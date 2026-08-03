@@ -1,6 +1,6 @@
 /**
  * Formula view — Excel's Show Formulas (⌘` / Ctrl+`), persisted per sheet as
- * sheetView/@showFormulas (#188).
+ * sheetView/@showFormulas.
  *
  * Univer's RENDER_RAW_FORMULA_KEY only reaches the rich-text/rotated cell
  * path in this version, so plain cells never change: the actual value swap
@@ -36,7 +36,7 @@ export function applyShowFormulasView(
 }
 
 /// Formula text for a cell whose model carries no `f`: the harvested
-/// per-sheet index (#164), unless the coordinates are unreliable (structural
+/// per-sheet index, unless the coordinates are unreliable (structural
 /// edits shifted them) or the user overwrote the cell this session.
 function indexedFormulaText(
   state: LazyWorkbookState | null,
@@ -75,7 +75,7 @@ export function installFormulaViewInterceptor(
 }
 
 /// Streamed workbooks whose closure gave up have no `f` in the model, so the
-/// formula bar shows only values (#164). Inject the harvested formula text
+/// formula bar shows only values. Inject the harvested formula text
 /// into the view model: the grid ignores `f` (displayRawFormula=false) and
 /// the engine reads the raw cell matrix, so this is display-only.
 export function installFormulaTextInterceptor(

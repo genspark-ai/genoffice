@@ -1,5 +1,5 @@
 /**
- * <a:fld> in-paragraph ordering (#88): a field must stay at its document
+ * <a:fld> in-paragraph ordering: a field must stay at its document
  * position relative to plain runs — "fld(2) + r(h)" renders as "2h", not "h2".
  */
 import { describe, it, expect } from 'vitest'
@@ -24,7 +24,7 @@ const runsOf = (spTree: string, paraIndex = 0) => {
   return el.text!.paragraphs[paraIndex]!.runs
 }
 
-describe('a:fld document-order preservation (#88)', () => {
+describe('a:fld document-order preservation', () => {
   it('fld before a plain run stays first (fld("2") + r("h") → "2h")', () => {
     const runs = runsOf(
       textBox(

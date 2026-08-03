@@ -195,7 +195,7 @@ export async function handleInsertChart(
     ctx.setMessage(error instanceof Error ? error.message : t('appChartNeedsNumericColumn'))
     return
   }
-  // Scatter reads its X values from the first data vector (#204).
+  // Scatter reads its X values from the first data vector.
   const parsed = chartDataFromValues(
     values,
     chartKind === 'scatter' ? { numericCategoryColumn: true } : undefined,
@@ -207,7 +207,7 @@ export async function handleInsertChart(
   const sheetName = worksheet.getSheetName()
   const dataStartRow = startRow + (parsed.hasHeaderRow && !parsed.byRow ? 1 : 0)
   // by-row orientation: series names come from the first column, categories
-  // from the first row (#178)
+  // from the first row
   const dataStartColumn = startColumn + (parsed.hasHeaderRow && parsed.byRow ? 1 : 0)
   const visual: WorkbookVisualObject = {
     id: `added-chart-${Date.now().toString(36)}-${state.editJournal.visualAdds.length + 1}`,

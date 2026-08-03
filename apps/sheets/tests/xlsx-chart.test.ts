@@ -459,7 +459,7 @@ describe('applyChartEdit series data', () => {
     ).toThrow(ChartEditError)
   })
 
-  it('keeps numRef categories numeric with their formatCode (#182)', () => {
+  it('keeps numRef categories numeric with their formatCode', () => {
     const dated = AXIS_CHART.replace(
       '<c:cat><c:strRef><c:f>Data!$A$2:$A$3</c:f><c:strCache><c:ptCount val="2"/>' +
         '<c:pt idx="0"><c:v>a</c:v></c:pt><c:pt idx="1"><c:v>b</c:v></c:pt></c:strCache></c:strRef></c:cat>',

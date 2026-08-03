@@ -1140,7 +1140,7 @@ function ChartVisual({
   const pendingEdit = chartPath ? chartEditing?.edits.get(chartPath) : undefined
   // Files written without numCache (openpyxl, pandas) have series refs but no
   // cached points; hydrate those series from the referenced cells. Categories
-  // hydrate on their own too (scatter xVal numRef without numCache, #180).
+  // hydrate on their own too (scatter xVal numRef without numCache).
   const readVector = chartEditing?.readVector
   const needsHydration = sourceChart.series.some(
     (series) =>

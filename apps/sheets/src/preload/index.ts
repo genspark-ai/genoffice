@@ -533,7 +533,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       columnCount: sheet.columnCount,
       columnWidths,
       // Degrade instead of rejecting the workbook: 0 / malformed defaults
-      // mean "use the built-in size" (#173).
+      // mean "use the built-in size".
       defaultRowHeight: normalizedDefaultSize(sheet.defaultRowHeight),
       defaultColumnWidth: normalizedDefaultSize(sheet.defaultColumnWidth),
       freeze: parseFreeze(sheet.freeze),
@@ -2092,7 +2092,7 @@ function isNonnegativeInteger(input: unknown): input is number {
 }
 
 /// Sheet default row height / column width: finite positive number, or null
-/// for "no default — use the built-in size" (0 and junk degrade to null, #173).
+/// for "no default — use the built-in size" (0 and junk degrade to null).
 function normalizedDefaultSize(input: unknown): number | null {
   return typeof input === 'number' && Number.isFinite(input) && input > 0 ? input : null
 }

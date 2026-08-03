@@ -2789,7 +2789,8 @@ th.cell-rev-del {
 }
 
 /* the clone is a gapless continuous flow (slices use virtual coordinates); canvas page gaps don't enter the clone */
-.pv-clip .page-gap {
+.pv-clip .page-gap,
+.pv-clip .page-gap-cut {
   display: none;
 }
 
@@ -6457,6 +6458,15 @@ ruby.doc-ruby.ProseMirror-selectednode {
   height: 0;
   position: relative;
   pointer-events: none;
+}
+
+/* safety net: a cut marker misplaced as a direct table/row child would otherwise be
+   wrapped in an anonymous table row, adding one line-height of phantom table height
+   that skews pagination measurement (#86 line shear / #93 page-count inflation) */
+table > .page-gap-cut,
+tbody > .page-gap-cut,
+tr > .page-gap-cut {
+  display: none;
 }
 
 .page-gap-cut::before {

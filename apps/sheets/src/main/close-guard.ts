@@ -6,7 +6,7 @@
  * Save / Don't Save / Cancel. Shutdown must always be 'proceed': a dialog raised
  * while the app is quitting resolves to its default button, and with Save as the
  * default that silently overwrote the user's original file on SIGTERM — a restart,
- * an installer, or killall could rewrite a model nobody chose to save (issue #170).
+ * an installer, or killall could rewrite a model nobody chose to save.
  * Unsaved work is covered by the periodic recovery copy, which the next launch
  * offers to restore.
  */

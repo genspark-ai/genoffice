@@ -709,12 +709,23 @@ button {
 }
 
 .slide-list {
-  width: 150px;
+  width: 120px; /* fallback; App drives the actual width via inline style (drag-resizable) */
   flex-shrink: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 10px;
+}
+
+/* drag handle between the thumbnail list and the canvas — resize the sidebar
+ * horizontally (overlaps the list's right border; cursor-only affordance) */
+.thumb-resizer {
+  width: 6px;
+  margin-left: -3px;
+  flex-shrink: 0;
+  cursor: col-resize; /* horizontal double-arrow on the splitter */
+  z-index: 20;
+  background: transparent;
 }
 
 /* macOS vibrancy (body.vib set at bootstrap): the thumbnail pane goes
@@ -873,7 +884,9 @@ body.vib .slide-list {
 .stage-wrap {
   flex: 1;
   overflow: auto;
-  padding: 32px;
+  /* 48px top: headroom for the .stage-ai-bar overhanging the slide card, so it
+     is never clipped by the pane edge at any window/zoom size */
+  padding: 48px 32px 32px;
   display: flex;
   /* flex-start + auto margins on the zoom-box: centered (both axes) while it
    * fits, but all edges stay scroll-reachable once zoomed content overflows
@@ -3484,57 +3497,67 @@ body.vib .slide-list {
    Genspark AI group); absolute so it doesn't distort the zoom-box extent.
    z-index lifts it over the Konva stage's transparent 160px bleed, which
    otherwise swallows the clicks */
+/* Genspark SAS floating toolbar, matched to the reference stage-toolbar:
+   white bar (padding 3px 5px, ~35px tall); 24px borderless tool buttons
+   with 12px #374151 labels; thin span dividers separate the groups; the
+   assistant toggle shows a gray selected state while the panel is open */
 .stage-ai-bar {
   position: absolute;
   bottom: 100%;
   left: 0;
   z-index: 5;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding-bottom: 4px;
+  margin-bottom: 6px;
+  padding: 3px 5px;
+  background: #fff;
+  border: 1px solid #ececf0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   white-space: nowrap;
 }
 
 .stage-ai-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 11px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
-  color: var(--text);
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #374151;
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background 0.1s,
-    border-color 0.1s,
-    box-shadow 0.1s;
+  transition: background 0.1s;
 }
 
 .stage-ai-btn:hover {
-  background: var(--hover);
-  border-color: var(--border-strong);
+  background: #f3f4f6;
 }
 
 .stage-ai-btn:active {
-  background: var(--pressed);
-  box-shadow: none;
+  background: #eceef1;
   transform: translateY(0.5px) scale(0.98);
 }
 
 .stage-ai-btn.active {
-  background: var(--active-bg);
-  border-color: var(--border-strong);
-  box-shadow: none;
+  background: #f3f4f6;
+}
+
+.stage-ai-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: #e5e7eb;
 }
 
 .stage-ai-btn svg {
   flex-shrink: 0;
+  /* AI feature glyphs match the ribbon's blue; the Genspark brand mark
+     carries its own fills and ignores currentColor */
   color: #0f7fff;
 }
 

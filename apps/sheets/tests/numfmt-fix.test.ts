@@ -4,7 +4,7 @@ import { fixFormattedValue, formatGeneral, generalCharBudget } from '../src/rend
 
 const NBSP = ' '
 
-describe('fixFormattedValue — empty sections (#183)', () => {
+describe('fixFormattedValue — empty sections', () => {
   it('renders 0 as empty when the zero section is empty', () => {
     expect(fixFormattedValue('#,##0_);(#,##0);', 0, 0)).toBe('')
   })
@@ -20,7 +20,7 @@ describe('fixFormattedValue — empty sections (#183)', () => {
   })
 })
 
-describe('fixFormattedValue — _x padding and text section (#186)', () => {
+describe('fixFormattedValue — _x padding and text section', () => {
   it('upgrades trailing padding spaces to NBSP so layout keeps them', () => {
     expect(fixFormattedValue('#,##0.0_);(#,##0.0)', 765.89, '765.9 ')).toBe(`765.9${NBSP}`)
   })
@@ -34,7 +34,11 @@ describe('fixFormattedValue — _x padding and text section (#186)', () => {
   it('applies the 4th (text) section to string cells', () => {
     expect(fixFormattedValue('#,##0.0_);(#,##0.0);0.0_);@_)', 'abc', 'abc')).toBe(`abc${NBSP}`)
     expect(
-      fixFormattedValue('#,##0.0_);(#,##0.0);0.0_);@_)', 'Training The Street', 'Training The Street'),
+      fixFormattedValue(
+        '#,##0.0_);(#,##0.0);0.0_);@_)',
+        'Training The Street',
+        'Training The Street',
+      ),
     ).toBe(`Training The Street${NBSP}`)
   })
 
@@ -47,7 +51,7 @@ describe('fixFormattedValue — _x padding and text section (#186)', () => {
   })
 })
 
-describe('formatGeneral (#189)', () => {
+describe('formatGeneral', () => {
   it('shows 0.326883 at the default 8.43-char column width', () => {
     // characterWidthToPixels(8.43) === 64
     expect(generalCharBudget(64)).toBe(8)

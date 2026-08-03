@@ -1,5 +1,5 @@
 /**
- * Empty-value formula results display as 0, like Excel (#202).
+ * Empty-value formula results display as 0, like Excel.
  *
  * A bare `=H19` on an empty cell already shows 0: the root reference goes
  * through BaseReferenceObject.getFirstCell(), which maps a missing cell to

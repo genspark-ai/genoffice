@@ -292,7 +292,7 @@ export function ExcelShell({
         event.preventDefault()
         setShowGoTo(true)
       }
-      // Excel's Show Formulas shortcut (⌘` / Ctrl+`, #188).
+      // Excel's Show Formulas shortcut (⌘` / Ctrl+`).
       if ((event.metaKey || event.ctrlKey) && event.key === '`') {
         event.preventDefault()
         onCommand('toggle-show-formulas')
@@ -842,7 +842,7 @@ function ChartTextDialog({
 }
 
 /// Numeric row-height / column-width entry (Excel's Format → Row Height /
-/// Column Width, #162). Applies to the rows/columns of the current selection.
+/// Column Width). Applies to the rows/columns of the current selection.
 function AxisSizeDialog({
   axis,
   onCommand,
@@ -2615,7 +2615,7 @@ function MenuSelect({
 
 /// MenuSelect variant whose trigger is a free-text input (Excel's font
 /// name/size boxes): Enter or clicking away commits the typed value, Esc
-/// reverts, the caret opens the preset list (#160).
+/// reverts, the caret opens the preset list.
 function EditableMenuSelect({
   label,
   className,

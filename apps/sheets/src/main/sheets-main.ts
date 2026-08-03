@@ -1529,7 +1529,7 @@ export function sheetsPendingEditCount(webContentsId: number): number {
  * The app is shutting down (quit menu, SIGTERM from a restart/installer/killall,
  * SIGINT from a terminal). The close guard must not save then: nobody answered the
  * prompt, and a dialog raised during shutdown resolves to its default button, which
- * silently overwrote the user's original file (issue #170). Unsaved work is covered
+ * silently overwrote the user's original file. Unsaved work is covered
  * by the 30s recovery copy instead — the next launch offers to restore it.
  */
 let appShuttingDown = false
@@ -2429,7 +2429,7 @@ async function writeWorkbookTo(
     sheetName: resolveSheetName(sheetId),
     ...group,
   }))
-  // Recalculated formula values (issue #166): sheetId → file sheet name, the same
+  // Recalculated formula values: sheetId → file sheet name, the same
   // resolution the cell edits use.
   const formulaValuesBySheet = new Map<
     string,

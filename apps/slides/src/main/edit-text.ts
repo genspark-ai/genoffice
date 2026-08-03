@@ -143,7 +143,7 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
 
 /**
  * Per-paragraph format marks set by the editor (bullets/line spacing/paragraph spacing on the
- * selection, issue #85) → engine paragraph-format patches, keyed by the edited paragraph index.
+ * selection) → engine paragraph-format patches, keyed by the edited paragraph index.
  * The caller applies each through setElementParagraphFormat(…, [index]) so the pPr surgery only
  * touches the marked paragraphs.
  */

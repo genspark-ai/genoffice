@@ -934,7 +934,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                         ))}
                         <div className="rb-menu-sep" />
                         {/* free pt values: the op plumbing has carried
-                            spaceBeforePt/spaceAfterPt all along (#149) */}
+                            spaceBeforePt/spaceAfterPt all along */}
                         {(
                           [
                             ['ribbonSpaceBefore', 'spaceBeforePt'],

@@ -685,7 +685,7 @@ describe('vertical text (bodyPr vert): horizontal edit overlay round-trips lossl
   })
 })
 
-describe('per-paragraph format on the editing selection (#85)', () => {
+describe('per-paragraph format on the editing selection', () => {
   const HEADING_AND_BODY: Paragraph[] = [
     { runs: [{ text: '智能教务', fontSize: 16, bold: true }], pPrExplicit: {} },
     {
@@ -764,7 +764,7 @@ describe('per-paragraph format on the editing selection (#85)', () => {
   })
 })
 
-describe('run hyperlinks (#146): overlay round-trip + merge semantics', () => {
+describe('run hyperlinks: overlay round-trip + merge semantics', () => {
   it('linked run round-trips through the editor DOM as <a href>', () => {
     const out = roundTrip([
       {

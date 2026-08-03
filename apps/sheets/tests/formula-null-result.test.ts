@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { coerceNullResult } from '../src/renderer/formula-null-result'
 
-describe('coerceNullResult (#202)', () => {
+describe('coerceNullResult', () => {
   it('turns a scalar null result into 0', () => {
     const result = coerceNullResult(NullValueObject.create())
     expect(result).toBeInstanceOf(NumberValueObject)

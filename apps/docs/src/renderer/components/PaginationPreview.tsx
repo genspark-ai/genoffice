@@ -446,7 +446,7 @@ export function PaginationPreview({
                   style={{
                     // last page opens to full capacity: slice bounds can drift a few
                     // lines short of the clone's real height (page-crossing tables),
-                    // silently dropping the document tail from export/print (#86);
+                    // silently dropping the document tail from export/print;
                     // past the real content bottom the window is empty anyway
                     height:
                       i === slices.length - 1 && vOffset <= 0.5

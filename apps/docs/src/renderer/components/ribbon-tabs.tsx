@@ -119,7 +119,7 @@ export function insertTableAt(editor: Editor, rows: number, cols: number): void 
     colWidthsPct: Array.from({ length: cols }, () => 100 / cols),
   }
   // inside a cell a top-level docTable insert would split the outer table
-  // (#156); Word semantics is a nested child table at the end of the cell
+  // — Word semantics is a nested child table at the end of the cell
   const { $from } = editor.state.selection
   for (let depth = $from.depth; depth > 0; depth--) {
     const name = $from.node(depth).type.name
@@ -398,7 +398,7 @@ export function insertPageBreakAt(editor: Editor): void {
  * Word's "Blank Page": one empty paragraph that starts its own page, and —
  * only when content follows it — a break pushed onto that following block so
  * it starts the page after. Unconditionally inserting two break paragraphs
- * turned a 1-page document into 3 pages (#152).
+ * turned a 1-page document into 3 pages.
  */
 export function insertBlankPageAt(editor: Editor): void {
   editor

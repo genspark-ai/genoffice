@@ -85,7 +85,11 @@ describe('parseTheme fmtScheme', () => {
 
 describe('p:style references -> fmtScheme templates', () => {
   const parse = () =>
-    parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(shapeWithStyle(STYLE_REFS)), ctx: { theme } })
+    parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(shapeWithStyle(STYLE_REFS)),
+      ctx: { theme },
+    })
 
   it('fillRef idx=2 -> linear gradient template, phClr substituted with accent2 and modifiers applied', () => {
     const el = parse().elements[0] as TextElement
@@ -125,12 +129,17 @@ describe('p:style references -> fmtScheme templates', () => {
     const style =
       '<a:lnRef idx="0"/><a:fillRef idx="1001"><a:schemeClr val="accent3"/></a:fillRef>' +
       '<a:effectRef idx="0"/><a:fontRef idx="minor"/>'
-    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(shapeWithStyle(style)), ctx: { theme } })
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(shapeWithStyle(style)),
+      ctx: { theme },
+    })
     expect((slide.elements[0] as TextElement).fill).toEqual({ type: 'solid', color: '#A5A5A5' })
   })
 
   it('explicit spPr fill/stroke wins over style references (not overridden by templates)', () => {
-    const explicit = '<a:solidFill><a:srgbClr val="112233"/></a:solidFill><a:ln w="25400"><a:solidFill><a:srgbClr val="445566"/></a:solidFill></a:ln>'
+    const explicit =
+      '<a:solidFill><a:srgbClr val="112233"/></a:solidFill><a:ln w="25400"><a:solidFill><a:srgbClr val="445566"/></a:solidFill></a:ln>'
     const slide = parseSlide({
       path: 'ppt/slides/slide1.xml',
       slideXml: slideWith(shapeWithStyle(STYLE_REFS, explicit)),
@@ -141,7 +150,7 @@ describe('p:style references -> fmtScheme templates', () => {
     expect(el.stroke?.width).toBe(25400)
   })
 
-  it('explicit <a:ln><a:noFill/> wins over lnRef: no stroke is drawn (#102)', () => {
+  it('explicit <a:ln><a:noFill/> wins over lnRef: no stroke is drawn', () => {
     const noOutline = '<a:ln><a:noFill/></a:ln>'
     const slide = parseSlide({
       path: 'ppt/slides/slide1.xml',
@@ -151,7 +160,7 @@ describe('p:style references -> fmtScheme templates', () => {
     expect((slide.elements[0] as TextElement).stroke).toBeUndefined()
   })
 
-  it('connector with explicit <a:ln><a:noFill/> draws no stroke; absent a:ln still falls back (#102)', () => {
+  it('connector with explicit <a:ln><a:noFill/> draws no stroke; absent a:ln still falls back', () => {
     const cxn = (ln: string) =>
       '<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="7" name="C"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
       '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1000" cy="1000"/></a:xfrm>' +
@@ -165,7 +174,11 @@ describe('p:style references -> fmtScheme templates', () => {
 
   it('theme without fmtScheme (legacy behavior): falls back to reference-color solid + 1pt', () => {
     const bare: any = { colors: { accent1: '#4472C4', accent2: '#ED7D31', dk1: '#000000' } }
-    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(shapeWithStyle(STYLE_REFS)), ctx: { theme: bare } })
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(shapeWithStyle(STYLE_REFS)),
+      ctx: { theme: bare },
+    })
     const el = slide.elements[0] as TextElement
     expect(el.fill?.type).toBe('solid')
     expect(el.stroke?.width).toBe(12700)

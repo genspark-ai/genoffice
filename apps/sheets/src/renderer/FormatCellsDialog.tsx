@@ -61,7 +61,7 @@ const NUMBER_CATEGORIES: { readonly labelKey: StringKey; readonly pattern: strin
 
 const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Times New Roman', '微软雅黑', '宋体']
 const FONT_SIZES = ['9', '10', '11', '12', '14', '16', '18', '22', '26']
-/// OOXML ST_BorderStyle names offered by the line-style picker (#168); the
+/// OOXML ST_BorderStyle names offered by the line-style picker; the
 /// journal maps them 1:1 to Univer BorderStyleTypes and back to the file.
 const BORDER_LINE_STYLES: { readonly labelKey: StringKey; readonly value: string }[] = [
   { labelKey: 'dlgFcStyleThin', value: 'thin' },

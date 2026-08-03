@@ -1,5 +1,5 @@
 /**
- * Rule-management panels say what each rule actually does (#203).
+ * Rule-management panels say what each rule actually does.
  *
  * - List-type data validation names show the actual options (literal lists)
  *   or the source range address, instead of the fixed "from range" wording.
@@ -68,11 +68,17 @@ function enhanceDvRuleNames(runtime: UniverRuntime): () => void {
 
 function colName(index: number): string {
   let name = ''
-  for (let i = index; i >= 0; i = Math.floor(i / 26) - 1) name = String.fromCharCode(65 + (i % 26)) + name
+  for (let i = index; i >= 0; i = Math.floor(i / 26) - 1)
+    name = String.fromCharCode(65 + (i % 26)) + name
   return name
 }
 
-function rangeA1(r: { startRow: number; startColumn: number; endRow: number; endColumn: number }): string {
+function rangeA1(r: {
+  startRow: number
+  startColumn: number
+  endRow: number
+  endColumn: number
+}): string {
   const start = `${colName(r.startColumn)}${r.startRow + 1}`
   const end = `${colName(r.endColumn)}${r.endRow + 1}`
   return start === end ? start : `${start}:${end}`
@@ -97,8 +103,7 @@ function enhanceCfPanel(runtime: UniverRuntime): () => void {
     if (!workbook || !sheet) return
     const rules =
       (model.getSubunitRules(workbook.getId(), sheet.getSheetId()) as
-        | IConditionFormattingRule[]
-        | undefined) ?? []
+        IConditionFormattingRule[] | undefined) ?? []
     const byRanges = new Map<string, string[]>()
     for (const rule of rules) {
       const config = rule.rule as { type: string; subType?: string; value?: string }

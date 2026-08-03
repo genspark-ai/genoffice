@@ -1,4 +1,4 @@
-/** #43-D/E: non-shape spTree children between two shapes (mc:AlternateContent etc.) are preserved verbatim on rebuild. */
+/** Non-shape spTree children between two shapes (mc:AlternateContent etc.) are preserved verbatim on rebuild. */
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { openPptx, savePptx, addElement, createBlankPptx, patchSlideXml } from '../src/index'

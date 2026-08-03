@@ -1,5 +1,5 @@
 /**
- * Run-level hyperlinks (#146): parse-time rId resolution + hlink styling, rels allocation
+ * Run-level hyperlinks: parse-time rId resolution + hlink styling, rels allocation
  * for links set in-session, patch-path <a:hlinkClick> surgery, and live lookup for the show.
  */
 import { describe, it, expect } from 'vitest'

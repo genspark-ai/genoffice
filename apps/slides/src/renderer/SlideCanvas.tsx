@@ -104,11 +104,31 @@ interface Props {
 export const CANVAS_BLEED = 160
 
 /**
+ * Node count from which a slide counts as "dense" and gets its raster pressure capped:
+ * every edit redraws the whole layer, and on a ~600-element page at pixelRatio 3 that keeps the
+ * GPU command buffer near-full — the prime suspect for the sporadic renderer main-thread freeze.
+ */
+export const DENSE_SLIDE_NODE_COUNT = 300
+
+/** Total node count including group children (a dense page may hide its elements inside groups). */
+function countNodes(nodes: RenderNode[]): number {
+  let n = 0
+  for (const node of nodes) {
+    n += 1
+    if (node.type === 'group') n += countNodes((node as GroupRenderNode).children)
+  }
+  return n
+}
+
+/**
  * Main-canvas rasterization ratio. Zoom is a pure CSS transform on the Stage's container, so
  * without this the bitmap stays at devicePixelRatio and zoom>1 just stretches it (blurry).
  * Never below devicePixelRatio (zoom<1 keeps the old quality); capped to bound canvas memory.
+ * Dense slides skip the zoom upscale and cap harder: full-layer redraw cost scales with
+ * ratio² × node count, and bounding it is the cheap half of the freeze mitigation.
  */
-export function canvasPixelRatio(devicePixelRatio: number, zoom: number): number {
+export function canvasPixelRatio(devicePixelRatio: number, zoom: number, nodeCount = 0): number {
+  if (nodeCount >= DENSE_SLIDE_NODE_COUNT) return Math.min(devicePixelRatio || 1, 2)
   return Math.min((devicePixelRatio || 1) * Math.max(zoom, 1), 3)
 }
 
@@ -136,6 +156,9 @@ export function SlideCanvas({
   const layerRef = useRef<Konva.Layer>(null)
   const stageRef = useRef<Konva.Stage>(null)
 
+  const nodeCount = useMemo(() => countNodes(slide.nodes), [slide])
+  const dense = nodeCount >= DENSE_SLIDE_NODE_COUNT
+
   // zoom is committed to state only after the gesture ends (App batches wheel events),
   // so re-rasterizing here happens once per gesture, not per wheel event. The slide dep
   // covers layers (re)created between zoom changes; the resolution media query covers
@@ -143,7 +166,7 @@ export function SlideCanvas({
   // dpr, so it must be re-armed after each change.
   useEffect(() => {
     const apply = () => {
-      const ratio = canvasPixelRatio(window.devicePixelRatio, zoom)
+      const ratio = canvasPixelRatio(window.devicePixelRatio, zoom, nodeCount)
       for (const l of stageRef.current?.getLayers() ?? []) {
         if (l.getCanvas().getPixelRatio() !== ratio) {
           l.getCanvas().setPixelRatio(ratio)
@@ -329,7 +352,9 @@ export function SlideCanvas({
       style={{ position: 'absolute', left: -CANVAS_BLEED, top: -CANVAS_BLEED }}
     >
       <Layer ref={layerRef} x={CANVAS_BLEED} y={CANVAS_BLEED}>
-        {/* Slide base: white background + shadow (used to be the Stage's CSS background; the bleed area must show the gray workspace behind) */}
+        {/* Slide base: white background + shadow (used to be the Stage's CSS background; the bleed area must show the gray workspace behind).
+            Dense slides drop the decorative blur: a canvas shadow re-rasterizes on every full-layer
+            redraw and is pure GPU pressure on exactly the pages where the freeze bites. */}
         <Rect
           name="slide-bg"
           x={0}
@@ -337,9 +362,9 @@ export function SlideCanvas({
           width={slide.widthPx}
           height={slide.heightPx}
           fill="#ffffff"
-          shadowColor="rgba(0,0,0,0.15)"
-          shadowBlur={16}
-          shadowOffsetY={2}
+          {...(dense
+            ? { stroke: 'rgba(0,0,0,0.15)', strokeWidth: 1 }
+            : { shadowColor: 'rgba(0,0,0,0.15)', shadowBlur: 16, shadowOffsetY: 2 })}
         />
         <Rect
           name="slide-bg"

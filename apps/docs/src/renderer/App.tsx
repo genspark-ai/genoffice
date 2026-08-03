@@ -35,10 +35,11 @@ import {
   appendEndnotesBlock,
   assignSections,
   effectiveHfRefs,
-  lineStartCoords,
+  lineStartAnchor,
   liveSections,
-  nextLineCoords,
+  nextLineAnchor,
   measureBlocks,
+  type LineAnchor,
   pageNumbers,
   sliceWithLineSplit,
   tableRowFlags,
@@ -66,7 +67,7 @@ import {
 import { saveUntilPersisted } from './save-until-persisted'
 import { FindPanel } from './components/FindPanel'
 import { Ribbon } from './components/Ribbon'
-import { GensparkMark, IconRedo, IconSave, IconUndo } from './components/icons'
+import { IconRedo, IconSave, IconUndo } from './components/icons'
 import {
   LinkInsertModal,
   insertImageFromDataUrl,
@@ -149,6 +150,21 @@ import {
 const _IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
+
+/**
+ * Document position of a measured line-start DOM anchor. posAtDOM works from the DOM
+ * tree, unlike posAtCoords whose viewport hit-testing returns degenerate positions for
+ * lines scrolled off-screen (which misplaced page-break markers into table bodies,
+ * inflating the canvas table by a phantom anonymous row and skewing pagination).
+ */
+function posFromAnchor(view: Editor['view'], anchor: LineAnchor): number | undefined {
+  try {
+    const pos = view.posAtDOM(anchor.node, anchor.charOffset)
+    return pos >= 0 ? pos : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** Clean pasted Word/web HTML: mso conditional comments, <o:p>, and unwrapping <li><p>x</p></li> */
 function cleanPastedHtml(html: string): string {
@@ -1711,14 +1727,14 @@ export function App() {
               }
               if (!matched) {
                 // inline cut point (page break mid-line): the cut falls in a line's band gap; locate the first line after it and insert a zero-height dashed marker
-                const coords = nextLineCoords(b.el, slice.start - b.top, factor)
-                const pos = coords ? editor.view.posAtCoords(coords)?.pos : undefined
+                const anchor = nextLineAnchor(b.el, slice.start - b.top, factor)
+                const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
                 if (pos != null) gaps.push({ pos, kind: 'cut', metrics })
               }
               return
             }
-            const coords = lineStartCoords(b.el, slice.start - b.top, factor)
-            const pos = coords ? editor.view.posAtCoords(coords)?.pos : undefined
+            const anchor = lineStartAnchor(b.el, slice.start - b.top, factor)
+            const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
             if (pos == null) return
             // fold the block's horizontal indent relative to the content area into negative margins so the gap spans the full paper width
             const elRect = b.el.getBoundingClientRect()
@@ -2480,31 +2496,22 @@ export function App() {
       <div className={`workspace ${darkCanvas ? 'workspace-dark' : ''}`}>
         {doc && (
           <div className={`ai-dock${showAi ? '' : ' collapsed'}`}>
-            {showAi ? (
-              <AiPanel
-                key={aiPanelKey}
-                editor={editor}
-                blocks={doc.parsed.blocks}
-                settings={settings}
-                docEmpty={wordCount === 0}
-                numIdFallback={
-                  doc.isBlank
-                    ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID }
-                    : null
-                }
-                preset={aiPreset}
-                onCollapse={() => setShowAi(false)}
-                filePath={doc?.filePath ?? null}
-              />
-            ) : (
-              <button
-                className="ai-rail"
-                title={t('appExpandAiPanel')}
-                onClick={() => setShowAi(true)}
-              >
-                <GensparkMark size={22} />
-              </button>
-            )}
+            {/* always mounted: collapse must not drop state or in-flight runs */}
+            <AiPanel
+              key={aiPanelKey}
+              editor={editor}
+              blocks={doc.parsed.blocks}
+              settings={settings}
+              docEmpty={wordCount === 0}
+              numIdFallback={
+                doc.isBlank ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID } : null
+              }
+              preset={aiPreset}
+              open={showAi}
+              onExpand={() => setShowAi(true)}
+              onCollapse={() => setShowAi(false)}
+              filePath={doc?.filePath ?? null}
+            />
           </div>
         )}
         {doc && showFind && <FindPanel editor={editor} onClose={() => setShowFind(false)} />}
@@ -2630,7 +2637,7 @@ export function App() {
                     </div>
                   )}
                   {endnotes.length > 0 && (
-                    // endnotes live in their own document-end area, roman-numbered — never mixed into the footnote block (#153)
+                    // endnotes live in their own document-end area, roman-numbered — never mixed into the footnote block
                     <div className="page-notes page-endnotes">
                       <div className="page-notes-label">{t('appEndnotesLabel')}</div>
                       {endnotes.map((n, i) => (

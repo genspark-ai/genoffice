@@ -40,7 +40,7 @@ async function saveAndUnzip(editor: Editor, parsed: Awaited<ReturnType<typeof pa
   return { bytes, xml }
 }
 
-describe('list toggle inside a table cell (#156)', () => {
+describe('list toggle inside a table cell', () => {
   it('setNode docListItem succeeds in a cell and saves w:numPr into the tc', async () => {
     const { editor, parsed } = await openBlank()
     insertTableAt(editor, 2, 2)
@@ -83,7 +83,7 @@ describe('list toggle inside a table cell (#156)', () => {
   })
 })
 
-describe('insert table inside a table cell (#156)', () => {
+describe('insert table inside a table cell', () => {
   it('nests the new table in the cell instead of splitting the outer table', async () => {
     const { editor, parsed } = await openBlank()
     insertTableAt(editor, 2, 2)

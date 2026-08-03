@@ -1494,37 +1494,39 @@ function innerGapHeight(el: HTMLElement): number {
 
 /**
  * In-block text lines (first rect of each line): offset is the virtual in-block Y
- * after subtracting inline gaps; left/top are screen coordinates (for posAtCoords).
+ * after subtracting inline gaps; left/top are screen coordinates; node is the text
+ * node owning the line's first rect (DOM anchor for viewport-independent positioning).
  * Text inside gaps (e.g. footnotes) doesn't count as lines.
  */
 function domLineRects(
   el: HTMLElement,
   zoomFactor: number,
-): Array<{ offset: number; left: number; top: number }> {
+): Array<{ offset: number; left: number; top: number; node: Text }> {
   const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
     g.getBoundingClientRect(),
   )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
   const range = document.createRange()
-  const rects: DOMRect[] = []
+  const rects: Array<{ r: DOMRect; node: Text }> = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (n.parentElement?.closest('.page-gap')) continue
     range.selectNodeContents(n)
     for (const r of range.getClientRects()) {
-      if (r.height > 0 && r.width > 0) rects.push(r)
+      if (r.height > 0 && r.width > 0) rects.push({ r, node: n as Text })
     }
   }
-  rects.sort((a, b) => a.top - b.top)
+  rects.sort((a, b) => a.r.top - b.r.top)
   const elTop = el.getBoundingClientRect().top
-  const lines: Array<{ offset: number; left: number; top: number }> = []
+  const lines: Array<{ offset: number; left: number; top: number; node: Text }> = []
   let lineBottom = -Infinity
-  for (const r of rects) {
+  for (const { r, node } of rects) {
     if (r.top >= lineBottom - 1) {
       lines.push({
         offset: (r.top - elTop - gapAbove(r.top)) / zoomFactor,
         left: r.left,
         top: r.top,
+        node,
       })
       lineBottom = r.bottom
     } else {
@@ -1552,30 +1554,76 @@ export function lineBreakBoundaries(lineOffsets: number[]): number[] {
   return lineOffsets.slice(1).filter((off) => off > 0.5)
 }
 
+/** DOM anchor of a line start: the line's first text node + character offset within it (feed to view.posAtDOM) */
+export interface LineAnchor {
+  node: Text
+  charOffset: number
+}
+
 /**
- * Screen coordinates of the line start matching an in-block virtual Y (offsetInBlock)
+ * Character offset within a text node where the line whose top is lineTop begins.
+ * Uses per-character Range rects (layout data, not viewport hit-testing), so it works
+ * for lines scrolled outside the viewport — posAtCoords/caretRangeFromPoint do not:
+ * off-screen coordinates resolve to degenerate document positions, which used to drop
+ * in-table cut markers before the table's first row where they inflate the canvas
+ * table by an anonymous-row line-height and skew all pagination measurement below.
+ */
+function lineStartCharOffset(node: Text, lineTop: number): number {
+  const len = node.length
+  if (len === 0) return 0
+  const range = document.createRange()
+  const topAt = (i: number): number => {
+    range.setStart(node, i)
+    range.setEnd(node, i + 1)
+    for (const r of range.getClientRects()) if (r.height > 0) return r.top
+    // collapsed characters (e.g. wrap-point whitespace) have no rect: treat as belonging to an earlier line
+    return -Infinity
+  }
+  // first character at/below the line top (character tops are non-decreasing in flowing text)
+  let lo = 0
+  let hi = len - 1
+  let ans = 0
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (topAt(mid) >= lineTop - 1) {
+      ans = mid
+      hi = mid - 1
+    } else {
+      lo = mid + 1
+    }
+  }
+  return ans
+}
+
+const toAnchor = (ln: { node: Text; top: number }): LineAnchor => ({
+  node: ln.node,
+  charOffset: lineStartCharOffset(ln.node, ln.top),
+})
+
+/**
+ * DOM anchor of the line start matching an in-block virtual Y (offsetInBlock)
  * (used to position mid-paragraph page-break decorations).
  * Returns null when no matching line is found (non-text block / hard pixel cut point).
  */
-export function lineStartCoords(
+export function lineStartAnchor(
   el: HTMLElement,
   offsetInBlock: number,
   zoomFactor: number,
-): { left: number; top: number } | null {
+): LineAnchor | null {
   for (const ln of domLineRects(el, zoomFactor)) {
-    if (Math.abs(ln.offset - offsetInBlock) < 1.5) return { left: ln.left + 1, top: ln.top + 1 }
+    if (Math.abs(ln.offset - offsetInBlock) < 1.5) return toAnchor(ln)
   }
   return null
 }
 
-/** Line-start coordinates of the first line at or after (≥) a given in-block Y: used by in-row cut points (cuts in inter-line gaps) to locate the next page's first line */
-export function nextLineCoords(
+/** DOM anchor of the first line at or after (≥) a given in-block Y: used by in-row cut points (cuts in inter-line gaps) to locate the next page's first line */
+export function nextLineAnchor(
   el: HTMLElement,
   offsetInBlock: number,
   zoomFactor: number,
-): { left: number; top: number } | null {
+): LineAnchor | null {
   for (const ln of domLineRects(el, zoomFactor)) {
-    if (ln.offset >= offsetInBlock - 1.5) return { left: ln.left + 1, top: ln.top + 1 }
+    if (ln.offset >= offsetInBlock - 1.5) return toAnchor(ln)
   }
   return null
 }

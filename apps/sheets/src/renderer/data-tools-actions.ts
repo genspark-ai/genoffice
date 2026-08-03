@@ -65,7 +65,7 @@ export function goToReference(ctx: DataToolsContext, ref: string): string | null
   }
   try {
     // A jump must not leave an editor open on the previous cell — later
-    // keystrokes would land there (#201). Commit it before moving.
+    // keystrokes would land there. Commit it before moving.
     const editing = workbook as unknown as {
       isCellEditing?(): boolean
       endEditingAsync?(save: boolean): Promise<boolean>
@@ -77,10 +77,10 @@ export function goToReference(ctx: DataToolsContext, ref: string): string | null
     target.scrollToCell(range.getRow(), range.getColumn())
     // Hand keyboard focus back to the grid (Univer's hidden editor host, the
     // same handoff its own name box does); typing right after a jump then
-    // lands in the target cell instead of being dropped on <body> (#201).
+    // lands in the target cell instead of being dropped on <body>.
     ctx.univerRef.current?.univer.__getInjector().get(ILayoutService).focus()
     // The single Scroll event a jump produces computes its viewport from a
-    // stale getVisibleRange; load around the target explicitly (#167).
+    // stale getVisibleRange; load around the target explicitly.
     if (ctx.univerRef.current) {
       void loadVisibleRange(
         ctx.univerRef.current,

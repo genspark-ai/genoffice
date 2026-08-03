@@ -66,7 +66,7 @@ export interface FontSubstitution {
 
 /**
  * Declared fonts that don't resolve on this system, with the family that
- * actually renders instead (issue #75: substitution used to be silent).
+ * actually renders instead (substitution used to be silent).
  */
 export function checkMissingFonts(names: string[]): FontSubstitution[] {
   if (typeof document === 'undefined') return []

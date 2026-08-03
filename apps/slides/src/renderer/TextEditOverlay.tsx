@@ -676,7 +676,7 @@ export function applySelectionLink(target: LinkTargetOp | null): boolean {
 }
 
 /**
- * Per-paragraph format while editing (issue #85): mark the paragraph divs covered by the
+ * Per-paragraph format while editing: mark the paragraph divs covered by the
  * caret/selection; extractParagraphs carries the marks to the main process on commit.
  * Toggle-off (clicking the active bullet kind again) resolves against the first covered
  * paragraph's current state. Returns false when no editor selection is available

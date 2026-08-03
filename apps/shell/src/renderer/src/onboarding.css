@@ -39,7 +39,10 @@
   display: flex;
   flex-direction: column;
   width: 540px;
-  height: 420px;
+  /* 420px is the design-spec height for the anchor languages; longer locales
+   * (de/ru/ar wrap the slide-2 copy to 3 lines) grow the card instead of
+   * overflowing the fixed box and eating the bottom padding */
+  min-height: 420px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   border-radius: 20px;
@@ -50,13 +53,27 @@
   padding: 41px 32px 25px;
 }
 
-.onb-slide {
+/* all slides render stacked in one grid cell; the tallest one sets the card
+ * height for the language, so the footer never moves between steps */
+.onb-stage {
   flex: 1;
+  display: grid;
+}
+
+.onb-slide {
+  grid-area: 1 / 1;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   text-align: start;
+}
+
+.onb-slide.active {
   animation: onb-slide-in 0.25s ease-out;
+}
+
+.onb-slide:not(.active) {
+  visibility: hidden;
 }
 
 @keyframes onb-slide-in {

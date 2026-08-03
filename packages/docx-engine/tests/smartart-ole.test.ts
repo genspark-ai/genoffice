@@ -44,7 +44,7 @@ async function buildFixture(): Promise<Uint8Array> {
   })
 }
 
-describe('SmartArt / OLE visible degrade (#220)', () => {
+describe('SmartArt / OLE visible degrade', () => {
   it('SmartArt preview lists the diagram node texts', async () => {
     const parsed = await parseDocx(await buildFixture())
     const block = parsed.blocks[0]

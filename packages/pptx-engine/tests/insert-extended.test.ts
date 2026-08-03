@@ -727,7 +727,7 @@ describe('field runs & wordart & preset shapes', () => {
   })
 })
 
-describe('per-data-point chart colors (#90)', () => {
+describe('per-data-point chart colors', () => {
   it('pointColors patch writes <c:dPt>, survives save/reopen and later style-only rebuilds', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const r = addChart(opened, 0, {

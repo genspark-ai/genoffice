@@ -431,7 +431,7 @@ export interface NewChart {
 /** Editable interchange model of one table cell (type === 'table' blocks). */
 export interface TableParagraph extends ParaFormat {
   runs: Run[]
-  /** list paragraph inside the cell (w:numPr), #156 */
+  /** list paragraph inside the cell (w:numPr) */
   list?: { kind: 'bullet' | 'ordered'; numId: string; ilvl: number }
 }
 

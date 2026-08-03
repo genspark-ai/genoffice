@@ -174,7 +174,7 @@ export interface PageSetupJournalState {
   printGridlines?: boolean
   printHeadings?: boolean
   showGridlines?: boolean
-  /// sheetView/@showFormulas: the sheet renders formulas instead of values (#188).
+  /// sheetView/@showFormulas: the sheet renders formulas instead of values.
   showFormulas?: boolean
   /// A1 range to print, or null to clear the print area.
   printArea?: string | null

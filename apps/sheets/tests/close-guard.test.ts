@@ -1,5 +1,5 @@
 /**
- * Issue #170: on SIGTERM the close prompt resolved to its default button ("Save")
+ * On SIGTERM the close prompt resolved to its default button ("Save")
  * with nobody answering, so a restart / installer / killall silently overwrote the
  * user's original workbook. The guard must proceed without writing while the app is
  * shutting down — unsaved work is covered by the periodic recovery copy.
@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import { closeGuardDecision } from '../src/main/close-guard'
 
-describe('closeGuardDecision (issue #170)', () => {
+describe('closeGuardDecision', () => {
   it('prompts only when there are pending edits and the app is staying up', () => {
     expect(closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: false })).toBe(
       'prompt',

@@ -8,7 +8,7 @@ import {
 /**
  * ECMA-376 Part 3 (MCE): every prefix named in mc:Choice Requires must be
  * resolvable at the AlternateContent scope. Word treats an unresolvable
- * prefix as file corruption ("unreadable content", issue #155), so the
+ * prefix as file corruption ("unreadable content"), so the
  * builders must declare the wps namespace on mc:AlternateContent itself.
  */
 

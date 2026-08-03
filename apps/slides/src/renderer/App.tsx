@@ -83,6 +83,20 @@ import { buildCtxItems } from './context-menu-items'
 
 const _IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
+/** Resizable thumbnail sidebar: drag the right edge; width persisted, clamped to a sane range */
+const THUMBS_W_KEY = 'ai-slides-thumbs-width'
+const THUMBS_W_DEFAULT = 120
+const THUMBS_W_MIN = 110
+
+function clampThumbsW(w: number): number {
+  return Math.min(Math.max(w, THUMBS_W_MIN), Math.min(400, Math.round(window.innerWidth * 0.4)))
+}
+
+function loadThumbsW(): number {
+  const saved = Number(localStorage.getItem(THUMBS_W_KEY))
+  return Number.isFinite(saved) && saved > 0 ? clampThumbsW(saved) : THUMBS_W_DEFAULT
+}
+
 /** Outline view: extract one page's text from the render tree (title = the text box with the largest font size, topmost). */
 function outlineOf(s: RenderSlide): { title: string; lines: string[] } {
   const texts: Array<{ y: number; fontSize: number; text: string }> = []
@@ -215,6 +229,46 @@ export function App() {
     return () => window.clearTimeout(t)
   }, [status])
   const [showThumbs, setShowThumbs] = useState(true)
+  // ── Thumbnail sidebar width (drag the divider to resize; persisted) ─────────
+  const [thumbsW, setThumbsW] = useState(loadThumbsW)
+  const thumbsListRef = useRef<HTMLDivElement | null>(null)
+  // Re-clamp when the window shrinks (max is 40% of the window), like the AI panel
+  useEffect(() => {
+    const onResize = () => setThumbsW((w) => clampThumbsW(w))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  /** Drag to resize: width state follows the pointer (rAF-throttled so the Konva
+   * thumbnails re-render at most once per frame); persisted on release. */
+  const startThumbsResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const list = thumbsListRef.current
+    if (!list) return
+    const left = list.getBoundingClientRect().left
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    let w = thumbsW
+    let raf = 0
+    const onMove = (ev: PointerEvent) => {
+      w = clampThumbsW(ev.clientX - left)
+      if (!raf)
+        raf = requestAnimationFrame(() => {
+          raf = 0
+          setThumbsW(w)
+        })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (raf) cancelAnimationFrame(raf)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setThumbsW(w)
+      localStorage.setItem(THUMBS_W_KEY, String(Math.round(w)))
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
   const [autoSave, setAutoSave] = useState(
     () => localStorage.getItem('ai-slides-auto-save') === '1',
   )
@@ -367,17 +421,25 @@ export function App() {
     if (ok) setDirty(true)
   }, [])
 
-  // Proportional fit: compute zoom from the stage container's measured size (fall back to a window estimate before mount)
-  const fitZoom = useCallback(
+  // Uncapped proportional fit ratio from the stage container's measured size
+  // (fall back to a window estimate before mount)
+  const rawFit = useCallback(
     (s?: RenderSlide) => {
       if (!s) return 1
       const el = stageWrapRef.current
       const availW =
-        (el?.clientWidth ?? window.innerWidth - (showThumbs ? 150 : 0) - (showAi ? 360 : 34)) - 56
-      const availH = (el?.clientHeight ?? window.innerHeight - 150) - 56
-      return Math.min(1.5, Math.max(0.1, Math.min(availW / s.widthPx, availH / s.heightPx)))
+        (el?.clientWidth ?? window.innerWidth - (showThumbs ? thumbsW : 0) - (showAi ? 360 : 34)) -
+        56
+      // -72: vertical padding is 48 (AI-bar headroom) + 32, minus the same 8px slack as width
+      const availH = (el?.clientHeight ?? window.innerHeight - 150) - 72
+      return Math.min(availW / s.widthPx, availH / s.heightPx)
     },
-    [showThumbs, showAi],
+    [showThumbs, showAi, thumbsW],
+  )
+  /** Fit zoom for display: rawFit clamped to the 0.1–1.5 auto-fit range */
+  const fitZoom = useCallback(
+    (s?: RenderSlide) => Math.min(1.5, Math.max(0.1, rawFit(s))),
+    [rawFit],
   )
   /** Fit-pending flag after open: consumed when the editor's first frame mounts (stage container measurable) */
   const needsFitRef = useRef(false)
@@ -411,20 +473,28 @@ export function App() {
     setScaleBox({ w: el.offsetWidth, h: el.offsetHeight })
   }, [slide?.widthPx, slide?.heightPx, showRuler])
 
-  // On container size changes (window/sidebar/thumbnail toggles), follow with a re-fit unless zoom was adjusted manually
+  // On container size changes (window/sidebar/thumbnail toggles): follow with a
+  // re-fit while in fit mode, and clamp any manual zoom back down to fit whenever
+  // the container gets too small — the canvas must never overflow the pane. A
+  // manual zoom smaller than fit is left alone.
   useEffect(() => {
     const el = stageWrapRef.current
     if (!hasDoc || !el) return
     const ro = new ResizeObserver(() => {
-      const lf = lastFitRef.current
-      if (lf == null || Math.abs(zoomLiveRef.current - lf) > 0.001) return
       const z = fitZoom(slideLiveRef.current)
+      const lf = lastFitRef.current
+      const inFitMode = lf != null && Math.abs(zoomLiveRef.current - lf) <= 0.001
+      // The overflow test uses the uncapped ratio: on large windows a manual
+      // zoom above the 1.5 fit cap can still fit and must not be wiped
+      if (!inFitMode && zoomLiveRef.current <= rawFit(slideLiveRef.current) + 0.001) return
       lastFitRef.current = z
       setZoom(z)
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [hasDoc, fitZoom])
+    // viewMode: reading/sorter unmount the editor, so the observer must re-bind
+    // to the remounted .stage-wrap or window resizes stop re-fitting the canvas
+  }, [hasDoc, fitZoom, rawFit, viewMode])
 
   const applyOpen = useCallback(
     (result: { path: string; slides: RenderSlide[]; defaultFont?: string } | null) => {
@@ -2276,7 +2346,8 @@ export function App() {
         ) : (
           <>
             <div className={`ai-dock${showAi && aiSettings ? '' : ' collapsed'}`}>
-              {showAi && aiSettings ? (
+              {/* always mounted once settings load: collapse must not drop state or in-flight runs */}
+              {aiSettings ? (
                 <AiPanel
                   key={aiPanelKey}
                   slides={slides}
@@ -2289,6 +2360,8 @@ export function App() {
                   fitWidthPx={FIT_WIDTH}
                   settings={aiSettings}
                   preset={aiPreset}
+                  open={showAi}
+                  onExpand={toggleAi}
                   onCollapse={toggleAi}
                   onUndo={() => void undo()}
                   onPathChange={(p) => {
@@ -2333,101 +2406,108 @@ export function App() {
               </div>
             ) : (
               showThumbs && (
-                <div className="slide-list">
-                  {(() => {
-                    const thumbItem = (s: RenderSlide, i: number) => (
-                      <div
-                        key={i}
-                        className={`thumb ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
-                        title={s.hidden ? t('appThumbHiddenTitle') : undefined}
-                        {...thumbDragProps(i)}
-                        onClick={() => {
-                          setCurrent(i)
-                          setSelectedIds([])
-                          setEditing(null)
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          setCurrent(i)
-                          setSelectedIds([])
-                          setEditing(null)
-                          void window.slidesApi.hasSlideClipboard().then(setCanPasteSlide)
-                          setCtxMenu({ kind: 'thumb', x: e.clientX, y: e.clientY, index: i })
-                        }}
-                      >
-                        <SlideThumb slide={s} images={images} />
-                        <span className="thumb-num">{i + 1}</span>
-                        {pasteFloater?.index === i && (
-                          <PasteOptionsFloater
-                            mode={pasteFloater.mode}
-                            onSelect={repasteSlideAs}
-                            onDismiss={() => setPasteFloater(null)}
-                          />
-                        )}
-                      </div>
-                    )
-                    if (!sectionGroups) return slides.map((s, i) => thumbItem(s, i))
-                    return sectionGroups.map((g, gi) => {
-                      const collapsed = g.id != null && collapsedSecs.has(g.id)
-                      return (
-                        <div key={g.id ?? `lead-${gi}`} className="section-group">
-                          <div
-                            className={`section-header${g.id == null ? ' section-header-none' : ''}`}
-                            onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
-                            onContextMenu={
-                              g.id != null
-                                ? (e) => {
-                                    e.preventDefault()
-                                    setCtxMenu({
-                                      kind: 'section',
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                      sectionId: g.id!,
-                                    })
-                                  }
-                                : undefined
-                            }
-                            title={g.id != null ? t('appSectionHeaderTitle') : undefined}
-                          >
-                            {g.id != null && (
-                              <span className={`section-arrow${collapsed ? '' : ' open'}`}>▸</span>
-                            )}
-                            {renamingSec && g.id != null && renamingSec.id === g.id ? (
-                              <input
-                                className="section-rename-input"
-                                autoFocus
-                                value={renamingSec.value}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) =>
-                                  setRenamingSec({ id: g.id!, value: e.target.value })
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') commitRenameSection()
-                                  else if (e.key === 'Escape') setRenamingSec(null)
-                                }}
-                                onBlur={commitRenameSection}
-                              />
-                            ) : (
-                              <span
-                                className="section-name"
-                                onDoubleClick={
-                                  g.id != null
-                                    ? () => setRenamingSec({ id: g.id!, value: g.name })
-                                    : undefined
-                                }
-                              >
-                                {g.name}
-                              </span>
-                            )}
-                            <span className="section-count">{g.end - g.start}</span>
-                          </div>
-                          {!collapsed &&
-                            slides.slice(g.start, g.end).map((s, k) => thumbItem(s, g.start + k))}
+                <>
+                  <div className="slide-list" ref={thumbsListRef} style={{ width: thumbsW }}>
+                    {(() => {
+                      // width = sidebar minus horizontal padding (20) and .thumb border (4)
+                      const thumbW = Math.max(60, thumbsW - 24)
+                      const thumbItem = (s: RenderSlide, i: number) => (
+                        <div
+                          key={i}
+                          className={`thumb ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
+                          title={s.hidden ? t('appThumbHiddenTitle') : undefined}
+                          {...thumbDragProps(i)}
+                          onClick={() => {
+                            setCurrent(i)
+                            setSelectedIds([])
+                            setEditing(null)
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            setCurrent(i)
+                            setSelectedIds([])
+                            setEditing(null)
+                            void window.slidesApi.hasSlideClipboard().then(setCanPasteSlide)
+                            setCtxMenu({ kind: 'thumb', x: e.clientX, y: e.clientY, index: i })
+                          }}
+                        >
+                          <SlideThumb slide={s} images={images} width={thumbW} />
+                          <span className="thumb-num">{i + 1}</span>
+                          {pasteFloater?.index === i && (
+                            <PasteOptionsFloater
+                              mode={pasteFloater.mode}
+                              onSelect={repasteSlideAs}
+                              onDismiss={() => setPasteFloater(null)}
+                            />
+                          )}
                         </div>
                       )
-                    })
-                  })()}
-                </div>
+                      if (!sectionGroups) return slides.map((s, i) => thumbItem(s, i))
+                      return sectionGroups.map((g, gi) => {
+                        const collapsed = g.id != null && collapsedSecs.has(g.id)
+                        return (
+                          <div key={g.id ?? `lead-${gi}`} className="section-group">
+                            <div
+                              className={`section-header${g.id == null ? ' section-header-none' : ''}`}
+                              onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
+                              onContextMenu={
+                                g.id != null
+                                  ? (e) => {
+                                      e.preventDefault()
+                                      setCtxMenu({
+                                        kind: 'section',
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        sectionId: g.id!,
+                                      })
+                                    }
+                                  : undefined
+                              }
+                              title={g.id != null ? t('appSectionHeaderTitle') : undefined}
+                            >
+                              {g.id != null && (
+                                <span className={`section-arrow${collapsed ? '' : ' open'}`}>
+                                  ▸
+                                </span>
+                              )}
+                              {renamingSec && g.id != null && renamingSec.id === g.id ? (
+                                <input
+                                  className="section-rename-input"
+                                  autoFocus
+                                  value={renamingSec.value}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) =>
+                                    setRenamingSec({ id: g.id!, value: e.target.value })
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') commitRenameSection()
+                                    else if (e.key === 'Escape') setRenamingSec(null)
+                                  }}
+                                  onBlur={commitRenameSection}
+                                />
+                              ) : (
+                                <span
+                                  className="section-name"
+                                  onDoubleClick={
+                                    g.id != null
+                                      ? () => setRenamingSec({ id: g.id!, value: g.name })
+                                      : undefined
+                                  }
+                                >
+                                  {g.name}
+                                </span>
+                              )}
+                              <span className="section-count">{g.end - g.start}</span>
+                            </div>
+                            {!collapsed &&
+                              slides.slice(g.start, g.end).map((s, k) => thumbItem(s, g.start + k))}
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+                  <div className="thumb-resizer" onPointerDown={startThumbsResize} />
+                </>
               )
             )}
             <div className="stage-col">
@@ -2458,6 +2538,7 @@ export function App() {
                         disabled while the deck has no real content */}
                     {!deckEmpty && (
                       <>
+                        <span className="stage-ai-divider" aria-hidden="true" />
                         <button
                           className="stage-ai-btn"
                           title={t('aiBeautifyPrompt')}
@@ -2465,7 +2546,7 @@ export function App() {
                             pushAiPreset(t('aiBeautifyPrompt'), true, undefined, undefined, true)
                           }
                         >
-                          <IconAiBeautify size={16} />
+                          <IconAiBeautify size={14} />
                           <span>{t('aiBeautifyBtn')}</span>
                         </button>
                         <button
@@ -2473,7 +2554,7 @@ export function App() {
                           title={t('aiFactCheckPrompt')}
                           onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
                         >
-                          <IconAiFactCheck size={16} />
+                          <IconAiFactCheck size={14} />
                           <span>{t('aiFactCheckBtn')}</span>
                         </button>
                         <button
@@ -2481,7 +2562,7 @@ export function App() {
                           title={t('aiImagePrompt')}
                           onClick={() => pushAiPreset(t('aiImagePrompt'))}
                         >
-                          <IconAiImage size={16} />
+                          <IconAiImage size={14} />
                           <span>{t('aiImageBtn')}</span>
                         </button>
                       </>

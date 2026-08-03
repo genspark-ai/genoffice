@@ -36,7 +36,7 @@ function normalizeLikeCommit(formula: string): string {
   return normalized
 }
 
-// The 7 minimal cases from #177 — typed text must round-trip identically.
+// The 7 minimal cases from the original bug report — typed text must round-trip identically.
 const CASES = [
   '="a"""&B1',
   '="a""b"&UPPER(B1)',
@@ -47,7 +47,7 @@ const CASES = [
   '="say ""hi"""',
 ]
 
-describe('fixSequenceNodes (#177)', () => {
+describe('fixSequenceNodes', () => {
   it.each(CASES)('round-trips %s through commit normalization', (formula) => {
     expect(normalizeLikeCommit(formula)).toBe(formula)
   })

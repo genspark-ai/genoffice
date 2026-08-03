@@ -116,7 +116,7 @@ function selectionStyle(
 /// ("h:mm:ss AM/PM") legitimately contain colons.
 const EXTRA_SEGMENT_COMMANDS = new Set(['cellprot', 'sort-custom', 'border'])
 
-/// ST_BorderStyle names accepted by the Format Cells line-style picker (#168).
+/// ST_BorderStyle names accepted by the Format Cells line-style picker.
 const BORDER_LINE_STYLE_TYPES: Record<string, BorderStyleTypes> = {
   thin: BorderStyleTypes.THIN,
   medium: BorderStyleTypes.MEDIUM,
@@ -468,7 +468,7 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     }
     case 'toggle-show-formulas': {
       // Formula view is per-sheet state (sheetView/@showFormulas): remember it
-      // for sheet switches and persist it on save (#188).
+      // for sheet switches and persist it on save.
       const sheetId = worksheet?.getSheetId()
       if (!sheetId) return
       const state = ctx.lazyWorkbookRef.current
@@ -1206,7 +1206,7 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         const type = BORDER_COMMAND_TYPES[argument]
         if (!type) return
         // `extra` is "<#color>[:<line-style>]" — the ribbon sends only the
-        // color, the Format Cells dialog appends an ST_BorderStyle name (#168)
+        // color, the Format Cells dialog appends an ST_BorderStyle name
         const [colorPart = '', stylePart = ''] = extra.split(':')
         const borderStyle =
           BORDER_LINE_STYLE_TYPES[stylePart] ??

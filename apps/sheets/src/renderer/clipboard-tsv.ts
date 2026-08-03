@@ -1,5 +1,5 @@
 /**
- * Clipboard plain-text interop (#187). Univer's copy joins raw cell text with
+ * Clipboard plain-text interop. Univer's copy joins raw cell text with
  * tabs — booleans land as 1/0 and embedded newlines go out unquoted (as bare
  * \r), so Excel/Numbers/scripts mis-parse the paste. Wrap the clipboard
  * service's content generation and rebuild the plain slice with Excel's TSV

@@ -1,4 +1,4 @@
-/** Word's default endnote numbering is lowercase roman (footnotes stay arabic) — the visual cue that separates the two note kinds (#153). */
+/** Word's default endnote numbering is lowercase roman (footnotes stay arabic) — the visual cue that separates the two note kinds. */
 const ROMAN: Array<[number, string]> = [
   [1000, 'm'],
   [900, 'cm'],

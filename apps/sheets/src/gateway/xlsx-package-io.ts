@@ -98,7 +98,7 @@ export interface StreamingSaveRequest {
   readonly pivotRefreshUpdates?: readonly PivotRefreshUpdate[] | undefined
   readonly visualEdits?: readonly WorkbookVisualEdit[] | undefined
   readonly sparklineAdditions?: readonly SheetSparklineAddition[] | undefined
-  /// Recalculated formula-cell values written into <v> (issue #166)
+  /// Recalculated formula-cell values written into <v>
   readonly formulaValues?: readonly SheetFormulaValues[] | undefined
 }
 

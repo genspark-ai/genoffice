@@ -38,8 +38,9 @@ export interface LazyWorkbookState {
   /// autoFilter (saveable) or a table part (whose filter lives in the table
   /// XML — editing it is blocked).
   readonly filterOrigins: Map<string, { origin: 'worksheet' | 'table'; range: IRange }>
-  /// Sheets whose view shows formulas instead of values (sheetView/@showFormulas,
-  /// #188): seeded from the file, flipped by the Formulas-tab toggle, applied
+  /// Sheets whose view shows formulas instead of values
+  /// (sheetView/@showFormulas): seeded from the file, flipped by the
+  /// Formulas-tab toggle, applied
   /// to the global raw-formula render key on sheet activation.
   readonly showFormulaSheets: Set<string>
   /// Small workbooks are fully loaded with formulas handed to Univer's engine
@@ -56,7 +57,7 @@ export interface LazyWorkbookState {
   }
   /// Formula text per sheet ('row:col', file coordinates) harvested from
   /// readWorkbookFormulas, so the formula bar can show formulas even when the
-  /// closure gave up and the engine never sees them (#164). Display-only.
+  /// closure gave up and the engine never sees them. Display-only.
   readonly formulaText: Map<string, Map<string, string>>
   /// Parsed pivot definitions keyed by part path, loaded eagerly at open so
   /// pivot refresh stays synchronous.

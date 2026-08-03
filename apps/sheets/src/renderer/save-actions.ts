@@ -87,7 +87,7 @@ export async function handleSave(
     }),
   )
   const definedNamesState = collectDefinedNamesState(ctx.univerRef.current, state)
-  // Recalculated formula results (issue #166): the engine's values are on screen but
+  // Recalculated formula results: the engine's values are on screen but
   // deliberately kept out of the journal (they must not become literals). Send them
   // separately so the save refreshes each formula cell's cached <v>, keeping its <f>.
   const formulaValues = [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>

@@ -135,7 +135,7 @@ describe('sidecar IronCalc recalculation channel', () => {
   })
 
   // IronCalc has no CELL("filename"); its error must not displace the
-  // cached sheet-name text the file already carries (#175).
+  // cached sheet-name text the file already carries.
   it('omits erroring CELL("filename") cells so the cached value survives', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xlsx-recalc-test-'))
     cleanups.push(directory)

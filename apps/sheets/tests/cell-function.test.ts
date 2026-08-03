@@ -26,7 +26,7 @@ function makeCell(path: string | null, original?: BaseFunction) {
   return cell
 }
 
-describe('CELL("filename") (#175)', () => {
+describe('CELL("filename")', () => {
   it('returns dir/[book]sheet for the referenced sheet', () => {
     const result = makeCell('/Users/x/Downloads/Workshop v1.xlsx').calculate(
       infoType('filename'),

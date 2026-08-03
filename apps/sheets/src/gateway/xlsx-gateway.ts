@@ -142,7 +142,7 @@ export interface SheetProtectionState {
   readonly protected: boolean
 }
 
-/// Recalculated cached values for formula cells (issue #166): the engine already
+/// Recalculated cached values for formula cells: the engine already
 /// computed them for the screen, and the save writes them into <v> so the file's
 /// inputs and outputs agree even for readers without a formula engine
 /// (openpyxl data_only, pandas, preview services).
@@ -828,7 +828,7 @@ export async function planCellEditsToXlsx(
     }
     worksheetXmls.set(sheetName, expandWorksheetDimensionToCells(worksheetXml))
   }
-  // Recalculated formula results (issue #166): refresh each formula cell's cached
+  // Recalculated formula results: refresh each formula cell's cached
   // <v> while leaving its <f> alone. Applied after the value edits so a cell the
   // user turned into a literal keeps that literal.
   for (const sheet of formulaValues) {
@@ -1006,7 +1006,7 @@ export async function planCellEditsToXlsx(
   // Any worksheet edit can invalidate the calculation chain — not just
   // structural shifts: overwriting a formula cell with a literal leaves a
   // calcChain entry pointing at a cell with no <f>, which Excel repairs with
-  // a scary prompt (#163). calcChain is a pure recalculation-order cache, so
+  // a scary prompt. calcChain is a pure recalculation-order cache, so
   // drop it (with its content-type and relationship) whenever this save wrote
   // any worksheet part and let Excel rebuild it on open. Sheet set changes
   // are kept as an extra trigger (a removal-only save may touch no part).
@@ -1568,7 +1568,7 @@ function patchCellKeepingStyle(
  * Refresh a formula cell's cached value: replace (or insert) <v> inside the existing
  * <c>, keeping <f> and every attribute. Cells that don't exist or aren't formulas are
  * left alone — the recalc overlay only ever names formula cells, and a cell the user
- * turned into a literal must keep the literal (issue #166).
+ * turned into a literal must keep the literal.
  */
 function patchFormulaCachedValue(
   worksheetXml: string,

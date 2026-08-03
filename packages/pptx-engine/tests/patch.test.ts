@@ -199,7 +199,7 @@ describe('setElementFont (change font family/size for a whole selected element)'
     if (pic) expect(setElementFont(slide, pic.id, { fontFamily: 'Arial' })).toBe(false)
   })
 
-  it('table: sizes cells with text and leaves a persisted marker on empty cells (#205)', async () => {
+  it('table: sizes cells with text and leaves a persisted marker on empty cells', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const r = addTable(opened, 0, {
       rows: 2,
@@ -224,7 +224,7 @@ describe('setElementFont (change font family/size for a whole selected element)'
     expect(tbl2.rows[0]![1]!.text!.paragraphs[0]!.runs[0]!.fontSize).toBe(14)
   })
 
-  it('table with only empty cells still reports a change (#205)', async () => {
+  it('table with only empty cells still reports a change', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const r = addTable(opened, 0, {
       rows: 2,

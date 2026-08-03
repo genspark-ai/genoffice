@@ -1,8 +1,0 @@
-# Keep GitHub Actions fresh: workflow actions are SHA-pinned, so tag moves
-# never reach us without a PR bumping the pinned commit here.
-version: 2
-updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly

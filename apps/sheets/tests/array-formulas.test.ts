@@ -4,7 +4,7 @@ import { collectArrayFollowers } from '../src/renderer/univer-sync'
 
 type Cells = Parameters<typeof collectArrayFollowers>[1]
 
-describe('collectArrayFollowers (#176)', () => {
+describe('collectArrayFollowers', () => {
   it('marks every covered cell except the master', () => {
     const followers = new Set<string>()
     const cells: Cells = [

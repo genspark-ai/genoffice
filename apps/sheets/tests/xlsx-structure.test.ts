@@ -370,7 +370,7 @@ describe('shiftTablePart', () => {
   })
 })
 
-describe('calcChain invalidation (issue #163)', () => {
+describe('calcChain invalidation', () => {
   it('a plain cell edit — formula cell turned into a literal — also drops calcChain', async () => {
     const mutation = await applyCellEditsToXlsx(
       await buildStructureFixture(),
@@ -434,7 +434,7 @@ describe('structural save integration', () => {
     expect(workbook).toContain('fullCalcOnLoad="1"')
   })
 
-  it('drops calcChain on a plain cell edit too — a formula overwritten by a literal invalidates it (#163)', async () => {
+  it('drops calcChain on a plain cell edit too — a formula overwritten by a literal invalidates it', async () => {
     const mutation = await applyCellEditsToXlsx(
       await buildStructureFixture(),
       [

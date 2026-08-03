@@ -150,7 +150,7 @@ describe('chart data-sync ref helpers', () => {
   })
 })
 
-describe('chartDataFromValues orientation and header detection (#178, #179)', () => {
+describe('chartDataFromValues orientation and header detection', () => {
   it('wide cross-tab: rows become series, numeric year headers become categories', async () => {
     const { chartDataFromValues } = await import('../src/domain/chart-visual')
     const parsed = chartDataFromValues([
@@ -206,7 +206,7 @@ describe('chartDataFromValues orientation and header detection (#178, #179)', ()
   })
 })
 
-describe('transposeChartSeries (#178)', () => {
+describe('transposeChartSeries', () => {
   it('pivots categories into series and series names into categories', async () => {
     const { transposeChartSeries } = await import('../src/domain/chart-visual')
     const seriesSet = transposeChartSeries(
@@ -243,7 +243,7 @@ describe('transposeChartSeries (#178)', () => {
   })
 })
 
-describe('formatCategoryLabel (#182)', () => {
+describe('formatCategoryLabel', () => {
   it('formats numeric category text through its number format', () => {
     expect(formatCategoryLabel('44562', 'mmm\\-yy')).toBe('Jan-22')
     expect(formatCategoryLabel('0.152', '0.0%')).toBe('15.2%')
@@ -257,7 +257,7 @@ describe('formatCategoryLabel (#182)', () => {
   })
 })
 
-describe('chartCategoryFormat (#182)', () => {
+describe('chartCategoryFormat', () => {
   const chart = (
     axis: string | undefined,
     series: string | undefined,
@@ -275,7 +275,7 @@ describe('chartCategoryFormat (#182)', () => {
   })
 })
 
-describe('scatterAxisBounds (#180)', () => {
+describe('scatterAxisBounds', () => {
   it('auto-scales positive data from 0 to an Excel-like nice ceiling', () => {
     expect(scatterAxisBounds([0.0026, 0.05, 0.152])).toMatchObject({ min: 0 })
     expect(scatterAxisBounds([0.0026, 0.05, 0.152]).max).toBeCloseTo(0.16, 10)
@@ -307,7 +307,7 @@ describe('scatterAxisBounds (#180)', () => {
   })
 })
 
-describe('chartDataFromValues scatter X column (#204)', () => {
+describe('chartDataFromValues scatter X column', () => {
   it('routes a numeric first column into categories for scatter', async () => {
     const { chartDataFromValues } = await import('../src/domain/chart-visual')
     const parsed = chartDataFromValues(
@@ -326,7 +326,7 @@ describe('chartDataFromValues scatter X column (#204)', () => {
 
   it('by-row selections pivot the first data row into X', async () => {
     const { chartDataFromValues } = await import('../src/domain/chart-visual')
-    // 2 rows × 4 cols with a label column: row 1 = X, row 2 = Y (#204 corpus shape)
+    // 2 rows × 4 cols with a label column: row 1 = X, row 2 = Y (corpus shape)
     const parsed = chartDataFromValues(
       [
         ['$ new shares', 100, 200, 300],

@@ -1,5 +1,5 @@
 /**
- * Copy materializes its selection first (#200). On streamed workbooks the
+ * Copy materializes its selection first. On streamed workbooks the
  * clipboard serializes whatever the lazy loader has put in the cell matrix:
  * rows the viewport never passed lose their text constants entirely and
  * numbers lose their number format. Loading the selection into the lazy

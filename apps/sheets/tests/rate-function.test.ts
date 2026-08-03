@@ -8,7 +8,7 @@ function residual(nper: number, pmt: number, pv: number, fv: number, rate: numbe
   return pv * growth + pmt * (1 / rate + 0) * (growth - 1) + fv
 }
 
-describe('solveRateByBisection (#185)', () => {
+describe('solveRateByBisection', () => {
   it('finds deep-negative roots the Newton solver overshoots', () => {
     const root = solveRateByBisection(5, -10, -100, 10.0000001, 0)
     expect(root).not.toBeNull()

@@ -65,9 +65,9 @@ interface ChatEntry {
   error?: string
   streaming?: boolean
   turnLimit?: boolean
-  /** the run failed and this user message was rolled back out of the model context (#92) */
+  /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
-  /** the run failed because Genspark is signed out — render an inline sign-in button (#87) */
+  /** the run failed because Genspark is signed out — render an inline sign-in button */
   loginRequired?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
@@ -128,6 +128,10 @@ interface AiPanelProps {
   numIdFallback?: NumIds | null
   /** preset instruction pushed from the ribbon or start screen; autoRun sends it immediately */
   preset?: { text: string; nonce: number; autoRun?: boolean } | null
+  /** false shows only the collapsed rail; the component stays mounted so panel state survives */
+  open?: boolean
+  /** expand from the collapsed rail */
+  onExpand?: () => void
   /** collapse the panel to the sidebar rail */
   onCollapse?: () => void
   /** Absolute path of the currently open file (used for chat-history persistence) */
@@ -141,6 +145,8 @@ export function AiPanel({
   docEmpty,
   numIdFallback,
   preset,
+  open = true,
+  onExpand,
   onCollapse,
   filePath,
 }: AiPanelProps) {
@@ -164,10 +170,11 @@ export function AiPanel({
 
   // The .ai-dock wrapper owns the animated width (Excel-parity 180ms slide);
   // it tracks the resizable panel width through this variable
+  // `open` dep: the aside ref only exists while expanded
   useEffect(() => {
     const dock = asideRef.current?.closest('.ai-dock') as HTMLElement | null
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
-  }, [panelWidth])
+  }, [panelWidth, open])
 
   // Re-clamp the persisted width when the window shrinks (max is 60% of the window)
   useEffect(() => {
@@ -427,7 +434,7 @@ export function AiPanel({
         onError: (error) => {
           setChat((prev) => {
             const next = [...prev]
-            // the loop rolled this run's user message out of the model context — surface that (#92)
+            // the loop rolled this run's user message out of the model context — surface that
             for (let i = next.length - 1; i >= 0; i--) {
               const entry = next[i]!
               if (entry.role === 'user') {
@@ -446,7 +453,7 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button (#87); detected via
+          // Signed-out failures get an inline sign-in button; detected via
           // gsk status rather than matching the localized error text
           void window.desktop
             .aiGskStatus()
@@ -489,12 +496,13 @@ export function AiPanel({
     }
   }, [editor])
 
-  // follow the stream, but stop yanking once the user scrolls up to read
+  // follow the stream, but stop yanking once the user scrolls up to read;
+  // `open` dep: re-expanding lands on messages streamed while collapsed
   useEffect(() => {
     if (stickToBottomRef.current) {
       logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
     }
-  }, [chat])
+  }, [chat, open])
 
   const onLogScroll = () => {
     const el = logRef.current
@@ -650,6 +658,15 @@ export function AiPanel({
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+  }
+
+  // collapsed: rail only — after all hooks, so the instance and its state survive
+  if (!open) {
+    return (
+      <button className="ai-rail" title={t('appExpandAiPanel')} onClick={onExpand}>
+        <GensparkMark size={22} />
+      </button>
+    )
   }
 
   return (

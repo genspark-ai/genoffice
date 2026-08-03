@@ -1454,15 +1454,14 @@ export function Home() {
                 aria-hidden="true"
               >
                 <path
-                  d="M10.7681 5.09766L11.0317 5.36133L12.9111 7.23925H18.9668C20.3342 7.23949 21.4732 8.37963 21.4732 9.74707V17.2471C21.4732 18.6602 20.3219 19.7546 18.9668 19.7549H5.03758C3.63661 19.7548 2.53125 18.6481 2.53125 17.2471V7.60401C2.53136 6.24882 3.62452 5.09778 5.03758 5.09766H10.7681Z"
+                  d="M6.29297 3.75H14.1729C14.4927 3.75 14.7979 3.88392 15.0146 4.11914L18.5566 7.96387C18.7512 8.17512 18.8593 8.45208 18.8594 8.73926V19.1055C18.8593 19.7376 18.346 20.25 17.7139 20.25H6.29297C5.66091 20.2499 5.14855 19.7375 5.14844 19.1055V4.89453C5.14855 4.26247 5.66091 3.75011 6.29297 3.75Z"
                   stroke="currentColor"
                   strokeWidth="1.5"
                 />
                 <path
-                  d="M21 10.5H3"
+                  d="M13.8984 4V7.11C13.8984 8.15382 14.7446 9 15.7884 9H18.8984"
                   stroke="currentColor"
                   strokeWidth="1.5"
-                  strokeLinecap="round"
                 />
               </svg>
               <span className="empty-hint">{t('projEmptyHint')}</span>
@@ -1567,12 +1566,33 @@ export function Home() {
           </div>
 
           {entries.length === 0 ? (
-            <p className="empty">
-              {view === 'starred'
-                ? t('emptyStarred')
-                : navCounts.recent === 0
-                  ? t('emptyRecent')
-                  : t('emptyFiltered')}
+            <p className="empty proj-empty">
+              <svg
+                className="proj-empty-icon"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6.29297 3.75H14.1729C14.4927 3.75 14.7979 3.88392 15.0146 4.11914L18.5566 7.96387C18.7512 8.17512 18.8593 8.45208 18.8594 8.73926V19.1055C18.8593 19.7376 18.346 20.25 17.7139 20.25H6.29297C5.66091 20.2499 5.14855 19.7375 5.14844 19.1055V4.89453C5.14855 4.26247 5.66091 3.75011 6.29297 3.75Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M13.8984 4V7.11C13.8984 8.15382 14.7446 9 15.7884 9H18.8984"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+              </svg>
+              <span className="empty-hint">
+                {view === 'starred'
+                  ? t('emptyStarred')
+                  : navCounts.recent === 0
+                    ? t('emptyRecent')
+                    : t('emptyFiltered')}
+              </span>
             </p>
           ) : (
             <div className={`recent-table${selectedPaths.length > 0 ? ' has-selection' : ''}`}>

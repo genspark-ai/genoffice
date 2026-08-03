@@ -2389,7 +2389,7 @@ function relPartPath(ctx: BuildContext, rId: string | undefined): string | null 
 }
 
 /**
- * SmartArt degrade (#220): the node texts from the diagram data part (r:dm)
+ * SmartArt degrade: the node texts from the diagram data part (r:dm)
  * become the preview, so the reader still sees the labels the diagram holds.
  */
 async function extractDiagramText(xml: string, ctx: BuildContext): Promise<string | null> {
@@ -2406,7 +2406,7 @@ async function extractDiagramText(xml: string, ctx: BuildContext): Promise<strin
 }
 
 /**
- * OLE embed degrade (#220): the original packages a preview picture
+ * OLE embed degrade: the original packages a preview picture
  * (v:imagedata) and declares its kind (o:OLEObject ProgID) — surface both
  * instead of a bare type label.
  */

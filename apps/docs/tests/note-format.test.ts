@@ -3,7 +3,7 @@ import { Editor } from '@tiptap/core'
 import { noteMarkText, toRoman } from '../src/renderer/note-format'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
-describe('note numbering (#153)', () => {
+describe('note numbering', () => {
   it('endnotes number in lowercase roman, footnotes stay arabic', () => {
     expect(toRoman(1)).toBe('i')
     expect(toRoman(4)).toBe('iv')

@@ -1,5 +1,5 @@
 /**
- * Escaped-quote lexer fix (#177). Univer's LexerTreeBuilder._nodeMaker emits
+ * Escaped-quote lexer fix. Univer's LexerTreeBuilder._nodeMaker emits
  * one sequence slot for the two characters of an escaped quote ("") inside a
  * string literal, and getSequenceNode treats slot index as character
  * position, so every node after an escape pair reports startIndex/endIndex
@@ -75,9 +75,7 @@ export function fixSequenceNodes(
 ): SequenceEntry[] | undefined | null {
   if (!nodes) return nodes
   const body = formulaBody(formula)
-  const reassembled = nodes
-    .map((node) => (typeof node === 'string' ? node : node.token))
-    .join('')
+  const reassembled = nodes.map((node) => (typeof node === 'string' ? node : node.token)).join('')
   if (reassembled === body) return nodes
   const map = buildSlotMap(body)
   let changed = false

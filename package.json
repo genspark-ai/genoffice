@@ -28,6 +28,7 @@
     "build": "npm run build -w @genoffice/docs",
     "build:all": "npm run build -w @genoffice/docs && npm run build -w @genoffice/sheets && npm run build -w @genoffice/slides && npm run build -w @genoffice/pdf && npm run build -w @genoffice/shell",
     "shell": "npm run build:all && electron apps/shell",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "notices": "node tools/gen-third-party-notices.mjs",
     "licenses": "node tools/check-licenses.mjs",
     "dist:mac": "npm run notices && npm run build:all && npm run dist:mac -w @genoffice/shell",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
     "concurrently": "^9.2.4",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",

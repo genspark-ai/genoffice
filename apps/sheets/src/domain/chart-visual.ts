@@ -35,7 +35,7 @@ export interface ChartSeriesVisualState {
   categories: string[]
   values: number[]
   numberFormat?: string | undefined
-  /// numCache formatCode of the category (or scatter X) data (#182).
+  /// numCache formatCode of the category (or scatter X) data.
   categoryFormat?: string | undefined
   color?: string | undefined
   trendline?: string | undefined
@@ -64,7 +64,7 @@ export interface ChartVisualState {
   gridlines?: boolean | undefined
   /// Explicit value-axis bounds (`c:scaling`); absent keys mean auto.
   valueAxis?: { min?: number | undefined; max?: number | undefined } | undefined
-  /// `c:numFmt` on the category/date axis (#182).
+  /// `c:numFmt` on the category/date axis.
   categoryAxisFormat?: string | undefined
   /// Bar family `c:gapWidth` (percent of one bar width between categories).
   gapWidthPct?: number | undefined
@@ -73,7 +73,7 @@ export interface ChartVisualState {
 }
 
 /// Numeric category labels (date serials, percents) render through their
-/// source number format instead of the raw number (#182).
+/// source number format instead of the raw number.
 export function formatCategoryLabel(raw: string, format: string | undefined): string {
   if (format === undefined || format === 'General' || raw.trim() === '') return raw
   const value = Number(raw)
@@ -102,7 +102,7 @@ export interface ScatterAxis {
   ticks: number[]
 }
 
-/// Excel-like auto scale for a scatter axis (#180): explicit `c:scaling`
+/// Excel-like auto scale for a scatter axis: explicit `c:scaling`
 /// bounds win; otherwise 0 (below-zero data pushes further down) up to a
 /// nice-step ceiling. Ticks are 5 evenly spaced values.
 export function scatterAxisBounds(
@@ -356,7 +356,7 @@ export function applyChartStateEdit(
 
 export interface ParsedChartData {
   /// Series run along rows (selection at least as wide as tall, Excel's
-  /// default, #178). In that orientation hasHeaderRow refers to the first
+  /// default). In that orientation hasHeaderRow refers to the first
   /// COLUMN (series names), hasCategoryColumn to the first ROW, and each
   /// series' `column` is its row offset within the selection.
   readonly byRow: boolean
@@ -373,12 +373,12 @@ const MAX_CHART_SERIES = 12
 /// First row with non-numeric labels → header row; first column mostly
 /// non-numeric → category column; every other column becomes a series.
 /// Excel's default orientation puts the series along the shorter dimension:
-/// a selection at least as wide as it is tall charts each ROW as a series
-/// (#178). Transposing up front lets the column-wise logic serve both.
+/// a selection at least as wide as it is tall charts each ROW as a series.
+/// Transposing up front lets the column-wise logic serve both.
 export function chartDataFromValues(
   source: readonly (readonly ChartGridValue[])[],
   options?: {
-    /// Scatter (#204): the first data vector is the X axis even when numeric,
+    /// Scatter: the first data vector is the X axis even when numeric,
     /// so it must become the category vector instead of a Y series.
     numericCategoryColumn?: boolean
   },
@@ -401,7 +401,7 @@ export function chartDataFromValues(
   // A header row is signalled by non-numeric labels, or by the cross-tab
   // fingerprint Excel also uses: blank corner cell with filled cells across
   // the rest of the first row (numeric headers — years, months — are data
-  // otherwise, #179).
+  // otherwise).
   const hasLabelHeader =
     grid.length > 1 &&
     firstRow.some((v, i) => (width === 1 || i > 0) && !isBlank(v) && !isNumeric(v))
@@ -414,7 +414,7 @@ export function chartDataFromValues(
   const body = (hasHeaderRow ? grid.slice(1) : grid).slice(0, MAX_CHART_ROWS)
   if (body.length === 0) return null
   // The blank-corner fingerprint marks the first column as the category axis
-  // even when its labels are numeric (years down the side, #179).
+  // even when its labels are numeric (years down the side).
   const hasCategoryColumn =
     width > 1 &&
     (hasCrossTabHeader ||
@@ -558,7 +558,7 @@ export function buildChartVisual(input: BuildChartVisualInput): SheetVisual {
         }
   const dataStartRow = bounds.startRow + (parsed.hasHeaderRow && !parsed.byRow ? 1 : 0)
   // by-row orientation: series names come from the first column, categories
-  // from the first row (#178)
+  // from the first row
   const dataStartColumn = bounds.startColumn + (parsed.hasHeaderRow && parsed.byRow ? 1 : 0)
   return {
     id: input.id,

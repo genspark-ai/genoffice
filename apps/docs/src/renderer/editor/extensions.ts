@@ -1098,7 +1098,7 @@ export const NativeTableSupport = Extension.create({
       Tab: () => {
         const { view } = this.editor
         if (goToNextCell(1)(this.editor.state, view.dispatch)) return true
-        // last cell: Word appends a row and moves into its first cell (#151)
+        // last cell: Word appends a row and moves into its first cell
         if (!isInTable(this.editor.state)) return false
         if (!addRowAfter(this.editor.state, view.dispatch)) return false
         return goToNextCell(1)(this.editor.state, view.dispatch)
@@ -1376,7 +1376,7 @@ function protectedDomSpec(node: PmNode): DomSpec {
       renderChartSpec(chartDisplay as ChartDisplay),
     ]
   }
-  // OLE embed with a packaged preview picture (#220): show the picture with a
+  // OLE embed with a packaged preview picture: show the picture with a
   // friendly type caption instead of a bare "Embedded object" label
   const oleCaption = label === 'Embedded object' ? oleTypeLabel(node.attrs.oleProgId) : null
   if (imageDataUrl && blockType === 'passthrough') {
@@ -1384,18 +1384,26 @@ function protectedDomSpec(node: PmNode): DomSpec {
     return [
       'div',
       attrs,
-      ['span', { class: 'doc-ole-wrap' }, ['img', { src: String(imageDataUrl), class: 'doc-ole-img' }]],
+      [
+        'span',
+        { class: 'doc-ole-wrap' },
+        ['img', { src: String(imageDataUrl), class: 'doc-ole-img' }],
+      ],
       ['span', { class: 'doc-protected-label' }, oleCaption ?? String(label)],
     ]
   }
   const children: unknown[] = [
-    ['span', { class: 'doc-protected-label' }, oleCaption ?? String(label || t('editorProtectedContent'))],
+    [
+      'span',
+      { class: 'doc-protected-label' },
+      oleCaption ?? String(label || t('editorProtectedContent')),
+    ],
   ]
   if (previewText) children.push(['span', { class: 'doc-protected-preview' }, String(previewText)])
   return ['div', attrs, ...children]
 }
 
-/** o:OLEObject ProgID → localized friendly kind (#220) */
+/** o:OLEObject ProgID → localized friendly kind */
 function oleTypeLabel(progId: unknown): string {
   const id = typeof progId === 'string' ? progId : ''
   if (id.startsWith('Excel.')) return t('editorOleExcel')

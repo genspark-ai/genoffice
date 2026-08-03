@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { asianCharCount, countWords, nonAsianWordCount } from '../src/renderer/word-count'
 
-describe('word count CJK rule (#93)', () => {
+describe('word count CJK rule', () => {
   it('counts asian chars one by one, punctuation included', () => {
     expect(asianCharCount('深圳市人民政府')).toBe(7)
     expect(asianCharCount('残疾预防，从我做起。')).toBe(10)

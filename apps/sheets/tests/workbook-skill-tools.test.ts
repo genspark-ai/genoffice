@@ -192,6 +192,35 @@ describe('executeWorkbookTool: read_range', () => {
     expect(result.mutated).toBe(false)
   })
 
+  it('escapes control characters in cell text so each grid row stays one physical line', () => {
+    const readCells = vi.fn().mockReturnValue({
+      A1: { value: 'Question' },
+      B1: { value: 'Answer' },
+      A2: { value: 'How did you\ndo it?' },
+      B2: { value: 'VO: line one\n\nline two\twith tab and C:\\path' },
+    })
+    const result = execSync(call('read_range', { range: 'A1:B2' }), fakeDeps({ readCells }))
+    const lines = result.output.split('\n')
+    expect(lines).toHaveLength(4)
+    expect(lines[2]).toBe('1\tQuestion\tAnswer')
+    expect(lines[3]).toBe(
+      '2\tHow did you\\ndo it?\tVO: line one\\n\\nline two\\twith tab and C:\\\\path',
+    )
+  })
+
+  it('normalizes Univer \\r paragraph breaks and CRLF to the \\n escape', () => {
+    // Univer streams in-cell line breaks as \r; the model must only ever see
+    // the \n convention documented in the base prompt.
+    const readCells = vi.fn().mockReturnValue({
+      A1: { value: 'univer\rparagraph' },
+      B1: { value: 'windows\r\nbreak and lone\rcr' },
+    })
+    const result = execSync(call('read_range', { range: 'A1:B1' }), fakeDeps({ readCells }))
+    const lines = result.output.split('\n')
+    expect(lines[2]).toBe('1\tuniver\\nparagraph\twindows\\nbreak and lone\\ncr')
+    expect(result.output).not.toContain('\\r')
+  })
+
   it('reports the authoritative sheet extent separately from the requested range', () => {
     const result = execSync(
       call('read_range', { range: 'A1:E120' }),
@@ -347,6 +376,18 @@ describe('executeWorkbookTool: read_cells', () => {
     )
     expect(result.output).toContain('B1: 550 (=SUM(A1:A10))')
     expect(result.output).toContain('C1: #REF! (=D1+E1)')
+  })
+
+  it('escapes multi-line cell text so each address stays on its own line', () => {
+    const readCells = vi.fn().mockReturnValue({
+      A1: { value: 'first\nsecond' },
+      B1: { value: 7 },
+    })
+    const result = execSync(
+      call('read_cells', { addresses: ['A1', 'B1'] }),
+      fakeDeps({ readCells }),
+    )
+    expect(result.output.split('\n')).toEqual(['A1: first\\nsecond', 'B1: 7'])
   })
 })
 

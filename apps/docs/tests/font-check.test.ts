@@ -45,7 +45,7 @@ describe('collectDocFonts', () => {
   })
 })
 
-describe('checkMissingFonts (#75)', () => {
+describe('checkMissingFonts', () => {
   it('reports a missing font with its first available substitute', () => {
     stubCanvas(['STFangsong', 'STKaiti'])
     // fresh module per stub: the 2d context is cached module-wide

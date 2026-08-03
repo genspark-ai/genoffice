@@ -190,7 +190,7 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.running || this.history.length > 0 || messages.length === 0) return
     // Unanswered user messages (a failed or interrupted run persisted them without a
     // reply) must not re-enter the model context: trailing ones would pair with the
-    // next instruction as one turn, adjacent ones read as a combined instruction (#92)
+    // next instruction as one turn, adjacent ones read as a combined instruction
     this.history = messages.filter(
       (m, i) => m.role !== 'user' || (messages[i + 1] && messages[i + 1]!.role !== 'user'),
     )
@@ -258,7 +258,7 @@ export class AgentLoop<TSnapshot = unknown> {
 
   /**
    * A run failed: remove its user message and every message after it, so the
-   * failed instruction can't be silently re-executed by the next run (#92).
+   * failed instruction can't be silently re-executed by the next run.
    */
   private rollbackFailedRun(): void {
     const msg = this.runUserMsg

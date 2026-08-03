@@ -110,9 +110,9 @@ interface ChatEntry {
   text: string
   error?: string
   streaming?: boolean
-  /** the run failed and this user message was rolled back out of the model context (#92) */
+  /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
-  /** the run failed because Genspark is signed out — render an inline sign-in button (#87) */
+  /** the run failed because Genspark is signed out — render an inline sign-in button */
   loginRequired?: boolean
   tools?: ToolActivity[]
   /** Generation progress card (only one per turn, replaced in real time) */
@@ -148,6 +148,10 @@ interface AiPanelProps {
     attachments?: AttachmentMeta[]
     slideShot?: boolean
   } | null
+  /** false shows only the collapsed rail; the component stays mounted so panel state survives */
+  open?: boolean
+  /** expand from the collapsed rail */
+  onExpand?: () => void
   onCollapse?: () => void
   /** Visible rollback action; uses the same main-process history as Cmd/Ctrl+Z. */
   onUndo?: () => void
@@ -227,6 +231,8 @@ export function AiPanel({
   fitWidthPx,
   settings,
   preset,
+  open = true,
+  onExpand,
   onCollapse,
   onPathChange,
   onDeckProgress,
@@ -246,10 +252,11 @@ export function AiPanel({
 
   // The .ai-dock wrapper owns the animated width (Excel-parity 180ms slide);
   // it tracks the resizable panel width through this variable
+  // `open` dep: the aside ref only exists while expanded
   useEffect(() => {
     const dock = asideRef.current?.closest('.ai-dock') as HTMLElement | null
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
-  }, [panelWidth])
+  }, [panelWidth, open])
   const [resizing, setResizing] = useState(false)
 
   // Re-clamp the persisted width when the window shrinks (max is 60% of the window)
@@ -993,7 +1000,7 @@ export function AiPanel({
           qcPagesRef.current = []
           setChat((prev) => {
             const next = [...prev]
-            // the loop rolled this run's user message out of the model context — surface that (#92)
+            // the loop rolled this run's user message out of the model context — surface that
             for (let i = next.length - 1; i >= 0; i--) {
               const entry = next[i]!
               if (entry.role === 'user') {
@@ -1012,7 +1019,7 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button (#87); detected via
+          // Signed-out failures get an inline sign-in button; detected via
           // gsk status rather than matching the localized error text
           void window.slidesApi
             .aiGskStatus()
@@ -1056,11 +1063,12 @@ export function AiPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset?.nonce])
 
+  // `open` dep: re-expanding lands on messages streamed while collapsed
   useEffect(() => {
     if (stickToBottomRef.current) {
       logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
     }
-  }, [chat])
+  }, [chat, open])
 
   const onLogScroll = () => {
     const el = logRef.current
@@ -1080,7 +1088,8 @@ export function AiPanel({
     }
     ta.style.height = 'auto'
     ta.style.height = `${Math.min(ta.scrollHeight, 147)}px`
-  }, [input])
+    // `open` dep: re-measure after expand restores a draft
+  }, [input, open])
 
   const run = () => runWith(input.trim())
 
@@ -1354,6 +1363,15 @@ export function AiPanel({
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+  }
+
+  // collapsed: rail only — after all hooks, so the instance and its state survive
+  if (!open) {
+    return (
+      <button className="ai-rail" title={t('appAiRailExpand')} onClick={onExpand}>
+        <GensparkMark size={22} />
+      </button>
+    )
   }
 
   return (

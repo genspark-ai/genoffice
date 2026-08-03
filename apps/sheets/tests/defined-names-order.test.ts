@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { applyDefinedNames } from '../src/renderer/univer-sync'
 import type { LazyWorkbookState, UniverRuntime } from '../src/renderer/univer-state'
 
-/// #174: Univer's defined-name table is keyed by name alone (first insert
+/// Univer's defined-name table is keyed by name alone (first insert
 /// wins), so the loader must feed each name's live workbook-level definition
 /// before Excel's #REF! sheet-scoped residues.
 describe('applyDefinedNames ordering', () => {

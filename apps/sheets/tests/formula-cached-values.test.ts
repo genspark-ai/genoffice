@@ -1,5 +1,5 @@
 /**
- * Issue #166: recalculated values lived only on screen, so a saved file had new
+ * Recalculated values lived only on screen, so a saved file had new
  * inputs and stale outputs — readers without a formula engine (openpyxl data_only,
  * pandas, preview services) silently got wrong numbers. The save now refreshes each
  * formula cell's cached <v> while leaving its <f> untouched.
@@ -36,7 +36,7 @@ async function saveWithFormulaValues(
   return (await zip.file('xl/worksheets/sheet1.xml')?.async('text')) ?? ''
 }
 
-describe('formula cached values (issue #166)', () => {
+describe('formula cached values', () => {
   it('updates <v> and keeps <f> for a numeric result', async () => {
     const xml = await saveWithFormulaValues([{ row: 1, column: 3, value: 811.4 }])
     const cell = /<c[^>]*r="D2"[^>]*>[\s\S]*?<\/c>/.exec(xml)?.[0] ?? ''

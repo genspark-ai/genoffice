@@ -252,7 +252,7 @@ describe('groupElements integration', () => {
   })
 })
 
-// ── #43-A: mixed-type group children keep document order ─────────────────────
+// ── mixed-type group children keep document order ────────────────────────────
 
 const SLIDE_NS =
   'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +

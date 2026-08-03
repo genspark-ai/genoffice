@@ -9,7 +9,8 @@ import type { RenderSlide } from '@genoffice/pptx-render'
 import { fillToKonva } from './konva-adapter'
 import { StaticNode } from './NodeBody'
 
-// Sidebar thumbnail width (px): = .slide-list 150 - horizontal padding 20 - .thumb border 4; must stay in sync with styles.css
+// Fallback width (px): matches the default 150px sidebar minus padding 20 and .thumb border 4;
+// the sidebar itself is drag-resizable and always passes an explicit width
 const THUMB_W = 126
 
 // memo: App-level state changes (zoom gestures especially) must not re-render every thumbnail Stage

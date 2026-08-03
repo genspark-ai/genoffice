@@ -278,7 +278,7 @@ export function applyPageSetupState(worksheetXml: string, state: SheetPageSetupS
   }
 
   if (state.showFormulas !== undefined) {
-    // showFormulas defaults to false; drop the attribute to restore it (#188).
+    // showFormulas defaults to false; drop the attribute to restore it.
     xml = setSheetViewAttr(xml, 'showFormulas', state.showFormulas ? '1' : null)
   }
 

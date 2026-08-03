@@ -579,7 +579,7 @@ export function applyDefinedNames(
   // first, workbook-scope second. Univer's name table is keyed by name alone
   // (first insert wins), so a #REF! sheet-scoped residue — Excel leaves those
   // behind when a sheet is deleted — appearing before the live workbook-level
-  // definition used to shadow it for the whole book (#174). Load each name's
+  // definition used to shadow it for the whole book. Load each name's
   // live workbook-level definition first and push #REF! residues last. This
   // is a stopgap until the engine models (name, scope) pairs.
   const groups = new Map<string, typeof file.definedNames>()
@@ -714,7 +714,7 @@ export async function loadVisibleRange(
   // getVisibleRange lags the scroll by one render frame; a large jump
   // (name-box goto, hyperlink) produces a single Scroll event whose computed
   // range is the OLD spot — already loaded, so nothing loads and no later
-  // event corrects it (#167). Re-anchor at the actual scroll position.
+  // event corrects it. Re-anchor at the actual scroll position.
   if (viewportStart) {
     visible = {
       startRow: viewportStart.row,
@@ -1098,7 +1098,7 @@ export async function readChartGridValues(
   if (state.formulaMode) {
     // Raw model values: getValues() reads the view model, where numfmt and
     // formula-view interceptors have replaced numbers with display strings
-    // ("12.5%", "=B5*C5"), which chartDataFromValues rejects (#180).
+    // ("12.5%", "=B5*C5"), which chartDataFromValues rejects.
     return target.getRange(range).getRawValues() as (
       string | number | boolean | null | undefined
     )[][]
@@ -1163,7 +1163,7 @@ export async function readChartRangeVector(
     throw new Error(t('appRangeTooManyCells', { range, max: 1000 }))
   const ref = absRangeRef(target.getSheetName(), range)
   if (state.formulaMode) {
-    // Raw values: the view model may hold interceptor display strings (#180).
+    // Raw values: the view model may hold interceptor display strings.
     const vector = (
       target.getRange(range).getRawValues() as (string | number | boolean | null | undefined)[][]
     ).flat()
@@ -1247,7 +1247,7 @@ async function recalcFormulaCellKeys(
   return keys
 }
 
-/// Keep the formula text around for the formula bar (#164) — the closure may
+/// Keep the formula text around for the formula bar — the closure may
 /// still give up, and the recalc overlay only carries values.
 function storeFormulaText(
   state: LazyWorkbookState,
@@ -1379,7 +1379,7 @@ async function loadFrozenColumnStrip(
         : Math.min(mapped.indexedThroughScreen, stripRange.endRow)
     if (availableEndRow === null || availableEndRow < stripRange.startRow) {
       // Not indexed that far yet: without the rollback this strip would be
-      // marked done and the frozen columns would stay blank forever (#167).
+      // marked done and the frozen columns would stay blank forever.
       state.frozenStripKeys.delete(sheetId)
       return
     }
@@ -1606,7 +1606,7 @@ function applyRowProperties(
       if (row.height !== undefined) {
         // The engine only reports ht when customHeight="1" — an explicit
         // user-set height. OOXML semantics: honor it and clip overflowing
-        // wrapped content instead of auto-growing the row (#159).
+        // wrapped content instead of auto-growing the row.
         worksheet.setRowHeightsForced(row.row, 1, Math.round((row.height * 96) / 72))
       }
       if (row.hidden) worksheet.hideRows(row.row, 1)
@@ -1903,7 +1903,7 @@ function patchWorksheetRangeInner(
           ? {
               s: {
                 // Link blue/underline is a fallback only: a colour or
-                // underline the file specifies must win (#161).
+                // underline the file specifies must win.
                 ...(isLink ? { cl: { rgb: '#0563C1' }, ul: { s: BooleanNumber.TRUE } } : {}),
                 ...(style ? toUniverStyle(style) : {}),
                 // Excel shows manual line breaks even without wrapText.
@@ -2003,7 +2003,7 @@ export function toRichTextDocument(
 }
 
 /// Formula mode: pull every sheet block by block and patch cells with their
-/// Record the follower cells of legacy CSE array formulas (#176): every cell
+/// Record the follower cells of legacy CSE array formulas: every cell
 /// a master's `<f t="array" ref>` covers except the master itself. Masters
 /// sit at the range's top-left, so ascending row-block order sees each master
 /// before its followers. Coordinates are screen-space (mapped through `ops`).
@@ -2988,7 +2988,7 @@ export function a1RangeRef(
   return `'${name}'!$${col}$${fromRow + 1}:$${col}$${toRow + 1}`
 }
 
-/// Absolute A1 ref over one row, columns in 0-based coordinates (#178).
+/// Absolute A1 ref over one row, columns in 0-based coordinates.
 export function a1RowRangeRef(
   sheetName: string,
   row: number,

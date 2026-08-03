@@ -5,7 +5,8 @@
 - `{op:"set_cell", sheetId, address:"B2", value}` — writes a single value (string/number/boolean/null). Optional `expectedValue` for concurrency protection.
 - `{op:"set_formula", sheetId, address, formula:"=SUM(A1:A10)"}` — writes a formula, must start with =. Optional `expectedFormula`.
 - `{op:"clear_cell", sheetId, address}` — clears a single cell.
-- `{op:"set_range", sheetId, start:"B2", values:[[row1], [row2], …]}` — bulk write: a 2D array laid out by rows, spreading right and down from start. **Strings starting with = are written as formulas.** Always use set_range for contiguous regions; never split them into many set_cell ops.
+- `{op:"set_range", sheetId, start:"B2", values:[[row1], [row2], …]}` — bulk write: a 2D array laid out by rows, spreading right and down from start. **values must be rectangular — every row the same length** (use null for a cell to clear; a shorter row would silently leave stale content behind). Instead of start you may pass `range:"B2:D5"`, whose size must exactly match values. **Strings starting with = are written as formulas.** Always use set_range for contiguous regions; never split them into many set_cell ops.
+- **When rewriting rows of an existing table, cover the full row span**: values rows should span all of the table's columns (or the write should be paired with clear_range for the leftover cells) so no stale fragments from the old content survive next to the new one.
 - `{op:"clear_range", sheetId, range:"A1:C10"}` — clears a rectangular region.
 
 Limit: at most 2000 expanded cell changes per batch.
@@ -17,12 +18,15 @@ Limit: at most 2000 expanded cell changes per batch.
 - Stay consistent with existing conventions: if earlier rows use formulas, new rows use formulas too; if earlier tax amounts are negative, newly filled ones should be negative too.
 
 **Wrong** — computed mentally and hard-coded:
+
 ```json
-{"op":"set_cell","sheetId":"s1","address":"B10","value":5000}
+{ "op": "set_cell", "sheetId": "s1", "address": "B10", "value": 5000 }
 ```
+
 **Right** — let the sheet compute it:
+
 ```json
-{"op":"set_formula","sheetId":"s1","address":"B10","formula":"=SUM(B2:B9)"}
+{ "op": "set_formula", "sheetId": "s1", "address": "B10", "formula": "=SUM(B2:B9)" }
 ```
 
 ## Share/percentage columns (where the total must be 100%)

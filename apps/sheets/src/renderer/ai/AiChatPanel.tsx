@@ -49,9 +49,9 @@ export interface AiChatMessage {
   readonly tools: readonly AiToolChip[]
   readonly streaming?: boolean | undefined
   readonly isError?: boolean | undefined
-  /** the run failed and this user message was rolled back out of the model context (#92) */
+  /** the run failed and this user message was rolled back out of the model context */
   readonly undelivered?: boolean | undefined
-  /** the run failed because Genspark is signed out — render an inline sign-in button (#87) */
+  /** the run failed because Genspark is signed out — render an inline sign-in button */
   readonly loginRequired?: boolean | undefined
   /** Set when this message reflects an auto-applied plan; renders an inline [Undo] button. */
   readonly autoApplied?: { readonly opCount: number } | undefined

@@ -173,7 +173,7 @@ describe('multi-level indentation indentDelta', () => {
   })
 })
 
-describe('per-paragraph paraIndices (#85 editing-mode selection)', () => {
+describe('per-paragraph paraIndices (editing-mode selection)', () => {
   const TWO_PARAS =
     '<a:bodyPr/><a:p><a:r><a:t>Heading</a:t></a:r></a:p>' +
     '<a:p><a:pPr marL="228600" indent="-228600"><a:buChar char="•"/></a:pPr><a:r><a:t>Body</a:t></a:r></a:p>'

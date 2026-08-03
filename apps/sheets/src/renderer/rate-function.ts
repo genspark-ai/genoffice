@@ -1,5 +1,5 @@
 /**
- * RATE bisection fallback (#185). Univer's Newton solver gives up the moment
+ * RATE bisection fallback. Univer's Newton solver gives up the moment
  * an iterate crosses rate <= -1, so deep-negative solutions (each period
  * losing nearly everything, e.g. CAGR of a collapsing series) come back
  * #NUM! even though a root exists just above -1. When the builtin errors,
@@ -125,10 +125,7 @@ export function createRateExecutor(): BaseFunction | null {
       if (!(result.isError?.() && result.getValue() === ErrorType.NUM)) return result
       const root = solveRateByBisection(nper, pmt, pv, fv, type)
       if (root === null) return result
-      return NumberValueObject.create(
-        root,
-        rowIndex === 0 && columnIndex === 0 ? '0%' : undefined,
-      )
+      return NumberValueObject.create(root, rowIndex === 0 && columnIndex === 0 ? '0%' : undefined)
     }
   }
   return new RateWithBisection(FUNCTION_NAMES_FINANCIAL.RATE)

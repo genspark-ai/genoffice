@@ -18,6 +18,7 @@ import {
   WebContentsView,
 } from 'electron'
 import type { WebContents } from 'electron'
+import { execFile } from 'node:child_process'
 import { readFile, writeFile, rm, stat, mkdir, open } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -262,28 +263,51 @@ let pendingOpenPath: string | null = null
 /** tab mode: each view queues its own path; the renderer consumes it after mounting */
 const pendingByWc = new Map<number, string>()
 /**
- * Renderer freeze watchdog (#129): the freeze is sporadic and has never
+ * Renderer freeze watchdog: the freeze is sporadic and has never
  * reproduced under instrumentation, so when it does happen, capture the
- * discriminating evidence (per-process CPU/RSS, GPU feature state) and give
+ * discriminating evidence (per-process CPU/RSS, GPU feature state, and on
+ * macOS native thread stacks of the renderer/GPU processes) and give
  * the user a way out. Reload restores from the main-side session, and the
  * 30s recovery draft bounds the loss for a force-quit instead.
  */
 const freezeDialogOpen = new Set<number>()
 
 async function handleRendererFreeze(wc: WebContents): Promise<void> {
+  const ts = Date.now()
   try {
+    const appMetrics = app.getAppMetrics()
     const diagnostics = {
       at: new Date().toISOString(),
       webContentsId: wc.id,
       sessionPath: sessions.get(wc.id)?.path ?? null,
       dirty: slidesIsDirty(wc.id),
-      appMetrics: app.getAppMetrics(),
+      appMetrics,
       gpuFeatureStatus: app.getGPUFeatureStatus(),
     }
     await writeFile(
-      join(app.getPath('userData'), `freeze-diagnostics-${Date.now()}.json`),
+      join(app.getPath('userData'), `freeze-diagnostics-${ts}.json`),
       JSON.stringify(diagnostics, null, 2),
     )
+    // macOS: native thread stacks of the renderer + GPU processes, taken from
+    // outside the frozen event loop (task_for_pid based, so it works even when
+    // a CDP attach suppresses the hang monitor and Runtime.evaluate is stuck).
+    // This is the discriminating evidence for the freeze: a renderer main thread
+    // parked in gpu::CommandBufferProxyImpl::WaitFor* confirms the GPU
+    // command-buffer-wait hypothesis. Best effort — `sample` is denied for
+    // hardened-runtime builds without the get-task-allow entitlement.
+    if (process.platform === 'darwin') {
+      const gpuPid = appMetrics.find((m) => m.type === 'GPU')?.pid
+      const targets: Array<[string, number | undefined]> = [
+        ['renderer', wc.getOSProcessId()],
+        ['gpu', gpuPid],
+      ]
+      for (const [label, pid] of targets) {
+        if (!pid) continue
+        const out = join(app.getPath('userData'), `freeze-stacks-${ts}-${label}-${pid}.txt`)
+        // Fire and forget: sampling runs for ~3s and must not delay the dialog
+        execFile('/usr/bin/sample', [String(pid), '3', '-file', out], () => {})
+      }
+    }
   } catch {
     /* diagnostics must never make the freeze worse */
   }
@@ -418,7 +442,7 @@ function sessionDirty(session: Session): boolean {
  * Ticks to skip after a failed recovery copy, per deck. Retrying every 30s just
  * repeats an expensive failure, but disabling the safety net for the rest of the
  * session was worse: on a heavy deck one slow serialization used to remove crash
- * recovery permanently and silently (refs #129). Back off instead, and keep the
+ * recovery permanently and silently. Back off instead, and keep the
  * skip count so a deck that always fails only pays for it every ~5 minutes.
  */
 const autosaveBackoff = new Map<string, number>()
@@ -428,7 +452,7 @@ let autosaveRunning = false
 /**
  * Recovery drafts for never-saved decks (wcId → visible path in <Documents>/GenOffice):
  * the sha1-keyed recovery copy needs session.path, so before the first save a freeze or
- * crash used to lose everything (#129). Removed on save, explicit discard, or clean close.
+ * crash used to lose everything. Removed on save, explicit discard, or clean close.
  */
 const untitledRecovery = new Map<number, string>()
 
@@ -996,7 +1020,7 @@ export function registerSlidesIpc(): void {
     el.text.paragraphs = applyEditParagraphs(el.text.paragraphs, op.paragraphs)
     ensureRunLinkRels(session.opened, op.slideIndex, el.text.paragraphs)
     el.dirty = true
-    // Per-paragraph bullets/spacing marked on the editor selection (#85)
+    // Per-paragraph bullets/spacing marked on the editor selection
     for (const { index, patch } of collectParagraphFormatPatches(op.paragraphs)) {
       setElementParagraphFormat(slide, op.sourceId, patch, [index])
     }

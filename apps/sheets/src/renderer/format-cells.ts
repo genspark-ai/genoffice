@@ -15,7 +15,7 @@ export interface FormatCellsDraft {
   readonly fontColor: string
   readonly border: string
   readonly borderColor: string
-  /// OOXML ST_BorderStyle name applied with the preset (#168).
+  /// OOXML ST_BorderStyle name applied with the preset.
   readonly borderStyle: string
   readonly fill: string
   readonly noFill: boolean

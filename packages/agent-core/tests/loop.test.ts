@@ -11,9 +11,7 @@ import {
 } from '../src'
 
 /** transport scripted turn by turn; exposes the callbacks for manual driving */
-function scriptedTransport(
-  script: Array<(cb: AgentStreamCallbacks) => void>,
-): AgentTransport & {
+function scriptedTransport(script: Array<(cb: AgentStreamCallbacks) => void>): AgentTransport & {
   requests: Array<{ messageCount: number; toolCount: number }>
   cancels: number
 } {
@@ -68,7 +66,11 @@ describe('AgentLoop', () => {
     loop.run('question')
     await flush()
     expect(onText).toHaveBeenLastCalledWith('Hello, world')
-    expect(onDone).toHaveBeenCalledWith({ text: 'Hello, world', cancelled: false, turnLimit: false })
+    expect(onDone).toHaveBeenCalledWith({
+      text: 'Hello, world',
+      cancelled: false,
+      turnLimit: false,
+    })
     expect(loop.busy).toBe(false)
     // user message carries the skill context
     expect(loop.messages[0]).toEqual({ role: 'user', text: 'question\n\nCTX' })
@@ -209,7 +211,11 @@ describe('AgentLoop', () => {
     expect(transport.requests[2].toolCount).toBe(0)
     const note = loop.messages.find((m) => m.role === 'user' && m.text.includes('turn limit'))
     expect(note).toBeDefined()
-    expect(onDone).toHaveBeenCalledWith({ text: 'partial conclusion', cancelled: false, turnLimit: true })
+    expect(onDone).toHaveBeenCalledWith({
+      text: 'partial conclusion',
+      cancelled: false,
+      turnLimit: true,
+    })
   })
 
   it('cancel drops pending tool calls and finalizes the run', async () => {
@@ -348,11 +354,13 @@ describe('AgentLoop', () => {
     loop.restore([{ role: 'user', text: 'should-not-be-injected' }])
     expect(loop.messages.length).toBe(before)
     expect(
-      loop.messages.some((m) => m.role === 'user' && 'text' in m && m.text === 'should-not-be-injected'),
+      loop.messages.some(
+        (m) => m.role === 'user' && 'text' in m && m.text === 'should-not-be-injected',
+      ),
     ).toBe(false)
   })
 
-  it('a failed run rolls its user message back out of history (#92)', async () => {
+  it('a failed run rolls its user message back out of history', async () => {
     const transport = scriptedTransport([
       (cb) => cb.onError('Not signed in'),
       (cb) => {
@@ -472,7 +480,9 @@ describe('AgentLoop compaction', () => {
     // The folded original text is gone from history
     expect(msgs.some((m) => 'text' in m && m.text === bigAnswer)).toBe(false)
     // The new user message comes after the summary
-    expect(msgs.some((m) => m.role === 'user' && 'text' in m && m.text.includes('follow-up'))).toBe(true)
+    expect(msgs.some((m) => m.role === 'user' && 'text' in m && m.text.includes('follow-up'))).toBe(
+      true,
+    )
   })
 
   it('falls back to a mechanical digest when the LLM summary fails; the turn proceeds normally', async () => {

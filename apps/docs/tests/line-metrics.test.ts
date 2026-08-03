@@ -343,7 +343,7 @@ describe('cssFontFamily', () => {
     )
   })
 
-  it('Simplified-Chinese office fonts map to real macOS/Windows families (#75)', () => {
+  it('Simplified-Chinese office fonts map to real macOS/Windows families', () => {
     expect(cssFontFamily('仿宋_GB2312')).toBe(
       "'仿宋_GB2312','STFangsong','FangSong','Noto Serif CJK SC',serif",
     )

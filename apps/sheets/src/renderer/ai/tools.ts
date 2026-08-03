@@ -298,17 +298,33 @@ function describeFormatState(format: CellFormatState): string {
   return parts.join(', ') || '(none)'
 }
 
+// Cell text is emitted into tab/newline-delimited tool output (read_range grid,
+// read_cells lists, plan summaries), where raw control characters would tear the
+// line/column structure apart and scramble the model's view of the grid. Escape
+// them — and backslash itself, so the encoding stays unambiguous. Univer streams
+// in-cell paragraph breaks as \r (the file model uses \n; see edit-journal's
+// dataStream conversion), so CR/CRLF are normalized to \n first: the model sees
+// a single line-break representation, and echoing the same `\n` escape inside
+// JSON string values of write operations round-trips into real line breaks.
+function escapeCellText(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/\t/g, '\\t')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, '\\n')
+}
+
 function formatCellScalar(cell: { value: CellScalar; formula?: string | undefined }): string {
   // Formula cells prefer the value (the AI reasons from computed values, with
   // the formula as provenance); when the value isn't computed yet, give only the
   // formula
   if (cell.formula) {
     return cell.value === null || cell.value === undefined
-      ? cell.formula
-      : `${String(cell.value)} (${cell.formula})`
+      ? escapeCellText(cell.formula)
+      : `${escapeCellText(String(cell.value))} (${escapeCellText(cell.formula)})`
   }
   if (cell.value === null) return '(empty)'
-  return String(cell.value)
+  return escapeCellText(String(cell.value))
 }
 
 function formatPlanSummary(plan: ChangePlan): string {
@@ -399,7 +415,11 @@ export function executeWorkbookTool(
           for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
             const cell = cells[formatAddress(row, column)]
             columns.push(
-              cell ? (cell.value === null ? (cell.formula ?? '') : formatCellScalar(cell)) : '',
+              cell
+                ? cell.value === null
+                  ? escapeCellText(cell.formula ?? '')
+                  : formatCellScalar(cell)
+                : '',
             )
           }
           rows.push(columns.join('\t'))

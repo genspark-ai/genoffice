@@ -1,5 +1,5 @@
 /**
- * Word-parity text statistics (#93).
+ * Word-parity text statistics.
  *
  * Word's CJK rule: Words = Asian characters (counted one by one, punctuation
  * included) + non-Asian words (whitespace/punct-delimited). The dialog also

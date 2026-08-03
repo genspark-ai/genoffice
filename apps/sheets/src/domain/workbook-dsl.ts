@@ -38,10 +38,15 @@ const clearCellSchema = z.object({
 
 // String values starting with "=" are treated as formulas, matching what
 // typing the same text into the cell editor would do.
+// `start` (top-left target cell) is canonical; `range` is also accepted
+// because every other range-shaped op uses that field name and models keep
+// reaching for it — when given, its size must match the values grid, which
+// doubles as a misaligned-write check (validated in expandToPrimitiveOps).
 const setRangeSchema = z.object({
   op: z.literal('set_range'),
   sheetId: z.string().min(1),
-  start: cellAddressSchema,
+  start: cellAddressSchema.optional(),
+  range: cellRangeSchema.optional(),
   values: z.array(z.array(cellScalarSchema).min(1).max(100)).min(1).max(500),
 })
 
@@ -829,6 +834,7 @@ export const workbookOperationSchema = z.discriminatedUnion('op', [
 
 export type WorkbookOperation = z.infer<typeof workbookOperationSchema>
 export type SetCellOperation = z.infer<typeof setCellSchema>
+export type SetRangeOperation = z.infer<typeof setRangeSchema>
 export type SetFormulaOperation = z.infer<typeof setFormulaSchema>
 export type ClearCellOperation = z.infer<typeof clearCellSchema>
 export type FormatRangeOperation = z.infer<typeof formatRangeSchema>
@@ -1033,6 +1039,51 @@ export type ExpandCellReader = (
   formula?: string | undefined
 }
 
+/// set_range guards, applied before any expansion. Jagged rows are rejected
+/// because a shorter row silently leaves the old trailing cells in place —
+/// the classic way a table rewrite shears its columns apart; requiring a
+/// rectangle forces the writer to state the intended width (null clears a
+/// cell). When the op targets a full `range`, its size must match the values
+/// grid so misaligned writes fail before anything applies.
+function setRangeOrigin(operation: SetRangeOperation): { startRow: number; startColumn: number } {
+  const width = operation.values[0]?.length ?? 0
+  const jaggedIndex = operation.values.findIndex((row) => row.length !== width)
+  if (jaggedIndex !== -1) {
+    throw new Error(
+      `set_range values must be rectangular: row 1 has ${width} cell(s) but row ${jaggedIndex + 1} has ${operation.values[jaggedIndex]?.length}. ` +
+        'Use null for cells that should be cleared, or split into separate set_range operations.',
+    )
+  }
+  const { start, range } = operation
+  if (!start && !range)
+    throw new Error('set_range needs "start" — the top-left target cell, like "B2".')
+  const bounds = parseRange(range ?? (start as string))
+  if (start && range) {
+    // Both fields together must agree; silently preferring one would let a
+    // write land somewhere other than where the model believes it targeted.
+    const startBounds = parseRange(start)
+    if (
+      startBounds.startRow !== bounds.startRow ||
+      startBounds.startColumn !== bounds.startColumn
+    ) {
+      throw new Error(
+        `set_range received both start ${start} and range ${range}, which disagree on the top-left cell — pass only one of them.`,
+      )
+    }
+  }
+  if (range) {
+    const rows = bounds.endRow - bounds.startRow + 1
+    const columns = bounds.endColumn - bounds.startColumn + 1
+    if (rows !== operation.values.length || columns !== width) {
+      throw new Error(
+        `set_range range ${range} spans ${rows}×${columns} cells but values is ${operation.values.length} row(s) × ${width} cell(s) — ` +
+          'make them match, or give "start" (the top-left cell) instead.',
+      )
+    }
+  }
+  return bounds
+}
+
 /// Expands set_range/clear_range into per-cell primitives so the preview,
 /// CAS checks, and both apply paths keep working on single cells. sort_range
 /// additionally needs `readCell` to compute the reordered values.
@@ -1050,7 +1101,7 @@ export function expandToPrimitiveOps(
   }
   for (const operation of operations) {
     if (operation.op === 'set_range') {
-      const origin = parseRange(operation.start)
+      const origin = setRangeOrigin(operation)
       operation.values.forEach((rowValues, rowOffset) => {
         rowValues.forEach((value, columnOffset) => {
           countCell()

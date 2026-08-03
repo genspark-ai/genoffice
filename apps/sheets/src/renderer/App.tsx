@@ -833,7 +833,7 @@ export function App(): React.JSX.Element {
           setMessage(error)
           setChat((previous) => {
             const next = [...previous]
-            // the loop rolled this run's user message out of the model context — surface that (#92)
+            // the loop rolled this run's user message out of the model context — surface that
             for (let i = next.length - 1; i >= 0; i--) {
               const entry = next[i]!
               if (entry.role === 'user') {
@@ -853,7 +853,7 @@ export function App(): React.JSX.Element {
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button (#87); detected via
+          // Signed-out failures get an inline sign-in button; detected via
           // gsk status rather than matching the localized error text
           void window.desktopApi
             .aiGskStatus()
@@ -1107,45 +1107,45 @@ export function App(): React.JSX.Element {
     // Copying in a filtered sheet must skip hidden rows;
     // see filtered-copy.ts for why the built-in hook is not enough.
     const filteredCopyDisposable = installFilteredCopyHook(runtime)
-    // Excel-compatible TSV plain text (TRUE/FALSE, quoted newlines, #187).
+    // Excel-compatible TSV plain text (TRUE/FALSE, quoted newlines).
     const tsvClipboardDisposable = installTsvClipboardFix(runtime)
-    // Formula view: swap formula cells to their formula text per sheet (#188).
+    // Formula view: swap formula cells to their formula text per sheet.
     const formulaViewDisposable = installFormulaViewInterceptor(runtime, lazyWorkbookRef)
     // Formula bar shows harvested formula text on streamed workbooks whose
-    // closure gave up (#164); display-only, the engine never sees it.
+    // closure gave up; display-only, the engine never sees it.
     const formulaTextDisposable = installFormulaTextInterceptor(runtime, lazyWorkbookRef)
     // Excel-parity number-format display: empty sections, text section,
-    // _/* padding, General digit fitting (#183/#186/#189).
+    // _/* padding, General digit fitting.
     const numberFormatFixDisposable = installNumberFormatFix(runtime)
-    // CELL("filename") resolves the session's on-disk path (#175); converted
+    // CELL("filename") resolves the session's on-disk path; converted
     // imports (needsSaveAs) count as never-saved, like Excel.
     const cellFilenameDisposable = installCellFilenameFunction(runtime, () => {
       const file = lazyWorkbookRef.current?.file
       return file && !file.needsSaveAs ? (file.path ?? null) : null
     })
-    // RATE converges near -100% via bisection instead of erroring (#185).
+    // RATE converges near -100% via bisection instead of erroring.
     const rateFallbackDisposable = installRateFallback(runtime)
     // Escaped quotes ("") no longer shift lexer indices and silently
-    // rewrite committed formulas (#177).
+    // rewrite committed formulas.
     const formulaLexerFixDisposable = installFormulaLexerFix(runtime)
     // Empty-value formula results (IFERROR/IF/CHOOSE over blank refs)
-    // display as 0 like Excel (#202).
+    // display as 0 like Excel.
     const nullResultDisposable = installFormulaNullResultFix(runtime)
     // Copy/cut load their selection into the lazy window first so streamed
-    // workbooks don't serialize blanks for never-viewed rows (#200).
+    // workbooks don't serialize blanks for never-viewed rows.
     const copyMaterializeDisposable = installCopyMaterialize(runtime, lazyWorkbookRef, setMessage)
     // Univer's own UI (rule-management panels, dialogs) follows the app
-    // language instead of hard-coded English (#203).
+    // language instead of hard-coded English.
     void applyUniverLocale(runtime, getLang())
     // Rule-management panels show what each rule actually does: list options /
-    // source range, CF formula text, ⚠ on #REF! dead rules (#203).
+    // source range, CF formula text, ⚠ on #REF! dead rules.
     const ruleDetailDisposable = installRuleDetail(runtime)
     const scrollDisposable = runtime.univerAPI.addEvent(
       runtime.univerAPI.Event.Scroll,
       (params) => {
         const { worksheet } = params
         // The event carries the true post-scroll position; getVisibleRange
-        // inside loadVisibleRange lags a frame (#167).
+        // inside loadVisibleRange lags a frame.
         const eventStart = params as { sheetViewStartRow?: number; sheetViewStartColumn?: number }
         void loadVisibleRange(
           runtime,
@@ -1213,7 +1213,7 @@ export function App(): React.JSX.Element {
       runtime.univerAPI.Event.ActiveSheetChanged,
       ({ activeSheet }) => {
         void loadVisibleRange(runtime, lazyWorkbookRef, activeSheet, setMessage)
-        // formula view is per-sheet (sheetView/@showFormulas, #188)
+        // formula view is per-sheet (sheetView/@showFormulas)
         applyShowFormulasView(runtime, lazyWorkbookRef.current, activeSheet.getSheetId())
         // zoom is per-sheet state; echo the new sheet's level
         setZoomPercent(Math.round(activeSheet.getZoom() * 100))
@@ -2674,7 +2674,7 @@ export function App(): React.JSX.Element {
         }
         const worksheet = workbook.getActiveSheet()
         if (!worksheet) return
-        // apply the opening sheet's formula view (sheetView/@showFormulas, #188)
+        // apply the opening sheet's formula view (sheetView/@showFormulas)
         applyShowFormulasView(runtime, state, worksheet.getSheetId())
         queueVisualInstall(
           runtime,

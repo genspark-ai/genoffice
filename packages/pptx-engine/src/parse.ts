@@ -195,7 +195,7 @@ function parseShapeFragment(
   // semantic tree; the byte-fidelity side's anchor.originalXml stays the original fragment.
   // <a:fld> (slide number/date) gets the same treatment: it is structurally an a:r,
   // and rewriting the tag (attributes kept, so @_type survives for run.field) keeps
-  // fields in document order instead of being appended after all plain runs (#88).
+  // fields in document order instead of being appended after all plain runs.
   const semanticXml = fragXml
     .replace(/<a:br\b[^>]*\/>|<a:br\b[\s\S]*?<\/a:br>/g, '<a:r><a:t>\n</a:t></a:r>')
     .replace(/<a:fld\b/g, '<a:r')
@@ -292,7 +292,7 @@ function parseSpShape(
         fill = tplFill ?? (phClr ? { type: 'solid', color: phClr } : undefined)
       }
     }
-    // explicit <a:ln><a:noFill/> (stroke === null) wins over the lnRef template (#102)
+    // explicit <a:ln><a:noFill/> (stroke === null) wins over the lnRef template
     if (stroke === undefined) stroke = styleRefStroke(node, ctx)
     if (!shadow && !glow) {
       const ref = style['a:effectRef']
@@ -419,7 +419,7 @@ function parseConnector(node: any, anchor: ByteAnchor, ctx: ParseContext): TextE
     '#000000'
   const explicitStroke = parseStroke(spPr, ctx, spPr?.['a:ln'] ? fallback : undefined)
   // null = author explicitly disabled the outline; only an *absent* a:ln
-  // falls back (so an unstyled connector never turns invisible, #102)
+  // falls back (so an unstyled connector never turns invisible)
   const stroke =
     explicitStroke === null
       ? undefined

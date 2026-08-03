@@ -4,6 +4,22 @@ Thanks for your interest in contributing. This document covers the local
 setup, the checks a change must pass, and the conventions used in this
 repository.
 
+## How changes land here
+
+This GitHub repository is a mirror: development happens in a private tree,
+and `main` here advances through single squashed snapshot commits
+(`Sync snapshot (<date>)`). That is why every file in a sync shows the same
+last-commit message, and why nobody — maintainers included — pushes to
+`main` directly.
+
+External pull requests are welcome and are reviewed here. Once a change is
+accepted, a maintainer imports it into the private tree with your authorship
+preserved as a `Co-authored-by:` trailer, and it ships to `main` in the next
+snapshot; your PR is then closed with a note pointing at the snapshot that
+carried it. GitHub will show the PR as "closed" rather than "merged" — the
+code and the attribution still land. Issues and feature requests are handled
+directly on this repository as usual.
+
 ## Repository layout
 
 - `apps/*` — the five Electron apps (docs, sheets, slides, pdf, shell).

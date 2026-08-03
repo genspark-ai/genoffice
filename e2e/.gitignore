@@ -1,0 +1,4 @@
+# E2E test artifacts (screenshots, videos, reports)
+artifacts/
+test-results/
+playwright-report/

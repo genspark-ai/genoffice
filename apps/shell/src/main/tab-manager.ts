@@ -59,7 +59,7 @@ export class TabManager {
     private readonly shellWindow: BrowserWindow,
     private readonly onChanged: () => void,
     private readonly applyMenuFor: (kind: TabKind) => void,
-    /** localized placeholder title for a tab that has no file yet (#94) */
+    /** localized placeholder title for a tab that has no file yet */
     private readonly untitledTitleFor?: (kind: TabKind) => string,
   ) {
     shellWindow.on('resize', () => this.layout())
@@ -142,7 +142,7 @@ export class TabManager {
       id,
       kind: 'sheets',
       view,
-      title: openPath ? basename(openPath) : this.untitled('sheets', 'GenOffice Sheets'),
+      title: openPath ? basename(openPath) : this.untitled('sheets', 'AI Sheets'),
       filePath: openPath,
     })
     this.activateTab(id)
@@ -159,7 +159,7 @@ export class TabManager {
       id,
       kind: 'slides',
       view,
-      title: openPath ? basename(openPath) : this.untitled('slides', 'GenOffice Slides'),
+      title: openPath ? basename(openPath) : this.untitled('slides', 'AI Slides'),
       filePath: openPath,
     })
     this.activateTab(id)

@@ -104,8 +104,9 @@ export function Onboarding({ onDone }: OnboardingProps) {
     cardRef.current?.focus()
   }, [])
 
-  // slide changes can unmount the focused control (the GenTeam button only
-  // exists on slide 2) — pull focus back onto the card so it never drops to body
+  // slide changes can strip focus from the active control (leaving slide 2
+  // makes its GenTeam button inert, which blurs it) — pull focus back onto the
+  // card so it never drops to body
   useEffect(() => {
     const card = cardRef.current
     const active = document.activeElement
@@ -124,7 +125,11 @@ export function Onboarding({ onDone }: OnboardingProps) {
       if (event.key === 'Tab') {
         const card = cardRef.current
         if (!card) return
-        const focusables = Array.from(card.querySelectorAll<HTMLElement>('button'))
+        // inactive slides stay mounted (stacked for the height lock) but are
+        // inert — their buttons must not enter the tab cycle
+        const focusables = Array.from(card.querySelectorAll<HTMLElement>('button')).filter(
+          (el) => !el.closest('[inert]'),
+        )
         if (focusables.length === 0) return
         const first = focusables[0]
         const last = focusables[focusables.length - 1]
@@ -156,30 +161,41 @@ export function Onboarding({ onDone }: OnboardingProps) {
   return (
     <div className="onb-overlay" role="dialog" aria-modal="true" aria-label={t(slide.titleKey)}>
       <div className="onb-card" ref={cardRef} tabIndex={-1}>
-        <div className="onb-slide" key={index}>
-          <SlideArt kind={slide.art} />
-          <h2 className="onb-title">{t(slide.titleKey)}</h2>
-          <p className="onb-subtitle">{t(slide.subtitleKey)}</p>
-          {slide.bodyKey && (
-            <p className={`onb-body${slide.bodyDim ? ' onb-body-dim' : ''}`}>{t(slide.bodyKey)}</p>
-          )}
-          {slide.showOffer && (
-            <div className="onb-offer">
-              <p className="onb-credits">{renderEmphasis(t('onbCredits'))}</p>
-              <button className="onb-join" onClick={() => void window.aiOffice.openGenTeam()}>
-                {t('onbJoinGenTeam')}
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path
-                    d="M3.5 8.5 8.5 3.5M4.5 3.5h4v4"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+        {/* all slides stay mounted, stacked in one grid cell: the card locks to
+            the tallest slide's height for the language, so the footer and its
+            buttons never move between steps. Inactive slides are inert. */}
+        <div className="onb-stage">
+          {SLIDES.map((s, i) => (
+            <div
+              className={`onb-slide${i === index ? ' active' : ''}`}
+              key={s.titleKey}
+              inert={i !== index}
+            >
+              <SlideArt kind={s.art} />
+              <h2 className="onb-title">{t(s.titleKey)}</h2>
+              <p className="onb-subtitle">{t(s.subtitleKey)}</p>
+              {s.bodyKey && (
+                <p className={`onb-body${s.bodyDim ? ' onb-body-dim' : ''}`}>{t(s.bodyKey)}</p>
+              )}
+              {s.showOffer && (
+                <div className="onb-offer">
+                  <p className="onb-credits">{renderEmphasis(t('onbCredits'))}</p>
+                  <button className="onb-join" onClick={() => void window.aiOffice.openGenTeam()}>
+                    {t('onbJoinGenTeam')}
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path
+                        d="M3.5 8.5 8.5 3.5M4.5 3.5h4v4"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
 
         <div className="onb-footer">

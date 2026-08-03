@@ -39,7 +39,7 @@ const worksheetMetadataSchema = z
     ),
     // 0 is legal in the file (sheetFormatPr on all-hidden sheets) and means
     // "no default"; the engine normalizes it to null, but a stray 0 must not
-    // reject the whole workbook (#173) — the preload maps it back to null.
+    // reject the whole workbook — the preload maps it back to null.
     defaultRowHeight: z.number().nonnegative().nullable(),
     defaultColumnWidth: z.number().nonnegative().nullable(),
     freeze: z
@@ -52,7 +52,7 @@ const worksheetMetadataSchema = z
     hidden: z.boolean(),
     tabColor: z.string().nullable(),
     showGridLines: z.boolean(),
-    /// sheetView/@showFormulas — the sheet opens in formula view (#188).
+    /// sheetView/@showFormulas — the sheet opens in formula view.
     showFormulas: z.boolean().optional(),
     tables: z.array(
       z
@@ -222,7 +222,7 @@ const visualObjectSchema = z
               categories: z.array(z.string()),
               values: z.array(z.number().finite()),
               numberFormat: z.string().optional(),
-              /// numCache formatCode of the category (or scatter X) data (#182).
+              /// numCache formatCode of the category (or scatter X) data.
               categoryFormat: z.string().optional(),
               color: z.string().optional(),
               trendline: z.string().optional(),
@@ -282,7 +282,7 @@ const visualObjectSchema = z
           .strict()
           .optional(),
         /// `c:numFmt` on the category/date axis; wins over the series-level
-        /// categoryFormat (#182).
+        /// categoryFormat.
         categoryAxisFormat: z.string().optional(),
         gapWidthPct: z.number().optional(),
         holeSizePct: z.number().optional(),
@@ -1342,7 +1342,7 @@ export const workbookSaveRequestSchema = z
     pageSetupStates: z.array(workbookPageSetupStateSchema).max(1_000),
     noteStates: z.array(workbookNoteStateSchema).max(1_000),
     /// Recalculated formula-cell values written back into <v> so the saved file's
-    /// inputs and outputs agree for readers without a formula engine (issue #166).
+    /// inputs and outputs agree for readers without a formula engine.
     formulaValues: z
       .array(
         z

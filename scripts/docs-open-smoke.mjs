@@ -107,7 +107,7 @@ class CDP {
   }
 }
 
-// '打开失败' below matches the zh default UI label ("open failed" in the status bar)
+// the CJK literal below matches the zh default UI status-bar label for "open failed"
 const PROBE = `(() => {
   const status = document.querySelector('.status-msg')?.textContent ?? ''
   const dbg = window.__pageDebug

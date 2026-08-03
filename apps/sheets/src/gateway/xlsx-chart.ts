@@ -621,7 +621,7 @@ function setSeriesData(
       } else {
         const catPattern = /<c:cat\/>|<c:cat>[\s\S]*?<\/c:cat>/
         const previousCat = catPattern.exec(next)?.[0] ?? ''
-        // Numeric categories cached as numRef/numLit (dates, #182) keep that
+        // Numeric categories cached as numRef/numLit (dates) keep that
         // shape and its formatCode; a strRef rewrite drops the format for good.
         const numeric = entry.categories.map((value) => Number(value))
         const keepNumeric =

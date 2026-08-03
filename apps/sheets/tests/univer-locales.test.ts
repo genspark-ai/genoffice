@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { univerLocaleFor } from '../src/renderer/univer-locales'
 
-describe('univerLocaleFor (#203)', () => {
+describe('univerLocaleFor', () => {
   it('maps every app language Univer has packs for', () => {
     expect(univerLocaleFor('zh')).toBe(LocaleType.ZH_CN)
     expect(univerLocaleFor('zh-TW')).toBe(LocaleType.ZH_TW)

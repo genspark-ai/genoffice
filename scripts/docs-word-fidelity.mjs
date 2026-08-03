@@ -264,7 +264,7 @@ async function oursExport(docxPath, pdfPath, index) {
     while (Date.now() - t0 < 60_000) {
       let p = null
       try {
-        // '打开失败' matches the zh default UI label ("open failed" in the status bar)
+        // the CJK literal matches the zh default UI status-bar label for "open failed"
         p = await cdp.evaluate(`(() => {
           const s = document.querySelector('.status-msg')?.textContent ?? ''
           return { failed: s.includes('打开失败'), pages: window.__pageDebug?.slices?.length ?? 0 }
@@ -284,7 +284,7 @@ async function oursExport(docxPath, pdfPath, index) {
     // Open paginated preview before exporting: on the preview path each .pv-page is exactly one
     // sheet (WYSIWYG), whereas the continuous-flow path lets Chromium reflow, making page count
     // and headers/footers diverge from what's on screen
-    // '视图' (View) / '分页预览' (Paginated Preview) match the zh default UI labels
+    // the CJK literals match the zh default UI labels for View / Paginated Preview
     const opened = await cdp.evaluate(`(async () => {
       ;[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === '视图')?.click()
       await new Promise((r) => setTimeout(r, 300))

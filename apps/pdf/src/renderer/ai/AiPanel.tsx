@@ -37,7 +37,7 @@ interface ChatEntry {
   text: string
   streaming?: boolean
   isError?: boolean
-  /** the run failed and this user message was rolled back out of the model context (#92) */
+  /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
   tools?: ToolActivity[]
 }
@@ -144,7 +144,7 @@ export function AiPanel({
         onError: (error) => {
           setChat((prev) => {
             const next = [...prev]
-            // the loop rolled this run's user message out of the model context — surface that (#92)
+            // the loop rolled this run's user message out of the model context — surface that
             for (let i = next.length - 1; i >= 0; i--) {
               const entry = next[i]!
               if (entry.role === 'user') {

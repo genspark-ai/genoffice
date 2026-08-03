@@ -20,7 +20,7 @@ vi.mock('react-konva', () => {
   }
 })
 
-import { canvasPixelRatio } from '../src/renderer/SlideCanvas'
+import { canvasPixelRatio, DENSE_SLIDE_NODE_COUNT } from '../src/renderer/SlideCanvas'
 
 describe('canvasPixelRatio', () => {
   it('follows zoom above 100% so the bitmap matches the displayed resolution (blur)', () => {
@@ -43,5 +43,14 @@ describe('canvasPixelRatio', () => {
   it('treats a missing/zero devicePixelRatio as 1', () => {
     expect(canvasPixelRatio(0, 1)).toBe(1)
     expect(canvasPixelRatio(0, 2)).toBe(2)
+  })
+
+  it('caps dense slides at min(dpr, 2) regardless of zoom (raster-pressure mitigation)', () => {
+    const dense = DENSE_SLIDE_NODE_COUNT
+    expect(canvasPixelRatio(2, 2, dense)).toBe(2) // zoom upscale skipped
+    expect(canvasPixelRatio(3, 1, dense)).toBe(2) // hard cap below dpr 3
+    expect(canvasPixelRatio(1, 3, dense)).toBe(1)
+    expect(canvasPixelRatio(0, 2, dense)).toBe(1)
+    expect(canvasPixelRatio(2, 2, dense - 1)).toBe(3) // below the threshold nothing changes
   })
 })
