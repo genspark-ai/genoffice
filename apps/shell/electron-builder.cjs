@@ -35,6 +35,19 @@ for (const rel of [
   }
 }
 
+// The module trees are electron-vite outputs produced by build:all; a missing
+// one means that module's build did not run or failed. electron-builder only
+// logs "file source doesn't exist" for an absent extraResources source and
+// still exits 0, so without this the installer launches normally and is simply
+// missing that editor — it surfaces only when a user opens the tab.
+for (const rel of ['../docs/out', '../sheets/out', '../slides/out', '../pdf/out']) {
+  if (!existsSync(join(__dirname, rel))) {
+    throw new Error(
+      `electron-builder extraResources source missing: ${rel} (run npm run build:all first)`,
+    )
+  }
+}
+
 /** @type {import('electron-builder').Configuration} */
 const config = {
   appId: 'com.genoffice.app',
