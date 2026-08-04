@@ -82,36 +82,45 @@ const config = {
       to: 'gsk/node_modules/ws',
     },
   ],
+  // `mimeType` is read only by the Linux target, where it becomes the
+  // desktop entry's MimeType= list; associations without it are dropped
+  // there. macOS and Windows ignore the field and key off `ext`.
   fileAssociations: [
     {
       ext: 'docx',
       name: 'Word Document',
       role: 'Editor',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     },
     {
       ext: 'xlsx',
       name: 'Excel Workbook',
       role: 'Editor',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     },
     {
       ext: 'pptx',
       name: 'PowerPoint Presentation',
       role: 'Editor',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     },
     {
       ext: 'xls',
       name: 'Excel 97-2003 Workbook',
       role: 'Editor',
+      mimeType: 'application/vnd.ms-excel',
     },
     {
       ext: 'csv',
       name: 'CSV Document',
       role: 'Editor',
+      mimeType: 'text/csv',
     },
     {
       ext: 'pdf',
       name: 'PDF Document',
       role: 'Editor',
+      mimeType: 'application/pdf',
     },
   ],
   npmRebuild: false,
@@ -141,6 +150,39 @@ const config = {
       {
         from: '../sheets/native/xlsx-engine/target/x86_64-pc-windows-gnu/release/xlsx-sidecar.exe',
         to: 'native/xlsx-sidecar.exe',
+      },
+    ],
+  },
+  // Unlike win (which cross-compiles the sidecar to an explicit target
+  // triple), linux takes it from cargo's host-native target/release/ — the
+  // same source mac uses. So no `arch` is pinned here: electron-builder
+  // defaults to the build host's architecture, which is the only one the
+  // sidecar was actually built for. Packaging arm64 on an x64 host, or the
+  // reverse, needs a matching `cargo build --target` first.
+  linux: {
+    // AppImage only: it needs no packaging identity, whereas deb/rpm would
+    // require a Debian maintainer and homepage in the repo metadata.
+    target: ['AppImage'],
+    category: 'Office',
+    icon: 'build/icon.png',
+    // mac and win name the binary from productName; linux instead derives it
+    // from package.json "name", and "@genoffice/shell" sanitizes to the
+    // invalid "@genofficeshell". Setting it explicitly also makes the
+    // generated genoffice.desktop match the WM_CLASS Electron reports (it
+    // takes that from the executable basename), so the running window links
+    // back to its launcher entry.
+    executableName: 'genoffice',
+    // Electron takes its X11 app_id from package.json "desktopName"
+    // (genoffice.desktop); syncDesktopName makes electron-builder name the
+    // .desktop file and its StartupWMClass from the same value. Without it
+    // StartupWMClass falls back to productName ("GenOffice"), which does not
+    // match the "genoffice" WM_CLASS the window actually reports — and X11
+    // compares case-sensitively, so the taskbar shows an unlinked window.
+    syncDesktopName: true,
+    extraResources: [
+      {
+        from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
+        to: 'native/xlsx-sidecar',
       },
     ],
   },

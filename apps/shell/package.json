@@ -6,6 +6,7 @@
   "private": true,
   "description": "Unified GenOffice shell: one app hosting the docs and sheets modules behind a home/launcher window",
   "main": "out/main/index.js",
+  "desktopName": "genoffice.desktop",
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
@@ -13,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "start": "electron-vite build && electron .",
     "dist:mac": "electron-vite build && electron-builder --mac",
-    "dist:win": "electron-vite build && electron-builder --win"
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux"
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",
