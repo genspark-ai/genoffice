@@ -61,6 +61,33 @@ export function normalizeLang(raw: string | null | undefined): Lang {
   return 'en'
 }
 
+const HTML_LANGS: Record<Lang, string> = {
+  zh: 'zh-CN',
+  en: 'en-US',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  es: 'es-ES',
+  th: 'th-TH',
+  id: 'id-ID',
+  ru: 'ru-RU',
+  ar: 'ar-SA',
+  pt: 'pt-BR',
+  it: 'it-IT',
+  pl: 'pl-PL',
+  nl: 'nl-NL',
+  ms: 'ms-MY',
+  he: 'he-IL',
+  hi: 'hi-IN',
+  'zh-TW': 'zh-TW',
+}
+
+/** BCP-47 tag for document.documentElement.lang (drives CSS :lang() and Chromium's per-language font fallback) */
+export function htmlLang(lang: Lang): string {
+  return HTML_LANGS[lang]
+}
+
 export type Params = Record<string, string | number>
 
 /** fill {name} placeholders; unknown placeholders are left as-is */
@@ -113,6 +140,5 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  * runtime fallback.
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
-  return (lang: Lang, key: keyof D, params?: Params): string =>
-    format(dicts[lang][key], params)
+  return (lang: Lang, key: keyof D, params?: Params): string => format(dicts[lang][key], params)
 }

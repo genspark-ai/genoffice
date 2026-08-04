@@ -2,7 +2,7 @@ import { app } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateInfo } from 'electron-updater'
-import { createI18n, getUiLang } from '@genoffice/i18n'
+import { createI18n, getUiLang, htmlLang } from '@genoffice/i18n'
 import type { UpdateUiState, UpdateUiStrings } from '../shared/update-api'
 import { closeUpdateWindow, pushUpdateState, showUpdateWindow } from './update-window'
 
@@ -284,6 +284,7 @@ function initialState(version: string): UpdateUiState {
     version,
     currentVersion: app.getVersion(),
     percent: 0,
+    lang: htmlLang(getUiLang()),
     strings: uiStrings(),
   }
 }

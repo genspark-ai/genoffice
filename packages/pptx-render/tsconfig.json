@@ -6,7 +6,8 @@
     "baseUrl": ".",
     "paths": {
       "@genoffice/pptx-engine": ["../pptx-engine/src/index.ts"],
-      "@genoffice/pptx-engine/table-grid": ["../pptx-engine/src/table-grid.ts"]
+      "@genoffice/pptx-engine/table-grid": ["../pptx-engine/src/table-grid.ts"],
+      "@genoffice/pptx-engine/background-promote": ["../pptx-engine/src/background-promote.ts"]
     }
   },
   "include": ["src", "tests"]

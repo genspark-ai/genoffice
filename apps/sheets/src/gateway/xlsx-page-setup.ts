@@ -3,6 +3,8 @@
 /// attributes), and maintains the sheet-scoped `_xlnm.Print_Area` defined
 /// name in workbook.xml. Untouched attributes and elements stay verbatim.
 
+import { parseSheetElements } from './xlsx-sheets'
+
 export class PageSetupError extends Error {}
 
 /// One printed header or footer: Excel's left/center/right sections. Text
@@ -351,9 +353,9 @@ export function applyPrintAreas(
   }[],
 ): string {
   let xml = workbookXml
-  const sheetOrder = [...xml.matchAll(/<sheet\b[^>]*\bname="([^"]*)"/g)].map((match) =>
-    decodeXmlEntities(match[1] ?? ''),
-  )
+  // Parse elements instead of pattern-matching serialized XML: attribute
+  // order and entity encoding vary by producer.
+  const sheetOrder = parseSheetElements(xml).map((element) => element.name)
   for (const { sheetName, printArea, printTitles } of areas) {
     const sheetIndex = sheetOrder.indexOf(sheetName)
     if (sheetIndex === -1) {
@@ -436,13 +438,4 @@ function escapeXml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-function decodeXmlEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
 }

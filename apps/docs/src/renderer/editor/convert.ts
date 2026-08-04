@@ -850,6 +850,19 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         } else {
           pushBlock({ kind: 'original', docxIndex: idx })
         }
+      } else if (idx !== null && idx !== undefined && originalByIndex.has(idx)) {
+        // pasted copy: the anchor is consumed by the first occurrence, so clone from the block's own data
+        const original = originalByIndex.get(idx)!
+        const image = imageFromProtectedAttrs(node)
+        if (image) {
+          changedCount++
+          pushBlock({ kind: 'image', image })
+        } else if (original.originalXml) {
+          changedCount++
+          pushBlock({ kind: 'xml', xml: stripAnchorMarkers(original.originalXml) })
+        } else {
+          console.warn('dropping unclonable copy of protected block', node.attrs?.label)
+        }
       } else if (node.attrs?.genXml) {
         // editor-created table or other self-contained fragment
         changedCount++
@@ -940,9 +953,13 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         mapAnchor(idx!)
         applyRawPPr(generated, original)
       } else if (original) {
-        // A split twin inherits the source node's attrs, including pPrChange,
-        // but the revision belongs only to the original anchored paragraph.
+        // A split twin inherits the source node's attrs, but pPrChange and
+        // bookmark/comment anchors belong only to the anchored original.
         delete generated.pPrChange
+        delete generated.bookmarks
+        delete generated.hiddenBookmarks
+        delete generated.commentStarts
+        delete generated.commentEnds
         // A grouped shell (partial open/close of a multi-block sdt) must be
         // emitted exactly once, by the anchor.
         if (generated.sdtShell?.group !== undefined) delete generated.sdtShell
@@ -989,6 +1006,31 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
     deletedCount,
     totalOriginal: originalByIndex.size,
   }
+}
+
+/** rebuild a pasted image copy from its preview bytes; null when not materializable */
+function imageFromProtectedAttrs(node: PmNode): NewImage | null {
+  if (node.attrs?.blockType !== 'image') return null
+  const m = /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/.exec(
+    String(node.attrs?.imageDataUrl ?? ''),
+  )
+  const widthPx = Number(node.attrs?.imageWidthPx)
+  const heightPx = Number(node.attrs?.imageHeightPx)
+  if (!m || !widthPx || !heightPx) return null
+  const image: NewImage = { base64: m[2], mime: m[1] as NewImage['mime'], widthPx, heightPx }
+  const align = node.attrs?.imageAlign as NewImage['align'] | null
+  if (align) image.align = align
+  const wrap = node.attrs?.imageWrap as ImageWrap | null
+  if (wrap) image.wrap = wrap
+  return image
+}
+
+/** cloned XML must not repeat the anchor's bookmark/comment ids */
+function stripAnchorMarkers(xml: string): string {
+  return xml.replace(
+    /<w:(?:bookmarkStart|bookmarkEnd|commentRangeStart|commentRangeEnd|commentReference)\b[^>]*\/>/g,
+    '',
+  )
 }
 
 /** chart data changes vs the parsed model; null when untouched or unpatchable */
@@ -1394,7 +1436,8 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     if (node.type === 'hardBreak') {
       const ch = node.attrs?.pageBreak ? '\f' : '\n'
       const prev = runs[runs.length - 1]
-      const prevAtomic = prev && (prev.noteRef || prev.xeTerm !== undefined || prev.math || prev.ruby)
+      const prevAtomic =
+        prev && (prev.noteRef || prev.xeTerm !== undefined || prev.math || prev.ruby)
       if (prev && !prevAtomic) prev.text += ch
       else runs.push({ text: ch })
       continue

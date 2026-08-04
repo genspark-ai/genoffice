@@ -202,6 +202,7 @@ export const appStrings = defineStrings({
     appAiTurnLimit: '（已达单次请求的工具调用轮数上限，以上是基于已读取信息的回答，可能不完整。）',
     appAiStopped: '（已停止）',
     appAiNoSummary: 'AI 已完成，没有生成总结。',
+    appAiNoAction: 'AI 没有执行任何操作，也没有给出回复。请重试或换个说法。',
     appNewConversation: '已开始新对话。',
     // Streaming load / edit gating
     appPivotCellNoEdit: '该单元格属于数据透视表——暂不支持编辑。',
@@ -1147,6 +1148,7 @@ export const appStrings = defineStrings({
       '(Reached the tool-call turn limit for this request; the answer above is based on what was read so far and may be incomplete.)',
     appAiStopped: '(stopped)',
     appAiNoSummary: 'AI finished with no summary.',
+    appAiNoAction: 'The AI made no changes and gave no reply. Try again or rephrase.',
     appNewConversation: 'New conversation started.',
     appPivotCellNoEdit: 'This cell is part of a PivotTable — editing it is not supported yet.',
     appAreaStreaming: 'That area is still streaming in — try editing it again in a moment.',
@@ -2105,6 +2107,7 @@ export const appStrings = defineStrings({
       '（1 回のリクエストのツール呼び出し上限に達したため、ここまでに読み取った情報に基づく回答です。不完全な場合があります。）',
     appAiStopped: '（停止しました）',
     appAiNoSummary: 'AI は完了しましたが、要約は生成されませんでした。',
+    appAiNoAction: 'AI は操作も返信も行いませんでした。もう一度試すか、言い換えてください。',
     appNewConversation: '新しい会話を開始しました。',
     // Streaming load / edit gating
     appPivotCellNoEdit: 'このセルはピボットテーブルの一部です — 編集には未対応です。',
@@ -3106,6 +3109,8 @@ export const appStrings = defineStrings({
       '(요청당 도구 호출 한도에 도달하여, 지금까지 읽은 정보를 기반으로 한 답변입니다. 불완전할 수 있습니다.)',
     appAiStopped: '(중지됨)',
     appAiNoSummary: 'AI가 완료되었지만 요약은 생성되지 않았습니다.',
+    appAiNoAction:
+      'AI가 아무 작업도 수행하지 않았고 응답도 없습니다. 다시 시도하거나 다르게 표현해 보세요.',
     appNewConversation: '새 대화를 시작했습니다.',
     // Streaming load / edit gating
     appPivotCellNoEdit: '이 셀은 피벗 테이블에 속해 있어 아직 편집할 수 없습니다.',
@@ -4100,6 +4105,7 @@ export const appStrings = defineStrings({
       "(Limite de tours d'appels d'outils atteinte pour cette requête ; la réponse ci-dessus se base sur ce qui a été lu et peut être incomplète.)",
     appAiStopped: '(arrêté)',
     appAiNoSummary: "L'IA a terminé sans générer de résumé.",
+    appAiNoAction: "L'IA n'a effectué aucune action ni donné de réponse. Réessayez ou reformulez.",
     appNewConversation: 'Nouvelle conversation démarrée.',
     appPivotCellNoEdit:
       "Cette cellule fait partie d'un tableau croisé dynamique — sa modification n'est pas encore prise en charge.",
@@ -5105,6 +5111,8 @@ export const appStrings = defineStrings({
       '(Limit der Toolaufruf-Runden für diese Anfrage erreicht; die Antwort oben basiert auf dem bisher Gelesenen und ist möglicherweise unvollständig.)',
     appAiStopped: '(gestoppt)',
     appAiNoSummary: 'KI ist fertig, hat aber keine Zusammenfassung erstellt.',
+    appAiNoAction:
+      'Die KI hat nichts ausgeführt und keine Antwort gegeben. Versuchen Sie es erneut oder formulieren Sie um.',
     appNewConversation: 'Neue Unterhaltung gestartet.',
     appPivotCellNoEdit:
       'Diese Zelle gehört zu einer PivotTable — ihre Bearbeitung wird noch nicht unterstützt.',
@@ -6101,6 +6109,8 @@ export const appStrings = defineStrings({
       '(Se alcanzó el límite de rondas de llamadas a herramientas para esta solicitud; la respuesta anterior se basa en lo leído hasta ahora y puede estar incompleta.)',
     appAiStopped: '(detenido)',
     appAiNoSummary: 'La IA terminó sin generar un resumen.',
+    appAiNoAction:
+      'La IA no realizó ninguna acción ni dio respuesta. Inténtalo de nuevo o reformula.',
     appNewConversation: 'Se inició una conversación nueva.',
     appPivotCellNoEdit:
       'Esta celda forma parte de una tabla dinámica — su edición aún no se admite.',
@@ -7074,6 +7084,7 @@ export const appStrings = defineStrings({
       '(ถึงขีดจำกัดรอบการเรียกเครื่องมือของคำขอนี้แล้ว คำตอบข้างต้นอิงจากข้อมูลที่อ่านมา อาจไม่สมบูรณ์)',
     appAiStopped: '(หยุดแล้ว)',
     appAiNoSummary: 'AI ทำงานเสร็จโดยไม่มีสรุป',
+    appAiNoAction: 'AI ไม่ได้ดำเนินการใด ๆ และไม่มีคำตอบ โปรดลองอีกครั้งหรือเปลี่ยนคำพูด',
     appNewConversation: 'เริ่มการสนทนาใหม่แล้ว',
     appPivotCellNoEdit: 'เซลล์นี้เป็นส่วนหนึ่งของ PivotTable — ยังไม่รองรับการแก้ไข',
     appAreaStreaming: 'พื้นที่นั้นกำลังโหลดแบบสตรีมอยู่ — ลองใหม่อีกสักครู่',
@@ -8008,6 +8019,8 @@ export const appStrings = defineStrings({
       '(Batas putaran panggilan alat untuk permintaan ini tercapai; jawaban di atas berdasarkan yang sudah dibaca dan mungkin tidak lengkap.)',
     appAiStopped: '(dihentikan)',
     appAiNoSummary: 'AI selesai tanpa menghasilkan ringkasan.',
+    appAiNoAction:
+      'AI tidak melakukan tindakan apa pun dan tidak memberi balasan. Coba lagi atau ubah kalimatnya.',
     appNewConversation: 'Percakapan baru dimulai.',
     appPivotCellNoEdit: 'Sel ini bagian dari PivotTable — pengeditannya belum didukung.',
     appAreaStreaming: 'Area itu masih dimuat secara streaming — coba lagi sebentar lagi.',
@@ -8967,6 +8980,8 @@ export const appStrings = defineStrings({
       '(Достигнут лимит раундов вызова инструментов для этого запроса; ответ выше основан на прочитанном и может быть неполным.)',
     appAiStopped: '(остановлено)',
     appAiNoSummary: 'ИИ завершил работу без сводки.',
+    appAiNoAction:
+      'ИИ не выполнил никаких действий и не дал ответа. Попробуйте ещё раз или переформулируйте.',
     appNewConversation: 'Начат новый диалог.',
     appPivotCellNoEdit:
       'Эта ячейка входит в сводную таблицу — её редактирование пока не поддерживается.',
@@ -9931,6 +9946,7 @@ export const appStrings = defineStrings({
       '(تم بلوغ الحد الأقصى لجولات استدعاء الأدوات في هذا الطلب؛ الإجابة أعلاه تستند إلى ما قُرئ وقد تكون غير مكتملة.)',
     appAiStopped: '(تم الإيقاف)',
     appAiNoSummary: 'انتهى الذكاء الاصطناعي دون ملخص.',
+    appAiNoAction: 'لم ينفذ الذكاء الاصطناعي أي إجراء ولم يقدم رداً. حاول مجدداً أو أعد الصياغة.',
     appNewConversation: 'بدأت محادثة جديدة.',
     appPivotCellNoEdit: 'هذه الخلية جزء من جدول محوري — تحريرها غير مدعوم بعد.',
     appAreaStreaming: 'ما زالت هذه الناحية قيد التحميل بالبث — أعد المحاولة لاحقًا.',
@@ -10879,6 +10895,7 @@ export const appStrings = defineStrings({
       '(Limite de chamadas de ferramentas atingido para esta solicitação; a resposta acima se baseia no que foi lido até agora e pode estar incompleta.)',
     appAiStopped: '(interrompido)',
     appAiNoSummary: 'A IA terminou sem gerar um resumo.',
+    appAiNoAction: 'A IA não realizou nenhuma ação nem deu resposta. Tente novamente ou reformule.',
     appNewConversation: 'Nova conversa iniciada.',
     appPivotCellNoEdit:
       'Esta célula faz parte de uma Tabela Dinâmica — a edição ainda não é suportada.',
@@ -11863,6 +11880,7 @@ export const appStrings = defineStrings({
       '(Raggiunto il limite di chiamate agli strumenti per questa richiesta; la risposta sopra si basa su quanto letto finora e potrebbe essere incompleta.)',
     appAiStopped: '(interrotto)',
     appAiNoSummary: "L'IA ha terminato senza generare un riepilogo.",
+    appAiNoAction: "L'IA non ha eseguito alcuna azione né dato risposta. Riprova o riformula.",
     appNewConversation: 'Nuova conversazione avviata.',
     appPivotCellNoEdit:
       'Questa cella fa parte di una tabella pivot — la modifica non è ancora supportata.',
@@ -12848,6 +12866,8 @@ export const appStrings = defineStrings({
       '(Osiągnięto limit rund wywołań narzędzi dla tego żądania; powyższa odpowiedź opiera się na dotychczas odczytanych informacjach i może być niekompletna.)',
     appAiStopped: '(zatrzymano)',
     appAiNoSummary: 'AI zakończyła bez podsumowania.',
+    appAiNoAction:
+      'AI nie wykonała żadnej akcji i nie udzieliła odpowiedzi. Spróbuj ponownie lub przeformułuj.',
     appNewConversation: 'Rozpoczęto nową rozmowę.',
     appPivotCellNoEdit:
       'Ta komórka jest częścią tabeli przestawnej — edycja nie jest jeszcze obsługiwana.',
@@ -13828,6 +13848,8 @@ export const appStrings = defineStrings({
       '(Limiet voor toolaanroepen voor deze aanvraag bereikt; het bovenstaande antwoord is gebaseerd op wat tot nu toe is gelezen en kan onvolledig zijn.)',
     appAiStopped: '(gestopt)',
     appAiNoSummary: 'AI is klaar zonder samenvatting.',
+    appAiNoAction:
+      'De AI heeft niets uitgevoerd en geen antwoord gegeven. Probeer opnieuw of herformuleer.',
     appNewConversation: 'Nieuw gesprek gestart.',
     appPivotCellNoEdit:
       'Deze cel maakt deel uit van een draaitabel — bewerken wordt nog niet ondersteund.',
@@ -14808,6 +14830,8 @@ export const appStrings = defineStrings({
       '(Had pusingan panggilan alat untuk permintaan ini telah dicapai; jawapan di atas berdasarkan maklumat yang dibaca setakat ini dan mungkin tidak lengkap.)',
     appAiStopped: '(dihentikan)',
     appAiNoSummary: 'AI selesai tanpa ringkasan.',
+    appAiNoAction:
+      'AI tidak melakukan sebarang tindakan dan tiada balasan. Cuba lagi atau ubah ayat.',
     appNewConversation: 'Perbualan baharu dimulakan.',
     appPivotCellNoEdit: 'Sel ini sebahagian daripada Jadual Pangsi — pengeditannya belum disokong.',
     appAreaStreaming: 'Kawasan itu masih dimuatkan secara penstriman — cuba edit lagi sebentar.',
@@ -15749,6 +15773,7 @@ export const appStrings = defineStrings({
       '(הושגה מגבלת סבבי קריאות הכלים לבקשה זו; התשובה שלמעלה מבוססת על מה שנקרא עד כה ועשויה להיות חלקית.)',
     appAiStopped: '(הופסק)',
     appAiNoSummary: 'ה-AI סיים ללא סיכום.',
+    appAiNoAction: 'ה-AI לא ביצע שום פעולה ולא השיב. נסו שוב או נסחו מחדש.',
     appNewConversation: 'שיחה חדשה החלה.',
     appPivotCellNoEdit: 'תא זה הוא חלק מטבלת ציר — עריכתו אינה נתמכת עדיין.',
     appAreaStreaming: 'אזור זה עדיין נטען בהזרמה — נסה לערוך אותו שוב בעוד רגע.',
@@ -16680,6 +16705,8 @@ export const appStrings = defineStrings({
       '(इस अनुरोध के लिए टूल-कॉल की सीमा पूरी हो गई; ऊपर का उत्तर अब तक पढ़ी गई जानकारी पर आधारित है और अधूरा हो सकता है।)',
     appAiStopped: '(रोका गया)',
     appAiNoSummary: 'AI बिना सारांश के समाप्त हुआ।',
+    appAiNoAction:
+      'AI ने कोई कार्रवाई नहीं की और कोई जवाब नहीं दिया। फिर से आज़माएँ या दूसरे शब्दों में कहें।',
     appNewConversation: 'नई बातचीत शुरू हुई।',
     appPivotCellNoEdit: 'यह सेल पिवट टेबल का हिस्सा है — इसका संपादन अभी समर्थित नहीं है।',
     appAreaStreaming:
@@ -17609,6 +17636,7 @@ export const appStrings = defineStrings({
     appAiTurnLimit: '（已達單次要求的工具呼叫輪數上限，以上是根據已讀取資訊的回答，可能不完整。）',
     appAiStopped: '（已停止）',
     appAiNoSummary: 'AI 已完成，沒有產生摘要。',
+    appAiNoAction: 'AI 沒有執行任何操作，也沒有給出回覆。請重試或換個說法。',
     appNewConversation: '已開始新對話。',
     appPivotCellNoEdit: '該儲存格屬於樞紐分析表——暫不支援編輯。',
     appAreaStreaming: '該範圍還在串流載入——請稍後再試。',

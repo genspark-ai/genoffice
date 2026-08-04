@@ -9,7 +9,7 @@ import type { ChartStyleInfo } from '@genoffice/pptx-render'
 import { ICON_COLORS } from '../insert-presets'
 import { THEME_PRESETS, type SlideThemePreset } from '../themes'
 import { restoreEditSelection } from '../TextEditOverlay'
-import { armColorInput } from '../color-input'
+import { armColorInput, toPickerHex } from '../color-input'
 import { TABLE_SHADING_COLORS } from './table-shading-colors'
 import { useI18n, type StringKey } from '../i18n/locale'
 import {
@@ -816,6 +816,7 @@ export function Ribbon({
   onInsertZoom,
   slideCount,
   currentSlide,
+  currentBgColor,
   onOpenHeaderFooter,
   onOpenEquation,
   onInsertMedia,
@@ -1028,6 +1029,11 @@ export function Ribbon({
   const bgInputRef = useRef<HTMLInputElement>(null)
   const bgTimer = useRef<number | null>(null)
   const [bgColor, setBgColor] = useState('#ffffff')
+  // Follow the current slide so the swatch and "apply to all" never fall back to a stale default white
+  useEffect(() => {
+    const hex = toPickerHex(currentBgColor)
+    if (hex) setBgColor(hex)
+  }, [currentBgColor])
   const onBgChange = (value: string) => {
     setBgColor(value)
     if (bgTimer.current) window.clearTimeout(bgTimer.current)
@@ -1562,7 +1568,12 @@ export function Ribbon({
               <button
                 className="rb-big"
                 disabled={!hasDoc}
-                onClick={() => bgInputRef.current?.click()}
+                onClick={() => {
+                  const el = bgInputRef.current
+                  if (!el) return
+                  armColorInput(el)
+                  el.click()
+                }}
                 title={t('ribbonBgFillTip')}
               >
                 <span className="rb-big-icon rb-big-icon-colored">

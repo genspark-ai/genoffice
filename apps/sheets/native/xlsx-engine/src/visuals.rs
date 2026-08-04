@@ -1597,8 +1597,24 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
     }
 }
 
-/// Implicit number formats, ECMA-376 §18.8.30 (ids 0-49; 23-36 and 41-44 are
-/// locale-defined and left unresolved).
+/// Implicit number formats, ECMA-376 §18.8.30. Ids 23-26 are undocumented
+/// and stay unresolved; everything else is mapped so that a builtin id never
+/// falls back to General (which would surface raw date serials, #numFmt58).
+///
+/// Locale-reserved ranges carry no formatCode in styles.xml — the reader is
+/// expected to know them:
+///  - 27-36 / 50-58: East-Asian date/time formats. The same id means a
+///    different pattern per locale (zh/ja/ko/zh-TW) and the file does not
+///    record which; we resolve with the zh-CN table since every locale's
+///    variant is a date/time of the same shape, and zh Excel/WPS files are
+///    the ones we actually receive. The zh AM/PM token (U+4E0A/U+4E0B
+///    U+5348) is not understood by the renderer's numfmt, so 34/35/55/56
+///    render as 24-hour. Escapes: U+5E74 year, U+6708 month, U+65E5 day,
+///    U+65F6 hour, U+5206 minute, U+79D2 second.
+///  - 41-44: accounting formats; 42/44 use "$" as the symbol is likewise
+///    locale-defined and unrecorded.
+///  - 59-81: th-TH; numfmt has no Thai digit/era tokens, so these map to
+///    Arabic-digit equivalents (Buddhist-era years render as Gregorian).
 fn builtin_number_format(id: u32) -> Option<&'static str> {
     match id {
         0 => Some("General"),
@@ -1623,15 +1639,44 @@ fn builtin_number_format(id: u32) -> Option<&'static str> {
         20 => Some("h:mm"),
         21 => Some("h:mm:ss"),
         22 => Some("m/d/yy h:mm"),
+        27 | 36 | 50 | 52 | 57 => Some("yyyy\"\u{5e74}\"m\"\u{6708}\""),
+        28 | 29 | 51 | 53 | 54 | 58 => Some("m\"\u{6708}\"d\"\u{65e5}\""),
+        30 => Some("m-d-yy"),
+        31 => Some("yyyy\"\u{5e74}\"m\"\u{6708}\"d\"\u{65e5}\""),
+        32 | 34 | 55 => Some("h\"\u{65f6}\"mm\"\u{5206}\""),
+        33 | 35 | 56 => Some("h\"\u{65f6}\"mm\"\u{5206}\"ss\"\u{79d2}\""),
         37 => Some("#,##0 ;(#,##0)"),
         38 => Some("#,##0 ;[Red](#,##0)"),
         39 => Some("#,##0.00;(#,##0.00)"),
         40 => Some("#,##0.00;[Red](#,##0.00)"),
+        41 => Some(r#"_(* #,##0_);_(* \(#,##0\);_(* "-"_);_(@_)"#),
+        42 => Some(r#"_("$"* #,##0_);_("$"* \(#,##0\);_("$"* "-"_);_(@_)"#),
+        43 => Some(r#"_(* #,##0.00_);_(* \(#,##0.00\);_(* "-"??_);_(@_)"#),
+        44 => Some(r#"_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)"#),
         45 => Some("mm:ss"),
         46 => Some("[h]:mm:ss"),
         47 => Some("mmss.0"),
         48 => Some("##0.0E+0"),
         49 => Some("@"),
+        59 => Some("0"),
+        60 => Some("0.00"),
+        61 => Some("#,##0"),
+        62 => Some("#,##0.00"),
+        67 => Some("0%"),
+        68 => Some("0.00%"),
+        69 => Some("# ?/?"),
+        70 => Some("# ??/??"),
+        71 => Some("d/m/yyyy"),
+        72 => Some("d-mmm-yy"),
+        73 => Some("d-mmm"),
+        74 => Some("mmm-yy"),
+        75 => Some("h:mm"),
+        76 => Some("h:mm:ss"),
+        77 => Some("d/m/yyyy h:mm"),
+        78 => Some("mm:ss"),
+        79 => Some("[h]:mm:ss"),
+        80 => Some("mm:ss.0"),
+        81 => Some("d/m/yy"),
         _ => None,
     }
 }

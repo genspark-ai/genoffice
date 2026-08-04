@@ -218,6 +218,25 @@ describe('group child format operations (font/fill/stroke)', () => {
     expect(slide.structureDirty).toBe(true)
   })
 
+  it('editGroupChildFill: gradient fill patched into the child slice', async () => {
+    const { editGroupChildFill } = await import('../src/index')
+    const { slide, grp } = mk()
+    const stops = [
+      { pos: 0, color: '#FF0000' },
+      { pos: 1, color: '#0000FF' },
+    ]
+    expect(editGroupChildFill(slide, 'grp1', 'c4', { stops, angle: 5400000 })).toBe(true)
+    expect((grp.children[1] as any).fill).toEqual({ type: 'gradient', stops, angle: 5400000 })
+    const slices = grp.anchor.originalXml.split('<p:sp>')
+    expect(slices[2]).toContain('<a:gradFill')
+    expect(slices[2]).toContain('<a:lin ang="5400000"')
+    expect(slices[1]).not.toContain('gradFill')
+
+    expect(editGroupChildFill(slide, 'grp1', 'c2', { stops, radial: true })).toBe(true)
+    expect((grp.children[0] as any).fill).toEqual({ type: 'gradient', stops, path: 'circle' })
+    expect(grp.anchor.originalXml.split('<p:sp>')[1]).toContain('<a:path path="circle"')
+  })
+
   it('editGroupChildStroke: adding and removing a stroke', async () => {
     const { editGroupChildStroke } = await import('../src/index')
     const { slide, grp } = mk()

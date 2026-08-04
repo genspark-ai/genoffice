@@ -319,6 +319,77 @@ describe('AgentLoop', () => {
     expect(loop.messages[0].role).toBe('user')
   })
 
+  it('a long run over maxHistory is never trimmed mid-run (history keeps its user message)', async () => {
+    // 21 tool turns → 1 user + 21×(assistant+tool) = 43 messages > maxHistory 40
+    const script: Array<(cb: AgentStreamCallbacks) => void> = Array.from(
+      { length: 21 },
+      (_, i) => (cb: AgentStreamCallbacks) => {
+        cb.onToolCall({ id: `t${i}`, name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+    )
+    script.push((cb) => {
+      cb.onDelta('all done')
+      cb.onDone()
+    })
+    const transport = scriptedTransport(script)
+    const onDone = vi.fn()
+    const onError = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      maxTurns: 30,
+      compaction: false,
+      events: { onDone, onError },
+    })
+    loop.run('big job')
+    for (let i = 0; i < 50; i++) await flush()
+    expect(transport.requests).toHaveLength(22)
+    // every request carried the full history including the run's user message
+    expect(transport.requests.every((r) => r.messageCount > 0)).toBe(true)
+    expect(loop.messages).toHaveLength(44)
+    expect(loop.messages[0]).toMatchObject({ role: 'user' })
+    expect(onError).not.toHaveBeenCalled()
+    expect(onDone).toHaveBeenCalledWith({ text: 'all done', cancelled: false, turnLimit: false })
+  })
+
+  it('boundary trim is abandoned when the window holds no user message (never empties history)', async () => {
+    const script: Array<(cb: AgentStreamCallbacks) => void> = Array.from(
+      { length: 4 },
+      (_, i) => (cb: AgentStreamCallbacks) => {
+        cb.onToolCall({ id: `t${i}`, name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+    )
+    script.push((cb) => {
+      cb.onDelta('done')
+      cb.onDone()
+    })
+    script.push((cb) => {
+      cb.onDelta('second answer')
+      cb.onDone()
+    })
+    const transport = scriptedTransport(script)
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      maxTurns: 10,
+      maxHistory: 5,
+      compaction: false,
+    })
+    loop.run('long first job') // ends with 10 messages, the only user message at index 0
+    for (let i = 0; i < 20; i++) await flush()
+    expect(loop.messages).toHaveLength(10)
+    loop.run('follow-up')
+    await flush()
+    // last-5 window has no user boundary → trim abandoned, nothing lost
+    expect(loop.messages[0]).toMatchObject({
+      role: 'user',
+      text: expect.stringContaining('long first job'),
+    })
+    expect(transport.requests.at(-1)!.messageCount).toBe(11)
+  })
+
   it('restore seeds history and the next run sends it to the model', async () => {
     const transport = scriptedTransport([
       (cb) => {
@@ -421,6 +492,22 @@ describe('AgentLoop', () => {
       { role: 'user', text: 'answered question' },
       { role: 'assistant', text: 'the answer' },
     ])
+  })
+
+  it('restore keeps edits-only turns: empty assistant text gets a placeholder instead of dropping the pair', () => {
+    const transport = scriptedTransport([])
+    const loop = new AgentLoop({ transport, skill: makeSkill() })
+    loop.restore([
+      { role: 'user', text: 'translate the intro' },
+      { role: 'assistant', text: '' }, // edits-only run persisted without a summary
+      { role: 'user', text: 'now shorten it' },
+      { role: 'assistant', text: 'shortened' },
+    ])
+    expect(loop.messages).toHaveLength(4)
+    expect(loop.messages[0]).toEqual({ role: 'user', text: 'translate the intro' })
+    const placeholder = loop.messages[1] as { role: string; text: string }
+    expect(placeholder.role).toBe('assistant')
+    expect(placeholder.text).not.toBe('') // providers reject empty assistant content blocks
   })
 
   it('restore trims oversized history at a user boundary', () => {
@@ -649,6 +736,92 @@ describe('AgentLoop compaction', () => {
     expect(toolMsg.results[0].isError).toBe(true)
     expect(toolMsg.results[0].output).toContain('bad json')
     expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
+  })
+
+  it('a truncated tool call is fed back as "split the call", not as a JSON error', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({
+          id: 't1',
+          name: 'do_thing',
+          input: {},
+          inputError: 'Unexpected end of JSON input',
+          truncated: true,
+        })
+        cb.onStopReason?.('max_tokens')
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const executed: AgentToolCall[] = []
+    const skill = makeSkill((call) => {
+      executed.push(call)
+      return { output: 'ok', summary: 'ok' }
+    })
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill, events: { onDone } })
+    loop.run('x')
+    await flush()
+    await flush()
+    expect(executed).toHaveLength(0)
+    const toolMsg = loop.messages[2] as Extract<AgentMessage, { role: 'tool' }>
+    expect(toolMsg.results[0].isError).toBe(true)
+    expect(toolMsg.results[0].output).toContain('smaller tool calls')
+    expect(toolMsg.results[0].output).not.toContain('JSON failed to parse')
+    // the follow-up turn completed normally, and a non-final max_tokens does not mark the result truncated
+    expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
+  })
+
+  it('a max_tokens stop on the final text turn surfaces truncated: true in onDone', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onDelta('partial reply cut off mid-')
+        cb.onStopReason?.('max_tokens')
+        cb.onDone()
+      },
+    ])
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onDone } })
+    loop.run('x')
+    await flush()
+    expect(onDone).toHaveBeenCalledWith({
+      text: 'partial reply cut off mid-',
+      cancelled: false,
+      turnLimit: false,
+      truncated: true,
+    })
+  })
+
+  it('the parse-failure counter is consecutive: a successful call resets it', async () => {
+    const badTurn = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'bad', name: 'do_thing', input: {}, inputError: 'bad json' })
+      cb.onDone()
+    }
+    const goodTurn = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'good', name: 'do_thing', input: { a: 1 } })
+      cb.onDone()
+    }
+    const finalTurn = (cb: AgentStreamCallbacks) => {
+      cb.onDelta('recovered')
+      cb.onDone()
+    }
+    // 2 fails, success, 2 fails: 4 total but never 3 in a row → the run must complete
+    const transport = scriptedTransport([badTurn, badTurn, goodTurn, badTurn, badTurn, finalTurn])
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      maxTurns: 10,
+      events: { onError, onDone },
+    })
+    loop.run('x')
+    for (let i = 0; i < 12; i++) await flush()
+    expect(onError).not.toHaveBeenCalled()
+    expect(onDone).toHaveBeenCalledWith({ text: 'recovered', cancelled: false, turnLimit: false })
   })
 
   it('terminates the run after consecutive input-parse failures hit the limit', async () => {

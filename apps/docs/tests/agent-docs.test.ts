@@ -227,6 +227,49 @@ describe('content read/write tools', () => {
     expect(exec.output).toContain('<p>GenSpark is an AI office suite.</p>')
   })
 
+  it('read_blocks pages oversized content: offset continuation reassembles the full HTML', async () => {
+    // one paragraph well past the 24k read cap
+    const long = 'A'.repeat(30_000)
+    const editor = createEditor([heading('Long chapter', 1), para(long)])
+    const first = await executeTool(
+      editor,
+      { id: 't1', name: 'read_blocks', input: { startBlockIndex: 0, endBlockIndex: 1 } },
+      NUM_IDS,
+    )
+    expect(first.isError).toBeUndefined()
+    const match = first.output.match(/offset=(\d+)/)
+    expect(first.output).toContain('truncated')
+    expect(match).not.toBeNull()
+    const offset = Number(match![1])
+    const second = await executeTool(
+      editor,
+      {
+        id: 't2',
+        name: 'read_blocks',
+        input: { startBlockIndex: 0, endBlockIndex: 1, offset },
+      },
+      NUM_IDS,
+    )
+    expect(second.isError).toBeUndefined()
+    expect(second.output).toContain('end of range')
+    const stitched =
+      first.output.slice(0, first.output.lastIndexOf('\n…(truncated')) +
+      second.output.slice(0, second.output.lastIndexOf('\n(end of range'))
+    expect(stitched).toContain('<h1>Long chapter</h1>')
+    expect(stitched).toContain(long)
+    // an offset beyond the content is an explicit error, not an empty read
+    const beyond = await executeTool(
+      editor,
+      {
+        id: 't3',
+        name: 'read_blocks',
+        input: { startBlockIndex: 0, endBlockIndex: 1, offset: 10_000_000 },
+      },
+      NUM_IDS,
+    )
+    expect(beyond.isError).toBe(true)
+  })
+
   it('replace_blocks rewrites the specified blocks', async () => {
     const editor = createEditor(fixture())
     const exec = await executeTool(
@@ -260,5 +303,243 @@ describe('content read/write tools', () => {
     expect(editor.state.doc.childCount).toBe(6)
     expect(editor.state.doc.child(4).textContent).toBe('New Section')
     expect(editor.state.doc.child(5).textContent).toBe('New content.')
+  })
+
+  it('an out-of-range end index is an error, not silently clamped', async () => {
+    const editor = createEditor(fixture())
+    const before = JSON.stringify(editor.getJSON())
+    for (const name of ['read_blocks', 'replace_blocks']) {
+      const exec = await executeTool(
+        editor,
+        { id: 't', name, input: { startBlockIndex: 2, endBlockIndex: 9, html: '<p>x</p>' } },
+        NUM_IDS,
+      )
+      expect(exec.isError).toBe(true)
+      expect(exec.output).toContain('4 blocks')
+    }
+    expect(JSON.stringify(editor.getJSON())).toBe(before)
+  })
+})
+
+describe('external-edit guard (document freshness baseline)', () => {
+  const read = (editor: Editor) =>
+    executeTool(editor, { id: 'r', name: 'get_document_context', input: {} }, NUM_IDS)
+  const replace = (editor: Editor) =>
+    executeTool(
+      editor,
+      {
+        id: 'w',
+        name: 'replace_blocks',
+        input: { startBlockIndex: 1, endBlockIndex: 1, html: '<p>rewritten</p>' },
+      },
+      NUM_IDS,
+    )
+
+  it('index-addressed writes fail after a user edit, and succeed again after a re-read', async () => {
+    const editor = createEditor(fixture())
+    await read(editor)
+    // simulate a manual user edit between tool calls
+    editor.view.dispatch(editor.state.tr.insertText('typed by user ', 2))
+    const stale = await executeTool(
+      editor,
+      {
+        id: 'w',
+        name: 'apply_commands',
+        input: { commands: [{ deleteBlocks: { target: { blockIndexes: [3] } } }] },
+      },
+      NUM_IDS,
+    )
+    expect(stale.isError).toBe(true)
+    expect(stale.output).toContain('edited by the user')
+    expect(editor.state.doc.childCount).toBe(4) // nothing deleted
+    await executeTool(
+      editor,
+      { id: 'r2', name: 'read_blocks', input: { startBlockIndex: 0, endBlockIndex: 3 } },
+      NUM_IDS,
+    )
+    const retry = await replace(editor)
+    expect(retry.isError).toBeUndefined()
+    expect(editor.state.doc.child(1).textContent).toBe('rewritten')
+  })
+
+  it("the AI's own consecutive writes do not trip the guard", async () => {
+    const editor = createEditor(fixture())
+    await read(editor)
+    expect((await replace(editor)).isError).toBeUndefined()
+    const second = await executeTool(
+      editor,
+      { id: 'w2', name: 'insert_content', input: { html: '<p>appendix</p>', afterBlockIndex: 3 } },
+      NUM_IDS,
+    )
+    expect(second.isError).toBeUndefined()
+    expect(editor.state.doc.childCount).toBe(5)
+  })
+})
+
+describe('blank-document detection', () => {
+  it('an image-only document is not blank: insert_content appends instead of wiping it', async () => {
+    const editor = createEditor([
+      {
+        type: 'docProtected',
+        attrs: { docxIndex: null, blockType: 'image', label: 'Image' },
+      },
+    ])
+    const exec = await executeTool(
+      editor,
+      { id: 't', name: 'insert_content', input: { html: '<p>caption</p>', afterBlockIndex: 0 } },
+      NUM_IDS,
+    )
+    expect(exec.isError).toBeUndefined()
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.child(0).attrs.blockType).toBe('image')
+    expect(buildDocContext(editor)).not.toContain('blank')
+  })
+
+  it('a single empty paragraph is still blank: insert_content replaces the template paragraph', async () => {
+    const editor = createEditor([{ type: 'docParagraph', attrs: { docxIndex: null } }])
+    expect(buildDocContext(editor)).toContain('blank')
+    const exec = await executeTool(
+      editor,
+      { id: 't', name: 'insert_content', input: { html: '<p>hello</p>' } },
+      NUM_IDS,
+    )
+    expect(exec.isError).toBeUndefined()
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.child(0).textContent).toBe('hello')
+  })
+})
+
+describe('web_search backend failures', () => {
+  it("method 'error' surfaces as a tool error instead of '(no results)'", async () => {
+    const editor = createEditor(fixture())
+    const w = window as unknown as { desktop?: unknown }
+    const saved = w.desktop
+    w.desktop = {
+      webSearch: async () => ({ results: [], method: 'error', error: 'Serper 502' }),
+    }
+    try {
+      const exec = await executeTool(
+        editor,
+        { id: 't', name: 'web_search', input: { query: 'genspark' } },
+        NUM_IDS,
+      )
+      expect(exec.isError).toBe(true)
+      expect(exec.output).toContain('Serper 502')
+      expect(exec.output).not.toContain('(no results)')
+    } finally {
+      w.desktop = saved
+    }
+  })
+})
+
+describe('insert_image freshness baseline', () => {
+  /** jsdom never decodes images; fake one that reports a fixed natural size */
+  class FakeImage {
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    naturalWidth = 100
+    naturalHeight = 80
+    set src(_v: string) {
+      queueMicrotask(() => this.onload?.())
+    }
+  }
+
+  const withImageStubs = async (fn: (release: () => void) => Promise<void>) => {
+    const w = window as unknown as { desktop?: unknown }
+    const savedDesktop = w.desktop
+    const savedImage = globalThis.Image
+    let release!: () => void
+    w.desktop = {
+      fetchImage: () =>
+        new Promise((resolve) => {
+          release = () => resolve({ mime: 'image/png', base64: 'AAAA' })
+        }),
+    }
+    globalThis.Image = FakeImage as unknown as typeof Image
+    try {
+      await fn(() => release())
+    } finally {
+      w.desktop = savedDesktop
+      globalThis.Image = savedImage
+    }
+  }
+
+  const replaceFirstPara = (editor: Editor) =>
+    executeTool(
+      editor,
+      {
+        id: 'w',
+        name: 'replace_blocks',
+        input: { startBlockIndex: 2, endBlockIndex: 2, html: '<p>rewritten</p>' },
+      },
+      NUM_IDS,
+    )
+
+  // the regression: settling insert_image with markDocSeen after the download
+  // baptized user edits made mid-flight, letting index writes hit shifted blocks
+  it('user edits during the download keep index-addressed writes stale', async () => {
+    const editor = createEditor(fixture())
+    await executeTool(editor, { id: 'r', name: 'get_document_context', input: {} }, NUM_IDS)
+    await withImageStubs(async (release) => {
+      const pending = executeTool(
+        editor,
+        { id: 't', name: 'insert_image', input: { url: 'https://example.com/a.png' } },
+        NUM_IDS,
+      )
+      // the user types while the download is in flight
+      editor.view.dispatch(editor.state.tr.insertText('typed by user ', 2))
+      release()
+      const exec = await pending
+      expect(exec.isError).toBeUndefined()
+      const stale = await replaceFirstPara(editor)
+      expect(stale.isError).toBe(true)
+      expect(stale.output).toContain('edited by the user')
+    })
+  })
+
+  it('an undisturbed insert_image keeps the baseline current (no forced re-read)', async () => {
+    const editor = createEditor(fixture())
+    await executeTool(editor, { id: 'r', name: 'get_document_context', input: {} }, NUM_IDS)
+    await withImageStubs(async (release) => {
+      const pending = executeTool(
+        editor,
+        { id: 't', name: 'insert_image', input: { url: 'https://example.com/a.png' } },
+        NUM_IDS,
+      )
+      release()
+      const exec = await pending
+      expect(exec.isError).toBeUndefined()
+      const write = await replaceFirstPara(editor)
+      expect(write.isError).toBeUndefined()
+    })
+  })
+})
+
+describe('abort during async tools', () => {
+  it('insert_image aborted mid-download writes nothing', async () => {
+    const editor = createEditor(fixture())
+    const before = JSON.stringify(editor.getJSON())
+    const w = window as unknown as { desktop?: { fetchImage(url: string): Promise<unknown> } }
+    const saved = w.desktop
+    w.desktop = {
+      fetchImage: async () => ({ mime: 'image/png', base64: 'AAAA' }),
+    }
+    try {
+      const ctrl = new AbortController()
+      ctrl.abort()
+      const skill = createDocsSkill(
+        () => editor,
+        () => NUM_IDS,
+      )
+      const exec = await skill.executeTool(
+        { id: 't', name: 'insert_image', input: { url: 'https://example.com/a.png' } },
+        ctrl.signal,
+      )
+      expect(exec.isError).toBe(true)
+      expect(exec.output).toContain('stopped by the user')
+      expect(JSON.stringify(editor.getJSON())).toBe(before)
+    } finally {
+      w.desktop = saved
+    }
   })
 })

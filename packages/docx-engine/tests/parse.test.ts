@@ -109,4 +109,41 @@ describe('parseDocx', () => {
     ])
     expect(visible[3].runs).toEqual([{ text: '有批注', commentIds: ['0'] }])
   })
+
+  it('detects headings by effective outline level, not only Heading1-style paragraphs', async () => {
+    const { buildDocx } = await import('./helpers/build-docx')
+    const p = (pPr: string, text: string) =>
+      `<w:p><w:pPr>${pPr}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const bytes = await buildDocx({
+      extraStylesXml:
+        // custom style with no own outlineLvl: inherits level 2 through basedOn
+        '<w:style w:type="paragraph" w:styleId="MySub"><w:name w:val="My Sub"/><w:basedOn w:val="Heading2"/></w:style>' +
+        // Word's TOCHeading pattern: basedOn Heading1 but outlineLvl 9 = body text
+        '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/>' +
+        '<w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>',
+      bodyXml: [
+        p('<w:pStyle w:val="Heading1"/>', 'h1 via built-in style'),
+        p('<w:pStyle w:val="Heading2"/>', 'h2 via built-in style'),
+        p('<w:pStyle w:val="Heading3"/>', 'h3 via undefined built-in styleId'),
+        p('<w:outlineLvl w:val="2"/>', 'h3 via direct outlineLvl'),
+        p('<w:pStyle w:val="MySub"/>', 'h2 inherited through basedOn'),
+        p('<w:pStyle w:val="TOCHeading"/>', 'body text: style outlineLvl 9'),
+        p(
+          '<w:pStyle w:val="Heading1"/><w:outlineLvl w:val="9"/>',
+          'body text: direct outlineLvl 9',
+        ),
+      ].join(''),
+    })
+    const doc = await parseDocx(bytes)
+    const visible = doc.blocks.filter((b) => !b.hidden)
+    expect(visible.map((b) => [b.type, b.level])).toEqual([
+      ['heading', 1],
+      ['heading', 2],
+      ['heading', 3],
+      ['heading', 3],
+      ['heading', 2],
+      ['paragraph', undefined],
+      ['paragraph', undefined],
+    ])
+  })
 })

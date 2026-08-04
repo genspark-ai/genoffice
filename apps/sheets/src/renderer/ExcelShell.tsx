@@ -179,6 +179,9 @@ interface ExcelShellProps {
   readonly onRefreshPivot: () => string | null
   readonly onIsSelectionInPivot: () => boolean
   readonly onGetActiveCell: () => string
+  /// Value of the selection's top-left cell, read when Format Cells opens
+  /// (number-format preview).
+  readonly onGetAnchorValue: () => number | string | null
   /// A1 label of the active cell, echoed live by the Name Box.
   readonly activeCellA1: string
   /// Name Box / Go To jump; returns an error message, or null on success.
@@ -238,6 +241,7 @@ export function ExcelShell({
   onRefreshPivot,
   onIsSelectionInPivot,
   onGetActiveCell,
+  onGetAnchorValue,
   activeCellA1,
   onGoToReference,
   onListDefinedNames,
@@ -480,6 +484,7 @@ export function ExcelShell({
       {showFormatCells && (
         <FormatCellsDialog
           selectionFormat={selectionFormat}
+          anchorValue={onGetAnchorValue()}
           onCommand={onCommand}
           onClose={() => setShowFormatCells(false)}
         />

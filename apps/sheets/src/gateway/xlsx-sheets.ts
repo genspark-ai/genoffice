@@ -42,7 +42,9 @@ export function validateSheetName(name: string): void {
     throw new SheetEditError(`Sheet name "${name}" must be 1-31 characters long.`)
   }
   if (INVALID_NAME_CHARACTERS.test(name)) {
-    throw new SheetEditError(`Sheet name "${name}" contains a forbidden character (\\ / ? * [ ] :).`)
+    throw new SheetEditError(
+      `Sheet name "${name}" contains a forbidden character (\\ / ? * [ ] :).`,
+    )
   }
   if (name.startsWith("'") || name.endsWith("'")) {
     throw new SheetEditError(`Sheet name "${name}" cannot start or end with an apostrophe.`)
@@ -52,10 +54,11 @@ export function validateSheetName(name: string): void {
 /// Quotes a sheet name for use as a formula qualifier when Excel requires it
 /// (non-identifier characters, or a name that parses as a cell reference).
 export function formatSheetQualifier(name: string): string {
-  const needsQuoting = !/^[A-Za-z_][A-Za-z0-9_.]*$/.test(name)
-    || /^[A-Za-z]{1,3}[0-9]+$/.test(name)
-    || /^(?:TRUE|FALSE)$/i.test(name)
-    || /^R[0-9]*C[0-9]*$/i.test(name)
+  const needsQuoting =
+    !/^[A-Za-z_][A-Za-z0-9_.]*$/.test(name) ||
+    /^[A-Za-z]{1,3}[0-9]+$/.test(name) ||
+    /^(?:TRUE|FALSE)$/i.test(name) ||
+    /^R[0-9]*C[0-9]*$/i.test(name)
   return needsQuoting ? `'${name.replaceAll("'", "''")}'` : name
 }
 
@@ -64,13 +67,17 @@ export function formatSheetQualifier(name: string): string {
 export function renameSheetInFormula(formula: string, oldName: string, newName: string): string {
   return formula
     .split('"')
-    .map((segment, index) => index % 2 === 1 ? segment : segment.replace(
-      FORMULA_REFERENCE_PATTERN,
-      (full, lead: string, qualifier: string | undefined, token: string) => {
-        if (qualifier === undefined || !qualifierMatches(qualifier, oldName)) return full
-        return `${lead}${formatSheetQualifier(newName)}!${token}`
-      },
-    ))
+    .map((segment, index) =>
+      index % 2 === 1
+        ? segment
+        : segment.replace(
+            FORMULA_REFERENCE_PATTERN,
+            (full, lead: string, qualifier: string | undefined, token: string) => {
+              if (qualifier === undefined || !qualifierMatches(qualifier, oldName)) return full
+              return `${lead}${formatSheetQualifier(newName)}!${token}`
+            },
+          ),
+    )
     .join('"')
 }
 
@@ -119,7 +126,11 @@ export function renameSheetReferencesInWorksheet(
   )
 }
 
-function renameHyperlinkLocation(location: string, oldName: string, newName: string): string | null {
+function renameHyperlinkLocation(
+  location: string,
+  oldName: string,
+  newName: string,
+): string | null {
   const match = /^('(?:[^']|'')+'|[^'!]+)!([\s\S]*)$/.exec(location)
   if (!match?.[1] || match[2] === undefined) return null
   if (!qualifierMatches(match[1], oldName)) return null
@@ -153,7 +164,10 @@ export function renameSheetReferencesInDefinedNames(
 }
 
 export function worksheetReferencesSheet(worksheetXml: string, sheetName: string): boolean {
-  for (const pattern of [/<f\b(?:[^>]*[^/>])?>([\s\S]*?)<\/f>/g, /<(?:formula[12]?)>([\s\S]*?)<\/(?:formula[12]?)>/g]) {
+  for (const pattern of [
+    /<f\b(?:[^>]*[^/>])?>([\s\S]*?)<\/f>/g,
+    /<(?:formula[12]?)>([\s\S]*?)<\/(?:formula[12]?)>/g,
+  ]) {
     for (const match of worksheetXml.matchAll(pattern)) {
       if (formulaReferencesSheet(decodeEntities(match[1] ?? ''), sheetName)) return true
     }
@@ -188,8 +202,8 @@ export function prepareClonedSheetRels(
       continue
     }
     throw new SheetEditError(
-      `Sheet "${sourceName}" carries charts, images, tables, or comments — `
-      + 'duplicating it is not supported yet.',
+      `Sheet "${sourceName}" carries charts, images, tables, or comments — ` +
+        'duplicating it is not supported yet.',
     )
   }
   return {
@@ -224,22 +238,24 @@ export function assertNoSheetScopedDefinedNames(workbookXml: string, sourceName:
   if (index < 0) throw new SheetEditError(`Sheet "${sourceName}" was not found in the workbook.`)
   if (new RegExp(`<definedName\\b[^>]*?\\blocalSheetId="${index}"`).test(workbookXml)) {
     throw new SheetEditError(
-      `Sheet "${sourceName}" has sheet-scoped defined names — duplicating it is `
-      + 'not supported yet.',
+      `Sheet "${sourceName}" has sheet-scoped defined names — duplicating it is ` +
+        'not supported yet.',
     )
   }
 }
 
 /// Blank worksheet part for added sheets.
 export function buildWorksheetPartXml(): string {
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
-    + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-    + '<dimension ref="A1"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>'
-    + '<sheetData/></worksheet>'
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"' +
+    ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<dimension ref="A1"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>' +
+    '<sheetData/></worksheet>'
+  )
 }
 
-interface SheetElement {
+export interface SheetElement {
   readonly xml: string
   readonly name: string
   readonly hidden: boolean
@@ -257,7 +273,10 @@ export function parseSheetElements(workbookXml: string): SheetElement[] {
       xml,
       name: decodeAttribute(name),
       hidden: state === 'hidden' || state === 'veryHidden',
-      relationshipId: readAttribute(xml, 'r:id'),
+      // The relationships namespace is conventionally bound to "r", but any
+      // prefix is legal — fall back to whatever prefix the producer chose.
+      relationshipId:
+        readAttribute(xml, 'r:id') ?? /(?:^|\s)[A-Za-z_][\w.-]*:id="([^"]*)"/.exec(xml)?.[1],
     })
   }
   return elements
@@ -297,9 +316,10 @@ export function applySheetPlanToWorkbookXml(
   for (const element of elements) {
     if (removedSet.has(element.name)) continue
     const newName = renameByOriginal.get(element.name)
-    const xml = newName === undefined
-      ? element.xml
-      : element.xml.replace(/\bname="[^"]*"/, () => `name="${escapeXmlAttribute(newName)}"`)
+    const xml =
+      newName === undefined
+        ? element.xml
+        : element.xml.replace(/\bname="[^"]*"/, () => `name="${escapeXmlAttribute(newName)}"`)
     finalElements.set(newName ?? element.name, { xml, hidden: element.hidden })
   }
   for (const addition of additions) {
@@ -318,7 +338,10 @@ export function applySheetPlanToWorkbookXml(
     element.xml = setSheetStateAttribute(element.xml, change.hidden)
   }
 
-  if (plan.order.length !== finalElements.size || plan.order.some((name) => !finalElements.has(name))) {
+  if (
+    plan.order.length !== finalElements.size ||
+    plan.order.some((name) => !finalElements.has(name))
+  ) {
     throw new SheetEditError('The sheet order does not match the final sheet set.')
   }
   if (plan.order.every((name) => finalElements.get(name)?.hidden)) {
@@ -438,13 +461,26 @@ function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  quot: '"',
+  apos: "'",
+  lt: '<',
+  gt: '>',
+  amp: '&',
+}
+
+/// Single-pass decode of the XML named entities plus numeric character
+/// references (&#dd; / &#xhh;) — producers may encode non-ASCII sheet names
+/// as numeric references, which sequential replaceAll would miss.
 function decodeEntities(input: string): string {
-  return input
-    .replaceAll('&quot;', '"')
-    .replaceAll('&apos;', "'")
-    .replaceAll('&gt;', '>')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&amp;', '&')
+  return input.replace(
+    /&(?:#x([0-9A-Fa-f]+)|#([0-9]+)|(quot|apos|lt|gt|amp));/g,
+    (match, hex: string | undefined, dec: string | undefined, named: string | undefined) => {
+      if (named !== undefined) return NAMED_ENTITIES[named] ?? match
+      const code = hex !== undefined ? Number.parseInt(hex, 16) : Number(dec)
+      return code <= 0x10ffff ? String.fromCodePoint(code) : match
+    },
+  )
 }
 
 function decodeAttribute(input: string): string {

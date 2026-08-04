@@ -55,9 +55,13 @@ export const aiStrings = defineStrings({
     aiTurnLimit: '（已达单次请求的工具调用轮数上限，以上是基于已完成步骤的回答，可能不完整。）',
     aiStopped: '(已停止)',
     aiNoReply: 'AI 没有返回内容。',
+    aiTruncatedNote: '（回复因长度限制被截断,内容可能不完整。）',
+    aiImagesSendFailed: '图片附件读取失败,本条消息已按无图发送',
     aiImageReadFail: '{name}: 读取失败',
     aiTooManyImages: '图片最多随消息发送 {max} 张,多余的已忽略',
     aiUnknownError: '未知错误',
+    aiTimeoutError: 'AI 请求超时：网络长时间无响应，已停止。请检查网络后重试',
+    aiCreditsExhausted: 'Genspark 积分已用完，请前往 genspark.ai/pricing 充值后重试',
     aiSumReadAttachment: '读取附件',
     aiSumImageAttachment: '图片附件 {name}',
     aiSumRead: '读取 {name}',
@@ -154,9 +158,15 @@ export const aiStrings = defineStrings({
       'This task paused before every step was finished. Completed edits are preserved; select Continue to finish the remaining work.',
     aiStopped: '(Stopped)',
     aiNoReply: 'The AI returned no content.',
+    aiTruncatedNote: '(The reply was cut off by the length limit and may be incomplete.)',
+    aiImagesSendFailed: 'Image attachments could not be read; this message was sent without images',
     aiImageReadFail: '{name}: failed to read',
     aiTooManyImages: 'At most {max} images per message; extras were ignored',
     aiUnknownError: 'Unknown error',
+    aiTimeoutError:
+      'AI request timed out: no response from the network, so the run was stopped. Check your connection and try again',
+    aiCreditsExhausted:
+      'Your Genspark credits have run out. Visit genspark.ai/pricing to top up, then try again',
     aiSumReadAttachment: 'Read attachment',
     aiSumImageAttachment: 'Image attachment {name}',
     aiSumRead: 'Read {name}',
@@ -253,9 +263,16 @@ export const aiStrings = defineStrings({
       '（1 回のリクエストのツール呼び出し上限に達したため、ここまでに完了した内容に基づく回答です。不完全な場合があります。）',
     aiStopped: '(停止しました)',
     aiNoReply: 'AI から回答がありませんでした。',
+    aiTruncatedNote: '（返信は長さ制限により途中で打ち切られ、不完全な可能性があります。）',
+    aiImagesSendFailed:
+      '画像添付ファイルを読み込めなかったため、このメッセージは画像なしで送信されました',
     aiImageReadFail: '{name}: 読み取りに失敗しました',
     aiTooManyImages: '画像は 1 メッセージにつき最大 {max} 枚までです。超過分は無視されました',
     aiUnknownError: '不明なエラー',
+    aiTimeoutError:
+      'AIリクエストがタイムアウトしました：ネットワークからの応答がないため中断しました。接続を確認して再試行してください',
+    aiCreditsExhausted:
+      'Gensparkクレジットを使い切りました。genspark.ai/pricing でチャージしてから再試行してください',
     aiSumReadAttachment: '添付ファイルを読み取り',
     aiSumImageAttachment: '画像添付 {name}',
     aiSumRead: '{name} を読み取り',
@@ -352,9 +369,15 @@ export const aiStrings = defineStrings({
       '(요청당 도구 호출 한도에 도달하여, 지금까지 완료한 내용을 기반으로 한 답변입니다. 불완전할 수 있습니다.)',
     aiStopped: '(중지됨)',
     aiNoReply: 'AI가 응답을 반환하지 않았습니다.',
+    aiTruncatedNote: '(응답이 길이 제한으로 잘려 내용이 불완전할 수 있습니다.)',
+    aiImagesSendFailed: '이미지 첨부 파일을 읽을 수 없어 이 메시지는 이미지 없이 전송되었습니다',
     aiImageReadFail: '{name}: 읽기 실패',
     aiTooManyImages: '이미지는 메시지당 최대 {max}장까지 보낼 수 있으며, 초과분은 무시되었습니다',
     aiUnknownError: '알 수 없는 오류',
+    aiTimeoutError:
+      'AI 요청 시간 초과: 네트워크 응답이 없어 중단되었습니다. 연결을 확인한 후 다시 시도해 주세요',
+    aiCreditsExhausted:
+      'Genspark 크레딧을 모두 사용했습니다. genspark.ai/pricing에서 충전한 후 다시 시도해 주세요',
     aiSumReadAttachment: '첨부 파일 읽기',
     aiSumImageAttachment: '이미지 첨부 {name}',
     aiSumRead: '{name} 읽기',
@@ -453,9 +476,17 @@ export const aiStrings = defineStrings({
       "(Limite de tours d'appels d'outils atteinte pour cette requête ; la réponse ci-dessus reflète les étapes déjà effectuées et peut être incomplète.)",
     aiStopped: '(Arrêté)',
     aiNoReply: "L'IA n'a renvoyé aucun contenu.",
+    aiTruncatedNote:
+      '(La réponse a été tronquée par la limite de longueur et peut être incomplète.)',
+    aiImagesSendFailed:
+      'Impossible de lire les images jointes ; ce message a été envoyé sans images',
     aiImageReadFail: '{name} : échec de la lecture',
     aiTooManyImages: 'Au plus {max} images par message ; les images en trop ont été ignorées',
     aiUnknownError: 'Erreur inconnue',
+    aiTimeoutError:
+      "Délai de la requête IA dépassé : aucune réponse du réseau, l'exécution a été interrompue. Vérifiez votre connexion et réessayez",
+    aiCreditsExhausted:
+      'Vos crédits Genspark sont épuisés. Rechargez sur genspark.ai/pricing puis réessayez',
     aiSumReadAttachment: 'Lire la pièce jointe',
     aiSumImageAttachment: 'Pièce jointe image {name}',
     aiSumRead: 'Lire {name}',
@@ -553,9 +584,17 @@ export const aiStrings = defineStrings({
       '(Limit für Toolaufrufe in dieser Anfrage erreicht; die obige Antwort basiert auf den bisher abgeschlossenen Schritten und ist möglicherweise unvollständig.)',
     aiStopped: '(Gestoppt)',
     aiNoReply: 'Die KI hat keinen Inhalt zurückgegeben.',
+    aiTruncatedNote:
+      '(Die Antwort wurde durch das Längenlimit abgeschnitten und ist möglicherweise unvollständig.)',
+    aiImagesSendFailed:
+      'Bildanhänge konnten nicht gelesen werden; diese Nachricht wurde ohne Bilder gesendet',
     aiImageReadFail: '{name}: Lesen fehlgeschlagen',
     aiTooManyImages: 'Höchstens {max} Bilder pro Nachricht; überzählige wurden ignoriert',
     aiUnknownError: 'Unbekannter Fehler',
+    aiTimeoutError:
+      'Zeitüberschreitung der KI-Anfrage: keine Antwort vom Netzwerk, der Vorgang wurde abgebrochen. Prüfe deine Verbindung und versuche es erneut',
+    aiCreditsExhausted:
+      'Deine Genspark-Credits sind aufgebraucht. Lade unter genspark.ai/pricing auf und versuche es erneut',
     aiSumReadAttachment: 'Anlage lesen',
     aiSumImageAttachment: 'Bildanlage {name}',
     aiSumRead: '{name} lesen',
@@ -652,9 +691,17 @@ export const aiStrings = defineStrings({
       '(Se alcanzó el límite de llamadas a herramientas de esta solicitud; la respuesta anterior refleja los pasos completados hasta ahora y puede estar incompleta.)',
     aiStopped: '(Detenido)',
     aiNoReply: 'La IA no devolvió contenido.',
+    aiTruncatedNote:
+      '(La respuesta fue cortada por el límite de longitud y puede estar incompleta.)',
+    aiImagesSendFailed:
+      'No se pudieron leer las imágenes adjuntas; este mensaje se envió sin imágenes',
     aiImageReadFail: '{name}: error de lectura',
     aiTooManyImages: 'Como máximo {max} imágenes por mensaje; las sobrantes se ignoraron',
     aiUnknownError: 'Error desconocido',
+    aiTimeoutError:
+      'La solicitud de IA agotó el tiempo de espera: no hubo respuesta de la red y se detuvo. Comprueba tu conexión e inténtalo de nuevo',
+    aiCreditsExhausted:
+      'Tus créditos de Genspark se han agotado. Recarga en genspark.ai/pricing e inténtalo de nuevo',
     aiSumReadAttachment: 'Leer dato adjunto',
     aiSumImageAttachment: 'Imagen adjunta {name}',
     aiSumRead: 'Leer {name}',
@@ -751,9 +798,15 @@ export const aiStrings = defineStrings({
       '(ถึงขีดจำกัดรอบการเรียกเครื่องมือของคำขอนี้แล้ว คำตอบด้านบนอิงจากขั้นตอนที่เสร็จสิ้นแล้ว อาจไม่สมบูรณ์)',
     aiStopped: '(หยุดแล้ว)',
     aiNoReply: 'AI ไม่ได้ส่งเนื้อหากลับมา',
+    aiTruncatedNote: '(คำตอบถูกตัดเนื่องจากถึงขีดจำกัดความยาว เนื้อหาอาจไม่สมบูรณ์)',
+    aiImagesSendFailed: 'ไม่สามารถอ่านไฟล์รูปภาพแนบได้ ข้อความนี้จึงถูกส่งโดยไม่มีรูปภาพ',
     aiImageReadFail: '{name}: อ่านไม่สำเร็จ',
     aiTooManyImages: 'ส่งรูปได้สูงสุด {max} รูปต่อข้อความ ส่วนที่เกินถูกละเว้น',
     aiUnknownError: 'ข้อผิดพลาดที่ไม่รู้จัก',
+    aiTimeoutError:
+      'คำขอ AI หมดเวลา: เครือข่ายไม่ตอบสนอง จึงหยุดการทำงาน โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
+    aiCreditsExhausted:
+      'เครดิต Genspark ของคุณหมดแล้ว โปรดเติมเครดิตที่ genspark.ai/pricing แล้วลองใหม่',
     aiSumReadAttachment: 'อ่านสิ่งที่แนบ',
     aiSumImageAttachment: 'รูปภาพแนบ {name}',
     aiSumRead: 'อ่าน {name}',
@@ -850,9 +903,15 @@ export const aiStrings = defineStrings({
       '(Batas putaran pemanggilan alat untuk permintaan ini tercapai; jawaban di atas berdasarkan langkah yang telah selesai dan mungkin tidak lengkap.)',
     aiStopped: '(Dihentikan)',
     aiNoReply: 'AI tidak mengembalikan konten.',
+    aiTruncatedNote: '(Balasan terpotong karena batas panjang dan mungkin tidak lengkap.)',
+    aiImagesSendFailed: 'Lampiran gambar tidak dapat dibaca; pesan ini dikirim tanpa gambar',
     aiImageReadFail: '{name}: gagal dibaca',
     aiTooManyImages: 'Maksimal {max} gambar per pesan; kelebihannya diabaikan',
     aiUnknownError: 'Kesalahan tidak dikenal',
+    aiTimeoutError:
+      'Permintaan AI habis waktu: jaringan tidak merespons sehingga proses dihentikan. Periksa koneksi Anda lalu coba lagi',
+    aiCreditsExhausted:
+      'Kredit Genspark Anda telah habis. Isi ulang di genspark.ai/pricing lalu coba lagi',
     aiSumReadAttachment: 'Baca lampiran',
     aiSumImageAttachment: 'Lampiran gambar {name}',
     aiSumRead: 'Baca {name}',
@@ -949,9 +1008,16 @@ export const aiStrings = defineStrings({
       '(Достигнут лимит вызовов инструментов для этого запроса; ответ выше основан на уже выполненных шагах и может быть неполным.)',
     aiStopped: '(Остановлено)',
     aiNoReply: 'ИИ не вернул содержимое.',
+    aiTruncatedNote: '(Ответ был обрезан из-за ограничения длины и может быть неполным.)',
+    aiImagesSendFailed:
+      'Не удалось прочитать вложенные изображения; это сообщение отправлено без изображений',
     aiImageReadFail: '{name}: не удалось прочитать',
     aiTooManyImages: 'Не более {max} изображений на сообщение; лишние проигнорированы',
     aiUnknownError: 'Неизвестная ошибка',
+    aiTimeoutError:
+      'Тайм-аут запроса ИИ: сеть не отвечает, выполнение остановлено. Проверьте подключение и повторите попытку',
+    aiCreditsExhausted:
+      'Кредиты Genspark исчерпаны. Пополните баланс на genspark.ai/pricing и повторите попытку',
     aiSumReadAttachment: 'Чтение вложения',
     aiSumImageAttachment: 'Вложенное изображение {name}',
     aiSumRead: 'Чтение {name}',
@@ -1048,9 +1114,15 @@ export const aiStrings = defineStrings({
       '(تم بلوغ الحد الأقصى لجولات استدعاء الأدوات لهذا الطلب؛ الإجابة أعلاه تستند إلى الخطوات المكتملة وقد تكون غير كاملة.)',
     aiStopped: '(تم الإيقاف)',
     aiNoReply: 'لم يُرجع الذكاء الاصطناعي أي محتوى.',
+    aiTruncatedNote: '(تم اقتطاع الرد بسبب حد الطول وقد يكون غير مكتمل.)',
+    aiImagesSendFailed: 'تعذّرت قراءة الصور المرفقة؛ تم إرسال هذه الرسالة بدون صور',
     aiImageReadFail: '{name}: فشلت القراءة',
     aiTooManyImages: 'يمكن إرسال {max} صور كحد أقصى مع كل رسالة؛ تم تجاهل الزائد',
     aiUnknownError: 'خطأ غير معروف',
+    aiTimeoutError:
+      'انتهت مهلة طلب الذكاء الاصطناعي: لا توجد استجابة من الشبكة وتم الإيقاف. تحقق من الاتصال وحاول مجددًا',
+    aiCreditsExhausted:
+      'نفدت أرصدة Genspark لديك. يرجى إعادة الشحن عبر genspark.ai/pricing ثم المحاولة مجددًا',
     aiSumReadAttachment: 'قراءة المرفق',
     aiSumImageAttachment: 'مرفق صورة {name}',
     aiSumRead: 'قراءة {name}',
@@ -1147,9 +1219,16 @@ export const aiStrings = defineStrings({
       '(Limite de chamadas de ferramentas desta solicitação atingido; a resposta acima reflete as etapas concluídas até agora e pode estar incompleta.)',
     aiStopped: '(Interrompido)',
     aiNoReply: 'A IA não retornou conteúdo.',
+    aiTruncatedNote: '(A resposta foi cortada pelo limite de comprimento e pode estar incompleta.)',
+    aiImagesSendFailed:
+      'Não foi possível ler as imagens anexadas; esta mensagem foi enviada sem imagens',
     aiImageReadFail: '{name}: falha na leitura',
     aiTooManyImages: 'No máximo {max} imagens por mensagem; as excedentes foram ignoradas',
     aiUnknownError: 'Erro desconhecido',
+    aiTimeoutError:
+      'A solicitação de IA expirou: sem resposta da rede, a execução foi interrompida. Verifique sua conexão e tente novamente',
+    aiCreditsExhausted:
+      'Seus créditos Genspark acabaram. Recarregue em genspark.ai/pricing e tente novamente',
     aiSumReadAttachment: 'Ler anexo',
     aiSumImageAttachment: 'Imagem anexada {name}',
     aiSumRead: 'Ler {name}',
@@ -1248,10 +1327,18 @@ export const aiStrings = defineStrings({
       '(Raggiunto il limite di chiamate agli strumenti per questa richiesta; la risposta sopra riflette i passaggi completati finora e potrebbe essere incompleta.)',
     aiStopped: '(Interrotto)',
     aiNoReply: "L'IA non ha restituito alcun contenuto.",
+    aiTruncatedNote:
+      '(La risposta è stata troncata dal limite di lunghezza e potrebbe essere incompleta.)',
+    aiImagesSendFailed:
+      'Impossibile leggere le immagini allegate; questo messaggio è stato inviato senza immagini',
     aiImageReadFail: '{name}: lettura non riuscita',
     aiTooManyImages:
       'Al massimo {max} immagini per messaggio; quelle in eccesso sono state ignorate',
     aiUnknownError: 'Errore sconosciuto',
+    aiTimeoutError:
+      'Richiesta IA scaduta: nessuna risposta dalla rete, esecuzione interrotta. Controlla la connessione e riprova',
+    aiCreditsExhausted:
+      'I tuoi crediti Genspark sono esauriti. Ricarica su genspark.ai/pricing e riprova',
     aiSumReadAttachment: 'Lettura allegato',
     aiSumImageAttachment: 'Immagine allegata {name}',
     aiSumRead: 'Lettura di {name}',
@@ -1348,9 +1435,16 @@ export const aiStrings = defineStrings({
       '(Osiągnięto limit rund wywołań narzędzi dla tego żądania; powyższa odpowiedź opiera się na dotychczas ukończonych krokach i może być niepełna.)',
     aiStopped: '(Zatrzymano)',
     aiNoReply: 'AI nie zwróciła żadnej treści.',
+    aiTruncatedNote: '(Odpowiedź została ucięta przez limit długości i może być niepełna.)',
+    aiImagesSendFailed:
+      'Nie udało się odczytać załączonych obrazów; ta wiadomość została wysłana bez obrazów',
     aiImageReadFail: '{name}: odczyt nie powiódł się',
     aiTooManyImages: 'Maksymalnie {max} obrazów na wiadomość; nadmiarowe zostały zignorowane',
     aiUnknownError: 'Nieznany błąd',
+    aiTimeoutError:
+      'Przekroczono limit czasu żądania AI: brak odpowiedzi sieci, przerwano. Sprawdź połączenie i spróbuj ponownie',
+    aiCreditsExhausted:
+      'Twoje kredyty Genspark wyczerpały się. Doładuj konto na genspark.ai/pricing i spróbuj ponownie',
     aiSumReadAttachment: 'Odczyt załącznika',
     aiSumImageAttachment: 'Załącznik graficzny {name}',
     aiSumRead: 'Odczyt {name}',
@@ -1447,9 +1541,16 @@ export const aiStrings = defineStrings({
       '(Limiet voor toolaanroepen voor dit verzoek bereikt; het antwoord hierboven is gebaseerd op de tot nu toe voltooide stappen en is mogelijk onvolledig.)',
     aiStopped: '(Gestopt)',
     aiNoReply: 'De AI heeft geen inhoud teruggegeven.',
+    aiTruncatedNote: '(Het antwoord is afgekapt door de lengtelimiet en is mogelijk onvolledig.)',
+    aiImagesSendFailed:
+      'Afbeeldingsbijlagen konden niet worden gelezen; dit bericht is zonder afbeeldingen verzonden',
     aiImageReadFail: '{name}: lezen mislukt',
     aiTooManyImages: 'Maximaal {max} afbeeldingen per bericht; extra afbeeldingen zijn genegeerd',
     aiUnknownError: 'Onbekende fout',
+    aiTimeoutError:
+      'AI-verzoek verlopen: geen reactie van het netwerk, uitvoering gestopt. Controleer je verbinding en probeer het opnieuw',
+    aiCreditsExhausted:
+      'Je Genspark-credits zijn op. Waardeer op via genspark.ai/pricing en probeer het opnieuw',
     aiSumReadAttachment: 'Bijlage lezen',
     aiSumImageAttachment: 'Afbeeldingsbijlage {name}',
     aiSumRead: '{name} lezen',
@@ -1546,9 +1647,15 @@ export const aiStrings = defineStrings({
       '(Had pusingan panggilan alat untuk permintaan ini telah dicapai; jawapan di atas berdasarkan langkah yang telah selesai dan mungkin tidak lengkap.)',
     aiStopped: '(Dihentikan)',
     aiNoReply: 'AI tidak memulangkan sebarang kandungan.',
+    aiTruncatedNote: '(Balasan terpotong kerana had panjang dan mungkin tidak lengkap.)',
+    aiImagesSendFailed: 'Lampiran imej tidak dapat dibaca; mesej ini dihantar tanpa imej',
     aiImageReadFail: '{name}: gagal dibaca',
     aiTooManyImages: 'Maksimum {max} imej setiap mesej; yang lebihan diabaikan',
     aiUnknownError: 'Ralat tidak diketahui',
+    aiTimeoutError:
+      'Permintaan AI tamat masa: rangkaian tidak memberi respons, proses dihentikan. Semak sambungan anda dan cuba lagi',
+    aiCreditsExhausted:
+      'Kredit Genspark anda telah habis. Tambah nilai di genspark.ai/pricing dan cuba lagi',
     aiSumReadAttachment: 'Baca lampiran',
     aiSumImageAttachment: 'Lampiran imej {name}',
     aiSumRead: 'Baca {name}',
@@ -1645,9 +1752,13 @@ export const aiStrings = defineStrings({
       '(הגעתם למגבלת סבבי קריאות הכלים לבקשה זו; התשובה שלמעלה מבוססת על השלבים שהושלמו עד כה ועשויה להיות חלקית.)',
     aiStopped: '(נעצר)',
     aiNoReply: 'ה-AI לא החזיר תוכן.',
+    aiTruncatedNote: '(התשובה נחתכה בגלל מגבלת האורך וייתכן שאינה שלמה.)',
+    aiImagesSendFailed: 'לא ניתן היה לקרוא את התמונות המצורפות; הודעה זו נשלחה ללא תמונות',
     aiImageReadFail: '{name}: הקריאה נכשלה',
     aiTooManyImages: 'עד {max} תמונות בהודעה; הנוספות לא נכללו',
     aiUnknownError: 'שגיאה לא ידועה',
+    aiTimeoutError: 'תם הזמן לבקשת ה-AI: אין תגובה מהרשת וההרצה הופסקה. בדוק את החיבור ונסה שוב',
+    aiCreditsExhausted: 'קרדיטי Genspark שלך אזלו. טען מחדש ב-genspark.ai/pricing ונסה שוב',
     aiSumReadAttachment: 'קריאת קובץ מצורף',
     aiSumImageAttachment: 'תמונה מצורפת {name}',
     aiSumRead: 'קריאת {name}',
@@ -1744,9 +1855,15 @@ export const aiStrings = defineStrings({
       '(इस अनुरोध के लिए टूल कॉल की सीमा पूरी हो गई; ऊपर का उत्तर अब तक पूर्ण हुए चरणों पर आधारित है और अधूरा हो सकता है।)',
     aiStopped: '(रोका गया)',
     aiNoReply: 'AI ने कोई सामग्री नहीं लौटाई।',
+    aiTruncatedNote: '(उत्तर लंबाई सीमा के कारण कट गया और अधूरा हो सकता है।)',
+    aiImagesSendFailed: 'छवि अनुलग्नक पढ़े नहीं जा सके; यह संदेश बिना छवियों के भेजा गया',
     aiImageReadFail: '{name}: पढ़ने में विफल',
     aiTooManyImages: 'प्रति संदेश अधिकतम {max} चित्र; अतिरिक्त को अनदेखा कर दिया गया',
     aiUnknownError: 'अज्ञात त्रुटि',
+    aiTimeoutError:
+      'AI अनुरोध का समय समाप्त: नेटवर्क से कोई प्रतिक्रिया नहीं मिली, इसलिए रोक दिया गया। कनेक्शन जांचें और फिर से प्रयास करें',
+    aiCreditsExhausted:
+      'आपके Genspark क्रेडिट समाप्त हो गए हैं। genspark.ai/pricing पर रिचार्ज करें और फिर से प्रयास करें',
     aiSumReadAttachment: 'अनुलग्नक पढ़ें',
     aiSumImageAttachment: 'चित्र अनुलग्नक {name}',
     aiSumRead: '{name} पढ़ें',
@@ -1841,9 +1958,13 @@ export const aiStrings = defineStrings({
     aiTurnLimit: '（已達單次要求的工具呼叫輪數上限，以上是基於已完成步驟的回答，可能不完整。）',
     aiStopped: '(已停止)',
     aiNoReply: 'AI 沒有回傳內容。',
+    aiTruncatedNote: '（回覆因長度限制被截斷,內容可能不完整。）',
+    aiImagesSendFailed: '圖片附件讀取失敗,本則訊息已改為不含圖片傳送',
     aiImageReadFail: '{name}: 讀取失敗',
     aiTooManyImages: '圖片最多隨訊息傳送 {max} 張,多餘的已忽略',
     aiUnknownError: '未知錯誤',
+    aiTimeoutError: 'AI 請求逾時：網路長時間無回應，已停止。請檢查網路後重試',
+    aiCreditsExhausted: 'Genspark 點數已用完，請前往 genspark.ai/pricing 儲值後重試',
     aiSumReadAttachment: '讀取附件',
     aiSumImageAttachment: '圖片附件 {name}',
     aiSumRead: '讀取 {name}',

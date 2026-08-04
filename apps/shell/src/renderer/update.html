@@ -21,11 +21,24 @@
         padding: 0;
         box-sizing: border-box;
       }
+      :root {
+        --ui-cjk: 'Microsoft YaHei', 'PingFang SC';
+      }
+      :root:lang(ja) {
+        --ui-cjk:
+          'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+      }
+      :root:lang(ko) {
+        --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+      }
+      :root:lang(zh-TW) {
+        --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+      }
       html,
       body {
         height: 100%;
         overflow: hidden;
-        font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+        font-family: -apple-system, 'Segoe UI', var(--ui-cjk), sans-serif;
         color: var(--text);
         background: transparent;
         user-select: none;

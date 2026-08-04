@@ -14,7 +14,10 @@ export function okResponse(body: ReadableStream<Uint8Array>): Response {
 }
 
 export function jsonResponse(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status })
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 export function errorResponse(status: number, text: string): Response {

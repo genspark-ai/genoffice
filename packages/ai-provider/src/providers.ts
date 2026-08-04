@@ -11,6 +11,19 @@ export const GENSPARK_LLM_BASE_URLS = {
   openai: 'https://www.genspark.ai/api/llm_proxy/v1',
 } as const
 
+/**
+ * Splits GenOffice usage out of the proxy's default "Claw" billing bucket
+ * (the backend attributes gsk-key traffic by X-Agent-Type). Only sent to the
+ * Genspark proxy — never to direct vendor APIs.
+ */
+export const GENSPARK_AGENT_TYPE = 'genoffice'
+
+export function gensparkAttributionHeaders(baseUrl?: string): Record<string, string> {
+  return baseUrl?.startsWith('https://www.genspark.ai')
+    ? { 'X-Agent-Type': GENSPARK_AGENT_TYPE }
+    : {}
+}
+
 export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'genspark',

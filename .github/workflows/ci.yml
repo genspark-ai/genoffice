@@ -90,3 +90,76 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Preservation gate: a no-op-adjacent edit through the OOXML gateway must
+      # leave every untouched package entry byte-identical (fails closed otherwise).
+      - name: Sheets compatibility gate
+        run: |
+          npm run fixtures -w @genoffice/sheets
+          npm run compat -w @genoffice/sheets
+
+  e2e:
+    # 22.04, not -latest: 24.04's AppArmor hardening blocks Electron renderer
+    # spawn under xvfb even with --no-sandbox and the userns sysctl lifted
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch, 2026-07
+        with:
+          toolchain: stable
+
+      - name: Cache cargo (xlsx-sidecar)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/sheets/native/xlsx-engine
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build apps
+        run: npm run build:all
+
+      - name: Generate sheets fixtures
+        run: npm run fixtures -w @genoffice/sheets
+
+      # Newer Ubuntu kernels ship an AppArmor policy that blocks unprivileged
+      # user namespaces, which kills the Chromium zygote even with --no-sandbox
+      # (window opens, renderer never loads). The knob only exists on kernels
+      # that enforce the restriction, so skip it where it is absent instead of
+      # failing the job (22.04 runner images vary by kernel).
+      - name: Allow unprivileged user namespaces (Electron)
+        run: |
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          else
+            echo "kernel.apparmor_restrict_unprivileged_userns not present — skipping"
+          fi
+
+      # Electron needs a display server on Linux runners. DEBUG=pw:browser
+      # forwards the Electron process stdout/stderr into the CI log so launch
+      # failures are diagnosable.
+      - name: E2E (Electron shell)
+        env:
+          DEBUG: 'pw:browser'
+        run: xvfb-run --auto-servernum -- npm run test:e2e
+
+      - name: Upload E2E artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-artifacts
+          path: |
+            e2e/artifacts
+            e2e/test-results
+          retention-days: 7

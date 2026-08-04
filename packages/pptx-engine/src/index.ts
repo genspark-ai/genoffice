@@ -25,6 +25,7 @@ import {
   readSlideAdvanceTimeXml,
   readSlideHiddenXml,
   readSlideTransitionXml,
+  type GradientFillPatch,
   type SlideTransitionKind,
 } from './generate'
 import {
@@ -108,6 +109,7 @@ export {
   readSlideTransitionXml,
   generateParagraphXml,
   generateXfrmXml,
+  type GradientFillPatch,
   type SlideTransitionKind,
 } from './generate'
 export {
@@ -131,6 +133,7 @@ export {
   type AlignRect,
 } from './align'
 export { createBlankPptx } from './blank'
+export { promoteSlideBackground, isBackgroundLikeElement } from './background-promote'
 export {
   applyThemeToArchive,
   buildColorMap,
@@ -466,6 +469,23 @@ export async function openPptx(bytes: Uint8Array): Promise<OpenedPptx> {
 
   const deck: SlideDeck = { slides, size, originalHash: archive.originalHash }
   return { deck, archive }
+}
+
+/**
+ * Rebuild the deck model from the archive's current entries — same result as
+ * openPptx(await savePptx(opened)) without materializing the zip, whose contiguous
+ * output buffer fails outright on large decks. Pending edits must already be baked
+ * into the entries (commitSaved).
+ */
+export function reparseDeck(opened: OpenedPptx): OpenedPptx {
+  const { archive } = opened
+  const { size, slidePaths } = archive.readPresentation()
+  const slides: Slide[] = []
+  for (const slidePath of slidePaths) {
+    const slide = parseSlideFromArchive(archive, slidePath)
+    if (slide) slides.push(slide)
+  }
+  return { deck: { slides, size, originalHash: archive.originalHash }, archive }
 }
 
 /**
@@ -3102,17 +3122,27 @@ export function setGroupChildFont(
   return patchGroupChildText(slide, groupId, t)
 }
 
-/** Group-child fill ('none' or #RRGGBB(AA)). */
+/** Group-child fill ('none' | #RRGGBB(AA) | gradient). */
 export function editGroupChildFill(
   slide: Slide,
   groupId: string,
   childId: string,
-  fill: string,
+  fill: string | GradientFillPatch,
 ): boolean {
   const found = findGroupChild(slide, groupId, childId)
   const child = found?.child
   if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
-  ;(child as TextElement).fill = fill === 'none' ? { type: 'none' } : { type: 'solid', color: fill }
+  ;(child as TextElement).fill =
+    typeof fill === 'string'
+      ? fill === 'none'
+        ? { type: 'none' }
+        : { type: 'solid', color: fill }
+      : {
+          type: 'gradient',
+          stops: fill.stops,
+          ...(fill.angle != null ? { angle: fill.angle } : {}),
+          ...(fill.radial ? { path: 'circle' as const } : {}),
+        }
   if (!patchGroupChildXml(found!.grp, child, (xml) => patchElementFill(xml, fill))) return false
   slide.structureDirty = true
   return true

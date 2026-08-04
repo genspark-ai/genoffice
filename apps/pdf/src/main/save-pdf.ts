@@ -1,3 +1,4 @@
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import {
   PDFArray,
   PDFBool,
@@ -280,6 +281,29 @@ function applyMetadata(pdfDoc: PDFDocument, meta: MetadataInput): void {
     )
   }
   pdfDoc.setModificationDate(new Date())
+}
+
+/**
+ * Apply the request to the PDF at sourcePath and atomically write the result to targetPath
+ * (temp file next to the target + rename, so a mid-write crash can't corrupt it).
+ * The source file is only ever read: Save As (targetPath !== sourcePath) must never mutate
+ * the original document, and a failed or cancelled save leaves both paths untouched.
+ * In-place Save passes targetPath === sourcePath.
+ */
+export async function savePdfToPath(
+  sourcePath: string,
+  targetPath: string,
+  request: SavePdfRequest,
+): Promise<void> {
+  const bytes = await applySaveRequest(new Uint8Array(await readFile(sourcePath)), request)
+  const tmp = `${targetPath}.gensave-${process.pid}.tmp`
+  try {
+    await writeFile(tmp, bytes)
+    await rename(tmp, targetPath)
+  } catch (err) {
+    await rm(tmp, { force: true })
+    throw err
+  }
 }
 
 /** Apply markups + form values + page ops, returning new bytes. Original objects are not reordered (pdf-lib keeps untouched objects). */

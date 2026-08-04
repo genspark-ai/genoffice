@@ -3,7 +3,12 @@ import { readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
-import { installNavigationGuard, safeExternalUrl } from '@genoffice/electron-utils'
+import {
+  contextMenuLabels,
+  installContextMenu,
+  installNavigationGuard,
+  safeExternalUrl,
+} from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { PDF_CHANNELS } from '../shared/ipc'
 import type {
@@ -16,7 +21,7 @@ import type {
   SavePdfRequest,
   SavePdfResult,
 } from '../shared/ipc'
-import { applySaveRequest, extractPagesBytes, insertPdfBytes } from './save-pdf'
+import { extractPagesBytes, insertPdfBytes, savePdfToPath } from './save-pdf'
 
 const tDlg = createI18n({
   zh: {
@@ -260,6 +265,9 @@ const allowedByWc = new Map<number, Set<string>>()
 /** Unsaved-changes flags mirrored from the renderer; drives the save prompt before closing a tab/window */
 const dirtyByWc = new Set<number>()
 const closeSaveWaiters = new Map<number, (ok: boolean) => void>()
+const saveAsWaiters = new Map<number, (ok: boolean) => void>()
+/** Save As destination granted per view (main-process dialog pick); the save handler refuses any other non-source target */
+const saveAsTargetByWc = new Map<number, string>()
 
 export function pdfIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
@@ -314,6 +322,41 @@ export function flushPdfSave(contents: WebContents): Promise<boolean> {
   return requestRendererSave(contents)
 }
 
+/**
+ * Marks the whole Save As flow (dialog included) for the renderer, which pauses
+ * autosave meanwhile: opening the save dialog blurs the window, and a
+ * blur-triggered autosave would write the pending edits into the original file.
+ */
+export function setPdfSaveAsInFlight(contents: WebContents, inFlight: boolean): void {
+  if (!contents.isDestroyed()) contents.send(PDF_CHANNELS.saveAsFlow, inFlight)
+}
+
+/**
+ * Menu Save As: grant targetPath to the view, then ask the renderer to apply its
+ * pending edits onto the source bytes and write the result to targetPath only.
+ * The original file is never written (non-destructive Save As).
+ */
+export function requestPdfSaveAs(contents: WebContents, targetPath: string): Promise<boolean> {
+  if (contents.isDestroyed()) return Promise.resolve(false)
+  const wcId = contents.id
+  saveAsTargetByWc.set(wcId, targetPath)
+  return new Promise<boolean>((resolve) => {
+    const done = (ok: boolean) => {
+      saveAsTargetByWc.delete(wcId)
+      resolve(ok)
+    }
+    const timer = setTimeout(() => {
+      saveAsWaiters.delete(wcId)
+      done(false)
+    }, 120_000)
+    saveAsWaiters.set(wcId, (ok) => {
+      clearTimeout(timer)
+      done(ok)
+    })
+    contents.send(PDF_CHANNELS.saveAsRequest, targetPath)
+  })
+}
+
 let ipcRegistered = false
 
 function registerPdfIpc(): void {
@@ -339,12 +382,13 @@ function registerPdfIpc(): void {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
       return { ok: false, error: 'pdf: path not granted to this view' }
     }
+    // Save As targets must have been granted by requestPdfSaveAs (main-process dialog pick)
+    const target = typeof request.targetPath === 'string' ? request.targetPath : path
+    if (target !== path && saveAsTargetByWc.get(e.sender.id) !== target) {
+      return { ok: false, error: 'pdf: target path not granted to this view' }
+    }
     try {
-      const bytes = await applySaveRequest(new Uint8Array(await readFile(path)), request)
-      // Temp file + rename for atomic replace; a mid-write crash won't corrupt the original
-      const tmp = `${path}.gensave-${process.pid}.tmp`
-      await writeFile(tmp, bytes)
-      await rename(tmp, path)
+      await savePdfToPath(path, target, request)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -450,6 +494,12 @@ function registerPdfIpc(): void {
     waiter?.(ok === true)
   })
 
+  ipcMain.on(PDF_CHANNELS.saveAsResult, (e, ok: unknown) => {
+    const waiter = saveAsWaiters.get(e.sender.id)
+    saveAsWaiters.delete(e.sender.id)
+    waiter?.(ok === true)
+  })
+
   // Language channel shared with other modules; removeHandler tolerates duplicate registration
   ipcMain.removeHandler(PDF_CHANNELS.getLanguage)
   ipcMain.handle(PDF_CHANNELS.getLanguage, () => getUiLang())
@@ -471,8 +521,11 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
     pendingByWc.delete(wcId)
     allowedByWc.delete(wcId)
     dirtyByWc.delete(wcId)
+    saveAsTargetByWc.delete(wcId)
     closeSaveWaiters.get(wcId)?.(false)
     closeSaveWaiters.delete(wcId)
+    saveAsWaiters.get(wcId)?.(false)
+    saveAsWaiters.delete(wcId)
   })
 }
 
@@ -495,6 +548,7 @@ export function createPdfView(openPath?: string | null): WebContentsView {
 /** Standalone window mode: `npm run dev -w @genoffice/pdf`, pdf path passed via argv */
 export function startPdfStandalone(): void {
   installNavigationGuard(app)
+  installContextMenu(app, () => contextMenuLabels(getUiLang()))
   configurePdfRuntime({
     preloadPath: join(__dirname, '../preload/index.js'),
     rendererUrl: process.env.ELECTRON_RENDERER_URL,

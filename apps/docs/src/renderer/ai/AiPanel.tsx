@@ -6,6 +6,7 @@ import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shar
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { findNumId, type NumIds } from './protocol'
+import { markDocSeen } from './tools'
 import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
@@ -219,7 +220,11 @@ export function AiPanel({
       }
     })
     if (silent) tr = tr.setMeta('addToHistory', false)
-    if (touched) view.dispatch(tr)
+    if (touched) {
+      view.dispatch(tr)
+      // AI-pipeline housekeeping, not a user edit: keep the freshness baseline current
+      markDocSeen(editorRef.current)
+    }
   }
   /** instruction of the in-flight run, labels its rollback snapshot */
   const instructionRef = useRef('')
@@ -410,11 +415,14 @@ export function AiPanel({
           patchLastAssistant({ streaming: false })
           setChat((prev) => [...prev, { role: 'assistant', text: '', streaming: true }])
         },
-        onDone: ({ text, cancelled, turnLimit }) => {
+        onDone: ({ text, cancelled, turnLimit, truncated }) => {
           // module-level t: the loop instance is created only once; the component's t goes stale with the first-render closure
-          const finalText = turnLimit
+          const baseText = turnLimit
             ? [text, tModule('aiTurnLimit')].filter(Boolean).join('\n\n')
             : text || (cancelled ? tModule('aiStopped') : '')
+          const finalText = truncated
+            ? [baseText, tModule('aiTruncatedNote')].filter(Boolean).join('\n\n')
+            : baseText
           patchLastAssistant((last) => ({
             streaming: false,
             turnLimit,
@@ -426,8 +434,9 @@ export function AiPanel({
           // App listens: a run that generated content into a never-saved document
           // triggers a silent first save with a content-derived file name
           window.dispatchEvent(new Event('ai-docs-run-done'))
-          // persist outside the updater (a double-invoked updater would write history twice); tools stores the whole run's full activity
-          if (finalText && !cancelled) {
+          // persist outside the updater (a double-invoked updater would write history twice); tools stores the whole run's full activity.
+          // Edits-only runs (tools ran, no text) persist too, or the whole turn vanishes from the restored transcript
+          if (!cancelled && (finalText || runToolsRef.current.length > 0)) {
             persistMessage('assistant', finalText, runToolsRef.current)
           }
         },
@@ -552,7 +561,14 @@ export function AiPanel({
     runStartedAtRef.current = Date.now()
     setBusy(true)
     persistMessage('user', instruction, undefined, attachmentsRef.current)
-    void collectImageAttachments().then((images) => loop.run(instruction, images))
+    // a rejected image read must not strand the run (busy would stay true forever): degrade to a no-image send
+    void collectImageAttachments()
+      .catch((): AgentImage[] => {
+        setAttachNotice(t('aiImagesSendFailed'))
+        window.setTimeout(() => setAttachNotice(null), 5000)
+        return []
+      })
+      .then((images) => loop.run(instruction, images))
   }
 
   const cancel = () => loopRef.current?.cancel()
@@ -636,18 +652,28 @@ export function AiPanel({
     setSnapshots((prev) => prev.filter((s) => s !== snapshot))
   }
 
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => resizeCleanupRef.current?.(), [])
+
   /** drag the panel's right edge to resize; panel is flush with the window's left edge */
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
+    const resizer = e.currentTarget
     setResizing(true)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: PointerEvent) => {
       setPanelWidth(clampPanelWidth(ev.clientX))
     }
-    const onUp = () => {
+    let done = false
+    const cleanup = () => {
+      if (done) return
+      done = true
+      resizeCleanupRef.current = null
       window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
+      resizer.removeEventListener('lostpointercapture', cleanup)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setResizing(false)
@@ -656,8 +682,13 @@ export function AiPanel({
         return w
       })
     }
+    resizeCleanupRef.current = cleanup
     window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointerup', cleanup)
+    window.addEventListener('pointercancel', cleanup)
+    // lostpointercapture also fires if the resizer is unmounted mid-drag (panel collapse)
+    resizer.addEventListener('lostpointercapture', cleanup)
+    resizer.setPointerCapture(e.pointerId)
   }
 
   // collapsed: rail only — after all hooks, so the instance and its state survive

@@ -145,6 +145,24 @@ export function IconAlignJustify(props: IconProps) {
   )
 }
 
+export function IconDirLtr(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 3.02 3.85 h 9.96 M 3.02 6.34 h 6.64 M 3.02 11.32 h 7.1" />
+      <path d="M 9.8 9.4 l 2.9 1.92 -2.9 1.92 z" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+export function IconDirRtl(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 3.02 3.85 h 9.96 M 6.34 6.34 h 6.64 M 5.88 11.32 h 7.1" />
+      <path d="M 6.2 9.4 l -2.9 1.92 2.9 1.92 z" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
 export function IconLineSpacing(props: IconProps) {
   return (
     <Svg {...props}>
@@ -215,7 +233,7 @@ function TextGlyph({
       fontSize={s}
       fill="currentColor"
       stroke="none"
-      fontFamily="Segoe UI, PingFang SC, sans-serif"
+      fontFamily="Segoe UI, sans-serif"
       fontWeight={bold ? 700 : 400}
     >
       {children}

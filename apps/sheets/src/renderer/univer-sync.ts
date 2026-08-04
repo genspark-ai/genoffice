@@ -1199,6 +1199,9 @@ export async function readChartRangeVector(
 const RECALC_DEBOUNCE_MS = 600
 const RECALC_READ_BUDGET = 20_000
 const RECALC_MAX_EDITS = 10_000
+/// transient sidecar hiccups retry on the next edit; repeated rejection of
+/// this workbook disables the fallback for the session
+export const RECALC_MAX_FAILURES = 3
 
 /// IronCalc fallback: when closure mode gave up on a streamed workbook, the
 /// pending edits still recalculate — in the sidecar, against the on-disk
@@ -1210,7 +1213,7 @@ export function queueFormulaRecalc(
 ): void {
   const state = lazyWorkbookRef.current
   if (!state || state.formulaMode || state.closure.status !== 'unavailable') return
-  if (state.recalc.failed) return
+  if (state.recalc.failures >= RECALC_MAX_FAILURES) return
   // The engine loads the file from disk; session structural edits would
   // desync every coordinate — fail soft to cached values.
   if ([...state.editJournal.structuralOps.values()].some((ops) => ops.length > 0)) return
@@ -1331,6 +1334,7 @@ async function runFormulaRecalc(
         journalSuppression.active = false
       }
     }
+    state.recalc.failures = 0
     if (isActiveSheet(runtime, sheetId)) {
       setMessage(
         unsupported > 0
@@ -1339,9 +1343,13 @@ async function runFormulaRecalc(
       )
     }
   } catch {
-    // Fail soft for the rest of the session: cached values stay on screen
-    // and the save still asks Excel to recalculate on open.
-    state.recalc.failed = true
+    // Fail soft: cached values stay on screen and the save still asks Excel
+    // to recalculate on open. Repeated failures disable the fallback — but
+    // only the current run may count (mirrors the success path's guard):
+    // a superseded run failing after a newer success must not stack stale
+    // failures toward the kill switch.
+    if (lazyWorkbookRef.current !== state || state.recalc.generation !== generation) return
+    state.recalc.failures += 1
   }
 }
 
@@ -1604,9 +1612,12 @@ function applyRowProperties(
       if (applied.has(key)) continue
       applied.add(key)
       if (row.height !== undefined) {
-        // The engine only reports ht when customHeight="1" — an explicit
-        // user-set height. OOXML semantics: honor it and clip overflowing
-        // wrapped content instead of auto-growing the row.
+        // The engine reports ht for every row that carries one, not just
+        // customHeight="1" rows: Excel stores its laid-out height (auto-fit
+        // included), and honoring it reproduces Excel's layout exactly.
+        // Re-measuring instead with whatever fonts the host OS substitutes
+        // clipped wrapped CJK rows on Windows. Forced = clip overflow and
+        // skip auto-height, exactly like Excel renders a freshly opened file.
         worksheet.setRowHeightsForced(row.row, 1, Math.round((row.height * 96) / 72))
       }
       if (row.hidden) worksheet.hideRows(row.row, 1)

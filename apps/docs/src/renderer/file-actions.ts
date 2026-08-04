@@ -6,6 +6,7 @@
  * so state never goes stale.
  */
 import type { Editor } from '@tiptap/core'
+import { history } from '@tiptap/pm/history'
 import {
   applyPageNumType,
   applySectionSettings,
@@ -52,6 +53,9 @@ import {
   type InkTool,
 } from './editor/ink'
 import { t, getLang } from './i18n/locale'
+import { isBlankDocument } from './ai/protocol'
+import { isDocDirty } from './doc-dirty'
+import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
@@ -158,6 +162,17 @@ export interface FileActionContext {
   setCompareResult: (value: { otherName: string; entries: CompareEntry[] } | null) => void
 }
 
+/** Drop the undo stack: undo across an open/reparse boundary resurrects stale
+ *  docxIndex anchors (corrupting the next save) or the previous document. */
+function resetEditorHistory(editor: Editor): void {
+  const plugin = editor.state.plugins.find((p) =>
+    String((p as unknown as { key: string }).key).startsWith('history$'),
+  )
+  if (!plugin) return
+  editor.unregisterPlugin('history')
+  editor.registerPlugin(history((plugin.spec as { config?: object }).config))
+}
+
 export async function loadFile(
   ctx: FileActionContext,
   result: OpenFileResult | null,
@@ -167,6 +182,8 @@ export async function loadFile(
     const parsed = await parseDocx(new Uint8Array(result.data))
     ctx.editor.storage.listNumbering.defs = parsed.numbering
     ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    resetEditorHistory(ctx.editor)
+    noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: result.path, fileName: result.name, hash: result.hash })
     ctx.setAiPanelKey((k) => k + 1)
     ctx.setDocCss(docStyleCss(parsed))
@@ -249,6 +266,8 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const parsed = await parseDocx(bytes)
     ctx.editor.storage.listNumbering.defs = parsed.numbering
     ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    resetEditorHistory(ctx.editor)
+    noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: null, fileName: t('appUntitledDocx'), hash: '', isBlank: true })
     ctx.setAiPanelKey((k) => k + 1)
     ctx.setDocCss(docStyleCss(parsed))
@@ -451,10 +470,23 @@ export async function buildDocBytes(ctx: FileActionContext): Promise<Uint8Array 
  * Crash-recovery copy: serialize the dirty document and hand the
  * bytes to the main process, which stores them under userData. Best-effort —
  * a failure only means this tick's copy is skipped.
+ *
+ * A dirty document that never got a path can't have a recovery copy (the main
+ * process only accepts allowlisted paths), so it is silently persisted into the
+ * default folder first (same save-new path as the first manual save); every
+ * later tick then covers it like any opened file.
  */
 export async function writeRecoveryCopy(ctx: FileActionContext): Promise<void> {
-  const { doc } = ctx
-  if (!doc?.filePath || !ctx.dirtyRef.current || ctx.saveInFlightRef.current) return
+  const { doc, editor } = ctx
+  if (!doc || !editor || ctx.saveInFlightRef.current || !isDocDirty(ctx)) return
+  if (!doc.filePath) {
+    if (isBlankDocument(editor)) return
+    if (editor.view.composing) return
+    const active = document.activeElement as HTMLElement | null
+    if (active?.closest('td[contenteditable], .doc-textbox')) return
+    await save(ctx, false, true)
+    return
+  }
   try {
     const bytes = await buildDocBytes(ctx)
     if (!bytes) return
@@ -468,14 +500,36 @@ export async function writeRecoveryCopy(ctx: FileActionContext): Promise<void> {
   }
 }
 
-export async function save(
-  ctx: FileActionContext,
-  saveAs: boolean,
-  auto = false,
-): Promise<boolean> {
+const runSerializedSave = createSaveSerializer()
+
+/**
+ * Path assigned by the first save of a still-pathless document (silent save-new
+ * or Save As). A queued save whose ctx snapshot predates that first save still
+ * sees `doc.filePath === null`; without this it would re-run the save-new path
+ * and create a duplicate file. Reset whenever a different document is loaded.
+ */
+let pathlessDocSavedPath: string | null = null
+
+export function noteDocumentSwapped(): void {
+  pathlessDocSavedPath = null
+}
+
+export function save(ctx: FileActionContext, saveAs: boolean, auto = false): Promise<boolean> {
+  // A save arriving mid-flight waits for the current one instead of failing.
+  // Reuse the finished pass only when it left nothing behind — judged by the
+  // composite dirty check (header/section/theme edits do not set dirtyRef), plus
+  // the raced-with-typing flag. A pass that left anything runs its own pass;
+  // saveOnce resolves a stale pathless snapshot via pathlessDocSavedPath, so
+  // the retry can no longer create a duplicate file.
+  return runSerializedSave(
+    () => saveOnce(ctx, saveAs, auto),
+    () => !saveAs && !ctx.saveIncompleteRef.current && !isDocDirty(ctx),
+  )
+}
+
+async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean): Promise<boolean> {
   const { doc, editor } = ctx
   if (!doc || !editor) return false
-  if (ctx.saveInFlightRef.current) return false
   ctx.saveInFlightRef.current = true
   ctx.saveIncompleteRef.current = false
   try {
@@ -490,8 +544,10 @@ export async function save(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,
     ) as ArrayBuffer
-    let savedPath = doc.filePath
-    if (saveAs || !doc.filePath) {
+    // a pathless snapshot may belong to a document that an earlier queued pass
+    // already landed on disk — overwrite that file instead of creating another
+    let savedPath = doc.filePath ?? pathlessDocSavedPath
+    if (saveAs || !savedPath) {
       // A never-saved document still called "Untitled" gets a name derived from its first heading
       const autoName =
         !doc.filePath && doc.fileName === t('appUntitledDocx') ? deriveAutoFileName(editor) : null
@@ -504,10 +560,15 @@ export async function save(
         return false
       }
       savedPath = result.path!
+      if (!doc.filePath) pathlessDocSavedPath = savedPath
     } else {
-      const result = await window.desktop.saveDocx(doc.filePath, buffer)
+      const result = await window.desktop.saveDocx(savedPath, buffer, auto)
       if (!result.ok) {
-        ctx.setStatus(t('appSaveFailed', { error: result.error ?? '' }))
+        // external-modified: the main process already prompted (or the autosave
+        // deferred to a manual save) — stay dirty, no second dialog/error banner
+        if (result.reason !== 'external-modified') {
+          ctx.setStatus(t('appSaveFailed', { error: result.error ?? '' }))
+        }
         return false
       }
     }
@@ -534,12 +595,24 @@ export async function save(
     // Reload from saved bytes so docxIndex anchors point at the new file.
     const reparsed = await parseDocx(bytes)
     editor.storage.listNumbering.defs = reparsed.numbering
-    editor.commands.setContent(blocksToPmDoc(reparsed.blocks) as never)
-    ctx.setDocCss(docStyleCss(reparsed))
-    if (auto) {
-      // silent save: keep the caret where the user was typing
-      editor.commands.setTextSelection(Math.min(selectionPos, editor.state.doc.content.size))
+    const rebasedPm = blocksToPmDoc(reparsed.blocks)
+    let unchanged = false
+    try {
+      unchanged = editor.state.doc.eq(editor.schema.nodeFromJSON(rebasedPm))
+    } catch {
+      /* unrepresentable → rewrite */
     }
+    // Equal doc: skip the rewrite so undo history, caret and scroll survive.
+    if (!unchanged) {
+      editor.commands.setContent(rebasedPm as never)
+      resetEditorHistory(editor)
+      const chain = editor
+        .chain()
+        .setTextSelection(Math.min(selectionPos, editor.state.doc.content.size))
+      if (!auto) chain.scrollIntoView()
+      chain.run()
+    }
+    ctx.setDocCss(docStyleCss(reparsed))
     ctx.setDoc((prev) =>
       prev
         ? {

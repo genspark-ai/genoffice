@@ -60,6 +60,8 @@ export function HeaderFooterArea({
   const { t } = useI18n()
   const [editing, setEditing] = useState(false)
   const editRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef(false)
+  const initialTextRef = useRef('')
   const paras = parasOf(value)
 
   // The editing surface is a standalone element: content is injected here and React
@@ -70,6 +72,8 @@ export function HeaderFooterArea({
     const el = editRef.current
     if (!el) return
     el.innerText = paras.map((p) => p.runs.map((r) => r.text).join('')).join('\n')
+    cancelRef.current = false
+    initialTextRef.current = el.innerText
     el.focus()
     const sel = window.getSelection()
     if (sel) {
@@ -83,6 +87,11 @@ export function HeaderFooterArea({
     const el = editRef.current
     setEditing(false)
     if (!el) return
+    if (cancelRef.current) {
+      cancelRef.current = false
+      return
+    }
+    if (el.innerText === initialTextRef.current) return
     const lines = el.innerText.replace(/\n+$/, '').split('\n')
     const nextParas: HfParagraph[] = lines.map((line, i) => {
       const template = paras[Math.min(i, paras.length - 1)]
@@ -137,6 +146,8 @@ export function HeaderFooterArea({
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               e.preventDefault()
+              e.stopPropagation()
+              cancelRef.current = true
               ;(e.target as HTMLElement).blur()
             }
           }}
