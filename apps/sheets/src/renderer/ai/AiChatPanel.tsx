@@ -148,11 +148,15 @@ export function AiChatPanel({
     }
   }, [chat, preview])
 
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => resizeCleanupRef.current?.(), [])
+
   /** Drag the right edge to resize: the panel is flush with the window's left edge, so width = clientX; the grid transition is disabled while dragging */
   const startResize = (e: React.PointerEvent<HTMLDivElement>): void => {
     e.preventDefault()
     const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
     if (!area) return
+    const resizer = e.currentTarget
     setResizing(true)
     area.style.transition = 'none'
     document.body.style.cursor = 'col-resize'
@@ -162,17 +166,28 @@ export function AiChatPanel({
       width = clampPanelWidth(ev.clientX)
       area.style.setProperty('--copilot-width', `${width}px`)
     }
-    const onUp = (): void => {
+    let done = false
+    const cleanup = (): void => {
+      if (done) return
+      done = true
+      resizeCleanupRef.current = null
       window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
+      resizer.removeEventListener('lostpointercapture', cleanup)
       area.style.transition = ''
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setResizing(false)
       if (width > 0) localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(width)))
     }
+    resizeCleanupRef.current = cleanup
     window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointerup', cleanup)
+    window.addEventListener('pointercancel', cleanup)
+    // lostpointercapture also fires if the resizer is unmounted mid-drag (panel collapse)
+    resizer.addEventListener('lostpointercapture', cleanup)
+    resizer.setPointerCapture(e.pointerId)
   }
 
   const onChatScroll = (): void => {

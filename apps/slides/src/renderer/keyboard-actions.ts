@@ -74,6 +74,12 @@ export function handleGlobalKeydown(ctx: ActionCtx, e: KeyboardEvent): void {
     return
   }
   if (editing || inField) return
+  // ⌘C/⌘X with text dragged in plain DOM (e.g. AI panel, focus on body): let the
+  // native copy run instead of hijacking it for the slide/element clipboard
+  if (mod && !e.altKey && !e.shiftKey && ['c', 'C', 'x', 'X'].includes(e.key)) {
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed) return
+  }
   // Esc: exit format painter continuous mode
   if (e.key === 'Escape' && ctx.brushMode) {
     e.preventDefault()
@@ -142,11 +148,11 @@ export function handleGlobalKeydown(ctx: ActionCtx, e: KeyboardEvent): void {
     }
     return
   }
-  // ⌘A: select all elements on the page (excluding decoration layer/placeholder chips)
+  // ⌘A: select all elements on the page (excluding decoration layer/placeholder chips/full-page backgrounds)
   if (mod && !e.altKey && (e.key === 'a' || e.key === 'A')) {
     e.preventDefault()
     const ids = (slide?.nodes ?? [])
-      .filter((n) => !n.decoration && n.type !== 'placeholder-chip')
+      .filter((n) => !n.decoration && !n.background && n.type !== 'placeholder-chip')
       .map((n) => n.sourceId)
     if (ids.length) ctx.setSelectedIds(ids)
     return

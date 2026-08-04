@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { ChartDisplay, NewChart } from '@genoffice/docx-engine'
 import type { AgentToolCall, AgentToolDef } from '../../shared/ipc'
 import { t } from '../i18n/locale'
@@ -7,6 +8,7 @@ import {
   blockRangePositions,
   buildDocumentContext,
   insertBlocksAfter,
+  isBlankDocument,
   parseHtmlFragment,
   replaceBlockRange,
   serializeRangeToHtml,
@@ -32,12 +34,18 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'read_blocks',
     description:
-      'Read the full content of a block range (restricted HTML). Previews in the block list are truncated; you must read the full original text with this tool before rewriting.',
+      'Read the full content of a block range (restricted HTML). Previews in the block list are truncated; you must read the full original text with this tool before rewriting. ' +
+      'Long ranges are paged: a truncated result says which offset to continue from; concatenate the slices in order to get the full HTML.',
     inputSchema: {
       type: 'object',
       properties: {
         startBlockIndex: { type: 'integer', description: 'start block index (0-based, inclusive)' },
         endBlockIndex: { type: 'integer', description: 'end block index (inclusive)' },
+        offset: {
+          type: 'integer',
+          description:
+            'character offset to continue a truncated read (default 0); use the offset given in the previous truncation notice',
+        },
       },
       required: ['startBlockIndex', 'endBlockIndex'],
     },
@@ -221,7 +229,36 @@ const fail = (summary: string, output: string): ToolExecution => ({
   summary,
 })
 
-function clampRange(
+/** Doc as last seen by the AI pipeline (context build / read / own write); a differing doc means the user edited in between. */
+const docBaseline = new WeakMap<Editor, ProseMirrorNode>()
+
+export function markDocSeen(editor: Editor): void {
+  docBaseline.set(editor, editor.state.doc)
+}
+
+function editedExternally(editor: Editor): boolean {
+  const seen = docBaseline.get(editor)
+  return seen !== undefined && seen !== editor.state.doc
+}
+
+/** tools addressing the document by block index: refused after an external edit until the model re-reads */
+const INDEX_WRITE_SUMMARIES: Record<string, () => string> = {
+  insert_content: () => t('aiSumInsertContent'),
+  replace_blocks: () => t('aiSumReplaceContent'),
+  apply_commands: () => t('aiSumApplyCommands'),
+  insert_chart: () => t('aiSumInsertChart'),
+  edit_chart: () => t('aiSumEditChart'),
+}
+
+const STALE_DOC_ERROR =
+  'The document was edited by the user since it was last read; block indexes may be stale. ' +
+  'Call get_document_context (or read_blocks) to get the current state, then retry.'
+
+function rangeError(editor: Editor): string {
+  return `block index invalid or out of range (the document has ${editor.state.doc.childCount} blocks); call get_document_context for fresh indexes`
+}
+
+function validRange(
   editor: Editor,
   start: unknown,
   end: unknown,
@@ -230,8 +267,9 @@ function clampRange(
   if (!Number.isInteger(start) || !Number.isInteger(end)) return null
   const s = Number(start)
   const e = Number(end)
-  if (s < 0 || e < s || s >= count) return null
-  return { start: s, end: Math.min(e, count - 1) }
+  // an out-of-range end must surface as an error, not silently clamp onto the wrong blocks
+  if (s < 0 || e < s || e >= count) return null
+  return { start: s, end: e }
 }
 
 /** Read the natural size of a dataURL image. */
@@ -245,12 +283,23 @@ function imageSizeOf(dataUrl: string): Promise<{ width: number; height: number }
 }
 
 /** Async tools: web search / image search / insert web image. */
-async function executeAsyncTool(editor: Editor, call: AgentToolCall): Promise<ToolExecution> {
+async function executeAsyncTool(
+  editor: Editor,
+  call: AgentToolCall,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
   switch (call.name) {
     case 'web_search': {
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiSumWebSearch'), 'query must not be empty')
       const r = await window.desktop.webSearch(query, Number(call.input.maxResults) || 6)
+      // a backend failure must not read as "no results" — the model would fabricate conclusions
+      if (r.method === 'error') {
+        return fail(
+          t('aiSumWebSearch'),
+          `web search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
       const lines: string[] = []
       if (r.answer) lines.push(`Direct answer: ${r.answer}\n`)
       r.results.forEach((it, i) =>
@@ -266,6 +315,13 @@ async function executeAsyncTool(editor: Editor, call: AgentToolCall): Promise<To
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiSumImageSearch'), 'query must not be empty')
       const r = await window.desktop.imageSearch(query, Number(call.input.maxResults) || 8)
+      // a backend failure must not read as an empty gallery — the model would fabricate image choices
+      if (r.method === 'error') {
+        return fail(
+          t('aiSumImageSearch'),
+          `image search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
       const lines = r.images.map(
         (im, i) =>
           `${i + 1}. ${im.title || '(untitled)'} [${im.width ?? '?'}x${im.height ?? '?'}]\n   ${im.imageUrl}`,
@@ -280,15 +336,24 @@ async function executeAsyncTool(editor: Editor, call: AgentToolCall): Promise<To
       const url = String(call.input.url ?? '')
       if (!/^https?:\/\//.test(url)) return fail(t('aiSumInsertImage'), 'invalid url')
       const fetched = await window.desktop.fetchImage(url)
+      // never write after the user hit stop (the download may resolve long after the abort)
+      if (signal?.aborted)
+        return fail(t('aiSumInsertImage'), 'stopped by the user; the image was not inserted')
       if (!fetched)
         return fail(t('aiSumInsertImage'), 'download failed (the image may not be accessible)')
       const dataUrl = `data:${fetched.mime};base64,${fetched.base64}`
       const maxW = Number(call.input.maxWidthPx) || 480
       try {
         const natural = await imageSizeOf(dataUrl)
+        if (signal?.aborted)
+          return fail(t('aiSumInsertImage'), 'stopped by the user; the image was not inserted')
         const scale = Math.min(1, maxW / natural.width)
         const w = Math.round(natural.width * scale)
         const h = Math.round(natural.height * scale)
+        // The download can take long: user edits made meanwhile must keep the
+        // freshness baseline stale, so only our own insertion may mark the doc
+        // seen. Checked right before the write — there is no async gap after.
+        const userEditedDuringFetch = editedExternally(editor)
         editor
           .chain()
           .focus()
@@ -305,6 +370,7 @@ async function executeAsyncTool(editor: Editor, call: AgentToolCall): Promise<To
             },
           })
           .run()
+        if (!userEditedDuringFetch) markDocSeen(editor)
         return {
           output: `Inserted the image (${w}×${h}px).`,
           mutated: true,
@@ -324,11 +390,31 @@ export function executeTool(
   call: AgentToolCall,
   numIds: NumIds,
   track?: AiTrack,
+  signal?: AbortSignal,
 ): ToolExecution | Promise<ToolExecution> {
-  // async tools (search/image insertion) take a separate Promise branch; the other sync tools keep returning synchronously (doesn't break existing tests).
-  if (call.name === 'web_search' || call.name === 'image_search' || call.name === 'insert_image') {
-    return executeAsyncTool(editor, call)
+  const staleSummary = INDEX_WRITE_SUMMARIES[call.name]
+  if (staleSummary && editedExternally(editor)) return fail(staleSummary(), STALE_DOC_ERROR)
+  const settle = (exec: ToolExecution): ToolExecution => {
+    const readsDoc = call.name === 'get_document_context' || call.name === 'read_blocks'
+    if (exec.mutated || (readsDoc && !exec.isError)) markDocSeen(editor)
+    return exec
   }
+  // Async tools take a separate Promise branch; the other sync tools keep returning
+  // synchronously (doesn't break existing tests). No settle here: marking the doc
+  // seen after the long download would baptize user edits made meanwhile —
+  // insert_image maintains the baseline itself right at its synchronous write.
+  if (call.name === 'web_search' || call.name === 'image_search' || call.name === 'insert_image') {
+    return executeAsyncTool(editor, call, signal)
+  }
+  return settle(executeSyncTool(editor, call, numIds, track))
+}
+
+function executeSyncTool(
+  editor: Editor,
+  call: AgentToolCall,
+  numIds: NumIds,
+  track?: AiTrack,
+): ToolExecution {
   switch (call.name) {
     case 'get_document_context':
       return {
@@ -338,13 +424,26 @@ export function executeTool(
       }
 
     case 'read_blocks': {
-      const range = clampRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
-      if (!range) return fail(t('aiSumReadBlocks'), 'block index invalid or out of range')
+      const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
+      if (!range) return fail(t('aiSumReadBlocks'), rangeError(editor))
       const html = serializeRangeToHtml(editor, range.start, range.end)
-      const clipped =
-        html.length > READ_MAX_CHARS ? html.slice(0, READ_MAX_CHARS) + '\n…(truncated)' : html
+      const offset = Math.max(0, Math.trunc(Number(call.input.offset)) || 0)
+      if (offset > 0 && offset >= html.length) {
+        return fail(
+          t('aiSumReadBlocks'),
+          `offset ${offset} is beyond the content (${html.length} characters in total)`,
+        )
+      }
+      const slice = html.slice(offset, offset + READ_MAX_CHARS)
+      const end = offset + slice.length
+      const note =
+        end < html.length
+          ? `\n…(truncated: ${html.length} characters in total, call read_blocks again with offset=${end} to continue)`
+          : offset > 0
+            ? `\n(end of range: ${html.length} characters in total)`
+            : ''
       return {
-        output: clipped || '(range is empty)',
+        output: slice ? slice + note : '(range is empty)',
         mutated: false,
         summary: t('aiSumReadBlocksRange', { start: range.start, end: range.end }),
       }
@@ -361,8 +460,7 @@ export function executeTool(
       if (nodes.length === 0)
         return fail(t('aiSumInsertContent'), 'html did not parse into any content blocks')
       const count = editor.state.doc.childCount
-      const docIsEmpty = editor.state.doc.textContent.trim() === ''
-      if (docIsEmpty) {
+      if (isBlankDocument(editor)) {
         // the blank template's single empty paragraph gets replaced
         replaceBlockRange(editor, 0, count - 1, nodes, track)
         return {
@@ -386,8 +484,8 @@ export function executeTool(
     }
 
     case 'replace_blocks': {
-      const range = clampRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
-      if (!range) return fail(t('aiSumReplaceContent'), 'block index invalid or out of range')
+      const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
+      if (!range) return fail(t('aiSumReplaceContent'), rangeError(editor))
       let nodes: ReturnType<typeof parseHtmlFragment>
       try {
         nodes = parseHtmlFragment(String(call.input.html ?? ''), numIds)

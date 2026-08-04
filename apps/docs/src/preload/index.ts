@@ -36,9 +36,15 @@ const api: DesktopApi = {
     ipcRenderer.on('docs:renamed', listener)
     return () => ipcRenderer.removeListener('docs:renamed', listener)
   },
-  saveDocx: (path: string, data: ArrayBuffer) => ipcRenderer.invoke('docs:save', path, data),
+  saveDocx: (path: string, data: ArrayBuffer, auto?: boolean) =>
+    ipcRenderer.invoke('docs:save', path, data, auto === true),
   writeRecoveryCopy: (path: string, data: ArrayBuffer) =>
     ipcRenderer.invoke('docs:write-recovery', path, data),
+  onTeardown: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('docs:teardown', listener)
+    return () => ipcRenderer.removeListener('docs:teardown', listener)
+  },
   saveDocxAs: (defaultName: string, data: ArrayBuffer) =>
     ipcRenderer.invoke('docs:save-as', defaultName, data),
   saveDocxNew: (defaultName: string, data: ArrayBuffer) =>

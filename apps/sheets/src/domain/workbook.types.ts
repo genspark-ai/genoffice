@@ -1,4 +1,9 @@
-import type { BorderPatch, CellFormatPatch, LayoutOperation, StructuralOperation } from './workbook-dsl'
+import type {
+  BorderPatch,
+  CellFormatPatch,
+  LayoutOperation,
+  StructuralOperation,
+} from './workbook-dsl'
 import type { SheetVisual } from './chart-visual'
 
 export type CellScalar = string | number | boolean | null
@@ -81,6 +86,12 @@ export interface ChangePlan {
   readonly structuralChanges: readonly StructuralChange[]
   readonly formatChanges: readonly FormatChange[]
   readonly warnings: readonly string[]
+}
+
+/** result of applying a proposed plan to the live workbook */
+export interface ApplyOutcome {
+  readonly ok: boolean
+  readonly reason?: string
 }
 
 export interface CommitReceipt {

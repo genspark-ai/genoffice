@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { armColorInput } from '../src/renderer/color-input'
+import { armColorInput, toPickerHex } from '../src/renderer/color-input'
 
 function fakeInput(value: string): HTMLInputElement {
   return { value } as HTMLInputElement
@@ -32,5 +32,23 @@ describe('armColorInput', () => {
     const input = fakeInput('')
     armColorInput(input)
     expect(input.value).toBe('')
+  })
+})
+
+describe('toPickerHex', () => {
+  it('lowercases and keeps the # prefix', () => {
+    expect(toPickerHex('#FF8800')).toBe('#ff8800')
+    expect(toPickerHex('4472C4')).toBe('#4472c4')
+  })
+
+  it('drops the alpha byte of #RRGGBBAA', () => {
+    expect(toPickerHex('#FF880080')).toBe('#ff8800')
+  })
+
+  it('returns null for missing or non-hex colors (gradient/image backgrounds)', () => {
+    expect(toPickerHex(undefined)).toBeNull()
+    expect(toPickerHex('')).toBeNull()
+    expect(toPickerHex('red')).toBeNull()
+    expect(toPickerHex('#fff')).toBeNull()
   })
 })

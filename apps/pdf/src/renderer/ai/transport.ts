@@ -6,9 +6,11 @@ import { t } from '../i18n/locale'
 export function createElectronTransport(getSettings: () => AiSettings): AgentTransport {
   return createIpcTransport<AiSettings>({
     onStream: (listener) => window.pdfApi.onAiStream(listener),
-    start: (request) => void window.pdfApi.aiStream(request),
+    start: (request) => window.pdfApi.aiStream(request),
     cancel: (requestId) => void window.pdfApi.aiStreamCancel(requestId),
     getSettings,
     unknownErrorText: () => t('aiUnknownError'),
+    timeoutErrorText: () => t('aiTimeoutError'),
+    creditsErrorText: () => t('aiCreditsExhausted'),
   })
 }

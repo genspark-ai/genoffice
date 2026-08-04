@@ -150,9 +150,18 @@ export interface DesktopApi {
   onOpenDocx(handler: (result: OpenFileResult) => void): () => void
   /** File was renamed externally (renamed in the shell Home list) — pushes old and new paths; renderer syncs its save path and title bar */
   onRenamedDocx(handler: (paths: { oldPath: string; newPath: string }) => void): () => void
-  saveDocx(path: string, data: ArrayBuffer): Promise<{ ok: boolean; error?: string }>
+  /** auto=true marks an autosave: an externally modified file then fails with
+   *  reason 'external-modified' instead of prompting (manual saves get an
+   *  Overwrite/Cancel dialog in the main process) */
+  saveDocx(
+    path: string,
+    data: ArrayBuffer,
+    auto?: boolean,
+  ): Promise<{ ok: boolean; error?: string; reason?: 'external-modified' }>
   /** crash-recovery copy of a dirty document, stored under userData */
   writeRecoveryCopy(path: string, data: ArrayBuffer): Promise<{ ok: boolean }>
+  /** tab closed but webContents kept alive (shell freeze workaround) — stop background timers */
+  onTeardown(handler: () => void): () => void
   saveDocxAs(
     defaultName: string,
     data: ArrayBuffer,
@@ -168,7 +177,8 @@ export interface DesktopApi {
   setAiSettings(settings: AiSettings): Promise<void>
   /** system print dialog for the current window */
   print(): Promise<void>
-  /** render the document to PDF and ask where to save; size in twips */
+  /** render the document to PDF and ask where to save; size in twips.
+   *  outPath is only honored when a previous export dialog chose that exact path */
   exportPdf(
     defaultName: string,
     pageWidthTwips: number,
@@ -180,7 +190,8 @@ export interface DesktopApi {
     pageWidthTwips: number,
     pageHeightTwips: number,
   ): Promise<{ ok: boolean; base64?: string; error?: string }>
-  /** Merge grouped PDF fragments in order and write to disk (missing outPath opens the save dialog) */
+  /** Merge grouped PDF fragments in order and write to disk (missing outPath opens
+   *  the save dialog; a given outPath must come from a previous export dialog) */
   saveMergedPdf(
     defaultName: string,
     base64Parts: string[],
@@ -201,6 +212,8 @@ export interface DesktopApi {
     results: Array<{ title: string; url: string; snippet: string }>
     answer?: string
     method: string
+    /** failure reason when method === 'error' */
+    error?: string
   }>
   imageSearch(
     query: string,
@@ -215,6 +228,8 @@ export interface DesktopApi {
       height?: number
     }>
     method: string
+    /** failure reason when method === 'error' */
+    error?: string
   }>
   fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
   /** file picker for chat attachments (multi-select) */

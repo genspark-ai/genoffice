@@ -245,6 +245,10 @@ export async function applyThemePreset(ctx: ActionCtx, preset: SlideThemePreset)
     ...(preset.minorFont ? { minorFont: preset.minorFont } : {}),
     fitWidthPx: FIT_WIDTH,
   })
+  if (r && !Array.isArray(r)) {
+    ctx.setStatus(t('appStatusThemeApplyFailed', { error: r.error }))
+    return
+  }
   if (r) {
     ctx.setSlides(r)
     ctx.setSelectedIds([])

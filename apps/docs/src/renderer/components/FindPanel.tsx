@@ -15,11 +15,21 @@ interface FindOptions {
 
 const isWordChar = (ch: string | undefined) => !!ch && /[\p{L}\p{N}_]/u.test(ch)
 
+/** length-preserving lowercase: chars whose lowercase grows ('İ' → 'i̇') stay as-is so match offsets never shift */
+export function foldCase(s: string): string {
+  let out = ''
+  for (const ch of s) {
+    const lower = ch.toLowerCase()
+    out += lower.length === ch.length ? lower : ch
+  }
+  return out
+}
+
 /** collect matches inside editable textblocks (protected blocks excluded) */
-function findMatches(editor: Editor, query: string, opts: FindOptions): Range[] {
+export function findMatches(editor: Editor, query: string, opts: FindOptions): Range[] {
   const found: Range[] = []
   if (!query) return found
-  const needle = opts.matchCase ? query : query.toLowerCase()
+  const needle = opts.matchCase ? query : foldCase(query)
   editor.state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     // flatten the block's inline content so matches spanning marks are found
@@ -34,7 +44,7 @@ function findMatches(editor: Editor, query: string, opts: FindOptions): Range[] 
         text += '\u0000' // leaf placeholder (hard break) never matches
       }
     })
-    const haystack = opts.matchCase ? text : text.toLowerCase()
+    const haystack = opts.matchCase ? text : foldCase(text)
     let i = 0
     while ((i = haystack.indexOf(needle, i)) !== -1) {
       const isWhole =
@@ -56,6 +66,8 @@ interface FindPanelProps {
   onClose: () => void
 }
 
+const SCAN_DEBOUNCE_MS = 150
+
 export function FindPanel({ editor, onClose }: FindPanelProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
@@ -65,6 +77,8 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
   const [matchCase, setMatchCase] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const indexRef = useRef(0)
+  const canEdit = editor.isEditable
 
   const highlight = useCallback(
     (ranges: Range[], activeIndex: number) => {
@@ -82,72 +96,125 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
     [editor],
   )
 
+  // rescan only updates matches/highlight; scrolling happens on explicit navigation
   const refresh = useCallback(
     (q: string, keepIndex = 0, opts?: Partial<FindOptions>) => {
       const ranges = findMatches(editor, q, { matchCase, wholeWord, ...opts })
       const active = ranges.length === 0 ? 0 : Math.min(keepIndex, ranges.length - 1)
       setMatches(ranges)
       setIndex(active)
+      indexRef.current = active
       highlight(ranges, active)
-      if (ranges.length > 0) scrollTo(ranges[active])
       return ranges
     },
-    [editor, highlight, scrollTo, matchCase, wholeWord],
+    [editor, highlight, matchCase, wholeWord],
+  )
+
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
+  const timerRef = useRef<number | null>(null)
+  const pendingKeepRef = useRef<'reset' | 'current'>('reset')
+  const scheduleRefresh = useCallback((q: string, keep: 'reset' | 'current' = 'reset') => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    pendingKeepRef.current = keep
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null
+      refreshRef.current(q, keep === 'current' ? indexRef.current : 0)
+    }, SCAN_DEBOUNCE_MS)
+  }, [])
+  /** run a pending debounced scan now (Enter right after typing must see fresh matches) */
+  const flushPending = useCallback(
+    (q: string) => {
+      if (timerRef.current === null) return null
+      window.clearTimeout(timerRef.current)
+      timerRef.current = null
+      const keep = pendingKeepRef.current
+      return {
+        ranges: refresh(q, keep === 'current' ? indexRef.current : 0),
+        queryChanged: keep === 'reset',
+      }
+    },
+    [refresh],
   )
 
   useEffect(() => {
     inputRef.current?.focus()
     inputRef.current?.select()
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    }
   }, [])
 
-  // stay in sync while the document changes underneath (typing, AI edits)
+  // stay in sync while the document changes underneath (typing, AI edits).
+  // The listener reads the query through a ref: between a keystroke in the find
+  // box and the next render, the effect closure still holds the previous query
+  // and would overwrite the pending scan for the new needle with stale text.
+  const queryRef = useRef(query)
+  queryRef.current = query
   useEffect(() => {
     const onUpdate = () => {
-      if (!query) return
-      const ranges = findMatches(editor, query, { matchCase, wholeWord })
-      setMatches(ranges)
-      setIndex((i) => Math.min(i, Math.max(ranges.length - 1, 0)))
+      if (queryRef.current) scheduleRefresh(queryRef.current, 'current')
     }
     editor.on('update', onUpdate)
     return () => {
       editor.off('update', onUpdate)
     }
-  }, [editor, query, matchCase, wholeWord])
+  }, [editor, scheduleRefresh])
 
   const close = useCallback(() => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    timerRef.current = null
     highlight([], 0)
     onClose()
   }, [highlight, onClose])
 
   const step = useCallback(
     (dir: 1 | -1) => {
-      if (matches.length === 0) return
-      const next = (index + dir + matches.length) % matches.length
+      const fresh = flushPending(query)
+      const ranges = fresh ? fresh.ranges : matches
+      if (ranges.length === 0) return
+      // A flushed scan for a new query already landed on the first match — Enter should
+      // visit it, not skip past it. A keep-current refresh (document changed underneath)
+      // must still move in the requested direction from the refreshed position.
+      const next = fresh?.queryChanged
+        ? indexRef.current
+        : ((fresh ? indexRef.current : index) + dir + ranges.length) % ranges.length
       setIndex(next)
-      highlight(matches, next)
-      scrollTo(matches[next])
+      indexRef.current = next
+      highlight(ranges, next)
+      scrollTo(ranges[next])
     },
-    [matches, index, highlight, scrollTo],
+    [flushPending, query, matches, index, highlight, scrollTo],
   )
 
   const replaceOne = useCallback(() => {
-    const m = matches[index]
+    if (!editor.isEditable) return
+    // a pending debounced rescan means `matches` may describe the previous
+    // query or pre-edit positions — replacing those would edit the wrong text
+    const fresh = flushPending(query)
+    const ranges = fresh ? fresh.ranges : matches
+    const at = fresh ? indexRef.current : index
+    const m = ranges[at]
     if (!m) return
     editor.commands.command(({ tr }) => {
       tr.insertText(replacement, m.from, m.to)
       return true
     })
-    refresh(query, index)
-  }, [editor, matches, index, replacement, query, refresh])
+    const after = refresh(query, at)
+    if (after.length > 0) scrollTo(after[Math.min(at, after.length - 1)])
+  }, [editor, flushPending, matches, index, replacement, query, refresh, scrollTo])
 
   const replaceAll = useCallback(() => {
-    if (matches.length === 0) return
+    if (!editor.isEditable) return
+    const fresh = flushPending(query)
+    const ranges = fresh ? fresh.ranges : matches
+    if (ranges.length === 0) return
     editor.commands.command(({ tr }) => {
-      for (const m of [...matches].reverse()) tr.insertText(replacement, m.from, m.to)
+      for (const m of [...ranges].reverse()) tr.insertText(replacement, m.from, m.to)
       return true
     })
     refresh(query)
-  }, [editor, matches, replacement, query, refresh])
+  }, [editor, flushPending, matches, replacement, query, refresh])
 
   return (
     <div className="find-panel">
@@ -159,7 +226,8 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
-            refresh(e.target.value)
+            queryRef.current = e.target.value
+            scheduleRefresh(e.target.value)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') step(e.shiftKey ? -1 : 1)
@@ -187,36 +255,52 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
           W
         </button>
         <span className="find-count">
-          {query ? (matches.length === 0 ? t('appNoResults') : `${index + 1}/${matches.length}`) : ''}
+          {query
+            ? matches.length === 0
+              ? t('appNoResults')
+              : `${index + 1}/${matches.length}`
+            : ''}
         </span>
-        <button className="find-btn" title={t('appPrevMatch')} onClick={() => step(-1)} disabled={matches.length === 0}>
+        <button
+          className="find-btn"
+          title={t('appPrevMatch')}
+          onClick={() => step(-1)}
+          disabled={matches.length === 0}
+        >
           ‹
         </button>
-        <button className="find-btn" title={t('appNextMatch')} onClick={() => step(1)} disabled={matches.length === 0}>
+        <button
+          className="find-btn"
+          title={t('appNextMatch')}
+          onClick={() => step(1)}
+          disabled={matches.length === 0}
+        >
           ›
         </button>
         <button className="find-btn find-close" title={t('appCloseEsc')} onClick={close}>
           ✕
         </button>
       </div>
-      <div className="find-row">
-        <input
-          className="find-input"
-          placeholder={t('appReplacePlaceholder')}
-          value={replacement}
-          onChange={(e) => setReplacement(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') replaceOne()
-            if (e.key === 'Escape') close()
-          }}
-        />
-        <button className="find-action" onClick={replaceOne} disabled={matches.length === 0}>
-          {t('appReplace')}
-        </button>
-        <button className="find-action" onClick={replaceAll} disabled={matches.length === 0}>
-          {t('appReplaceAll')}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="find-row">
+          <input
+            className="find-input"
+            placeholder={t('appReplacePlaceholder')}
+            value={replacement}
+            onChange={(e) => setReplacement(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') replaceOne()
+              if (e.key === 'Escape') close()
+            }}
+          />
+          <button className="find-action" onClick={replaceOne} disabled={matches.length === 0}>
+            {t('appReplace')}
+          </button>
+          <button className="find-action" onClick={replaceAll} disabled={matches.length === 0}>
+            {t('appReplaceAll')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

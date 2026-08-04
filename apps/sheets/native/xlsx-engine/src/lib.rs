@@ -2166,11 +2166,15 @@ fn row_property<R: std::io::BufRead>(
     else {
         return Ok(None);
     };
-    let custom_height = attribute_value(reader, element, b"customHeight")?
-        .is_some_and(|value| value == "1" || value == "true");
+    // ht is reported with or without customHeight="1". Excel records the
+    // laid-out height of every non-default row — auto-fit results included —
+    // so honoring it reproduces Excel's layout regardless of which fonts the
+    // host OS has (re-measuring with substitute fonts clipped wrapped CJK
+    // rows on Windows). customHeight only matters when writing heights back,
+    // which the edit journal handles separately.
     let height = attribute_value(reader, element, b"ht")?
         .and_then(|value| value.parse::<f64>().ok())
-        .filter(|_| custom_height);
+        .filter(|value| *value >= 0.0);
     let hidden = attribute_value(reader, element, b"hidden")?
         .is_some_and(|value| value == "1" || value == "true");
     let outline_level = attribute_value(reader, element, b"outlineLevel")?
@@ -2769,6 +2773,64 @@ mod tests {
         assert_eq!(formulas.cells.len(), 5);
     }
 
+    /// Excel writes ht on auto-fitted rows without customHeight="1"; those
+    /// heights must survive parsing (dropping them forced a re-measure with
+    /// substitute fonts, which clipped wrapped CJK rows on Windows).
+    #[test]
+    fn reports_row_heights_without_custom_height_flag() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                // Row 1: Excel auto-fit height (no customHeight); row 2: an
+                // explicit user height; row 3: no height attributes at all.
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1" ht="38.25"><c r="A1"><v>1</v></c></row>
+<row r="2" ht="56" customHeight="1"><c r="A2"><v>2</v></c></row>
+<row r="3"><c r="A3"><v>3</v></c></row>
+</sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let sheet_id = metadata.sheets[0].id.clone();
+        let range = CellRange {
+            start_row: 0,
+            end_row: 2,
+            start_column: 0,
+            end_column: 0,
+        };
+        let result = loop {
+            let result = sessions
+                .read_range(&metadata.session_id, &sheet_id, &range)
+                .unwrap();
+            if result.indexing_complete {
+                break result;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let height_of = |row: usize| {
+            result
+                .rows
+                .iter()
+                .find(|property| property.row == row)
+                .and_then(|property| property.height)
+        };
+        assert_eq!(height_of(0), Some(38.25));
+        assert_eq!(height_of(1), Some(56.0));
+        assert!(!result.rows.iter().any(|property| property.row == 2));
+    }
+
     #[test]
     fn captures_array_formula_refs_on_master_cells() {
         let (_dir, path) = open_fixture(&[
@@ -2916,6 +2978,55 @@ mod tests {
             ]
         );
         assert_eq!(result.merges.len(), 1);
+    }
+
+    /// zh Excel/WPS date cells reference locale-reserved builtin numFmtIds
+    /// (27-36, 50-58) that carry no formatCode in styles.xml; they used to
+    /// resolve to None and render as raw date serials (e.g. 46230).
+    #[test]
+    fn resolves_locale_reserved_builtin_number_formats() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                // xf1: zh date (58), xf2: accounting (44), xf3: an explicit
+                // numFmt entry reusing a reserved id, which must win over
+                // the builtin table.
+                "xl/styles.xml",
+                r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1"><numFmt numFmtId="57" formatCode="yyyy/m/d"/></numFmts>
+<fonts count="1"><font/></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf/></cellStyleXfs>
+<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="58" applyNumberFormat="1"/><xf numFmtId="44" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/></cellXfs>
+</styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" s="1"><v>46230</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let format = |index: usize| metadata.styles[index].number_format.as_deref();
+        // The zh-CN month/day date format (U+6708 month, U+65E5 day),
+        // escaped to keep the source ASCII-only.
+        assert_eq!(format(1), Some("m\"\u{6708}\"d\"\u{65e5}\""));
+        assert_eq!(
+            format(2),
+            Some(r#"_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)"#),
+        );
+        assert_eq!(format(3), Some("yyyy/m/d"));
     }
 
     #[test]

@@ -65,8 +65,11 @@ import {
   textHasCjk,
 } from './line-metrics'
 import { saveUntilPersisted } from './save-until-persisted'
+import { cachedByDoc } from './doc-cache'
+import { useShallowStable, useStableCallbacks } from './use-stable'
 import { FindPanel } from './components/FindPanel'
 import { Ribbon } from './components/Ribbon'
+import { computeFormatState } from './components/ribbon-format-state'
 import { IconRedo, IconSave, IconUndo } from './components/icons'
 import {
   LinkInsertModal,
@@ -74,7 +77,6 @@ import {
   insertImageViaDialog,
   insertPageBreakAt,
   insertTableAt,
-  setParaAttrs,
   type InkPenSettings,
   type RevisionDisplayMode,
   type ViewMode,
@@ -88,8 +90,14 @@ import {
 } from './components/ContextMenu'
 import { PromptModal } from './components/PromptModal'
 import { t, useI18n } from './i18n/locale'
-import { setActiveSubEditor, subscribeSubEditorState } from './editor/active-editor'
+import {
+  getActiveSubEditor,
+  setActiveSubEditor,
+  subscribeSubEditorState,
+} from './editor/active-editor'
 import type { CompareEntry } from './editor/compare'
+import { collectHeadings } from './editor/headings'
+import { setSelectionAlign } from './editor/direction'
 
 import {
   editorExtensions,
@@ -102,6 +110,7 @@ import { collectRevisions, gotoRevision, type TrackChangesStorage } from './edit
 import { NavPane } from './components/NavPane'
 import { Ruler } from './components/Ruler'
 import { docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
+import { isDocDirty } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
   hfFromPart,
@@ -150,6 +159,13 @@ import {
 const _IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
+
+const EMPTY_BLOCKS: Block[] = []
+
+// O(doc) derivations cached by PM doc reference: caret moves and unrelated
+// state updates reuse the last result instead of re-walking the whole document
+const wordCountOfDoc = cachedByDoc((d) => countWords(d.textContent))
+const revisionCountOfDoc = cachedByDoc((d) => collectRevisions(d).length)
 
 /**
  * Document position of a measured line-start DOM anchor. posAtDOM works from the DOM
@@ -246,7 +262,7 @@ const DEFAULT_SETTINGS: AiSettings = {
 
 export function App() {
   // subscribe to language switches for re-render; strings all go through module-level t, so memoized callbacks never capture stale closures
-  useI18n()
+  const { lang } = useI18n()
   const [doc, setDoc] = useState<DocState | null>(null)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
   const bootPendingRef = useRef<Promise<[OpenFileResult | null, boolean]> | null>(null)
@@ -457,6 +473,8 @@ export function App() {
     entries: CompareEntry[]
   } | null>(null)
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('aidocs.autoSave') === '1')
+  // tab closed but this renderer kept alive (shell freeze workaround): go inert
+  const [tornDown, setTornDown] = useState(false)
   const [aiPreset, setAiPreset] = useState<{
     text: string
     nonce: number
@@ -616,15 +634,18 @@ export function App() {
     document.title = doc ? doc.fileName : 'GenOffice Docs'
   }, [doc])
 
+  useEffect(() => window.desktop.onTeardown?.(() => setTornDown(true)), [])
+
   // Crash-recovery copy: while the document is dirty, push a serialized
   // copy to the main process every 30s; a normal save (or discarding on close) removes
   // it, and reopening the file offers Restore/Discard when a newer copy exists.
   useEffect(() => {
+    if (tornDown) return
     const timer = window.setInterval(() => {
       void writeRecoveryCopyImpl(fileCtxRef.current)
     }, 30_000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [tornDown])
 
   // Recompute the document-level line-height factor while editing:
   // docStyleCss decides it once at parse time, so typing CJK into a blank document
@@ -1314,7 +1335,7 @@ export function App() {
   const submitProtectModal = useCallback(() => submitProtectModalImpl(reviewCtxRef.current), [])
   const compareWithFile = useCallback(() => compareWithFileImpl(reviewCtxRef.current), [])
 
-  const revisionCount = editor && doc ? collectRevisions(editor.state.doc).length : 0
+  const revisionCount = editor && doc ? revisionCountOfDoc(editor.state.doc) : 0
 
   /** Word's page-width / whole-page zoom: compute the actual zoom ratio from the current window size */
   const zoomFit = useCallback(
@@ -1540,13 +1561,12 @@ export function App() {
     const nums = secs.length > 1 ? pageNumbers(slices, secs) : slices.map((_, i) => i + 1)
     const byEl = new Map(mBlocks.filter((b) => b.el).map((b) => [b.el as HTMLElement, b.top]))
     const pages: number[] = []
-    editor.state.doc.forEach((node, offset) => {
-      if (node.type.name !== 'docHeading' || !node.textContent.trim()) return
-      const dom = editor.view.nodeDOM(offset) as HTMLElement | null
+    for (const h of collectHeadings(editor.state.doc)) {
+      const dom = editor.view.nodeDOM(h.pos) as HTMLElement | null
       const top = dom ? byEl.get(dom) : undefined
       const idx = top === undefined ? 1 : pageAt(slices, top + 1)
       pages.push(nums[Math.min(Math.max(idx, 1), nums.length) - 1] ?? idx)
-    })
+    }
     return pages
   }, [
     editor,
@@ -1880,30 +1900,7 @@ export function App() {
   // "has unsaved changes" check shared by the close guard and autosave; refreshed on every
   // render (all edit paths forceRender), so the guard's query reads the latest value
   const anyDirtyRef = useRef(false)
-  const hasUnsavedChanges =
-    dirtyRef.current ||
-    sectionDirty ||
-    sectionsDirty.length > 0 ||
-    trailingStartType !== null ||
-    pageColorDirty ||
-    headerDirty ||
-    footerDirty ||
-    hfVariantsDirty.length > 0 ||
-    Object.keys(sectionHfEdits).length > 0 ||
-    pgNumEdit !== null ||
-    pgNumDirtySections.length > 0 ||
-    numberingDirty ||
-    Object.keys(styleUpserts).length > 0 ||
-    titlePgDirty ||
-    evenOddHfDirty ||
-    watermarkDirty ||
-    inksDirty ||
-    notesDirty ||
-    sourcesDirty ||
-    themeFontsDirty ||
-    themeColorsDirty ||
-    commentsDirty ||
-    protectionDirty
+  const hasUnsavedChanges = isDocDirty(fileCtxRef.current)
   anyDirtyRef.current = hasUnsavedChanges
 
   // close guard: the main process queries dirty state before closing a tab/window; choosing "Save" runs a full save and reports back
@@ -1918,10 +1915,13 @@ export function App() {
     const offSave = window.desktop.onCloseSaveRequest?.(() => {
       // Closing must not report success while edits are still unpersisted, so a
       // save that raced with typing is retried until the file catches up.
+      // save(false) never prompts — a pathless first save lands silently in the
+      // default folder — so retrying is always safe; reporting "persisted" just
+      // because the snapshot had no path yet would close over mid-save edits.
       void saveUntilPersisted({
         save: () => save(false),
         wasIncomplete: () => saveIncompleteRef.current,
-        hasPath: () => !!doc?.filePath,
+        hasPath: () => true,
       }).then(
         (ok) => window.desktop.reportCloseSaveResult(ok === true),
         () => window.desktop.reportCloseSaveResult(false),
@@ -1935,31 +1935,9 @@ export function App() {
 
   // autosave: every 30s and on window blur, silently persist pending changes
   useEffect(() => {
-    if (!autoSave || !doc || !doc.filePath) return
+    if (tornDown || !autoSave || !doc || !doc.filePath) return
     const tick = () => {
-      const anyDirty =
-        dirtyRef.current ||
-        sectionDirty ||
-        sectionsDirty.length > 0 ||
-        trailingStartType !== null ||
-        pageColorDirty ||
-        headerDirty ||
-        footerDirty ||
-        hfVariantsDirty.length > 0 ||
-        Object.keys(sectionHfEdits).length > 0 ||
-        pgNumEdit !== null ||
-        pgNumDirtySections.length > 0 ||
-        numberingDirty ||
-        Object.keys(styleUpserts).length > 0 ||
-        titlePgDirty ||
-        evenOddHfDirty ||
-        watermarkDirty ||
-        inksDirty ||
-        notesDirty ||
-        sourcesDirty ||
-        themeFontsDirty ||
-        themeColorsDirty
-      if (!anyDirty) return
+      if (!isDocDirty(fileCtxRef.current)) return
       if (editor?.view.composing) return // don't interrupt IME input
       const active = document.activeElement as HTMLElement | null
       if (active?.closest('td[contenteditable], .doc-textbox')) return // mid in-place edit
@@ -1971,30 +1949,7 @@ export function App() {
       window.clearInterval(id)
       window.removeEventListener('blur', tick)
     }
-  }, [
-    autoSave,
-    doc,
-    editor,
-    save,
-    sectionDirty,
-    pageColorDirty,
-    headerDirty,
-    footerDirty,
-    hfVariantsDirty,
-    sectionHfEdits,
-    pgNumEdit,
-    pgNumDirtySections,
-    numberingDirty,
-    styleUpserts,
-    titlePgDirty,
-    evenOddHfDirty,
-    watermarkDirty,
-    inksDirty,
-    notesDirty,
-    sourcesDirty,
-    themeFontsDirty,
-    themeColorsDirty,
-  ])
+  }, [tornDown, autoSave, doc, editor, save])
 
   // After an AI run finishes on a never-saved document, silently save it once: the
   // first save derives the file name from the first heading (see deriveAutoFileName
@@ -2012,7 +1967,16 @@ export function App() {
   }, [editor, save])
 
   useEffect(() => {
+    // editing shortcuts only fire when focus is in an editor surface (main
+    // ProseMirror, textbox sub-editor, in-place table cell) or nowhere at all —
+    // never while typing in the find box, AI input or other form fields
+    const focusInEditor = () => {
+      const el = document.activeElement
+      if (!el || el === document.body) return true
+      return !!(el as HTMLElement).closest('.ProseMirror, td[contenteditable]')
+    }
     const handler = (e: KeyboardEvent) => {
+      const canEdit = !!editor?.isEditable && focusInEditor()
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
         void save(e.shiftKey)
@@ -2026,39 +1990,41 @@ export function App() {
         if (doc) setShowFind(true)
       }
       // Word dialog shortcuts: Font ⌘D / Paragraph ⌥⌘M / Hyperlink ⌘K
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'd' && doc) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'd' && doc && canEdit) {
         e.preventDefault()
         setShowFontDialog(true)
       }
-      if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyM' && doc) {
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyM' && doc && canEdit) {
         e.preventDefault()
         setShowParaDialog(true)
       }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'k' && doc) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'k' && doc && canEdit) {
         e.preventDefault()
         setShowLinkModal(true)
       }
-      if (e.key === 'F9' && doc) {
+      if (e.key === 'F9' && doc && editor?.isEditable) {
         e.preventDefault()
         updateFields()
       }
       // Word alignment shortcuts
-      const ALIGN_KEYS: Record<string, string | null> = {
-        l: null,
+      const ALIGN_KEYS: Record<string, 'left' | 'center' | 'right' | 'justify'> = {
+        l: 'left',
         e: 'center',
         r: 'right',
         j: 'justify',
       }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key in ALIGN_KEYS && editor) {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key in ALIGN_KEYS &&
+        editor &&
+        canEdit
+      ) {
         e.preventDefault()
-        const align = ALIGN_KEYS[e.key]
-        editor
-          .chain()
-          .focus()
-          .updateAttributes('docParagraph', { align })
-          .updateAttributes('docHeading', { align })
-          .updateAttributes('docListItem', { align })
-          .run()
+        // route into a focused textbox sub-editor, like the ribbon does
+        const target = getActiveSubEditor() ?? editor
+        setSelectionAlign(target, ALIGN_KEYS[e.key])
       }
     }
     window.addEventListener('keydown', handler)
@@ -2079,7 +2045,8 @@ export function App() {
   // native application menu → renderer commands
   useEffect(() => {
     return window.desktop.onMenuCommand((command, payload) => {
-      const align = (value: string | null) => editor && setParaAttrs(editor, { align: value })
+      const align = (value: 'left' | 'center' | 'right' | 'justify') =>
+        editor && setSelectionAlign(editor, value)
       switch (command) {
         case 'new':
           void newFile()
@@ -2164,7 +2131,7 @@ export function App() {
           editor?.chain().focus().toggleMark('underline').run()
           break
         case 'align-left':
-          align(null)
+          align('left')
           break
         case 'align-center':
           align('center')
@@ -2268,9 +2235,173 @@ export function App() {
     }
   }, [editor, openRecent, save, status, exportPdf])
 
+  // shallow-stable snapshot of every editor read the ribbon displays: caret moves
+  // that change none of it keep the reference, so the memoized Ribbon skips
+  const formatState = useShallowStable(
+    computeFormatState(editor, doc?.parsed.styles, doc?.parsed.docDefaults),
+  )
+
+  // registerStyleUpsert mutates doc.parsed.styles in place; clone per upsert so the
+  // memoized Ribbon sees a new reference and refreshes its style gallery
+  const ribbonStyles = useMemo(
+    () => (doc ? new Map(doc.parsed.styles) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- styleUpserts: in-place styles mutations must produce a new Map identity
+    [doc, styleUpserts],
+  )
+
+  /** every function prop of the memoized Ribbon, with stable identities (dispatches into the latest render's closures) */
+  const ribbonActions = useStableCallbacks({
+    allocateNumId: (kind: 'bullet' | 'ordered') => allocateListNumId(kind),
+    createListDef: (levels: CustomNumberingLevel[]) => createCustomListDef(levels),
+    onStylesPanel: () => setShowStylesPanel((v) => !v),
+    onParagraphDialog: () => setShowParaDialog(true),
+    onOpen: () => void openFile(),
+    onSave: () => void save(false),
+    onSaveAs: () => void save(true),
+    onToggleAi: () => setShowAi((v) => !v),
+    onSection: (next: SectionSettings) => {
+      // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)
+      setSections((prev) =>
+        prev.map((s, i) => (i === activeSection ? { ...s, settings: next } : s)),
+      )
+      if (sections.length <= 1 || activeSection === sections.length - 1) {
+        setSection(next)
+        setSectionDirty(true)
+      } else {
+        setSectionsDirty((d) => (d.includes(activeSection) ? d : [...d, activeSection]))
+        setStatus(t('appSectionSettingsApplied', { n: activeSection + 1 }))
+      }
+    },
+    onInsertSectionBreak: (type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage') =>
+      insertSectionBreak(type),
+    onPageColor: (next: string | null) => {
+      setPageColor(next)
+      setPageColorDirty(true)
+    },
+    onWatermark: (next: string | null) => {
+      setWatermark(next)
+      setWatermarkDirty(true)
+      setStatus(next ? t('appWatermarkSet', { text: next }) : t('appWatermarkRemoved'))
+    },
+    onThemeFonts: (fonts: ThemeFonts) => {
+      setThemeFonts(fonts)
+      setThemeFontsDirty(true)
+      setStatus(t('appThemeFontsChanged'))
+    },
+    onThemeColors: (colors: ThemeColors) => {
+      setThemeColors(colors)
+      setThemeColorsDirty(true)
+      setStatus(t('appThemeColorsApplied', { name: colors.name ?? '' }))
+    },
+    onInkTool: setInkTool,
+    onInkPen: setInkPen,
+    onInkHighlighter: setInkHighlighter,
+    onInkClearAll: clearInks,
+    onInsertNote: insertNote,
+    onAddSource: (source: SourceInfo) => {
+      setSources((prev) => [...prev, source])
+      setSourcesDirty(true)
+      setStatus(t('appSourceAdded', { title: source.title }))
+    },
+    headingPages,
+    onZoom: setZoom,
+    onZoomFit: zoomFit,
+    onDarkCanvas: setDarkCanvas,
+    onAiPreset: (text: string) => {
+      // Word's Editor / Translate start working as soon as they're clicked
+      setShowAi(true)
+      setAiPreset({ text, nonce: Date.now(), autoRun: true })
+    },
+    onHeader: (next: HeaderFooter) => {
+      setHeader(next)
+      setHeaderDirty(true)
+    },
+    onPageNumFormat: openPgNumModal,
+    onInsertField: insertField,
+    onFooter: (next: HeaderFooter) => {
+      setFooter(next)
+      setFooterDirty(true)
+    },
+    onTitlePg: toggleTitlePg,
+    onEvenOddHf: (on: boolean) => {
+      setEvenOddHf(on)
+      setEvenOddHfDirty(true)
+      setHfView(on ? 'even' : 'default')
+      setStatus(on ? t('appEvenOddOn') : t('appEvenOddOff'))
+    },
+    onShowMarks: setShowMarks,
+    onShowRuler: setShowRuler,
+    onShowNav: setShowNav,
+    onShowComments: () => setShowComments(true),
+    onNewComment: startNewComment,
+    onTrackChanges: setTrackChanges,
+    onRevisionDisplay: setRevisionDisplay,
+    onAcceptRevision: (all: boolean) => handleRevision('accept', all),
+    onRejectRevision: (all: boolean) => handleRevision('reject', all),
+    onGotoRevision: (dir: 1 | -1) => {
+      if (editor) gotoRevision(editor, dir)
+    },
+    onToggleProtection: toggleProtection,
+    onCompare: () => void compareWithFile(),
+    onViewMode: setViewMode,
+    onReadMode: setReadMode,
+    onShowGrid: setShowGrid,
+    onSplitView: setSplitView,
+    onPagePreview: () => setShowPagePreview(true),
+  })
+
+  const closeCommentsPanel = useCallback(() => {
+    setShowComments(false)
+    cancelNewComment()
+  }, [cancelNewComment])
+
+  const hasDoc = !!doc
+  const quickActions = useMemo(
+    () => (
+      <>
+        <button
+          className="qa-btn"
+          title={t('appSaveShortcutTip')}
+          disabled={!hasDoc || !hasUnsavedChanges}
+          onClick={() => void save(false)}
+        >
+          <IconSave size={15} />
+        </button>
+        <button
+          className="qa-btn"
+          title={t('appUndo')}
+          disabled={!hasDoc}
+          onClick={() => editor?.chain().focus().undo().run()}
+        >
+          <IconUndo size={15} />
+        </button>
+        <button
+          className="qa-btn"
+          title={t('appRedo')}
+          disabled={!hasDoc}
+          onClick={() => editor?.chain().focus().redo().run()}
+        >
+          <IconRedo size={15} />
+        </button>
+        <label className={`autosave-toggle ${autoSave ? 'on' : ''}`} title={t('appAutoSaveTip')}>
+          <span className="autosave-knob" />
+          <span className="autosave-text">{t('appAutoSave')}</span>
+          <input
+            type="checkbox"
+            checked={autoSave}
+            onChange={(e) => setAutoSave(e.target.checked)}
+          />
+        </label>
+        <span className="qa-sep" aria-hidden="true" />
+      </>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasDoc, hasUnsavedChanges, autoSave, editor, save, lang],
+  )
+
   if (!editor) return null
 
-  const wordCount = countWords(editor.state.doc.textContent)
+  const wordCount = wordCountOfDoc(editor.state.doc)
 
   const canvasSection = sections[activeSection]?.settings ?? section
   const canvasBox = canvasSection ? sectionPageBox(canvasSection) : null
@@ -2317,180 +2448,46 @@ export function App() {
 .editor-scroll .doc-page.measuring-columns { column-count: auto; width: ${colFlow.colWidthPx + twipsToPx(canvasSection?.marginLeft ?? section?.marginLeft ?? 0) + twipsToPx(canvasSection?.marginRight ?? section?.marginRight ?? 0)}px; }`}</style>
       )}
       <Ribbon
-        quickActions={
-          <>
-            <button
-              className="qa-btn"
-              title={t('appSaveShortcutTip')}
-              disabled={!doc || !hasUnsavedChanges}
-              onClick={() => void save(false)}
-            >
-              <IconSave size={15} />
-            </button>
-            <button
-              className="qa-btn"
-              title={t('appUndo')}
-              disabled={!doc}
-              onClick={() => editor.chain().focus().undo().run()}
-            >
-              <IconUndo size={15} />
-            </button>
-            <button
-              className="qa-btn"
-              title={t('appRedo')}
-              disabled={!doc}
-              onClick={() => editor.chain().focus().redo().run()}
-            >
-              <IconRedo size={15} />
-            </button>
-            <label
-              className={`autosave-toggle ${autoSave ? 'on' : ''}`}
-              title={t('appAutoSaveTip')}
-            >
-              <span className="autosave-knob" />
-              <span className="autosave-text">{t('appAutoSave')}</span>
-              <input
-                type="checkbox"
-                checked={autoSave}
-                onChange={(e) => setAutoSave(e.target.checked)}
-              />
-            </label>
-            <span className="qa-sep" aria-hidden="true" />
-          </>
-        }
+        quickActions={quickActions}
         editor={editor}
+        formatState={formatState}
         hasDoc={!!doc}
-        blocks={doc?.parsed.blocks ?? []}
-        allocateNumId={allocateListNumId}
-        createListDef={createCustomListDef}
-        onStylesPanel={() => setShowStylesPanel((v) => !v)}
-        onParagraphDialog={() => setShowParaDialog(true)}
-        styles={doc?.parsed.styles}
+        blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
+        styles={ribbonStyles}
         docDefaults={doc?.parsed.docDefaults}
-        onOpen={() => void openFile()}
-        onSave={() => void save(false)}
-        onSaveAs={() => void save(true)}
         showAi={showAi}
-        onToggleAi={() => setShowAi((v) => !v)}
         section={sections[activeSection]?.settings ?? section}
         activeSection={sections.length > 1 ? activeSection : null}
-        onSection={(next) => {
-          // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)
-          setSections((prev) =>
-            prev.map((s, i) => (i === activeSection ? { ...s, settings: next } : s)),
-          )
-          if (sections.length <= 1 || activeSection === sections.length - 1) {
-            setSection(next)
-            setSectionDirty(true)
-          } else {
-            setSectionsDirty((d) => (d.includes(activeSection) ? d : [...d, activeSection]))
-            setStatus(t('appSectionSettingsApplied', { n: activeSection + 1 }))
-          }
-        }}
-        onInsertSectionBreak={insertSectionBreak}
         pageColor={pageColor}
-        onPageColor={(next) => {
-          setPageColor(next)
-          setPageColorDirty(true)
-        }}
         watermark={watermark}
-        onWatermark={(next) => {
-          setWatermark(next)
-          setWatermarkDirty(true)
-          setStatus(next ? t('appWatermarkSet', { text: next }) : t('appWatermarkRemoved'))
-        }}
         themeFonts={themeFonts}
-        onThemeFonts={(fonts) => {
-          setThemeFonts(fonts)
-          setThemeFontsDirty(true)
-          setStatus(t('appThemeFontsChanged'))
-        }}
-        onThemeColors={(colors) => {
-          setThemeColors(colors)
-          setThemeColorsDirty(true)
-          setStatus(t('appThemeColorsApplied', { name: colors.name ?? '' }))
-        }}
         inkTool={inkTool}
-        onInkTool={setInkTool}
         inkPen={inkPen}
-        onInkPen={setInkPen}
         inkHighlighter={inkHighlighter}
-        onInkHighlighter={setInkHighlighter}
         inkCount={inkAnnotations.length}
-        onInkClearAll={clearInks}
-        onInsertNote={insertNote}
         sources={sources}
-        headingPages={headingPages}
-        onAddSource={(source) => {
-          setSources((prev) => [...prev, source])
-          setSourcesDirty(true)
-          setStatus(t('appSourceAdded', { title: source.title }))
-        }}
         zoom={Math.round(zoom)}
-        onZoom={setZoom}
-        onZoomFit={zoomFit}
         darkCanvas={darkCanvas}
-        onDarkCanvas={setDarkCanvas}
-        onAiPreset={(text) => {
-          // Word's Editor / Translate start working as soon as they're clicked
-          setShowAi(true)
-          setAiPreset({ text, nonce: Date.now(), autoRun: true })
-        }}
         tabRequest={ribbonTabRequest}
         header={header}
-        onHeader={(next) => {
-          setHeader(next)
-          setHeaderDirty(true)
-        }}
-        onPageNumFormat={openPgNumModal}
-        onInsertField={insertField}
         footer={footer}
-        onFooter={(next) => {
-          setFooter(next)
-          setFooterDirty(true)
-        }}
         titlePg={titlePg}
-        onTitlePg={toggleTitlePg}
         evenOddHf={evenOddHf}
-        onEvenOddHf={(on) => {
-          setEvenOddHf(on)
-          setEvenOddHfDirty(true)
-          setHfView(on ? 'even' : 'default')
-          setStatus(on ? t('appEvenOddOn') : t('appEvenOddOff'))
-        }}
         showMarks={showMarks}
-        onShowMarks={setShowMarks}
         showRuler={showRuler}
-        onShowRuler={setShowRuler}
         showNav={showNav}
-        onShowNav={setShowNav}
         commentCount={comments.length}
-        onShowComments={() => setShowComments(true)}
-        canComment={!!editor && !editor.state.selection.empty}
-        onNewComment={startNewComment}
+        canComment={!editor.state.selection.empty}
         trackChanges={trackChanges}
-        onTrackChanges={setTrackChanges}
         revisionDisplay={revisionDisplay}
-        onRevisionDisplay={setRevisionDisplay}
         revisionCount={revisionCount}
-        onAcceptRevision={(all) => handleRevision('accept', all)}
-        onRejectRevision={(all) => handleRevision('reject', all)}
-        onGotoRevision={(dir) => {
-          if (editor) gotoRevision(editor, dir)
-        }}
         isProtected={isProtected}
-        onToggleProtection={toggleProtection}
-        onCompare={() => void compareWithFile()}
         filePath={doc?.filePath ?? null}
         viewMode={viewMode}
-        onViewMode={setViewMode}
         readMode={readMode}
-        onReadMode={setReadMode}
         showGrid={showGrid}
-        onShowGrid={setShowGrid}
         splitView={splitView}
-        onSplitView={setSplitView}
-        onPagePreview={() => setShowPagePreview(true)}
+        {...ribbonActions}
       />
 
       <div className={`workspace ${darkCanvas ? 'workspace-dark' : ''}`}>
@@ -2515,7 +2512,7 @@ export function App() {
           </div>
         )}
         {doc && showFind && <FindPanel editor={editor} onClose={() => setShowFind(false)} />}
-        {doc && showNav && <NavPane editor={editor} />}
+        {doc && showNav && <NavPane editor={editor} doc={editor.state.doc} />}
         <div className="editor-area">
           <main className="editor-scroll">
             {doc ? (
@@ -2727,16 +2724,14 @@ export function App() {
         {doc && showComments && (
           <CommentsPanel
             comments={comments}
+            docNode={editor.state.doc}
             composing={commentComposing}
             onSubmitNew={submitNewComment}
             onReply={replyToComment}
             onResolve={resolveComment}
             onCancelNew={cancelNewComment}
             onDelete={deleteComment}
-            onClose={() => {
-              setShowComments(false)
-              cancelNewComment()
-            }}
+            onClose={closeCommentsPanel}
           />
         )}
         {doc && showStylesPanel && (

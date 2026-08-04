@@ -10,6 +10,7 @@ import {
   relsPathFor,
   type MutablePackage,
 } from './xlsx-drawing-add'
+import { parseSheetElements } from './xlsx-sheets'
 
 /// Persists pivots created in the editor as native OOXML parts: a cache
 /// definition with real sharedItems + records derived from the source range,
@@ -294,29 +295,25 @@ function decodePivotXmlEntities(s: string): string {
     .replace(/&amp;/g, '&')
 }
 
-/// Resolve the worksheet path for a source sheet name.
+/// Resolve the worksheet path for a source sheet name. Attribute order and
+/// entity encoding vary by producer, so the sheet is found by decoded name
+/// rather than by pattern-matching serialized XML.
 async function resolveSourcePath(pkg: MutablePackage, sheetName: string): Promise<string> {
   const workbookXml = await pkg.readText('xl/workbook.xml')
-  const escapedName = sheetName
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/"/g, '&quot;')
-    .replace(/&/g, '&amp;')
-  // Try both plain name and XML-escaped name
-  const namePattern = new RegExp(
-    `<sheet\\b[^>]*\\bname="(?:${escapedName}|${sheetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})"[^>]*\\br:id="([^"]+)"`,
-  )
-  const sheetMatch = namePattern.exec(workbookXml)
-  if (!sheetMatch?.[1])
+  const relationshipId = parseSheetElements(workbookXml).find(
+    (element) => element.name === sheetName,
+  )?.relationshipId
+  if (relationshipId === undefined)
     throw new PivotAddError(`Source sheet "${sheetName}" not found in workbook.xml.`)
 
   const relXml = await pkg.readText('xl/_rels/workbook.xml.rels')
   // Two-step lookup: attribute order varies by producer (openpyxl puts Target before Id)
   const relationshipXml = new RegExp(
-    `<Relationship\\b[^>]*\\bId="${sheetMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*/?>`,
+    `<Relationship\\b[^>]*\\bId="${relationshipId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*/?>`,
   ).exec(relXml)?.[0]
   const relTarget =
     relationshipXml === undefined ? undefined : /\bTarget="([^"]+)"/.exec(relationshipXml)?.[1]
-  if (!relTarget) throw new PivotAddError(`Relationship ${sheetMatch[1]} not found.`)
+  if (!relTarget) throw new PivotAddError(`Relationship ${relationshipId} not found.`)
   const target = relTarget.replace(/^\/?xl\//, '')
   return `xl/${target.replace(/^\.\//, '')}`
 }

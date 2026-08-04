@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, type Lang, type Params } from '@genoffice/i18n'
+import { createI18n, htmlLang, type Lang, type Params } from '@genoffice/i18n'
 import { strings } from './strings'
 
 const translate = createI18n(strings)
@@ -22,6 +22,7 @@ export function LocaleProvider({ initial, children }: { initial: Lang; children:
       lang,
       setLang: (next) => {
         setLangState(next)
+        document.documentElement.lang = htmlLang(next)
         void window.aiOffice.setLanguage(next)
       },
     }),

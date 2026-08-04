@@ -103,6 +103,16 @@ interface Props {
  */
 export const CANVAS_BLEED = 160
 
+/** Walk up the Konva parent chain to the owning node_<sourceId> Group (null for background/decoration/stage). */
+function nodeIdFromTarget(t: Konva.Node | null): string | null {
+  while (t && t !== t.getStage()) {
+    const id = typeof t.id === 'function' ? t.id() : ''
+    if (id && id.startsWith('node_')) return id.slice('node_'.length)
+    t = t.getParent()
+  }
+  return null
+}
+
 /**
  * Node count from which a slide counts as "dense" and gets its raster pressure capped:
  * every edit redraws the whole layer, and on a ~600-element page at pixelRatio 3 that keeps the
@@ -193,6 +203,13 @@ export function SlideCanvas({
   const [spacing, setSpacing] = useState<SpacingIndicator[]>([])
   const [sizeMatch, setSizeMatch] = useState<{ w: string[]; h: string[] } | null>(null)
   const sizeMatchKeyRef = useRef('')
+  // A marquee drag just ended on this gesture: swallow the trailing click so it doesn't select the node under the cursor
+  const suppressClickRef = useRef(false)
+  // Full-page background-like nodes: click-selectable but not draggable; marquee drags may start on them
+  const backgroundIds = useMemo(
+    () => new Set(slide.nodes.filter((n) => n.background).map((n) => n.sourceId)),
+    [slide],
+  )
   // Rubber-band selection rectangle (slide coordinates); null = not rubber-band selecting
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null,
@@ -240,7 +257,7 @@ export function SlideCanvas({
       { v: [0, slide.widthPx], h: [0, slide.heightPx] }, // Page edges
     ]
     for (const n of slide.nodes) {
-      if (excludeIds.includes(n.sourceId) || n.decoration) continue
+      if (excludeIds.includes(n.sourceId) || n.decoration || n.background) continue
       const b = n.box
       list.push({ v: [b.x, b.x + b.w / 2, b.x + b.w], h: [b.y, b.y + b.h / 2, b.y + b.h] })
     }
@@ -250,7 +267,7 @@ export function SlideCanvas({
   // Neighbor boxes for equal-spacing snapping (same exclusion rules as snapTargets)
   const spacingBoxes = (excludeIds: string[]) =>
     slide.nodes
-      .filter((n) => !excludeIds.includes(n.sourceId) && !n.decoration)
+      .filter((n) => !excludeIds.includes(n.sourceId) && !n.decoration && !n.background)
       .map((n) => ({ x: n.box.x, y: n.box.y, w: n.box.w, h: n.box.h }))
 
   // Bounding box of a multi-select drag (snapped as a whole; if it contains group children the coordinate systems differ, so degrade to no snapping)
@@ -277,13 +294,19 @@ export function SlideCanvas({
       width={slide.widthPx + CANVAS_BLEED * 2}
       height={slide.heightPx + CANVAS_BLEED * 2}
       onMouseDown={(e) => {
-        // Blank = the Stage itself (bleed area) or the slide base/background (name=slide-bg)
+        suppressClickRef.current = false
+        // Blank = the Stage itself (bleed area), the slide base/background (name=slide-bg),
+        // or a full-page background-like node (still click-selectable, but a drag on it
+        // rubber-bands instead of moving it)
         const isBlank =
           e.target === e.target.getStage() ||
           (typeof e.target.name === 'function' && e.target.name() === 'slide-bg')
-        if (!isBlank) return
-        onSelect(null)
+        const hitId = isBlank ? null : nodeIdFromTarget(e.target)
+        const onBackground = hitId != null && backgroundIds.has(hitId)
+        if (!isBlank && !onBackground) return
+        if (isBlank) onSelect(null)
         // Mouse-down on blank area -> start rubber-band selection (on release, elements fully inside the rectangle are selected)
+        if (e.evt.button !== 0) return
         const raw = e.target.getStage()?.getPointerPosition()
         if (!raw || !onMarqueeSelect) return
         const start = { x: raw.x - CANVAS_BLEED, y: raw.y - CANVAS_BLEED }
@@ -306,16 +329,18 @@ export function SlideCanvas({
         if (!m) return
         setMarquee(null)
         if (Math.hypot(m.x2 - m.x1, m.y2 - m.y1) * zoom <= 3) return // A click, not a rubber-band selection
+        suppressClickRef.current = true
         const [lx, rx] = m.x1 < m.x2 ? [m.x1, m.x2] : [m.x2, m.x1]
         const [ty, by] = m.y1 < m.y2 ? [m.y1, m.y2] : [m.y2, m.y1]
         const ids = slide.nodes
           .filter((n) => {
-            if (n.decoration) return false
+            if (n.decoration || n.background) return false
             const b = n.box
             return b.x >= lx && b.x + b.w <= rx && b.y >= ty && b.y + b.h <= by
           })
           .map((n) => n.sourceId)
         if (ids.length) onMarqueeSelect!(ids)
+        else onSelect(null) // A marquee that started on a background node skipped the mousedown clear
       }}
       onContextMenu={(e) => {
         e.evt.preventDefault()
@@ -399,6 +424,7 @@ export function SlideCanvas({
             selectedIds={selectedIds}
             selBBox={selBBox}
             spacingBoxes={spacingBoxes}
+            suppressClickRef={suppressClickRef}
           />
         ))}
         {guides.map((g, i) =>
@@ -823,6 +849,8 @@ interface NodeProps {
   allowChildTextEdit?: boolean
   /** Used by multiDrag computation for in-group-editing children */
   selectedIds?: string[]
+  /** Set when a marquee drag just completed on this gesture: the trailing click must not select the node under the cursor */
+  suppressClickRef?: React.MutableRefObject<boolean>
 }
 
 /** Throttle interval for live resize preview (ms): each preview runs an IPC round-trip + full-page relayout */
@@ -850,6 +878,7 @@ function NodeView({
   insideGroupId,
   allowChildTextEdit,
   selectedIds,
+  suppressClickRef,
 }: NodeProps) {
   const { t } = useI18n()
   const { box } = node
@@ -901,8 +930,9 @@ function NodeView({
   // master/layout decoration layer: read-only display, not selectable/draggable
   if (node.decoration) return <StaticNode node={node} images={images} />
 
-  // Chips are select-only; tables/charts support p:xfrm patch persistence, so they can be dragged/resized
-  const draggable = node.type !== 'placeholder-chip'
+  // Chips are select-only; tables/charts support p:xfrm patch persistence, so they can be dragged/resized.
+  // Full-page backgrounds stay in place: a drag on them rubber-bands (Stage-level marquee) instead of moving them.
+  const draggable = node.type !== 'placeholder-chip' && !node.background
   // Flip mirrors within the original box: add width offset to x then scale -1 (subtracted back when the drag reports)
   const flipOffX = box.flipH ? box.w : 0
   const flipOffY = box.flipV ? box.h : 0
@@ -919,8 +949,13 @@ function NodeView({
     // default 3px threshold is too sensitive, and once it becomes a drag, onDragMove snapping amplifies it into a visible 6px+ jump that commits to the model.
     // The threshold's semantics are "6 screen px": Konva compares in canvas coordinates, so divide by the canvas CSS zoom.
     dragDistance: 6 / Math.max(zoom, 0.1),
-    onClick: (e: Konva.KonvaEventObject<MouseEvent>) =>
-      onSelect(node.sourceId, e.evt.shiftKey || e.evt.metaKey),
+    onClick: (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (suppressClickRef?.current) {
+        suppressClickRef.current = false
+        return
+      }
+      onSelect(node.sourceId, e.evt.shiftKey || e.evt.metaKey)
+    },
     onTap: () => onSelect(node.sourceId),
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
       // Children in in-group editing use a different coordinate system from page snap targets; don't snap
@@ -1089,6 +1124,7 @@ function NodeView({
               multiDrag={(selectedIds?.length ?? 0) > 1 && !!selectedIds?.includes(c.sourceId)}
               insideGroupId={node.sourceId}
               allowChildTextEdit={plain}
+              suppressClickRef={suppressClickRef}
             />
           ))}
         </Group>

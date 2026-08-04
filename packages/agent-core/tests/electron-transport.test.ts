@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createIpcTransport, type IpcStreamChunk, type IpcStreamStart } from '../src'
+import {
+  createIpcTransport,
+  IPC_STREAM_SILENCE_TIMEOUT_MS,
+  type IpcStreamChunk,
+  type IpcStreamStart,
+} from '../src'
 
 interface FakeSettings {
   provider: string
 }
 
-function setup() {
+function setup(
+  startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
+  creditsErrorText?: () => string,
+) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
   const unsubscribe = vi.fn(() => {
     listener = undefined
@@ -17,14 +25,20 @@ function setup() {
       listener = l
       return unsubscribe
     },
-    start: (request) => started.push(request),
+    start: (request) => {
+      started.push(request)
+      return startImpl?.(request)
+    },
     cancel: (requestId) => cancelled.push(requestId),
     getSettings: () => ({ provider: 'genspark' }),
     unknownErrorText: () => 'unknown error',
+    timeoutErrorText: () => 'timed out',
+    ...(creditsErrorText ? { creditsErrorText } : {}),
   })
   const cb = {
     onDelta: vi.fn(),
     onToolCall: vi.fn(),
+    onStopReason: vi.fn(),
     onDone: vi.fn(),
     onError: vi.fn(),
   }
@@ -59,7 +73,15 @@ describe('createIpcTransport', () => {
     const { cb, emit, unsubscribe } = setup()
     emit({ type: 'done' })
     expect(cb.onDone).toHaveBeenCalledTimes(1)
+    expect(cb.onStopReason).not.toHaveBeenCalled()
     expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards a stopReason carried on the done chunk before onDone', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'done', stopReason: 'max_tokens' })
+    expect(cb.onStopReason).toHaveBeenCalledWith('max_tokens')
+    expect(cb.onDone).toHaveBeenCalledTimes(1)
   })
 
   it('maps error chunks to onError with the localized fallback', () => {
@@ -73,5 +95,68 @@ describe('createIpcTransport', () => {
     const { started, cancelled, handle } = setup()
     handle.cancel()
     expect(cancelled).toEqual([started[0]!.requestId])
+  })
+
+  it('maps a timeout error code to the localized timeout message', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'error', error: 'AI request timed out: no data received', errorCode: 'timeout' })
+    expect(cb.onError).toHaveBeenCalledWith('timed out')
+  })
+
+  it('maps a credits error code to the localized credits message', () => {
+    const { cb, emit } = setup(undefined, () => 'credits used up')
+    emit({
+      type: 'error',
+      error: 'Your Genspark credits have been exhausted.',
+      errorCode: 'credits',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('credits used up')
+  })
+
+  it('a credits error code without creditsErrorText falls back to the carried text', () => {
+    const { cb, emit } = setup()
+    emit({
+      type: 'error',
+      error: 'Your Genspark credits have been exhausted.',
+      errorCode: 'credits',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('Your Genspark credits have been exhausted.')
+  })
+
+  it('fails the run after prolonged silence; pings re-arm the watchdog', () => {
+    vi.useFakeTimers()
+    try {
+      const { cb, emit, started, cancelled } = setup()
+      emit({ type: 'delta', text: 'x' })
+      vi.advanceTimersByTime(IPC_STREAM_SILENCE_TIMEOUT_MS - 1)
+      emit({ type: 'ping' })
+      vi.advanceTimersByTime(IPC_STREAM_SILENCE_TIMEOUT_MS - 1)
+      expect(cb.onError).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(IPC_STREAM_SILENCE_TIMEOUT_MS)
+      expect(cb.onError).toHaveBeenCalledWith('timed out')
+      expect(cancelled).toEqual([started[0]!.requestId])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('done disarms the silence watchdog', () => {
+    vi.useFakeTimers()
+    try {
+      const { cb, emit } = setup()
+      emit({ type: 'done' })
+      vi.advanceTimersByTime(IPC_STREAM_SILENCE_TIMEOUT_MS * 2)
+      expect(cb.onError).not.toHaveBeenCalled()
+      expect(cb.onDone).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a rejected start fails the run instead of leaving it pending', async () => {
+    const { cb } = setup(() => Promise.reject(new Error('no handler registered')))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(cb.onError).toHaveBeenCalledWith('no handler registered')
+    expect(cb.onDone).not.toHaveBeenCalled()
   })
 })

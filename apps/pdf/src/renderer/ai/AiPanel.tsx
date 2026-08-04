@@ -213,18 +213,28 @@ export function AiPanel({
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => resizeCleanupRef.current?.(), [])
+
   /** Drag the right edge to resize: the panel is flush with the window's left edge, so width = clientX */
   const startResize = (e: ReactPointerEvent<HTMLDivElement>): void => {
     e.preventDefault()
+    const resizer = e.currentTarget
     setResizing(true)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: PointerEvent): void => {
       setPanelWidth(clampPanelWidth(ev.clientX))
     }
-    const onUp = (): void => {
+    let done = false
+    const cleanup = (): void => {
+      if (done) return
+      done = true
+      resizeCleanupRef.current = null
       window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointerup', cleanup)
+      window.removeEventListener('pointercancel', cleanup)
+      resizer.removeEventListener('lostpointercapture', cleanup)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       setResizing(false)
@@ -233,8 +243,13 @@ export function AiPanel({
         return w
       })
     }
+    resizeCleanupRef.current = cleanup
     window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointerup', cleanup)
+    window.addEventListener('pointercancel', cleanup)
+    // lostpointercapture also fires if the resizer is unmounted mid-drag (panel collapse)
+    resizer.addEventListener('lostpointercapture', cleanup)
+    resizer.setPointerCapture(e.pointerId)
   }
 
   const typingLabel =

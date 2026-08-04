@@ -25,7 +25,13 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { gskApiKey, gskSlideGenerate } from '@genoffice/ai-search'
-import { installNavigationGuard, safeExternalUrl } from '@genoffice/electron-utils'
+import {
+  appMenuLabels,
+  contextMenuLabels,
+  installContextMenu,
+  installNavigationGuard,
+  safeExternalUrl,
+} from '@genoffice/electron-utils'
 import { getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 import {
@@ -93,9 +99,11 @@ import {
   type SlideAnimation,
   openPptx,
   mergeSlideFromPptx,
+  promoteSlideBackground,
   parseTheme,
   pasteElements,
   reorderElement,
+  reparseDeck,
   savePptx,
   savePptxToFile,
   commitSaved,
@@ -1363,6 +1371,7 @@ export function registerSlidesIpc(): void {
         const perPage = await Promise.all(pagesHtml.map(readCloudPage))
         const base = await openPptx(perPage[0]!.bytes)
         for (const one of perPage.slice(1)) await mergeSlideFromPptx(base, one.bytes)
+        for (const s of base.deck.slides) promoteSlideBackground(s, base.deck.size)
         return { bytes: await savePptx(base) }
       }
 
@@ -1387,8 +1396,10 @@ export function registerSlidesIpc(): void {
             try {
               const one = await readCloudPage(html)
               const slide = await mergeSlideFromPptx(opened, one.bytes)
-              if (slide) merged += 1
-              else lastErr = tm('errMergeFailed')
+              if (slide) {
+                promoteSlideBackground(slide, opened.deck.size)
+                merged += 1
+              } else lastErr = tm('errMergeFailed')
             } catch (pageErr) {
               lastErr = pageErr instanceof Error ? pageErr.message : String(pageErr)
             }
@@ -1449,6 +1460,7 @@ export function registerSlidesIpc(): void {
             rollback()
             return { error: tm('errMergeFailed') }
           }
+          promoteSlideBackground(merged, opened.deck.size)
           // The new page is at the end (index=total); after moving to atIndex the old page gets pushed to atIndex+1, delete it
           if (!moveSlide(opened, total, atIndex) || !deleteSlide(opened, atIndex + 1)) {
             rollback()
@@ -1498,6 +1510,7 @@ export function registerSlidesIpc(): void {
             rollback()
             return { error: tm('errMergeFailed') }
           }
+          promoteSlideBackground(merged, opened.deck.size)
           // The new page is at the end (index=total); with atIndex=total it belongs at the end anyway, no move needed
           if (atIndex < total && !moveSlide(opened, total, atIndex)) {
             rollback()
@@ -1833,9 +1846,20 @@ export function registerSlidesIpc(): void {
     const slide = session.opened.deck.slides[op.slideIndex]
     if (!slide) return null
     if (op.groupId) {
-      if (typeof op.fill !== 'string') return null // Group children only support solid colors for now
       pushHistory(session)
-      if (!editGroupChildFill(slide, op.groupId, op.sourceId, op.fill)) {
+      const fill =
+        typeof op.fill === 'string'
+          ? op.fill
+          : {
+              stops: [
+                { pos: 0, color: op.fill.gradient.from },
+                { pos: 1, color: op.fill.gradient.to },
+              ],
+              ...(op.fill.gradient.radial
+                ? { radial: true }
+                : { angle: Math.round((op.fill.gradient.angleDeg ?? 0) * 60000) }),
+            }
+      if (!editGroupChildFill(slide, op.groupId, op.sourceId, fill)) {
         session.undoStack.pop()
         return null
       }
@@ -2984,7 +3008,7 @@ export function registerSlidesIpc(): void {
   // colors follow), and remap the deck's explicit srgbClr wholesale to the new theme palette
   // (real-world decks have almost entirely explicit colors, so swapping only the theme changes
   // nothing visually). Element resolved colors come from the parse-time inheritance chain, so
-  // after the surgery savePptx -> openPptx reparses; undo snapshots roll back as usual.
+  // after the surgery the deck reparses in memory; undo snapshots roll back as usual.
   ipcMain.handle('slides:apply-theme', async (e, op: ApplyThemeOp) => {
     const session = sessions.get(e.sender.id)
     if (!session) return null
@@ -2996,10 +3020,11 @@ export function registerSlidesIpc(): void {
       ...(op.minorFont ? { minorFont: op.minorFont } : {}),
     }
     try {
-      // 1) Bake unsaved edits into the package bytes first: the color surgery edits entries
+      // 1) Bake unsaved edits into the entries first: the color surgery edits entries
       //    directly, and dirty elements left for a later save would overwrite the surgery
-      //    result with stale slices
-      session.opened = await openPptx(await savePptx(session.opened))
+      //    result with stale slices. In-memory (commitSaved/reparseDeck) instead of
+      //    savePptx -> openPptx: the zip roundtrip's contiguous buffer fails on large decks
+      commitSaved(session.opened)
       // 2) Pure entry surgery: theme parts + explicit color remapping
       const patched = applyThemeToArchive(session.opened, spec)
       const remapped = remapDeckColors(session.opened, spec)
@@ -3007,11 +3032,11 @@ export function registerSlidesIpc(): void {
         session.undoStack.pop()
         return null
       }
-      // 3) Reopen and reparse so every element's resolved colors/fonts refresh
-      session.opened = await openPptx(await savePptx(session.opened))
-    } catch {
+      // 3) Reparse so every element's resolved colors/fonts refresh
+      session.opened = reparseDeck(session.opened)
+    } catch (err) {
       restoreSnapshot(session, session.undoStack.pop()!)
-      return null
+      return { error: err instanceof Error ? err.message : String(err) }
     }
     // Pages without any background definition fall back to the theme base color (so dark themes don't leave a white background)
     const lt1 = op.colors.lt1
@@ -3773,6 +3798,7 @@ export function buildSlidesMenu(): Menu {
       cmd,
     )
   const isMac = process.platform === 'darwin'
+  const labels = appMenuLabels(getUiLang())
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
     {
@@ -3799,8 +3825,8 @@ export function buildSlidesMenu(): Menu {
               click: () => closeActiveTabHook?.(),
             }
           : isMac
-            ? { role: 'close' as const }
-            : { role: 'quit' as const },
+            ? { role: 'close' as const, label: tm('menuClose') }
+            : { role: 'quit' as const, label: tm('menuQuit') },
       ],
     },
     {
@@ -3814,7 +3840,7 @@ export function buildSlidesMenu(): Menu {
         { label: tm('menuCut'), accelerator: 'CmdOrCtrl+X', click: () => send('cut') },
         { label: tm('menuCopy'), accelerator: 'CmdOrCtrl+C', click: () => send('copy') },
         { label: tm('menuPaste'), accelerator: 'CmdOrCtrl+V', click: () => send('paste') },
-        { role: 'selectAll' },
+        { role: 'selectAll', label: labels.selectAll },
       ],
     },
     {
@@ -3828,7 +3854,7 @@ export function buildSlidesMenu(): Menu {
           click: () => send('zoom-reset'),
         },
         { type: 'separator' },
-        { role: 'toggleDevTools' },
+        { role: 'toggleDevTools', label: labels.toggleDevTools },
       ],
     },
   ]
@@ -3884,6 +3910,7 @@ async function applyMainProcessProxy(): Promise<void> {
 
 export function startSlidesStandalone(): void {
   installNavigationGuard(app)
+  installContextMenu(app, () => contextMenuLabels(getUiLang()))
   // Optional debug switch: enable CDP only in dev with SLIDES_CDP_PORT explicitly set (for
   // automated testing/troubleshooting); packaged builds (isPackaged) are unaffected.
   if (!app.isPackaged && process.env.SLIDES_CDP_PORT) {

@@ -31,6 +31,8 @@ export interface UpdateUiState {
   currentVersion: string
   /** 0-100, meaningful while downloading */
   percent: number
+  /** BCP-47 tag for documentElement.lang (drives CJK font selection) */
+  lang: string
   strings: UpdateUiStrings
 }
 

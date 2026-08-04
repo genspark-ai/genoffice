@@ -26,12 +26,29 @@
     'Segoe UI',
     -apple-system,
     BlinkMacSystemFont,
-    'PingFang SC',
-    'Microsoft YaHei',
+    var(--ui-cjk),
     sans-serif;
   color: var(--text);
   background: var(--surface);
   font-synthesis: none;
+}
+
+/* UI CJK fonts per language (documentElement.lang is set at bootstrap and on switch);
+ * the zh expansion must keep the historical stack byte-identical */
+:root {
+  --ui-cjk: 'PingFang SC', 'Microsoft YaHei';
+}
+
+:root:lang(ja) {
+  --ui-cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+}
+
+:root:lang(ko) {
+  --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+}
+
+:root:lang(zh-TW) {
+  --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
 }
 
 * {
@@ -2398,6 +2415,135 @@ textarea:focus {
   align-self: end;
 }
 
+/* Format Cells → Number tab */
+.numfmt-tab {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 12px;
+}
+
+.numfmt-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  align-self: start;
+}
+
+.numfmt-cats button {
+  border: 0;
+  padding: 4px 8px;
+  background: transparent;
+  border-radius: var(--radius-small);
+  font-size: 12px;
+  color: var(--text);
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.numfmt-cats button:hover:not(.active) {
+  background: var(--surface-hover);
+}
+
+.numfmt-cats button.active {
+  background: var(--excel-green);
+  color: #ffffff;
+}
+
+.numfmt-body {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+
+.numfmt-field {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.numfmt-field select,
+.numfmt-field input {
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.numfmt-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.numfmt-body .dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.numfmt-sample output {
+  min-height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.numfmt-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 138px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+}
+
+.numfmt-list button {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 3px 8px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.numfmt-list button:hover:not(.active) {
+  background: var(--surface-hover);
+}
+
+.numfmt-list button.red {
+  color: #d13438;
+}
+
+.numfmt-list button.active {
+  background: var(--excel-green);
+  color: #ffffff;
+}
+
+.numfmt-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -2431,6 +2577,26 @@ textarea:focus {
 /* Consolidate dialog */
 .dialog-grid .dialog-span {
   grid-column: 1 / -1;
+}
+
+/* Pivot dialog: long localized labels and stacked field rows outgrow the
+   shared 420px card, so it gets its own bounds and a scrolling body. */
+.format-cells-dialog.pivot-dialog {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  max-width: min(92vw, 640px);
+  max-height: 88vh;
+}
+
+.pivot-dialog .dialog-grid {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* fieldsets don't shrink below min-content unless min-width is reset */
+.pivot-dialog .dialog-grid fieldset {
+  min-width: 0;
 }
 
 .input-row {

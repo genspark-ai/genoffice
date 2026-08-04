@@ -8,6 +8,7 @@ import {
   markDocsNewBlank,
   requestDocsClose,
   setActiveDocsResolver,
+  teardownDocsRenderer,
 } from '../../../docs/src/main/docs-main'
 import { createPdfView, pdfIsDirty, requestPdfClose } from '../../../pdf/src/main/pdf-main'
 import {
@@ -315,6 +316,7 @@ export class TabManager {
         // accessibility support — looks like an upstream WebContentsView/Chromium
         // issue, not something fixable from here). Detaching without destroying
         // avoids the freeze; the orphaned webContents is reclaimed when the app quits.
+        teardownDocsRenderer(removed.view.webContents)
       } else {
         removed.view.webContents.close()
       }
@@ -342,10 +344,10 @@ export class TabManager {
   }
 
   /** the active tab's pdf view, if the active tab is a pdf (pdf menu target) */
-  activePdfTab(): { webContents: WebContents; filePath?: string } | undefined {
+  activePdfTab(): { id: string; webContents: WebContents; filePath?: string } | undefined {
     const tab = this.tabs.find((t) => t.id === this.activeId)
     return tab?.kind === 'pdf' && tab.view
-      ? { webContents: tab.view.webContents, filePath: tab.filePath }
+      ? { id: tab.id, webContents: tab.view.webContents, filePath: tab.filePath }
       : undefined
   }
 }

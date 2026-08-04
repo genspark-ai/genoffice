@@ -1,5 +1,5 @@
 import ReactDOM from 'react-dom/client'
-import type { Lang } from '@genoffice/i18n'
+import { htmlLang, type Lang } from '@genoffice/i18n'
 
 import '@univerjs/preset-sheets-core/lib/index.css'
 
@@ -27,6 +27,7 @@ async function bootstrap(): Promise<void> {
     /* dev renderer without the preload handler */
   }
   setModuleLang(lang)
+  document.documentElement.lang = htmlLang(lang)
   ReactDOM.createRoot(root!).render(
     <LocaleProvider initial={lang}>
       <App />

@@ -8,6 +8,8 @@ import { app, ipcMain } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  AiCreditsError,
+  AiTimeoutError,
   defaultAiSettings,
   resolveAiSettings,
   streamForProvider,
@@ -108,11 +110,20 @@ export function registerAiIpc(): void {
     }
     const controller = new AbortController()
     activeAiStreams.set(requestId, controller)
+    // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
+    let lastPing = 0
+    const ping = () => {
+      const now = Date.now()
+      if (now - lastPing < 5_000) return
+      lastPing = now
+      send({ requestId, type: 'ping' })
+    }
     try {
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onActivity: ping,
       })
       send({ requestId, type: 'done' })
     } catch (err) {
@@ -121,7 +132,16 @@ export function registerAiIpc(): void {
       } else {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`[ai-stream] ${requestId} (${provider}/${config.model}) failed:`, msg)
-        send({ requestId, type: 'error', error: msg })
+        send({
+          requestId,
+          type: 'error',
+          error: msg,
+          ...(err instanceof AiTimeoutError
+            ? { errorCode: 'timeout' as const }
+            : err instanceof AiCreditsError
+              ? { errorCode: 'credits' as const }
+              : {}),
+        })
       }
     } finally {
       activeAiStreams.delete(requestId)

@@ -1,21 +1,29 @@
+import { DEFAULT_NUMFMT_OPTIONS, numfmtPattern, type NumfmtOptions } from './numfmt-dialog'
 import { numberFormatLabel } from './selection-format'
 
-/// Excel's Number-group category dropdown: label → representative pattern.
+const pattern = (overrides: Partial<NumfmtOptions>): string =>
+  numfmtPattern({ ...DEFAULT_NUMFMT_OPTIONS, ...overrides })
+
+/// Excel's Number-group category dropdown: label → representative pattern,
+/// built by the same builders as the Format Cells dialog (numfmt-dialog.ts).
 export const NUMBER_FORMAT_CATEGORIES: ReadonlyArray<{
   readonly label: string
   readonly pattern: string
 }> = [
-  { label: 'General', pattern: 'General' },
-  { label: 'Number', pattern: '0.00' },
-  { label: 'Currency', pattern: '$#,##0.00' },
-  { label: 'Accounting', pattern: '_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)' },
-  { label: 'Short Date', pattern: 'm/d/yyyy' },
-  { label: 'Long Date', pattern: 'dddd, mmmm dd, yyyy' },
-  { label: 'Time', pattern: 'h:mm:ss AM/PM' },
-  { label: 'Percentage', pattern: '0.00%' },
-  { label: 'Fraction', pattern: '# ?/?' },
-  { label: 'Scientific', pattern: '0.00E+00' },
-  { label: 'Text', pattern: '@' },
+  { label: 'General', pattern: pattern({ category: 'general' }) },
+  { label: 'Number', pattern: pattern({ category: 'number' }) },
+  { label: 'Currency', pattern: pattern({ category: 'currency' }) },
+  { label: 'Accounting', pattern: pattern({ category: 'accounting' }) },
+  { label: 'Short Date', pattern: pattern({ category: 'date', datePattern: 'm/d/yyyy' }) },
+  {
+    label: 'Long Date',
+    pattern: pattern({ category: 'date', datePattern: 'dddd, mmmm dd, yyyy' }),
+  },
+  { label: 'Time', pattern: pattern({ category: 'time', timePattern: 'h:mm:ss AM/PM' }) },
+  { label: 'Percentage', pattern: pattern({ category: 'percentage' }) },
+  { label: 'Fraction', pattern: pattern({ category: 'fraction' }) },
+  { label: 'Scientific', pattern: pattern({ category: 'scientific' }) },
+  { label: 'Text', pattern: pattern({ category: 'text' }) },
 ]
 
 /// The dropdown echo for the current selection. The generic 'Date' category

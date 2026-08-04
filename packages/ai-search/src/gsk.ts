@@ -346,7 +346,12 @@ async function toolCliPost(
   try {
     const resp = await fetch(`${GSK_TOOL_CLI_BASE}${path}`, {
       method: 'POST',
-      headers: { 'X-Api-Key': key, 'Content-Type': 'application/json' },
+      // X-Agent-Type splits GenOffice usage out of the proxy's "Claw" billing bucket
+      headers: {
+        'X-Api-Key': key,
+        'Content-Type': 'application/json',
+        'X-Agent-Type': 'genoffice',
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     })
@@ -394,6 +399,36 @@ export async function gskSlideGenerate(
   const resp = await fetch(String(downloadUrl), signal ? { signal } : undefined)
   if (!resp.ok) throw new Error(`PPTX download failed: HTTP ${resp.status}`)
   return { bytes: new Uint8Array(await resp.arrayBuffer()), model: String(data.model ?? '') }
+}
+
+// ── File conversion (PDF → DOCX) ────────────────────────────────────
+
+/** Extracts the download link from file_convert's markdown result text (exported for tests) */
+export function parseGskConvertResult(raw: unknown): string {
+  const data = asRecord(asRecord(raw).data ?? raw)
+  const text = typeof data.result === 'string' ? data.result : ''
+  const url = /\((https?:\/\/[^)\s]+)\)/.exec(text)?.[1] ?? /https?:\/\/\S+/.exec(text)?.[0]
+  if (!url) {
+    throw new Error(`file_convert returned no link: ${JSON.stringify(raw).slice(0, 200)}`)
+  }
+  return url
+}
+
+/**
+ * Uploads a local PDF and converts it to DOCX in the cloud (`gsk convert`,
+ * costs 5 credits); returns the DOCX bytes.
+ */
+export async function gskConvertPdfToDocx(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const wrapperUrl = await gskUpload(filePath)
+  const raw = await runGsk(['convert', wrapperUrl], GENERATE_TIMEOUT_MS, signal)
+  const link = parseGskConvertResult(raw)
+  const downloadUrl = await gskResolveDownloadUrl(link)
+  const resp = await fetch(downloadUrl, signal ? { signal } : undefined)
+  if (!resp.ok) throw new Error(`DOCX download failed: HTTP ${resp.status}`)
+  return new Uint8Array(await resp.arrayBuffer())
 }
 
 // ── Media analysis / transcription ──────────────────────────────────
@@ -475,6 +510,7 @@ export async function gskUpload(filePath: string): Promise<string> {
 export interface GskLoginInfo {
   email: string
   plan: string
+  creditBalance?: number
 }
 
 /** Current login info; null when not logged in */
@@ -483,23 +519,163 @@ export async function gskLoginInfo(): Promise<GskLoginInfo | null> {
     const raw = await runGsk(['login-info'], SEARCH_TIMEOUT_MS)
     const d = asRecord(asRecord(raw).data ?? raw)
     if (!d.email) return null
-    return { email: String(d.email), plan: String(d.plan ?? d.personal_plan ?? '') }
+    const info: GskLoginInfo = {
+      email: String(d.email),
+      plan: String(d.plan ?? d.personal_plan ?? ''),
+    }
+    const balance = Number(d.credit_balance)
+    if (Number.isFinite(balance)) info.creditBalance = balance
+    return info
   } catch {
     return null
   }
 }
 
-/** Triggers browser login (fire-and-forget; api_key is written to config.json on completion). Returns whether the CLI was launched. */
-export function gskLogin(): boolean {
+/** Progress event for the browser login flow. */
+export interface GskLoginProgress {
+  phase: 'url' | 'success' | 'error'
+  url?: string
+  expiresInSec?: number
+  /** 'network' | 'expired' | raw CLI error text */
+  error?: string
+}
+
+/** One parsed line of `gsk login` output (info/errors go to stderr with [INFO]/[ERROR] prefixes; success JSON to stdout). */
+export type GskLoginParsedLine =
+  | { kind: 'url'; url: string }
+  | { kind: 'expires'; expiresInSec: number }
+  | { kind: 'success' }
+  | { kind: 'error'; reason: 'network' | 'expired' | 'other'; message: string }
+
+const LOGIN_NETWORK_ERROR_RE =
+  /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|network|HTTP 5\d\d/i
+
+export function parseGskLoginLine(line: string): GskLoginParsedLine | null {
+  const trimmed = line.trim()
+  const url = trimmed.match(/^\[INFO\] Login URL: (\S+)/)
+  if (url) return { kind: 'url', url: url[1]! }
+  const expires = trimmed.match(/^\[INFO\] Waiting for authorization \(expires in (\d+)s/)
+  if (expires) return { kind: 'expires', expiresInSec: Number(expires[1]) }
+  if (/^\[INFO\] Login successful/.test(trimmed) || /"message":\s*"Login successful"/.test(trimmed))
+    return { kind: 'success' }
+  const err = trimmed.match(/^\[ERROR\] (.+)/)
+  if (err) {
+    const message = err[1]!.trim()
+    if (/^Authorization (expired|timed out)/.test(message))
+      return { kind: 'error', reason: 'expired', message }
+    return {
+      kind: 'error',
+      reason: LOGIN_NETWORK_ERROR_RE.test(message) ? 'network' : 'other',
+      message,
+    }
+  }
+  return null
+}
+
+function onStreamLines(stream: NodeJS.ReadableStream | null, handle: (line: string) => void): void {
+  if (!stream) return
+  let buf = ''
+  stream.setEncoding('utf8')
+  stream.on('data', (chunk: string) => {
+    buf += chunk
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+    for (const line of lines) handle(line)
+  })
+  stream.on('end', () => {
+    if (buf) handle(buf)
+  })
+}
+
+let activeLogin: { child: ReturnType<typeof execFile>; cancel: () => void } | null = null
+
+/**
+ * Starts the browser login flow (device code), killing any previous in-flight
+ * login CLI first (its device code would otherwise be authorized into a dead
+ * process). The superseded session is silenced *before* the kill so that
+ * output still buffered in its pipes can't leak stale url/error events into
+ * the new attempt. Progress is reported via onEvent; api_key still lands in
+ * config.json on success, so polling that file remains a valid fallback.
+ * Returns whether the CLI was launched.
+ */
+export function gskLoginStart(onEvent?: (progress: GskLoginProgress) => void): boolean {
   const entry = resolveGskEntry()
   if (!entry) return false
-  execFile(
+  activeLogin?.cancel()
+  const emit = onEvent ?? (() => {})
+  let done = false
+  let lastUrl: string | undefined
+  let lastErrorLine: string | undefined
+  const finish = (progress: GskLoginProgress) => {
+    if (done) return
+    done = true
+    // the session is terminal: stop advertising it as reusable to gskLogin()
+    // right away rather than waiting for the child to exit, and reap a CLI
+    // that lingers after reporting an error (its device code is dead anyway)
+    if (activeLogin?.child === child) activeLogin = null
+    if (progress.phase === 'error') child.kill()
+    emit(progress)
+  }
+  const child = execFile(
     process.execPath,
     [...electronCompatArgs(), entry, 'login'],
-    { timeout: 300_000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
-    () => {},
+    { timeout: 360_000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
+    (error) => {
+      if (activeLogin?.child === child) activeLogin = null
+      if (done) return
+      if (!error) {
+        finish({ phase: 'success' })
+      } else if (error.killed) {
+        done = true // execFile timeout kill — Home's expires_in deadline already covers the UI
+      } else {
+        // exit before the URL ever appeared = the device-code request failed
+        finish({ phase: 'error', error: lastErrorLine ?? (lastUrl ? 'login failed' : 'network') })
+      }
+    },
   )
+  activeLogin = {
+    child,
+    cancel: () => {
+      done = true
+      child.kill()
+    },
+  }
+  const handleLine = (line: string) => {
+    if (done) return
+    const parsed = parseGskLoginLine(line)
+    if (!parsed) return
+    if (parsed.kind === 'url') {
+      lastUrl = parsed.url
+      emit({ phase: 'url', url: parsed.url })
+    } else if (parsed.kind === 'expires') {
+      emit({
+        phase: 'url',
+        ...(lastUrl ? { url: lastUrl } : {}),
+        expiresInSec: parsed.expiresInSec,
+      })
+    } else if (parsed.kind === 'success') {
+      finish({ phase: 'success' })
+    } else {
+      const reason = parsed.reason === 'other' && !lastUrl ? 'network' : parsed.reason
+      lastErrorLine = reason === 'other' ? parsed.message : reason
+      finish({ phase: 'error', error: lastErrorLine })
+    }
+  }
+  onStreamLines(child.stdout, handleLine)
+  onStreamLines(child.stderr, handleLine)
   return true
+}
+
+/**
+ * Triggers browser login without progress reporting (api_key is written to
+ * config.json on completion). Unlike gskLoginStart, a login already in flight
+ * (e.g. the Home account menu's) is reused rather than killed — killing it
+ * would silently strand that caller on a dead device code. Returns whether a
+ * login CLI is running.
+ */
+export function gskLogin(): boolean {
+  if (activeLogin) return true
+  return gskLoginStart()
 }
 
 /** Logs out (deletes the saved API key; note login state is shared globally with the terminal gsk CLI) */
