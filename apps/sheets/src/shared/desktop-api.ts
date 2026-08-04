@@ -3,10 +3,13 @@ import { z } from 'zod'
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiProviderConfig,
+  AiProviderId,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 
 const MAX_RANGE_CELLS = 20_000
@@ -1768,9 +1771,22 @@ export const aiStreamRequestSchema = z
   })
   .strict()
 
+export const aiListModelsInputSchema = z
+  .object({
+    provider: z.string(),
+    config: z.object({
+      apiKey: z.string(),
+      model: z.string(),
+      baseUrl: z.string().optional(),
+    }),
+    freeOnly: z.boolean().optional(),
+  })
+  .strict()
+
 export type AiSettingsInput = z.infer<typeof aiSettingsInputSchema>
 export type AiChatRequestInput = z.infer<typeof aiChatRequestSchema>
 export type AiStreamRequestInput = z.infer<typeof aiStreamRequestSchema>
+export type AiListModelsInput = z.infer<typeof aiListModelsInputSchema>
 
 /// A rendered print job: the renderer lays the sheet out as HTML, the main
 /// process turns it into a PDF via a hidden window.
@@ -1897,6 +1913,10 @@ export interface DesktopApi {
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
+  /// run a one-shot connectivity test against the given provider settings (no tool calls)
+  aiTestSettings(settings: AiSettings): Promise<AiChatResponse>
+  /// fetch the live model catalog a provider exposes; freeOnly keeps zero-cost models
+  aiListModels(provider: AiProviderId, config: AiProviderConfig, freeOnly?: boolean): Promise<ModelListEntry[]>
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

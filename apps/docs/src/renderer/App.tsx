@@ -24,6 +24,7 @@ import {
 import type { AiSettings, OpenFileResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
 import { AiPanel } from './ai/AiPanel'
+import { AiSettingsDialog } from '@genoffice/ui'
 import { asianCharCount, countWords, nonAsianWordCount } from './word-count'
 import { toRoman } from './note-format'
 import { CommentsPanel } from './components/CommentsPanel'
@@ -253,6 +254,7 @@ export function App() {
   const bootHandledRef = useRef(false)
   const [_recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<AiSettings>(DEFAULT_SETTINGS)
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
   const [showAi, setShowAi] = useState(() => localStorage.getItem('aidocs.showAi') !== '0')
   /** Increments on every open/new document: AiPanel remounts by key to reset the conversation and history (save path changes don't bump it, so the session continues) */
   const [aiPanelKey, setAiPanelKey] = useState(0)
@@ -2510,12 +2512,26 @@ export function App() {
               open={showAi}
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}
+              onOpenSettings={() => setAiSettingsOpen(true)}
               filePath={doc?.filePath ?? null}
             />
           </div>
         )}
         {doc && showFind && <FindPanel editor={editor} onClose={() => setShowFind(false)} />}
         {doc && showNav && <NavPane editor={editor} />}
+        <AiSettingsDialog
+          open={aiSettingsOpen}
+          onClose={() => setAiSettingsOpen(false)}
+          load={async () => window.desktop.getAiSettings()}
+          save={async (s) => {
+            await window.desktop.setAiSettings(s)
+          }}
+          test={async (s) => window.desktop.aiTestSettings(s)}
+          listModels={async (provider, config, freeOnly) =>
+            window.desktop.aiListModels(provider, config, freeOnly)
+          }
+          onSaved={(s) => setSettings(s)}
+        />
         <div className="editor-area">
           <main className="editor-scroll">
             {doc ? (

@@ -5,6 +5,7 @@ import type {
   AiSettings,
   AiStreamChunk,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import type {
@@ -224,6 +225,20 @@ const desktopApi: DesktopApi = {
       throw new Error('Invalid AI chat response.')
     }
     return result as unknown as AiChatResponse
+  },
+  async aiTestSettings(settings) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiTestSettings, settings)
+    if (!isRecord(result) || typeof result.ok !== 'boolean') {
+      throw new Error('Invalid AI test response.')
+    }
+    return result as unknown as AiChatResponse
+  },
+  aiListModels(provider, config, freeOnly) {
+    return ipcRenderer.invoke(IPC_CHANNELS.aiListModels, {
+      provider,
+      config,
+      freeOnly: freeOnly === true,
+    }) as Promise<ModelListEntry[]>
   },
   async aiStream(request) {
     await ipcRenderer.invoke(IPC_CHANNELS.aiStream, request)

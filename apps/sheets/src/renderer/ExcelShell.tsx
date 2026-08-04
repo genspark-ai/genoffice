@@ -142,6 +142,8 @@ interface ExcelShellProps {
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: () => void
+  /** open the bring-your-own-key model settings dialog */
+  readonly onOpenSettings: () => void
   readonly onCommand: (command: string) => void
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
@@ -251,6 +253,7 @@ export function ExcelShell({
   onStop,
   onNewChat,
   onUndo,
+  onOpenSettings,
   onCommand,
   statusMessage,
   zoomPercent,
@@ -434,6 +437,7 @@ export function ExcelShell({
           onUndo={onUndo}
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
+          onOpenSettings={onOpenSettings}
         />
         <div className="sheet-main">
           {/* Excel's formula-bar row, Name Box only for now (fx bar TBD). */}

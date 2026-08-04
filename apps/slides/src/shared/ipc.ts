@@ -10,10 +10,14 @@
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
 import type {
+  AiChatResponse,
+  AiProviderConfig,
+  AiProviderId,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 
 export type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
@@ -1283,6 +1287,9 @@ export interface SlidesApi {
   onRenamed: (handler: (newPath: string) => void) => () => void
   getAiSettings: () => Promise<AiSettings>
   setAiSettings: (settings: AiSettings) => Promise<void>
+  aiTestSettings: (settings: AiSettings) => Promise<AiChatResponse>
+  /** fetch the live model catalog a provider exposes; freeOnly keeps zero-cost models */
+  aiListModels(provider: AiProviderId, config: AiProviderConfig, freeOnly?: boolean): Promise<ModelListEntry[]>
   aiStream: (request: AiStreamRequest) => Promise<void>
   aiStreamCancel: (requestId: string) => Promise<void>
   /** Genspark account status (gsk login state); with withEmail also fetches the email (needs a network request, slower) */

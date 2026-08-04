@@ -53,6 +53,7 @@ import type { ChartPresetDef, IconDef, SmartArtDef, WordArtPreset } from './inse
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
 import { t, useI18n } from './i18n/locale'
 import { AiPanel } from './ai/AiPanel'
+import { AiSettingsDialog } from '@genoffice/ui'
 import { ChartDataDialog } from './components/ChartDataDialog'
 import type { BrushFormat } from './format-brush'
 import { isTextUndoTarget, shouldRouteUndoToDeck } from './undo-routing'
@@ -279,6 +280,7 @@ export function App() {
   const [showAi, setShowAi] = useState(() => localStorage.getItem('ai-slides-show-ai') !== '0')
   const [showFormat, setShowFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
   const [aiPreset, setAiPreset] = useState<{
     text: string
     nonce: number
@@ -2363,6 +2365,7 @@ export function App() {
                   open={showAi}
                   onExpand={toggleAi}
                   onCollapse={toggleAi}
+                  onOpenSettings={() => setAiSettingsOpen(true)}
                   onUndo={() => void undo()}
                   onPathChange={(p) => {
                     setPath(p)
@@ -2376,6 +2379,19 @@ export function App() {
                 </button>
               )}
             </div>
+            <AiSettingsDialog
+              open={aiSettingsOpen}
+              onClose={() => setAiSettingsOpen(false)}
+              load={async () => window.slidesApi.getAiSettings()}
+              save={async (s) => {
+                await window.slidesApi.setAiSettings(s)
+              }}
+              test={async (s) => window.slidesApi.aiTestSettings(s)}
+              listModels={async (provider, config, freeOnly) =>
+                window.slidesApi.aiListModels(provider, config, freeOnly)
+              }
+              onSaved={(s) => setAiSettings(s)}
+            />
             {viewMode === 'outline' ? (
               <div className="outline-pane">
                 {slides.map((s, i) => {
@@ -3079,6 +3095,17 @@ export function App() {
           onClose={() => setFindOpen(false)}
         />
       )}
+
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        onClose={() => setAiSettingsOpen(false)}
+        load={async () => window.slidesApi.getAiSettings()}
+        save={async (s) => {
+          await window.slidesApi.setAiSettings(s)
+        }}
+        test={async (s) => window.slidesApi.aiTestSettings(s)}
+        onSaved={(s) => setAiSettings(s)}
+      />
 
       {pendingRehearse && (
         <div className="modal-backdrop">

@@ -23,6 +23,7 @@ import type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 
 export type {
@@ -35,6 +36,7 @@ export type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 
@@ -187,6 +189,14 @@ export interface DesktopApi {
     outPath?: string,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
+  /** run a one-shot connectivity test against the given provider settings (no tool calls) */
+  aiTestSettings(settings: AiSettings): Promise<AiChatResponse>
+  /** fetch the live model catalog a provider exposes; freeOnly keeps zero-cost models */
+  aiListModels(
+    provider: AiProviderId,
+    config: AiProviderConfig,
+    freeOnly?: boolean,
+  ): Promise<ModelListEntry[]>
   /** start a streaming AI call; deltas arrive via onAiStream with the same requestId */
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

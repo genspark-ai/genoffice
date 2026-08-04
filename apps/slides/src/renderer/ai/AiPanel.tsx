@@ -16,7 +16,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, AiSettingsButton } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -155,6 +155,8 @@ interface AiPanelProps {
   onCollapse?: () => void
   /** Visible rollback action; uses the same main-process history as Cmd/Ctrl+Z. */
   onUndo?: () => void
+  /** open the bring-your-own-key model settings dialog */
+  onOpenSettings?: () => void
   /** Callback to update the path after AI generation lands on disk (title bar sync) */
   onPathChange?: (path: string) => void
   /** Generation progress callback (for the canvas top progress bar) */
@@ -234,6 +236,7 @@ export function AiPanel({
   open = true,
   onExpand,
   onCollapse,
+  onOpenSettings,
   onPathChange,
   onDeckProgress,
   currentFilePath,
@@ -1404,6 +1407,11 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          {onOpenSettings && (
+            <span className="ai-header-btn ai-settings-btn">
+              <AiSettingsButton onClick={onOpenSettings} />
+            </span>
+          )}
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChat')}>
               <IconNewChat size={15} />

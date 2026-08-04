@@ -46,7 +46,15 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'gemini',
     label: 'Gemini',
-    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    models: [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-3-flash-preview',
+      'gemini-3.1-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.1-pro-preview',
+    ],
     defaultModel: 'gemini-2.5-flash',
     keyPlaceholder: 'AIza...',
   },
@@ -63,6 +71,22 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     models: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini'],
     defaultModel: 'gpt-4.1-mini',
     keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    models: [
+      'openrouter/free',
+      'anthropic/claude-sonnet-4.5',
+      'openai/gpt-5.1',
+      'google/gemini-3.1-pro-preview',
+      'deepseek/deepseek-v3.2',
+      'meta-llama/llama-3.3-70b-instruct',
+      'qwen/qwen-2.5-72b-instruct',
+      'mistralai/mistral-small-3.1',
+    ],
+    defaultModel: 'openrouter/free',
+    keyPlaceholder: 'sk-or-v1-...',
   },
   {
     id: 'custom',
@@ -118,4 +142,39 @@ export function resolveAiSettings(
     provider: stored.provider ?? defaults.provider,
     providers: { ...defaults.providers, ...stored.providers },
   }
+}
+
+/**
+ * Bring-your-own-key / local-LLM overrides, applied on top of whatever provider
+ * settings were resolved from disk. Reading these once from the environment lets
+ * every app in the suite (docs, sheets, slides, pdf, shell) point at the same
+ * endpoint with a single shared configuration — no per-app settings-file edits.
+ *
+ * Environment:
+ *   GENOFFICE_AI_PROVIDER  provider id (default: 'custom' when a base URL is given)
+ *   GENOFFICE_AI_BASE_URL  OpenAI-compatible base URL, e.g. http://localhost:11434/v1
+ *   GENOFFICE_AI_MODEL     model name the endpoint exposes
+ *   GENOFFICE_AI_API_KEY   api key (local servers usually accept any non-empty value) *
+ * If GENOFFICE_AI_PROVIDER is omitted but GENOFFICE_AI_BASE_URL is set, the
+ * active provider is switched to `custom` so a local/OpenAI-compatible endpoint
+ * works out of the box. Genspark remains the default whenever nothing is set.
+ */
+export function applyProviderOverrides(settings: AiSettings): AiSettings {
+  const envProvider = process.env.GENOFFICE_AI_PROVIDER as AiProviderId | undefined
+  const baseUrl = process.env.GENOFFICE_AI_BASE_URL
+  const model = process.env.GENOFFICE_AI_MODEL
+  const apiKey = process.env.GENOFFICE_AI_API_KEY
+
+  let provider = settings.provider
+  if (envProvider) provider = envProvider
+  else if (baseUrl && provider === 'genspark') provider = 'custom'
+
+  const cfg = settings.providers[provider]
+  if (!cfg) return settings
+
+  settings.provider = provider
+  if (model) cfg.model = model
+  if (apiKey !== undefined) cfg.apiKey = apiKey
+  if (provider === 'custom' && baseUrl) cfg.baseUrl = baseUrl
+  return settings
 }

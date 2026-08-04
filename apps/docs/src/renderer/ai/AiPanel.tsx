@@ -13,7 +13,7 @@ import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiSettingsButton, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -134,6 +134,8 @@ interface AiPanelProps {
   onExpand?: () => void
   /** collapse the panel to the sidebar rail */
   onCollapse?: () => void
+  /** open the bring-your-own-key model settings dialog */
+  onOpenSettings?: () => void
   /** Absolute path of the currently open file (used for chat-history persistence) */
   filePath?: string | null
 }
@@ -148,6 +150,7 @@ export function AiPanel({
   open = true,
   onExpand,
   onCollapse,
+  onOpenSettings,
   filePath,
 }: AiPanelProps) {
   const { t } = useI18n()
@@ -699,6 +702,11 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          {onOpenSettings && (
+            <span className="ai-header-btn ai-settings-btn">
+              <AiSettingsButton onClick={onOpenSettings} />
+            </span>
+          )}
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChatTitle')}>
               <IconNewChat size={16} />

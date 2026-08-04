@@ -8,14 +8,21 @@ import { app, ipcMain } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  applyProviderOverrides,
+  chatForProvider,
   defaultAiSettings,
+  listModelsForProvider,
   resolveAiSettings,
   streamForProvider,
+  type AiChatResponse,
+  type AiProviderConfig,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
+  type ModelListEntry,
 } from '@genoffice/ai-provider'
 import { fetchWithSsrfGuard } from '@genoffice/electron-utils'
 import {
@@ -56,10 +63,9 @@ const activeAiStreams = new Map<string, AbortController>()
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
-    settings.provider = 'genspark'
-    return settings
+    // Genspark is the default; applyProviderOverrides lets a bring-your-own-key or local
+    // (OpenAI-compatible) provider be used instead of being forced back to genspark.
+    return applyProviderOverrides(resolveAiSettings(stored, defaultAiSettings()))
   })
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
@@ -79,6 +85,45 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
     writeJson(AI_SETTINGS_PATH(), settings)
+  })
+
+  // Live model catalog for the AI settings UI (OpenRouter needs no key; the rest use the stored one).
+  ipcMain.handle(
+    'ai:list-models',
+    async (
+      _event,
+      provider: AiProviderId,
+      config: AiProviderConfig,
+      freeOnly: boolean,
+    ): Promise<ModelListEntry[]> => {
+      return listModelsForProvider(provider, config, { freeOnly: freeOnly === true })
+    },
+  )
+
+  // One-shot connectivity test for the AI settings UI (no tool calls).
+  ipcMain.handle('ai:test-settings', async (_event, settings: AiSettings): Promise<AiChatResponse> => {
+    const provider = settings.provider
+    let config = settings.providers?.[provider]
+    if (provider === 'genspark' && config && !config.apiKey) {
+      config = { ...config, apiKey: gskApiKey() }
+    }
+    if (!config?.apiKey) {
+      return {
+        ok: false,
+        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
+      }
+    }
+    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    try {
+      return await chatForProvider(
+        provider,
+        config,
+        'You are a connectivity test. Reply with the single word OK.',
+        'Run the connectivity test now.',
+      )
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {

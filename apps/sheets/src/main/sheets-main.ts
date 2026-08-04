@@ -36,8 +36,10 @@ import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@gen
 import { ProjectStore } from '@genoffice/project-store'
 
 import {
+  applyProviderOverrides,
   chatForProvider,
   defaultAiSettings,
+  listModelsForProvider,
   resolveAiSettings,
   streamForProvider,
   type AiProviderId,
@@ -45,6 +47,7 @@ import {
   type AiStreamChunk,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
+  type ModelListEntry,
 } from '@genoffice/ai-provider'
 import { csvToXlsxBuffer, decodeCsvBuffer } from '../gateway/csv-import'
 import {
@@ -70,6 +73,7 @@ import type {
 import {
   ATTACHMENT_IMAGE_EXTS,
   aiChatRequestSchema,
+  aiListModelsInputSchema,
   aiSettingsInputSchema,
   aiStreamRequestSchema,
   workbookFileSchema,
@@ -2005,11 +2009,9 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    // Genspark is the default; applyProviderOverrides lets a bring-your-own-key or local
+    // (OpenAI-compatible) provider be used instead of being forced back to genspark.
+    return applyProviderOverrides(resolveAiSettings(stored, defaultAiSettings()))
   })
 
   // Genspark account (gsk login state): the auth source for AI features; the
@@ -2054,6 +2056,46 @@ export function registerSheetsAiIpc(): void {
     } catch (err) {
       return { ok: false, error: String(err) }
     }
+  })
+
+  // One-shot connectivity test for the AI settings UI (no tool calls).
+  ipcMain.handle(IPC_CHANNELS.aiTestSettings, async (event, input: unknown) => {
+    sessionFor(event)
+    const settings = aiSettingsInputSchema.parse(input)
+    const provider = settings.provider as AiProviderId
+    let config = settings.providers[provider]
+    if (provider === 'genspark' && config && !config.apiKey) {
+      config = { ...config, apiKey: gskApiKey() }
+    }
+    if (!config?.apiKey) {
+      return {
+        ok: false,
+        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
+      }
+    }
+    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    try {
+      return await chatForProvider(
+        provider,
+        config,
+        'You are a connectivity test. Reply with the single word OK.',
+        'Run the connectivity test now.',
+      )
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Live model catalog for the AI settings UI (OpenRouter needs no key; the rest use the stored one).
+  ipcMain.handle(IPC_CHANNELS.aiListModels, async (event, input: unknown) => {
+    sessionFor(event)
+    const { provider, config, freeOnly } = aiListModelsInputSchema.parse(input)
+    const models: ModelListEntry[] = await listModelsForProvider(
+      provider as AiProviderId,
+      config,
+      { freeOnly: freeOnly === true },
+    )
+    return models
   })
 
   ipcMain.handle(IPC_CHANNELS.aiStream, async (event, input: unknown) => {

@@ -27,8 +27,31 @@ Every app embeds the same AI panel: block-granular AI editing with version
 snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
 state in the others.
 
-**AI providers.** The apps sign in to a Genspark account and route model
+**AI providers.** By default the apps sign in to a Genspark account and route model
 calls through the Genspark service side; no model API key is stored locally.
+
+**Bring your own key / local LLM.** The provider engine also supports direct
+providers (Claude, Gemini, DeepSeek, OpenAI, or any OpenAI-compatible endpoint via
+the `custom` provider). To point the whole suite at your own endpoint or a local
+model, set these environment variables before launching — no per-app settings needed:
+
+| Variable | Purpose |
+| --- | --- |
+| `GENOFFICE_AI_PROVIDER` | Provider id: `custom`, `anthropic`, `gemini`, `deepseek`, `openai`, `openrouter`. Optional — a base URL alone implies `custom`. |
+| `GENOFFICE_AI_BASE_URL` | OpenAI-compatible base URL, one level above `/chat/completions`. e.g. Ollama `http://localhost:11434/v1`, LM Studio `http://localhost:1234/v1`, llama.cpp `http://localhost:8080/v1`, vLLM `http://localhost:8000/v1`. Only used by `custom`. |
+| `GENOFFICE_AI_MODEL` | Model name the endpoint exposes (must support OpenAI-format streaming tool calls for the agents). |
+| `GENOFFICE_AI_API_KEY` | API key (local servers usually accept any non-empty value). |
+
+```bash
+GENOFFICE_AI_BASE_URL=http://localhost:11434/v1 \
+GENOFFICE_AI_MODEL=qwen2.5:14b \
+GENOFFICE_AI_API_KEY=not-needed \
+  npm run shell
+```
+
+Web/image search falls back to free DuckDuckGo when no Genspark/Serper key is
+available; slide *image generation* still requires a Genspark login or an image
+model.
 
 ## Engine packages
 

@@ -98,6 +98,7 @@ import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
 
 import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import { AiSettingsDialog } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
@@ -538,6 +539,7 @@ export function App(): React.JSX.Element {
   const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
   const aiSettingsRef = useRef<AiSettings | null>(null)
   aiSettingsRef.current = aiSettings
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
@@ -2936,6 +2938,7 @@ export function App(): React.JSX.Element {
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
         onUndo={handleUndo}
+        onOpenSettings={() => setAiSettingsOpen(true)}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}
         canSave={pendingEdits > 0}
@@ -2964,6 +2967,19 @@ export function App(): React.JSX.Element {
         onCreateConsolidate={(config) => handleCreateConsolidateImpl(dataToolsContext(), config)}
         onGetConsolidateDefault={() => consolidateDefaultReferenceImpl(dataToolsContext())}
         onApplyHeaderFooter={(result) => handleApplyHeaderFooterImpl(pageLayoutContext(), result)}
+      />
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        onClose={() => setAiSettingsOpen(false)}
+        load={async () => window.desktopApi.getAiSettings()}
+        save={async (s) => {
+          await window.desktopApi.setAiSettings(s)
+        }}
+        test={async (s) => window.desktopApi.aiTestSettings(s)}
+        listModels={async (provider, config, freeOnly) =>
+          window.desktopApi.aiListModels(provider, config, freeOnly)
+        }
+        onSaved={(s) => setAiSettingsState(s)}
       />
       {advancedFilterColumns !== null && (
         <AdvancedFilterDialog

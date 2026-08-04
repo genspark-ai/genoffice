@@ -96,6 +96,7 @@ async function chatOpenAiCompatible(
 const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
   deepseek: 'https://api.deepseek.com/v1',
   openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
 }
 
 /** route a one-shot (non-streaming, non-tool-calling) chat call by provider id */
@@ -120,6 +121,7 @@ export async function chatForProvider(
       return chatGemini(config, system, user)
     case 'deepseek':
     case 'openai':
+    case 'openrouter':
       return chatOpenAiCompatible(OPENAI_COMPATIBLE_BASE_URLS[provider]!, config, system, user)
     case 'custom':
       if (!config.baseUrl) return { ok: false, error: 'A custom provider requires a Base URL' }
