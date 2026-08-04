@@ -4,6 +4,7 @@
   "version": "0.4.0",
   "license": "Apache-2.0",
   "private": true,
+  "homepage": "https://github.com/genspark-ai/genoffice",
   "description": "Unified GenOffice shell: one app hosting the docs and sheets modules behind a home/launcher window",
   "main": "out/main/index.js",
   "scripts": {
@@ -13,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "start": "electron-vite build && electron .",
     "dist:mac": "electron-vite build && electron-builder --mac",
-    "dist:win": "electron-vite build && electron-builder --win"
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux"
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",

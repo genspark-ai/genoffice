@@ -19,20 +19,37 @@ const { join } = require('node:path')
 
 const updateUrl = process.env.GENOFFICE_UPDATE_URL
 
-// The gsk CLI tree below is copied verbatim from node_modules, and the
-// nested commander path depends on npm's current hoisting layout — fail the
-// build with a clear message if an install ever changes it, instead of
-// shipping an installer with a broken gsk runtime.
+// The gsk CLI tree below is copied verbatim from node_modules. Its `commander`
+// dependency may be installed either nested under @genspark/cli or hoisted to
+// the top-level node_modules (npm's layout differs by version/installer), so we
+// resolve whichever actually exists instead of hardcoding one layout — shipping
+// the app with a broken gsk runtime is worse than failing the build early.
+function gskCommanderDir() {
+  const nested = join(__dirname, '../../node_modules/@genspark/cli/node_modules/commander')
+  if (existsSync(nested)) return nested
+  const hoisted = join(__dirname, '../../node_modules/commander')
+  if (existsSync(hoisted)) return hoisted
+  return null
+}
+
+const gskCommander = gskCommanderDir()
 for (const rel of [
   '../../node_modules/@genspark/cli',
-  '../../node_modules/@genspark/cli/node_modules/commander',
+  gskCommander && '../../node_modules/commander',
   '../../node_modules/ws',
 ]) {
+  if (!rel) continue
   if (!existsSync(join(__dirname, rel))) {
     throw new Error(
       `electron-builder extraResources source missing: ${rel} (npm hoisting changed?)`,
     )
   }
+}
+if (!gskCommander) {
+  throw new Error(
+    'electron-builder: cannot find the commander dependency required by @genspark/cli ' +
+      '(checked node_modules/@genspark/cli/node_modules/commander and node_modules/commander)',
+  )
 }
 
 /** @type {import('electron-builder').Configuration} */
@@ -74,7 +91,7 @@ const config = {
       to: 'gsk/node_modules/@genspark/cli',
     },
     {
-      from: '../../node_modules/@genspark/cli/node_modules/commander',
+      from: gskCommander,
       to: 'gsk/node_modules/commander',
     },
     {
@@ -141,6 +158,23 @@ const config = {
       {
         from: '../sheets/native/xlsx-engine/target/x86_64-pc-windows-gnu/release/xlsx-sidecar.exe',
         to: 'native/xlsx-sidecar.exe',
+      },
+    ],
+  },
+  linux: {
+    target: ['AppImage', 'deb'],
+    executableName: 'genoffice',
+    artifactName: 'genoffice-${version}-${arch}.${ext}',
+    category: 'Office',
+    maintainer: 'GenOffice',
+    synopsis: 'AI-native office suite (docs, sheets, slides, pdf)',
+    description:
+      'GenOffice is an AI-native office suite: word processor, spreadsheet, presentations, and PDF. ' +
+      'The original file is the source of truth; edits are applied as narrow patches so untouched content survives.',
+    extraResources: [
+      {
+        from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',
+        to: 'native/xlsx-sidecar',
       },
     ],
   },
