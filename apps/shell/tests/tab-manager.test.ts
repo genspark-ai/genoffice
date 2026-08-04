@@ -100,6 +100,7 @@ const WINDOW_HEIGHT = 600
 
 interface FakeShellWindow {
   on: ReturnType<typeof vi.fn>
+  isDestroyed: ReturnType<typeof vi.fn>
   getContentBounds: () => { x: number; y: number; width: number; height: number }
   contentView: {
     addChildView: ReturnType<typeof vi.fn>
@@ -110,6 +111,7 @@ interface FakeShellWindow {
 function makeShellWindow(): FakeShellWindow {
   return {
     on: vi.fn(),
+    isDestroyed: vi.fn(() => false),
     getContentBounds: () => ({ x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }),
     contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
   }
@@ -257,6 +259,61 @@ describe('activation', () => {
       width: WINDOW_WIDTH,
       height: WINDOW_HEIGHT - TAB_STRIP_HEIGHT,
     })
+  })
+})
+
+describe('window resize layout', () => {
+  function resizeHandler(): () => void {
+    const call = shellWindow.on.mock.calls.find((c) => c[0] === 'resize')
+    expect(call).toBeDefined()
+    return call![1] as () => void
+  }
+
+  it('re-lays out after resize bounds settle (Linux/X11 stale getContentBounds)', async () => {
+    // On X11, `resize` fires before the WM applies maximize bounds, so the first
+    // layout still sees the pre-maximize size. The deferred layout must pick up
+    // the real size on the next turn (see issue #15).
+    manager.openSheetsTab()
+    const view = lastCreatedView(createSheetsView)
+    view.setBounds.mockClear()
+
+    let width = WINDOW_WIDTH
+    let height = WINDOW_HEIGHT
+    shellWindow.getContentBounds = () => ({ x: 0, y: 0, width, height })
+
+    resizeHandler()()
+    expect(view.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: TAB_STRIP_HEIGHT,
+      width: WINDOW_WIDTH,
+      height: WINDOW_HEIGHT - TAB_STRIP_HEIGHT,
+    })
+
+    // Bounds update after the synchronous layout, as on X11 maximize.
+    width = 1920
+    height = 1080
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    expect(view.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: TAB_STRIP_HEIGHT,
+      width: 1920,
+      height: 1080 - TAB_STRIP_HEIGHT,
+    })
+    expect(view.setBounds).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips deferred layout after the shell window is destroyed', async () => {
+    manager.openSheetsTab()
+    const view = lastCreatedView(createSheetsView)
+    view.setBounds.mockClear()
+
+    resizeHandler()()
+    expect(view.setBounds).toHaveBeenCalledTimes(1)
+
+    shellWindow.isDestroyed.mockReturnValue(true)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(view.setBounds).toHaveBeenCalledTimes(1)
   })
 })
 
