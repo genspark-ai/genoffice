@@ -9,7 +9,10 @@ export async function buildCompatibilityFixture(): Promise<Buffer> {
   zip.file('xl/worksheets/sheet1.xml', worksheet)
   zip.file('xl/styles.xml', styles)
   zip.file('customXml/item1.xml', '<compatibility-marker value="must-survive"/>')
-  zip.file('xl/charts/chart1.xml', '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>')
+  zip.file(
+    'xl/charts/chart1.xml',
+    '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>',
+  )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
@@ -25,7 +28,10 @@ export async function buildEditFixture(): Promise<Buffer> {
   zip.file('xl/styles.xml', editStyles)
   zip.file('xl/sharedStrings.xml', editSharedStrings)
   zip.file('customXml/item1.xml', '<compatibility-marker value="must-survive"/>')
-  zip.file('xl/charts/chart1.xml', '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>')
+  zip.file(
+    'xl/charts/chart1.xml',
+    '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>',
+  )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
@@ -81,7 +87,10 @@ export async function buildStructureFixture(): Promise<Buffer> {
   zip.file('xl/worksheets/sheet1.xml', structureWorksheet)
   zip.file('xl/worksheets/sheet2.xml', structureOtherWorksheet)
   zip.file('xl/styles.xml', styles)
-  zip.file('xl/calcChain.xml', '<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="D2" i="1"/></calcChain>')
+  zip.file(
+    'xl/calcChain.xml',
+    '<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="D2" i="1"/></calcChain>',
+  )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
@@ -145,7 +154,10 @@ export async function buildSheetsFixture(): Promise<Buffer> {
   zip.file('xl/worksheets/sheet3.xml', sheetsMyWorksheet)
   zip.file('xl/styles.xml', styles)
   zip.file('xl/charts/chart1.xml', sheetsChart)
-  zip.file('xl/calcChain.xml', '<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="A2" i="1"/></calcChain>')
+  zip.file(
+    'xl/calcChain.xml',
+    '<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="A2" i="1"/></calcChain>',
+  )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
@@ -202,6 +214,113 @@ const sheetsMyWorksheet = `<?xml version="1.0" encoding="UTF-8"?>
 </worksheet>`
 
 const sheetsChart = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:barChart><c:ser><c:val><c:numRef><c:f>Data!$A$1:$A$2</c:f></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`
+
+/// Exercises preservation of exotic and binary parts: theme, doc properties,
+/// comments + VML, a table part, frozen panes, autoFilter, PNG media, and
+/// printer settings. Only sheet1.xml may change when a cell is edited.
+export async function buildKitchenSinkFixture(): Promise<Buffer> {
+  const zip = new JSZip()
+  zip.file('[Content_Types].xml', kitchenSinkContentTypes)
+  zip.file('_rels/.rels', kitchenSinkPackageRelationships)
+  zip.file('docProps/core.xml', kitchenSinkCore)
+  zip.file('docProps/app.xml', kitchenSinkApp)
+  zip.file('xl/workbook.xml', kitchenSinkWorkbook)
+  zip.file('xl/_rels/workbook.xml.rels', kitchenSinkWorkbookRelationships)
+  zip.file('xl/worksheets/sheet1.xml', kitchenSinkWorksheet)
+  zip.file('xl/worksheets/_rels/sheet1.xml.rels', kitchenSinkWorksheetRelationships)
+  zip.file('xl/styles.xml', styles)
+  zip.file('xl/theme/theme1.xml', kitchenSinkTheme)
+  zip.file('xl/tables/table1.xml', kitchenSinkTable)
+  zip.file('xl/comments1.xml', kitchenSinkComments)
+  zip.file('xl/drawings/vmlDrawing1.vml', kitchenSinkVml)
+  zip.file('xl/media/image1.png', kitchenSinkPng)
+  zip.file(
+    'xl/printerSettings/printerSettings1.bin',
+    Buffer.from([0x01, 0x02, 0x03, 0xff, 0x00, 0x7f]),
+  )
+  zip.file('customXml/item1.xml', '<compatibility-marker value="must-survive"/>')
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
+const kitchenSinkContentTypes = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/>
+  <Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`
+
+const kitchenSinkPackageRelationships = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`
+
+const kitchenSinkCore = `<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator>fixture</dc:creator></cp:coreProperties>`
+
+const kitchenSinkApp = `<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>GenOffice Fixture</Application></Properties>`
+
+const kitchenSinkWorkbook = `<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`
+
+const kitchenSinkWorkbookRelationships = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+</Relationships>`
+
+const kitchenSinkWorksheet = `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" state="frozen"/></sheetView></sheetViews>
+  <sheetData>
+    <row r="1"><c r="A1"><v>1</v></c><c r="B1" t="inlineStr"><is><t>hdr</t></is></c></row>
+    <row r="2"><c r="A2"><v>2</v></c><c r="B2"><v>3</v></c></row>
+  </sheetData>
+  <autoFilter ref="A1:B2"/>
+  <legacyDrawing r:id="rId3"/>
+  <tableParts count="1"><tablePart r:id="rId1"/></tableParts>
+</worksheet>`
+
+const kitchenSinkWorksheetRelationships = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>
+</Relationships>`
+
+const kitchenSinkTheme = `<?xml version="1.0" encoding="UTF-8"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Fixture"><a:themeElements/></a:theme>`
+
+const kitchenSinkTable = `<?xml version="1.0" encoding="UTF-8"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="Table1" displayName="Table1" ref="A1:B2"><tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="hdr"/></tableColumns></table>`
+
+const kitchenSinkComments = `<?xml version="1.0" encoding="UTF-8"?>
+<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>fixture</author></authors><commentList><comment ref="B1" authorId="0"><text><t>note</t></text></comment></commentList></comments>`
+
+const kitchenSinkVml = `<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape id="_x0000_s1025" type="#_x0000_t202" style="visibility:hidden"/></xml>`
+
+const kitchenSinkPng = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+  0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+  0x42, 0x60, 0x82,
+])
 
 const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">

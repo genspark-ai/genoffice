@@ -7,7 +7,8 @@
   "description": "pptx parsing (Slide element tree with byte anchors + inheritance resolution), OOXML fragment generation, element-patch save",
   "exports": {
     ".": "./src/index.ts",
-    "./table-grid": "./src/table-grid.ts"
+    "./table-grid": "./src/table-grid.ts",
+    "./background-promote": "./src/background-promote.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

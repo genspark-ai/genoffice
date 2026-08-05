@@ -30,6 +30,12 @@ export interface RenderNodeBase {
   sourceId: string
   /** master/layout decoration node: read-only display, not selectable/draggable/snappable */
   decoration?: boolean
+  /**
+   * Full-page background-like element (bottom-of-z-order full-page fill/picture,
+   * no text): still selectable by click, but not draggable, excluded from marquee
+   * results/snapping, and marquee drags may start on top of it.
+   */
+  background?: boolean
 }
 
 /** Resolved render fill (RGBA / gradient stops / image dataUrl). */

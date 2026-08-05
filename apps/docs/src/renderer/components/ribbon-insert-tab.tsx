@@ -10,6 +10,7 @@ import {
 import { EquationGallery, EquationModal } from './EquationModal'
 import { COVER_PRESETS, insertCoverPage, type CoverPreset } from '../editor/cover-pages'
 import { useI18n } from '../i18n/locale'
+import { useModalKeys } from './modal-keys'
 import {
   IconBook,
   IconCaret,
@@ -465,13 +466,14 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
 /** Insert Hyperlink dialog, shared by the ribbon and the native application menu */
 export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t } = useI18n()
+  const modalKeys = useModalKeys(onClose)
   const [linkText, setLinkText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
 
   const insertLink = () => {
     const href = linkUrl.trim()
     const text = linkText.trim() || href
-    if (!href) return
+    if (!href || !editor.isEditable) return
     editor
       .chain()
       .focus()
@@ -481,7 +483,12 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal">
         <h2>{t('ribbonLinkInsertTitle')}</h2>
         <label>

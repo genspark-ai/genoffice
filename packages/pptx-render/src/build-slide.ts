@@ -17,6 +17,7 @@ import type {
 // Subpath import: the renderer bundles this package, so pulling the engine's index
 // (Node-only imports like node:crypto) would break the browser build
 import { tableRowGridCols } from '@genoffice/pptx-engine/table-grid'
+import { isBackgroundLikeElement } from '@genoffice/pptx-engine/background-promote'
 import { buildChartNode } from './build-chart'
 import type {
   RenderSlide,
@@ -117,9 +118,22 @@ export function buildRenderSlide(
       nodes.push(node)
     }
   }
-  for (const el of slide.elements) {
+  // Bottom-of-z-order contiguous full-page backgrounds (cloud-generated decks encode
+  // the page background as ordinary shapes): marked so the interaction layer can
+  // let marquee drags start on them without making them uneditable.
+  let bgLeading = 0
+  while (
+    bgLeading < slide.elements.length &&
+    isBackgroundLikeElement(slide.elements[bgLeading]!, size)
+  ) {
+    bgLeading += 1
+  }
+  for (const [i, el] of slide.elements.entries()) {
     const node = buildNode(sub(el), vp, metrics, opts.media, { x: 0, y: 0 })
-    if (node) nodes.push(node)
+    if (node) {
+      if (i < bgLeading) node.background = true
+      nodes.push(node)
+    }
   }
   // Hidden-slide flag (<p:sld show="0">). Same logic as the engine's readSlideHiddenXml,
   // inlined here as a small regex so we only depend on pptx-engine types (safe to bundle in the renderer).

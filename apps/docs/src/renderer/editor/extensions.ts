@@ -85,6 +85,7 @@ import {
   SearchHighlightExtension,
   TabStopExtension,
 } from './decoration-extensions'
+import { AutoDirectionExtension } from './direction'
 export * from './marks'
 export * from './decoration-extensions'
 
@@ -171,12 +172,15 @@ function blockAttrs(
   // list items already indent via padding; a margin would double-shift them.
   // listGeometry: drive list geometry with w:ind (--li-left text indent, --li-hang the hanging
   // area i.e. the number-marker width); negative text-indent is expressed by the marker box, no longer emitted directly
+  // Logical (inline-start/end) margins: identical to left/right in LTR, and in bidi
+  // paragraphs they mirror, matching Word's quirk that w:ind left/right swap sides.
   if (includeIndent && node.attrs.indentLeft) {
-    styles.push(`margin-left:${Number(node.attrs.indentLeft) / 20}pt`)
+    styles.push(`margin-inline-start:${Number(node.attrs.indentLeft) / 20}pt`)
   } else if (listGeometry && node.attrs.indentLeft) {
     styles.push(`--li-left:${Number(node.attrs.indentLeft) / 20}pt`)
   }
-  if (node.attrs.indentRight) styles.push(`margin-right:${Number(node.attrs.indentRight) / 20}pt`)
+  if (node.attrs.indentRight)
+    styles.push(`margin-inline-end:${Number(node.attrs.indentRight) / 20}pt`)
   if (node.attrs.indentFirstLine) {
     const firstLine = Number(node.attrs.indentFirstLine)
     if (listGeometry && firstLine < 0) styles.push(`--li-hang:${-firstLine / 20}pt`)
@@ -628,51 +632,68 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
   },
   addProseMirrorPlugins() {
     const storage = this.storage
+    const compute = (doc: PmNode): DecorationSet | null => {
+      if (storage.defs.size === 0) return null
+      const refs: ListItemRef[] = []
+      const nodes: Array<{ pos: number; size: number; attrs: Record<string, unknown> }> = []
+      doc.descendants((node, pos) => {
+        if (node.type.name === 'docListItem') {
+          refs.push({
+            numId: (node.attrs.numId as string | null) ?? null,
+            ilvl: Number(node.attrs.ilvl) || 0,
+          })
+          nodes.push({ pos, size: node.nodeSize, attrs: node.attrs })
+          return false
+        }
+        return true
+      })
+      if (refs.length === 0) return null
+      const markers = computeListMarkers(refs, storage.defs)
+      const decos: Decoration[] = []
+      markers.forEach((marker, i) => {
+        if (marker === null) return
+        const attrs: Record<string, string> = { 'data-marker': marker }
+        // geometry fallback: when the paragraph has no w:ind of its own, use the numbering.xml level's indent;
+        // marker font size always comes from the level's rPr (independent of paragraph text size)
+        const def = refs[i].numId !== null ? storage.defs.get(refs[i].numId as string) : undefined
+        const level = def?.levels[Math.max(0, refs[i].ilvl)]
+        if (level) {
+          const styles: string[] = []
+          const nodeAttrs = nodes[i].attrs
+          if (!nodeAttrs.indentLeft && level.indentLeft) {
+            styles.push(`--li-left:${level.indentLeft / 20}pt`)
+          }
+          if (!nodeAttrs.indentFirstLine && level.hanging) {
+            styles.push(`--li-hang:${level.hanging / 20}pt`)
+          }
+          if (level.szHalfPoints) styles.push(`--li-marker-size:${level.szHalfPoints / 2}pt`)
+          if (styles.length > 0) attrs.style = styles.join(';')
+        }
+        decos.push(Decoration.node(nodes[i].pos, nodes[i].pos + nodes[i].size, attrs))
+      })
+      return DecorationSet.create(doc, decos)
+    }
+
+    interface CachedMarkers {
+      defs: Map<string, NumberingDef>
+      decos: DecorationSet | null
+    }
+    const key = new PluginKey<CachedMarkers>('listNumbering')
     return [
-      new Plugin({
-        key: new PluginKey('listNumbering'),
+      new Plugin<CachedMarkers>({
+        key,
+        state: {
+          init: (_config, state) => ({ defs: storage.defs, decos: compute(state.doc) }),
+          apply(tr, old) {
+            // defs is replaced (never mutated) on open/reparse and marker overlay
+            if (tr.docChanged || old.defs !== storage.defs)
+              return { defs: storage.defs, decos: compute(tr.doc) }
+            return old.decos ? { defs: old.defs, decos: old.decos.map(tr.mapping, tr.doc) } : old
+          },
+        },
         props: {
           decorations(state) {
-            if (storage.defs.size === 0) return null
-            const refs: ListItemRef[] = []
-            const nodes: Array<{ pos: number; size: number; attrs: Record<string, unknown> }> = []
-            state.doc.descendants((node, pos) => {
-              if (node.type.name === 'docListItem') {
-                refs.push({
-                  numId: (node.attrs.numId as string | null) ?? null,
-                  ilvl: Number(node.attrs.ilvl) || 0,
-                })
-                nodes.push({ pos, size: node.nodeSize, attrs: node.attrs })
-                return false
-              }
-              return true
-            })
-            if (refs.length === 0) return null
-            const markers = computeListMarkers(refs, storage.defs)
-            const decos: Decoration[] = []
-            markers.forEach((marker, i) => {
-              if (marker === null) return
-              const attrs: Record<string, string> = { 'data-marker': marker }
-              // geometry fallback: when the paragraph has no w:ind of its own, use the numbering.xml level's indent;
-              // marker font size always comes from the level's rPr (independent of paragraph text size)
-              const def =
-                refs[i].numId !== null ? storage.defs.get(refs[i].numId as string) : undefined
-              const level = def?.levels[Math.max(0, refs[i].ilvl)]
-              if (level) {
-                const styles: string[] = []
-                const nodeAttrs = nodes[i].attrs
-                if (!nodeAttrs.indentLeft && level.indentLeft) {
-                  styles.push(`--li-left:${level.indentLeft / 20}pt`)
-                }
-                if (!nodeAttrs.indentFirstLine && level.hanging) {
-                  styles.push(`--li-hang:${level.hanging / 20}pt`)
-                }
-                if (level.szHalfPoints) styles.push(`--li-marker-size:${level.szHalfPoints / 2}pt`)
-                if (styles.length > 0) attrs.style = styles.join(';')
-              }
-              decos.push(Decoration.node(nodes[i].pos, nodes[i].pos + nodes[i].size, attrs))
-            })
-            return DecorationSet.create(state.doc, decos)
+            return key.getState(state)?.decos ?? null
           },
         },
       }),
@@ -2236,4 +2257,5 @@ export const editorExtensions = [
   MoveRevisionExtension,
   PPrChangeExtension,
   RevisionOriginalExtension,
+  AutoDirectionExtension,
 ]

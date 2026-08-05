@@ -11,6 +11,7 @@ import {
   type TocEntry,
 } from '@genoffice/docx-engine'
 import { PromptModal } from './PromptModal'
+import { collectHeadings } from '../editor/headings'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import {
   IconBook,
@@ -28,13 +29,7 @@ import {
 import { BIG, TabProps, toggleDropdown } from './ribbon-tabs'
 
 function collectTocEntries(editor: Editor): TocEntry[] {
-  const entries: TocEntry[] = []
-  editor.state.doc.forEach((node) => {
-    if (node.type.name === 'docHeading' && node.textContent.trim()) {
-      entries.push({ level: Number(node.attrs.level) || 1, text: node.textContent })
-    }
-  })
-  return entries
+  return collectHeadings(editor.state.doc).map(({ level, text }) => ({ level, text }))
 }
 
 /** Heading entries + real page numbers (headingPages and collectTocEntries share document order) */

@@ -21,6 +21,7 @@ function render(state: UpdateUiState): void {
   phase = state.phase
   const s = state.strings
 
+  document.documentElement.lang = state.lang
   document.title = s.title
   headline.textContent = s.headline
   verCurrent.textContent = `v${state.currentVersion}`

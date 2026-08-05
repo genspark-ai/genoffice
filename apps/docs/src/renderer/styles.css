@@ -20,6 +20,24 @@
   box-sizing: border-box;
 }
 
+/* UI CJK fonts per language (documentElement.lang is set at bootstrap and on switch);
+ * the zh expansion must keep the historical stack byte-identical */
+:root {
+  --ui-cjk: 'PingFang SC', 'Microsoft YaHei';
+}
+
+:root:lang(ja) {
+  --ui-cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+}
+
+:root:lang(ko) {
+  --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+}
+
+:root:lang(zh-TW) {
+  --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+}
+
 html,
 body,
 #root {
@@ -32,8 +50,7 @@ body {
     'Segoe UI',
     -apple-system,
     BlinkMacSystemFont,
-    'PingFang SC',
-    'Microsoft YaHei',
+    var(--ui-cjk),
     sans-serif;
   color: var(--text);
   background: var(--chrome-bg);
@@ -2871,33 +2888,35 @@ th.cell-rev-del {
    geometry comes from w:ind (--li-left text indent / --li-hang hanging marker-area width,
    emitted by extensions.ts); defaults replicate the old fixed per-level indents. The marker
    is an inline hanging box: it fills the hanging area, and when too wide it pushes the body
-   text aside instead of overlapping it (Word behavior) */
+   text aside instead of overlapping it (Word behavior).
+   Logical (inline-start) geometry so RTL list items (direction:rtl via w:bidi)
+   mirror automatically: indent and marker land on the right side. */
 .doc-li {
   position: relative;
-  padding-left: var(--li-left, 0.55in);
+  padding-inline-start: var(--li-left, 0.55in);
   margin: 0 0 4pt;
 }
 
 .doc-li.ilvl-1 {
-  padding-left: var(--li-left, 0.85in);
+  padding-inline-start: var(--li-left, 0.85in);
 }
 
 .doc-li.ilvl-2 {
-  padding-left: var(--li-left, 1.15in);
+  padding-inline-start: var(--li-left, 1.15in);
 }
 
 .doc-li.ilvl-3 {
-  padding-left: var(--li-left, 1.45in);
+  padding-inline-start: var(--li-left, 1.45in);
 }
 
 .doc-li.ilvl-4 {
-  padding-left: var(--li-left, 1.75in);
+  padding-inline-start: var(--li-left, 1.75in);
 }
 
 .doc-li::before {
   display: inline-block;
   min-width: var(--li-hang, 0.25in);
-  margin-left: calc(-1 * var(--li-hang, 0.25in));
+  margin-inline-start: calc(-1 * var(--li-hang, 0.25in));
   font-size: var(--li-marker-size, inherit);
 }
 
@@ -3455,7 +3474,7 @@ th.cell-rev-del {
 .doc-chart-axis-label {
   font:
     10px 'Segoe UI',
-    'PingFang SC',
+    var(--ui-cjk),
     sans-serif;
   fill: var(--text-dim, #888);
 }
@@ -3527,7 +3546,7 @@ th.cell-rev-del {
   padding: 1px 8px;
   margin-right: 10px;
   background: var(--surface);
-  font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+  font-family: 'Segoe UI', var(--ui-cjk), sans-serif;
 }
 
 .doc-protected-preview {
@@ -3784,7 +3803,7 @@ body.docs-crop-active
   padding: 9vh 24px 40px;
   text-align: center;
   background: var(--surface);
-  font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+  font-family: 'Segoe UI', var(--ui-cjk), sans-serif;
 }
 
 .editor-scroll:has(> .start-screen) {

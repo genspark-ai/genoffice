@@ -497,6 +497,43 @@ describe('executeWorkbookTool: propose_operations', () => {
     expect(result.output).toContain('⚠️ Formula error values present')
   })
 
+  it('waits for the async apply and reports success only after it lands', async () => {
+    const proposeOperations = vi.fn().mockReturnValue({
+      ok: true,
+      plan: EMPTY_PLAN,
+      applied: Promise.resolve({ ok: true }),
+    })
+    const result = await executeWorkbookTool(
+      call('propose_operations', {
+        operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'new' }],
+        summary: 'Update A1',
+      }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBeFalsy()
+    expect(result.mutated).toBe(true)
+    expect(result.output).toContain('Auto-applied')
+  })
+
+  it('returns an error (not success) when the async apply fails', async () => {
+    const proposeOperations = vi.fn().mockReturnValue({
+      ok: true,
+      plan: EMPTY_PLAN,
+      applied: Promise.resolve({ ok: false, reason: 'workbook changed since preview' }),
+    })
+    const result = await executeWorkbookTool(
+      call('propose_operations', {
+        operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'new' }],
+        summary: 'Update A1',
+      }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.mutated).toBe(false)
+    expect(result.output).toContain('UNCHANGED')
+    expect(result.output).toContain('workbook changed since preview')
+  })
+
   it('propagates a conflict/streaming-guard error from proposeOperations', () => {
     const proposeOperations = vi.fn().mockReturnValue({ ok: false, error: 'still streaming in' })
     const result = execSync(

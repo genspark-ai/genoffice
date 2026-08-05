@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core'
 import { latexToOmml, ommlToMathML } from '@genoffice/docx-engine'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
+import { useModalKeys } from './modal-keys'
 
 /** Built-in equation library (the common preset set for the "Insert Equation" dropdown) */
 export const BUILTIN_EQUATIONS: Array<{ name: string; nameKey: StringKey; latex: string }> = [
@@ -84,13 +85,14 @@ export function EquationModal({
   editTarget?: MathEditTarget
 }) {
   const { t } = useI18n()
+  const modalKeys = useModalKeys(onClose)
   const [latex, setLatex] = useState(editTarget?.latex ?? '')
   const [inline, setInline] = useState(editTarget?.kind === 'inline')
   const preview = useMemo(() => previewOf(latex), [latex])
   const canInsert = preview !== null && 'mathml' in preview
 
   const insert = () => {
-    if (!canInsert) return
+    if (!canInsert || !editor.isEditable) return
     if (editTarget) {
       const node = editor.state.doc.nodeAt(editTarget.pos)
       if (editTarget.kind === 'inline' && node?.type.name === 'docInlineMath') {
@@ -113,7 +115,12 @@ export function EquationModal({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal equation-modal">
         <h2>{t('appInsertEquation')}</h2>
         <label>

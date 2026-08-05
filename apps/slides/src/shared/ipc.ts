@@ -321,7 +321,7 @@ export interface GradientFillSpec {
 export interface EditFillOp {
   slideIndex: number
   sourceId: string
-  /** 'none' | #RRGGBB(AA, optional alpha) | gradient (group children only support solid colors for now) */
+  /** 'none' | #RRGGBB(AA, optional alpha) | gradient */
   fill: string | GradientFillSpec
   /** In-group editing: sourceId is a direct child of that group */
   groupId?: string
@@ -1175,8 +1175,8 @@ export interface SlidesApi {
   getHeaderFooter: (
     slideIndex: number,
   ) => Promise<{ footer: string | null; slideNum: boolean; date: string | null }>
-  /** Apply a theme (color/font scheme + per-page background); returns the reparsed full RenderSlide set */
-  applyTheme: (op: ApplyThemeOp) => Promise<RenderSlide[] | null>
+  /** Apply a theme (color/font scheme + per-page background); returns the reparsed full RenderSlide set, null = no-op, { error } = failed (state rolled back) */
+  applyTheme: (op: ApplyThemeOp) => Promise<RenderSlide[] | { error: string } | null>
   /** Set the transition effect (takes effect in PowerPoint shows of the saved pptx); returns success */
   setTransition: (op: SetTransitionOp) => Promise<boolean>
   /** The current page's transition effect (echoed on page switch) */

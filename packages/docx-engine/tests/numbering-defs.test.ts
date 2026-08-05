@@ -55,3 +55,38 @@ describe('numbering definitions (word/numbering.xml)', () => {
     expect(doc.numbering.get('2')?.levels[0]?.lvlText).toBe('%1.')
   })
 })
+
+describe('mixed multilevel list kind', () => {
+  const MIXED_NUMBERING =
+    XML_DECL +
+    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:abstractNum w:abstractNumId="9">' +
+    '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>' +
+    '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#61623;"/></w:lvl>' +
+    '</w:abstractNum>' +
+    '<w:num w:numId="7"><w:abstractNumId w:val="9"/></w:num>' +
+    '</w:numbering>'
+
+  it('classifies each level by its own numFmt, not level 0', async () => {
+    const li = (ilvl: number, text: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="7"/></w:numPr></w:pPr>` +
+      `<w:r><w:t>${text}</w:t></w:r></w:p>`
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: li(0, 'top') + li(1, 'sub'), numberingXml: MIXED_NUMBERING }),
+    )
+    expect(doc.blocks[0].list).toMatchObject({ kind: 'ordered', ilvl: 0 })
+    expect(doc.blocks[1].list).toMatchObject({ kind: 'bullet', ilvl: 1 })
+  })
+
+  it('falls back to the level-0 classification for undefined levels', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:pPr><w:numPr><w:ilvl w:val="4"/><w:numId w:val="7"/></w:numPr></w:pPr>' +
+          '<w:r><w:t>deep</w:t></w:r></w:p>',
+        numberingXml: MIXED_NUMBERING,
+      }),
+    )
+    expect(doc.blocks[0].list).toMatchObject({ kind: 'ordered', ilvl: 4 })
+  })
+})

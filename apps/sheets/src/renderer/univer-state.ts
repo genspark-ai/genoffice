@@ -73,11 +73,12 @@ export interface LazyWorkbookState {
   >
   /// IronCalc fallback when closure mode is unavailable: file formula-cell
   /// keys per sheet, engine values overlaid on viewport patches, and a
-  /// session kill switch after the engine rejects the workbook once.
+  /// session kill switch after the engine rejects the workbook repeatedly.
   readonly recalc: {
     timer: ReturnType<typeof setTimeout> | null
     generation: number
-    failed: boolean
+    /// consecutive engine failures; a success resets it
+    failures: number
     readonly formulaCells: Map<string, ReadonlySet<number>>
     readonly overlay: Map<string, Map<string, PinnedClosureCell>>
   }

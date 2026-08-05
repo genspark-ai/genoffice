@@ -405,12 +405,20 @@ function clip(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + '…' : text
 }
 
+/** Blank = exactly one empty paragraph; a textContent check would misread image/chart-only documents as blank. */
+export function isBlankDocument(editor: Editor): boolean {
+  const doc = editor.state.doc
+  if (doc.childCount !== 1) return false
+  const first = doc.child(0)
+  return first.type.name === 'docParagraph' && first.content.size === 0
+}
+
 /**
  * Per-turn context: fresh document skeleton + selection fragment injected
  * as a selection chip.
  */
 export function buildDocContext(editor: Editor): string {
-  const isEmptyDoc = editor.state.doc.textContent.trim() === ''
+  const isEmptyDoc = isBlankDocument(editor)
   const scope = getSelectionScope(editor)
   const selectionHtml = scope.isRange
     ? clip(serializeRangeToHtml(editor, scope.startIndex, scope.endIndex), SELECTION_MAX_CHARS)

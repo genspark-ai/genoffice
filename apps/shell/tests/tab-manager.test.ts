@@ -45,6 +45,7 @@ const docsQueryDirty = vi.fn(() => Promise.resolve(false))
 const markDocsNewBlank = vi.fn()
 const requestDocsClose = vi.fn(() => Promise.resolve(true))
 const setActiveDocsResolver = vi.fn()
+const teardownDocsRenderer = vi.fn()
 
 vi.mock('../../docs/src/main/docs-main', () => ({
   createDocsView: (...args: unknown[]) => createDocsView(...(args as [])),
@@ -52,6 +53,7 @@ vi.mock('../../docs/src/main/docs-main', () => ({
   markDocsNewBlank: (...args: unknown[]) => markDocsNewBlank(...args),
   requestDocsClose: (...args: unknown[]) => requestDocsClose(...(args as [])),
   setActiveDocsResolver: (...args: unknown[]) => setActiveDocsResolver(...args),
+  teardownDocsRenderer: (...args: unknown[]) => teardownDocsRenderer(...args),
 }))
 
 const createPdfView = vi.fn(() => makeFakeView())
@@ -302,6 +304,8 @@ describe('closing tabs', () => {
     await manager.closeTab(id)
     expect(shellWindow.contentView.removeChildView).toHaveBeenCalledWith(view)
     expect(view.webContents.close).not.toHaveBeenCalled()
+    // the orphaned renderer must be told to go inert (recovery-copy resurrection guard)
+    expect(teardownDocsRenderer).toHaveBeenCalledWith(view.webContents)
   })
 
   it('closes a clean docs tab after the async dirty query says clean', async () => {
@@ -400,6 +404,15 @@ describe('file path bookkeeping', () => {
     expect(manager.findSlidesTabByPath('/tmp/b.pptx')).toBe('t2')
     expect(manager.findPdfTabByPath('/tmp/c.pdf')).toBe('t3')
     expect(manager.findPdfTabByPath('/tmp/missing.pdf')).toBeUndefined()
+  })
+
+  it('reports the active pdf tab with its id (so callers can re-activate it)', () => {
+    const pdfId = manager.openPdfTab('/tmp/c.pdf')
+    const active = manager.activePdfTab()
+    expect(active?.id).toBe(pdfId)
+    expect(active?.filePath).toBe('/tmp/c.pdf')
+    manager.openDocsTab()
+    expect(manager.activePdfTab()).toBeUndefined()
   })
 })
 

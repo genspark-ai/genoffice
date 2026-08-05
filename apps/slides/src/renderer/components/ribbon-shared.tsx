@@ -372,6 +372,8 @@ export interface Props {
   /** Document page count / current page (for the Zoom dropdown) */
   slideCount: number
   currentSlide: number
+  /** Current slide's solid background color (undefined = gradient/image/none); syncs the Design tab swatch */
+  currentBgColor?: string
   /** Open the header & footer dialog */
   onOpenHeaderFooter: () => void
   /** Open the equation dialog */

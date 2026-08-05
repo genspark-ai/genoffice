@@ -19,6 +19,41 @@ export interface SaveUntilPersistedDeps {
 }
 
 /**
+ * Serializes save passes. A call that arrives while a save is in flight waits
+ * for it instead of failing (the old immediate `false` made "Save and close"
+ * silently give up during a blur autosave), reuses the finished save's success
+ * when `canReuse` says nothing is left to persist, and otherwise runs its own
+ * pass. Callers always get the real outcome.
+ */
+export function createSaveSerializer(): (
+  runSave: () => Promise<boolean>,
+  canReuse: () => boolean,
+) => Promise<boolean> {
+  let tail: Promise<boolean> | null = null
+  return (runSave, canReuse) => {
+    // Strict FIFO chaining: every caller queues behind the current tail, so two
+    // save passes can never run concurrently — the old "wait then re-check a
+    // shared inFlight slot" let several waiters observe the cleared slot together
+    // and start overlapping passes.
+    const prior = tail
+    const pass = (async () => {
+      if (prior) {
+        const ok = await prior.catch(() => false)
+        if (ok && canReuse()) return true
+      }
+      return runSave()
+    })()
+    tail = pass
+    pass
+      .catch(() => false)
+      .then(() => {
+        if (tail === pass) tail = null
+      })
+    return pass
+  }
+}
+
+/**
  * True only when the document is fully on disk. False means the caller must not
  * treat the save as complete — for the close guard, keep the window open.
  */

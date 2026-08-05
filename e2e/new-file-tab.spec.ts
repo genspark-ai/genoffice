@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { launchShell, closeAndSaveVideo, screenshotPath } from './helpers'
+import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } from './helpers'
 
 test.describe('new file from home', () => {
   test('AI Docs quick card opens a docs editor tab', async () => {
@@ -8,8 +8,6 @@ test.describe('new file from home', () => {
     try {
       await expect(page.locator('.quick-card').first()).toContainText('AI Docs')
 
-      // the docs editor loads in a WebContentsView, which surfaces as a new page
-      const editorPagePromise = app.waitForEvent('window', { timeout: 30_000 })
       await page.locator('.quick-card').first().click()
 
       const editorTab = page.locator('.tab-bar .tab-item:not(.tab-home)')
@@ -17,8 +15,10 @@ test.describe('new file from home', () => {
       await expect(editorTab).toHaveClass(/active/)
       await page.screenshot({ path: screenshotPath('new-doc-tab-bar') })
 
-      const editorPage = await editorPagePromise
-      await editorPage.waitForLoadState('domcontentloaded')
+      // the docs editor loads in a WebContentsView, which surfaces as a new
+      // page — poll for it instead of waitForLoadState, which hangs on Linux
+      // when Playwright attaches mid-navigation and misses lifecycle events
+      const editorPage = await waitForPageWithUrl(app, 'docs/out')
       await expect(editorPage.locator('body')).toBeVisible()
       await editorPage.screenshot({ path: screenshotPath('new-doc-editor') })
     } finally {

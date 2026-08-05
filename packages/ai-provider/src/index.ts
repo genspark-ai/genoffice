@@ -31,5 +31,13 @@ export type {
 } from './auth'
 export { chatForProvider } from './chat'
 export { fetchCodexCapabilities } from './codex'
-export { sseLines, streamForProvider } from './stream'
+export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
+export {
+  AI_CHAT_RESPONSE_TIMEOUT_MS,
+  AI_CONNECT_TIMEOUT_MS,
+  AI_IDLE_TIMEOUT_MS,
+  AiTimeoutError,
+  createStreamWatchdog,
+} from './watchdog'
+export type { StreamWatchdog } from './watchdog'

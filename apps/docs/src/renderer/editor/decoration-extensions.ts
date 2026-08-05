@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import {} from '@tiptap/pm/tables'
@@ -168,6 +168,9 @@ interface MeasuredTab {
  * Measure → decorate → re-measure converges (a tab's target is absolute, not
  * cumulative) and is guarded by a signature check to avoid dispatch loops.
  */
+/** nodes are immutable, so the has-tab verdict per textblock never goes stale */
+const paraHasTabCache = new WeakMap<ProseMirrorNode, boolean>()
+
 class TabLayoutView {
   private lastSig = ''
 
@@ -177,7 +180,14 @@ class TabLayoutView {
     document.fonts?.ready.then(() => this.measure()).catch(() => {})
   }
 
-  update() {
+  update(view: EditorView, prevState: EditorState) {
+    // selection-only transactions change neither the doc nor tab layout; the
+    // plugin-state check keeps the measure→decorate→re-measure convergence alive
+    if (
+      view.state.doc === prevState.doc &&
+      tabStopPluginKey.getState(view.state) === tabStopPluginKey.getState(prevState)
+    )
+      return
     this.measure()
   }
 
@@ -190,7 +200,12 @@ class TabLayoutView {
     const paras: Array<{ node: ProseMirrorNode; pos: number }> = []
     view.state.doc.descendants((node, pos) => {
       if (!node.isTextblock) return true
-      if (node.textContent.includes('\t')) paras.push({ node, pos })
+      let hasTab = paraHasTabCache.get(node)
+      if (hasTab === undefined) {
+        hasTab = node.textContent.includes('\t')
+        paraHasTabCache.set(node, hasTab)
+      }
+      if (hasTab) paras.push({ node, pos })
       return false
     })
 

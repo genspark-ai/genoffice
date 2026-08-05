@@ -11,7 +11,7 @@ import {
   ParagraphDialog,
 } from '../src/renderer/components/ContextMenu'
 
-function createEditor(): Editor {
+function createEditor(paraAttrs: Record<string, unknown> = {}): Editor {
   return new Editor({
     element: document.createElement('div'),
     extensions: editorExtensions,
@@ -20,7 +20,7 @@ function createEditor(): Editor {
       content: [
         {
           type: 'docParagraph',
-          attrs: { docxIndex: 0 },
+          attrs: { docxIndex: 0, ...paraAttrs },
           content: [{ type: 'text', text: 'EVs market research' }],
         },
       ],
@@ -171,6 +171,60 @@ describe('ParagraphDialog', () => {
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
     act(() => ok.click())
     expect(editor.getAttributes('docParagraph').align).toBe('center')
+    unmount()
+    editor.destroy()
+  })
+
+  it('resolves visual left/right against the paragraph direction (LTR)', () => {
+    const editor = createEditor({ align: 'right' })
+    select(editor, 2, 2)
+    const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
+    const alignSelect = container.querySelector('select')!
+    expect(alignSelect.value).toBe('right')
+    act(() => {
+      alignSelect.value = 'left'
+      alignSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
+    act(() => ok.click())
+    // visual left is the start side in LTR → stored as null
+    expect(editor.getAttributes('docParagraph').align).toBeNull()
+    unmount()
+    editor.destroy()
+  })
+
+  it('shows the start side as Right in RTL and stores visual left explicitly', () => {
+    const editor = createEditor({ bidi: true })
+    select(editor, 2, 2)
+    const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
+    const alignSelect = container.querySelector('select')!
+    // unset align in an RTL paragraph renders right, so the dialog shows Right
+    expect(alignSelect.value).toBe('right')
+    act(() => {
+      alignSelect.value = 'left'
+      alignSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
+    act(() => ok.click())
+    // visual left is the end side in RTL → stored explicitly
+    expect(editor.getAttributes('docParagraph').align).toBe('left')
+    unmount()
+    editor.destroy()
+  })
+
+  it('clears the align attr when re-selecting the start side in RTL', () => {
+    const editor = createEditor({ bidi: true, align: 'left' })
+    select(editor, 2, 2)
+    const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
+    const alignSelect = container.querySelector('select')!
+    expect(alignSelect.value).toBe('left')
+    act(() => {
+      alignSelect.value = 'right'
+      alignSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
+    act(() => ok.click())
+    expect(editor.getAttributes('docParagraph').align).toBeNull()
     unmount()
     editor.destroy()
   })

@@ -23,6 +23,7 @@ const recalcResultSchema = z
         })
         .strict(),
     ),
+    cached: z.boolean(),
   })
   .strict()
 
@@ -129,6 +130,44 @@ describe('sidecar IronCalc recalculation channel', () => {
         number: 120,
         isFormula: true,
       })
+      expect(result.cached).toBe(false)
+    } finally {
+      client.stop()
+    }
+  })
+
+  it('serves repeat requests from the resident model and rebuilds after a revert', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-recalc-test-'))
+    cleanups.push(directory)
+    const path = join(directory, 'recalc.xlsx')
+    await writeFile(path, await buildRecalcFixture())
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    const reads = [
+      { sheet: 'Data', range: { startRow: 0, endRow: 2, startColumn: 0, endColumn: 0 } },
+    ]
+    try {
+      const first = recalcResultSchema.parse(
+        await client.recalcCells({
+          path,
+          edits: [{ sheet: 'Data', row: 0, column: 0, input: '100' }],
+          reads,
+        }),
+      )
+      expect(first.cached).toBe(false)
+      // changed edit: incremental set_user_input on the resident model
+      const second = recalcResultSchema.parse(
+        await client.recalcCells({
+          path,
+          edits: [{ sheet: 'Data', row: 0, column: 0, input: '200' }],
+          reads,
+        }),
+      )
+      expect(second.cached).toBe(true)
+      expect(second.cells.find((cell) => cell.row === 2)?.formatted).toBe('220')
+      // undo removed the edit: only the file knows A1's original content
+      const third = recalcResultSchema.parse(await client.recalcCells({ path, edits: [], reads }))
+      expect(third.cached).toBe(false)
+      expect(third.cells.find((cell) => cell.row === 2)?.formatted).toBe('30')
     } finally {
       client.stop()
     }

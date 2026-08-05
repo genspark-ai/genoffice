@@ -850,6 +850,90 @@ describe('table row/cell revisions (rowIns/rowDel/cellIns/cellDel)', () => {
   })
 })
 
+describe('recorder scope gating', () => {
+  function trackingEditor(content: JsonNode[]): Editor {
+    const editor = createEditor(content)
+    const storage = editor.storage.trackChanges as TrackChangesStorage
+    storage.enabled = true
+    storage.author = 'Tester'
+    return editor
+  }
+  const blockPos = (editor: Editor, index: number): number => {
+    let pos = 0
+    for (let i = 0; i < index; i++) pos += editor.state.doc.child(i).nodeSize
+    return pos
+  }
+
+  it('mid-document edits record the same revisions and leave distant blocks unmarked', () => {
+    const editor = trackingEditor(Array.from({ length: 20 }, (_, i) => para(text(`block ${i}`))))
+    editor.commands.insertContentAt(blockPos(editor, 10) + 3, 'NEW')
+    editor.commands.deleteRange({ from: blockPos(editor, 12) + 1, to: blockPos(editor, 12) + 3 })
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => r.kind).sort()).toEqual(['del', 'ins'])
+    const inBlock = (r: { from: number; to: number }, index: number) => {
+      const start = blockPos(editor, index)
+      return r.from >= start && r.to <= start + editor.state.doc.child(index).nodeSize
+    }
+    expect(ranges.every((r) => inBlock(r, 10) || inBlock(r, 12))).toBe(true)
+    expect(editor.state.doc.childCount).toBe(20)
+    editor.destroy()
+  })
+
+  it('records pPrChange for the edited paragraph only in a long document', () => {
+    const editor = trackingEditor(Array.from({ length: 15 }, (_, i) => para(text(`p${i}`))))
+    editor.commands.setTextSelection(blockPos(editor, 7) + 2)
+    editor.commands.updateAttributes('docParagraph', { align: 'center' })
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges).toMatchObject([{ kind: 'pPrChange', author: 'Tester' }])
+    expect(ranges[0].from).toBe(blockPos(editor, 7))
+    editor.destroy()
+  })
+})
+
+describe('IME composition deferral', () => {
+  function composingEditor(content: JsonNode[]): { editor: Editor; end: () => void } {
+    const editor = createEditor(content)
+    const storage = editor.storage.trackChanges as TrackChangesStorage
+    storage.enabled = true
+    storage.author = 'Tester'
+    let composing = true
+    Object.defineProperty(editor.view, 'composing', {
+      get: () => composing,
+      configurable: true,
+    })
+    return { editor, end: () => (composing = false) }
+  }
+
+  it('defers recording while composing and marks the result after compositionend', () => {
+    const { editor, end } = composingEditor([para(text('ab'))])
+    editor.view.dispatch(editor.state.tr.insertText('n', 3, 3))
+    editor.view.dispatch(editor.state.tr.insertText('ね', 3, 4))
+    expect(collectRevisions(editor.state.doc)).toHaveLength(0)
+    end()
+    editor.view.dispatch(editor.state.tr) // the compositionend poke
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0]).toMatchObject({ kind: 'ins', author: 'Tester' })
+    expect(editor.state.doc.textBetween(ranges[0].from, ranges[0].to)).toBe('ね')
+    editor.destroy()
+  })
+
+  it('records the selection a composition replaced as a struck deletion', () => {
+    const { editor, end } = composingEditor([para(text('abcd'))])
+    editor.view.dispatch(editor.state.tr.insertText('X', 2, 4)) // IME replaces "bc"
+    end()
+    editor.view.dispatch(editor.state.tr)
+    expect(editor.state.doc.textContent).toBe('aXbcd')
+    const kinds = collectRevisions(editor.state.doc)
+      .map((r) => r.kind)
+      .sort()
+    expect(kinds).toEqual(['del', 'ins'])
+    acceptAllRevisions(editor)
+    expect(editor.state.doc.textContent).toBe('aXd')
+    editor.destroy()
+  })
+})
+
 describe('repeated backspace under track changes', () => {
   function trackingEditor(content: JsonNode[]): Editor {
     const editor = createEditor(content)

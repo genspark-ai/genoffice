@@ -32,6 +32,7 @@ import { SlideThumb } from './SlideThumb'
 import { MasterView } from './MasterView'
 import { TextEditOverlay, firstFontFamily } from './TextEditOverlay'
 import { CropOverlay } from './CropOverlay'
+import { createImageLoader } from './image-loader'
 import { InkOverlay } from './InkOverlay'
 import { inkNodesOf, type InkPenSettings, type InkStroke, type InkTool } from './ink'
 import type { SlideThemePreset } from './themes'
@@ -293,6 +294,7 @@ export function App() {
   )
   const bootHandledRef = useRef(false)
   const [images, setImages] = useState<Map<string, HTMLImageElement>>(new Map())
+  const imageLoaderRef = useRef<ReturnType<typeof createImageLoader> | null>(null)
   const [hasClipboard, setHasClipboard] = useState(false)
   const [transition, setTransition] = useState<TransitionKind>('none')
   // ── Animations tab: current page's animation list + pane/preview ─────────────
@@ -635,6 +637,12 @@ export function App() {
   const inTextField = () => {
     const el = document.activeElement as HTMLElement | null
     return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+  }
+
+  // Text dragged in plain DOM (e.g. AI panel) focuses body; canvas shape selection stays collapsed
+  const hasDomTextSelection = () => {
+    const sel = window.getSelection()
+    return !!sel && !sel.isCollapsed
   }
 
   /** Apply the full slides set after undo/redo: page count may change (undoing a new page), clamp current */
@@ -1465,10 +1473,12 @@ export function App() {
       else if (cmd === 'undo') void undo()
       else if (cmd === 'redo') void redo()
       else if (cmd === 'cut') {
-        if (editing || inTextField()) void window.slidesApi.nativeClipboard('cut')
+        if (editing || inTextField() || hasDomTextSelection())
+          void window.slidesApi.nativeClipboard('cut')
         else void cutSelected()
       } else if (cmd === 'copy') {
-        if (editing || inTextField()) void window.slidesApi.nativeClipboard('copy')
+        if (editing || inTextField() || hasDomTextSelection())
+          void window.slidesApi.nativeClipboard('copy')
         else void copySelected()
       } else if (cmd === 'paste') {
         if (editing || inTextField()) void window.slidesApi.nativeClipboard('paste')
@@ -1513,38 +1523,26 @@ export function App() {
       addFillUrl(s.background)
       walk(s.nodes)
     }
-    let cancelled = false
-    const loaded = new Map<string, HTMLImageElement>()
-    let pending = 0
-    const flush = () => {
-      if (cancelled || loaded.size === 0) return
-      setImages((prev) => {
-        const m = new Map(prev)
-        for (const [k, v] of loaded) m.set(k, v)
-        return m
+    if (!imageLoaderRef.current) {
+      imageLoaderRef.current = createImageLoader((entries) => {
+        setImages((prev) => {
+          const m = new Map(prev)
+          for (const [k, v] of entries) m.set(k, v)
+          return m
+        })
       })
     }
-    urls.forEach((u) => {
-      if (images.has(u)) return
-      pending++
-      const img = new Image()
-      img.onload = () => {
-        loaded.set(u, img)
-        pending--
-        if (pending === 0) flush()
-      }
-      img.onerror = () => {
-        pending--
-        if (pending === 0) flush()
-      }
-      img.src = u
-    })
-    if (pending === 0) return
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    imageLoaderRef.current.load(urls)
   }, [slides])
+  // Dispose on unmount and clear the ref so a remount (e.g. React Strict Mode's
+  // dev double-mount) lazily recreates a fresh loader instead of reusing a disposed one.
+  useEffect(
+    () => () => {
+      imageLoaderRef.current?.dispose()
+      imageLoaderRef.current = null
+    },
+    [],
+  )
 
   const editNode = useMemo(() => {
     if (!editing || !slide) return null
@@ -2236,6 +2234,7 @@ export function App() {
         onInsertZoom={(index) => void insertZoom(index)}
         slideCount={slides.length}
         currentSlide={current}
+        currentBgColor={slide?.background.kind === 'solid' ? slide.background.color : undefined}
         onOpenHeaderFooter={() => void openHeaderFooter()}
         onOpenEquation={() => setEqDialogOpen(true)}
         onInsertMedia={(kind) => void insertMediaFile(kind)}

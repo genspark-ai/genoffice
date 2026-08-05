@@ -31,11 +31,21 @@ import type {
   WebContents,
 } from 'electron'
 import { z } from 'zod'
-import { installNavigationGuard, safeExternalUrl } from '@genoffice/electron-utils'
+import {
+  appMenuLabels,
+  contextMenuLabels,
+  installContextMenu,
+  installNavigationGuard,
+  safeExternalUrl,
+  viewMenuTemplate,
+  windowMenuTemplate,
+} from '@genoffice/electron-utils'
 import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 
 import {
+  AiCreditsError,
+  AiTimeoutError,
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
@@ -1691,6 +1701,7 @@ export function registerSheetsIpc(): void {
           })
           .strict(),
       ),
+      cached: z.boolean().optional(),
     })
     .strict()
   ipcMain.handle(IPC_CHANNELS.recalcWorkbook, async (event, input: unknown) => {
@@ -2086,18 +2097,36 @@ export function registerSheetsAiIpc(): void {
     }
     const controller = new AbortController()
     entry.aiStreams.set(requestId, controller)
+    // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
+    let lastPing = 0
+    const ping = () => {
+      const now = Date.now()
+      if (now - lastPing < 5_000) return
+      lastPing = now
+      send({ requestId, type: 'ping' })
+    }
     try {
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onActivity: ping,
       })
       send({ requestId, type: 'done' })
     } catch (err) {
       if (controller.signal.aborted) {
         send({ requestId, type: 'done' })
       } else {
-        send({ requestId, type: 'error', error: err instanceof Error ? err.message : String(err) })
+        send({
+          requestId,
+          type: 'error',
+          error: err instanceof Error ? err.message : String(err),
+          ...(err instanceof AiTimeoutError
+            ? { errorCode: 'timeout' as const }
+            : err instanceof AiCreditsError
+              ? { errorCode: 'credits' as const }
+              : {}),
+        })
       }
     } finally {
       entry.aiStreams.delete(requestId)
@@ -2592,6 +2621,7 @@ export function setSheetsCloseTabHook(fn: (() => void) | null): void {
 /// the application menu and are forwarded to the renderer.
 function installApplicationMenu(): void {
   const sendMenuAction = sendSheetsMenuAction
+  const labels = appMenuLabels(getUiLang())
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
@@ -2628,7 +2658,9 @@ function installApplicationMenu(): void {
                 accelerator: process.platform === 'darwin' ? 'CmdOrCtrl+W' : 'CmdOrCtrl+Q',
                 click: () => closeActiveTabHook?.(),
               }
-            : { role: process.platform === 'darwin' ? ('close' as const) : ('quit' as const) },
+            : process.platform === 'darwin'
+              ? { role: 'close' as const, label: tm('menuClose') }
+              : { role: 'quit' as const, label: tm('menuQuit') },
         ],
       },
       {
@@ -2647,15 +2679,15 @@ function installApplicationMenu(): void {
             click: () => sendMenuAction('redo'),
           },
           { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
+          { role: 'cut', label: labels.cut },
+          { role: 'copy', label: labels.copy },
+          { role: 'paste', label: labels.paste },
           { type: 'separator' },
-          { role: 'selectAll' },
+          { role: 'selectAll', label: labels.selectAll },
         ],
       },
-      { role: 'viewMenu' },
-      { role: 'windowMenu' },
+      viewMenuTemplate(labels),
+      windowMenuTemplate(process.platform, labels),
     ]),
   )
 }
@@ -2717,6 +2749,7 @@ async function applyMainProcessProxy(): Promise<void> {
 
 export function startSheetsStandalone(): void {
   installNavigationGuard(app)
+  installContextMenu(app, () => contextMenuLabels(getUiLang()))
   // GENOFFICE_USER_DATA: test drivers point this at a scratch dir so automated
   // instances get their own userData AND single-instance lock (the lock is scoped
   // to userData), allowing parallel instances alongside a normal dev run.

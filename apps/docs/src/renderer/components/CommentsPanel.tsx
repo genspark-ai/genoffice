@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { Node as PmNode } from '@tiptap/pm/model'
 import type { CommentInfo } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
 import { IconComment, IconTrash } from './icons'
@@ -16,14 +17,16 @@ function formatDate(iso?: string): string {
   })
 }
 
-/** anchor text quoted from the document, to orient comments whose range spans paragraphs */
-function anchorTextOf(id: string): string {
-  const spans = document.querySelectorAll<HTMLElement>('.ProseMirror .doc-comment')
-  let text = ''
-  for (const span of spans) {
-    if ((span.dataset.commentIds ?? '').split(' ').includes(id)) text += span.textContent ?? ''
+/** anchor text quoted from the document, to orient comments whose range spans paragraphs (one DOM pass for all threads) */
+function collectAnchorTexts(): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const span of document.querySelectorAll<HTMLElement>('.ProseMirror .doc-comment')) {
+    const text = span.textContent ?? ''
+    for (const id of (span.dataset.commentIds ?? '').split(' ')) {
+      if (id) out.set(id, (out.get(id) ?? '') + text)
+    }
   }
-  return text
+  return out
 }
 
 function jumpTo(id: string) {
@@ -43,8 +46,9 @@ function jumpTo(id: string) {
  * Word's comments pane: list + jump-to-anchor, a composer when New Comment was
  * clicked (composing), and per-comment delete.
  */
-export function CommentsPanel({
+export const CommentsPanel = memo(function CommentsPanel({
   comments,
+  docNode,
   composing,
   onSubmitNew,
   onReply,
@@ -54,6 +58,8 @@ export function CommentsPanel({
   onClose,
 }: {
   comments: CommentInfo[]
+  /** current PM doc, used only as the anchor-scan cache key (doc unchanged ⇒ anchors unchanged) */
+  docNode: PmNode
   /** show the new-comment composer (selection captured by the caller) */
   composing: boolean
   onSubmitNew: (text: string) => void
@@ -73,6 +79,8 @@ export function CommentsPanel({
   const [replyDraft, setReplyDraft] = useState('')
   // Word: resolved comments are collapsed/hidden by default
   const [showResolved, setShowResolved] = useState(false)
+
+  const anchorTexts = useMemo(collectAnchorTexts, [docNode, comments])
 
   const topLevel = comments.filter((c) => !c.parentId)
   const openThreads = topLevel.filter((c) => !c.done)
@@ -98,7 +106,7 @@ export function CommentsPanel({
   }
 
   const renderThread = (c: CommentInfo) => {
-    const anchor = anchorTextOf(c.id)
+    const anchor = anchorTexts.get(c.id) ?? ''
     const replies = repliesOf(c.id)
     return (
       <div key={c.id} className={`comment-thread ${c.done ? 'resolved' : ''}`}>
@@ -239,4 +247,4 @@ export function CommentsPanel({
       </div>
     </aside>
   )
-}
+})

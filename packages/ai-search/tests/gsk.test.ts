@@ -4,8 +4,10 @@ import {
   parseGskWebSearch,
   parseGskImageSearch,
   parseGskGeneratedImage,
+  parseGskConvertResult,
   extractGskText,
   parseToolCliNdjson,
+  parseGskLoginLine,
 } from '../src/gsk'
 
 describe('parseGskOutput', () => {
@@ -94,6 +96,29 @@ describe('parseGskImageSearch', () => {
   })
 })
 
+describe('parseGskConvertResult', () => {
+  it('extracts the markdown link from the result text', () => {
+    const raw = {
+      status: 'ok',
+      data: {
+        result:
+          'Conversion complete. Download links:\n[report.docx](https://www.genspark.ai/api/files/s/JmS2WJHv)\n',
+      },
+    }
+    expect(parseGskConvertResult(raw)).toBe('https://www.genspark.ai/api/files/s/JmS2WJHv')
+  })
+
+  it('falls back to a bare URL without markdown', () => {
+    const raw = { status: 'ok', data: { result: 'Done: https://example.com/f.docx' } }
+    expect(parseGskConvertResult(raw)).toBe('https://example.com/f.docx')
+  })
+
+  it('throws when the result has no link', () => {
+    expect(() => parseGskConvertResult({ status: 'ok', data: { result: 'no link' } })).toThrow()
+    expect(() => parseGskConvertResult({ status: 'ok' })).toThrow()
+  })
+})
+
 describe('parseGskGeneratedImage', () => {
   it('prefers no-watermark url', () => {
     const raw = {
@@ -111,9 +136,11 @@ describe('parseGskGeneratedImage', () => {
   })
 
   it('falls back to image_urls, throws on empty', () => {
-    expect(parseGskGeneratedImage({ data: { generated_images: [{ image_urls: ['https://cdn/a.png'] }] } }).url).toBe(
-      'https://cdn/a.png',
-    )
+    expect(
+      parseGskGeneratedImage({
+        data: { generated_images: [{ image_urls: ['https://cdn/a.png'] }] },
+      }).url,
+    ).toBe('https://cdn/a.png')
     expect(() => parseGskGeneratedImage({ data: { generated_images: [] } })).toThrow()
   })
 })
@@ -145,12 +172,79 @@ describe('parseToolCliNdjson', () => {
   })
 
   it('returns error result lines as-is', () => {
-    const r = parseToolCliNdjson('{"version":1,"status":"error","message":"deck_context must be an object","data":null}')
+    const r = parseToolCliNdjson(
+      '{"version":1,"status":"error","message":"deck_context must be an object","data":null}',
+    )
     expect(r.status).toBe('error')
     expect(r.message).toMatch(/deck_context/)
   })
 
   it('throws when no result line exists', () => {
     expect(() => parseToolCliNdjson('{"heartbeat":1}\nnot json')).toThrow(/No result line/)
+  })
+})
+
+// sample lines mirror @genspark/cli login: info/errors on stderr with
+// [INFO]/[ERROR] prefixes, success JSON envelope on stdout
+describe('parseGskLoginLine', () => {
+  it('extracts the auth URL', () => {
+    expect(
+      parseGskLoginLine('[INFO] Login URL: https://www.genspark.ai/cli-auth?code=abc'),
+    ).toEqual({ kind: 'url', url: 'https://www.genspark.ai/cli-auth?code=abc' })
+  })
+
+  it('extracts expires_in from the waiting line', () => {
+    expect(
+      parseGskLoginLine(
+        '[INFO] Waiting for authorization (expires in 300s, press Ctrl+C to cancel)...',
+      ),
+    ).toEqual({ kind: 'expires', expiresInSec: 300 })
+  })
+
+  it('detects success from the stderr info line and the stdout json envelope', () => {
+    expect(parseGskLoginLine('[INFO] Login successful! API key saved.')).toEqual({
+      kind: 'success',
+    })
+    expect(parseGskLoginLine('  "message": "Login successful",')).toEqual({ kind: 'success' })
+  })
+
+  it('classifies expiry and timeout as expired', () => {
+    expect(parseGskLoginLine('[ERROR] Authorization expired. Please try again.')).toEqual({
+      kind: 'error',
+      reason: 'expired',
+      message: 'Authorization expired. Please try again.',
+    })
+    expect(parseGskLoginLine('[ERROR] Authorization timed out. Please try again.')).toMatchObject({
+      kind: 'error',
+      reason: 'expired',
+    })
+  })
+
+  it('classifies device-code request failures as network', () => {
+    expect(parseGskLoginLine('[ERROR] fetch failed')).toMatchObject({
+      kind: 'error',
+      reason: 'network',
+    })
+    expect(parseGskLoginLine('[ERROR] HTTP 502: Bad Gateway')).toMatchObject({
+      kind: 'error',
+      reason: 'network',
+    })
+  })
+
+  it('passes other errors through as-is', () => {
+    expect(parseGskLoginLine('[ERROR] auth_url host does not match baseUrl host')).toEqual({
+      kind: 'error',
+      reason: 'other',
+      message: 'auth_url host does not match baseUrl host',
+    })
+  })
+
+  it('ignores noise lines', () => {
+    expect(parseGskLoginLine('[INFO] Requesting device code...')).toBeNull()
+    expect(parseGskLoginLine('[INFO] Opening browser for login...')).toBeNull()
+    expect(
+      parseGskLoginLine('[INFO] Still waiting for authorization... (295s remaining)'),
+    ).toBeNull()
+    expect(parseGskLoginLine('')).toBeNull()
   })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n/locale'
+import { useModalKeys } from './modal-keys'
 
 /**
  * In-app replacement for window.prompt, which Electron renderers do not
@@ -27,6 +28,7 @@ export function PromptModal({
   const [value, setValue] = useState(initial)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const modalKeys = useModalKeys(onClose)
 
   useEffect(() => {
     const el = multiline ? textareaRef.current : inputRef.current
@@ -41,7 +43,12 @@ export function PromptModal({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal">
         <h2>{title}</h2>
         <label>
@@ -70,7 +77,9 @@ export function PromptModal({
           )}
         </label>
         <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>{t('appCancel')}</button>
+          <button className="btn-ghost" onClick={onClose}>
+            {t('appCancel')}
+          </button>
           <button className="btn-primary" disabled={!allowEmpty && !value.trim()} onClick={submit}>
             {t('appOk')}
           </button>

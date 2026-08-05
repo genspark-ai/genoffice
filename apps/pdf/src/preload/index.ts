@@ -18,6 +18,17 @@ const api: PdfApi = {
     return () => ipcRenderer.removeListener(PDF_CHANNELS.closeSaveRequest, listener)
   },
   sendCloseSaveResult: (ok) => ipcRenderer.send(PDF_CHANNELS.closeSaveResult, ok),
+  onSaveAsRequest: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, targetPath: string) => handler(targetPath)
+    ipcRenderer.on(PDF_CHANNELS.saveAsRequest, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.saveAsRequest, listener)
+  },
+  sendSaveAsResult: (ok) => ipcRenderer.send(PDF_CHANNELS.saveAsResult, ok),
+  onSaveAsFlow: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, inFlight: boolean) => handler(inFlight)
+    ipcRenderer.on(PDF_CHANNELS.saveAsFlow, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.saveAsFlow, listener)
+  },
   getLanguage: () => ipcRenderer.invoke(PDF_CHANNELS.getLanguage),
   onLanguageChanged: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, lang: Lang) => handler(lang)

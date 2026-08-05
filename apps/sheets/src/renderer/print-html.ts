@@ -3,13 +3,28 @@
 /// sheet's Page Layout settings (print area, repeated title rows, gridlines,
 /// headings). The main process turns the HTML into a PDF.
 
+import { htmlLang, type Lang } from '@genoffice/i18n'
 import { columnIndex, columnLabel } from '../domain/cell-address'
 
 import type { WorkbookExportPdfRequest } from '../shared/desktop-api'
 import type { HeaderFooterParts, PageSetupJournalState } from './edit-journal'
-import { t } from './i18n/locale'
+import { getLang, t } from './i18n/locale'
 
 export class PrintError extends Error {}
+
+/** UI-language CJK fallback for the print stack (mirrors the :lang() variables in styles.css) */
+function printCjkFonts(lang: Lang): string {
+  switch (lang) {
+    case 'ja':
+      return "'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo'"
+    case 'ko':
+      return "'Apple SD Gothic Neo', 'Malgun Gothic'"
+    case 'zh-TW':
+      return "'PingFang TC', 'Microsoft JhengHei'"
+    default:
+      return "'PingFang SC'"
+  }
+}
 
 const MAX_PRINT_CELLS = 50_000
 
@@ -170,9 +185,9 @@ export function buildSheetPrintPayload(
     .map((width) => `<col style="width:${round(width)}pt">`)
     .join('')}</colgroup>`
   const html =
-    `<!doctype html><html><head><meta charset="utf-8"><style>
+    `<!doctype html><html lang="${htmlLang(getLang())}"><head><meta charset="utf-8"><style>
 * { box-sizing: border-box; }
-body { margin: 0; font-family: Calibri, 'Helvetica Neue', Arial, 'PingFang SC', sans-serif; }
+body { margin: 0; font-family: Calibri, 'Helvetica Neue', Arial, ${printCjkFonts(getLang())}, sans-serif; }
 table { border-collapse: collapse; table-layout: fixed; }
 thead { display: table-header-group; }
 tfoot { display: table-footer-group; }
