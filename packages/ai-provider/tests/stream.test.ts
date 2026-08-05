@@ -486,7 +486,7 @@ describe('streamForProvider: openai-compatible', () => {
     const { cb } = collector()
     await streamForProvider(
       'deepseek',
-      { apiKey: 'k', model: 'deepseek-chat' },
+      { apiKey: 'k', model: 'deepseek-v4-flash' },
       'sys',
       [],
       [],
@@ -494,7 +494,7 @@ describe('streamForProvider: openai-compatible', () => {
       cb,
     )
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.deepseek.com/v1/chat/completions',
+      'https://api.deepseek.com/chat/completions',
       expect.anything(),
     )
   })

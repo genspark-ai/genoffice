@@ -31,12 +31,18 @@ import type {
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
 import {
+  getConfiguredAiSettingsStore,
+  resolveConfiguredAiProvider,
+  type AiTask,
+} from '@genoffice/ai-electron'
+import {
   AiCreditsError,
   AiTimeoutError,
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
   streamForProvider,
+  type AiProviderId,
   type AiChatRequest,
   type AiSettings,
   type AiStreamChunk,
@@ -2468,6 +2474,10 @@ const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
 const activeAiStreams = new Map<string, AbortController>()
 
+function withAiRuntimeIdentity(system: string, provider: string, model: string): string {
+  return `${system}\n\nRuntime identity: the active AI provider is "${provider}" and the active model is "${model}". If the user asks which provider or model is running, answer with these exact values. Do not identify the runtime as Genspark unless the active provider is "genspark".`
+}
+
 /**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
  * register them exactly once for all window types (docs, sheets, home) —
@@ -2475,6 +2485,20 @@ const activeAiStreams = new Map<string, AbortController>()
  */
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
+    const secure = getConfiguredAiSettingsStore()?.load()
+    if (secure) {
+      const settings = defaultAiSettings()
+      settings.provider = secure.active.chat.providerId as AiProviderId
+      for (const [id, config] of Object.entries(secure.providers)) {
+        const target = settings.providers[id as AiProviderId]
+        if (target) {
+          target.model = config.model
+          target.baseUrl = config.baseUrl
+          target.apiKey = config.credentialConfigured ? '__configured__' : ''
+        }
+      }
+      return settings
+    }
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
@@ -2502,11 +2526,23 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    const { requestId, system, messages } = request
+    const settings = request.settings ?? resolveAiSettings({}, defaultAiSettings())
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
+    let task: AiTask = 'chat'
+    if (request.task === 'image') task = 'image'
+    else if (request.task === 'vision') task = 'vision'
+    else if (request.task === 'slides-generation') task = 'slides-generation'
+    const resolved = resolveConfiguredAiProvider(task)
+    const provider = (resolved?.providerId ?? settings.provider) as AiProviderId
+    let config = resolved
+      ? {
+          apiKey: resolved.apiKey ?? '',
+          model: resolved.model,
+          ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+        }
+      : settings.providers?.[provider]
     // the genspark key never enters the settings file; requests take it from the gsk login state
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
@@ -2538,15 +2574,23 @@ export function registerAiIpc(): void {
     }
     try {
       let stopReason: string | undefined
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
-        signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
-        onActivity: ping,
-        onStopReason: (reason) => {
-          stopReason = reason
+      await streamForProvider(
+        provider,
+        config,
+        withAiRuntimeIdentity(system, provider, config.model),
+        messages,
+        tools,
+        maxTokens,
+        {
+          signal: controller.signal,
+          onDelta: (text) => send({ requestId, type: 'delta', text }),
+          onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+          onActivity: ping,
+          onStopReason: (reason) => {
+            stopReason = reason
+          },
         },
-      })
+      )
       send({ requestId, type: 'done', stopReason })
     } catch (err) {
       if (controller.signal.aborted) {
@@ -2629,7 +2673,12 @@ export function registerAiIpc(): void {
     }
     if (!config.model) return { ok: false, error: tm('errNoModel') }
     try {
-      return await chatForProvider(provider, config, system, user)
+      return await chatForProvider(
+        provider,
+        config,
+        withAiRuntimeIdentity(system, provider, config.model),
+        user,
+      )
     } catch (err) {
       return { ok: false, error: String(err) }
     }

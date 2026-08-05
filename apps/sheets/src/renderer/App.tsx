@@ -755,7 +755,7 @@ export function App(): React.JSX.Element {
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => aiSettingsRef.current!),
+      transport: createElectronTransport(),
       systemSuffix: aiLangDirective,
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),

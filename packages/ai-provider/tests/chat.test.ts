@@ -69,9 +69,9 @@ describe('chatForProvider', () => {
       .fn()
       .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
     vi.stubGlobal('fetch', fetchMock)
-    await chatForProvider('deepseek', { apiKey: 'k', model: 'deepseek-chat' }, 'sys', 'hi')
+    await chatForProvider('deepseek', { apiKey: 'k', model: 'deepseek-v4-flash' }, 'sys', 'hi')
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.deepseek.com/v1/chat/completions',
+      'https://api.deepseek.com/chat/completions',
       expect.anything(),
     )
   })

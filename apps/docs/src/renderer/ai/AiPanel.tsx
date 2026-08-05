@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
-import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
+import { AI_PROVIDERS, type AiSettings } from '@genoffice/ai-provider'
+import type { AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { findNumId, type NumIds } from './protocol'
@@ -152,6 +153,11 @@ export function AiPanel({
   filePath,
 }: AiPanelProps) {
   const { t } = useI18n()
+  const activeProviderMeta = AI_PROVIDERS.find((provider) => provider.id === settings.provider)
+  const activeModel = settings.providers[settings.provider]?.model?.trim()
+  const runtimeLabel = activeModel
+    ? `${activeProviderMeta?.label ?? settings.provider} · ${activeModel}`
+    : (activeProviderMeta?.label ?? settings.provider)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   /** Wall-clock start of the current run, drives the elapsed badge */
@@ -342,7 +348,7 @@ export function AiPanel({
       ordered: findNumId(blocksRef.current, 'ordered') ?? numIdFallbackRef.current?.ordered ?? null,
     })
     loopRef.current = new AgentLoop<PmNode>({
-      transport: createElectronTransport(() => settingsRef.current),
+      transport: createElectronTransport(),
       systemSuffix: aiLangDirective,
       maxTurns: DOCS_AGENT_MAX_TURNS,
       skill: composeSkills('docs+files', '', [
@@ -722,12 +728,12 @@ export function AiPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label={t('aiPanelTitle')}
+        aria-label={runtimeLabel}
       />
       <div className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
-          {t('aiPanelTitle')}
+          {runtimeLabel}
         </span>
         <div className="ai-panel-header-actions">
           {chat.length > 0 && (

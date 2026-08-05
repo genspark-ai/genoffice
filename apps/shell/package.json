@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",
+    "@genoffice/ai-electron": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
     "@genoffice/docs": "*",
@@ -42,5 +43,8 @@
     "vite": "^7.3.1",
     "vitest": "^4.1.10"
   },
-  "author": "GenOffice"
+  "author": "GenOffice",
+  "dependencies": {
+    "simple-icons": "^16.28.0"
+  }
 }

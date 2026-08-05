@@ -1,5 +1,5 @@
 import { httpBodyDetail } from './http-error'
-import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
+import { AI_PROVIDER_BY_ID, GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
@@ -115,11 +115,6 @@ async function chatOpenAiCompatible(
   return { ok: true, content }
 }
 
-const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
-  deepseek: 'https://api.deepseek.com/v1',
-  openai: 'https://api.openai.com/v1',
-}
-
 /** route a one-shot (non-streaming, non-tool-calling) chat call by provider id */
 export async function chatForProvider(
   provider: AiProviderId,
@@ -142,14 +137,38 @@ export async function chatForProvider(
         }
         return chatOpenAiCompatible(wd, GENSPARK_LLM_BASE_URLS.openai, config, system, user)
       case 'anthropic':
-        return chatAnthropic(wd, config, system, user)
+        return chatAnthropic(
+          wd,
+          config,
+          system,
+          user,
+          config.baseUrl ?? 'https://api.anthropic.com',
+        )
       case 'gemini':
-        return chatGemini(wd, config, system, user)
+        return chatGemini(
+          wd,
+          config,
+          system,
+          user,
+          config.baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta',
+        )
       case 'deepseek':
       case 'openai':
+      case 'openrouter':
+      case 'mistral':
+      case 'groq':
+      case 'together':
+      case 'fireworks':
+      case 'cerebras':
+      case 'xai':
+      case 'nvidia':
+      case 'ollama':
+      case 'lmstudio':
+      case 'vllm':
+      case 'llamacpp':
         return chatOpenAiCompatible(
           wd,
-          OPENAI_COMPATIBLE_BASE_URLS[provider]!,
+          config.baseUrl ?? AI_PROVIDER_BY_ID[provider].defaultBaseUrl!,
           config,
           system,
           user,

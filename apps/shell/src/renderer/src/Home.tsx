@@ -14,11 +14,13 @@ import type {
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
+import type { AiSettingsApi } from '../../shared/ai-settings-api'
 
 declare global {
   interface Window {
     aiOffice: HomeApi
     aiOfficeProject?: ProjectHomeApi
+    aiOfficeAiSettings: AiSettingsApi
   }
 }
 
@@ -417,7 +419,7 @@ const LANG_OPTIONS = [
   { value: 'zh-TW', label: '繁體中文' },
 ] as const
 
-function AccountEntry() {
+function AccountEntry({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { lang, setLang, t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
   const [waiting, setWaiting] = useState(false)
@@ -640,6 +642,25 @@ function AccountEntry() {
             </>
           )}
           <div className="account-menu-divider" />
+          <button
+            className="account-menu-item"
+            role="menuitem"
+            onClick={() => {
+              closeMenu()
+              onOpenSettings()
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M6.6 2.4h2.8l.4 1.6c.35.13.68.32.98.57l1.55-.55 1.4 2.43-1.17 1.1c.03.2.04.4.04.6s-.01.4-.04.6l1.17 1.1-1.4 2.43-1.55-.55c-.3.25-.63.44-.98.57l-.4 1.6H6.6l-.4-1.6a4.2 4.2 0 0 1-.98-.57l-1.55.55-1.4-2.43 1.17-1.1a4.6 4.6 0 0 1 0-1.2l-1.17-1.1 1.4-2.43 1.55.55c.3-.25.63-.44.98-.57l.4-1.6Z"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                strokeLinejoin="round"
+              />
+              <circle cx="8" cy="8.15" r="1.8" stroke="currentColor" strokeWidth="1.1" />
+            </svg>
+            <span>{t('settingsTitle')}</span>
+          </button>
           <div
             className="lang-row-wrap"
             ref={langRowRef}
@@ -837,7 +858,7 @@ function AccountEntry() {
 
 // ── Main component ──────────────────────────────────────
 
-export function Home() {
+export function Home({ onOpenSettings }: { onOpenSettings: () => void }) {
   const i18n = useI18n()
   const { t, lang } = i18n
   // ── Paged list state (rows loaded for the current view + filter) ──
@@ -1772,7 +1793,7 @@ export function Home() {
           </>
         )}
 
-        <AccountEntry />
+        <AccountEntry onOpenSettings={onOpenSettings} />
       </aside>
 
       {selectedProjectId ? renderProjectContent() : renderGlobalContent()}

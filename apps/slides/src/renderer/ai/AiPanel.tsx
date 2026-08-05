@@ -551,7 +551,7 @@ export function AiPanel({
         window.slidesApi
           .aiStream({
             requestId,
-            settings,
+            task: 'slides-generation',
             system,
             messages: [{ role: 'user', text: user }],
             ...(maxTokens ? { maxTokens } : {}),
@@ -919,7 +919,7 @@ export function AiPanel({
     }
     accessRef.current = access
     loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current),
+      transport: createElectronTransport(),
       systemSuffix: aiLangDirective,
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
@@ -1195,7 +1195,7 @@ export function AiPanel({
     const controller = new AbortController()
     qcAbortRef.current = controller
     const capped = pages.slice(0, QC_MAX_PAGES)
-    const transport = createElectronTransport(() => settingsRef.current)
+    const transport = createElectronTransport()
     const header = tGlobal('aiQcStart', { count: capped.length })
     const lines: string[] = []
     const renderEntry = () => [header, ...lines].join('\n')

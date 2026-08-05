@@ -118,6 +118,7 @@ import { TABS_CHANNELS } from '../shared/tabs-api'
 import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
 import { TabManager } from './tab-manager'
 import { initAutoUpdater } from './updater'
+import { registerAiSettingsIpc } from './ai-settings-ipc'
 
 /**
  * GenOffice unified shell: ONE Electron app, ONE BrowserWindow, hosting the
@@ -2103,6 +2104,7 @@ registerAiIpc()
 registerProjectIpc()
 registerDocsIpc()
 registerHomeIpc()
+registerAiSettingsIpc(APP_SETTINGS_PATH)
 registerTabsIpc()
 
 // sheets' project:resolveChat goes through the handler registered by docs-main; the sessionId reverse lookup hooks in here

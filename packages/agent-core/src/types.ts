@@ -84,6 +84,8 @@ export interface AgentPhase {
 // ---- LLM transport (how one model turn is streamed; app supplies the impl) ----
 
 export interface AgentStreamRequest {
+  /** Optional capability/task hint resolved by the main process. */
+  task?: string
   system: string
   messages: AgentMessage[]
   tools: AgentToolDef[]

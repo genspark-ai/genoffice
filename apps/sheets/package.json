@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@genoffice/agent-core": "*",
+    "@genoffice/ai-electron": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
     "@genoffice/electron-utils": "*",

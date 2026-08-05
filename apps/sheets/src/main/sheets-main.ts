@@ -42,6 +42,11 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
+import {
+  getConfiguredAiSettingsStore,
+  resolveConfiguredAiProvider,
+  type AiTask,
+} from '@genoffice/ai-electron'
 
 import {
   AiCreditsError,
@@ -2015,6 +2020,20 @@ export function registerSheetsAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
+    const secure = getConfiguredAiSettingsStore()?.load()
+    if (secure) {
+      const settings = defaultAiSettings()
+      settings.provider = secure.active.chat.providerId as AiProviderId
+      for (const [id, config] of Object.entries(secure.providers)) {
+        const target = settings.providers[id as AiProviderId]
+        if (target) {
+          target.model = config.model
+          target.baseUrl = config.baseUrl
+          target.apiKey = config.credentialConfigured ? '__configured__' : ''
+        }
+      }
+      return settings
+    }
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // AI features all go through Genspark (gsk login); legacy settings that chose
@@ -2048,8 +2067,9 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
     sessionFor(event)
     const request = aiChatRequestSchema.parse(input)
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
+    const settings = request.settings
+    const provider = settings.provider as AiProviderId
+    let config = settings.providers[provider]
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
@@ -2073,8 +2093,20 @@ export function registerSheetsAiIpc(): void {
     const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
+    const settings = request.settings ?? resolveAiSettings({}, defaultAiSettings())
+    let task: AiTask = 'chat'
+    if (request.task === 'image') task = 'image'
+    else if (request.task === 'vision') task = 'vision'
+    else if (request.task === 'slides-generation') task = 'slides-generation'
+    const resolved = resolveConfiguredAiProvider(task)
+    const provider = (resolved?.providerId ?? settings.provider) as AiProviderId
+    let config = resolved
+      ? {
+          apiKey: resolved.apiKey ?? '',
+          model: resolved.model,
+          ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+        }
+      : settings.providers[provider]
     // Genspark's key never enters the settings file; it is read from the gsk
     // login state per request
     if (provider === 'genspark' && config && !config.apiKey) {

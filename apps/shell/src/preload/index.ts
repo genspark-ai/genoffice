@@ -15,6 +15,8 @@ import type {
 import { HOME_CHANNELS, PROJECT_CHANNELS } from '../shared/home-api'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
+import type { AiSettingsApi } from '../shared/ai-settings-api'
+import { AI_SETTINGS_CHANNELS } from '../shared/ai-settings-api'
 
 const UI_LANGUAGES: readonly UiLanguage[] = [
   'zh',
@@ -148,6 +150,31 @@ const homeApi: HomeApi = {
 }
 
 contextBridge.exposeInMainWorld('aiOffice', homeApi)
+
+const aiSettingsApi: AiSettingsApi = {
+  async get() {
+    return (await ipcRenderer.invoke(AI_SETTINGS_CHANNELS.get)) as Awaited<
+      ReturnType<AiSettingsApi['get']>
+    >
+  },
+  async save(input) {
+    if (!input || typeof input !== 'object') throw new Error('Invalid AI settings.')
+    return (await ipcRenderer.invoke(AI_SETTINGS_CHANNELS.save, input)) as Awaited<
+      ReturnType<AiSettingsApi['save']>
+    >
+  },
+  async test(input) {
+    if (!input || typeof input !== 'object') throw new Error('Invalid provider settings.')
+    return (await ipcRenderer.invoke(AI_SETTINGS_CHANNELS.test, input)) as Awaited<
+      ReturnType<AiSettingsApi['test']>
+    >
+  },
+  async cancelTest() {
+    await ipcRenderer.invoke(AI_SETTINGS_CHANNELS.cancelTest)
+  },
+}
+
+contextBridge.exposeInMainWorld('aiOfficeAiSettings', aiSettingsApi)
 
 const projectApi: ProjectHomeApi = {
   async listProjects() {

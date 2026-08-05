@@ -104,7 +104,7 @@ export function AiPanel({
       deletePage: (idx) => apiRef.current.deletePage(idx),
     }
     loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current!),
+      transport: createElectronTransport(),
       skill: createPdfSkill(deps),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {

@@ -1760,7 +1760,8 @@ export const aiChatRequestSchema = z
 export const aiStreamRequestSchema = z
   .object({
     requestId: z.string().min(1),
-    settings: aiSettingsInputSchema,
+    settings: aiSettingsInputSchema.optional(),
+    task: z.string().min(1).optional(),
     system: z.string(),
     messages: z.array(agentMessageSchema).max(MAX_AI_MESSAGES),
     tools: z.array(agentToolDefSchema).max(MAX_AI_TOOLS).optional(),

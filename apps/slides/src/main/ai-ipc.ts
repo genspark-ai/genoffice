@@ -8,11 +8,18 @@ import { app, ipcMain } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  getConfiguredAiSettingsStore,
+  resolveConfiguredAiProvider,
+  type AiTask,
+} from '@genoffice/ai-electron'
+import {
   AiCreditsError,
   AiTimeoutError,
   defaultAiSettings,
+  generateImageForProvider,
   resolveAiSettings,
   streamForProvider,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
@@ -57,6 +64,20 @@ const activeAiStreams = new Map<string, AbortController>()
 
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
+    const secure = getConfiguredAiSettingsStore()?.load()
+    if (secure) {
+      const settings = defaultAiSettings()
+      settings.provider = secure.active.chat.providerId as AiProviderId
+      for (const [id, config] of Object.entries(secure.providers)) {
+        const target = settings.providers[id as AiProviderId]
+        if (target) {
+          target.model = config.model
+          target.baseUrl = config.baseUrl
+          target.apiKey = config.credentialConfigured ? '__configured__' : ''
+        }
+      }
+      return settings
+    }
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
     // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
@@ -84,11 +105,23 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    const { requestId, system, messages } = request
+    const settings = request.settings ?? resolveAiSettings({}, defaultAiSettings())
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
+    let task: AiTask = 'chat'
+    if (request.task === 'image') task = 'image'
+    else if (request.task === 'vision') task = 'vision'
+    else if (request.task === 'slides-generation') task = 'slides-generation'
+    const resolved = resolveConfiguredAiProvider(task)
+    const provider = (resolved?.providerId ?? settings.provider) as AiProviderId
+    let config = resolved
+      ? {
+          apiKey: resolved.apiKey ?? '',
+          model: resolved.model,
+          ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+        }
+      : settings.providers?.[provider]
     // The genspark key never enters the settings file; it is fetched from the gsk login state per request
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
@@ -189,6 +222,35 @@ export function registerSlidesOnlyAiIpc(): void {
         imageSize?: string
       },
     ) => {
+      const configured = resolveConfiguredAiProvider('image')
+      if (configured && configured.providerId !== 'genspark') {
+        try {
+          if (!configured.apiKey)
+            return { error: tm('errNoApiKey', { provider: configured.providerId }) }
+          const images = await generateImageForProvider(
+            configured.providerId as import('@genoffice/ai-provider').AiProviderId,
+            {
+              apiKey: configured.apiKey,
+              model: op.model || configured.model,
+              ...(configured.baseUrl ? { baseUrl: configured.baseUrl } : {}),
+            },
+            {
+              prompt: String(op.prompt),
+              model: op.model ? String(op.model) : configured.model,
+              aspectRatio: op.aspectRatio ? String(op.aspectRatio) : undefined,
+              imageSize: op.imageSize ? String(op.imageSize) : undefined,
+            },
+          )
+          const image = images[0]
+          if (!image) return { error: 'Image provider returned no image.' }
+          return {
+            ...(image.base64 ? { url: `data:${image.mimeType};base64,${image.base64}` } : {}),
+            ...(image.url ? { url: image.url } : {}),
+          }
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err) }
+        }
+      }
       if (!hasGskAuth()) return { error: tm('errGskCli') }
       try {
         const r = await gskGenerateImage({

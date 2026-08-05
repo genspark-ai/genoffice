@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
+import { sanitizeGeminiSchema } from './gemini-schema'
 import { httpBodyDetail } from './http-error'
-import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
+import { AI_PROVIDER_BY_ID, GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiProviderConfig, AiProviderId } from './types'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
@@ -507,7 +508,7 @@ async function geminiTurn(
                 functionDeclarations: tools.map((t) => ({
                   name: t.name,
                   description: t.description,
-                  parameters: t.inputSchema,
+                  parameters: sanitizeGeminiSchema(t.inputSchema),
                 })),
               },
             ],
@@ -803,11 +804,6 @@ async function openAiCompatibleTurn(
   if (stopReason) cb.onStopReason?.(stopReason)
 }
 
-const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
-  deepseek: 'https://api.deepseek.com/v1',
-  openai: 'https://api.openai.com/v1',
-}
-
 /** route a streaming, tool-calling-capable turn by provider id */
 export async function streamForProvider(
   provider: AiProviderId,
@@ -854,13 +850,41 @@ export async function streamForProvider(
         cb,
       )
     case 'anthropic':
-      return streamAnthropic(config, system, messages, tools, maxTokens, cb)
+      return streamAnthropic(
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        cb,
+        config.baseUrl ?? 'https://api.anthropic.com',
+      )
     case 'gemini':
-      return streamGemini(config, system, messages, tools, maxTokens, cb)
+      return streamGemini(
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        cb,
+        config.baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta',
+      )
     case 'deepseek':
     case 'openai':
+    case 'openrouter':
+    case 'mistral':
+    case 'groq':
+    case 'together':
+    case 'fireworks':
+    case 'cerebras':
+    case 'xai':
+    case 'nvidia':
+    case 'ollama':
+    case 'lmstudio':
+    case 'vllm':
+    case 'llamacpp':
       return streamOpenAiCompatible(
-        OPENAI_COMPATIBLE_BASE_URLS[provider]!,
+        config.baseUrl ?? AI_PROVIDER_BY_ID[provider].defaultBaseUrl!,
         config,
         system,
         messages,

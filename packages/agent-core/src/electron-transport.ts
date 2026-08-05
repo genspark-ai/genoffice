@@ -24,10 +24,14 @@ export interface IpcStreamChunk {
   stopReason?: string
 }
 
+/** Stable routing hints understood by the main-process resolver. */
+export type IpcTask = 'chat' | 'image' | 'vision' | 'slides-generation' | (string & {})
+
 /** The request forwarded to the main process to start one streaming turn. */
-export interface IpcStreamStart<S> {
+export interface IpcStreamStart {
   requestId: string
-  settings: S
+  /** Main-process routing hint; credentials and provider settings stay in main. */
+  task: IpcTask
   system: string
   messages: AgentMessage[]
   tools: AgentToolDef[]
@@ -41,14 +45,15 @@ export interface IpcStreamStart<S> {
  */
 export const IPC_STREAM_SILENCE_TIMEOUT_MS = 90_000
 
-export interface IpcTransportOptions<S> {
+export interface IpcTransportOptions {
   /** subscribe to stream chunks; returns the unsubscribe function */
   onStream(listener: (chunk: IpcStreamChunk) => void): () => void
   /** forward the start request to the main process; a returned promise reports handler failure */
-  start(request: IpcStreamStart<S>): void | Promise<unknown>
+  start(request: IpcStreamStart): void | Promise<unknown>
   /** abort the in-flight turn in the main process */
   cancel(requestId: string): void
-  getSettings(): S
+  /** Default task for callers that do not put a task on AgentStreamRequest. */
+  task?: IpcTask
   /** localized fallback when an error chunk carries no message */
   unknownErrorText(): string
   /** localized message for timeouts (errorCode 'timeout' and the silence watchdog) */
@@ -62,7 +67,7 @@ export interface IpcTransportOptions<S> {
  * LLM providers (avoids renderer CORS) and streams chunks back per requestId.
  * Each app wires in its own preload bridge and i18n via the options.
  */
-export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTransport {
+export function createIpcTransport(options: IpcTransportOptions): AgentTransport {
   const timeoutText = () => options.timeoutErrorText?.() ?? options.unknownErrorText()
   return {
     stream(request: AgentStreamRequest, cb) {
@@ -117,7 +122,7 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
         Promise.resolve(
           options.start({
             requestId,
-            settings: options.getSettings(),
+            task: request.task ?? options.task ?? 'chat',
             system: request.system,
             messages: request.messages,
             tools: request.tools,

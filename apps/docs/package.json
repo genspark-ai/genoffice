@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",
+    "@genoffice/ai-electron": "*",
     "@genoffice/i18n": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",

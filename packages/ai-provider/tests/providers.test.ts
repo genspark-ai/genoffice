@@ -20,6 +20,35 @@ describe('defaultAiSettings', () => {
   })
 })
 
+describe('provider catalog', () => {
+  it('includes cloud, OpenRouter, and local OpenAI-compatible presets', () => {
+    expect(AI_PROVIDERS.map((meta) => meta.id)).toEqual(
+      expect.arrayContaining([
+        'openrouter',
+        'mistral',
+        'groq',
+        'together',
+        'fireworks',
+        'cerebras',
+        'xai',
+        'nvidia',
+        'ollama',
+        'lmstudio',
+        'vllm',
+        'llamacpp',
+      ]),
+    )
+    expect(AI_PROVIDERS.find((meta) => meta.id === 'openrouter')).toMatchObject({
+      defaultBaseUrl: 'https://openrouter.ai/api/v1',
+      imageProtocol: 'openai-images',
+    })
+    expect(AI_PROVIDERS.find((meta) => meta.id === 'ollama')).toMatchObject({
+      defaultBaseUrl: 'http://localhost:11434/v1',
+      endpointKind: 'local',
+    })
+  })
+})
+
 describe('resolveAiSettings', () => {
   it('returns fresh defaults when nothing is stored', () => {
     const defaults = defaultAiSettings({ anthropic: 'sk-ant-preset' })
@@ -58,7 +87,10 @@ describe('resolveAiSettings', () => {
       defaults,
     )
     expect(resolved.provider).toBe('gemini')
-    expect(resolved.providers.gemini).toEqual({ apiKey: 'stored-gemini-key', model: 'gemini-2.5-pro' })
+    expect(resolved.providers.gemini).toEqual({
+      apiKey: 'stored-gemini-key',
+      model: 'gemini-2.5-pro',
+    })
     // provider not mentioned in stored.providers keeps the computed default
     expect(resolved.providers.anthropic.apiKey).toBe('preset-key')
   })

@@ -6,21 +6,17 @@ import {
   type IpcStreamStart,
 } from '../src'
 
-interface FakeSettings {
-  provider: string
-}
-
 function setup(
-  startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
+  startImpl?: (request: IpcStreamStart) => void | Promise<unknown>,
   creditsErrorText?: () => string,
 ) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
   const unsubscribe = vi.fn(() => {
     listener = undefined
   })
-  const started: IpcStreamStart<FakeSettings>[] = []
+  const started: IpcStreamStart[] = []
   const cancelled: string[] = []
-  const transport = createIpcTransport<FakeSettings>({
+  const transport = createIpcTransport({
     onStream: (l) => {
       listener = l
       return unsubscribe
@@ -30,7 +26,7 @@ function setup(
       return startImpl?.(request)
     },
     cancel: (requestId) => cancelled.push(requestId),
-    getSettings: () => ({ provider: 'genspark' }),
+    task: 'chat',
     unknownErrorText: () => 'unknown error',
     timeoutErrorText: () => 'timed out',
     ...(creditsErrorText ? { creditsErrorText } : {}),
@@ -49,10 +45,10 @@ function setup(
 }
 
 describe('createIpcTransport', () => {
-  it('starts one request with settings and forwards deltas and tool calls', () => {
+  it('starts one request with a task and forwards deltas and tool calls', () => {
     const { started, cb, emit } = setup()
     expect(started).toHaveLength(1)
-    expect(started[0]!.settings).toEqual({ provider: 'genspark' })
+    expect(started[0]!.task).toBe('chat')
     expect(started[0]!.system).toBe('sys')
 
     emit({ type: 'delta', text: 'hi' })
@@ -61,6 +57,30 @@ describe('createIpcTransport', () => {
     expect(cb.onDelta).toHaveBeenNthCalledWith(1, 'hi')
     expect(cb.onDelta).toHaveBeenNthCalledWith(2, '')
     expect(cb.onToolCall).toHaveBeenCalledWith({ id: 'c1', name: 'read', input: {} })
+  })
+
+  it('prefers the request task over the transport default', () => {
+    const { started } = setup()
+    // The setup default is chat; this exercises the per-turn override.
+    const requestTransport = createIpcTransport({
+      onStream: () => () => undefined,
+      start: (request) => {
+        started.push(request)
+      },
+      cancel: () => undefined,
+      task: 'chat',
+      unknownErrorText: () => 'unknown error',
+    })
+    requestTransport.stream(
+      { task: 'image', system: '', messages: [], tools: [] },
+      {
+        onDelta: () => undefined,
+        onToolCall: () => undefined,
+        onDone: () => undefined,
+        onError: () => undefined,
+      },
+    )
+    expect(started.at(-1)?.task).toBe('image')
   })
 
   it('ignores chunks for other requestIds', () => {
