@@ -81,6 +81,12 @@ Without Apple or Windows signing credentials in the environment these produce
 unsigned artifacts: code signing and notarization are skipped with a warning
 rather than failing. That is the expected result for a contributor build.
 
+> **Building on FAT32/exFAT drives (macOS)**: If your repository resides on an external USB drive formatted as exFAT/FAT32, `electron-builder` will fail when writing directly to the drive because macOS generates hidden `._` AppleDouble metadata files. To build without moving the repo, set `BUILD_DIR` to a path on your Mac's APFS drive (e.g., `/tmp`):
+>
+> ```bash
+> BUILD_DIR=/tmp/genoffice-release npm run dist:mac && mkdir -p apps/shell/release && cp /tmp/genoffice-release/*.dmg apps/shell/release/
+> ```
+
 `dist:win` additionally expects the xlsx sidecar at the MinGW cross-compilation
 path. Building on Windows leaves it under the MSVC target instead, so stage it
 first:
@@ -99,6 +105,7 @@ testing and local overrides:
 
 | Variable                                                 | Effect                                                                 |
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `BUILD_DIR`                                              | Override `electron-builder` output directory (e.g. `/tmp` for exFAT)   |
 | `GENOFFICE_USER_DATA`                                    | Override the Electron userData directory (test isolation)              |
 | `GENOFFICE_LANG`                                         | Force the UI language instead of following the OS locale               |
 | `GENOFFICE_FAKE_UPDATE`                                  | Exercise the updater UI without a real release feed                    |

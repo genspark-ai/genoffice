@@ -75,6 +75,8 @@ The sheets app additionally needs a Rust toolchain for its xlsx sidecar
 (`cargo` on PATH); `npm run build -w @genoffice/sheets` compiles it
 automatically.
 
+If building on an external exFAT/FAT32 USB drive on macOS, use `BUILD_DIR=/tmp/genoffice-release npm run dist:mac` to output intermediate build files to APFS (see [CONTRIBUTING.md](CONTRIBUTING.md#building-installers)).
+
 Local UI/e2e driver scripts (Playwright + Electron, for local acceptance, not
 committed by default) live in [`scripts/drivers/`](scripts/drivers/README.md).
 
