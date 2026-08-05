@@ -416,6 +416,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'CSV 导出已取消。',
     appExportCsvExported: '已导出 {path}。',
     appExportCsvFailed: '无法导出 CSV。',    appDemoNoSave: '演示模式的编辑只保存在内存——打开 XLSX 文件才能保存到磁盘。',
+    appExportCsvBtn: '导出为 CSV',
     appFilterSnapshotFailed: '无法快照筛选状态。',
     appColorFiltersUnsaveable: '颜色筛选暂时无法保存为 XLSX——请先清除再保存。',
     appNoEditsToSave: '还没有可保存的编辑。',
@@ -1375,6 +1376,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'CSV export canceled.',
     appExportCsvExported: 'Exported {path}.',
     appExportCsvFailed: 'Unable to export CSV.',    appDemoNoSave: 'Demo edits stay in memory — open an XLSX file to save to disk.',
+    appExportCsvBtn: 'Export CSV',
     appFilterSnapshotFailed: 'Unable to snapshot the filters.',
     appColorFiltersUnsaveable:
       'Color filters cannot be saved as XLSX yet — clear them before saving.',
@@ -2369,6 +2371,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: '{path} にエクスポートしました。',
     appExportCsvFailed: 'CSV をエクスポートできません。',    appDemoNoSave:
       'デモモードの編集はメモリ内にのみ保存されます — ディスクに保存するには XLSX ファイルを開いてください。',
+    appExportCsvBtn: 'CSV をエクスポート',
     appFilterSnapshotFailed: 'フィルターの状態をスナップショットできません。',
     appColorFiltersUnsaveable:
       '色フィルターは現時点では XLSX として保存できません — 先に解除してから保存してください。',
@@ -3354,6 +3357,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: '{path}에 내보냈습니다.',
     appExportCsvFailed: 'CSV를 내보낼 수 없습니다.',    appDemoNoSave:
       '데모 모드의 편집은 메모리에만 저장됩니다 — 디스크에 저장하려면 XLSX 파일을 여십시오.',
+    appExportCsvBtn: 'CSV 내보내기',
     appFilterSnapshotFailed: '필터 상태의 스냅숏을 만들 수 없습니다.',
     appColorFiltersUnsaveable:
       '색 필터는 아직 XLSX로 저장할 수 없습니다 — 먼저 해제한 후 저장하십시오.',
@@ -4378,6 +4382,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: '{path} exporté.',
     appExportCsvFailed: 'Impossible d’exporter en CSV.',    appDemoNoSave:
       'Les modifications en mode démo restent en mémoire — ouvrez un fichier XLSX pour enregistrer sur le disque.',
+    appExportCsvBtn: 'Exporter en CSV',
     appFilterSnapshotFailed: 'Impossible de prendre un instantané des filtres.',
     appColorFiltersUnsaveable:
       "Les filtres par couleur ne peuvent pas encore être enregistrés en XLSX — effacez-les avant d'enregistrer.",
@@ -5383,6 +5388,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: '{path} exportiert.',
     appExportCsvFailed: 'CSV kann nicht exportiert werden.',    appDemoNoSave:
       'Demo-Bearbeitungen bleiben im Speicher — öffnen Sie eine XLSX-Datei, um auf die Festplatte zu speichern.',
+    appExportCsvBtn: 'CSV exportieren',
     appFilterSnapshotFailed: 'Momentaufnahme der Filter nicht möglich.',
     appColorFiltersUnsaveable:
       'Farbfilter können noch nicht als XLSX gespeichert werden — löschen Sie sie vor dem Speichern.',
@@ -6380,6 +6386,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: 'Exportado: {path}.',
     appExportCsvFailed: 'No se pudo exportar el CSV.',    appDemoNoSave:
       'Las ediciones de demostración permanecen en memoria — abra un archivo XLSX para guardar en disco.',
+    appExportCsvBtn: 'Exportar a CSV',
     appFilterSnapshotFailed: 'No se puede tomar una instantánea de los filtros.',
     appColorFiltersUnsaveable:
       'Los filtros por color aún no se pueden guardar como XLSX — bórrelos antes de guardar.',
@@ -7326,6 +7333,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: 'ส่งออก {path} แล้ว',
     appExportCsvFailed: 'ไม่สามารถส่งออก CSV ได้',    appDemoNoSave:
       'การแก้ไขในโหมดสาธิตอยู่ในหน่วยความจำเท่านั้น — เปิดไฟล์ XLSX เพื่อบันทึกลงดิสก์',
+    appExportCsvBtn: 'ส่งออก CSV',
     appFilterSnapshotFailed: 'บันทึกภาพรวมสถานะตัวกรองไม่ได้',
     appColorFiltersUnsaveable: 'ตัวกรองสียังบันทึกเป็น XLSX ไม่ได้ — ล้างก่อนบันทึก',
     appNoEditsToSave: 'ยังไม่มีการแก้ไขให้บันทึก',
@@ -8276,6 +8284,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'Ekspor CSV dibatalkan.',
     appExportCsvExported: 'Diekspor: {path}.',
     appExportCsvFailed: 'Tidak dapat mengekspor CSV.',    appDemoNoSave: 'Pengeditan demo tetap di memori — buka file XLSX untuk menyimpan ke disk.',
+    appExportCsvBtn: 'Ekspor CSV',
     appFilterSnapshotFailed: 'Tidak dapat mengambil cuplikan status filter.',
     appColorFiltersUnsaveable:
       'Filter warna belum dapat disimpan sebagai XLSX — hapus dahulu sebelum menyimpan.',
@@ -9250,6 +9259,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: 'Экспортировано: {path}.',
     appExportCsvFailed: 'Не удалось экспортировать CSV.',    appDemoNoSave:
       'Изменения в демо-режиме остаются в памяти — откройте файл XLSX, чтобы сохранить на диск.',
+    appExportCsvBtn: 'Экспорт в CSV',
     appFilterSnapshotFailed: 'Не удаётся сделать снимок состояния фильтров.',
     appColorFiltersUnsaveable:
       'Фильтры по цвету пока нельзя сохранить в XLSX — очистите их перед сохранением.',
@@ -10197,6 +10207,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'تم إلغاء تصدير CSV.',
     appExportCsvExported: 'تم التصدير: {path}.',
     appExportCsvFailed: 'تعذّر تصدير CSV.',    appDemoNoSave: 'تبقى تعديلات الوضع التجريبي في الذاكرة — افتح ملف XLSX للحفظ على القرص.',
+    appExportCsvBtn: 'تصدير CSV',
     appFilterSnapshotFailed: 'يتعذر أخذ لقطة لحالة عوامل التصفية.',
     appColorFiltersUnsaveable:
       'لا يمكن بعد حفظ عوامل التصفية حسب اللون في XLSX — امسحها قبل الحفظ.',
@@ -11180,6 +11191,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: 'Exportado: {path}.',
     appExportCsvFailed: 'Não foi possível exportar CSV.',    appDemoNoSave:
       'Edições de demonstração ficam na memória — abra um arquivo XLSX para salvar no disco.',
+    appExportCsvBtn: 'Exportar CSV',
     appFilterSnapshotFailed: 'Não foi possível capturar o estado dos filtros.',
     appColorFiltersUnsaveable:
       'Filtros de cor ainda não podem ser salvos como XLSX — limpe-os antes de salvar.',
@@ -12165,6 +12177,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'Esportazione CSV annullata.',
     appExportCsvExported: 'Esportato: {path}.',
     appExportCsvFailed: 'Impossibile esportare il CSV.',    appDemoNoSave: 'Le modifiche demo restano in memoria — apri un file XLSX per salvare su disco.',
+    appExportCsvBtn: 'Esporta CSV',
     appFilterSnapshotFailed: 'Impossibile acquisire lo stato dei filtri.',
     appColorFiltersUnsaveable:
       'I filtri per colore non possono ancora essere salvati come XLSX — cancellali prima di salvare.',
@@ -13153,6 +13166,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: 'Wyeksportowano: {path}.',
     appExportCsvFailed: 'Nie można wyeksportować CSV.',    appDemoNoSave:
       'Zmiany w trybie demo pozostają w pamięci — otwórz plik XLSX, aby zapisać na dysku.',
+    appExportCsvBtn: 'Eksportuj CSV',
     appFilterSnapshotFailed: 'Nie można wykonać migawki stanu filtrów.',
     appColorFiltersUnsaveable:
       'Filtrów kolorów nie można jeszcze zapisać jako XLSX — wyczyść je przed zapisaniem.',
@@ -14146,6 +14160,7 @@ export const appStrings = defineStrings({
     appExportCsvExported: 'Geëxporteerd: {path}.',
     appExportCsvFailed: 'Kan CSV niet exporteren.',    appDemoNoSave:
       'Demobewerkingen blijven in het geheugen — open een XLSX-bestand om op schijf op te slaan.',
+    appExportCsvBtn: 'CSV exporteren',
     appFilterSnapshotFailed: 'Kan geen momentopname van de filters maken.',
     appColorFiltersUnsaveable:
       'Kleurfilters kunnen nog niet als XLSX worden opgeslagen — wis ze voordat u opslaat.',
@@ -15110,6 +15125,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'Eksport CSV dibatalkan.',
     appExportCsvExported: 'Dieksport: {path}.',
     appExportCsvFailed: 'Tidak dapat mengeksport CSV.',    appDemoNoSave: 'Suntingan demo kekal dalam memori — buka fail XLSX untuk menyimpan ke cakera.',
+    appExportCsvBtn: 'Eksport CSV',
     appFilterSnapshotFailed: 'Tidak dapat mengambil syot kilat penapis.',
     appColorFiltersUnsaveable:
       'Penapis warna belum boleh disimpan sebagai XLSX — kosongkannya sebelum menyimpan.',
@@ -16041,6 +16057,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'ייצוא CSV בוטל.',
     appExportCsvExported: 'יוצא: {path}.',
     appExportCsvFailed: 'לא ניתן לייצא CSV.',    appDemoNoSave: 'עריכות הדגמה נשארות בזיכרון — פתח קובץ XLSX כדי לשמור לדיסק.',
+    appExportCsvBtn: 'ייצוא CSV',
     appFilterSnapshotFailed: 'לא ניתן לצלם את מצב המסננים.',
     appColorFiltersUnsaveable: 'מסנני צבע אינם ניתנים לשמירה כ-XLSX עדיין — נקה אותם לפני השמירה.',
     appNoEditsToSave: 'אין עדיין עריכות לשמירה.',
@@ -16994,6 +17011,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'CSV निर्यात रद्द किया गया।',
     appExportCsvExported: 'निर्यात: {path}।',
     appExportCsvFailed: 'CSV निर्यात नहीं किया जा सका।',    appDemoNoSave: 'डेमो संपादन स्मृति में रहते हैं — डिस्क पर सहेजने के लिए XLSX फ़ाइल खोलें।',
+    appExportCsvBtn: 'CSV निर्यात करें',
     appFilterSnapshotFailed: 'फ़िल्टर की स्थिति का स्नैपशॉट नहीं लिया जा सका।',
     appColorFiltersUnsaveable:
       'रंग फ़िल्टर अभी XLSX के रूप में सहेजे नहीं जा सकते — सहेजने से पहले उन्हें साफ़ करें।',
@@ -17904,6 +17922,7 @@ export const appStrings = defineStrings({
     appExportCsvCanceled: 'CSV 匯出已取消。',
     appExportCsvExported: '已匯出 {path}。',
     appExportCsvFailed: '無法匯出 CSV。',    appDemoNoSave: '示範模式的編輯只保存在記憶體——開啟 XLSX 檔案才能儲存到磁碟。',
+    appExportCsvBtn: '匯出 CSV',
     appFilterSnapshotFailed: '無法擷取篩選狀態快照。',
     appColorFiltersUnsaveable: '色彩篩選暫時無法儲存為 XLSX——請先清除再儲存。',
     appNoEditsToSave: '還沒有可儲存的編輯。',

@@ -71,6 +71,7 @@ export function AiChatPanel({
   prompt,
   preview,
   aiBusy,
+  memoryCount,
   onPromptChange,
   onSend,
   onStop,
@@ -98,6 +99,8 @@ export function AiChatPanel({
   readonly prompt: string
   readonly preview: ChangePlan | null
   readonly aiBusy: boolean
+  /// Project-memory entry count, shown as a badge in the panel header.
+  readonly memoryCount: number
   readonly onPromptChange: (prompt: string) => void
   /** Send the composer text, or the given instruction when provided (used by the failed-run Retry) */
   readonly onSend: (instruction?: string) => void
@@ -256,6 +259,19 @@ export function AiChatPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          {memoryCount > 0 && (
+            <span className="ai-memory-badge" title={t('aiMemoryBadgeTip', { n: memoryCount })}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 5.5c-4.5 0-7.5 3.3-7.5 7.5 0 1.9.7 3.6 2 4.7v3.3c0 .55.45 1 1 1h9c.55 0 1-.45 1-1v-3.3c1.3-1.1 2-2.8 2-4.7 0-4.2-3-7.5-7.5-7.5zM9.5 5.3C9.3 4 9.9 2.9 10.9 2.2M14.5 5.3c.2-1.3-.4-2.4-1.4-3.1"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {memoryCount}
+            </span>
+          )}
           <span className="ai-header-btn ai-settings-btn">
             <AiSettingsButton onClick={onOpenSettings} />
           </span>

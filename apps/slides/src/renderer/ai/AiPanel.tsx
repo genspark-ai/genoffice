@@ -284,6 +284,8 @@ export function AiPanel({
   const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
   const memoryProjectIdRef = useRef<string | null>(null)
   const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const [memoryCount, setMemoryCount] = useState(0)
+  const syncMemoryCount = () => setMemoryCount(memoryEntriesRef.current.length)
   const memoryRef = useRef<MemoryStoreAdapter | null>(null)
   if (!memoryRef.current) {
     memoryRef.current = {
@@ -295,6 +297,7 @@ export function AiPanel({
         if (!api || !projectId) throw new Error('No resolved project for memory.')
         const entry = await api.addMemory({ projectId, text })
         memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        syncMemoryCount()
         return entry
       },
       remove: async (id) => {
@@ -303,6 +306,7 @@ export function AiPanel({
         if (!api || !projectId) return
         await api.removeMemory({ projectId, id })
         memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+        syncMemoryCount()
       },
     }
   }
@@ -357,7 +361,10 @@ export function AiPanel({
         memoryApiRef.current = api
         memoryProjectIdRef.current = ids.projectId
         void api.getMemory(ids.projectId).then((entries) => {
-          if (Array.isArray(entries)) memoryEntriesRef.current = entries
+          if (Array.isArray(entries)) {
+            memoryEntriesRef.current = entries
+            syncMemoryCount()
+          }
         })
         return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
       })
@@ -1438,6 +1445,19 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          {memoryCount > 0 && (
+            <span className="ai-memory-badge" title={t('aiMemoryBadgeTip', { n: memoryCount })}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 5.5c-4.5 0-7.5 3.3-7.5 7.5 0 1.9.7 3.6 2 4.7v3.3c0 .55.45 1 1 1h9c.55 0 1-.45 1-1v-3.3c1.3-1.1 2-2.8 2-4.7 0-4.2-3-7.5-7.5-7.5zM9.5 5.3C9.3 4 9.9 2.9 10.9 2.2M14.5 5.3c.2-1.3-.4-2.4-1.4-3.1"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {memoryCount}
+            </span>
+          )}
           {onOpenSettings && (
             <span className="ai-header-btn ai-settings-btn">
               <AiSettingsButton onClick={onOpenSettings} />

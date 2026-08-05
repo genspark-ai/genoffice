@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import {
   CaretIcon,
+  ExportIcon,
   GensparkMark,
   RIBBON_GLYPH_ICONS,
   RedoIcon,
@@ -126,6 +127,8 @@ interface ExcelShellProps {
   readonly sheetHasContent: boolean
   /// true while the real LLM agent is running (composer disabled meanwhile).
   readonly aiBusy: boolean
+  /// Project-memory entry count, shown as a badge in the AI panel header.
+  readonly memoryCount: number
   readonly chat: readonly AiChatMessage[]
   readonly historicChat?: readonly AiChatMessage[]
   /// Chat attachments (chips + 📎 button + drag-and-drop), same structure as the
@@ -220,6 +223,7 @@ export function ExcelShell({
   selectionFormat,
   sheetHasContent,
   aiBusy,
+  memoryCount,
   chat,
   historicChat,
   attachments,
@@ -332,6 +336,16 @@ export function ExcelShell({
           <button
             type="button"
             className="qa-btn"
+            title={t('appExportCsvBtn')}
+            aria-label={t('appExportCsvBtn')}
+            disabled={!sheetHasContent}
+            onClick={() => onCommand('export-csv')}
+          >
+            <ExportIcon />
+          </button>
+          <button
+            type="button"
+            className="qa-btn"
             title={t('appUndo')}
             aria-label={t('appUndo')}
             onClick={onUndo}
@@ -430,6 +444,7 @@ export function ExcelShell({
           prompt={prompt}
           preview={preview}
           aiBusy={aiBusy}
+          memoryCount={memoryCount}
           onPromptChange={onPromptChange}
           onSend={onSend}
           onStop={onStop}

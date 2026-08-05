@@ -2393,6 +2393,8 @@ export function App() {
         onOpen={() => void openFile()}
         onSave={() => void save(false)}
         onSaveAs={() => void save(true)}
+        onExportMarkdown={() => void exportMarkdown()}
+        onExportTxt={() => void exportTextImpl(fileCtxRef.current, 'txt')}
         showAi={showAi}
         onToggleAi={() => setShowAi((v) => !v)}
         section={sections[activeSection]?.settings ?? section}

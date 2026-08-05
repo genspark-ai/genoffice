@@ -119,6 +119,9 @@ interface RibbonProps {
   onOpen: () => void
   onSave: () => void
   onSaveAs: () => void
+  /** File menu → export current document */
+  onExportMarkdown: () => void
+  onExportTxt: () => void
   showAi: boolean
   onToggleAi: () => void
   section: SectionSettings | null
@@ -481,6 +484,8 @@ export function Ribbon({
   onOpen,
   onSave,
   onSaveAs,
+  onExportMarkdown,
+  onExportTxt,
   showAi,
   onToggleAi,
   section,
@@ -1138,6 +1143,24 @@ export function Ribbon({
                   }}
                 >
                   {t('ribbonSaveAs')} <span className="file-menu-key">Ctrl+Shift+S</span>
+                </button>
+                <button
+                  disabled={!hasDoc}
+                  onClick={() => {
+                    setDropdown(null)
+                    onExportMarkdown()
+                  }}
+                >
+                  {t('ribbonExportMarkdown')}
+                </button>
+                <button
+                  disabled={!hasDoc}
+                  onClick={() => {
+                    setDropdown(null)
+                    onExportTxt()
+                  }}
+                >
+                  {t('ribbonExportTxt')}
                 </button>
               </div>
             )}

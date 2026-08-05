@@ -1443,6 +1443,24 @@ select.select-like {
   min-width: 0;
 }
 
+.ai-memory-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  margin-right: 4px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
 .ai-header-btn {
   display: flex;
   align-items: center;

@@ -565,6 +565,8 @@ export function App(): React.JSX.Element {
   const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
   const memoryProjectIdRef = useRef<string | null>(null)
   const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const [memoryCount, setMemoryCount] = useState(0)
+  const syncMemoryCount = () => setMemoryCount(memoryEntriesRef.current.length)
   const memoryRef = useRef<MemoryStoreAdapter | null>(null)
   if (!memoryRef.current) {
     memoryRef.current = {
@@ -576,6 +578,7 @@ export function App(): React.JSX.Element {
         if (!api || !projectId) throw new Error('No resolved project for memory.')
         const entry = await api.addMemory({ projectId, text })
         memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        syncMemoryCount()
         return entry
       },
       remove: async (id) => {
@@ -584,6 +587,7 @@ export function App(): React.JSX.Element {
         if (!api || !projectId) return
         await api.removeMemory({ projectId, id })
         memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+        syncMemoryCount()
       },
     }
   }
@@ -695,7 +699,10 @@ export function App(): React.JSX.Element {
         memoryApiRef.current = api
         memoryProjectIdRef.current = ids.projectId
         void api.getMemory(ids.projectId).then((entries) => {
-          if (Array.isArray(entries)) memoryEntriesRef.current = entries
+          if (Array.isArray(entries)) {
+            memoryEntriesRef.current = entries
+            syncMemoryCount()
+          }
         })
         const msgs = await api.loadChat({
           projectId: ids.projectId,
@@ -2527,6 +2534,7 @@ export function App(): React.JSX.Element {
         recordFreezeJournalImpl(pageLayoutContext(), sheetId, rows, columns),
       handlePageLayoutCommand: (rest) => handlePageLayoutCommandImpl(pageLayoutContext(), rest),
       handleExportPdf: () => handleExportPdfImpl(pageLayoutContext()),
+      handleExportCsv: () => handleExportCsvImpl({ univerRef, lazyWorkbookRef, setMessage }),
     }
   }
 
@@ -2959,6 +2967,7 @@ export function App(): React.JSX.Element {
         selectionFormat={selectionFormat}
         statusMessage={message}
         aiBusy={aiBusy}
+        memoryCount={memoryCount}
         chat={chat}
         historicChat={historicChat}
         attachments={attachments}
