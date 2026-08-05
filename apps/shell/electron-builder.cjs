@@ -41,7 +41,7 @@ const config = {
   productName: 'GenOffice',
   electronVersion: '41.7.1',
   directories: {
-    output: 'release',
+    output: process.env.BUILD_DIR || 'release',
   },
   files: ['out/**'],
   extraResources: [
