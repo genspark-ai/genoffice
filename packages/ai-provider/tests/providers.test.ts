@@ -18,6 +18,23 @@ describe('defaultAiSettings', () => {
     expect(settings.providers.anthropic.apiKey).toBe('sk-ant-preset')
     expect(settings.providers.gemini.apiKey).toBe('')
   })
+
+  it('adds Codex as an account-backed provider without an API key', () => {
+    const settings = defaultAiSettings()
+    const codex = AI_PROVIDERS.find((provider) => provider.id === 'openai-codex')
+
+    expect(codex).toMatchObject({
+      label: 'ChatGPT Codex',
+      defaultModel: 'gpt-5.5',
+      requiresApiKey: false,
+    })
+    expect(settings.providers['openai-codex']).toEqual({
+      apiKey: '',
+      model: 'gpt-5.5',
+      reasoningEffort: 'none',
+      baseUrl: undefined,
+    })
+  })
 })
 
 describe('resolveAiSettings', () => {
@@ -58,8 +75,22 @@ describe('resolveAiSettings', () => {
       defaults,
     )
     expect(resolved.provider).toBe('gemini')
-    expect(resolved.providers.gemini).toEqual({ apiKey: 'stored-gemini-key', model: 'gemini-2.5-pro' })
+    expect(resolved.providers.gemini).toEqual({
+      apiKey: 'stored-gemini-key',
+      model: 'gemini-2.5-pro',
+    })
     // provider not mentioned in stored.providers keeps the computed default
     expect(resolved.providers.anthropic.apiKey).toBe('preset-key')
+  })
+
+  it('keeps the account-backed Codex default when resolving legacy settings', () => {
+    const resolved = resolveAiSettings({ apiKey: 'legacy-key' }, defaultAiSettings())
+
+    expect(resolved.providers['openai-codex']).toEqual({
+      apiKey: '',
+      model: 'gpt-5.5',
+      reasoningEffort: 'none',
+      baseUrl: undefined,
+    })
   })
 })

@@ -26,6 +26,7 @@ export function AiComposer({
   sendIconDisabled,
   stopIcon,
   textareaRef,
+  sendDisabled = false,
   onChange,
   onSend,
   onStop,
@@ -51,6 +52,8 @@ export function AiComposer({
   readonly stopIcon?: React.ReactNode
   /** pass a ref to focus the textarea from outside */
   readonly textareaRef?: React.RefObject<HTMLTextAreaElement | null> | undefined
+  /** external app state can temporarily block sending without disabling draft editing */
+  readonly sendDisabled?: boolean | undefined
   readonly onChange: (next: string) => void
   readonly onSend: () => void
   readonly onStop: () => void
@@ -59,7 +62,7 @@ export function AiComposer({
 }): React.JSX.Element {
   const innerRef = useRef<HTMLTextAreaElement | null>(null)
   const ref = textareaRef ?? innerRef
-  const canSend = value.trim().length > 0 && !busy
+  const canSend = value.trim().length > 0 && !busy && !sendDisabled
 
   // auto-grow up to ~6 lines; empty clears the inline height outright so the
   // CSS min-height governs (a hidden-at-measure pass can leave a stale value).

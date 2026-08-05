@@ -10,7 +10,17 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
+import { createServer, type ServerResponse } from 'node:http'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+} from 'electron'
 import {
   fetchWithSsrfGuard,
   installNavigationGuard,
@@ -28,7 +38,9 @@ import type {
 import { parseFileToText } from '@genoffice/file-parse'
 import {
   chatForProvider,
+  AI_PROVIDERS,
   defaultAiSettings,
+  fetchCodexCapabilities,
   resolveAiSettings,
   streamForProvider,
   type AiChatRequest,
@@ -36,8 +48,13 @@ import {
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
+  type CodexCallbackHandle,
+  type CodexCredentialStore,
+  type CodexCredentials,
+  type CodexReasoningEffort,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { CodexAuthService } from '../../../../packages/ai-provider/src/auth'
 import {
   gskApiKey,
   gskLogin,
@@ -57,6 +74,7 @@ import type {
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { findDocxPath } from '../shared/open-file'
+import { safeCodexStreamError } from './codex-error'
 import { initDocsAutoUpdater } from './updater'
 
 /**
@@ -2258,8 +2276,198 @@ const TWIPS_PER_INCH = 1440
 // implementations live in @genoffice/ai-provider, shared with apps/sheets.
 
 const SETTINGS_PATH = () => userDataPath('ai-settings.json')
+const CODEX_CREDENTIALS_PATH = () => userDataPath('codex-credentials.bin')
+const CODEX_CALLBACK_PORT = 1455
+const CODEX_LOGIN_TIMEOUT_MS = 5 * 60_000
 
 const activeAiStreams = new Map<string, AbortController>()
+let codexAuth: CodexAuthService | undefined
+
+function isCodexCredentials(value: unknown): value is CodexCredentials {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.accessToken === 'string' &&
+    typeof record.refreshToken === 'string' &&
+    typeof record.accountId === 'string' &&
+    typeof record.expiresAt === 'number'
+  )
+}
+
+function codexCredentialStore(): CodexCredentialStore {
+  return {
+    async get() {
+      const path = CODEX_CREDENTIALS_PATH()
+      if (!existsSync(path)) return undefined
+      if (!safeStorage.isEncryptionAvailable())
+        throw new Error('Secure credential storage is unavailable')
+      try {
+        const parsed: unknown = JSON.parse(safeStorage.decryptString(readFileSync(path)))
+        if (isCodexCredentials(parsed)) return parsed
+      } catch {
+        // Corrupt encrypted data cannot be trusted; remove it before a fresh login.
+      }
+      if (existsSync(path)) unlinkSync(path)
+      return undefined
+    },
+    async set(credentials) {
+      if (!safeStorage.isEncryptionAvailable())
+        throw new Error('Secure credential storage is unavailable')
+      writeFileSync(
+        CODEX_CREDENTIALS_PATH(),
+        safeStorage.encryptString(JSON.stringify(credentials)),
+        {
+          mode: 0o600,
+        },
+      )
+    },
+    async delete() {
+      const path = CODEX_CREDENTIALS_PATH()
+      if (existsSync(path)) unlinkSync(path)
+    },
+  }
+}
+
+function beginCodexCallback(expectedState: string): CodexCallbackHandle {
+  let server: ReturnType<typeof createServer> | undefined
+  let pendingResponse: ServerResponse | undefined
+  let finish: ((result: { state: string; code: string }) => void) | undefined
+  let fail: ((error: Error) => void) | undefined
+  let settled = false
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const close = () => {
+    server?.close()
+    server = undefined
+  }
+  const settle = (result: { state: string; code: string }) => {
+    if (settled) return
+    settled = true
+    if (timeout) clearTimeout(timeout)
+    finish?.(result)
+  }
+  const reject = (error: Error) => {
+    if (settled) return
+    settled = true
+    if (timeout) clearTimeout(timeout)
+    if (pendingResponse) {
+      pendingResponse
+        .writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' })
+        .end('Sign-in could not be completed. You may close this window.')
+      pendingResponse = undefined
+    }
+    close()
+    fail?.(error)
+  }
+  const complete = (success: boolean) => {
+    if (pendingResponse) {
+      pendingResponse
+        .writeHead(success ? 200 : 500, { 'Content-Type': 'text/html; charset=utf-8' })
+        .end(
+          success
+            ? 'Sign-in complete. You may close this window.'
+            : 'Sign-in could not be completed. You may close this window.',
+        )
+      pendingResponse = undefined
+    }
+    close()
+  }
+  const wait = new Promise<{ state: string; code: string }>((resolve, rejectWait) => {
+    finish = resolve
+    fail = rejectWait
+    server = createServer((request, response) => {
+      const url = new URL(request.url ?? '/', `http://127.0.0.1:${CODEX_CALLBACK_PORT}`)
+      if (url.pathname !== '/auth/callback') {
+        response.writeHead(404).end('Not found')
+        return
+      }
+      const state = url.searchParams.get('state')
+      const code = url.searchParams.get('code')
+      if (!state || !code || state !== expectedState) {
+        response.writeHead(400).end('Sign-in could not be completed.')
+        reject(new Error('ChatGPT sign-in state mismatch'))
+        return
+      }
+      pendingResponse = response
+      settle({ state, code })
+    })
+    server.once('error', () => reject(new Error('ChatGPT sign-in callback unavailable')))
+    server.listen(CODEX_CALLBACK_PORT, '127.0.0.1')
+  })
+  timeout = setTimeout(() => reject(new Error('ChatGPT sign-in timed out')), CODEX_LOGIN_TIMEOUT_MS)
+  timeout.unref()
+  return {
+    wait,
+    cancel: () => reject(new Error('ChatGPT sign-in cancelled')),
+    complete,
+  }
+}
+
+function getCodexAuth(): CodexAuthService {
+  codexAuth ??= new CodexAuthService({
+    store: codexCredentialStore(),
+    clock: () => Date.now(),
+    fetch,
+    openBrowser: async (url) => {
+      const target = safeExternalUrl(url)
+      if (!target) throw new Error('ChatGPT sign-in URL rejected')
+      await shell.openExternal(target)
+    },
+    beginCallback: beginCodexCallback,
+  })
+  return codexAuth
+}
+
+function safeCodexAuthError(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message.includes('timed out')) return 'ChatGPT sign-in timed out. Try again.'
+  if (message.includes('cancelled')) return 'ChatGPT sign-in cancelled.'
+  if (message.includes('expired')) return 'ChatGPT sign-in expired. Sign in again.'
+  if (message.includes('Secure credential storage'))
+    return 'Secure credential storage is unavailable.'
+  return 'ChatGPT sign-in could not be completed. Try again.'
+}
+
+function sanitizeAiSettings(stored: Partial<AiSettings> & LegacyAiSettings): AiSettings {
+  const settings = resolveAiSettings(
+    stored && typeof stored === 'object' ? stored : {},
+    defaultAiSettings(),
+  )
+  if (!AI_PROVIDERS.some((provider) => provider.id === settings.provider)) {
+    settings.provider = 'genspark'
+  }
+  const safeProviders = {} as AiSettings['providers']
+  for (const meta of AI_PROVIDERS) {
+    const raw = settings.providers[meta.id]
+    safeProviders[meta.id] = {
+      apiKey:
+        meta.requiresApiKey === false ? '' : typeof raw?.apiKey === 'string' ? raw.apiKey : '',
+      model: typeof raw?.model === 'string' && raw.model ? raw.model : meta.defaultModel,
+      ...(meta.needsBaseUrl
+        ? { baseUrl: typeof raw?.baseUrl === 'string' ? raw.baseUrl : '' }
+        : {}),
+      ...(meta.id === 'openai-codex'
+        ? {
+            reasoningEffort: isCodexReasoningEffort(raw?.reasoningEffort)
+              ? raw.reasoningEffort
+              : 'none',
+          }
+        : {}),
+    }
+  }
+  return { provider: settings.provider, providers: safeProviders }
+}
+
+function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(
+    value as string,
+  )
+}
+
+function safeCodexCapabilitiesError(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message.includes('models response')) return 'ChatGPT Codex model availability is unavailable.'
+  return safeCodexStreamError(error)
+}
 
 /**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
@@ -2269,10 +2477,7 @@ const activeAiStreams = new Map<string, AbortController>()
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return sanitizeAiSettings(stored)
   })
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
@@ -2290,8 +2495,51 @@ export function registerAiIpc(): void {
     gskLogin()
   })
 
+  ipcMain.handle('ai:codex-status', async () => {
+    try {
+      return await getCodexAuth().status()
+    } catch (error) {
+      return { loggedIn: false, error: safeCodexAuthError(error) }
+    }
+  })
+
+  ipcMain.handle('ai:codex-login', async () => {
+    try {
+      return await getCodexAuth().login()
+    } catch (error) {
+      return { loggedIn: false, error: safeCodexAuthError(error) }
+    }
+  })
+
+  ipcMain.handle('ai:codex-cancel-login', () => {
+    getCodexAuth().cancelLogin()
+  })
+
+  ipcMain.handle('ai:codex-logout', async () => {
+    try {
+      await getCodexAuth().logout()
+      return { loggedIn: false }
+    } catch (error) {
+      return { loggedIn: false, error: safeCodexAuthError(error) }
+    }
+  })
+
+  ipcMain.handle('ai:codex-capabilities', async () => {
+    let context: Awaited<ReturnType<CodexAuthService['getContext']>>
+    try {
+      context = await getCodexAuth().getContext()
+    } catch (error) {
+      return { models: [], error: safeCodexAuthError(error) }
+    }
+    try {
+      return await fetchCodexCapabilities(context)
+    } catch (error) {
+      return { models: [], error: safeCodexCapabilitiesError(error) }
+    }
+  })
+
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(SETTINGS_PATH(), settings)
+    writeJson(SETTINGS_PATH(), sanitizeAiSettings(settings))
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
@@ -2300,6 +2548,7 @@ export function registerAiIpc(): void {
     const maxTokens = request.maxTokens ?? 8192
     const provider = settings.provider
     let config = settings.providers?.[provider]
+    let codexContext: Awaited<ReturnType<CodexAuthService['getContext']>> | undefined
     // the genspark key never enters the settings file; requests take it from the gsk login state
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
@@ -2307,7 +2556,37 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (provider === 'openai-codex') {
+      try {
+        codexContext = await getCodexAuth().getContext()
+      } catch (error) {
+        send({ requestId, type: 'error', error: safeCodexAuthError(error) })
+        return
+      }
+      try {
+        const capabilities = await fetchCodexCapabilities(codexContext)
+        const model = capabilities.models.find((candidate) => candidate.id === config?.model)
+        if (!model) {
+          send({ requestId, type: 'error', error: 'Selected ChatGPT Codex model is unavailable.' })
+          return
+        }
+        if (
+          config?.reasoningEffort &&
+          config.reasoningEffort !== 'none' &&
+          !model.reasoningEfforts.includes(config.reasoningEffort)
+        ) {
+          send({
+            requestId,
+            type: 'error',
+            error: 'Selected ChatGPT Codex reasoning effort is unavailable.',
+          })
+          return
+        }
+      } catch (error) {
+        send({ requestId, type: 'error', error: safeCodexCapabilitiesError(error) })
+        return
+      }
+    } else if (!config?.apiKey) {
       send({
         requestId,
         type: 'error',
@@ -2322,17 +2601,35 @@ export function registerAiIpc(): void {
     const controller = new AbortController()
     activeAiStreams.set(requestId, controller)
     try {
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
-        signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
-      })
+      await streamForProvider(
+        provider,
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        {
+          signal: controller.signal,
+          onDelta: (text) => send({ requestId, type: 'delta', text }),
+          onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        },
+        codexContext,
+      )
       send({ requestId, type: 'done' })
     } catch (err) {
       if (controller.signal.aborted) {
         send({ requestId, type: 'done' })
       } else {
-        send({ requestId, type: 'error', error: err instanceof Error ? err.message : String(err) })
+        send({
+          requestId,
+          type: 'error',
+          error:
+            provider === 'openai-codex'
+              ? safeCodexStreamError(err)
+              : err instanceof Error
+                ? err.message
+                : String(err),
+        })
       }
     } finally {
       activeAiStreams.delete(requestId)
@@ -2388,6 +2685,9 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
     const { settings, system, user } = request
     const provider = settings.provider
+    if (provider === 'openai-codex') {
+      return { ok: false, error: 'ChatGPT Codex is available through streaming chats only.' }
+    }
     let config = settings.providers?.[provider]
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }

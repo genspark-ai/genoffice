@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
-export type AiProviderId = 'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
+export type AiProviderId =
+  'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'openai-codex' | 'custom'
 
 /** Genspark account status (gsk login state; the sole auth source for AI features) */
 export interface GenSparkAccountStatus {
@@ -11,8 +12,23 @@ export interface GenSparkAccountStatus {
 export interface AiProviderConfig {
   apiKey: string
   model: string
+  /** Codex-only Responses reasoning setting; `none` omits the request field. */
+  reasoningEffort?: CodexReasoningEffort
   /** only used by the custom (OpenAI-compatible) provider */
   baseUrl?: string | undefined
+}
+
+export type CodexReasoningEffort =
+  'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+
+/** Renderer-safe, account-specific Codex model capabilities. */
+export interface CodexModelCapability {
+  id: string
+  reasoningEfforts: CodexReasoningEffort[]
+}
+
+export interface CodexCapabilities {
+  models: CodexModelCapability[]
 }
 
 export interface AiProviderMeta {
@@ -21,7 +37,32 @@ export interface AiProviderMeta {
   models: string[]
   defaultModel: string
   keyPlaceholder: string
+  /** false when this provider receives main-process account credentials instead of a settings API key */
+  requiresApiKey?: boolean
   needsBaseUrl?: boolean
+}
+
+/**
+ * Account credentials injected by the main process for one Codex request.
+ * Never persist this in AiSettings or forward it over renderer IPC.
+ */
+export interface CodexAuthContext {
+  accessToken: string
+  accountId: string
+  expiresAt: number
+}
+
+/** Narrow provider boundary; app code owns prompts, history, and tool execution. */
+export interface CodexAdapterRequest {
+  auth: CodexAuthContext
+  instructions: string
+  messages: AgentMessage[]
+  tools: AgentToolDef[]
+  model: string
+  reasoningEffort?: CodexReasoningEffort
+  signal: AbortSignal
+  onDelta: (text: string) => void
+  onToolCall: (call: AgentToolCall) => void
 }
 
 export interface AiSettings {

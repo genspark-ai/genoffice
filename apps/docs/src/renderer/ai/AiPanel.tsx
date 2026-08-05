@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
-import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
+import {
+  AI_PROVIDERS,
+  type AiSettings,
+  type AttachmentAddResult,
+  type AttachmentMeta,
+  type CodexAccountStatus,
+  type CodexCapabilitiesResult,
+  type CodexReasoningEffort,
+} from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { findNumId, type NumIds } from './protocol'
@@ -21,10 +29,13 @@ import sendStop from '../assets/send-stop.png'
 import attachIcon from '../assets/attach-icon.png'
 import {
   IconClock,
+  IconCaret,
+  IconCheck,
   IconNewChat,
   IconPaperclip,
   IconRefresh,
   IconSidebarCollapse,
+  IconTrackChanges,
 } from '../components/icons'
 
 interface Snapshot {
@@ -67,7 +78,7 @@ interface ChatEntry {
   turnLimit?: boolean
   /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
-  /** the run failed because Genspark is signed out — render an inline sign-in button */
+  /** Genspark account was signed out — render its existing inline sign-in action */
   loginRequired?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
@@ -122,6 +133,7 @@ interface AiPanelProps {
   editor: Editor
   blocks: Block[]
   settings: AiSettings
+  onSettingsChange?: (settings: AiSettings) => void
   /** the document has no text yet — the empty-state copy offers drafting instead of editing */
   docEmpty?: boolean
   /** fallback numbering ids for documents created from the blank template */
@@ -142,6 +154,7 @@ export function AiPanel({
   editor,
   blocks,
   settings,
+  onSettingsChange,
   docEmpty,
   numIdFallback,
   preset,
@@ -163,10 +176,20 @@ export function AiPanel({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
+  const [codexAccount, setCodexAccount] = useState<CodexAccountStatus | null>(null)
+  const [codexLoginPending, setCodexLoginPending] = useState(false)
+  const [codexCapabilities, setCodexCapabilities] = useState<CodexCapabilitiesResult | null>(null)
+  const [, setCodexCapabilitiesLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [panelWidth, setPanelWidth] = useState(loadPanelWidth)
   const [resizing, setResizing] = useState(false)
+  const [activePopover, setActivePopover] = useState<'model' | 'track' | null>(null)
   const asideRef = useRef<HTMLElement>(null)
+  const composerMenuRef = useRef<HTMLDivElement>(null)
+  const codexAccountRef = useRef<CodexAccountStatus | null>(null)
+  const codexLoginPendingRef = useRef(false)
+  const codexSelectionRef = useRef(0)
+  const codexStatusRequestRef = useRef(0)
 
   // The .ai-dock wrapper owns the animated width (Excel-parity 180ms slide);
   // it tracks the resizable panel width through this variable
@@ -198,6 +221,8 @@ export function AiPanel({
   editorRef.current = editor
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  codexAccountRef.current = codexAccount
+  const codexSendDisabled = settings.provider === 'openai-codex' && codexAccount?.loggedIn !== true
   const blocksRef = useRef(blocks)
   blocksRef.current = blocks
   const numIdFallbackRef = useRef(numIdFallback)
@@ -206,6 +231,116 @@ export function AiPanel({
   attachmentsRef.current = attachments
   const trackChangesRef = useRef(trackChanges)
   trackChangesRef.current = trackChanges
+
+  useEffect(() => {
+    const selection = ++codexSelectionRef.current
+    const statusRequest = ++codexStatusRequestRef.current
+    codexAccountRef.current = null
+    setCodexAccount(null)
+    codexLoginPendingRef.current = false
+    setCodexLoginPending(false)
+    if (settings.provider !== 'openai-codex') {
+      setCodexCapabilities(null)
+      return
+    }
+    let active = true
+    setCodexCapabilities(null)
+    void window.desktop
+      .aiCodexStatus()
+      .then((account) => {
+        if (
+          !active ||
+          selection !== codexSelectionRef.current ||
+          statusRequest !== codexStatusRequestRef.current
+        )
+          return
+        codexAccountRef.current = account
+        setCodexAccount(account)
+      })
+      .catch(() => {
+        if (
+          !active ||
+          selection !== codexSelectionRef.current ||
+          statusRequest !== codexStatusRequestRef.current
+        )
+          return
+        const account = { loggedIn: false, error: tModule('aiUnknownError') }
+        codexAccountRef.current = account
+        setCodexAccount(account)
+      })
+    return () => {
+      active = false
+    }
+  }, [settings.provider])
+
+  useEffect(() => {
+    if (settings.provider !== 'openai-codex' || codexAccount?.loggedIn !== true) {
+      setCodexCapabilities(null)
+      setCodexCapabilitiesLoading(false)
+      return
+    }
+    let active = true
+    setCodexCapabilitiesLoading(true)
+    void window.desktop
+      .aiCodexCapabilities()
+      .then((capabilities) => {
+        if (!active) return
+        setCodexCapabilities((previous) =>
+          capabilities.error && previous?.models.length
+            ? { models: previous.models, error: capabilities.error }
+            : capabilities,
+        )
+        const selected = capabilities.models.find(
+          (candidate) => candidate.id === settingsRef.current.providers['openai-codex'].model,
+        )
+        const model = selected ?? capabilities.models[0]
+        if (!model || !onSettingsChange) return
+        const current = settingsRef.current.providers['openai-codex']
+        const reasoningEffort = model.reasoningEfforts.includes(current.reasoningEffort ?? 'none')
+          ? (current.reasoningEffort ?? 'none')
+          : (model.reasoningEfforts[0] ?? 'none')
+        if (model.id !== current.model || reasoningEffort !== (current.reasoningEffort ?? 'none')) {
+          onSettingsChange({
+            ...settingsRef.current,
+            providers: {
+              ...settingsRef.current.providers,
+              'openai-codex': { ...current, model: model.id, reasoningEffort },
+            },
+          })
+        }
+      })
+      .catch(() => {
+        if (active) setCodexCapabilities({ models: [], error: tModule('aiUnknownError') })
+      })
+      .finally(() => {
+        if (active) setCodexCapabilitiesLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [codexAccount?.loggedIn, onSettingsChange, settings.provider])
+
+  useEffect(() => {
+    if (!activePopover) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!composerMenuRef.current?.contains(event.target as Node)) setActivePopover(null)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActivePopover(null)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [activePopover])
+
+  useEffect(() => {
+    if (settings.provider !== 'openai-codex' && activePopover === 'model') {
+      setActivePopover(null)
+    }
+  }, [activePopover, settings.provider])
 
   /** drop every aiChanged flag; silent = skip undo history (auto-accept path) */
   const clearAiHighlights = (silent = false) => {
@@ -453,17 +588,31 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktop
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
+          const provider = settingsRef.current.provider
+          const status =
+            provider === 'openai-codex'
+              ? window.desktop.aiCodexStatus()
+              : provider === 'genspark'
+                ? window.desktop.aiGskStatus()
+                : undefined
+          void status
+            ?.then((account) => {
+              if (provider === 'openai-codex') {
+                if (settingsRef.current.provider !== 'openai-codex') return
+                codexStatusRequestRef.current += 1
+                codexAccountRef.current = account
+                setCodexAccount(account)
+                return
+              }
+              if (account.loggedIn) return
               setChat((prev) => {
                 const next = [...prev]
                 const last = next.at(-1)
                 if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
+                  next[next.length - 1] = {
+                    ...last,
+                    loginRequired: true,
+                  }
                 }
                 return next
               })
@@ -537,6 +686,12 @@ export function AiPanel({
   }
 
   const runWith = (instruction: string, displayInstruction = instruction) => {
+    if (
+      settingsRef.current.provider === 'openai-codex' &&
+      codexAccountRef.current?.loggedIn !== true
+    ) {
+      return
+    }
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return
     setInput('')
@@ -558,6 +713,99 @@ export function AiPanel({
   const cancel = () => loopRef.current?.cancel()
 
   const retry = () => runWith(lastInstructionRef.current)
+
+  const changeProvider = (providerId: AiSettings['provider']) => {
+    const meta = AI_PROVIDERS.find((provider) => provider.id === providerId)
+    if (!meta || !onSettingsChange) return
+    onSettingsChange({
+      provider: providerId,
+      providers: {
+        ...settings.providers,
+        [providerId]: {
+          ...settings.providers[providerId],
+          apiKey:
+            meta.requiresApiKey === false ? '' : (settings.providers[providerId]?.apiKey ?? ''),
+          model: settings.providers[providerId]?.model || meta.defaultModel,
+          baseUrl: meta.needsBaseUrl ? (settings.providers[providerId]?.baseUrl ?? '') : undefined,
+        },
+      },
+    })
+  }
+
+  const changeCodexModel = (model: string) => {
+    if (!onSettingsChange) return
+    const capability = codexCapabilities?.models.find((candidate) => candidate.id === model)
+    if (!capability) return
+    const current = settings.providers['openai-codex']
+    onSettingsChange({
+      ...settings,
+      providers: {
+        ...settings.providers,
+        'openai-codex': {
+          ...current,
+          model,
+          reasoningEffort: capability.reasoningEfforts.includes(current.reasoningEffort ?? 'none')
+            ? (current.reasoningEffort ?? 'none')
+            : (capability.reasoningEfforts[0] ?? 'none'),
+        },
+      },
+    })
+  }
+
+  const changeCodexReasoning = (reasoningEffort: string) => {
+    if (!onSettingsChange || !codexCapabilities) return
+    const model = codexCapabilities.models.find(
+      (candidate) => candidate.id === settings.providers['openai-codex'].model,
+    )
+    const effort = reasoningEffort as CodexReasoningEffort
+    if (!model || !model.reasoningEfforts.includes(effort)) return
+    onSettingsChange({
+      ...settings,
+      providers: {
+        ...settings.providers,
+        'openai-codex': {
+          ...settings.providers['openai-codex'],
+          reasoningEffort: effort,
+        },
+      },
+    })
+  }
+
+  const startLogin = async () => {
+    if (settingsRef.current.provider === 'openai-codex') {
+      if (codexLoginPendingRef.current) return
+      const selection = codexSelectionRef.current
+      codexLoginPendingRef.current = true
+      codexStatusRequestRef.current += 1
+      setCodexLoginPending(true)
+      try {
+        const result = await window.desktop.aiCodexLogin()
+        if (
+          settingsRef.current.provider === 'openai-codex' &&
+          selection === codexSelectionRef.current
+        ) {
+          codexAccountRef.current = result
+          setCodexAccount(result)
+        }
+      } catch {
+        if (
+          settingsRef.current.provider === 'openai-codex' &&
+          selection === codexSelectionRef.current
+        ) {
+          const account = { loggedIn: false, error: tModule('aiUnknownError') }
+          codexAccountRef.current = account
+          setCodexAccount(account)
+        }
+      } finally {
+        if (selection === codexSelectionRef.current) {
+          codexLoginPendingRef.current = false
+          setCodexLoginPending(false)
+        }
+      }
+      return
+    }
+    void window.desktop.aiGskLogin()
+  }
 
   const continueRun = () => runWith(DOCS_CONTINUE_INSTRUCTION, t('aiContinue'))
 
@@ -623,12 +871,12 @@ export function AiPanel({
     clearAiHighlights()
   }
 
-  const toggleTrackChanges = () => {
-    const next = !trackChanges
+  const setTrackChangesMode = (next: boolean) => {
     setTrackChanges(next)
     localStorage.setItem(TRACK_CHANGES_KEY, next ? '1' : '0')
     // switching off keeps nothing pending: accept whatever is still highlighted
     if (!next) acceptChanges()
+    setActivePopover(null)
   }
 
   const rollback = (snapshot: Snapshot) => {
@@ -659,6 +907,11 @@ export function AiPanel({
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
+
+  const activeCodexModel = codexCapabilities?.models.find(
+    (candidate) => candidate.id === settings.providers['openai-codex'].model,
+  )
+  const activeCodexReasoning = settings.providers['openai-codex'].reasoningEffort ?? 'none'
 
   // collapsed: rail only — after all hooks, so the instance and its state survive
   if (!open) {
@@ -696,9 +949,21 @@ export function AiPanel({
       <div className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
-          {t('aiPanelTitle')}
+          GenSpark AI
         </span>
         <div className="ai-panel-header-actions">
+          <select
+            className="ai-provider-select"
+            aria-label={t('aiSwitchModelTitle')}
+            value={settings.provider}
+            onChange={(event) => changeProvider(event.target.value as AiSettings['provider'])}
+          >
+            {AI_PROVIDERS.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.label}
+              </option>
+            ))}
+          </select>
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChatTitle')}>
               <IconNewChat size={16} />
@@ -711,6 +976,26 @@ export function AiPanel({
           )}
         </div>
       </div>
+
+      {settings.provider === 'openai-codex' && codexAccount?.loggedIn === false && (
+        <div className="ai-codex-auth-banner" role="status">
+          <div className="ai-codex-auth-copy">
+            <span>{t('aiCodexSignInRequired')}</span>
+            {codexAccount.error && (
+              <span className="ai-codex-auth-error">{codexAccount.error}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="ai-codex-auth-login"
+            disabled={codexLoginPending}
+            aria-busy={codexLoginPending}
+            onClick={() => void startLogin()}
+          >
+            {t('aiCodexLoginBtn')}
+          </button>
+        </div>
+      )}
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* past conversation (read-only transcript, not fed to the model), shown continuously with the current turn */}
@@ -795,7 +1080,7 @@ export function AiPanel({
                 <div className="ai-msg-error">{t('aiErrorPrefix', { error: entry.error })}</div>
               )}
               {entry.loginRequired && (
-                <button className="ai-login-btn" onClick={() => void window.desktop.aiGskLogin()}>
+                <button className="ai-login-btn" onClick={() => void startLogin()}>
                   {t('aiGskLoginBtn')}
                 </button>
               )}
@@ -895,6 +1180,7 @@ export function AiPanel({
         <AiComposer
           value={input}
           busy={busy}
+          sendDisabled={codexSendDisabled}
           placeholder={t('aiInputPlaceholder')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
@@ -911,7 +1197,7 @@ export function AiPanel({
           onStop={cancel}
           onPasteFiles={(files) => void onPasteFiles(files)}
           footerStart={
-            <>
+            <div className="ai-composer-footer-actions" ref={composerMenuRef}>
               <button
                 className="ai-attach-btn"
                 onClick={pickAttachments}
@@ -919,15 +1205,109 @@ export function AiPanel({
               >
                 <img src={attachIcon} alt="" aria-hidden />
               </button>
-              <button
-                className={`ai-track-btn${trackChanges ? ' on' : ''}`}
-                onClick={toggleTrackChanges}
-                title={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
-              >
-                <span className="ai-track-dot" aria-hidden />
-                {t('aiTrackChanges')}
-              </button>
-            </>
+              <div className="ai-track-control">
+                <button
+                  type="button"
+                  className={`ai-track-btn${trackChanges ? ' on' : ''}`}
+                  onClick={() =>
+                    setActivePopover((current) => (current === 'track' ? null : 'track'))
+                  }
+                  title={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
+                  aria-expanded={activePopover === 'track'}
+                  aria-haspopup="menu"
+                >
+                  <IconTrackChanges size={16} />
+                  {t('aiTrackChanges')}
+                  <IconCaret size={11} />
+                </button>
+                {activePopover === 'track' && (
+                  <div className="ai-track-popover" role="menu" aria-label={t('aiTrackChanges')}>
+                    <div className="ai-popover-heading">{t('aiTrackChanges')}</div>
+                    <button
+                      type="button"
+                      className={`ai-track-option${trackChanges ? ' selected' : ''}`}
+                      data-track-choice="on"
+                      role="menuitemradio"
+                      aria-checked={trackChanges}
+                      onClick={() => setTrackChangesMode(true)}
+                    >
+                      <IconTrackChanges size={17} />
+                      <span>{t('aiTrackOnTitle')}</span>
+                      {trackChanges && <IconCheck size={16} />}
+                    </button>
+                    <button
+                      type="button"
+                      className={`ai-track-option${!trackChanges ? ' selected' : ''}`}
+                      data-track-choice="off"
+                      role="menuitemradio"
+                      aria-checked={!trackChanges}
+                      onClick={() => setTrackChangesMode(false)}
+                    >
+                      <IconTrackChanges size={17} />
+                      <span>{t('aiTrackOffTitle')}</span>
+                      {!trackChanges && <IconCheck size={16} />}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {settings.provider === 'openai-codex' && activeCodexModel && (
+                <div className="ai-model-control">
+                  <button
+                    type="button"
+                    className="ai-codex-model-trigger"
+                    onClick={() =>
+                      setActivePopover((current) => (current === 'model' ? null : 'model'))
+                    }
+                    aria-label={`${t('aiCodexModelLabel')}: ${activeCodexModel.id}; ${t('aiCodexReasoningLabel')}: ${activeCodexReasoning}`}
+                    aria-expanded={activePopover === 'model'}
+                    aria-haspopup="menu"
+                  >
+                    <span>{activeCodexModel.id}</span>
+                    <span className="ai-codex-model-effort">{activeCodexReasoning}</span>
+                    <IconCaret size={12} />
+                  </button>
+                  {activePopover === 'model' && (
+                    <div
+                      className="ai-codex-model-popover"
+                      role="menu"
+                      aria-label={t('aiCodexModelLabel')}
+                    >
+                      <div className="ai-popover-heading">{t('aiCodexModelLabel')}</div>
+                      {codexCapabilities?.models.map((model) => (
+                        <button
+                          type="button"
+                          key={model.id}
+                          className={`ai-codex-option${model.id === activeCodexModel.id ? ' selected' : ''}`}
+                          data-codex-model-option={model.id}
+                          role="menuitemradio"
+                          aria-checked={model.id === activeCodexModel.id}
+                          onClick={() => changeCodexModel(model.id)}
+                        >
+                          <span>{model.id}</span>
+                          {model.id === activeCodexModel.id && <IconCheck size={16} />}
+                        </button>
+                      ))}
+                      <div className="ai-popover-divider" />
+                      <div className="ai-popover-heading">{t('aiCodexReasoningLabel')}</div>
+                      {activeCodexModel.reasoningEfforts.map((effort) => (
+                        <button
+                          type="button"
+                          key={effort}
+                          className={`ai-codex-option${effort === activeCodexReasoning ? ' selected' : ''}`}
+                          data-codex-reasoning-option={effort}
+                          role="menuitemradio"
+                          aria-checked={effort === activeCodexReasoning}
+                          onClick={() => changeCodexReasoning(effort)}
+                        >
+                          <span>{effort}</span>
+                          {effort === activeCodexReasoning && <IconCheck size={16} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           }
         />
       </div>

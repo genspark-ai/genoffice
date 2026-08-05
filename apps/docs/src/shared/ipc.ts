@@ -22,6 +22,9 @@ import type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexReasoningEffort,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 
@@ -34,9 +37,17 @@ export type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexReasoningEffort,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
+
+/** Main-process validated Codex model catalog; error text is already redacted. */
+export interface CodexCapabilitiesResult extends CodexCapabilities {
+  error?: string
+}
 
 // ---- agent protocol: canonical types live in @genoffice/agent-core ----
 
@@ -194,6 +205,12 @@ export interface DesktopApi {
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */
   aiGskLogin(): Promise<void>
+  /** Redacted ChatGPT Codex account state; credentials never cross preload. */
+  aiCodexStatus(): Promise<CodexAccountStatus>
+  aiCodexLogin(): Promise<CodexAccountStatus>
+  aiCodexCancelLogin(): Promise<void>
+  aiCodexLogout(): Promise<CodexAccountStatus>
+  aiCodexCapabilities(): Promise<CodexCapabilitiesResult>
   webSearch(
     query: string,
     maxResults?: number,

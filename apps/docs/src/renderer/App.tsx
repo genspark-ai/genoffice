@@ -569,6 +569,11 @@ export function App() {
     void window.desktop.getAiSettings().then(setSettings)
   }, [])
 
+  const updateAiSettings = (next: AiSettings) => {
+    setSettings(next)
+    void window.desktop.setAiSettings(next)
+  }
+
   useEffect(() => {
     localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
   }, [showAi])
@@ -2502,6 +2507,7 @@ export function App() {
               editor={editor}
               blocks={doc.parsed.blocks}
               settings={settings}
+              onSettingsChange={updateAiSettings}
               docEmpty={wordCount === 0}
               numIdFallback={
                 doc.isBlank ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID } : null
