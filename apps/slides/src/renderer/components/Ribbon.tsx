@@ -3,7 +3,14 @@
  * (local state switches tabs, .ribbon-body dispatches); content is trimmed to slide capabilities,
  * unimplemented items are grayed placeholders.
  */
-import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import type { AnimEffectKind, AnimTrigger, TransitionKind } from '../../shared/ipc'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
 import { ICON_COLORS } from '../insert-presets'
@@ -70,7 +77,15 @@ import {
   IconPathZigzag,
 } from './icons'
 import { ChartTypeDialog } from './ChartTypeDialog'
-import { BIG, Group, RbCaret, type Props, type RibbonTabCtx } from './ribbon-shared'
+import {
+  BIG,
+  Group,
+  RbCaret,
+  closeSiblingPanels,
+  type Props,
+  type RibbonPanelKey,
+  type RibbonTabCtx,
+} from './ribbon-shared'
 export type { FormatCmd, SlidesViewMode } from './ribbon-shared'
 import type { FormatCmd } from './ribbon-shared'
 import { RibbonHomeTab } from './RibbonHomeTab'
@@ -745,6 +760,7 @@ export function Ribbon({
   onFormatBrushClick,
   onFormatBrushDoubleClick,
   onTextColor,
+  curBulletChar,
   curFontFamily,
   curFontSizePt,
   curFontSizeMixed,
@@ -897,6 +913,31 @@ export function Ribbon({
   const valAxisRef = useRef<HTMLInputElement>(null)
   const [iconColor, setIconColor] = useState(ICON_COLORS[0]!)
 
+  // One ribbon popup at a time: every dropdown trigger closes its siblings on
+  // mousedown (via closeSiblingPanels) before its own click-toggle runs, so
+  // popups never stack. `keep` names the popups that must survive the sweep —
+  // the trigger's own (its toggle decides) and, for nested triggers, the panel
+  // anchoring them.
+  const closePanels = useCallback((keep: RibbonPanelKey[] = []) => {
+    if (!keep.includes('file')) setFileOpen(false)
+    if (!keep.includes('color')) setColorOpen(false)
+    if (!keep.includes('font')) setFontOpen(false)
+    if (!keep.includes('size')) setSizeOpen(false)
+    if (!keep.includes('lineSpacing')) setLineSpacingOpen(false)
+    if (!keep.includes('para')) setParaOpen(false)
+    if (!keep.includes('layoutPick')) setLayoutPickOpen(false)
+    if (!keep.includes('slideSize')) setSlideSizeOpen(false)
+    if (!keep.includes('transparency')) setTransparencyOpen(false)
+    if (!keep.includes('table')) setTableOpen(false)
+    if (!keep.includes('layout')) setLayoutOpen(false)
+    if (!keep.includes('translate')) setTranslateOpen(false)
+    if (!keep.includes('arrange')) setArrangeOpen(false)
+    if (!keep.includes('insert')) setInsertDrop(null)
+    if (!keep.includes('chart')) setChartDrop(null)
+    if (!keep.includes('collapse')) setCollapseOpen(null)
+    if (!keep.includes('pen')) setPenFlyout(null)
+  }, [])
+
   // Clicking elsewhere collapses the table picker (the font color palette uses onMouseDown without stealing focus, collapsing naturally when the edit commits)
   useEffect(() => {
     if (
@@ -1009,7 +1050,10 @@ export function Ribbon({
         className={`rb-big ${insertDrop === key ? 'active' : ''}`}
         disabled={disabled}
         title={title}
-        onMouseDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => {
+          e.stopPropagation()
+          closeSiblingPanels(e, closePanels, 'insert')
+        }}
         onClick={() => setInsertDrop((v) => (v === key ? null : key))}
       >
         <span className="rb-big-icon">
@@ -1139,6 +1183,8 @@ export function Ribbon({
     brushMode,
     canDistribute,
     canPaste,
+    closePanels,
+    curBulletChar,
     curFontFamily,
     curFontSizeMixed,
     curFontSizePt,
@@ -1249,6 +1295,10 @@ export function Ribbon({
           <div className="file-tab-wrap">
             <button
               className={`ribbon-tab ribbon-tab-file ${fileOpen ? 'open' : ''}`}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                closeSiblingPanels(e, closePanels, 'file')
+              }}
               onClick={() => setFileOpen((v) => !v)}
             >
               {t('ribbonTabFile')}
@@ -1313,7 +1363,7 @@ export function Ribbon({
           </div>
         )}
         <button className="qa-btn" title={t('ribbonSaveTip')} disabled={!dirty} onClick={onSave}>
-          <IconSave size={15} />
+          <IconSave size={16} />
         </button>
         {/* onMouseDown+preventDefault like the format buttons: keep contentEditable focus so undo/redo reaches
             the active text edit. onClick with detail===0 covers keyboard activation (Enter/Space emit only click). */}
@@ -1329,7 +1379,7 @@ export function Ribbon({
             if (e.detail === 0) onUndo()
           }}
         >
-          <IconUndo size={15} />
+          <IconUndo size={16} />
         </button>
         <button
           className="qa-btn"
@@ -1343,7 +1393,7 @@ export function Ribbon({
             if (e.detail === 0) onRedo()
           }}
         >
-          <IconRedo size={15} />
+          <IconRedo size={16} />
         </button>
         <label className={`autosave-toggle ${autoSave ? 'on' : ''}`} title={t('ribbonAutoSaveTip')}>
           <span className="autosave-knob" />
@@ -1613,6 +1663,10 @@ export function Ribbon({
                 <button
                   className={`rb-big ${slideSizeOpen ? 'active' : ''}`}
                   disabled={!hasDoc}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'slideSize')
+                  }}
                   onClick={() => setSlideSizeOpen((v) => !v)}
                   title={t('ribbonSlideSizeTip')}
                 >
@@ -1644,22 +1698,6 @@ export function Ribbon({
                   </div>
                 )}
               </div>
-            </Group>
-            <div className="ribbon-sep" />
-            <Group label="AI">
-              <button
-                className="rb-big"
-                disabled={!hasDoc}
-                onClick={() => onAiPreset(t('ribbonDesignIdeasPrompt'))}
-                title={`${t('ribbonDesignIdeasTip')} — ${t('ribbonAiCreditNote')}`}
-              >
-                <span className="rb-big-icon">
-                  <span className="copilot-badge">
-                    <IconSparkle size={13} />
-                  </span>
-                </span>
-                <span>{t('ribbonDesignIdeas')}</span>
-              </button>
             </Group>
           </>
         ) : tab === 'transitions' ? (
@@ -1719,7 +1757,10 @@ export function Ribbon({
               collapse={{
                 collapsed: collapsedGroups.includes('animation'),
                 open: collapseOpen === 'animation',
-                onToggle: () => setCollapseOpen((v) => (v === 'animation' ? null : 'animation')),
+                onToggle: () => {
+                  closePanels(['collapse'])
+                  setCollapseOpen((v) => (v === 'animation' ? null : 'animation'))
+                },
                 icon: (
                   <span className="rb-anim-glyph rb-anim-entr">
                     <IconAnimStar size={20} />
@@ -1767,8 +1808,10 @@ export function Ribbon({
               collapse={{
                 collapsed: collapsedGroups.includes('motionPaths'),
                 open: collapseOpen === 'motionPaths',
-                onToggle: () =>
-                  setCollapseOpen((v) => (v === 'motionPaths' ? null : 'motionPaths')),
+                onToggle: () => {
+                  closePanels(['collapse'])
+                  setCollapseOpen((v) => (v === 'motionPaths' ? null : 'motionPaths'))
+                },
                 icon: (
                   <span className="rb-anim-glyph rb-anim-path">
                     <IconPathDiagonal size={20} />
@@ -2019,7 +2062,10 @@ export function Ribbon({
                   className={`rb-big ${translateOpen ? 'active' : ''}`}
                   disabled={!hasDoc}
                   title={`${t('ribbonTranslateTip')} — ${t('ribbonAiCreditNote')}`}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'translate')
+                  }}
                   onClick={() => setTranslateOpen((v) => !v)}
                 >
                   <span className="rb-big-icon rb-ai-icon">
@@ -2343,7 +2389,10 @@ export function Ribbon({
                   className={`rb-big ${chartDrop === 'elements' ? 'active' : ''}`}
                   disabled={!onEditChart}
                   title={t('ribbonAddChartElementTip')}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'chart')
+                  }}
                   onClick={() => setChartDrop((v) => (v === 'elements' ? null : 'elements'))}
                 >
                   <span className="rb-big-icon" style={{ fontSize: 20 }}>
@@ -2453,7 +2502,10 @@ export function Ribbon({
                   className={`rb-big ${chartDrop === 'colors' ? 'active' : ''}`}
                   disabled={!onEditChart}
                   title={t('ribbonChangeColorsTip')}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'chart')
+                  }}
                   onClick={() => setChartDrop((v) => (v === 'colors' ? null : 'colors'))}
                 >
                   <span className="rb-big-icon" style={{ fontSize: 20 }}>
@@ -2584,6 +2636,10 @@ export function Ribbon({
                 <button
                   className={`rb-big ${transparencyOpen ? 'active' : ''}`}
                   disabled={!onPictureOpacity}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'transparency')
+                  }}
                   onClick={() => setTransparencyOpen((v) => !v)}
                   title={t('ribbonTransparency')}
                 >

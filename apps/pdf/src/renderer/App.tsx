@@ -19,13 +19,15 @@ import type { LocalMarkup, PageGeom } from './annotations'
 import { DRAW_COLORS, DrawLayer, cssRgb } from './DrawLayer'
 import type { DrawTool, LocalDrawing } from './DrawLayer'
 import { FormLayer } from './FormLayer'
+import { navAction } from './keyNav'
+import { rowOfVisIdx, spreadRows, stepPage } from './spread'
 import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import type { OutlineNode } from './OutlinePanel'
 import { printPdf } from './print'
 import { PropertiesDialog } from './PropertiesDialog'
 import { SignatureDialog } from './SignatureDialog'
-import type { SignatureStrokes } from './SignatureDialog'
+import type { SignatureData } from './SignatureDialog'
 import { StampDialog } from './StampDialog'
 import { buildStamps } from './stamps'
 import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
@@ -51,7 +53,20 @@ const MIN_SCALE = ZOOM_STEPS[0]
 const MAX_SCALE = ZOOM_STEPS[ZOOM_STEPS.length - 1]
 const PAGE_GAP = 16
 const SCROLL_PAD = 24
-const THUMB_WIDTH = 108
+// ── Sidebar (thumbnails / outline) width: drag the divider to resize; persisted ──
+const SIDEBAR_W_KEY = 'genoffice-pdf-sidebar-width'
+const SIDEBAR_W_DEFAULT = 150
+const SIDEBAR_W_MIN = 120
+/** pane padding (10px × 2) + thumb box borders (2px × 2) */
+const SIDEBAR_CHROME = 24
+
+const clampSidebarW = (w: number): number =>
+  Math.min(Math.max(w, SIDEBAR_W_MIN), Math.min(320, Math.round(window.innerWidth * 0.4)))
+
+const loadSidebarW = (): number => {
+  const saved = Number(localStorage.getItem(SIDEBAR_W_KEY))
+  return Number.isFinite(saved) && saved > 0 ? clampSidebarW(saved) : SIDEBAR_W_DEFAULT
+}
 
 interface PageSize {
   width: number
@@ -215,23 +230,27 @@ function MarkupOverlay({
   )
 }
 
-/** Thumbnail: rendered once per (doc, rotation) when visible and cached */
+/** Thumbnail: rendered once per (doc, rotation, raster width) when visible and cached.
+ *  rasterW only changes when a sidebar drag ends, so a resize re-rasters each
+ *  visible thumb once; while dragging the canvas just CSS-stretches. */
 function PdfThumb({
   doc,
   pageNo,
   rotationDelta,
   visible,
+  rasterW,
 }: {
   doc: PDFDocumentProxy
   pageNo: number
   rotationDelta: number
   visible: boolean
+  rasterW: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const renderedKeyRef = useRef<string | null>(null)
   useEffect(() => {
     const canvas = canvasRef.current
-    const key = `${rotationDelta}`
+    const key = `${rotationDelta}:${rasterW}`
     if (!visible || !canvas || renderedKeyRef.current === key) return
     renderedKeyRef.current = key
     let cancelled = false
@@ -239,7 +258,7 @@ function PdfThumb({
       const page = await doc.getPage(pageNo)
       if (cancelled) return
       const rotation = (page.rotate + rotationDelta) % 360
-      const scale = THUMB_WIDTH / page.getViewport({ scale: 1, rotation }).width
+      const scale = rasterW / page.getViewport({ scale: 1, rotation }).width
       const viewport = page.getViewport({ scale, rotation })
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       canvas.width = Math.floor(viewport.width * dpr)
@@ -257,25 +276,33 @@ function PdfThumb({
     return () => {
       cancelled = true
     }
-  }, [doc, pageNo, rotationDelta, visible])
+  }, [doc, pageNo, rotationDelta, visible, rasterW])
   // Reset the cache key when the doc changes (save reload); re-render next time it's visible
   useEffect(() => {
     renderedKeyRef.current = null
   }, [doc])
-  return <canvas ref={canvasRef} style={{ width: THUMB_WIDTH }} />
+  return <canvas ref={canvasRef} style={{ width: '100%' }} />
 }
 
 // ── ribbon icons (aligned with slides' rb-big visual language) ──
 
-function Icon({ children }: { children: ReactNode }): ReactElement {
+/** Constant painted stroke instead of proportional scaling — same rule as the
+ *  slides icons: ~1.5px lines at 20px+, ~1.25px on 13-19px glyphs, ~1.1px below.
+ *  stroke-width is in 24-canvas units: units = painted-px × 24 / rendered-px. */
+function pinnedStroke(size: number): number {
+  const painted = size >= 20 ? 1.5 : size >= 13 ? 1.25 : 1.1
+  return (painted * 24) / size
+}
+
+function Icon({ size = 28, children }: { size?: number; children: ReactNode }): ReactElement {
   return (
     <svg
-      width="20"
-      height="20"
-      viewBox="0 0 20 20"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.4"
+      strokeWidth={pinnedStroke(size)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -287,214 +314,217 @@ function Icon({ children }: { children: ReactNode }): ReactElement {
 
 const IconThumbs = () => (
   <Icon>
-    <rect x="2.5" y="3" width="6" height="6.5" rx="1" />
-    <rect x="2.5" y="12" width="6" height="5" rx="1" />
-    <path d="M12 4h5.5M12 8h5.5M12 13h5.5M12 16h5.5" />
+    <rect x="4.5" y="5" width="6" height="6.5" rx="1" />
+    <rect x="4.5" y="14" width="6" height="5" rx="1" />
+    <path d="M14 6 L19.5 6 M14 10 L19.5 10 M14 15 L19.5 15 M14 18 L19.5 18" />
   </Icon>
 )
 const IconHighlight = () => (
   <Icon>
-    <path d="M4 16.5 12.5 8l3.5 3.5-8.5 8.5H4v-3.5Z" transform="translate(0 -3)" />
-    <path d="M12.5 5 15 2.5 18.5 6 16 8.5" transform="translate(0 -1)" />
-    <path d="M3 18.5h14" stroke="#ffc21c" strokeWidth="2.4" />
+    <path d="M6.04 15.09 L13.54 7.59 L16.63 10.68 L9.13 18.18 L6.04 18.18 L6.04 15.09 Z" />
+    <path d="M13.54 6.71 L15.75 4.5 L18.84 7.59 L16.63 9.79" />
+    <path d="M5.16 19.5 L17.51 19.5" strokeWidth={2.2} />
   </Icon>
 )
 const IconUnderline = () => (
   <Icon>
-    <path d="M6 3.5v6a4 4 0 0 0 8 0v-6" />
-    <path d="M4.5 17h11" stroke="#2b66ff" strokeWidth="2" />
+    <path d="M7.56 4.5 L7.56 11.17 A 4.44 4.44 0 0 0 16.44 11.17 L16.44 4.5" />
+    <path d="M5.89 19.5 L18.11 19.5" strokeWidth={1.85} />
   </Icon>
 )
 const IconStrike = () => (
   <Icon>
-    <path d="M13.8 6c-.5-1.5-2-2.4-3.8-2.4-2.2 0-3.8 1.2-3.8 3 0 1.4.9 2.2 2.6 2.7" />
-    <path d="M7 14.6c.5 1.4 2 2.3 3.9 2.3 2.2 0 3.9-1.1 3.9-3 0-.6-.1-1.1-.4-1.5" />
-    <path d="M3.5 10.5h13" stroke="#db3830" strokeWidth="1.8" />
+    <path d="M16.29 7.21 C15.72 5.52 14.03 4.5 12 4.5 C9.52 4.5 7.71 5.85 7.71 7.88 C7.71 9.46 8.73 10.36 10.65 10.93" />
+    <path d="M8.62 16.91 C9.18 18.48 10.87 19.5 13.02 19.5 C15.5 19.5 17.41 18.26 17.41 16.12 C17.41 15.44 17.3 14.88 16.96 14.42" />
+    <path d="M4.67 12.28 L19.33 12.28" strokeWidth={1.65} />
   </Icon>
 )
 const IconInk = () => (
   <Icon>
-    <path d="M3 15.5c2.5.5 3.5-1 3.5-3s-1.2-3.4-2.6-2.6c-1.2.7-.6 3 1.6 4.3 2.4 1.4 5.2.6 7.4-1.6 1.6-1.6 2.6-3.6 3.1-5.6" />
-    <path d="M14.5 3.5 17 6l-1.5 1.5" />
+    <path d="M16.15 4.85 L19.15 7.85 L8.9 18.1 L4.9 19.1 L5.9 15.1 Z" />
+    <path d="M14.15 6.85 L17.15 9.85" />
   </Icon>
 )
 const IconRect = () => (
   <Icon>
-    <rect x="3" y="5" width="14" height="10" rx="1" />
+    <rect x="4.5" y="6.64" width="15" height="10.71" rx="1.07" />
   </Icon>
 )
 const IconEllipse = () => (
   <Icon>
-    <ellipse cx="10" cy="10" rx="7" ry="5.2" />
+    <ellipse cx="12" cy="12" rx="7.5" ry="5.57" />
   </Icon>
 )
 const IconArrow = () => (
   <Icon>
-    <path d="M3.5 15.5 16 3.5" />
-    <path d="M10.5 3.5H16v5.5" />
+    <path d="M4.5 19.2 L19.5 4.8" />
+    <path d="M12.9 4.8 L19.5 4.8 L19.5 11.4" />
   </Icon>
 )
 const IconNote = () => (
   <Icon>
-    <path d="M3 4.5h14v9h-8l-4 3v-3H3z" strokeLinejoin="round" />
-    <path d="M6.5 8h7M6.5 10.5h4.5" />
+    <path d="M4.5 5.57 L19.5 5.57 L19.5 15.21 L10.93 15.21 L6.64 18.43 L6.64 15.21 L4.5 15.21 Z" />
+    <path d="M8.25 9.32 L15.75 9.32 M8.25 12 L13.07 12" />
   </Icon>
 )
 const IconSign = () => (
   <Icon>
-    <path d="M2.5 14.5c2-.3 3.4-1.6 4.6-3.6 1.1-1.9 1.7-4 1.3-5.4-.3-1-1.2-1-1.6 0-.5 1.3-.3 3.6.7 5.6 1 2 2.4 3.1 3.9 3.1 1.2 0 2.1-.6 2.6-1.6" />
-    <path d="M3 17.5h14" />
+    <path d="M5.5 15.1 C7.8 12.3 9.5 9 9.2 7 C9 5.7 7.9 5.9 7.6 7.4 C7.2 9.6 8.6 13.4 10.5 14.9 C12 16.1 13.9 15.3 14.7 13.8 C15.1 13 15.9 13 16.3 13.8 C16.7 14.7 17.7 15 18.5 14.4" />
+    <path d="M4.75 18.6 L19.25 18.6" />
   </Icon>
 )
 const IconExportImg = () => (
   <Icon>
-    <rect x="2.5" y="4" width="15" height="10.5" rx="1" />
-    <circle cx="7" cy="7.8" r="1.2" />
-    <path d="M2.8 12.2 7 9l3.4 2.6L13 9.6l4.2 3.4" />
+    <rect x="4.5" y="6.75" width="15" height="10.5" rx="1" />
+    <circle cx="9" cy="10.55" r="1.2" />
+    <path d="M4.8 14.95 L9 11.75 L12.4 14.35 L15 12.35 L19.2 15.75" />
   </Icon>
 )
 const IconNight = () => (
   <Icon>
-    <path d="M15.5 12.2A6.5 6.5 0 0 1 7.8 4.5a6.5 6.5 0 1 0 7.7 7.7Z" />
+    <path d="M19.5 13.48 A 7.58 7.58 0 0 1 10.52 4.5 A 7.58 7.58 0 1 0 19.5 13.48 Z" />
   </Icon>
 )
 const IconSpread = () => (
   <Icon>
-    <rect x="2.5" y="4" width="6.5" height="12" rx="1" />
-    <rect x="11" y="4" width="6.5" height="12" rx="1" />
+    <rect x="4.5" y="6" width="6.5" height="12" rx="1" />
+    <rect x="13" y="6" width="6.5" height="12" rx="1" />
   </Icon>
 )
 const IconSinglePage = () => (
   <Icon>
-    <rect x="5.5" y="3.5" width="9" height="13" rx="1" />
+    <rect x="6.81" y="4.5" width="10.38" height="15" rx="1.15" />
   </Icon>
 )
 const IconWatermark = () => (
   <Icon>
-    <rect x="3" y="3.5" width="14" height="13" rx="1" />
-    <path d="M6 13.5 13.5 6" />
-    <path d="M6 9.5 9.5 6M10.5 13.5 14 10" />
+    <rect x="4.5" y="5.04" width="15" height="13.93" rx="1.07" />
+    <path d="M7.71 15.75 L15.75 7.71" />
+    <path d="M7.71 11.46 L11.46 7.71 M12.54 15.75 L16.29 12" />
   </Icon>
 )
 const IconProps = () => (
   <Icon>
-    <circle cx="10" cy="10" r="7.2" />
-    <path d="M10 9v4.5" />
-    <circle cx="10" cy="6.6" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="7.5" />
+    <path d="M12 10.96 L12 15.65" />
+    <circle cx="12" cy="8.46" r="0.94" fill="currentColor" stroke="none" />
   </Icon>
 )
 const IconRotateL = () => (
   <Icon>
-    <path d="M6.5 7.5H3V4" />
-    <path d="M3.2 7.2A7 7 0 1 1 3 10" />
+    <path d="M8.28 10.3 L4.53 10.3 L4.53 6.55" />
+    <path d="M4.75 9.98 A 7.5 7.5 0 1 1 4.53 12.98" />
   </Icon>
 )
 const IconRotateR = () => (
   <Icon>
-    <path d="M13.5 7.5H17V4" />
-    <path d="M16.8 7.2A7 7 0 1 0 17 10" />
+    <path d="M15.72 10.3 L19.47 10.3 L19.47 6.55" />
+    <path d="M19.25 9.98 A 7.5 7.5 0 1 0 19.47 12.98" />
   </Icon>
 )
 const IconDeletePage = () => (
   <Icon>
-    <path d="M5 3h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-    <path d="M7.5 11l5 5M12.5 11l-5 5" stroke="#db3830" />
+    <path d="M7.7 4.5 H13.7 L17.2 8 V18.5 A1 1 0 0 1 16.2 19.5 H7.7 A1 1 0 0 1 6.7 18.5 V5.5 A1 1 0 0 1 7.7 4.5 Z" />
+    <path d="M13.7 4.5 V8 H17.2" />
+    <path d="M9.7 11.75 L14.2 16.25 M14.2 11.75 L9.7 16.25" />
   </Icon>
 )
 const IconExtract = () => (
   <Icon>
-    <path d="M5 3h7l3 3v5" />
-    <path d="M4 3.9V16a1 1 0 0 0 1 1h5" />
-    <path d="M15 13.5v6M12 16.5l3 3 3-3" transform="translate(0 -2)" />
+    <path d="M7.2 4.5 H13.2 L16.7 8 V11.5" />
+    <path d="M6.2 5.5 V18.5 A1 1 0 0 0 7.2 19.5 H11.2" />
+    <path d="M14.95 13.5 V19 M12.2 16.5 L14.95 19.25 L17.7 16.5" />
   </Icon>
 )
 const IconInsertPdf = () => (
   <Icon>
-    <path d="M5 3h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-    <path d="M10 8.5v6M7 11.5h6" stroke="#217346" />
+    <path d="M7.7 4.5 H13.7 L17.2 8 V18.5 A1 1 0 0 1 16.2 19.5 H7.7 A1 1 0 0 1 6.7 18.5 V5.5 A1 1 0 0 1 7.7 4.5 Z" />
+    <path d="M13.7 4.5 V8 H17.2" />
+    <path d="M11.95 11 V17 M8.95 14 H14.95" />
   </Icon>
 )
 const IconFitWidth = () => (
   <Icon>
-    <path d="M3 4v12M17 4v12" />
-    <path d="M6 10h8M8.2 7.8 6 10l2.2 2.2M11.8 7.8 14 10l-2.2 2.2" />
+    <path d="M4.5 5.57 L4.5 18.43 M19.5 5.57 L19.5 18.43" />
+    <path d="M7.71 12 L16.29 12 M10.07 9.64 L7.71 12 L10.07 14.36 M13.93 9.64 L16.29 12 L13.93 14.36" />
   </Icon>
 )
 const IconFitPage = () => (
   <Icon>
-    <rect x="5" y="2.5" width="10" height="15" rx="1" />
-    <path d="M10 6v8M7.8 8.2 10 6l2.2 2.2M7.8 11.8 10 14l2.2-2.2" />
+    <rect x="7" y="4.5" width="10" height="15" rx="1" />
+    <path d="M12 8 L12 16 M9.8 10.2 L12 8 L14.2 10.2 M9.8 13.8 L12 16 L14.2 13.8" />
   </Icon>
 )
 const IconOutline = () => (
   <Icon>
-    <path d="M3.5 4.5h13M6.5 8.5h10M6.5 12.5h10M9.5 16.5h7" />
-    <circle cx="4" cy="8.5" r="0.8" fill="currentColor" />
-    <circle cx="4" cy="12.5" r="0.8" fill="currentColor" />
-    <circle cx="7" cy="16.5" r="0.8" fill="currentColor" />
+    <path d="M4.84 4.78 L19.5 4.78 M8.22 9.29 L19.5 9.29 M8.22 13.8 L19.5 13.8 M11.61 18.32 L19.5 18.32" />
+    <circle cx="5.4" cy="9.29" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="5.4" cy="13.8" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="8.79" cy="18.32" r="0.9" fill="currentColor" stroke="none" />
   </Icon>
 )
-const IconUndo = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.3"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M5.5 3.5 2.5 6.5l3 3" />
-    <path d="M2.5 6.5h7a4 4 0 0 1 0 8H6" />
-  </svg>
+const IconDrawColor = () => (
+  <Icon>
+    <path d="M12 4.5 C14.2 7.3 17.25 9.2 17.25 12.4 C17.25 15.4 14.9 17.5 12 17.5 C9.1 17.5 6.75 15.4 6.75 12.4 C6.75 9.2 9.8 7.3 12 4.5 Z" />
+  </Icon>
 )
-const IconRedo = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.3"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M10.5 3.5 13.5 6.5l-3 3" />
-    <path d="M13.5 6.5h-7a4 4 0 0 0 0 8H10" />
+/* dropdown chevron, same glyph as slides' RbCaret */
+const RbCaret = () => (
+  <svg className="rb-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <path
+      d="M5.5 9.25 12 15.75l6.5-6.5"
+      stroke="currentColor"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 )
 const IconSearch = () => (
   <Icon>
-    <circle cx="9" cy="9" r="5.5" />
-    <path d="M13.2 13.2 17 17" />
+    <circle cx="10.61" cy="10.61" r="6.11" />
+    <path d="M15.28 15.28 L19.5 19.5" />
   </Icon>
 )
 const IconPrint = () => (
   <Icon>
-    <path d="M6 7V3h8v4" />
-    <rect x="3.5" y="7" width="13" height="6.5" rx="1" />
-    <path d="M6 11h8v6H6z" />
+    <path d="M7.71 8.79 L7.71 4.5 L16.29 4.5 L16.29 8.79" />
+    <rect x="5.04" y="8.79" width="13.93" height="6.96" rx="1.07" />
+    <path d="M7.71 13.07 L16.29 13.07 L16.29 19.5 L7.71 19.5 Z" />
+  </Icon>
+)
+const IconUndo = () => (
+  <Icon size={15}>
+    <path d="M8.59 4.5 L4.5 8.59 L8.59 12.68" />
+    <path d="M4.5 8.59 L14.05 8.59 A 5.45 5.45 0 0 1 14.05 19.5 L9.27 19.5" />
+  </Icon>
+)
+const IconRedo = () => (
+  <Icon size={15}>
+    <path d="M15.41 4.5 L19.5 8.59 L15.41 12.68" />
+    <path d="M19.5 8.59 L9.95 8.59 A 5.45 5.45 0 0 0 9.95 19.5 L14.73 19.5" />
   </Icon>
 )
 const IconSave = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M2.5 3.5a1 1 0 0 1 1-1h7.6l2.4 2.4v7.6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9Z" />
-    <path d="M5 2.7v3.1h5.4V2.7M4.8 13.3V9h6.4v4.3" />
-  </svg>
+  <Icon size={15}>
+    <path d="M4.5 5.86 A 1.36 1.36 0 0 1 5.86 4.5 L16.23 4.5 L19.5 7.77 L19.5 18.14 A 1.36 1.36 0 0 1 18.14 19.5 L5.86 19.5 A 1.36 1.36 0 0 1 4.5 18.14 L4.5 5.86 Z" />
+    <path d="M7.91 4.77 L7.91 9 L15.27 9 L15.27 4.77 M7.64 19.23 L7.64 13.36 L16.36 13.36 L16.36 19.23" />
+  </Icon>
 )
+
+const rgbToHex = (c: readonly [number, number, number]): string =>
+  `#${c
+    .map((v) =>
+      Math.round(v * 255)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`
+const hexToRgb = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(1, 3), 16) / 255,
+  parseInt(hex.slice(3, 5), 16) / 255,
+  parseInt(hex.slice(5, 7), 16) / 255,
+]
 
 interface ThumbMenu {
   x: number
@@ -552,6 +582,86 @@ function parsePageRanges(input: string, max: number): number[] | null {
   return out.size > 0 ? [...out].sort((x, y) => x - y) : null
 }
 
+/** Scale factor applied when placing a signature: 1/3 of the displayed page width,
+    capped at 1/6 of its height so tall images stay signature-sized */
+const signPlaceK = (sig: SignatureData, dispW: number, dispH: number): number =>
+  Math.min(dispW / 3 / sig.width, dispH / 6 / sig.height)
+
+/** Click-to-place overlay: a translucent ghost of the pending signature follows the
+    cursor at its actual landing size, and clicking drops it centered on that point */
+function SignDropOverlay({
+  sig,
+  dispW,
+  dispH,
+  scale,
+  color,
+  title,
+  onPlace,
+}: {
+  sig: SignatureData
+  /** Displayed page size at scale=1 (view coords) */
+  dispW: number
+  dispH: number
+  scale: number
+  color: [number, number, number]
+  title: string
+  onPlace: (vx: number, vy: number) => void
+}): ReactElement {
+  const [pt, setPt] = useState<[number, number] | null>(null)
+  const k = signPlaceK(sig, dispW, dispH) * scale
+  const w = sig.width * k
+  const h = sig.height * k
+  return (
+    <div
+      className="pdf-sign-drop"
+      title={title}
+      onPointerMove={(e) => {
+        const box = e.currentTarget.getBoundingClientRect()
+        setPt([e.clientX - box.left, e.clientY - box.top])
+      }}
+      onPointerLeave={() => setPt(null)}
+      onClick={(e) => {
+        const box = e.currentTarget.getBoundingClientRect()
+        onPlace((e.clientX - box.left) / scale, (e.clientY - box.top) / scale)
+      }}
+    >
+      {pt && (
+        <div
+          className="pdf-sign-ghost"
+          style={{
+            left: Math.min(Math.max(pt[0] - w / 2, 0), Math.max(dispW * scale - w, 0)),
+            top: Math.min(Math.max(pt[1] - h / 2, 0), Math.max(dispH * scale - h, 0)),
+            width: w,
+            height: h,
+          }}
+        >
+          {sig.kind === 'image' ? (
+            <img src={`data:image/png;base64,${sig.image}`} alt="" draggable={false} />
+          ) : (
+            <svg viewBox={`0 0 ${sig.width} ${sig.height}`} preserveAspectRatio="none">
+              {sig.paths.map((p, i) => {
+                const pts: string[] = []
+                for (let j = 0; j < p.length; j += 2) pts.push(`${p[j]},${p[j + 1]}`)
+                return (
+                  <polyline
+                    key={i}
+                    points={pts.join(' ')}
+                    fill="none"
+                    stroke={cssRgb(color)}
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )
+              })}
+            </svg>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const { t } = useI18n()
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
@@ -565,6 +675,45 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
   const [sidebar, setSidebar] = useState<'thumbs' | 'outline' | null>('thumbs')
+  const [sidebarW, setSidebarW] = useState(loadSidebarW)
+  /** raster width for thumbnails — only updated when a drag ends (re-rastering every frame would jank) */
+  const [thumbRasterW, setThumbRasterW] = useState(() => loadSidebarW() - SIDEBAR_CHROME)
+  // Re-clamp when the window shrinks (max is 40% of the window), same as slides
+  useEffect(() => {
+    const onResize = () => setSidebarW((w) => clampSidebarW(w))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  /** Drag to resize: width follows the pointer (rAF-throttled); persisted on release */
+  const startSidebarResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = sidebarW
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    let w = startW
+    let raf = 0
+    const onMove = (ev: PointerEvent) => {
+      w = clampSidebarW(startW + ev.clientX - startX)
+      if (!raf)
+        raf = requestAnimationFrame(() => {
+          raf = 0
+          setSidebarW(w)
+        })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (raf) cancelAnimationFrame(raf)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setSidebarW(w)
+      setThumbRasterW(w - SIDEBAR_CHROME)
+      localStorage.setItem(SIDEBAR_W_KEY, String(Math.round(w)))
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
   const [aiCollapsed, setAiCollapsed] = useState(false)
   const [spread, setSpread] = useState<1 | 2>(1)
   const [nightMode, setNightMode] = useState(false)
@@ -573,6 +722,7 @@ export default function App() {
   const [drawings, setDrawings] = useState<LocalDrawing[]>([])
   const [drawTool, setDrawTool] = useState<DrawTool | null>(null)
   const [drawColor, setDrawColor] = useState<[number, number, number]>(DRAW_COLORS[0]!.rgb)
+  const [colorOpen, setColorOpen] = useState(false)
   const [notePrompt, setNotePrompt] = useState<{ origIdx: number; at: [number, number] } | null>(
     null,
   )
@@ -588,7 +738,7 @@ export default function App() {
   const [dragOver, setDragOver] = useState<number | null>(null)
   const [signDlg, setSignDlg] = useState(false)
   /** Confirmed signature awaiting placement; when non-null the page enters click-to-place mode */
-  const [pendingSign, setPendingSign] = useState<SignatureStrokes | null>(null)
+  const [pendingSign, setPendingSign] = useState<SignatureData | null>(null)
   const [exporting, setExporting] = useState(false)
   const [formEdits, setFormEdits] = useState<Map<string, FormValueInput>>(new Map())
   const [rotations, setRotations] = useState<Map<number, number>>(new Map())
@@ -632,24 +782,10 @@ export default function App() {
   }, [sizes, deleted, order])
   const pageCount = visList.length
 
-  /** Render rows: one page per row in single mode, two in spread mode (first page alone, like a book cover) */
-  const rows = useMemo(() => {
-    if (spread === 1) return visList.map((i) => [i])
-    const out: number[][] = []
-    for (let i = 0; i < visList.length; i++) {
-      if (i === 0) out.push([visList[0]!])
-      else if (i % 2 === 1)
-        out.push([visList[i]!, ...(visList[i + 1] !== undefined ? [visList[i + 1]!] : [])])
-    }
-    return out
-  }, [visList, spread])
+  const rows = useMemo(() => spreadRows(visList, spread), [visList, spread])
 
   /** Visible position → row index */
-  const rowOfVis = useCallback(
-    (visIdx: number) =>
-      spread === 1 ? visIdx : visIdx === 0 ? 0 : Math.floor((visIdx - 1) / 2) + 1,
-    [spread],
-  )
+  const rowOfVis = useCallback((visIdx: number) => rowOfVisIdx(visIdx, spread), [spread])
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath
 
   const rotDelta = useCallback((origIdx: number) => rotations.get(origIdx) ?? 0, [rotations])
@@ -1048,6 +1184,65 @@ export default function App() {
     y: y >= 96 ? y - 48 : Math.min(y + 12, window.innerHeight - 44),
   })
 
+  /** Shift a drawing by a PDF-space delta (drag-to-move on the page) */
+  const moveDrawing = (id: string, dx: number, dy: number) => {
+    pushUndo()
+    setSelected(null)
+    setDrawings((prev) =>
+      prev.map((d) => {
+        if (d.id !== id) return d
+        const input = d.input
+        switch (input.kind) {
+          case 'ink':
+            return {
+              ...d,
+              input: {
+                ...input,
+                paths: input.paths.map((p) => p.map((v, i) => (i % 2 === 0 ? v + dx : v + dy))),
+              },
+            }
+          case 'rect':
+          case 'ellipse':
+          case 'image':
+            return {
+              ...d,
+              input: {
+                ...input,
+                rect: [
+                  input.rect[0] + dx,
+                  input.rect[1] + dy,
+                  input.rect[2] + dx,
+                  input.rect[3] + dy,
+                ] as [number, number, number, number],
+              },
+            }
+          case 'line':
+          case 'arrow':
+            return {
+              ...d,
+              input: {
+                ...input,
+                from: [input.from[0] + dx, input.from[1] + dy] as [number, number],
+                to: [input.to[0] + dx, input.to[1] + dy] as [number, number],
+              },
+            }
+          default:
+            return d
+        }
+      }),
+    )
+  }
+
+  /** Replace an image drawing's rect (corner-handle resize) */
+  const resizeDrawing = (id: string, rect: [number, number, number, number]) => {
+    pushUndo()
+    setDrawings((prev) =>
+      prev.map((d) =>
+        d.id === id && d.input.kind === 'image' ? { ...d, input: { ...d.input, rect } } : d,
+      ),
+    )
+  }
+
   const deleteSelected = () => {
     const sel = selected
     if (!sel) return
@@ -1175,6 +1370,20 @@ export default function App() {
       else next.set(origIdx, nv)
       return next
     })
+    // Image stamps are always drawn upright (both in the overlay and in the saved
+    // appearance), so a 90° page turn swaps their displayed width/height. Swap the
+    // user-space rect around its center to keep the bitmap's aspect ratio intact.
+    setDrawings((prev) =>
+      prev.map((d) => {
+        if (d.input.kind !== 'image' || d.input.pageIndex !== origIdx) return d
+        const [x1, y1, x2, y2] = d.input.rect
+        const cx = (x1 + x2) / 2
+        const cy = (y1 + y2) / 2
+        const hw = (x2 - x1) / 2
+        const hh = (y2 - y1) / 2
+        return { ...d, input: { ...d.input, rect: [cx - hh, cy - hw, cx + hh, cy + hw] } }
+      }),
+    )
   }
 
   const deletePage = (origIdx: number) => {
@@ -1243,28 +1452,49 @@ export default function App() {
     setOrder([...next, ...rest])
   }
 
-  /** Place signature: pad coords → target page PDF coords (width is 1/3 of the page, proportional) */
-  const placeSignature = (origIdx: number, at: [number, number]) => {
+  /** Place signature centered on the click point (view coords, scale=1); sized via signPlaceK
+      to match the ghost preview. Points map view→PDF individually so it stays upright on
+      rotated pages. */
+  const placeSignature = (origIdx: number, vx: number, vy: number) => {
     const sig = pendingSign
     if (!sig) return
     const geom = pageGeom(origIdx)
-    const targetW = geom.pw / 3
-    const k = targetW / sig.width
-    const paths = sig.paths.map((p) => {
-      const out: number[] = []
-      for (let i = 0; i < p.length; i += 2) {
-        out.push(at[0] + p[i]! * k, at[1] - p[i + 1]! * k)
-      }
-      return out
-    })
+    const disp = geomDispSize(geom)
+    const k = signPlaceK(sig, disp.width, disp.height)
+    const targetW = sig.width * k
+    const targetH = sig.height * k
+    const left = Math.min(Math.max(vx - targetW / 2, 0), Math.max(disp.width - targetW, 0))
+    const top = Math.min(Math.max(vy - targetH / 2, 0), Math.max(disp.height - targetH, 0))
     pushUndo()
-    setDrawings((prev) => [
-      ...prev,
-      {
-        id: newId(),
-        input: { kind: 'ink', pageIndex: origIdx, color: drawColor, width: 1.6, paths },
-      },
-    ])
+    if (sig.kind === 'image') {
+      const [ax, ay] = viewToPdf(geom, left, top)
+      const [bx, by] = viewToPdf(geom, left + targetW, top + targetH)
+      const rect: [number, number, number, number] = [
+        Math.min(ax, bx),
+        Math.min(ay, by),
+        Math.max(ax, bx),
+        Math.max(ay, by),
+      ]
+      setDrawings((prev) => [
+        ...prev,
+        { id: newId(), input: { kind: 'image', pageIndex: origIdx, image: sig.image, rect } },
+      ])
+    } else {
+      const paths = sig.paths.map((p) => {
+        const out: number[] = []
+        for (let i = 0; i < p.length; i += 2) {
+          out.push(...viewToPdf(geom, left + p[i]! * k, top + p[i + 1]! * k))
+        }
+        return out
+      })
+      setDrawings((prev) => [
+        ...prev,
+        {
+          id: newId(),
+          input: { kind: 'ink', pageIndex: origIdx, color: drawColor, width: 1.6, paths },
+        },
+      ])
+    }
     setPendingSign(null)
   }
 
@@ -1473,6 +1703,16 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', close)
   }, [thumbMenu])
 
+  // Clicking elsewhere closes the draw-color palette
+  useEffect(() => {
+    if (!colorOpen) return
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.rb-drop-wrap')) setColorOpen(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [colorOpen])
+
   // Main process picked "Save" in the close prompt → save and report the result
   useEffect(() => {
     return window.pdfApi.onCloseSaveRequest(() => {
@@ -1540,40 +1780,32 @@ export default function App() {
       }
       const el = scrollRef.current
       if (!el) return
-      switch (e.key) {
-        case 'PageDown':
-        case ' ':
-          e.preventDefault()
-          el.scrollTop += el.clientHeight - 40
+      const inThumbs = !!thumbsRef.current?.contains(document.activeElement)
+      const action = navAction(e.key, inThumbs)
+      if (!action) return
+      e.preventDefault()
+      switch (action.type) {
+        case 'scrollViewport':
+          el.scrollTop += action.dir * (el.clientHeight - 40)
           break
-        case 'PageUp':
-          e.preventDefault()
-          el.scrollTop -= el.clientHeight - 40
+        case 'scrollEdge':
+          el.scrollTop = action.edge === 'top' ? 0 : el.scrollHeight
           break
-        case 'Home':
-          e.preventDefault()
-          el.scrollTop = 0
+        case 'scrollBy':
+          el.scrollTop += action.delta
           break
-        case 'End':
-          e.preventDefault()
-          el.scrollTop = el.scrollHeight
+        case 'stepPage': {
+          const target = stepPage(visList, spread, currentPage, action.dir)
+          scrollToPage(target)
+          if (inThumbs) {
+            const thumbEl = thumbsRef.current?.querySelector<HTMLElement>(
+              `[data-idx="${target - 1}"]`,
+            )
+            thumbEl?.focus({ preventScroll: true })
+            thumbEl?.scrollIntoView({ block: 'nearest' })
+          }
           break
-        case 'ArrowDown':
-          e.preventDefault()
-          el.scrollTop += 60
-          break
-        case 'ArrowUp':
-          e.preventDefault()
-          el.scrollTop -= 60
-          break
-        case 'ArrowRight':
-          e.preventDefault()
-          scrollToPage(currentPage + 1)
-          break
-        case 'ArrowLeft':
-          e.preventDefault()
-          scrollToPage(currentPage - 1)
-          break
+        }
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1858,20 +2090,46 @@ export default function App() {
                 </span>
                 {t('sign')}
               </button>
-              <div className="rb-col pdf-color-col">
-                <div className="pdf-color-row">
-                  {DRAW_COLORS.map((c) => (
-                    <button
-                      key={c.name}
-                      className={`pdf-color-dot${drawColor === c.rgb ? ' active' : ''}`}
-                      style={{ background: cssRgb(c.rgb) }}
-                      disabled={readOnly}
-                      title={t('drawColor')}
-                      onClick={() => setDrawColor(c.rgb)}
-                    />
-                  ))}
-                </div>
-                <span className="pdf-color-label">{t('drawColor')}</span>
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big${colorOpen ? ' active' : ''}`}
+                  disabled={readOnly}
+                  title={t('drawColor')}
+                  onClick={() => setColorOpen((v) => !v)}
+                >
+                  <span className="rb-big-icon">
+                    <span className="rb-big-icon-colored">
+                      <IconDrawColor />
+                      <span className="rb-color-bar" style={{ background: cssRgb(drawColor) }} />
+                    </span>
+                    <RbCaret />
+                  </span>
+                  {t('drawColor')}
+                </button>
+                {colorOpen && (
+                  <div className="rb-drop rb-color-grid">
+                    {DRAW_COLORS.map((c) => (
+                      <button
+                        key={c.name}
+                        className={`rb-swatch${cssRgb(drawColor) === cssRgb(c.rgb) ? ' active' : ''}`}
+                        style={{ background: cssRgb(c.rgb) }}
+                        title={c.name}
+                        onClick={() => {
+                          setDrawColor(c.rgb)
+                          setColorOpen(false)
+                        }}
+                      />
+                    ))}
+                    <label className="rb-color-more" title={t('drawColor')}>
+                      <input
+                        type="color"
+                        value={rgbToHex(drawColor)}
+                        onChange={(e) => setDrawColor(hexToRgb(e.target.value))}
+                      />
+                      {t('moreColors')}
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1974,25 +2232,9 @@ export default function App() {
               </button>
             </div>
           </div>
-          <div className="ribbon-sep" />
-          {/* ---- AI assistant (same far-right Genspark entry as the docs ribbon) ---- */}
-          <div className="ribbon-group">
-            <div className="ribbon-group-items">
-              <button
-                className={`rb-big rb-ai${aiCollapsed ? '' : ' active'}`}
-                title={t('ribbonAiAssistantTip')}
-                onClick={() => setAiCollapsed((v) => !v)}
-              >
-                <span className="rb-big-icon">
-                  <GensparkMark size={28} />
-                </span>
-                <span>{t('ribbonAiAssistant')}</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
-      <div className="pdf-body">
+      <div className="app-main">
         {/* dock wrapper animates the width between panel and rail (docs-style 180ms ease);
             the panel stays mounted while collapsed so the chat history survives */}
         <div className={`ai-dock${aiCollapsed ? ' collapsed' : ''}`}>
@@ -2007,444 +2249,490 @@ export default function App() {
           )}
           <AiPanel api={aiApi} onCollapse={() => setAiCollapsed(true)} />
         </div>
-        {sidebar === 'outline' && outline && (
-          <div className="pdf-thumbs pdf-outline-pane">
-            <OutlinePanel outline={outline} onGoToDest={(dest) => void goToDest(dest)} />
-          </div>
-        )}
-        {sidebar === 'thumbs' && (
-          <div ref={thumbsRef} className="pdf-thumbs">
-            {visList.map((origIdx, v) => {
-              const size = dispSize(origIdx)
-              return (
-                <div
-                  key={origIdx}
-                  ref={setThumbRef(v)}
-                  data-idx={v}
-                  className={`pdf-thumb${currentPage === v + 1 ? ' pdf-thumb-active' : ''}${
-                    dragOver === v && dragFrom !== null && dragFrom !== v
-                      ? ' pdf-thumb-dropbefore'
-                      : ''
-                  }`}
-                  draggable={!readOnly}
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move'
-                    setDragFrom(v)
-                  }}
-                  onDragOver={(e) => {
-                    if (dragFrom === null) return
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                    setDragOver(v)
-                  }}
-                  onDragLeave={() => setDragOver((o) => (o === v ? null : o))}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    if (dragFrom !== null) movePage(dragFrom, v)
-                    setDragFrom(null)
-                    setDragOver(null)
-                  }}
-                  onDragEnd={() => {
-                    setDragFrom(null)
-                    setDragOver(null)
-                  }}
-                  onClick={() => scrollToPage(v + 1)}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    setThumbMenu({
-                      x: Math.min(e.clientX, window.innerWidth - 190),
-                      y: Math.min(e.clientY, window.innerHeight - 190),
-                      origIdx,
-                    })
-                  }}
-                >
-                  <div
-                    className="pdf-thumb-box"
-                    style={{ height: Math.round((size.height / size.width) * THUMB_WIDTH) }}
-                  >
-                    <PdfThumb
-                      doc={doc}
-                      pageNo={origIdx + 1}
-                      rotationDelta={rotDelta(origIdx)}
-                      visible={visibleThumbs.has(v)}
-                    />
-                  </div>
-                  <span className="pdf-thumb-no">{v + 1}</span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        <div
-          ref={scrollRef}
-          className={`pdf-scroll${drawTool ? ' pdf-drawing' : ''}${nightMode ? ' pdf-night' : ''}`}
-          onScroll={() => {
-            handleScroll()
-            setSelPopup(null)
-            setSelected(null)
-          }}
-          onMouseUp={drawTool ? undefined : handleMouseUp}
-          onClick={(e) => {
-            // Clicking anywhere that isn't an annotation clears the selection
-            if (
-              !(e.target as Element).closest?.(
-                '.pdf-markup, .pdf-draw-shape, .pdf-note-pin, .pdf-stamp-preview',
-              )
-            )
-              setSelected(null)
-          }}
-        >
-          {rows.map((row, r) => (
-            <div key={r} ref={setRowRef(r)} data-idx={r} className="pdf-row">
-              {row.map((origIdx) => {
-                const rowVisible = visibleRows.has(r)
-                const size = dispSize(origIdx)
-                const geom = pageGeom(origIdx)
-                return (
-                  <div
-                    key={origIdx}
-                    className="pdf-page"
-                    style={
-                      {
-                        width: Math.floor(size.width * scale),
-                        height: Math.floor(size.height * scale),
-                        '--scale-factor': scale,
-                      } as CSSProperties
-                    }
-                  >
-                    <PdfPage
-                      doc={doc}
-                      pageNo={origIdx + 1}
-                      scale={scale}
-                      rotationDelta={rotDelta(origIdx)}
-                      visible={rowVisible}
-                    />
-                    {pendingSign && (
+        <div className="app-content">
+          <div className="pdf-body">
+            {sidebar === 'outline' && outline && (
+              <div className="pdf-thumbs pdf-outline-pane" style={{ width: sidebarW }}>
+                <OutlinePanel outline={outline} onGoToDest={(dest) => void goToDest(dest)} />
+              </div>
+            )}
+            {sidebar === 'thumbs' && (
+              <div ref={thumbsRef} className="pdf-thumbs" style={{ width: sidebarW }}>
+                {visList.map((origIdx, v) => {
+                  const size = dispSize(origIdx)
+                  return (
+                    <div
+                      key={origIdx}
+                      ref={setThumbRef(v)}
+                      data-idx={v}
+                      tabIndex={-1}
+                      className={`pdf-thumb${currentPage === v + 1 ? ' pdf-thumb-active' : ''}${
+                        dragOver === v && dragFrom !== null && dragFrom !== v
+                          ? ' pdf-thumb-dropbefore'
+                          : ''
+                      }`}
+                      draggable={!readOnly}
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = 'move'
+                        setDragFrom(v)
+                      }}
+                      onDragOver={(e) => {
+                        if (dragFrom === null) return
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                        setDragOver(v)
+                      }}
+                      onDragLeave={() => setDragOver((o) => (o === v ? null : o))}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        if (dragFrom !== null) movePage(dragFrom, v)
+                        setDragFrom(null)
+                        setDragOver(null)
+                      }}
+                      onDragEnd={() => {
+                        setDragFrom(null)
+                        setDragOver(null)
+                      }}
+                      onClick={() => scrollToPage(v + 1)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setThumbMenu({
+                          x: Math.min(e.clientX, window.innerWidth - 190),
+                          y: Math.min(e.clientY, window.innerHeight - 190),
+                          origIdx,
+                        })
+                      }}
+                    >
                       <div
-                        className="pdf-sign-drop"
-                        title={t('signHint')}
-                        onClick={(e) => {
-                          const box = e.currentTarget.getBoundingClientRect()
-                          placeSignature(
-                            origIdx,
-                            viewToPdf(
-                              geom,
-                              (e.clientX - box.left) / scale,
-                              (e.clientY - box.top) / scale,
-                            ),
-                          )
-                        }}
-                      />
-                    )}
-                    {rowVisible && (
-                      <>
-                        {/* Preview of unsaved stamps; clicking selects the whole watermark/header-footer set */}
-                        {(stampPreview.get(origIdx) ?? []).map((s, si) => (
-                          <img
-                            key={si}
-                            className={`pdf-stamp-preview${selected?.kind === 'stamp' ? ' pdf-stamp-selected' : ''}`}
-                            src={`data:image/png;base64,${s.image}`}
-                            alt=""
-                            title={t('removeStamp')}
-                            style={{
-                              ...pdfRectToCss(geom, s.rect, scale),
-                              opacity: s.opacity ?? 1,
-                            }}
-                            onClick={(e) =>
-                              setSelected({ kind: 'stamp', ...popupPos(e.clientX, e.clientY) })
-                            }
-                          />
-                        ))}
-                        {searchOpen && (
-                          <div className="pdf-search-layer">
-                            {activeMatches.flatMap((m, mi) =>
-                              m.pageIndex === origIdx
-                                ? m.rects.map((r, ri) => (
-                                    <div
-                                      key={`${mi}-${ri}`}
-                                      className={`pdf-search-hit${mi === searchCurClamped ? ' pdf-search-hit-cur' : ''}`}
-                                      style={pdfRectToCss(geom, r, scale)}
-                                    />
-                                  ))
-                                : [],
-                            )}
-                          </div>
-                        )}
-                        <MarkupOverlay
-                          markups={markups.filter((m) => m.pageIndex === origIdx)}
-                          geom={geom}
-                          scale={scale}
-                          selectedId={selected?.kind === 'markup' ? selected.id : null}
-                          selectTitle={t('removeMarkup')}
-                          onSelect={(id, x, y) =>
-                            setSelected({ kind: 'markup', id, ...popupPos(x, y) })
-                          }
-                        />
-                        <DrawLayer
-                          geom={geom}
-                          scale={scale}
-                          pageWidth={size.width}
-                          pageHeight={size.height}
-                          drawings={drawings.filter((d) => d.input.pageIndex === origIdx)}
-                          tool={readOnly ? null : drawTool}
-                          color={drawColor}
-                          strokeWidth={STROKE_WIDTH}
-                          selectedId={selected?.kind === 'drawing' ? selected.id : null}
-                          selectTitle={t('removeMarkup')}
-                          onCommit={(input) => commitDrawing(origIdx, input)}
-                          onNoteAt={(at) => {
-                            setNoteText('')
-                            setNotePrompt({ origIdx, at })
-                          }}
-                          onSelect={(id, x, y) =>
-                            setSelected({ kind: 'drawing', id, ...popupPos(x, y) })
-                          }
-                        />
-                        <LinkLayer
+                        className="pdf-thumb-box"
+                        style={{ aspectRatio: `${size.width} / ${size.height}` }}
+                      >
+                        <PdfThumb
                           doc={doc}
                           pageNo={origIdx + 1}
-                          geom={geom}
-                          scale={scale}
-                          onGoToDest={(dest) => void goToDest(dest)}
+                          rotationDelta={rotDelta(origIdx)}
+                          visible={visibleThumbs.has(v)}
+                          rasterW={thumbRasterW}
                         />
-                        <FormLayer
-                          doc={doc}
-                          pageNo={origIdx + 1}
-                          geom={geom}
-                          scale={scale}
-                          readOnly={readOnly}
-                          edits={formEdits}
-                          onEdit={(v2) => {
-                            pushUndo(`form:${v2.name}`)
-                            setFormEdits((prev) => new Map(prev).set(v2.name, v2))
-                          }}
-                        />
-                      </>
-                    )}
-                  </div>
+                      </div>
+                      <span className="pdf-thumb-no">{v + 1}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {(sidebar === 'thumbs' || (sidebar === 'outline' && !!outline)) && (
+              <div className="pdf-side-resizer" onPointerDown={startSidebarResize} />
+            )}
+            <div
+              ref={scrollRef}
+              className={`pdf-scroll${drawTool ? ' pdf-drawing' : ''}${nightMode ? ' pdf-night' : ''}`}
+              onScroll={() => {
+                handleScroll()
+                setSelPopup(null)
+                setSelected(null)
+              }}
+              onMouseUp={drawTool ? undefined : handleMouseUp}
+              onClick={(e) => {
+                // Clicking anywhere that isn't an annotation clears the selection
+                if (
+                  !(e.target as Element).closest?.(
+                    '.pdf-markup, .pdf-draw-shape, .pdf-note-pin, .pdf-stamp-preview',
+                  )
                 )
-              })}
+                  setSelected(null)
+              }}
+            >
+              {rows.map((row, r) => (
+                <div key={r} ref={setRowRef(r)} data-idx={r} className="pdf-row">
+                  {row.map((origIdx) => {
+                    const rowVisible = visibleRows.has(r)
+                    const size = dispSize(origIdx)
+                    const geom = pageGeom(origIdx)
+                    return (
+                      <div
+                        key={origIdx}
+                        className="pdf-page"
+                        style={
+                          {
+                            width: Math.floor(size.width * scale),
+                            height: Math.floor(size.height * scale),
+                            '--scale-factor': scale,
+                          } as CSSProperties
+                        }
+                      >
+                        <PdfPage
+                          doc={doc}
+                          pageNo={origIdx + 1}
+                          scale={scale}
+                          rotationDelta={rotDelta(origIdx)}
+                          visible={rowVisible}
+                        />
+                        {pendingSign && (
+                          <SignDropOverlay
+                            sig={pendingSign}
+                            dispW={geomDispSize(geom).width}
+                            dispH={geomDispSize(geom).height}
+                            scale={scale}
+                            color={drawColor}
+                            title={t('signHint')}
+                            onPlace={(vx, vy) => placeSignature(origIdx, vx, vy)}
+                          />
+                        )}
+                        {rowVisible && (
+                          <>
+                            {/* Preview of unsaved stamps; clicking selects the whole watermark/header-footer set */}
+                            {(stampPreview.get(origIdx) ?? []).map((s, si) => (
+                              <img
+                                key={si}
+                                className={`pdf-stamp-preview${selected?.kind === 'stamp' ? ' pdf-stamp-selected' : ''}`}
+                                src={`data:image/png;base64,${s.image}`}
+                                alt=""
+                                title={t('removeStamp')}
+                                style={{
+                                  ...pdfRectToCss(geom, s.rect, scale),
+                                  opacity: s.opacity ?? 1,
+                                }}
+                                onClick={(e) =>
+                                  setSelected({ kind: 'stamp', ...popupPos(e.clientX, e.clientY) })
+                                }
+                              />
+                            ))}
+                            {searchOpen && (
+                              <div className="pdf-search-layer">
+                                {activeMatches.flatMap((m, mi) =>
+                                  m.pageIndex === origIdx
+                                    ? m.rects.map((r, ri) => (
+                                        <div
+                                          key={`${mi}-${ri}`}
+                                          className={`pdf-search-hit${mi === searchCurClamped ? ' pdf-search-hit-cur' : ''}`}
+                                          style={pdfRectToCss(geom, r, scale)}
+                                        />
+                                      ))
+                                    : [],
+                                )}
+                              </div>
+                            )}
+                            <MarkupOverlay
+                              markups={markups.filter((m) => m.pageIndex === origIdx)}
+                              geom={geom}
+                              scale={scale}
+                              selectedId={selected?.kind === 'markup' ? selected.id : null}
+                              selectTitle={t('removeMarkup')}
+                              onSelect={(id, x, y) =>
+                                setSelected({ kind: 'markup', id, ...popupPos(x, y) })
+                              }
+                            />
+                            <DrawLayer
+                              geom={geom}
+                              scale={scale}
+                              pageWidth={size.width}
+                              pageHeight={size.height}
+                              drawings={drawings.filter((d) => d.input.pageIndex === origIdx)}
+                              tool={readOnly ? null : drawTool}
+                              color={drawColor}
+                              strokeWidth={STROKE_WIDTH}
+                              selectedId={selected?.kind === 'drawing' ? selected.id : null}
+                              selectTitle={t('removeMarkup')}
+                              onCommit={(input) => commitDrawing(origIdx, input)}
+                              onNoteAt={(at) => {
+                                setNoteText('')
+                                setNotePrompt({ origIdx, at })
+                              }}
+                              onSelect={(id, x, y) =>
+                                setSelected({ kind: 'drawing', id, ...popupPos(x, y) })
+                              }
+                              onMove={readOnly ? undefined : moveDrawing}
+                              onResize={readOnly ? undefined : resizeDrawing}
+                            />
+                            <LinkLayer
+                              doc={doc}
+                              pageNo={origIdx + 1}
+                              geom={geom}
+                              scale={scale}
+                              onGoToDest={(dest) => void goToDest(dest)}
+                            />
+                            <FormLayer
+                              doc={doc}
+                              pageNo={origIdx + 1}
+                              geom={geom}
+                              scale={scale}
+                              readOnly={readOnly}
+                              edits={formEdits}
+                              onEdit={(v2) => {
+                                pushUndo(`form:${v2.name}`)
+                                setFormEdits((prev) => new Map(prev).set(v2.name, v2))
+                              }}
+                            />
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {searchOpen && (
-          <div className="pdf-search-bar">
-            <input
-              ref={searchInputRef}
-              className="pdf-search-input"
-              placeholder={t('search')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') searchStep(e.shiftKey ? -1 : 1)
-                else if (e.key === 'Escape') closeSearch()
-              }}
-            />
-            <span className="pdf-search-count">
-              {searchQuery.trim()
-                ? activeMatches.length > 0
-                  ? t('searchCount', { current: searchCurClamped + 1, total: activeMatches.length })
-                  : t('searchNoResults')
-                : ''}
-            </span>
-            <button
-              className="rb-icon"
-              title={t('searchPrev')}
-              disabled={activeMatches.length === 0}
-              onClick={() => searchStep(-1)}
-            >
-              ‹
-            </button>
-            <button
-              className="rb-icon"
-              title={t('searchNext')}
-              disabled={activeMatches.length === 0}
-              onClick={() => searchStep(1)}
-            >
-              ›
-            </button>
-            <button className="rb-icon" onClick={closeSearch}>
-              ×
-            </button>
-          </div>
-        )}
-        {selPopup && (
-          <div
-            className="pdf-sel-popup"
-            style={{ left: selPopup.x, top: selPopup.y }}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <button type="button" title={t('highlight')} onClick={() => applyMarkup('highlight')}>
-              <span className="sel-swatch sel-swatch-hl" />
-            </button>
-            <button type="button" title={t('underline')} onClick={() => applyMarkup('underline')}>
-              <span className="sel-swatch sel-swatch-ul">U</span>
-            </button>
-            <button type="button" title={t('strikeout')} onClick={() => applyMarkup('strikeout')}>
-              <span className="sel-swatch sel-swatch-st">S</span>
-            </button>
-          </div>
-        )}
-        {selected && (
-          <div
-            className="pdf-del-popup"
-            style={{ left: selected.x, top: selected.y }}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <button type="button" onClick={deleteSelected}>
-              {t('deleteAnnotation')}
-            </button>
-          </div>
-        )}
-        {deleteToast && (
-          <div className="pdf-toast">
-            <span>{t('annotationDeleted')}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setDeleteToast(false)
-                undo()
-              }}
-            >
-              {t('undo')}
-            </button>
-          </div>
-        )}
-        {thumbMenu && (
-          <div className="thumb-menu file-menu" style={{ left: thumbMenu.x, top: thumbMenu.y }}>
-            <button
-              onClick={() => {
-                rotatePage(menuOrig, -90)
-                setThumbMenu(null)
-              }}
-            >
-              {t('rotateLeft')}
-            </button>
-            <button
-              onClick={() => {
-                rotatePage(menuOrig, 90)
-                setThumbMenu(null)
-              }}
-            >
-              {t('rotateRight')}
-            </button>
-            <button
-              disabled={pageCount <= 1}
-              onClick={() => {
-                deletePage(menuOrig)
-                setThumbMenu(null)
-              }}
-            >
-              {t('deletePage')}
-            </button>
-            <button
-              onClick={() => {
-                setThumbMenu(null)
-                void extractPage(menuOrig)
-              }}
-            >
-              {t('extractPage')}
-            </button>
-            <button
-              onClick={() => {
-                setThumbMenu(null)
-                void insertPdf(menuOrig)
-              }}
-            >
-              {t('insertPdf')}
-            </button>
-          </div>
-        )}
-        {stampDlg && (
-          <StampDialog t={t} onCancel={() => setStampDlg(false)} onApply={applyStamps} />
-        )}
-        {propsDlg && (
-          <PropertiesDialog
-            doc={doc}
-            fileName={fileName}
-            fileSize={fileSize}
-            pageCount={pageCount}
-            pending={metadata}
-            readOnly={readOnly}
-            t={t}
-            onCancel={() => setPropsDlg(false)}
-            onApply={(meta) => {
-              setPropsDlg(false)
-              pushUndo()
-              setMetadata(meta)
-            }}
-          />
-        )}
-        {signDlg && (
-          <SignatureDialog
-            color={drawColor}
-            t={t}
-            onCancel={() => setSignDlg(false)}
-            onConfirm={(sig) => {
-              setSignDlg(false)
-              setPendingSign(sig)
-            }}
-          />
-        )}
-        {notePrompt && (
-          <div className="pdf-modal-mask" onClick={() => setNotePrompt(null)}>
-            <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="pdf-modal-title">{t('noteTitle')}</div>
-              <textarea
-                className="pdf-modal-textarea"
-                value={noteText}
-                placeholder={t('notePlaceholder')}
-                autoFocus
-                onChange={(e) => setNoteText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) confirmNote()
-                  else if (e.key === 'Escape') setNotePrompt(null)
-                }}
-              />
-              <div className="pdf-modal-actions">
-                <button className="pdf-modal-btn" onClick={() => setNotePrompt(null)}>
-                  {t('cancel')}
+            {searchOpen && (
+              <div className="pdf-search-bar">
+                <input
+                  ref={searchInputRef}
+                  className="pdf-search-input"
+                  placeholder={t('search')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') searchStep(e.shiftKey ? -1 : 1)
+                    else if (e.key === 'Escape') closeSearch()
+                  }}
+                />
+                <span className="pdf-search-count">
+                  {searchQuery.trim()
+                    ? activeMatches.length > 0
+                      ? t('searchCount', {
+                          current: searchCurClamped + 1,
+                          total: activeMatches.length,
+                        })
+                      : t('searchNoResults')
+                    : ''}
+                </span>
+                <button
+                  className="rb-icon"
+                  title={t('searchPrev')}
+                  disabled={activeMatches.length === 0}
+                  onClick={() => searchStep(-1)}
+                >
+                  ‹
                 </button>
                 <button
-                  className="pdf-modal-btn primary"
-                  disabled={!noteText.trim()}
-                  onClick={confirmNote}
+                  className="rb-icon"
+                  title={t('searchNext')}
+                  disabled={activeMatches.length === 0}
+                  onClick={() => searchStep(1)}
                 >
-                  {t('ok')}
+                  ›
+                </button>
+                <button className="rb-icon" onClick={closeSearch}>
+                  ×
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-        {extractDlg && (
-          <div className="pdf-modal-mask" onClick={() => setExtractDlg(false)}>
-            <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="pdf-modal-title">{t('extractRangeTitle')}</div>
-              <input
-                className={`pdf-modal-input${extractInvalid ? ' invalid' : ''}`}
-                value={extractInput}
-                placeholder={t('extractRangeHint', { total: pageCount })}
-                autoFocus
-                onChange={(e) => {
-                  setExtractInput(e.target.value)
-                  setExtractInvalid(false)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmExtract()
-                  else if (e.key === 'Escape') setExtractDlg(false)
+            )}
+            {selPopup && (
+              <div
+                className="pdf-sel-popup"
+                style={{ left: selPopup.x, top: selPopup.y }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <button
+                  type="button"
+                  title={t('highlight')}
+                  onClick={() => applyMarkup('highlight')}
+                >
+                  <span className="sel-swatch sel-swatch-hl" />
+                </button>
+                <button
+                  type="button"
+                  title={t('underline')}
+                  onClick={() => applyMarkup('underline')}
+                >
+                  <span className="sel-swatch sel-swatch-ul">U</span>
+                </button>
+                <button
+                  type="button"
+                  title={t('strikeout')}
+                  onClick={() => applyMarkup('strikeout')}
+                >
+                  <span className="sel-swatch sel-swatch-st">S</span>
+                </button>
+              </div>
+            )}
+            {selected && (
+              <div
+                className="pdf-del-popup"
+                style={{ left: selected.x, top: selected.y }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <button type="button" onClick={deleteSelected}>
+                  {t('deleteAnnotation')}
+                </button>
+              </div>
+            )}
+            {deleteToast && (
+              <div className="pdf-toast">
+                <span>{t('annotationDeleted')}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteToast(false)
+                    undo()
+                  }}
+                >
+                  {t('undo')}
+                </button>
+              </div>
+            )}
+            {thumbMenu && (
+              <div className="thumb-menu file-menu" style={{ left: thumbMenu.x, top: thumbMenu.y }}>
+                <button
+                  onClick={() => {
+                    rotatePage(menuOrig, -90)
+                    setThumbMenu(null)
+                  }}
+                >
+                  {t('rotateLeft')}
+                </button>
+                <button
+                  onClick={() => {
+                    rotatePage(menuOrig, 90)
+                    setThumbMenu(null)
+                  }}
+                >
+                  {t('rotateRight')}
+                </button>
+                <button
+                  disabled={pageCount <= 1}
+                  onClick={() => {
+                    deletePage(menuOrig)
+                    setThumbMenu(null)
+                  }}
+                >
+                  {t('deletePage')}
+                </button>
+                <button
+                  onClick={() => {
+                    setThumbMenu(null)
+                    void extractPage(menuOrig)
+                  }}
+                >
+                  {t('extractPage')}
+                </button>
+                <button
+                  onClick={() => {
+                    setThumbMenu(null)
+                    void insertPdf(menuOrig)
+                  }}
+                >
+                  {t('insertPdf')}
+                </button>
+              </div>
+            )}
+            {stampDlg && (
+              <StampDialog t={t} onCancel={() => setStampDlg(false)} onApply={applyStamps} />
+            )}
+            {propsDlg && (
+              <PropertiesDialog
+                doc={doc}
+                fileName={fileName}
+                fileSize={fileSize}
+                pageCount={pageCount}
+                pending={metadata}
+                readOnly={readOnly}
+                t={t}
+                onCancel={() => setPropsDlg(false)}
+                onApply={(meta) => {
+                  setPropsDlg(false)
+                  pushUndo()
+                  setMetadata(meta)
                 }}
               />
-              <div className="pdf-modal-actions">
-                <button className="pdf-modal-btn" onClick={() => setExtractDlg(false)}>
-                  {t('cancel')}
-                </button>
-                <button className="pdf-modal-btn primary" onClick={confirmExtract}>
-                  {t('ok')}
-                </button>
+            )}
+            {signDlg && (
+              <SignatureDialog
+                color={drawColor}
+                t={t}
+                onCancel={() => setSignDlg(false)}
+                onConfirm={(sig) => {
+                  setSignDlg(false)
+                  setPendingSign(sig)
+                }}
+              />
+            )}
+            {notePrompt && (
+              <div className="pdf-modal-mask" onClick={() => setNotePrompt(null)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('noteTitle')}</div>
+                  <textarea
+                    className="pdf-modal-textarea"
+                    value={noteText}
+                    placeholder={t('notePlaceholder')}
+                    autoFocus
+                    onChange={(e) => setNoteText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) confirmNote()
+                      else if (e.key === 'Escape') setNotePrompt(null)
+                    }}
+                  />
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setNotePrompt(null)}>
+                      {t('cancel')}
+                    </button>
+                    <button
+                      className="pdf-modal-btn primary"
+                      disabled={!noteText.trim()}
+                      onClick={confirmNote}
+                    >
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+            {extractDlg && (
+              <div className="pdf-modal-mask" onClick={() => setExtractDlg(false)}>
+                <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="pdf-modal-title">{t('extractRangeTitle')}</div>
+                  <input
+                    className={`pdf-modal-input${extractInvalid ? ' invalid' : ''}`}
+                    value={extractInput}
+                    placeholder={t('extractRangeHint', { total: pageCount })}
+                    autoFocus
+                    onChange={(e) => {
+                      setExtractInput(e.target.value)
+                      setExtractInvalid(false)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmExtract()
+                      else if (e.key === 'Escape') setExtractDlg(false)
+                    }}
+                  />
+                  <div className="pdf-modal-actions">
+                    <button className="pdf-modal-btn" onClick={() => setExtractDlg(false)}>
+                      {t('cancel')}
+                    </button>
+                    <button className="pdf-modal-btn primary" onClick={confirmExtract}>
+                      {t('ok')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          <footer className="status-bar">
+            <div className="status-left">
+              <span className="status-item">
+                {t('appPageOf', { current: currentPage, total: pageCount })}
+              </span>
+            </div>
+            <div className="status-right">
+              <button className="zoom-btn" title={t('zoomOut')} onClick={zoomOut}>
+                −
+              </button>
+              <input
+                className="zoom-slider"
+                type="range"
+                min={MIN_SCALE * 100}
+                max={MAX_SCALE * 100}
+                step={5}
+                value={Math.round(scale * 100)}
+                onChange={(e) => applyScale(Number(e.target.value) / 100, null)}
+              />
+              <button className="zoom-btn" title={t('zoomIn')} onClick={zoomIn}>
+                +
+              </button>
+              <span className="zoom-value">{Math.round(scale * 100)}%</span>
+            </div>
+          </footer>
+        </div>
       </div>
     </div>
   )

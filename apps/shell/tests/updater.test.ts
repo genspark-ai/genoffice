@@ -25,6 +25,8 @@ const updaterState = {
   autoDownload: true,
   autoInstallOnAppQuit: false,
   disableDifferentialDownload: false,
+  channel: null as string | null,
+  allowDowngrade: false,
 }
 const checkForUpdates = vi.fn(() => Promise.resolve(null))
 const downloadUpdate = vi.fn<() => Promise<unknown>>(() => Promise.resolve([]))
@@ -46,6 +48,21 @@ vi.mock('electron-updater', () => ({
     },
     set disableDifferentialDownload(v: boolean) {
       updaterState.disableDifferentialDownload = v
+    },
+    set channel(v: string | null) {
+      updaterState.channel = v
+      // mirrors electron-updater's real setter side effect: assigning
+      // `channel` unconditionally flips allowDowngrade to true
+      updaterState.allowDowngrade = true
+    },
+    get channel() {
+      return updaterState.channel
+    },
+    set allowDowngrade(v: boolean) {
+      updaterState.allowDowngrade = v
+    },
+    get allowDowngrade() {
+      return updaterState.allowDowngrade
     },
   },
 }))
@@ -106,6 +123,8 @@ beforeEach(() => {
   updaterState.autoDownload = true
   updaterState.autoInstallOnAppQuit = false
   updaterState.disableDifferentialDownload = false
+  updaterState.channel = null
+  updaterState.allowDowngrade = false
   checkForUpdates.mockClear()
   downloadUpdate.mockReset()
   downloadUpdate.mockImplementation(() => Promise.resolve([]))
@@ -248,6 +267,47 @@ describe('initAutoUpdater', () => {
     vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
     await flushAsync()
     expect(showUpdateWindow).not.toHaveBeenCalled()
+  })
+
+  it('defaults to the stable (latest) feed channel', async () => {
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+    expect(updaterState.channel).toBe('latest')
+    // must never allow a downgrade, despite electron-updater's channel setter
+    // side effect
+    expect(updaterState.allowDowngrade).toBe(false)
+  })
+
+  it('starts on the beta feed when the beta channel is passed in', async () => {
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null, 'beta')
+    expect(updaterState.channel).toBe('beta')
+    // must never allow a downgrade, despite electron-updater's channel setter
+    // side effect
+    expect(updaterState.allowDowngrade).toBe(false)
+  })
+
+  it('applyUpdateChannel switches the feed and re-checks immediately', async () => {
+    const { initAutoUpdater, applyUpdateChannel } = await loadUpdater()
+    initAutoUpdater(() => null)
+    expect(checkForUpdates).not.toHaveBeenCalled()
+    applyUpdateChannel('beta')
+    expect(updaterState.channel).toBe('beta')
+    expect(updaterState.allowDowngrade).toBe(false)
+    expect(checkForUpdates).toHaveBeenCalledTimes(1)
+    applyUpdateChannel('stable')
+    expect(updaterState.channel).toBe('latest')
+    expect(updaterState.allowDowngrade).toBe(false)
+    expect(checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('applyUpdateChannel is a no-op before the real updater is active', async () => {
+    appState.isPackaged = false
+    const { initAutoUpdater, applyUpdateChannel } = await loadUpdater()
+    initAutoUpdater(() => null)
+    applyUpdateChannel('beta')
+    expect(updaterState.channel).toBeNull()
+    expect(checkForUpdates).not.toHaveBeenCalled()
   })
 })
 

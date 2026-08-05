@@ -258,8 +258,11 @@ export function configurePdfRuntime(paths: RuntimePaths): void {
   runtime = paths
 }
 
-/** Open paths queued at tab creation; the renderer consumes them after mount (avoids did-finish-load races) */
-const pendingByWc = new Map<number, string>()
+/** Open path per view, queued at tab creation; the renderer consumes it after mount
+ * (avoids did-finish-load races). Kept until the view is destroyed: a reload
+ * (View > Reload) remounts the renderer and consumes again — a one-shot entry
+ * would strand the tab on "No file to open". */
+const openPathByWc = new Map<number, string>()
 /** File paths granted to each view — readFile only allows these */
 const allowedByWc = new Map<number, Set<string>>()
 /** Unsaved-changes flags mirrored from the renderer; drives the save prompt before closing a tab/window */
@@ -363,11 +366,7 @@ function registerPdfIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
 
-  ipcMain.handle(PDF_CHANNELS.consumePending, (e) => {
-    const path = pendingByWc.get(e.sender.id) ?? null
-    pendingByWc.delete(e.sender.id)
-    return path
-  })
+  ipcMain.handle(PDF_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
 
   ipcMain.handle(PDF_CHANNELS.readFile, async (e, path: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
@@ -508,7 +507,7 @@ function registerPdfIpc(): void {
 function grantAndTrack(wc: WebContents, openPath?: string | null): void {
   const wcId = wc.id
   if (openPath && existsSync(openPath)) {
-    pendingByWc.set(wcId, openPath)
+    openPathByWc.set(wcId, openPath)
     allowedByWc.set(wcId, new Set([openPath]))
   }
   // External links inside the PDF (Link annots with target=_blank) go to the system browser
@@ -518,7 +517,7 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
     return { action: 'deny' }
   })
   wc.once('destroyed', () => {
-    pendingByWc.delete(wcId)
+    openPathByWc.delete(wcId)
     allowedByWc.delete(wcId)
     dirtyByWc.delete(wcId)
     saveAsTargetByWc.delete(wcId)

@@ -20,3 +20,4 @@ export {
   isSafeRemoteUrl,
   type FetchWithSsrfGuardOptions,
 } from './safe-remote-url'
+export { fetchRemoteImage, remoteImageHeaders } from './remote-image'

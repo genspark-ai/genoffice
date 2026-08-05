@@ -211,10 +211,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: '设置当前页背景纯色',
     ribbonApplyToAll: '应用到全部',
     ribbonBgApplyAllTip: '把背景色 {color} 应用到全部页',
-    ribbonDesignIdeas: '设计灵感',
-    ribbonDesignIdeasTip: 'AI 分析当前页并给出设计建议',
-    ribbonDesignIdeasPrompt:
-      '针对当前页,给出布局和文案上的优化建议;文案可以直接改进的,用工具直接修改。',
     // Transitions
     ribbonGroupTransitionToThis: '切换到此幻灯片',
     ribbonNone: '无',
@@ -802,10 +798,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Set a solid background color for the current slide',
     ribbonApplyToAll: 'Apply To All',
     ribbonBgApplyAllTip: 'Apply background color {color} to all slides',
-    ribbonDesignIdeas: 'Design Ideas',
-    ribbonDesignIdeasTip: 'AI reviews the current slide and suggests design improvements',
-    ribbonDesignIdeasPrompt:
-      'For the current slide, suggest layout and copy improvements; where the copy can be improved directly, apply the changes with tools.',
     ribbonGroupTransitionToThis: 'Transition to This Slide',
     ribbonNone: 'None',
     ribbonTransMorph: 'Morph',
@@ -1404,10 +1396,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: '現在のスライドの背景を単色に設定',
     ribbonApplyToAll: 'すべてに適用',
     ribbonBgApplyAllTip: '背景色 {color} をすべてのスライドに適用',
-    ribbonDesignIdeas: 'デザインアイデア',
-    ribbonDesignIdeasTip: 'AI が現在のスライドを分析してデザインを提案',
-    ribbonDesignIdeasPrompt:
-      '現在のスライドについて、レイアウトと文言の改善案を提示してください。文言を直接改善できる箇所は、ツールで直接修正してください。',
     // Transitions
     ribbonGroupTransitionToThis: '画面切り替え',
     ribbonNone: 'なし',
@@ -2012,10 +2000,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: '현재 슬라이드의 배경을 단색으로 설정',
     ribbonApplyToAll: '모두 적용',
     ribbonBgApplyAllTip: '배경색 {color}을(를) 모든 슬라이드에 적용',
-    ribbonDesignIdeas: '디자인 아이디어',
-    ribbonDesignIdeasTip: 'AI가 현재 슬라이드를 분석하여 디자인 개선안 제안',
-    ribbonDesignIdeasPrompt:
-      '현재 슬라이드에 대해 레이아웃과 문구 개선안을 제시해 주세요. 문구를 바로 개선할 수 있는 부분은 도구로 직접 수정해 주세요.',
     // Transitions
     ribbonGroupTransitionToThis: '화면 전환',
     ribbonNone: '없음',
@@ -2624,11 +2608,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: "Définir une couleur d'arrière-plan unie pour la diapositive actuelle",
     ribbonApplyToAll: 'Appliquer à toutes',
     ribbonBgApplyAllTip: "Appliquer la couleur d'arrière-plan {color} à toutes les diapositives",
-    ribbonDesignIdeas: 'Idées de conception',
-    ribbonDesignIdeasTip:
-      "L'IA analyse la diapositive actuelle et suggère des améliorations de conception",
-    ribbonDesignIdeasPrompt:
-      'Pour la diapositive actuelle, propose des améliorations de mise en page et de texte ; lorsque le texte peut être amélioré directement, applique les modifications avec les outils.',
     ribbonGroupTransitionToThis: 'Accès à cette diapositive',
     ribbonNone: 'Aucune',
     ribbonTransMorph: 'Morphose',
@@ -3241,10 +3220,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Einfarbigen Hintergrund für die aktuelle Folie festlegen',
     ribbonApplyToAll: 'Für alle übernehmen',
     ribbonBgApplyAllTip: 'Hintergrundfarbe {color} auf alle Folien anwenden',
-    ribbonDesignIdeas: 'Designideen',
-    ribbonDesignIdeasTip: 'KI analysiert die aktuelle Folie und schlägt Designverbesserungen vor',
-    ribbonDesignIdeasPrompt:
-      'Schlage für die aktuelle Folie Verbesserungen an Layout und Text vor; wo der Text direkt verbessert werden kann, wende die Änderungen mit den Tools an.',
     ribbonGroupTransitionToThis: 'Übergang zu dieser Folie',
     ribbonNone: 'Ohne',
     ribbonTransMorph: 'Morphen',
@@ -3851,10 +3826,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Establecer un color de fondo sólido para la diapositiva actual',
     ribbonApplyToAll: 'Aplicar a todo',
     ribbonBgApplyAllTip: 'Aplicar el color de fondo {color} a todas las diapositivas',
-    ribbonDesignIdeas: 'Ideas de diseño',
-    ribbonDesignIdeasTip: 'La IA analiza la diapositiva actual y sugiere mejoras de diseño',
-    ribbonDesignIdeasPrompt:
-      'Para la diapositiva actual, sugiere mejoras de diseño y de texto; cuando el texto se pueda mejorar directamente, aplica los cambios con las herramientas.',
     ribbonGroupTransitionToThis: 'Transición a esta diapositiva',
     ribbonNone: 'Ninguna',
     ribbonTransMorph: 'Transformación',
@@ -4453,10 +4424,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'ตั้งค่าพื้นหลังสีทึบให้สไลด์ปัจจุบัน',
     ribbonApplyToAll: 'ใช้กับทั้งหมด',
     ribbonBgApplyAllTip: 'ใช้สีพื้นหลัง {color} กับทุกสไลด์',
-    ribbonDesignIdeas: 'แนวคิดการออกแบบ',
-    ribbonDesignIdeasTip: 'AI วิเคราะห์สไลด์ปัจจุบันและให้คำแนะนำด้านการออกแบบ',
-    ribbonDesignIdeasPrompt:
-      'สำหรับสไลด์ปัจจุบัน ให้เสนอแนะการปรับปรุงเค้าโครงและข้อความ หากข้อความปรับปรุงได้โดยตรง ให้ใช้เครื่องมือแก้ไขโดยตรง',
     ribbonGroupTransitionToThis: 'การเปลี่ยนไปยังสไลด์นี้',
     ribbonNone: 'ไม่มี',
     ribbonTransMorph: 'มอร์ฟ',
@@ -5046,10 +5013,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Atur warna latar belakang polos untuk slide saat ini',
     ribbonApplyToAll: 'Terapkan ke Semua',
     ribbonBgApplyAllTip: 'Terapkan warna latar belakang {color} ke semua slide',
-    ribbonDesignIdeas: 'Ide Desain',
-    ribbonDesignIdeasTip: 'AI menganalisis slide saat ini dan memberikan saran desain',
-    ribbonDesignIdeasPrompt:
-      'Untuk slide saat ini, berikan saran perbaikan tata letak dan teks; jika teks dapat langsung diperbaiki, gunakan alat untuk mengubahnya secara langsung.',
     ribbonGroupTransitionToThis: 'Transisi ke Slide Ini',
     ribbonNone: 'Tidak Ada',
     ribbonTransMorph: 'Morf',
@@ -5646,10 +5609,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Задать сплошной цвет фона для текущего слайда',
     ribbonApplyToAll: 'Применить ко всем',
     ribbonBgApplyAllTip: 'Применить цвет фона {color} ко всем слайдам',
-    ribbonDesignIdeas: 'Идеи для оформления',
-    ribbonDesignIdeasTip: 'ИИ анализирует текущий слайд и предлагает улучшения оформления',
-    ribbonDesignIdeasPrompt:
-      'Для текущего слайда предложи улучшения макета и текста; там, где текст можно улучшить сразу, внеси изменения инструментами.',
     ribbonGroupTransitionToThis: 'Переход к этому слайду',
     ribbonNone: 'Нет',
     ribbonTransMorph: 'Трансформация',
@@ -6239,10 +6198,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'تعيين لون خلفية سادة للشريحة الحالية',
     ribbonApplyToAll: 'تطبيق على الكل',
     ribbonBgApplyAllTip: 'تطبيق لون الخلفية {color} على كل الشرائح',
-    ribbonDesignIdeas: 'أفكار التصميم',
-    ribbonDesignIdeasTip: 'يحلل الذكاء الاصطناعي الشريحة الحالية ويقترح تحسينات للتصميم',
-    ribbonDesignIdeasPrompt:
-      'بالنسبة إلى الشريحة الحالية، اقترح تحسينات على التخطيط والنص؛ وحيثما أمكن تحسين النص مباشرة، طبّق التغييرات باستخدام الأدوات.',
     ribbonGroupTransitionToThis: 'الانتقال إلى هذه الشريحة',
     ribbonNone: 'بلا',
     ribbonTransMorph: 'تحوّل',
@@ -6833,10 +6788,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Definir uma cor sólida de plano de fundo para o slide atual',
     ribbonApplyToAll: 'Aplicar a Todos',
     ribbonBgApplyAllTip: 'Aplicar a cor de plano de fundo {color} a todos os slides',
-    ribbonDesignIdeas: 'Ideias de Design',
-    ribbonDesignIdeasTip: 'A IA analisa o slide atual e sugere melhorias de design',
-    ribbonDesignIdeasPrompt:
-      'Para o slide atual, sugira melhorias de layout e de texto; onde o texto puder ser melhorado diretamente, aplique as alterações com as ferramentas.',
     ribbonGroupTransitionToThis: 'Transição para Este Slide',
     ribbonNone: 'Nenhuma',
     ribbonTransMorph: 'Transformar',
@@ -7444,11 +7395,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Imposta un colore di sfondo a tinta unita per la diapositiva corrente',
     ribbonApplyToAll: 'Applica a Tutte',
     ribbonBgApplyAllTip: 'Applica il colore di sfondo {color} a tutte le diapositive',
-    ribbonDesignIdeas: 'Idee per la Progettazione',
-    ribbonDesignIdeasTip:
-      "L'IA analizza la diapositiva corrente e suggerisce miglioramenti di design",
-    ribbonDesignIdeasPrompt:
-      'Per la diapositiva corrente, suggerisci miglioramenti al layout e ai testi; dove il testo può essere migliorato direttamente, applica le modifiche con gli strumenti.',
     ribbonGroupTransitionToThis: 'Transizione alla Diapositiva',
     ribbonNone: 'Nessuna',
     ribbonTransMorph: 'Morphing',
@@ -8050,10 +7996,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Ustaw jednolity kolor tła bieżącego slajdu',
     ribbonApplyToAll: 'Zastosuj do wszystkich',
     ribbonBgApplyAllTip: 'Zastosuj kolor tła {color} do wszystkich slajdów',
-    ribbonDesignIdeas: 'Pomysły projektowe',
-    ribbonDesignIdeasTip: 'AI analizuje bieżący slajd i sugeruje ulepszenia projektu',
-    ribbonDesignIdeasPrompt:
-      'Dla bieżącego slajdu zaproponuj ulepszenia układu i tekstu; tam, gdzie tekst można poprawić bezpośrednio, zastosuj zmiany za pomocą narzędzi.',
     ribbonGroupTransitionToThis: 'Przejście do tego slajdu',
     ribbonNone: 'Brak',
     ribbonTransMorph: 'Przekształcenie',
@@ -8656,10 +8598,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Een effen achtergrondkleur voor de huidige dia instellen',
     ribbonApplyToAll: 'Op alles toepassen',
     ribbonBgApplyAllTip: "Achtergrondkleur {color} op alle dia's toepassen",
-    ribbonDesignIdeas: 'Ontwerpideeën',
-    ribbonDesignIdeasTip: 'AI beoordeelt de huidige dia en stelt ontwerpverbeteringen voor',
-    ribbonDesignIdeasPrompt:
-      'Stel voor de huidige dia verbeteringen voor de indeling en tekst voor; waar de tekst direct kan worden verbeterd, pas de wijzigingen toe met de hulpmiddelen.',
     ribbonGroupTransitionToThis: 'Overgang naar deze dia',
     ribbonNone: 'Geen',
     ribbonTransMorph: 'Morphing',
@@ -9263,10 +9201,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'Tetapkan warna latar belakang tunggal untuk slaid semasa',
     ribbonApplyToAll: 'Gunakan pada Semua',
     ribbonBgApplyAllTip: 'Gunakan warna latar belakang {color} pada semua slaid',
-    ribbonDesignIdeas: 'Idea Reka Bentuk',
-    ribbonDesignIdeasTip: 'AI menyemak slaid semasa dan mencadangkan penambahbaikan reka bentuk',
-    ribbonDesignIdeasPrompt:
-      'Untuk slaid semasa, cadangkan penambahbaikan tataletak dan teks; jika teks boleh diperbaik secara langsung, gunakan alat untuk membuat perubahan terus.',
     ribbonGroupTransitionToThis: 'Peralihan ke Slaid Ini',
     ribbonNone: 'Tiada',
     ribbonTransMorph: 'Morf',
@@ -9855,10 +9789,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'הגדרת צבע רקע אחיד לשקופית הנוכחית',
     ribbonApplyToAll: 'החל על הכל',
     ribbonBgApplyAllTip: 'החלת צבע הרקע {color} על כל השקופיות',
-    ribbonDesignIdeas: 'רעיונות לעיצוב',
-    ribbonDesignIdeasTip: 'ה-AI מנתח את השקופית הנוכחית ומציע שיפורי עיצוב',
-    ribbonDesignIdeasPrompt:
-      'עבור השקופית הנוכחית, הצע שיפורים בפריסה ובניסוח; היכן שאפשר לשפר את הטקסט ישירות, החל את השינויים באמצעות הכלים.',
     ribbonGroupTransitionToThis: 'מעבר לשקופית זו',
     ribbonNone: 'ללא',
     ribbonTransMorph: 'מורף',
@@ -10444,10 +10374,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: 'वर्तमान स्लाइड के लिए ठोस पृष्ठभूमि रंग सेट करें',
     ribbonApplyToAll: 'सभी पर लागू करें',
     ribbonBgApplyAllTip: 'पृष्ठभूमि रंग {color} सभी स्लाइड पर लागू करें',
-    ribbonDesignIdeas: 'डिज़ाइन विचार',
-    ribbonDesignIdeasTip: 'AI वर्तमान स्लाइड की समीक्षा करता है और डिज़ाइन सुधार सुझाता है',
-    ribbonDesignIdeasPrompt:
-      'वर्तमान स्लाइड के लिए लेआउट और पाठ में सुधार सुझाएँ; जहाँ पाठ सीधे सुधारा जा सकता है, वहाँ उपकरणों से परिवर्तन लागू करें।',
     ribbonGroupTransitionToThis: 'इस स्लाइड में ट्रांज़िशन',
     ribbonNone: 'कोई नहीं',
     ribbonTransMorph: 'मॉर्फ़',
@@ -11027,10 +10953,6 @@ export const ribbonStrings = defineStrings({
     ribbonBgFillTip: '設定目前頁背景純色',
     ribbonApplyToAll: '套用到全部',
     ribbonBgApplyAllTip: '把背景色 {color} 套用到全部頁',
-    ribbonDesignIdeas: '設計構想',
-    ribbonDesignIdeasTip: 'AI 分析目前頁並給出設計建議',
-    ribbonDesignIdeasPrompt:
-      '針對目前頁，給出版面和文案上的最佳化建議；文案可以直接改進的，用工具直接修改。',
     ribbonGroupTransitionToThis: '切換到此投影片',
     ribbonNone: '無',
     ribbonTransMorph: '轉化',

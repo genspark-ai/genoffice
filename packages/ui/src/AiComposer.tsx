@@ -20,6 +20,7 @@ export function AiComposer({
   sendLabel,
   stopLabel,
   ariaLabel,
+  header,
   footerStart,
   iconOnly = false,
   sendIconEnabled,
@@ -40,6 +41,8 @@ export function AiComposer({
   readonly sendLabel: string
   readonly stopLabel: string
   readonly ariaLabel?: string | undefined
+  /** content inside the box above the textarea (attachment chips, …) — Genspark composer style */
+  readonly header?: React.ReactNode
   /** extra controls at the left of the footer (attach button, toggles, …) */
   readonly footerStart?: React.ReactNode
   /** compact variant: no hint text, icon-only enter/stop button (Genspark composer style) */
@@ -76,6 +79,7 @@ export function AiComposer({
 
   return (
     <div className="ai-input-box">
+      {header}
       <textarea
         ref={ref}
         value={value}

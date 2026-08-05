@@ -48,6 +48,15 @@ export type DrawingInput =
   | (DrawBase & { kind: 'line'; from: [number, number]; to: [number, number] })
   | (DrawBase & { kind: 'arrow'; from: [number, number]; to: [number, number] })
   | {
+      /** Image signature/stamp placed by the user; written as a Stamp annotation */
+      kind: 'image'
+      pageIndex: number
+      /** base64 PNG, without the data: prefix */
+      image: string
+      /** PDF user space [x1,y1,x2,y2] */
+      rect: [number, number, number, number]
+    }
+  | {
       kind: 'note'
       pageIndex: number
       color: [number, number, number]
