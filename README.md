@@ -1,7 +1,7 @@
 # GenOffice
 
 An AI-native office suite for macOS and Windows: word processor, spreadsheet,
-presentations, and PDF — five Electron apps sharing one engine layer, built
+presentations, and PDF — four Electron apps sharing one engine layer, built
 around AI editing as a first-class workflow rather than a bolted-on chat box.
 
 [![Meet GenOffice — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
@@ -27,10 +27,10 @@ Other versions are on the [Releases](https://github.com/genspark-ai/genoffice/re
 | App           | Product              | What it is                                                                                                                                                                                                                                                                                                                                                 |
 | ------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/docs`   | **GenOffice Docs**   | `.docx` word processor. Byte-preserving round trip: only dirty paragraphs are regenerated (paragraph patch), everything else in the original file is kept byte-for-byte, so opening and saving never breaks layout in Word. Paginated view whose line metrics reproduce the original document's layout, tracked changes, comments, styles, equations, ink. |
-| `apps/sheets` | **GenOffice Sheets** | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; xlsx import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing. |
-| `apps/slides` | **GenOffice Slides** | `.pptx` presentations. In-house pptx parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                    |
-| `apps/pdf`    | **GenOffice PDF**    | PDF viewer/editor on pdf.js + pdf-lib: annotations, forms, outlines, stamps, signatures, page operations, print.                                                                                                                                                                                                                                           |
-| `apps/shell`  | **GenOffice**        | The suite shell: home screen, tabbed hosting of the four editors, auto-update.                                                                                                                                                                                                                                                                             |
+| `apps/sheets` | **GenOffice Sheets** | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing. |
+| `apps/slides` | **GenOffice Slides** | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                |
+| `apps/pdf`    | **GenOffice PDF**    | `.pdf` viewer/editor on pdf.js + pdf-lib: annotations, forms, outlines, stamps, signatures, page operations, and printing support.                                                                                                                                                                                                                         |
+| `apps/shell`  | **GenOffice**        | The suite shell: home screen, tabbed hosting of the four editors, and auto-update frameworks.                                                                                                                                                                                                                                                              |
 
 Every app embeds the same AI panel: block-granular AI editing with version
 snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
@@ -83,8 +83,8 @@ committed by default) live in [`scripts/drivers/`](scripts/drivers/README.md).
 ```
 open docx ─► archive original by hash (never touched)
           ─► docx-engine parses word/document.xml top-level elements (w:p / w:tbl / …)
-          ─► Block tree, each block anchored by docxIndex + original XML slice
-          ─► TipTap streaming editor (manual + AI editing, dirty tracking)
+          ─► Block tree, each block anchored by `docxIndex` + original XML slice
+          ─► Tiptap streaming editor (manual + AI editing, dirty tracking)
 save      ─► dirty blocks → OOXML fragments (referencing existing styles only)
           ─► splice into original document.xml (untouched blocks keep original bytes)
           ─► repack zip; all other entries copied byte-for-byte
