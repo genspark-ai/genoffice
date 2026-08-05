@@ -1067,41 +1067,85 @@ export default function App() {
     setSaveState('error')
   }
 
-  const save = async (autosave = false): Promise<boolean> => {
-    if (!dirty || saveState === 'saving' || !filePath) return !dirty
+  /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As */
+  const editsPayload = () => ({
+    markups: markups.map(({ id: _id, ...rest }) => rest),
+    drawings: drawings.map((d) => d.input),
+    stamps: stampCfg ? renderStamps(stampCfg, visList) : [],
+    formValues: [...formEdits.values()],
+    rotations: [...rotations].map(([pageIndex, delta]) => ({ pageIndex, delta })),
+    deletedPages: [...deleted],
+    ...(order ? { pageOrder: visList } : {}),
+    ...(metadata ? { metadata } : {}),
+  })
+
+  /** Resolved when the running save() lands; Save As serializes behind it */
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null)
+
+  const save = (autosave = false): Promise<boolean> => {
+    if (!dirty || saveState === 'saving' || !filePath) return Promise.resolve(!dirty)
     // An explicit save opts this file into autosave
     if (!autosave) savedOnceRef.current = true
-    setSaveState('saving')
-    const result = await window.pdfApi.save({
-      path: filePath,
-      markups: markups.map(({ id: _id, ...rest }) => rest),
-      drawings: drawings.map((d) => d.input),
-      stamps: stampCfg ? renderStamps(stampCfg, visList) : [],
-      formValues: [...formEdits.values()],
-      rotations: [...rotations].map(([pageIndex, delta]) => ({ pageIndex, delta })),
-      deletedPages: [...deleted],
-      ...(order ? { pageOrder: visList } : {}),
-      ...(metadata ? { metadata } : {}),
+    const run = (async (): Promise<boolean> => {
+      setSaveState('saving')
+      const result = await window.pdfApi.save({ path: filePath, ...editsPayload() })
+      if (!result.ok) {
+        opFailed(result.error)
+        return false
+      }
+      // Reload: changes are in the file now, canvas renders directly, overlays/pending ops are cleared
+      try {
+        const el = scrollRef.current
+        const scrollTop = el?.scrollTop ?? 0
+        await loadDoc(filePath, doc)
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
+        })
+      } catch {
+        /* Save already succeeded; a reload failure doesn't block (takes effect on next open) */
+      }
+      setSaveState('saved')
+      setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 2000)
+      return true
+    })()
+    const tracked = run.finally(() => {
+      if (saveInFlightRef.current === tracked) saveInFlightRef.current = null
     })
+    saveInFlightRef.current = tracked
+    return tracked
+  }
+
+  /**
+   * Save As: apply pending edits onto the source bytes and write only to targetPath.
+   * The original file stays untouched on disk and the edits stay pending in this tab.
+   */
+  const saveAsTo = async (targetPath: string): Promise<boolean> => {
+    if (!filePath) return false
+    // A save already in flight (autosave that started before the dialog opened) lands
+    // first. If it succeeded, every edit that was pending is now part of the source
+    // bytes, so the copy applies nothing on top — deriving this from the save result
+    // (instead of re-reading state) avoids racing React's render of the cleared edits.
+    const inFlight = saveInFlightRef.current
+    const flushed = inFlight ? await inFlight.catch(() => false) : false
+    const edits = flushed
+      ? { markups: [], drawings: [], formValues: [], stamps: [] }
+      : editsPayload()
+    setSaveState('saving')
+    const result = await window.pdfApi.save({ path: filePath, targetPath, ...edits })
     if (!result.ok) {
       opFailed(result.error)
       return false
     }
-    // Reload: changes are in the file now, canvas renders directly, overlays/pending ops are cleared
-    try {
-      const el = scrollRef.current
-      const scrollTop = el?.scrollTop ?? 0
-      await loadDoc(filePath, doc)
-      requestAnimationFrame(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
-      })
-    } catch {
-      /* Save already succeeded; a reload failure doesn't block (takes effect on next open) */
-    }
-    setSaveState('saved')
-    setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 2000)
+    // Back to idle, not 'saved': only the copy was written — this tab's edits are
+    // still pending, so a saved-confirmation next to the unsaved badge would lie
+    setSaveState('idle')
     return true
   }
+
+  // Autosave pauses while the shell's Save As flow is open: the save dialog blurs the
+  // window, and the blur-triggered autosave would write the pending edits into the original
+  const saveAsFlowRef = useRef(false)
+  useEffect(() => window.pdfApi.onSaveAsFlow((inFlight) => (saveAsFlowRef.current = inFlight)), [])
 
   // Autosave (same strategy as Docs): every 30s and on window blur, silently persist pending
   // edits via the regular save() path; skipped while a save is in flight or without a file path.
@@ -1109,7 +1153,13 @@ export default function App() {
   // overwritten because a thumbnail got dragged or a markup tool tapped — Save (⌘S / the
   // toolbar button / File ▸ Save) is what opts this file into unattended writes.
   useAutosave(
-    () => savedOnceRef.current && dirty && saveState !== 'saving' && filePath !== '' && !readOnly,
+    () =>
+      savedOnceRef.current &&
+      dirty &&
+      saveState !== 'saving' &&
+      filePath !== '' &&
+      !readOnly &&
+      !saveAsFlowRef.current,
     () => void save(true),
   )
 
@@ -1427,6 +1477,13 @@ export default function App() {
   useEffect(() => {
     return window.pdfApi.onCloseSaveRequest(() => {
       void save().then((ok) => window.pdfApi.sendCloseSaveResult(ok))
+    })
+  })
+
+  // Shell menu Save As → write pending edits to the picked path only; the original file is never mutated
+  useEffect(() => {
+    return window.pdfApi.onSaveAsRequest((targetPath) => {
+      void saveAsTo(targetPath).then((ok) => window.pdfApi.sendSaveAsResult(ok))
     })
   })
 

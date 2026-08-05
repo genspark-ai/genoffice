@@ -58,6 +58,40 @@ import {
   type XNode,
 } from './xml-utils'
 
+const MAX_ZIP_PARTS = 10000
+const MAX_PART_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 1.5 * 1024 * 1024 * 1024
+
+/**
+ * Reject zip bombs before any part is inflated, using the declared
+ * uncompressed sizes from the central directory (JSZip keeps them in
+ * the lazy `_data` compressed object).
+ */
+export function assertZipWithinLimits(zip: JSZip): void {
+  const files = Object.values(zip.files).filter((f) => !f.dir)
+  if (files.length > MAX_ZIP_PARTS) {
+    throw new Error(`docx rejected: ${files.length} parts exceeds the ${MAX_ZIP_PARTS} limit`)
+  }
+  let total = 0
+  for (const file of files) {
+    const size =
+      (file as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0
+    if (size > MAX_PART_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `docx rejected: part ${file.name} declares ${size} uncompressed bytes ` +
+          `(limit ${MAX_PART_UNCOMPRESSED_BYTES})`,
+      )
+    }
+    if (size > 0) total += size
+  }
+  if (total > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+    throw new Error(
+      `docx rejected: total uncompressed size ${total} exceeds the ` +
+        `${MAX_TOTAL_UNCOMPRESSED_BYTES} limit`,
+    )
+  }
+}
+
 const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -87,6 +121,7 @@ export interface ParseExtras {
 
 export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras: ParseExtras }> {
   const zip = await JSZip.loadAsync(bytes)
+  assertZipWithinLimits(zip)
   const docFile = zip.file('word/document.xml')
   if (!docFile) throw new Error('not a docx: missing word/document.xml')
   const documentXml = await docFile.async('string')
@@ -126,6 +161,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     styles,
     rels,
     numFormats,
+    numbering,
     chartParts,
     noteNumbers,
     themeColors: theme.colors,
@@ -279,12 +315,21 @@ interface BuildContext {
   styles: Map<string, StyleInfo>
   rels: Map<string, RelInfo>
   numFormats: Map<string, 'bullet' | 'ordered'>
+  /** full per-level definitions, for level-aware kind classification */
+  numbering: Map<string, NumberingDef>
   /** collector: chart part XML seen while building blocks (partPath -> xml) */
   chartParts: Record<string, string>
   /** "footnote:<id>" / "endnote:<id>" -> display number */
   noteNumbers: Map<string, number>
   /** live palette for w:themeColor resolution, null when the doc has no theme */
   themeColors?: ThemeColors | null
+}
+
+/** bullet/ordered classification of one list level (mixed lists differ per ilvl) */
+function listKindOf(ctx: BuildContext, numId: string, ilvl: number): 'bullet' | 'ordered' {
+  const fmt = ctx.numbering.get(numId)?.levels[ilvl]?.numFmt
+  if (fmt !== undefined) return fmt === 'bullet' ? 'bullet' : 'ordered'
+  return ctx.numFormats.get(numId) ?? 'bullet'
 }
 
 /** w:color -> display hex; w:themeColor resolves against the live palette (beats stale w:val) */
@@ -720,13 +765,41 @@ async function buildBlock(
   return buildTextParagraph(base, xml, ctx)
 }
 
+/**
+ * Effective heading level 1-9 (Word TOC/outline semantics): direct pPr
+ * w:outlineLvl wins (9 = body text), then the style's level, then a built-in
+ * HeadingN styleId the document never defined.
+ */
+function headingLevelOf(
+  pPr: XNode | undefined,
+  styleId: string | undefined,
+  ctx: BuildContext,
+): number | undefined {
+  const direct = pPr ? attrsOf(findChild(pPr, 'w:outlineLvl') ?? {})['w:val'] : undefined
+  if (direct !== undefined) {
+    const lvl = parseInt(direct, 10)
+    return lvl >= 0 && lvl <= 8 ? lvl + 1 : undefined
+  }
+  if (!styleId) return undefined
+  const info = ctx.styles.get(styleId)
+  if (info) return info.headingLevel
+  const m = /^Heading([1-9])$/i.exec(styleId)
+  return m ? parseInt(m[1], 10) : undefined
+}
+
 /** parse a w:p as editable text content (paragraph / heading / listItem) */
 function buildTextParagraph(
   base: Pick<Block, 'id' | 'docxIndex' | 'originalXml'>,
   xml: string,
   ctx: BuildContext,
 ): Block {
-  const parsed = xmlParser.parse(xml) as XNode[]
+  let parsed: XNode[]
+  try {
+    parsed = xmlParser.parse(xml) as XNode[]
+  } catch {
+    // unparseable paragraph (e.g. pathological nesting): keep the original bytes
+    return { ...base, type: 'passthrough', label: 'Paragraph', previewText: plainText(xml) }
+  }
   const pNode = parsed.find((n) => nameOf(n) === 'w:p')
   if (!pNode) {
     return { ...base, type: 'passthrough', label: 'Unknown paragraph', previewText: plainText(xml) }
@@ -779,12 +852,15 @@ function buildTextParagraph(
           old.numId = oldNumId
           old.ilvl =
             parseInt(attrsOf(findChild(oldNumPr!, 'w:ilvl') ?? {})['w:val'] ?? '0', 10) || 0
-          old.kind = ctx.numFormats.get(oldNumId) ?? 'bullet'
-        } else if (oldStyleId && ctx.styles.get(oldStyleId)?.headingLevel) {
-          old.type = 'docHeading'
-          old.level = ctx.styles.get(oldStyleId)!.headingLevel
-        } else if (oldStyleId) {
-          old.type = 'docParagraph'
+          old.kind = listKindOf(ctx, oldNumId, old.ilvl)
+        } else {
+          const oldLevel = headingLevelOf(oldPPr, oldStyleId, ctx)
+          if (oldLevel) {
+            old.type = 'docHeading'
+            old.level = oldLevel
+          } else if (oldStyleId) {
+            old.type = 'docParagraph'
+          }
         }
         if (old && Object.keys(old).length > 0) pPrChangeInfo.old = old
       }
@@ -802,12 +878,13 @@ function buildTextParagraph(
     const numId = attrsOf(findChild(numPr, 'w:numId') ?? {})['w:val']
     const ilvl = attrsOf(findChild(numPr, 'w:ilvl') ?? {})['w:val'] ?? '0'
     if (numId) {
-      const kind = ctx.numFormats.get(numId) ?? 'bullet'
+      const ilvlNum = parseInt(ilvl, 10) || 0
+      const kind = listKindOf(ctx, numId, ilvlNum)
       return {
         ...base,
         type: 'listItem',
         styleId,
-        list: { kind, numId, ilvl: parseInt(ilvl, 10) || 0 },
+        list: { kind, numId, ilvl: ilvlNum },
         format,
         rawPPr,
         bookmarks,
@@ -821,23 +898,21 @@ function buildTextParagraph(
   }
 
   // heading?
-  if (styleId) {
-    const info = ctx.styles.get(styleId)
-    if (info?.headingLevel) {
-      return {
-        ...base,
-        type: 'heading',
-        level: info.headingLevel,
-        styleId,
-        format,
-        rawPPr,
-        bookmarks,
-        hiddenBookmarks,
-        commentStarts,
-        commentEnds,
-        runs,
-        ...revExtras,
-      }
+  const headingLevel = headingLevelOf(pPr, styleId, ctx)
+  if (headingLevel) {
+    return {
+      ...base,
+      type: 'heading',
+      level: headingLevel,
+      styleId,
+      format,
+      rawPPr,
+      bookmarks,
+      hiddenBookmarks,
+      commentStarts,
+      commentEnds,
+      runs,
+      ...revExtras,
     }
   }
 
@@ -1047,7 +1122,12 @@ function vmlColorHex(value: string | undefined): string | undefined {
  */
 function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
   if (!xml.includes('<w:txbxContent')) return []
-  const parsed = xmlParser.parse(xml) as XNode[]
+  let parsed: XNode[]
+  try {
+    parsed = xmlParser.parse(xml) as XNode[]
+  } catch {
+    return []
+  }
   const shapes: XNode[] = []
   collectNodes(parsed, 'wps:wsp', shapes)
   for (const vmlName of ['v:shape', 'v:rect', 'v:roundrect']) {
@@ -1331,7 +1411,7 @@ function extractRuns(
           if (xe) pushRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
           else if (ref) {
             const name = ref[1] ?? ref[2]
-            pushRun({ text: fieldCached || name, refField: name }, rev)
+            pushRun({ text: fieldCached || name, refField: name, refInstr: fieldInstr }, rev)
           } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
             pushRun({ text: fieldCached || ' ', instrField: fieldInstr.trim() }, rev)
           }
@@ -1443,6 +1523,15 @@ function rubyPartText(rubyNode: XNode, part: 'w:rubyBase' | 'w:rt'): string {
   return text
 }
 
+/** OOXML on/off toggle, three-state: absent → undefined, explicit off → false */
+function onOffOf(parent: XNode, name: string): boolean | undefined {
+  const child = findChild(parent, name)
+  if (!child) return undefined
+  const val = attrsOf(child)['w:val']
+  if (val === undefined) return true
+  return !['0', 'false', 'none', 'off'].includes(val.toLowerCase())
+}
+
 function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null): Run | null {
   let text = ''
   for (const child of childrenOf(rNode)) {
@@ -1470,10 +1559,14 @@ function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null):
     run.rawRPr = serializeXNode(rPr)
     const rStyle = attrsOf(findChild(rPr, 'w:rStyle') ?? {})['w:val']
     if (rStyle && rStyle !== 'Hyperlink') run.styleId = rStyle
-    if (boolProp(rPr, 'w:b')) run.bold = true
-    if (boolProp(rPr, 'w:i')) run.italic = true
+    const bold = onOffOf(rPr, 'w:b')
+    if (bold !== undefined) run.bold = bold
+    const italic = onOffOf(rPr, 'w:i')
+    if (italic !== undefined) run.italic = italic
     if (underlineProp(rPr)) run.underline = true
-    if (boolProp(rPr, 'w:strike')) run.strike = true
+    else if (attrsOf(findChild(rPr, 'w:u') ?? {})['w:val'] === 'none') run.underline = false
+    const strike = onOffOf(rPr, 'w:strike')
+    if (strike !== undefined) run.strike = strike
     const color = colorFrom(rPr, theme)
     if (color) run.color = color
     const sz = attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val']
@@ -1907,14 +2000,11 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
     const format = extractParaFormat(pPr ?? {})
     const numPr = pPr ? findChild(pPr, 'w:numPr') : undefined
     const numId = numPr ? attrsOf(findChild(numPr, 'w:numId') ?? {})['w:val'] : undefined
+    const cellIlvl = numPr
+      ? parseInt(attrsOf(findChild(numPr, 'w:ilvl') ?? {})['w:val'] ?? '0', 10) || 0
+      : 0
     const list =
-      numPr && numId
-        ? {
-            kind: ctx.numFormats.get(numId) ?? ('bullet' as const),
-            numId,
-            ilvl: parseInt(attrsOf(findChild(numPr, 'w:ilvl') ?? {})['w:val'] ?? '0', 10) || 0,
-          }
-        : undefined
+      numPr && numId ? { kind: listKindOf(ctx, numId, cellIlvl), numId, ilvl: cellIlvl } : undefined
     richParas.push({ ...format, ...(list ? { list } : {}), runs: extractRuns(p, ctx) })
     if (!cell.align) {
       const jc = attrsOf(findChild(findChild(p, 'w:pPr') ?? {}, 'w:jc') ?? {})['w:val']
@@ -2456,7 +2546,13 @@ async function parseStyles(
   const styles = new Map<string, StyleInfo>()
   const file = zip.file('word/styles.xml')
   if (!file) return { styles }
-  const parsed = xmlParser.parse(await file.async('string')) as XNode[]
+  let parsed: XNode[]
+  try {
+    parsed = xmlParser.parse(await file.async('string')) as XNode[]
+  } catch (err) {
+    console.warn('styles.xml unparseable, styles degraded to empty:', err)
+    return { styles }
+  }
   const root = parsed.find((n) => nameOf(n) === 'w:styles')
   if (!root) return { styles }
 
@@ -2504,6 +2600,8 @@ async function parseStyles(
 
   const basedOnIds = new Map<string, string>()
   const linkedIds = new Map<string, string>()
+  // styles with an explicit w:outlineLvl 9 (body text, e.g. TOCHeading basedOn Heading1)
+  const outlineOffIds = new Set<string>()
   for (const styleNode of findChildren(root, 'w:style')) {
     const attrs = attrsOf(styleNode)
     const type = attrs['w:type']
@@ -2521,6 +2619,7 @@ async function parseStyles(
         if (outline !== undefined) {
           const lvl = parseInt(outline, 10)
           if (lvl >= 0 && lvl <= 8) headingLevel = lvl + 1
+          else outlineOffIds.add(styleId)
         }
       }
     }
@@ -2562,6 +2661,14 @@ async function parseStyles(
     }
     if (parent?.tableDisplay) {
       info.tableDisplay = mergeTableDisplay(parent.tableDisplay, info.tableDisplay)
+    }
+    if (
+      info.type === 'paragraph' &&
+      info.headingLevel === undefined &&
+      !outlineOffIds.has(styleId) &&
+      parent?.headingLevel
+    ) {
+      info.headingLevel = parent.headingLevel
     }
     return info
   }
@@ -2665,11 +2772,14 @@ function styleDisplayOf(styleNode: XNode, theme?: ThemeColors | null): StyleDisp
     if (sz) display.sizeHalfPoints = parseInt(sz, 10) || undefined
     const color = colorFrom(rPr, theme)
     if (color) display.color = color
-    if (boolProp(rPr, 'w:b')) display.bold = true
-    if (boolProp(rPr, 'w:i')) display.italic = true
+    const bold = onOffOf(rPr, 'w:b')
+    if (bold !== undefined) display.bold = bold
+    const italic = onOffOf(rPr, 'w:i')
+    if (italic !== undefined) display.italic = italic
     const u = attrsOf(findChild(rPr, 'w:u') ?? {})['w:val']
-    if (u && u !== 'none') display.underline = true
-    if (boolProp(rPr, 'w:strike')) display.strike = true
+    if (u) display.underline = u !== 'none'
+    const strike = onOffOf(rPr, 'w:strike')
+    if (strike !== undefined) display.strike = strike
     const fonts = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
     const font = fonts['w:eastAsia'] ?? fonts['w:ascii'] ?? fonts['w:hAnsi']
     if (font) display.font = font

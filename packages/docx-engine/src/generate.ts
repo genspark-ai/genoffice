@@ -1,4 +1,12 @@
-import type { GeneratedBlock, ImageWrap, ParaFormat, Run, TableCell, TableModel } from './types'
+import type {
+  GeneratedBlock,
+  ImageWrap,
+  ParaFormat,
+  Run,
+  TabStop,
+  TableCell,
+  TableModel,
+} from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 
 export interface GenerateContext {
@@ -658,7 +666,8 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   if (format.spaceBefore && format.spaceBefore > 0) {
     spacingAttrs.push(`w:before="${Math.round(format.spaceBefore)}"`)
   }
-  if (format.spaceAfter && format.spaceAfter > 0) {
+  // explicit 0 overrides the style's space-after in Word, so it must be written back
+  if (format.spaceAfter !== undefined && format.spaceAfter >= 0) {
     spacingAttrs.push(`w:after="${Math.round(format.spaceAfter)}"`)
   }
   if ((format.lineRule === 'exact' || format.lineRule === 'atLeast') && format.lineRawTwips) {
@@ -748,11 +757,149 @@ export function splitXmlChildren(xml: string): PPrChild[] {
   return out
 }
 
+/** mirrors JC_ALIGN on the parse side (kept local: parse.ts imports from this module) */
+const JC_TO_ALIGN: Record<string, ParaFormat['align']> = {
+  left: 'left',
+  start: 'left',
+  center: 'center',
+  right: 'right',
+  end: 'right',
+  both: 'justify',
+  distribute: 'distribute',
+}
+
+function rawSpacingUnchanged(raw: string | undefined, f: ParaFormat): boolean {
+  const rule = rawAttr(raw, 'w:lineRule') ?? 'auto'
+  const line = parseInt(rawAttr(raw, 'w:line') ?? '', 10)
+  const before = parseInt(rawAttr(raw, 'w:before') ?? '', 10)
+  const afterStr = rawAttr(raw, 'w:after')
+  const after = parseInt(afterStr ?? '', 10)
+  const rawBefore = before > 0 ? before : undefined
+  const rawAfter = afterStr !== undefined && after >= 0 ? after : undefined
+  const fBefore = f.spaceBefore && f.spaceBefore > 0 ? Math.round(f.spaceBefore) : undefined
+  const fAfter =
+    f.spaceAfter !== undefined && f.spaceAfter >= 0 ? Math.round(f.spaceAfter) : undefined
+  if (rawBefore !== fBefore || rawAfter !== fAfter) return false
+  if ((f.lineRule === 'exact' || f.lineRule === 'atLeast') && f.lineRawTwips) {
+    return line > 0 && rule === f.lineRule && line === Math.round(f.lineRawTwips)
+  }
+  if (f.lineSpacing && f.lineSpacing > 0) {
+    return line > 0 && rule === 'auto' && Math.round((line / 240) * 100) / 100 === f.lineSpacing
+  }
+  return !(line > 0)
+}
+
+function rawIndUnchanged(raw: string | undefined, f: ParaFormat): boolean {
+  const left = parseInt(rawAttr(raw, 'w:left') ?? rawAttr(raw, 'w:start') ?? '', 10)
+  const right = parseInt(rawAttr(raw, 'w:right') ?? rawAttr(raw, 'w:end') ?? '', 10)
+  const firstLine = parseInt(rawAttr(raw, 'w:firstLine') ?? '', 10)
+  const hanging = parseInt(rawAttr(raw, 'w:hanging') ?? '', 10)
+  const rawLeft = Number.isFinite(left) && left !== 0 ? left : undefined
+  const rawRight = Number.isFinite(right) && right !== 0 ? right : undefined
+  const rawFirst = hanging > 0 ? -hanging : firstLine > 0 ? firstLine : undefined
+  const norm = (v: number | undefined) => (v ? Math.round(v) : undefined)
+  return (
+    rawLeft === norm(f.indentLeft) &&
+    rawRight === norm(f.indentRight) &&
+    rawFirst === norm(f.indentFirstLine)
+  )
+}
+
+function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
+  let rawBorders = ''
+  if (raw) {
+    const inner = raw.replace(/^<w:pBdr[^>]*>/, '').replace(/<\/w:pBdr>$/, '')
+    const kids = splitXmlChildren(inner)
+    for (const [side, ch] of [
+      ['top', 't'],
+      ['bottom', 'b'],
+      ['left', 'l'],
+      ['right', 'r'],
+    ] as const) {
+      const el = kids.find((k) => k.name === `w:${side}`)
+      if (el && rawAttr(el.xml, 'w:val') !== 'none') rawBorders += ch
+    }
+  }
+  const norm = (s: string | undefined) => (s ? [...new Set(s)].sort().join('') : '')
+  return norm(rawBorders) === norm(f.borders)
+}
+
+function rawTabsUnchanged(raw: string | undefined, stops: TabStop[]): boolean {
+  const rawStops: TabStop[] = []
+  if (raw) {
+    const inner = raw.replace(/^<w:tabs[^>]*>/, '').replace(/<\/w:tabs>$/, '')
+    for (const kid of splitXmlChildren(inner)) {
+      if (kid.name !== 'w:tab') continue
+      const pos = parseInt(rawAttr(kid.xml, 'w:pos') ?? '', 10)
+      if (!Number.isFinite(pos)) continue
+      rawStops.push({ pos, val: (rawAttr(kid.xml, 'w:val') ?? 'left') as TabStop['val'] })
+      const leader = rawAttr(kid.xml, 'w:leader')
+      if (leader && leader !== 'none') rawStops[rawStops.length - 1].leader = leader as never
+    }
+  }
+  if (rawStops.length !== stops.length) return false
+  const normLeader = (l?: string) => (l && l !== 'none' ? l : undefined)
+  return rawStops.every(
+    (r, i) =>
+      r.pos === stops[i].pos &&
+      r.val === stops[i].val &&
+      normLeader(r.leader) === normLeader(stops[i].leader),
+  )
+}
+
+function rawFramePrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
+  const val = rawAttr(raw, 'w:dropCap')
+  const rawDc =
+    val === 'drop' || val === 'margin'
+      ? { type: val, lines: parseInt(rawAttr(raw, 'w:lines') ?? '3', 10) || 3 }
+      : undefined
+  return rawDc?.type === f.dropCap?.type && rawDc?.lines === f.dropCap?.lines
+}
+
+/** True when re-parsing the raw child yields the current model value, i.e. the group was not edited */
+function pprGroupUnchanged(tag: string, raw: string | undefined, f: ParaFormat): boolean {
+  switch (tag) {
+    case 'w:pageBreakBefore':
+      return rawBool(raw) === !!f.pageBreakBefore
+    case 'w:bidi':
+      return rawBool(raw) === !!f.bidi
+    case 'w:jc': {
+      const val = rawAttr(raw, 'w:val')
+      let rawAlign = val ? JC_TO_ALIGN[val] : undefined
+      if (f.bidi && (rawAlign === 'left' || rawAlign === 'right')) {
+        rawAlign = rawAlign === 'left' ? 'right' : 'left'
+      }
+      return rawAlign === f.align
+    }
+    case 'w:spacing':
+      return rawSpacingUnchanged(raw, f)
+    case 'w:ind':
+      return rawIndUnchanged(raw, f)
+    case 'w:pBdr':
+      return rawPBdrUnchanged(raw, f)
+    case 'w:shd': {
+      const fill = rawAttr(raw, 'w:fill')
+      return (fill && fill !== 'auto' ? fill : undefined) === f.shadingFill
+    }
+    case 'w:tabs':
+      return rawTabsUnchanged(raw, f.tabStops ?? [])
+    case 'w:framePr':
+      return rawFramePrUnchanged(raw, f)
+    default:
+      return false
+  }
+}
+
 /**
- * Merge format-model changes into an original <w:pPr> slice: the six children
- * the ParaFormat model owns are replaced by freshly built ones (at their
- * schema position), everything else — keepNext, tabs, paragraph-mark rPr,
- * pPrChange revision records... — keeps its original bytes.
+ * Merge format-model changes into an original <w:pPr> slice. Like mergeRPrModel,
+ * each managed child is compared group by group: when its raw bytes re-parse to
+ * the current model value the group was not edited and keeps its original bytes,
+ * so unmodeled attributes (w:firstLineChars, w:afterLines, autospacing, border
+ * colors, shading patterns…) survive. Only genuinely changed groups are rebuilt
+ * from the model (at their schema position) — a rebuilt w:ind intentionally drops
+ * firstLineChars/leftChars so the user's new twips indent wins over the CJK
+ * char-unit variant Word would otherwise prefer. Everything unmanaged — keepNext,
+ * paragraph-mark rPr, pPrChange revision records... — keeps its original bytes.
  * When format.tabStops is set, w:tabs is also managed (replaced or removed).
  * When format.dropCap is set, w:framePr is also managed.
  */
@@ -768,7 +915,13 @@ export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): 
   const managedTags = new Set(FORMAT_MANAGED_TAGS)
   if (format?.tabStops !== undefined) managedTags.add('w:tabs')
   if (format?.dropCap !== undefined) managedTags.add('w:framePr')
-  const kept = splitXmlChildren(inner).filter((c) => !managedTags.has(c.name))
+  const rawChildren = splitXmlChildren(inner)
+  const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
+  const rebuilt = new Set(
+    [...managedTags].filter((tag) => !pprGroupUnchanged(tag, rawOf(tag), format ?? {})),
+  )
+  const freshOut = fresh.filter((c) => rebuilt.has(c.name))
+  const kept = rawChildren.filter((c) => !rebuilt.has(c.name))
   const rank = (n: string) => PPR_CHILD_ORDER.indexOf(n)
   const parts: string[] = []
   let fi = 0
@@ -776,11 +929,12 @@ export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): 
   for (const child of kept) {
     const own = rank(child.name)
     const effective = own === -1 ? prevRank : Math.max(own, prevRank)
-    while (fi < fresh.length && rank(fresh[fi].name) < effective) parts.push(fresh[fi++].xml)
+    while (fi < freshOut.length && rank(freshOut[fi].name) < effective)
+      parts.push(freshOut[fi++].xml)
     parts.push(child.xml)
     prevRank = effective
   }
-  while (fi < fresh.length) parts.push(fresh[fi++].xml)
+  while (fi < freshOut.length) parts.push(freshOut[fi++].xml)
   if (parts.length === 0) return ''
   return `${open}${parts.join('')}</w:pPr>`
 }
@@ -1401,11 +1555,13 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     )
   }
   if (run.refField !== undefined) {
-    // cross-reference: full REF field, run text is the cached display result
+    // cross-reference: full REF field, run text is the cached display result;
+    // the original instruction (with its switches) is written back verbatim
     const name = run.refField.replace(/"/g, '')
+    const instr = run.refInstr ?? ` REF ${name} \\h `
     return (
       '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-      `<w:r><w:instrText xml:space="preserve"> REF ${escapeXmlText(name)} \\h </w:instrText></w:r>` +
+      `<w:r><w:instrText xml:space="preserve">${escapeXmlText(instr)}</w:instrText></w:r>` +
       '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
       generateRunXml({ ...run, refField: undefined }, insideLink) +
       '<w:r><w:fldChar w:fldCharType="end"/></w:r>'

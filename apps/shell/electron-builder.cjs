@@ -52,6 +52,19 @@ if (!gskCommander) {
   )
 }
 
+// The module trees are electron-vite outputs produced by build:all; a missing
+// one means that module's build did not run or failed. electron-builder only
+// logs "file source doesn't exist" for an absent extraResources source and
+// still exits 0, so without this the installer launches normally and is simply
+// missing that editor — it surfaces only when a user opens the tab.
+for (const rel of ['../docs/out', '../sheets/out', '../slides/out', '../pdf/out']) {
+  if (!existsSync(join(__dirname, rel))) {
+    throw new Error(
+      `electron-builder extraResources source missing: ${rel} (run npm run build:all first)`,
+    )
+  }
+}
+
 /** @type {import('electron-builder').Configuration} */
 const config = {
   appId: 'com.genoffice.app',
@@ -99,36 +112,45 @@ const config = {
       to: 'gsk/node_modules/ws',
     },
   ],
+  // `mimeType` is read only by the Linux target, where it becomes the
+  // desktop entry's MimeType= list; associations without it are dropped
+  // there. macOS and Windows ignore the field and key off `ext`.
   fileAssociations: [
     {
       ext: 'docx',
       name: 'Word Document',
       role: 'Editor',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     },
     {
       ext: 'xlsx',
       name: 'Excel Workbook',
       role: 'Editor',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     },
     {
       ext: 'pptx',
       name: 'PowerPoint Presentation',
       role: 'Editor',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     },
     {
       ext: 'xls',
       name: 'Excel 97-2003 Workbook',
       role: 'Editor',
+      mimeType: 'application/vnd.ms-excel',
     },
     {
       ext: 'csv',
       name: 'CSV Document',
       role: 'Editor',
+      mimeType: 'text/csv',
     },
     {
       ext: 'pdf',
       name: 'PDF Document',
       role: 'Editor',
+      mimeType: 'application/pdf',
     },
   ],
   npmRebuild: false,
@@ -161,16 +183,32 @@ const config = {
       },
     ],
   },
+// Unlike win (which cross-compiles the sidecar to an explicit target
+  // triple), linux takes it from cargo's host-native target/release/ — the
+  // same source mac uses. So no `arch` is pinned here: electron-builder
+  // defaults to the build host's architecture, which is the only one the
+  // sidecar was actually built for. Packaging arm64 on an x64 host, or the
+  // reverse, needs a matching `cargo build --target` first.
   linux: {
-    target: ['AppImage', 'deb'],
-    executableName: 'genoffice',
-    artifactName: 'genoffice-${version}-${arch}.${ext}',
+    // AppImage only: it needs no packaging identity, whereas deb/rpm would
+    // require a Debian maintainer and homepage in the repo metadata.
+    target: ['AppImage'],
     category: 'Office',
-    maintainer: 'GenOffice',
-    synopsis: 'AI-native office suite (docs, sheets, slides, pdf)',
-    description:
-      'GenOffice is an AI-native office suite: word processor, spreadsheet, presentations, and PDF. ' +
-      'The original file is the source of truth; edits are applied as narrow patches so untouched content survives.',
+    icon: 'build/icon.png',
+    // mac and win name the binary from productName; linux instead derives it
+    // from package.json "name", and "@genoffice/shell" sanitizes to the
+    // invalid "@genofficeshell". Setting it explicitly also makes the
+    // generated genoffice.desktop match the WM_CLASS Electron reports (it
+    // takes that from the executable basename), so the running window links
+    // back to its launcher entry.
+    executableName: 'genoffice',
+    // Electron takes its X11 app_id from package.json "desktopName"
+    // (genoffice.desktop); syncDesktopName makes electron-builder name the
+    // .desktop file and its StartupWMClass from the same value. Without it
+    // StartupWMClass falls back to productName ("GenOffice"), which does not
+    // match the "genoffice" WM_CLASS the window actually reports — and X11
+    // compares case-sensitively, so the taskbar shows an unlinked window.
+    syncDesktopName: true,
     extraResources: [
       {
         from: '../sheets/native/xlsx-engine/target/release/xlsx-sidecar',

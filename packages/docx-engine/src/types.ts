@@ -67,6 +67,8 @@ export interface Run {
    * holds the cached display result. Regenerates as a full REF field.
    */
   refField?: string
+  /** exact original REF instruction text; written back verbatim so switches (\r, \p, ...) survive */
+  refInstr?: string
   /** Generic inline field (DATE/TIME/NUMPAGES/FILENAME etc.): full instruction text; run text is the cached result */
   instrField?: string
   /**

@@ -8,6 +8,7 @@ import {
   markDocsNewBlank,
   requestDocsClose,
   setActiveDocsResolver,
+  teardownDocsRenderer,
 } from '../../../docs/src/main/docs-main'
 import { createPdfView, pdfIsDirty, requestPdfClose } from '../../../pdf/src/main/pdf-main'
 import {
@@ -62,7 +63,15 @@ export class TabManager {
     /** localized placeholder title for a tab that has no file yet */
     private readonly untitledTitleFor?: (kind: TabKind) => string,
   ) {
-    shellWindow.on('resize', () => this.layout())
+    // Layout once synchronously for macOS/Windows (bounds are already correct),
+    // then once more on the next tick. On Linux/X11, `resize` fires before the
+    // window manager applies the new size, so getContentBounds() is still the
+    // pre-maximize size inside the handler and a follow-up layout is required.
+    // See https://github.com/genspark-ai/genoffice/issues/15
+    shellWindow.on('resize', () => {
+      this.layout()
+      setImmediate(() => this.layout())
+    })
   }
 
   private untitled(kind: TabKind, fallback: string): string {
@@ -95,6 +104,8 @@ export class TabManager {
 
   /** re-fit the active tab's view after a window resize */
   layout(): void {
+    // Deferred resize layouts can land after the shell window was closed.
+    if (this.shellWindow.isDestroyed()) return
     const active = this.tabs.find((t) => t.id === this.activeId)
     if (active?.view) active.view.setBounds(this.contentBounds())
   }
@@ -315,6 +326,7 @@ export class TabManager {
         // accessibility support — looks like an upstream WebContentsView/Chromium
         // issue, not something fixable from here). Detaching without destroying
         // avoids the freeze; the orphaned webContents is reclaimed when the app quits.
+        teardownDocsRenderer(removed.view.webContents)
       } else {
         removed.view.webContents.close()
       }
@@ -342,10 +354,10 @@ export class TabManager {
   }
 
   /** the active tab's pdf view, if the active tab is a pdf (pdf menu target) */
-  activePdfTab(): { webContents: WebContents; filePath?: string } | undefined {
+  activePdfTab(): { id: string; webContents: WebContents; filePath?: string } | undefined {
     const tab = this.tabs.find((t) => t.id === this.activeId)
     return tab?.kind === 'pdf' && tab.view
-      ? { webContents: tab.view.webContents, filePath: tab.filePath }
+      ? { id: tab.id, webContents: tab.view.webContents, filePath: tab.filePath }
       : undefined
   }
 }

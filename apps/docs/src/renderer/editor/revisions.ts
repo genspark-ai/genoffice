@@ -619,28 +619,142 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
 
   addProseMirrorPlugins() {
     const storage = this.storage
+    const editor = this.editor
+    // edits made while the IME is composing; recorded at compositionend so the
+    // ins mark never rewrites the composition's DOM (Chromium aborts otherwise)
+    let pendingIme: { from: number; to: number; removed: PmNode[] } | null = null
     return [
       new Plugin({
         key: new PluginKey('trackChangesRecorder'),
+        props: {
+          handleDOMEvents: {
+            // PM keeps the doc in sync during composition and often dispatches
+            // nothing at compositionend; poke a transaction to flush pendingIme
+            compositionend: (view) => {
+              setTimeout(() => {
+                if (pendingIme && !view.isDestroyed && !view.composing) view.dispatch(view.state.tr)
+              }, 0)
+              return false
+            },
+          },
+        },
         appendTransaction: (transactions, oldState, newState) => {
-          if (!storage.enabled) return null
+          if (!storage.enabled) {
+            pendingIme = null
+            return null
+          }
+          if (pendingIme) {
+            for (const transaction of transactions) {
+              pendingIme.from = transaction.mapping.map(pendingIme.from, -1)
+              pendingIme.to = transaction.mapping.map(pendingIme.to, 1)
+            }
+          }
           const tracked = transactions.filter(
             (t) => t.docChanged && !t.getMeta(TRACK_IGNORE) && !t.getMeta('history$'),
           )
-          if (tracked.length === 0) return null
+          let composing = false
+          try {
+            composing = Boolean(editor.view?.composing)
+          } catch {
+            /* headless editor */
+          }
+          const flush = composing ? null : pendingIme
+          if (!composing) pendingIme = null
+          if (tracked.length === 0 && !flush) return null
 
           const insType = newState.schema.marks.ins
           const delType = newState.schema.marks.del
           if (!insType || !delType) return null
-          const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-          const insMark = insType.create({ author: storage.author, date: now })
-          const delMark = delType.create({ author: storage.author, date: now })
 
           // flatten steps across transactions with a shared mapping to the final doc
           const steps = tracked.flatMap((t) =>
             t.steps.map((step, i) => ({ step, docBefore: t.docs[i] })),
           )
           const mapping = new Mapping(steps.map(({ step }) => step.getMap()))
+
+          // Affected span in final-doc coordinates: the scans below only visit
+          // blocks intersecting it (blocks outside the step ranges cannot change).
+          let spanFrom = Infinity
+          let spanTo = -Infinity
+          let unbounded = false
+          steps.forEach(({ step }, idx) => {
+            const tail = mapping.slice(idx + 1)
+            let ranged = false
+            step.getMap().forEach((_oldStart, _oldEnd, from, to) => {
+              ranged = true
+              spanFrom = Math.min(spanFrom, tail.map(from, -1))
+              spanTo = Math.max(spanTo, tail.map(to, 1))
+            })
+            if (ranged) return
+            if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
+              spanFrom = Math.min(spanFrom, tail.map(step.from, -1))
+              spanTo = Math.max(spanTo, tail.map(step.to, 1))
+            } else {
+              // AttrStep and other rangeless steps expose pos; anything else falls
+              // back to a whole-doc scan
+              const pos = (step as unknown as { pos?: number }).pos
+              if (typeof pos === 'number') {
+                spanFrom = Math.min(spanFrom, tail.map(pos, -1))
+                spanTo = Math.max(spanTo, tail.map(pos, 1) + 1)
+              } else unbounded = true
+            }
+          })
+
+          if (composing) {
+            if (spanFrom <= spanTo && !unbounded) {
+              const from = Math.max(0, spanFrom)
+              const to = Math.min(newState.doc.content.size, spanTo)
+              if (pendingIme) {
+                pendingIme.from = Math.min(pendingIme.from, from)
+                pendingIme.to = Math.max(pendingIme.to, to)
+              } else {
+                // composition replacing a selection deletes it in the first step:
+                // capture that content now, re-materialize it struck at flush time
+                const removed: PmNode[] = []
+                for (const { step, docBefore } of steps) {
+                  if (!(step instanceof ReplaceStep) && !(step instanceof ReplaceAroundStep))
+                    continue
+                  if (step.to <= step.from) continue
+                  const slice = docBefore.slice(step.from, step.to)
+                  if (slice.openStart !== 0 || slice.openEnd !== 0) continue
+                  let inlineOnly = slice.content.childCount > 0
+                  slice.content.forEach((child) => {
+                    if (!child.isInline) inlineOnly = false
+                  })
+                  if (!inlineOnly) continue
+                  slice.content.forEach((child) => {
+                    const ownIns = child.marks.some(
+                      (m) => m.type === insType && m.attrs.author === storage.author,
+                    )
+                    if (!ownIns) removed.push(child)
+                  })
+                }
+                pendingIme = { from, to, removed }
+              }
+            }
+            return null
+          }
+
+          let newFrom = 0
+          let newTo = 0
+          let oldFrom = 0
+          let oldTo = 0
+          if (unbounded) {
+            newTo = newState.doc.content.size
+            oldTo = oldState.doc.content.size
+          } else if (spanFrom <= spanTo) {
+            newFrom = Math.max(0, spanFrom - 1)
+            newTo = Math.min(newState.doc.content.size, spanTo + 1)
+            // exact preimage: old/new scans must cover matching block sets, or the
+            // anchor diff below would mistake one-sided coverage for a delete/insert
+            const inverted = mapping.invert()
+            oldFrom = Math.max(0, inverted.map(newFrom, -1))
+            oldTo = Math.min(oldState.doc.content.size, inverted.map(newTo, 1))
+          }
+
+          const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+          const insMark = insType.create({ author: storage.author, date: now })
+          const delMark = delType.create({ author: storage.author, date: now })
 
           const tr = newState.tr
           tr.setMeta(TRACK_IGNORE, true)
@@ -655,19 +769,21 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             tracked.flatMap((transaction) => transaction.steps.map((step) => step.getMap())),
           )
           const oldAnchors = new Map<number, { node: PmNode; pos: number }>()
-          oldState.doc.forEach((node, pos) => {
+          oldState.doc.nodesBetween(oldFrom, oldTo, (node, pos) => {
             const index = node.attrs?.docxIndex
             if (typeof index === 'number') oldAnchors.set(index, { node, pos })
+            return false
           })
           const newAnchors = new Map<number, { node: PmNode; pos: number }>()
-          newState.doc.forEach((node, pos) => {
+          newState.doc.nodesBetween(newFrom, newTo, (node, pos) => {
             const index = node.attrs?.docxIndex
             if (typeof index === 'number') newAnchors.set(index, { node, pos })
+            return false
           })
           const matchedNewPositions = new Set<number>()
           const movedNewPositions = new Set<number>()
           const deletedBlocks: Array<{ node: PmNode; pos: number }> = []
-          oldState.doc.forEach((before, oldPos) => {
+          oldState.doc.nodesBetween(oldFrom, oldTo, (before, oldPos) => {
             const index = before.attrs?.docxIndex
             if (typeof index === 'number') {
               const match = newAnchors.get(index)
@@ -686,7 +802,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               ) {
                 deletedBlocks.push({ node: before, pos: fullMapping.map(oldPos, -1) })
               }
-              return
+              return false
             }
             const mapped = fullMapping.map(oldPos, -1)
             const after = newState.doc.nodeAt(mapped)
@@ -700,6 +816,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             else if ((before.attrs?.blockRevision as { kind?: string } | null)?.kind !== 'ins') {
               deletedBlocks.push({ node: before, pos: mapped })
             }
+            return false
           })
           for (const { node, pos } of deletedBlocks.sort((a, b) => b.pos - a.pos)) {
             tr.insert(
@@ -715,19 +832,20 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             )
             changed = true
           }
-          newState.doc.forEach((node, pos) => {
+          newState.doc.nodesBetween(newFrom, newTo, (node, pos) => {
             const index = node.attrs?.docxIndex
             const knownAnchor = typeof index === 'number' && oldAnchors.has(index)
             if (
               (!movedNewPositions.has(pos) && (knownAnchor || matchedNewPositions.has(pos))) ||
               node.attrs?.blockRevision
             )
-              return
+              return false
             tr.setNodeMarkup(tr.mapping.map(pos, 1), undefined, {
               ...node.attrs,
               blockRevision: { kind: 'ins', author: storage.author, date: now },
             })
             changed = true
+            return false
           })
 
           // Native table row commands preserve the table anchor. Record the
@@ -797,7 +915,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             }
           }
 
-          oldState.doc.descendants((before, oldPos) => {
+          oldState.doc.nodesBetween(oldFrom, oldTo, (before, oldPos) => {
             if (!PARAGRAPH_NODE_TYPES.has(before.type.name)) return
             const newPos = fullMapping.map(oldPos, -1)
             const after = newState.doc.nodeAt(newPos)
@@ -926,6 +1044,32 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               }
             }
           })
+
+          if (flush) {
+            const max = newState.doc.content.size
+            const from = tr.mapping.map(Math.max(0, Math.min(flush.from, max)), 1)
+            const to = tr.mapping.map(Math.max(0, Math.min(flush.to, max)), -1)
+            if (from < to) {
+              tr.removeMark(from, to, delType)
+              tr.addMark(from, to, insMark)
+              changed = true
+            }
+            if (flush.removed.length > 0) {
+              const at = Math.max(from, to)
+              const end = flush.removed.reduce((acc, child) => {
+                const struck = child.marks.some((m) => m.type === delType)
+                  ? child
+                  : child.mark([...child.marks, delMark])
+                tr.insert(acc, struck)
+                return acc + struck.nodeSize
+              }, at)
+              // same caret rule as above: keep it in front of the struck text
+              if (newState.selection.empty && tr.mapping.map(newState.selection.from) === end) {
+                tr.setSelection(TextSelection.create(tr.doc, at))
+              }
+              changed = true
+            }
+          }
 
           return changed ? tr : null
         },

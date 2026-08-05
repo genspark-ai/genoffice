@@ -23,9 +23,27 @@
   box-sizing: border-box;
 }
 
+/* UI CJK fonts per language (documentElement.lang is set at bootstrap and on switch);
+ * the zh expansion must keep the historical stack byte-identical */
+:root {
+  --ui-cjk: 'PingFang SC';
+}
+
+:root:lang(ja) {
+  --ui-cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+}
+
+:root:lang(ko) {
+  --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+}
+
+:root:lang(zh-TW) {
+  --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family: -apple-system, var(--ui-cjk), 'Segoe UI', 'Microsoft YaHei', sans-serif;
   background: var(--surface);
   color: var(--text);
 }
@@ -236,6 +254,44 @@ body.vib .home {
 
 .account-sub.error {
   color: #b3261e;
+}
+
+/* rescue panel while waiting for the browser sign-in (auto-open may have failed) */
+.login-hint {
+  position: absolute;
+  left: -8px;
+  bottom: calc(100% + 4px);
+  width: calc(100% + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 30;
+}
+
+.login-hint button {
+  border: none;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 6px 8px;
+  color: #232425;
+  cursor: pointer;
+  text-align: left;
+}
+
+.login-hint button:hover {
+  background: #f5f5f5;
+}
+
+.login-hint .login-hint-open,
+.account-menu-item.login-rescue {
+  color: var(--accent);
 }
 
 /* popup panel metrics match the Genspark account dropdown;

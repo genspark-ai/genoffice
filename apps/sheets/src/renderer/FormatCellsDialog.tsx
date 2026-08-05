@@ -2,6 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 
 import { draftFromSelection, formatCellsCommands, type FormatCellsDraft } from './format-cells'
 import { useI18n, type StringKey } from './i18n/locale'
+import {
+  clampDecimals,
+  CURRENCY_SYMBOLS,
+  DATE_PATTERNS,
+  FRACTION_PATTERNS,
+  NEGATIVE_STYLES,
+  NUMFMT_CATEGORIES,
+  numfmtOptionsOf,
+  numfmtPattern,
+  numfmtPreview,
+  sampleValue,
+  TIME_PATTERNS,
+  todaySerial,
+  type NumfmtCategory,
+  type NumfmtOptions,
+} from './numfmt-dialog'
 
 import type { SelectionFormat } from './selection-format'
 
@@ -46,17 +62,37 @@ const ROTATIONS: { readonly labelKey: StringKey; readonly value: string }[] = [
   { labelKey: 'dlgFcRotVertical', value: 'vertical' },
 ]
 
-const NUMBER_CATEGORIES: { readonly labelKey: StringKey; readonly pattern: string }[] = [
-  { labelKey: 'dlgFcNumGeneral', pattern: 'General' },
-  { labelKey: 'dlgFcNumNumber', pattern: '0.00' },
-  { labelKey: 'dlgFcNumThousands', pattern: '#,##0.00' },
-  { labelKey: 'dlgFcNumCurrency', pattern: '$#,##0.00' },
-  { labelKey: 'dlgFcNumCurrencyCny', pattern: '¥#,##0.00' },
-  { labelKey: 'dlgFcNumPercent', pattern: '0.00%' },
-  { labelKey: 'dlgFcNumDate', pattern: 'yyyy-mm-dd' },
-  { labelKey: 'dlgFcNumTime', pattern: 'hh:mm:ss' },
-  { labelKey: 'dlgFcNumScientific', pattern: '0.00E+00' },
-  { labelKey: 'dlgFcNumText', pattern: '@' },
+const NUMFMT_CATEGORY_LABELS: Record<NumfmtCategory, StringKey> = {
+  general: 'dlgFcNumGeneral',
+  number: 'dlgFcNumNumber',
+  currency: 'dlgFcNumCurrency',
+  accounting: 'appNumFmtAccounting',
+  date: 'dlgFcNumDate',
+  time: 'dlgFcNumTime',
+  percentage: 'dlgFcNumPercent',
+  fraction: 'appNumFmtFraction',
+  scientific: 'dlgFcNumScientific',
+  text: 'dlgFcNumText',
+  custom: 'dlgFcNumCustomName',
+}
+
+const FRACTION_LABELS: readonly StringKey[] = [
+  'dlgFcFracD1',
+  'dlgFcFracD2',
+  'dlgFcFracD3',
+  'dlgFcFracHalf',
+  'dlgFcFracQuarter',
+  'dlgFcFracEighth',
+  'dlgFcFracSixteenth',
+  'dlgFcFracTenth',
+]
+
+const DECIMAL_CATEGORIES: readonly NumfmtCategory[] = [
+  'number',
+  'currency',
+  'accounting',
+  'percentage',
+  'scientific',
 ]
 
 const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Times New Roman', '微软雅黑', '宋体']
@@ -86,10 +122,13 @@ const BORDER_PRESETS: { readonly labelKey: StringKey; readonly value: string }[]
 
 export function FormatCellsDialog({
   selectionFormat,
+  anchorValue,
   onCommand,
   onClose,
 }: {
   readonly selectionFormat: SelectionFormat | null
+  /// Value of the selection's top-left cell, for the number-format preview.
+  readonly anchorValue: number | string | null
   readonly onCommand: (command: string) => void
   readonly onClose: () => void
 }): React.JSX.Element {
@@ -110,17 +149,23 @@ export function FormatCellsDialog({
   const set = <K extends keyof FormatCellsDraft>(key: K, value: FormatCellsDraft[K]): void =>
     setDraft((previous) => ({ ...previous, [key]: value }))
 
-  const namedCategories = NUMBER_CATEGORIES.map((category) => ({
-    name: t(category.labelKey),
-    pattern: category.pattern,
-  }))
-  const categoryOptions =
-    !draft.pattern || NUMBER_CATEGORIES.some((category) => category.pattern === draft.pattern)
-      ? namedCategories
-      : [
-          ...namedCategories,
-          { name: t('dlgFcNumCustom', { pattern: draft.pattern }), pattern: draft.pattern },
-        ]
+  const [numOptions, setNumOptions] = useState<NumfmtOptions>(() =>
+    numfmtOptionsOf(initial.pattern),
+  )
+  const updateNumfmt = (patch: Partial<NumfmtOptions>): void => {
+    const next = { ...numOptions, ...patch }
+    setNumOptions(next)
+    set('pattern', numfmtPattern(next))
+  }
+  // Freeze the preview inputs at open time so the sample doesn't tick.
+  const previewBase = useRef({ anchor: anchorValue, serial: todaySerial() })
+  const sample = sampleValue(
+    numOptions.category,
+    previewBase.current.anchor,
+    previewBase.current.serial,
+  )
+  const negativeSample = -Math.abs(typeof sample === 'number' ? sample : 1234.56)
+
   const familyOptions =
     !draft.family || FONT_FAMILIES.includes(draft.family)
       ? FONT_FAMILIES
@@ -157,26 +202,156 @@ export function FormatCellsDialog({
         </nav>
         <section className="dialog-body">
           {tab === 'Number' && (
-            <div className="dialog-grid">
-              <label>
-                {t('dlgFcCategory')}
-                <select value={draft.pattern} onChange={(e) => set('pattern', e.target.value)}>
-                  <option value="">{t('dlgFcUnchanged')}</option>
-                  {categoryOptions.map((category) => (
-                    <option key={category.pattern} value={category.pattern}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {t('dlgFcCustomCode')}
-                <input
-                  value={draft.pattern}
-                  placeholder="#,##0.00"
-                  onChange={(e) => set('pattern', e.target.value)}
-                />
-              </label>
+            <div className="numfmt-tab">
+              <div className="numfmt-cats" role="listbox" aria-label={t('dlgFcCategory')}>
+                {NUMFMT_CATEGORIES.map((category) => (
+                  <button
+                    key={category}
+                    role="option"
+                    aria-selected={category === numOptions.category}
+                    className={category === numOptions.category ? 'active' : ''}
+                    onClick={() =>
+                      updateNumfmt(
+                        category === 'custom' ? { category, custom: draft.pattern } : { category },
+                      )
+                    }
+                  >
+                    {t(NUMFMT_CATEGORY_LABELS[category])}
+                  </button>
+                ))}
+              </div>
+              <div className="numfmt-body">
+                <div className="numfmt-field numfmt-sample">
+                  {t('dlgFcSample')}
+                  <output>{numfmtPreview(draft.pattern, sample)}</output>
+                </div>
+                {DECIMAL_CATEGORIES.includes(numOptions.category) && (
+                  <div className="numfmt-row">
+                    <label className="numfmt-field">
+                      {t('dlgFcDecimals')}
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        value={numOptions.decimals}
+                        onChange={(e) =>
+                          updateNumfmt({ decimals: clampDecimals(Number(e.target.value)) })
+                        }
+                      />
+                    </label>
+                    {(numOptions.category === 'currency' ||
+                      numOptions.category === 'accounting') && (
+                      <label className="numfmt-field">
+                        {t('dlgFcCurrencySymbol')}
+                        <select
+                          value={numOptions.symbol}
+                          onChange={(e) => updateNumfmt({ symbol: e.target.value })}
+                        >
+                          <option value="">{t('dlgFcSymbolNone')}</option>
+                          {CURRENCY_SYMBOLS.map((symbol) => (
+                            <option key={symbol} value={symbol}>
+                              {symbol}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+                {numOptions.category === 'number' && (
+                  <label className="dialog-check">
+                    <input
+                      type="checkbox"
+                      checked={numOptions.thousands}
+                      onChange={(e) => updateNumfmt({ thousands: e.target.checked })}
+                    />
+                    {t('dlgFcThousandsSep')}
+                  </label>
+                )}
+                {(numOptions.category === 'number' || numOptions.category === 'currency') && (
+                  <div className="numfmt-field">
+                    {t('dlgFcNegNumbers')}
+                    <div className="numfmt-list" role="listbox" aria-label={t('dlgFcNegNumbers')}>
+                      {NEGATIVE_STYLES.map((style) => (
+                        <button
+                          key={style}
+                          role="option"
+                          aria-selected={style === numOptions.negative}
+                          className={`${style === numOptions.negative ? 'active' : ''} ${
+                            style.includes('red') ? 'red' : ''
+                          }`.trim()}
+                          onClick={() => updateNumfmt({ negative: style })}
+                        >
+                          {numfmtPreview(
+                            numfmtPattern({ ...numOptions, negative: style }),
+                            negativeSample,
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(numOptions.category === 'date' || numOptions.category === 'time') && (
+                  <div className="numfmt-field">
+                    {t('dlgFcTypeLabel')}
+                    <div className="numfmt-list" role="listbox" aria-label={t('dlgFcTypeLabel')}>
+                      {(numOptions.category === 'date' ? DATE_PATTERNS : TIME_PATTERNS).map(
+                        (candidate) => {
+                          const key = numOptions.category === 'date' ? 'datePattern' : 'timePattern'
+                          return (
+                            <button
+                              key={candidate}
+                              role="option"
+                              aria-selected={candidate === numOptions[key]}
+                              className={candidate === numOptions[key] ? 'active' : ''}
+                              onClick={() => updateNumfmt({ [key]: candidate })}
+                            >
+                              {numfmtPreview(candidate, sample)}
+                            </button>
+                          )
+                        },
+                      )}
+                    </div>
+                  </div>
+                )}
+                {numOptions.category === 'fraction' && (
+                  <div className="numfmt-field">
+                    {t('dlgFcTypeLabel')}
+                    <div className="numfmt-list" role="listbox" aria-label={t('dlgFcTypeLabel')}>
+                      {FRACTION_PATTERNS.map((candidate, index) => (
+                        <button
+                          key={candidate}
+                          role="option"
+                          aria-selected={candidate === numOptions.fractionPattern}
+                          className={candidate === numOptions.fractionPattern ? 'active' : ''}
+                          onClick={() => updateNumfmt({ fractionPattern: candidate })}
+                        >
+                          {t(FRACTION_LABELS[index] ?? 'dlgFcFracD1')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {numOptions.category === 'general' && (
+                  <p className="numfmt-note">{t('dlgFcGeneralNote')}</p>
+                )}
+                {numOptions.category === 'text' && (
+                  <p className="numfmt-note">{t('dlgFcTextNote')}</p>
+                )}
+                {numOptions.category === 'custom' && (
+                  <label className="numfmt-field">
+                    {t('dlgFcCustomCode')}
+                    <input
+                      value={draft.pattern}
+                      placeholder="#,##0.00"
+                      onChange={(e) => {
+                        setNumOptions({ ...numOptions, custom: e.target.value })
+                        set('pattern', e.target.value)
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
             </div>
           )}
           {tab === 'Alignment' && (

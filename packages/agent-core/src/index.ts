@@ -15,7 +15,7 @@ export { composeSkills } from './skill'
 export type { AgentSkill } from './skill'
 export { createMemoryTools } from './memory'
 export type { MemoryEntryLike, MemoryStoreAdapter, MemoryTools } from './memory'
-export { AgentLoop } from './loop'
+export { AgentLoop, COMPLETED_VIA_TOOLS_TEXT } from './loop'
 export type {
   AgentLoopEvents,
   AgentLoopOptions,
@@ -23,5 +23,5 @@ export type {
   CompactionOptions,
   ToolExecutedEvent,
 } from './loop'
-export { createIpcTransport } from './electron-transport'
+export { createIpcTransport, IPC_STREAM_SILENCE_TIMEOUT_MS } from './electron-transport'
 export type { IpcStreamChunk, IpcStreamStart, IpcTransportOptions } from './electron-transport'

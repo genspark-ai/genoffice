@@ -15,7 +15,7 @@ import {
   injectInkRunsIntoParagraph,
   stripInkRuns,
 } from './ink'
-import type { ParseExtras } from './parse'
+import { assertZipWithinLimits, type ParseExtras } from './parse'
 import { BLANK_NUMBERING_XML, abstractNumXml, type CustomNumberingLevel } from './blank'
 import { applyPageNumType, applySectionSettings, applySectionStartType } from './section'
 import {
@@ -392,6 +392,7 @@ export async function saveDocx(
   if (isUnchanged) return originalBytes
 
   const zip = await JSZip.loadAsync(originalBytes)
+  assertZipWithinLimits(zip)
 
   // Relationship allocation for newly created hyperlinks and images.
   const relsPath = 'word/_rels/document.xml.rels'

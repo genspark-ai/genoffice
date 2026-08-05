@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createI18n, format, isLang, normalizeLang } from '../src/index'
+import { createI18n, format, htmlLang, isLang, LANGS, normalizeLang } from '../src/index'
 
 describe('normalizeLang', () => {
   it('maps zh variants to zh', () => {
@@ -77,6 +77,17 @@ describe('isLang', () => {
     expect(isLang('zh-TW')).toBe(true)
     expect(isLang('zh-CN')).toBe(false)
     expect(isLang(42)).toBe(false)
+  })
+})
+
+describe('htmlLang', () => {
+  it('maps every supported language to a BCP-47 tag', () => {
+    expect(htmlLang('zh')).toBe('zh-CN')
+    expect(htmlLang('en')).toBe('en-US')
+    expect(htmlLang('ja')).toBe('ja-JP')
+    expect(htmlLang('ko')).toBe('ko-KR')
+    expect(htmlLang('zh-TW')).toBe('zh-TW')
+    for (const lang of LANGS) expect(htmlLang(lang)).toMatch(/^[a-z]{2}-[A-Z]{2}$/)
   })
 })
 

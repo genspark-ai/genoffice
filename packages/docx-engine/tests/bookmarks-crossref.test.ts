@@ -118,3 +118,36 @@ describe('cross-references (REF fields)', () => {
     expect(saved).toEqual(source)
   })
 })
+
+describe('REF field switch preservation', () => {
+  const SWITCHED_REF_PARA =
+    '<w:p><w:r><w:t xml:space="preserve">见第</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> REF _Ref12345 \\r \\h </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    '<w:r><w:t>3</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+    '<w:r><w:t xml:space="preserve">章。</w:t></w:r></w:p>'
+
+  it('keeps the original instruction (with \\r) after editing the paragraph', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: SWITCHED_REF_PARA }))
+    const runs = doc.blocks[0].runs!
+    expect(runs[1]).toMatchObject({ refField: '_Ref12345', refInstr: ' REF _Ref12345 \\r \\h ' })
+    const saved = await saveDocx(doc, [
+      { kind: 'generated', block: { type: 'paragraph', runs: [{ text: '改' }, ...runs.slice(1)] } },
+    ])
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    const docXml = await zip.file('word/document.xml')!.async('string')
+    expect(docXml).toContain(
+      '<w:instrText xml:space="preserve"> REF _Ref12345 \\r \\h </w:instrText>',
+    )
+  })
+
+  it('falls back to the default REF instruction for newly created references', () => {
+    const xml = generateParagraphXml(
+      { type: 'paragraph', runs: [{ text: '第一章', refField: 'chap1' }] },
+      GEN_CTX,
+    )
+    expect(xml).toContain('<w:instrText xml:space="preserve"> REF chap1 \\h </w:instrText>')
+  })
+})

@@ -12,6 +12,8 @@ export interface AgentToolCall {
   input: Record<string, unknown>
   /** Parse error when the model emitted invalid input JSON; the loop feeds back an is_error result for retry instead of aborting the run */
   inputError?: string | undefined
+  /** The argument stream was cut off by the token limit (stop_reason max_tokens); the loop asks the model to split the call instead of "fixing JSON" */
+  truncated?: boolean | undefined
 }
 
 export interface AgentToolResult {
@@ -93,6 +95,8 @@ export interface AgentStreamCallbacks {
   onToolCall(call: AgentToolCall): void
   /** Phase changes within the model stream (thinking / responding / tool-input); older transports may omit this */
   onPhase?(phase: AgentPhase): void
+  /** normalized stop reason of the turn ('max_tokens' = cut off by the token limit); transports may omit this */
+  onStopReason?(reason: string): void
   onDone(): void
   onError(error: string): void
 }

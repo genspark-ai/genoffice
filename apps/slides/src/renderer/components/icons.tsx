@@ -279,7 +279,7 @@ function TextGlyph({
       fontSize={s}
       fill="currentColor"
       stroke="none"
-      fontFamily="Segoe UI, PingFang SC, sans-serif"
+      fontFamily="Segoe UI, sans-serif"
       fontWeight={bold ? 700 : 400}
     >
       {children}

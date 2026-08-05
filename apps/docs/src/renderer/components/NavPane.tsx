@@ -1,14 +1,13 @@
+import { memo } from 'react'
 import type { Editor } from '@tiptap/core'
-import { t } from '../i18n/locale'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import { collectHeadings } from '../editor/headings'
+import { useI18n } from '../i18n/locale'
 
-/** Word's navigation pane: heading outline with click-to-jump. */
-export function NavPane({ editor }: { editor: Editor }) {
-  const headings: Array<{ text: string; level: number; pos: number }> = []
-  editor.state.doc.forEach((node, offset) => {
-    if (node.type.name === 'docHeading' && node.textContent.trim()) {
-      headings.push({ text: node.textContent, level: Number(node.attrs.level) || 1, pos: offset })
-    }
-  })
+/** Word's navigation pane: heading outline with click-to-jump. Memoized on the doc — caret moves skip the outline walk. */
+export const NavPane = memo(function NavPane({ editor, doc }: { editor: Editor; doc: PmNode }) {
+  const { t } = useI18n()
+  const headings = collectHeadings(doc)
   return (
     <aside className="nav-pane">
       <div className="nav-pane-title">{t('appNavTitle')}</div>
@@ -30,4 +29,4 @@ export function NavPane({ editor }: { editor: Editor }) {
       </div>
     </aside>
   )
-}
+})

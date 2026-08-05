@@ -25,6 +25,7 @@ import {
   protectSheetGuard,
   queueFormulaRecalc,
   queueSparklineInstall,
+  RECALC_MAX_FAILURES,
   queueVisualInstall,
   sheetOutline,
   syncUniver,
@@ -97,7 +98,13 @@ import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
 
-import { AgentLoop, composeSkills, type AgentImage, type MemoryStoreAdapter } from '@genoffice/agent-core'
+import {
+  AgentLoop,
+  COMPLETED_VIA_TOOLS_TEXT,
+  composeSkills,
+  type AgentImage,
+  type MemoryStoreAdapter,
+} from '@genoffice/agent-core'
 import { AiSettingsDialog } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
@@ -111,7 +118,7 @@ import {
 } from '../domain/chart-visual'
 import { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
 import { iconSetSaveable } from '../gateway/xlsx-cf'
-import type { ChangePlan } from '../domain/workbook.types'
+import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
 import { createElectronTransport } from './ai/transport'
 import type { ActiveSheetInfo, SheetsSkillDeps } from './ai/tools'
 import type { AiChatMessage } from './ai/AiChatPanel'
@@ -212,6 +219,8 @@ import {
 } from './formula-view'
 import { installCellFilenameFunction } from './cell-function'
 import { installFormulaLexerFix } from './formula-lexer-fix'
+import { installSheetRenameFix } from './sheet-rename-fix'
+import { installSelectionWrapGuard } from './selection-wrap-fix'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
 import { installRuleDetail } from './univer-rule-detail'
@@ -784,6 +793,11 @@ export function App(): React.JSX.Element {
   /** AI plans apply asynchronously after propose_operations returns. Run
    * completion waits for these before doing the run's single auto-save. */
   const aiApplyPromisesRef = useRef<Promise<boolean>[]>([])
+  /** Last non-empty streamed text of the run: a final empty turn falls back to
+   * it instead of wiping the model's own summary from the tool-call turn. */
+  const runLastTextRef = useRef('')
+  /** true once any tool of the run mutated the workbook */
+  const runMutatedRef = useRef(false)
 
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
@@ -799,6 +813,7 @@ export function App(): React.JSX.Element {
       maxTurns: 24,
       events: {
         onText: (text) => {
+          if (text) runLastTextRef.current = text
           setMessage(text || t('appAiThinking'))
           // When the model retries successfully and keeps streaming after a
           // mid-run failure (e.g. one apply error), clear the error flag —
@@ -821,6 +836,7 @@ export function App(): React.JSX.Element {
           }))
         },
         onToolExecuted: ({ call, execution }) => {
+          if (execution.mutated) runMutatedRef.current = true
           const input = safeJsonInput(call.input)
           const output = execution.output
             ? execution.output.slice(0, PERSIST_TOOL_FIELD_MAX)
@@ -851,9 +867,34 @@ export function App(): React.JSX.Element {
           })
         },
         onDone: ({ text, cancelled, turnLimit }) => {
+          // Prefer tool summaries when the model finished via tools with no prose
+          // (agent-core fills history with COMPLETED_VIA_TOOLS_TEXT so follow-ups
+          // stay provider-safe; the UI can show the real work that ran).
+          const toolSummaries = (() => {
+            const lines: string[] = []
+            const seen = new Set<string>()
+            for (const tool of runToolsRef.current) {
+              if (!tool.summary || tool.isError || seen.has(tool.summary)) continue
+              seen.add(tool.summary)
+              lines.push(tool.summary)
+              if (lines.length >= 8) break
+            }
+            return lines.join('\n')
+          })()
+          const prose =
+            text && text !== COMPLETED_VIA_TOOLS_TEXT
+              ? text
+              : runLastTextRef.current || toolSummaries || text
+          // A final empty turn must not claim completion: reuse the model's last
+          // streamed text; with none, only a mutating run gets the "done" phrasing.
+          const fallback = cancelled
+            ? t('appAiStopped')
+            : runLastTextRef.current ||
+              toolSummaries ||
+              (runMutatedRef.current ? t('appAiNoSummary') : t('appAiNoAction'))
           const finalText = turnLimit
-            ? [text, t('appAiTurnLimit')].filter(Boolean).join('\n\n')
-            : text || (cancelled ? t('appAiStopped') : t('appAiNoSummary'))
+            ? [prose, t('appAiTurnLimit')].filter(Boolean).join('\n\n')
+            : prose || fallback
           setMessage(finalText)
           patchLastAssistant((entry) => ({
             ...entry,
@@ -957,6 +998,8 @@ export function App(): React.JSX.Element {
     if (!instruction.trim() || !loop || loop.busy || runStartingRef.current) return
     runStartingRef.current = true
     aiApplyPromisesRef.current = []
+    runLastTextRef.current = ''
+    runMutatedRef.current = false
     setAiBusy(true)
     setMessage(t('appAiThinking'))
     appendChat({ role: 'assistant', text: '', tools: [], streaming: true })
@@ -1169,6 +1212,10 @@ export function App(): React.JSX.Element {
     // Escaped quotes ("") no longer shift lexer indices and silently
     // rewrite committed formulas.
     const formulaLexerFixDisposable = installFormulaLexerFix(runtime)
+    // Renaming a sheet to a case variant of itself is not a duplicate.
+    const sheetRenameFixDisposable = installSheetRenameFix()
+    // Arrow keys stop at the sheet edge instead of wrapping to the far side.
+    const selectionWrapGuardDisposable = installSelectionWrapGuard(runtime)
     // Empty-value formula results (IFERROR/IF/CHOOSE over blank refs)
     // display as 0 like Excel.
     const nullResultDisposable = installFormulaNullResultFix(runtime)
@@ -1702,7 +1749,7 @@ export function App(): React.JSX.Element {
           !state.formulaMode &&
           contentEdited &&
           state.closure.status === 'unavailable' &&
-          !state.recalc.failed
+          state.recalc.failures < RECALC_MAX_FAILURES
         ) {
           queueFormulaRecalc(runtime, lazyWorkbookRef, setMessage)
         } else if (
@@ -1930,6 +1977,8 @@ export function App(): React.JSX.Element {
       cellFilenameDisposable.dispose()
       rateFallbackDisposable.dispose()
       formulaLexerFixDisposable.dispose()
+      sheetRenameFixDisposable.dispose()
+      selectionWrapGuardDisposable.dispose()
       nullResultDisposable.dispose()
       copyMaterializeDisposable.dispose()
       ruleDetailDisposable()
@@ -2113,7 +2162,7 @@ export function App(): React.JSX.Element {
    * — auto-apply never bypasses the "workbook changed since preview" check.
    * When apply fails, the preview card stays up as a manual fallback.
    */
-  function autoApplySafePlan(plan: ChangePlan): void {
+  function autoApplySafePlan(plan: ChangePlan): Promise<ApplyOutcome> {
     const opCount =
       plan.cellChanges.length +
       plan.formatChanges.length +
@@ -2123,8 +2172,8 @@ export function App(): React.JSX.Element {
     if (state) {
       // Lazy path reads lazyPreviewRef (a ref, already set by the caller) —
       // safe to invoke synchronously right after propose.
-      const apply = handleLazyApply(state).then((ok) => {
-        if (ok) {
+      const apply = handleLazyApply(state).then((outcome) => {
+        if (outcome.ok) {
           // Patch last assistant message with inline undo button.
           patchLastAssistant((entry) => ({ ...entry, autoApplied: { opCount } }))
         } else {
@@ -2133,11 +2182,10 @@ export function App(): React.JSX.Element {
           lazyPreviewRef.current = null
           setPreview(null)
         }
-        return ok
+        return outcome
       })
-      aiApplyPromisesRef.current.push(apply)
-      void apply
-      return
+      aiApplyPromisesRef.current.push(apply.then((outcome) => outcome.ok))
+      return apply
     }
     // Non-lazy path: apply the passed plan directly (setPreview is async, so we
     // cannot rely on the preview state within the same tick).
@@ -2169,28 +2217,31 @@ export function App(): React.JSX.Element {
       setMessage(t('appAppliedRevision', { revision }))
       // Patch last assistant message to show inline undo button.
       patchLastAssistant((entry) => ({ ...entry, autoApplied: { opCount } }))
+      return Promise.resolve({ ok: true })
     } catch (error: unknown) {
       // Fall back to leaving the preview up so the user can Apply manually.
-      setMessage(error instanceof Error ? error.message : t('appApplyTxFailed'))
+      const reason = error instanceof Error ? error.message : t('appApplyTxFailed')
+      setMessage(reason)
+      return Promise.resolve({ ok: false, reason })
     }
   }
 
-  async function handleLazyApply(state: LazyWorkbookState): Promise<boolean> {
+  async function handleLazyApply(state: LazyWorkbookState): Promise<ApplyOutcome> {
     const stored = lazyPreviewRef.current
     const runtime = univerRef.current
-    if (!stored || !runtime) return false
+    if (!stored || !runtime) return { ok: false, reason: t('appApplyTxFailed') }
     if (stored.sessionId !== state.file.sessionId) {
       lazyPreviewRef.current = null
       setPreview(null)
       setMessage(t('appPreviewOtherWorkbook'))
-      return false
+      return { ok: false, reason: t('appPreviewOtherWorkbook') }
     }
     const worksheet = runtime.univerAPI.getActiveWorkbook()?.getSheetBySheetId(stored.sheetId)
     if (!worksheet) {
       lazyPreviewRef.current = null
       setPreview(null)
       setMessage(t('appPreviewSheetGone'))
-      return false
+      return { ok: false, reason: t('appPreviewSheetGone') }
     }
     // Image bytes load BEFORE the drift check and the (synchronous) mutation
     // loop, so a slow disk read can never interleave with edits.
@@ -2214,9 +2265,11 @@ export function App(): React.JSX.Element {
         text: `${entry.text}\n\n${t('appApplyFailed', { reason })}`,
         isError: true,
       }))
-      return false
+      return { ok: false, reason }
     }
-    if (lazyPreviewRef.current !== stored || lazyWorkbookRef.current !== state) return false
+    if (lazyPreviewRef.current !== stored || lazyWorkbookRef.current !== state) {
+      return { ok: false, reason: t('appApplyTxFailed') }
+    }
     if (!planStillMatches(stored.plan, lazyCellReader(worksheet))) {
       const reason = t('appWorkbookChangedSincePreview')
       setMessage(reason)
@@ -2225,7 +2278,7 @@ export function App(): React.JSX.Element {
         text: `${entry.text}\n\n${t('appApplyFailed', { reason })}`,
         isError: true,
       }))
-      return false
+      return { ok: false, reason }
     }
     // All commands of one propose merge into a single undo item (⌘Z / [Undo]
     // rolls back the whole batch in one step)
@@ -2459,7 +2512,7 @@ export function App(): React.JSX.Element {
       lazyPreviewRef.current = null
       setPreview(null)
       setMessage(t('appAppliedJournaled'))
-      return true
+      return { ok: true }
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : t('appApplyTxFailed')
       setMessage(reason)
@@ -2474,7 +2527,7 @@ export function App(): React.JSX.Element {
               isError: true,
             },
       )
-      return false
+      return { ok: false, reason }
     } finally {
       undoBatching?.dispose()
     }
@@ -2548,6 +2601,15 @@ export function App(): React.JSX.Element {
     // Resolves interned style references and merges row/col/sheet styles —
     // raw getCellData().s can be a style-id string with no fields on it.
     return range.getCellStyleData() ?? {}
+  }
+
+  function anchorCellValue(): number | string | null {
+    try {
+      const value = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveRange()?.getValue()
+      return typeof value === 'number' || typeof value === 'string' ? value : null
+    } catch {
+      return null
+    }
   }
 
   refreshSelectionFormatRef.current = () => {
@@ -2634,7 +2696,7 @@ export function App(): React.JSX.Element {
       recalc: {
         timer: null,
         generation: 0,
-        failed: false,
+        failures: 0,
         formulaCells: new Map(),
         overlay: new Map(),
       },
@@ -3002,6 +3064,7 @@ export function App(): React.JSX.Element {
         onRefreshPivot={() => handleRefreshPivotImpl(pivotContext())}
         onIsSelectionInPivot={() => isSelectionInPivotImpl(pivotContext())}
         onGetActiveCell={() => activeCellLabelImpl(dataToolsContext())}
+        onGetAnchorValue={anchorCellValue}
         activeCellA1={activeCellA1}
         onGoToReference={(ref) => goToReferenceImpl(dataToolsContext(), ref)}
         onListDefinedNames={() => listDefinedNamesImpl(dataToolsContext())}

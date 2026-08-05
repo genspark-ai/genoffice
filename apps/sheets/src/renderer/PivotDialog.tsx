@@ -44,7 +44,7 @@ export interface PivotValueFilterOption {
 }
 
 export interface PivotValueSpec {
-  readonly fieldIndex: number  // index into PivotField[]; -1 for calculated fields
+  readonly fieldIndex: number // index into PivotField[]; -1 for calculated fields
   readonly agg: 'sum' | 'count' | 'average' | 'max' | 'min'
   /// "Show values as" mode; undefined = normal (show the aggregate directly).
   readonly showDataAs?: PivotShowDataAsOption | undefined
@@ -68,7 +68,7 @@ export interface PivotEditSeed {
 
 /// Full OOXML pivot configuration passed to onCreate on success.
 export interface OoXmlPivotConfig {
-  readonly sourceRange: string  // e.g. "A1:C10"
+  readonly sourceRange: string // e.g. "A1:C10"
   /// Row dimension fields (ordered, outer first), indices into fields; at least 1.
   readonly rowFieldIndices: readonly number[]
   /// Column dimension fields (ordered, outer first), indices into fields; empty
@@ -78,12 +78,18 @@ export interface OoXmlPivotConfig {
   /// row/column dimension fields).
   readonly groupings: readonly { readonly fieldIndex: number; readonly rule: PivotGroupingOption }[]
   /// Label filters on row/column fields (fieldIndex points into fields).
-  readonly labelFilters: readonly { readonly fieldIndex: number; readonly rule: PivotLabelFilterOption }[]
+  readonly labelFilters: readonly {
+    readonly fieldIndex: number
+    readonly rule: PivotLabelFilterOption
+  }[]
   /// Value filter (valueIndex points into values; applied to the level-1 row
   /// field).
-  readonly valueFilters: readonly { readonly valueIndex: number; readonly rule: PivotValueFilterOption }[]
+  readonly valueFilters: readonly {
+    readonly valueIndex: number
+    readonly rule: PivotValueFilterOption
+  }[]
   readonly values: readonly PivotValueSpec[]
-  readonly targetCell: string  // e.g. "F1"
+  readonly targetCell: string // e.g. "F1"
 }
 
 const AGG_LABELS: Record<PivotValueSpec['agg'], StringKey> = {
@@ -124,12 +130,12 @@ export function PivotDialog({
   const { t } = useI18n()
   // Row/column dimensions: ordered multi-select (outer first) with add/remove and
   // move up/down; column dimensions may be empty.
-  const [rowFieldIndices, setRowFieldIndices] = useState<number[]>(
-    [...(initial?.rowFieldIndices ?? [0])],
-  )
-  const [colFieldIndices, setColFieldIndices] = useState<number[]>(
-    [...(initial?.colFieldIndices ?? [])],
-  )
+  const [rowFieldIndices, setRowFieldIndices] = useState<number[]>([
+    ...(initial?.rowFieldIndices ?? [0]),
+  ])
+  const [colFieldIndices, setColFieldIndices] = useState<number[]>([
+    ...(initial?.colFieldIndices ?? []),
+  ])
   // Grouping modes of dimension fields, recorded by field index (independent of
   // axis/level, so moving levels doesn't lose them).
   const [fieldGroupings, setFieldGroupings] = useState<Record<number, PivotGroupingOption>>({})
@@ -216,22 +222,31 @@ export function PivotDialog({
   /// Ordered field-list UI for one dimension axis (shared by rows/columns): one
   /// row per level, supporting field change, grouping mode, move up/down, and
   /// delete; the delete button is hidden below minCount (rows keep ≥1 level).
-  const renderAxisFields = (
-    indices: readonly number[],
-    setAxis: AxisSetter,
-    minCount: number,
-  ) => (
+  const renderAxisFields = (indices: readonly number[], setAxis: AxisSetter, minCount: number) => (
     <>
       {indices.map((fieldIdx, i) => (
-        <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#888', width: 34 }}>{t('dlgPivotLevel', { n: i + 1 })}</span>
+        <div
+          key={i}
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+            marginBottom: 4,
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ fontSize: 12, color: '#888', width: 34 }}>
+            {t('dlgPivotLevel', { n: i + 1 })}
+          </span>
           <select
             value={fieldIdx}
             onChange={(event) => updateAxisField(setAxis, i, Number(event.target.value))}
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 0 }}
           >
             {fields.map((field, fi) => (
-              <option key={field.colIndex} value={fi}>{field.label}</option>
+              <option key={field.colIndex} value={fi}>
+                {field.label}
+              </option>
             ))}
           </select>
           <select
@@ -304,7 +319,9 @@ export function PivotDialog({
             disabled={i === 0}
             title={t('dlgPivotMoveUp')}
             onClick={() => moveAxisField(setAxis, i, -1)}
-          >↑</button>
+          >
+            ↑
+          </button>
           <button
             type="button"
             className="secondary"
@@ -312,7 +329,9 @@ export function PivotDialog({
             disabled={i === indices.length - 1}
             title={t('dlgPivotMoveDown')}
             onClick={() => moveAxisField(setAxis, i, 1)}
-          >↓</button>
+          >
+            ↓
+          </button>
           {indices.length > minCount && (
             <button
               type="button"
@@ -320,7 +339,9 @@ export function PivotDialog({
               style={{ padding: '1px 6px' }}
               title={t('dlgPivotRemoveLevel')}
               onClick={() => removeAxisField(setAxis, i)}
-            >✕</button>
+            >
+              ✕
+            </button>
           )}
         </div>
       ))}
@@ -330,7 +351,9 @@ export function PivotDialog({
           className="secondary"
           style={{ fontSize: 12, marginTop: 2 }}
           onClick={() => addAxisField(setAxis)}
-        >{t('dlgPivotAddField')}</button>
+        >
+          {t('dlgPivotAddField')}
+        </button>
       )}
     </>
   )
@@ -338,231 +361,267 @@ export function PivotDialog({
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
-        className="format-cells-dialog"
+        className="format-cells-dialog pivot-dialog"
         role="dialog"
         aria-label={mode === 'edit' ? t('dlgPivotEditTitle') : t('dlgPivotCreateTitle')}
         style={{ minWidth: 380 }}
         onClick={(event) => event.stopPropagation()}
       >
         <header>{mode === 'edit' ? t('dlgPivotEditTitle') : t('dlgPivotCreateTitle')}</header>
-        {noFields
-          ? (
-              <p className="dialog-note">
-                {t('dlgPivotNoFields')}
-              </p>
-            )
-          : (
-              <div className="dialog-grid">
-                <label>
-                  {t('dlgPivotSourceRange')}
-                  <input
-                    type="text"
-                    className="cell-input"
-                    value={sourceRange}
-                    readOnly
-                    style={{ background: '#f5f5f5', cursor: 'default' }}
-                  />
-                </label>
-                <fieldset style={{ border: '1px solid #ddd', padding: '6px 8px', marginTop: 4 }}>
-                  <legend style={{ fontWeight: 500, fontSize: 13 }}>{t('dlgPivotRowFields')}</legend>
-                  {renderAxisFields(rowFieldIndices, setRowFieldIndices, 1)}
-                </fieldset>
-                <fieldset style={{ border: '1px solid #ddd', padding: '6px 8px', marginTop: 4 }}>
-                  <legend style={{ fontWeight: 500, fontSize: 13 }}>{t('dlgPivotColFields')}</legend>
-                  {colFieldIndices.length === 0 && (
-                    <p className="dialog-note" style={{ margin: '2px 0' }}>{t('dlgPivotNoColFields')}</p>
-                  )}
-                  {renderAxisFields(colFieldIndices, setColFieldIndices, 0)}
-                </fieldset>
-                <fieldset style={{ border: '1px solid #ddd', padding: '6px 8px', marginTop: 4 }}>
-                  <legend style={{ fontWeight: 500, fontSize: 13 }}>{t('dlgPivotValues')}</legend>
-                  {values.map((spec, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
-                      {spec.formula !== undefined
-                        ? (
-                            // Calculated field: name + formula (e.g. Profit =
-                            // Revenue-Cost).
-                            <>
-                              <input
-                                type="text"
-                                className="cell-input"
-                                placeholder={t('dlgPivotCalcNamePlaceholder')}
-                                value={spec.calcName ?? ''}
-                                onChange={(event) => updateValue(i, { calcName: event.target.value })}
-                                style={{ width: 90 }}
-                              />
-                              <span style={{ color: '#888' }}>=</span>
-                              <input
-                                type="text"
-                                className="cell-input"
-                                placeholder={t('dlgPivotCalcFormulaPlaceholder')}
-                                value={spec.formula}
-                                onChange={(event) => updateValue(i, { formula: event.target.value })}
-                                style={{ flex: 1 }}
-                              />
-                            </>
-                          )
-                        : (
-                            <>
-                              <select
-                                value={spec.fieldIndex}
-                                onChange={(event) => updateValue(i, { fieldIndex: Number(event.target.value) })}
-                                style={{ flex: 1 }}
-                              >
-                                {fields.map((field, fi) => (
-                                  <option key={field.colIndex} value={fi}>{field.label}</option>
-                                ))}
-                              </select>
-                              <select
-                                value={spec.agg}
-                                onChange={(event) => updateValue(i, { agg: event.target.value as PivotValueSpec['agg'] })}
-                              >
-                                {(Object.entries(AGG_LABELS) as [PivotValueSpec['agg'], StringKey][]).map(([agg, labelKey]) => (
-                                  <option key={agg} value={agg}>{t(labelKey)}</option>
-                                ))}
-                              </select>
-                            </>
-                          )}
+        {noFields ? (
+          <p className="dialog-note">{t('dlgPivotNoFields')}</p>
+        ) : (
+          <div className="dialog-grid">
+            <label>
+              {t('dlgPivotSourceRange')}
+              <input
+                type="text"
+                className="cell-input"
+                value={sourceRange}
+                readOnly
+                style={{ background: '#f5f5f5', cursor: 'default' }}
+              />
+            </label>
+            <fieldset
+              className="dialog-span"
+              style={{ border: '1px solid #ddd', padding: '6px 8px', marginTop: 4 }}
+            >
+              <legend style={{ fontWeight: 500, fontSize: 13 }}>{t('dlgPivotRowFields')}</legend>
+              {renderAxisFields(rowFieldIndices, setRowFieldIndices, 1)}
+            </fieldset>
+            <fieldset
+              className="dialog-span"
+              style={{ border: '1px solid #ddd', padding: '6px 8px', marginTop: 4 }}
+            >
+              <legend style={{ fontWeight: 500, fontSize: 13 }}>{t('dlgPivotColFields')}</legend>
+              {colFieldIndices.length === 0 && (
+                <p className="dialog-note" style={{ margin: '2px 0' }}>
+                  {t('dlgPivotNoColFields')}
+                </p>
+              )}
+              {renderAxisFields(colFieldIndices, setColFieldIndices, 0)}
+            </fieldset>
+            <fieldset
+              className="dialog-span"
+              style={{ border: '1px solid #ddd', padding: '6px 8px', marginTop: 4 }}
+            >
+              <legend style={{ fontWeight: 500, fontSize: 13 }}>{t('dlgPivotValues')}</legend>
+              {values.map((spec, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    marginBottom: 4,
+                    alignItems: 'center',
+                  }}
+                >
+                  {spec.formula !== undefined ? (
+                    // Calculated field: name + formula (e.g. Profit =
+                    // Revenue-Cost).
+                    <>
+                      <input
+                        type="text"
+                        className="cell-input"
+                        placeholder={t('dlgPivotCalcNamePlaceholder')}
+                        value={spec.calcName ?? ''}
+                        onChange={(event) => updateValue(i, { calcName: event.target.value })}
+                        style={{ width: 90 }}
+                      />
+                      <span style={{ color: '#888' }}>=</span>
+                      <input
+                        type="text"
+                        className="cell-input"
+                        placeholder={t('dlgPivotCalcFormulaPlaceholder')}
+                        value={spec.formula}
+                        onChange={(event) => updateValue(i, { formula: event.target.value })}
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                    </>
+                  ) : (
+                    <>
                       <select
-                        title={t('dlgPivotShowAs')}
-                        value={spec.showDataAs ?? ''}
-                        onChange={(event) => {
-                          const v = event.target.value as PivotShowDataAsOption | ''
-                          // '' = normal: remove showDataAs from the spec.
-                          updateValue(i, { showDataAs: v === '' ? undefined : v })
-                        }}
+                        value={spec.fieldIndex}
+                        onChange={(event) =>
+                          updateValue(i, { fieldIndex: Number(event.target.value) })
+                        }
+                        style={{ flex: 1, minWidth: 0 }}
                       >
-                        {SHOW_DATA_AS_LABELS.map(({ value, labelKey }) => (
-                          <option key={value} value={value}>{t(labelKey)}</option>
+                        {fields.map((field, fi) => (
+                          <option key={field.colIndex} value={fi}>
+                            {field.label}
+                          </option>
                         ))}
                       </select>
                       <select
-                        title={t('dlgPivotValueFilter')}
-                        value={valueFilters[i]?.op ?? ''}
-                        onChange={(event) => {
-                          const op = event.target.value as PivotValueFilterOption['op'] | ''
-                          setValueFilters((prev) => {
-                            const next = { ...prev }
-                            if (op === '') delete next[i]
-                            else if (op === 'top') next[i] = { op, count: prev[i]?.count ?? 10 }
-                            else if (op === 'greaterThan') next[i] = { op, from: prev[i]?.from ?? 0 }
-                            else next[i] = { op, from: prev[i]?.from ?? 0, to: prev[i]?.to ?? 100 }
-                            return next
-                          })
-                        }}
+                        value={spec.agg}
+                        onChange={(event) =>
+                          updateValue(i, { agg: event.target.value as PivotValueSpec['agg'] })
+                        }
                       >
-                        <option value="">{t('dlgPivotFilterNone')}</option>
-                        <option value="top">{t('dlgPivotFilterTopN')}</option>
-                        <option value="greaterThan">{t('dlgPivotFilterGreaterThan')}</option>
-                        <option value="between">{t('dlgPivotFilterBetween')}</option>
+                        {(Object.entries(AGG_LABELS) as [PivotValueSpec['agg'], StringKey][]).map(
+                          ([agg, labelKey]) => (
+                            <option key={agg} value={agg}>
+                              {t(labelKey)}
+                            </option>
+                          ),
+                        )}
                       </select>
-                      {valueFilters[i]?.op === 'top' && (
-                        <input
-                          type="number"
-                          title={t('dlgPivotTopNCount')}
-                          className="cell-input"
-                          style={{ width: 52 }}
-                          min={1}
-                          value={valueFilters[i].count ?? 10}
-                          onChange={(event) => {
-                            const count = Number(event.target.value)
-                            setValueFilters((prev) => ({ ...prev, [i]: { op: 'top', count } }))
-                          }}
-                        />
-                      )}
-                      {valueFilters[i]?.op === 'greaterThan' && (
-                        <input
-                          type="number"
-                          title={t('dlgPivotGreaterThanValue')}
-                          className="cell-input"
-                          style={{ width: 64 }}
-                          value={valueFilters[i].from ?? 0}
-                          onChange={(event) => {
-                            const from = Number(event.target.value)
-                            setValueFilters((prev) => ({ ...prev, [i]: { op: 'greaterThan', from } }))
-                          }}
-                        />
-                      )}
-                      {valueFilters[i]?.op === 'between' && (
-                        <>
-                          <input
-                            type="number"
-                            title={t('dlgPivotBetweenFrom')}
-                            className="cell-input"
-                            style={{ width: 56 }}
-                            value={valueFilters[i].from ?? 0}
-                            onChange={(event) => {
-                              const from = Number(event.target.value)
-                              setValueFilters((prev) => ({
-                                ...prev,
-                                [i]: { op: 'between', from, to: prev[i]?.to ?? 100 },
-                              }))
-                            }}
-                          />
-                          <input
-                            type="number"
-                            title={t('dlgPivotBetweenTo')}
-                            className="cell-input"
-                            style={{ width: 56 }}
-                            value={valueFilters[i].to ?? 100}
-                            onChange={(event) => {
-                              const to = Number(event.target.value)
-                              setValueFilters((prev) => ({
-                                ...prev,
-                                [i]: { op: 'between', from: prev[i]?.from ?? 0, to },
-                              }))
-                            }}
-                          />
-                        </>
-                      )}
-                      {values.length > 1 && (
-                        <button
-                          type="button"
-                          className="secondary"
-                          style={{ padding: '1px 6px' }}
-                          onClick={() => removeValue(i)}
-                        >✕</button>
-                      )}
-                    </div>
-                  ))}
-                  {values.length < 8 && (
-                    <span style={{ display: 'inline-flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="secondary"
-                        style={{ fontSize: 12, marginTop: 2 }}
-                        onClick={addValue}
-                      >{t('dlgPivotAddValue')}</button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        style={{ fontSize: 12, marginTop: 2 }}
-                        onClick={addCalculatedValue}
-                      >{t('dlgPivotAddCalc')}</button>
-                    </span>
+                    </>
                   )}
-                </fieldset>
-                <label>
-                  {t('dlgPivotTargetCell')}
-                  <input
-                    type="text"
-                    className="cell-input"
-                    placeholder={t('dlgPivotTargetPlaceholder')}
-                    value={targetCell}
-                    disabled={mode === 'edit'}
-                    title={mode === 'edit' ? t('dlgPivotTargetLocked') : undefined}
-                    onChange={(event) => setTargetCell(event.target.value.toUpperCase())}
-                    style={{ width: 80 }}
-                  />
-                </label>
-                <p className="dialog-note">
-                  {t('dlgPivotNote')}
-                </p>
-              </div>
-            )}
-        {error && <p className="dialog-note" role="alert" style={{ color: '#c00' }}>{error}</p>}
+                  <select
+                    title={t('dlgPivotShowAs')}
+                    value={spec.showDataAs ?? ''}
+                    onChange={(event) => {
+                      const v = event.target.value as PivotShowDataAsOption | ''
+                      // '' = normal: remove showDataAs from the spec.
+                      updateValue(i, { showDataAs: v === '' ? undefined : v })
+                    }}
+                  >
+                    {SHOW_DATA_AS_LABELS.map(({ value, labelKey }) => (
+                      <option key={value} value={value}>
+                        {t(labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    title={t('dlgPivotValueFilter')}
+                    value={valueFilters[i]?.op ?? ''}
+                    onChange={(event) => {
+                      const op = event.target.value as PivotValueFilterOption['op'] | ''
+                      setValueFilters((prev) => {
+                        const next = { ...prev }
+                        if (op === '') delete next[i]
+                        else if (op === 'top') next[i] = { op, count: prev[i]?.count ?? 10 }
+                        else if (op === 'greaterThan') next[i] = { op, from: prev[i]?.from ?? 0 }
+                        else next[i] = { op, from: prev[i]?.from ?? 0, to: prev[i]?.to ?? 100 }
+                        return next
+                      })
+                    }}
+                  >
+                    <option value="">{t('dlgPivotFilterNone')}</option>
+                    <option value="top">{t('dlgPivotFilterTopN')}</option>
+                    <option value="greaterThan">{t('dlgPivotFilterGreaterThan')}</option>
+                    <option value="between">{t('dlgPivotFilterBetween')}</option>
+                  </select>
+                  {valueFilters[i]?.op === 'top' && (
+                    <input
+                      type="number"
+                      title={t('dlgPivotTopNCount')}
+                      className="cell-input"
+                      style={{ width: 52 }}
+                      min={1}
+                      value={valueFilters[i].count ?? 10}
+                      onChange={(event) => {
+                        const count = Number(event.target.value)
+                        setValueFilters((prev) => ({ ...prev, [i]: { op: 'top', count } }))
+                      }}
+                    />
+                  )}
+                  {valueFilters[i]?.op === 'greaterThan' && (
+                    <input
+                      type="number"
+                      title={t('dlgPivotGreaterThanValue')}
+                      className="cell-input"
+                      style={{ width: 64 }}
+                      value={valueFilters[i].from ?? 0}
+                      onChange={(event) => {
+                        const from = Number(event.target.value)
+                        setValueFilters((prev) => ({ ...prev, [i]: { op: 'greaterThan', from } }))
+                      }}
+                    />
+                  )}
+                  {valueFilters[i]?.op === 'between' && (
+                    <>
+                      <input
+                        type="number"
+                        title={t('dlgPivotBetweenFrom')}
+                        className="cell-input"
+                        style={{ width: 56 }}
+                        value={valueFilters[i].from ?? 0}
+                        onChange={(event) => {
+                          const from = Number(event.target.value)
+                          setValueFilters((prev) => ({
+                            ...prev,
+                            [i]: { op: 'between', from, to: prev[i]?.to ?? 100 },
+                          }))
+                        }}
+                      />
+                      <input
+                        type="number"
+                        title={t('dlgPivotBetweenTo')}
+                        className="cell-input"
+                        style={{ width: 56 }}
+                        value={valueFilters[i].to ?? 100}
+                        onChange={(event) => {
+                          const to = Number(event.target.value)
+                          setValueFilters((prev) => ({
+                            ...prev,
+                            [i]: { op: 'between', from: prev[i]?.from ?? 0, to },
+                          }))
+                        }}
+                      />
+                    </>
+                  )}
+                  {values.length > 1 && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{ padding: '1px 6px' }}
+                      onClick={() => removeValue(i)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              {values.length < 8 && (
+                <span style={{ display: 'inline-flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ fontSize: 12, marginTop: 2 }}
+                    onClick={addValue}
+                  >
+                    {t('dlgPivotAddValue')}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ fontSize: 12, marginTop: 2 }}
+                    onClick={addCalculatedValue}
+                  >
+                    {t('dlgPivotAddCalc')}
+                  </button>
+                </span>
+              )}
+            </fieldset>
+            <label>
+              {t('dlgPivotTargetCell')}
+              <input
+                type="text"
+                className="cell-input"
+                placeholder={t('dlgPivotTargetPlaceholder')}
+                value={targetCell}
+                disabled={mode === 'edit'}
+                title={mode === 'edit' ? t('dlgPivotTargetLocked') : undefined}
+                onChange={(event) => setTargetCell(event.target.value.toUpperCase())}
+                style={{ width: 80 }}
+              />
+            </label>
+            <p className="dialog-note dialog-span">{t('dlgPivotNote')}</p>
+          </div>
+        )}
+        {error && (
+          <p className="dialog-note" role="alert" style={{ color: '#c00' }}>
+            {error}
+          </p>
+        )}
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
           {!noFields && (
             <button
               className="primary-action"
@@ -586,8 +645,13 @@ export function PivotDialog({
                   setError(t('dlgPivotErrColNeedsSingleValue'))
                   return
                 }
-                if (values.some((spec) => spec.formula !== undefined
-                  && ((spec.calcName ?? '').trim() === '' || spec.formula.trim() === ''))) {
+                if (
+                  values.some(
+                    (spec) =>
+                      spec.formula !== undefined &&
+                      ((spec.calcName ?? '').trim() === '' || spec.formula.trim() === ''),
+                  )
+                ) {
                   setError(t('dlgPivotErrCalcFieldIncomplete'))
                   return
                 }
@@ -597,8 +661,13 @@ export function PivotDialog({
                 const groupings = Object.entries(fieldGroupings)
                   .map(([fieldIdx, rule]) => ({ fieldIndex: Number(fieldIdx), rule }))
                   .filter(({ fieldIndex }) => axisFieldSet.has(fieldIndex))
-                if (groupings.some(({ rule }) =>
-                  rule.kind === 'range' && (!Number.isFinite(rule.rangeStep) || rule.rangeStep <= 0))) {
+                if (
+                  groupings.some(
+                    ({ rule }) =>
+                      rule.kind === 'range' &&
+                      (!Number.isFinite(rule.rangeStep) || rule.rangeStep <= 0),
+                  )
+                ) {
                   setError(t('dlgPivotErrRangeStep'))
                   return
                 }
@@ -618,8 +687,10 @@ export function PivotDialog({
                   setError(t('dlgPivotErrOneValueFilter'))
                   return
                 }
-                if (valueFilterEntries.length === 1
-                  && labelFilterEntries.some(({ fieldIndex }) => fieldIndex === rowFieldIndices[0])) {
+                if (
+                  valueFilterEntries.length === 1 &&
+                  labelFilterEntries.some(({ fieldIndex }) => fieldIndex === rowFieldIndices[0])
+                ) {
                   setError(t('dlgPivotErrFilterConflict'))
                   return
                 }

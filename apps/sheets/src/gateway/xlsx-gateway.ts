@@ -37,7 +37,7 @@ import {
 } from './xlsx-pivot-add'
 import type { SheetFilterState } from './xlsx-filter'
 import { applyFilterState } from './xlsx-filter'
-import type { SheetAllocation, SheetEditPlan } from './xlsx-sheets'
+import type { SheetAllocation, SheetEditPlan, SheetElement } from './xlsx-sheets'
 import {
   addWorksheetOverride,
   addWorksheetRelationship,
@@ -1456,35 +1456,44 @@ async function shiftAnchoredSheetParts(
   }
 }
 
+/// Attribute order and entity encoding in <sheet> elements vary by producer,
+/// so never pattern-match the serialized XML for a name — parse each element
+/// and compare decoded names instead (issue #10: valid workbooks failed to
+/// save because r:id preceded name, or the name used numeric char refs).
+function findSheetElement(workbookXml: string, sheetName: string): SheetElement | undefined {
+  return parseSheetElements(workbookXml).find((element) => element.name === sheetName)
+}
+
 async function resolveWorksheetPath(
   reader: Pick<EntrySource, 'readText'>,
   sheetName: string,
 ): Promise<string> {
   const workbookXml = await reader.readText('xl/workbook.xml')
-  const escapedName = escapeRegExp(escapeXmlAttribute(sheetName))
-  const sheetMatch = new RegExp(
-    `<sheet\\b[^>]*\\bname="${escapedName}"[^>]*\\br:id="([^"]+)"[^>]*/?>`,
-  ).exec(workbookXml)
-  if (!sheetMatch?.[1]) throw new Error(`Sheet "${sheetName}" was not found in workbook.xml.`)
+  const relationshipId = findSheetElement(workbookXml, sheetName)?.relationshipId
+  if (relationshipId === undefined)
+    throw new Error(`Sheet "${sheetName}" was not found in workbook.xml.`)
 
   const relationshipsXml = await reader.readText('xl/_rels/workbook.xml.rels')
   // Two-step lookup: attribute order varies by producer (openpyxl puts
   // Target before Id), so never assume Id precedes Target.
   const relationshipXml = new RegExp(
-    `<Relationship\\b[^>]*\\bId="${escapeRegExp(sheetMatch[1])}"[^>]*/?>`,
+    `<Relationship\\b[^>]*\\bId="${escapeRegExp(relationshipId)}"[^>]*/?>`,
   ).exec(relationshipsXml)?.[0]
   const targetMatch =
     relationshipXml === undefined ? undefined : /\bTarget="([^"]+)"/.exec(relationshipXml)?.[1]
-  if (!targetMatch) throw new Error(`Relationship ${sheetMatch[1]} was not found.`)
+  if (!targetMatch) throw new Error(`Relationship ${relationshipId} was not found.`)
   const target = targetMatch.replace(/^\/?xl\//, '')
   return `xl/${target.replace(/^\.\//, '')}`
 }
 
 function replaceSheetName(workbookXml: string, before: string, after: string): string {
-  const beforeEscaped = escapeRegExp(escapeXmlAttribute(before))
-  const sheetPattern = new RegExp(`(<sheet\\b[^>]*\\bname=")${beforeEscaped}("[^>]*>)`)
-  if (!sheetPattern.test(workbookXml)) throw new Error(`Sheet "${before}" was not found.`)
-  return workbookXml.replace(sheetPattern, `$1${escapeXmlAttribute(after)}$2`)
+  const element = findSheetElement(workbookXml, before)
+  if (!element) throw new Error(`Sheet "${before}" was not found.`)
+  const renamedXml = element.xml.replace(
+    /(\bname=")[^"]*(")/,
+    (_match, prefix: string, suffix: string) => `${prefix}${escapeXmlAttribute(after)}${suffix}`,
+  )
+  return workbookXml.replace(element.xml, () => renamedXml)
 }
 
 function patchCell(worksheetXml: string, address: string, cell: CellState): string {
@@ -1864,13 +1873,25 @@ function escapeXmlText(input: string): string {
   return input.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
+const XML_NAMED_ENTITIES: Record<string, string> = {
+  quot: '"',
+  apos: "'",
+  lt: '<',
+  gt: '>',
+  amp: '&',
+}
+
+/// Single-pass decode of the XML named entities plus numeric character
+/// references (&#dd; / &#xhh;), which some producers use for non-ASCII text.
 function decodeXmlText(input: string): string {
-  return input
-    .replaceAll('&quot;', '"')
-    .replaceAll('&apos;', "'")
-    .replaceAll('&gt;', '>')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&amp;', '&')
+  return input.replace(
+    /&(?:#x([0-9A-Fa-f]+)|#([0-9]+)|(quot|apos|lt|gt|amp));/g,
+    (match, hex: string | undefined, dec: string | undefined, named: string | undefined) => {
+      if (named !== undefined) return XML_NAMED_ENTITIES[named] ?? match
+      const code = hex !== undefined ? Number.parseInt(hex, 16) : Number(dec)
+      return code <= 0x10ffff ? String.fromCodePoint(code) : match
+    },
+  )
 }
 
 function escapeXmlAttribute(input: string): string {

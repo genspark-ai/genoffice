@@ -18,6 +18,24 @@
   box-sizing: border-box;
 }
 
+/* UI CJK fonts per language (documentElement.lang is set at bootstrap and on switch);
+ * the zh expansion must keep the historical stack byte-identical */
+:root {
+  --ui-cjk: 'PingFang SC', 'Microsoft YaHei';
+}
+
+:root:lang(ja) {
+  --ui-cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+}
+
+:root:lang(ko) {
+  --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+}
+
+:root:lang(zh-TW) {
+  --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+}
+
 html,
 body,
 #root {
@@ -30,8 +48,7 @@ body {
     'Segoe UI',
     -apple-system,
     BlinkMacSystemFont,
-    'PingFang SC',
-    'Microsoft YaHei',
+    var(--ui-cjk),
     sans-serif;
   font-size: 13px;
   color: var(--text);

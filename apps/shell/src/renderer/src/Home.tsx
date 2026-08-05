@@ -391,7 +391,8 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
 // Language switching also lives in this popup menu.
 
 const LOGIN_POLL_MS = 2500
-const LOGIN_TIMEOUT_MS = 120_000
+/** fallback deadline when the CLI does not report expires_in (device codes live ~300s) */
+const LOGIN_MAX_WAIT_MS = 300_000
 
 // sorted by ISO 639 language code — native-script labels have no natural
 // shared alphabet, so the code is the ordering key
@@ -423,7 +424,13 @@ function AccountEntry() {
   const [waiting, setWaiting] = useState(false)
   // incremented on login retry, resetting the polling timer
   const [loginNonce, setLoginNonce] = useState(0)
-  const [loginError, setLoginError] = useState<'timeout' | 'launch' | null>(null)
+  const [loginError, setLoginError] = useState<
+    'timeout' | 'launch' | 'network' | 'expired' | 'failed' | null
+  >(null)
+  // auth URL reported by the login CLI — rescue entry when the browser did not open
+  const [authUrl, setAuthUrl] = useState<string | null>(null)
+  const [urlCopied, setUrlCopied] = useState(false)
+  const loginDeadline = useRef(0)
   const [menuOpen, setMenuOpen] = useState(false)
   // language flyout: opens on hover, fixed-position so it can escape the
   // sidebar's scroll container (same trick as the project row menu)
@@ -449,17 +456,43 @@ function AccountEntry() {
     }
   }, [])
 
-  // poll while the browser login is pending (takes effect once the login state lands in the local config file)
+  // login progress pushed from main (gsk login CLI output)
+  useEffect(() => {
+    const off = window.aiOffice.onAccountLogin?.((ev) => {
+      if (ev.phase === 'url') {
+        if (ev.url) setAuthUrl(ev.url)
+        if (ev.expiresInSec) loginDeadline.current = Date.now() + ev.expiresInSec * 1000
+      } else if (ev.phase === 'success') {
+        void window.aiOffice.accountStatus().then((s) => {
+          if (s.loggedIn) {
+            setStatus(s)
+            setWaiting(false)
+            setAuthUrl(null)
+          }
+        })
+      } else if (ev.phase === 'error') {
+        setWaiting(false)
+        setAuthUrl(null)
+        setLoginError(
+          ev.error === 'network' ? 'network' : ev.error === 'expired' ? 'expired' : 'failed',
+        )
+      }
+    })
+    return off
+  }, [])
+
+  // config-file polling stays as the fallback success path (works even if progress events are lost)
   useEffect(() => {
     if (!waiting) return
-    const startedAt = Date.now()
     const timer = setInterval(() => {
       void window.aiOffice.accountStatus().then((s) => {
         if (s.loggedIn) {
           setStatus(s)
           setWaiting(false)
-        } else if (Date.now() - startedAt > LOGIN_TIMEOUT_MS) {
+          setAuthUrl(null)
+        } else if (Date.now() > loginDeadline.current) {
           setWaiting(false)
+          setAuthUrl(null)
           setLoginError('timeout')
         }
       })
@@ -484,12 +517,15 @@ function AccountEntry() {
   const loggedIn = status?.loggedIn ?? false
   const email = status?.email ?? ''
   const initial = email ? email[0].toUpperCase() : loggedIn ? 'G' : '?'
-  const errorText =
-    loginError === 'timeout'
-      ? t('loginTimeout')
-      : loginError === 'launch'
-        ? t('loginLaunchFailed')
-        : null
+  const errorText = loginError
+    ? {
+        timeout: t('loginTimeout'),
+        launch: t('loginLaunchFailed'),
+        network: t('loginNetworkError'),
+        expired: t('loginExpired'),
+        failed: t('loginFailed'),
+      }[loginError]
+    : null
 
   const closeMenu = () => {
     setMenuOpen(false)
@@ -533,9 +569,12 @@ function AccountEntry() {
   }, [langFly])
 
   const startLogin = () => {
-    // clicking again while waiting = relaunch the browser login and reset the timer (rescue for a mistakenly closed login page)
+    // clicking again while waiting = relaunch the login (main kills the stale CLI, so the new device code is the live one)
     setLoginError(null)
     setWaiting(true)
+    setAuthUrl(null)
+    setUrlCopied(false)
+    loginDeadline.current = Date.now() + LOGIN_MAX_WAIT_MS
     setLoginNonce((n) => n + 1)
     closeMenu()
     void window.aiOffice.accountLogin().then((launched) => {
@@ -543,6 +582,16 @@ function AccountEntry() {
         setWaiting(false)
         setLoginError('launch')
       }
+    })
+  }
+
+  const openLoginUrl = () => void window.aiOffice.openLoginUrl?.()
+
+  const copyLoginUrl = () => {
+    if (!authUrl) return
+    void navigator.clipboard.writeText(authUrl).then(() => {
+      setUrlCopied(true)
+      window.setTimeout(() => setUrlCopied(false), 2000)
     })
   }
 
@@ -562,14 +611,34 @@ function AccountEntry() {
               </span>
             </div>
           ) : (
-            <button
-              className="account-menu-item"
-              role="menuitem"
-              onClick={startLogin}
-              title={waiting ? t('waitingLogin') : undefined}
-            >
-              {waiting ? t('waitingShort') : t('loginGenspark')}
-            </button>
+            <>
+              <button
+                className="account-menu-item"
+                role="menuitem"
+                onClick={startLogin}
+                title={waiting ? t('waitingLogin') : undefined}
+              >
+                {waiting ? t('waitingShort') : t('loginGenspark')}
+              </button>
+              {waiting && authUrl && (
+                <>
+                  <button
+                    className="account-menu-item login-rescue"
+                    role="menuitem"
+                    onClick={openLoginUrl}
+                  >
+                    {t('loginOpenManually')}
+                  </button>
+                  <button
+                    className="account-menu-item login-rescue"
+                    role="menuitem"
+                    onClick={copyLoginUrl}
+                  >
+                    {urlCopied ? t('loginCopied') : t('loginCopyUrl')}
+                  </button>
+                </>
+              )}
+            </>
           )}
           <div className="account-menu-divider" />
           <div
@@ -693,6 +762,16 @@ function AccountEntry() {
               <span>{loggingOut ? t('loggingOut') : t('logout')}</span>
             </button>
           )}
+        </div>
+      )}
+      {!menuOpen && waiting && authUrl && (
+        <div className="login-hint" role="status">
+          <button className="login-hint-open" onClick={openLoginUrl}>
+            {t('loginOpenManually')}
+          </button>
+          <button className="login-hint-copy" onClick={copyLoginUrl}>
+            {urlCopied ? t('loginCopied') : t('loginCopyUrl')}
+          </button>
         </div>
       )}
       <button

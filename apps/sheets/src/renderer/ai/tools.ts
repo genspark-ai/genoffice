@@ -8,7 +8,12 @@ import {
   formatAddress,
   type RangeBounds,
 } from '../../domain/cell-address'
-import type { CellFormatState, CellScalar, ChangePlan } from '../../domain/workbook.types'
+import type {
+  ApplyOutcome,
+  CellFormatState,
+  CellScalar,
+  ChangePlan,
+} from '../../domain/workbook.types'
 import { t } from '../i18n/locale'
 import { guideCatalogSummary, loadGuides } from './guides'
 
@@ -70,10 +75,12 @@ export interface SheetsSkillDeps {
   readFormats(addresses: readonly string[]): Record<string, CellFormatState>
   /** formatted report of a sheet's feature state (filters, CF, DV, names, visuals, …) */
   readSheetFeatures(sheetId?: string): string
+  /** `applied` resolves with the real apply result (the lazy path applies async);
+   * the tool awaits it so the model never hears "applied" for a batch that failed */
   proposeOperations(
     operations: readonly WorkbookOperation[],
     summary: string,
-  ): { ok: true; plan: ChangePlan } | { ok: false; error: string }
+  ): { ok: true; plan: ChangePlan; applied?: Promise<ApplyOutcome> } | { ok: false; error: string }
 }
 
 const MAX_READ_ADDRESSES = 100
@@ -540,44 +547,58 @@ export function executeWorkbookTool(
       }
       const outcome = deps.proposeOperations(operations, summaryInput.trim())
       if (!outcome.ok) return fail(t('aiToolPropose'), outcome.error)
-      const warnings =
-        outcome.plan.warnings.length > 0 ? `\nNote: ${outcome.plan.warnings.join('; ')}` : ''
-      const opCount =
-        outcome.plan.cellChanges.length +
-        outcome.plan.formatChanges.length +
-        outcome.plan.sheetRenames.length +
-        outcome.plan.structuralChanges.length
-      const base = `Auto-applied ${opCount} change(s) (undo via the side panel [Undo] button or ⌘Z): ${formatPlanSummary(outcome.plan)}${warnings}`
       const summary = summaryInput.trim()
-      // Read-back after write (write → verify): formula cells fetch their
-      // computed values after the async recalc, so the AI sees real results and
-      // errors like #REF!/#DIV/0! instead of just what it wrote.
-      const formulaAddrs = outcome.plan.cellChanges
-        .filter((c) => c.after.formula)
-        .map((c) => c.address)
-      if (formulaAddrs.length === 0) {
-        return { output: base, mutated: true, summary }
-      }
-      return (async (): Promise<ToolExecution> => {
-        await new Promise((resolve) => setTimeout(resolve, FORMULA_RECALC_DELAY_MS))
-        const shown = formulaAddrs.slice(0, MAX_READBACK_FORMULAS)
-        const cells = deps.readCells(shown)
-        const lines = shown.map((addr) => {
-          const v = cells[addr]?.value
-          return `${addr} = ${v === null || v === undefined ? '(still computing; verify with read_cells)' : String(v)}`
-        })
-        const rest = formulaAddrs.length - shown.length
-        const hasError = lines.some((l) => /#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!)/.test(l))
-        return {
-          output:
-            `${base}\nFormula results: ${lines.join('; ')}${rest > 0 ? `; …${rest} more formula cells` : ''}` +
-            (hasError
-              ? '\n⚠️ Formula error values present — check references/divisors and fix them.'
-              : ''),
-          mutated: true,
-          summary,
+      const finish = (): ToolExecution | Promise<ToolExecution> => {
+        const warnings =
+          outcome.plan.warnings.length > 0 ? `\nNote: ${outcome.plan.warnings.join('; ')}` : ''
+        const opCount =
+          outcome.plan.cellChanges.length +
+          outcome.plan.formatChanges.length +
+          outcome.plan.sheetRenames.length +
+          outcome.plan.structuralChanges.length
+        const base = `Auto-applied ${opCount} change(s) (undo via the side panel [Undo] button or ⌘Z): ${formatPlanSummary(outcome.plan)}${warnings}`
+        // Read-back after write (write → verify): formula cells fetch their
+        // computed values after the async recalc, so the AI sees real results and
+        // errors like #REF!/#DIV/0! instead of just what it wrote.
+        const formulaAddrs = outcome.plan.cellChanges
+          .filter((c) => c.after.formula)
+          .map((c) => c.address)
+        if (formulaAddrs.length === 0) {
+          return { output: base, mutated: true, summary }
         }
-      })()
+        return (async (): Promise<ToolExecution> => {
+          await new Promise((resolve) => setTimeout(resolve, FORMULA_RECALC_DELAY_MS))
+          const shown = formulaAddrs.slice(0, MAX_READBACK_FORMULAS)
+          const cells = deps.readCells(shown)
+          const lines = shown.map((addr) => {
+            const v = cells[addr]?.value
+            return `${addr} = ${v === null || v === undefined ? '(still computing; verify with read_cells)' : String(v)}`
+          })
+          const rest = formulaAddrs.length - shown.length
+          const hasError = lines.some((l) =>
+            /#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!)/.test(l),
+          )
+          return {
+            output:
+              `${base}\nFormula results: ${lines.join('; ')}${rest > 0 ? `; …${rest} more formula cells` : ''}` +
+              (hasError
+                ? '\n⚠️ Formula error values present — check references/divisors and fix them.'
+                : ''),
+            mutated: true,
+            summary,
+          }
+        })()
+      }
+      if (!outcome.applied) return finish()
+      return outcome.applied.then((applied) =>
+        applied.ok
+          ? finish()
+          : fail(
+              t('aiToolPropose'),
+              `Apply failed — the workbook is UNCHANGED: ${applied.reason ?? 'unknown reason'}. ` +
+                'Do not tell the user the changes were made; adjust the operations and retry, or explain the failure.',
+            ),
+      )
     }
 
     default:
