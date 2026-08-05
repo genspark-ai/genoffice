@@ -183,6 +183,9 @@ function anthropicMessages(messages: AgentMessage[]): unknown[] {
       for (const call of m.toolCalls ?? []) {
         content.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input })
       }
+      // Anthropic rejects empty content arrays; a prior empty terminal turn
+      // (tool work with no prose) would otherwise poison every follow-up.
+      if (content.length === 0) content.push({ type: 'text', text: '(no content)' })
       return { role: 'assistant', content }
     }
     // tool results travel back as a user message of tool_result blocks
@@ -386,6 +389,8 @@ function geminiContents(messages: AgentMessage[]): unknown[] {
       for (const call of m.toolCalls ?? []) {
         parts.push({ functionCall: { name: call.name, args: call.input } })
       }
+      // Gemini rejects model turns with empty parts lists.
+      if (parts.length === 0) parts.push({ text: '(no content)' })
       return { role: 'model', parts }
     }
     return {
@@ -597,12 +602,15 @@ function openAiMessages(system: string, messages: AgentMessage[]): unknown[] {
         })
       }
     } else if (m.role === 'assistant') {
+      const hasTools = !!(m.toolCalls && m.toolCalls.length > 0)
+      // content:null with no tool_calls is an empty assistant turn; some OpenAI-
+      // compatible proxies drop or reject the follow-up conversation after that.
       out.push({
         role: 'assistant',
-        content: m.text || null,
-        ...(m.toolCalls && m.toolCalls.length > 0
+        content: m.text || (hasTools ? null : '(no content)'),
+        ...(hasTools
           ? {
-              tool_calls: m.toolCalls.map((call) => ({
+              tool_calls: m.toolCalls!.map((call) => ({
                 id: call.id,
                 type: 'function',
                 function: { name: call.name, arguments: JSON.stringify(call.input) },

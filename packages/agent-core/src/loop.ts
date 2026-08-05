@@ -85,6 +85,15 @@ const TURN_LIMIT_NOTE =
   '[System] The tool-call turn limit for this request has been reached; no more tools may be called this turn. ' +
   'Answer directly from the information already gathered; if the task is unfinished, briefly state what is done and what remains.'
 
+/**
+ * Terminal assistant text when tools mutated the artifact (or an edits-only
+ * turn was restored) and the model returned no prose. Must be non-empty so
+ * provider message converters never emit empty assistant content, which breaks
+ * multi-turn follow-ups (see finishTurn / restore).
+ * Exported so apps can substitute a localized / tool-derived summary in the UI.
+ */
+export const COMPLETED_VIA_TOOLS_TEXT = '(completed tool actions; no text reply)'
+
 const SUMMARIZE_SYSTEM =
   'You are a conversation compressor. Compress this editing session between the user and the AI assistant into a concise summary so later turns can continue with context. ' +
   "Keep: the user's goals and key instructions, completed changes (which files/pages/elements were modified), important facts and data, and outstanding items. " +
@@ -194,9 +203,7 @@ export class AgentLoop<TSnapshot = unknown> {
     // Edits-only runs persist an assistant message with no text; give it a placeholder
     // so the turn stays paired and providers never see an empty assistant content block
     const normalized = messages.map((m) =>
-      m.role === 'assistant' && !m.text
-        ? { ...m, text: '(completed tool actions; no text reply)' }
-        : m,
+      m.role === 'assistant' && !m.text ? { ...m, text: COMPLETED_VIA_TOOLS_TEXT } : m,
     )
     // Unanswered user messages (a failed or interrupted run persisted them without a
     // reply) must not re-enter the model context: trailing ones would pair with the
@@ -497,11 +504,20 @@ export class AgentLoop<TSnapshot = unknown> {
     // no-tools finalizing turn after hitting the limit
     // (a cancelled turn drops its tool calls — no results would follow)
     if (toolCalls.length === 0 || this.cancelled || this.finalizing) {
-      this.history.push({ role: 'assistant', text: this.turnText })
+      // Models often end a tool-using run with an empty text turn ("I'm done").
+      // Leaving assistant text empty in history then poisons the next user
+      // prompt: Anthropic rejects empty content arrays, Gemini rejects empty
+      // parts, and OpenAI-compatible routes send content:null with no tool_calls —
+      // all of which make follow-up turns fail or return empty again (see
+      // genoffice#12 / #22: first prompt works, second shows "no summary").
+      const text =
+        this.turnText ||
+        (!this.cancelled && this.mutationSeen ? COMPLETED_VIA_TOOLS_TEXT : this.turnText)
+      this.history.push({ role: 'assistant', text })
       this.running = false
       this.runUserMsg = null
       events?.onDone?.({
-        text: this.turnText,
+        text,
         cancelled: this.cancelled,
         turnLimit: this.finalizing,
         // set only when true so exact-shape consumers/tests stay unaffected

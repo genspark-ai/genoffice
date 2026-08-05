@@ -13,7 +13,7 @@ export type {
 } from './types'
 export { composeSkills } from './skill'
 export type { AgentSkill } from './skill'
-export { AgentLoop } from './loop'
+export { AgentLoop, COMPLETED_VIA_TOOLS_TEXT } from './loop'
 export type {
   AgentLoopEvents,
   AgentLoopOptions,

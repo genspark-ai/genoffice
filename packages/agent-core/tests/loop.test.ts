@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   AgentLoop,
+  COMPLETED_VIA_TOOLS_TEXT,
   composeSkills,
   type AgentMessage,
   type AgentSkill,
@@ -508,6 +509,53 @@ describe('AgentLoop', () => {
     const placeholder = loop.messages[1] as { role: string; text: string }
     expect(placeholder.role).toBe('assistant')
     expect(placeholder.text).not.toBe('') // providers reject empty assistant content blocks
+  })
+
+  it('after tools mutate, an empty final model turn still stores non-empty history for follow-ups', async () => {
+    // Regression for genoffice#12 / #22: first AI prompt mutates via tools with no
+    // prose, second prompt must not inherit an empty assistant content block.
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: { a: 1 } })
+        cb.onDone()
+      },
+      (cb) => cb.onDone(), // model returns no text after tools
+      (cb) => {
+        cb.onDelta('second prompt ok')
+        cb.onDone()
+      },
+    ])
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onDone },
+    })
+    loop.run('first change')
+    await flush()
+    await flush()
+
+    expect(onDone).toHaveBeenCalledWith({
+      text: COMPLETED_VIA_TOOLS_TEXT,
+      cancelled: false,
+      turnLimit: false,
+    })
+    const afterFirst = loop.messages
+    expect(afterFirst.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const finalAssistant = afterFirst[3] as Extract<AgentMessage, { role: 'assistant' }>
+    expect(finalAssistant.text).toBe(COMPLETED_VIA_TOOLS_TEXT)
+    expect(finalAssistant.text.length).toBeGreaterThan(0)
+
+    onDone.mockClear()
+    loop.run('follow-up')
+    await flush()
+    expect(onDone).toHaveBeenCalledWith({
+      text: 'second prompt ok',
+      cancelled: false,
+      turnLimit: false,
+    })
+    // Follow-up request carries the prior (now non-empty) terminal assistant
+    expect(transport.requests[2]!.messageCount).toBeGreaterThanOrEqual(5)
   })
 
   it('restore trims oversized history at a user boundary', () => {

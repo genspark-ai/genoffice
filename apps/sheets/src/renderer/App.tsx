@@ -98,7 +98,12 @@ import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
 
-import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import {
+  AgentLoop,
+  COMPLETED_VIA_TOOLS_TEXT,
+  composeSkills,
+  type AgentImage,
+} from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
@@ -820,15 +825,34 @@ export function App(): React.JSX.Element {
           })
         },
         onDone: ({ text, cancelled, turnLimit }) => {
+          // Prefer tool summaries when the model finished via tools with no prose
+          // (agent-core fills history with COMPLETED_VIA_TOOLS_TEXT so follow-ups
+          // stay provider-safe; the UI can show the real work that ran).
+          const toolSummaries = (() => {
+            const lines: string[] = []
+            const seen = new Set<string>()
+            for (const tool of runToolsRef.current) {
+              if (!tool.summary || tool.isError || seen.has(tool.summary)) continue
+              seen.add(tool.summary)
+              lines.push(tool.summary)
+              if (lines.length >= 8) break
+            }
+            return lines.join('\n')
+          })()
+          const prose =
+            text && text !== COMPLETED_VIA_TOOLS_TEXT
+              ? text
+              : runLastTextRef.current || toolSummaries || text
           // A final empty turn must not claim completion: reuse the model's last
           // streamed text; with none, only a mutating run gets the "done" phrasing.
           const fallback = cancelled
             ? t('appAiStopped')
             : runLastTextRef.current ||
+              toolSummaries ||
               (runMutatedRef.current ? t('appAiNoSummary') : t('appAiNoAction'))
           const finalText = turnLimit
-            ? [text, t('appAiTurnLimit')].filter(Boolean).join('\n\n')
-            : text || fallback
+            ? [prose, t('appAiTurnLimit')].filter(Boolean).join('\n\n')
+            : prose || fallback
           setMessage(finalText)
           patchLastAssistant((entry) => ({
             ...entry,

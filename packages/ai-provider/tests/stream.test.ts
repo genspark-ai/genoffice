@@ -229,6 +229,44 @@ describe('streamForProvider: anthropic', () => {
     ).rejects.toThrow(/Claude returned no content/)
   })
 
+  it('never sends an empty assistant content array when history has edits-only replies', async () => {
+    // Prior empty terminal turns would map to content:[] and break follow-ups
+    // on Anthropic (genoffice#12 / #22 class of multi-turn failures).
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse(
+          sseStream([
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+            'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}',
+          ]),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'anthropic',
+      { apiKey: 'k', model: 'm' },
+      'sys',
+      [
+        { role: 'user', text: 'first' },
+        { role: 'assistant', text: '' },
+        { role: 'user', text: 'second' },
+      ],
+      [],
+      100,
+      cb,
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
+      messages: Array<{ role: string; content: unknown }>
+    }
+    for (const msg of body.messages) {
+      if (msg.role !== 'assistant') continue
+      expect(Array.isArray(msg.content)).toBe(true)
+      expect((msg.content as unknown[]).length).toBeGreaterThan(0)
+    }
+  })
+
   it('replaces an HTML error body (e.g. a gateway block page) with a readable note', async () => {
     const html =
       '<!doctype html>\n<html>\n<head><title>Genspark</title></head><body>app shell</body></html>'
@@ -478,6 +516,43 @@ describe('streamForProvider: openai-compatible', () => {
     await expect(
       streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
     ).rejects.toThrow(/The model returned no content/)
+  })
+
+  it('never sends content:null for an assistant turn with neither text nor tools', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse(
+          sseStream([
+            'data: {"choices":[{"delta":{"content":"ok"}}]}',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+            'data: [DONE]',
+          ]),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'm' },
+      'sys',
+      [
+        { role: 'user', text: 'first' },
+        { role: 'assistant', text: '' },
+        { role: 'user', text: 'second' },
+      ],
+      [],
+      100,
+      cb,
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
+      messages: Array<{ role: string; content: unknown; tool_calls?: unknown }>
+    }
+    for (const msg of body.messages) {
+      if (msg.role !== 'assistant') continue
+      expect(msg.content === null && !msg.tool_calls).toBe(false)
+      if (msg.content !== null) expect(String(msg.content).length).toBeGreaterThan(0)
+    }
   })
 
   it('routes deepseek and openai to their fixed base URLs', async () => {
