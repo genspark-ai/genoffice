@@ -41,9 +41,13 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
       title: jumpHint(),
     }
     if (field.anchor) attrs['data-toc-anchor'] = field.anchor
+    const num: DomSpec[] = field.num
+      ? [['span', { class: 'doc-toc-num', contenteditable: 'false' }, field.num]]
+      : []
     return [
       'div',
       attrs,
+      ...num,
       ['span', { class: 'doc-toc-title', contenteditable: 'false' }, field.left || '\u00a0'],
       ['span', { class: 'doc-toc-dots' }],
       ['span', { class: 'doc-toc-page', contenteditable: 'false' }, field.right ?? ''],

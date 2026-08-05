@@ -171,7 +171,8 @@ describe('stream timeouts end to end', () => {
       100,
       { ...collector().cb, onActivity },
     )
-    await run
+    // a ping-only stream carries no content, so the turn itself rejects
+    await expect(run).rejects.toThrow(/returned no content/)
     expect(onActivity).toHaveBeenCalled()
   })
 })

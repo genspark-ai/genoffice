@@ -40,11 +40,17 @@ for (const rel of [
 // logs "file source doesn't exist" for an absent extraResources source and
 // still exits 0, so without this the installer launches normally and is simply
 // missing that editor — it surfaces only when a user opens the tab.
-for (const rel of ['../docs/out', '../sheets/out', '../slides/out', '../pdf/out']) {
-  if (!existsSync(join(__dirname, rel))) {
-    throw new Error(
-      `electron-builder extraResources source missing: ${rel} (run npm run build:all first)`,
-    )
+//
+// Runs from the beforePack hook, not at module load: gen-third-party-notices
+// requires this config to read extraResources, and the dist:* scripts run
+// notices before build:all, when the out dirs legitimately don't exist yet.
+function assertModuleTreesPresent() {
+  for (const rel of ['../docs/out', '../sheets/out', '../slides/out', '../pdf/out']) {
+    if (!existsSync(join(__dirname, rel))) {
+      throw new Error(
+        `electron-builder extraResources source missing: ${rel} (run npm run build:all first)`,
+      )
+    }
   }
 }
 
@@ -202,6 +208,9 @@ const config = {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+  },
+  beforePack: async () => {
+    assertModuleTreesPresent()
   },
   dmg: {
     sign: true,

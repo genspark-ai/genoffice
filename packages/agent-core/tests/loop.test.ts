@@ -535,8 +535,10 @@ describe('AgentLoop', () => {
     await flush()
     await flush()
 
+    // onDone reports the raw (empty) turn text so app UIs keep their own
+    // localized fallbacks; only the history entry gets the placeholder.
     expect(onDone).toHaveBeenCalledWith({
-      text: COMPLETED_VIA_TOOLS_TEXT,
+      text: '',
       cancelled: false,
       turnLimit: false,
     })

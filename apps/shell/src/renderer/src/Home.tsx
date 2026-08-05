@@ -417,6 +417,11 @@ const LANG_OPTIONS = [
   { value: 'zh-TW', label: '繁體中文' },
 ] as const
 
+const CHANNEL_OPTIONS = [
+  { value: 'stable', labelKey: 'channelStable' },
+  { value: 'beta', labelKey: 'channelBeta' },
+] as const
+
 function AccountEntry() {
   const { lang, setLang, t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
@@ -438,6 +443,11 @@ function AccountEntry() {
   // grace period before the hover flyout closes: the pointer's diagonal path
   // from the row to the options crosses ground outside both elements
   const langCloseTimer = useRef<number | null>(null)
+  // update-channel flyout: same hover/click/outside-scroll pattern as the language flyout
+  const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
+  const [chanFly, setChanFly] = useState<{ left: number; bottom: number } | null>(null)
+  const chanRowRef = useRef<HTMLDivElement>(null)
+  const chanCloseTimer = useRef<number | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
   const [appVersion, setAppVersion] = useState('')
 
@@ -507,6 +517,7 @@ function AccountEntry() {
       if (!target?.closest?.('.account-entry')) {
         setMenuOpen(false)
         setLangFly(null)
+        setChanFly(null)
       }
     }
     window.addEventListener('pointerdown', handler)
@@ -529,6 +540,7 @@ function AccountEntry() {
   const closeMenu = () => {
     setMenuOpen(false)
     setLangFly(null)
+    setChanFly(null)
   }
 
   const cancelLangFlyClose = () => {
@@ -567,6 +579,40 @@ function AccountEntry() {
     }
   }, [langFly])
 
+  const cancelChanFlyClose = () => {
+    if (chanCloseTimer.current !== null) {
+      window.clearTimeout(chanCloseTimer.current)
+      chanCloseTimer.current = null
+    }
+  }
+
+  const openChanFly = () => {
+    cancelChanFlyClose()
+    const rect = chanRowRef.current?.getBoundingClientRect()
+    if (rect) setChanFly({ left: rect.right - 2, bottom: window.innerHeight - rect.bottom })
+  }
+
+  const scheduleChanFlyClose = () => {
+    cancelChanFlyClose()
+    chanCloseTimer.current = window.setTimeout(() => setChanFly(null), 200)
+  }
+
+  // same scroll-close rule as the language flyout: the fixed-position flyout
+  // would otherwise detach from its row when the sidebar scrolls
+  useEffect(() => {
+    if (!chanFly) return
+    const close = (event: Event) => {
+      const target = event.target as Element | null
+      if (target instanceof Element && target.closest('.lang-flyout')) return
+      setChanFly(null)
+    }
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      cancelChanFlyClose()
+    }
+  }, [chanFly])
+
   const startLogin = () => {
     // clicking again while waiting = relaunch the login (main kills the stale CLI, so the new device code is the live one)
     setLoginError(null)
@@ -595,8 +641,12 @@ function AccountEntry() {
   }
 
   const handleClick = () => {
-    setMenuOpen((v) => !v)
+    setMenuOpen((v) => {
+      if (!v) void window.aiOffice.getUpdateChannel().then(setChannel)
+      return !v
+    })
     setLangFly(null)
+    setChanFly(null)
   }
 
   return (
@@ -697,6 +747,94 @@ function AccountEntry() {
                   >
                     {opt.label}
                     {lang === opt.value && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                        <path
+                          d="M2.5 6.2l2.4 2.4 4.6-5"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div
+            className="lang-row-wrap"
+            ref={chanRowRef}
+            onMouseEnter={openChanFly}
+            onMouseLeave={scheduleChanFlyClose}
+          >
+            <button
+              className="account-menu-item lang-row"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={!!chanFly}
+              onClick={openChanFly}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M4 3v6.5a3 3 0 0 0 3 3h5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+                <circle cx="4" cy="3" r="1.6" stroke="currentColor" strokeWidth="1.2" />
+                <path
+                  d="M9.8 10l2.4 2.5-2.4 2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+              </svg>
+              <span className="lang-row-label">{t('updateChannel')}</span>
+              <span className="lang-row-current">
+                {t(channel === 'beta' ? 'channelBeta' : 'channelStable')}
+              </span>
+              <svg
+                className="lang-row-chevron"
+                width="11"
+                height="11"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4.5 2.5l4 3.5-4 3.5"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              </svg>
+            </button>
+            {chanFly && (
+              <div
+                className="lang-flyout"
+                role="menu"
+                style={{ left: chanFly.left, bottom: chanFly.bottom }}
+              >
+                {CHANNEL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    role="menuitemradio"
+                    aria-checked={channel === opt.value}
+                    className={`lang-menu-item${channel === opt.value ? ' active' : ''}`}
+                    onClick={() => {
+                      closeMenu()
+                      if (channel !== opt.value) {
+                        setChannel(opt.value)
+                        void window.aiOffice.setUpdateChannel(opt.value)
+                      }
+                    }}
+                  >
+                    {t(opt.labelKey)}
+                    {channel === opt.value && (
                       <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
                         <path
                           d="M2.5 6.2l2.4 2.4 4.6-5"

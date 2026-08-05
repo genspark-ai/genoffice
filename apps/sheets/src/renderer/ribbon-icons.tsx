@@ -37,25 +37,26 @@ export function CaretIcon(): ReactElement {
   )
 }
 
-/// Quick-access save button (floppy) — same geometry as the slides ribbon's
-/// IconSave, so the three apps' save buttons read identically.
+/// Quick-access save button (floppy) — design-supplied geometry shared with
+/// the docs and slides ribbons, so the three apps' save buttons read identically.
 export function SaveIcon(): ReactElement {
   return (
     <Icon>
-      <path d="M5.15 5.9a1.25 1.25 0 0 1 1.25-1.25h9.96l3.11 3.11v9.34a1.25 1.25 0 0 1-1.25 1.25H6.4a1.25 1.25 0 0 1-1.25-1.25z" />
-      <path d="M8.27 4.65V9.01h6.85V4.9" />
-      <rect x="8.27" y="13.25" width="7.47" height="5.6" />
+      <path d="M3 4.5C3 3.67158 3.67158 3 4.5 3H17.1407L21 6.60325V19.5C21 20.3285 20.3285 21 19.5 21H4.5C3.67158 21 3 20.3285 3 19.5V4.5Z" />
+      <path d="M12.0042 3L12 6.6923C12 6.86225 11.7761 7 11.5 7H7.5C7.22385 7 7 6.86225 7 6.6923V3H12.0042Z" />
+      <path d="M7 13H17" />
+      <path d="M7 17H12.0042" />
     </Icon>
   )
 }
 
-/// Quick-access undo/redo — the docs ribbon's IconUndo/IconRedo geometry
-/// (16-canvas × 1.5), so the two apps' tab-row arrows read identically.
+/// Quick-access undo/redo — design-supplied geometry shared with the docs
+/// and slides ribbons, so the three apps' tab-row arrows read identically.
 export function UndoIcon(): ReactElement {
   return (
     <Icon>
-      <path d="M4.5 9.75h10.5a5.25 5.25 0 0 1 0 10.5H9" />
-      <path d="M8.7 5.55 4.5 9.75l4.2 4.2" />
+      <path d="M5.91026 4L2.5 7.14791L5.91026 10.8205" />
+      <path d="M3.96154 7.41028H15.1636C18.5169 7.41028 21.3646 10.1484 21.4953 13.5C21.6334 17.0416 18.707 20.0769 15.1636 20.0769H6.88384" />
     </Icon>
   )
 }
@@ -63,8 +64,8 @@ export function UndoIcon(): ReactElement {
 export function RedoIcon(): ReactElement {
   return (
     <Icon>
-      <path d="M19.5 9.75H9a5.25 5.25 0 0 0 0 10.5h6" />
-      <path d="M15.3 5.55 19.5 9.75l-4.2 4.2" />
+      <path d="M18.0897 4L21.5 7.14791L18.0897 10.8205" />
+      <path d="M20.0385 7.41028H8.83636C5.4831 7.41028 2.63537 10.1484 2.5047 13.5C2.36657 17.0416 5.29296 20.0769 8.83636 20.0769H17.1162" />
     </Icon>
   )
 }
@@ -196,48 +197,39 @@ export const RIBBON_GLYPH_ICONS: Record<string, ReactElement> = {
   // paste special swaps the text lines for option sliders on the same board
   '📋': (
     <Icon>
-      <rect x="6.38" y="5.81" width="11.25" height="13.5" rx="1.13" />
-      <rect x="9.52" y="4.35" width="4.95" height="2.93" rx="0.79" fill="var(--surface, #fff)" />
-      <path d="M 9.19 10.31 h 5.63 M 9.19 13.13 h 5.63 M 9.19 15.94 h 3.38" />
+      <path d="M 8.14 18.16 H 5.89 C 4.85 18.16 4 17.31 4 16.26 V 6.79 C 4 5.74 4.85 4.89 5.89 4.89 H 7.32 M 17.26 7.74 V 6.79 C 17.26 5.74 16.41 4.89 15.37 4.89 H 13.95" />
+      <rect x="7.79" y="3" width="5.68" height="2.84" rx="0.95" />
+      <path d="M 18.21 7.74 H 9.68 C 8.64 7.74 7.79 8.59 7.79 9.63 V 19.11 C 7.79 20.15 8.64 21 9.68 21 H 15.49 L 20.11 16.03 V 9.63 C 20.11 8.59 19.26 7.74 18.21 7.74 Z" />
+      <path d="M 10.63 11.05 H 17.26 M 10.63 14.37 H 14.42" />
+      <path d="M 15.37 21 V 16.74 C 15.37 16.21 15.79 15.79 16.32 15.79 H 20.11" />
     </Icon>
   ),
   '📑': (
     <Icon>
-      <rect x="6.38" y="5.81" width="11.25" height="13.5" rx="1.13" />
-      <rect x="9.52" y="4.35" width="4.95" height="2.93" rx="0.79" fill="var(--surface, #fff)" />
-      <path d="M 9.19 10.88 h 5.63 M 9.19 14.81 h 5.63" />
-      <circle cx="11.06" cy="10.88" r="0.83" />
-      <circle cx="12.94" cy="14.81" r="0.83" />
+      <path d="M 14.99 5.02 H 16.98 C 18.09 5.02 18.98 5.92 18.98 7.04 L 18.88 19.02 C 18.87 20.11 17.98 21 16.88 21 H 6.88 C 5.77 21 4.87 20.09 4.88 18.98 L 4.98 7 C 4.98 5.91 5.88 5.02 6.98 5.02 H 8.99" />
+      <rect x="9.16" y="3.5" width="5.68" height="2.84" rx="0.95" />
+      <path d="M 8 10 H 16 M 8 13.5 H 16 M 8 17 H 13" />
     </Icon>
   ),
-  // cut / copy / format painter share the docs ribbon's geometry (docs
-  // 16-canvas coordinates × 1.5), identical across all three apps
+  // cut / copy / format painter share one 24-canvas design across all three
+  // apps (the docs ribbon carries the same geometry × 2/3 on its 16 canvas)
   '✂': (
     <Icon>
-      <path d="M 16.67 3.99 8.8 15.2 M 7.33 3.99 l 7.88 11.21" />
-      <circle cx="6.93" cy="17.34" r="2.67" />
-      <circle cx="17.07" cy="17.34" r="2.67" />
+      <path d="M 7.91 19.27 L 8.92 17.57 L 16.98 3.59 M 7.02 3.5 L 15.08 17.47 L 16.09 19.27" />
+      <circle cx="5.83" cy="18.13" r="2.37" />
+      <circle cx="18.17" cy="18.13" r="2.37" />
     </Icon>
   ),
   '⧉': (
     <Icon>
-      <rect x="8.93" y="7.7" width="9.84" height="12.3" rx="1.23" />
-      <path d="M 15.08 7.7 v -2.46 a 1.23 1.23 0 0 0 -1.23 -1.23 h -7.38 a 1.23 1.23 0 0 0 -1.23 1.23 v 11.07 a 1.23 1.23 0 0 0 1.23 1.23 h 2.46" />
+      <rect x="7" y="7" width="14" height="14" rx="3" />
+      <path d="M 14.5 4 H 7 C 5.34 4 4 5.34 4 7 V 14.5" />
     </Icon>
   ),
   '🖌': (
     <Icon>
-      <rect x="5.63" y="4.35" width="12.75" height="5.1" rx="1.02" />
-      <path d="M 18.38 6.9 h 1.91 v 5.1 H 12.64 v 2.55" />
-      <rect
-        x="10.73"
-        y="14.55"
-        width="3.83"
-        height="5.74"
-        rx="1.02"
-        fill="currentColor"
-        stroke="none"
-      />
+      <path d="M 16.5 4 H 3.97 V 10.71 H 16.5 Z" />
+      <path d="M 16.51 7.13 H 20.53 V 14.33 L 9.79 15.72 V 21" />
     </Icon>
   ),
   // ---- find / filter ----

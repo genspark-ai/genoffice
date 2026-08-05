@@ -40,6 +40,80 @@ describe('sseLines', () => {
   })
 })
 
+describe('streamForProvider: empty SSE streams surface as errors', () => {
+  // A 200 SSE stream with zero text and zero tool calls previously dissolved
+  // into an empty "successful" turn; the UI then showed a generic "no content"
+  // message with no diagnostics (alpha rows 36/37)
+  it.each([
+    ['anthropic', 'claude-sonnet-5', /Claude returned no content/],
+    ['gemini', 'gemini-2.5-flash', /Gemini returned no content/],
+    ['openai', 'gpt-4.1-mini', /The model returned no content/],
+  ] as const)('%s: rejects on an empty stream', async (provider, model, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(sseStream([]))))
+    const { cb } = collector()
+    await expect(
+      streamForProvider(provider, { apiKey: 'k', model }, 'sys', [], [], 100, cb),
+    ).rejects.toThrow(message)
+  })
+
+  it('a genuine empty closing turn (normal stop framing) still succeeds', async () => {
+    // common after tool-heavy runs: the model ends with end_turn and no content;
+    // this must NOT be treated as a gateway failure
+    const anthropicBody = sseStream([
+      'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(anthropicBody)))
+    await expect(
+      streamForProvider(
+        'anthropic',
+        { apiKey: 'k', model: 'claude-sonnet-5' },
+        'sys',
+        [],
+        [],
+        100,
+        collector().cb,
+      ),
+    ).resolves.toBeUndefined()
+
+    const openAiBody = sseStream([
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(openAiBody)))
+    await expect(
+      streamForProvider(
+        'openai',
+        { apiKey: 'k', model: 'gpt-4.1-mini' },
+        'sys',
+        [],
+        [],
+        100,
+        collector().cb,
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('a tool-call-only stream still succeeds (no false empty error)', async () => {
+    const body = sseStream([
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"do_thing"}}',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}',
+      'data: {"type":"content_block_stop","index":0}',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { toolCalls, cb } = collector()
+    await streamForProvider(
+      'anthropic',
+      { apiKey: 'k', model: 'claude-sonnet-5' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(toolCalls).toHaveLength(1)
+  })
+})
+
 describe('streamForProvider: anthropic', () => {
   it('emits text deltas and a completed tool call', async () => {
     const body = sseStream([
@@ -559,6 +633,7 @@ describe('streamForProvider: openai-compatible', () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
     vi.stubGlobal('fetch', fetchMock)
     const { cb } = collector()
+    // empty fixture streams reject with "returned no content"; only the request URL matters here
     await streamForProvider(
       'deepseek',
       { apiKey: 'k', model: 'deepseek-chat' },
@@ -567,7 +642,7 @@ describe('streamForProvider: openai-compatible', () => {
       [],
       100,
       cb,
-    )
+    ).catch(() => {})
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.deepseek.com/v1/chat/completions',
       expect.anything(),
@@ -586,7 +661,7 @@ describe('streamForProvider: openai-compatible', () => {
       [],
       100,
       cb,
-    )
+    ).catch(() => {})
     expect(fetchMock).toHaveBeenCalledWith(
       'https://my-endpoint.example.com/v1/chat/completions',
       expect.anything(),
@@ -617,7 +692,7 @@ describe('streamForProvider: genspark', () => {
       [],
       100,
       cb,
-    )
+    ).catch(() => {})
     expect(fetchMock).toHaveBeenCalledWith(
       'https://www.genspark.ai/api/anthropic/v1/messages',
       expect.objectContaining({ headers: expect.objectContaining({ 'x-api-key': 'gsk-k' }) }),
@@ -636,7 +711,7 @@ describe('streamForProvider: genspark', () => {
       [],
       100,
       cb,
-    )
+    ).catch(() => {})
     expect(fetchMock).toHaveBeenCalledWith(
       'https://www.genspark.ai/api/llm_proxy/gemini/v1beta/models/gemini-3-flash-preview:streamGenerateContent?alt=sse',
       expect.objectContaining({ headers: expect.objectContaining({ 'x-goog-api-key': 'gsk-k' }) }),
@@ -655,7 +730,7 @@ describe('streamForProvider: genspark', () => {
       [],
       100,
       cb,
-    )
+    ).catch(() => {})
     expect(fetchMock).toHaveBeenCalledWith(
       'https://www.genspark.ai/api/llm_proxy/v1/chat/completions',
       expect.anything(),
@@ -667,7 +742,9 @@ describe('streamForProvider: genspark', () => {
       const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream([])))
       vi.stubGlobal('fetch', fetchMock)
       const { cb } = collector()
-      await streamForProvider('genspark', { apiKey: 'gsk-k', model }, 'sys', [], [], 100, cb)
+      await streamForProvider('genspark', { apiKey: 'gsk-k', model }, 'sys', [], [], 100, cb).catch(
+        () => {},
+      )
       expect(fetchMock).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
@@ -686,7 +763,9 @@ describe('streamForProvider: genspark', () => {
       const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream([])))
       vi.stubGlobal('fetch', fetchMock)
       const { cb } = collector()
-      await streamForProvider(provider, { apiKey: 'k', model }, 'sys', [], [], 100, cb)
+      await streamForProvider(provider, { apiKey: 'k', model }, 'sys', [], [], 100, cb).catch(
+        () => {},
+      )
       const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
       expect(headers['X-Agent-Type']).toBeUndefined()
     }

@@ -14,7 +14,7 @@ import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } fro
 import {
   appMenuLabels,
   contextMenuLabels,
-  fetchWithSsrfGuard,
+  fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
@@ -45,8 +45,8 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import {
+  ensureGenofficeLogin,
   gskApiKey,
-  gskLogin,
   gskLoginInfo,
   hasGskAuth,
   webSearch,
@@ -2494,7 +2494,7 @@ export function registerAiIpc(): void {
   )
 
   ipcMain.handle('ai:gsk-login', () => {
-    gskLogin()
+    ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
@@ -2595,10 +2595,9 @@ export function registerAiIpc(): void {
       try {
         // the URL originates from AI tool calls (prompt-injectable via web search
         // results), so refuse non-http schemes and private/link-local targets;
-        // redirects are followed manually so every hop is validated too
-        const resp = await fetchWithSsrfGuard(String(url), {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        })
+        // redirects are followed manually so every hop is validated too.
+        // fetchRemoteImage adds CDN-friendly headers and transient-error retries.
+        const resp = await fetchRemoteImage(String(url))
         if (!resp || !resp.ok) return null
         const buf = Buffer.from(await resp.arrayBuffer())
         const ct = resp.headers.get('content-type') ?? ''

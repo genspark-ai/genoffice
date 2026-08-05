@@ -1,3 +1,5 @@
+import type { UpdateChannel } from './update-api'
+
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
 export type UiLanguage =
   | 'zh'
@@ -87,6 +89,10 @@ export interface HomeApi {
   getLanguage(): Promise<UiLanguage>
   /** switch + persist the UI language; main rebuilds its menus to match */
   setLanguage(lang: UiLanguage): Promise<void>
+  /** current update channel (persisted in userData/app-settings.json; default 'stable') */
+  getUpdateChannel(): Promise<UpdateChannel>
+  /** switch + persist the update channel; triggers an immediate update check */
+  setUpdateChannel(channel: UpdateChannel): Promise<void>
   /** Genspark account status (gsk login state; to be upgraded to a signup/account system later) */
   accountStatus(): Promise<AccountStatus>
   /** start Genspark login (opens the browser; accountStatus flips to logged-in on completion); returns whether the launch succeeded */
@@ -186,6 +192,8 @@ export const HOME_CHANNELS = {
   openTrash: 'home:open-trash',
   getLanguage: 'home:get-language',
   setLanguage: 'home:set-language',
+  getUpdateChannel: 'home:get-update-channel',
+  setUpdateChannel: 'home:set-update-channel',
   accountStatus: 'home:account-status',
   accountLogin: 'home:account-login',
   accountLoginEvent: 'home:account-login-event',

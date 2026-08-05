@@ -30,7 +30,7 @@ import type {
 import { SlideCanvas } from './SlideCanvas'
 import { SlideThumb } from './SlideThumb'
 import { MasterView } from './MasterView'
-import { TextEditOverlay, firstFontFamily } from './TextEditOverlay'
+import { TextEditOverlay, firstFontFamily, liveBulletChar } from './TextEditOverlay'
 import { CropOverlay } from './CropOverlay'
 import { createImageLoader } from './image-loader'
 import { InkOverlay } from './InkOverlay'
@@ -52,6 +52,8 @@ import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/Ins
 import { CutoutDialog } from './components/CutoutDialog'
 import type { ChartPresetDef, IconDef, SmartArtDef, WordArtPreset } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
+import { ToastHost } from './components/toast'
+import { showToast } from './components/toast-bus'
 import { t, useI18n } from './i18n/locale'
 import { AiPanel } from './ai/AiPanel'
 import { ChartDataDialog } from './components/ChartDataDialog'
@@ -197,6 +199,40 @@ function collectFontRuns(
   else if (node.type === 'table') for (const cell of node.cells) pushLayout(cell.text)
   else if (node.type === 'group')
     for (const child of node.children) collectFontRuns(child, scale, out)
+}
+
+/** Per-paragraph bullet chars of one laid-out text body for the ribbon bullet gallery: '' for a
+ * paragraph with no bullet, '#num' for numbered (matches no preset tile). Lines group into
+ * paragraphs on paraStart so wrap continuations don't count. */
+function collectBodyBulletChars(
+  text:
+    | { lines: Array<{ runs: Array<{ text: string; isBullet?: boolean }>; paraStart?: boolean }> }
+    | undefined,
+  out: Set<string>,
+) {
+  if (!text) return
+  if (!text.lines.length) {
+    out.add('')
+    return
+  }
+  for (let i = 0; i < text.lines.length;) {
+    let j = i + 1
+    while (j < text.lines.length && !text.lines[j]!.paraStart) j++
+    const bullet = text.lines
+      .slice(i, j)
+      .flatMap((l) => l.runs)
+      .find((r) => r.isBullet)
+    out.add(bullet ? (/^\d/.test(bullet.text) ? '#num' : bullet.text.trim()) : '')
+    i = j
+  }
+}
+
+/** Same collection across a node's text bodies (group children, all table cells). */
+function collectBulletChars(node: RenderNode, out: Set<string>) {
+  if (node.type === 'shape' || node.type === 'text') collectBodyBulletChars(node.text, out)
+  else if (node.type === 'table')
+    for (const cell of node.cells) collectBodyBulletChars(cell.text, out)
+  else if (node.type === 'group') for (const child of node.children) collectBulletChars(child, out)
 }
 
 export function App() {
@@ -572,7 +608,10 @@ export function App() {
   const editingActiveRef = useRef(false)
   editingActiveRef.current = !!editing || !!editingCell
 
-  const save = useCallback((): Promise<boolean> => fileActions.save(ctxRef.current), [])
+  const save = useCallback(
+    (quiet = false): Promise<boolean> => fileActions.save(ctxRef.current, quiet),
+    [],
+  )
 
   // Close guard (closing tab/window) chose "Save": run the full save flow and report the result
   useEffect(() => {
@@ -609,7 +648,7 @@ export function App() {
       void window.slidesApi.isDirty().then((d) => {
         if (!d || saving) return
         saving = true
-        void save().finally(() => {
+        void save(true).finally(() => {
           saving = false
         })
       })
@@ -738,6 +777,15 @@ export function App() {
   // StrictMode runs the mount effect twice, but the pending queue can only be consumed once, so the
   // consume Promise is stored in a shared ref and its result is processed only once.
   useEffect(() => {
+    // newBlank itself can fail (IPC/main-process error); one retry for transient
+    // hiccups, then surface the error — otherwise the tab silently sticks on
+    // "Opening…" forever and the click that created it looks like a no-op
+    const bootBlank = () =>
+      newBlank().catch((err: unknown) => {
+        void newBlank().catch(() => {
+          showToast(err instanceof Error ? err.message : String(err), 'error')
+        })
+      })
     const off = window.slidesApi.onOpened((r) => applyOpen(r))
     consumePendingRef.current ??= window.slidesApi.consumePendingOpen(FIT_WIDTH)
     void consumePendingRef.current
@@ -745,13 +793,13 @@ export function App() {
         if (bootHandledRef.current) return
         bootHandledRef.current = true
         if (r) applyOpen(r)
-        else void newBlank()
+        else void bootBlank()
       })
       // Open failures (corrupt file etc.) also land on a blank deck, or it stays at "Opening…" forever
       .catch(() => {
         if (bootHandledRef.current) return
         bootHandledRef.current = true
-        void newBlank()
+        void bootBlank()
       })
     return off
   }, [applyOpen, newBlank])
@@ -1799,9 +1847,14 @@ export function App() {
     (hex: string) => styleActions.onElementTextColor(ctxRef.current, hex),
     [],
   )
+  // In-edit paragraph formats mutate the overlay DOM without a state change; the tick
+  // re-runs curBulletChar so the gallery highlight follows the live marks
+  const [paraFmtTick, setParaFmtTick] = useState(0)
   const onParagraphFormat = useCallback(
-    (patch: Parameters<typeof styleActions.onParagraphFormat>[1]) =>
-      styleActions.onParagraphFormat(ctxRef.current, patch),
+    (patch: Parameters<typeof styleActions.onParagraphFormat>[1]) => {
+      styleActions.onParagraphFormat(ctxRef.current, patch)
+      if (ctxRef.current.editing || ctxRef.current.editingCell) setParaFmtTick((n) => n + 1)
+    },
     [],
   )
   const onFill = useCallback(
@@ -1970,6 +2023,37 @@ export function App() {
     return st
   }, [inTextEdit, selFont, selectedIds, slide, defaultFont])
 
+  // Current bullet char for the ribbon bullet gallery highlight: '' = no bullet
+  // (None tile), a glyph = its preset tile, null = mixed/unknown (no highlight)
+  const curBulletChar = useMemo(() => {
+    void paraFmtTick // re-read the overlay DOM after an in-edit paragraph format
+    if (inTextEdit) {
+      // Uncommitted paragraph formats exist only in the overlay DOM, not the slide tree
+      const live = liveBulletChar()
+      if (live !== undefined) return live
+    }
+    if (editingCell) {
+      // Cell edits scope to the one cell — the whole table would read as mixed
+      const tbl = findNodeCtx(editingCell.sourceId)?.node
+      if (tbl?.type !== 'table') return null
+      const cell = tbl.cells.find((c) => c.row === editingCell.row && c.col === editingCell.col)
+      if (!cell) return null
+      const cellFound = new Set<string>()
+      collectBodyBulletChars(cell.text, cellFound)
+      return cellFound.size === 1 ? [...cellFound][0]! : null
+    }
+    const ids = selectedIds.length ? selectedIds : editing ? [editing.sourceId] : []
+    if (!ids.length) return null
+    const found = new Set<string>()
+    // findNodeCtx also resolves children of the group being edited, not just top-level nodes
+    for (const id of ids) {
+      const node = findNodeCtx(id)?.node
+      if (node) collectBulletChars(node, found)
+    }
+    if (found.size !== 1) return null
+    return [...found][0]!
+  }, [selectedIds, editing, editingCell, inTextEdit, findNodeCtx, paraFmtTick])
+
   // Refresh the action-module context every render so extracted actions never see stale state
   ctxRef.current = {
     slides,
@@ -2088,6 +2172,7 @@ export function App() {
 
   return (
     <div className="app">
+      <ToastHost />
       <Ribbon
         hasDoc={!!slide}
         deckEmpty={deckEmpty}
@@ -2175,6 +2260,7 @@ export function App() {
             : null
         }
         onParagraphFormat={onParagraphFormat}
+        curBulletChar={curBulletChar}
         curFontFamily={fontStatus?.family ?? null}
         curFontSizePt={fontStatus?.sizePt ?? null}
         curFontSizeMixed={fontStatus?.sizeMixed ?? false}
@@ -2265,690 +2351,724 @@ export function App() {
         canDistribute={selectedIds.length >= 3}
       />
 
-      <div className="workspace">
-        {!slide ? (
-          <div className="start-screen start-booting">{t('appStartOpening')}</div>
-        ) : viewMode === 'reading' ? (
-          (() => {
-            // Reading view: page fills the available area, click/arrow keys to turn pages, Esc to exit
-            const availH = Math.max(240, winSize.h - 40 - 112 - 24 - 76)
-            const availW = Math.max(320, winSize.w - 120)
-            const readW = Math.round(Math.min(availW, availH * (slide.widthPx / slide.heightPx)))
-            return (
-              <div className="reading-view">
-                <div
-                  className="reading-slide"
-                  title={t('appReadingSlideTitle')}
-                  onClick={() => setCurrent((c) => Math.min(c + 1, slides.length - 1))}
-                >
-                  <SlideThumb slide={slide} images={images} width={readW} />
-                </div>
-                <div className="reading-bar">
-                  <button
-                    disabled={current === 0}
-                    onClick={() => setCurrent((c) => Math.max(c - 1, 0))}
-                  >
-                    {t('appReadingPrev')}
-                  </button>
-                  <span className="reading-page">
-                    {current + 1} / {slides.length}
-                  </span>
-                  <button
-                    disabled={current === slides.length - 1}
-                    onClick={() => setCurrent((c) => Math.min(c + 1, slides.length - 1))}
-                  >
-                    {t('appReadingNext')}
-                  </button>
-                  <button className="reading-exit" onClick={() => onViewMode('normal')}>
-                    {t('appReadingExit')}
-                  </button>
-                </div>
-              </div>
-            )
-          })()
-        ) : viewMode === 'sorter' ? (
-          <div className="sorter-view">
-            {slides.map((s, i) => (
-              <div
-                key={i}
-                className={`sorter-item ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
-                title={s.hidden ? t('appSorterHiddenTitle') : t('appSorterItemTitle')}
-                {...thumbDragProps(i, true)}
-                onClick={() => {
-                  setCurrent(i)
-                  setSelectedIds([])
-                  setEditing(null)
+      <div className="app-main">
+        {slide && viewMode !== 'reading' && viewMode !== 'sorter' && (
+          <div className={`ai-dock${showAi && aiSettings ? '' : ' collapsed'}`}>
+            {/* always mounted once settings load: collapse must not drop state or in-flight runs */}
+            {aiSettings ? (
+              <AiPanel
+                key={aiPanelKey}
+                slides={slides}
+                current={current}
+                selectedIds={selectedIds}
+                deckEmpty={deckEmpty}
+                images={images}
+                applySlide={applySlide}
+                applyDeck={applyDeck}
+                fitWidthPx={FIT_WIDTH}
+                settings={aiSettings}
+                preset={aiPreset}
+                open={showAi}
+                onExpand={toggleAi}
+                onCollapse={toggleAi}
+                onUndo={() => void undo()}
+                onPathChange={(p) => {
+                  setPath(p)
+                  setDirty(false)
                 }}
-                onDoubleClick={() => {
-                  setCurrent(i)
-                  onViewMode('normal')
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  setCurrent(i)
-                  void window.slidesApi.hasSlideClipboard().then(setCanPasteSlide)
-                  setCtxMenu({ kind: 'thumb', x: e.clientX, y: e.clientY, index: i })
-                }}
-              >
-                <SlideThumb slide={s} images={images} width={208} />
-                <span className="sorter-num">{i + 1}</span>
-                {pasteFloater?.index === i && (
-                  <PasteOptionsFloater
-                    mode={pasteFloater.mode}
-                    onSelect={repasteSlideAs}
-                    onDismiss={() => setPasteFloater(null)}
-                  />
-                )}
-              </div>
-            ))}
+                currentFilePath={path}
+              />
+            ) : (
+              <button className="ai-rail" onClick={toggleAi} title={t('appAiRailExpand')}>
+                <GensparkMark size={22} />
+              </button>
+            )}
           </div>
-        ) : (
-          <>
-            <div className={`ai-dock${showAi && aiSettings ? '' : ' collapsed'}`}>
-              {/* always mounted once settings load: collapse must not drop state or in-flight runs */}
-              {aiSettings ? (
-                <AiPanel
-                  key={aiPanelKey}
-                  slides={slides}
-                  current={current}
-                  selectedIds={selectedIds}
-                  deckEmpty={deckEmpty}
-                  images={images}
-                  applySlide={applySlide}
-                  applyDeck={applyDeck}
-                  fitWidthPx={FIT_WIDTH}
-                  settings={aiSettings}
-                  preset={aiPreset}
-                  open={showAi}
-                  onExpand={toggleAi}
-                  onCollapse={toggleAi}
-                  onUndo={() => void undo()}
-                  onPathChange={(p) => {
-                    setPath(p)
-                    setDirty(false)
-                  }}
-                  currentFilePath={path}
-                />
-              ) : (
-                <button className="ai-rail" onClick={toggleAi} title={t('appAiRailExpand')}>
-                  <GensparkMark size={22} />
-                </button>
-              )}
-            </div>
-            {viewMode === 'outline' ? (
-              <div className="outline-pane">
-                {slides.map((s, i) => {
-                  const o = outlineOf(s)
-                  return (
+        )}
+        <div className="app-content">
+          <div className="workspace">
+            {!slide ? (
+              <div className="start-screen start-booting">{t('appStartOpening')}</div>
+            ) : viewMode === 'reading' ? (
+              (() => {
+                // Reading view: page fills the available area, click/arrow keys to turn pages, Esc to exit
+                const availH = Math.max(240, winSize.h - 40 - 112 - 24 - 76)
+                const availW = Math.max(320, winSize.w - 120)
+                const readW = Math.round(
+                  Math.min(availW, availH * (slide.widthPx / slide.heightPx)),
+                )
+                return (
+                  <div className="reading-view">
                     <div
-                      key={i}
-                      className={`outline-item ${i === current ? 'active' : ''}`}
-                      onClick={() => {
-                        setCurrent(i)
-                        setSelectedIds([])
-                        setEditing(null)
-                      }}
+                      className="reading-slide"
+                      title={t('appReadingSlideTitle')}
+                      onClick={() => setCurrent((c) => Math.min(c + 1, slides.length - 1))}
                     >
-                      <span className="outline-num">{i + 1}</span>
-                      <div className="outline-body">
-                        <div className="outline-title">{o.title || t('appOutlineNoText')}</div>
-                        {o.lines.slice(0, 5).map((t, j) => (
-                          <div key={j} className="outline-line">
-                            {t}
-                          </div>
-                        ))}
-                        {o.lines.length > 5 && <div className="outline-line outline-more">…</div>}
-                      </div>
+                      <SlideThumb slide={slide} images={images} width={readW} />
                     </div>
-                  )
-                })}
+                    <div className="reading-bar">
+                      <button
+                        disabled={current === 0}
+                        onClick={() => setCurrent((c) => Math.max(c - 1, 0))}
+                      >
+                        {t('appReadingPrev')}
+                      </button>
+                      <span className="reading-page">
+                        {current + 1} / {slides.length}
+                      </span>
+                      <button
+                        disabled={current === slides.length - 1}
+                        onClick={() => setCurrent((c) => Math.min(c + 1, slides.length - 1))}
+                      >
+                        {t('appReadingNext')}
+                      </button>
+                      <button className="reading-exit" onClick={() => onViewMode('normal')}>
+                        {t('appReadingExit')}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()
+            ) : viewMode === 'sorter' ? (
+              <div className="sorter-view">
+                {slides.map((s, i) => (
+                  <div
+                    key={i}
+                    className={`sorter-item ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
+                    title={s.hidden ? t('appSorterHiddenTitle') : t('appSorterItemTitle')}
+                    {...thumbDragProps(i, true)}
+                    onClick={() => {
+                      setCurrent(i)
+                      setSelectedIds([])
+                      setEditing(null)
+                    }}
+                    onDoubleClick={() => {
+                      setCurrent(i)
+                      onViewMode('normal')
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setCurrent(i)
+                      void window.slidesApi.hasSlideClipboard().then(setCanPasteSlide)
+                      setCtxMenu({ kind: 'thumb', x: e.clientX, y: e.clientY, index: i })
+                    }}
+                  >
+                    <SlideThumb slide={s} images={images} width={208} />
+                    <span className="sorter-num">{i + 1}</span>
+                    {pasteFloater?.index === i && (
+                      <PasteOptionsFloater
+                        mode={pasteFloater.mode}
+                        onSelect={repasteSlideAs}
+                        onDismiss={() => setPasteFloater(null)}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
             ) : (
-              showThumbs && (
-                <>
-                  <div className="slide-list" ref={thumbsListRef} style={{ width: thumbsW }}>
-                    {(() => {
-                      // width = sidebar minus horizontal padding (20) and .thumb border (4)
-                      const thumbW = Math.max(60, thumbsW - 24)
-                      const thumbItem = (s: RenderSlide, i: number) => (
+              <>
+                {viewMode === 'outline' ? (
+                  <div className="outline-pane">
+                    {slides.map((s, i) => {
+                      const o = outlineOf(s)
+                      return (
                         <div
                           key={i}
-                          className={`thumb ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
-                          title={s.hidden ? t('appThumbHiddenTitle') : undefined}
-                          {...thumbDragProps(i)}
+                          className={`outline-item ${i === current ? 'active' : ''}`}
                           onClick={() => {
                             setCurrent(i)
                             setSelectedIds([])
                             setEditing(null)
                           }}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            setCurrent(i)
-                            setSelectedIds([])
-                            setEditing(null)
-                            void window.slidesApi.hasSlideClipboard().then(setCanPasteSlide)
-                            setCtxMenu({ kind: 'thumb', x: e.clientX, y: e.clientY, index: i })
-                          }}
                         >
-                          <SlideThumb slide={s} images={images} width={thumbW} />
-                          <span className="thumb-num">{i + 1}</span>
-                          {pasteFloater?.index === i && (
-                            <PasteOptionsFloater
-                              mode={pasteFloater.mode}
-                              onSelect={repasteSlideAs}
-                              onDismiss={() => setPasteFloater(null)}
-                            />
-                          )}
+                          <span className="outline-num">{i + 1}</span>
+                          <div className="outline-body">
+                            <div className="outline-title">{o.title || t('appOutlineNoText')}</div>
+                            {o.lines.slice(0, 5).map((t, j) => (
+                              <div key={j} className="outline-line">
+                                {t}
+                              </div>
+                            ))}
+                            {o.lines.length > 5 && (
+                              <div className="outline-line outline-more">…</div>
+                            )}
+                          </div>
                         </div>
                       )
-                      if (!sectionGroups) return slides.map((s, i) => thumbItem(s, i))
-                      return sectionGroups.map((g, gi) => {
-                        const collapsed = g.id != null && collapsedSecs.has(g.id)
-                        return (
-                          <div key={g.id ?? `lead-${gi}`} className="section-group">
+                    })}
+                  </div>
+                ) : (
+                  showThumbs && (
+                    <>
+                      <div className="slide-list" ref={thumbsListRef} style={{ width: thumbsW }}>
+                        {(() => {
+                          // width = sidebar minus horizontal padding (20) and .thumb border (4)
+                          const thumbW = Math.max(60, thumbsW - 24)
+                          const thumbItem = (s: RenderSlide, i: number) => (
                             <div
-                              className={`section-header${g.id == null ? ' section-header-none' : ''}`}
-                              onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
-                              onContextMenu={
-                                g.id != null
-                                  ? (e) => {
-                                      e.preventDefault()
-                                      setCtxMenu({
-                                        kind: 'section',
-                                        x: e.clientX,
-                                        y: e.clientY,
-                                        sectionId: g.id!,
-                                      })
-                                    }
-                                  : undefined
-                              }
-                              title={g.id != null ? t('appSectionHeaderTitle') : undefined}
+                              key={i}
+                              className={`thumb ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
+                              title={s.hidden ? t('appThumbHiddenTitle') : undefined}
+                              {...thumbDragProps(i)}
+                              onClick={() => {
+                                setCurrent(i)
+                                setSelectedIds([])
+                                setEditing(null)
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault()
+                                setCurrent(i)
+                                setSelectedIds([])
+                                setEditing(null)
+                                void window.slidesApi.hasSlideClipboard().then(setCanPasteSlide)
+                                setCtxMenu({ kind: 'thumb', x: e.clientX, y: e.clientY, index: i })
+                              }}
                             >
-                              {g.id != null && (
-                                <span className={`section-arrow${collapsed ? '' : ' open'}`}>
-                                  ▸
-                                </span>
-                              )}
-                              {renamingSec && g.id != null && renamingSec.id === g.id ? (
-                                <input
-                                  className="section-rename-input"
-                                  autoFocus
-                                  value={renamingSec.value}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) =>
-                                    setRenamingSec({ id: g.id!, value: e.target.value })
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') commitRenameSection()
-                                    else if (e.key === 'Escape') setRenamingSec(null)
-                                  }}
-                                  onBlur={commitRenameSection}
+                              <SlideThumb slide={s} images={images} width={thumbW} />
+                              <span className="thumb-num">{i + 1}</span>
+                              {pasteFloater?.index === i && (
+                                <PasteOptionsFloater
+                                  mode={pasteFloater.mode}
+                                  onSelect={repasteSlideAs}
+                                  onDismiss={() => setPasteFloater(null)}
                                 />
-                              ) : (
-                                <span
-                                  className="section-name"
-                                  onDoubleClick={
+                              )}
+                            </div>
+                          )
+                          if (!sectionGroups) return slides.map((s, i) => thumbItem(s, i))
+                          return sectionGroups.map((g, gi) => {
+                            const collapsed = g.id != null && collapsedSecs.has(g.id)
+                            return (
+                              <div key={g.id ?? `lead-${gi}`} className="section-group">
+                                <div
+                                  className={`section-header${g.id == null ? ' section-header-none' : ''}`}
+                                  onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
+                                  onContextMenu={
                                     g.id != null
-                                      ? () => setRenamingSec({ id: g.id!, value: g.name })
+                                      ? (e) => {
+                                          e.preventDefault()
+                                          setCtxMenu({
+                                            kind: 'section',
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                            sectionId: g.id!,
+                                          })
+                                        }
                                       : undefined
                                   }
+                                  title={g.id != null ? t('appSectionHeaderTitle') : undefined}
                                 >
-                                  {g.name}
-                                </span>
-                              )}
-                              <span className="section-count">{g.end - g.start}</span>
-                            </div>
-                            {!collapsed &&
-                              slides.slice(g.start, g.end).map((s, k) => thumbItem(s, g.start + k))}
-                          </div>
-                        )
-                      })
-                    })()}
-                  </div>
-                  <div className="thumb-resizer" onPointerDown={startThumbsResize} />
-                </>
-              )
-            )}
-            <div className="stage-col">
-              <div
-                className={`stage-wrap${brushMode ? ' format-brush-mode' : ''}`}
-                ref={stageWrapRef}
-              >
-                {/* transform: scale() doesn't grow layout, so the scroll range ignores the
+                                  {g.id != null && (
+                                    <span className={`section-arrow${collapsed ? '' : ' open'}`}>
+                                      ▸
+                                    </span>
+                                  )}
+                                  {renamingSec && g.id != null && renamingSec.id === g.id ? (
+                                    <input
+                                      className="section-rename-input"
+                                      autoFocus
+                                      value={renamingSec.value}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) =>
+                                        setRenamingSec({ id: g.id!, value: e.target.value })
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') commitRenameSection()
+                                        else if (e.key === 'Escape') setRenamingSec(null)
+                                      }}
+                                      onBlur={commitRenameSection}
+                                    />
+                                  ) : (
+                                    <span
+                                      className="section-name"
+                                      onDoubleClick={
+                                        g.id != null
+                                          ? () => setRenamingSec({ id: g.id!, value: g.name })
+                                          : undefined
+                                      }
+                                    >
+                                      {g.name}
+                                    </span>
+                                  )}
+                                  <span className="section-count">{g.end - g.start}</span>
+                                </div>
+                                {!collapsed &&
+                                  slides
+                                    .slice(g.start, g.end)
+                                    .map((s, k) => thumbItem(s, g.start + k))}
+                              </div>
+                            )
+                          })
+                        })()}
+                      </div>
+                      <div className="thumb-resizer" onPointerDown={startThumbsResize} />
+                    </>
+                  )
+                )}
+                <div className="stage-col">
+                  <div
+                    className={`stage-wrap${brushMode ? ' format-brush-mode' : ''}`}
+                    ref={stageWrapRef}
+                  >
+                    {/* transform: scale() doesn't grow layout, so the scroll range ignores the
                     zoomed size and the left/top overflow becomes unreachable; the zoom-box
                     is sized to the scaled dimensions to give the scroller the real extent */}
-                <div
-                  ref={zoomBoxRef}
-                  className="stage-zoom-box"
-                  style={
-                    scaleBox ? { width: scaleBox.w * zoom, height: scaleBox.h * zoom } : undefined
-                  }
-                >
-                  <div className="stage-ai-bar">
-                    <button
-                      className={`stage-ai-btn${showAi ? ' active' : ''}`}
-                      title={t('aiOpenAssistant')}
-                      onClick={toggleAi}
+                    <div
+                      ref={zoomBoxRef}
+                      className="stage-zoom-box"
+                      style={
+                        scaleBox
+                          ? { width: scaleBox.w * zoom, height: scaleBox.h * zoom }
+                          : undefined
+                      }
                     >
-                      <GensparkMark size={14} />
-                      <span>Genspark AI</span>
-                    </button>
-                    {/* Same one-click presets as the Home tab; hidden instead of
+                      <div className="stage-ai-bar">
+                        <button
+                          className={`stage-ai-btn${showAi ? ' active' : ''}`}
+                          title={t('aiOpenAssistant')}
+                          onClick={toggleAi}
+                        >
+                          <GensparkMark size={14} />
+                          <span>Genspark AI</span>
+                        </button>
+                        {/* Same one-click presets as the Home tab; hidden instead of
                         disabled while the deck has no real content */}
-                    {!deckEmpty && (
-                      <>
-                        <span className="stage-ai-divider" aria-hidden="true" />
-                        <button
-                          className="stage-ai-btn"
-                          title={t('aiBeautifyPrompt')}
-                          onClick={() =>
-                            pushAiPreset(t('aiBeautifyPrompt'), true, undefined, undefined, true)
-                          }
-                        >
-                          <IconAiBeautify size={14} />
-                          <span>{t('aiBeautifyBtn')}</span>
-                        </button>
-                        <button
-                          className="stage-ai-btn"
-                          title={t('aiFactCheckPrompt')}
-                          onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
-                        >
-                          <IconAiFactCheck size={14} />
-                          <span>{t('aiFactCheckBtn')}</span>
-                        </button>
-                        <button
-                          className="stage-ai-btn"
-                          title={t('aiImagePrompt')}
-                          onClick={() => pushAiPreset(t('aiImagePrompt'))}
-                        >
-                          <IconAiImage size={14} />
-                          <span>{t('aiImageBtn')}</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  <div
-                    ref={stageScaleRef}
-                    className="stage-scale"
-                    style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-                  >
-                    {showRuler && (
-                      <div className="ruler-row">
-                        <div className="ruler-corner" />
-                        <Ruler
-                          length={slide.widthPx}
-                          onAddGuide={
-                            showGuides
-                              ? (p) => setGuides((g) => [...g, { axis: 'v', pos: p }])
-                              : undefined
-                          }
-                        />
+                        {!deckEmpty && (
+                          <>
+                            <span className="stage-ai-divider" aria-hidden="true" />
+                            <button
+                              className="stage-ai-btn"
+                              title={t('aiBeautifyPrompt')}
+                              onClick={() =>
+                                pushAiPreset(
+                                  t('aiBeautifyPrompt'),
+                                  true,
+                                  undefined,
+                                  undefined,
+                                  true,
+                                )
+                              }
+                            >
+                              <IconAiBeautify size={14} />
+                              <span>{t('aiBeautifyBtn')}</span>
+                            </button>
+                            <button
+                              className="stage-ai-btn"
+                              title={t('aiFactCheckPrompt')}
+                              onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
+                            >
+                              <IconAiFactCheck size={14} />
+                              <span>{t('aiFactCheckBtn')}</span>
+                            </button>
+                            <button
+                              className="stage-ai-btn"
+                              title={t('aiImagePrompt')}
+                              onClick={() => pushAiPreset(t('aiImagePrompt'))}
+                            >
+                              <IconAiImage size={14} />
+                              <span>{t('aiImageBtn')}</span>
+                            </button>
+                          </>
+                        )}
                       </div>
-                    )}
-                    <div className="ruler-body">
-                      {showRuler && (
-                        <Ruler
-                          length={slide.heightPx}
-                          vertical
-                          onAddGuide={
-                            showGuides
-                              ? (p) => setGuides((g) => [...g, { axis: 'h', pos: p }])
-                              : undefined
-                          }
-                        />
-                      )}
                       <div
-                        className="stage-rel"
-                        style={{
-                          position: 'relative',
-                          width: slide.widthPx,
-                          height: slide.heightPx,
-                        }}
-                        onDragOver={(e) => {
-                          if (e.dataTransfer.types.includes('Files')) e.preventDefault()
-                        }}
-                        onDrop={(e) => {
-                          const files = Array.from(e.dataTransfer.files).filter((f) =>
-                            f.type.startsWith('image/'),
-                          )
-                          if (!files.length) return
-                          e.preventDefault()
-                          const rect = e.currentTarget.getBoundingClientRect()
-                          const at = {
-                            x: ((e.clientX - rect.left) / rect.width) * slide.widthPx,
-                            y: ((e.clientY - rect.top) / rect.height) * slide.heightPx,
-                          }
-                          for (const f of files) {
-                            void f.arrayBuffer().then((buf) => {
-                              // Chunked base64 conversion: spreading a large array would blow the call stack
-                              const bytes = new Uint8Array(buf)
-                              let bin = ''
-                              for (let i = 0; i < bytes.length; i += 0x8000) {
-                                bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-                              }
-                              const ext = (f.name.split('.').pop() ?? 'png').toLowerCase()
-                              void insertExternalImage(btoa(bin), ext === 'jpeg' ? 'jpg' : ext, at)
-                            })
-                          }
-                        }}
+                        ref={stageScaleRef}
+                        className="stage-scale"
+                        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
                       >
-                        <SlideCanvas
-                          slide={slide}
-                          selectedIds={selectedIds}
-                          onSelect={handleCanvasSelect}
-                          onEditText={startEdit}
-                          onTransform={onTransform}
-                          onEditTableCell={startEditCell}
-                          onTableColResize={onTableColResize}
-                          onTableRowResize={(id, row, hPx) => void onTableRowResize(id, row, hPx)}
-                          onPlayMedia={(id) => void startMediaPlayback(id)}
-                          onContextMenu={onCanvasContextMenu}
-                          onMarqueeSelect={setSelectedIds}
-                          onDuplicateTo={(id, dx, dy) => void duplicateSelected([id], dx, dy)}
-                          images={images}
-                          zoom={zoom}
-                          enteredGroupId={enteredGroupId}
-                          onEnterGroup={handleEnterGroup}
-                          onEditConnectorEndpoints={onEditConnectorEndpoints}
-                          editingText={
-                            editing
-                              ? { sourceId: editing.sourceId }
-                              : editingCell
-                                ? {
-                                    sourceId: editingCell.sourceId,
-                                    cell: { row: editingCell.row, col: editingCell.col },
-                                  }
-                                : null
-                          }
-                        />
-                        {showGrid && <div className="grid-overlay" />}
-                        {showGuides &&
-                          guides.map((g, gi) => (
-                            <div
-                              key={`${g.axis}${gi}`}
-                              className={`guide-line guide-${g.axis} guide-draggable`}
-                              style={
-                                g.axis === 'v'
-                                  ? { left: `${g.pos * 100}%` }
-                                  : { top: `${g.pos * 100}%` }
-                              }
-                              title={t('appGuideDragTip')}
-                              onPointerDown={(e) => {
-                                e.preventDefault()
-                                e.currentTarget.setPointerCapture(e.pointerId)
-                                const host = e.currentTarget.parentElement!
-                                const rect = host.getBoundingClientRect()
-                                const move = (ev: PointerEvent) => {
-                                  const p =
-                                    g.axis === 'v'
-                                      ? (ev.clientX - rect.left) / rect.width
-                                      : (ev.clientY - rect.top) / rect.height
-                                  setGuides((list) =>
-                                    list.map((x, i) =>
-                                      i === gi ? { ...x, pos: Math.min(1, Math.max(0, p)) } : x,
-                                    ),
-                                  )
-                                }
-                                const up = (ev: PointerEvent) => {
-                                  window.removeEventListener('pointermove', move)
-                                  window.removeEventListener('pointerup', up)
-                                  // Dragging off the canvas = delete the guide
-                                  const outside =
-                                    ev.clientX < rect.left - 24 ||
-                                    ev.clientX > rect.right + 24 ||
-                                    ev.clientY < rect.top - 24 ||
-                                    ev.clientY > rect.bottom + 24
-                                  if (outside) setGuides((list) => list.filter((_, i) => i !== gi))
-                                }
-                                window.addEventListener('pointermove', move)
-                                window.addEventListener('pointerup', up)
-                              }}
-                              onDoubleClick={() =>
-                                setGuides((list) => list.filter((_, i) => i !== gi))
+                        {showRuler && (
+                          <div className="ruler-row">
+                            <div className="ruler-corner" />
+                            <Ruler
+                              length={slide.widthPx}
+                              onAddGuide={
+                                showGuides
+                                  ? (p) => setGuides((g) => [...g, { axis: 'v', pos: p }])
+                                  : undefined
                               }
                             />
-                          ))}
-                        {editing && editNode && (
-                          <TextEditOverlay
-                            node={editNode}
-                            scale={slide.scale}
-                            caretPoint={editing.caret}
-                            replaceWith={editing.replaceWith}
-                            onCommit={commitEdit}
-                            onCancel={() => setEditing(null)}
-                            onFollowLink={followRunLink}
-                          />
-                        )}
-                        {editingCell && cellEditNode && (
-                          <TextEditOverlay
-                            node={cellEditNode}
-                            scale={slide.scale}
-                            onCommit={commitCellEdit}
-                            onCancel={() => setEditingCell(null)}
-                            onTabNav={(paragraphs, dir) => void navigateCell(paragraphs, dir)}
-                            onFollowLink={followRunLink}
-                          />
-                        )}
-                        {mediaPlay && mediaPlayNode && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: mediaPlayNode.box.x,
-                              top: mediaPlayNode.box.y,
-                              width: mediaPlayNode.box.w,
-                              height:
-                                mediaPlay.kind === 'video'
-                                  ? mediaPlayNode.box.h
-                                  : Math.max(mediaPlayNode.box.h, 40),
-                              zIndex: 20,
-                              background: mediaPlay.kind === 'video' ? '#000' : 'transparent',
-                              borderRadius: 4,
-                              overflow: 'hidden',
-                              boxShadow: '0 2px 12px rgba(0,0,0,.35)',
-                            }}
-                          >
-                            {mediaPlay.kind === 'video' ? (
-                              <video
-                                src={mediaPlay.dataUrl}
-                                controls
-                                autoPlay
-                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                              />
-                            ) : (
-                              <audio
-                                src={mediaPlay.dataUrl}
-                                controls
-                                autoPlay
-                                style={{ width: '100%' }}
-                              />
-                            )}
-                            <button
-                              onClick={() => setMediaPlay(null)}
-                              title={t('appMediaCloseTitle')}
-                              style={{
-                                position: 'absolute',
-                                top: 4,
-                                right: 4,
-                                width: 22,
-                                height: 22,
-                                lineHeight: '20px',
-                                padding: 0,
-                                border: 'none',
-                                borderRadius: '50%',
-                                background: 'rgba(0,0,0,.55)',
-                                color: '#fff',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              ×
-                            </button>
                           </div>
                         )}
-                        {animPreview > 0 && (
-                          <AnimPreviewOverlay
-                            key={animPreview}
-                            slide={slide}
-                            images={images}
-                            items={animations}
-                            onDone={() => setAnimPreview(0)}
-                          />
-                        )}
-                        {hoverAnim && animPreview === 0 && (
-                          <AnimPreviewOverlay
-                            key={`hover-${hoverAnim.nonce}`}
-                            slide={slide}
-                            images={images}
-                            items={hoverAnim.items}
-                            onDone={() => setHoverAnim(null)}
-                          />
-                        )}
-                        {cropTarget && (
-                          <CropOverlay
-                            box={cropTarget.box}
-                            srcRect={cropTarget.srcRect}
-                            onConfirm={(rect) => void commitCrop(rect)}
-                            onCancel={cancelCrop}
-                          />
-                        )}
-                        {inkTool !== 'select' && !editing && (
-                          <InkOverlay
-                            slide={slide}
-                            tool={inkTool}
-                            color={inkTool === 'highlighter' ? inkHighlighter.color : inkPen.color}
-                            width={inkTool === 'highlighter' ? inkHighlighter.width : inkPen.width}
-                            onCommit={(stroke) => void commitInk(stroke)}
-                            onErase={(ids) => void eraseInk(ids)}
-                          />
-                        )}
+                        <div className="ruler-body">
+                          {showRuler && (
+                            <Ruler
+                              length={slide.heightPx}
+                              vertical
+                              onAddGuide={
+                                showGuides
+                                  ? (p) => setGuides((g) => [...g, { axis: 'h', pos: p }])
+                                  : undefined
+                              }
+                            />
+                          )}
+                          <div
+                            className="stage-rel"
+                            style={{
+                              position: 'relative',
+                              width: slide.widthPx,
+                              height: slide.heightPx,
+                            }}
+                            onDragOver={(e) => {
+                              if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+                            }}
+                            onDrop={(e) => {
+                              const files = Array.from(e.dataTransfer.files).filter((f) =>
+                                f.type.startsWith('image/'),
+                              )
+                              if (!files.length) return
+                              e.preventDefault()
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              const at = {
+                                x: ((e.clientX - rect.left) / rect.width) * slide.widthPx,
+                                y: ((e.clientY - rect.top) / rect.height) * slide.heightPx,
+                              }
+                              for (const f of files) {
+                                void f.arrayBuffer().then((buf) => {
+                                  // Chunked base64 conversion: spreading a large array would blow the call stack
+                                  const bytes = new Uint8Array(buf)
+                                  let bin = ''
+                                  for (let i = 0; i < bytes.length; i += 0x8000) {
+                                    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+                                  }
+                                  const ext = (f.name.split('.').pop() ?? 'png').toLowerCase()
+                                  void insertExternalImage(
+                                    btoa(bin),
+                                    ext === 'jpeg' ? 'jpg' : ext,
+                                    at,
+                                  )
+                                })
+                              }
+                            }}
+                          >
+                            <SlideCanvas
+                              slide={slide}
+                              selectedIds={selectedIds}
+                              onSelect={handleCanvasSelect}
+                              onEditText={startEdit}
+                              onTransform={onTransform}
+                              onEditTableCell={startEditCell}
+                              onTableColResize={onTableColResize}
+                              onTableRowResize={(id, row, hPx) =>
+                                void onTableRowResize(id, row, hPx)
+                              }
+                              onPlayMedia={(id) => void startMediaPlayback(id)}
+                              onContextMenu={onCanvasContextMenu}
+                              onMarqueeSelect={setSelectedIds}
+                              onDuplicateTo={(id, dx, dy) => void duplicateSelected([id], dx, dy)}
+                              images={images}
+                              zoom={zoom}
+                              enteredGroupId={enteredGroupId}
+                              onEnterGroup={handleEnterGroup}
+                              onEditConnectorEndpoints={onEditConnectorEndpoints}
+                              editingText={
+                                editing
+                                  ? { sourceId: editing.sourceId }
+                                  : editingCell
+                                    ? {
+                                        sourceId: editingCell.sourceId,
+                                        cell: { row: editingCell.row, col: editingCell.col },
+                                      }
+                                    : null
+                              }
+                            />
+                            {showGrid && <div className="grid-overlay" />}
+                            {showGuides &&
+                              guides.map((g, gi) => (
+                                <div
+                                  key={`${g.axis}${gi}`}
+                                  className={`guide-line guide-${g.axis} guide-draggable`}
+                                  style={
+                                    g.axis === 'v'
+                                      ? { left: `${g.pos * 100}%` }
+                                      : { top: `${g.pos * 100}%` }
+                                  }
+                                  title={t('appGuideDragTip')}
+                                  onPointerDown={(e) => {
+                                    e.preventDefault()
+                                    e.currentTarget.setPointerCapture(e.pointerId)
+                                    const host = e.currentTarget.parentElement!
+                                    const rect = host.getBoundingClientRect()
+                                    const move = (ev: PointerEvent) => {
+                                      const p =
+                                        g.axis === 'v'
+                                          ? (ev.clientX - rect.left) / rect.width
+                                          : (ev.clientY - rect.top) / rect.height
+                                      setGuides((list) =>
+                                        list.map((x, i) =>
+                                          i === gi ? { ...x, pos: Math.min(1, Math.max(0, p)) } : x,
+                                        ),
+                                      )
+                                    }
+                                    const up = (ev: PointerEvent) => {
+                                      window.removeEventListener('pointermove', move)
+                                      window.removeEventListener('pointerup', up)
+                                      // Dragging off the canvas = delete the guide
+                                      const outside =
+                                        ev.clientX < rect.left - 24 ||
+                                        ev.clientX > rect.right + 24 ||
+                                        ev.clientY < rect.top - 24 ||
+                                        ev.clientY > rect.bottom + 24
+                                      if (outside)
+                                        setGuides((list) => list.filter((_, i) => i !== gi))
+                                    }
+                                    window.addEventListener('pointermove', move)
+                                    window.addEventListener('pointerup', up)
+                                  }}
+                                  onDoubleClick={() =>
+                                    setGuides((list) => list.filter((_, i) => i !== gi))
+                                  }
+                                />
+                              ))}
+                            {editing && editNode && (
+                              <TextEditOverlay
+                                node={editNode}
+                                scale={slide.scale}
+                                caretPoint={editing.caret}
+                                replaceWith={editing.replaceWith}
+                                onCommit={commitEdit}
+                                onCancel={() => setEditing(null)}
+                                onFollowLink={followRunLink}
+                              />
+                            )}
+                            {editingCell && cellEditNode && (
+                              <TextEditOverlay
+                                node={cellEditNode}
+                                scale={slide.scale}
+                                onCommit={commitCellEdit}
+                                onCancel={() => setEditingCell(null)}
+                                onTabNav={(paragraphs, dir) => void navigateCell(paragraphs, dir)}
+                                onFollowLink={followRunLink}
+                              />
+                            )}
+                            {mediaPlay && mediaPlayNode && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  left: mediaPlayNode.box.x,
+                                  top: mediaPlayNode.box.y,
+                                  width: mediaPlayNode.box.w,
+                                  height:
+                                    mediaPlay.kind === 'video'
+                                      ? mediaPlayNode.box.h
+                                      : Math.max(mediaPlayNode.box.h, 40),
+                                  zIndex: 20,
+                                  background: mediaPlay.kind === 'video' ? '#000' : 'transparent',
+                                  borderRadius: 4,
+                                  overflow: 'hidden',
+                                  boxShadow: '0 2px 12px rgba(0,0,0,.35)',
+                                }}
+                              >
+                                {mediaPlay.kind === 'video' ? (
+                                  <video
+                                    src={mediaPlay.dataUrl}
+                                    controls
+                                    autoPlay
+                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                  />
+                                ) : (
+                                  <audio
+                                    src={mediaPlay.dataUrl}
+                                    controls
+                                    autoPlay
+                                    style={{ width: '100%' }}
+                                  />
+                                )}
+                                <button
+                                  onClick={() => setMediaPlay(null)}
+                                  title={t('appMediaCloseTitle')}
+                                  style={{
+                                    position: 'absolute',
+                                    top: 4,
+                                    right: 4,
+                                    width: 22,
+                                    height: 22,
+                                    lineHeight: '20px',
+                                    padding: 0,
+                                    border: 'none',
+                                    borderRadius: '50%',
+                                    background: 'rgba(0,0,0,.55)',
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
+                            {animPreview > 0 && (
+                              <AnimPreviewOverlay
+                                key={animPreview}
+                                slide={slide}
+                                images={images}
+                                items={animations}
+                                onDone={() => setAnimPreview(0)}
+                              />
+                            )}
+                            {hoverAnim && animPreview === 0 && (
+                              <AnimPreviewOverlay
+                                key={`hover-${hoverAnim.nonce}`}
+                                slide={slide}
+                                images={images}
+                                items={hoverAnim.items}
+                                onDone={() => setHoverAnim(null)}
+                              />
+                            )}
+                            {cropTarget && (
+                              <CropOverlay
+                                box={cropTarget.box}
+                                srcRect={cropTarget.srcRect}
+                                onConfirm={(rect) => void commitCrop(rect)}
+                                onCancel={cancelCrop}
+                              />
+                            )}
+                            {inkTool !== 'select' && !editing && (
+                              <InkOverlay
+                                slide={slide}
+                                tool={inkTool}
+                                color={
+                                  inkTool === 'highlighter' ? inkHighlighter.color : inkPen.color
+                                }
+                                width={
+                                  inkTool === 'highlighter' ? inkHighlighter.width : inkPen.width
+                                }
+                                onCommit={(stroke) => void commitInk(stroke)}
+                                onErase={(ids) => void eraseInk(ids)}
+                              />
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
+                  {showNotes && (
+                    <div className="notes-pane" style={{ height: notesHeight }}>
+                      <div
+                        className="notes-resize-handle"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          notesDragRef.current = { startY: e.clientY, startH: notesHeight }
+                          const onMove = (ev: MouseEvent) => {
+                            const d = notesDragRef.current
+                            if (!d) return
+                            const newH = Math.max(
+                              60,
+                              Math.min(480, d.startH - (ev.clientY - d.startY)),
+                            )
+                            setNotesHeight(newH)
+                          }
+                          const onUp = () => {
+                            notesDragRef.current = null
+                            window.removeEventListener('mousemove', onMove)
+                            window.removeEventListener('mouseup', onUp)
+                          }
+                          window.addEventListener('mousemove', onMove)
+                          window.addEventListener('mouseup', onUp)
+                        }}
+                      />
+                      <div className="notes-label">{t('appNotesLabel')}</div>
+                      <textarea
+                        value={notesText}
+                        placeholder={t('appNotesPlaceholder')}
+                        onChange={(e) => onNotesChange(e.target.value)}
+                        onBlur={() => void flushNotes()}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
-              {showNotes && (
-                <div className="notes-pane" style={{ height: notesHeight }}>
-                  <div
-                    className="notes-resize-handle"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      notesDragRef.current = { startY: e.clientY, startH: notesHeight }
-                      const onMove = (ev: MouseEvent) => {
-                        const d = notesDragRef.current
-                        if (!d) return
-                        const newH = Math.max(60, Math.min(480, d.startH - (ev.clientY - d.startY)))
-                        setNotesHeight(newH)
-                      }
-                      const onUp = () => {
-                        notesDragRef.current = null
-                        window.removeEventListener('mousemove', onMove)
-                        window.removeEventListener('mouseup', onUp)
-                      }
-                      window.addEventListener('mousemove', onMove)
-                      window.addEventListener('mouseup', onUp)
-                    }}
+                {showFormat ? (
+                  <FormatPane
+                    node={selectedNode}
+                    onTransform={onTransform}
+                    onFill={(id, fill) => void onFill(id, fill)}
+                    onImageFill={(id) =>
+                      void window.slidesApi
+                        .editImageFill({ slideIndex: current, sourceId: id })
+                        .then((r) => r && applySlide(current, r))
+                    }
+                    onTextAnchor={(id, anchor) =>
+                      void window.slidesApi
+                        .setTextAnchor({ slideIndex: current, sourceId: id, anchor })
+                        .then((r) => r && applySlide(current, r))
+                    }
+                    onStroke={(id, stroke) => void onStroke(id, stroke)}
+                    onDelete={() => void deleteSelected()}
+                    onCollapse={() => setShowFormat(false)}
+                    onPictureCrop={startCrop}
+                    onPictureCutout={startCutout}
+                    pictureCanCutout={contextPictureCanCutout}
+                    link={selectedLink}
+                    onOpenLink={openLinkDialog}
+                    chartData={selectedChartData}
+                    onChartPointColor={(si, pi, color) =>
+                      void onEditChart({ pointColors: { [si]: { [pi]: color } } })
+                    }
                   />
-                  <div className="notes-label">{t('appNotesLabel')}</div>
-                  <textarea
-                    value={notesText}
-                    placeholder={t('appNotesPlaceholder')}
-                    onChange={(e) => onNotesChange(e.target.value)}
-                    onBlur={() => void flushNotes()}
+                ) : showAnimPane ? (
+                  <AnimationPane
+                    slideIndex={current}
+                    items={animations}
+                    selected={selAnim}
+                    onSelect={setSelAnim}
+                    onMove={moveAnimation}
+                    onDelete={deleteAnimation}
+                    onPreview={() => setAnimPreview((n) => n + 1)}
+                    onCollapse={() => setShowAnimPane(false)}
                   />
-                </div>
-              )}
-            </div>
-            {showFormat ? (
-              <FormatPane
-                node={selectedNode}
-                onTransform={onTransform}
-                onFill={(id, fill) => void onFill(id, fill)}
-                onImageFill={(id) =>
-                  void window.slidesApi
-                    .editImageFill({ slideIndex: current, sourceId: id })
-                    .then((r) => r && applySlide(current, r))
-                }
-                onTextAnchor={(id, anchor) =>
-                  void window.slidesApi
-                    .setTextAnchor({ slideIndex: current, sourceId: id, anchor })
-                    .then((r) => r && applySlide(current, r))
-                }
-                onStroke={(id, stroke) => void onStroke(id, stroke)}
-                onDelete={() => void deleteSelected()}
-                onCollapse={() => setShowFormat(false)}
-                onPictureCrop={startCrop}
-                onPictureCutout={startCutout}
-                pictureCanCutout={contextPictureCanCutout}
-                link={selectedLink}
-                onOpenLink={openLinkDialog}
-                chartData={selectedChartData}
-                onChartPointColor={(si, pi, color) =>
-                  void onEditChart({ pointColors: { [si]: { [pi]: color } } })
-                }
-              />
-            ) : showAnimPane ? (
-              <AnimationPane
-                slideIndex={current}
-                items={animations}
-                selected={selAnim}
-                onSelect={setSelAnim}
-                onMove={moveAnimation}
-                onDelete={deleteAnimation}
-                onPreview={() => setAnimPreview((n) => n + 1)}
-                onCollapse={() => setShowAnimPane(false)}
-              />
-            ) : showComments ? (
-              <CommentsPane
-                slideIndex={current}
-                comments={comments}
-                focusNonce={commentsFocusNonce}
-                onAdd={(text) => void addComment(text)}
-                onDelete={(c) => void deleteComment(c)}
-                onCollapse={() => setShowComments(false)}
-              />
-            ) : null}
-          </>
-        )}
-      </div>
+                ) : showComments ? (
+                  <CommentsPane
+                    slideIndex={current}
+                    comments={comments}
+                    focusNonce={commentsFocusNonce}
+                    onAdd={(text) => void addComment(text)}
+                    onDelete={(c) => void deleteComment(c)}
+                    onCollapse={() => setShowComments(false)}
+                  />
+                ) : null}
+              </>
+            )}
+          </div>
 
-      <footer className="status-bar">
-        <div className="status-left">
-          {slide ? (
-            <span className="status-item">
-              {t('appStatusBarSlide', { current: current + 1, total: slides.length })}
-            </span>
-          ) : (
-            t('appStatusBarReady')
-          )}
-          {status && <span className="status-msg"> — {status}</span>}
+          <footer className="status-bar">
+            <div className="status-left">
+              {slide ? (
+                <span className="status-item">
+                  {t('appStatusBarSlide', { current: current + 1, total: slides.length })}
+                </span>
+              ) : (
+                t('appStatusBarReady')
+              )}
+              {status && <span className="status-msg"> — {status}</span>}
+            </div>
+            <div className="status-right">
+              {hasDoc && (
+                <button
+                  className={`status-notes-btn${showNotes ? ' on' : ''}`}
+                  title={showNotes ? t('appNotesHide') : t('appNotesShow')}
+                  onClick={() => setShowNotes((v) => !v)}
+                >
+                  {t('appNotesLabel')}
+                </button>
+              )}
+              <button className="zoom-btn" onClick={() => setZoom((z) => Math.max(z - 0.1, 0.25))}>
+                −
+              </button>
+              <input
+                className="zoom-slider"
+                type="range"
+                min={25}
+                max={300}
+                step={5}
+                value={Math.round(zoom * 100)}
+                onChange={(e) => setZoom(Number(e.target.value) / 100)}
+              />
+              <button className="zoom-btn" onClick={() => setZoom((z) => Math.min(z + 0.1, 3))}>
+                +
+              </button>
+              <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+            </div>
+          </footer>
         </div>
-        <div className="status-right">
-          {hasDoc && (
-            <button
-              className={`status-notes-btn${showNotes ? ' on' : ''}`}
-              title={showNotes ? t('appNotesHide') : t('appNotesShow')}
-              onClick={() => setShowNotes((v) => !v)}
-            >
-              {t('appNotesLabel')}
-            </button>
-          )}
-          <button className="zoom-btn" onClick={() => setZoom((z) => Math.max(z - 0.1, 0.25))}>
-            −
-          </button>
-          <input
-            className="zoom-slider"
-            type="range"
-            min={25}
-            max={300}
-            step={5}
-            value={Math.round(zoom * 100)}
-            onChange={(e) => setZoom(Number(e.target.value) / 100)}
-          />
-          <button className="zoom-btn" onClick={() => setZoom((z) => Math.min(z + 0.1, 3))}>
-            +
-          </button>
-          <span className="zoom-value">{Math.round(zoom * 100)}%</span>
-        </div>
-      </footer>
+      </div>
 
       {masterItems && (
         <MasterView

@@ -27,6 +27,10 @@ import menuXlsxIcon1x from './assets/menu-xlsx.png?asset'
 import menuXlsxIcon2x from './assets/menu-xlsx@2x.png?asset'
 import menuPptxIcon1x from './assets/menu-pptx.png?asset'
 import menuPptxIcon2x from './assets/menu-pptx@2x.png?asset'
+import menuPdfIcon1x from './assets/menu-pdf.png?asset'
+import menuPdfIcon2x from './assets/menu-pdf@2x.png?asset'
+import menuHomeIcon1x from './assets/menu-home.png?asset'
+import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
   appMenuLabels,
@@ -39,13 +43,15 @@ import {
 import { readAppSettings, writeAppSetting } from './app-settings'
 import { ProjectStore } from '@genoffice/project-store'
 import {
+  ensureGenofficeLogin,
+  genofficeLogout,
   gskConvertPdfToDocx,
-  gskLogin,
-  gskLoginStart,
   gskLoginInfo,
-  gskLogout,
   hasGskAuth,
+  loadGenofficeAuth,
   resolveGskEntry,
+  setGskProxyUrl,
+  startGenofficeLogin,
 } from '@genoffice/ai-search'
 
 import {
@@ -117,7 +123,8 @@ import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
 import { TabManager } from './tab-manager'
-import { initAutoUpdater } from './updater'
+import { applyUpdateChannel, initAutoUpdater } from './updater'
+import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
 
 /**
  * GenOffice unified shell: ONE Electron app, ONE BrowserWindow, hosting the
@@ -218,6 +225,11 @@ function persistLang(lang: Lang): void {
   writeAppSetting(APP_SETTINGS_PATH(), 'language', lang)
 }
 
+function currentUpdateChannel(): UpdateChannel {
+  const saved = readAppSettings(APP_SETTINGS_PATH()).updateChannel
+  return isUpdateChannel(saved) ? saved : 'stable'
+}
+
 // ---- first-run onboarding ----
 // The GenTeam community page opened from the onboarding's second slide.
 // Stable short link served by the genspark.ai site; it 302s to the tokened
@@ -253,6 +265,7 @@ const tMain = createI18n({
     errMissing: '文件不存在',
     errExists: '同名文件已存在',
     errRenameFailed: '重命名失败',
+    errNewTabFailed: '新建文档失败',
     errUnsupportedExt: '暂不支持 .{ext} 类型',
     copySuffix: '副本',
     menuHelp: '帮助',
@@ -298,6 +311,7 @@ const tMain = createI18n({
     errMissing: 'File not found',
     errExists: 'A file with that name already exists',
     errRenameFailed: 'Rename failed',
+    errNewTabFailed: 'Could not create the new document',
     errUnsupportedExt: '.{ext} files are not supported',
     copySuffix: 'copy',
     menuHelp: 'Help',
@@ -346,6 +360,7 @@ const tMain = createI18n({
     errMissing: 'ファイルが見つかりません',
     errExists: '同名のファイルが既に存在します',
     errRenameFailed: '名前の変更に失敗しました',
+    errNewTabFailed: '新規ドキュメントを作成できませんでした',
     errUnsupportedExt: '.{ext} 形式には対応していません',
     copySuffix: 'コピー',
     menuHelp: 'ヘルプ',
@@ -394,6 +409,7 @@ const tMain = createI18n({
     errMissing: '파일을 찾을 수 없습니다',
     errExists: '같은 이름의 파일이 이미 있습니다',
     errRenameFailed: '이름 바꾸기에 실패했습니다',
+    errNewTabFailed: '새 문서를 만들지 못했습니다',
     errUnsupportedExt: '.{ext} 형식은 지원되지 않습니다',
     copySuffix: '복사본',
     menuHelp: '도움말',
@@ -442,6 +458,7 @@ const tMain = createI18n({
     errMissing: 'Fichier introuvable',
     errExists: 'Un fichier du même nom existe déjà',
     errRenameFailed: 'Échec du renommage',
+    errNewTabFailed: 'Impossible de créer le nouveau document',
     errUnsupportedExt: 'les fichiers .{ext} ne sont pas pris en charge',
     copySuffix: 'copie',
     menuHelp: 'Aide',
@@ -490,6 +507,7 @@ const tMain = createI18n({
     errMissing: 'Datei nicht gefunden',
     errExists: 'Eine Datei mit diesem Namen existiert bereits',
     errRenameFailed: 'Umbenennen fehlgeschlagen',
+    errNewTabFailed: 'Neues Dokument konnte nicht erstellt werden',
     errUnsupportedExt: '.{ext}-Dateien werden nicht unterstützt',
     copySuffix: 'Kopie',
     menuHelp: 'Hilfe',
@@ -538,6 +556,7 @@ const tMain = createI18n({
     errMissing: 'Archivo no encontrado',
     errExists: 'Ya existe un archivo con ese nombre',
     errRenameFailed: 'No se pudo cambiar el nombre',
+    errNewTabFailed: 'No se pudo crear el nuevo documento',
     errUnsupportedExt: 'los archivos .{ext} no son compatibles',
     copySuffix: 'copia',
     menuHelp: 'Ayuda',
@@ -586,6 +605,7 @@ const tMain = createI18n({
     errMissing: 'ไม่พบไฟล์',
     errExists: 'มีไฟล์ชื่อเดียวกันอยู่แล้ว',
     errRenameFailed: 'เปลี่ยนชื่อไม่สำเร็จ',
+    errNewTabFailed: 'สร้างเอกสารใหม่ไม่สำเร็จ',
     errUnsupportedExt: 'ไม่รองรับไฟล์ .{ext}',
     copySuffix: 'สำเนา',
     menuHelp: 'วิธีใช้',
@@ -633,6 +653,7 @@ const tMain = createI18n({
     errMissing: 'File tidak ditemukan',
     errExists: 'File dengan nama tersebut sudah ada',
     errRenameFailed: 'Gagal mengganti nama',
+    errNewTabFailed: 'Gagal membuat dokumen baru',
     errUnsupportedExt: 'file .{ext} tidak didukung',
     copySuffix: 'salinan',
     menuHelp: 'Bantuan',
@@ -681,6 +702,7 @@ const tMain = createI18n({
     errMissing: 'Файл не найден',
     errExists: 'Файл с таким именем уже существует',
     errRenameFailed: 'Не удалось переименовать',
+    errNewTabFailed: 'Не удалось создать новый документ',
     errUnsupportedExt: 'файлы .{ext} не поддерживаются',
     copySuffix: 'копия',
     menuHelp: 'Справка',
@@ -729,6 +751,7 @@ const tMain = createI18n({
     errMissing: 'الملف غير موجود',
     errExists: 'يوجد ملف بالاسم نفسه بالفعل',
     errRenameFailed: 'فشلت إعادة التسمية',
+    errNewTabFailed: 'تعذّر إنشاء المستند الجديد',
     errUnsupportedExt: 'ملفات .{ext} غير مدعومة',
     copySuffix: 'نسخة',
     menuHelp: 'تعليمات',
@@ -776,6 +799,7 @@ const tMain = createI18n({
     errMissing: 'Arquivo não encontrado',
     errExists: 'Já existe um arquivo com esse nome',
     errRenameFailed: 'Falha ao renomear',
+    errNewTabFailed: 'Falha ao criar o novo documento',
     errUnsupportedExt: 'arquivos .{ext} não são suportados',
     copySuffix: 'cópia',
     menuHelp: 'Ajuda',
@@ -824,6 +848,7 @@ const tMain = createI18n({
     errMissing: 'File non trovato',
     errExists: 'Esiste già un file con questo nome',
     errRenameFailed: 'Impossibile rinominare',
+    errNewTabFailed: 'Impossibile creare il nuovo documento',
     errUnsupportedExt: 'i file .{ext} non sono supportati',
     copySuffix: 'copia',
     menuHelp: 'Aiuto',
@@ -872,6 +897,7 @@ const tMain = createI18n({
     errMissing: 'Nie znaleziono pliku',
     errExists: 'Plik o tej nazwie już istnieje',
     errRenameFailed: 'Nie udało się zmienić nazwy',
+    errNewTabFailed: 'Nie udało się utworzyć nowego dokumentu',
     errUnsupportedExt: 'pliki .{ext} nie są obsługiwane',
     copySuffix: 'kopia',
     menuHelp: 'Pomoc',
@@ -920,6 +946,7 @@ const tMain = createI18n({
     errMissing: 'Bestand niet gevonden',
     errExists: 'Er bestaat al een bestand met die naam',
     errRenameFailed: 'Naam wijzigen mislukt',
+    errNewTabFailed: 'Kan het nieuwe document niet maken',
     errUnsupportedExt: '.{ext}-bestanden worden niet ondersteund',
     copySuffix: 'kopie',
     menuHelp: 'Help',
@@ -968,6 +995,7 @@ const tMain = createI18n({
     errMissing: 'Fail tidak ditemui',
     errExists: 'Fail dengan nama yang sama sudah wujud',
     errRenameFailed: 'Gagal menamakan semula',
+    errNewTabFailed: 'Gagal mencipta dokumen baharu',
     errUnsupportedExt: 'fail .{ext} tidak disokong',
     copySuffix: 'salinan',
     menuHelp: 'Bantuan',
@@ -1016,6 +1044,7 @@ const tMain = createI18n({
     errMissing: 'הקובץ לא נמצא',
     errExists: 'כבר קיים קובץ באותו שם',
     errRenameFailed: 'שינוי השם נכשל',
+    errNewTabFailed: 'יצירת המסמך החדש נכשלה',
     errUnsupportedExt: 'קובצי .{ext} אינם נתמכים',
     copySuffix: 'עותק',
     menuHelp: 'עזרה',
@@ -1061,6 +1090,7 @@ const tMain = createI18n({
     errMissing: 'फ़ाइल नहीं मिली',
     errExists: 'इस नाम की फ़ाइल पहले से मौजूद है',
     errRenameFailed: 'नाम बदलने में विफल',
+    errNewTabFailed: 'नया दस्तावेज़ बनाने में विफल',
     errUnsupportedExt: '.{ext} फ़ाइलें समर्थित नहीं हैं',
     copySuffix: 'प्रतिलिपि',
     menuHelp: 'सहायता',
@@ -1109,6 +1139,7 @@ const tMain = createI18n({
     errMissing: '檔案不存在',
     errExists: '同名檔案已存在',
     errRenameFailed: '重新命名失敗',
+    errNewTabFailed: '新建文件失敗',
     errUnsupportedExt: '暫不支援 .{ext} 類型',
     copySuffix: '副本',
     menuHelp: '說明',
@@ -1416,7 +1447,38 @@ async function newSheetTab(): Promise<void> {
     openDocumentPath(filePath)
   } catch (err) {
     console.warn('[shell] blank workbook create failed, opening in-memory blank tab:', err)
-    tabManager?.openSheetsTab(undefined, { newBlank: true })
+    try {
+      tabManager?.openSheetsTab(undefined, { newBlank: true })
+    } catch (fallbackErr) {
+      surfaceNewTabError(fallbackErr)
+    }
+  }
+}
+
+/**
+ * A throw anywhere in the create-tab path (view creation, sidecar resolution,
+ * renderer load) used to be swallowed by `void`-ed promises and ipc-invoke
+ * rejections, so the click looked like a pure no-op — the exact "AI Sheets /
+ * AI Slides do nothing" alpha report. Surface the failure instead.
+ */
+function surfaceNewTabError(err: unknown): void {
+  console.error('[shell] new tab failed:', err)
+  dialog.showErrorBox(tm('errNewTabFailed'), err instanceof Error ? err.message : String(err))
+}
+
+function newDocTab(): void {
+  try {
+    tabManager?.openDocsTab(undefined, { newBlank: true })
+  } catch (err) {
+    surfaceNewTabError(err)
+  }
+}
+
+function newSlideTab(): void {
+  try {
+    tabManager?.openSlidesTab()
+  } catch (err) {
+    surfaceNewTabError(err)
   }
 }
 
@@ -1449,9 +1511,10 @@ function statEntries(paths: string[]): RecentEntry[] {
 }
 
 function registerHomeIpc(): void {
-  // Genspark account (gsk login state; to be upgraded to a signup/account system later)
+  // signed-in means GenOffice's own device-code login; the shared gsk CLI key
+  // is only a silent fallback, deliberately not shown here to nudge users onto our key
   ipcMain.handle(HOME_CHANNELS.accountStatus, async () => {
-    if (!hasGskAuth()) return { loggedIn: false }
+    if (!loadGenofficeAuth()) return { loggedIn: false }
     const info = await gskLoginInfo()
     return info ? { loggedIn: true, email: info.email } : { loggedIn: true }
   })
@@ -1465,8 +1528,16 @@ function registerHomeIpc(): void {
     const send = (payload: AccountLoginEvent) => {
       if (!sender.isDestroyed()) sender.send(HOME_CHANNELS.accountLoginEvent, payload)
     }
-    const launched = gskLoginStart((progress) => {
-      if (progress.url) pendingLoginUrl = progress.url
+    // open the browser on the first url event only; later events refresh the rescue URL
+    let opened = false
+    const launched = startGenofficeLogin((progress) => {
+      if (progress.url) {
+        pendingLoginUrl = progress.url
+        if (!opened) {
+          opened = true
+          void shell.openExternal(progress.url)
+        }
+      }
       send(progress)
     })
     if (launched) send({ phase: 'launched' })
@@ -1478,7 +1549,7 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.accountLogout, async () => {
-    await gskLogout()
+    await genofficeLogout()
   })
 
   ipcMain.handle(HOME_CHANNELS.getAppVersion, (): string => app.getVersion())
@@ -1532,7 +1603,7 @@ function registerHomeIpc(): void {
     if (opts?.projectId && opts.projectId !== 'default') {
       pendingNewFileProject.set('doc', opts.projectId)
     }
-    tabManager?.openDocsTab(undefined, { newBlank: true })
+    newDocTab()
   })
 
   ipcMain.handle(HOME_CHANNELS.newSheet, (_event, opts?: { projectId?: string }) => {
@@ -1546,7 +1617,7 @@ function registerHomeIpc(): void {
     if (opts?.projectId && opts.projectId !== 'default') {
       pendingNewFileProject.set('slide', opts.projectId)
     }
-    tabManager?.openSlidesTab()
+    newSlideTab()
   })
 
   ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
@@ -1637,6 +1708,14 @@ function registerHomeIpc(): void {
     for (const wc of webContents.getAllWebContents()) wc.send('app:language-changed', lang)
   })
 
+  ipcMain.handle(HOME_CHANNELS.getUpdateChannel, (): UpdateChannel => currentUpdateChannel())
+
+  ipcMain.handle(HOME_CHANNELS.setUpdateChannel, (_event, channel: unknown) => {
+    if (!isUpdateChannel(channel) || channel === currentUpdateChannel()) return
+    writeAppSetting(APP_SETTINGS_PATH(), 'updateChannel', channel)
+    applyUpdateChannel(channel)
+  })
+
   ipcMain.handle(
     HOME_CHANNELS.onboardingSeen,
     (): boolean => readAppSettings(APP_SETTINGS_PATH()).onboardingSeen === true,
@@ -1666,14 +1745,31 @@ function loadMenuIcon(path1x: string, path2x: string): NativeImage {
 }
 
 // loaded once, not on every menu open
-let menuIconCache: { docx: NativeImage; xlsx: NativeImage; pptx: NativeImage } | null = null
-function menuIcons(): { docx: NativeImage; xlsx: NativeImage; pptx: NativeImage } {
+interface MenuIconSet {
+  docx: NativeImage
+  xlsx: NativeImage
+  pptx: NativeImage
+  pdf: NativeImage
+  home: NativeImage
+}
+let menuIconCache: MenuIconSet | null = null
+function menuIcons(): MenuIconSet {
   menuIconCache ??= {
     docx: loadMenuIcon(menuDocxIcon1x, menuDocxIcon2x),
     xlsx: loadMenuIcon(menuXlsxIcon1x, menuXlsxIcon2x),
     pptx: loadMenuIcon(menuPptxIcon1x, menuPptxIcon2x),
+    pdf: loadMenuIcon(menuPdfIcon1x, menuPdfIcon2x),
+    home: loadMenuIcon(menuHomeIcon1x, menuHomeIcon2x),
   }
   return menuIconCache
+}
+
+const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
+  home: 'home',
+  docs: 'docx',
+  sheets: 'xlsx',
+  slides: 'pptx',
+  pdf: 'pdf',
 }
 
 function registerTabsIpc(): void {
@@ -1692,6 +1788,7 @@ function registerTabsIpc(): void {
         label: tab.title,
         type: 'checkbox' as const,
         checked: tab.active,
+        icon: menuIcons()[TAB_MENU_ICON[tab.kind]],
         click: () => tabManager?.activateTab(tab.id),
       })),
     )
@@ -1712,7 +1809,7 @@ function registerTabsIpc(): void {
       {
         label: tm('menuNewDoc'),
         icon: menuIcons().docx,
-        click: () => tabManager?.openDocsTab(undefined, { newBlank: true }),
+        click: () => newDocTab(),
       },
       {
         label: tm('menuNewSheet'),
@@ -1722,7 +1819,7 @@ function registerTabsIpc(): void {
       {
         label: tm('menuNewSlide'),
         icon: menuIcons().pptx,
-        click: () => tabManager?.openSlidesTab(),
+        click: () => newSlideTab(),
       },
       { type: 'separator' },
       { label: tm('menuOpen'), click: () => void openFileViaDialog() },
@@ -1759,13 +1856,13 @@ function buildHomeMenu(): void {
         {
           label: tm('menuNewDoc'),
           accelerator: 'CmdOrCtrl+N',
-          click: () => tabManager?.openDocsTab(undefined, { newBlank: true }),
+          click: () => newDocTab(),
         },
         {
           label: tm('menuNewSheet'),
           click: () => void newSheetTab(),
         },
-        { label: tm('menuNewSlide'), click: () => tabManager?.openSlidesTab() },
+        { label: tm('menuNewSlide'), click: () => newSlideTab() },
         { type: 'separator' },
         {
           label: tm('menuOpen'),
@@ -1931,12 +2028,7 @@ async function exportPdfAsDocx(): Promise<void> {
         cancelId: 1,
         noLink: true,
       })
-      if (response === 0 && !gskLogin()) {
-        void dialog.showMessageBox(shellWindow, {
-          type: 'error',
-          message: tm('pdfDocxNoCliMsg'),
-        })
-      }
+      if (response === 0) ensureGenofficeLogin((url) => void shell.openExternal(url))
       return
     }
     const balance = (await gskLoginInfo())?.creditBalance
@@ -2016,13 +2108,13 @@ function installDockMenu(): void {
       { label: tm('menuHome'), click: () => tabManager?.openHomeTab() },
       {
         label: tm('menuNewDoc'),
-        click: () => tabManager?.openDocsTab(undefined, { newBlank: true }),
+        click: () => newDocTab(),
       },
       {
         label: tm('menuNewSheet'),
         click: () => void newSheetTab(),
       },
-      { label: tm('menuNewSlide'), click: () => tabManager?.openSlidesTab() },
+      { label: tm('menuNewSlide'), click: () => newSlideTab() },
     ]),
   )
 }
@@ -2051,6 +2143,9 @@ async function installMainProcessProxy(): Promise<void> {
     }
   }
   if (!proxyUrl) return
+  // spawned gsk CLI children (login/search/…) do their own fetch and never see
+  // the dispatcher below — forward the proxy to them via env
+  setGskProxyUrl(proxyUrl)
   try {
     const { ProxyAgent, setGlobalDispatcher } = await import('undici')
     setGlobalDispatcher(new ProxyAgent(proxyUrl))
@@ -2129,7 +2224,7 @@ app.whenReady().then(() => {
   // deferred to ready: labels need currentLang(), which reads app.getLocale()
   installBackToHomeItems()
   installDockMenu()
-  initAutoUpdater(() => shellWindow)
+  initAutoUpdater(() => shellWindow, currentUpdateChannel())
 
   if (!pendingLaunchPath || !openDocumentPath(pendingLaunchPath)) tabManager?.openHomeTab()
   pendingLaunchPath = null

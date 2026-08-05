@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
+import { computeListMarkers, type ListItemRef } from './list-markers'
 import { ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
 import { NOTE_PART_PATH, parseNotesXml } from './notes'
@@ -199,6 +200,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     elements.push(el)
     blocks.push(await buildBlock(el, i, xml, buildCtx))
   }
+  applyTocEntryNumbers(blocks, numbering)
 
   const header = await readHeaderFooterPart(
     zip,
@@ -641,7 +643,8 @@ async function buildBlock(
   // TOC-styled paragraphs are part of a TOC field result even when they carry
   // no field chars themselves (entries with literal page numbers). Editing
   // them individually would corrupt the field, so they stay protected.
-  if (/<w:pStyle w:val="TOC[1-9]"/.test(xml)) {
+  // Word writes styleIds "TOC1".."TOC9"; Pages exports "TOC 1"/"TOC 2" (with space).
+  if (/<w:pStyle w:val="TOC ?[1-9]"/.test(xml)) {
     return {
       ...base,
       type: 'passthrough',
@@ -2102,16 +2105,35 @@ function hfContentFromXml(
   theme?: ThemeColors | null,
 ): { text: string; hasPageNumber: boolean; watermark: string | null; paras: HfParagraph[] } {
   const hasPageNumber = /<w:instrText[^>]*>[^<]*\bPAGE\b/.test(xml)
-  // drop cached field results (e.g. the stale page number between separate/end),
-  // then mark the PAGE field position with '#' so "- PAGE -" reads "- # -";
-  // NUMPAGES gets the private-use marker (renderer substitutes the total)
-  const cleaned = xml
-    .replace(/<w:fldChar w:fldCharType="separate"\/>[\s\S]*?<w:fldChar w:fldCharType="end"\/>/g, '')
-    .replace(
-      /<w:instrText[^>]*>[^<]*\bNUMPAGES\b[^<]*<\/w:instrText>/g,
-      `<w:t>${TOTAL_PAGES_MARK}</w:t>`,
-    )
-    .replace(/<w:instrText[^>]*>[^<]*\bPAGE\b[^<]*<\/w:instrText>/g, '<w:t>#</w:t>')
+  // Rewrite each field span (begin..end) for display. PAGE becomes the '#'
+  // marker and NUMPAGES the private-use marker (the renderer substitutes real
+  // numbers), dropping their stale cached results; other fields (DATE, STYLEREF,
+  // ...) keep their cached result runs (Word refreshes them on open). fldChar
+  // attribute matching is tolerant (Pages writes w:fldLock="0" etc.).
+  const cleaned = xml.replace(
+    /<w:fldChar[^>]*w:fldCharType="begin"[^>]*\/>[\s\S]*?<w:fldChar[^>]*w:fldCharType="end"[^>]*\/>/g,
+    (span) => {
+      const instr = (span.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? [])
+        .map((m) => m.replace(/<[^>]+>/g, ''))
+        .join('')
+      const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(span)?.[0] ?? ''
+      // the span starts inside the begin run and ends inside the end run, so
+      // the replacement closes/reopens the enclosing w:r to stay balanced
+      // (the leftover edge runs end up empty and are dropped later)
+      const emit = (inner: string) => `</w:r>${inner}<w:r>`
+      if (/\bNUMPAGES\b/.test(instr)) {
+        return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
+      }
+      if (/\bPAGE\b/.test(instr)) return emit(`<w:r>${rPr}<w:t>#</w:t></w:r>`)
+      const cached = /<w:fldChar[^>]*w:fldCharType="separate"[^>]*\/>([\s\S]*)$/.exec(span)?.[1]
+      // complete result runs between separate and end (partial run fragments at the edges drop out)
+      return emit(
+        (cached?.match(/<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g) ?? [])
+          .filter((run) => run.includes('<w:t'))
+          .join(''),
+      )
+    },
+  )
   return {
     text: plainText(cleaned),
     hasPageNumber,
@@ -2303,7 +2325,8 @@ function decodeEntities(text: string): string {
  */
 function fieldDisplayOf(xml: string): FieldDisplay | undefined {
   const styleId = /<w:pStyle w:val="([^"]+)"/.exec(xml)?.[1] ?? ''
-  const tocLevel = /^TOC([1-9])$/i.exec(styleId)
+  // "TOC1" (Word) or "TOC 1" (Pages export)
+  const tocLevel = /^TOC ?([1-9])$/i.exec(styleId)
   if (tocLevel) {
     // TOC entry: title <tab with dot leader> page number
     let left = ''
@@ -2333,6 +2356,41 @@ function fieldDisplayOf(xml: string): FieldDisplay | undefined {
     return { kind: 'text', left: visible }
   }
   return undefined
+}
+
+/**
+ * TOC entries carry their outline number ("1.", "1.1.") as w:numPr numbering
+ * (Pages exports one numId per entry with startOverride restarts). The field
+ * result is a display-only cache, so the marker is computed once at parse time
+ * and stored on the tocLine FieldDisplay. Counters run document-wide in block
+ * order, shared with editable list items (same abstractNum semantics).
+ */
+function applyTocEntryNumbers(blocks: Block[], numbering: Map<string, NumberingDef>): void {
+  if (numbering.size === 0) return
+  const items: ListItemRef[] = []
+  const tocAt = new Map<number, FieldDisplay>()
+  for (const block of blocks) {
+    if (block.list?.numId) {
+      items.push({ numId: block.list.numId, ilvl: block.list.ilvl })
+      continue
+    }
+    const fd = block.fieldDisplay
+    if (block.type !== 'passthrough' || fd?.kind !== 'tocLine' || !block.originalXml) continue
+    const numPr = /<w:numPr>[\s\S]*?<\/w:numPr>/.exec(block.originalXml)?.[0]
+    if (!numPr) continue
+    const numId = /<w:numId w:val="([^"]+)"/.exec(numPr)?.[1]
+    if (!numId) continue
+    const ilvl = parseInt(/<w:ilvl w:val="(\d+)"/.exec(numPr)?.[1] ?? '0', 10)
+    tocAt.set(items.length, fd)
+    items.push({ numId, ilvl })
+  }
+  if (tocAt.size === 0) return
+  const markers = computeListMarkers(items, numbering)
+  for (const [i, fd] of tocAt) {
+    const marker = markers[i]
+    // bullets make no sense in front of a TOC entry; only ordered markers show
+    if (marker && !/^[•◦▪➢❖✓]$/.test(marker)) fd.num = marker
+  }
 }
 
 const FIELD_LABELS: Record<string, string> = {

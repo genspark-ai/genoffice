@@ -36,6 +36,7 @@ import type { RibbonFormatState } from './ribbon-format-state'
 import { setSelectedColumnWidth } from '../editor/table-sizing'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor } from '../font-list'
+import { cssFontFamily } from '../line-metrics'
 import {
   DesignTab,
   DrawTab,
@@ -116,8 +117,6 @@ interface RibbonProps {
   styles?: Map<string, StyleInfo>
   /** document-wide text defaults from styles.xml */
   docDefaults?: DocDefaults
-  /** Open the styles pane */
-  onStylesPanel?: () => void
   /** Open the paragraph dialog (line-spacing rule / exact value entry lives there) */
   onParagraphDialog?: () => void
   onOpen: () => void
@@ -137,6 +136,7 @@ interface RibbonProps {
   onWatermark: (text: string | null) => void
   themeFonts: ThemeFonts | null
   onThemeFonts: (fonts: ThemeFonts) => void
+  themeColors: ThemeColors | null
   onThemeColors: (colors: ThemeColors) => void
   /** Draw → pen / highlighter / eraser */
   inkTool: InkTool
@@ -272,7 +272,10 @@ const NOOP_CHAIN = new Proxy(
   { get: (_t, prop) => (prop === 'run' ? () => false : () => NOOP_CHAIN) },
 ) as ChainedCommands
 
-const FONT_SIZES = [9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 36, 48, 72]
+// Word's preset size list (also drives the grow/shrink font step buttons)
+const FONT_SIZES = [
+  5, 5.5, 6.5, 7.5, 8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72,
+]
 
 const THEME_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorWhite', hex: 'FFFFFF' },
@@ -449,9 +452,6 @@ function previewLevelText(levels: CustomNumberingLevel[], ilvl: number): string 
   )
 }
 
-/** Max character styles shown inline; the rest fold into the "More styles" dropdown */
-const MAX_INLINE_CHAR_STYLES = 2
-
 const STYLE_GALLERY = [
   { key: 'p', labelKey: 'ribbonStyleNormal', className: 'style-normal' },
   { key: 'h1', labelKey: 'ribbonStyleHeading1', className: 'style-h1' },
@@ -459,20 +459,31 @@ const STYLE_GALLERY = [
   { key: 'h3', labelKey: 'ribbonStyleHeading3', className: 'style-h3' },
 ] as const satisfies ReadonlyArray<{ key: string; labelKey: StringKey; className: string }>
 
-/** Fallback character styles shown when the document has no character styles */
-const CHAR_STYLE_PRESETS: Array<{ styleId: string; labelKey: StringKey; display: CSSProperties }> =
-  [
-    {
-      styleId: '__preset_emphasis',
-      labelKey: 'ribbonStyleEmphasis',
-      display: { fontStyle: 'italic', color: 'var(--theme-accent, #4472C4)' },
-    },
-    {
-      styleId: '__preset_strong',
-      labelKey: 'ribbonStyleIntenseEmphasis',
-      display: { fontWeight: 'bold', color: 'var(--theme-accent, #4472C4)' },
-    },
-  ]
+/** Fallback character styles shown when the document has no character styles.
+ * Emphasis = italic + accent color, Intense Emphasis = bold + accent color;
+ * applied via the plain italic/bold marks plus docTextStyle color. */
+const CHAR_STYLE_PRESETS: Array<{
+  styleId: string
+  labelKey: StringKey
+  mark: 'italic' | 'bold'
+  display: (accentHex: string) => CSSProperties
+}> = [
+  {
+    styleId: '__preset_emphasis',
+    labelKey: 'ribbonStyleEmphasis',
+    mark: 'italic',
+    display: (accentHex) => ({ fontStyle: 'italic', color: `#${accentHex}` }),
+  },
+  {
+    styleId: '__preset_strong',
+    labelKey: 'ribbonStyleIntenseEmphasis',
+    mark: 'bold',
+    display: (accentHex) => ({ fontWeight: 'bold', color: `#${accentHex}` }),
+  },
+]
+
+/** Theme accent used by the preset character styles when the doc theme has none */
+const DEFAULT_PRESET_ACCENT = '4472C4'
 
 function findNumIdOfKind(blocks: Block[], kind: 'bullet' | 'ordered'): string | null {
   for (const b of blocks) {
@@ -490,7 +501,6 @@ function RibbonInner({
   blocks,
   allocateNumId,
   createListDef,
-  onStylesPanel,
   onParagraphDialog,
   styles,
   docDefaults,
@@ -509,6 +519,7 @@ function RibbonInner({
   onWatermark,
   themeFonts,
   onThemeFonts,
+  themeColors,
   onThemeColors,
   inkTool,
   onInkTool,
@@ -832,18 +843,68 @@ function RibbonInner({
         }
 
   const activeCharStyleId = fs.charStyleId
+  const presetAccent = themeColors?.accent1?.trim().toUpperCase() || DEFAULT_PRESET_ACCENT
+
+  /**
+   * Character styles shown in the gallery.
+   * Use doc's own character styles (type=character) if any, otherwise show
+   * the two built-in presets so the gallery is never empty.
+   */
+  const charStyleItems: Array<{ key: string; label: string; previewStyle: CSSProperties }> =
+    (() => {
+      // Collect non-Hyperlink character styles from the document
+      const docItems: Array<{ key: string; label: string; previewStyle: React.CSSProperties }> = []
+      if (styles) {
+        for (const [id, info] of styles) {
+          if (info.type !== 'character') continue
+          if (id === 'Hyperlink' || id === 'FollowedHyperlink' || id === 'DefaultParagraphFont')
+            continue
+          // Word rule: semiHidden and linked character shells ("Heading 1 Char") stay out of the style gallery
+          if (info.semiHidden || info.linkedCharShell) continue
+          const css: CSSProperties = {}
+          if (info.display?.bold) css.fontWeight = 'bold'
+          if (info.display?.italic) css.fontStyle = 'italic'
+          if (info.display?.underline) css.textDecoration = 'underline'
+          if (info.display?.color) css.color = `#${info.display.color}`
+          docItems.push({ key: `char:${id}`, label: info.name, previewStyle: css })
+        }
+      }
+      if (docItems.length > 0) return docItems
+      // Fallback: built-in presets
+      return CHAR_STYLE_PRESETS.map((p) => ({
+        key: `char:${p.styleId}`,
+        label: t(p.labelKey),
+        previewStyle: p.display(presetAccent),
+      }))
+    })()
+
+  // Presets carry no styleId (they apply plain italic/bold + accent color), so
+  // detect their active state from the format state instead of charStyleId.
+  const usingPresetFallback = charStyleItems[0]?.key === `char:${CHAR_STYLE_PRESETS[0].styleId}`
+  const presetActive = (mark: 'italic' | 'bold'): boolean =>
+    usingPresetFallback &&
+    !activeCharStyleId &&
+    (mark === 'italic' ? fs.italic : fs.bold) &&
+    (fs.textColor ?? '').toUpperCase() === presetAccent
   const activeStyleKey =
     fs.headingLevel !== null
       ? `h${fs.headingLevel}`
       : activeCharStyleId
         ? `char:${activeCharStyleId}`
-        : 'p'
+        : presetActive('bold')
+          ? 'char:__preset_strong'
+          : presetActive('italic')
+            ? 'char:__preset_emphasis'
+            : 'p'
   const currentSize = fs.fontSizePt
   const currentFont = fs.fontFamily
   // The "(Body)" entry means "no explicit run font — inherit the document's body
   // font", so it has to name that font rather than a fixed one: docDefaults is what
   // actually renders, the theme's minor font is what "+Body" resolves to.
   const bodyFontName = docDefaults?.asciiFont?.trim() || themeFonts?.minor?.trim() || 'Calibri'
+  // computed unconditionally (not inside the dropdown render): cheap, and the
+  // render-isolation test uses fontFamiliesFor calls as its render probe
+  const fontFamilies = fontFamiliesFor(lang)
   // unset align follows the paragraph direction: start is left in LTR, right in RTL
   const activeAlign = fs.align ?? (fs.bidi ? 'right' : 'left')
   const activeSpacing = fs.lineSpacing
@@ -880,65 +941,68 @@ function RibbonInner({
   const applyStyle = (key: string) => {
     if (key.startsWith('char:')) {
       const styleId = key.slice(5)
+      const preset = CHAR_STYLE_PRESETS.find((p) => p.styleId === styleId)
+      if (preset) {
+        // Presets are plain italic/bold marks + accent color; toggle off when already active
+        if (activeStyleKey === key) {
+          chain().unsetMark(preset.mark).setMark('docTextStyle', { color: null }).run()
+        } else {
+          // switching presets must drop the other's mark, otherwise both stay
+          // active and the gallery highlight sticks on the wrong card
+          let c = chain()
+          for (const p of CHAR_STYLE_PRESETS) if (p !== preset) c = c.unsetMark(p.mark)
+          c.setMark(preset.mark).setMark('docTextStyle', { color: presetAccent }).run()
+        }
+        return
+      }
       // Toggle: if already active, remove the mark; else set it
       if (activeCharStyleId === styleId) {
         chain().unsetMark('docTextStyle').run()
       } else {
-        // Apply preset visual attrs for the two built-in presets, otherwise just styleId
-        if (styleId === '__preset_emphasis') {
-          chain()
-            .setMark('docTextStyle', { styleId: null, color: null, bold: null, italic: true })
-            .run()
-        } else if (styleId === '__preset_strong') {
-          chain()
-            .setMark('docTextStyle', { styleId: null, color: null, bold: true, italic: null })
-            .run()
-        } else {
-          chain().setMark('docTextStyle', { styleId }).run()
-        }
+        chain().setMark('docTextStyle', { styleId }).run()
       }
       return
     }
     if (sub) return // textboxes have no heading styles
-    if (key === 'p') chain().setNode('docParagraph').run()
-    else
-      chain()
-        .setNode('docHeading', { level: Number(key.slice(1)) })
-        .run()
-  }
-
-  /**
-   * Character styles shown in the gallery.
-   * Use doc's own character styles (type=character) if any, otherwise show
-   * the two built-in presets so the gallery is never empty.
-   */
-  const charStyleItems: Array<{ key: string; label: string; previewStyle: CSSProperties }> =
-    (() => {
-      // Collect non-Hyperlink character styles from the document
-      const docItems: Array<{ key: string; label: string; previewStyle: React.CSSProperties }> = []
-      if (styles) {
-        for (const [id, info] of styles) {
-          if (info.type !== 'character') continue
-          if (id === 'Hyperlink' || id === 'FollowedHyperlink' || id === 'DefaultParagraphFont')
-            continue
-          // Word rule: semiHidden and linked character shells ("Heading 1 Char") stay out of the style gallery
-          if (info.semiHidden || info.linkedCharShell) continue
-          const css: CSSProperties = {}
-          if (info.display?.bold) css.fontWeight = 'bold'
-          if (info.display?.italic) css.fontStyle = 'italic'
-          if (info.display?.underline) css.textDecoration = 'underline'
-          if (info.display?.color) css.color = `#${info.display.color}`
-          docItems.push({ key: `char:${id}`, label: info.name, previewStyle: css })
+    let c = chain()
+    if (key === 'p') c = c.setNode('docParagraph')
+    else c = c.setNode('docHeading', { level: Number(key.slice(1)) })
+    // Word-like: applying a paragraph style sheds the runs' direct font/size/color.
+    // Those render as inline span styles and would otherwise mask the style's look
+    // entirely (the click would seem to do nothing on documents whose body runs
+    // carry explicit rPr, common in CJK templates).
+    c.command(({ tr }) => {
+      const { from, to } = tr.selection
+      let start = from
+      let end = to
+      tr.doc.nodesBetween(from, to, (node, pos) => {
+        if (node.isTextblock) {
+          start = Math.min(start, pos + 1)
+          end = Math.max(end, pos + node.nodeSize - 1)
         }
+      })
+      const type = editor.schema.marks.docTextStyle
+      const jobs: Array<{ from: number; to: number; attrs: Record<string, unknown> | null }> = []
+      tr.doc.nodesBetween(start, end, (node, pos) => {
+        if (!node.isText) return
+        const m = node.marks.find((mm) => mm.type === type)
+        if (!m) return
+        if (m.attrs.color == null && m.attrs.sizeHalfPoints == null && m.attrs.font == null) return
+        const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null }
+        const keep = Object.values(attrs).some((v) => v !== null)
+        jobs.push({
+          from: Math.max(pos, start),
+          to: Math.min(pos + node.nodeSize, end),
+          attrs: keep ? attrs : null,
+        })
+      })
+      for (const job of jobs) {
+        tr.removeMark(job.from, job.to, type)
+        if (job.attrs) tr.addMark(job.from, job.to, type.create(job.attrs))
       }
-      if (docItems.length > 0) return docItems
-      // Fallback: built-in presets
-      return CHAR_STYLE_PRESETS.map((p) => ({
-        key: `char:${p.styleId}`,
-        label: t(p.labelKey),
-        previewStyle: p.display as CSSProperties,
-      }))
-    })()
+      return true
+    }).run()
+  }
 
   const toggleList = (kind: 'bullet' | 'ordered') => {
     if (sub) return // textboxes have no list numbering
@@ -1671,8 +1735,17 @@ function RibbonInner({
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       >
-                        <rect x="4.5" y="3.5" width="15" height="17" rx="2" />
-                        <path d="M8 8.5h8M8 12h8M8 15.5h4.5" strokeLinecap="round" />
+                        <path
+                          d="M13.875 21H12H6.5C5.39543 21 4.5 20.1046 4.5 19V5C4.5 3.89543 5.39543 3 6.5 3H17.5C18.6046 3 19.5 3.89543 19.5 5V9V12V13"
+                          strokeLinecap="round"
+                        />
+                        <path d="M8.00001 7H16" strokeLinecap="round" />
+                        <path d="M8.00007 10.2032H14.0001" strokeLinecap="round" />
+                        <path d="M8.00007 13.4062H12.0001" strokeLinecap="round" />
+                        <path
+                          d="M17 14L17.2579 14.697C17.5961 15.611 17.7652 16.068 18.0986 16.4014C18.432 16.7348 18.889 16.9039 19.803 17.2421L20.5 17.5L19.803 17.7579C18.889 18.0961 18.432 18.2652 18.0986 18.5986C17.7652 18.932 17.5961 19.389 17.2579 20.303L17 21L16.7421 20.303C16.4039 19.389 16.2348 18.932 15.9014 18.5986C15.568 18.2652 15.111 18.0961 14.197 17.7579L13.5 17.5L14.197 17.2421C15.111 16.9039 15.568 16.7348 15.9014 16.4014C16.2348 16.068 16.4039 15.611 16.7421 14.697L17 14Z"
+                          strokeLinejoin="round"
+                        />
                       </svg>
                     </span>
                   </span>
@@ -1695,19 +1768,47 @@ function RibbonInner({
                         strokeLinejoin="round"
                       >
                         <path
-                          d="M5 19l9.5-9.5a2.1 2.1 0 0 1 3 3L8 22l-4 1 1-4Z"
+                          d="M5.00012 20.7481L8.80319 20.7482L21.7482 7.80317L17.945 4L5 16.945L5.00012 20.7481Z"
                           strokeLinejoin="round"
-                          transform="translate(1.5 -3.5)"
                         />
+                        <path d="M15.1406 6.80469L18.9438 10.6079" />
                         <path
-                          d="M5 5.5 5.6 7.4 7.5 8 5.6 8.6 5 10.5 4.4 8.6 2.5 8l1.9-.6L5 5.5Z"
-                          fill="currentColor"
-                          stroke="none"
+                          d="M8 3L8.22106 3.59745C8.51094 4.38087 8.65589 4.77259 8.94166 5.05833C9.22743 5.34409 9.61914 5.48903 10.4026 5.77893L11 6L10.4026 6.22107C9.61914 6.51097 9.22743 6.65592 8.94166 6.94167C8.65589 7.22741 8.51094 7.61913 8.22106 8.40255L8 9L7.77894 8.40255C7.48906 7.61913 7.34411 7.22741 7.05834 6.94167C6.77257 6.65592 6.38086 6.51097 5.59743 6.22107L5 6L5.59743 5.77893C6.38086 5.48903 6.77257 5.34409 7.05834 5.05833C7.34411 4.77259 7.48906 4.38087 7.77894 3.59745L8 3Z"
+                          strokeLinejoin="round"
                         />
                       </svg>
                     </span>
                   </span>
                   <span>{t('aiPolishBtn')}</span>
+                </button>
+                <button
+                  className="rb-big ai-entry"
+                  disabled={docEmpty}
+                  title={t('aiTidyPrompt')}
+                  onClick={() => onAiPreset(t('aiTidyPrompt'))}
+                >
+                  <span className="rb-big-icon">
+                    <span className="ai-feature-icon" aria-hidden="true">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 5H20" strokeLinecap="round" />
+                        <path d="M4 9H16" strokeLinecap="round" />
+                        <path d="M4 13H11" strokeLinecap="round" />
+                        <path d="M4 17H10" strokeLinecap="round" />
+                        <path
+                          d="M17 14L17.2579 14.697C17.5961 15.611 17.7652 16.068 18.0986 16.4014C18.432 16.7348 18.889 16.9039 19.803 17.2421L20.5 17.5L19.803 17.7579C18.889 18.0961 18.432 18.2652 18.0986 18.5986C17.7652 18.932 17.5961 19.389 17.2579 20.303L17 21L16.7421 20.303C16.4039 19.389 16.2348 18.932 15.9014 18.5986C15.568 18.2652 15.111 18.0961 14.197 17.7579L13.5 17.5L14.197 17.2421C15.111 16.9039 15.568 16.7348 15.9014 16.4014C16.2348 16.068 16.4039 15.611 16.7421 14.697L17 14Z"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </span>
+                  <span>{t('aiTidyBtn')}</span>
                 </button>
               </div>
               <div className="ribbon-group-label">Genspark AI</div>
@@ -1764,63 +1865,103 @@ function RibbonInner({
             <div className="ribbon-group">
               <div className="ribbon-group-items rb-font-group">
                 <div className="rb-row">
-                  {/* Editable comboboxes (input+datalist): real documents use fonts and sizes
-                      outside any fixed list (GB/T 9704 fonts, half sizes like 13.5pt) */}
-                  <input
-                    className="rb-select rb-font-family"
-                    list="rb-font-family-options"
-                    disabled={!canEdit}
-                    key={`f:${currentFont}:${hasDoc}`}
-                    defaultValue={currentFont}
-                    placeholder={t('ribbonFontBodyNamed', { font: bodyFontName })}
-                    title={t('ribbonFontFamilyTip')}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                    }}
-                    onChange={(e) => {
-                      // Chromium marks a datalist pick as insertReplacementText: apply right away
-                      const it = (e.nativeEvent as InputEvent).inputType
-                      if (it === 'insertReplacementText') (e.target as HTMLInputElement).blur()
-                    }}
-                    onBlur={(e) => {
-                      const v = e.target.value.trim()
-                      if (v !== currentFont) setTextStyle({ font: v || null })
-                    }}
-                  />
-                  <datalist id="rb-font-family-options">
-                    {fontFamiliesFor(lang)
-                      .filter((f) => f !== bodyFontName)
-                      .map((f) => (
-                        <option key={f} value={f} />
-                      ))}
-                  </datalist>
-                  <input
-                    className="rb-select rb-font-size"
-                    type="number"
-                    list="rb-font-size-options"
-                    min={1}
-                    max={1638}
-                    step={0.5}
-                    disabled={!canEdit}
-                    key={`s:${currentSize}:${hasDoc}`}
-                    defaultValue={currentSize}
-                    title={t('ribbonFontSizeTip')}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                    }}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value)
-                      if (!Number.isFinite(v) || v <= 0) return
-                      const half = Math.round(Math.min(1638, Math.max(1, v)) * 2)
-                      if (half !== Math.round(currentSize * 2))
-                        setTextStyle({ sizeHalfPoints: half })
-                    }}
-                  />
-                  <datalist id="rb-font-size-options">
-                    {FONT_SIZES.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
+                  {/* Editable combobox (free-typed input + full preset dropdown): real
+                      documents use fonts and sizes outside any fixed list (GB/T 9704
+                      fonts, half sizes like 13.5pt) */}
+                  <div className="rb-split-wrap">
+                    <input
+                      className="rb-select rb-font-family"
+                      disabled={!canEdit}
+                      key={`f:${currentFont}:${hasDoc}`}
+                      defaultValue={currentFont}
+                      placeholder={t('ribbonFontBodyNamed', { font: bodyFontName })}
+                      title={t('ribbonFontFamilyTip')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                      }}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim()
+                        if (v !== currentFont) setTextStyle({ font: v || null })
+                      }}
+                    />
+                    <button
+                      className="rb-caret rb-combo-caret"
+                      disabled={!canEdit}
+                      title={t('ribbonFontFamilyTip')}
+                      onClick={() => setDropdown((v) => (v === 'fontFamily' ? null : 'fontFamily'))}
+                    >
+                      <IconCaret />
+                    </button>
+                    {dropdown === 'fontFamily' && (
+                      <div className="spacing-menu rb-font-family-menu">
+                        <button
+                          className={!currentFont ? 'active' : ''}
+                          style={{ fontFamily: cssFontFamily(bodyFontName) }}
+                          onClick={() => setTextStyle({ font: null })}
+                        >
+                          {t('ribbonFontBodyNamed', { font: bodyFontName })}
+                        </button>
+                        {fontFamilies
+                          .filter((f) => f !== bodyFontName)
+                          .map((f) => (
+                            <button
+                              key={f}
+                              className={f === currentFont ? 'active' : ''}
+                              style={{ fontFamily: cssFontFamily(f) }}
+                              onClick={() => setTextStyle({ font: f })}
+                            >
+                              {f}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rb-split-wrap">
+                    <input
+                      className="rb-select rb-font-size"
+                      type="number"
+                      min={1}
+                      max={1638}
+                      step={0.5}
+                      disabled={!canEdit}
+                      key={`s:${currentSize}:${hasDoc}`}
+                      defaultValue={currentSize}
+                      title={t('ribbonFontSizeTip')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                      }}
+                      onBlur={(e) => {
+                        const v = Number(e.target.value)
+                        if (!Number.isFinite(v) || v <= 0) return
+                        const half = Math.round(Math.min(1638, Math.max(1, v)) * 2)
+                        if (half !== Math.round(currentSize * 2))
+                          setTextStyle({ sizeHalfPoints: half })
+                      }}
+                    />
+                    <button
+                      className="rb-caret rb-combo-caret"
+                      disabled={!canEdit}
+                      title={t('ribbonFontSizeTip')}
+                      onClick={() => setDropdown((v) => (v === 'fontSize' ? null : 'fontSize'))}
+                    >
+                      <IconCaret />
+                    </button>
+                    {dropdown === 'fontSize' && (
+                      <div className="spacing-menu rb-font-size-menu">
+                        {FONT_SIZES.map((s) => (
+                          <button
+                            key={s}
+                            className={
+                              Math.round(s * 2) === Math.round(currentSize * 2) ? 'active' : ''
+                            }
+                            onClick={() => setTextStyle({ sizeHalfPoints: Math.round(s * 2) })}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     className="rb-icon"
                     disabled={!canEdit}
@@ -2389,7 +2530,9 @@ function RibbonInner({
                     <span className="style-card-label">{t(s.labelKey)}</span>
                   </button>
                 ))}
-                {charStyleItems.slice(0, MAX_INLINE_CHAR_STYLES).map((s) => (
+                {/* all visible character styles render inline: the styles panel
+                    that used to catch the overflow is gone */}
+                {charStyleItems.map((s) => (
                   <button
                     key={s.key}
                     className={`style-card style-card-char ${activeStyleKey === s.key ? 'active' : ''}`}
@@ -2403,31 +2546,6 @@ function RibbonInner({
                     <span className="style-card-label">{s.label}</span>
                   </button>
                 ))}
-                <button
-                  className="style-gallery-more"
-                  disabled={!hasDoc}
-                  title={t('ribbonStylePaneTip')}
-                  onClick={() => onStylesPanel?.()}
-                >
-                  {/* "More styles" icon: horizontal lines + down arrow */}
-                  <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-                    <path
-                      d="M1.5 2h8"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                      fill="none"
-                    />
-                    <path
-                      d="M2 5.5 5.5 9 9 5.5"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </svg>
-                </button>
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupStyles')}</div>
             </div>

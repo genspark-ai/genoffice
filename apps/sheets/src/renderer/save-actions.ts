@@ -21,6 +21,7 @@ import {
   toSaveVisualEdits,
 } from './edit-journal'
 import { t } from './i18n/locale'
+import { showToast } from './toast-bus'
 import {
   collectCfStates,
   collectDefinedNamesState,
@@ -46,6 +47,7 @@ export interface SaveContext {
 export async function handleSave(
   ctx: SaveContext,
   mode: 'save' | 'save-as' | 'recovery',
+  quiet = false,
 ): Promise<void> {
   const state = ctx.lazyWorkbookRef.current
   if (!state) {
@@ -65,7 +67,9 @@ export async function handleSave(
   try {
     filterStates = collectFilterStates(ctx.univerRef.current, state)
   } catch (error: unknown) {
-    ctx.setMessage(error instanceof Error ? error.message : t('appFilterSnapshotFailed'))
+    const failed = error instanceof Error ? error.message : t('appFilterSnapshotFailed')
+    ctx.setMessage(failed)
+    if (mode !== 'recovery' && !quiet) showToast(failed, 'error')
     return
   }
   const cfStates = collectCfStates(ctx.univerRef.current, state)
@@ -119,7 +123,10 @@ export async function handleSave(
       ...heldTables.map((table) => table.sheetId),
     ].some((sheetId) => addedSheetIds.has(sheetId))
     if (strandedHeld) {
-      if (mode !== 'recovery') ctx.setMessage(t('appSaveHeldStranded'))
+      if (mode !== 'recovery') {
+        ctx.setMessage(t('appSaveHeldStranded'))
+        if (!quiet) showToast(t('appSaveHeldStranded'), 'error')
+      }
       return
     }
   }
@@ -155,7 +162,10 @@ export async function handleSave(
           ?.getSheets()
           .map((sheet) => sheet.getSheetId()) ?? [])
   if (sheetOps.length > 0 && sheetOrder.length === 0) {
-    if (mode !== 'recovery') ctx.setMessage(t('appSheetOrderReadFailed'))
+    if (mode !== 'recovery') {
+      ctx.setMessage(t('appSheetOrderReadFailed'))
+      if (!quiet) showToast(t('appSheetOrderReadFailed'), 'error')
+    }
     return
   }
   const payload = {
@@ -222,13 +232,13 @@ export async function handleSave(
     }
     if (!splitSave) {
       ctx.openLazyWorkbook(result.file)
-      ctx.setMessage(
-        t('appSaved', {
-          name: result.file.name,
-          touched: result.touchedEntries.length,
-          total: result.file.entryCount,
-        }),
-      )
+      const saved = t('appSaved', {
+        name: result.file.name,
+        touched: result.touchedEntries.length,
+        total: result.file.entryCount,
+      })
+      ctx.setMessage(saved)
+      if (!quiet) showToast(saved)
       return
     }
     try {
@@ -265,15 +275,17 @@ export async function handleSave(
         return
       }
       ctx.openLazyWorkbook(second.file)
-      ctx.setMessage(t('appSavedTwoPhase', { name: second.file.name }))
+      const saved = t('appSavedTwoPhase', { name: second.file.name })
+      ctx.setMessage(saved)
+      if (!quiet) showToast(saved)
     } catch (error: unknown) {
       if (ctx.lazyWorkbookRef.current !== state) return
       ctx.openLazyWorkbook(result.file)
-      ctx.setMessage(
-        t('appSaveSecondFailed', {
-          reason: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      const failed = t('appSaveSecondFailed', {
+        reason: error instanceof Error ? error.message : String(error),
+      })
+      ctx.setMessage(failed)
+      if (!quiet) showToast(failed, 'error')
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : ''
@@ -281,8 +293,10 @@ export async function handleSave(
     // say it in plain language instead of the raw gateway error with part names
     if (message.includes('cannot shift here')) {
       ctx.setMessage(t('appStructuralShiftBlocked'))
+      if (!quiet) showToast(t('appStructuralShiftBlocked'), 'error')
       return
     }
     ctx.setMessage(message || t('appSaveFailed'))
+    if (!quiet) showToast(message || t('appSaveFailed'), 'error')
   }
 }

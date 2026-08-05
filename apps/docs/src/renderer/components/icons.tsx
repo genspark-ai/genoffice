@@ -246,9 +246,11 @@ function TextGlyph({
 export function IconPaste(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="4.25" y="3.88" width="7.5" height="9" rx="0.75" />
-      <rect x="6.35" y="2.9" width="3.3" height="1.95" rx="0.52" fill="var(--surface, #fff)" />
-      <path d="M 6.13 6.88 h 3.75 M 6.13 8.75 h 3.75 M 6.13 10.63 h 2.25" />
+      <path d="M 5.43 12.11 H 3.93 C 3.23 12.11 2.67 11.54 2.67 10.84 V 4.53 C 2.67 3.83 3.23 3.26 3.93 3.26 H 4.88 M 11.51 5.16 V 4.53 C 11.51 3.83 10.94 3.26 10.25 3.26 H 9.3" />
+      <rect x="5.19" y="2" width="3.79" height="1.89" rx="0.63" />
+      <path d="M 12.14 5.16 H 6.46 C 5.76 5.16 5.19 5.72 5.19 6.42 V 12.74 C 5.19 13.43 5.76 14 6.46 14 H 10.32 L 13.4 10.68 V 6.42 C 13.4 5.72 12.84 5.16 12.14 5.16 Z" />
+      <path d="M 7.09 7.37 H 11.51 M 7.09 9.58 H 9.61" />
+      <path d="M 10.25 14 V 11.16 C 10.25 10.81 10.53 10.53 10.88 10.53 H 13.4" />
     </Svg>
   )
 }
@@ -256,9 +258,9 @@ export function IconPaste(props: IconProps) {
 export function IconCut(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 10.91 3.02 6.01 9.99 M 5.1 3.02 l 4.9 6.97" />
-      <circle cx="4.85" cy="11.32" r="1.66" />
-      <circle cx="11.15" cy="11.32" r="1.66" />
+      <path d="M 5.27 12.85 L 5.94 11.71 L 11.32 2.4 M 4.68 2.33 L 10.05 11.65 L 10.73 12.85" />
+      <circle cx="3.89" cy="12.08" r="1.58" />
+      <circle cx="12.11" cy="12.08" r="1.58" />
     </Svg>
   )
 }
@@ -266,8 +268,8 @@ export function IconCut(props: IconProps) {
 export function IconCopy(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="6.08" y="5.31" width="6.16" height="7.7" rx="0.77" />
-      <path d="M 9.93 5.31 v -1.54 a 0.77 0.77 0 0 0 -0.77 -0.77 h -4.62 a 0.77 0.77 0 0 0 -0.77 0.77 v 6.93 a 0.77 0.77 0 0 0 0.77 0.77 h 1.54" />
+      <rect x="4.67" y="4.67" width="9.33" height="9.33" rx="2" />
+      <path d="M 9.67 2.67 H 4.67 C 3.56 2.67 2.67 3.56 2.67 4.67 V 9.67" />
     </Svg>
   )
 }
@@ -275,9 +277,8 @@ export function IconCopy(props: IconProps) {
 export function IconFormatPainter(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="4" y="3.2" width="8" height="3.2" rx="0.64" />
-      <path d="M 12 4.8 h 1.2 v 3.2 H 8.4 v 1.6" />
-      <rect x="7.2" y="9.6" width="2.4" height="3.6" rx="0.64" fill="currentColor" stroke="none" />
+      <path d="M 11 2.67 H 2.65 V 7.14 H 11 Z" />
+      <path d="M 11.01 4.75 H 13.68 V 9.56 L 6.53 10.48 V 14" />
     </Svg>
   )
 }
@@ -718,7 +719,7 @@ export function IconPageSize(props: IconProps) {
     <Svg {...props}>
       <rect x="4.15" y="3" width="7.7" height="10.01" rx="0.62" />
       <path
-        d="M 6.08 8 h 3.85 M 8 6.08 v 3.85 M 7 7 6.08 6.08 m 3.08 0 -0.92 0.92 m 0 2.77 0.92 0.92 m -3.08 0 0.92 -0.92"
+        d="M 6.08 8 h 3.85 M 8 6.08 v 3.85 M 7 7 6.08 6.08 m 3.85 0 -0.92 0.92 m 0 2.01 0.92 0.92 m -3.85 0 0.92 -0.92"
         strokeWidth="1"
       />
     </Svg>
@@ -1198,19 +1199,24 @@ export function IconGear(props: IconProps) {
   )
 }
 
-/** collapse the right sidebar: panel outline + arrow pushing into it */
-export function IconSidebarCollapse(props: IconProps) {
-  // Mirrored glyph: the AI panel docks on the LEFT, so the divider and arrow point left
+/** collapse the left-docked AI panel: sheets-parity glyph (16-canvas, 1.2/1.3 stroke),
+ *  self-contained so the shared Svg wrapper's pinned stroke doesn't alter its weight */
+export function IconSidebarCollapse({ size = 20 }: IconProps) {
   return (
-    <Svg {...props}>
-      <rect x="3" y="3.76" width="10.01" height="8.47" rx="0.77" />
-      <path d="M 6.07 3.76 v 8.47" />
-      <path
-        d="M 11.46 8 h -3.39 M 9.39 6.38 7.77 8 l 1.62 1.62"
-        strokeWidth="1"
-        strokeLinejoin="round"
-      />
-    </Svg>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+      <path d="M5.5 2.5v11" />
+      <path d="M12.5 8H8.1M9.8 5.9 7.7 8l2.1 2.1" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
   )
 }
 
@@ -1248,31 +1254,52 @@ export function IconNewChat(props: IconProps) {
 
 /* ---------- titlebar quick access ---------- */
 
+/** Design-supplied glyphs on the 1:16 stroke:canvas ratio (24-canvas / 1.5 stroke):
+ *  the stroke scales proportionally with size instead of the pinnedStroke policy. */
+function SvgRatio({ size = 24, children }: IconProps & { children: ReactNode }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {children}
+    </svg>
+  )
+}
+
 export function IconSave(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M 3.22 4.09 a 0.87 0.87 0 0 1 0.87 -0.87 h 6.96 L 13.22 5.39 v 6.53 a 0.87 0.87 0 0 1 -0.87 0.87 H 4.09 a 0.87 0.87 0 0 1 -0.87 -0.87 z" />
-      <path d="M 5.39 3.22 V 6.26 h 4.79 V 3.39" />
-      <rect x="5.39" y="8.87" width="5.22" height="3.92" />
-    </Svg>
+    <SvgRatio {...props}>
+      <path d="M3 4.5C3 3.67158 3.67158 3 4.5 3H17.1407L21 6.60325V19.5C21 20.3285 20.3285 21 19.5 21H4.5C3.67158 21 3 20.3285 3 19.5V4.5Z" />
+      <path d="M12.0042 3L12 6.6923C12 6.86225 11.7761 7 11.5 7H7.5C7.22385 7 7 6.86225 7 6.6923V3H12.0042Z" />
+      <path d="M7 13H17" />
+      <path d="M7 17H12.0042" />
+    </SvgRatio>
   )
 }
 
 export function IconUndo(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M3 6.5h7a3.5 3.5 0 0 1 0 7H6" />
-      <path d="M5.8 3.7 3 6.5l2.8 2.8" />
-    </Svg>
+    <SvgRatio {...props}>
+      <path d="M5.91026 4L2.5 7.14791L5.91026 10.8205" />
+      <path d="M3.96154 7.41028H15.1636C18.5169 7.41028 21.3646 10.1484 21.4953 13.5C21.6334 17.0416 18.707 20.0769 15.1636 20.0769H6.88384" />
+    </SvgRatio>
   )
 }
 
 export function IconRedo(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M13 6.5H6a3.5 3.5 0 0 0 0 7h4" />
-      <path d="M10.2 3.7 13 6.5l-2.8 2.8" />
-    </Svg>
+    <SvgRatio {...props}>
+      <path d="M18.0897 4L21.5 7.14791L18.0897 10.8205" />
+      <path d="M20.0385 7.41028H8.83636C5.4831 7.41028 2.63537 10.1484 2.5047 13.5C2.36657 17.0416 5.29296 20.0769 8.83636 20.0769H17.1162" />
+    </SvgRatio>
   )
 }
 

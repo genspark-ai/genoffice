@@ -4,7 +4,7 @@
  * to avoid renderer CORS), search tools, and the slides-only ai:* channels
  * (image generation, media analysis, style templates).
  */
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -19,14 +19,14 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
-import { fetchWithSsrfGuard } from '@genoffice/electron-utils'
+import { fetchRemoteImage } from '@genoffice/electron-utils'
 import {
   webSearch,
   imageSearch,
+  ensureGenofficeLogin,
   gskApiKey,
   gskGenerateImage,
   gskAnalyzeMedia,
-  gskLogin,
   gskLoginInfo,
   hasGskAuth,
 } from '@genoffice/ai-search'
@@ -76,7 +76,7 @@ export function registerAiIpc(): void {
   )
 
   ipcMain.handle('ai:gsk-login', () => {
-    gskLogin()
+    ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
@@ -245,10 +245,9 @@ export function registerSlidesOnlyAiIpc(): void {
       try {
         // the URL originates from AI tool calls (prompt-injectable via image
         // search results), so refuse non-http schemes and private/link-local
-        // targets; redirects are followed manually so every hop is validated
-        const resp = await fetchWithSsrfGuard(String(op.url), {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        })
+        // targets; redirects are followed manually so every hop is validated.
+        // fetchRemoteImage adds CDN-friendly headers and transient-error retries.
+        const resp = await fetchRemoteImage(String(op.url))
         if (!resp || !resp.ok) return null
         const buf = Buffer.from(await resp.arrayBuffer())
         const ct = resp.headers.get('content-type') ?? ''

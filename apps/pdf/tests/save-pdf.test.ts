@@ -235,6 +235,35 @@ describe('applySaveRequest', () => {
     expect(pageAnnots(await PDFDocument.load(saved), 0)).toHaveLength(0)
   })
 
+  it('writes an image drawing as a Stamp annotation with an image appearance', async () => {
+    const bytes = await makePdf([[612, 792]])
+    const saved = await applySaveRequest(
+      bytes,
+      request({
+        drawings: [{ kind: 'image', pageIndex: 0, image: TINY_PNG, rect: [100, 500, 300, 600] }],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const annots = pageAnnots(out, 0)
+    expect(annots.map(subtypeOf)).toEqual(['Stamp'])
+    const rect = annots[0]!.lookup(PDFName.of('Rect'), PDFArray)
+    expect(String(rect)).toBe('[ 100 500 300 600 ]')
+    expect(annots[0]!.lookup(PDFName.of('AP'), PDFDict).has(PDFName.of('N'))).toBe(true)
+  })
+
+  it('counter-rotates the image appearance on rotated pages', async () => {
+    const bytes = await makePdf([[612, 792]])
+    const saved = await applySaveRequest(
+      bytes,
+      request({
+        rotations: [{ pageIndex: 0, delta: 90 }],
+        drawings: [{ kind: 'image', pageIndex: 0, image: TINY_PNG, rect: [100, 500, 300, 600] }],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    expect(pageAnnots(out, 0).map(subtypeOf)).toEqual(['Stamp'])
+  })
+
   it('embeds PNG stamps without failing', async () => {
     const bytes = await makePdf([[612, 792]])
     const saved = await applySaveRequest(

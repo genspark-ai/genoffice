@@ -527,24 +527,23 @@ function IconNewChat(): ReactElement {
   )
 }
 
-/* Same glyph as the slides IconSidebarCollapse (24×24 viewBox, 1.5 stroke), rendered at 15px */
+/* Same glyph as the sheets IconCollapse (16×16 viewBox, 1.2/1.3 stroke), rendered at 15px */
 function IconCollapse(): ReactElement {
   return (
     <svg
       width={15}
       height={15}
-      viewBox="0 0 24 24"
+      viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.2"
       strokeLinecap="round"
-      strokeLinejoin="round"
       aria-hidden
     >
       {/* Mirrored: the AI panel docks on the LEFT, so the divider and arrow point left */}
-      <rect x="2.25" y="3.75" width="19.5" height="16.5" rx="1.5" />
-      <path d="M8.25 3.75 v16.5" />
-      <path d="M18.75 12 h-6.6 M14.7 8.85 11.55 12 l3.15 3.15" />
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+      <path d="M5.5 2.5v11" />
+      <path d="M12.5 8H8.1M9.8 5.9 7.7 8l2.1 2.1" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   )
 }

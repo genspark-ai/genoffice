@@ -1,0 +1,83 @@
+name: Promote to Stable
+
+# Manually promote an already-published beta build to the stable update
+# channel. No rebuild: rewrites latest.yml / latest-mac.yml on the CDN to
+# the versioned feed archive uploaded when the build went to beta, and
+# re-points the marketing download aliases (GenOffice.dmg /
+# GenOfficeSetup.exe) to the promoted version via server-side blob copy.
+# Windows and mac version sequences are independent. Empty inputs default
+# to each platform's newest beta version; type "skip" to leave a platform
+# untouched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mac_version:
+        description: 'mac version to promote (x.y.z; empty = latest beta; "skip" = leave mac untouched)'
+        required: false
+        default: ''
+      win_version:
+        description: 'windows version to promote (x.y.z; empty = latest beta; "skip" = leave windows untouched)'
+        required: false
+        default: ''
+      force:
+        description: 'allow rollback (skip the newer-version guard)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: promote-stable
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Promote
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          GENOFFICE_UPDATE_URL: ${{ secrets.GENOFFICE_UPDATE_URL }}
+          MAC_VERSION: ${{ inputs.mac_version }}
+          WIN_VERSION: ${{ inputs.win_version }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -eu
+          # empty input = promote that platform's newest beta; "skip" = leave
+          # the platform untouched. promote-stable.cjs resolves "latest" from
+          # the beta feed and re-validates everything server-side.
+          [ -z "$MAC_VERSION" ] && MAC_VERSION="latest"
+          [ -z "$WIN_VERSION" ] && WIN_VERSION="latest"
+          [ "$MAC_VERSION" = "skip" ] && MAC_VERSION=""
+          [ "$WIN_VERSION" = "skip" ] && WIN_VERSION=""
+          if [ -z "$MAC_VERSION" ] && [ -z "$WIN_VERSION" ]; then
+            echo "nothing to promote — both platforms set to skip"
+            exit 1
+          fi
+          for v in "$MAC_VERSION" "$WIN_VERSION"; do
+            if [ -n "$v" ] && [ "$v" != "latest" ] && ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "invalid version: $v (expected x.y.z, \"latest\", or \"skip\")"
+              exit 1
+            fi
+          done
+          # The storage container / blob prefix (and the full base URL) are
+          # substrings of the secret URL, so GitHub's automatic masking does
+          # not cover them — mask them explicitly before promote-stable.cjs
+          # logs anything (same approach as mac-build.yml / windows-build.yml).
+          URL="${GENOFFICE_UPDATE_URL%/}"
+          REL="${URL#*://*/}"
+          echo "::add-mask::${REL%%/*}"
+          echo "::add-mask::${REL#*/}"
+          echo "::add-mask::$URL"
+          ARGS=""
+          [ -n "$MAC_VERSION" ] && ARGS="$ARGS --mac $MAC_VERSION"
+          [ -n "$WIN_VERSION" ] && ARGS="$ARGS --win $WIN_VERSION"
+          [ "$FORCE" = "true" ] && ARGS="$ARGS --force"
+          node scripts/promote-stable.cjs $ARGS

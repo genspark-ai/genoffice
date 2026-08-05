@@ -10,7 +10,8 @@
   --text-dim: #605e5c;
   --hover: #f3f2f1;
   --pressed: #edebe9;
-  --active-bg: #fbeae5;
+  /* selected/pressed plate: neutral gray (slides/docs ribbon parity) */
+  --active-bg: #e2e0de;
   --canvas: #e6e6e6;
 }
 
@@ -116,7 +117,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--text-dim);
+  color: #232425;
 }
 
 .qa-btn svg {
@@ -196,10 +197,16 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b3a39;
+  color: #232425;
+  /* hover/active plate box: sheets .tool-icon-row parity — stretches edge to
+     edge of the button and rounds, while the label below stays outside */
+  align-self: stretch;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin: 0 -4px;
 }
 
-.rb-big:hover:not(:disabled) {
+.rb-big:hover:not(:disabled) .rb-big-icon {
   background: var(--hover);
 }
 
@@ -208,9 +215,9 @@ button {
   cursor: default;
 }
 
-.rb-big.active {
+/* Active state paints only the gray icon plate — label/ink stays the standard color */
+.rb-big.active .rb-big-icon {
   background: var(--active-bg);
-  color: var(--accent);
 }
 
 /* AI button: brand logo only — no accent plate behind the icon, label stays black (same as docs) */
@@ -227,6 +234,11 @@ button {
 .rb-big.rb-ai:hover:not(:disabled) {
   background: none;
   color: var(--color-text-primary);
+}
+
+.rb-big.rb-ai.active .rb-big-icon,
+.rb-big.rb-ai:hover:not(:disabled) .rb-big-icon {
+  background: none;
 }
 
 .rb-col {
@@ -268,7 +280,7 @@ button {
   border-radius: 3px;
   font-size: 13px;
   cursor: pointer;
-  color: var(--text);
+  color: #232425;
   padding: 0 5px;
 }
 
@@ -572,6 +584,7 @@ button {
 }
 
 .pdf-thumbs {
+  /* width set inline (drag-resizable, persisted) */
   width: 150px;
   flex-shrink: 0;
   overflow-y: auto;
@@ -581,6 +594,18 @@ button {
   user-select: none;
 }
 
+/* drag handle between the sidebar and the page area — resize the sidebar
+ * horizontally (overlaps the pane's right border; cursor-only affordance),
+ * same pattern as slides' .thumb-resizer */
+.pdf-side-resizer {
+  width: 6px;
+  margin-left: -3px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+}
+
 .pdf-thumb {
   display: flex;
   flex-direction: column;
@@ -588,10 +613,13 @@ button {
   gap: 3px;
   padding-bottom: 10px;
   cursor: pointer;
+  /* focusable for arrow-key page stepping; the active red border is the visual cue */
+  outline: none;
 }
 
 .pdf-thumb-box {
-  width: 112px;
+  /* fluid: follows the resizable sidebar width (aspect ratio set inline per page) */
+  width: 100%;
   background: #fff;
   border: 2px solid var(--border-strong);
   border-radius: 4px;
@@ -659,6 +687,20 @@ button {
   z-index: 8;
   cursor: crosshair;
   background: rgb(60 120 216 / 6%);
+}
+
+/* Translucent preview of the pending signature following the cursor */
+.pdf-sign-ghost {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.65;
+}
+
+.pdf-sign-ghost img,
+.pdf-sign-ghost svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .pdf-page {
@@ -935,7 +977,7 @@ button {
 }
 
 .pdf-draw-shape {
-  cursor: pointer;
+  cursor: move;
 }
 
 .pdf-draw-shape:hover {
@@ -1123,60 +1165,192 @@ button {
   touch-action: none;
 }
 
-.pdf-sign-preview {
-  min-height: 68px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  background: #fff;
-  font-family: 'Snell Roundhand', 'Segoe Script', cursive;
-  font-style: italic;
-  font-size: 34px;
-  overflow: hidden;
-}
-
 .pdf-sign-hint {
   font-size: 11.5px;
   color: var(--text-dim);
 }
 
-/* ── Drawing colors ── */
-
-.pdf-color-col {
-  justify-content: center;
-  gap: 4px;
+.pdf-sign-fontgrid {
+  width: 420px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
-.pdf-color-row {
+.pdf-sign-fontcard {
+  height: 64px;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 26px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.pdf-color-dot {
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 18%) inset;
+.pdf-sign-fontcard.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent) inset;
+}
+
+.pdf-sign-imgbox {
+  width: 420px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 6px;
+}
+
+.pdf-sign-imgbox-empty {
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.pdf-sign-imgplus {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.pdf-sign-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdf-sign-bw {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pdf-sign-bw.disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.pdf-draw-handle {
+  fill: #fff;
+  stroke: var(--accent, #2b66ff);
+  stroke-width: 1.5;
+}
+
+/* ── Drawing color split button + palette (same pattern as slides' font color) ── */
+
+.rb-caret {
+  flex-shrink: 0;
+  display: block;
+}
+
+.rb-big-icon .rb-caret {
+  margin-left: 3px;
+  color: #605e5c;
+}
+
+/* color strip under the glyph showing the current draw color */
+.rb-big-icon-colored {
+  position: relative;
+  display: flex;
+}
+
+.rb-big-icon-colored .rb-color-bar {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: -3px;
+  height: 4px;
+  border-radius: 1px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.rb-drop-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  /* Anchor for the .rb-drop panel (see slides: scope keeps each panel on its own wrap) */
+  anchor-name: --rb-drop-wrap;
+  anchor-scope: --rb-drop-wrap;
+}
+
+.rb-drop {
+  /* Fixed + anchored to the parent .rb-drop-wrap so the panel escapes the
+     ribbon-body scroll clip while still tracking its trigger. */
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.14),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+}
+
+.rb-color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 18px);
+  gap: 5px;
+}
+
+.rb-swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
   cursor: pointer;
   padding: 0;
 }
 
-.pdf-color-dot.active {
-  border-color: var(--text);
+.rb-swatch:hover,
+.rb-swatch.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
-.pdf-color-dot:disabled {
-  opacity: 0.4;
-  cursor: default;
+/* "More colors…" row at the bottom of the palette (native any-color picker) */
+.rb-color-more {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, #e3e3e3);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.pdf-color-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  text-align: center;
+.rb-color-more input[type='color'] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
 }
 
 .pdf-modal-textarea {
@@ -2195,4 +2369,81 @@ button {
 
 .ai-retry-btn:hover {
   background: rgb(198 40 40 / 8%);
+}
+
+/* ================= status bar (unified chrome shared with docs/sheets/slides) ================= */
+
+.status-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  height: 24px;
+  font-size: 11.5px;
+  color: #605e5c;
+  background: #f3f4f6;
+  border-top: 1px solid #e1e4e8;
+}
+
+.status-left {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-item {
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.zoom-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.zoom-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.zoom-slider {
+  width: 110px;
+  accent-color: #8a8886;
+  height: 3px;
+}
+
+.zoom-value {
+  min-width: 38px;
+  text-align: right;
+}
+
+/* body row (AI dock + content column) — the status bar spans only the content
+   column so the dock runs the full height of the window */
+.app-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }

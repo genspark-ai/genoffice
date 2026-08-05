@@ -37,9 +37,9 @@ export interface IpcStreamStart<S> {
  * Renderer-side silence watchdog: the main process re-arms it with keepalive
  * pings on wire activity, so firing means the turn is dead (main-process stall,
  * lost chunks) and the run must fail instead of leaving the UI busy forever.
- * Longer than the main-process idle timeout so that one (localized) wins.
+ * Longer than the main-process idle timeout (180s) so that one (localized) wins.
  */
-export const IPC_STREAM_SILENCE_TIMEOUT_MS = 90_000
+export const IPC_STREAM_SILENCE_TIMEOUT_MS = 240_000
 
 export interface IpcTransportOptions<S> {
   /** subscribe to stream chunks; returns the unsubscribe function */

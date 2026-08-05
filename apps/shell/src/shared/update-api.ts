@@ -43,3 +43,10 @@ export interface UpdateWindowApi {
   later(): void
   onState(handler: (state: UpdateUiState) => void): () => void
 }
+
+/** user-selectable update channel; 'stable' maps to the latest.yml feed, 'beta' to beta.yml */
+export type UpdateChannel = 'stable' | 'beta'
+
+export function isUpdateChannel(v: unknown): v is UpdateChannel {
+  return v === 'stable' || v === 'beta'
+}

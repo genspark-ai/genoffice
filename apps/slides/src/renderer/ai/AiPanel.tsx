@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { AgentLoop, composeSkills, type AgentImage, type ToolDisplay } from '@genoffice/agent-core'
+import {
+  AgentLoop,
+  composeSkills,
+  IPC_STREAM_SILENCE_TIMEOUT_MS,
+  type AgentImage,
+  type ToolDisplay,
+} from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -22,13 +28,16 @@ import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import attachIcon from '../assets/attach-icon.png'
-import {
-  IconClock,
-  IconNewChat,
-  IconPaperclip,
-  IconRefresh,
-  IconSidebarCollapseLeft,
-} from '../components/icons'
+import filePdfIcon from '../assets/file-pdf.png'
+import fileWordIcon from '../assets/file-word.png'
+import fileExcelIcon from '../assets/file-excel.png'
+import filePptIcon from '../assets/file-ppt.png'
+import fileImageIcon from '../assets/file-image.png'
+import fileVideoIcon from '../assets/file-video.png'
+import fileVoiceIcon from '../assets/file-voice.png'
+import fileDocumentIcon from '../assets/file-document.png'
+import fileGeneralIcon from '../assets/file-general.png'
+import { IconClock, IconNewChat, IconRefresh, IconSidebarCollapseLeft } from '../components/icons'
 
 interface ToolActivity {
   name: string
@@ -61,6 +70,86 @@ const PASTE_MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
   'image/webp': 'webp',
+}
+
+/** File-type icons for attachment cards (Genspark attachment icon set); exts the
+ *  attachment allowlist doesn't accept yet are mapped ahead so they light up when added */
+const ATTACHMENT_CARD_ICON_GROUPS: [icon: string, exts: string[]][] = [
+  [fileWordIcon, ['doc', 'docx']],
+  [fileExcelIcon, ['xls', 'xlsx', 'csv', 'tsv']],
+  [filePptIcon, ['ppt', 'pptx']],
+  [filePdfIcon, ['pdf']],
+  [fileImageIcon, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'tiff', 'heic']],
+  [fileVideoIcon, ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v']],
+  [fileVoiceIcon, ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus']],
+  [
+    fileDocumentIcon,
+    [
+      'txt',
+      'md',
+      'markdown',
+      'rtf',
+      'log',
+      'json',
+      'yaml',
+      'yml',
+      'xml',
+      'html',
+      'htm',
+      'js',
+      'ts',
+      'tsx',
+      'jsx',
+      'py',
+      'java',
+      'c',
+      'h',
+      'cpp',
+      'go',
+      'rs',
+      'rb',
+      'sh',
+      'sql',
+      'css',
+    ],
+  ],
+]
+
+const ATTACHMENT_CARD_ICONS: Record<string, string> = Object.fromEntries(
+  ATTACHMENT_CARD_ICON_GROUPS.flatMap(([icon, exts]) => exts.map((ext) => [ext, icon])),
+)
+
+function AttachmentCardIcon({ ext }: { ext: string }) {
+  return <img src={ATTACHMENT_CARD_ICONS[ext] ?? fileGeneralIcon} alt="" aria-hidden />
+}
+
+/** Card name slot width: 190 card - 2 border - 8/14 padding - 40 icon - 10 gap */
+const CARD_NAME_MAX_WIDTH = 116
+let cardNameCtx: CanvasRenderingContext2D | null = null
+
+/** Ellipsize like the design: cut at the limit, strip trailing -_./spaces so
+ *  punctuation never sits against the …; CSS text-overflow stays as fallback */
+function truncateCardName(name: string): string {
+  cardNameCtx ??= document.createElement('canvas').getContext('2d')
+  if (!cardNameCtx) return name
+  // must match the stack the card name actually renders with (body font in styles.css)
+  cardNameCtx.font =
+    "500 13px 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+  if (cardNameCtx.measureText(name).width <= CARD_NAME_MAX_WIDTH) return name
+  let lo = 1
+  let hi = name.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (cardNameCtx.measureText(`${name.slice(0, mid)}…`).width <= CARD_NAME_MAX_WIDTH) lo = mid
+    else hi = mid - 1
+  }
+  return `${name.slice(0, lo).replace(/[-_.\s]+$/, '')}…`
+}
+
+function formatAttachmentSize(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+    : `${(bytes / 1024).toFixed(2)} KB`
 }
 
 /** Cap on tool args/output persisted to the transcript (the store layer has another 16k truncation fallback) */
@@ -246,6 +335,45 @@ export function AiPanel({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
+  /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
+  const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
+  /** image paths with a read already issued — one readAttachmentImage per attach, even while pending */
+  const previewRequestedRef = useRef(new Set<string>())
+  useEffect(() => {
+    const alive = new Set(attachments.map((a) => a.path))
+    // drop previews (and request markers) of removed attachments, so memory is reclaimed and a re-attach re-reads
+    setAttachmentPreviews((prev) => {
+      const stale = Object.keys(prev).filter((p) => !alive.has(p))
+      if (stale.length === 0) return prev
+      const next = { ...prev }
+      for (const p of stale) delete next[p]
+      return next
+    })
+    for (const p of previewRequestedRef.current) {
+      if (!alive.has(p)) previewRequestedRef.current.delete(p)
+    }
+    for (const a of attachments) {
+      if (!ATTACHMENT_IMAGE_EXTS.has(a.ext) || previewRequestedRef.current.has(a.path)) continue
+      previewRequestedRef.current.add(a.path)
+      void window.desktop.readAttachmentImage(a.path).then((r) => {
+        if (!previewRequestedRef.current.has(a.path)) return // removed while the read was in flight
+        if (r.ok && r.base64 && r.mime) {
+          setAttachmentPreviews((prev) => ({
+            ...prev,
+            [a.path]: `data:${r.mime};base64,${r.base64}`,
+          }))
+        }
+      })
+    }
+  }, [attachments])
+  /** paints the strip's scrollbar thumb while the user scrolls it (cleared 800ms after the last event) */
+  const attachScrollFadeRef = useRef(0)
+  const onAttachmentsScroll = (e: React.UIEvent<HTMLDivElement>): void => {
+    const el = e.currentTarget
+    el.classList.add('is-scrolling')
+    window.clearTimeout(attachScrollFadeRef.current)
+    attachScrollFadeRef.current = window.setTimeout(() => el.classList.remove('is-scrolling'), 800)
+  }
   const [dragOver, setDragOver] = useState(false)
   const [panelWidth, setPanelWidth] = useState(loadPanelWidth)
   const asideRef = useRef<HTMLElement>(null)
@@ -526,16 +654,29 @@ export function AiPanel({
         }
         const onAbort = () =>
           finish({ ok: false, error: tGlobal('aiErrStopped'), errKind: 'stopped' }, true)
-        const to = setTimeout(
-          () =>
-            finish(
-              { ok: false, error: tGlobal('aiErrTimeout', { ms: timeoutMs }), errKind: 'timeout' },
-              true,
-            ),
-          timeoutMs,
-        )
+        // Silence watchdog, not a total-duration cap: long generations legitimately run
+        // for many minutes, and the main process re-arms us with keepalive pings on wire
+        // activity. Firing means the turn is dead (main stall / lost chunks).
+        let to: ReturnType<typeof setTimeout> | undefined
+        const armTimeout = () => {
+          clearTimeout(to)
+          to = setTimeout(
+            () =>
+              finish(
+                {
+                  ok: false,
+                  error: tGlobal('aiErrTimeout', { ms: timeoutMs }),
+                  errKind: 'timeout',
+                },
+                true,
+              ),
+            timeoutMs,
+          )
+        }
+        armTimeout()
         const unsub = window.slidesApi.onAiStream((chunk) => {
           if (chunk.requestId !== requestId) return
+          armTimeout() // any chunk (including pings) proves the turn is alive
           if (chunk.type === 'delta') buf += chunk.text ?? ''
           else if (chunk.type === 'done')
             finish(
@@ -544,7 +685,14 @@ export function AiPanel({
                 : { ok: false, text: buf, error: tGlobal('aiErrEmptyOutput'), errKind: 'empty' },
             )
           else if (chunk.type === 'error')
-            finish({ ok: false, error: chunk.error ?? tGlobal('aiErrUnknown') })
+            finish({
+              ok: false,
+              error: chunk.error ?? tGlobal('aiErrUnknown'),
+              // Empty gateway streams surface as errors now (ai-provider stream.ts
+              // tags them with this suffix); keep classifying them as empty output
+              // so retry ladders fail fast instead of burning billed attempts
+              ...(chunk.error?.includes('(empty stream)') ? { errKind: 'empty' as const } : {}),
+            })
         })
         signal?.addEventListener('abort', onAbort, { once: true })
         // If invoke itself rejects (IPC-layer failure), fail immediately instead of waiting out the timeout
@@ -568,7 +716,7 @@ export function AiPanel({
     const runLlmOnce = async (
       system: string,
       user: string,
-      timeoutMs = 150000,
+      timeoutMs = IPC_STREAM_SILENCE_TIMEOUT_MS,
       useGenModel = true,
       signal?: AbortSignal,
       maxTokens?: number,
@@ -756,7 +904,7 @@ export function AiPanel({
         const q = a.questionnaire ? `\nUser questionnaire answers: ${a.questionnaire}` : ''
         const hint = a.styleHint ? `\nStyle preference: ${a.styleHint}` : ''
         const userMsg = `Topic and style preferences: ${a.topic}${hint}${q}\nOutput the Style Skill.`
-        const r = await runLlmOnce(sys, userMsg, 90000, true, a.signal)
+        const r = await runLlmOnce(sys, userMsg, undefined, true, a.signal)
         return r.ok && r.text
           ? { ok: true, styleSkill: r.text.trim() }
           : { ok: false, error: r.error ?? tGlobal('aiErrEmptyOutput') }
@@ -806,7 +954,7 @@ export function AiPanel({
         let lastErr = tGlobal('aiErrEmptyOutput')
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           if (a.signal?.aborted) return { ok: false, error: tGlobal('aiErrStopped') }
-          const r = await runLlmOnce(sys, userMsg, 90000, true, a.signal)
+          const r = await runLlmOnce(sys, userMsg, undefined, true, a.signal)
           if (!r.ok || !r.text) {
             lastErr = r.error ?? tGlobal('aiErrEmptyOutput')
             // Empty output/timeout doesn't burn another attempt; request-level errors may retry
@@ -978,12 +1126,27 @@ export function AiPanel({
           const finalText = turnLimit
             ? [text, tGlobal('aiTurnLimit')].filter(Boolean).join('\n\n')
             : text || (cancelled ? tGlobal('aiStoppedNote') : '')
-          patchLastAssistant((last) => ({
-            streaming: false,
-            text: finalText || (last.tools?.length ? last.text : tGlobal('aiNoResponse')),
-            // A stop mid-tool can leave a running placeholder behind — drop it
-            tools: last.tools?.filter((tl) => !tl.running),
-          }))
+          const ranTools = runToolsRef.current.length > 0
+          setChat((prev) => {
+            const next = [...prev]
+            const last = next.at(-1)
+            if (!last || last.role !== 'assistant') return prev
+            // Tool-heavy runs often end with an empty closing turn. Earlier
+            // bubbles already show the executed work — drop the empty trailing
+            // bubble instead of mislabeling the whole run as "no content".
+            if (!finalText && !last.text && !last.tools?.length && ranTools) {
+              next.pop()
+              return next
+            }
+            next[next.length - 1] = {
+              ...last,
+              streaming: false,
+              text: finalText || (last.tools?.length ? last.text : tGlobal('aiNoResponse')),
+              // A stop mid-tool can leave a running placeholder behind — drop it
+              tools: last.tools?.filter((tl) => !tl.running),
+            }
+            return next
+          })
           void finishHistoryBatch().finally(() => {
             setBusy(false)
             // Post-generation layout QC: only after a completed run that landed generated pages
@@ -1633,25 +1796,67 @@ export function AiPanel({
         </div>
       ) : (
         <div className="ai-composer">
-          {attachments.length > 0 && (
-            <div className="ai-attachments">
-              {attachments.map((a) => (
-                <span key={a.path} className="ai-attachment-chip" title={a.path}>
-                  <IconPaperclip size={11} />
-                  {a.name}
-                  <button
-                    className="ai-attachment-remove"
-                    onClick={() => removeAttachment(a.path)}
-                    title={t('aiRemoveAttachment')}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
           {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
           <div className="ai-input-box">
+            {attachments.length > 0 && (
+              <div className="ai-attachments" onScroll={onAttachmentsScroll}>
+                {attachments.map((a) =>
+                  ATTACHMENT_IMAGE_EXTS.has(a.ext) ? (
+                    <span key={a.path} className="ai-attachment-thumb" title={a.path}>
+                      {attachmentPreviews[a.path] ? (
+                        <img src={attachmentPreviews[a.path]} alt={a.name} />
+                      ) : (
+                        <span className="ai-attachment-thumb-pending" aria-hidden>
+                          <img src={fileImageIcon} alt="" />
+                        </span>
+                      )}
+                      <button
+                        className="ai-attachment-thumb-remove"
+                        onClick={() => removeAttachment(a.path)}
+                        title={t('aiRemoveAttachment')}
+                        aria-label={t('aiRemoveAttachment')}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                          <path
+                            d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
+                            fill="currentColor"
+                            stroke="currentColor"
+                            strokeWidth="0.25"
+                          />
+                        </svg>
+                      </button>
+                    </span>
+                  ) : (
+                    <span key={a.path} className="ai-attachment-card" title={a.path}>
+                      <span className="ai-attachment-card-icon">
+                        <AttachmentCardIcon ext={a.ext} />
+                      </span>
+                      <span className="ai-attachment-card-meta">
+                        <span className="ai-attachment-card-name">{truncateCardName(a.name)}</span>
+                        <span className="ai-attachment-card-size">
+                          {formatAttachmentSize(a.sizeBytes)}
+                        </span>
+                      </span>
+                      <button
+                        className="ai-attachment-thumb-remove"
+                        onClick={() => removeAttachment(a.path)}
+                        title={t('aiRemoveAttachment')}
+                        aria-label={t('aiRemoveAttachment')}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                          <path
+                            d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
+                            fill="currentColor"
+                            stroke="currentColor"
+                            strokeWidth="0.25"
+                          />
+                        </svg>
+                      </button>
+                    </span>
+                  ),
+                )}
+              </div>
+            )}
             <textarea
               ref={inputRef}
               value={input}

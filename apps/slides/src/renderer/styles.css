@@ -82,6 +82,7 @@ button {
   align-items: center;
   gap: 5px;
   cursor: pointer;
+  margin-left: 4px;
   margin-right: 4px;
   -webkit-app-region: no-drag;
   user-select: none;
@@ -134,7 +135,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--text-dim);
+  color: #232325;
 }
 
 .qa-btn svg {
@@ -147,8 +148,7 @@ button {
 }
 
 .qa-btn:disabled {
-  /* saved state stays clearly visible, just muted enough to read as inactive */
-  opacity: 0.55;
+  color: #909499;
   cursor: default;
 }
 
@@ -411,7 +411,10 @@ button {
   /* separators keep spanning the full ribbon height while groups center */
   align-self: stretch;
   background: var(--border);
-  margin: 8px 6px;
+  /* 2px matches the groups' vertical padding, so the line spans exactly the
+     tallest group content (the two 30px font rows) instead of stopping short
+     of it — same inset across all three apps */
+  margin: 2px 6px;
 }
 
 .ribbon-placeholder {
@@ -460,10 +463,10 @@ button {
 }
 
 .ai-feature-icon svg {
-  /* 28px like the other tall-button glyphs (Paste etc.); the 24-unit viewBox's
-     1.5 stroke scales to 1.75px = 28/16, keeping the 1:16 stroke standard */
-  width: 28px;
-  height: 28px;
+  /* 24px renders the 24-unit viewBox 1:1, so the 1.5 stroke paints 1.5px,
+     keeping the 1:16 stroke standard */
+  width: 24px;
+  height: 24px;
 }
 
 /* the dropdown chevron sits beside the icon (top row), not the label */
@@ -511,7 +514,8 @@ button {
 }
 
 .rb-big.ai-entry.active {
-  background: var(--active-bg);
+  /* neutral gray, shared with the docs/sheets Genspark entries */
+  background: #ebebeb;
 }
 
 .rb-big.ai-entry:hover:not(:disabled) .rb-big-icon,
@@ -745,16 +749,16 @@ button {
   background: transparent;
 }
 
-/* macOS vibrancy (body.vib set at bootstrap): the thumbnail pane goes
- * transparent so the window's 'sidebar' material shows the desktop
- * through. The workspace must stop painting behind the pane, so
- * each mode container that relied on the workspace canvas paints itself. */
+/* macOS vibrancy (body.vib set at bootstrap): only the body stays
+ * transparent for the window material; the workspace, mode containers and
+ * the thumbnail pane paint solid so content never shows the desktop
+ * through. */
 body.vib {
   background: transparent;
 }
 
 body.vib .workspace {
-  background: transparent;
+  background: var(--canvas);
 }
 
 body.vib .stage-col,
@@ -763,7 +767,7 @@ body.vib .sorter-view {
 }
 
 body.vib .slide-list {
-  background: transparent;
+  background: #ececec;
 }
 
 .thumb {
@@ -2033,7 +2037,6 @@ body.vib .slide-list {
   padding: 8px 14px 10px;
   max-height: 150px;
   overflow-y: auto;
-  background: rgba(246, 248, 252, 0.7);
 }
 
 .ai-versions-title {
@@ -2233,9 +2236,150 @@ body.vib .slide-list {
 /* attachment chips above the composer */
 .ai-attachments {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 7px;
+  gap: 8px;
+  /* single row inside the prompt box, above the textarea (Genspark composer style):
+     extra images run past the box edge and scroll horizontally.
+     scroll (not auto) + zero bottom padding: the always-present 4px scrollbar lane
+     doubles as the bottom padding, so overflowing never grows the strip and
+     shifts its content up */
+  overflow-x: scroll;
+  padding: 13px 14px 0;
+  margin-bottom: -6px;
+}
+
+.ai-attachments > * {
+  flex-shrink: 0;
+}
+
+/* The 4px scrollbar lane is always reserved (no layout jump when it appears);
+   the thumb is painted only while scrolling (.is-scrolling from the strip's onScroll) */
+.ai-attachments::-webkit-scrollbar {
+  height: 4px;
+}
+
+.ai-attachments::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: transparent;
+}
+
+.ai-attachments.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 25%);
+}
+
+/* Image attachments: square thumbnail with a round dark remove button on its corner */
+.ai-attachment-thumb {
+  position: relative;
+}
+
+.ai-attachment-thumb img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.ai-attachment-thumb-remove {
+  position: absolute;
+  top: -10px;
+  right: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #000;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-attachment-thumb-remove:hover {
+  background: #4b4e51;
+}
+
+/* The card's 1px border shifts its absolutely-positioned button inward by 1px
+   on both axes; land the borderless thumbs' button on the exact same spot */
+.ai-attachment-thumb .ai-attachment-thumb-remove {
+  top: -9px;
+  right: -1px;
+}
+
+/* image thumb before its preview arrives (or when reading fails): neutral tile + type icon */
+.ai-attachment-thumb-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.ai-attachment-thumb .ai-attachment-thumb-pending img {
+  width: 26px;
+  height: 26px;
+}
+
+/* Non-image attachments (pdf, xlsx, …): fixed-width bordered card — brand type
+   icon + truncated name and size, same height and remove button as the thumbs */
+.ai-attachment-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 190px;
+  height: 56px;
+  padding: 0 14px 0 8px;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+/* the type icon sits in its own bordered white tile, like the Genspark card */
+.ai-attachment-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ai-attachment-card-icon img {
+  display: block;
+  width: 26px;
+  height: 26px;
+}
+
+.ai-attachment-card-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ai-attachment-card-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: #232425;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-attachment-card-size {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
 }
 
 .ai-attachment-chip {
@@ -2710,12 +2854,18 @@ body.vib .slide-list {
 }
 
 /* Bubble tail pointing at the trigger button (skipped on
- * scrollable menus, where overflow would clip the pseudo-element) */
+ * scrollable menus, where overflow would clip the pseudo-element).
+ * Anchored to the trigger wrap, NOT the panel edge: near the right window
+ * edge flip-inline right-aligns the panel, and a panel-relative `left: 18px`
+ * tail would point at whatever sits left of the trigger. */
 .rb-drop:not(.rb-menu-scroll)::before {
   content: '';
-  position: absolute;
-  top: -5.5px;
-  left: 18px;
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  position-visibility: anchors-visible;
+  /* panel top (anchor bottom + 6px) minus half the 10px diamond */
+  top: calc(anchor(bottom) + 0.5px);
+  left: calc(anchor(center) - 5px);
   width: 10px;
   height: 10px;
   background: var(--surface);
@@ -3007,9 +3157,68 @@ body.vib .slide-list {
   white-space: nowrap;
 }
 
-.rb-bullet-char {
-  font-size: 14px;
+/* Bullet character picker: PowerPoint-style preset tiles — each tile previews
+ * three "bullet + text bar" lines; the first tile is the None reset */
+.rb-bullet-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 44px);
+  gap: 4px;
+}
+
+.rb-bullet-tile {
+  height: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.rb-bullet-tile:hover:not(:disabled) {
+  background: var(--active-bg);
+  border-color: var(--accent);
+}
+
+.rb-bullet-tile:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The tile matching the selection's current bullet (WPS-style filled highlight) */
+.rb-bullet-tile.on {
+  background: var(--active-bg);
+  border-color: var(--accent);
+}
+
+.rb-bullet-tile-none {
+  font-size: 11px;
+  color: var(--text-dim);
+  align-items: center;
+}
+
+.rb-bullet-tile-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rb-bullet-tile-glyph {
+  font-size: 10px;
   line-height: 1;
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.rb-bullet-tile-bar {
+  flex: 1;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-strong);
 }
 
 .rb-bullet-hang {
@@ -4835,6 +5044,10 @@ body.vib .slide-list {
 .rb-icon-colors {
   display: flex;
   gap: 5px;
+  /* 3px headroom: the panel's bubble-tail diamond (.rb-drop::before) dips
+     ~7px into the panel and would otherwise cover the first swatch's
+     selection outline (2px + 1px offset above the 8px panel padding) */
+  padding-top: 3px;
   padding-bottom: 6px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border, #e3e3e3);
@@ -6297,6 +6510,10 @@ body.vib .slide-list {
   background: var(--accent);
   color: #fff;
   flex-shrink: 0;
+  /* The overlay covers the .ribbon-tabs window drag region; drag regions
+   * hit-test by rectangle regardless of z-order and would swallow every
+   * real click on this bar (notably the Close Master View button) */
+  -webkit-app-region: no-drag;
 }
 .master-bar-title {
   font-size: 13px;
@@ -6487,4 +6704,66 @@ body.vib .slide-list {
 
 .ai-login-btn:hover {
   opacity: 0.88;
+}
+
+/* ================= transient toast (save feedback) ================= */
+
+.app-toast {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(35, 35, 37, 0.92);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  max-width: 60vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-toast.error {
+  background: rgba(196, 49, 75, 0.95);
+}
+
+.app-toast-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.app-toast.success .app-toast-icon {
+  color: #34c759;
+}
+
+/* body row (AI dock + content column) — the status bar spans only the content
+   column so the dock runs the full height of the window */
+.app-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }

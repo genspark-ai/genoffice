@@ -510,14 +510,15 @@ export class AgentLoop<TSnapshot = unknown> {
       // parts, and OpenAI-compatible routes send content:null with no tool_calls —
       // all of which make follow-up turns fail or return empty again (see
       // genoffice#12 / #22: first prompt works, second shows "no summary").
-      const text =
-        this.turnText ||
-        (!this.cancelled && this.mutationSeen ? COMPLETED_VIA_TOOLS_TEXT : this.turnText)
-      this.history.push({ role: 'assistant', text })
+      // Same normalization as restore(), applied unconditionally: cancelled and
+      // read-only empty turns poison follow-ups just the same. onDone still
+      // reports the raw turn text so app UIs keep their localized fallbacks
+      // instead of surfacing this English placeholder.
+      this.history.push({ role: 'assistant', text: this.turnText || COMPLETED_VIA_TOOLS_TEXT })
       this.running = false
       this.runUserMsg = null
       events?.onDone?.({
-        text,
+        text: this.turnText,
         cancelled: this.cancelled,
         turnLimit: this.finalizing,
         // set only when true so exact-shape consumers/tests stay unaffected

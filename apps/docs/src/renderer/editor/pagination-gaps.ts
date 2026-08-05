@@ -44,7 +44,8 @@ export interface GapMetrics {
   marginRight: number
 }
 
-const GAP_BAND = 28
+/** height of the gray inter-page band inside a page gap */
+export const GAP_BAND = 28
 
 function makeGapEl(m: GapMetrics, kind: 'block' | 'inline' | 'table' | 'cut'): HTMLElement {
   const gap = document.createElement(kind === 'table' ? 'tr' : 'div')
@@ -87,13 +88,16 @@ export type PageGapSpec = {
   /** Previous page's bottom footnote area (a ready-made positioned/sized element) and its content signature (change triggers rebuild) */
   notes?: HTMLElement
   notesKey?: string
+  /** Previous page's footer / next page's header (ready-made positioned .page-gap-hf elements) and their content signature */
+  hfEls?: HTMLElement[]
+  hfKey?: string
 } & ({ el: HTMLElement } | { pos: number; kind?: 'inline' | 'table' | 'cut' })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
 export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
   const decos: Decoration[] = []
   for (const gap of gaps) {
-    const { metrics, notes } = gap
+    const { metrics, notes, hfEls } = gap
     let pos: number
     let kind: 'block' | 'inline' | 'table' | 'cut'
     if ('el' in gap) {
@@ -115,11 +119,16 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
         () => {
           const el = makeGapEl(metrics, kind)
           if (notes) el.appendChild(notes)
+          // header/footer strips only fit the full-width gap variants (a table-row
+          // gap has no reliable absolute-positioning context; cut markers have no height)
+          if (hfEls && (kind === 'block' || kind === 'inline')) {
+            for (const hf of hfEls) el.appendChild(hf)
+          }
           return el
         },
         {
           side: -1,
-          key: `page-gap-${kind[0]}-${pos}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}`,
+          key: `page-gap-${kind[0]}-${pos}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
         },
       ),
     )

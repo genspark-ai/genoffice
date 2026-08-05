@@ -33,10 +33,11 @@ import {
   IconZoomJump,
 } from './icons'
 import { saveEditSelection } from '../TextEditOverlay'
-import { BIG, Group, RbCaret, type RibbonTabCtx } from './ribbon-shared'
+import { BIG, Group, RbCaret, closeSiblingPanels, type RibbonTabCtx } from './ribbon-shared'
 
 export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
   const {
+    closePanels,
     currentSlide,
     editing,
     hasDoc,
@@ -91,7 +92,10 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
               <span
                 className={`rb-caret-hit${layoutOpen ? ' active' : ''}`}
                 title={t('ribbonChooseLayout')}
-                onMouseDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => {
+                  e.stopPropagation()
+                  closeSiblingPanels(e, closePanels, 'layout')
+                }}
                 onClick={(e) => {
                   e.stopPropagation()
                   if (hasDoc) setLayoutOpen((v) => !v)
@@ -161,7 +165,10 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
             className={`rb-big ${tableOpen ? 'active' : ''}`}
             disabled={!hasDoc}
             title={t('ribbonInsertTableTip')}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => {
+              e.stopPropagation()
+              closeSiblingPanels(e, closePanels, 'table')
+            }}
             onClick={() => setTableOpen((v) => !v)}
           >
             <span className="rb-big-icon">

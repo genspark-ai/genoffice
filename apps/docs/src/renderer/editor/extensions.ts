@@ -1336,6 +1336,17 @@ function protectedDomSpec(node: PmNode): DomSpec {
     attrs.class += ' doc-protected-sectbreak'
     return ['div', attrs, ['span', { class: 'doc-sectbreak-label' }, t('editorSectionBreak')]]
   }
+  // TOC field boundary paragraphs (fldChar begin + instruction / lone fldChar
+  // end) have no visible result; Word shows nothing there either, so they get
+  // the same near-invisible strip (hover/selection reveals the label)
+  if (
+    !previewText &&
+    !fieldDisplay &&
+    (label === 'Auto TOC (updates when opened in Word)' || label === 'Field end marker')
+  ) {
+    attrs.class += ' doc-protected-sectbreak'
+    return ['div', attrs, ['span', { class: 'doc-sectbreak-label' }, String(label)]]
+  }
   if (blockType === 'image' && imageDataUrl) {
     const { imageWidthPx, imageHeightPx, imageAlign, imageWrap } = node.attrs
     if (imageAlign === 'center' || imageAlign === 'right') {

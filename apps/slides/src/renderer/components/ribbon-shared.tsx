@@ -3,7 +3,7 @@
  * small layout components, and the RibbonTabCtx bundle handed to the
  * extracted tab components.
  */
-import type { Dispatch, ReactNode, SetStateAction } from 'react'
+import type { Dispatch, MouseEvent as ReactMouseEvent, ReactNode, SetStateAction } from 'react'
 import type {
   AnimEffectKind,
   AnimTrigger,
@@ -113,6 +113,39 @@ export function RbCaret() {
       />
     </svg>
   )
+}
+
+/** Every ribbon popup that participates in "one popup at a time". */
+export type RibbonPanelKey =
+  | 'file'
+  | 'color'
+  | 'font'
+  | 'size'
+  | 'lineSpacing'
+  | 'para'
+  | 'layoutPick'
+  | 'slideSize'
+  | 'transparency'
+  | 'table'
+  | 'layout'
+  | 'translate'
+  | 'arrange'
+  | 'insert'
+  | 'chart'
+  | 'collapse'
+  | 'pen'
+
+/** Ribbon popups are mutually exclusive: a trigger closes every sibling popup
+ *  on mousedown, before its own click-toggle runs. A trigger rendered inside
+ *  another popup (collapse flyout, paragraph panel) keeps its anchor open —
+ *  closing it would unmount the popup being opened. */
+export function closeSiblingPanels(
+  e: ReactMouseEvent<HTMLElement>,
+  closePanels: (keep: RibbonPanelKey[]) => void,
+  own: RibbonPanelKey,
+): void {
+  const nested = e.currentTarget.closest('.rb-drop') != null
+  closePanels(nested ? [own, 'collapse', 'para'] : [own])
 }
 
 export function Group({
@@ -246,6 +279,8 @@ export interface Props {
   curFontSizePt: number | null
   /** Mixed selection font sizes (shown as "min+") */
   curFontSizeMixed?: boolean
+  /** Current bullet char of the selection for the bullet gallery ('' = no bullet; null = mixed/unknown, nothing highlighted) */
+  curBulletChar: string | null
   /** Editing: change the selection's font / set size (pt) */
   onFontFamily: (family: string) => void
   onFontSize: (pt: number) => void
@@ -440,6 +475,7 @@ export interface RibbonTabCtx extends Pick<
   | 'brushMode'
   | 'canDistribute'
   | 'canPaste'
+  | 'curBulletChar'
   | 'curFontFamily'
   | 'curFontSizeMixed'
   | 'curFontSizePt'
@@ -498,6 +534,7 @@ export interface RibbonTabCtx extends Pick<
   | 'zoom'
 > {
   arrangeOpen: boolean
+  closePanels: (keep: RibbonPanelKey[]) => void
   collapseOpen: string | null
   collapsedGroups: string[]
   colorOpen: boolean

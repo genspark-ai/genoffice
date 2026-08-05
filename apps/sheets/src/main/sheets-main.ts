@@ -58,10 +58,11 @@ import {
 } from '@genoffice/ai-provider'
 import { csvToXlsxBuffer, decodeCsvBuffer } from '../gateway/csv-import'
 import {
+  ensureGenofficeLogin,
   gskApiKey,
-  gskLogin,
   gskLoginInfo,
   hasGskAuth,
+  setGskProxyUrl,
   webSearch,
   imageSearch,
 } from '@genoffice/ai-search'
@@ -2036,7 +2037,7 @@ export function registerSheetsAiIpc(): void {
   )
 
   ipcMain.handle(IPC_CHANNELS.aiGskLogin, () => {
-    gskLogin()
+    ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
   ipcMain.handle(IPC_CHANNELS.aiSetSettings, (event, input: unknown) => {
@@ -2713,6 +2714,9 @@ export {
  */
 async function applyMainProcessProxy(): Promise<void> {
   const setDispatcher = async (proxyUrl: string) => {
+    // spawned gsk CLI children do their own fetch and never see the
+    // dispatcher below — forward the proxy to them via env
+    setGskProxyUrl(proxyUrl)
     try {
       const { ProxyAgent, setGlobalDispatcher } = await import('undici')
       setGlobalDispatcher(new ProxyAgent(proxyUrl))

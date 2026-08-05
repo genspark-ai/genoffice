@@ -729,6 +729,39 @@ export function applySelectionParagraphFormat(patch: {
   return true
 }
 
+/** Bullet-gallery highlight while editing: union of the live paragraph marks across the edit
+ * root ('' = none, '#num' = numbered, glyph = char bullet). `undefined` = no uncommitted
+ * paragraph-format change, the render tree is still accurate; `null` = unknowable (mixed, or a
+ * re-toggled char bullet whose glyph lives only in the engine's uncommitted state). */
+export function liveBulletChar(): string | null | undefined {
+  const root = document.querySelector('[data-src-para]')?.parentElement
+  if (!root) return undefined
+  const blocks = Array.from(root.children).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'DIV',
+  )
+  if (!blocks.length || !blocks.some((b) => b.dataset.bullet)) return undefined
+  const found = new Set<string>()
+  for (const b of blocks) {
+    const kind = b.dataset.bullet ?? b.dataset.hadBullet
+    if (!kind || kind === 'none') {
+      found.add('')
+      continue
+    }
+    if (kind === 'number') {
+      found.add('#num')
+      continue
+    }
+    // char: explicit glyph from the gallery, engine default ('•') for a fresh bullet; a
+    // paragraph whose original glyph never reached the DOM stays unknowable
+    const glyph =
+      b.dataset.bulletChar ??
+      (b.dataset.bullet === 'char' && b.dataset.hadBullet == null ? '•' : null)
+    if (glyph == null) return null
+    found.add(glyph)
+  }
+  return found.size === 1 ? [...found][0]! : null
+}
+
 /**
  * Font size increase/decrease while editing: execCommand('fontSize', 7) wraps the selection as a
  * placeholder, then <font size="7"> is replaced with a span scaled from the original px (inherited

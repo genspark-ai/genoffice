@@ -386,6 +386,8 @@ export interface FieldDisplay {
   level?: number
   /** bookmark anchor of the tocLine hyperlink (_Toc...), for click-to-jump */
   anchor?: string
+  /** numbering marker of the entry's w:numPr ("1.", "1.1."), computed at parse time */
+  num?: string
 }
 
 /** Editable text tokens inside an OMML formula; the surrounding math tree is preserved. */

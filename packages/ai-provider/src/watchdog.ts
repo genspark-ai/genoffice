@@ -6,7 +6,13 @@
  */
 
 export const AI_CONNECT_TIMEOUT_MS = 60_000
-export const AI_IDLE_TIMEOUT_MS = 60_000
+/**
+ * Generous on purpose: on long-context requests the gateway can legitimately go
+ * silent for minutes (thinking/buffering before the first token and between
+ * chunks). 60s here killed real in-progress generations that were still billed,
+ * so only genuinely dead connections should trip this.
+ */
+export const AI_IDLE_TIMEOUT_MS = 180_000
 /** Non-streaming chat waits for the full generation before headers arrive */
 export const AI_CHAT_RESPONSE_TIMEOUT_MS = 180_000
 

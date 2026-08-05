@@ -59,6 +59,7 @@ import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
+import { showToast } from './components/toast-bus'
 
 /** The App state the file actions need; built fresh per call. */
 export interface FileActionContext {
@@ -556,7 +557,10 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
         ? await window.desktop.saveDocxAs(autoName ?? doc.fileName, buffer)
         : await window.desktop.saveDocxNew(autoName ?? doc.fileName, buffer)
       if (!result.ok) {
-        if (result.error) ctx.setStatus(t('appSaveFailed', { error: result.error }))
+        if (result.error) {
+          ctx.setStatus(t('appSaveFailed', { error: result.error }))
+          if (!auto) showToast(t('appSaveFailed', { error: result.error }), 'error')
+        }
         return false
       }
       savedPath = result.path!
@@ -568,6 +572,7 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
         // deferred to a manual save) — stay dirty, no second dialog/error banner
         if (result.reason !== 'external-modified') {
           ctx.setStatus(t('appSaveFailed', { error: result.error ?? '' }))
+          if (!auto) showToast(t('appSaveFailed', { error: result.error ?? '' }), 'error')
         }
         return false
       }
@@ -590,6 +595,9 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
       ctx.setStatus(
         auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
       )
+      // No success toast: the doc is still dirty (edits raced the save), and the
+      // close-guard's saveUntilPersisted retries would repeat it on every pass —
+      // the converging complete save below toasts once.
       return true
     }
     // Reload from saved bytes so docxIndex anchors point at the new file.
@@ -678,9 +686,11 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
     ctx.setStatus(
       auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
     )
+    if (!auto) showToast(t('appSaved'))
     return true
   } catch (err) {
     ctx.setStatus(t('appSaveFailed', { error: String(err) }))
+    if (!auto) showToast(t('appSaveFailed', { error: String(err) }), 'error')
     return false
   } finally {
     ctx.saveInFlightRef.current = false

@@ -10,7 +10,8 @@
   --text-dim: #605e5c;
   --hover: #f3f2f1;
   --pressed: #edebe9;
-  --active-bg: #e8f1fb;
+  /* selected/pressed plate: neutral gray (slides/sheets/pdf ribbon parity) */
+  --active-bg: #e2e0de;
   --canvas: #e6e6e6;
   --ai-highlight: #fff3c4;
   --ai-highlight-border: #f2b900;
@@ -82,7 +83,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: var(--text-dim);
+  color: #232325;
 }
 
 .qa-btn svg {
@@ -95,7 +96,7 @@ button {
 }
 
 .qa-btn:disabled {
-  opacity: 0.55;
+  color: #909499;
   cursor: default;
 }
 
@@ -343,8 +344,14 @@ button {
 
 .ribbon-sep {
   width: 1px;
+  /* the overflowing ribbon row squeezes shrinkable items first — without
+     this the 1px separators collapse to 0 and vanish (slides ribbon parity) */
+  flex-shrink: 0;
   background: var(--border);
-  margin: 8px 6px;
+  /* 2px matches the groups' vertical padding, so the line spans exactly the
+     tallest group content (the clipboard stack / two-row font block) instead
+     of stopping short of it — same inset across all three apps */
+  margin: 2px 6px;
 }
 
 .ribbon-placeholder {
@@ -446,10 +453,7 @@ button {
   cursor: default;
 }
 
-.rb-big.active {
-  color: var(--word-blue);
-}
-
+/* Active state paints only the gray icon plate — ink stays the standard #232425 */
 .rb-big.active .rb-big-icon {
   background: var(--active-bg);
 }
@@ -464,10 +468,6 @@ button {
    row is painted. */
 .rb-big.ai-entry {
   border-radius: 4px;
-  /* Fill the 80px band like the slides/sheets AI entries — .ribbon-group-items
-     centers buttons at natural height, which made this plate shorter and shifted
-     the icon/label a couple px vs the other apps' identical button. */
-  align-self: stretch;
 }
 
 .rb-big.ai-entry:hover:not(:disabled) {
@@ -477,7 +477,7 @@ button {
 /* Neutral gray, not the Word-blue --active-bg: the Genspark entry is the same
    control across docs/sheets/slides, so its open state matches their ribbons. */
 .rb-big.ai-entry.active {
-  background: #e2e0de;
+  background: #ebebeb;
 }
 
 .rb-big.ai-entry:hover:not(:disabled) .rb-big-icon,
@@ -508,6 +508,7 @@ button {
 
 .rb-small svg {
   flex-shrink: 0;
+  /* 14px glyphs, matching the slides/sheets clipboard stacks */
   width: 14px;
   height: 14px;
   color: #232425;
@@ -522,10 +523,6 @@ button {
 
 .rb-small.active {
   background: var(--active-bg);
-}
-
-.rb-small.active svg {
-  color: var(--word-blue);
 }
 
 .rb-small:disabled {
@@ -565,7 +562,36 @@ button {
 }
 
 .rb-font-size {
-  width: 58px;
+  width: 44px;
+}
+
+/* hide the native number spinner: the grow/shrink font buttons next to the
+   input already cover stepping */
+.rb-font-size::-webkit-outer-spin-button,
+.rb-font-size::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* the combobox inputs and their carets render as one bordered control, Word-style */
+.rb-font-size,
+.rb-font-family {
+  border-right: none;
+  border-radius: 3px 0 0 3px;
+}
+
+/* double class beats the base .rb-caret rules defined further down */
+.rb-caret.rb-combo-caret {
+  width: 18px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  background: var(--surface);
+}
+
+.rb-caret.rb-combo-caret:hover:not(:disabled) {
+  background: var(--hover);
 }
 
 .rb-icon {
@@ -592,7 +618,6 @@ button {
 
 .rb-icon.active {
   background: var(--active-bg);
-  color: var(--word-blue);
 }
 
 .rb-icon:disabled {
@@ -619,6 +644,17 @@ button {
 .rb-script sub,
 .rb-script sup {
   font-size: 9px;
+  line-height: 1;
+}
+
+/* vertical-align:sub/super has no effect on flex items (.rb-icon is inline-flex
+   with align-items:center), so nudge the "2" off-center manually */
+.rb-script sub {
+  transform: translateY(4px);
+}
+
+.rb-script sup {
+  transform: translateY(-4px);
 }
 
 /* split button: main action + caret dropdown */
@@ -921,10 +957,10 @@ button {
 }
 
 .ai-feature-icon svg {
-  /* 28px like the other tall-button glyphs (Paste etc.); the 24-unit viewBox's
-     1.5 stroke scales to 1.75px = 28/16, keeping the 1:16 stroke standard */
-  width: 28px;
-  height: 28px;
+  /* 24px renders the 24-unit viewBox 1:1, so the 1.5 stroke paints 1.5px,
+     keeping the 1:16 stroke standard */
+  width: 24px;
+  height: 24px;
 }
 
 .spacing-menu {
@@ -962,7 +998,68 @@ button {
 
 .spacing-menu button.active {
   background: var(--active-bg);
-  color: var(--word-blue);
+}
+
+/* Font size preset list: compact Word-style rows so the whole list fits
+   without scrolling (the viewport cap only kicks in on tiny windows), and the
+   current size gets a leading check instead of a highlight. Placed after the
+   .spacing-menu rules so these overrides win at equal specificity. */
+.rb-font-size-menu {
+  min-width: 76px;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+
+.rb-font-size-menu button {
+  position: relative;
+  padding: 3px 16px 3px 28px;
+  font-size: 12.5px;
+}
+
+.rb-font-size-menu button.active {
+  background: none;
+  color: var(--text);
+}
+
+.rb-font-size-menu button.active:hover {
+  background: var(--hover);
+}
+
+.rb-font-size-menu button.active::before {
+  content: '✓';
+  position: absolute;
+  left: 10px;
+}
+
+/* Font family list: each entry renders in its own typeface (inline style);
+   long list scrolls like Word's */
+.rb-font-family-menu {
+  min-width: 200px;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+
+.rb-font-family-menu button {
+  padding: 5px 16px 5px 28px;
+  font-size: 14px;
+  position: relative;
+  white-space: nowrap;
+}
+
+.rb-font-family-menu button.active {
+  background: none;
+  color: var(--text);
+}
+
+.rb-font-family-menu button.active:hover {
+  background: var(--hover);
+}
+
+.rb-font-family-menu button.active::before {
+  content: '✓';
+  position: absolute;
+  left: 10px;
+  font-family: system-ui;
 }
 
 /* ---- Insert: table size picker ---- */
@@ -1070,7 +1167,8 @@ button {
 }
 
 .table-cell.hot {
-  background: var(--active-bg);
+  /* blue-tinted like an in-document selection, not the gray toolbar plate */
+  background: #e8f1fb;
   border-color: var(--word-blue);
 }
 
@@ -1484,7 +1582,7 @@ th.cell-rev-del {
 }
 
 .layout-menu button.pos-cell.active {
-  border-color: var(--accent, #2b579a);
+  border-color: var(--border-strong);
   background: var(--active-bg);
 }
 
@@ -1611,12 +1709,12 @@ th.cell-rev-del {
 }
 
 .style-card:hover:not(:disabled) {
-  border-color: var(--word-blue);
+  border-color: var(--border-strong);
   background: var(--hover);
 }
 
 .style-card.active {
-  border-color: var(--word-blue);
+  border-color: var(--border-strong);
   background: var(--active-bg);
 }
 
@@ -1654,30 +1752,6 @@ th.cell-rev-del {
   font-size: 13px;
 }
 
-.style-gallery-more {
-  width: 20px;
-  height: 62px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.style-gallery-more:hover:not(:disabled),
-.style-gallery-more.active {
-  border-color: var(--word-blue);
-  background: var(--hover);
-}
-
-.style-gallery-more:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 /* ================= workspace / document canvas ================= */
 
 .workspace {
@@ -1690,6 +1764,9 @@ th.cell-rev-del {
 .editor-scroll {
   flex: 1;
   overflow-y: auto;
+  /* classic (non-overlay) scrollbars change clientWidth as they come and go,
+     which would make the zoom auto-refit oscillate — reserve the gutter */
+  scrollbar-gutter: stable;
   padding: 26px 24px 140px;
 }
 
@@ -2702,6 +2779,12 @@ th.cell-rev-del {
   height: 11px;
 }
 
+/* header/footer strips inside canvas page gaps: display-only copies of each page's
+   variant (edit via the document top/bottom areas or the pagination preview) */
+.page-gap-hf {
+  pointer-events: none;
+}
+
 /* when a page gap is right next to a page-break indicator, hide the duplicate dashed marker (keep placeholder height) */
 .page-gap + .page-break-before {
   border-top-color: transparent;
@@ -3326,16 +3409,22 @@ th.cell-rev-del {
   text-decoration: underline;
 }
 
-.doc-toc-l2 .doc-toc-title {
+/* level indent applies to the first cell (the numbering marker when present, the title otherwise) */
+.doc-toc-l2 > span:first-child {
   padding-left: 1.5em;
 }
 
-.doc-toc-l3 .doc-toc-title {
+.doc-toc-l3 > span:first-child {
   padding-left: 3em;
 }
 
-.doc-toc-l4 .doc-toc-title {
+.doc-toc-l4 > span:first-child {
   padding-left: 4.5em;
+}
+
+.doc-toc-num {
+  white-space: pre;
+  margin-right: 4px;
 }
 
 .doc-toc-dots {
@@ -3534,7 +3623,8 @@ th.cell-rev-del {
 .doc-protected.ProseMirror-selectednode {
   border: 1px solid var(--word-blue);
   outline: 1px solid var(--word-blue);
-  background: var(--active-bg);
+  /* blue-tinted like an in-document selection, not the gray toolbar plate */
+  background: #e8f1fb;
 }
 
 .doc-protected-label {
@@ -4740,7 +4830,6 @@ body.docs-crop-active
   padding: 8px 14px 10px;
   max-height: 150px;
   overflow-y: auto;
-  background: rgba(246, 248, 252, 0.7);
 }
 
 .ai-versions-title {
@@ -5017,9 +5106,150 @@ body.docs-crop-active
 /* attachment chips above the composer */
 .ai-attachments {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 7px;
+  gap: 8px;
+  /* single row inside the prompt box, above the textarea (Genspark composer style):
+     extra images run past the box edge and scroll horizontally.
+     scroll (not auto) + zero bottom padding: the always-present 4px scrollbar lane
+     doubles as the bottom padding, so overflowing never grows the strip and
+     shifts its content up */
+  overflow-x: scroll;
+  padding: 13px 14px 0;
+  margin-bottom: -6px;
+}
+
+.ai-attachments > * {
+  flex-shrink: 0;
+}
+
+/* The 4px scrollbar lane is always reserved (no layout jump when it appears);
+   the thumb is painted only while scrolling (.is-scrolling from the strip's onScroll) */
+.ai-attachments::-webkit-scrollbar {
+  height: 4px;
+}
+
+.ai-attachments::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: transparent;
+}
+
+.ai-attachments.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 25%);
+}
+
+/* Image attachments: square thumbnail with a round dark remove button on its corner */
+.ai-attachment-thumb {
+  position: relative;
+}
+
+.ai-attachment-thumb img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.ai-attachment-thumb-remove {
+  position: absolute;
+  top: -10px;
+  right: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #000;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-attachment-thumb-remove:hover {
+  background: #4b4e51;
+}
+
+/* The card's 1px border shifts its absolutely-positioned button inward by 1px
+   on both axes; land the borderless thumbs' button on the exact same spot */
+.ai-attachment-thumb .ai-attachment-thumb-remove {
+  top: -9px;
+  right: -1px;
+}
+
+/* image thumb before its preview arrives (or when reading fails): neutral tile + type icon */
+.ai-attachment-thumb-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.ai-attachment-thumb .ai-attachment-thumb-pending img {
+  width: 26px;
+  height: 26px;
+}
+
+/* Non-image attachments (pdf, xlsx, …): fixed-width bordered card — brand type
+   icon + truncated name and size, same height and remove button as the thumbs */
+.ai-attachment-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 190px;
+  height: 56px;
+  padding: 0 14px 0 8px;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+/* the type icon sits in its own bordered white tile, like the Genspark card */
+.ai-attachment-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ai-attachment-card-icon img {
+  display: block;
+  width: 26px;
+  height: 26px;
+}
+
+.ai-attachment-card-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ai-attachment-card-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: #232425;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-attachment-card-size {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
 }
 
 .ai-attachment-chip {
@@ -5460,6 +5690,7 @@ body.docs-crop-active
   align-items: center;
   gap: 5px;
   cursor: pointer;
+  margin-left: 4px;
   margin-right: 4px;
   -webkit-app-region: no-drag;
   user-select: none;
@@ -6363,106 +6594,6 @@ ruby.doc-ruby.ProseMirror-selectednode {
   background: var(--word-blue-soft, #d5e3f5);
 }
 
-/* styles popup */
-.styles-modal {
-  width: 420px;
-  max-height: 72vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--surface);
-  border-radius: 8px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
-}
-
-.styles-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
-}
-
-.styles-panel-close {
-  border: none;
-  background: none;
-  font-size: 16px;
-  cursor: pointer;
-  color: var(--text-dim);
-}
-
-.styles-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px 0 10px;
-}
-
-.styles-panel-group {
-  padding: 6px 12px 2px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.styles-panel-row {
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  gap: 4px;
-}
-
-.styles-panel-row.active {
-  background: var(--word-blue-soft, #e7effa);
-}
-
-.styles-panel-name {
-  flex: 1;
-  text-align: left;
-  border: none;
-  background: none;
-  padding: 5px 6px;
-  cursor: pointer;
-  border-radius: 4px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.styles-panel-name:hover {
-  background: var(--hover, #f0f2f5);
-}
-
-.styles-panel-update {
-  visibility: hidden;
-  font-size: 11px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.styles-panel-row:hover .styles-panel-update {
-  visibility: visible;
-}
-
-.styles-panel-new {
-  border-top: 1px solid var(--border);
-  padding: 8px 12px 12px;
-}
-
-.styles-panel-new-row {
-  display: flex;
-  gap: 6px;
-}
-
-.styles-panel-new-row input {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 6px;
-}
-
 /* run-level format revision (w:rPrChange): amber underline hint */
 .has-rpr-change {
   text-decoration: underline wavy #c98a00;
@@ -6804,4 +6935,66 @@ tr > .page-gap-cut {
 
 .ai-login-btn:hover {
   opacity: 0.88;
+}
+
+/* ================= transient toast (save feedback) ================= */
+
+.app-toast {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(35, 35, 37, 0.92);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  max-width: 60vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-toast.error {
+  background: rgba(196, 49, 75, 0.95);
+}
+
+.app-toast-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.app-toast.success .app-toast-icon {
+  color: #34c759;
+}
+
+/* body row (AI dock + content column) — the status bar spans only the content
+   column so the dock runs the full height of the window */
+.app-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }

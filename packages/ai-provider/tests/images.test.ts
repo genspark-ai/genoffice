@@ -24,7 +24,9 @@ async function requestBodyFor(
 ): Promise<any> {
   const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream([])))
   vi.stubGlobal('fetch', fetchMock)
-  await streamForProvider(provider, config, 'sys', messages, [], 1024, callbacks())
+  // the empty fixture stream legitimately rejects with "returned no content";
+  // these tests only inspect the outgoing request body
+  await streamForProvider(provider, config, 'sys', messages, [], 1024, callbacks()).catch(() => {})
   return JSON.parse(fetchMock.mock.calls[0][1].body as string)
 }
 

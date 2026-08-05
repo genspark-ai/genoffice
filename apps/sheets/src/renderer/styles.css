@@ -94,8 +94,8 @@ textarea:disabled {
   /* minmax(0, 1fr) column: the ribbon's min-content width must clip at the
      viewport instead of stretching the whole shell past it. */
   grid-template-columns: minmax(0, 1fr);
-  /* header / body (AI panel + sheet column) / status bar */
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* header / body (AI panel + sheet column, status bar inside the sheet column) */
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   background: var(--surface);
 }
@@ -177,9 +177,9 @@ textarea:disabled {
 .excel-header {
   position: relative;
   z-index: 10;
-  border-bottom: 1px solid var(--border-strong);
+  /* same divider weight as the docs/slides ribbons: their --border-strong, no drop shadow */
+  border-bottom: 1px solid #c8c6c4;
   background: var(--surface);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
 }
 
 .ribbon-tabs {
@@ -244,21 +244,21 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* same box and 15px glyph as the slides ribbon's .qa-btn */
+  /* same box and 16px glyph as the slides ribbon's .qa-btn */
   width: 30px;
   height: 28px;
   padding: 0;
   border: none;
   border-radius: 4px;
-  color: var(--text-dim, #605e5c);
+  color: #232325;
   background: none;
   cursor: pointer;
 }
 
 .ribbon-tabs .qa-btn svg {
   display: block;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .ribbon-tabs .qa-btn:hover:not(:disabled) {
@@ -266,7 +266,10 @@ textarea:disabled {
 }
 
 .ribbon-tabs .qa-btn:disabled {
-  opacity: 0.55;
+  color: #909499;
+  /* neutralize the global button:disabled opacity so the glyph reads exactly
+     #909499, matching the docs and slides quick-access buttons */
+  opacity: 1;
   cursor: default;
 }
 
@@ -277,6 +280,7 @@ textarea:disabled {
   align-items: center;
   gap: 5px;
   cursor: pointer;
+  margin-left: 4px;
   margin-right: 4px;
   -webkit-app-region: no-drag;
   user-select: none;
@@ -393,21 +397,18 @@ textarea:disabled {
 }
 
 /* group separator: a hairline inset from the band's top/bottom, like the slides
-   ribbon's .ribbon-sep (a plain border-right would span the full 80px band) */
+   ribbon's .ribbon-sep (a plain border-right would span the full 80px band).
+   The 2px inset matches the groups' vertical padding, so the line spans exactly
+   the tallest group content (the two 30px rows) — same inset across all three
+   apps. */
 .ribbon-group::after {
   content: '';
   position: absolute;
-  top: 8px;
+  top: 2px;
   right: 0;
-  bottom: 8px;
+  bottom: 2px;
   width: 1px;
   background: var(--border);
-}
-
-/* The Genspark entry brings its own separator — drop the preceding group's
- * hairline so the two don't render as a double line */
-.ribbon-group:has(+ .ribbon-genspark-sep)::after {
-  display: none;
 }
 
 /* The AI group leads the band in every app: 4px side padding like the
@@ -544,10 +545,10 @@ textarea:disabled {
 }
 
 .ribbon-tool.ai-entry .ai-feature-icon svg {
-  /* 28px like the other tall-button glyphs (Paste etc.); the 24-unit viewBox's
-     1.5 stroke scales to 1.75px = 28/16, keeping the 1:16 stroke standard */
-  width: 28px;
-  height: 28px;
+  /* 24px renders the 24-unit viewBox 1:1, so the 1.5 stroke paints 1.5px,
+     keeping the 1:16 stroke standard */
+  width: 24px;
+  height: 24px;
 }
 
 /* The AI entry buttons read as one piece: hover/press tint the whole button
@@ -564,7 +565,8 @@ textarea:disabled {
 }
 
 .ribbon-tool.large.as-button.ai-entry.active {
-  background: var(--ribbon-active);
+  /* neutral gray, shared with the docs/slides Genspark entries */
+  background: #ebebeb;
 }
 
 .ribbon-tool.large.ai-entry:hover .tool-icon-row,
@@ -606,16 +608,8 @@ textarea:disabled {
   stroke-width: 1.3; /* 28px → ~1.5px */
 }
 
-.tool-stack .tool-symbol svg {
-  stroke-width: 1.9; /* 16px → ~1.27px */
-}
-
 .chart-grid .tool-symbol svg {
   stroke-width: 2.2; /* 13px → ~1.2px */
-}
-
-.ribbon-tabs .qa-btn svg {
-  stroke-width: 2; /* 15px → 1.25px */
 }
 
 .chev path {
@@ -714,7 +708,7 @@ textarea:disabled {
   display: grid;
   min-width: 24px;
   /* 3 stacked mini rows line up with one tall button, as in the slides ribbon's
-     .rb-clip-col (cut / copy / format painter): 24×20 buttons, gap 0, ~16px glyph */
+     .rb-clip-col (cut / copy / format painter): 24×20 buttons, gap 0, 14px glyph */
   height: 20px;
   place-items: center;
   border: none;
@@ -723,12 +717,6 @@ textarea:disabled {
   cursor: pointer;
   border-radius: var(--radius-small);
   font-size: 14px;
-}
-
-/* cut / copy / format painter glyphs match the slides ribbon's 16px svgs */
-.tool-stack .tool-symbol svg {
-  width: 16px;
-  height: 16px;
 }
 
 .tool-stack button:hover {
@@ -1234,7 +1222,8 @@ select.select-like {
 /* formula-bar row + spreadsheet */
 .sheet-main {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* name box / workbook / status bar */
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
@@ -3689,9 +3678,150 @@ textarea:focus {
 /* attachment chips above the composer */
 .ai-attachments {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 7px;
+  gap: 8px;
+  /* single row inside the prompt box, above the textarea (Genspark composer style):
+     extra images run past the box edge and scroll horizontally.
+     scroll (not auto) + zero bottom padding: the always-present 4px scrollbar lane
+     doubles as the bottom padding, so overflowing never grows the strip and
+     shifts its content up */
+  overflow-x: scroll;
+  padding: 13px 14px 0;
+  margin-bottom: -6px;
+}
+
+.ai-attachments > * {
+  flex-shrink: 0;
+}
+
+/* The 4px scrollbar lane is always reserved (no layout jump when it appears);
+   the thumb is painted only while scrolling (.is-scrolling from the strip's onScroll) */
+.ai-attachments::-webkit-scrollbar {
+  height: 4px;
+}
+
+.ai-attachments::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: transparent;
+}
+
+.ai-attachments.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 25%);
+}
+
+/* Image attachments: square thumbnail with a round dark remove button on its corner */
+.ai-attachment-thumb {
+  position: relative;
+}
+
+.ai-attachment-thumb img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.ai-attachment-thumb-remove {
+  position: absolute;
+  top: -10px;
+  right: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #000;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-attachment-thumb-remove:hover {
+  background: #4b4e51;
+}
+
+/* The card's 1px border shifts its absolutely-positioned button inward by 1px
+   on both axes; land the borderless thumbs' button on the exact same spot */
+.ai-attachment-thumb .ai-attachment-thumb-remove {
+  top: -9px;
+  right: -1px;
+}
+
+/* image thumb before its preview arrives (or when reading fails): neutral tile + type icon */
+.ai-attachment-thumb-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.ai-attachment-thumb .ai-attachment-thumb-pending img {
+  width: 26px;
+  height: 26px;
+}
+
+/* Non-image attachments (pdf, xlsx, …): fixed-width bordered card — brand type
+   icon + truncated name and size, same height and remove button as the thumbs */
+.ai-attachment-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 190px;
+  height: 56px;
+  padding: 0 14px 0 8px;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+/* the type icon sits in its own bordered white tile, like the Genspark card */
+.ai-attachment-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ai-attachment-card-icon img {
+  display: block;
+  width: 26px;
+  height: 26px;
+}
+
+.ai-attachment-card-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ai-attachment-card-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: #232425;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-attachment-card-size {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
 }
 
 .ai-attachment-chip {
@@ -3887,37 +4017,6 @@ textarea:focus {
   --univer-primary-600: currentColor;
 }
 
-/* Genspark entry at the Home ribbon's right end: vertical hairline + icon-over-label
- * button, same spec as the docs/slides ribbon AI button (28px mark, 11px/500 black label) */
-.ribbon-genspark-sep {
-  width: 1px;
-  align-self: stretch;
-  margin: 8px 6px;
-  background: var(--color-border-default);
-  flex-shrink: 0;
-}
-
-.ribbon-genspark-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 4px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.ribbon-genspark-btn:hover {
-  background: #f3f2f1;
-}
-
 .ai-msg-undelivered {
   margin-top: 6px;
   display: flex;
@@ -3954,4 +4053,51 @@ textarea:focus {
 
 .ai-login-btn:hover {
   opacity: 0.88;
+}
+
+/* ================= transient toast (save feedback) ================= */
+
+.app-toast {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(35, 35, 37, 0.92);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  max-width: 60vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-toast.error {
+  background: rgba(196, 49, 75, 0.95);
+}
+
+.app-toast-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.app-toast.success .app-toast-icon {
+  color: #34c759;
 }

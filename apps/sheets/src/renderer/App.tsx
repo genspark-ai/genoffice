@@ -276,6 +276,7 @@ import { planStillMatches } from './lazy-plan'
 import { netAxisDelta, screenToFile } from './view-transform'
 import { selectionFormatEquals, toSelectionFormat, type SelectionFormat } from './selection-format'
 import { ExcelShell } from './ExcelShell'
+import { ToastHost } from './toast'
 import { AdvancedFilterDialog, type AdvancedFilterColumn } from './AdvancedFilterDialog'
 import { SymbolDialog } from './SymbolDialog'
 import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPanel'
@@ -375,7 +376,7 @@ export function App(): React.JSX.Element {
       // whose first save opens a Save As dialog.
       if (editingCellRef.current || state.file.needsSaveAs) return
       saving = true
-      void handleSaveRef.current('save').finally(() => {
+      void handleSaveRef.current('save', true).finally(() => {
         saving = false
       })
     }
@@ -445,9 +446,9 @@ export function App(): React.JSX.Element {
   const menuActionRef = useRef<(action: MenuAction) => void>(() => {})
   /// Fresh handleSave for the AutoSave tick (assigned each render, like
   /// menuActionRef, so the interval closure never goes stale).
-  const handleSaveRef = useRef<(mode: 'save' | 'save-as' | 'recovery') => Promise<void>>(() =>
-    Promise.resolve(),
-  )
+  const handleSaveRef = useRef<
+    (mode: 'save' | 'save-as' | 'recovery', quiet?: boolean) => Promise<void>
+  >(() => Promise.resolve())
   const closeSaveRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const refreshSelectionFormatRef = useRef<() => void>(() => {})
   const chartEditRef = useRef<(chartPath: string, edit: ChartEditData) => void>(() => {})
@@ -839,10 +840,14 @@ export function App(): React.JSX.Element {
             }
             return lines.join('\n')
           })()
+          // A cancelled run must keep the "stopped" notice: earlier narration or
+          // tool summaries would make an aborted run read as completed.
           const prose =
             text && text !== COMPLETED_VIA_TOOLS_TEXT
               ? text
-              : runLastTextRef.current || toolSummaries || text
+              : cancelled
+                ? ''
+                : runLastTextRef.current || toolSummaries || text
           // A final empty turn must not claim completion: reuse the model's last
           // streamed text; with none, only a mutating run gets the "done" phrasing.
           const fallback = cancelled
@@ -2088,7 +2093,8 @@ export function App(): React.JSX.Element {
       setMessage(t('appAiChangesNotSaved'))
       return
     }
-    await handleSave('save')
+    // AutoSave-driven write after an AI run: silent like the interval autosave.
+    await handleSave('save', true)
     const after = lazyWorkbookRef.current
     if (after && journalSize(after.editJournal) === 0) {
       // Saving reopens the sidecar session and resets Univer's undo stack.
@@ -2790,8 +2796,8 @@ export function App(): React.JSX.Element {
     }
   }
 
-  async function handleSave(mode: 'save' | 'save-as' | 'recovery'): Promise<void> {
-    return handleSaveImpl(saveContext(), mode)
+  async function handleSave(mode: 'save' | 'save-as' | 'recovery', quiet = false): Promise<void> {
+    return handleSaveImpl(saveContext(), mode, quiet)
   }
   closeSaveRef.current = async () => {
     const state = lazyWorkbookRef.current
@@ -2957,6 +2963,7 @@ export function App(): React.JSX.Element {
 
   return (
     <>
+      <ToastHost />
       {chartDialog && chartDialogTarget && chartDialog.kind === 'format' && (
         <ChartFormatPane
           chart={chartDialogTarget.chart}
