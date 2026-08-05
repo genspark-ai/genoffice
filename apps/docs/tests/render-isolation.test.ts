@@ -188,6 +188,8 @@ function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     onOpen: noop,
     onSave: noop,
     onSaveAs: noop,
+    onExportMarkdown: noop,
+    onExportTxt: noop,
     showAi: false,
     onToggleAi: noop,
     section: null,
