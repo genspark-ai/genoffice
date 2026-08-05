@@ -2334,7 +2334,6 @@ function beginCodexCallback(expectedState: string): CodexCallbackHandle {
   let finish: ((result: { state: string; code: string }) => void) | undefined
   let fail: ((error: Error) => void) | undefined
   let settled = false
-  let timeout: ReturnType<typeof setTimeout> | undefined
   const close = () => {
     server?.close()
     server = undefined
@@ -2393,7 +2392,10 @@ function beginCodexCallback(expectedState: string): CodexCallbackHandle {
     server.once('error', () => reject(new Error('ChatGPT sign-in callback unavailable')))
     server.listen(CODEX_CALLBACK_PORT, '127.0.0.1')
   })
-  timeout = setTimeout(() => reject(new Error('ChatGPT sign-in timed out')), CODEX_LOGIN_TIMEOUT_MS)
+  const timeout = setTimeout(
+    () => reject(new Error('ChatGPT sign-in timed out')),
+    CODEX_LOGIN_TIMEOUT_MS,
+  )
   timeout.unref()
   return {
     wait,

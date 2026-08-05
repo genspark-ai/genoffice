@@ -506,7 +506,7 @@ export async function streamForProvider(
         messages,
         tools,
         model: config.model,
-        reasoningEffort: config.reasoningEffort,
+        ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
         signal: cb.signal,
         onDelta: cb.onDelta,
         onToolCall: cb.onToolCall,

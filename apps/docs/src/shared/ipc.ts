@@ -24,7 +24,6 @@ import type {
   AiStreamRequest,
   CodexAccountStatus,
   CodexCapabilities,
-  CodexReasoningEffort,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 
