@@ -636,6 +636,73 @@ function runMarks(run: Run): PmMark[] {
 
 // ---- ProseMirror doc -> SaveBlock[] (dirty detection via content signatures) ----
 
+/**
+ * Rebuild an "effective" Block[] straight from the live ProseMirror doc:
+ * the exact current content (edited runs, table cell text, deletions gone)
+ * without touching the original file. Used by Markdown / plain-text export.
+ */
+export function pmDocToBlocks(doc: PmNode, originalBlocks: Block[]): Block[] {
+  const originalByIndex = new Map<number, Block>()
+  for (const block of originalBlocks) {
+    if (!block.hidden && block.docxIndex !== null) originalByIndex.set(block.docxIndex, block)
+  }
+  const out: Block[] = []
+  for (const node of doc.content ?? []) {
+    const runs = inlineToRuns(node.content ?? [])
+    switch (node.type) {
+      case 'docHeading':
+        out.push({
+          id: `x${out.length}`,
+          type: 'heading',
+          docxIndex: null,
+          originalXml: null,
+          level: Math.max(1, Math.min(9, Number(node.attrs?.level) || 1)),
+          runs,
+        })
+        break
+      case 'docListItem':
+        out.push({
+          id: `x${out.length}`,
+          type: 'listItem',
+          docxIndex: null,
+          originalXml: null,
+          list: {
+            kind: (node.attrs?.kind as 'bullet' | 'ordered') ?? 'bullet',
+            numId: String(node.attrs?.numId ?? ''),
+            ilvl: Number(node.attrs?.ilvl) || 0,
+          },
+          runs,
+        })
+        break
+      case 'docTable':
+        out.push({
+          id: `x${out.length}`,
+          type: 'table',
+          docxIndex: null,
+          originalXml: null,
+          table: pmTableToModel(node),
+        })
+        break
+      case 'docProtected': {
+        const idx = node.attrs?.docxIndex as number | null
+        const original = idx !== null && idx !== undefined ? originalByIndex.get(idx) : undefined
+        if (original) out.push(original)
+        break
+      }
+      default:
+        out.push({
+          id: `x${out.length}`,
+          type: 'paragraph',
+          docxIndex: null,
+          originalXml: null,
+          runs,
+        })
+        break
+    }
+  }
+  return out
+}
+
 export interface SavePlan {
   saveBlocks: SaveBlock[]
   /**

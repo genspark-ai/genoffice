@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   AccountStatus,
   HomeApi,
+  MemoryEntryItem,
   RecentEntry,
   RecentPage,
   RenameResult,
@@ -170,6 +171,20 @@ const projectApi: ProjectHomeApi = {
       limit,
     })
     return Array.isArray(result) ? (result as TimelineEntryItem[]) : []
+  },
+  async getMemory(projectId) {
+    const result: unknown = await ipcRenderer.invoke(PROJECT_CHANNELS.getMemory, projectId)
+    return Array.isArray(result) ? (result as MemoryEntryItem[]) : []
+  },
+  async addMemory(projectId, text) {
+    const result: unknown = await ipcRenderer.invoke(PROJECT_CHANNELS.addMemory, { projectId, text })
+    return result as MemoryEntryItem
+  },
+  async removeMemory(projectId, id) {
+    await ipcRenderer.invoke(PROJECT_CHANNELS.removeMemory, { projectId, id })
+  },
+  async clearMemory(projectId) {
+    await ipcRenderer.invoke(PROJECT_CHANNELS.clearMemory, projectId)
   },
 }
 

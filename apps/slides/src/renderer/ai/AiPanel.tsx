@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { AgentLoop, composeSkills, type AgentImage, type ToolDisplay } from '@genoffice/agent-core'
+import { AgentLoop, composeSkills, type AgentImage, type MemoryStoreAdapter, type ToolDisplay } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -280,6 +280,32 @@ export function AiPanel({
   const stickToBottomRef = useRef(true)
   /** Current chat's projectId/chatId, set after resolve succeeds */
   const chatRefIds = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** Project memory adapter (refs stay fresh; tools/context read the latest state) */
+  const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
+  const memoryProjectIdRef = useRef<string | null>(null)
+  const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const memoryRef = useRef<MemoryStoreAdapter | null>(null)
+  if (!memoryRef.current) {
+    memoryRef.current = {
+      available: () => memoryProjectIdRef.current !== null && memoryApiRef.current !== null,
+      entries: () => memoryEntriesRef.current,
+      add: async (text) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) throw new Error('No resolved project for memory.')
+        const entry = await api.addMemory({ projectId, text })
+        memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        return entry
+      },
+      remove: async (id) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) return
+        await api.removeMemory({ projectId, id })
+        memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+      },
+    }
+  }
 
   // The loop instance survives across renders; closures read refs for the latest state
   const slidesRef = useRef(slides)
@@ -328,6 +354,11 @@ export function AiPanel({
       .resolveChat({ filePath: currentFilePath ?? null, tempChatId })
       .then((ids) => {
         chatRefIds.current = ids
+        memoryApiRef.current = api
+        memoryProjectIdRef.current = ids.projectId
+        void api.getMemory(ids.projectId).then((entries) => {
+          if (Array.isArray(entries)) memoryEntriesRef.current = entries
+        })
         return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
       })
       .then((msgs) => {
@@ -925,7 +956,7 @@ export function AiPanel({
       transport: createElectronTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
       skill: composeSkills('slides+files', '', [
-        createSlidesSkill(access),
+        createSlidesSkill(access, memoryRef.current),
         createFilesSkill(
           () => attachmentsRef.current,
           (path) => readAttachmentPathsRef.current.add(path),

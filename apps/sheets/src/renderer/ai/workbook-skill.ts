@@ -1,4 +1,5 @@
-import type { AgentSkill } from '@genoffice/agent-core'
+import type { AgentSkill, MemoryStoreAdapter } from '@genoffice/agent-core'
+import { createMemoryTools } from '@genoffice/agent-core'
 import basePrompt from './prompts/base.md?raw'
 import {
   WORKBOOK_TOOLS,
@@ -17,12 +18,22 @@ import {
  * definitions and conventions live in prompts/guides/*.md, loaded on demand
  * via load_guide.
  */
-export function createWorkbookSkill(deps: SheetsSkillDeps): AgentSkill {
+export function createWorkbookSkill(deps: SheetsSkillDeps, memory?: MemoryStoreAdapter): AgentSkill {
+  const memoryTools = memory ? createMemoryTools(memory) : null
   return {
     id: 'sheets',
     systemPrompt: basePrompt,
-    tools: WORKBOOK_TOOLS,
-    buildContext: () => buildWorkbookContext(deps),
-    executeTool: (call) => executeWorkbookTool(call, deps),
+    tools: [...WORKBOOK_TOOLS, ...(memoryTools?.tools ?? [])],
+    buildContext: () => {
+      const base = buildWorkbookContext(deps)
+      const memorySection = memoryTools?.contextSection()
+      return memorySection ? `${base}\n\n${memorySection}` : base
+    },
+    executeTool: (call) => {
+      if (memoryTools && (call.name === 'remember_memory' || call.name === 'forget_memory')) {
+        return memoryTools.execute(call)
+      }
+      return executeWorkbookTool(call, deps)
+    },
   }
 }

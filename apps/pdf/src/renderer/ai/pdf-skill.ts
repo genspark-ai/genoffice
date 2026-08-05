@@ -1,4 +1,5 @@
-import type { AgentSkill } from '@genoffice/agent-core'
+import type { AgentSkill, MemoryStoreAdapter } from '@genoffice/agent-core'
+import { createMemoryTools } from '@genoffice/agent-core'
 import { AGENT_TOOLS, executePdfTool } from './tools'
 import type { PdfAiDeps } from './tools'
 
@@ -16,11 +17,12 @@ const SYSTEM_PROMPT = `You are GenOffice's PDF assistant, helping the user read,
 - All modifications are in an unsaved state; when done, remind the user they can save with ⌘S and undo with ⌘Z.
 - Cite page numbers when quoting document content. Answer in Markdown and keep it concise.`
 
-export function createPdfSkill(deps: PdfAiDeps): AgentSkill {
+export function createPdfSkill(deps: PdfAiDeps, memory?: MemoryStoreAdapter): AgentSkill {
+  const memoryTools = memory ? createMemoryTools(memory) : null
   return {
     id: 'pdf',
     systemPrompt: SYSTEM_PROMPT,
-    tools: AGENT_TOOLS,
+    tools: [...AGENT_TOOLS, ...(memoryTools?.tools ?? [])],
     buildContext: () => {
       const parts = [
         `Current document: "${deps.fileName()}", ${deps.pageCount()} pages; the user is viewing page ${deps.currentPage()}.`,
@@ -33,8 +35,15 @@ export function createPdfSkill(deps: PdfAiDeps): AgentSkill {
           `The document has an outline (${outline.length} top-level entries); use get_outline to view it.`,
         )
       }
+      const memorySection = memoryTools?.contextSection()
+      if (memorySection) parts.push(memorySection)
       return parts.join('\n')
     },
-    executeTool: (call) => executePdfTool(deps, call),
+    executeTool: (call) => {
+      if (memoryTools && (call.name === 'remember_memory' || call.name === 'forget_memory')) {
+        return memoryTools.execute(call)
+      }
+      return executePdfTool(deps, call)
+    },
   }
 }

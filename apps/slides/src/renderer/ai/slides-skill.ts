@@ -1,4 +1,5 @@
-import type { AgentSkill, ToolDisplay } from '@genoffice/agent-core'
+import type { AgentSkill, MemoryStoreAdapter, ToolDisplay } from '@genoffice/agent-core'
+import { createMemoryTools } from '@genoffice/agent-core'
 import type {
   GroupRenderNode,
   PictureRenderNode,
@@ -1394,20 +1395,28 @@ export function formatSlideDump(slide: RenderSlide): string {
   return `Canvas ${slide.widthPx}×${slide.heightPx}px\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
 }
 
-export function createSlidesSkill(access: DeckAccess): AgentSkill {
+export function createSlidesSkill(access: DeckAccess, memory?: MemoryStoreAdapter): AgentSkill {
   // The HTML pipeline was already used in this conversation → later calls without an explicit mode default to append.
   // Safety net for when the AI ignores the "pass all pages at once" constraint: separate calls no longer overwrite each other (P0-1).
   const state: SkillState = { htmlGenerated: false }
+  const memoryTools = memory ? createMemoryTools(memory) : null
   return {
     id: 'slides',
     systemPrompt: AGENT_SYSTEM_PROMPT,
-    tools: TOOLS,
+    tools: [...TOOLS, ...(memoryTools?.tools ?? [])],
     buildContext: () => {
       const outline = `<deck outline>\n${buildDeckOutline(access.getSlides(), access.getCurrent(), access.getSelectedIds())}\n</deck outline>`
       const progress = buildProgressNote(state)
-      return progress ? `${outline}\n${progress}` : outline
+      const base = progress ? `${outline}\n${progress}` : outline
+      const memorySection = memoryTools?.contextSection()
+      return memorySection ? `${base}\n\n${memorySection}` : base
     },
-    executeTool: (call, signal) => executeTool(access, call, state, signal),
+    executeTool: (call, signal) => {
+      if (memoryTools && (call.name === 'remember_memory' || call.name === 'forget_memory')) {
+        return memoryTools.execute(call)
+      }
+      return executeTool(access, call, state, signal)
+    },
   }
 }
 

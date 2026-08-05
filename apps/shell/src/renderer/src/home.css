@@ -1492,3 +1492,104 @@ body.vib .home {
   font-variant-numeric: tabular-nums;
   padding-top: 1px;
 }
+
+/* ── Project AI memory (Phase 1 quick win) ─────────────── */
+
+.memory-section {
+  margin-top: 28px;
+}
+
+.mem-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 4px 2px;
+}
+
+.memory-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.memory-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.memory-item + .memory-item {
+  border-top: 1px solid #efefef;
+}
+
+.memory-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.memory-delete {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.memory-delete:hover {
+  background: var(--surface-subtle);
+  color: #d5484f;
+}
+
+.memory-add {
+  display: flex;
+  gap: 8px;
+}
+
+.memory-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.memory-input:focus {
+  border-color: var(--accent);
+}
+
+.memory-add-btn {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.memory-add-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

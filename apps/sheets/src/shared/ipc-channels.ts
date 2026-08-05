@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   closeSaveRequest: 'workbook:close-save-request',
   closeSaveResult: 'workbook:close-save-result',
   exportPdf: 'workbook:export-pdf',
+  exportCsv: 'workbook:export-csv',
   openExternal: 'shell:open-external',
   menuAction: 'menu:action',
   aiGetSettings: 'ai:get-settings',

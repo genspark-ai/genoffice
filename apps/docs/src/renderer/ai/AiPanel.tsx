@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
-import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import { AgentLoop, composeSkills, type AgentImage, type MemoryStoreAdapter } from '@genoffice/agent-core'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
@@ -195,6 +195,32 @@ export function AiPanel({
   const stickToBottomRef = useRef(true)
   /** projectId/chatId of the current chat */
   const chatRefIds = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** project memory: resolved project + cached entries (fed to buildContext and the memory tools) */
+  const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
+  const memoryProjectIdRef = useRef<string | null>(null)
+  const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const memoryRef = useRef<MemoryStoreAdapter | null>(null)
+  if (!memoryRef.current) {
+    memoryRef.current = {
+      available: () => memoryProjectIdRef.current !== null && memoryApiRef.current !== null,
+      entries: () => memoryEntriesRef.current,
+      add: async (text) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) throw new Error('No resolved project for memory.')
+        const entry = await api.addMemory({ projectId, text })
+        memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        return entry
+      },
+      remove: async (id) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) return
+        await api.removeMemory({ projectId, id })
+        memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+      },
+    }
+  }
 
   // latest props for the loop's closures (the loop instance outlives renders)
   const editorRef = useRef(editor)
@@ -243,6 +269,11 @@ export function AiPanel({
       .resolveChat({ filePath: filePath ?? null, tempChatId })
       .then((ids) => {
         chatRefIds.current = ids
+        memoryApiRef.current = api
+        memoryProjectIdRef.current = ids.projectId
+        void api.getMemory(ids.projectId).then((entries) => {
+          if (Array.isArray(entries)) memoryEntriesRef.current = entries
+        })
         return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
       })
       .then((msgs) => {
@@ -348,6 +379,7 @@ export function AiPanel({
           () => editorRef.current,
           numIds,
           () => (trackChangesRef.current ? { author: AI_REVISION_AUTHOR } : undefined),
+          memoryRef.current,
         ),
         createFilesSkill(() => attachmentsRef.current),
       ]),

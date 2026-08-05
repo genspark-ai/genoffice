@@ -360,5 +360,11 @@ const projectApi: ProjectApi = {
   deleteProject: (args) => ipcRenderer.invoke('project:delete', args),
   moveFile: (args) => ipcRenderer.invoke('project:moveFile', args),
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
+
+  // AI memory
+  getMemory: (projectId) => ipcRenderer.invoke('project:getMemory', projectId),
+  addMemory: (args) => ipcRenderer.invoke('project:addMemory', args),
+  removeMemory: (args) => ipcRenderer.invoke('project:removeMemory', args),
+  clearMemory: (projectId) => ipcRenderer.invoke('project:clearMemory', projectId),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)

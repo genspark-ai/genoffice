@@ -7,6 +7,7 @@ import iconPdf from './assets/file-pdf.svg'
 import type {
   AccountStatus,
   HomeApi,
+  MemoryEntryItem,
   ProjectHomeApi,
   ProjectSummaryEntry,
   RecentEntry,
@@ -835,6 +836,31 @@ export function Home() {
   // refresh signal for project-view data (re-pull file stats after file changes)
   const [projectTick, setProjectTick] = useState(0)
 
+  // ── Project AI memory ──
+  const [memoryEntries, setMemoryEntries] = useState<MemoryEntryItem[]>([])
+  const [memoryDraft, setMemoryDraft] = useState('')
+  useEffect(() => {
+    if (!projectMode || !selectedProjectId) {
+      setMemoryEntries([])
+      return
+    }
+    void window.aiOfficeProject!.getMemory(selectedProjectId).then(setMemoryEntries)
+  }, [projectMode, selectedProjectId, projectTick])
+
+  async function addMemoryEntry(text: string): Promise<void> {
+    const trimmed = text.trim()
+    if (!projectMode || !selectedProjectId || !trimmed) return
+    setMemoryDraft('')
+    const entry = await window.aiOfficeProject!.addMemory(selectedProjectId, trimmed)
+    setMemoryEntries((prev) => [entry, ...prev.filter((e) => e.id !== entry.id)])
+  }
+
+  async function deleteMemoryEntry(id: string): Promise<void> {
+    if (!projectMode || !selectedProjectId) return
+    await window.aiOfficeProject!.removeMemory(selectedProjectId, id)
+    setMemoryEntries((prev) => prev.filter((e) => e.id !== id))
+  }
+
   const refresh = () => {
     reloadRef.current(true)
     setProjectTick((n) => n + 1)
@@ -1489,6 +1515,59 @@ export function Home() {
               </ul>
             </div>
           )}
+        </section>
+
+        <section className="recents memory-section" aria-label={t('secProjectMemory')}>
+          <div className="recents-toolbar">
+            <div className="recents-heading">
+              <span className="section-label">{t('secProjectMemory')}</span>
+              <span className="file-count">{t(fileCountKey(memoryEntries.length), { n: memoryEntries.length })}</span>
+            </div>
+          </div>
+          {memoryEntries.length === 0 ? (
+            <p className="empty mem-empty">{t('memEmpty')}</p>
+          ) : (
+            <ul className="memory-list">
+              {memoryEntries.map((entry) => (
+                <li key={entry.id} className="memory-item">
+                  <span className="memory-text">{entry.text}</span>
+                  <button
+                    className="memory-delete"
+                    title={t('memDelete')}
+                    aria-label={t('memDelete')}
+                    onClick={() => void deleteMemoryEntry(entry.id)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M6 6l12 12M18 6L6 18"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            className="memory-add"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void addMemoryEntry(memoryDraft)
+            }}
+          >
+            <input
+              className="memory-input"
+              value={memoryDraft}
+              onChange={(event) => setMemoryDraft(event.target.value)}
+              placeholder={t('memAddPlaceholder')}
+              maxLength={2000}
+            />
+            <button type="submit" className="memory-add-btn" disabled={!memoryDraft.trim()}>
+              {t('memAdd')}
+            </button>
+          </form>
         </section>
       </main>
     )

@@ -2,9 +2,9 @@
  * IPC interface type definitions (shared by the renderer and main processes).
  * No Electron dependency; importable from the renderer.
  */
-import type { ChatAttachment, ChatMessage, ChatMeta, ProjectSummary, TimelineEntry, ToolActivity } from './types.js'
+import type { ChatAttachment, ChatMessage, ChatMeta, MemoryEntry, ProjectSummary, TimelineEntry, ToolActivity } from './types.js'
 
-export type { ChatAttachment, ChatMessage, ChatMeta, ProjectSummary, TimelineEntry, ToolActivity }
+export type { ChatAttachment, ChatMessage, ChatMeta, MemoryEntry, ProjectSummary, TimelineEntry, ToolActivity }
 
 export interface AppendChatArgs {
   projectId: string
@@ -71,6 +71,16 @@ export interface GetTimelineArgs {
   limit?: number
 }
 
+export interface AddMemoryArgs {
+  projectId: string
+  text: string
+}
+
+export interface RemoveMemoryArgs {
+  projectId: string
+  id: string
+}
+
 /** Project storage API the main process exposes to the renderer */
 export interface ProjectApi {
   /**
@@ -97,4 +107,13 @@ export interface ProjectApi {
   moveFile(args: MoveFileArgs): Promise<void>
   /** Gets the project timeline */
   getTimeline(args: GetTimelineArgs): Promise<TimelineEntry[]>
+  // ── AI memory ──
+  /** Reads the project's AI memory entries (newest first) */
+  getMemory(projectId: string): Promise<MemoryEntry[]>
+  /** Appends one AI memory entry; returns it (with id/ts) */
+  addMemory(args: AddMemoryArgs): Promise<MemoryEntry>
+  /** Deletes one AI memory entry by id (no-op when unknown) */
+  removeMemory(args: RemoveMemoryArgs): Promise<void>
+  /** Clears all AI memory entries for the project */
+  clearMemory(projectId: string): Promise<void>
 }

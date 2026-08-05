@@ -19,6 +19,8 @@ export interface PickImageResult {
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiProviderConfig,
+  AiProviderId,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
@@ -131,6 +133,8 @@ export type MenuCommand =
   | 'find'
   | 'print'
   | 'export-pdf'
+  | 'export-markdown'
+  | 'export-txt'
   | 'word-count'
 
 export interface DesktopApi {
@@ -175,6 +179,13 @@ export interface DesktopApi {
     defaultName: string,
     pageWidthTwips: number,
     pageHeightTwips: number,
+    outPath?: string,
+  ): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** export the document body as Markdown (.md) or plain text (.txt) and ask where to save */
+  exportText(
+    defaultName: string,
+    ext: 'md' | 'txt',
+    content: string,
     outPath?: string,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   /** Mixed paper-size export: produce a set of PDF bytes (base64) at given sizes per the current print layout */

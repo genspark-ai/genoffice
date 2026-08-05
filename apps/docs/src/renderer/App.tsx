@@ -113,7 +113,9 @@ import {
   type PendingNumbering,
 } from './doc-state'
 import {
+  exportMarkdown as exportMarkdownImpl,
   exportPdf as exportPdfImpl,
+  exportText as exportTextImpl,
   loadFile as loadFileImpl,
   newFile as newFileImpl,
   save as saveImpl,
@@ -1215,6 +1217,16 @@ export function App() {
     [],
   )
 
+  const exportMarkdown = useCallback(
+    (outPath?: string) => exportMarkdownImpl(fileCtxRef.current, outPath),
+    [],
+  )
+
+  const exportPlainText = useCallback(
+    (outPath?: string) => exportTextImpl(fileCtxRef.current, 'txt', outPath),
+    [],
+  )
+
   // for real-device verification: trigger export directly via CDP (same as __pageDebug)
   useEffect(() => {
     ;(window as unknown as Record<string, unknown>).__exportPdf = exportPdf
@@ -2186,6 +2198,12 @@ export function App() {
         case 'export-pdf':
           void exportPdf()
           break
+        case 'export-markdown':
+          void exportMarkdown()
+          break
+        case 'export-txt':
+          void exportPlainText()
+          break
       }
     })
   }, [
@@ -2196,6 +2214,8 @@ export function App() {
     openRecent,
     save,
     exportPdf,
+    exportMarkdown,
+    exportPlainText,
     zoomFit,
     openStats,
     startNewComment,
@@ -2267,8 +2287,9 @@ export function App() {
       save: () => save(false),
       getStatus: () => status,
       exportPdfTo: (path: string) => exportPdf(path),
+      exportMarkdownTo: (path: string) => exportMarkdown(path),
     }
-  }, [editor, openRecent, save, status, exportPdf])
+  }, [editor, openRecent, save, status, exportPdf, exportMarkdown])
 
   if (!editor) return null
 

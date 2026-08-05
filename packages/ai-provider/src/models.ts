@@ -48,7 +48,7 @@ async function listOpenRouter(freeOnly: boolean): Promise<ModelListEntry[]> {
       m.pricing?.prompt === '0' && m.pricing?.completion === '0'
     const free = zero || m.id.endsWith(':free')
     if (freeOnly && !free) continue
-    out.push({ id: m.id, label: m.name, free })
+    out.push({ id: m.id, ...(m.name ? { label: m.name } : {}), free })
   }
   out.sort((a, b) => (a.free === b.free ? a.id.localeCompare(b.id) : a.free ? -1 : 1))
   if (freeOnly) {
@@ -85,7 +85,7 @@ async function listAnthropic(apiKey: string): Promise<ModelListEntry[]> {
   for (const m of json.data ?? []) {
     if (!m.id) continue
     if (/(tool|embedding)/.test(m.id)) continue
-    out.push({ id: m.id, label: m.display_name, free: false })
+    out.push({ id: m.id, ...(m.display_name ? { label: m.display_name } : {}), free: false })
   }
   return out
 }

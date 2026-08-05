@@ -13,6 +13,8 @@ export type {
 } from './types'
 export { composeSkills } from './skill'
 export type { AgentSkill } from './skill'
+export { createMemoryTools } from './memory'
+export type { MemoryEntryLike, MemoryStoreAdapter, MemoryTools } from './memory'
 export { AgentLoop } from './loop'
 export type {
   AgentLoopEvents,

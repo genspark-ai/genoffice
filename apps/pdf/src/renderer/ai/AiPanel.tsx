@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop } from '@genoffice/agent-core'
+import { AgentLoop, type MemoryStoreAdapter } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
@@ -74,6 +74,53 @@ export function AiPanel({
   const apiRef = useRef(api)
   apiRef.current = api
 
+  // Project memory: resolved into the default project on mount; tools/context
+  // read the latest state through refs (PDF files have no per-file project yet)
+  const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
+  const memoryProjectIdRef = useRef<string | null>(null)
+  const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const memoryRef = useRef<MemoryStoreAdapter | null>(null)
+  if (!memoryRef.current) {
+    memoryRef.current = {
+      available: () => memoryProjectIdRef.current !== null && memoryApiRef.current !== null,
+      entries: () => memoryEntriesRef.current,
+      add: async (text) => {
+        const projectApi = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!projectApi || !projectId) throw new Error('No resolved project for memory.')
+        const entry = await projectApi.addMemory({ projectId, text })
+        memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        return entry
+      },
+      remove: async (id) => {
+        const projectApi = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!projectApi || !projectId) return
+        await projectApi.removeMemory({ projectId, id })
+        memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+      },
+    }
+  }
+
+  // Resolve the default project once (memory persistence; no per-file history)
+  useEffect(() => {
+    const projectApi = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    if (!projectApi) return
+    void projectApi
+      .resolveChat({ filePath: null, tempChatId: `unsaved-pdf-${Date.now()}` })
+      .then((ids) => {
+        memoryApiRef.current = projectApi
+        memoryProjectIdRef.current = ids.projectId
+        return projectApi.getMemory(ids.projectId)
+      })
+      .then((entries) => {
+        if (Array.isArray(entries)) memoryEntriesRef.current = entries
+      })
+      .catch(() => {
+        /* silent */
+      })
+  }, [])
+
   const patchLast = (patch: Partial<ChatEntry> | ((last: ChatEntry) => Partial<ChatEntry>)) => {
     setChat((prev) => {
       const next = [...prev]
@@ -105,7 +152,7 @@ export function AiPanel({
     }
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),
-      skill: createPdfSkill(deps),
+      skill: createPdfSkill(deps, memoryRef.current),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {

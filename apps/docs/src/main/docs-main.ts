@@ -119,6 +119,8 @@ const tMain = createI18n({
     menuSaveAs: '另存为…',
     menuPageSetup: '页面设置…',
     menuExportPdf: '导出为 PDF…',
+    menuExportMarkdown: '导出为 Markdown…',
+    menuExportTxt: '导出为纯文本…',
     menuPrint: '打印…',
     menuEdit: '编辑',
     menuUndo: '撤销',
@@ -210,6 +212,8 @@ const tMain = createI18n({
     menuSaveAs: 'Save As…',
     menuPageSetup: 'Page Setup…',
     menuExportPdf: 'Export as PDF…',
+    menuExportMarkdown: 'Export as Markdown…',
+    menuExportTxt: 'Export as Plain Text…',
     menuPrint: 'Print…',
     menuEdit: 'Edit',
     menuUndo: 'Undo',
@@ -301,6 +305,8 @@ const tMain = createI18n({
     menuSaveAs: '名前を付けて保存…',
     menuPageSetup: 'ページ設定…',
     menuExportPdf: 'PDF としてエクスポート…',
+    menuExportMarkdown: 'Markdown としてエクスポート…',
+    menuExportTxt: 'プレーンテキストとしてエクスポート…',
     menuPrint: '印刷…',
     menuEdit: '編集',
     menuUndo: '元に戻す',
@@ -393,6 +399,8 @@ const tMain = createI18n({
     menuSaveAs: '다른 이름으로 저장…',
     menuPageSetup: '페이지 설정…',
     menuExportPdf: 'PDF로 내보내기…',
+    menuExportMarkdown: 'Markdown으로 내보내기…',
+    menuExportTxt: '일반 텍스트로 내보내기…',
     menuPrint: '인쇄…',
     menuEdit: '편집',
     menuUndo: '실행 취소',
@@ -486,6 +494,8 @@ const tMain = createI18n({
     menuSaveAs: 'Enregistrer sous…',
     menuPageSetup: 'Mise en page…',
     menuExportPdf: 'Exporter au format PDF…',
+    menuExportMarkdown: 'Exporter au format Markdown…',
+    menuExportTxt: 'Exporter en texte brut…',
     menuPrint: 'Imprimer…',
     menuEdit: 'Édition',
     menuUndo: 'Annuler',
@@ -579,6 +589,8 @@ const tMain = createI18n({
     menuSaveAs: 'Speichern unter…',
     menuPageSetup: 'Seite einrichten…',
     menuExportPdf: 'Als PDF exportieren…',
+    menuExportMarkdown: 'Als Markdown exportieren…',
+    menuExportTxt: 'Als Nur-Text exportieren…',
     menuPrint: 'Drucken…',
     menuEdit: 'Bearbeiten',
     menuUndo: 'Rückgängig',
@@ -671,6 +683,8 @@ const tMain = createI18n({
     menuSaveAs: 'Guardar como…',
     menuPageSetup: 'Configurar página…',
     menuExportPdf: 'Exportar como PDF…',
+    menuExportMarkdown: 'Exportar como Markdown…',
+    menuExportTxt: 'Exportar como texto plano…',
     menuPrint: 'Imprimir…',
     menuEdit: 'Edición',
     menuUndo: 'Deshacer',
@@ -762,6 +776,8 @@ const tMain = createI18n({
     menuSaveAs: 'บันทึกเป็น…',
     menuPageSetup: 'ตั้งค่าหน้ากระดาษ…',
     menuExportPdf: 'ส่งออกเป็น PDF…',
+    menuExportMarkdown: 'ส่งออกเป็น Markdown…',
+    menuExportTxt: 'ส่งออกเป็นข้อความธรรมดา…',
     menuPrint: 'พิมพ์…',
     menuEdit: 'แก้ไข',
     menuUndo: 'เลิกทำ',
@@ -853,6 +869,8 @@ const tMain = createI18n({
     menuSaveAs: 'Simpan Sebagai…',
     menuPageSetup: 'Penyetelan Halaman…',
     menuExportPdf: 'Ekspor sebagai PDF…',
+    menuExportMarkdown: 'Ekspor sebagai Markdown…',
+    menuExportTxt: 'Ekspor sebagai teks biasa…',
     menuPrint: 'Cetak…',
     menuEdit: 'Edit',
     menuUndo: 'Urungkan',
@@ -945,6 +963,8 @@ const tMain = createI18n({
     menuSaveAs: 'Сохранить как…',
     menuPageSetup: 'Параметры страницы…',
     menuExportPdf: 'Экспорт в PDF…',
+    menuExportMarkdown: 'Экспорт в Markdown…',
+    menuExportTxt: 'Экспорт в обычный текст…',
     menuPrint: 'Печать…',
     menuEdit: 'Правка',
     menuUndo: 'Отменить',
@@ -1037,6 +1057,8 @@ const tMain = createI18n({
     menuSaveAs: 'حفظ باسم…',
     menuPageSetup: 'إعداد الصفحة…',
     menuExportPdf: 'تصدير بتنسيق PDF…',
+    menuExportMarkdown: 'تصدير بتنسيق Markdown…',
+    menuExportTxt: 'تصدير كنص عادي…',
     menuPrint: 'طباعة…',
     menuEdit: 'تحرير',
     menuUndo: 'تراجع',
@@ -1129,6 +1151,8 @@ const tMain = createI18n({
     menuSaveAs: 'Salvar Como…',
     menuPageSetup: 'Configurar Página…',
     menuExportPdf: 'Exportar como PDF…',
+    menuExportMarkdown: 'Exportar como Markdown…',
+    menuExportTxt: 'Exportar como texto simples…',
     menuPrint: 'Imprimir…',
     menuEdit: 'Editar',
     menuUndo: 'Desfazer',
@@ -1221,6 +1245,8 @@ const tMain = createI18n({
     menuSaveAs: 'Salva con nome…',
     menuPageSetup: 'Imposta pagina…',
     menuExportPdf: 'Esporta come PDF…',
+    menuExportMarkdown: 'Esporta come Markdown…',
+    menuExportTxt: 'Esporta come testo semplice…',
     menuPrint: 'Stampa…',
     menuEdit: 'Modifica',
     menuUndo: 'Annulla',
@@ -1313,6 +1339,8 @@ const tMain = createI18n({
     menuSaveAs: 'Zapisz jako…',
     menuPageSetup: 'Ustawienia strony…',
     menuExportPdf: 'Eksportuj jako PDF…',
+    menuExportMarkdown: 'Eksportuj jako Markdown…',
+    menuExportTxt: 'Eksportuj jako zwykły tekst…',
     menuPrint: 'Drukuj…',
     menuEdit: 'Edycja',
     menuUndo: 'Cofnij',
@@ -1405,6 +1433,8 @@ const tMain = createI18n({
     menuSaveAs: 'Opslaan als…',
     menuPageSetup: 'Pagina-instelling…',
     menuExportPdf: 'Exporteren als PDF…',
+    menuExportMarkdown: 'Exporteren als Markdown…',
+    menuExportTxt: 'Exporteren als platte tekst…',
     menuPrint: 'Afdrukken…',
     menuEdit: 'Bewerken',
     menuUndo: 'Ongedaan maken',
@@ -1497,6 +1527,8 @@ const tMain = createI18n({
     menuSaveAs: 'Simpan Sebagai…',
     menuPageSetup: 'Persediaan Halaman…',
     menuExportPdf: 'Eksport sebagai PDF…',
+    menuExportMarkdown: 'Eksport sebagai Markdown…',
+    menuExportTxt: 'Eksport sebagai teks biasa…',
     menuPrint: 'Cetak…',
     menuEdit: 'Edit',
     menuUndo: 'Buat Asal',
@@ -1587,6 +1619,8 @@ const tMain = createI18n({
     menuSaveAs: 'שמירה בשם…',
     menuPageSetup: 'הגדרת עמוד…',
     menuExportPdf: 'ייצוא כ-PDF…',
+    menuExportMarkdown: 'ייצוא כ-Markdown…',
+    menuExportTxt: 'ייצוא כטקסט פשוט…',
     menuPrint: 'הדפסה…',
     menuEdit: 'עריכה',
     menuUndo: 'בטל',
@@ -1679,6 +1713,8 @@ const tMain = createI18n({
     menuSaveAs: 'इस रूप में सहेजें…',
     menuPageSetup: 'पृष्ठ सेटअप…',
     menuExportPdf: 'PDF के रूप में निर्यात करें…',
+    menuExportMarkdown: 'Markdown के रूप में निर्यात करें…',
+    menuExportTxt: 'सादा पाठ के रूप में निर्यात करें…',
     menuPrint: 'प्रिंट करें…',
     menuEdit: 'संपादन',
     menuUndo: 'पूर्ववत करें',
@@ -1768,6 +1804,8 @@ const tMain = createI18n({
     menuSaveAs: '另存新檔…',
     menuPageSetup: '版面設定…',
     menuExportPdf: '匯出為 PDF…',
+    menuExportMarkdown: '匯出為 Markdown…',
+    menuExportTxt: '匯出為純文字…',
     menuPrint: '列印…',
     menuEdit: '編輯',
     menuUndo: '復原',
@@ -2646,6 +2684,28 @@ export function registerProjectIpc(): void {
   ipcMain.handle('project:timeline', (_event, args: { projectId: string; limit?: number }) => {
     return getProjectStore().getProjectTimeline(args.projectId, args.limit ?? 20)
   })
+
+  // ── AI memory (persistent per-project memory.json) ────────
+
+  /** Read the project's AI memory entries (newest first) */
+  ipcMain.handle('project:getMemory', (_event, projectId: string) => {
+    return getProjectStore().getProjectMemory(projectId)
+  })
+
+  /** Append one AI memory entry; returns it (with id/ts) */
+  ipcMain.handle('project:addMemory', (_event, args: { projectId: string; text: string }) => {
+    return getProjectStore().addProjectMemory(args.projectId, args.text)
+  })
+
+  /** Delete one AI memory entry by id (no-op when unknown) */
+  ipcMain.handle('project:removeMemory', (_event, args: { projectId: string; id: string }) => {
+    getProjectStore().removeProjectMemory(args.projectId, args.id)
+  })
+
+  /** Clear all AI memory entries for the project */
+  ipcMain.handle('project:clearMemory', (_event, projectId: string) => {
+    getProjectStore().clearProjectMemory(projectId)
+  })
 }
 
 /** document/attachment/window IPC (everything except the AI proxy above) */
@@ -2847,6 +2907,44 @@ export function registerDocsIpc(): void {
     // print the calling tab's own content; zero margins — the docx page padding provides them
     event.sender.print({ margins: { marginType: 'none' } })
   })
+
+  // Markdown / plain-text export: the renderer serializes the live block tree
+  // (packages/docx-engine) and hands the text over for the save dialog + write.
+  ipcMain.handle(
+    'docs:export-text',
+    async (
+      event,
+      defaultName: string,
+      ext: 'md' | 'txt',
+      content: unknown,
+      outPath?: string,
+    ) => {
+      if (typeof content !== 'string' || (ext !== 'md' && ext !== 'txt')) {
+        return { ok: false, error: 'Invalid export request.' }
+      }
+      let filePath = outPath ?? null
+      if (!filePath) {
+        const result = await saveDialog(event, {
+          title: tm('dlgExportPdf'),
+          defaultPath: defaultName.replace(/\.docx$/i, '') + '.' + ext,
+          filters: [
+            {
+              name: ext === 'md' ? 'Markdown' : 'Plain text',
+              extensions: [ext],
+            },
+          ],
+        })
+        if (result.canceled || !result.filePath) return { ok: false }
+        filePath = result.filePath
+      }
+      try {
+        writeFileSync(filePath, content, 'utf8')
+        return { ok: true, path: filePath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 
   ipcMain.handle(
     'docs:export-pdf',
@@ -3075,6 +3173,8 @@ export function buildDocsMenu(): void {
         { type: 'separator' },
         { label: tm('menuPageSetup'), click: () => sendCommand('page-setup') },
         { label: tm('menuExportPdf'), click: () => sendCommand('export-pdf') },
+        { label: tm('menuExportMarkdown'), click: () => sendCommand('export-markdown') },
+        { label: tm('menuExportTxt'), click: () => sendCommand('export-txt') },
         {
           label: tm('menuPrint'),
           accelerator: 'CmdOrCtrl+P',
