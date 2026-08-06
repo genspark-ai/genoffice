@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import type { CSSProperties } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
+import { SHAPE_GALLERY_GROUPS, wordArtSolidColor, type WordArtPreset } from '@genoffice/ui'
 import {
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
-  WORDART_PRESETS,
   type HeaderFooter,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
@@ -13,11 +12,14 @@ import type { DocsTabInfo } from '../../shared/ipc'
 import { tableModelToPmNode } from '../editor/convert'
 import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
+import iconEditor from '../assets/icon-editor.png'
+import iconTranslate from '../assets/icon-translate.png'
 import {
   IconAccept,
   IconAiPanel,
   IconCaret,
   IconComment,
+  IconComments,
   IconCompare,
   IconCursor,
   IconEraser,
@@ -33,13 +35,11 @@ import {
   IconPrintLayout,
   IconReadMode,
   IconRuler,
-  IconSparkle,
   IconSplit,
   IconSwitchWindows,
   IconRedo,
   IconReject,
   IconTrackChanges,
-  IconTranslate,
   IconUndo,
   IconWebLayout,
   IconWholePage,
@@ -207,89 +207,35 @@ export function insertTextboxAt(editor: Editor): void {
     heightEmu: TEXTBOX_HEIGHT_EMU,
     id: Math.floor(Math.random() * 900000) + 100000,
   })
-  editor
-    .chain()
-    .focus()
-    .insertContent({
-      type: 'docProtected',
-      attrs: {
-        docxIndex: null,
-        blockType: 'passthrough',
-        label: t('ribbonTextBox'),
-        genXml: xml,
-        textboxes: [emptyTextboxDisplay()],
-      },
-    })
-    .run()
+  // top-level insert: a plain insertContent would replace a selected floating
+  // node and fails silently from inside a table cell
+  insertTopLevelBlockAtSelection(editor, {
+    type: 'docProtected',
+    attrs: {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonTextBox'),
+      genXml: xml,
+      textboxes: [emptyTextboxDisplay()],
+    },
+  })
 }
 
-/** Common DrawingML preset shapes for the shape picker dropdown. */
-export const SHAPE_PRESETS: Array<{
-  prst: string
-  labelKey: StringKey
-  clipPath?: string
-  borderRadius?: string
-}> = [
-  { prst: 'rect', labelKey: 'ribbonShapeRect' },
-  { prst: 'roundRect', labelKey: 'ribbonShapeRoundRect', borderRadius: '12%' },
-  { prst: 'ellipse', labelKey: 'ribbonShapeEllipse', borderRadius: '50%' },
-  {
-    prst: 'triangle',
-    labelKey: 'ribbonShapeTriangle',
-    clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
-  },
-  {
-    prst: 'rtTriangle',
-    labelKey: 'ribbonShapeRtTriangle',
-    clipPath: 'polygon(0% 0%, 0% 100%, 100% 100%)',
-  },
-  {
-    prst: 'diamond',
-    labelKey: 'ribbonShapeDiamond',
-    clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
-  },
-  {
-    prst: 'parallelogram',
-    labelKey: 'ribbonShapeParallelogram',
-    clipPath: 'polygon(15% 0%, 100% 0%, 85% 100%, 0% 100%)',
-  },
-  {
-    prst: 'pentagon',
-    labelKey: 'ribbonShapePentagon',
-    clipPath: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
-  },
-  {
-    prst: 'hexagon',
-    labelKey: 'ribbonShapeHexagon',
-    clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
-  },
-  {
-    prst: 'star5',
-    labelKey: 'ribbonShapeStar5',
-    clipPath:
-      'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
-  },
-  {
-    prst: 'rightArrow',
-    labelKey: 'ribbonShapeRightArrow',
-    clipPath: 'polygon(0% 25%, 65% 25%, 65% 0%, 100% 50%, 65% 100%, 65% 75%, 0% 75%)',
-  },
-  {
-    prst: 'leftRightArrow',
-    labelKey: 'ribbonShapeLeftRightArrow',
-    clipPath:
-      'polygon(0% 50%, 20% 0%, 20% 30%, 80% 30%, 80% 0%, 100% 50%, 80% 100%, 80% 70%, 20% 70%, 20% 100%)',
-  },
-]
+/**
+ * Shape gallery for the picker dropdown: the cross-app shared groups (slides
+ * parity), minus Lines — the page renderer draws shapes as filled clipped
+ * boxes and cannot show stroke-only connectors yet.
+ */
+export const DOC_SHAPE_GROUPS = SHAPE_GALLERY_GROUPS.filter(
+  (g) => g.groupKey !== 'ribbonShapeGroupLines',
+)
 
-/** Shape preset CSS: convert a prst name to inline style properties. */
-export function shapePresetStyle(prst: string | undefined): CSSProperties {
-  const preset = SHAPE_PRESETS.find((s) => s.prst === prst)
-  if (!preset) return {}
-  const style: CSSProperties = {}
-  if (preset.clipPath) style.clipPath = preset.clipPath
-  if (preset.borderRadius) style.borderRadius = preset.borderRadius
-  return style
+const DOC_SHAPES = DOC_SHAPE_GROUPS.flatMap((g) => g.shapes)
+
+/** Display label for a prst inserted from the gallery. */
+export function shapeLabel(prst: string): string {
+  const def = DOC_SHAPES.find((s) => s.prst === prst)
+  return def ? t(def.labelKey as StringKey) : prst
 }
 
 /**
@@ -303,11 +249,18 @@ export function insertTopLevelBlockAtSelection(editor: Editor, content: JSONCont
   return editor.chain().focus().insertContentAt(position, content).run()
 }
 
-/** Insert a floating preset shape (wps:wsp with prstGeom) at the cursor. */
-export function insertShapeAt(editor: Editor, prst: string): void {
-  const preset = SHAPE_PRESETS.find((s) => s.prst === prst) ?? SHAPE_PRESETS[0]
-  const widthEmu = 1800000
-  const heightEmu = 1080000
+/**
+ * Insert a floating preset shape (wps:wsp with prstGeom) at the cursor, or at
+ * an explicit top-level doc position with an explicit size (shape draw mode).
+ * Returns the position the block was inserted at (null if the insert failed).
+ */
+export function insertShapeAt(
+  editor: Editor,
+  prst: string,
+  opts?: { widthEmu?: number; heightEmu?: number; atPos?: number },
+): number | null {
+  const widthEmu = opts?.widthEmu ?? 1800000
+  const heightEmu = opts?.heightEmu ?? 1080000
   const xml = buildShapeParagraphXml({
     prst,
     widthEmu,
@@ -326,16 +279,19 @@ export function insertShapeAt(editor: Editor, prst: string): void {
     prst,
     paras: [{ runs: [{ text: '' }] }],
   }
-  insertTopLevelBlockAtSelection(editor, {
+  const content = {
     type: 'docProtected',
     attrs: {
       docxIndex: null,
       blockType: 'passthrough',
-      label: t('ribbonShapeLabel', { name: t(preset.labelKey) }),
+      label: t('ribbonShapeLabel', { name: shapeLabel(prst) }),
       genXml: xml,
       textboxes: [textbox],
     },
-  })
+  }
+  const { $from } = editor.state.selection
+  const position = opts?.atPos ?? ($from.depth > 0 ? $from.after(1) : editor.state.selection.to)
+  return editor.chain().focus().insertContentAt(position, content).run() ? position : null
 }
 
 /** ~7.5 cm × 2 cm default size for WordArt in EMU */
@@ -343,10 +299,13 @@ const WORDART_WIDTH_EMU = 2700000
 const WORDART_HEIGHT_EMU = 720000
 
 /** Insert a floating WordArt text box at the cursor. */
-export function insertWordArtAt(editor: Editor, wordArtId: string): void {
-  const preset = WORDART_PRESETS.find((p) => p.id === wordArtId) ?? WORDART_PRESETS[0]
+export function insertWordArtAt(editor: Editor, preset: WordArtPreset): void {
+  // The saved run can only carry a solid color; light fills fall back to the
+  // outline color so the text stays readable when the file is reopened.
+  const solidHex = wordArtSolidColor(preset).replace('#', '')
   const xml = buildWordArtParagraphXml({
-    wordArtId,
+    colorHex: solidHex,
+    italic: preset.italic,
     widthEmu: WORDART_WIDTH_EMU,
     heightEmu: WORDART_HEIGHT_EMU,
     id: Math.floor(Math.random() * 900000) + 100000,
@@ -355,14 +314,15 @@ export function insertWordArtAt(editor: Editor, wordArtId: string): void {
     // no background fill; shape border is also absent (noFill)
     widthPx: Math.round(WORDART_WIDTH_EMU / 9525),
     heightPx: Math.round(WORDART_HEIGHT_EMU / 9525),
-    wordArtId,
+    wordArtId: preset.id,
     paras: [
       {
         runs: [
           {
             text: t('ribbonWordArtDefaultText'),
-            color: preset.colorHex,
+            color: solidHex,
             bold: true,
+            italic: preset.italic,
             sizeHalfPoints: 72,
           },
         ],
@@ -370,20 +330,18 @@ export function insertWordArtAt(editor: Editor, wordArtId: string): void {
       },
     ],
   }
-  editor
-    .chain()
-    .focus()
-    .insertContent({
-      type: 'docProtected',
-      attrs: {
-        docxIndex: null,
-        blockType: 'passthrough',
-        label: t('ribbonWordArtLabel', { name: preset.label }),
-        genXml: xml,
-        textboxes: [textbox],
-      },
-    })
-    .run()
+  // top-level insert: a plain insertContent would replace a selected floating
+  // node and fails silently from inside a table cell
+  insertTopLevelBlockAtSelection(editor, {
+    type: 'docProtected',
+    attrs: {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonWordArtLabel', { name: t(preset.nameKey as StringKey) }),
+      genXml: xml,
+      textboxes: [textbox],
+    },
+  })
 }
 
 export function insertPageBreakAt(editor: Editor): void {
@@ -546,8 +504,8 @@ export function ReviewTab({
             }}
           >
             <span className="rb-big-icon">
-              <span className="copilot-badge">
-                <IconSparkle size={13} />
+              <span className="ai-feature-icon" aria-hidden="true">
+                <img src={iconEditor} width={22} height={22} alt="" />
               </span>
             </span>
             <span>{t('ribbonEditorBtn')}</span>
@@ -568,8 +526,8 @@ export function ReviewTab({
               onClick={() => toggleDropdown(setDropdown, 'translate')}
             >
               <span className="rb-big-icon">
-                <span className="copilot-badge">
-                  <IconTranslate size={13} />
+                <span className="ai-feature-icon" aria-hidden="true">
+                  <img src={iconTranslate} width={22} height={22} alt="" />
                 </span>
                 <IconCaret />
               </span>
@@ -619,7 +577,7 @@ export function ReviewTab({
             onClick={onShowComments}
           >
             <span className="rb-big-icon">
-              <IconComment size={BIG} />
+              <IconComments size={BIG} />
             </span>
             <span>{t('ribbonShowComments')}</span>
           </button>

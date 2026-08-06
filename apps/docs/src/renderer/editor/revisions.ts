@@ -51,6 +51,7 @@ const TEXT_STYLE_FIELDS = [
   'color',
   'sizeHalfPoints',
   'font',
+  'fontAscii',
   'charSpacingTwips',
   'charScaleEm',
   'highlight',
@@ -621,8 +622,40 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
     const storage = this.storage
     const editor = this.editor
     // edits made while the IME is composing; recorded at compositionend so the
-    // ins mark never rewrites the composition's DOM (Chromium aborts otherwise)
-    let pendingIme: { from: number; to: number; removed: PmNode[] } | null = null
+    // ins mark never rewrites the composition's DOM (Chromium aborts otherwise).
+    // base/mapping snapshot the pre-composition doc: the flush diffs the final
+    // span against it, because PM's IME DOM re-reads can replace far more than
+    // the composed text (runs whose marks don't round-trip the DOM)
+    let pendingIme: { from: number; to: number; base: PmNode; mapping: Mapping } | null = null
+    // inline content of [from,to) as 1 char per position, else null (not a
+    // single textblock / exotic inline node): lets the flush diff by text
+    const inlineText = (
+      doc: PmNode,
+      from: number,
+      to: number,
+    ): { text: string; children: PmNode[] } | null => {
+      if (from >= to) return { text: '', children: [] }
+      const $from = doc.resolve(from)
+      if (!$from.sameParent(doc.resolve(to)) || !$from.parent.isTextblock) return null
+      let ok = true
+      let text = ''
+      const children: PmNode[] = []
+      doc.nodesBetween(from, to, (node, pos) => {
+        if (!node.isInline) return true
+        if (node.isText) {
+          const a = Math.max(from - pos, 0)
+          const b = Math.min(to - pos, node.text!.length)
+          const cut = a > 0 || b < node.text!.length ? node.cut(a, b) : node
+          text += cut.text
+          children.push(cut)
+        } else if (node.isLeaf && node.nodeSize === 1) {
+          text += '￼'
+          children.push(node)
+        } else ok = false
+        return false
+      })
+      return ok ? { text, children } : null
+    }
     return [
       new Plugin({
         key: new PluginKey('trackChangesRecorder'),
@@ -647,6 +680,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             for (const transaction of transactions) {
               pendingIme.from = transaction.mapping.map(pendingIme.from, -1)
               pendingIme.to = transaction.mapping.map(pendingIme.to, 1)
+              pendingIme.mapping.appendMapping(transaction.mapping)
             }
           }
           const tracked = transactions.filter(
@@ -657,6 +691,12 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
             composing = Boolean(editor.view?.composing)
           } catch {
             /* headless editor */
+          }
+          // the IME commit lands after view.composing flips false (PM flushes the
+          // final composition DOM records in a microtask from compositionend and
+          // tags them); recording it as a plain edit struck the provisional text
+          if (!composing && tracked.length > 0 && tracked.every((t) => t.getMeta('composition'))) {
+            composing = true
           }
           const flush = composing ? null : pendingIme
           if (!composing) pendingIme = null
@@ -708,28 +748,12 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
                 pendingIme.from = Math.min(pendingIme.from, from)
                 pendingIme.to = Math.max(pendingIme.to, to)
               } else {
-                // composition replacing a selection deletes it in the first step:
-                // capture that content now, re-materialize it struck at flush time
-                const removed: PmNode[] = []
-                for (const { step, docBefore } of steps) {
-                  if (!(step instanceof ReplaceStep) && !(step instanceof ReplaceAroundStep))
-                    continue
-                  if (step.to <= step.from) continue
-                  const slice = docBefore.slice(step.from, step.to)
-                  if (slice.openStart !== 0 || slice.openEnd !== 0) continue
-                  let inlineOnly = slice.content.childCount > 0
-                  slice.content.forEach((child) => {
-                    if (!child.isInline) inlineOnly = false
-                  })
-                  if (!inlineOnly) continue
-                  slice.content.forEach((child) => {
-                    const ownIns = child.marks.some(
-                      (m) => m.type === insType && m.attrs.author === storage.author,
-                    )
-                    if (!ownIns) removed.push(child)
-                  })
+                pendingIme = {
+                  from,
+                  to,
+                  base: oldState.doc,
+                  mapping: new Mapping(transactions.flatMap((t) => t.mapping.maps)),
                 }
-                pendingIme = { from, to, removed }
               }
             }
             return null
@@ -1047,16 +1071,54 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
 
           if (flush) {
             const max = newState.doc.content.size
-            const from = tr.mapping.map(Math.max(0, Math.min(flush.from, max)), 1)
-            const to = tr.mapping.map(Math.max(0, Math.min(flush.to, max)), -1)
-            if (from < to) {
-              tr.removeMark(from, to, delType)
-              tr.addMark(from, to, insMark)
+            const from = Math.max(0, Math.min(flush.from, max))
+            const to = Math.max(from, Math.min(flush.to, max))
+            const inv = flush.mapping.invert()
+            const baseMax = flush.base.content.size
+            const baseFrom = Math.max(0, Math.min(inv.map(from, -1), baseMax))
+            const baseTo = Math.max(baseFrom, Math.min(inv.map(to, 1), baseMax))
+            const cur = inlineText(newState.doc, from, to)
+            const base = inlineText(flush.base, baseFrom, baseTo)
+            // trim the common affix so only the middle the composition really
+            // changed gets recorded (a one-character IME edit used to redline
+            // the whole paragraph when PM rewrote the surrounding runs)
+            let prefix = 0
+            let suffix = 0
+            let removed: PmNode[] = []
+            if (cur && base) {
+              const limit = Math.min(base.text.length, cur.text.length)
+              while (prefix < limit && base.text[prefix] === cur.text[prefix]) prefix++
+              while (
+                suffix < limit - prefix &&
+                base.text[base.text.length - 1 - suffix] === cur.text[cur.text.length - 1 - suffix]
+              )
+                suffix++
+              const midTo = base.text.length - suffix
+              let at = 0
+              for (const child of base.children) {
+                const len = child.isText ? child.text!.length : 1
+                const a = Math.max(prefix - at, 0)
+                const b = Math.min(midTo - at, len)
+                if (a < b)
+                  removed.push(child.isText && (a > 0 || b < len) ? child.cut(a, b) : child)
+                at += len
+              }
+              removed = removed.filter(
+                (child) =>
+                  // deleting your own insertion removes it outright
+                  !child.marks.some((m) => m.type === insType && m.attrs.author === storage.author),
+              )
+            }
+            const insFrom = tr.mapping.map(from + prefix, 1)
+            const insTo = tr.mapping.map(to - suffix, -1)
+            if (insFrom < insTo) {
+              tr.removeMark(insFrom, insTo, delType)
+              tr.addMark(insFrom, insTo, insMark)
               changed = true
             }
-            if (flush.removed.length > 0) {
-              const at = Math.max(from, to)
-              const end = flush.removed.reduce((acc, child) => {
+            if (removed.length > 0) {
+              const at = Math.max(insFrom, insTo)
+              const end = removed.reduce((acc, child) => {
                 const struck = child.marks.some((m) => m.type === delType)
                   ? child
                   : child.mark([...child.marks, delMark])

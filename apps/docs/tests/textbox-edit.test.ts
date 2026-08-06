@@ -128,6 +128,39 @@ describe('text box rich-text edit and save', () => {
     editor.destroy()
   })
 
+  it('persists a resize of an auto-fit textbox as a fixed height', async () => {
+    const autoFitXml = TEXTBOX_PARAGRAPH.replace(
+      '<wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/>',
+      '<wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"><a:spAutoFit/></wps:bodyPr>',
+    )
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: `<w:p><w:r><w:t>Leading text</w:t></w:r></w:p>${autoFitXml}` }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const pos = textboxNodePos(editor)
+    const node = editor.state.doc.nodeAt(pos)!
+    const boxes = node.attrs.textboxes as TextboxDisplay[]
+    expect(boxes[0].heightPx).toBeUndefined() // autofit carries no fixed height
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        textboxes: [{ ...boxes[0], heightPx: 240, minHeightPx: 240 }],
+      }),
+    )
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(1)
+    const reparsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    const resized = reparsed.blocks.find((block) => block.textboxes)?.textboxes?.[0]
+    expect(resized?.heightPx).toBe(240)
+    expect(resized?.widthPx).toBe(boxes[0].widthPx)
+    editor.destroy()
+  })
+
   it('edited textbox paragraph saves as a patched XML block and re-parses with the new text', async () => {
     const { editor, parsed } = await openTextboxDoc()
     editTextboxPara(editor, 0, [

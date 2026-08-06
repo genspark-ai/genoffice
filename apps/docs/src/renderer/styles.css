@@ -1217,23 +1217,32 @@ button {
   position-try-fallbacks: flip-inline;
   position-visibility: anchors-visible;
   z-index: 60;
-  display: grid;
-  grid-template-columns: repeat(4, 64px);
-  gap: 4px;
+  width: 312px;
+  max-height: 420px;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  padding: 8px;
+  padding: 6px;
+}
+
+.shape-group-title {
+  padding: 6px 4px 2px;
+  font-size: 11px;
+  color: var(--text-dim, #797775);
+}
+
+.shape-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
 }
 
 .shape-cell {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  width: 64px;
-  padding: 4px 2px;
+  justify-content: center;
+  padding: 5px 0;
   border: none;
   background: none;
   border-radius: 4px;
@@ -1245,23 +1254,9 @@ button {
   background: var(--active-bg);
 }
 
-.shape-preview {
-  display: block;
-  width: 36px;
-  height: 24px;
-  border: 1.5px solid #2f5496;
-}
-
-.shape-label {
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 60px;
-}
-
 /* ---- WordArt picker panel ---- */
 
+/* Unlabeled letter grid matching the slides WordArt gallery (style name = tooltip) */
 .wordart-palette {
   position: fixed;
   position-anchor: --rb-drop-wrap;
@@ -1271,8 +1266,8 @@ button {
   position-visibility: anchors-visible;
   z-index: 60;
   display: grid;
-  grid-template-columns: repeat(2, 120px);
-  gap: 4px;
+  grid-template-columns: repeat(4, 44px);
+  gap: 5px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -1281,39 +1276,21 @@ button {
 }
 
 .wordart-cell {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  width: 120px;
-  padding: 6px 8px;
-  border: none;
-  background: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border, #e3e3e3);
   border-radius: 4px;
+  background: var(--surface, #fff);
+  font-size: 26px;
+  font-family: Georgia, serif;
   cursor: pointer;
-  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .wordart-cell:hover {
-  background: var(--active-bg);
-}
-
-.wordart-preview {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-  font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
-  min-width: 26px;
-  text-align: center;
-}
-
-.wordart-label {
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  text-align: left;
+  border-color: var(--accent, #b26b00);
 }
 
 /* ---- Drop cap dropdown menu ---- */
@@ -1690,8 +1667,65 @@ th.cell-rev-del {
 }
 
 /* style gallery */
-.style-gallery {
+/* The Styles group absorbs the row's free width and shrinks with the window
+   (min-width keeps two cards + the expander visible); extra cards clip inside
+   .style-gallery instead of widening the scrolling ribbon row, and the
+   expander below makes the clipped ones reachable. */
+.ribbon-group-styles {
+  flex: 1;
+  min-width: 178px;
+}
+
+.style-gallery-wrap {
   gap: 4px;
+  min-width: 0;
+}
+
+.style-gallery {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.style-gallery-more {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 62px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.style-gallery-more:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.style-gallery-menu {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  width: min(478px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 8px;
 }
 
 .style-card {
@@ -1700,12 +1734,17 @@ th.cell-rev-del {
   align-items: center;
   justify-content: center;
   gap: 2px;
+  flex: 0 0 auto;
   width: 74px;
   height: 62px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface);
   cursor: pointer;
+}
+
+.style-gallery-menu .style-card {
+  width: auto;
 }
 
 .style-card:hover:not(:disabled) {
@@ -3084,6 +3123,35 @@ th.cell-rev-del {
   pointer-events: auto;
 }
 
+/* corner resize handle of floating shape/textbox/WordArt/line boxes */
+.box-resize-handle {
+  position: absolute;
+  z-index: 4;
+  right: -6px;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--word-blue);
+  border-radius: 2px;
+  background: var(--surface);
+  cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.doc-protected-textboxes:hover > .box-resize-handle,
+.doc-protected-textboxes.ProseMirror-selectednode > .box-resize-handle,
+.doc-protected-chart:hover > .box-resize-handle,
+.doc-protected-chart.ProseMirror-selectednode > .box-resize-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-content-editing > .box-resize-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Native ProseMirror tables */
 .doc-page > .doc-table {
   margin: 2px 0;
@@ -3549,10 +3617,8 @@ th.cell-rev-del {
 
 .doc-chart-svg {
   display: block;
-  width: 100%;
-  max-width: 560px;
+  max-width: 100%;
   margin: 0 auto;
-  height: auto;
 }
 
 .doc-chart-grid {
@@ -5113,7 +5179,11 @@ body.docs-crop-active
      doubles as the bottom padding, so overflowing never grows the strip and
      shifts its content up */
   overflow-x: scroll;
-  padding: 13px 14px 0;
+  /* side insets are transparent borders, not padding: overflow clips at the
+     padding edge, so side padding would let scrolled items slide flush against
+     the box edges — borders keep the 14px gaps while scrolling */
+  padding: 13px 0 0;
+  border-inline: 14px solid transparent;
   margin-bottom: -6px;
 }
 
@@ -6997,4 +7067,57 @@ tr > .page-gap-cut {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* Shape draw mode (Word parity): crosshair over the whole document while armed */
+.ProseMirror.doc-shape-drawing,
+.ProseMirror.doc-shape-drawing * {
+  cursor: crosshair !important;
+}
+
+/* Shape gallery dropdown (slides parity: grouped, outline-icon grid) */
+.rb-drop-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim, #777);
+  padding: 4px 2px 3px;
+}
+
+.rb-shape-gallery {
+  width: 264px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.rb-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 28px);
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.rb-shape-cell {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.rb-shape-cell:hover {
+  border-color: var(--accent, #2b579a);
+  background: var(--hover, rgba(0, 0, 0, 0.06));
+}
+
+/* Gallery variant keeps .shape-palette's anchored-card chrome but stacks grouped grids */
+.shape-palette.rb-shape-gallery {
+  display: block;
 }

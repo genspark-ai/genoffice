@@ -490,7 +490,7 @@ button {
 }
 
 .rb-big.active {
-  color: var(--accent);
+  color: var(--text);
 }
 
 .rb-big.active .rb-big-icon {
@@ -2243,7 +2243,11 @@ body.vib .slide-list {
      doubles as the bottom padding, so overflowing never grows the strip and
      shifts its content up */
   overflow-x: scroll;
-  padding: 13px 14px 0;
+  /* side insets are transparent borders, not padding: overflow clips at the
+     padding edge, so side padding would let scrolled items slide flush against
+     the box edges — borders keep the 14px gaps while scrolling */
+  padding: 13px 0 0;
+  border-inline: 14px solid transparent;
   margin-bottom: -6px;
 }
 
@@ -5121,6 +5125,12 @@ body.vib .slide-list {
   display: inline-flex;
   width: 30px;
   justify-content: center;
+  align-items: center;
+  /* inline-flex sits on the text baseline, riding the icon high — middle-align it to the label,
+     then nudge 1px up for optical centering against the label's cap height */
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
   font-size: 14px;
   /* neutral glyphs — no accent tint in menus */
   color: #3b3a39;

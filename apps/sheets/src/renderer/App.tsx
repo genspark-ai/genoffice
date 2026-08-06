@@ -188,9 +188,14 @@ import {
   type PivotEditContext,
   type SlicerPickerState,
 } from './pivot-actions'
+import type { ChartRecommendations } from '../domain/chart-recommend'
 import {
   applyAiShapeEdit as applyAiShapeEditImpl,
   buildAiChartEdit as buildAiChartEditImpl,
+  handleInsertChart as handleInsertChartImpl,
+  handleInsertIcon as handleInsertIconImpl,
+  handleInsertScreenshot,
+  handleRecommendedCharts as handleRecommendedChartsImpl,
   insertAiChartVisual as insertAiChartVisualImpl,
   insertAiImageVisual as insertAiImageVisualImpl,
   insertAiShapeVisual as insertAiShapeVisualImpl,
@@ -278,6 +283,9 @@ import { selectionFormatEquals, toSelectionFormat, type SelectionFormat } from '
 import { ExcelShell } from './ExcelShell'
 import { ToastHost } from './toast'
 import { AdvancedFilterDialog, type AdvancedFilterColumn } from './AdvancedFilterDialog'
+import { IconsDialog } from './IconsDialog'
+import { RecommendedChartsDialog } from './RecommendedChartsDialog'
+import { ScreenshotDialog } from './ScreenshotDialog'
 import { SymbolDialog } from './SymbolDialog'
 import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
@@ -422,6 +430,9 @@ export function App(): React.JSX.Element {
   >(null)
   /// True while the Insert → Symbol dialog is open.
   const [symbolDialogOpen, setSymbolDialogOpen] = useState(false)
+  const [screenshotDialogOpen, setScreenshotDialogOpen] = useState(false)
+  const [iconsDialogOpen, setIconsDialogOpen] = useState(false)
+  const [recommendedCharts, setRecommendedCharts] = useState<ChartRecommendations | null>(null)
   /// The focused floating visual (chart/shape/image); charts surface a
   /// contextual Chart Design ribbon tab while selected.
   const [selectedVisual, setSelectedVisual] = useState<WorkbookVisualObject | null>(null)
@@ -1130,6 +1141,13 @@ export function App(): React.JSX.Element {
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
+    // Pull any shell-queued workbook ourselves: the shell's 'open' nudge loop
+    // gives up after 30s, and on slow dev cold starts Univer mounts later than
+    // that — the tab would strand as a blank in-memory workbook (no save, no
+    // shapes) with the queued file silently never opened.
+    void window.desktopApi?.hasQueuedWorkbook?.().then((queued) => {
+      if (queued) void handleInspectWorkbook()
+    })
     // Univer 0.25.1 also badges text parseable as date/time, phone numbers, and
     // other long numeric identifiers with "Number stored as text". Those values
     // should remain text, so clear the view type before the built-in marker
@@ -2543,6 +2561,13 @@ export function App(): React.JSX.Element {
       setMessage,
       setChartDialog,
       setSymbolDialogOpen,
+      setScreenshotDialogOpen,
+      setIconsDialogOpen,
+      openRecommendedCharts: () => {
+        void handleRecommendedChartsImpl(visualContext()).then((result) => {
+          if (result) setRecommendedCharts(result)
+        })
+      },
       setPendingEdits,
       visualContext,
       dataToolsContext,
@@ -3045,6 +3070,29 @@ export function App(): React.JSX.Element {
         <SymbolDialog
           onInsert={(char) => handleInsertSymbolImpl(dataToolsContext(), char)}
           onClose={() => setSymbolDialogOpen(false)}
+        />
+      )}
+      {screenshotDialogOpen && (
+        <ScreenshotDialog
+          onInsert={(dataUrl, width, height) =>
+            handleInsertScreenshot(visualContext(), dataUrl, width, height)
+          }
+          onClose={() => setScreenshotDialogOpen(false)}
+        />
+      )}
+      {iconsDialogOpen && (
+        <IconsDialog
+          onInsert={(dataUrl, size, name) =>
+            handleInsertIconImpl(visualContext(), dataUrl, size, name)
+          }
+          onClose={() => setIconsDialogOpen(false)}
+        />
+      )}
+      {recommendedCharts !== null && (
+        <RecommendedChartsDialog
+          recommendations={recommendedCharts}
+          onPick={(kind) => void handleInsertChartImpl(visualContext(), kind)}
+          onClose={() => setRecommendedCharts(null)}
         />
       )}
       {slicerPicker !== null && (

@@ -8,6 +8,7 @@
 import { app, dialog, ipcMain } from 'electron'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { showOpenDialogWithMemory } from '@genoffice/electron-utils'
 import { parseFileToText } from '@genoffice/file-parse'
 import type {
   AttachmentAddResult,
@@ -159,9 +160,7 @@ export function registerAttachmentIpc(): void {
       ],
       properties: ['openFile' as const, 'multiSelections' as const],
     }
-    const r = parent
-      ? await dialog.showOpenDialog(parent, options)
-      : await dialog.showOpenDialog(options)
+    const r = await showOpenDialogWithMemory(dialog, parent, options)
     if (r.canceled || r.filePaths.length === 0) return null
     return collectAttachments(r.filePaths)
   })

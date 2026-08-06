@@ -155,20 +155,34 @@ export function SlideShowView({
     onExit(order[Math.min(pos, order.length - 1)] ?? startAt)
   }
 
-  // System full screen: requested on entering the show; exiting/user leaving full screen ends the show
+  // System full screen: requested on entering the show; exiting/user leaving full screen ends the show.
+  // Entry is detected from the fullscreenchange event, not the requestFullscreen promise: inside the
+  // shell's WebContentsView the promise can stay pending/reject even though fullscreen engaged, which
+  // left the show mounted after Esc (fullscreen gone, show still covering the window).
   useEffect(() => {
-    let entered = false
-    void document.documentElement.requestFullscreen?.().then(
-      () => {
-        entered = true
-      },
-      () => {},
-    )
+    // already-fullscreen mounts (presenter view handing off to the normal show
+    // keeps fullscreen) never get a fullscreenchange, so seed from current state
+    let entered = !!document.fullscreenElement
+    let exitTimer = 0
+    void document.documentElement.requestFullscreen?.().catch(() => {})
     const onFsChange = () => {
-      if (entered && !document.fullscreenElement) exitRef.current()
+      if (document.fullscreenElement) {
+        entered = true
+        window.clearTimeout(exitTimer)
+        return
+      }
+      if (!entered) return
+      // Grace window before ending the show: a strict-mode remount briefly drops
+      // fullscreen (previous cleanup's exitFullscreen) and re-enters right away —
+      // only a loss that sticks means the user actually left fullscreen.
+      window.clearTimeout(exitTimer)
+      exitTimer = window.setTimeout(() => {
+        if (!document.fullscreenElement) exitRef.current()
+      }, 150)
     }
     document.addEventListener('fullscreenchange', onFsChange)
     return () => {
+      window.clearTimeout(exitTimer)
       document.removeEventListener('fullscreenchange', onFsChange)
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
     }

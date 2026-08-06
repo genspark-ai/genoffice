@@ -84,6 +84,7 @@ describe('native editable tables', () => {
           color: '1F4E78',
           sizeHalfPoints: null,
           font: 'Calibri',
+          fontAscii: 'Calibri',
           charSpacingTwips: null,
           charScaleEm: null,
           highlight: null,

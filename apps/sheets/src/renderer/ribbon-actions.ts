@@ -67,6 +67,7 @@ import {
   handleInsertPicture,
   handleInsertPivotChart,
   handleInsertShape,
+  startShapeDraw,
   type VisualActionContext,
 } from './visual-actions'
 import type { ChartDialogKind, ChartEditData, ShapeEditChanges } from './WorkbookVisuals'
@@ -93,6 +94,9 @@ export interface RibbonCommandContext {
   setMessage: (message: string) => void
   setChartDialog: (dialog: { kind: ChartDialogKind; editKey: string }) => void
   setSymbolDialogOpen: (open: boolean) => void
+  setScreenshotDialogOpen: (open: boolean) => void
+  setIconsDialogOpen: (open: boolean) => void
+  openRecommendedCharts: () => void
   setPendingEdits: (count: number) => void
   visualContext: () => VisualActionContext
   dataToolsContext: () => DataToolsContext
@@ -405,6 +409,15 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     case 'insert-symbol':
       ctx.setSymbolDialogOpen(true)
       return
+    case 'insert-screenshot':
+      ctx.setScreenshotDialogOpen(true)
+      return
+    case 'recommended-charts-open':
+      ctx.openRecommendedCharts()
+      return
+    case 'insert-icons':
+      ctx.setIconsDialogOpen(true)
+      return
     case 'note-open':
       // Opens the note editor popup at the primary selected cell; the
       // journal snapshots the sheet's notes and ⌘S writes legacy comments.
@@ -673,7 +686,9 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     return
   }
   if (command.startsWith('insert-shape:')) {
-    handleInsertShape(ctx.visualContext(), command.slice('insert-shape:'.length), false)
+    // Excel parity: gallery pick arms the crosshair draw mode (click = default
+    // size, drag = custom, Shift = square, Esc = cancel)
+    startShapeDraw(ctx.visualContext(), command.slice('insert-shape:'.length))
     return
   }
   if (command === 'insert-textbox') {

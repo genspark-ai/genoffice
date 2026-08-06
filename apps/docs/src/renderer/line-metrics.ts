@@ -291,6 +291,19 @@ export function cssFontFamily(font: string): string {
   return `${chain(font, serifLike ? CJK_SERIF : CJK_SANS)},${serifLike ? 'serif' : 'sans-serif'}`
 }
 
+/**
+ * Fallback chain for a dual-slot run (w:ascii ≠ w:eastAsia): Latin families first,
+ * then the full East Asian chain. The Latin part drops its own CJK/generic fallbacks
+ * so CJK glyphs fall through to the eastAsia font instead of a lookalike.
+ */
+export function cssDualFontFamily(ascii: string, eastAsia: string): string {
+  if (ascii === eastAsia) return cssFontFamily(ascii)
+  const latin = cssFontFamily(ascii)
+    .split(',')
+    .filter((f) => !/noto (sans|serif) cjk/i.test(f) && !/^(serif|sans-serif|monospace)$/.test(f))
+  return `${latin.join(',')},${cssFontFamily(eastAsia)}`
+}
+
 /** Text contains CJK characters (decides the line-height factor: CJK lines measure ~1.3em per Chinese font metrics) */
 export function textHasCjk(text: string): boolean {
   for (const ch of text) {

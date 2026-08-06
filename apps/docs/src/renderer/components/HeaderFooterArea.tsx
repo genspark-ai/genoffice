@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { TOTAL_PAGES_MARK, type HfImage, type HfParagraph, type Run } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
-import { cssFontFamily } from '../line-metrics'
+import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
 
 export interface HfValue {
   text: string
@@ -17,7 +17,8 @@ function runStyle(run: Run): React.CSSProperties {
   if (run.strike) style.textDecoration = `${style.textDecoration ?? ''} line-through`.trim()
   if (run.color) style.color = `#${run.color}`
   if (run.sizeHalfPoints) style.fontSize = `${run.sizeHalfPoints / 2}pt`
-  if (run.font) style.fontFamily = cssFontFamily(run.font)
+  if (run.font && run.fontAscii) style.fontFamily = cssDualFontFamily(run.fontAscii, run.font)
+  else if (run.font || run.fontAscii) style.fontFamily = cssFontFamily((run.font ?? run.fontAscii)!)
   return style
 }
 

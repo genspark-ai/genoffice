@@ -18,6 +18,8 @@ import {
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
+  showOpenDialogWithMemory,
+  showSaveDialogWithMemory,
   windowMenuTemplate,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
@@ -1938,13 +1940,11 @@ function dialogParent(event: IpcMainInvokeEvent): BrowserWindow | undefined {
 }
 
 async function openDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions) {
-  const parent = dialogParent(event)
-  return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options)
+  return showOpenDialogWithMemory(dialog, dialogParent(event), options)
 }
 
 async function saveDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
-  const parent = dialogParent(event)
-  return parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options)
+  return showSaveDialogWithMemory(dialog, dialogParent(event), options)
 }
 
 /** default folder where new files land on their first (silent) save; shared with the other editors via shell */

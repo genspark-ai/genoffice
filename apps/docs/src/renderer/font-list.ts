@@ -36,6 +36,18 @@ const JAPANESE = ['Yu Gothic', 'Yu Mincho', 'Meiryo', 'MS Gothic', 'MS Mincho']
 const KOREAN = ['Malgun Gothic', 'Batang', 'Gulim', 'Dotum']
 const TRADITIONAL_CHINESE = ['Microsoft JhengHei', 'PMingLiU']
 
+const EAST_ASIAN_FONT_RE =
+  /[⺀-鿿豈-﫿぀-ヿㇰ-ㇿ가-힯]|sim(sun|hei)|nsimsun|kaiti|fangsong|dengxian|yahei|songti|heiti|xingkai|lisu|youyuan|st(zhongsong|song|kai|fangsong|xihei|hupo|liti|caiyun)|pingfang|hiragino|meiryo|osaka|kozuka|yu (gothic|mincho)|yugoth|ms (ui )?p?(gothic|mincho)|biz ud|malgun|batang|gulim|dotum|gungsuh|m(ye|yu)ngjo|nanum|apple (sd )?gothic|applemyungjo|jhenghei|p?mingliu|biaukai|dfkai|kaiu|source han|noto (sans|serif) (cjk|sc|tc|hk|jp|kr)|wenquanyi/i
+
+/**
+ * Which rFonts slot a font-box pick should target: East Asian names go to
+ * w:eastAsia, everything else to w:ascii/w:hAnsi — mirroring Word, where
+ * picking a Latin font never clobbers the Chinese font and vice versa.
+ */
+export function isEastAsianFontName(name: string): boolean {
+  return EAST_ASIAN_FONT_RE.test(name.normalize('NFKC'))
+}
+
 export function fontFamiliesFor(lang: Lang): readonly string[] {
   switch (lang) {
     case 'zh':
