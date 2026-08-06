@@ -1338,11 +1338,12 @@ export function IconSmartArt(props: IconProps) {
   )
 }
 
-/** WordArt: outlined A */
+/** WordArt: outlined block-letter A (matches docs IconWordArt, scaled 16→24 canvas) */
 export function IconWordArt(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 5.2 19.48 L 12 4.52 l 6.8 14.97 M 7.92 14.45 h 8.16" />
+      <path d="M 12 4.5 L 5.25 19.5 h 3.45 l 1.5 -3.75 h 3.6 l 1.5 3.75 h 3.45 L 12 4.5 Z" />
+      <path d="M 8.4 13.8 h 7.2" />
     </Svg>
   )
 }

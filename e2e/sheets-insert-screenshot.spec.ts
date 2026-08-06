@@ -30,34 +30,29 @@ test.describe('sheets: Insert → Screenshot', () => {
       const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
       await waitForWorkbook(sheets)
 
+      // Always stub the OS capturer in the main process: real capture is
+      // host-dependent (macOS gates it behind the Screen Recording
+      // permission, and on headless CI xvfb intermittently advertises a
+      // screen source whose full-resolution grab comes back as an empty
+      // frame, failing the capture after the picker showed it). The test's
+      // job is the picker → capture → insert → save pipeline, which runs for
+      // real either way, so make the source deterministic everywhere.
+      await launched.app.evaluate(({ desktopCapturer, nativeImage, systemPreferences }) => {
+        const pixel =
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        const frame = nativeImage.createFromDataURL(pixel).resize({ width: 800, height: 600 })
+        desktopCapturer.getSources = async () => [
+          { id: 'screen:0:0', name: 'Mock Screen', thumbnail: frame } as never,
+        ]
+        systemPreferences.getMediaAccessStatus = () => 'granted'
+      })
+
       await sheets.getByRole('button', { name: 'Insert', exact: true }).click()
       await sheets.getByRole('button', { name: 'Screenshot' }).click()
       const dialog = sheets.getByRole('dialog', { name: 'Screenshot' })
       await expect(dialog).toBeVisible()
 
-      // Hosts without real capture support still need to exercise the
-      // pipeline: macOS gates capture behind the Screen Recording permission
-      // (dev Electron binaries usually lack it), and headless Linux CI has no
-      // capturable surfaces, so getSources() comes back empty. In either case
-      // stub the capturer in the main process so the rest of the flow
-      // (picker → capture → insert → save) still runs for real.
       const grid = dialog.locator('.screenshot-grid button')
-      const refresh = dialog.getByRole('button', { name: 'Refresh' })
-      await expect(refresh).toBeEnabled()
-      const noSources = (await grid.count()) === 0
-      if (noSources) {
-        await sheets.screenshot({ path: screenshotPath('screenshot-no-sources') })
-        await launched.app.evaluate(({ desktopCapturer, nativeImage, systemPreferences }) => {
-          const pixel =
-            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-          const frame = nativeImage.createFromDataURL(pixel).resize({ width: 800, height: 600 })
-          desktopCapturer.getSources = async () => [
-            { id: 'screen:0:0', name: 'Mock Screen', thumbnail: frame } as never,
-          ]
-          systemPreferences.getMediaAccessStatus = () => 'granted'
-        })
-        await refresh.click()
-      }
       await expect(grid.first()).toBeVisible()
       await sheets.screenshot({ path: screenshotPath('screenshot-picker') })
       await grid.first().click()

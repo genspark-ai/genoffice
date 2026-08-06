@@ -28,6 +28,7 @@ import type {
   TransitionKind,
 } from '../shared/ipc'
 import { SlideCanvas } from './SlideCanvas'
+import type { DrawRect } from './draw-shape'
 import { SlideThumb } from './SlideThumb'
 import { MasterView } from './MasterView'
 import { TextEditOverlay, firstFontFamily, liveBulletChar } from './TextEditOverlay'
@@ -50,7 +51,8 @@ import { AnimationPane } from './components/AnimationPane'
 import { AnimPreviewOverlay } from './components/AnimatedSlide'
 import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/InsertDialogs'
 import { CutoutDialog } from './components/CutoutDialog'
-import type { ChartPresetDef, IconDef, SmartArtDef, WordArtPreset } from './insert-presets'
+import type { WordArtPreset } from '@genoffice/ui'
+import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
 import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
@@ -249,6 +251,8 @@ export function App() {
   const [enteredGroupId, setEnteredGroupId] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [editingCell, setEditingCell] = useState<EditingCellState | null>(null)
+  // Armed shape draw mode (ribbon gallery pick); null = normal selection behavior
+  const [drawKind, setDrawKind] = useState<InsertKind | null>(null)
   /** Latest-state bundle for the extracted action modules; refreshed every render (see action-context.ts). */
   const ctxRef = useRef<ActionCtx>(null as unknown as ActionCtx)
   const [zoom, setZoom] = useState(1)
@@ -856,6 +860,23 @@ export function App() {
     (kind: InsertKind) => insertActions.insertElement(ctxRef.current, kind),
     [],
   )
+  // Shape draw mode (PowerPoint/WPS parity): gallery pick arms the crosshair, the canvas commits the box.
+  // The armed kind lives in a ref too: the commit side effect must stay out of the
+  // setState updater (StrictMode double-invokes updaters → double insert).
+  const drawKindRef = useRef<InsertKind | null>(null)
+  const pickShape = useCallback((kind: InsertKind) => {
+    setEditing(null)
+    setEditingCell(null)
+    setSelectedIds([])
+    drawKindRef.current = kind
+    setDrawKind(kind)
+  }, [])
+  const commitDraw = useCallback((rect: DrawRect) => {
+    const kind = drawKindRef.current
+    drawKindRef.current = null
+    setDrawKind(null)
+    if (kind) void insertActions.insertShapeAt(ctxRef.current, kind, rect)
+  }, [])
   const insertImage = useCallback(() => insertActions.insertImage(ctxRef.current), [])
 
   const onBackground = useCallback(
@@ -2197,6 +2218,7 @@ export function App() {
         onToggleAi={toggleAi}
         onAiPreset={(text, opts) => pushAiPreset(text, true, undefined, undefined, opts?.slideShot)}
         onInsert={(kind) => void insertElement(kind)}
+        onPickShape={pickShape}
         onInsertImage={() => void insertImage()}
         onBackground={(color, all) => void onBackground(color, all)}
         onApplyTheme={(preset) => void applyThemePreset(preset)}
@@ -2760,6 +2782,12 @@ export function App() {
                               enteredGroupId={enteredGroupId}
                               onEnterGroup={handleEnterGroup}
                               onEditConnectorEndpoints={onEditConnectorEndpoints}
+                              drawMode={drawKind ? { kind: drawKind } : null}
+                              onDrawCommit={commitDraw}
+                              onDrawCancel={() => {
+                                drawKindRef.current = null
+                                setDrawKind(null)
+                              }}
                               editingText={
                                 editing
                                   ? { sourceId: editing.sourceId }

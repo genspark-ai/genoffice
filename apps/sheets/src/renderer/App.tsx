@@ -1141,6 +1141,13 @@ export function App(): React.JSX.Element {
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
+    // Pull any shell-queued workbook ourselves: the shell's 'open' nudge loop
+    // gives up after 30s, and on slow dev cold starts Univer mounts later than
+    // that — the tab would strand as a blank in-memory workbook (no save, no
+    // shapes) with the queued file silently never opened.
+    void window.desktopApi?.hasQueuedWorkbook?.().then((queued) => {
+      if (queued) void handleInspectWorkbook()
+    })
     // Univer 0.25.1 also badges text parseable as date/time, phone numbers, and
     // other long numeric identifiers with "Number stored as text". Those values
     // should remain text, so clear the view type before the built-in marker

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { SHAPE_GALLERY } from '../src/renderer/components/shape-gallery'
+import { SHAPE_GALLERY_GROUPS } from '../../../packages/ui/src/shape-gallery'
 import { shapeBackgroundCss, shapePreviewPathD } from '../src/renderer/editor/shape-svg'
 
-const galleryPrsts = SHAPE_GALLERY.flatMap((group) => group.shapes.map((shape) => shape.prst))
+// The docs gallery (ribbon-tabs' DOC_SHAPE_GROUPS) is the shared groups minus Lines
+const galleryPrsts = SHAPE_GALLERY_GROUPS.filter(
+  (group) => group.groupKey !== 'ribbonShapeGroupLines',
+).flatMap((group) => group.shapes.map((shape) => shape.prst))
 
 describe('shape gallery', () => {
   it('every gallery prst has preview and background geometry', () => {

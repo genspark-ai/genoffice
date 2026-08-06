@@ -5,10 +5,13 @@ import {
   presetPath,
   presetPolygon,
 } from '../../../packages/pptx-render/src/preset-geometry'
-import { SHAPE_GALLERY } from '../src/renderer/shape-gallery'
+import { SHAPE_GALLERY_GROUPS } from '../../../packages/ui/src/shape-gallery'
 import { ADDABLE_SHAPE_TYPES } from '../src/shared/shape-types'
 
-const galleryPrsts = SHAPE_GALLERY.flatMap((group) => group.shapes.map((shape) => shape.prst))
+// The ribbon gallery (ExcelShell's SHEET_SHAPE_GROUPS) is the shared groups minus Lines
+const galleryPrsts = SHAPE_GALLERY_GROUPS.filter(
+  (group) => group.groupKey !== 'ribbonShapeGroupLines',
+).flatMap((group) => group.shapes.map((shape) => shape.prst))
 
 describe('shape gallery', () => {
   it('every gallery prst is saveable (in ADDABLE_SHAPE_TYPES)', () => {

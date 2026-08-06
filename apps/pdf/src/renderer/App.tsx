@@ -493,23 +493,42 @@ const IconPrint = () => (
     <path d="M7.71 13.07 L16.29 13.07 L16.29 19.5 L7.71 19.5 Z" />
   </Icon>
 )
+/** Design-supplied glyphs on the 1:16 stroke:canvas ratio (24-canvas / 1.5 stroke),
+ *  geometry shared with docs/slides/sheets. */
+const IconRatio = ({ size = 16, children }: { size?: number; children: ReactNode }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.5}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    {children}
+  </svg>
+)
 const IconUndo = () => (
-  <Icon size={15}>
-    <path d="M8.59 4.5 L4.5 8.59 L8.59 12.68" />
-    <path d="M4.5 8.59 L14.05 8.59 A 5.45 5.45 0 0 1 14.05 19.5 L9.27 19.5" />
-  </Icon>
+  <IconRatio>
+    <path d="M5.91026 4L2.5 7.14791L5.91026 10.8205" />
+    <path d="M3.96154 7.41028H15.1636C18.5169 7.41028 21.3646 10.1484 21.4953 13.5C21.6334 17.0416 18.707 20.0769 15.1636 20.0769H6.88384" />
+  </IconRatio>
 )
 const IconRedo = () => (
-  <Icon size={15}>
-    <path d="M15.41 4.5 L19.5 8.59 L15.41 12.68" />
-    <path d="M19.5 8.59 L9.95 8.59 A 5.45 5.45 0 0 0 9.95 19.5 L14.73 19.5" />
-  </Icon>
+  <IconRatio>
+    <path d="M18.0897 4L21.5 7.14791L18.0897 10.8205" />
+    <path d="M20.0385 7.41028H8.83636C5.4831 7.41028 2.63537 10.1484 2.5047 13.5C2.36657 17.0416 5.29296 20.0769 8.83636 20.0769H17.1162" />
+  </IconRatio>
 )
 const IconSave = () => (
-  <Icon size={15}>
-    <path d="M4.5 5.86 A 1.36 1.36 0 0 1 5.86 4.5 L16.23 4.5 L19.5 7.77 L19.5 18.14 A 1.36 1.36 0 0 1 18.14 19.5 L5.86 19.5 A 1.36 1.36 0 0 1 4.5 18.14 L4.5 5.86 Z" />
-    <path d="M7.91 4.77 L7.91 9 L15.27 9 L15.27 4.77 M7.64 19.23 L7.64 13.36 L16.36 13.36 L16.36 19.23" />
-  </Icon>
+  <IconRatio>
+    <path d="M3 4.5C3 3.67158 3.67158 3 4.5 3H17.1407L21 6.60325V19.5C21 20.3285 20.3285 21 19.5 21H4.5C3.67158 21 3 20.3285 3 19.5V4.5Z" />
+    <path d="M12.0042 3L12 6.6923C12 6.86225 11.7761 7 11.5 7H7.5C7.22385 7 7 6.86225 7 6.6923V3H12.0042Z" />
+    <path d="M7 13H17" />
+    <path d="M7 17H12.0042" />
+  </IconRatio>
 )
 
 const rgbToHex = (c: readonly [number, number, number]): string =>

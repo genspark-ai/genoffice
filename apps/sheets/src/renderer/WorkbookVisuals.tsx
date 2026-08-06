@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { shapePreviewPath } from '@genoffice/ui'
 
 import type { createUniver } from './create-univer'
 
@@ -12,11 +13,6 @@ import {
   splitSheetRef,
 } from '../domain/chart-visual'
 import { parseAddress } from '../domain/cell-address'
-import {
-  isPillPreset,
-  presetPath,
-  presetPolygon,
-} from '../../../../packages/pptx-render/src/preset-geometry'
 import { t } from './i18n/locale'
 import type { WorkbookChartEdit, WorkbookFile, WorkbookVisualObject } from '../shared/desktop-api'
 
@@ -525,7 +521,7 @@ const cornerSouth = (corner: ResizeCorner): boolean =>
   corner === 'sw' || corner === 's' || corner === 'se'
 
 /// xlsx drawing offsets are EMU; 9525 EMU per CSS pixel at 96dpi.
-const EMU_PER_PIXEL = 9525
+export const EMU_PER_PIXEL = 9525
 /// Frames smaller than this collapse resize handles into each other.
 const MIN_FRAME_PIXELS = 24
 /// xlsx sheet limits: drags may leave the data-sized lazy grid (install
@@ -535,19 +531,19 @@ const XLSX_MAX_ROW = 1048575
 
 /// One edge of a drawing anchor: a cell index plus a pixel offset inside
 /// that cell (the px equivalent of xlsx's `<xdr:col>` + `<xdr:colOff>`).
-interface AnchorMarker {
+export interface AnchorMarker {
   index: number
   offset: number
 }
 
-const markerFrom = (index: number, offsetEmu: number): AnchorMarker => ({
+export const markerFrom = (index: number, offsetEmu: number): AnchorMarker => ({
   index,
   offset: offsetEmu / EMU_PER_PIXEL,
 })
 
 /// Move a marker by a pixel delta, carrying across real row/column sizes.
 /// Clamps at the sheet start and inside the last row/column.
-function walkMarker(
+export function walkMarker(
   marker: AnchorMarker,
   delta: number,
   sizeOf: (index: number) => number,
@@ -970,14 +966,10 @@ function EditableShapeVisual({
 function ShapeVisual({ visual }: { readonly visual: WorkbookVisualObject }): React.JSX.Element {
   const type = visual.shapeType ?? ''
   const fill = visual.fillColor ?? '#DDEBF7'
-  const isRect = type === 'rect' || type === 'flowChartProcess'
-  // Alternate Process draws as a rounded rectangle, not a pill like Terminator
-  const isRounded = type === 'roundRect' || type === 'flowChartAlternateProcess'
-  const isPill = isPillPreset(type) && !isRounded
-  const isEllipse = type === 'ellipse'
-  const polygon = presetPolygon(type, 100, 100)
-  const path = polygon ? null : presetPath(type, 100, 100)
-  if (!isRect && !isPill && !isRounded && !isEllipse && !polygon && !path) {
+  // Same geometry source as the gallery previews (and the other apps'
+  // renderers), so every insertable preset draws its real silhouette.
+  const d = shapePreviewPath(type, 100, 100)
+  if (!d) {
     return (
       <div className="xlsx-shape">
         <span>{visual.text ?? visual.name ?? t('appDrawingObject')}</span>
@@ -990,30 +982,7 @@ function ShapeVisual({ visual }: { readonly visual: WorkbookVisualObject }): Rea
       style={visual.rotation ? { transform: `rotate(${visual.rotation}deg)` } : undefined}
     >
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        {(isRect || isPill || isRounded) && (
-          <rect
-            x="1"
-            y="1"
-            width="98"
-            height="98"
-            rx={isPill ? 49 : isRounded ? 12 : 0}
-            fill={fill}
-            stroke="#00000022"
-          />
-        )}
-        {isEllipse && <ellipse cx="50" cy="50" rx="49" ry="49" fill={fill} stroke="#00000022" />}
-        {polygon && <polygon points={polygon.join(' ')} fill={fill} stroke="#00000022" />}
-        {path?.path && <path d={path.path} fill={fill} stroke="#00000022" />}
-        {path?.fillPath && <path d={path.fillPath} fill={fill} stroke="none" />}
-        {path?.strokePath && (
-          <path
-            d={path.strokePath}
-            fill="none"
-            stroke={fill}
-            strokeWidth={3}
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
+        <path d={d} fill={fill} stroke="#00000022" />
       </svg>
       {visual.text && <span className="shape-text">{visual.text}</span>}
     </div>

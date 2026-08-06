@@ -14,7 +14,8 @@ import type {
   TransitionKind,
 } from '../../shared/ipc'
 import type { InkPenSettings, InkTool } from '../ink'
-import type { ChartPresetDef, IconDef, SmartArtDef, WordArtPreset } from '../insert-presets'
+import type { WordArtPreset } from '@genoffice/ui'
+import type { ChartPresetDef, IconDef, SmartArtDef } from '../insert-presets'
 import type { SlideThemePreset } from '../themes'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
 import { useI18n } from '../i18n/locale'
@@ -229,6 +230,8 @@ export interface Props {
   onAiPreset: (text: string, opts?: { slideShot?: boolean }) => void
   /** Insert an element on the current page */
   onInsert: (kind: InsertKind) => void
+  /** Shape gallery pick: enter canvas draw mode (crosshair; click = default size, drag = custom, Esc cancels) */
+  onPickShape: (kind: InsertKind) => void
   /** Open the image picker dialog and insert into the current page */
   onInsertImage: () => void
   /** Set the page background solid color; allSlides=true applies to all pages */
@@ -506,6 +509,7 @@ export interface RibbonTabCtx extends Pick<
   | 'onFormatBrushClick'
   | 'onFormatBrushDoubleClick'
   | 'onInsert'
+  | 'onPickShape'
   | 'onInsertChart'
   | 'onInsertField'
   | 'onInsertIcon'

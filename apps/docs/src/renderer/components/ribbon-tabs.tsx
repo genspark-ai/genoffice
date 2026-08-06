@@ -1,24 +1,25 @@
 import { useState } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
+import { SHAPE_GALLERY_GROUPS, wordArtSolidColor, type WordArtPreset } from '@genoffice/ui'
 import {
-  buildLineParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
-  WORDART_PRESETS,
   type HeaderFooter,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
-import { shapeLabelKey } from './shape-gallery'
 import { tableModelToPmNode } from '../editor/convert'
 import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
+import iconEditor from '../assets/icon-editor.png'
+import iconTranslate from '../assets/icon-translate.png'
 import {
   IconAccept,
   IconAiPanel,
   IconCaret,
   IconComment,
+  IconComments,
   IconCompare,
   IconCursor,
   IconEraser,
@@ -34,13 +35,11 @@ import {
   IconPrintLayout,
   IconReadMode,
   IconRuler,
-  IconSparkle,
   IconSplit,
   IconSwitchWindows,
   IconRedo,
   IconReject,
   IconTrackChanges,
-  IconTranslate,
   IconUndo,
   IconWebLayout,
   IconWholePage,
@@ -208,8 +207,8 @@ export function insertTextboxAt(editor: Editor): void {
     heightEmu: TEXTBOX_HEIGHT_EMU,
     id: Math.floor(Math.random() * 900000) + 100000,
   })
-  // never plain insertContent: with an object selected (NodeSelection) that
-  // would replace the selected shape instead of adding a new block
+  // top-level insert: a plain insertContent would replace a selected floating
+  // node and fails silently from inside a table cell
   insertTopLevelBlockAtSelection(editor, {
     type: 'docProtected',
     attrs: {
@@ -223,6 +222,23 @@ export function insertTextboxAt(editor: Editor): void {
 }
 
 /**
+ * Shape gallery for the picker dropdown: the cross-app shared groups (slides
+ * parity), minus Lines — the page renderer draws shapes as filled clipped
+ * boxes and cannot show stroke-only connectors yet.
+ */
+export const DOC_SHAPE_GROUPS = SHAPE_GALLERY_GROUPS.filter(
+  (g) => g.groupKey !== 'ribbonShapeGroupLines',
+)
+
+const DOC_SHAPES = DOC_SHAPE_GROUPS.flatMap((g) => g.shapes)
+
+/** Display label for a prst inserted from the gallery. */
+export function shapeLabel(prst: string): string {
+  const def = DOC_SHAPES.find((s) => s.prst === prst)
+  return def ? t(def.labelKey as StringKey) : prst
+}
+
+/**
  * Insert a block beside the current top-level block. Ribbon actions can be
  * invoked while the caret is nested in a table cell, where inserting a block
  * directly at the selection is invalid and TipTap otherwise fails silently.
@@ -233,47 +249,18 @@ export function insertTopLevelBlockAtSelection(editor: Editor, content: JSONCont
   return editor.chain().focus().insertContentAt(position, content).run()
 }
 
-/** Insert a floating stroke-only line/connector at the cursor. */
-export function insertLineAt(editor: Editor, kind: string): void {
-  const straight = kind !== 'lineBent' && kind !== 'lineCurved'
-  const widthEmu = 1800000
-  // Word's horizontal line is a zero-height extent; the display box keeps a
-  // 12 px grab band and draws the stroke at its vertical center
-  const heightEmu = straight ? 0 : 1080000
-  const xml = buildLineParagraphXml({
-    kind,
-    widthEmu,
-    heightEmu,
-    id: Math.floor(Math.random() * 900000) + 100000,
-  })
-  const textbox: TextboxDisplay = {
-    borderColor: '000000',
-    widthPx: Math.round(widthEmu / 9525),
-    heightPx: straight ? 12 : Math.round(heightEmu / 9525),
-    prst: kind,
-    paras: [],
-    readOnly: true,
-    insetTopPx: 0,
-    insetRightPx: 0,
-    insetBottomPx: 0,
-    insetLeftPx: 0,
-  }
-  insertTopLevelBlockAtSelection(editor, {
-    type: 'docProtected',
-    attrs: {
-      docxIndex: null,
-      blockType: 'passthrough',
-      label: t('ribbonShapeLabel', { name: t(shapeLabelKey(kind)) }),
-      genXml: xml,
-      textboxes: [textbox],
-    },
-  })
-}
-
-/** Insert a floating preset shape (wps:wsp with prstGeom) at the cursor. */
-export function insertShapeAt(editor: Editor, prst: string): void {
-  const widthEmu = 1800000
-  const heightEmu = 1080000
+/**
+ * Insert a floating preset shape (wps:wsp with prstGeom) at the cursor, or at
+ * an explicit top-level doc position with an explicit size (shape draw mode).
+ * Returns the position the block was inserted at (null if the insert failed).
+ */
+export function insertShapeAt(
+  editor: Editor,
+  prst: string,
+  opts?: { widthEmu?: number; heightEmu?: number; atPos?: number },
+): number | null {
+  const widthEmu = opts?.widthEmu ?? 1800000
+  const heightEmu = opts?.heightEmu ?? 1080000
   const xml = buildShapeParagraphXml({
     prst,
     widthEmu,
@@ -292,16 +279,19 @@ export function insertShapeAt(editor: Editor, prst: string): void {
     prst,
     paras: [{ runs: [{ text: '' }] }],
   }
-  insertTopLevelBlockAtSelection(editor, {
+  const content = {
     type: 'docProtected',
     attrs: {
       docxIndex: null,
       blockType: 'passthrough',
-      label: t('ribbonShapeLabel', { name: t(shapeLabelKey(prst)) }),
+      label: t('ribbonShapeLabel', { name: shapeLabel(prst) }),
       genXml: xml,
       textboxes: [textbox],
     },
-  })
+  }
+  const { $from } = editor.state.selection
+  const position = opts?.atPos ?? ($from.depth > 0 ? $from.after(1) : editor.state.selection.to)
+  return editor.chain().focus().insertContentAt(position, content).run() ? position : null
 }
 
 /** ~7.5 cm × 2 cm default size for WordArt in EMU */
@@ -309,10 +299,13 @@ const WORDART_WIDTH_EMU = 2700000
 const WORDART_HEIGHT_EMU = 720000
 
 /** Insert a floating WordArt text box at the cursor. */
-export function insertWordArtAt(editor: Editor, wordArtId: string): void {
-  const preset = WORDART_PRESETS.find((p) => p.id === wordArtId) ?? WORDART_PRESETS[0]
+export function insertWordArtAt(editor: Editor, preset: WordArtPreset): void {
+  // The saved run can only carry a solid color; light fills fall back to the
+  // outline color so the text stays readable when the file is reopened.
+  const solidHex = wordArtSolidColor(preset).replace('#', '')
   const xml = buildWordArtParagraphXml({
-    wordArtId,
+    colorHex: solidHex,
+    italic: preset.italic,
     widthEmu: WORDART_WIDTH_EMU,
     heightEmu: WORDART_HEIGHT_EMU,
     id: Math.floor(Math.random() * 900000) + 100000,
@@ -321,14 +314,15 @@ export function insertWordArtAt(editor: Editor, wordArtId: string): void {
     // no background fill; shape border is also absent (noFill)
     widthPx: Math.round(WORDART_WIDTH_EMU / 9525),
     heightPx: Math.round(WORDART_HEIGHT_EMU / 9525),
-    wordArtId,
+    wordArtId: preset.id,
     paras: [
       {
         runs: [
           {
             text: t('ribbonWordArtDefaultText'),
-            color: preset.colorHex,
+            color: solidHex,
             bold: true,
+            italic: preset.italic,
             sizeHalfPoints: 72,
           },
         ],
@@ -336,12 +330,14 @@ export function insertWordArtAt(editor: Editor, wordArtId: string): void {
       },
     ],
   }
+  // top-level insert: a plain insertContent would replace a selected floating
+  // node and fails silently from inside a table cell
   insertTopLevelBlockAtSelection(editor, {
     type: 'docProtected',
     attrs: {
       docxIndex: null,
       blockType: 'passthrough',
-      label: t('ribbonWordArtLabel', { name: preset.label }),
+      label: t('ribbonWordArtLabel', { name: t(preset.nameKey as StringKey) }),
       genXml: xml,
       textboxes: [textbox],
     },
@@ -508,8 +504,8 @@ export function ReviewTab({
             }}
           >
             <span className="rb-big-icon">
-              <span className="copilot-badge">
-                <IconSparkle size={13} />
+              <span className="ai-feature-icon" aria-hidden="true">
+                <img src={iconEditor} width={22} height={22} alt="" />
               </span>
             </span>
             <span>{t('ribbonEditorBtn')}</span>
@@ -530,8 +526,8 @@ export function ReviewTab({
               onClick={() => toggleDropdown(setDropdown, 'translate')}
             >
               <span className="rb-big-icon">
-                <span className="copilot-badge">
-                  <IconTranslate size={13} />
+                <span className="ai-feature-icon" aria-hidden="true">
+                  <img src={iconTranslate} width={22} height={22} alt="" />
                 </span>
                 <IconCaret />
               </span>
@@ -581,7 +577,7 @@ export function ReviewTab({
             onClick={onShowComments}
           >
             <span className="rb-big-icon">
-              <IconComment size={BIG} />
+              <IconComments size={BIG} />
             </span>
             <span>{t('ribbonShowComments')}</span>
           </button>

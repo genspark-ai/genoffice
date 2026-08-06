@@ -11,7 +11,6 @@ export {
 } from './patch'
 export {
   TABLE_HEADER_FILL,
-  WORDART_PRESETS,
   applyImageWrap,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,

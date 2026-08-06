@@ -2,7 +2,18 @@
  * 3.1/3.2 Konva canvas — renders one RenderSlide + selection/transform + text-edit triggering.
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Stage, Layer, Rect, Group, Transformer, Line, Arrow, Text, Circle } from 'react-konva'
+import {
+  Stage,
+  Layer,
+  Rect,
+  Group,
+  Transformer,
+  Line,
+  Arrow,
+  Text,
+  Circle,
+  Path,
+} from 'react-konva'
 import type Konva from 'konva'
 import type {
   RenderSlide,
@@ -22,6 +33,14 @@ import {
 } from './snap'
 import { NodeBody, StaticNode } from './NodeBody'
 import { useI18n } from './i18n/locale'
+import {
+  defaultDrawSize,
+  isLineDrawKind,
+  isStraightLineKind,
+  resolveDrawRect,
+  type DrawRect,
+} from './draw-shape'
+import { shapePreviewPath } from './components/gallery-previews'
 
 /** Whether a node is a connector (read-only, no Transformer attached). */
 function isConnectorNode(node: RenderNode): boolean {
@@ -93,6 +112,12 @@ interface Props {
       end?: { targetId: string; idx: number } | null
     },
   ) => void
+  /** Shape draw mode (ribbon gallery pick): crosshair cursor, mousedown draws over anything; click = default size */
+  drawMode?: { kind: string } | null
+  /** Draw gesture committed: box to insert (slide px; flipH/flipV restore a line's drag direction) */
+  onDrawCommit?: (rect: DrawRect) => void
+  /** Draw mode cancelled from inside the canvas (Escape) */
+  onDrawCancel?: () => void
 }
 
 /**
@@ -161,6 +186,9 @@ export function SlideCanvas({
   enteredGroupId,
   onEnterGroup,
   onEditConnectorEndpoints,
+  drawMode,
+  onDrawCommit,
+  onDrawCancel,
 }: Props) {
   const trRef = useRef<Konva.Transformer>(null)
   const layerRef = useRef<Konva.Layer>(null)
@@ -215,6 +243,41 @@ export function SlideCanvas({
     null,
   )
   const marqueeRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+
+  // In-flight shape draw gesture (slide coordinates); preview only shows past the click threshold
+  const drawRef = useRef<{ x1: number; y1: number; x2: number; y2: number; shift: boolean } | null>(
+    null,
+  )
+  const [drawPreview, setDrawPreview] = useState<DrawRect | null>(null)
+
+  // Draw mode: Escape cancels; toggling Shift mid-drag re-constrains the preview without mouse movement
+  useEffect(() => {
+    if (!drawMode) {
+      drawRef.current = null
+      setDrawPreview(null)
+      return
+    }
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        drawRef.current = null
+        setDrawPreview(null)
+        onDrawCancel?.()
+        return
+      }
+      if (ev.key === 'Shift') {
+        const d = drawRef.current
+        if (!d) return
+        d.shift = ev.type === 'keydown'
+        setDrawPreview(resolveDrawRect(drawMode.kind, d.x1, d.y1, d.x2, d.y2, d.shift))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKey)
+    }
+  }, [drawMode, onDrawCancel])
 
   // Hold Shift while rotating -> snap in 15° steps; release to restore free angle
   useEffect(() => {
@@ -294,6 +357,16 @@ export function SlideCanvas({
       width={slide.widthPx + CANVAS_BLEED * 2}
       height={slide.heightPx + CANVAS_BLEED * 2}
       onMouseDown={(e) => {
+        // Draw mode swallows the gesture before any selection logic (drawing works over elements too)
+        if (drawMode) {
+          if (e.evt.button !== 0) return
+          const raw = e.target.getStage()?.getPointerPosition()
+          if (!raw) return
+          const x = raw.x - CANVAS_BLEED
+          const y = raw.y - CANVAS_BLEED
+          drawRef.current = { x1: x, y1: y, x2: x, y2: y, shift: e.evt.shiftKey }
+          return
+        }
         suppressClickRef.current = false
         // Blank = the Stage itself (bleed area), the slide base/background (name=slide-bg),
         // or a full-page background-like node (still click-selectable, but a drag on it
@@ -314,6 +387,19 @@ export function SlideCanvas({
         setMarquee(null) // Only show after moving past the threshold
       }}
       onMouseMove={(e) => {
+        if (drawMode) {
+          const d = drawRef.current
+          if (!d) return
+          const raw = e.target.getStage()?.getPointerPosition()
+          if (!raw) return
+          d.x2 = raw.x - CANVAS_BLEED
+          d.y2 = raw.y - CANVAS_BLEED
+          d.shift = e.evt.shiftKey
+          // Within 3 screen px still counts as a click; don't show the preview yet
+          if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) * zoom > 3)
+            setDrawPreview(resolveDrawRect(drawMode.kind, d.x1, d.y1, d.x2, d.y2, d.shift))
+          return
+        }
         const m = marqueeRef.current
         if (!m) return
         const raw = e.target.getStage()?.getPointerPosition()
@@ -324,6 +410,19 @@ export function SlideCanvas({
         if (Math.hypot(m.x2 - m.x1, m.y2 - m.y1) * zoom > 3) setMarquee({ ...m })
       }}
       onMouseUp={() => {
+        if (drawMode) {
+          const d = drawRef.current
+          drawRef.current = null
+          setDrawPreview(null)
+          if (!d || !onDrawCommit) return
+          // Click (no real drag) = insert at the predefined default size, PowerPoint-style
+          const rect =
+            Math.hypot(d.x2 - d.x1, d.y2 - d.y1) * zoom <= 3
+              ? { x: d.x1, y: d.y1, ...defaultDrawSize(drawMode.kind) }
+              : resolveDrawRect(drawMode.kind, d.x1, d.y1, d.x2, d.y2, d.shift)
+          onDrawCommit(rect)
+          return
+        }
         const m = marqueeRef.current
         marqueeRef.current = null
         if (!m) return
@@ -374,9 +473,15 @@ export function SlideCanvas({
         }
         onContextMenu(sourceId, e.evt.clientX, e.evt.clientY, cell)
       }}
-      style={{ position: 'absolute', left: -CANVAS_BLEED, top: -CANVAS_BLEED }}
+      style={{
+        position: 'absolute',
+        left: -CANVAS_BLEED,
+        top: -CANVAS_BLEED,
+        cursor: drawMode ? 'crosshair' : undefined,
+      }}
     >
-      <Layer ref={layerRef} x={CANVAS_BLEED} y={CANVAS_BLEED}>
+      {/* Draw mode disables node hit-testing: the crosshair gesture must not select/drag elements underneath */}
+      <Layer ref={layerRef} x={CANVAS_BLEED} y={CANVAS_BLEED} listening={!drawMode}>
         {/* Slide base: white background + shadow (used to be the Stage's CSS background; the bleed area must show the gray workspace behind).
             Dense slides drop the decorative blur: a canvas shadow re-rasterizes on every full-layer
             redraw and is pure GPU pressure on exactly the pages where the freeze bites. */}
@@ -494,6 +599,74 @@ export function SlideCanvas({
             listening={false}
           />
         )}
+        {/* Shape-draw preview: live ghost of the actual shape being drawn (PowerPoint drag behavior) */}
+        {drawMode &&
+          drawPreview &&
+          (() => {
+            const p = drawPreview
+            // Line kinds preview with their real endpoints (flips encode leftward/upward drags)
+            const sx = p.flipH ? p.x + p.w : p.x
+            const sy = p.flipV ? p.y + p.h : p.y
+            const ex = p.flipH ? p.x : p.x + p.w
+            const ey = p.flipV ? p.y : p.y + p.h
+            const lineW = 1.33 // 1pt, same as the inserted stroke
+            if (isStraightLineKind(drawMode.kind)) {
+              return drawMode.kind === 'line' ? (
+                <Line
+                  points={[sx, sy, ex, ey]}
+                  stroke="#000000"
+                  strokeWidth={lineW}
+                  listening={false}
+                />
+              ) : (
+                <Arrow
+                  points={[sx, sy, ex, ey]}
+                  stroke="#000000"
+                  fill="#000000"
+                  strokeWidth={lineW}
+                  pointerAtEnding
+                  pointerAtBeginning={drawMode.kind === 'lineArrowDouble'}
+                  pointerLength={8}
+                  pointerWidth={6}
+                  listening={false}
+                />
+              )
+            }
+            if (isLineDrawKind(drawMode.kind)) {
+              const mx = (sx + ex) / 2
+              const d =
+                drawMode.kind === 'lineBent'
+                  ? `M ${sx} ${sy} L ${mx} ${sy} L ${mx} ${ey} L ${ex} ${ey}`
+                  : `M ${sx} ${sy} C ${sx + (ex - sx) * 0.6} ${sy} ${sx + (ex - sx) * 0.4} ${ey} ${ex} ${ey}`
+              return <Path data={d} stroke="#000000" strokeWidth={lineW} listening={false} />
+            }
+            const d = shapePreviewPath(drawMode.kind, Math.max(p.w, 1), Math.max(p.h, 1))
+            if (d)
+              return (
+                <Path
+                  x={p.x}
+                  y={p.y}
+                  data={d}
+                  fill="rgba(196,62,28,0.45)"
+                  stroke="#C43E1C"
+                  strokeWidth={1 / Math.max(zoom, 0.1)}
+                  listening={false}
+                />
+              )
+            // Preset not covered by the preview geometry: dashed box fallback
+            return (
+              <Rect
+                x={p.x}
+                y={p.y}
+                width={p.w}
+                height={p.h}
+                stroke="#4080ff"
+                strokeWidth={1 / Math.max(zoom, 0.1)}
+                dash={[4, 4]}
+                listening={false}
+              />
+            )
+          })()}
         {(() => {
           if (selectedIds.length !== 1) return null
           const n = slide.nodes.find((x) => x.sourceId === selectedIds[0])

@@ -67,6 +67,7 @@ import {
   handleInsertPicture,
   handleInsertPivotChart,
   handleInsertShape,
+  startShapeDraw,
   type VisualActionContext,
 } from './visual-actions'
 import type { ChartDialogKind, ChartEditData, ShapeEditChanges } from './WorkbookVisuals'
@@ -685,7 +686,9 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     return
   }
   if (command.startsWith('insert-shape:')) {
-    handleInsertShape(ctx.visualContext(), command.slice('insert-shape:'.length), false)
+    // Excel parity: gallery pick arms the crosshair draw mode (click = default
+    // size, drag = custom, Shift = square, Esc = cancel)
+    startShapeDraw(ctx.visualContext(), command.slice('insert-shape:'.length))
     return
   }
   if (command === 'insert-textbox') {
