@@ -1,3 +1,29 @@
+
+
+Rất nhiều anh em công nghệ đang chuyển từ các sản phẩm Office bản quyền qua nguồn mở: Đây là một bộ Microsoft Office mã nguồn mở tích hợp AI ngay từ đầu
+
+Sau làn sóng AI Coding và AI Agent, giờ đây đến lượt AI Office trở thành xu hướng mới. GenOffice là một dự án mã nguồn mở với tham vọng xây dựng bộ ứng dụng văn phòng thế hệ mới, nơi AI không chỉ hỗ trợ mà còn trực tiếp hoàn thành công việc cho người dùng.
+
+Điểm nổi bật của dự án:
+
+* Tích hợp đầy đủ Docs, Sheets, Slides và PDF trong một ứng dụng.
+* AI được tích hợp sẵn để viết tài liệu, phân tích dữ liệu và tạo bài thuyết trình.
+* Có thể nghiên cứu thông tin, tổng hợp nội dung và sinh tài liệu chỉ từ một yêu cầu.
+* Mã nguồn mở, cho phép cộng đồng cùng phát triển và mở rộng.
+* Hỗ trợ trên cả Windows, macOS và Linux.
+* Thiết kế hướng tới trải nghiệm AI-first thay vì chỉ bổ sung AI vào các ứng dụng văn phòng truyền thống. (Reddit⁠￼)
+
+Ứng dụng thực tế:
+
+* Soạn thảo báo cáo bằng AI.
+* Phân tích dữ liệu và tạo bảng tính thông minh.
+* Tự động xây dựng slide thuyết trình.
+* Tóm tắt và chỉnh sửa tài liệu PDF.
+* Xây dựng AI Workspace cho cá nhân hoặc doanh nghiệp.
+
+Điều thú vị nhất là GenOffice không chỉ thêm một nút “AI” vào Office, mà được thiết kế ngay từ đầu theo triết lý AI-native. Thay vì phải chuyển qua lại giữa chatbot và Word, Excel hay PowerPoint, AI có thể trực tiếp nghiên cứu, phân tích dữ liệu, viết tài liệu và tạo slide ngay trong cùng một không gian làm việc. Đây có thể sẽ là hướng phát triển của các bộ ứng dụng văn phòng trong vài năm tới.
+
+
 # GenOffice
 
 An AI-native office suite for macOS and Windows: word processor, spreadsheet,
