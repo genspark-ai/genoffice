@@ -27,6 +27,7 @@ import {
   type OoXmlPivotConfig,
 } from './PivotDialog'
 import { InsertFunctionDialog } from './InsertFunctionDialog'
+import { ShapeGalleryMenu } from './shape-gallery'
 import { SubtotalDialog, type SubtotalConfig } from './SubtotalDialog'
 import { ConsolidateDialog } from './ConsolidateDialog'
 import type { ConsolidateConfig } from './consolidate'
@@ -1265,27 +1266,15 @@ function Ribbon({
               <ToolSymbol symbol="◇" />
               {t('appShapes')}
               <CaretIcon />
-              <MenuSelect
-                cover
+              <ShapeGalleryMenu
                 label="Shapes"
-                options={[
-                  { value: 'rect', label: t('appShapeRect') },
-                  { value: 'roundRect', label: t('appShapeRoundRect') },
-                  { value: 'ellipse', label: t('appShapeEllipse') },
-                  { value: 'triangle', label: t('appShapeTriangle') },
-                  { value: 'diamond', label: t('appShapeDiamond') },
-                  { value: 'rightArrow', label: t('appShapeRightArrow') },
-                  { value: 'leftArrow', label: t('appShapeLeftArrow') },
-                  { value: 'pentagon', label: t('appShapePentagon') },
-                  { value: 'hexagon', label: t('appShapeHexagon') },
-                ]}
-                onPick={(value) => onCommand(`insert-shape:${value}`)}
+                onPick={(prst) => onCommand(`insert-shape:${prst}`)}
               />
             </span>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button className="styles-row as-button" onClick={() => onCommand('insert-icons')}>
               <ToolSymbol symbol="✧" />
               {t('appIcons')}
-            </span>
+            </button>
             <span className="styles-row reserved" title={t('appNotAvailableYet')}>
               <ToolSymbol symbol="⬡" />
               {t('app3dModels')}
@@ -1297,18 +1286,23 @@ function Ribbon({
               <ToolSymbol symbol="▤" />
               SmartArt
             </span>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button className="styles-row as-button" onClick={() => onCommand('insert-screenshot')}>
               <ToolSymbol symbol="⧉" />
               {t('appScreenshot')}
-              <CaretIcon />
-            </span>
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCheckbox')}>
           <RibbonReserved large label={t('appGroupCheckbox')} symbol="☑" />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCharts')}>
-          <RibbonReserved large label={t('appRecommendedCharts')} symbol="📊" />
+          <RibbonButton
+            large
+            label={t('appRecommendedCharts')}
+            detail={t('appFromSelection')}
+            symbol="📊"
+            onClick={() => onCommand('recommended-charts-open')}
+          />
           <div className="chart-grid">
             <button
               title={t('appChartGridTitle', { type: t('appChartColumn') })}

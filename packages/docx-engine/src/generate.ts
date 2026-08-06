@@ -595,6 +595,179 @@ export function patchTextboxHeights(
   return resizedXml
 }
 
+/** Connector/line prsts rendered as display boxes despite having no text body */
+const LINE_SHAPE_RE =
+  /<a:prstGeom[^>]*prst="(?:line|straightConnector1|bentConnector[234]|curvedConnector[234])"/
+
+/** Same drawing set extractTextboxes yields boxes for (keeps patch indexes aligned) */
+function isBoxDrawing(drawingXml: string): boolean {
+  if (drawingXml.includes('<w:txbxContent') && paraPlainText(drawingXml) !== '') return true
+  return LINE_SHAPE_RE.test(drawingXml) && drawingXml.includes('<wp:wrapSquare')
+}
+
+export interface TextboxSizePatch {
+  wPx?: number | null
+  hPx?: number | null
+}
+
+/** Resize fixed DrawingML textboxes/shapes while preserving anchors and styling. */
+export function patchTextboxSizes(
+  paragraphXml: string,
+  sizes: ReadonlyArray<TextboxSizePatch | null | undefined>,
+): string {
+  if (sizes.every((size) => size == null || (size.wPx == null && size.hPx == null)))
+    return paragraphXml
+  const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
+  let out = ''
+  let cursor = 0
+  let boxIndex = -1
+  for (const drawing of drawings) {
+    const drawingXml = paragraphXml.slice(drawing.start, drawing.end)
+    if (!isBoxDrawing(drawingXml)) continue
+    boxIndex++
+    const size = sizes[boxIndex]
+    if (!size || (size.wPx == null && size.hPx == null)) continue
+    let resized = drawingXml
+    if (size.wPx != null) {
+      const cx = Math.max(1, Math.round(size.wPx * EMU_PER_PX))
+      resized = resized
+        .replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+        .replace(/(<a:ext\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+    }
+    if (size.hPx != null) {
+      const cy = Math.max(1, Math.round(size.hPx * EMU_PER_PX))
+      resized = resized
+        .replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+        .replace(/(<a:ext\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+        // a fixed height only sticks if Word stops auto-fitting the shape
+        .replace(/<a:spAutoFit\s*\/>|<a:spAutoFit\s*>\s*<\/a:spAutoFit>/, '<a:noAutofit/>')
+    }
+    out += paragraphXml.slice(cursor, drawing.start) + resized
+    cursor = drawing.end
+  }
+  let resizedXml = out + paragraphXml.slice(cursor)
+
+  let fallbackIndex = -1
+  resizedXml = resizedXml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, (fallback) => {
+    if (!isBoxDrawing(fallback) && !fallback.includes('<w:txbxContent')) return fallback
+    if (fallback.includes('<w:txbxContent') && paraPlainText(fallback) === '') return fallback
+    fallbackIndex++
+    const size = sizes[fallbackIndex]
+    if (!size) return fallback
+    let next = fallback
+    if (size.hPx != null) {
+      next = next.replace(
+        /(style="[^"]*\bheight:)\s*[\d.]+(pt|px)/,
+        (_whole, prefix: string, unit: string) => {
+          const value =
+            unit === 'pt' ? Math.round(size.hPx! * 75) / 100 : Math.round(size.hPx! * 100) / 100
+          return `${prefix}${value}${unit}`
+        },
+      )
+    }
+    if (size.wPx != null) {
+      next = next.replace(
+        /(style="[^"]*\bwidth:)\s*[\d.]+(pt|px)/,
+        (_whole, prefix: string, unit: string) => {
+          const value =
+            unit === 'pt' ? Math.round(size.wPx! * 75) / 100 : Math.round(size.wPx! * 100) / 100
+          return `${prefix}${value}${unit}`
+        },
+      )
+    }
+    return next
+  })
+  return resizedXml
+}
+
+/** Rewrite the first drawing's extent (chart/SmartArt graphicFrame paragraphs). */
+export function patchDrawingExtent(paragraphXml: string, wPx: number, hPx: number): string {
+  const cx = Math.max(1, Math.round(wPx * EMU_PER_PX))
+  const cy = Math.max(1, Math.round(hPx * EMU_PER_PX))
+  return paragraphXml
+    .replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+    .replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+    .replace(/(<a:ext\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+    .replace(/(<a:ext\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+}
+
+/** Insertable line/connector kinds: stroke-only wps:wsp with optional arrow ends */
+export const LINE_KINDS: Record<string, { prst: string; head?: boolean; tail?: boolean }> = {
+  line: { prst: 'line' },
+  lineArrow: { prst: 'straightConnector1', tail: true },
+  lineArrowDouble: { prst: 'straightConnector1', head: true, tail: true },
+  lineBent: { prst: 'bentConnector3' },
+  lineCurved: { prst: 'curvedConnector3' },
+}
+
+/** Insert a floating stroke-only line/connector paragraph (wp:anchor + wps:wsp). */
+export function buildLineParagraphXml(opts: {
+  kind: string
+  widthEmu?: number
+  heightEmu?: number
+  id?: number
+  colorHex?: string
+}): string {
+  const def = LINE_KINDS[opts.kind] ?? LINE_KINDS.line
+  const widthEmu = opts.widthEmu ?? 1800000
+  const heightEmu = opts.heightEmu ?? 114300
+  const id = opts.id ?? 1
+  const colorHex = opts.colorHex ?? '000000'
+
+  const ln =
+    `<a:ln w="12700"><a:solidFill><a:srgbClr val="${colorHex}"/></a:solidFill>` +
+    (def.head ? '<a:headEnd type="triangle"/>' : '') +
+    (def.tail ? '<a:tailEnd type="triangle"/>' : '') +
+    `</a:ln>`
+
+  const spPr =
+    `<wps:spPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm>` +
+    `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>` +
+    `<a:noFill/>` +
+    ln +
+    `</wps:spPr>`
+
+  const wsp =
+    `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">` +
+    `<wps:cNvSpPr/>` +
+    spPr +
+    `<wps:bodyPr/>` +
+    `</wps:wsp>`
+
+  const graphicData =
+    `<a:graphicData xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
+    `uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">${wsp}</a:graphicData>`
+
+  const graphic = `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${graphicData}</a:graphic>`
+
+  const anchor =
+    `<wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ` +
+    `distT="0" distB="0" distL="114300" distR="114300" simplePos="0" ` +
+    `relativeHeight="251658240" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<wp:simplePos x="0" y="0"/>` +
+    `<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="${widthEmu}" cy="${heightEmu}"/>` +
+    `<wp:effectExtent l="0" t="0" r="0" b="0"/>` +
+    `<wp:wrapSquare wrapText="bothSides"/>` +
+    `<wp:docPr id="${id}" name="${def.prst} ${id}"/>` +
+    graphic +
+    `</wp:anchor>`
+
+  const mcNs =
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
+  const mcChoice = `<mc:Choice Requires="wps"><w:drawing>${anchor}</w:drawing></mc:Choice>`
+  const vmlLine =
+    `<v:line xmlns:v="urn:schemas-microsoft-com:vml" ` +
+    `from="0,0" to="${Math.round(widthEmu / EMU_PER_PT)}pt,${Math.round(heightEmu / EMU_PER_PT)}pt" ` +
+    `strokecolor="#${colorHex}"/>`
+  const mcFallback = `<mc:Fallback><w:pict>${vmlLine}</w:pict></mc:Fallback>`
+
+  return `<w:p><w:r><mc:AlternateContent ${mcNs}>${mcChoice}${mcFallback}</mc:AlternateContent></w:r></w:p>`
+}
+
 /** CT_PPr child sequence (subset), for schema-ordered assembly and merging */
 export const PPR_CHILD_ORDER = [
   'w:pStyle',
@@ -1659,18 +1832,48 @@ function rawBool(xml: string | undefined): boolean {
   return !['0', 'false', 'none', 'off'].includes(val.toLowerCase())
 }
 
+/** rFonts built from the model alone (no original element to preserve).
+ * Latin-only keeps eastAsia empty; a lone primary font fills every slot (legacy behavior). */
+function freshRFontsXml(font: string | undefined, fontAscii: string | undefined): string {
+  const a = escapeXmlAttr(fontAscii ?? font ?? '')
+  const ea = font ? ` w:eastAsia="${escapeXmlAttr(font)}"` : ''
+  return `<w:rFonts w:ascii="${a}"${ea} w:hAnsi="${a}" w:cs="${a}"/>`
+}
+
+/**
+ * Rebuild rFonts merging the model into the original attributes: only the slots the
+ * model holds are overwritten (their theme attrs dropped so the explicit value wins);
+ * cs/hint and any untouched slot keep their original values.
+ */
+function mergeRFontsXml(rawXml: string, run: Run): string {
+  const attrs = new Map<string, string>()
+  for (const m of rawXml.matchAll(/ ([\w:]+)="([^"]*)"/g)) attrs.set(m[1], m[2])
+  // run.font may just be the parse-side derivation of an ascii-only element; writing
+  // it back would invent an eastAsia slot that pins CJK to the old Latin font. Only
+  // write eastAsia when the slot already existed or the user actually changed it.
+  const rawPrimary = attrs.get('w:eastAsia') ?? attrs.get('w:ascii') ?? attrs.get('w:hAnsi')
+  const hadEastAsia = attrs.has('w:eastAsia') || attrs.has('w:eastAsiaTheme')
+  const set = (slot: string, theme: string, value: string) => {
+    attrs.set(slot, escapeXmlAttr(value))
+    attrs.delete(theme)
+  }
+  if (run.fontAscii) {
+    set('w:ascii', 'w:asciiTheme', run.fontAscii)
+    set('w:hAnsi', 'w:hAnsiTheme', run.fontAscii)
+  }
+  if (run.font && (hadEastAsia || run.font !== rawPrimary)) {
+    set('w:eastAsia', 'w:eastAsiaTheme', run.font)
+  }
+  return `<w:rFonts${[...attrs].map(([k, v]) => ` ${k}="${v}"`).join('')}/>`
+}
+
 function revisionRPrChangeXml(run: Run): string | null {
   const change = run.rPrChange
   if (!change) return null
   const old = change.old ?? {}
   const props: string[] = []
   if (old.styleId) props.push(`<w:rStyle w:val="${escapeXmlAttr(old.styleId)}"/>`)
-  if (old.font) {
-    const font = escapeXmlAttr(old.font)
-    props.push(
-      `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`,
-    )
-  }
+  if (old.font || old.fontAscii) props.push(freshRFontsXml(old.font, old.fontAscii))
   if (old.bold) props.push('<w:b/>')
   if (old.italic) props.push('<w:i/>')
   if (old.strike) props.push('<w:strike/>')
@@ -1697,12 +1900,8 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   if (insideLink) out.push({ name: 'w:rStyle', xml: '<w:rStyle w:val="Hyperlink"/>' })
   else if (run.styleId)
     out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(run.styleId)}"/>` })
-  if (run.font) {
-    const f = escapeXmlAttr(run.font)
-    out.push({
-      name: 'w:rFonts',
-      xml: `<w:rFonts w:ascii="${f}" w:eastAsia="${f}" w:hAnsi="${f}" w:cs="${f}"/>`,
-    })
+  if (run.font || run.fontAscii) {
+    out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii) })
   }
   if (run.bold) out.push({ name: 'w:b', xml: '<w:b/>' })
   if (run.italic) out.push({ name: 'w:i', xml: '<w:i/>' })
@@ -1759,10 +1958,10 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return raw === modeled || (raw === 'Hyperlink' && !modeled)
       }
       case 'rFonts': {
+        // mirrors the parse side: primary = eastAsia ?? ascii ?? hAnsi, latin = ascii ?? hAnsi
         const attrs = rawOf('w:rFonts')
-        const raw =
-          rawAttr(attrs, 'w:eastAsia') ?? rawAttr(attrs, 'w:ascii') ?? rawAttr(attrs, 'w:hAnsi')
-        return raw === run.font
+        const ascii = rawAttr(attrs, 'w:ascii') ?? rawAttr(attrs, 'w:hAnsi')
+        return (rawAttr(attrs, 'w:eastAsia') ?? ascii) === run.font && ascii === run.fontAscii
       }
       case 'bold':
         return rawBool(rawOf('w:b')) === !!run.bold
@@ -1804,7 +2003,13 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
   for (const g of RUN_MANAGED_GROUPS) {
     if (groupEqual(g.key)) continue
     for (const t of g.tags) rebuiltTags.add(t)
-    freshOut.push(...freshByGroup.get(g.key)!)
+    const rawRFonts = g.key === 'rFonts' ? rawOf('w:rFonts') : undefined
+    if (rawRFonts && (run.font || run.fontAscii)) {
+      // edited font slots merge into the original element instead of replacing it
+      freshOut.push({ name: 'w:rFonts', xml: mergeRFontsXml(rawRFonts, run) })
+    } else {
+      freshOut.push(...freshByGroup.get(g.key)!)
+    }
   }
 
   const kept = rawChildren.filter((c) => !rebuiltTags.has(c.name))

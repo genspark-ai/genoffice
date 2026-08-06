@@ -12,6 +12,11 @@ import {
   splitSheetRef,
 } from '../domain/chart-visual'
 import { parseAddress } from '../domain/cell-address'
+import {
+  isPillPreset,
+  presetPath,
+  presetPolygon,
+} from '../../../../packages/pptx-render/src/preset-geometry'
 import { t } from './i18n/locale'
 import type { WorkbookChartEdit, WorkbookFile, WorkbookVisualObject } from '../shared/desktop-api'
 
@@ -962,24 +967,17 @@ function EditableShapeVisual({
   )
 }
 
-const SHAPE_POLYGONS: Record<string, string> = {
-  triangle: '50,4 96,96 4,96',
-  diamond: '50,2 98,50 50,98 2,50',
-  rightArrow: '2,35 60,35 60,15 98,50 60,85 60,65 2,65',
-  leftArrow: '98,35 40,35 40,15 2,50 40,85 40,65 98,65',
-  pentagon: '50,2 98,38 79,98 21,98 2,38',
-  hexagon: '25,4 75,4 98,50 75,96 25,96 2,50',
-}
-
 function ShapeVisual({ visual }: { readonly visual: WorkbookVisualObject }): React.JSX.Element {
   const type = visual.shapeType ?? ''
   const fill = visual.fillColor ?? '#DDEBF7'
-  const isRect = ['rect', 'roundRect', 'flowChartProcess', 'snip1Rect', 'snip2SameRect'].includes(
-    type,
-  )
+  const isRect = type === 'rect' || type === 'flowChartProcess'
+  // Alternate Process draws as a rounded rectangle, not a pill like Terminator
+  const isRounded = type === 'roundRect' || type === 'flowChartAlternateProcess'
+  const isPill = isPillPreset(type) && !isRounded
   const isEllipse = type === 'ellipse'
-  const polygon = SHAPE_POLYGONS[type]
-  if (!isRect && !isEllipse && !polygon) {
+  const polygon = presetPolygon(type, 100, 100)
+  const path = polygon ? null : presetPath(type, 100, 100)
+  if (!isRect && !isPill && !isRounded && !isEllipse && !polygon && !path) {
     return (
       <div className="xlsx-shape">
         <span>{visual.text ?? visual.name ?? t('appDrawingObject')}</span>
@@ -992,19 +990,30 @@ function ShapeVisual({ visual }: { readonly visual: WorkbookVisualObject }): Rea
       style={visual.rotation ? { transform: `rotate(${visual.rotation}deg)` } : undefined}
     >
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        {isRect && (
+        {(isRect || isPill || isRounded) && (
           <rect
             x="1"
             y="1"
             width="98"
             height="98"
-            rx={type === 'roundRect' ? 12 : 0}
+            rx={isPill ? 49 : isRounded ? 12 : 0}
             fill={fill}
             stroke="#00000022"
           />
         )}
         {isEllipse && <ellipse cx="50" cy="50" rx="49" ry="49" fill={fill} stroke="#00000022" />}
-        {polygon && <polygon points={polygon} fill={fill} stroke="#00000022" />}
+        {polygon && <polygon points={polygon.join(' ')} fill={fill} stroke="#00000022" />}
+        {path?.path && <path d={path.path} fill={fill} stroke="#00000022" />}
+        {path?.fillPath && <path d={path.fillPath} fill={fill} stroke="none" />}
+        {path?.strokePath && (
+          <path
+            d={path.strokePath}
+            fill="none"
+            stroke={fill}
+            strokeWidth={3}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
       </svg>
       {visual.text && <span className="shape-text">{visual.text}</span>}
     </div>

@@ -7,6 +7,7 @@ import {
   parseGskImageSearch,
   parseGskGeneratedImage,
   parseGskConvertResult,
+  parseGskPastProjects,
   extractGskText,
   parseToolCliNdjson,
 } from '../src/gsk'
@@ -145,6 +146,86 @@ describe('parseGskImageSearch', () => {
     }
     const images = parseGskImageSearch(raw, 8)
     expect(images.map((i) => i.title)).toEqual(['ok'])
+  })
+})
+
+describe('parseGskPastProjects', () => {
+  // real `gsk projects --artifact_types slides` shape (trimmed)
+  const raw = {
+    version: 1,
+    status: 'ok',
+    message: 'success',
+    data: {
+      projects: [
+        {
+          project_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          type: 'slides_agent_git',
+          title: 'Product launch trailer presentation',
+          ctime: '2026-07-29T07:09:43.706212',
+        },
+        {
+          project_id: '12345678-90ab-4cde-8f01-234567890abc',
+          type: 'slides_agent_git',
+          title: 'Team collaboration deck request',
+          ctime: '2026-07-23T08:39:04.464484',
+        },
+      ],
+      total: 222,
+      offset: 0,
+      has_more: true,
+      returned: 2,
+    },
+    session_state: {
+      past_projects: {
+        projects: [
+          {
+            project_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            project_url: '/agents?id=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            artifacts: [],
+          },
+        ],
+      },
+    },
+  }
+
+  it('maps projects, preferring session_state project_url and deriving the rest', () => {
+    const page = parseGskPastProjects(raw)
+    expect(page.total).toBe(222)
+    expect(page.hasMore).toBe(true)
+    expect(page.projects).toEqual([
+      {
+        projectId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        type: 'slides_agent_git',
+        title: 'Product launch trailer presentation',
+        ctime: '2026-07-29T07:09:43.706212',
+        projectUrl: '/agents?id=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      },
+      {
+        projectId: '12345678-90ab-4cde-8f01-234567890abc',
+        type: 'slides_agent_git',
+        title: 'Team collaboration deck request',
+        ctime: '2026-07-23T08:39:04.464484',
+        projectUrl: '/agents?id=12345678-90ab-4cde-8f01-234567890abc',
+      },
+    ])
+  })
+
+  it('skips entries without project_id and tolerates missing data', () => {
+    const page = parseGskPastProjects({
+      status: 'ok',
+      data: { projects: [{ title: 'no id' }], has_more: false },
+    })
+    expect(page.projects).toEqual([])
+    expect(page.total).toBe(0)
+    expect(page.hasMore).toBe(false)
+  })
+
+  it('tolerates a completely empty response', () => {
+    expect(parseGskPastProjects({ status: 'ok' })).toEqual({
+      projects: [],
+      total: 0,
+      hasMore: false,
+    })
   })
 })
 

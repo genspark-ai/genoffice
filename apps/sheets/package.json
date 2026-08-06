@@ -22,6 +22,7 @@
     "gate": "npm run typecheck && npm run fixtures && npm test && npm run compat"
   },
   "dependencies": {
+    "@fluentui/react-icons": "^2.0.333",
     "@genoffice/agent-core": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
@@ -29,7 +30,6 @@
     "@genoffice/file-parse": "*",
     "@genoffice/i18n": "*",
     "@genoffice/ui": "*",
-    "@fluentui/react-icons": "^2.0.333",
     "@univerjs/core": "^0.25.1",
     "@univerjs/preset-sheets-conditional-formatting": "^0.25.1",
     "@univerjs/preset-sheets-core": "^0.25.1",
@@ -54,7 +54,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^41.0.3",
+    "electron": "^43.3.0",
     "electron-vite": "^5.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

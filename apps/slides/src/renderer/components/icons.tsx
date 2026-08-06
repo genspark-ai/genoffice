@@ -1226,24 +1226,25 @@ export function IconEllipse(props: IconProps) {
   )
 }
 
-/** Slide show: from beginning (screen + play triangle) */
+/** Slide show: from beginning (slide open at the bottom-right, its bottom edge
+ * running out as an arrow into a play triangle — loop back to slide 1 and play) */
 export function IconPlayFromStart(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M19.51 11.3 V6.57 a0.92 0.92 0 0 0 -0.92 -0.92 H5.41 a0.92 0.92 0 0 0 -0.92 0.92 v8.56 a0.92 0.92 0 0 0 0.92 0.92 h8.25" />
+      <path d="M10.85 14.2 l1.89 1.85 -1.89 1.85" />
+      <path d="M15.3 12.7 L20.9 16.05 L15.3 19.4 Z" />
+    </Svg>
+  )
+}
+
+/** Slide show: from current slide (screen + play triangle) */
+export function IconPlayCurrent(props: IconProps) {
   return (
     <Svg {...props}>
       <rect x="4.49" y="5.65" width="15.02" height="10.4" rx="0.92" />
       <path d="M 10.27 8.3 v 5.08 l 4.39 -2.54 z" fill="currentColor" stroke="none" />
       <path d="M 12 16.04 v 2.31 M 9.11 18.35 h 5.78" />
-    </Svg>
-  )
-}
-
-/** Slide show: from current slide (half screen + play triangle) */
-export function IconPlayCurrent(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M 4.49 10.27 v -3.7 a 0.92 0.92 0 0 1 0.92 -0.92 h 13.17 a 0.92 0.92 0 0 1 0.92 0.92 v 9.7 a 0.92 0.92 0 0 1 -0.92 0.92 H 12" />
-      <path d="M 4.49 13.39 h 4.62 M 4.49 16.27 h 4.62 M 4.49 19.16 h 4.62" />
-      <path d="M 12.23 9.23 v 5.08 l 4.39 -2.54 z" fill="currentColor" stroke="none" />
     </Svg>
   )
 }

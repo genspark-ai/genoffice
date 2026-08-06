@@ -1548,3 +1548,322 @@ body.vib .home {
   font-variant-numeric: tabular-nums;
   padding-top: 1px;
 }
+
+/* ── Cloud (Genspark web) projects ── */
+
+/* fixed header: the content column never scrolls; only .cloud-scroll does */
+.content:has(.cloud-projects) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 26px 36px 24px;
+}
+
+.cloud-projects {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cloud-projects .proj-empty {
+  flex: 1;
+}
+
+.cloud-hero {
+  flex-shrink: 0;
+}
+
+.cloud-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cloud-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.cloud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: #eef0f2;
+  border-radius: 999px;
+  padding: 5px 11px;
+  white-space: nowrap;
+}
+
+.cloud-subtitle {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.cloud-sort {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.cloud-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 8px 13px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cloud-sort-btn:hover {
+  background: var(--surface-subtle);
+}
+
+.cloud-sort-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 150px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  padding: 4px;
+  z-index: 5;
+}
+
+.cloud-sort-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 8px 11px;
+  font-size: 13px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.cloud-sort-menu button:hover {
+  background: var(--surface-subtle);
+}
+
+.cloud-sort-menu button.active {
+  font-weight: 600;
+}
+
+.cloud-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.cloud-search {
+  flex: 1;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.cloud-search:focus-within {
+  border-color: var(--accent);
+}
+
+.cloud-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.cloud-seg {
+  display: flex;
+  background: #f0f1f3;
+  border-radius: 10px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.cloud-seg button {
+  border: none;
+  background: none;
+  padding: 7px 15px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cloud-seg button.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.cloud-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.cloud-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cloud-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 24px 12px 10px;
+}
+
+.cloud-list li:first-child.cloud-group-label {
+  padding-top: 14px;
+}
+
+.cloud-list li + li:not(.cloud-group-label) .cloud-row {
+  border-top: 1px solid #f1f2f4;
+}
+
+.cloud-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 15px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  border-radius: 10px;
+}
+
+.cloud-row:hover {
+  background: var(--surface-subtle);
+  border-color: transparent;
+}
+
+.cloud-row:hover + li .cloud-row {
+  border-top-color: transparent;
+}
+
+.cloud-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* title + trailing external icon; the icon hugs the text and survives truncation */
+.cloud-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.cloud-row-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cloud-row-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* always visible so rows read as external links; darkens on hover */
+.cloud-row-external {
+  flex-shrink: 0;
+  color: #c9ced4;
+}
+
+.cloud-row:hover .cloud-row-external,
+.cloud-row:focus-visible .cloud-row-external {
+  color: var(--text-secondary);
+}
+
+/* right-aligned to match the sidebar count column (22px, centered digits) */
+.nav-external {
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 4px;
+  color: var(--text-muted);
+}
+
+.cloud-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.cloud-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cloud-refresh-btn:hover:not(:disabled) {
+  background: var(--surface-subtle);
+}
+
+.cloud-refresh-btn.syncing svg {
+  animation: cloud-refresh-spin 0.9s linear infinite;
+  color: var(--text-muted);
+}
+
+@keyframes cloud-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

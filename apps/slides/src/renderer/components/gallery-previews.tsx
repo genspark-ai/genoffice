@@ -65,14 +65,17 @@ export function shapePreviewPath(prst: string, w: number, h: number): string | n
   if (poly) return polygonPathD(poly)
   const path = presetPath(prst, w, h)
   if (path) return [path.path, path.fillPath, path.strokePath].filter(Boolean).join(' ')
+  // Alternate Process is a rounded rectangle, not a pill like Terminator
+  if (prst === 'roundRect' || prst === 'flowChartAlternateProcess')
+    return roundRectPathD(w, h, Math.min(w, h) * 0.16667)
   if (isPillPreset(prst)) return roundRectPathD(w, h, Math.min(w, h) / 2)
-  if (prst === 'roundRect') return roundRectPathD(w, h, Math.min(w, h) * 0.16667)
   if (prst === 'ellipse') {
     const rx = w / 2
     const ry = h / 2
     return `M 0 ${R(ry)} A ${R(rx)} ${R(ry)} 0 1 1 ${R(w)} ${R(ry)} A ${R(rx)} ${R(ry)} 0 1 1 0 ${R(ry)} Z`
   }
-  if (prst === 'rect') return `M 0 0 L ${R(w)} 0 L ${R(w)} ${R(h)} L 0 ${R(h)} Z`
+  if (prst === 'rect' || prst === 'flowChartProcess')
+    return `M 0 0 L ${R(w)} 0 L ${R(w)} ${R(h)} L 0 ${R(h)} Z`
   return null
 }
 

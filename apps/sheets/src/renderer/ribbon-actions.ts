@@ -93,6 +93,9 @@ export interface RibbonCommandContext {
   setMessage: (message: string) => void
   setChartDialog: (dialog: { kind: ChartDialogKind; editKey: string }) => void
   setSymbolDialogOpen: (open: boolean) => void
+  setScreenshotDialogOpen: (open: boolean) => void
+  setIconsDialogOpen: (open: boolean) => void
+  openRecommendedCharts: () => void
   setPendingEdits: (count: number) => void
   visualContext: () => VisualActionContext
   dataToolsContext: () => DataToolsContext
@@ -404,6 +407,15 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       return
     case 'insert-symbol':
       ctx.setSymbolDialogOpen(true)
+      return
+    case 'insert-screenshot':
+      ctx.setScreenshotDialogOpen(true)
+      return
+    case 'recommended-charts-open':
+      ctx.openRecommendedCharts()
+      return
+    case 'insert-icons':
+      ctx.setIconsDialogOpen(true)
       return
     case 'note-open':
       // Opens the note editor popup at the primary selected cell; the

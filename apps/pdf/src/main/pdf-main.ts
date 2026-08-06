@@ -8,6 +8,8 @@ import {
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
+  showOpenDialogWithMemory,
+  showSaveDialogWithMemory,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { PDF_CHANNELS } from '../shared/ipc'
@@ -407,7 +409,7 @@ function registerPdfIpc(): void {
       }
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await dialog.showSaveDialog(win!, {
+      const picked = await showSaveDialogWithMemory(dialog, win, {
         title: tm('dlgExtract'),
         defaultPath: join(dirname(path), String(suggestedName || 'pages.pdf')),
         filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
@@ -432,7 +434,7 @@ function registerPdfIpc(): void {
       }
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await dialog.showOpenDialog(win!, {
+      const picked = await showOpenDialogWithMemory(dialog, win, {
         title: tm('dlgInsert'),
         filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
         properties: ['openFile'],
@@ -463,7 +465,7 @@ function registerPdfIpc(): void {
         return { ok: false, error: 'pdf: no images' }
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await dialog.showOpenDialog(win!, {
+      const picked = await showOpenDialogWithMemory(dialog, win, {
         title: tm('dlgExportImages'),
         properties: ['openDirectory', 'createDirectory'],
       })

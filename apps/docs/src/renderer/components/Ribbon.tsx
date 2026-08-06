@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import type { Command } from '@tiptap/pm/state'
@@ -35,7 +35,7 @@ import type { InkTool } from '../editor/ink'
 import type { RibbonFormatState } from './ribbon-format-state'
 import { setSelectedColumnWidth } from '../editor/table-sizing'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor } from '../font-list'
+import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
 import { cssFontFamily } from '../line-metrics'
 import {
   DesignTab,
@@ -896,6 +896,22 @@ function RibbonInner({
           : presetActive('italic')
             ? 'char:__preset_emphasis'
             : 'p'
+
+  // Style gallery overflow: the inline row clips (the ribbon row cannot grow),
+  // so a "more styles" expander must appear whenever cards are cut off.
+  const styleGalleryRef = useRef<HTMLDivElement | null>(null)
+  const [styleGalleryOverflow, setStyleGalleryOverflow] = useState(false)
+  useLayoutEffect(() => {
+    const el = styleGalleryRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const check = () => setStyleGalleryOverflow(el.scrollWidth - el.clientWidth > 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+    // scrollWidth changes don't fire the observer: re-check when the card set can change
+  }, [tab, charStyleItems.length, lang])
+
   const currentSize = fs.fontSizePt
   const currentFont = fs.fontFamily
   // The "(Body)" entry means "no explicit run font — inherit the document's body
@@ -916,6 +932,13 @@ function RibbonInner({
   const setTextStyle = (patch: Record<string, unknown>) => {
     chain().setMark('docTextStyle', patch).run()
     setDropdown(null)
+  }
+
+  /** font picks target only their script's rFonts slot (Word never flattens the other one) */
+  const setFont = (name: string | null) => {
+    if (!name) setTextStyle({ font: null, fontAscii: null })
+    else if (isEastAsianFontName(name)) setTextStyle({ font: name })
+    else setTextStyle({ fontAscii: name })
   }
 
   /** apply paragraph-level attrs to every block type in the selection */
@@ -987,8 +1010,14 @@ function RibbonInner({
         if (!node.isText) return
         const m = node.marks.find((mm) => mm.type === type)
         if (!m) return
-        if (m.attrs.color == null && m.attrs.sizeHalfPoints == null && m.attrs.font == null) return
-        const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null }
+        if (
+          m.attrs.color == null &&
+          m.attrs.sizeHalfPoints == null &&
+          m.attrs.font == null &&
+          m.attrs.fontAscii == null
+        )
+          return
+        const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null, fontAscii: null }
         const keep = Object.values(attrs).some((v) => v !== null)
         jobs.push({
           from: Math.max(pos, start),
@@ -1002,6 +1031,43 @@ function RibbonInner({
       }
       return true
     }).run()
+  }
+
+  /** Style cards, shared by the inline gallery and its overflow menu */
+  const renderStyleCards = (inMenu: boolean) => {
+    const apply = (key: string) => {
+      applyStyle(key)
+      if (inMenu) setDropdown(null)
+    }
+    return (
+      <>
+        {STYLE_GALLERY.map((s) => (
+          <button
+            key={s.key}
+            className={`style-card ${activeStyleKey === s.key ? 'active' : ''}`}
+            disabled={!canEdit || !!sub}
+            onClick={() => apply(s.key)}
+          >
+            <span className={`style-card-preview ${s.className}`}>{t('ribbonStylePreview')}</span>
+            <span className="style-card-label">{t(s.labelKey)}</span>
+          </button>
+        ))}
+        {charStyleItems.map((s) => (
+          <button
+            key={s.key}
+            className={`style-card style-card-char ${activeStyleKey === s.key ? 'active' : ''}`}
+            disabled={!canEdit}
+            title={s.label}
+            onClick={() => apply(s.key)}
+          >
+            <span className="style-card-preview" style={s.previewStyle}>
+              Aa
+            </span>
+            <span className="style-card-label">{s.label}</span>
+          </button>
+        ))}
+      </>
+    )
   }
 
   const toggleList = (kind: 'bullet' | 'ordered') => {
@@ -1881,7 +1947,7 @@ function RibbonInner({
                       }}
                       onBlur={(e) => {
                         const v = e.target.value.trim()
-                        if (v !== currentFont) setTextStyle({ font: v || null })
+                        if (v !== currentFont) setFont(v || null)
                       }}
                     />
                     <button
@@ -1897,7 +1963,7 @@ function RibbonInner({
                         <button
                           className={!currentFont ? 'active' : ''}
                           style={{ fontFamily: cssFontFamily(bodyFontName) }}
-                          onClick={() => setTextStyle({ font: null })}
+                          onClick={() => setFont(null)}
                         >
                           {t('ribbonFontBodyNamed', { font: bodyFontName })}
                         </button>
@@ -1908,7 +1974,7 @@ function RibbonInner({
                               key={f}
                               className={f === currentFont ? 'active' : ''}
                               style={{ fontFamily: cssFontFamily(f) }}
-                              onClick={() => setTextStyle({ font: f })}
+                              onClick={() => setFont(f)}
                             >
                               {f}
                             </button>
@@ -2515,37 +2581,28 @@ function RibbonInner({
             <div className="ribbon-sep" />
 
             {/* ---- Styles ---- */}
-            <div className="ribbon-group">
-              <div className="ribbon-group-items style-gallery">
-                {STYLE_GALLERY.map((s) => (
+            <div className="ribbon-group ribbon-group-styles">
+              <div className="ribbon-group-items rb-split-wrap style-gallery-wrap">
+                <div className="style-gallery" ref={styleGalleryRef}>
+                  {renderStyleCards(false)}
+                </div>
+                {/* clipped cards stay reachable through the expander grid */}
+                {styleGalleryOverflow && (
                   <button
-                    key={s.key}
-                    className={`style-card ${activeStyleKey === s.key ? 'active' : ''}`}
-                    disabled={!canEdit || !!sub}
-                    onClick={() => applyStyle(s.key)}
+                    className="style-gallery-more"
+                    title={t('ribbonMoreStyles')}
+                    aria-label={t('ribbonMoreStyles')}
+                    aria-expanded={dropdown === 'styleGallery'}
+                    onClick={() =>
+                      setDropdown((v) => (v === 'styleGallery' ? null : 'styleGallery'))
+                    }
                   >
-                    <span className={`style-card-preview ${s.className}`}>
-                      {t('ribbonStylePreview')}
-                    </span>
-                    <span className="style-card-label">{t(s.labelKey)}</span>
+                    <IconCaret />
                   </button>
-                ))}
-                {/* all visible character styles render inline: the styles panel
-                    that used to catch the overflow is gone */}
-                {charStyleItems.map((s) => (
-                  <button
-                    key={s.key}
-                    className={`style-card style-card-char ${activeStyleKey === s.key ? 'active' : ''}`}
-                    disabled={!canEdit}
-                    title={s.label}
-                    onClick={() => applyStyle(s.key)}
-                  >
-                    <span className="style-card-preview" style={s.previewStyle}>
-                      Aa
-                    </span>
-                    <span className="style-card-label">{s.label}</span>
-                  </button>
-                ))}
+                )}
+                {dropdown === 'styleGallery' && (
+                  <div className="style-gallery-menu">{renderStyleCards(true)}</div>
+                )}
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupStyles')}</div>
             </div>

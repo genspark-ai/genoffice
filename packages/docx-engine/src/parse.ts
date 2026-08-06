@@ -1123,8 +1123,70 @@ function vmlColorHex(value: string | undefined): string | undefined {
  * fallback-stripped XML, otherwise the mc:Fallback VML twin would duplicate
  * every box.
  */
+const LINE_PRSTS_RE =
+  /<a:prstGeom[^>]*prst="(?:line|straightConnector1|bentConnector[234]|curvedConnector[234])"/
+
+/** stroke-only line/connector prsts shown as display boxes despite no text body */
+const LINE_PRSTS = new Set([
+  'line',
+  'straightConnector1',
+  'bentConnector2',
+  'bentConnector3',
+  'bentConnector4',
+  'curvedConnector2',
+  'curvedConnector3',
+  'curvedConnector4',
+])
+
+/** wps line shape → display-only line box (synthetic prst carries the arrow ends) */
+function lineBoxOf(shape: XNode): TextboxDisplay | null {
+  const spPr = findChild(shape, 'wps:spPr')
+  if (!spPr) return null
+  const prst = attrsOf(findChild(spPr, 'a:prstGeom') ?? {})['prst']
+  if (!prst || !LINE_PRSTS.has(prst)) return null
+  const box: TextboxDisplay = { paras: [], readOnly: true }
+  const ln = findChild(spPr, 'a:ln')
+  const border = ln
+    ? attrsOf(findChild(findChild(ln, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})['val']
+    : undefined
+  box.borderColor = border ?? '000000'
+  const arrowEnd = (name: string): boolean => {
+    const type = attrsOf(findChild(ln ?? {}, name) ?? {})['type']
+    return !!type && type !== 'none'
+  }
+  const head = arrowEnd('a:headEnd')
+  const tail = arrowEnd('a:tailEnd')
+  box.prst = prst.startsWith('bentConnector')
+    ? 'lineBent'
+    : prst.startsWith('curvedConnector')
+      ? 'lineCurved'
+      : head && tail
+        ? 'lineArrowDouble'
+        : head || tail
+          ? 'lineArrow'
+          : 'line'
+  const ext = findChild(findChild(spPr, 'a:xfrm') ?? {}, 'a:ext')
+  const cx = ext ? parseInt(attrsOf(ext)['cx'] ?? '', 10) : NaN
+  const cy = ext ? parseInt(attrsOf(ext)['cy'] ?? '', 10) : NaN
+  if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round(cx / EMU_PER_PX)
+  if (Number.isFinite(cy) && cy > 0) {
+    box.heightPx = Math.round(cy / EMU_PER_PX)
+    box.minHeightPx = box.heightPx
+  } else {
+    // zero-height extent = Word's horizontal line; keep a 12 px grab band
+    box.heightPx = 12
+  }
+  box.insetTopPx = 0
+  box.insetRightPx = 0
+  box.insetBottomPx = 0
+  box.insetLeftPx = 0
+  return box
+}
+
 function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
-  if (!xml.includes('<w:txbxContent')) return []
+  // wrapSquare gate keeps converter-emitted decorative rules on the thin-rule path
+  const hasLineShapes = xml.includes('<wp:wrapSquare') && LINE_PRSTS_RE.test(xml)
+  if (!xml.includes('<w:txbxContent') && !hasLineShapes) return []
   let parsed: XNode[]
   try {
     parsed = xmlParser.parse(xml) as XNode[]
@@ -1140,7 +1202,13 @@ function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
   for (const shape of shapes) {
     const contents: XNode[] = []
     collectNodes(childrenOf(shape), 'w:txbxContent', contents)
-    if (contents.length === 0) continue
+    if (contents.length === 0) {
+      if (hasLineShapes) {
+        const lineBox = lineBoxOf(shape)
+        if (lineBox) out.push(lineBox)
+      }
+      continue
+    }
     const box: TextboxDisplay = { paras: [] }
     const shapeAttrs = attrsOf(shape)
     if (nameOf(shape) !== 'wps:wsp') {
@@ -1577,6 +1645,8 @@ function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null):
     const fonts = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
     const font = fonts['w:eastAsia'] ?? fonts['w:ascii'] ?? fonts['w:hAnsi']
     if (font) run.font = font
+    const fontAscii = fonts['w:ascii'] ?? fonts['w:hAnsi']
+    if (fontAscii) run.fontAscii = fontAscii
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) run.charSpacingTwips = spc
     const wScale = parseInt(attrsOf(findChild(rPr, 'w:w') ?? {})['w:val'] ?? '', 10)
@@ -1604,6 +1674,8 @@ function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null):
         const ofonts = attrsOf(findChild(oldRPr, 'w:rFonts') ?? {})
         const of = ofonts['w:eastAsia'] ?? ofonts['w:ascii'] ?? ofonts['w:hAnsi']
         if (of) old.font = of
+        const ofa = ofonts['w:ascii'] ?? ofonts['w:hAnsi']
+        if (ofa) old.fontAscii = ofa
         const ospc = parseInt(attrsOf(findChild(oldRPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
         if (ospc) old.charSpacingTwips = ospc
         const owScale = parseInt(attrsOf(findChild(oldRPr, 'w:w') ?? {})['w:val'] ?? '', 10)
@@ -1630,6 +1702,7 @@ function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null):
     if (decoded !== null) {
       run.text = decoded
       delete run.font
+      delete run.fontAscii
       if (run.rawRPr) run.rawRPr = run.rawRPr.replace(/<w:rFonts[^>]*\/>/, '')
     }
   }
@@ -1663,6 +1736,7 @@ function sameStyle(a: Run, b: Run): boolean {
     a.color === b.color &&
     a.sizeHalfPoints === b.sizeHalfPoints &&
     a.font === b.font &&
+    a.fontAscii === b.fontAscii &&
     a.highlight === b.highlight &&
     a.vertAlign === b.vertAlign &&
     (a.link?.href ?? '') === (b.link?.href ?? '') &&
@@ -2593,7 +2667,14 @@ async function extractChart(xml: string, ctx: BuildContext): Promise<ChartDispla
   if (!file) return null
   const partXml = await file.async('string')
   const display = parseChartPartXml(partXml, path)
-  if (display) ctx.chartParts[path] = partXml
+  if (display) {
+    ctx.chartParts[path] = partXml
+    const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(xml)
+    const cx = extent ? parseInt(extent[1]!, 10) : NaN
+    const cy = extent ? parseInt(extent[2]!, 10) : NaN
+    if (Number.isFinite(cx) && cx > 0) display.widthPx = Math.round(cx / EMU_PER_PX)
+    if (Number.isFinite(cy) && cy > 0) display.heightPx = Math.round(cy / EMU_PER_PX)
+  }
   return display
 }
 

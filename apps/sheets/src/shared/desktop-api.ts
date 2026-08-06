@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { ADDABLE_SHAPE_TYPES } from './shape-types'
 import type {
   AiChatRequest,
   AiChatResponse,
@@ -1095,17 +1096,7 @@ export const workbookVisualAddSchema = z
       .optional(),
     shape: z
       .object({
-        shapeType: z.enum([
-          'rect',
-          'roundRect',
-          'ellipse',
-          'triangle',
-          'diamond',
-          'rightArrow',
-          'leftArrow',
-          'pentagon',
-          'hexagon',
-        ]),
+        shapeType: z.enum(ADDABLE_SHAPE_TYPES),
         fillColor: z
           .string()
           .regex(/^#[0-9a-fA-F]{6}$/)
@@ -1496,6 +1487,42 @@ export const localImageResultSchema = z
   })
   .strict()
 
+/// Insert → Screenshot: enumerate capturable windows/screens for the picker
+/// grid, then grab the chosen source at full resolution. 'denied' means the
+/// OS blocks capture (macOS Screen Recording permission) — the picker shows
+/// guidance instead of an empty grid.
+export const screenSourcesResultSchema = z
+  .object({
+    status: z.enum(['ok', 'denied']),
+    sources: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string(),
+          kind: z.enum(['screen', 'window']),
+          /// Small preview as a data URL; empty when the OS returned none.
+          thumbnail: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+
+export const screenCaptureRequestSchema = z
+  .object({
+    id: z.string().min(1).max(256),
+  })
+  .strict()
+
+export const screenCaptureResultSchema = z
+  .object({
+    mediaType: z.literal('image/png'),
+    base64: z.string().min(1).max(28_000_000),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  })
+  .strict()
+
 export const workbookPivotRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -1666,6 +1693,9 @@ export type WorkbookPivotRequest = z.infer<typeof workbookPivotRequestSchema>
 export type WorkbookPivotDefinition = z.infer<typeof workbookPivotDefinitionSchema>
 export type LocalImageRequest = z.infer<typeof localImageRequestSchema>
 export type LocalImageResult = z.infer<typeof localImageResultSchema>
+export type ScreenSourcesResult = z.infer<typeof screenSourcesResultSchema>
+export type ScreenCaptureRequest = z.infer<typeof screenCaptureRequestSchema>
+export type ScreenCaptureResult = z.infer<typeof screenCaptureResultSchema>
 export type WorkbookVisualObject = z.infer<typeof visualObjectSchema>
 export type WorkbookVisualAdd = z.infer<typeof workbookVisualAddSchema>
 export type WorkbookTableAdd = z.infer<typeof workbookTableAddSchema>
@@ -1868,6 +1898,9 @@ export interface DesktopApi {
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
   readLocalImage(request: LocalImageRequest): Promise<LocalImageResult>
+  captureScreenSources(): Promise<ScreenSourcesResult>
+  /// null when the source vanished between listing and capture.
+  captureScreenSource(request: ScreenCaptureRequest): Promise<ScreenCaptureResult | null>
   saveWorkbookEdits(request: WorkbookSaveRequest): Promise<WorkbookSaveResult>
   /// Crash-recovery copy of the pending edits, written under userData.
   /// Best-effort: never prompts, never touches the opened file.

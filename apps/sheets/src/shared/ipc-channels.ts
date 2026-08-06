@@ -28,6 +28,8 @@ export const IPC_CHANNELS = {
   aiGskLogin: 'ai:gsk-login',
   // Chat attachments (sheets: prefix — docs already registers global files:* in
   // the shell; avoids collisions)
+  captureScreenSources: 'sheets:capture-screen-sources',
+  captureScreenSource: 'sheets:capture-screen-source',
   filesPick: 'sheets:files-pick',
   filesAdd: 'sheets:files-add',
   filesAddPastedImage: 'sheets:files-add-pasted-image',

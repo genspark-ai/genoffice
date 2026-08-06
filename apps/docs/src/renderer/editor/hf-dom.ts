@@ -5,7 +5,7 @@ import {
   type HfParagraph,
   type Run,
 } from '@genoffice/docx-engine'
-import { cssFontFamily } from '../line-metrics'
+import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
 
 /**
  * Plain-DOM header/footer rendering for the canvas page gaps (M4 always-on
@@ -21,7 +21,9 @@ function applyRunStyle(span: HTMLElement, run: Run): void {
   if (deco.length > 0) span.style.textDecoration = deco.join(' ')
   if (run.color) span.style.color = `#${run.color}`
   if (run.sizeHalfPoints) span.style.fontSize = `${run.sizeHalfPoints / 2}pt`
-  if (run.font) span.style.fontFamily = cssFontFamily(run.font)
+  if (run.font && run.fontAscii) span.style.fontFamily = cssDualFontFamily(run.fontAscii, run.font)
+  else if (run.font || run.fontAscii)
+    span.style.fontFamily = cssFontFamily((run.font ?? run.fontAscii)!)
 }
 
 /** effective paragraphs: rich paras when present, else the legacy single line (mirrors HeaderFooterArea) */

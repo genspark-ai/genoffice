@@ -2,8 +2,9 @@ import type { Node as PmNode } from '@tiptap/pm/model'
 import {} from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssFontFamily } from '../line-metrics'
+import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
 import { t } from '../i18n/locale'
+import { shapeBackgroundCss } from './shape-svg'
 import {
   type ChartDisplay,
   type FieldDisplay,
@@ -166,14 +167,26 @@ interface ChartGeom {
   bottom: number
 }
 
+/** widest a chart draws at; the resize handle clamps to this too so mouseup never snaps back */
+export const CHART_MAX_WIDTH_PX = 660
+
 /** draw the read-only SVG preview into the node's .doc-chart-canvas */
 export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void {
   const canvas = dom.querySelector<HTMLElement>('.doc-chart-canvas')
   if (!canvas || !chart?.series.length) return
-  const geom: ChartGeom = { width: 560, height: 240, left: 46, right: 12, top: 12, bottom: 26 }
+  const geom: ChartGeom = {
+    width: Math.min(chart.widthPx ?? 560, CHART_MAX_WIDTH_PX),
+    height: chart.heightPx ?? 240,
+    left: 46,
+    right: 12,
+    top: 12,
+    bottom: 26,
+  }
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('viewBox', `0 0 ${geom.width} ${geom.height}`)
   svg.setAttribute('class', 'doc-chart-svg')
+  svg.style.width = `${geom.width}px`
+  svg.style.height = `${geom.height}px`
 
   if (chart.kind === 'pie') drawPie(svg, chart, geom)
   else drawAxes(svg, chart, geom)
@@ -391,27 +404,6 @@ export function wireChartEditing(
 }
 
 /** rendering of an anchored textbox (code box / callout card); text is editable in place */
-/** CSS clip-path/borderRadius for DrawingML prstGeom shapes. */
-const PRST_CSS: Record<string, { clipPath?: string; borderRadius?: string }> = {
-  roundRect: { borderRadius: '12%' },
-  ellipse: { borderRadius: '50%' },
-  triangle: { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' },
-  rtTriangle: { clipPath: 'polygon(0% 0%, 0% 100%, 100% 100%)' },
-  diamond: { clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' },
-  parallelogram: { clipPath: 'polygon(15% 0%, 100% 0%, 85% 100%, 0% 100%)' },
-  pentagon: { clipPath: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)' },
-  hexagon: { clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)' },
-  star5: {
-    clipPath:
-      'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
-  },
-  rightArrow: { clipPath: 'polygon(0% 25%, 65% 25%, 65% 0%, 100% 50%, 65% 100%, 65% 75%, 0% 75%)' },
-  leftRightArrow: {
-    clipPath:
-      'polygon(0% 50%, 20% 0%, 20% 30%, 80% 30%, 80% 0%, 100% 50%, 80% 100%, 80% 70%, 20% 70%, 20% 100%)',
-  },
-}
-
 /**
  * WordArt preset CSS approximation applied to the entire textbox container.
  * color: used as -webkit-text-fill-color; stroke: optional -webkit-text-stroke.
@@ -430,18 +422,26 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
   const insetRight = box.insetRightPx ?? 9.6
   const insetBottom = box.insetBottomPx ?? 4.8
   const insetLeft = box.insetLeftPx ?? 9.6
-  const shapeStyle = box.prst ? PRST_CSS[box.prst] : undefined
+  // preset geometry renders as an SVG background so the box div stays plain
+  // (sub-editors replaceChildren() it); border/fill live inside the SVG then
+  const geomCss = box.prst
+    ? shapeBackgroundCss(
+        box.prst,
+        box.widthPx ?? 189,
+        box.heightPx ?? 113,
+        box.fill,
+        box.borderColor,
+      )
+    : null
   const waStyle = box.wordArtId ? WORDART_CSS[box.wordArtId] : undefined
   return [
-    box.fill ? `background:#${box.fill}` : '',
-    box.borderColor && !shapeStyle?.clipPath ? `border-color:#${box.borderColor}` : '',
-    box.borderColor && shapeStyle?.clipPath ? `outline:2px solid #${box.borderColor}` : '',
+    geomCss ?? '',
+    !geomCss && box.fill ? `background:#${box.fill}` : '',
+    !geomCss && box.borderColor ? `border-color:#${box.borderColor}` : '',
     box.widthPx ? `width:${box.widthPx}px` : '',
     // Word clips fixed-height (noAutofit) boxes instead of growing them
     box.heightPx ? `height:${box.heightPx}px` : '',
     `padding:${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px`,
-    shapeStyle?.clipPath ? `clip-path:${shapeStyle.clipPath}` : '',
-    shapeStyle?.borderRadius ? `border-radius:${shapeStyle.borderRadius}` : '',
     waStyle?.color ? `-webkit-text-fill-color:${waStyle.color}` : '',
     waStyle?.stroke ? `-webkit-text-stroke:${waStyle.stroke}` : '',
     waStyle?.textShadow ? `text-shadow:${waStyle.textShadow}` : '',
@@ -462,7 +462,13 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
         run.bold ? 'font-weight:700' : '',
         run.italic ? 'font-style:italic' : '',
         run.underline ? 'text-decoration:underline' : '',
-        run.font ? `font-family:${cssFontFamily(run.font)}` : '',
+        run.font || run.fontAscii
+          ? `font-family:${
+              run.font && run.fontAscii
+                ? cssDualFontFamily(run.fontAscii, run.font)
+                : cssFontFamily((run.font ?? run.fontAscii)!)
+            }`
+          : '',
         run.sizeHalfPoints ? `font-size:${run.sizeHalfPoints / 2}pt` : '',
       ]
         .filter(Boolean)

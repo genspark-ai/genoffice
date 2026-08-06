@@ -9,7 +9,9 @@ import {
   patchMathTokens,
   patchTableCellTexts,
   type CellTextsPatch,
-  patchTextboxHeights,
+  patchDrawingExtent,
+  patchTextboxSizes,
+  type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
   type Block,
@@ -34,6 +36,7 @@ import {
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { inlineMathML } from './equation'
+import { isStraightLineKind } from './shape-svg'
 
 /** minimal ProseMirror JSON shapes */
 export interface PmMark {
@@ -607,6 +610,7 @@ function runMarks(run: Run): PmMark[] {
     run.color ||
     run.sizeHalfPoints ||
     run.font ||
+    run.fontAscii ||
     run.charSpacingTwips ||
     run.charScalePct ||
     run.highlight ||
@@ -621,6 +625,7 @@ function runMarks(run: Run): PmMark[] {
         color: run.color ?? null,
         sizeHalfPoints: run.sizeHalfPoints ?? null,
         font: run.font ?? null,
+        fontAscii: run.fontAscii ?? null,
         charSpacingTwips: run.charSpacingTwips ?? null,
         charScaleEm: run.charScalePct ? charScaleEm(run.text, run.charScalePct) : null,
         highlight: run.highlight ?? null,
@@ -788,7 +793,7 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         const imagePatch = imagePatchOf(node, original)
         const tableTexts = tableTextsPatch(node, original)
         const textboxTexts = textboxParasPatch(node, original)
-        const textboxHeights = textboxHeightsPatch(node, original)
+        const textboxSizes = textboxSizesPatch(node, original)
         const textboxOffsetX =
           node.attrs?.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) : undefined
         const textboxOffsetY =
@@ -807,6 +812,15 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
           changedCount++
           chartPatches.push(chartPatch)
         }
+        // chart resize rewrites the body drawing's extent
+        const chartDisplay = node.attrs?.chartDisplay as ChartDisplay | null
+        const chartSize =
+          chartDisplay?.widthPx &&
+          chartDisplay.heightPx &&
+          (chartDisplay.widthPx !== original.chartDisplay?.widthPx ||
+            chartDisplay.heightPx !== original.chartDisplay?.heightPx)
+            ? { w: chartDisplay.widthPx, h: chartDisplay.heightPx }
+            : null
         if (imagePatch && original.originalXml) {
           changedCount++
           let xml = patchImageParagraphXml(original.originalXml, imagePatch)
@@ -828,13 +842,13 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
           changedCount++
           pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
         } else if (
-          (textboxTexts || textboxHeights || textboxPositionChanged) &&
+          (textboxTexts || textboxSizes || textboxPositionChanged) &&
           original.originalXml
         ) {
           changedCount++
           let xml = original.originalXml
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
-          if (textboxHeights) xml = patchTextboxHeights(xml, textboxHeights)
+          if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxPositionChanged) {
             const wrap =
               (node.attrs?.imageWrap as ImageWrap | null) ?? original.imageWrap ?? 'square-left'
@@ -847,6 +861,12 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         } else if (formulaTokens && original.originalXml) {
           changedCount++
           pushBlock({ kind: 'xml', xml: patchMathTokens(original.originalXml, formulaTokens) })
+        } else if (chartSize && original.originalXml) {
+          changedCount++
+          pushBlock({
+            kind: 'xml',
+            xml: patchDrawingExtent(original.originalXml, chartSize.w, chartSize.h),
+          })
         } else {
           pushBlock({ kind: 'original', docxIndex: idx })
         }
@@ -888,6 +908,17 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
             ),
           )
         }
+        // persist resize/autogrow of newly-inserted single-box shapes/lines;
+        // horizontal lines keep their zero-height extent (display box is a grab band)
+        const genBox = genTextboxes?.length === 1 ? genTextboxes[0] : null
+        if (genBox && (genBox.widthPx || genBox.heightPx)) {
+          xml = patchTextboxSizes(xml, [
+            {
+              wPx: genBox.widthPx ?? null,
+              hPx: isStraightLineKind(genBox.prst) ? null : (genBox.heightPx ?? null),
+            },
+          ])
+        }
         // apply wrap changes for floating textboxes/shapes
         const genWrap = node.attrs?.imageWrap as ImageWrap | null
         const genOffsetX =
@@ -925,7 +956,13 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
             values: s.values,
           }))
         }
-        pushBlock({ kind: 'chart', chart: spec })
+        pushBlock({
+          kind: 'chart',
+          chart: spec,
+          ...(display?.widthPx && display.heightPx
+            ? { extentPx: { w: display.widthPx, h: display.heightPx } }
+            : {}),
+        })
       }
       // protected node without an anchor or generated payload cannot be regenerated; drop it
       continue
@@ -1241,18 +1278,21 @@ function textboxParasPatch(
   return changed ? boxes : null
 }
 
-function textboxHeightsPatch(node: PmNode, original: Block): (number | null)[] | null {
+function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | null)[] | null {
   const current = node.attrs?.textboxes as TextboxDisplay[] | null
   const initial = original.textboxes
   if (!current || !initial || current.length !== initial.length) return null
   let changed = false
-  const heights = current.map((box, index) => {
-    const originalHeight = initial[index].heightPx
-    if (!originalHeight || !box.heightPx || box.heightPx === originalHeight) return null
+  const sizes = current.map((box, index) => {
+    // a resize on an autofit box (no initial heightPx) pins its height:
+    // patchTextboxSizes drops spAutoFit so Word honors the fixed extent
+    const wPx = box.widthPx && box.widthPx !== initial[index].widthPx ? box.widthPx : null
+    const hPx = box.heightPx && box.heightPx !== initial[index].heightPx ? box.heightPx : null
+    if (wPx == null && hPx == null) return null
     changed = true
-    return box.heightPx
+    return { wPx, hPx }
   })
-  return changed ? heights : null
+  return changed ? sizes : null
 }
 
 function fieldTextPatch(node: PmNode, original: Block): FieldTextPatch | null {
@@ -1503,6 +1543,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         if (mark.attrs?.color) run.color = String(mark.attrs.color)
         if (mark.attrs?.sizeHalfPoints) run.sizeHalfPoints = Number(mark.attrs.sizeHalfPoints)
         if (mark.attrs?.font) run.font = String(mark.attrs.font)
+        if (mark.attrs?.fontAscii) run.fontAscii = String(mark.attrs.fontAscii)
         if (mark.attrs?.charSpacingTwips) run.charSpacingTwips = Number(mark.attrs.charSpacingTwips)
         if (mark.attrs?.highlight) run.highlight = String(mark.attrs.highlight)
         if (mark.attrs?.vertAlign === 'superscript' || mark.attrs?.vertAlign === 'subscript') {
@@ -1558,6 +1599,7 @@ function runStyleKey(run: Run): string {
     run.color ?? null,
     run.sizeHalfPoints ?? null,
     run.font ?? null,
+    run.fontAscii ?? null,
     run.highlight ?? null,
     run.vertAlign ?? null,
     run.link?.href ?? null,
@@ -1599,6 +1641,7 @@ function normalizedRuns(runs: Run[]): unknown[] {
     r.color ?? null,
     r.sizeHalfPoints ?? null,
     r.font ?? null,
+    r.fontAscii ?? null,
     r.highlight ?? null,
     r.vertAlign ?? null,
     r.link?.href ?? null,

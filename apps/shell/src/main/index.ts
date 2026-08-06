@@ -38,9 +38,17 @@ import {
   editMenuTemplate,
   installContextMenu,
   installNavigationGuard,
+  showOpenDialogWithMemory,
+  showSaveDialogWithMemory,
   windowMenuTemplate,
 } from '@genoffice/electron-utils'
 import { readAppSettings, writeAppSetting } from './app-settings'
+import {
+  clearCloudProjectsStore,
+  cloudProjectExternalUrl,
+  readCloudProjectsStore,
+  syncCloudProjects,
+} from './cloud-projects'
 import { ProjectStore } from '@genoffice/project-store'
 import {
   ensureGenofficeLogin,
@@ -121,6 +129,7 @@ import type { AccountLoginEvent, RecentEntry, RecentPage, RenameResult } from '.
 import { HOME_CHANNELS } from '../shared/home-api'
 import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
+import { showErrorDialog } from './error-dialog'
 import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
 import { TabManager } from './tab-manager'
 import { applyUpdateChannel, initAutoUpdater } from './updater'
@@ -1463,7 +1472,7 @@ async function newSheetTab(): Promise<void> {
  */
 function surfaceNewTabError(err: unknown): void {
   console.error('[shell] new tab failed:', err)
-  dialog.showErrorBox(tm('errNewTabFailed'), err instanceof Error ? err.message : String(err))
+  showErrorDialog(shellWindow, tm('errNewTabFailed'), err)
 }
 
 function newDocTab(): void {
@@ -1515,6 +1524,7 @@ function registerHomeIpc(): void {
   // is only a silent fallback, deliberately not shown here to nudge users onto our key
   ipcMain.handle(HOME_CHANNELS.accountStatus, async () => {
     if (!loadGenofficeAuth()) return { loggedIn: false }
+    await proxyBootstrap
     const info = await gskLoginInfo()
     return info ? { loggedIn: true, email: info.email } : { loggedIn: true }
   })
@@ -1522,9 +1532,10 @@ function registerHomeIpc(): void {
   // login progress is streamed to the requesting renderer; the auth URL is
   // kept main-side so the "open manually" rescue never opens a renderer-supplied URL
   let pendingLoginUrl = ''
-  ipcMain.handle(HOME_CHANNELS.accountLogin, (event) => {
+  ipcMain.handle(HOME_CHANNELS.accountLogin, async (event) => {
     const sender = event.sender
     pendingLoginUrl = ''
+    await proxyBootstrap
     const send = (payload: AccountLoginEvent) => {
       if (!sender.isDestroyed()) sender.send(HOME_CHANNELS.accountLoginEvent, payload)
     }
@@ -1550,6 +1561,8 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.accountLogout, async () => {
     await genofficeLogout()
+    // the cloud projects cache belongs to the account that just signed out
+    clearCloudProjectsStore(cloudProjectsStorePath())
   })
 
   ipcMain.handle(HOME_CHANNELS.getAppVersion, (): string => app.getVersion())
@@ -1585,7 +1598,7 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.browse, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? shellWindow
     if (!win) return
-    const result = await dialog.showOpenDialog(win, {
+    const result = await showOpenDialogWithMemory(dialog, win, {
       title: tm('dlgOpenTitle'),
       filters: [
         { name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS },
@@ -1730,6 +1743,19 @@ function registerHomeIpc(): void {
       // no browser handler available; nothing actionable for the user here
     })
   })
+
+  const cloudProjectsStorePath = () => join(app.getPath('userData'), 'cloud-projects.json')
+
+  ipcMain.handle(HOME_CHANNELS.cloudProjectsCached, () =>
+    readCloudProjectsStore(cloudProjectsStorePath()),
+  )
+
+  ipcMain.handle(HOME_CHANNELS.cloudProjects, () => syncCloudProjects(cloudProjectsStorePath()))
+
+  ipcMain.handle(HOME_CHANNELS.openCloudProject, (_event, projectUrl: unknown) => {
+    const url = cloudProjectExternalUrl(projectUrl)
+    if (url) void shell.openExternal(url)
+  })
 }
 
 function stringPaths(value: unknown): string[] {
@@ -1838,7 +1864,7 @@ function registerTabsIpc(): void {
 async function openFileViaDialog(): Promise<void> {
   const win = shellWindow ?? BrowserWindow.getFocusedWindow()
   if (!win) return
-  const result = await dialog.showOpenDialog(win, {
+  const result = await showOpenDialogWithMemory(dialog, win, {
     filters: [{ name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS }],
     properties: ['openFile'],
   })
@@ -1960,7 +1986,7 @@ async function savePdfAs(): Promise<void> {
   // blur-triggered autosave would write the pending edits into the original file
   setPdfSaveAsInFlight(tab.webContents, true)
   try {
-    const picked = await dialog.showSaveDialog(shellWindow, {
+    const picked = await showSaveDialogWithMemory(dialog, shellWindow, {
       defaultPath: tab.filePath,
       filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
     })
@@ -2046,7 +2072,7 @@ async function exportPdfAsDocx(): Promise<void> {
       noLink: true,
     })
     if (confirm.response !== 0) return
-    const picked = await dialog.showSaveDialog(shellWindow, {
+    const picked = await showSaveDialogWithMemory(dialog, shellWindow, {
       defaultPath: tab.filePath.replace(/\.pdf$/i, '.docx'),
       filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
     })
@@ -2124,6 +2150,9 @@ function installDockMenu(): void {
 // Prefer proxy env vars (terminal launch); a packaged app launched from Finder inherits no shell
 // env vars, so fall back to the system HTTP proxy. The renderer uses Chromium's system proxy and
 // is unaffected. Same bootstrap as slides-main startSlidesStandalone.
+// awaited by login IPC so the first status probe / login click cannot race the proxy resolution
+let proxyBootstrap: Promise<void> = Promise.resolve()
+
 async function installMainProcessProxy(): Promise<void> {
   let proxyUrl = [
     process.env.HTTPS_PROXY,
@@ -2135,7 +2164,9 @@ async function installMainProcessProxy(): Promise<void> {
   ].find((v) => v && /^https?:\/\//.test(v))
   if (!proxyUrl) {
     try {
-      const resolved = await session.defaultSession.resolveProxy('https://api.anthropic.com/')
+      // PAC/rule proxies answer per-host: probe the host the login flow, the
+      // Genspark LLM proxy and the gsk CLI actually target
+      const resolved = await session.defaultSession.resolveProxy('https://www.genspark.ai/')
       const m = /PROXY\s+([^;\s]+)/.exec(resolved)
       if (m) proxyUrl = `http://${m[1]}`
     } catch {
@@ -2212,7 +2243,7 @@ app.whenReady().then(() => {
     return
   }
 
-  void installMainProcessProxy()
+  proxyBootstrap = installMainProcessProxy()
   app.setAccessibilitySupportEnabled(true)
   // Settle the shared uiLang from saved settings BEFORE any tab renderer can
   // ask 'app:get-language': the editor handlers return the i18n module's

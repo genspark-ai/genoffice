@@ -86,7 +86,9 @@ function fixtureDoc(): JsonNode[] {
         docxIndex: 0,
       },
     ),
-    para([text('GenSpark intro,'), text('GenSpark is great', [{ type: 'bold' }])], { docxIndex: 1 }),
+    para([text('GenSpark intro,'), text('GenSpark is great', [{ type: 'bold' }])], {
+      docxIndex: 1,
+    }),
     heading([text('Risk Notes')], 2, { docxIndex: 2 }),
     para([text('Body paragraph')], { docxIndex: 3, align: 'center' }),
     listItem([text('List item')], { docxIndex: 4, numId: '1' }),
@@ -133,7 +135,9 @@ describe('updateTextStyle', () => {
   it('null clears one attr, keeping the others; mark removed when all attrs empty', () => {
     const editor = createEditor([
       para([
-        text('red text', [{ type: 'docTextStyle', attrs: { color: 'FF0000', sizeHalfPoints: 24 } }]),
+        text('red text', [
+          { type: 'docTextStyle', attrs: { color: 'FF0000', sizeHalfPoints: 24 } },
+        ]),
       ]),
       para([text('color only', [{ type: 'docTextStyle', attrs: { color: '00FF00' } }])]),
     ])
@@ -151,6 +155,40 @@ describe('updateTextStyle', () => {
     expect(outcome.ok).toBe(true)
     expect(textStyleOf(editor, 0)).toMatchObject({ color: null, sizeHalfPoints: 24 })
     expect(textStyleOf(editor, 1)).toBeNull()
+  })
+
+  it('font routes to its script slot: CJK keeps the Latin font, Latin keeps the CJK font', () => {
+    const mixed = () =>
+      createEditor([
+        para([
+          text('合同 Contract', [
+            { type: 'docTextStyle', attrs: { font: 'SimSun', fontAscii: 'Times New Roman' } },
+          ]),
+        ]),
+      ])
+    const style = (font: string | null) => ({
+      commands: [
+        {
+          updateTextStyle: {
+            target: { nodeType: 'docParagraph' as const },
+            style: { font },
+            fields: ['font' as const],
+          },
+        },
+      ],
+    })
+
+    const cjk = mixed()
+    expect(executeCommands(cjk, style('KaiTi')).ok).toBe(true)
+    expect(textStyleOf(cjk, 0)).toMatchObject({ font: 'KaiTi', fontAscii: 'Times New Roman' })
+
+    const latin = mixed()
+    expect(executeCommands(latin, style('Arial')).ok).toBe(true)
+    expect(textStyleOf(latin, 0)).toMatchObject({ font: 'SimSun', fontAscii: 'Arial' })
+
+    const cleared = mixed()
+    expect(executeCommands(cleared, style(null)).ok).toBe(true)
+    expect(textStyleOf(cleared, 0)).toBeNull()
   })
 
   it('boolean fields add and remove basic marks', () => {

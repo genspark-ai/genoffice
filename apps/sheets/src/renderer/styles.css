@@ -1114,6 +1114,32 @@ textarea:disabled {
   font-weight: 600;
 }
 
+/* Insert tab shape gallery: grouped preview grid inside the dropdown */
+.shape-gallery-drop {
+  width: 322px;
+  max-height: 420px;
+}
+
+.shape-gallery-title {
+  padding: 6px 6px 2px;
+  font-size: 11px;
+  color: var(--text-dim, #797775);
+}
+
+.shape-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+}
+
+.menu-select-drop .shape-gallery-grid button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  padding: 5px 0;
+  color: var(--text, #444);
+}
+
 /* Insert tab's small chart-type buttons, arranged as an icon cluster. */
 .chart-grid {
   display: grid;
@@ -2705,6 +2731,154 @@ textarea:focus {
   border-color: var(--border-strong);
 }
 
+/* Insert Screenshot dialog */
+.screenshot-dialog {
+  width: 520px;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.screenshot-grid button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.screenshot-grid button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.screenshot-grid button.capturing {
+  opacity: 0.6;
+}
+
+.screenshot-grid img {
+  width: 100%;
+  height: 84px;
+  object-fit: contain;
+}
+
+.screenshot-grid span {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Insert Icons dialog */
+.icons-dialog {
+  width: 560px;
+}
+
+.icons-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px 0;
+}
+
+.icons-toolbar input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.icons-colors {
+  display: flex;
+  gap: 4px;
+}
+
+.icons-colors button {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.icons-colors button.active {
+  outline: 2px solid var(--accent, #217346);
+  outline-offset: 1px;
+}
+
+.icons-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.icons-grid button {
+  display: grid;
+  place-items: center;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: none;
+  font-size: 24px;
+}
+
+.icons-grid button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+/* Recommended Charts dialog */
+.recommended-charts-dialog {
+  width: 640px;
+}
+
+.recommended-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.recommended-charts-grid button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  text-align: left;
+  font-size: 11px;
+}
+
+.recommended-charts-grid button:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.recommended-charts-grid svg {
+  width: 100%;
+  height: auto;
+  background: var(--surface);
+}
+
+.recommended-charts-grid span {
+  color: var(--text-secondary, #666);
+}
+
 /* Insert/Edit Link dialog */
 .link-dialog {
   width: 420px;
@@ -3685,7 +3859,11 @@ textarea:focus {
      doubles as the bottom padding, so overflowing never grows the strip and
      shifts its content up */
   overflow-x: scroll;
-  padding: 13px 14px 0;
+  /* side insets are transparent borders, not padding: overflow clips at the
+     padding edge, so side padding would let scrolled items slide flush against
+     the box edges — borders keep the 14px gaps while scrolling */
+  padding: 13px 0 0;
+  border-inline: 14px solid transparent;
   margin-bottom: -6px;
 }
 

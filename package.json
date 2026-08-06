@@ -5,7 +5,7 @@
   "description": "AI-native office suite (docs, sheets, slides, pdf)",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20",
+    "node": ">=22.12.0",
     "npm": ">=10"
   },
   "repository": {
@@ -17,6 +17,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "install-electron",
     "format": "node tools/format-changed.mjs --write",
     "format:check": "node tools/format-changed.mjs --check",
     "lint": "eslint .",

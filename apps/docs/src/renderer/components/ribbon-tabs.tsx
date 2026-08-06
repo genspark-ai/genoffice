@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { CSSProperties } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
 import {
+  buildLineParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
@@ -10,6 +10,7 @@ import {
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
+import { shapeLabelKey } from './shape-gallery'
 import { tableModelToPmNode } from '../editor/convert'
 import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
@@ -207,89 +208,18 @@ export function insertTextboxAt(editor: Editor): void {
     heightEmu: TEXTBOX_HEIGHT_EMU,
     id: Math.floor(Math.random() * 900000) + 100000,
   })
-  editor
-    .chain()
-    .focus()
-    .insertContent({
-      type: 'docProtected',
-      attrs: {
-        docxIndex: null,
-        blockType: 'passthrough',
-        label: t('ribbonTextBox'),
-        genXml: xml,
-        textboxes: [emptyTextboxDisplay()],
-      },
-    })
-    .run()
-}
-
-/** Common DrawingML preset shapes for the shape picker dropdown. */
-export const SHAPE_PRESETS: Array<{
-  prst: string
-  labelKey: StringKey
-  clipPath?: string
-  borderRadius?: string
-}> = [
-  { prst: 'rect', labelKey: 'ribbonShapeRect' },
-  { prst: 'roundRect', labelKey: 'ribbonShapeRoundRect', borderRadius: '12%' },
-  { prst: 'ellipse', labelKey: 'ribbonShapeEllipse', borderRadius: '50%' },
-  {
-    prst: 'triangle',
-    labelKey: 'ribbonShapeTriangle',
-    clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
-  },
-  {
-    prst: 'rtTriangle',
-    labelKey: 'ribbonShapeRtTriangle',
-    clipPath: 'polygon(0% 0%, 0% 100%, 100% 100%)',
-  },
-  {
-    prst: 'diamond',
-    labelKey: 'ribbonShapeDiamond',
-    clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
-  },
-  {
-    prst: 'parallelogram',
-    labelKey: 'ribbonShapeParallelogram',
-    clipPath: 'polygon(15% 0%, 100% 0%, 85% 100%, 0% 100%)',
-  },
-  {
-    prst: 'pentagon',
-    labelKey: 'ribbonShapePentagon',
-    clipPath: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
-  },
-  {
-    prst: 'hexagon',
-    labelKey: 'ribbonShapeHexagon',
-    clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
-  },
-  {
-    prst: 'star5',
-    labelKey: 'ribbonShapeStar5',
-    clipPath:
-      'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
-  },
-  {
-    prst: 'rightArrow',
-    labelKey: 'ribbonShapeRightArrow',
-    clipPath: 'polygon(0% 25%, 65% 25%, 65% 0%, 100% 50%, 65% 100%, 65% 75%, 0% 75%)',
-  },
-  {
-    prst: 'leftRightArrow',
-    labelKey: 'ribbonShapeLeftRightArrow',
-    clipPath:
-      'polygon(0% 50%, 20% 0%, 20% 30%, 80% 30%, 80% 0%, 100% 50%, 80% 100%, 80% 70%, 20% 70%, 20% 100%)',
-  },
-]
-
-/** Shape preset CSS: convert a prst name to inline style properties. */
-export function shapePresetStyle(prst: string | undefined): CSSProperties {
-  const preset = SHAPE_PRESETS.find((s) => s.prst === prst)
-  if (!preset) return {}
-  const style: CSSProperties = {}
-  if (preset.clipPath) style.clipPath = preset.clipPath
-  if (preset.borderRadius) style.borderRadius = preset.borderRadius
-  return style
+  // never plain insertContent: with an object selected (NodeSelection) that
+  // would replace the selected shape instead of adding a new block
+  insertTopLevelBlockAtSelection(editor, {
+    type: 'docProtected',
+    attrs: {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonTextBox'),
+      genXml: xml,
+      textboxes: [emptyTextboxDisplay()],
+    },
+  })
 }
 
 /**
@@ -303,9 +233,45 @@ export function insertTopLevelBlockAtSelection(editor: Editor, content: JSONCont
   return editor.chain().focus().insertContentAt(position, content).run()
 }
 
+/** Insert a floating stroke-only line/connector at the cursor. */
+export function insertLineAt(editor: Editor, kind: string): void {
+  const straight = kind !== 'lineBent' && kind !== 'lineCurved'
+  const widthEmu = 1800000
+  // Word's horizontal line is a zero-height extent; the display box keeps a
+  // 12 px grab band and draws the stroke at its vertical center
+  const heightEmu = straight ? 0 : 1080000
+  const xml = buildLineParagraphXml({
+    kind,
+    widthEmu,
+    heightEmu,
+    id: Math.floor(Math.random() * 900000) + 100000,
+  })
+  const textbox: TextboxDisplay = {
+    borderColor: '000000',
+    widthPx: Math.round(widthEmu / 9525),
+    heightPx: straight ? 12 : Math.round(heightEmu / 9525),
+    prst: kind,
+    paras: [],
+    readOnly: true,
+    insetTopPx: 0,
+    insetRightPx: 0,
+    insetBottomPx: 0,
+    insetLeftPx: 0,
+  }
+  insertTopLevelBlockAtSelection(editor, {
+    type: 'docProtected',
+    attrs: {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonShapeLabel', { name: t(shapeLabelKey(kind)) }),
+      genXml: xml,
+      textboxes: [textbox],
+    },
+  })
+}
+
 /** Insert a floating preset shape (wps:wsp with prstGeom) at the cursor. */
 export function insertShapeAt(editor: Editor, prst: string): void {
-  const preset = SHAPE_PRESETS.find((s) => s.prst === prst) ?? SHAPE_PRESETS[0]
   const widthEmu = 1800000
   const heightEmu = 1080000
   const xml = buildShapeParagraphXml({
@@ -331,7 +297,7 @@ export function insertShapeAt(editor: Editor, prst: string): void {
     attrs: {
       docxIndex: null,
       blockType: 'passthrough',
-      label: t('ribbonShapeLabel', { name: t(preset.labelKey) }),
+      label: t('ribbonShapeLabel', { name: t(shapeLabelKey(prst)) }),
       genXml: xml,
       textboxes: [textbox],
     },
@@ -370,20 +336,16 @@ export function insertWordArtAt(editor: Editor, wordArtId: string): void {
       },
     ],
   }
-  editor
-    .chain()
-    .focus()
-    .insertContent({
-      type: 'docProtected',
-      attrs: {
-        docxIndex: null,
-        blockType: 'passthrough',
-        label: t('ribbonWordArtLabel', { name: preset.label }),
-        genXml: xml,
-        textboxes: [textbox],
-      },
-    })
-    .run()
+  insertTopLevelBlockAtSelection(editor, {
+    type: 'docProtected',
+    attrs: {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonWordArtLabel', { name: preset.label }),
+      genXml: xml,
+      textboxes: [textbox],
+    },
+  })
 }
 
 export function insertPageBreakAt(editor: Editor): void {

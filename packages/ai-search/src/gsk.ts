@@ -20,6 +20,7 @@ import {
   COPYRIGHT_HOSTS,
   asRecord,
   firstItem,
+  gskProxyUrl,
   safeHost,
   type ImageSearchResult,
   type WebSearchResult,
@@ -107,20 +108,9 @@ export function hasGskAuth(): boolean {
 
 // ── Child-process proxy plumbing ────────────────────────────────────
 
-let explicitProxyUrl = ''
-
-/**
- * Proxy for spawned gsk CLI children. The Electron main process routes its own
- * fetch through undici's global dispatcher (see the apps' proxy bootstraps),
- * but that never reaches child processes: a packaged app launched from
- * Finder/Explorer inherits no proxy env vars, so `gsk login` etc. would dial
- * genspark.ai directly and fail on networks that require the system proxy
- * (browser + renderer work, only the CLI children break). The bootstraps call
- * this with the proxy they resolved so gskChildEnv() can forward it.
- */
-export function setGskProxyUrl(url: string): void {
-  explicitProxyUrl = url
-}
+// The main process's undici dispatcher (see the apps' proxy bootstraps) never
+// reaches child processes: without forwarding they dial genspark.ai directly.
+export { setGskProxyUrl, gskProxyUrl } from './shared'
 
 /**
  * env for gsk CLI children: Electron-as-Node plus proxy forwarding. The CLI
@@ -131,7 +121,7 @@ export function setGskProxyUrl(url: string): void {
 export function gskChildEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, ELECTRON_RUN_AS_NODE: '1' }
   const proxy = [
-    explicitProxyUrl,
+    gskProxyUrl(),
     base.HTTPS_PROXY,
     base.https_proxy,
     base.HTTP_PROXY,
@@ -563,6 +553,86 @@ export async function gskUpload(filePath: string): Promise<string> {
   const url = dataRec.file_wrapper_url ?? raw.url ?? dataRec.url
   if (!url) throw new Error(`gsk upload did not return a URL: ${JSON.stringify(raw).slice(0, 200)}`)
   return String(url)
+}
+
+// ── Past projects (Genspark web) ────────────────────────────────────
+
+export interface GskPastProject {
+  projectId: string
+  /** raw project type, e.g. 'slides_agent_git' */
+  type: string
+  title: string
+  /** creation time, ISO-like string from the API */
+  ctime: string
+  /** relative web URL, e.g. '/agents?id=...' — join with https://www.genspark.ai */
+  projectUrl: string
+}
+
+export interface GskPastProjectsPage {
+  projects: GskPastProject[]
+  total: number
+  hasMore: boolean
+}
+
+/**
+ * Parses `gsk projects`. data.projects lacks project_url — it only appears in
+ * session_state.past_projects — so take it from there, falling back to
+ * deriving it from the project id. (exported for tests)
+ */
+export function parseGskPastProjects(raw: unknown): GskPastProjectsPage {
+  const rec = asRecord(raw)
+  const data = asRecord(rec.data ?? raw)
+  const urlById = new Map<string, string>()
+  const sessionProjects = asRecord(asRecord(rec.session_state).past_projects).projects
+  if (Array.isArray(sessionProjects)) {
+    for (const item of sessionProjects) {
+      const p = asRecord(item)
+      if (p.project_id && typeof p.project_url === 'string' && p.project_url) {
+        urlById.set(String(p.project_id), p.project_url)
+      }
+    }
+  }
+  const listRaw: unknown[] = Array.isArray(data.projects) ? data.projects : []
+  const projects: GskPastProject[] = []
+  for (const item of listRaw) {
+    const p = asRecord(item)
+    const projectId = String(p.project_id ?? '')
+    if (!projectId) continue
+    projects.push({
+      projectId,
+      type: String(p.type ?? ''),
+      title: String(p.title ?? ''),
+      ctime: String(p.ctime ?? ''),
+      projectUrl: urlById.get(projectId) ?? `/agents?id=${projectId}`,
+    })
+  }
+  const total = Number(data.total)
+  return {
+    projects,
+    total: Number.isFinite(total) ? total : projects.length,
+    hasMore: data.has_more === true,
+  }
+}
+
+export interface GskListPastProjectsOptions {
+  /** 'slides' | 'docs' | 'sheets' | ...; omit for all kinds */
+  artifactTypes?: string[]
+  /** page size, CLI default 20, max 100 */
+  limit?: number
+  offset?: number
+  signal?: AbortSignal
+}
+
+/** Lists the user's own past Genspark web projects, newest first (`gsk projects`). */
+export async function gskListPastProjects(
+  options: GskListPastProjectsOptions = {},
+): Promise<GskPastProjectsPage> {
+  const args = ['projects']
+  if (options.artifactTypes?.length) args.push('--artifact_types', ...options.artifactTypes)
+  if (options.limit !== undefined) args.push('--limit', String(options.limit))
+  if (options.offset) args.push('--offset', String(options.offset))
+  const raw = await runGsk(args, SEARCH_TIMEOUT_MS, options.signal)
+  return parseGskPastProjects(raw)
 }
 
 export interface GskLoginInfo {

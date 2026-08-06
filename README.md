@@ -22,6 +22,29 @@ Previous version:
 
 Other versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
 
+### Linux
+
+x86_64, glibc 2.34+ (Ubuntu 22.04 or newer; tested on Ubuntu 24.04):
+
+- **Debian / Ubuntu**: [genoffice_0.5.149_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/genoffice_0.5.149_amd64.deb)
+- **Other distros**: [GenOffice-0.5.149.AppImage](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/GenOffice-0.5.149.AppImage)
+
+Install the deb with apt — it pulls in the dependencies and adds GenOffice
+to the applications menu:
+
+```bash
+sudo apt install ./genoffice_0.5.149_amd64.deb
+```
+
+The AppImage instead runs in place: install the FUSE 2 runtime
+(`sudo apt install libfuse2`; on Ubuntu 24.04 the package is `libfuse2t64`),
+make the file executable, then run it:
+
+```bash
+chmod +x GenOffice-0.5.149.AppImage
+./GenOffice-0.5.149.AppImage
+```
+
 ## Apps
 
 | App           | Product              | What it is                                                                                                                                                                                                                                                                                                                                                    |

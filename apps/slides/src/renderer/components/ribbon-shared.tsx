@@ -134,6 +134,7 @@ export type RibbonPanelKey =
   | 'chart'
   | 'collapse'
   | 'pen'
+  | 'slideShow'
 
 /** Ribbon popups are mutually exclusive: a trigger closes every sibling popup
  *  on mousedown, before its own click-toggle runs. A trigger rendered inside
@@ -523,6 +524,7 @@ export interface RibbonTabCtx extends Pick<
   | 'onPaste'
   | 'onResetLayout'
   | 'onSetLayout'
+  | 'onSlideShow'
   | 'onStrike'
   | 'onTextColor'
   | 'onTextToggle'
@@ -575,11 +577,16 @@ export interface RibbonTabCtx extends Pick<
   setParaOpen: Dispatch<SetStateAction<boolean>>
   setSizeDraft: Dispatch<SetStateAction<string | null>>
   setSizeOpen: Dispatch<SetStateAction<boolean>>
+  setSlideShowFromStart: Dispatch<SetStateAction<boolean>>
+  setSlideShowOpen: Dispatch<SetStateAction<boolean>>
   setTableCustom: Dispatch<SetStateAction<{ r: number; c: number }>>
   setTableHover: Dispatch<SetStateAction<{ r: number; c: number }>>
   setTableOpen: Dispatch<SetStateAction<boolean>>
   sizeDraft: string | null
   sizeOpen: boolean
+  /** Home-tab split button memory: the last chosen start mode (true = from beginning) */
+  slideShowFromStart: boolean
+  slideShowOpen: boolean
   t: ReturnType<typeof useI18n>['t']
   tableCustom: { r: number; c: number }
   tableHover: { r: number; c: number }

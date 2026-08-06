@@ -36,12 +36,13 @@ import {
 } from './icons'
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */
+import { SHAPE_GALLERY, ShapePreview, isLineKind } from './shape-gallery'
 import {
   BIG,
   InsertTabProps,
-  SHAPE_PRESETS,
   insertBlankPageAt,
   insertImageViaDialog,
+  insertLineAt,
   insertPageBreakAt,
   insertShapeAt,
   insertTableAt,
@@ -733,26 +734,27 @@ export function InsertTab({
             </button>
             {dropdown === 'shape' && (
               <div className="shape-palette">
-                {SHAPE_PRESETS.map((s) => (
-                  <button
-                    key={s.prst}
-                    className="shape-cell"
-                    title={t(s.labelKey)}
-                    onClick={() => {
-                      insertShapeAt(editor, s.prst)
-                      setDropdown(() => null)
-                    }}
-                  >
-                    <span
-                      className="shape-preview"
-                      style={{
-                        background: '#4472C4',
-                        ...(s.clipPath ? { clipPath: s.clipPath } : {}),
-                        ...(s.borderRadius ? { borderRadius: s.borderRadius } : {}),
-                      }}
-                    />
-                    <span className="shape-label">{t(s.labelKey)}</span>
-                  </button>
+                {SHAPE_GALLERY.map((group) => (
+                  <div key={group.labelKey} className="shape-group">
+                    <div className="shape-group-title">{t(group.labelKey)}</div>
+                    <div className="shape-grid">
+                      {group.shapes.map((s) => (
+                        <button
+                          key={s.prst}
+                          className="shape-cell"
+                          title={t(s.labelKey)}
+                          aria-label={t(s.labelKey)}
+                          onClick={() => {
+                            if (isLineKind(s.prst)) insertLineAt(editor, s.prst)
+                            else insertShapeAt(editor, s.prst)
+                            setDropdown(() => null)
+                          }}
+                        >
+                          <ShapePreview prst={s.prst} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

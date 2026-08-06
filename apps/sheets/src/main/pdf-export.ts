@@ -8,11 +8,10 @@ import { join } from 'node:path'
 
 import { BrowserWindow, dialog } from 'electron'
 
+import { showSaveDialogWithMemory } from '@genoffice/electron-utils'
+
 import type { IpcMainInvokeEvent } from 'electron'
-import type {
-  WorkbookExportPdfRequest,
-  WorkbookExportPdfResult,
-} from '../shared/desktop-api'
+import type { WorkbookExportPdfRequest, WorkbookExportPdfResult } from '../shared/desktop-api'
 
 export async function exportPdf(
   event: IpcMainInvokeEvent,
@@ -23,9 +22,7 @@ export async function exportPdf(
     defaultPath: request.fileName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   }
-  const selection = parent
-    ? await dialog.showSaveDialog(parent, dialogOptions)
-    : await dialog.showSaveDialog(dialogOptions)
+  const selection = await showSaveDialogWithMemory(dialog, parent, dialogOptions)
   if (selection.canceled || !selection.filePath) return { canceled: true }
 
   const workDir = await mkdtemp(join(tmpdir(), 'ai-excel-pdf-'))

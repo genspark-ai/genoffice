@@ -12,6 +12,7 @@ export {
   windowMenuTemplate,
   type AppMenuLabels,
 } from './app-menu'
+export { showOpenDialogWithMemory, showSaveDialogWithMemory } from './dialog-memory'
 export { installNavigationGuard } from './navigation-guard'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {

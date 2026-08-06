@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { asRecord } from './shared'
+import { asRecord, gskProxyUrl } from './shared'
 
 /** Progress event for the browser login flow. */
 export interface GskLoginProgress {
@@ -56,6 +56,56 @@ function resolveFetch(): typeof fetch {
   }
   cachedFetch = impl
   return impl
+}
+
+interface ProxySession {
+  setProxy: (config: { proxyRules: string }) => Promise<void>
+  fetch: typeof fetch
+}
+
+let proxyFetchCache: { url: string; impl: typeof fetch } | undefined
+let proxyFallbackPreferred = false
+
+// proxy/gateway rejections, not endpoint answers — must not mark a channel healthy
+const GATEWAY_ERROR_STATUSES = new Set([407, 502, 504])
+
+/**
+ * Retry channel when the primary fetch cannot connect: net.fetch follows only
+ * Chromium's own proxy config, so a proxy the bootstraps resolved from env
+ * vars — or a system proxy Chromium failed to apply — never reaches it. Pin a
+ * dedicated session to the registered proxy, keeping Chromium TLS (Node fetch
+ * is bot-challenged, see resolveFetch). null when no proxy is registered.
+ */
+async function proxyFallbackFetch(): Promise<typeof fetch | null> {
+  const proxyUrl = gskProxyUrl()
+  if (!proxyUrl) return null
+  if (proxyFetchCache?.url === proxyUrl) return proxyFetchCache.impl
+  let impl: typeof fetch = (...args) => fetch(...args)
+  if (process.versions.electron) {
+    try {
+      const require = createRequire(import.meta.url)
+      const { session } = require('electron') as {
+        session?: { fromPartition: (partition: string) => ProxySession }
+      }
+      if (session) {
+        const ses = session.fromPartition('genoffice-login-proxy')
+        await ses.setProxy({ proxyRules: proxyUrl })
+        impl = ses.fetch.bind(ses)
+      }
+    } catch {
+      /* non-main context: global fetch rides the bootstrap's undici dispatcher */
+    }
+  }
+  proxyFetchCache = { url: proxyUrl, impl }
+  return impl
+}
+
+/** Primary + fallback, ordered by which one last succeeded after a failover. */
+async function loginFetchChannels(): Promise<(typeof fetch)[]> {
+  const primary = resolveFetch()
+  const fallback = await proxyFallbackFetch()
+  if (!fallback) return [primary]
+  return proxyFallbackPreferred ? [fallback, primary] : [primary, fallback]
 }
 
 /** Override dir via GENOFFICE_AUTH_DIR (test isolation). */
@@ -136,13 +186,29 @@ async function httpJson(
   url: string,
   init: RequestInit & { signal: AbortSignal },
 ): Promise<{ resp: Response; json: Record<string, unknown> }> {
-  let resp: Response
-  try {
-    resp = await resolveFetch()(url, init)
-  } catch (e) {
-    if (init.signal.aborted) throw e
-    throw new LoginFlowError('network')
+  const flowSignal = init.signal
+  let resp: Response | undefined
+  const channels = await loginFetchChannels()
+  for (const [i, impl] of channels.entries()) {
+    try {
+      // per-attempt timeout: a blackholed direct connection would otherwise
+      // hang for the OS TCP timeout before the fallback ever runs
+      resp = await impl(url, {
+        ...init,
+        signal: AbortSignal.any([flowSignal, AbortSignal.timeout(HTTP_TIMEOUT_MS)]),
+      })
+    } catch (e) {
+      if (flowSignal.aborted) throw e
+      continue
+    }
+    // gateway statuses fail over like connect errors (endpoint 4xx such as the
+    // poll's authorization_pending still counts as a healthy channel)
+    if (GATEWAY_ERROR_STATUSES.has(resp.status)) continue
+    // the losing channel keeps losing on proxy-only networks — lead with the winner
+    if (i > 0) proxyFallbackPreferred = !proxyFallbackPreferred
+    break
   }
+  if (!resp) throw new LoginFlowError('network')
   let json: Record<string, unknown> = {}
   try {
     json = asRecord(await resp.json())
@@ -342,7 +408,14 @@ export async function genofficeLogout(): Promise<void> {
   clearAuth()
 }
 
-/** Test hook: drop the auth cache so the next read hits the file system. */
+/** Test hook: drop the auth cache and fetch-channel state. */
 export function resetGenofficeAuthCache(): void {
   cachedAuth = undefined
+  proxyFetchCache = undefined
+  proxyFallbackPreferred = false
+}
+
+/** Test hook: whether the proxy fallback channel is currently preferred. */
+export function genofficeProxyFallbackPreferred(): boolean {
+  return proxyFallbackPreferred
 }

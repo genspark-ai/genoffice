@@ -188,9 +188,14 @@ import {
   type PivotEditContext,
   type SlicerPickerState,
 } from './pivot-actions'
+import type { ChartRecommendations } from '../domain/chart-recommend'
 import {
   applyAiShapeEdit as applyAiShapeEditImpl,
   buildAiChartEdit as buildAiChartEditImpl,
+  handleInsertChart as handleInsertChartImpl,
+  handleInsertIcon as handleInsertIconImpl,
+  handleInsertScreenshot,
+  handleRecommendedCharts as handleRecommendedChartsImpl,
   insertAiChartVisual as insertAiChartVisualImpl,
   insertAiImageVisual as insertAiImageVisualImpl,
   insertAiShapeVisual as insertAiShapeVisualImpl,
@@ -278,6 +283,9 @@ import { selectionFormatEquals, toSelectionFormat, type SelectionFormat } from '
 import { ExcelShell } from './ExcelShell'
 import { ToastHost } from './toast'
 import { AdvancedFilterDialog, type AdvancedFilterColumn } from './AdvancedFilterDialog'
+import { IconsDialog } from './IconsDialog'
+import { RecommendedChartsDialog } from './RecommendedChartsDialog'
+import { ScreenshotDialog } from './ScreenshotDialog'
 import { SymbolDialog } from './SymbolDialog'
 import { SlicerFieldPicker, SlicerPanels, type SlicerUiState } from './SlicerPanel'
 import type { DefinedNameAction, DefinedNameRow } from './NameManagerDialog'
@@ -422,6 +430,9 @@ export function App(): React.JSX.Element {
   >(null)
   /// True while the Insert → Symbol dialog is open.
   const [symbolDialogOpen, setSymbolDialogOpen] = useState(false)
+  const [screenshotDialogOpen, setScreenshotDialogOpen] = useState(false)
+  const [iconsDialogOpen, setIconsDialogOpen] = useState(false)
+  const [recommendedCharts, setRecommendedCharts] = useState<ChartRecommendations | null>(null)
   /// The focused floating visual (chart/shape/image); charts surface a
   /// contextual Chart Design ribbon tab while selected.
   const [selectedVisual, setSelectedVisual] = useState<WorkbookVisualObject | null>(null)
@@ -2543,6 +2554,13 @@ export function App(): React.JSX.Element {
       setMessage,
       setChartDialog,
       setSymbolDialogOpen,
+      setScreenshotDialogOpen,
+      setIconsDialogOpen,
+      openRecommendedCharts: () => {
+        void handleRecommendedChartsImpl(visualContext()).then((result) => {
+          if (result) setRecommendedCharts(result)
+        })
+      },
       setPendingEdits,
       visualContext,
       dataToolsContext,
@@ -3045,6 +3063,29 @@ export function App(): React.JSX.Element {
         <SymbolDialog
           onInsert={(char) => handleInsertSymbolImpl(dataToolsContext(), char)}
           onClose={() => setSymbolDialogOpen(false)}
+        />
+      )}
+      {screenshotDialogOpen && (
+        <ScreenshotDialog
+          onInsert={(dataUrl, width, height) =>
+            handleInsertScreenshot(visualContext(), dataUrl, width, height)
+          }
+          onClose={() => setScreenshotDialogOpen(false)}
+        />
+      )}
+      {iconsDialogOpen && (
+        <IconsDialog
+          onInsert={(dataUrl, size, name) =>
+            handleInsertIconImpl(visualContext(), dataUrl, size, name)
+          }
+          onClose={() => setIconsDialogOpen(false)}
+        />
+      )}
+      {recommendedCharts !== null && (
+        <RecommendedChartsDialog
+          recommendations={recommendedCharts}
+          onPick={(kind) => void handleInsertChartImpl(visualContext(), kind)}
+          onClose={() => setRecommendedCharts(null)}
         />
       )}
       {slicerPicker !== null && (

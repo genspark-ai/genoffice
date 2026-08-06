@@ -1217,23 +1217,32 @@ button {
   position-try-fallbacks: flip-inline;
   position-visibility: anchors-visible;
   z-index: 60;
-  display: grid;
-  grid-template-columns: repeat(4, 64px);
-  gap: 4px;
+  width: 312px;
+  max-height: 420px;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  padding: 8px;
+  padding: 6px;
+}
+
+.shape-group-title {
+  padding: 6px 4px 2px;
+  font-size: 11px;
+  color: var(--text-dim, #797775);
+}
+
+.shape-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
 }
 
 .shape-cell {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  width: 64px;
-  padding: 4px 2px;
+  justify-content: center;
+  padding: 5px 0;
   border: none;
   background: none;
   border-radius: 4px;
@@ -1243,21 +1252,6 @@ button {
 
 .shape-cell:hover {
   background: var(--active-bg);
-}
-
-.shape-preview {
-  display: block;
-  width: 36px;
-  height: 24px;
-  border: 1.5px solid #2f5496;
-}
-
-.shape-label {
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 60px;
 }
 
 /* ---- WordArt picker panel ---- */
@@ -1690,8 +1684,65 @@ th.cell-rev-del {
 }
 
 /* style gallery */
-.style-gallery {
+/* The Styles group absorbs the row's free width and shrinks with the window
+   (min-width keeps two cards + the expander visible); extra cards clip inside
+   .style-gallery instead of widening the scrolling ribbon row, and the
+   expander below makes the clipped ones reachable. */
+.ribbon-group-styles {
+  flex: 1;
+  min-width: 178px;
+}
+
+.style-gallery-wrap {
   gap: 4px;
+  min-width: 0;
+}
+
+.style-gallery {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.style-gallery-more {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 62px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.style-gallery-more:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.style-gallery-menu {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
+  width: min(478px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 8px;
 }
 
 .style-card {
@@ -1700,12 +1751,17 @@ th.cell-rev-del {
   align-items: center;
   justify-content: center;
   gap: 2px;
+  flex: 0 0 auto;
   width: 74px;
   height: 62px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface);
   cursor: pointer;
+}
+
+.style-gallery-menu .style-card {
+  width: auto;
 }
 
 .style-card:hover:not(:disabled) {
@@ -3084,6 +3140,35 @@ th.cell-rev-del {
   pointer-events: auto;
 }
 
+/* corner resize handle of floating shape/textbox/WordArt/line boxes */
+.box-resize-handle {
+  position: absolute;
+  z-index: 4;
+  right: -6px;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--word-blue);
+  border-radius: 2px;
+  background: var(--surface);
+  cursor: nwse-resize;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.doc-protected-textboxes:hover > .box-resize-handle,
+.doc-protected-textboxes.ProseMirror-selectednode > .box-resize-handle,
+.doc-protected-chart:hover > .box-resize-handle,
+.doc-protected-chart.ProseMirror-selectednode > .box-resize-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-content-editing > .box-resize-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Native ProseMirror tables */
 .doc-page > .doc-table {
   margin: 2px 0;
@@ -3549,10 +3634,8 @@ th.cell-rev-del {
 
 .doc-chart-svg {
   display: block;
-  width: 100%;
-  max-width: 560px;
+  max-width: 100%;
   margin: 0 auto;
-  height: auto;
 }
 
 .doc-chart-grid {
@@ -5113,7 +5196,11 @@ body.docs-crop-active
      doubles as the bottom padding, so overflowing never grows the strip and
      shifts its content up */
   overflow-x: scroll;
-  padding: 13px 14px 0;
+  /* side insets are transparent borders, not padding: overflow clips at the
+     padding edge, so side padding would let scrolled items slide flush against
+     the box edges — borders keep the 14px gaps while scrolling */
+  padding: 13px 0 0;
+  border-inline: 14px solid transparent;
   margin-bottom: -6px;
 }
 

@@ -43,8 +43,6 @@ import {
   IconSave,
   IconSetupShow,
   IconSparkle,
-  IconSpellcheck,
-  IconTranslate,
   IconUndo,
   IconWholePage,
   IconZoom100,
@@ -76,6 +74,9 @@ import {
   IconPathCircle,
   IconPathZigzag,
 } from './icons'
+// brand-supplied Review AI icon art (44px = 22px @2x), color baked in
+import iconSpelling from '../assets/icon-spelling.png'
+import iconTranslate from '../assets/icon-translate.png'
 import { ChartTypeDialog } from './ChartTypeDialog'
 import {
   BIG,
@@ -896,6 +897,8 @@ export function Ribbon({
   const [collapseOpen, setCollapseOpen] = useState<string | null>(null)
   const [translateOpen, setTranslateOpen] = useState(false)
   const [arrangeOpen, setArrangeOpen] = useState(false)
+  const [slideShowOpen, setSlideShowOpen] = useState(false)
+  const [slideShowFromStart, setSlideShowFromStart] = useState(false)
   // Insert tab dropdown galleries (at most one open at a time)
   const [insertDrop, setInsertDrop] = useState<
     'shapes' | 'icons' | 'chart' | 'smartart' | 'wordart' | 'zoom' | 'addanim' | null
@@ -936,6 +939,7 @@ export function Ribbon({
     if (!keep.includes('chart')) setChartDrop(null)
     if (!keep.includes('collapse')) setCollapseOpen(null)
     if (!keep.includes('pen')) setPenFlyout(null)
+    if (!keep.includes('slideShow')) setSlideShowOpen(false)
   }, [])
 
   // Clicking elsewhere collapses the table picker (the font color palette uses onMouseDown without stealing focus, collapsing naturally when the edit commits)
@@ -950,6 +954,7 @@ export function Ribbon({
       !layoutOpen &&
       !chartDrop &&
       !arrangeOpen &&
+      !slideShowOpen &&
       !paraOpen
     )
       return
@@ -963,6 +968,7 @@ export function Ribbon({
       setLayoutOpen(false)
       setChartDrop(null)
       setArrangeOpen(false)
+      setSlideShowOpen(false)
       setParaOpen(false)
       setCollapseOpen(null)
     }
@@ -978,6 +984,7 @@ export function Ribbon({
     layoutOpen,
     chartDrop,
     arrangeOpen,
+    slideShowOpen,
     paraOpen,
     collapseOpen,
   ])
@@ -1232,6 +1239,7 @@ export function Ribbon({
     onPaste,
     onResetLayout,
     onSetLayout,
+    onSlideShow,
     onStrike,
     onTextColor,
     onTextToggle,
@@ -1275,11 +1283,15 @@ export function Ribbon({
     setParaOpen,
     setSizeDraft,
     setSizeOpen,
+    setSlideShowFromStart,
+    setSlideShowOpen,
     setTableCustom,
     setTableHover,
     setTableOpen,
     sizeDraft,
     sizeOpen,
+    slideShowFromStart,
+    slideShowOpen,
     t,
     tableCustom,
     tableHover,
@@ -2049,10 +2061,9 @@ export function Ribbon({
                   if (confirmAiRewrite()) onAiPreset(t('ribbonSpellCheckPrompt'))
                 }}
               >
-                <span className="rb-big-icon rb-ai-icon">
-                  <IconSpellcheck size={BIG} />
-                  <span className="copilot-badge copilot-badge-mini">
-                    <IconSparkle size={8} />
+                <span className="rb-big-icon">
+                  <span className="ai-feature-icon" aria-hidden="true">
+                    <img src={iconSpelling} width={22} height={22} alt="" />
                   </span>
                 </span>
                 <span>{t('ribbonSpellCheck')}</span>
@@ -2068,10 +2079,9 @@ export function Ribbon({
                   }}
                   onClick={() => setTranslateOpen((v) => !v)}
                 >
-                  <span className="rb-big-icon rb-ai-icon">
-                    <IconTranslate size={BIG} />
-                    <span className="copilot-badge copilot-badge-mini">
-                      <IconSparkle size={8} />
+                  <span className="rb-big-icon">
+                    <span className="ai-feature-icon" aria-hidden="true">
+                      <img src={iconTranslate} width={22} height={22} alt="" />
                     </span>
                     <RbCaret />
                   </span>

@@ -4,7 +4,9 @@ name: Promote to Stable
 # channel. No rebuild: rewrites latest.yml / latest-mac.yml on the CDN to
 # the versioned feed archive uploaded when the build went to beta, and
 # re-points the marketing download aliases (GenOffice.dmg /
-# GenOfficeSetup.exe) to the promoted version via server-side blob copy.
+# GenOfficeSetup.exe) to the promoted version by downloading the installer
+# and re-uploading it under the alias name (server-side copy cannot read
+# the private source container).
 # Windows and mac version sequences are independent. Empty inputs default
 # to each platform's newest beta version; type "skip" to leave a platform
 # untouched.
@@ -34,12 +36,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Promote
         env:
