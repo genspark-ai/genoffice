@@ -383,6 +383,70 @@ async function anthropicTurn(
 
 // ---- Gemini ----
 
+/**
+ * Gemini's function-declaration schemas are a proto-based OpenAPI subset, not
+ * full JSON Schema. It rejects anything outside that subset — and one bad
+ * declaration fails the *whole* request. Normalizations applied recursively:
+ *   - `type` unions (`["string","null"]`) → first non-null scalar + `nullable`
+ *   - `additionalProperties` → removed (unsupported)
+ *   - `anyOf`/`oneOf`/`allOf` → collapsed to their first non-null member
+ *   - tuple-style `items` (array) → first element (the proto field is singular)
+ */
+export function sanitizeGeminiSchema(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map((n) => sanitizeGeminiSchema(n))
+  }
+  if (typeof node !== 'object' || node === null) return node
+  const schema = { ...(node as Record<string, unknown>) }
+
+  delete schema.additionalProperties
+  delete schema.$schema
+  delete schema.propertyNames
+  delete schema.definitions
+
+  if (Array.isArray(schema.type)) {
+    const union = schema.type as string[]
+    const hasNull = union.includes('null')
+    const primary = union.find((t) => t !== 'null') ?? 'string'
+    schema.type = primary
+    if (hasNull) schema.nullable = true
+  }
+
+  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+    const alternatives = schema[key]
+    if (Array.isArray(alternatives)) {
+      const pick = alternatives.find(
+        (alt) => typeof alt === 'object' && alt !== null && !(alt as { type?: string }).type?.includes('null'),
+      ) ?? alternatives[0]
+      if (typeof pick === 'object' && pick !== null) {
+        const merged = { ...schema, ...(pick as Record<string, unknown>) }
+        delete merged[key]
+        return sanitizeGeminiSchema(merged)
+      }
+      delete schema[key]
+    }
+  }
+
+  if (Array.isArray(schema.items)) {
+    schema.items = schema.items[0]
+  }
+  if (schema.items) {
+    schema.items = sanitizeGeminiSchema(schema.items)
+  }
+  if (schema.properties && typeof schema.properties === 'object') {
+    const props = schema.properties as Record<string, unknown>
+    const sanitized: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(props)) {
+      sanitized[key] = sanitizeGeminiSchema(value)
+    }
+    schema.properties = sanitized
+  }
+  if (schema.enum && Array.isArray(schema.enum)) {
+    schema.enum = schema.enum.map((v) => (typeof v === 'string' ? v : String(v)))
+  }
+  return schema
+}
+
 function geminiContents(messages: AgentMessage[]): unknown[] {
   return messages.map((m) => {
     if (m.role === 'user') {
@@ -524,7 +588,7 @@ async function geminiTurn(
                 functionDeclarations: tools.map((t) => ({
                   name: t.name,
                   description: t.description,
-                  parameters: t.inputSchema,
+                  parameters: sanitizeGeminiSchema(t.inputSchema),
                 })),
               },
             ],
@@ -840,6 +904,7 @@ async function openAiCompatibleTurn(
 const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
   deepseek: 'https://api.deepseek.com/v1',
   openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
 }
 
 /** route a streaming, tool-calling-capable turn by provider id */
@@ -893,6 +958,7 @@ export async function streamForProvider(
       return streamGemini(config, system, messages, tools, maxTokens, cb)
     case 'deepseek':
     case 'openai':
+    case 'openrouter':
       return streamOpenAiCompatible(
         OPENAI_COMPATIBLE_BASE_URLS[provider]!,
         config,

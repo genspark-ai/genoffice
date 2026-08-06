@@ -19,20 +19,37 @@ const { join } = require('node:path')
 
 const updateUrl = process.env.GENOFFICE_UPDATE_URL
 
-// The gsk CLI tree below is copied verbatim from node_modules, and the
-// nested commander path depends on npm's current hoisting layout — fail the
-// build with a clear message if an install ever changes it, instead of
-// shipping an installer with a broken gsk runtime.
+// The gsk CLI tree below is copied verbatim from node_modules. Its `commander`
+// dependency may be installed either nested under @genspark/cli or hoisted to
+// the top-level node_modules (npm's layout differs by version/installer), so we
+// resolve whichever actually exists instead of hardcoding one layout — shipping
+// the app with a broken gsk runtime is worse than failing the build early.
+function gskCommanderDir() {
+  const nested = join(__dirname, '../../node_modules/@genspark/cli/node_modules/commander')
+  if (existsSync(nested)) return nested
+  const hoisted = join(__dirname, '../../node_modules/commander')
+  if (existsSync(hoisted)) return hoisted
+  return null
+}
+
+const gskCommander = gskCommanderDir()
 for (const rel of [
   '../../node_modules/@genspark/cli',
-  '../../node_modules/@genspark/cli/node_modules/commander',
+  gskCommander && '../../node_modules/commander',
   '../../node_modules/ws',
 ]) {
+  if (!rel) continue
   if (!existsSync(join(__dirname, rel))) {
     throw new Error(
       `electron-builder extraResources source missing: ${rel} (npm hoisting changed?)`,
     )
   }
+}
+if (!gskCommander) {
+  throw new Error(
+    'electron-builder: cannot find the commander dependency required by @genspark/cli ' +
+      '(checked node_modules/@genspark/cli/node_modules/commander and node_modules/commander)',
+  )
 }
 
 // The module trees are electron-vite outputs produced by build:all; a missing
@@ -93,7 +110,7 @@ const config = {
       to: 'gsk/node_modules/@genspark/cli',
     },
     {
-      from: '../../node_modules/@genspark/cli/node_modules/commander',
+      from: gskCommander,
       to: 'gsk/node_modules/commander',
     },
     {
@@ -172,7 +189,7 @@ const config = {
       },
     ],
   },
-  // Unlike win (which cross-compiles the sidecar to an explicit target
+// Unlike win (which cross-compiles the sidecar to an explicit target
   // triple), linux takes it from cargo's host-native target/release/ — the
   // same source mac uses. So no `arch` is pinned here: electron-builder
   // defaults to the build host's architecture, which is the only one the

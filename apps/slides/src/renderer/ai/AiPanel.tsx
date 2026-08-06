@@ -4,6 +4,7 @@ import {
   composeSkills,
   IPC_STREAM_SILENCE_TIMEOUT_MS,
   type AgentImage,
+  type MemoryStoreAdapter,
   type ToolDisplay,
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
@@ -22,7 +23,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, AiSettingsButton } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -244,6 +245,8 @@ interface AiPanelProps {
   onCollapse?: () => void
   /** Visible rollback action; uses the same main-process history as Cmd/Ctrl+Z. */
   onUndo?: () => void
+  /** open the bring-your-own-key model settings dialog */
+  onOpenSettings?: () => void
   /** Callback to update the path after AI generation lands on disk (title bar sync) */
   onPathChange?: (path: string) => void
   /** Generation progress callback (for the canvas top progress bar) */
@@ -323,6 +326,7 @@ export function AiPanel({
   open = true,
   onExpand,
   onCollapse,
+  onOpenSettings,
   onPathChange,
   onDeckProgress,
   currentFilePath,
@@ -405,6 +409,36 @@ export function AiPanel({
   const stickToBottomRef = useRef(true)
   /** Current chat's projectId/chatId, set after resolve succeeds */
   const chatRefIds = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** Project memory adapter (refs stay fresh; tools/context read the latest state) */
+  const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
+  const memoryProjectIdRef = useRef<string | null>(null)
+  const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const [memoryCount, setMemoryCount] = useState(0)
+  const syncMemoryCount = () => setMemoryCount(memoryEntriesRef.current.length)
+  const memoryRef = useRef<MemoryStoreAdapter | null>(null)
+  if (!memoryRef.current) {
+    memoryRef.current = {
+      available: () => memoryProjectIdRef.current !== null && memoryApiRef.current !== null,
+      entries: () => memoryEntriesRef.current,
+      add: async (text) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) throw new Error('No resolved project for memory.')
+        const entry = await api.addMemory({ projectId, text })
+        memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        syncMemoryCount()
+        return entry
+      },
+      remove: async (id) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) return
+        await api.removeMemory({ projectId, id })
+        memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+        syncMemoryCount()
+      },
+    }
+  }
 
   // The loop instance survives across renders; closures read refs for the latest state
   const slidesRef = useRef(slides)
@@ -453,6 +487,14 @@ export function AiPanel({
       .resolveChat({ filePath: currentFilePath ?? null, tempChatId })
       .then((ids) => {
         chatRefIds.current = ids
+        memoryApiRef.current = api
+        memoryProjectIdRef.current = ids.projectId
+        void api.getMemory(ids.projectId).then((entries) => {
+          if (Array.isArray(entries)) {
+            memoryEntriesRef.current = entries
+            syncMemoryCount()
+          }
+        })
         return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
       })
       .then((msgs) => {
@@ -1070,7 +1112,7 @@ export function AiPanel({
       transport: createElectronTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
       skill: composeSkills('slides+files', '', [
-        createSlidesSkill(access),
+        createSlidesSkill(access, memoryRef.current),
         createFilesSkill(
           () => attachmentsRef.current,
           (path) => readAttachmentPathsRef.current.add(path),
@@ -1582,6 +1624,24 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          {memoryCount > 0 && (
+            <span className="ai-memory-badge" title={t('aiMemoryBadgeTip', { n: memoryCount })}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 5.5c-4.5 0-7.5 3.3-7.5 7.5 0 1.9.7 3.6 2 4.7v3.3c0 .55.45 1 1 1h9c.55 0 1-.45 1-1v-3.3c1.3-1.1 2-2.8 2-4.7 0-4.2-3-7.5-7.5-7.5zM9.5 5.3C9.3 4 9.9 2.9 10.9 2.2M14.5 5.3c.2-1.3-.4-2.4-1.4-3.1"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {memoryCount}
+            </span>
+          )}
+          {onOpenSettings && (
+            <span className="ai-header-btn ai-settings-btn">
+              <AiSettingsButton onClick={onOpenSettings} />
+            </span>
+          )}
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChat')}>
               <IconNewChat size={15} />

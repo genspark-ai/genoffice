@@ -31,6 +31,7 @@ import { basename, dirname, join } from 'node:path'
 import type {
   ChatMeta,
   ChatMessage,
+  MemoryEntry,
   ProjectData,
   ProjectIndex,
   ProjectInfo,
@@ -101,6 +102,10 @@ export class ProjectStore {
 
   private chatPath(projectId: string, chatId: string): string {
     return join(this.chatsDir(projectId), `${chatId}.jsonl`)
+  }
+
+  private memoryPath(projectId: string): string {
+    return join(this.projectDir(projectId), 'memory.json')
   }
 
   // ── seq counters (in-memory cache, initialized from JSONL line count on first read) ──
@@ -712,5 +717,68 @@ export class ProjectStore {
       return b.seq - a.seq
     })
     return entries.slice(0, limit)
+  }
+
+  // ── AI memory (P2: persistent per-project memory.json) ────
+
+  /**
+   * Reads the project's AI memory entries (newest first).
+   * Absent/corrupt memory.json returns [].
+   */
+  getProjectMemory(projectId: string): MemoryEntry[] {
+    const memory = readJson<MemoryEntry[]>(this.memoryPath(projectId))
+    if (!Array.isArray(memory)) return []
+    return memory
+      .filter((e) => e && typeof e.text === 'string')
+      .map((entry, index) => ({ entry, index }))
+      .sort((a, b) => {
+        if (b.entry.ts > a.entry.ts) return 1
+        if (b.entry.ts < a.entry.ts) return -1
+        // Same timestamp (e.g. same-millisecond writes): later insertion wins
+        return b.index - a.index
+      })
+      .map(({ entry }) => entry)
+  }
+
+  /**
+   * Appends one memory entry (id = first 16 hex chars of sha256). Touches the
+   * project's updatedAt so the Home overview reflects the change.
+   */
+  addProjectMemory(projectId: string, text: string): MemoryEntry {
+    const trimmed = text.trim()
+    if (!trimmed) throw new Error('Memory text cannot be empty')
+    const ts = nowIso()
+    const entry: MemoryEntry = {
+      id: createHash('sha256').update(trimmed + ts).digest('hex').slice(0, 16),
+      text: trimmed,
+      ts,
+    }
+    const memory = this.getProjectMemory(projectId)
+    memory.push(entry)
+    ensureDir(this.projectDir(projectId))
+    writeJson(this.memoryPath(projectId), memory)
+    const proj = this.readProject(projectId)
+    if (proj) {
+      proj.updatedAt = ts
+      this.writeProject(proj)
+    }
+    return entry
+  }
+
+  /**
+   * Deletes the memory entry with the given id. No-op when the id is unknown.
+   */
+  removeProjectMemory(projectId: string, id: string): void {
+    const memory = this.getProjectMemory(projectId)
+    const next = memory.filter((e) => e.id !== id)
+    if (next.length === memory.length) return
+    writeJson(this.memoryPath(projectId), next)
+  }
+
+  /**
+   * Clears all memory entries for the project (the file is left with []).
+   */
+  clearProjectMemory(projectId: string): void {
+    writeJson(this.memoryPath(projectId), [])
   }
 }

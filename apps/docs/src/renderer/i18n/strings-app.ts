@@ -3,6 +3,11 @@ import { defineStrings } from '@genoffice/i18n'
 /** Strings for App.tsx / SettingsModal / non-Ribbon components (keys use the app prefix to mark the area) */
 export const appStrings = defineStrings({
   zh: {
+    appExportingText: '正在导出 Markdown/文本…',
+    appExportedText: '已导出: {path}',
+    appExportTextFailed: '导出失败: {error}',
+    appExportTextCanceled: '已取消导出',
+
     // Common
     appClose: '关闭',
     appCancel: '取消',
@@ -294,6 +299,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: '样式名称',
   },
   en: {
+    appExportingText: 'Exporting…',
+    appExportedText: 'Exported: {path}',
+    appExportTextFailed: 'Export failed: {error}',
+    appExportTextCanceled: 'Export canceled',
+
     appClose: 'Close',
     appCancel: 'Cancel',
     appOk: 'OK',
@@ -564,6 +574,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Style name',
   },
   ja: {
+    appExportingText: 'エクスポート中…',
+    appExportedText: 'エクスポートしました: {path}',
+    appExportTextFailed: 'エクスポートに失敗しました: {error}',
+    appExportTextCanceled: 'エクスポートをキャンセルしました',
+
     // Common
     appClose: '閉じる',
     appCancel: 'キャンセル',
@@ -866,6 +881,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'スタイル名',
   },
   ko: {
+    appExportingText: '내보내는 중…',
+    appExportedText: '내보냈습니다: {path}',
+    appExportTextFailed: '내보내기 실패: {error}',
+    appExportTextCanceled: '내보내기를 취소했습니다',
+
     // Common
     appClose: '닫기',
     appCancel: '취소',
@@ -1168,6 +1188,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: '스타일 이름',
   },
   fr: {
+    appExportingText: 'Exportation…',
+    appExportedText: 'Exporté : {path}',
+    appExportTextFailed: 'Échec de l\'exportation : {error}',
+    appExportTextCanceled: 'Exportation annulée',
+
     appClose: 'Fermer',
     appCancel: 'Annuler',
     appOk: 'OK',
@@ -1449,6 +1474,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nom du style',
   },
   de: {
+    appExportingText: 'Exportiere…',
+    appExportedText: 'Exportiert: {path}',
+    appExportTextFailed: 'Export fehlgeschlagen: {error}',
+    appExportTextCanceled: 'Export abgebrochen',
+
     appClose: 'Schließen',
     appCancel: 'Abbrechen',
     appOk: 'OK',
@@ -1732,6 +1762,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Name der Formatvorlage',
   },
   es: {
+    appExportingText: 'Exportando…',
+    appExportedText: 'Exportado: {path}',
+    appExportTextFailed: 'Error de exportación: {error}',
+    appExportTextCanceled: 'Exportación cancelada',
+
     appClose: 'Cerrar',
     appCancel: 'Cancelar',
     appOk: 'Aceptar',
@@ -2011,6 +2046,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nombre del estilo',
   },
   th: {
+    appExportingText: 'กำลังส่งออก…',
+    appExportedText: 'ส่งออกแล้ว: {path}',
+    appExportTextFailed: 'ส่งออกล้มเหลว: {error}',
+    appExportTextCanceled: 'ยกเลิกการส่งออก',
+
     appClose: 'ปิด',
     appCancel: 'ยกเลิก',
     appOk: 'ตกลง',
@@ -2284,6 +2324,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'ชื่อสไตล์',
   },
   id: {
+    appExportingText: 'Mengekspor…',
+    appExportedText: 'Diekspor: {path}',
+    appExportTextFailed: 'Gagal mengekspor: {error}',
+    appExportTextCanceled: 'Ekspor dibatalkan',
+
     appClose: 'Tutup',
     appCancel: 'Batal',
     appOk: 'OK',
@@ -2559,6 +2604,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nama gaya',
   },
   ru: {
+    appExportingText: 'Экспорт…',
+    appExportedText: 'Экспортировано: {path}',
+    appExportTextFailed: 'Ошибка экспорта: {error}',
+    appExportTextCanceled: 'Экспорт отменен',
+
     appClose: 'Закрыть',
     appCancel: 'Отмена',
     appOk: 'ОК',
@@ -2837,6 +2887,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Имя стиля',
   },
   ar: {
+    appExportingText: 'جارٍ التصدير…',
+    appExportedText: 'تم التصدير: {path}',
+    appExportTextFailed: 'فشل التصدير: {error}',
+    appExportTextCanceled: 'تم إلغاء التصدير',
+
     appClose: 'إغلاق',
     appCancel: 'إلغاء',
     appOk: 'موافق',
@@ -3108,6 +3163,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'اسم النمط',
   },
   pt: {
+    appExportingText: 'Exportando…',
+    appExportedText: 'Exportado: {path}',
+    appExportTextFailed: 'Falha na exportação: {error}',
+    appExportTextCanceled: 'Exportação cancelada',
+
     appClose: 'Fechar',
     appCancel: 'Cancelar',
     appOk: 'OK',
@@ -3383,6 +3443,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nome do estilo',
   },
   it: {
+    appExportingText: 'Esportazione…',
+    appExportedText: 'Esportato: {path}',
+    appExportTextFailed: 'Errore di esportazione: {error}',
+    appExportTextCanceled: 'Esportazione annullata',
+
     appClose: 'Chiudi',
     appCancel: 'Annulla',
     appOk: 'OK',
@@ -3658,6 +3723,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nome dello stile',
   },
   pl: {
+    appExportingText: 'Eksportowanie…',
+    appExportedText: 'Wyeksportowano: {path}',
+    appExportTextFailed: 'Błąd eksportu: {error}',
+    appExportTextCanceled: 'Anulowano eksport',
+
     appClose: 'Zamknij',
     appCancel: 'Anuluj',
     appOk: 'OK',
@@ -3936,6 +4006,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nazwa stylu',
   },
   nl: {
+    appExportingText: 'Exporteren…',
+    appExportedText: 'Geëxporteerd: {path}',
+    appExportTextFailed: 'Export mislukt: {error}',
+    appExportTextCanceled: 'Export geannuleerd',
+
     appClose: 'Sluiten',
     appCancel: 'Annuleren',
     appOk: 'OK',
@@ -4218,6 +4293,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Stijlnaam',
   },
   ms: {
+    appExportingText: 'Mengeksport…',
+    appExportedText: 'Dieksport: {path}',
+    appExportTextFailed: 'Eksport gagal: {error}',
+    appExportTextCanceled: 'Eksport dibatalkan',
+
     appClose: 'Tutup',
     appCancel: 'Batal',
     appOk: 'OK',
@@ -4493,6 +4573,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'Nama gaya',
   },
   he: {
+    appExportingText: 'מייצא…',
+    appExportedText: 'יוצא: {path}',
+    appExportTextFailed: 'הדصد נכשל: {error}',
+    appExportTextCanceled: 'הדصد בוטל',
+
     appClose: 'סגירה',
     appCancel: 'ביטול',
     appOk: 'אישור',
@@ -4762,6 +4847,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'שם הסגנון',
   },
   hi: {
+    appExportingText: 'निर्यात हो रहा है…',
+    appExportedText: 'निर्यात किया गया: {path}',
+    appExportTextFailed: 'निर्यात विफल: {error}',
+    appExportTextCanceled: 'निर्यात रद्द किया गया',
+
     appClose: 'बंद करें',
     appCancel: 'रद्द करें',
     appOk: 'ठीक है',
@@ -5035,6 +5125,11 @@ export const appStrings = defineStrings({
     appStyleNamePlaceholder: 'शैली का नाम',
   },
   'zh-TW': {
+    appExportingText: '正在匯出 Markdown/文字…',
+    appExportedText: '已匯出: {path}',
+    appExportTextFailed: '匯出失敗: {error}',
+    appExportTextCanceled: '已取消匯出',
+
     appClose: '關閉',
     appCancel: '取消',
     appOk: '確定',

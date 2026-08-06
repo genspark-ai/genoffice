@@ -100,6 +100,7 @@ export interface RibbonCommandContext {
   recordFreezeJournal: (sheetId: string | undefined, rows: number, columns: number) => void
   handlePageLayoutCommand: (rest: string) => void
   handleExportPdf: () => Promise<void>
+  handleExportCsv: () => Promise<void>
 }
 
 /// Resolves interned style references and merges row/col/sheet styles —
@@ -694,6 +695,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
   }
   if (command === 'export-pdf') {
     void ctx.handleExportPdf()
+    return
+  }
+  if (command === 'export-csv') {
+    void ctx.handleExportCsv()
     return
   }
   if (command.startsWith('row-height:') || command.startsWith('col-width:')) {

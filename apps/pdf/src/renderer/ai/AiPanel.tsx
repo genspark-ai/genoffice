@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop } from '@genoffice/agent-core'
+import { AgentLoop, type MemoryStoreAdapter } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
@@ -74,6 +74,60 @@ export function AiPanel({
   const apiRef = useRef(api)
   apiRef.current = api
 
+  // Project memory: resolved into the default project on mount; tools/context
+  // read the latest state through refs (PDF files have no per-file project yet)
+  const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
+  const memoryProjectIdRef = useRef<string | null>(null)
+  const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const [memoryCount, setMemoryCount] = useState(0)
+  const syncMemoryCount = () => setMemoryCount(memoryEntriesRef.current.length)
+  const memoryRef = useRef<MemoryStoreAdapter | null>(null)
+  if (!memoryRef.current) {
+    memoryRef.current = {
+      available: () => memoryProjectIdRef.current !== null && memoryApiRef.current !== null,
+      entries: () => memoryEntriesRef.current,
+      add: async (text) => {
+        const projectApi = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!projectApi || !projectId) throw new Error('No resolved project for memory.')
+        const entry = await projectApi.addMemory({ projectId, text })
+        memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        syncMemoryCount()
+        return entry
+      },
+      remove: async (id) => {
+        const projectApi = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!projectApi || !projectId) return
+        await projectApi.removeMemory({ projectId, id })
+        memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+        syncMemoryCount()
+      },
+    }
+  }
+
+  // Resolve the default project once (memory persistence; no per-file history)
+  useEffect(() => {
+    const projectApi = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    if (!projectApi) return
+    void projectApi
+      .resolveChat({ filePath: null, tempChatId: `unsaved-pdf-${Date.now()}` })
+      .then((ids) => {
+        memoryApiRef.current = projectApi
+        memoryProjectIdRef.current = ids.projectId
+        return projectApi.getMemory(ids.projectId)
+      })
+      .then((entries) => {
+        if (Array.isArray(entries)) {
+          memoryEntriesRef.current = entries
+          syncMemoryCount()
+        }
+      })
+      .catch(() => {
+        /* silent */
+      })
+  }, [])
+
   const patchLast = (patch: Partial<ChatEntry> | ((last: ChatEntry) => Partial<ChatEntry>)) => {
     setChat((prev) => {
       const next = [...prev]
@@ -105,7 +159,7 @@ export function AiPanel({
     }
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),
-      skill: createPdfSkill(deps),
+      skill: createPdfSkill(deps, memoryRef.current),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {
@@ -274,6 +328,19 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          {memoryCount > 0 && (
+            <span className="ai-memory-badge" title={t('aiMemoryBadgeTip', { n: memoryCount })}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 5.5c-4.5 0-7.5 3.3-7.5 7.5 0 1.9.7 3.6 2 4.7v3.3c0 .55.45 1 1 1h9c.55 0 1-.45 1-1v-3.3c1.3-1.1 2-2.8 2-4.7 0-4.2-3-7.5-7.5-7.5zM9.5 5.3C9.3 4 9.9 2.9 10.9 2.2M14.5 5.3c.2-1.3-.4-2.4-1.4-3.1"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {memoryCount}
+            </span>
+          )}
           {chat.length > 0 && (
             <button
               className="ai-header-btn"

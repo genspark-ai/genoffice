@@ -50,6 +50,17 @@ export function SaveIcon(): ReactElement {
   )
 }
 
+/// Quick-access export button (arrow into tray) — sheet → CSV export, same
+/// geometry style as the other QAT glyphs.
+export function ExportIcon(): ReactElement {
+  return (
+    <Icon>
+      <path d="M12 4.25v9.5M8.25 9.75 12 13.5l3.75-3.75" />
+      <path d="M4.75 15.5v2.85c0 .69.56 1.25 1.25 1.25h12a1.25 1.25 0 0 0 1.25-1.25V15.5" />
+    </Icon>
+  )
+}
+
 /// Quick-access undo/redo — design-supplied geometry shared with the docs
 /// and slides ribbons, so the three apps' tab-row arrows read identically.
 export function UndoIcon(): ReactElement {

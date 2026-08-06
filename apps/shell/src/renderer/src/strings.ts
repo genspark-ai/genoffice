@@ -15,7 +15,12 @@ export const strings = {
     colLocation: '位置',
     colModified: '修改时间',
     colSize: '大小',
-    // Quick start
+
+    secProjectMemory: 'AI 记忆',
+    memEmpty: '这个项目还没有 AI 记忆。在文档、表格或演示中让 AI 记住某件事后，会显示在这里。',
+    memAdd: '添加',
+    memAddPlaceholder: '写一条要长期记住的信息（例如：客户偏好美式日期格式）',
+    memDelete: '删除这条记忆',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -145,7 +150,12 @@ export const strings = {
     colLocation: 'Location',
     colModified: 'Modified',
     colSize: 'Size',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'AI Memory',
+    memEmpty: 'No AI memory yet for this project. When you ask the AI to remember something in a document, sheet or deck, it shows up here.',
+    memAdd: 'Add',
+    memAddPlaceholder: 'A fact to remember long-term (e.g. the client prefers US date formats)',
+    memDelete: 'Delete this memory',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'Open Local File',
@@ -272,7 +282,12 @@ export const strings = {
     colLocation: '場所',
     colModified: '更新日時',
     colSize: 'サイズ',
-    // Quick start
+
+    secProjectMemory: 'AI メモリ',
+    memEmpty: 'このプロジェクトにはまだ AI メモリがありません。ドキュメント・表計算・プレゼンで AI に記憶させた内容がここに表示されます。',
+    memAdd: '追加',
+    memAddPlaceholder: '長期的に覚えておく情報（例：顧客は米国式の日付形式を好む）',
+    memDelete: 'このメモリを削除',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -412,7 +427,12 @@ export const strings = {
     colLocation: '위치',
     colModified: '수정한 날짜',
     colSize: '크기',
-    // Quick start
+
+    secProjectMemory: 'AI 메모리',
+    memEmpty: '이 프로젝트에는 아직 AI 메모리가 없습니다. 문서·스프레드시트·프레젠테이션에서 AI가 기억하도록 한 내용이 여기에 표시됩니다.',
+    memAdd: '추가',
+    memAddPlaceholder: '오래 기억할 정보 (예: 고객은 미국식 날짜 형식을 선호함)',
+    memDelete: '이 메모리 삭제',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -549,7 +569,12 @@ export const strings = {
     colLocation: 'Emplacement',
     colModified: 'Modifié le',
     colSize: 'Taille',
-    // Quick start
+
+    secProjectMemory: 'Mémoire IA',
+    memEmpty: "Aucune mémoire IA pour ce projet pour l'instant. Lorsque vous demandez à l'IA de se souvenir de quelque chose dans un document, une feuille ou une présentation, cela apparaît ici.",
+    memAdd: 'Ajouter',
+    memAddPlaceholder: 'Un fait à retenir à long terme (ex. le client préfère les formats de date américains)',
+    memDelete: 'Supprimer cette mémoire',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -689,7 +714,12 @@ export const strings = {
     colLocation: 'Speicherort',
     colModified: 'Geändert',
     colSize: 'Größe',
-    // Quick start
+
+    secProjectMemory: 'KI-Speicher',
+    memEmpty: 'Noch keine KI-Erinnerungen für dieses Projekt. Wenn Sie die KI bitten, sich etwas in einem Dokument, einer Tabelle oder einer Präsentation zu merken, erscheint es hier.',
+    memAdd: 'Hinzufügen',
+    memAddPlaceholder: 'Ein langfristig zu merkender Fakt (z. B. der Kunde bevorzugt US-Datumsformate)',
+    memDelete: 'Diesen Speichereintrag löschen',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -831,7 +861,12 @@ export const strings = {
     colLocation: 'Ubicación',
     colModified: 'Modificado',
     colSize: 'Tamaño',
-    // Quick start
+
+    secProjectMemory: 'Memoria IA',
+    memEmpty: 'Aún no hay memoria de IA para este proyecto. Cuando pidas a la IA que recuerde algo en un documento, una hoja o una presentación, aparecerá aquí.',
+    memAdd: 'Añadir',
+    memAddPlaceholder: 'Un dato que recordar a largo plazo (p. ej. el cliente prefiere formatos de fecha estadounidenses)',
+    memDelete: 'Eliminar esta memoria',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -971,7 +1006,12 @@ export const strings = {
     colLocation: 'ตำแหน่งที่ตั้ง',
     colModified: 'แก้ไขเมื่อ',
     colSize: 'ขนาด',
-    // Quick start
+
+    secProjectMemory: 'หน่วยความจำ AI',
+    memEmpty: 'ยังไม่มีหน่วยความจำ AI สำหรับโปรเจ็กต์นี้ เมื่อขอให้ AI จดจำบางสิ่งในเอกสาร สเปรดชีต หรืองานนำเสนอ จะแสดงที่นี่',
+    memAdd: 'เพิ่ม',
+    memAddPlaceholder: 'ข้อเท็จจริงที่ต้องจดจำระยะยาว (เช่น ลูกค้าชอบรูปแบบวันที่แบบสหรัฐฯ)',
+    memDelete: 'ลบหน่วยความจำนี้',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -1107,7 +1147,12 @@ export const strings = {
     colLocation: 'Lokasi',
     colModified: 'Diubah',
     colSize: 'Ukuran',
-    // Quick start
+
+    secProjectMemory: 'Memori AI',
+    memEmpty: 'Belum ada memori AI untuk proyek ini. Saat Anda meminta AI mengingat sesuatu di dokumen, spreadsheet, atau presentasi, akan muncul di sini.',
+    memAdd: 'Tambah',
+    memAddPlaceholder: 'Fakta yang perlu diingat jangka panjang (mis. klien lebih suka format tanggal AS)',
+    memDelete: 'Hapus memori ini',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -1244,7 +1289,12 @@ export const strings = {
     colLocation: 'Расположение',
     colModified: 'Изменён',
     colSize: 'Размер',
-    // Quick start
+
+    secProjectMemory: 'Память ИИ',
+    memEmpty: 'Пока нет памяти ИИ для этого проекта. Когда вы попросите ИИ запомнить что-то в документе, таблице или презентации, это появится здесь.',
+    memAdd: 'Добавить',
+    memAddPlaceholder: 'Факт для долгосрочного запоминания (например, клиент предпочитает американский формат дат)',
+    memDelete: 'Удалить эту запись',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -1382,7 +1432,12 @@ export const strings = {
     colLocation: 'الموقع',
     colModified: 'تاريخ التعديل',
     colSize: 'الحجم',
-    // Quick start
+
+    secProjectMemory: 'ذاكرة الذكاء الاصطناعي',
+    memEmpty: 'لا توجد ذاكرة ذكاء اصطناعي لهذا المشروع بعد. عندما تطلب من الذكاء الاصطناعي تذكُّر شيء في مستند أو جدول بيانات أو عرض تقديمي، سيظهر هنا.',
+    memAdd: 'إضافة',
+    memAddPlaceholder: 'حقيقة للتذكر على المدى الطويل (مثل: العميل يفضّل تنسيق التواريخ الأمريكي)',
+    memDelete: 'حذف هذه الذاكرة',    // Quick start
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
@@ -1517,7 +1572,12 @@ export const strings = {
     colLocation: 'Local',
     colModified: 'Modificado',
     colSize: 'Tamanho',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'Memória de IA',
+    memEmpty: 'Ainda não há memória de IA para este projeto. Quando você pedir à IA para lembrar de algo em um documento, planilha ou apresentação, aparecerá aqui.',
+    memAdd: 'Adicionar',
+    memAddPlaceholder: 'Um fato para lembrar a longo prazo (ex.: o cliente prefere formatos de data dos EUA)',
+    memDelete: 'Excluir esta memória',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'Abrir arquivo local',
@@ -1646,7 +1706,12 @@ export const strings = {
     colLocation: 'Posizione',
     colModified: 'Modificato',
     colSize: 'Dimensione',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'Memoria IA',
+    memEmpty: "Ancora nessuna memoria IA per questo progetto. Quando chiedi all'IA di ricordare qualcosa in un documento, foglio o presentazione, apparirà qui.",
+    memAdd: 'Aggiungi',
+    memAddPlaceholder: 'Un fatto da ricordare a lungo termine (es. il cliente preferisce i formati data USA)',
+    memDelete: 'Elimina questa memoria',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'Apri file locale',
@@ -1774,7 +1839,12 @@ export const strings = {
     colLocation: 'Lokalizacja',
     colModified: 'Zmodyfikowano',
     colSize: 'Rozmiar',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'Pamięć AI',
+    memEmpty: 'Brak jeszcze pamięci AI dla tego projektu. Gdy poprosisz AI, aby zapamiętało coś w dokumencie, arkuszu lub prezentacji, pojawi się tutaj.',
+    memAdd: 'Dodaj',
+    memAddPlaceholder: 'Fakt do zapamiętania na dłużej (np. klient woli formaty daty amerykańskie)',
+    memDelete: 'Usuń tę pamięć',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'Otwórz plik lokalny',
@@ -1903,7 +1973,12 @@ export const strings = {
     colLocation: 'Locatie',
     colModified: 'Gewijzigd',
     colSize: 'Grootte',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'AI-geheugen',
+    memEmpty: 'Nog geen AI-geheugen voor dit project. Wanneer je de AI vraagt iets te onthouden in een document, spreadsheet of presentatie, verschijnt het hier.',
+    memAdd: 'Toevoegen',
+    memAddPlaceholder: 'Een feit om lang te onthouden (bijv. de klant geeft de voorkeur aan Amerikaanse datums)',
+    memDelete: 'Dit geheugen verwijderen',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'Lokaal bestand openen',
@@ -2031,7 +2106,12 @@ export const strings = {
     colLocation: 'Lokasi',
     colModified: 'Diubah suai',
     colSize: 'Saiz',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'Memori AI',
+    memEmpty: 'Belum ada memori AI untuk projek ini. Apabila anda meminta AI mengingat sesuatu dalam dokumen, hamparan atau pembentangan, ia akan muncul di sini.',
+    memAdd: 'Tambah',
+    memAddPlaceholder: 'Fakta untuk diingat jangka panjang (cth. pelanggan lebih suka format tarikh AS)',
+    memDelete: 'Padam memori ini',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'Buka Fail Setempat',
@@ -2158,7 +2238,12 @@ export const strings = {
     colLocation: 'מיקום',
     colModified: 'שונה',
     colSize: 'גודל',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'זיכרון AI',
+    memEmpty: 'אין עדיין זיכרון AI לפרויקט זה. כשתבקשו מה-AI לזכור משהו במסמך, בגיליון או במצגת, הוא יופיע כאן.',
+    memAdd: 'הוסף',
+    memAddPlaceholder: 'עובדה לזכירה לטווח ארוך (לדוגמה: הלקוח מעדיף פורמט תאריכים אמריקאי)',
+    memDelete: 'מחק זיכרון זה',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'פתיחת קובץ מקומי',
@@ -2282,7 +2367,12 @@ export const strings = {
     colLocation: 'स्थान',
     colModified: 'संशोधित',
     colSize: 'आकार',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'AI मेमोरी',
+    memEmpty: 'इस प्रोजेक्ट के लिए अभी कोई AI मेमोरी नहीं है। जब आप AI से किसी दस्तावेज़, स्प्रेडशीट या प्रेज़ेंटेशन में कुछ याद रखने को कहेंगे, तो यह यहाँ दिखेगा।',
+    memAdd: 'जोड़ें',
+    memAddPlaceholder: 'दीर्घकालिक रूप से याद रखने योग्य तथ्य (जैसे: ग्राहक अमेरिकी दिनांक प्रारूप पसंद करता है)',
+    memDelete: 'इस मेमोरी को हटाएँ',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: 'स्थानीय फ़ाइल खोलें',
@@ -2411,7 +2501,12 @@ export const strings = {
     colLocation: '位置',
     colModified: '修改時間',
     colSize: '大小',
-    newDoc: 'AI Docs',
+
+    secProjectMemory: 'AI 記憶',
+    memEmpty: '這個專案還沒有 AI 記憶。當您請 AI 在文件、試算表或簡報中記住某件事時，會顯示在這裡。',
+    memAdd: '新增',
+    memAddPlaceholder: '寫下一條要長期記住的資訊（例如：客戶偏好美式日期格式）',
+    memDelete: '刪除這條記憶',    newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
     openLocal: '開啟本機檔案',

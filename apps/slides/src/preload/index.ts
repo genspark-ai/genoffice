@@ -265,6 +265,9 @@ const api: SlidesApi = {
   },
   getAiSettings: () => ipcRenderer.invoke('ai:get-settings'),
   setAiSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:set-settings', settings),
+  aiTestSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:test-settings', settings),
+  aiListModels: (provider, config, freeOnly) =>
+    ipcRenderer.invoke('ai:list-models', provider, config, freeOnly),
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
@@ -357,5 +360,11 @@ const projectApi: ProjectApi = {
   deleteProject: (args) => ipcRenderer.invoke('project:delete', args),
   moveFile: (args) => ipcRenderer.invoke('project:moveFile', args),
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
+
+  // AI memory
+  getMemory: (projectId) => ipcRenderer.invoke('project:getMemory', projectId),
+  addMemory: (args) => ipcRenderer.invoke('project:addMemory', args),
+  removeMemory: (args) => ipcRenderer.invoke('project:removeMemory', args),
+  clearMemory: (projectId) => ipcRenderer.invoke('project:clearMemory', projectId),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)

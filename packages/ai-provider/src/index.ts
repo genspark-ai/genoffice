@@ -15,10 +15,17 @@ export {
   GENSPARK_LLM_BASE_URLS,
   defaultAiSettings,
   resolveAiSettings,
+  applyProviderOverrides,
 } from './providers'
 export { chatForProvider } from './chat'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
+export {
+  GEMINI_FREE_MODELS,
+  OPENROUTER_FREE_ROUTER,
+  listModelsForProvider,
+  type ModelListEntry,
+} from './models'
 export {
   AI_CHAT_RESPONSE_TIMEOUT_MS,
   AI_CONNECT_TIMEOUT_MS,

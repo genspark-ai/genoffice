@@ -1,6 +1,13 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
-export type AiProviderId = 'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
+export type AiProviderId =
+  | 'genspark'
+  | 'anthropic'
+  | 'gemini'
+  | 'deepseek'
+  | 'openai'
+  | 'openrouter'
+  | 'custom'
 
 /** Genspark account status (gsk login state; the sole auth source for AI features) */
 export interface GenSparkAccountStatus {

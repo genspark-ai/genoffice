@@ -25,6 +25,7 @@ import {
 import type { AiSettings, OpenFileResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
 import { AiPanel } from './ai/AiPanel'
+import { AiSettingsDialog } from '@genoffice/ui'
 import { asianCharCount, countWords, nonAsianWordCount } from './word-count'
 import { toRoman } from './note-format'
 import { CommentsPanel } from './components/CommentsPanel'
@@ -125,7 +126,9 @@ import {
   type PendingNumbering,
 } from './doc-state'
 import {
+  exportMarkdown as exportMarkdownImpl,
   exportPdf as exportPdfImpl,
+  exportText as exportTextImpl,
   loadFile as loadFileImpl,
   newFile as newFileImpl,
   save as saveImpl,
@@ -273,6 +276,7 @@ export function App() {
   const bootHandledRef = useRef(false)
   const [_recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<AiSettings>(DEFAULT_SETTINGS)
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
   const [showAi, setShowAi] = useState(() => localStorage.getItem('aidocs.showAi') !== '0')
   /** Increments on every open/new document: AiPanel remounts by key to reset the conversation and history (save path changes don't bump it, so the session continues) */
   const [aiPanelKey, setAiPanelKey] = useState(0)
@@ -1122,6 +1126,16 @@ export function App() {
 
   const exportPdf = useCallback(
     (outPath?: string) => exportPdfImpl(fileCtxRef.current, outPath),
+    [],
+  )
+
+  const exportMarkdown = useCallback(
+    (outPath?: string) => exportMarkdownImpl(fileCtxRef.current, outPath),
+    [],
+  )
+
+  const exportPlainText = useCallback(
+    (outPath?: string) => exportTextImpl(fileCtxRef.current, 'txt', outPath),
     [],
   )
 
@@ -2198,6 +2212,12 @@ export function App() {
         case 'export-pdf':
           void exportPdf()
           break
+        case 'export-markdown':
+          void exportMarkdown()
+          break
+        case 'export-txt':
+          void exportPlainText()
+          break
       }
     })
   }, [
@@ -2208,6 +2228,8 @@ export function App() {
     openRecent,
     save,
     exportPdf,
+    exportMarkdown,
+    exportPlainText,
     zoomFit,
     openStats,
     startNewComment,
@@ -2279,8 +2301,9 @@ export function App() {
       save: () => save(false),
       getStatus: () => status,
       exportPdfTo: (path: string) => exportPdf(path),
+      exportMarkdownTo: (path: string) => exportMarkdown(path),
     }
-  }, [editor, openRecent, save, status, exportPdf])
+  }, [editor, openRecent, save, status, exportPdf, exportMarkdown])
 
   // shallow-stable snapshot of every editor read the ribbon displays: caret moves
   // that change none of it keep the reference, so the memoized Ribbon skips
@@ -2298,6 +2321,8 @@ export function App() {
     onOpen: () => void openFile(),
     onSave: () => void save(false),
     onSaveAs: () => void save(true),
+    onExportMarkdown: () => void exportMarkdown(),
+    onExportTxt: () => void exportTextImpl(fileCtxRef.current, 'txt'),
     onToggleAi: () => setShowAi((v) => !v),
     onSection: (next: SectionSettings) => {
       // layout applies to the cursor's section; the final section's sectPr goes through SaveOptions.section (also drives canvas geometry)
@@ -2549,6 +2574,7 @@ export function App() {
               open={showAi}
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}
+              onOpenSettings={() => setAiSettingsOpen(true)}
               filePath={doc?.filePath ?? null}
             />
           </div>
@@ -2557,6 +2583,19 @@ export function App() {
           <div className={`workspace ${darkCanvas ? 'workspace-dark' : ''}`}>
             {doc && showFind && <FindPanel editor={editor} onClose={() => setShowFind(false)} />}
             {doc && showNav && <NavPane editor={editor} doc={editor.state.doc} />}
+            <AiSettingsDialog
+              open={aiSettingsOpen}
+              onClose={() => setAiSettingsOpen(false)}
+              load={async () => window.desktop.getAiSettings()}
+              save={async (s) => {
+                await window.desktop.setAiSettings(s)
+              }}
+              test={async (s) => window.desktop.aiTestSettings(s)}
+              listModels={async (provider, config, freeOnly) =>
+                window.desktop.aiListModels(provider, config, freeOnly)
+              }
+              onSaved={(s) => setSettings(s)}
+            />
             <div className="editor-area">
               <main className="editor-scroll">
                 {doc ? (

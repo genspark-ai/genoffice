@@ -19,10 +19,13 @@ export interface PickImageResult {
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiProviderConfig,
+  AiProviderId,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 
 export type {
@@ -35,6 +38,7 @@ export type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 
@@ -129,6 +133,8 @@ export type MenuCommand =
   | 'find'
   | 'print'
   | 'export-pdf'
+  | 'export-markdown'
+  | 'export-txt'
   | 'word-count'
 
 export interface DesktopApi {
@@ -185,6 +191,13 @@ export interface DesktopApi {
     pageHeightTwips: number,
     outPath?: string,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** export the document body as Markdown (.md) or plain text (.txt) and ask where to save */
+  exportText(
+    defaultName: string,
+    ext: 'md' | 'txt',
+    content: string,
+    outPath?: string,
+  ): Promise<{ ok: boolean; path?: string; error?: string }>
   /** Mixed paper-size export: produce a set of PDF bytes (base64) at given sizes per the current print layout */
   printPdfBuffer(
     pageWidthTwips: number,
@@ -198,6 +211,14 @@ export interface DesktopApi {
     outPath?: string,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
+  /** run a one-shot connectivity test against the given provider settings (no tool calls) */
+  aiTestSettings(settings: AiSettings): Promise<AiChatResponse>
+  /** fetch the live model catalog a provider exposes; freeOnly keeps zero-cost models */
+  aiListModels(
+    provider: AiProviderId,
+    config: AiProviderConfig,
+    freeOnly?: boolean,
+  ): Promise<ModelListEntry[]>
   /** start a streaming AI call; deltas arrive via onAiStream with the same requestId */
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

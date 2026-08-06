@@ -65,6 +65,13 @@ export interface ProjectData extends ProjectInfo {
   files: string[]
 }
 
+/** One persistent AI memory entry stored under the project directory (memory.json). */
+export interface MemoryEntry {
+  id: string
+  text: string
+  ts: string
+}
+
 export interface ProjectIndex {
   projects: ProjectInfo[]
   /** absolute path → projectId */

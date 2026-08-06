@@ -865,3 +865,68 @@ function mkdirSyncHelper(p: string): void {
     /* ignore */
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// AI memory (memory.json CRUD)
+// ────────────────────────────────────────────────────────────
+
+describe('project memory', () => {
+  let tmpDir: string
+  let store: ProjectStore
+
+  beforeEach(() => {
+    tmpDir = makeTempDir()
+    store = new ProjectStore(tmpDir)
+    store.ensureDefaultProject()
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('starts empty', () => {
+    expect(store.getProjectMemory('default')).toEqual([])
+  })
+
+  it('adds entries (newest first) with unique ids', () => {
+    const first = store.addProjectMemory('default', 'prefers US date format')
+    const second = store.addProjectMemory('default', 'uses 12pt font by default')
+    expect(first.id).toMatch(/^[0-9a-f]{16}$/)
+    expect(first.id).not.toBe(second.id)
+    const memory = store.getProjectMemory('default')
+    expect(memory).toHaveLength(2)
+    expect(memory[0].text).toBe('uses 12pt font by default')
+    expect(memory[1].text).toBe('prefers US date format')
+  })
+
+  it('persists across store instances', () => {
+    store.addProjectMemory('default', 'remember this')
+    const reopened = new ProjectStore(tmpDir)
+    const memory = reopened.getProjectMemory('default')
+    expect(memory).toHaveLength(1)
+    expect(memory[0].text).toBe('remember this')
+  })
+
+  it('trims and rejects empty text', () => {
+    expect(() => store.addProjectMemory('default', '   ')).toThrow('Memory text cannot be empty')
+    store.addProjectMemory('default', '  keep this  ')
+    expect(store.getProjectMemory('default')[0].text).toBe('keep this')
+  })
+
+  it('removes a single entry by id (no-op for unknown ids)', () => {
+    const a = store.addProjectMemory('default', 'alpha')
+    const b = store.addProjectMemory('default', 'beta')
+    store.removeProjectMemory('default', a.id)
+    store.removeProjectMemory('default', 'does-not-exist')
+    const memory = store.getProjectMemory('default')
+    expect(memory.map((e) => e.text)).toEqual(['beta'])
+    void b
+  })
+
+  it('clears all entries', () => {
+    store.addProjectMemory('default', 'alpha')
+    store.addProjectMemory('default', 'beta')
+    store.clearProjectMemory('default')
+    expect(store.getProjectMemory('default')).toEqual([])
+  })
+})

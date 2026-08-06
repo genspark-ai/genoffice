@@ -4,6 +4,7 @@
   "version": "0.5.0",
   "license": "Apache-2.0",
   "private": true,
+  "homepage": "https://github.com/genspark-ai/genoffice",
   "description": "Unified GenOffice shell: one app hosting the docs and sheets modules behind a home/launcher window",
   "main": "out/main/index.js",
   "desktopName": "genoffice.desktop",

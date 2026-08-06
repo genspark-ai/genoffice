@@ -1,4 +1,5 @@
 export * from './types'
+export { serializeBlocksToMarkdown, serializeBlocksToPlainText } from './markdown'
 export { parseDocx, type ParseExtras } from './parse'
 export {
   saveDocx,

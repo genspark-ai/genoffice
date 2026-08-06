@@ -58,6 +58,8 @@ const api: DesktopApi = {
     pageHeightTwips: number,
     outPath?: string,
   ) => ipcRenderer.invoke('docs:export-pdf', defaultName, pageWidthTwips, pageHeightTwips, outPath),
+  exportText: (defaultName: string, ext: 'md' | 'txt', content: string, outPath?: string) =>
+    ipcRenderer.invoke('docs:export-text', defaultName, ext, content, outPath),
   printPdfBuffer: (pageWidthTwips: number, pageHeightTwips: number) =>
     ipcRenderer.invoke('docs:print-pdf-buffer', pageWidthTwips, pageHeightTwips),
   saveMergedPdf: (defaultName: string, base64Parts: string[], outPath?: string) =>
@@ -65,6 +67,9 @@ const api: DesktopApi = {
   getAiSettings: () => ipcRenderer.invoke('ai:get-settings'),
   setAiSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:set-settings', settings),
   aiChat: (request: AiChatRequest) => ipcRenderer.invoke('ai:chat', request),
+  aiTestSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:test-settings', settings),
+  aiListModels: (provider, config, freeOnly) =>
+    ipcRenderer.invoke('ai:list-models', provider, config, freeOnly),
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
@@ -127,6 +132,11 @@ const projectApi: ProjectApi = {
   deleteProject: (args) => ipcRenderer.invoke('project:delete', args),
   moveFile: (args) => ipcRenderer.invoke('project:moveFile', args),
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
+  // AI memory
+  getMemory: (projectId) => ipcRenderer.invoke('project:getMemory', projectId),
+  addMemory: (args) => ipcRenderer.invoke('project:addMemory', args),
+  removeMemory: (args) => ipcRenderer.invoke('project:removeMemory', args),
+  clearMemory: (projectId) => ipcRenderer.invoke('project:clearMemory', projectId),
 }
 
 contextBridge.exposeInMainWorld('desktop', api)

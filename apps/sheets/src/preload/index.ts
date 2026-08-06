@@ -5,6 +5,7 @@ import type {
   AiSettings,
   AiStreamChunk,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import type {
@@ -166,6 +167,28 @@ const desktopApi: DesktopApi = {
     }
     return result as { canceled: true } | { canceled: false; path: string }
   },
+  async exportCsv(request) {
+    if (
+      !isRecord(request) ||
+      typeof request.fileName !== 'string' ||
+      request.fileName.length === 0 ||
+      request.fileName.length > 255 ||
+      typeof request.csv !== 'string' ||
+      request.csv.length === 0 ||
+      request.csv.length > 50_000_000
+    ) {
+      throw new Error('Invalid CSV export request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.exportCsv, request)
+    if (
+      !isRecord(result) ||
+      typeof result.canceled !== 'boolean' ||
+      (result.canceled === false && typeof result.path !== 'string')
+    ) {
+      throw new Error('Invalid CSV export response.')
+    }
+    return result as { canceled: true } | { canceled: false; path: string }
+  },
   async closeWorkbook(sessionId) {
     if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
     await ipcRenderer.invoke(IPC_CHANNELS.closeWorkbook, sessionId)
@@ -224,6 +247,20 @@ const desktopApi: DesktopApi = {
       throw new Error('Invalid AI chat response.')
     }
     return result as unknown as AiChatResponse
+  },
+  async aiTestSettings(settings) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiTestSettings, settings)
+    if (!isRecord(result) || typeof result.ok !== 'boolean') {
+      throw new Error('Invalid AI test response.')
+    }
+    return result as unknown as AiChatResponse
+  },
+  aiListModels(provider, config, freeOnly) {
+    return ipcRenderer.invoke(IPC_CHANNELS.aiListModels, {
+      provider,
+      config,
+      freeOnly: freeOnly === true,
+    }) as Promise<ModelListEntry[]>
   },
   async aiStream(request) {
     await ipcRenderer.invoke(IPC_CHANNELS.aiStream, request)
@@ -390,6 +427,12 @@ const projectApi: ProjectApi = {
   deleteProject: (args) => ipcRenderer.invoke('project:delete', args),
   moveFile: (args) => ipcRenderer.invoke('project:moveFile', args),
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
+
+  // AI memory
+  getMemory: (projectId) => ipcRenderer.invoke('project:getMemory', projectId),
+  addMemory: (args) => ipcRenderer.invoke('project:addMemory', args),
+  removeMemory: (args) => ipcRenderer.invoke('project:removeMemory', args),
+  clearMemory: (projectId) => ipcRenderer.invoke('project:clearMemory', projectId),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)
 

@@ -22,6 +22,8 @@ import {
   readSections,
   readSectionSettings,
   saveDocx,
+  serializeBlocksToMarkdown,
+  serializeBlocksToPlainText,
   type CommentInfo,
   type DocProtection,
   type HeaderFooter,
@@ -45,7 +47,7 @@ import {
 } from './doc-state'
 import { docStyleCss } from './doc-style-css'
 import type { CompareEntry } from './editor/compare'
-import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from './editor/convert'
+import { blocksToPmDoc, pmDocToBlocks, pmDocToSavePlan, type PmNode } from './editor/convert'
 import {
   annotationsFromParsed,
   buildInkImages,
@@ -810,4 +812,39 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
         ? t('appExportPdfFailed', { error: result.error })
         : t('appExportPdfCanceled'),
   )
+}
+
+/**
+ * Export the live document body as Markdown or plain text. Serializes the
+ * current ProseMirror doc (edited runs, table cells, deletions applied) via
+ * the shared docx-engine serializer; the main process opens the save dialog.
+ */
+export async function exportText(
+  ctx: FileActionContext,
+  ext: 'md' | 'txt',
+  outPath?: string,
+): Promise<void> {
+  const { doc, editor } = ctx
+  if (!doc || !editor) return
+  ctx.setStatus(t('appExportingText'))
+  try {
+    const blocks = pmDocToBlocks(editor.getJSON() as PmNode, doc.parsed.blocks)
+    const content =
+      ext === 'md' ? serializeBlocksToMarkdown(blocks) : serializeBlocksToPlainText(blocks)
+    const result = await window.desktop.exportText(doc.fileName, ext, content, outPath)
+    ctx.setStatus(
+      result.ok
+        ? t('appExportedText', { path: result.path ?? '' })
+        : result.error
+          ? t('appExportTextFailed', { error: result.error })
+          : t('appExportTextCanceled'),
+    )
+  } catch (err) {
+    ctx.setStatus(t('appExportTextFailed', { error: err instanceof Error ? err.message : String(err) }))
+  }
+}
+
+/** Markdown export convenience wrapper. */
+export async function exportMarkdown(ctx: FileActionContext, outPath?: string): Promise<void> {
+  return exportText(ctx, 'md', outPath)
 }

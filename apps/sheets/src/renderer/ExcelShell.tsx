@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import {
   CaretIcon,
+  ExportIcon,
   GensparkMark,
   RIBBON_GLYPH_ICONS,
   RedoIcon,
@@ -126,6 +127,8 @@ interface ExcelShellProps {
   readonly sheetHasContent: boolean
   /// true while the real LLM agent is running (composer disabled meanwhile).
   readonly aiBusy: boolean
+  /// Project-memory entry count, shown as a badge in the AI panel header.
+  readonly memoryCount: number
   readonly chat: readonly AiChatMessage[]
   readonly historicChat?: readonly AiChatMessage[]
   /// Chat attachments (chips + 📎 button + drag-and-drop), same structure as the
@@ -142,6 +145,8 @@ interface ExcelShellProps {
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: () => void
+  /** open the bring-your-own-key model settings dialog */
+  readonly onOpenSettings: () => void
   readonly onCommand: (command: string) => void
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
@@ -221,6 +226,7 @@ export function ExcelShell({
   selectionFormat,
   sheetHasContent,
   aiBusy,
+  memoryCount,
   chat,
   historicChat,
   attachments,
@@ -255,6 +261,7 @@ export function ExcelShell({
   onStop,
   onNewChat,
   onUndo,
+  onOpenSettings,
   onCommand,
   statusMessage,
   zoomPercent,
@@ -329,6 +336,16 @@ export function ExcelShell({
             onClick={onSave}
           >
             <SaveIcon />
+          </button>
+          <button
+            type="button"
+            className="qa-btn"
+            title={t('appExportCsvBtn')}
+            aria-label={t('appExportCsvBtn')}
+            disabled={!sheetHasContent}
+            onClick={() => onCommand('export-csv')}
+          >
+            <ExportIcon />
           </button>
           <button
             type="button"
@@ -431,6 +448,7 @@ export function ExcelShell({
           prompt={prompt}
           preview={preview}
           aiBusy={aiBusy}
+          memoryCount={memoryCount}
           onPromptChange={onPromptChange}
           onSend={onSend}
           onStop={onStop}
@@ -438,6 +456,7 @@ export function ExcelShell({
           onUndo={onUndo}
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
+          onOpenSettings={onOpenSettings}
         />
         <div className="sheet-main">
           {/* Excel's formula-bar row, Name Box only for now (fx bar TBD). */}

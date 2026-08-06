@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentToolCall } from '@genoffice/agent-core'
-import { AiCreditsError, sseLines, streamForProvider } from '../src/stream'
+import { AiCreditsError, sanitizeGeminiSchema, sseLines, streamForProvider } from '../src/stream'
 import { jsonResponse, okResponse, sseStream } from './test-utils'
 
 afterEach(() => {
@@ -352,6 +352,73 @@ describe('streamForProvider: anthropic', () => {
   })
 })
 
+describe('sanitizeGeminiSchema', () => {
+  it('collapses type unions to a scalar and marks nullable', () => {
+    expect(sanitizeGeminiSchema({ type: ['number', 'null'], description: 'v' })).toEqual({
+      type: 'number',
+      description: 'v',
+      nullable: true,
+    })
+    expect(sanitizeGeminiSchema({ type: ['string', 'number'] })).toEqual({
+      type: 'string',
+    })
+    expect(sanitizeGeminiSchema({ type: ['null'] })).toEqual({ type: 'string', nullable: true })
+  })
+
+  it('normalizes unions nested inside array items', () => {
+    const out = sanitizeGeminiSchema({
+      type: 'object',
+      properties: {
+        values: { type: 'array', items: { type: ['number', 'null'] } },
+      },
+    }) as { properties: { values: { items: { type: string; nullable: boolean } } } }
+    expect(out.properties.values.items).toEqual({ type: 'number', nullable: true })
+  })
+
+  it('strips additionalProperties, $schema, propertyNames and definitions', () => {
+    const out = sanitizeGeminiSchema({
+      type: 'object',
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      propertyNames: { type: 'string' },
+      additionalProperties: false,
+      definitions: { foo: { type: 'string' } },
+      properties: { tags: { type: 'array', items: { type: 'string' }, additionalProperties: false } },
+    }) as Record<string, unknown>
+    expect(out.$schema).toBeUndefined()
+    expect(out.propertyNames).toBeUndefined()
+    expect(out.additionalProperties).toBeUndefined()
+    expect(out.definitions).toBeUndefined()
+    expect((out.properties as Record<string, unknown>).tags).not.toHaveProperty('additionalProperties')
+  })
+
+  it('collapses anyOf/oneOf/allOf to the first non-null member', () => {
+    const out = sanitizeGeminiSchema({
+      type: 'object',
+      properties: {
+        x: { anyOf: [{ type: 'null' }, { type: 'string', description: 'kept' }] },
+      },
+    }) as { properties: { x: { type: string; description?: string } } }
+    expect(out.properties.x.type).toBe('string')
+    expect(out.properties.x.description).toBe('kept')
+  })
+
+  it('keeps empty properties objects (accepted by Gemini) intact', () => {
+    expect(sanitizeGeminiSchema({ type: 'object', properties: {}, required: [] })).toEqual({
+      type: 'object',
+      properties: {},
+      required: [],
+    })
+  })
+
+  it('coerces tuple-style items arrays to a single item schema', () => {
+    const out = sanitizeGeminiSchema({
+      type: 'object',
+      properties: { pair: { type: 'array', items: [{ type: 'string' }, { type: 'number' }] } },
+    }) as { properties: { pair: { items: unknown } } }
+    expect(out.properties.pair.items).toEqual({ type: 'string' })
+  })
+})
+
 describe('streamForProvider: gemini', () => {
   it('emits text and a whole (non-partial) function call', async () => {
     const body = sseStream([
@@ -372,6 +439,60 @@ describe('streamForProvider: gemini', () => {
     expect(deltas.join('')).toBe('hi there')
     expect(toolCalls).toHaveLength(1)
     expect(toolCalls[0]).toMatchObject({ name: 'set_cell', input: { a1: '42' } })
+  })
+
+  it('sends Gemini-sanitized tool schemas (type unions collapsed, no additionalProperties)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream([])))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'gemini',
+      { apiKey: 'k', model: 'gemini-2.5-flash' },
+      'sys',
+      [],
+      [
+        {
+          name: 'apply_patch',
+          description: 'patch',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              patches: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { value: { type: ['string', 'null'] }, kind: { type: 'string' } },
+                  required: ['kind'],
+                },
+              },
+              extra: { type: 'object', additionalProperties: { type: 'string' } },
+            },
+            required: ['patches'],
+          },
+        },
+      ],
+      100,
+      cb,
+    )
+    const sent = fetchMock.mock.calls[0]![1] as { body: string }
+    const body = JSON.parse(sent.body) as {
+      tools: Array<{ functionDeclarations: Array<{ parameters: Record<string, unknown> }> }>
+    }
+    const params = body.tools[0]!.functionDeclarations[0]!.parameters
+    const patches = params.properties as Record<string, unknown>
+    expect(patches.patches).toMatchObject({
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          value: { type: 'string', nullable: true },
+          kind: { type: 'string' },
+        },
+        required: ['kind'],
+      },
+    })
+    expect(patches.extra).not.toHaveProperty('additionalProperties')
+    expect(JSON.stringify(body)).not.toContain('additionalProperties')
   })
 
   it('throws when the prompt is blocked instead of finishing an empty turn', async () => {
@@ -665,6 +786,27 @@ describe('streamForProvider: openai-compatible', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'https://my-endpoint.example.com/v1/chat/completions',
       expect.anything(),
+    )
+  })
+
+  it('routes openrouter to its fixed base URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'openrouter',
+      { apiKey: 'sk-or-v1-x', model: 'anthropic/claude-sonnet-4.5' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://openrouter.ai/api/v1/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer sk-or-v1-x' }),
+      }),
     )
   })
 

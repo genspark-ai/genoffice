@@ -103,7 +103,9 @@ import {
   COMPLETED_VIA_TOOLS_TEXT,
   composeSkills,
   type AgentImage,
+  type MemoryStoreAdapter,
 } from '@genoffice/agent-core'
+import { AiSettingsDialog } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
@@ -236,6 +238,7 @@ import {
   recordFreezeJournal as recordFreezeJournalImpl,
   type PageLayoutContext,
 } from './page-layout-actions'
+import { handleExportCsv as handleExportCsvImpl } from './csv-export'
 import { handleSave as handleSaveImpl, type SaveContext } from './save-actions'
 import {
   applyChartEdit as applyChartEditImpl,
@@ -547,6 +550,7 @@ export function App(): React.JSX.Element {
   const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
   const aiSettingsRef = useRef<AiSettings | null>(null)
   aiSettingsRef.current = aiSettings
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
@@ -567,6 +571,36 @@ export function App(): React.JSX.Element {
   const workbookOpeningRef = useRef(false)
   /** Current session's projectId/chatId (resolved when the workbook opens) */
   const chatRefIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** Project memory adapter (refs stay fresh; tools/context read the latest state) */
+  const memoryApiRef = useRef<(typeof window)['projectApi'] | null>(null)
+  const memoryProjectIdRef = useRef<string | null>(null)
+  const memoryEntriesRef = useRef<{ id: string; text: string; ts: string }[]>([])
+  const [memoryCount, setMemoryCount] = useState(0)
+  const syncMemoryCount = () => setMemoryCount(memoryEntriesRef.current.length)
+  const memoryRef = useRef<MemoryStoreAdapter | null>(null)
+  if (!memoryRef.current) {
+    memoryRef.current = {
+      available: () => memoryProjectIdRef.current !== null && memoryApiRef.current !== null,
+      entries: () => memoryEntriesRef.current,
+      add: async (text) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) throw new Error('No resolved project for memory.')
+        const entry = await api.addMemory({ projectId, text })
+        memoryEntriesRef.current = [entry, ...memoryEntriesRef.current]
+        syncMemoryCount()
+        return entry
+      },
+      remove: async (id) => {
+        const api = memoryApiRef.current
+        const projectId = memoryProjectIdRef.current
+        if (!api || !projectId) return
+        await api.removeMemory({ projectId, id })
+        memoryEntriesRef.current = memoryEntriesRef.current.filter((e) => e.id !== id)
+        syncMemoryCount()
+      },
+    }
+  }
 
   // File renamed externally (in the shell Home list) → sync the title-bar file
   // name (the save path is synced by the main process)
@@ -672,6 +706,14 @@ export function App(): React.JSX.Element {
       .resolveChat(resolveArgs)
       .then(async (ids) => {
         chatRefIdsRef.current = ids
+        memoryApiRef.current = api
+        memoryProjectIdRef.current = ids.projectId
+        void api.getMemory(ids.projectId).then((entries) => {
+          if (Array.isArray(entries)) {
+            memoryEntriesRef.current = entries
+            syncMemoryCount()
+          }
+        })
         const msgs = await api.loadChat({
           projectId: ids.projectId,
           chatId: ids.chatId,
@@ -764,7 +806,7 @@ export function App(): React.JSX.Element {
       transport: createElectronTransport(() => aiSettingsRef.current!),
       systemSuffix: aiLangDirective,
       skill: composeSkills('sheets+files', '', [
-        createWorkbookSkill(sheetsSkillDeps()),
+        createWorkbookSkill(sheetsSkillDeps(), memoryRef.current),
         createFilesSkill(() => attachmentsRef.current),
         createSearchSkill(),
       ]),
@@ -2551,6 +2593,7 @@ export function App(): React.JSX.Element {
         recordFreezeJournalImpl(pageLayoutContext(), sheetId, rows, columns),
       handlePageLayoutCommand: (rest) => handlePageLayoutCommandImpl(pageLayoutContext(), rest),
       handleExportPdf: () => handleExportPdfImpl(pageLayoutContext()),
+      handleExportCsv: () => handleExportCsvImpl({ univerRef, lazyWorkbookRef, setMessage }),
     }
   }
 
@@ -2829,6 +2872,8 @@ export function App(): React.JSX.Element {
       void handleInspectWorkbook()
     } else if (action === 'export-pdf') {
       void handleExportPdfImpl(pageLayoutContext())
+    } else if (action === 'export-csv') {
+      void handleExportCsvImpl(pageLayoutContext())
     } else if (action === 'undo' || action === 'redo') {
       // The shell's own text fields (AI prompt, dialog inputs) keep native
       // text undo; everywhere else ⌘Z means workbook history.
@@ -2991,6 +3036,7 @@ export function App(): React.JSX.Element {
         selectionFormat={selectionFormat}
         statusMessage={message}
         aiBusy={aiBusy}
+        memoryCount={memoryCount}
         chat={chat}
         historicChat={historicChat}
         attachments={attachments}
@@ -3004,6 +3050,7 @@ export function App(): React.JSX.Element {
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
         onUndo={handleUndo}
+        onOpenSettings={() => setAiSettingsOpen(true)}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}
         canSave={pendingEdits > 0}
@@ -3033,6 +3080,19 @@ export function App(): React.JSX.Element {
         onCreateConsolidate={(config) => handleCreateConsolidateImpl(dataToolsContext(), config)}
         onGetConsolidateDefault={() => consolidateDefaultReferenceImpl(dataToolsContext())}
         onApplyHeaderFooter={(result) => handleApplyHeaderFooterImpl(pageLayoutContext(), result)}
+      />
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        onClose={() => setAiSettingsOpen(false)}
+        load={async () => window.desktopApi.getAiSettings()}
+        save={async (s) => {
+          await window.desktopApi.setAiSettings(s)
+        }}
+        test={async (s) => window.desktopApi.aiTestSettings(s)}
+        listModels={async (provider, config, freeOnly) =>
+          window.desktopApi.aiListModels(provider, config, freeOnly)
+        }
+        onSaved={(s) => setAiSettingsState(s)}
       />
       {advancedFilterColumns !== null && (
         <AdvancedFilterDialog

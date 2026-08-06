@@ -3,10 +3,13 @@ import { z } from 'zod'
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiProviderConfig,
+  AiProviderId,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  ModelListEntry,
 } from '@genoffice/ai-provider'
 
 const MAX_RANGE_CELLS = 20_000
@@ -1768,9 +1771,22 @@ export const aiStreamRequestSchema = z
   })
   .strict()
 
+export const aiListModelsInputSchema = z
+  .object({
+    provider: z.string(),
+    config: z.object({
+      apiKey: z.string(),
+      model: z.string(),
+      baseUrl: z.string().optional(),
+    }),
+    freeOnly: z.boolean().optional(),
+  })
+  .strict()
+
 export type AiSettingsInput = z.infer<typeof aiSettingsInputSchema>
 export type AiChatRequestInput = z.infer<typeof aiChatRequestSchema>
 export type AiStreamRequestInput = z.infer<typeof aiStreamRequestSchema>
+export type AiListModelsInput = z.infer<typeof aiListModelsInputSchema>
 
 /// A rendered print job: the renderer lays the sheet out as HTML, the main
 /// process turns it into a PDF via a hidden window.
@@ -1809,6 +1825,23 @@ export const workbookExportPdfResultSchema = z.union([
 
 export type WorkbookExportPdfRequest = z.infer<typeof workbookExportPdfRequestSchema>
 export type WorkbookExportPdfResult = z.infer<typeof workbookExportPdfResultSchema>
+
+/// The renderer serializes the active sheet's used range as CSV; the main
+/// process opens the save dialog and writes the file.
+export const workbookExportCsvRequestSchema = z
+  .object({
+    fileName: z.string().min(1).max(255),
+    csv: z.string().min(1).max(50_000_000),
+  })
+  .strict()
+
+export const workbookExportCsvResultSchema = z.union([
+  z.object({ canceled: z.literal(true) }).strict(),
+  z.object({ canceled: z.literal(false), path: z.string().min(1) }).strict(),
+])
+
+export type WorkbookExportCsvRequest = z.infer<typeof workbookExportCsvRequestSchema>
+export type WorkbookExportCsvResult = z.infer<typeof workbookExportCsvResultSchema>
 
 // ---- Chat attachments (local files fed to the agent via tools; same structure
 // as apps/docs and apps/slides) ----
@@ -1879,6 +1912,7 @@ export interface DesktopApi {
     baseName: string,
   ): Promise<{ renamed: boolean; name?: string }>
   exportPdf(request: WorkbookExportPdfRequest): Promise<WorkbookExportPdfResult>
+  exportCsv(request: WorkbookExportCsvRequest): Promise<WorkbookExportCsvResult>
   closeWorkbook(sessionId: string): Promise<void>
   openExternal(url: string): Promise<void>
   /// Application-menu File commands (Open/Save/Save As); returns unsubscribe.
@@ -1897,6 +1931,10 @@ export interface DesktopApi {
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
+  /// run a one-shot connectivity test against the given provider settings (no tool calls)
+  aiTestSettings(settings: AiSettings): Promise<AiChatResponse>
+  /// fetch the live model catalog a provider exposes; freeOnly keeps zero-cost models
+  aiListModels(provider: AiProviderId, config: AiProviderConfig, freeOnly?: boolean): Promise<ModelListEntry[]>
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
@@ -1924,7 +1962,7 @@ export interface DesktopApi {
   getPathForFile(file: File): string
 }
 
-export type MenuAction = 'open' | 'save' | 'save-as' | 'export-pdf' | 'undo' | 'redo'
+export type MenuAction = 'open' | 'save' | 'save-as' | 'export-pdf' | 'export-csv' | 'undo' | 'redo'
 
 export interface WebSearchResult {
   results: Array<{ title: string; url: string; snippet: string }>

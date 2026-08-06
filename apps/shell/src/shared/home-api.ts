@@ -157,6 +157,12 @@ export interface TimelineEntryItem {
   seq: number
 }
 
+export interface MemoryEntryItem {
+  id: string
+  text: string
+  ts: string
+}
+
 export interface ProjectHomeApi {
   /** list all projects (with file count + last-active time) */
   listProjects(): Promise<ProjectSummaryEntry[]>
@@ -172,6 +178,14 @@ export interface ProjectHomeApi {
   moveFile(filePath: string, projectId: string): Promise<void>
   /** fetch the project timeline */
   getTimeline(projectId: string, limit?: number): Promise<TimelineEntryItem[]>
+  /** read the project's AI memory entries (newest first) */
+  getMemory(projectId: string): Promise<MemoryEntryItem[]>
+  /** append one AI memory entry; returns it (with id/ts) */
+  addMemory(projectId: string, text: string): Promise<MemoryEntryItem>
+  /** delete one AI memory entry by id */
+  removeMemory(projectId: string, id: string): Promise<void>
+  /** clear all AI memory entries for the project */
+  clearMemory(projectId: string): Promise<void>
 }
 
 export const HOME_CHANNELS = {
@@ -213,4 +227,8 @@ export const PROJECT_CHANNELS = {
   delete: 'project:delete',
   moveFile: 'project:moveFile',
   timeline: 'project:timeline',
+  getMemory: 'project:getMemory',
+  addMemory: 'project:addMemory',
+  removeMemory: 'project:removeMemory',
+  clearMemory: 'project:clearMemory',
 } as const
