@@ -1277,14 +1277,17 @@ export const DocProtected = Node.create({
           // Let ProseMirror plugins receive handle presses; floating-object
           // dragging is implemented at the editor-view level.
           if (target?.closest?.('.doc-move-handle')) return false
-          // Object-mode body presses on floating boxes also go to the drag plugin
+          // Shape bodies (prst textboxes) drag-to-move on a plain press (Word
+          // parity); a double-click still reaches the inner editor for the caret
           if (
             event.type === 'mousedown' &&
-            dom.classList.contains('doc-protected-textboxes') &&
+            (event as MouseEvent).detail < 2 &&
+            target?.closest?.('.doc-textbox') &&
             !dom.classList.contains('doc-content-editing') &&
-            target?.closest?.('.doc-textbox')
-          )
+            (currentNode.attrs.textboxes as TextboxDisplay[] | null)?.[0]?.prst
+          ) {
             return false
+          }
           const contentTarget = target?.closest?.(EDITABLE_PROTECTED_SELECTOR)
           return (
             !!contentTarget &&
@@ -1939,7 +1942,7 @@ function mountTextboxEditors(
     )
   }
 
-  /** external model change (undo of a commit, AI edit, resize): re-feed the sub-editors */
+  /** external model change (undo of a commit, AI edit): re-feed the sub-editors */
   const sync = (boxes: TextboxDisplay[] | null) => {
     if (!boxes || boxes === knownBoxes) return
     knownBoxes = boxes
@@ -1948,6 +1951,8 @@ function mountTextboxEditors(
       if (sub && !sub.isDestroyed) sub.commands.setContent(textboxDocJson(box))
       const el = boxEls[i]
       if (el) el.setAttribute('style', textboxBoxStyle(box))
+      // corner resize only rewrites the attrs; without refreshing the minimum
+      // the next autofit would shrink the box back below the resized height
       minHeights[i] = box.minHeightPx ?? box.heightPx
       measuredHeights[i] = box.heightPx
     })
@@ -1973,7 +1978,7 @@ function mountTextboxEditors(
   return { cleanup, sync, setEditable, commit }
 }
 
-/** drag the corner handle of a selected image or floating box to resize it */
+/** drag the corner handle of a selected image to resize it */
 function imageResizePlugin(): Plugin {
   return new Plugin({
     props: {
@@ -1981,26 +1986,26 @@ function imageResizePlugin(): Plugin {
         mousedown: (view, event) => {
           const target = event.target as HTMLElement
           if (target.classList?.contains('box-resize-handle')) {
-            const wrapper = target.closest('.doc-protected') as HTMLElement | null
-            const isChart = !!wrapper?.classList.contains('doc-protected-chart')
-            const boxEl = wrapper?.querySelector(
+            const boxWrapper = target.closest('.doc-protected') as HTMLElement | null
+            const isChart = !!boxWrapper?.classList.contains('doc-protected-chart')
+            const boxEl = boxWrapper?.querySelector(
               isChart ? '.doc-chart-canvas svg' : '.doc-textbox',
             ) as HTMLElement | null
-            if (!wrapper || !boxEl) return false
-            let pos = -1
+            if (!boxWrapper || !boxEl) return false
+            let boxPos = -1
             view.state.doc.descendants((node, p) => {
-              if (pos !== -1) return false
-              if (node.type.name === 'docProtected' && view.nodeDOM(p) === wrapper) pos = p
-              return pos === -1
+              if (boxPos !== -1) return false
+              if (node.type.name === 'docProtected' && view.nodeDOM(p) === boxWrapper) boxPos = p
+              return boxPos === -1
             })
-            if (pos === -1) return false
-            const attrs = view.state.doc.nodeAt(pos)?.attrs
+            if (boxPos === -1) return false
+            const attrs = view.state.doc.nodeAt(boxPos)?.attrs
             const boxes = attrs?.textboxes as TextboxDisplay[] | null
             const chart = attrs?.chartDisplay as ChartDisplay | null
             if (!isChart && (!Array.isArray(boxes) || boxes.length !== 1)) return false
             if (isChart && !chart) return false
             event.preventDefault()
-            view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
+            view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, boxPos)))
 
             const zoomEl = document.querySelector('.doc-zoom') as HTMLElement | null
             const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
@@ -2033,13 +2038,13 @@ function imageResizePlugin(): Plugin {
               window.removeEventListener('mousemove', onMove)
               window.removeEventListener('mouseup', onUp)
               const { w, h } = sizeAt(e)
-              const node = view.state.doc.nodeAt(pos)
+              const node = view.state.doc.nodeAt(boxPos)
               if (!node) return
               if (isChart) {
                 const display = node.attrs.chartDisplay as ChartDisplay | null
                 if (!display) return
                 view.dispatch(
-                  view.state.tr.setNodeMarkup(pos, undefined, {
+                  view.state.tr.setNodeMarkup(boxPos, undefined, {
                     ...node.attrs,
                     chartDisplay: {
                       ...display,
@@ -2062,7 +2067,7 @@ function imageResizePlugin(): Plugin {
                     minHeightPx: Math.round(h),
                   }
               view.dispatch(
-                view.state.tr.setNodeMarkup(pos, undefined, {
+                view.state.tr.setNodeMarkup(boxPos, undefined, {
                   ...node.attrs,
                   textboxes: [next],
                 }),
@@ -2129,9 +2134,6 @@ const EMU_PER_PX = 9525
 
 /**
  * Drag floating images and textbox shapes (wp:anchor) to update posOffset.
- * Activates on the move handle, or on body presses of floating textbox /
- * shape / WordArt blocks in object mode (3 px threshold keeps clicks as
- * plain selection).
  * Only handles images with numeric posOffset (imageOffsetXEmu/YEmu set).
  * Inline images (no imageWrap) are auto-converted to anchor on drag start
  * with square wrap and the initial offset derived from the drag delta.
@@ -2144,11 +2146,13 @@ function floatingObjectDragPlugin(): Plugin {
           if (event.button !== 0) return false
           const target = event.target as HTMLElement | null
           if (!target) return false
+          // Activate on the move handle of an image block, or (Word parity)
+          // anywhere on a textbox/shape body — its text isn't edited in place,
+          // so the body gesture is unambiguous
           const handle = target.closest('.doc-move-handle') as HTMLElement | null
-          let wrapper = handle
-            ? (handle.closest('.doc-protected') as HTMLElement | null)
-            : (target.closest('.doc-protected-textboxes') as HTMLElement | null)
-          if (!handle && wrapper?.classList.contains('doc-content-editing')) wrapper = null
+          const body = handle ? null : (target.closest('.doc-textbox') as HTMLElement | null)
+          if (!handle && !body) return false
+          const wrapper = (handle ?? body)!.closest('.doc-protected') as HTMLElement | null
           if (!wrapper) return false
 
           // Find the ProseMirror node position
@@ -2164,6 +2168,10 @@ function floatingObjectDragPlugin(): Plugin {
           const isImage = node.attrs.blockType === 'image'
           const isTextbox = Array.isArray(node.attrs.textboxes) && node.attrs.textboxes.length > 0
           if (!isImage && !isTextbox) return false
+          // Body activation is for prst shapes only: plain text boxes keep
+          // click-to-type, images keep their native behavior
+          const isShapeBody = isTextbox && !!(node.attrs.textboxes as TextboxDisplay[])[0]?.prst
+          if (!handle && !isShapeBody) return false
 
           const isFloating = !!node.attrs.imageWrap
           const hasNumericOffset =
@@ -2189,13 +2197,14 @@ function floatingObjectDragPlugin(): Plugin {
             isTextbox ? '.doc-textbox' : '.doc-protected-img',
           ) as HTMLElement | null
 
-          const startThresholdPx = handle ? 0 : 3
-          let started = false
+          // 3px threshold keeps plain clicks (select, first click of a
+          // double-click-to-edit) from nudging the object
+          let dragging = false
           const onMove = (e: MouseEvent) => {
             const dx = (e.clientX - startX) / zoom
             const dy = (e.clientY - startY) / zoom
-            if (!started && Math.hypot(dx, dy) < startThresholdPx) return
-            started = true
+            if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+            dragging = true
             if (visual) visual.style.transform = `translate(${dx}px, ${dy}px)`
           }
 
@@ -2206,8 +2215,8 @@ function floatingObjectDragPlugin(): Plugin {
 
             const dx = (e.clientX - startX) / zoom
             const dy = (e.clientY - startY) / zoom
-            // Only update if actually moved (≥1 px)
-            if (!started || (Math.abs(dx) < 1 && Math.abs(dy) < 1)) return
+            // Only commit a real drag (past the threshold)
+            if (!dragging) return
 
             const newX = Math.round(startOffsetX + dx * EMU_PER_PX)
             const newY = Math.round(startOffsetY + dy * EMU_PER_PX)

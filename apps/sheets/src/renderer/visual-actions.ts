@@ -30,6 +30,7 @@ import {
 } from './edit-journal'
 import { t } from './i18n/locale'
 import { findPivotAtSelection, type PivotActionContext } from './pivot-actions'
+import { startSheetShapeDraw } from './shape-draw'
 import {
   a1RangeRef,
   a1RowRangeRef,
@@ -379,6 +380,47 @@ export async function handleInsertPivotChart(
   ctx.setMessage(
     chartData.truncated ? t('appPivotChartInsertedTruncated') : t('appPivotChartInserted'),
   )
+}
+
+/**
+ * Excel-parity draw mode entry: arm the crosshair over the grid; the drawn
+ * rectangle (or single click = default 1in square) becomes the shape's anchor.
+ */
+export function startShapeDraw(ctx: VisualActionContext, shapeType: string): void {
+  const runtime = ctx.univerRef.current
+  if (!runtime) return
+  if (!ctx.lazyWorkbookRef.current) {
+    ctx.setMessage(t('appShapeNeedsFile'))
+    return
+  }
+  startSheetShapeDraw(runtime, shapeType, (anchor) => insertShapeAtAnchor(ctx, shapeType, anchor))
+}
+
+/** Insert a gallery shape at an explicit twoCellAnchor (draw-mode commit). */
+export function insertShapeAtAnchor(
+  ctx: VisualActionContext,
+  shapeType: string,
+  anchor: WorkbookVisualObject['anchor'],
+): void {
+  const runtime = ctx.univerRef.current
+  const state = ctx.lazyWorkbookRef.current
+  if (!runtime || !state) return
+  const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  if (!worksheet) return
+  const sheetId = worksheet.getSheetId()
+  if (isSheetRemoved(state.editJournal, sheetId)) return
+  const visual: WorkbookVisualObject = {
+    id: `added-shape-${Date.now().toString(36)}-${state.editJournal.visualAdds.length + 1}`,
+    sheetId,
+    kind: 'shape',
+    anchor,
+    shapeType,
+    fillColor: '#DDEBF7',
+  }
+  recordVisualAdd(state.editJournal, visual)
+  ctx.setPendingEdits(journalSize(state.editJournal))
+  queueCtxVisualInstall(ctx, runtime, sheetId)
+  ctx.setMessage(t('appShapeInserted'))
 }
 
 export function handleInsertShape(

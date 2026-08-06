@@ -1927,6 +1927,9 @@ export interface DesktopApi {
   /// Returns true once when this tab was opened via "New Spreadsheet" from the
   /// shell home.
   consumeNewBlankWorkbook(): Promise<boolean>
+  /// Is a shell-queued workbook path still waiting to be opened? (The shell's
+  /// 'open' nudge loop can time out on slow cold starts; the renderer pulls.)
+  hasQueuedWorkbook(): Promise<boolean>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>

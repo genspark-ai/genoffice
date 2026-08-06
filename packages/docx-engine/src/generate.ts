@@ -2192,60 +2192,18 @@ export function buildShapeParagraphXml(opts: {
   return `<w:p><w:r>${alternateContent}</w:r></w:p>`
 }
 
-/** WordArt preset definitions (style name → shape fill/stroke/text color). */
-export const WORDART_PRESETS = [
-  {
-    id: 'wordArt-1',
-    label: 'Fill - accent color',
-    colorHex: '4472C4',
-    borderHex: '2F5496',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-2',
-    label: 'Gradient - blue violet',
-    colorHex: '7B2FBE',
-    borderHex: '4472C4',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-3',
-    label: 'Outline - no fill',
-    colorHex: '4472C4',
-    borderHex: '4472C4',
-    noFill: true,
-  },
-  {
-    id: 'wordArt-4',
-    label: 'Shadow - dark',
-    colorHex: '1F3864',
-    borderHex: '1F3864',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-5',
-    label: 'Glow - orange',
-    colorHex: 'ED7D31',
-    borderHex: 'C55A11',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-6',
-    label: 'Fill - dark red',
-    colorHex: 'C00000',
-    borderHex: '9B0000',
-    noFill: false,
-  },
-] as const
-
 /**
  * Build a <w:p> fragment containing a floating WordArt WPS text box.
  * The shape has no background fill; the text runs carry large size (36pt)
- * and the specified color. Style is approximated — Word can open the result.
+ * and the specified solid color. Style is approximated (no stroke/effects in
+ * the saved run — the caller picks a readable solid color) — Word can open
+ * the result. Presets live in the UI layer (@genoffice/ui wordart-presets).
  */
 export function buildWordArtParagraphXml(opts: {
   text?: string
-  wordArtId?: string
+  /** 6-digit hex without '#'; defaults to the Office accent blue. */
+  colorHex?: string
+  italic?: boolean
   widthEmu?: number
   heightEmu?: number
   id?: number
@@ -2253,14 +2211,15 @@ export function buildWordArtParagraphXml(opts: {
   const widthEmu = opts.widthEmu ?? 2700000 // ~7.5 cm
   const heightEmu = opts.heightEmu ?? 720000 // ~2 cm
   const id = opts.id ?? 1
-  const preset = WORDART_PRESETS.find((p) => p.id === opts.wordArtId) ?? WORDART_PRESETS[0]
+  const colorHex = opts.colorHex ?? '4472C4'
   const text = opts.text ?? 'WordArt'
 
-  // Build run props: large font + color
+  // Build run props: large font + color (schema order: b < i < color < sz)
   const rPr =
     `<w:rPr>` +
     `<w:b/>` +
-    `<w:color w:val="${preset.colorHex}"/>` +
+    (opts.italic ? `<w:i/>` : '') +
+    `<w:color w:val="${colorHex}"/>` +
     `<w:sz w:val="72"/>` + // 36pt = 72 half-points
     `<w:szCs w:val="72"/>` +
     `</w:rPr>`

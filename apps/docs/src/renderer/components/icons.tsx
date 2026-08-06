@@ -175,8 +175,22 @@ export function IconLineSpacing(props: IconProps) {
 export function IconClearFormat(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M2.17 12.67 5.67 3.5l3.5 9.17M3.4 9.5h4.55" />
-      <path d="m10.4 9.1 3.4 3.4M13.8 9.1l-3.4 3.4" />
+      {/* letter A with a wiped-off stroke at its top left (matches slides) */}
+      <path d="M 2.5 12.5 5.5 4 l 3 8.5" />
+      <path d="M 3.7 9.5 h 3.6" />
+      <path d="M 2.9 5.9 l 1.2 -1.2" />
+      {/* compact diagonal eraser at the lower right, outline only, band facing the A */}
+      <g transform="rotate(45 11.6 11.6)">
+        <rect
+          x="9.1"
+          y="9.8"
+          width="5"
+          height="3.6"
+          rx="0.5"
+          stroke="var(--ribbon-accent-2, #A33FB5)"
+        />
+        <path d="M 10.5 9.8 v 3.6" stroke="var(--ribbon-accent-2, #A33FB5)" />
+      </g>
     </Svg>
   )
 }
@@ -317,8 +331,8 @@ export function IconRemoveBg(props: IconProps) {
 export function IconCrop(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 5.41 2.97 v 7.62 h 7.62" />
-      <path d="M 2.97 5.41 h 7.62 v 7.62" />
+      <path d="M 5.33 3.17 v 7.5 h 7.5" />
+      <path d="M 3.17 5.33 h 7.5 v 7.5" />
     </Svg>
   )
 }
@@ -337,10 +351,10 @@ export function IconReplacePicture(props: IconProps) {
 export function IconChart(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 2.99 2.99 v 10.01 h 10.01" />
-      <rect x="4.81" y="8" width="1.82" height="5.01" />
-      <rect x="7.55" y="5.27" width="1.82" height="7.74" />
-      <rect x="10.27" y="6.64" width="1.82" height="6.37" />
+      <path d="M 3.02 3.02 v 9.96 h 9.96" />
+      <rect x="5.09" y="8" width="1.83" height="3.32" fill="currentColor" stroke="none" />
+      <rect x="8" y="5.51" width="1.83" height="5.81" fill="currentColor" stroke="none" />
+      <rect x="10.91" y="6.75" width="1.83" height="4.57" fill="currentColor" stroke="none" />
     </Svg>
   )
 }
@@ -369,6 +383,16 @@ export function IconComment(props: IconProps) {
     <Svg {...props}>
       <path d="M 2.99 3.91 h 10.01 v 6.83 h -5.46 L 4.81 13.46 v -2.73 h -1.82 z" />
       <path d="M 5.27 6.18 h 5.46 M 5.27 8.46 h 3.64" />
+    </Svg>
+  )
+}
+
+export function IconComments(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 5.75 3.45 h 7.28 v 5.46 h -1.68" />
+      <path d="M 2.99 5.75 h 8.19 v 5.46 h -4.1 L 4.81 13.5 v -2.29 h -1.82 z" />
+      <path d="M 5.27 8.2 h 3.9" />
     </Svg>
   )
 }
@@ -1306,7 +1330,7 @@ export function IconRedo(props: IconProps) {
 export function IconCursor(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M4 2.5 12 8l-3.4.8L7 12.4 4 2.5Z" />
+      <path d="M 3.98 3.01 12.02 8.53 l -3.41 0.81 L 6.99 12.95 3.98 3.01 Z" />
     </Svg>
   )
 }
@@ -1342,9 +1366,8 @@ export function IconEraser(props: IconProps) {
 export function IconTextBox(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="3" y="4.7" width="10" height="6.6" rx="0.85" />
-      <path d="M5.5 7.2h5" />
-      <path d="M8 7.2v3.3" />
+      <rect x="2.99" y="3.77" width="10.01" height="8.47" rx="0.77" />
+      <path d="M 5.69 6.07 h 4.62 M 8 6.07 v 4.23" />
     </Svg>
   )
 }

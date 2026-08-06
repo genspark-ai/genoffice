@@ -1256,6 +1256,7 @@ button {
 
 /* ---- WordArt picker panel ---- */
 
+/* Unlabeled letter grid matching the slides WordArt gallery (style name = tooltip) */
 .wordart-palette {
   position: fixed;
   position-anchor: --rb-drop-wrap;
@@ -1265,8 +1266,8 @@ button {
   position-visibility: anchors-visible;
   z-index: 60;
   display: grid;
-  grid-template-columns: repeat(2, 120px);
-  gap: 4px;
+  grid-template-columns: repeat(4, 44px);
+  gap: 5px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -1275,39 +1276,21 @@ button {
 }
 
 .wordart-cell {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  width: 120px;
-  padding: 6px 8px;
-  border: none;
-  background: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border, #e3e3e3);
   border-radius: 4px;
+  background: var(--surface, #fff);
+  font-size: 26px;
+  font-family: Georgia, serif;
   cursor: pointer;
-  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .wordart-cell:hover {
-  background: var(--active-bg);
-}
-
-.wordart-preview {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-  font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
-  min-width: 26px;
-  text-align: center;
-}
-
-.wordart-label {
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  text-align: left;
+  border-color: var(--accent, #b26b00);
 }
 
 /* ---- Drop cap dropdown menu ---- */
@@ -7084,4 +7067,57 @@ tr > .page-gap-cut {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* Shape draw mode (Word parity): crosshair over the whole document while armed */
+.ProseMirror.doc-shape-drawing,
+.ProseMirror.doc-shape-drawing * {
+  cursor: crosshair !important;
+}
+
+/* Shape gallery dropdown (slides parity: grouped, outline-icon grid) */
+.rb-drop-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim, #777);
+  padding: 4px 2px 3px;
+}
+
+.rb-shape-gallery {
+  width: 264px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.rb-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 28px);
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.rb-shape-cell {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.rb-shape-cell:hover {
+  border-color: var(--accent, #2b579a);
+  background: var(--hover, rgba(0, 0, 0, 0.06));
+}
+
+/* Gallery variant keeps .shape-palette's anchored-card chrome but stacks grouped grids */
+.shape-palette.rb-shape-gallery {
+  display: block;
 }

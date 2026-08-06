@@ -10,26 +10,19 @@ around AI editing as a first-class workflow rather than a bolted-on chat box.
 
 ## Download
 
-Signed installers built from `main`:
+| Platform                        | Requirements                                | Download                                                                                                                             |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **macOS** (Apple Silicon)       | macOS 11+                                   | [GenOffice-0.5.83-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOffice-0.5.83-arm64.dmg)          |
+| **Windows** (x64)               | Windows 10+                                 | [GenOfficeSetup-v0.5.79.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOfficeSetup-v0.5.79.exe)          |
+| **Linux** — Debian / Ubuntu     | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer) | [genoffice_0.5.149_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/genoffice_0.5.149_amd64.deb) |
+| **Linux** — other distributions | x86_64, glibc 2.34+, FUSE 2                 | [GenOffice-0.5.149.AppImage](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/GenOffice-0.5.149.AppImage)   |
 
-- **macOS** (Apple Silicon): [GenOffice-0.5.83-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOffice-0.5.83-arm64.dmg)
-- **Windows** (x64): [GenOfficeSetup-v0.5.79.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOfficeSetup-v0.5.79.exe)
+All builds come from `main`; the macOS and Windows installers are signed.
+Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
 
-Previous version:
+### Installing on Linux
 
-- **macOS** (Apple Silicon): [GenOffice-0.5.1-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.5.1/GenOffice-0.5.1-arm64.dmg)
-- **Windows** (x64): [GenOfficeSetup-v0.5.1.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.5.1/GenOfficeSetup-v0.5.1.exe)
-
-Other versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
-
-### Linux
-
-x86_64, glibc 2.34+ (Ubuntu 22.04 or newer; tested on Ubuntu 24.04):
-
-- **Debian / Ubuntu**: [genoffice_0.5.149_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/genoffice_0.5.149_amd64.deb)
-- **Other distros**: [GenOffice-0.5.149.AppImage](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/GenOffice-0.5.149.AppImage)
-
-Install the deb with apt — it pulls in the dependencies and adds GenOffice
+The deb installs with apt — it pulls in the dependencies and adds GenOffice
 to the applications menu:
 
 ```bash

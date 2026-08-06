@@ -2,9 +2,10 @@ import type { Node as PmNode } from '@tiptap/pm/model'
 import {} from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
+import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
-import { t } from '../i18n/locale'
 import { shapeBackgroundCss } from './shape-svg'
+import { t } from '../i18n/locale'
 import {
   type ChartDisplay,
   type FieldDisplay,
@@ -407,6 +408,8 @@ export function wireChartEditing(
 /**
  * WordArt preset CSS approximation applied to the entire textbox container.
  * color: used as -webkit-text-fill-color; stroke: optional -webkit-text-stroke.
+ * Derived from the shared cross-app presets; the wordArt-N entries keep
+ * sessions with blocks inserted by the old docs-only gallery rendering.
  */
 const WORDART_CSS: Record<string, { color: string; stroke?: string; textShadow?: string }> = {
   'wordArt-1': { color: '#4472C4' },
@@ -416,14 +419,20 @@ const WORDART_CSS: Record<string, { color: string; stroke?: string; textShadow?:
   'wordArt-5': { color: '#ED7D31', textShadow: '0 0 8px #ED7D31, 0 0 16px #ED7D31' },
   'wordArt-6': { color: '#C00000' },
 }
+for (const p of WORDART_PRESETS) {
+  WORDART_CSS[p.id] = {
+    color: p.fill,
+    stroke: p.outline ? `${wordArtStrokePx(p.outline.widthEmu)}px ${p.outline.color}` : undefined,
+  }
+}
 
 export function textboxBoxStyle(box: TextboxDisplay): string {
   const insetTop = box.insetTopPx ?? 4.8
   const insetRight = box.insetRightPx ?? 9.6
   const insetBottom = box.insetBottomPx ?? 4.8
   const insetLeft = box.insetLeftPx ?? 9.6
-  // preset geometry renders as an SVG background so the box div stays plain
-  // (sub-editors replaceChildren() it); border/fill live inside the SVG then
+  // preset geometry renders as an SVG background so the border follows the
+  // outline (a clip-path would clip a CSS outline away with the box corners)
   const geomCss = box.prst
     ? shapeBackgroundCss(
         box.prst,

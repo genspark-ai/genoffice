@@ -8,15 +8,53 @@ import type { InsertKind, LinkTargetOp } from '../shared/ipc'
 import type { ActionCtx } from './action-context'
 import { applySelectionLink, saveEditSelection, selectionLink } from './TextEditOverlay'
 import { FIT_WIDTH } from './app-constants'
+import type { WordArtPreset } from '@genoffice/ui'
 import {
   chartSampleData,
   iconSvg,
   type ChartPresetDef,
   type IconDef,
   type SmartArtDef,
-  type WordArtPreset,
 } from './insert-presets'
 import { t } from './i18n/locale'
+import { isLineDrawKind, type DrawRect } from './draw-shape'
+
+/** Draw-mode commit: insert a gallery shape at the drawn box (PowerPoint click-or-drag sizing). */
+export async function insertShapeAt(
+  ctx: ActionCtx,
+  kind: InsertKind,
+  rect: DrawRect,
+): Promise<void> {
+  const { slide, current } = ctx
+  if (!slide) return
+  const isLine = isLineDrawKind(kind)
+  const r = await window.slidesApi.addElement({
+    slideIndex: current,
+    kind,
+    xPx: Math.round(rect.x),
+    yPx: Math.round(rect.y),
+    wPx: Math.round(rect.w),
+    hPx: Math.round(rect.h),
+    fitWidthPx: FIT_WIDTH,
+    ...(isLine ? { stroke: { color: '#000000', widthPt: 1 } } : { fillColor: '#C43E1C' }),
+  })
+  if (!r) return
+  let updated = r.slide
+  // Connectors render top-left → bottom-right inside their box; leftward/upward drags are restored by mirroring
+  for (const axis of [
+    ...(rect.flipH ? (['h'] as const) : []),
+    ...(rect.flipV ? (['v'] as const) : []),
+  ]) {
+    const f = await window.slidesApi.flipElements({
+      slideIndex: current,
+      sourceIds: [r.sourceId],
+      axis,
+    })
+    if (f) updated = f
+  }
+  ctx.applySlide(current, updated)
+  ctx.setSelectedIds([r.sourceId])
+}
 
 export async function insertElement(ctx: ActionCtx, kind: InsertKind): Promise<void> {
   const { slide, current } = ctx

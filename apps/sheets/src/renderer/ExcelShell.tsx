@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { SHAPE_GALLERY_GROUPS, ShapePreview } from '@genoffice/ui'
 
 import {
   CaretIcon,
@@ -27,7 +28,6 @@ import {
   type OoXmlPivotConfig,
 } from './PivotDialog'
 import { InsertFunctionDialog } from './InsertFunctionDialog'
-import { ShapeGalleryMenu } from './shape-gallery'
 import { SubtotalDialog, type SubtotalConfig } from './SubtotalDialog'
 import { ConsolidateDialog } from './ConsolidateDialog'
 import type { ConsolidateConfig } from './consolidate'
@@ -1266,7 +1266,7 @@ function Ribbon({
               <ToolSymbol symbol="◇" />
               {t('appShapes')}
               <CaretIcon />
-              <ShapeGalleryMenu
+              <ShapeGallerySelect
                 label="Shapes"
                 onPick={(prst) => onCommand(`insert-shape:${prst}`)}
               />
@@ -2602,6 +2602,78 @@ function MenuSelect({
             >
               {option.label}
             </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/// Cross-app shared shape gallery (slides parity), minus Lines — the grid
+/// renderer draws shapes as filled paths and cannot show stroke-only connectors.
+const SHEET_SHAPE_GROUPS = SHAPE_GALLERY_GROUPS.filter(
+  (g) => g.groupKey !== 'ribbonShapeGroupLines',
+)
+
+/// Shapes dropdown: grouped outline-icon grid (same look/content as docs and
+/// slides); the trigger is an invisible cover like MenuSelect's `cover` mode.
+function ShapeGallerySelect({
+  label,
+  onPick,
+}: {
+  readonly label: string
+  readonly onPick: (prst: string) => void
+}): React.JSX.Element {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent): void => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div ref={wrapRef} className="menu-select menu-select-cover">
+      <button
+        type="button"
+        className="cover-select"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      />
+      {open && (
+        <div className="menu-select-drop rb-shape-gallery" role="listbox" aria-label={label}>
+          {SHEET_SHAPE_GROUPS.map((group) => (
+            <div key={group.groupKey}>
+              <div className="rb-drop-title">{t(group.groupKey as StringKey)}</div>
+              <div className="rb-shape-grid">
+                {group.shapes.map((s) => (
+                  <button
+                    type="button"
+                    key={s.prst}
+                    className="rb-shape-cell"
+                    title={t(s.labelKey as StringKey)}
+                    onClick={() => {
+                      setOpen(false)
+                      onPick(s.prst)
+                    }}
+                  >
+                    <ShapePreview prst={s.prst} size={18} />
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

@@ -1,15 +1,12 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Editor } from '@tiptap/core'
-import {
-  WORDART_PRESETS,
-  type ChartDisplay,
-  type HeaderFooter,
-  type NewChart,
-} from '@genoffice/docx-engine'
+import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
+import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
 import { EquationGallery, EquationModal } from './EquationModal'
 import { COVER_PRESETS, insertCoverPage, type CoverPreset } from '../editor/cover-pages'
-import { useI18n } from '../i18n/locale'
+import { startShapeDrawMode } from '../editor/shape-draw'
+import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 import {
   IconBook,
@@ -36,13 +33,12 @@ import {
 } from './icons'
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */
-import { SHAPE_GALLERY, ShapePreview, isLineKind } from './shape-gallery'
 import {
   BIG,
   InsertTabProps,
+  DOC_SHAPE_GROUPS,
   insertBlankPageAt,
   insertImageViaDialog,
-  insertLineAt,
   insertPageBreakAt,
   insertShapeAt,
   insertTableAt,
@@ -733,24 +729,26 @@ export function InsertTab({
               <span>{t('ribbonShapes')}</span>
             </button>
             {dropdown === 'shape' && (
-              <div className="shape-palette">
-                {SHAPE_GALLERY.map((group) => (
-                  <div key={group.labelKey} className="shape-group">
-                    <div className="shape-group-title">{t(group.labelKey)}</div>
-                    <div className="shape-grid">
+              <div className="shape-palette rb-shape-gallery">
+                {DOC_SHAPE_GROUPS.map((group) => (
+                  <div key={group.groupKey}>
+                    <div className="rb-drop-title">{t(group.groupKey as StringKey)}</div>
+                    <div className="rb-shape-grid">
                       {group.shapes.map((s) => (
                         <button
                           key={s.prst}
-                          className="shape-cell"
-                          title={t(s.labelKey)}
-                          aria-label={t(s.labelKey)}
+                          className="rb-shape-cell"
+                          title={t(s.labelKey as StringKey)}
                           onClick={() => {
-                            if (isLineKind(s.prst)) insertLineAt(editor, s.prst)
-                            else insertShapeAt(editor, s.prst)
+                            // Word parity: arm crosshair draw mode (click = default 1in
+                            // square, drag = custom size, Shift = square, Esc = cancel)
+                            startShapeDrawMode(editor, s.prst, (opts) =>
+                              insertShapeAt(editor, s.prst, opts),
+                            )
                             setDropdown(() => null)
                           }}
                         >
-                          <ShapePreview prst={s.prst} />
+                          <ShapePreview prst={s.prst} size={18} />
                         </button>
                       ))}
                     </div>
@@ -798,23 +796,21 @@ export function InsertTab({
                   <button
                     key={p.id}
                     className="wordart-cell"
-                    title={p.label}
+                    title={t(p.nameKey as StringKey)}
+                    style={{
+                      color: p.fill,
+                      WebkitTextStroke: p.outline
+                        ? `${wordArtStrokePx(p.outline.widthEmu)}px ${p.outline.color}`
+                        : undefined,
+                      fontWeight: p.bold ? 800 : 400,
+                      fontStyle: p.italic ? 'italic' : undefined,
+                    }}
                     onClick={() => {
-                      insertWordArtAt(editor, p.id)
+                      insertWordArtAt(editor, p)
                       setDropdown(() => null)
                     }}
                   >
-                    <span
-                      className="wordart-preview"
-                      style={{
-                        WebkitTextFillColor: p.noFill ? 'transparent' : `#${p.colorHex}`,
-                        WebkitTextStroke: p.noFill ? `2px #${p.borderHex}` : undefined,
-                        color: `#${p.colorHex}`,
-                      }}
-                    >
-                      {t('ribbonWordArtPreviewChar')}
-                    </span>
-                    <span className="wordart-label">{p.label}</span>
+                    {t('ribbonWordArtPreviewChar')}
                   </button>
                 ))}
               </div>

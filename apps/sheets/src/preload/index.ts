@@ -302,6 +302,10 @@ const desktopApi: DesktopApi = {
     const result: unknown = await ipcRenderer.invoke('sheets:consume-new-blank')
     return result === true
   },
+  async hasQueuedWorkbook() {
+    const result: unknown = await ipcRenderer.invoke('sheets:has-queued-workbook')
+    return result === true
+  },
   async pickAttachments() {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.filesPick)
     return result === null ? null : parseAttachmentAddResult(result)
