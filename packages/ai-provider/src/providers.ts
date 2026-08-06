@@ -1,9 +1,10 @@
 import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from './types'
 
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+
 /**
- * Genspark server-side LLM proxy endpoints. All three protocols share the
- * api_key from the gsk login; model ids follow the proxy's own naming scheme,
- * which differs from the official vendor ids.
+ * Legacy Genspark proxy endpoints are retained so existing saved Genspark settings
+ * continue to work. New installs default to OpenRouter instead.
  */
 export const GENSPARK_LLM_BASE_URLS = {
   anthropic: 'https://www.genspark.ai/api/anthropic',
@@ -11,11 +12,6 @@ export const GENSPARK_LLM_BASE_URLS = {
   openai: 'https://www.genspark.ai/api/llm_proxy/v1',
 } as const
 
-/**
- * Splits GenOffice usage out of the proxy's default "Claw" billing bucket
- * (the backend attributes gsk-key traffic by X-Agent-Type). Only sent to the
- * Genspark proxy — never to direct vendor APIs.
- */
 export const GENSPARK_AGENT_TYPE = 'genoffice'
 
 export function gensparkAttributionHeaders(baseUrl?: string): Record<string, string> {
@@ -26,8 +22,18 @@ export function gensparkAttributionHeaders(baseUrl?: string): Record<string, str
 
 export const AI_PROVIDERS: AiProviderMeta[] = [
   {
+    id: 'openrouter',
+    label: 'OpenRouter (Nemotron)',
+    models: [
+      'nvidia/nemotron-3-nano-30b-a3b:free',
+      'openrouter/free',
+    ],
+    defaultModel: 'nvidia/nemotron-3-nano-30b-a3b:free',
+    keyPlaceholder: 'sk-or-v1-...',
+  },
+  {
     id: 'genspark',
-    label: 'Genspark',
+    label: 'Genspark (Legacy)',
     models: [
       'claude-opus-4-7',
       'claude-opus-4-8',
@@ -87,12 +93,6 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   },
 ]
 
-/**
- * Fresh settings with every provider's default model and an empty key,
- * except providers listed in `defaultApiKeys` (e.g. an app-specific
- * preconfigured Anthropic key). Callers own that policy; this package
- * has no hardcoded keys.
- */
 export function defaultAiSettings(
   defaultApiKeys?: Partial<Record<AiProviderId, string>>,
 ): AiSettings {
@@ -104,15 +104,9 @@ export function defaultAiSettings(
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }
-  return { provider: 'genspark', providers }
+  return { provider: 'openrouter', providers }
 }
 
-/**
- * Merge on-disk settings over freshly computed defaults, migrating the
- * pre-provider shape (a single OpenAI-compatible endpoint) into the
- * "custom" provider slot. `stored` is whatever the caller read from its
- * settings file (already JSON-parsed); this function does no file I/O.
- */
 export function resolveAiSettings(
   stored: Partial<AiSettings> & LegacyAiSettings,
   defaults: AiSettings,
