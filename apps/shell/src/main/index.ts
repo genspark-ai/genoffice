@@ -225,14 +225,22 @@ function persistLang(lang: Lang): void {
   writeAppSetting(APP_SETTINGS_PATH(), 'language', lang)
 }
 
+let cachedUpdateChannel: UpdateChannel | null = null
+
 function currentUpdateChannel(): UpdateChannel {
+  if (cachedUpdateChannel) return cachedUpdateChannel
   const saved = readAppSettings(APP_SETTINGS_PATH()).updateChannel
-  return isUpdateChannel(saved) ? saved : 'stable'
+  cachedUpdateChannel = isUpdateChannel(saved) ? saved : 'stable'
+  return cachedUpdateChannel
 }
 
+let cachedTheme: UiTheme | null = null
+
 function currentTheme(): UiTheme {
+  if (cachedTheme) return cachedTheme
   const saved = readAppSettings(APP_SETTINGS_PATH()).theme
-  return saved === 'light' || saved === 'dark' ? saved : 'system'
+  cachedTheme = saved === 'light' || saved === 'dark' ? saved : 'system'
+  return cachedTheme
 }
 
 // ---- first-run onboarding ----
@@ -1717,6 +1725,7 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.setUpdateChannel, (_event, channel: unknown) => {
     if (!isUpdateChannel(channel) || channel === currentUpdateChannel()) return
+    cachedUpdateChannel = channel
     writeAppSetting(APP_SETTINGS_PATH(), 'updateChannel', channel)
     applyUpdateChannel(channel)
   })
@@ -1735,6 +1744,7 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.setTheme, (_event, theme: unknown) => {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'system') return
     if (theme === currentTheme()) return
+    cachedTheme = theme
     writeAppSetting(APP_SETTINGS_PATH(), 'theme', theme)
     for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
   })
