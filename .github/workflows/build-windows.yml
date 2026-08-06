@@ -1,0 +1,66 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck AI provider
+        run: npm run typecheck -w @genoffice/ai-provider
+
+      - name: Build Windows installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:win
+
+      - name: Show packaged files
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path 'apps/shell/release') {
+            Get-ChildItem -Path 'apps/shell/release' -Recurse | Select-Object FullName, Length
+          } else {
+            Write-Host 'apps/shell/release does not exist'
+          }
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GenOffice-Windows
+          path: |
+            apps/shell/release/*.exe
+            apps/shell/release/*.msi
+            apps/shell/release/*.yml
+          if-no-files-found: error
+          retention-days: 14
