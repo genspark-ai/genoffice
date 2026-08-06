@@ -7,6 +7,7 @@ on:
     paths:
       - 'apps/**'
       - 'packages/**'
+      - 'tools/configure-openrouter-fork.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-windows.yml'
@@ -36,8 +37,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck AI provider
-        run: npm run typecheck -w @genoffice/ai-provider
+      - name: Apply OpenRouter + Nemotron fork customizations
+        run: node tools/configure-openrouter-fork.mjs
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Build Windows installer
         env:
