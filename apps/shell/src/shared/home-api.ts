@@ -22,6 +22,9 @@ export type UiLanguage =
   | 'hi'
   | 'zh-TW'
 
+/** UI theme preference */
+export type UiTheme = 'light' | 'dark' | 'system'
+
 /** a recent file entry shown on the home screen; type derives from the extension */
 export interface RecentEntry {
   path: string
@@ -109,6 +112,10 @@ export interface HomeApi {
   onboardingSeen(): Promise<boolean>
   /** mark the first-run onboarding as done so it never shows again */
   setOnboardingSeen(): Promise<void>
+  /** current UI theme preference (persisted in userData/app-settings.json) */
+  getTheme(): Promise<UiTheme>
+  /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
+  setTheme(theme: UiTheme): Promise<void>
   /** open the GenTeam community page in the default browser */
   openGenTeam(): Promise<void>
 }
@@ -202,6 +209,8 @@ export const HOME_CHANNELS = {
   getAppVersion: 'home:get-app-version',
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',
+  getTheme: 'home:get-theme',
+  setTheme: 'home:set-theme',
   openGenTeam: 'home:open-genteam',
 } as const
 

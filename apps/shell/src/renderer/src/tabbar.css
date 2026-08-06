@@ -274,3 +274,52 @@
 .app-frame-content {
   padding-top: 40px;
 }
+
+/* ── Dark mode tab bar overrides ─────────────────────────── */
+
+[data-theme="dark"] .tab-bar {
+  --tabstrip-bg: #2a2a2a;
+  --tabstrip-text: #b0b0b0;
+  --tabstrip-text-active: #e4e4e4;
+  --tab-separator: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .tab-item.active .tab-plate {
+  background: var(--surface);
+}
+
+[data-theme="dark"] .tab-item:not(.active):hover .tab-plate {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .tab-new-btn:hover,
+[data-theme="dark"] .tab-overflow-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* System dark: same overrides when following OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .tab-bar {
+    --tabstrip-bg: #2a2a2a;
+    --tabstrip-text: #b0b0b0;
+    --tabstrip-text-active: #e4e4e4;
+    --tab-separator: rgba(255, 255, 255, 0.15);
+  }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .tab-item.active .tab-plate {
+    background: var(--surface);
+  }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .tab-item:not(.active):hover .tab-plate {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .tab-close:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .tab-new-btn:hover,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .tab-overflow-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}

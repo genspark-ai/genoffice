@@ -11,6 +11,7 @@ import type {
   ProjectSummaryEntry,
   TimelineEntryItem,
   UiLanguage,
+  UiTheme,
 } from '../shared/home-api'
 import { HOME_CHANNELS, PROJECT_CHANNELS } from '../shared/home-api'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
@@ -153,6 +154,14 @@ const homeApi: HomeApi = {
   },
   async setOnboardingSeen() {
     await ipcRenderer.invoke(HOME_CHANNELS.setOnboardingSeen)
+  },
+  async getTheme() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getTheme)
+    return result === 'dark' || result === 'light' ? result : 'system'
+  },
+  async setTheme(theme) {
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system') throw new Error('Invalid theme.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setTheme, theme)
   },
   async openGenTeam() {
     await ipcRenderer.invoke(HOME_CHANNELS.openGenTeam)

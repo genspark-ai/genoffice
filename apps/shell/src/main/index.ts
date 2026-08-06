@@ -117,7 +117,7 @@ import {
   requestPdfSaveAs,
   setPdfSaveAsInFlight,
 } from '../../../pdf/src/main/pdf-main'
-import type { AccountLoginEvent, RecentEntry, RecentPage, RenameResult } from '../shared/home-api'
+import type { AccountLoginEvent, RecentEntry, RecentPage, RenameResult, UiTheme } from '../shared/home-api'
 import { HOME_CHANNELS } from '../shared/home-api'
 import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
@@ -228,6 +228,11 @@ function persistLang(lang: Lang): void {
 function currentUpdateChannel(): UpdateChannel {
   const saved = readAppSettings(APP_SETTINGS_PATH()).updateChannel
   return isUpdateChannel(saved) ? saved : 'stable'
+}
+
+function currentTheme(): UiTheme {
+  const saved = readAppSettings(APP_SETTINGS_PATH()).theme
+  return saved === 'light' || saved === 'dark' ? saved : 'system'
 }
 
 // ---- first-run onboarding ----
@@ -1723,6 +1728,15 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.setOnboardingSeen, () => {
     writeAppSetting(APP_SETTINGS_PATH(), 'onboardingSeen', true)
+  })
+
+  ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
+
+  ipcMain.handle(HOME_CHANNELS.setTheme, (_event, theme: unknown) => {
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system') return
+    if (theme === currentTheme()) return
+    writeAppSetting(APP_SETTINGS_PATH(), 'theme', theme)
+    for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
   })
 
   ipcMain.handle(HOME_CHANNELS.openGenTeam, () => {
