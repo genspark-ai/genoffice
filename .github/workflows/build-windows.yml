@@ -11,6 +11,7 @@ on:
       - 'tools/fix-openrouter-chat-route.mjs'
       - 'tools/fix-openrouter-suite-routes.mjs'
       - 'tools/add-nvidia-provider.mjs'
+      - 'tools/expand-nvidia-models.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-windows.yml'
@@ -46,6 +47,7 @@ jobs:
           node tools/fix-openrouter-chat-route.mjs
           node tools/fix-openrouter-suite-routes.mjs
           node tools/add-nvidia-provider.mjs
+          node tools/expand-nvidia-models.mjs
 
       - name: Typecheck
         run: npm run typecheck
