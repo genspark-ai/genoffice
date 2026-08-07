@@ -24,6 +24,7 @@ import {
   DomSpec,
   ProtectedContentEditor,
   TableBordersAttr,
+  borderLineCss,
   cellPadCss,
   preventProtectedLineBreak,
   protectedText,
@@ -537,10 +538,19 @@ export function renderTableSpec(model: TableModel): DomSpec {
           : cell.textDirection === 'btLr'
             ? 'writing-mode:sideways-lr'
             : '',
-        cell.fill ? `background:#${cell.fill}` : '',
         cell.color ? `color:#${cell.color}` : '',
         cell.bold ? 'font-weight:600' : '',
+        cell.fill ? `background:#${cell.fill}` : '',
         cell.align ? `text-align:${cell.align}` : '',
+        cell.vAlign && cell.vAlign !== 'top'
+          ? `vertical-align:${cell.vAlign === 'center' ? 'middle' : 'bottom'}`
+          : '',
+        // w:tcBorders — nested/read-only tables get no default gridlines, so
+        // per-cell borders are the only line source for style-less documents
+        ...(['top', 'left', 'bottom', 'right'] as const).map((side) => {
+          const v = borderLineCss(cell.borders?.[side])
+          return v ? `border-${side}:${v}` : ''
+        }),
         ...(['top', 'left', 'bottom', 'right'] as const).map((side) =>
           cell.cellMarTwips?.[side] !== undefined
             ? `padding-${side}:${(cell.cellMarTwips[side]! / 15).toFixed(1)}px`
@@ -562,7 +572,10 @@ export function renderTableSpec(model: TableModel): DomSpec {
       if (content.length === 0) content.push('\u00a0')
       tds.push(['td', tdAttrs, ...content])
     })
-    return ['tr', {}, ...tds]
+    const trAttrs: Record<string, string> = {}
+    const rh = model.rowHeightsTwips?.[ri]
+    if (rh) trAttrs.style = `height:${((rh / 1440) * 96).toFixed(1)}px`
+    return ['tr', trAttrs, ...tds]
   })
 
   const tableChildren: unknown[] = []

@@ -5,6 +5,7 @@ import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
 import iconPdf from './assets/file-pdf.svg'
+import iconMd from './assets/file-md.svg'
 import type {
   AccountStatus,
   CloudProjectKind,
@@ -43,6 +44,8 @@ const FILE_ICONS: Record<string, string> = {
   xlsx: iconXlsx,
   pptx: iconPptx,
   pdf: iconPdf,
+  md: iconMd,
+  markdown: iconMd,
 }
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
@@ -113,6 +116,7 @@ const FILTERS: { key: string; label: StringKey }[] = [
   { key: 'xlsx', label: 'filterSheets' },
   { key: 'pptx', label: 'filterSlides' },
   { key: 'pdf', label: 'filterPdf' },
+  { key: 'md', label: 'filterMd' },
 ]
 
 // ── Project sidebar component ────────────────────────────
@@ -425,6 +429,14 @@ const CHANNEL_OPTIONS = [
   { value: 'beta', labelKey: 'channelBeta' },
 ] as const
 
+const THEME_OPTIONS = [
+  { value: 'light' as const, labelKey: 'themeLight' as const },
+  { value: 'dark' as const, labelKey: 'themeDark' as const },
+  { value: 'system' as const, labelKey: 'themeSystem' as const },
+] as const
+
+type ThemeValue = (typeof THEME_OPTIONS)[number]['value']
+
 function AccountEntry({
   onStatusChange,
 }: {
@@ -459,6 +471,11 @@ function AccountEntry({
   const [chanFly, setChanFly] = useState<{ left: number; bottom: number } | null>(null)
   const chanRowRef = useRef<HTMLDivElement>(null)
   const chanCloseTimer = useRef<number | null>(null)
+  // theme flyout: same pattern as language and channel flyouts
+  const [theme, setThemeState] = useState<ThemeValue>('system')
+  const [themeFly, setThemeFly] = useState<{ left: number; bottom: number } | null>(null)
+  const themeRowRef = useRef<HTMLDivElement>(null)
+  const themeCloseTimer = useRef<number | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
   const [appVersion, setAppVersion] = useState('')
 
@@ -470,6 +487,9 @@ function AccountEntry({
     })
     void window.aiOffice.getAppVersion?.().then((v) => {
       if (alive && v) setAppVersion(v)
+    })
+    void window.aiOffice.getTheme?.().then((th) => {
+      if (alive) setThemeState(th)
     })
     return () => {
       alive = false
@@ -529,6 +549,7 @@ function AccountEntry({
         setMenuOpen(false)
         setLangFly(null)
         setChanFly(null)
+        setThemeFly(null)
       }
     }
     window.addEventListener('pointerdown', handler)
@@ -552,6 +573,7 @@ function AccountEntry({
     setMenuOpen(false)
     setLangFly(null)
     setChanFly(null)
+    setThemeFly(null)
   }
 
   const cancelLangFlyClose = () => {
@@ -624,6 +646,38 @@ function AccountEntry({
     }
   }, [chanFly])
 
+  const cancelThemeFlyClose = () => {
+    if (themeCloseTimer.current !== null) {
+      window.clearTimeout(themeCloseTimer.current)
+      themeCloseTimer.current = null
+    }
+  }
+
+  const openThemeFly = () => {
+    cancelThemeFlyClose()
+    const rect = themeRowRef.current?.getBoundingClientRect()
+    if (rect) setThemeFly({ left: rect.right - 2, bottom: window.innerHeight - rect.bottom })
+  }
+
+  const scheduleThemeFlyClose = () => {
+    cancelThemeFlyClose()
+    themeCloseTimer.current = window.setTimeout(() => setThemeFly(null), 200)
+  }
+
+  useEffect(() => {
+    if (!themeFly) return
+    const close = (event: Event) => {
+      const target = event.target as Element | null
+      if (target instanceof Element && target.closest('.lang-flyout')) return
+      setThemeFly(null)
+    }
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      cancelThemeFlyClose()
+    }
+  }, [themeFly])
+
   const startLogin = () => {
     // clicking again while waiting = relaunch the login (main kills the stale CLI, so the new device code is the live one)
     setLoginError(null)
@@ -658,6 +712,7 @@ function AccountEntry({
     })
     setLangFly(null)
     setChanFly(null)
+    setThemeFly(null)
   }
 
   return (
@@ -782,6 +837,92 @@ function AccountEntry({
                   >
                     {opt.label}
                     {lang === opt.value && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                        <path
+                          d="M2.5 6.2l2.4 2.4 4.6-5"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div
+            className="lang-row-wrap"
+            ref={themeRowRef}
+            onMouseEnter={openThemeFly}
+            onMouseLeave={scheduleThemeFlyClose}
+          >
+            <button
+              className="account-menu-item lang-row"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={!!themeFly}
+              onClick={openThemeFly}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.2" />
+                <path
+                  d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="lang-row-label">{t('theme')}</span>
+              <span className="lang-row-current">
+                {t(THEME_OPTIONS.find((opt) => opt.value === theme)?.labelKey ?? 'themeSystem')}
+              </span>
+              <svg
+                className="lang-row-chevron"
+                width="11"
+                height="11"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4.5 2.5l4 3.5-4 3.5"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              </svg>
+            </button>
+            {themeFly && (
+              <div
+                className="lang-flyout"
+                role="menu"
+                style={{ left: themeFly.left, bottom: themeFly.bottom }}
+              >
+                {THEME_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    role="menuitemradio"
+                    aria-checked={theme === opt.value}
+                    className={`lang-menu-item${theme === opt.value ? ' active' : ''}`}
+                    onClick={() => {
+                      closeMenu()
+                      if (theme !== opt.value) {
+                        setThemeState(opt.value)
+                        void window.aiOffice.setTheme(opt.value)
+                        // apply theme attribute to DOM immediately
+                        if (opt.value === 'light' || opt.value === 'dark') {
+                          document.documentElement.setAttribute('data-theme', opt.value)
+                        } else {
+                          document.documentElement.removeAttribute('data-theme')
+                        }
+                      }
+                    }}
+                  >
+                    {t(opt.labelKey)}
+                    {theme === opt.value && (
                       <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
                         <path
                           d="M2.5 6.2l2.4 2.4 4.6-5"
@@ -1716,10 +1857,17 @@ export function Home() {
     void window.aiOffice.newSlide(selectedProjectId ? { projectId: selectedProjectId } : undefined)
   }
 
+  const handleNewMarkdown = () => {
+    void window.aiOffice.newMarkdown(
+      selectedProjectId ? { projectId: selectedProjectId } : undefined,
+    )
+  }
+
   const NEW_ITEMS = [
     { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
     { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
     { ext: 'pptx', title: t('newSlide'), sub: '.pptx', action: handleNewSlide },
+    { ext: 'md', title: t('newMarkdown'), sub: '.md', action: handleNewMarkdown },
   ]
 
   function renderQuickCards() {
@@ -1752,7 +1900,7 @@ export function Home() {
             <span className="quick-title-row">
               <span className="quick-title">{t('openLocal')}</span>
             </span>
-            <span className="quick-sub">.docx / .xlsx / .xls / .csv / .pptx / .pdf</span>
+            <span className="quick-sub">.docx / .xlsx / .xls / .csv / .pptx / .pdf / .md</span>
           </span>
         </button>
       </div>

@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { SHAPE_GALLERY_GROUPS } from '../../../packages/ui/src/shape-gallery'
 import { shapeBackgroundCss, shapePreviewPathD } from '../src/renderer/editor/shape-svg'
 
-// The docs gallery (ribbon-tabs' DOC_SHAPE_GROUPS) is the shared groups minus Lines
-const galleryPrsts = SHAPE_GALLERY_GROUPS.filter(
-  (group) => group.groupKey !== 'ribbonShapeGroupLines',
-).flatMap((group) => group.shapes.map((shape) => shape.prst))
+// The docs gallery (ribbon-tabs' DOC_SHAPE_GROUPS) is the full shared set, Lines included
+const galleryPrsts = SHAPE_GALLERY_GROUPS.flatMap((group) =>
+  group.shapes.map((shape) => shape.prst),
+)
 
 describe('shape gallery', () => {
   it('every gallery prst has preview and background geometry', () => {

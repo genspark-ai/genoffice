@@ -38,6 +38,7 @@ import {
   IconPrintLayout,
   IconReadMode,
   IconRecord,
+  IconRemoveBg,
   IconRedo,
   IconRehearse,
   IconSave,
@@ -749,6 +750,7 @@ export function Ribbon({
   onAddSlideWithLayout,
   onAddSection,
   layouts,
+  layoutSize,
   formatOpen,
   onToggleFormat,
   hasSelection,
@@ -763,6 +765,7 @@ export function Ribbon({
   onFormatBrushDoubleClick,
   onTextColor,
   curBulletChar,
+  curAlign,
   curFontFamily,
   curFontSizePt,
   curFontSizeMixed,
@@ -1193,6 +1196,7 @@ export function Ribbon({
     canPaste,
     closePanels,
     curBulletChar,
+    curAlign,
     curFontFamily,
     curFontSizeMixed,
     curFontSizePt,
@@ -1205,6 +1209,7 @@ export function Ribbon({
     hasSelection,
     hasTextSelection,
     layouts,
+    layoutSize,
     onAddSection,
     onAddSlide,
     onAddSlideWithLayout,
@@ -1455,7 +1460,10 @@ export function Ribbon({
             // Clicking a pen picks it up; clicking the held pen opens its
             // color/width flyout; customisations stick to that pen preset.
             const applyPenPreset = (preset: PenPreset) => {
-              onInkTool(preset.kind)
+              // onInkTool toggles back to 'select' when the active tool is re-picked;
+              // only switch when it actually differs so editing color/width (or swapping
+              // to another pen of the same kind) never drops the pen
+              if (inkTool !== preset.kind) onInkTool(preset.kind)
               if (preset.kind === 'pen')
                 onInkPen({ ...inkPen, color: preset.color, width: preset.width })
               else onInkHighlighter({ ...inkHighlighter, color: preset.color, width: preset.width })
@@ -1467,6 +1475,49 @@ export function Ribbon({
               const next = penPresets.map((p, i) => (i === index ? { ...p, ...patch } : p))
               setPenPresets(next)
               applyPenPreset(next[index])
+            }
+            // Color swatches + width dots editing one pen preset (same controls as
+            // apps/docs DrawTab); shown inline for the selected pen and reused by the
+            // held-pen flyout
+            const renderInkSettings = (index: number) => {
+              const preset = penPresets[index]!
+              const widths = preset.kind === 'highlighter' ? HIGHLIGHTER_WIDTHS : PEN_WIDTHS
+              return (
+                <div className="ink-settings">
+                  <div className="ink-swatches">
+                    {INK_COLORS.map((hex) => (
+                      <button
+                        key={hex}
+                        className={`ink-swatch ${preset.color === hex ? 'active' : ''}`}
+                        style={{ background: `#${hex}` }}
+                        title={`#${hex}`}
+                        disabled={!hasDoc}
+                        onClick={() => updatePenPreset(index, { color: hex })}
+                      />
+                    ))}
+                  </div>
+                  <div className="ink-widths">
+                    {widths.map((w) => (
+                      <button
+                        key={w}
+                        className={`ink-width ${preset.width === w ? 'active' : ''}`}
+                        title={t('ribbonInkWidthTip', { w })}
+                        disabled={!hasDoc}
+                        onClick={() => updatePenPreset(index, { width: w })}
+                      >
+                        <span
+                          className="ink-width-dot"
+                          style={{
+                            width: Math.min(16, w * 2 + 2),
+                            height: Math.min(16, w * 2 + 2),
+                            background: `#${preset.color}`,
+                          }}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
             }
             return (
               <>
@@ -1537,6 +1588,7 @@ export function Ribbon({
                       )
                     })}
                   </div>
+                  {renderInkSettings(selectedPen)}
                 </Group>
                 <div className="ribbon-sep" />
                 <Group label={t('ribbonGroupClear')}>
@@ -1552,48 +1604,14 @@ export function Ribbon({
                     <span>{t('ribbonEraseAll')}</span>
                   </button>
                 </Group>
-                {penFlyout &&
-                  (() => {
-                    const preset = penPresets[penFlyout.index]
-                    const widths = preset.kind === 'highlighter' ? HIGHLIGHTER_WIDTHS : PEN_WIDTHS
-                    return (
-                      <>
-                        <div className="pen-flyout-backdrop" onClick={() => setPenFlyout(null)} />
-                        <div className="pen-flyout" style={{ left: penFlyout.x, top: penFlyout.y }}>
-                          <div className="ink-swatches">
-                            {INK_COLORS.map((hex) => (
-                              <button
-                                key={hex}
-                                className={`ink-swatch ${preset.color === hex ? 'active' : ''}`}
-                                style={{ background: `#${hex}` }}
-                                title={`#${hex}`}
-                                onClick={() => updatePenPreset(penFlyout.index, { color: hex })}
-                              />
-                            ))}
-                          </div>
-                          <div className="ink-widths">
-                            {widths.map((w) => (
-                              <button
-                                key={w}
-                                className={`ink-width ${preset.width === w ? 'active' : ''}`}
-                                title={t('ribbonInkWidthTip', { w })}
-                                onClick={() => updatePenPreset(penFlyout.index, { width: w })}
-                              >
-                                <span
-                                  className="ink-width-dot"
-                                  style={{
-                                    width: Math.min(16, w * 2 + 2),
-                                    height: Math.min(16, w * 2 + 2),
-                                    background: `#${preset.color}`,
-                                  }}
-                                />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )
-                  })()}
+                {penFlyout && (
+                  <>
+                    <div className="pen-flyout-backdrop" onClick={() => setPenFlyout(null)} />
+                    <div className="pen-flyout" style={{ left: penFlyout.x, top: penFlyout.y }}>
+                      {renderInkSettings(penFlyout.index)}
+                    </div>
+                  </>
+                )}
               </>
             )
           })()
@@ -2639,8 +2657,8 @@ export function Ribbon({
                 disabled={!onPictureCutout || !contextPictureCanCutout}
                 onClick={onPictureCutout}
               >
-                <span className="rb-big-icon" style={{ fontSize: 20 }}>
-                  🪄
+                <span className="rb-big-icon">
+                  <IconRemoveBg size={BIG + 2} />
                 </span>
                 <span>{t('ribbonRemoveBg')}</span>
               </button>

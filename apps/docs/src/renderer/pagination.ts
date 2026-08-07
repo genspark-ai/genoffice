@@ -1155,6 +1155,19 @@ export function pageAt(slices: PageSlice[], y: number): number {
   return page
 }
 
+/**
+ * Pages the user can see: an even/odd-section parity blank shares its start with the
+ * neighbouring slice and draws no page, so NUMPAGES, the status bar, and the gap
+ * header/footer widgets all count only distinct slice starts (up to `upTo` slices).
+ */
+export function visiblePageCount(slices: PageSlice[], upTo = slices.length): number {
+  let n = 0
+  for (let i = 0; i < Math.min(upTo, slices.length); i++) {
+    if (i === 0 || slices[i].start !== slices[i - 1].start) n++
+  }
+  return n
+}
+
 export interface MeasuredContent {
   blocks: BlockBox[]
   totalHeight: number
@@ -1296,6 +1309,30 @@ export function sliceWithLineSplit(
  * Table blocks → tableRows (tr boundaries; never cuts into text lines inside cells); text blocks → lineBoxes.
  * Returns whether any block was filled (true means the caller must re-slice).
  */
+/**
+ * DOM line/row sampling is the hot path of repeated repagination: the set of
+ * page-crossing blocks is stable across edits, so raw samples are cached by
+ * element identity plus a cheap content/geometry signature. Entries drop with
+ * their element (WeakMap) or when the signature stops matching.
+ */
+const lineSampleCache = new WeakMap<
+  HTMLElement,
+  { sig: string; boundaries?: number[]; rows?: TableRowBox[] }
+>()
+
+function lineSampleSig(el: HTMLElement, textH: number): string {
+  // djb2 over the text: equal-length edits must still invalidate
+  const text = el.textContent ?? ''
+  let h = 5381
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
+  // width guards width-only reflows; descendant count guards nested (e.g. table
+  // cell) structure changes that keep the direct-child count. A stale miss only
+  // costs one re-sample, so quantization errs toward invalidating.
+  const w = el.getBoundingClientRect().width
+  const nodes = el.getElementsByTagName('*').length
+  return `${Math.round(textH * 4)}:${Math.round(w * 4)}:${nodes}:${h}`
+}
+
 export function fillLineBoxes(
   blocks: BlockBox[],
   geoms: SectionGeom[],
@@ -1326,9 +1363,16 @@ export function fillLineBoxes(
 
     // line boxes tile only the text area (block height includes the merged-in space-after, which lines must not cover)
     const textH = block.height - (block.spaceAfterPx ?? 0)
+    const sig = lineSampleSig(block.el, textH)
+    const cached = lineSampleCache.get(block.el)
+    const hit = cached?.sig === sig ? cached : null
 
     if (block.el.querySelector('tr')) {
-      const rows = domTableRows(block.el, textH, zoomFactor)
+      // flags mutate the rows, so cached rows are cloned per use
+      const rows = hit?.rows
+        ? hit.rows.map((r) => ({ ...r }))
+        : domTableRows(block.el, textH, zoomFactor)
+      if (!hit?.rows) lineSampleCache.set(block.el, { sig, rows: rows.map((r) => ({ ...r })) })
       if (rows.length > 0) {
         const flags =
           block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.tableRowFlags : undefined
@@ -1342,7 +1386,11 @@ export function fillLineBoxes(
       }
       continue
     }
-    const boundaries = domLineBoundaries(block.el, zoomFactor)
+    // synthesized over-page cuts below mutate the list, so cached entries are copied out
+    const boundaries = hit?.boundaries
+      ? [...hit.boundaries]
+      : domLineBoundaries(block.el, zoomFactor)
+    if (!hit?.boundaries) lineSampleCache.set(block.el, { sig, boundaries: [...boundaries] })
     if (boundaries.length === 0 && block.height > contentH) {
       // over-page block with no text lines (e.g. a large image): synthesize cut points at page height, equivalent to hard pixel cuts
       for (let y = contentH; y < block.height; y += contentH) boundaries.push(y)
@@ -1428,8 +1476,16 @@ function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number):
   )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const elTop = el.getBoundingClientRect().top
-  // take only the outer table's rows: trs of nested tables inside cells (.doc-nested-table) are in-row content, not page-split units
-  const trs = Array.from(el.querySelectorAll('tr')).filter((tr) => !tr.closest('.doc-nested-table'))
+  // take only the outer table's real rows: trs of nested tables inside cells
+  // (.doc-nested-table) are in-row content, and decoration rows (page gaps /
+  // repeated tblHeader clones) are not page-split units — counting them would
+  // add phantom boundaries and shift the tableRowFlags index alignment
+  const trs = Array.from(el.querySelectorAll('tr')).filter(
+    (tr) =>
+      !tr.closest('.doc-nested-table') &&
+      !tr.classList.contains('page-gap') &&
+      !tr.classList.contains('page-repeat-header'),
+  )
   const tops: number[] = []
   for (const tr of trs) {
     const trTop = tr.getBoundingClientRect().top

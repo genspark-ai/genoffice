@@ -26,7 +26,7 @@
     "electron-vite": "^5.0.0",
     "jsdom": "^28.0.0",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.4.54",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.3",

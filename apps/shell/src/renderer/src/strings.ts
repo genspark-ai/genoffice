@@ -35,6 +35,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: '打开本地文件',
     greetMorning: '早上好',
     greetAfternoon: '下午好',
@@ -51,6 +52,7 @@ export const strings = {
     filterSheets: '表格',
     filterSlides: '演示',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: '按类型筛选',
     // List / bulk actions
     fileCount: '{n} 个文件',
@@ -142,6 +144,10 @@ export const strings = {
     aiDlgModelDefault: '模型默认',
     aiDlgTuningHint: '留空即不发送该参数。部分推理模型只接受自己的默认温度。',
     aiDlgBadNumber: '温度需在 {min}–{max} 之间，最大 token 需为正整数。',
+    theme: '主题',
+    themeLight: '浅色',
+    themeDark: '深色',
+    themeSystem: '跟随系统',
     // Dates
     today: '今天',
     // Settings window
@@ -240,6 +246,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Open Local File',
     greetMorning: 'Good morning',
     greetAfternoon: 'Good afternoon',
@@ -255,6 +262,7 @@ export const strings = {
     filterSheets: 'Sheets',
     filterSlides: 'Slides',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filter by type',
     fileCount: '{n} files',
     fileCountOne: '{n} file',
@@ -344,6 +352,10 @@ export const strings = {
     aiDlgTuningHint:
       'Leave blank to omit the field. Some reasoning models accept only their own temperature.',
     aiDlgBadNumber: 'Temperature must be {min}–{max}, and max tokens a positive whole number.',
+    theme: 'Theme',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeSystem: 'System',
     today: 'Today',
     // Settings window
     setTitle: 'Settings',
@@ -448,6 +460,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'ローカルファイルを開く',
     greetMorning: 'おはようございます',
     greetAfternoon: 'こんにちは',
@@ -464,6 +477,7 @@ export const strings = {
     filterSheets: 'スプレッドシート',
     filterSlides: 'プレゼンテーション',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: '種類で絞り込み',
     // List / bulk actions
     fileCount: '{n} 個のファイル',
@@ -564,6 +578,10 @@ export const strings = {
     aiDlgTuningHint:
       '空欄にすると項目を送信しません。一部の推論モデルは既定の温度しか受け付けません。',
     aiDlgBadNumber: '温度は {min}〜{max}、最大トークンは正の整数で指定してください。',
+    theme: 'テーマ',
+    themeLight: 'ライト',
+    themeDark: 'ダーク',
+    themeSystem: 'システム',
     // Dates
     today: '今日',
     // Settings window
@@ -669,6 +687,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: '로컬 파일 열기',
     greetMorning: '좋은 아침이에요',
     greetAfternoon: '안녕하세요',
@@ -685,6 +704,7 @@ export const strings = {
     filterSheets: '스프레드시트',
     filterSlides: '프레젠테이션',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: '유형별 필터',
     // List / bulk actions
     fileCount: '파일 {n}개',
@@ -780,6 +800,10 @@ export const strings = {
     aiDlgTuningHint:
       '비워 두면 해당 항목을 보내지 않습니다. 일부 추론 모델은 기본 온도만 허용합니다.',
     aiDlgBadNumber: '온도는 {min}~{max}, 최대 토큰은 양의 정수여야 합니다.',
+    theme: '테마',
+    themeLight: '라이트',
+    themeDark: '다크',
+    themeSystem: '시스템',
     // Dates
     today: '오늘',
     // Settings window
@@ -887,6 +911,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Ouvrir un fichier local',
     greetMorning: 'Bonjour',
     greetAfternoon: 'Bonjour',
@@ -903,6 +928,7 @@ export const strings = {
     filterSheets: 'Feuilles de calcul',
     filterSlides: 'Présentations',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filtrer par type',
     // List / bulk actions
     fileCount: '{n} fichiers',
@@ -1003,6 +1029,10 @@ export const strings = {
       "Laissez vide pour omettre le champ. Certains modèles de raisonnement n'acceptent que leur propre température.",
     aiDlgBadNumber:
       'La température doit être entre {min} et {max}, et les tokens max un entier positif.',
+    theme: 'Thème',
+    themeLight: 'Clair',
+    themeDark: 'Sombre',
+    themeSystem: 'Système',
     // Dates
     today: "Aujourd'hui",
     // Settings window
@@ -1110,6 +1140,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Lokale Datei öffnen',
     greetMorning: 'Guten Morgen',
     greetAfternoon: 'Guten Tag',
@@ -1126,6 +1157,7 @@ export const strings = {
     filterSheets: 'Tabellen',
     filterSlides: 'Präsentationen',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Nach Typ filtern',
     // List / bulk actions
     fileCount: '{n} Dateien',
@@ -1228,6 +1260,10 @@ export const strings = {
       'Leer lassen, um das Feld wegzulassen. Manche Reasoning-Modelle akzeptieren nur ihre eigene Temperatur.',
     aiDlgBadNumber:
       'Temperatur muss zwischen {min} und {max} liegen, Max-Tokens eine positive ganze Zahl sein.',
+    theme: 'Thema',
+    themeLight: 'Hell',
+    themeDark: 'Dunkel',
+    themeSystem: 'System',
     // Dates
     today: 'Heute',
     // Settings window
@@ -1335,6 +1371,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Abrir archivo local',
     greetMorning: 'Buenos días',
     greetAfternoon: 'Buenas tardes',
@@ -1351,6 +1388,7 @@ export const strings = {
     filterSheets: 'Hojas de cálculo',
     filterSlides: 'Presentaciones',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filtrar por tipo',
     // List / bulk actions
     fileCount: '{n} archivos',
@@ -1452,6 +1490,10 @@ export const strings = {
       'Déjalo vacío para omitir el campo. Algunos modelos de razonamiento solo aceptan su propia temperatura.',
     aiDlgBadNumber:
       'La temperatura debe estar entre {min} y {max}, y los tokens máximos ser un entero positivo.',
+    theme: 'Tema',
+    themeLight: 'Claro',
+    themeDark: 'Oscuro',
+    themeSystem: 'Sistema',
     // Dates
     today: 'Hoy',
     // Settings window
@@ -1557,6 +1599,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'เปิดไฟล์ในเครื่อง',
     greetMorning: 'สวัสดีตอนเช้า',
     greetAfternoon: 'สวัสดีตอนบ่าย',
@@ -1573,6 +1616,7 @@ export const strings = {
     filterSheets: 'สเปรดชีต',
     filterSlides: 'งานนำเสนอ',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'กรองตามชนิด',
     // List / bulk actions
     fileCount: '{n} ไฟล์',
@@ -1669,6 +1713,10 @@ export const strings = {
     aiDlgTuningHint:
       'เว้นว่างไว้เพื่อไม่ส่งค่านี้ โมเดลแบบให้เหตุผลบางตัวรับเฉพาะอุณหภูมิเริ่มต้นของตัวเอง',
     aiDlgBadNumber: 'อุณหภูมิต้องอยู่ระหว่าง {min}–{max} และโทเค็นสูงสุดต้องเป็นจำนวนเต็มบวก',
+    theme: 'ธีม',
+    themeLight: 'สว่าง',
+    themeDark: 'มืด',
+    themeSystem: 'ตามระบบ',
     // Dates
     today: 'วันนี้',
     // Settings window
@@ -1773,6 +1821,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Buka File Lokal',
     greetMorning: 'Selamat pagi',
     greetAfternoon: 'Selamat siang',
@@ -1789,6 +1838,7 @@ export const strings = {
     filterSheets: 'Spreadsheet',
     filterSlides: 'Presentasi',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filter menurut jenis',
     // List / bulk actions
     fileCount: '{n} file',
@@ -1886,6 +1936,10 @@ export const strings = {
     aiDlgTuningHint:
       'Kosongkan untuk tidak mengirim kolom ini. Sebagian model penalaran hanya menerima suhu bawaannya.',
     aiDlgBadNumber: 'Suhu harus {min}–{max}, dan token maksimum berupa bilangan bulat positif.',
+    theme: 'Tema',
+    themeLight: 'Terang',
+    themeDark: 'Gelap',
+    themeSystem: 'Sistem',
     // Dates
     today: 'Hari ini',
     // Settings window
@@ -1991,6 +2045,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Открыть локальный файл',
     greetMorning: 'Доброе утро',
     greetAfternoon: 'Добрый день',
@@ -2007,6 +2062,7 @@ export const strings = {
     filterSheets: 'Таблицы',
     filterSlides: 'Презентации',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Фильтр по типу',
     // List / bulk actions
     fileCount: 'Файлов: {n}',
@@ -2106,6 +2162,10 @@ export const strings = {
       'Оставьте пустым, чтобы не отправлять поле. Некоторые рассуждающие модели принимают только свою температуру.',
     aiDlgBadNumber:
       'Температура должна быть от {min} до {max}, а максимум токенов — целым положительным числом.',
+    theme: 'Тема',
+    themeLight: 'Светлая',
+    themeDark: 'Тёмная',
+    themeSystem: 'Системная',
     // Dates
     today: 'Сегодня',
     // Settings window
@@ -2211,6 +2271,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'فتح ملف محلي',
     greetMorning: 'صباح الخير',
     greetAfternoon: 'مساء الخير',
@@ -2227,6 +2288,7 @@ export const strings = {
     filterSheets: 'جداول بيانات',
     filterSlides: 'عروض تقديمية',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'تصفية حسب النوع',
     // List / bulk actions
     fileCount: '{n} ملفات',
@@ -2323,6 +2385,10 @@ export const strings = {
       'اتركه فارغًا لعدم إرسال الحقل. بعض نماذج الاستدلال لا تقبل سوى درجة حرارتها الافتراضية.',
     aiDlgBadNumber:
       'يجب أن تكون درجة الحرارة بين {min} و{max}، والحد الأقصى للرموز عددًا صحيحًا موجبًا.',
+    theme: 'المظهر',
+    themeLight: 'فاتح',
+    themeDark: 'داكن',
+    themeSystem: 'النظام',
     // Dates
     today: 'اليوم',
     // Settings window
@@ -2425,6 +2491,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Abrir arquivo local',
     greetMorning: 'Bom dia',
     greetAfternoon: 'Boa tarde',
@@ -2440,6 +2507,7 @@ export const strings = {
     filterSheets: 'Planilhas',
     filterSlides: 'Apresentações',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filtrar por tipo',
     fileCount: '{n} arquivos',
     fileCountOne: '{n} arquivo',
@@ -2535,6 +2603,10 @@ export const strings = {
       'Deixe vazio para omitir o campo. Alguns modelos de raciocínio só aceitam a própria temperatura.',
     aiDlgBadNumber:
       'A temperatura deve ficar entre {min} e {max}, e os tokens máximos ser um inteiro positivo.',
+    theme: 'Tema',
+    themeLight: 'Claro',
+    themeDark: 'Escuro',
+    themeSystem: 'Sistema',
     today: 'Hoje',
     // Settings window
     setTitle: 'Definições',
@@ -2636,6 +2708,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Apri file locale',
     greetMorning: 'Buongiorno',
     greetAfternoon: 'Buon pomeriggio',
@@ -2651,6 +2724,7 @@ export const strings = {
     filterSheets: 'Fogli di calcolo',
     filterSlides: 'Presentazioni',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filtra per tipo',
     fileCount: '{n} file',
     fileCountOne: '{n} file',
@@ -2746,6 +2820,10 @@ export const strings = {
       'Lascia vuoto per non inviare il campo. Alcuni modelli di ragionamento accettano solo la propria temperatura.',
     aiDlgBadNumber:
       'La temperatura deve essere tra {min} e {max} e i token massimi un intero positivo.',
+    theme: 'Tema',
+    themeLight: 'Chiaro',
+    themeDark: 'Scuro',
+    themeSystem: 'Sistema',
     today: 'Oggi',
     // Settings window
     setTitle: 'Impostazioni',
@@ -2846,6 +2924,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Otwórz plik lokalny',
     greetMorning: 'Dzień dobry',
     greetAfternoon: 'Dzień dobry',
@@ -2861,6 +2940,7 @@ export const strings = {
     filterSheets: 'Arkusze',
     filterSlides: 'Prezentacje',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filtruj według typu',
     fileCount: 'Pliki: {n}',
     fileCountOne: '{n} plik',
@@ -2956,6 +3036,10 @@ export const strings = {
       'Zostaw puste, aby pominąć pole. Część modeli rozumujących przyjmuje tylko własną temperaturę.',
     aiDlgBadNumber:
       'Temperatura musi mieścić się w zakresie {min}–{max}, a maks. tokenów być dodatnią liczbą całkowitą.',
+    theme: 'Motyw',
+    themeLight: 'Jasny',
+    themeDark: 'Ciemny',
+    themeSystem: 'Systemowy',
     today: 'Dzisiaj',
     // Settings window
     setTitle: 'Ustawienia',
@@ -3059,6 +3143,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Lokaal bestand openen',
     greetMorning: 'Goedemorgen',
     greetAfternoon: 'Goedemiddag',
@@ -3074,6 +3159,7 @@ export const strings = {
     filterSheets: 'Spreadsheets',
     filterSlides: 'Presentaties',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Filteren op type',
     fileCount: '{n} bestanden',
     fileCountOne: '{n} bestand',
@@ -3168,6 +3254,10 @@ export const strings = {
       'Laat leeg om het veld weg te laten. Sommige redeneermodellen accepteren alleen hun eigen temperatuur.',
     aiDlgBadNumber:
       'Temperatuur moet tussen {min} en {max} liggen en max tokens een positief geheel getal zijn.',
+    theme: 'Thema',
+    themeLight: 'Licht',
+    themeDark: 'Donker',
+    themeSystem: 'Systeem',
     today: 'Vandaag',
     // Settings window
     setTitle: 'Instellingen',
@@ -3269,6 +3359,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'Buka Fail Setempat',
     greetMorning: 'Selamat pagi',
     greetAfternoon: 'Selamat tengah hari',
@@ -3284,6 +3375,7 @@ export const strings = {
     filterSheets: 'Hamparan',
     filterSlides: 'Persembahan',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'Tapis mengikut jenis',
     fileCount: '{n} fail',
     fileCountOne: '{n} fail',
@@ -3377,6 +3469,10 @@ export const strings = {
     aiDlgTuningHint:
       'Biarkan kosong untuk tidak menghantar medan ini. Sesetengah model penaakulan hanya menerima suhu lalainya.',
     aiDlgBadNumber: 'Suhu mesti {min}–{max}, dan token maksimum ialah integer positif.',
+    theme: 'Tema',
+    themeLight: 'Cerah',
+    themeDark: 'Gelap',
+    themeSystem: 'Sistem',
     today: 'Hari ini',
     // Settings window
     setTitle: 'Tetapan',
@@ -3477,6 +3573,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'פתיחת קובץ מקומי',
     greetMorning: 'בוקר טוב',
     greetAfternoon: 'צהריים טובים',
@@ -3492,6 +3589,7 @@ export const strings = {
     filterSheets: 'גיליונות',
     filterSlides: 'מצגות',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'סינון לפי סוג',
     fileCount: '{n} קבצים',
     fileCountOne: 'קובץ אחד',
@@ -3581,6 +3679,10 @@ export const strings = {
     aiDlgTuningHint:
       'השאירו ריק כדי לא לשלוח את השדה. חלק ממודלי החשיבה מקבלים רק את הטמפרטורה שלהם.',
     aiDlgBadNumber: 'הטמפרטורה חייבת להיות בין {min} ל-{max}, ומקסימום הטוקנים מספר שלם חיובי.',
+    theme: 'ערכת נושא',
+    themeLight: 'בהיר',
+    themeDark: 'כהה',
+    themeSystem: 'מערכת',
     today: 'היום',
     // Settings window
     setTitle: 'הגדרות',
@@ -3679,6 +3781,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: 'स्थानीय फ़ाइल खोलें',
     greetMorning: 'सुप्रभात',
     greetAfternoon: 'नमस्ते',
@@ -3694,6 +3797,7 @@ export const strings = {
     filterSheets: 'स्प्रेडशीट',
     filterSlides: 'प्रस्तुतियाँ',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: 'प्रकार के अनुसार फ़िल्टर करें',
     fileCount: '{n} फ़ाइलें',
     fileCountOne: '{n} फ़ाइल',
@@ -3788,6 +3892,10 @@ export const strings = {
     aiDlgTuningHint:
       'फ़ील्ड न भेजने के लिए खाली छोड़ें। कुछ रीज़निंग मॉडल केवल अपना ही तापमान स्वीकार करते हैं।',
     aiDlgBadNumber: 'तापमान {min}–{max} के बीच और अधिकतम टोकन धनात्मक पूर्णांक होना चाहिए।',
+    theme: 'थीम',
+    themeLight: 'हल्का',
+    themeDark: 'गहरा',
+    themeSystem: 'सिस्टम',
     today: 'आज',
     // Settings window
     setTitle: 'सेटिंग्स',
@@ -3887,6 +3995,7 @@ export const strings = {
     newDoc: 'AI Docs',
     newSheet: 'AI Sheets',
     newSlide: 'AI Slides',
+    newMarkdown: 'AI Markdown',
     openLocal: '開啟本機檔案',
     greetMorning: '早安',
     greetAfternoon: '午安',
@@ -3902,6 +4011,7 @@ export const strings = {
     filterSheets: '試算表',
     filterSlides: '簡報',
     filterPdf: 'PDF',
+    filterMd: 'Markdown',
     filterAria: '依類型篩選',
     fileCount: '{n} 個檔案',
     fileCountOne: '{n} 個檔案',
@@ -3989,6 +4099,10 @@ export const strings = {
     aiDlgModelDefault: '模型預設',
     aiDlgTuningHint: '留空即不傳送該參數。部分推理模型只接受自己的預設溫度。',
     aiDlgBadNumber: '溫度需介於 {min}–{max}，最大 token 需為正整數。',
+    theme: '主題',
+    themeLight: '淺色',
+    themeDark: '深色',
+    themeSystem: '跟隨系統',
     today: '今天',
     // Settings window
     setTitle: '設定',

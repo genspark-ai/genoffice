@@ -53,6 +53,9 @@ export interface AiProviderTestResult {
   error?: string
 }
 
+/** UI theme preference */
+export type UiTheme = 'light' | 'dark' | 'system'
+
 /** a recent file entry shown on the home screen; type derives from the extension */
 export interface RecentEntry {
   path: string
@@ -104,6 +107,8 @@ export interface HomeApi {
   newSheet(opts?: { projectId?: string }): Promise<void>
   /** open a slides tab at its start screen (open-a-pptx) */
   newSlide(opts?: { projectId?: string }): Promise<void>
+  /** open a blank markdown editor tab */
+  newMarkdown(opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
@@ -148,6 +153,10 @@ export interface HomeApi {
   onboardingSeen(): Promise<boolean>
   /** mark the first-run onboarding as done so it never shows again */
   setOnboardingSeen(): Promise<void>
+  /** current UI theme preference (persisted in userData/app-settings.json) */
+  getTheme(): Promise<UiTheme>
+  /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
+  setTheme(theme: UiTheme): Promise<void>
   /** open the GenTeam community page in the default browser */
   openGenTeam(): Promise<void>
   /** locally stored full cloud project list (instant; null when no store or logged out) */
@@ -253,6 +262,7 @@ export const HOME_CHANNELS = {
   newDoc: 'home:new-doc',
   newSheet: 'home:new-sheet',
   newSlide: 'home:new-slide',
+  newMarkdown: 'home:new-markdown',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',
@@ -271,6 +281,8 @@ export const HOME_CHANNELS = {
   getAppVersion: 'home:get-app-version',
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',
+  getTheme: 'home:get-theme',
+  setTheme: 'home:set-theme',
   openGenTeam: 'home:open-genteam',
   cloudProjects: 'home:cloud-projects',
   cloudProjectsCached: 'home:cloud-projects-cached',

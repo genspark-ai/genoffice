@@ -699,6 +699,29 @@ export function IconSparkle(props: IconProps) {
   )
 }
 
+/** Remove Background: dashed marching-ants selection around a landscape photo
+ * (sun + mountains), an AI sparkle in the top-right notch. */
+export function IconRemoveBg(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/* dashed selection frame, top-right corner open for the sparkle */}
+      <path
+        d="M 15.3 5.6 H 6.8 a 2.4 2.4 0 0 0 -2.4 2.4 v 8.6 a 2.4 2.4 0 0 0 2.4 2.4 h 10.4 a 2.4 2.4 0 0 0 2.4 -2.4 V 9.8"
+        strokeDasharray="2.7 2.05"
+      />
+      {/* photo subject: sun + mountains */}
+      <circle cx={9.4} cy={9.8} r={1.5} />
+      <path d="M 6.3 16.4 l 3.1 -3.5 2.5 2.7 1.9 -2.1 3.4 2.9" />
+      {/* sparkle */}
+      <path
+        d="M 18.9 3.4 l 0.78 2.12 2.12 0.78 -2.12 0.78 -0.78 2.12 -0.78 -2.12 -2.12 -0.78 2.12 -0.78 z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </Svg>
+  )
+}
+
 export function IconWand(props: IconProps) {
   return (
     <Svg {...props}>

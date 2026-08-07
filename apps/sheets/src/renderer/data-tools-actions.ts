@@ -7,6 +7,7 @@
 import { ILayoutService } from '@univerjs/preset-sheets-core'
 
 import { columnLabel } from '../domain/cell-address'
+import { decodeCsvBuffer, isNumericCell, parseCsv } from '../gateway/csv-import'
 import type { AdvancedFilterColumn, AdvancedFilterCriteria } from './AdvancedFilterDialog'
 import {
   buildLabelMatrix,
@@ -19,7 +20,7 @@ import {
 } from './consolidate'
 import { isSheetRemoved, journalSize, recordStructuralOp } from './edit-journal'
 import { resolveGoToRef, type GoToNameEntry } from './goto'
-import { t } from './i18n/locale'
+import { getLang, t } from './i18n/locale'
 import { appendSymbol } from './SymbolDialog'
 import {
   advancedFilterColumnOptions,
@@ -39,6 +40,81 @@ export interface DataToolsContext {
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
   setAdvancedFilterColumns: (columns: readonly AdvancedFilterColumn[] | null) => void
+}
+
+/// Matches the paste ceiling in spirit: one setValues command, journaled and
+/// undoable; larger files should open as their own workbook instead.
+const CSV_IMPORT_MAX_CELLS = 50_000
+
+/// Excel writes CSV in the system's legacy charset; the UI language is the
+/// best tie-breaker we have (same map as the main-process open path).
+const CSV_CHARSET_BY_LANG: Record<string, string> = {
+  zh: 'gb18030',
+  'zh-TW': 'big5',
+  ja: 'shift_jis',
+  ko: 'euc-kr',
+}
+
+/// Data → From Text/CSV: reads a delimited file (encoding and delimiter
+/// sniffed by the shared CSV pipeline) into the active sheet at the selection.
+export function handleImportCsv(ctx: DataToolsContext): void {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain'
+  input.onchange = () => {
+    const file = input.files?.[0]
+    if (!file) return
+    if (file.size > 32 * 1024 * 1024) {
+      ctx.setMessage(t('appCsvTooLarge'))
+      return
+    }
+    void file.arrayBuffer().then((buffer) => {
+      importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
+    })
+  }
+  input.click()
+}
+
+function importCsvText(ctx: DataToolsContext, text: string): void {
+  const runtime = ctx.univerRef.current
+  const workbook = runtime?.univerAPI.getActiveWorkbook()
+  const worksheet = workbook?.getActiveSheet()
+  const range = workbook?.getActiveRange()
+  if (!worksheet || !range) {
+    ctx.setMessage(t('appSelectCellFirst'))
+    return
+  }
+  const rows = parseCsv(text)
+  const columns = rows.reduce((width, row) => Math.max(width, row.length), 0)
+  if (rows.length === 0 || columns === 0) {
+    ctx.setMessage(t('appCsvEmpty'))
+    return
+  }
+  if (rows.length * columns > CSV_IMPORT_MAX_CELLS) {
+    ctx.setMessage(t('appCsvTooLarge'))
+    return
+  }
+  const values = rows.map((row) =>
+    Array.from({ length: columns }, (_, index) => {
+      const cell = row[index] ?? ''
+      return isNumericCell(cell) ? { v: Number(cell) } : { v: cell }
+    }),
+  )
+  const row = range.getRow()
+  const column = range.getColumn()
+  try {
+    worksheet.getRange(row, column, rows.length, columns).setValues(values)
+  } catch (error: unknown) {
+    ctx.setMessage(error instanceof Error ? error.message : t('appCsvImportFailed'))
+    return
+  }
+  ctx.setMessage(
+    t('appCsvImported', {
+      rows: rows.length,
+      columns,
+      cell: `${columnLetter(column)}${row + 1}`,
+    }),
+  )
 }
 
 export function activeCellLabel(ctx: DataToolsContext): string {

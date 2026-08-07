@@ -855,3 +855,129 @@ describe('outline operations', () => {
     expect(xml).toContain('<row r="1" outlineLevel="1"/>')
   })
 })
+
+describe('applyStructuralOps row moves', () => {
+  const move = (index: number, count: number, before: number) =>
+    ({ kind: 'move-rows', index, count, before }) as const
+
+  it('relocates a row with its height/hidden attributes and keeps sheetData ascending', () => {
+    const xml =
+      '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1"><v>1</v></c></row>' +
+      '<row r="2" ht="30" customHeight="1" hidden="1"><c r="A2"><v>2</v></c></row>' +
+      '<row r="3"><c r="A3"><v>3</v></c></row>' +
+      '</sheetData></worksheet>'
+    const moved = applyStructuralOps(xml, [move(1, 1, 3)], SHEET)
+    expect(moved).toBe(
+      '<worksheet><sheetData>' +
+        '<row r="1"><c r="A1"><v>1</v></c></row>' +
+        '<row r="2"><c r="A2"><v>3</v></c></row>' +
+        '<row r="3" ht="30" customHeight="1" hidden="1"><c r="A3"><v>2</v></c></row>' +
+        '</sheetData></worksheet>',
+    )
+  })
+
+  it('moves a block upward and renumbers the displaced rows', () => {
+    const xml =
+      '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1"><v>1</v></c></row>' +
+      '<row r="2"><c r="A2"><v>2</v></c></row>' +
+      '<row r="3"><c r="A3"><v>3</v></c></row>' +
+      '</sheetData></worksheet>'
+    const moved = applyStructuralOps(xml, [move(2, 1, 0)], SHEET)
+    expect(moved).toBe(
+      '<worksheet><sheetData>' +
+        '<row r="1"><c r="A1"><v>3</v></c></row>' +
+        '<row r="2"><c r="A2"><v>1</v></c></row>' +
+        '<row r="3"><c r="A3"><v>2</v></c></row>' +
+        '</sheetData></worksheet>',
+    )
+  })
+
+  it('remaps references into the moved rows and leaves spanning references alone', () => {
+    const xml =
+      '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1"><f>A2+SUM(A1:A3)+SUM(B:B)</f></c></row>' +
+      '<row r="2"><c r="A2"><v>2</v></c></row>' +
+      '<row r="3"><c r="A3"><v>3</v></c></row>' +
+      '</sheetData></worksheet>'
+    const moved = applyStructuralOps(xml, [move(1, 1, 3)], SHEET)
+    expect(moved).toContain('<f>A3+SUM(A1:A3)+SUM(B:B)</f>')
+  })
+
+  it('fails closed when a formula range is torn by the move', () => {
+    const xml =
+      '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1"><f>SUM(A2:A4)</f></c></row>' +
+      '<row r="2"><c r="A2"><v>2</v></c></row>' +
+      '<row r="3"><c r="A3"><v>3</v></c></row>' +
+      '<row r="4"><c r="A4"><v>4</v></c></row>' +
+      '<row r="5"><c r="A5"><v>5</v></c></row>' +
+      '</sheetData></worksheet>'
+    expect(() => applyStructuralOps(xml, [move(3, 2, 1)], SHEET)).toThrow(StructuralShiftError)
+  })
+
+  it('moves merges inside the block, keeps spanning merges, tears fail closed', () => {
+    const xml =
+      '<worksheet><sheetData>' +
+      '<row r="1"/><row r="2"/><row r="3"/><row r="4"/>' +
+      '</sheetData>' +
+      '<mergeCells count="2"><mergeCell ref="A2:B2"/><mergeCell ref="C1:C4"/></mergeCells>' +
+      '</worksheet>'
+    const moved = applyStructuralOps(xml, [move(1, 1, 4)], SHEET)
+    expect(moved).toContain('<mergeCell ref="A4:B4"/>')
+    expect(moved).toContain('<mergeCell ref="C1:C4"/>')
+    const torn =
+      '<worksheet><sheetData><row r="1"/><row r="2"/><row r="3"/><row r="4"/></sheetData>' +
+      '<mergeCells count="1"><mergeCell ref="A2:B3"/></mergeCells></worksheet>'
+    expect(() => applyStructuralOps(torn, [move(2, 2, 1)], SHEET)).toThrow(StructuralShiftError)
+  })
+
+  it('fails closed when a shared formula anchor overlaps the moved rows', () => {
+    const xml =
+      '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1"><f t="shared" ref="A1:A4" si="0">B1*2</f></c></row>' +
+      '<row r="2"><c r="A2"><f t="shared" si="0"/></c></row>' +
+      '<row r="3"><c r="A3"><f t="shared" si="0"/></c></row>' +
+      '<row r="4"><c r="A4"><f t="shared" si="0"/></c></row>' +
+      '</sheetData></worksheet>'
+    expect(() => applyStructuralOps(xml, [move(1, 1, 4)], SHEET)).toThrow(/shared formula anchor/)
+  })
+
+  it('rejects a move whose target sits inside the moved block', () => {
+    expect(() =>
+      applyStructuralOps('<worksheet><sheetData/></worksheet>', [move(2, 3, 4)], SHEET),
+    ).toThrow(StructuralShiftError)
+  })
+
+  it('rewrites cross-sheet references and defined names through the swap', () => {
+    const other =
+      '<worksheet><sheetData><row r="1"><c r="A1"><f>Data!A2</f></c></row></sheetData></worksheet>'
+    expect(shiftCrossSheetFormulas(other, SHEET, [move(1, 1, 4)])).toContain('<f>Data!A4</f>')
+    const names =
+      '<workbook><definedNames><definedName name="x">Data!$A$2</definedName></definedNames></workbook>'
+    expect(shiftDefinedNames(names, SHEET, [move(1, 1, 4)])).toContain('Data!$A$4')
+  })
+
+  it('moves drawing anchors as pairs and fails closed on straddles', () => {
+    const drawing =
+      '<xdr:wsDr><xdr:twoCellAnchor>' +
+      '<xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>5</xdr:rowOff></xdr:from>' +
+      '<xdr:to><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>3</xdr:row><xdr:rowOff>7</xdr:rowOff></xdr:to>' +
+      '</xdr:twoCellAnchor></xdr:wsDr>'
+    const moved = shiftDrawingAnchors(drawing, [move(2, 2, 1)])
+    expect(moved).toContain('<xdr:row>1</xdr:row>')
+    expect(moved).toContain('<xdr:row>2</xdr:row>')
+    expect(moved).toContain('<xdr:rowOff>5</xdr:rowOff>')
+    expect(() => shiftDrawingAnchors(drawing, [move(3, 2, 1)])).toThrow(StructuralShiftError)
+  })
+
+  it('relocates a whole table inside the block and rejects header moves', () => {
+    const table =
+      '<table name="T1" ref="A2:B4" headerRowCount="1" totalsRowCount="0">' +
+      '<autoFilter ref="A2:B4"/></table>'
+    const relocated = shiftTablePart(table, [move(1, 3, 6)])
+    expect(relocated).toContain('ref="A4:B6"')
+    expect(() => shiftTablePart(table, [move(1, 2, 5)])).toThrow(/header row/)
+  })
+})

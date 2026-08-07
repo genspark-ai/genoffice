@@ -34,7 +34,14 @@ import {
   IconZoomJump,
 } from './icons'
 import { saveEditSelection } from '../TextEditOverlay'
-import { BIG, Group, RbCaret, closeSiblingPanels, type RibbonTabCtx } from './ribbon-shared'
+import {
+  BIG,
+  Group,
+  LayoutList,
+  RbCaret,
+  closeSiblingPanels,
+  type RibbonTabCtx,
+} from './ribbon-shared'
 
 export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
   const {
@@ -44,6 +51,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
     hasDoc,
     hasSelection,
     layouts,
+    layoutSize,
     onAddSlide,
     onAddSlideWithLayout,
     onInsert,
@@ -93,7 +101,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
               <IconNewSlide size={BIG} />
               <span
                 className={`rb-caret-hit${layoutOpen ? ' active' : ''}`}
-                title={t('ribbonChooseLayout')}
+                title={t('ribbonChooseLayoutNew')}
                 onMouseDown={(e) => {
                   e.stopPropagation()
                   closeSiblingPanels(e, closePanels, 'layout')
@@ -110,52 +118,15 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
           </button>
           {layoutOpen && (
             <div className="rb-drop rb-layout-panel" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="rb-drop-title">{t('ribbonChooseLayout')}</div>
-              <div className="rb-layout-list">
-                {(layouts ?? []).map((lay) => (
-                  <button
-                    key={lay.path}
-                    className="rb-layout-item"
-                    onClick={() => {
-                      setLayoutOpen(false)
-                      onAddSlideWithLayout(lay.path)
-                    }}
-                    title={lay.name}
-                  >
-                    <div className="rb-layout-preview">
-                      {lay.placeholders.map((ph, i) => {
-                        const S = 120,
-                          H = 68
-                        const EMU = 9144000
-                        const EMU_H = 5143500
-                        const x = Math.round((ph.x / EMU) * S)
-                        const y = Math.round((ph.y / EMU_H) * H)
-                        const w = Math.max(8, Math.round((ph.cx / EMU) * S))
-                        const h = Math.max(6, Math.round((ph.cy / EMU_H) * H))
-                        return (
-                          <div
-                            key={i}
-                            className="rb-layout-ph"
-                            style={{ left: x, top: y, width: w, height: h }}
-                          >
-                            <span>
-                              {ph.type === 'title' || ph.type === 'ctrTitle'
-                                ? 'T'
-                                : ph.type === 'body' || ph.type === 'obj'
-                                  ? '≡'
-                                  : ''}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="rb-layout-name">{lay.name}</div>
-                  </button>
-                ))}
-                {(layouts ?? []).length === 0 && (
-                  <div className="rb-layout-empty">{t('ribbonNoLayouts')}</div>
-                )}
-              </div>
+              <div className="rb-drop-title">{t('ribbonChooseLayoutNew')}</div>
+              <LayoutList
+                layouts={layouts}
+                size={layoutSize}
+                onPick={(path) => {
+                  setLayoutOpen(false)
+                  onAddSlideWithLayout(path)
+                }}
+              />
             </div>
           )}
         </div>

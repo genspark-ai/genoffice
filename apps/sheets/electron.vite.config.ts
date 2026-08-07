@@ -13,6 +13,7 @@ export default defineConfig({
           '@genoffice/ai-provider',
           '@genoffice/agent-core',
           '@genoffice/ai-search',
+          '@genoffice/docx-engine',
           '@genoffice/file-parse',
           '@genoffice/electron-utils',
           '@genoffice/i18n',

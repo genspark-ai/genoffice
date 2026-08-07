@@ -24,6 +24,7 @@ import type {
   SectionSettings,
   SourceInfo,
   StyleInfo,
+  TextboxDisplay,
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
@@ -240,7 +241,12 @@ const TABS = (
 ) as readonly string[]
 const TABLE_TABS = ['tableDesign', 'tableLayout'] as const
 const IMAGE_TABS = ['pictureFormat'] as const
-type RibbonTab = (typeof TABS)[number] | (typeof TABLE_TABS)[number] | (typeof IMAGE_TABS)[number]
+const SHAPE_TABS = ['shapeFormat'] as const
+type RibbonTab =
+  | (typeof TABS)[number]
+  | (typeof TABLE_TABS)[number]
+  | (typeof IMAGE_TABS)[number]
+  | (typeof SHAPE_TABS)[number]
 
 // tab values double as internal-state / external tabRequest keys; translated for display via these string keys
 const TAB_LABEL_KEYS: Record<string, StringKey> = {
@@ -256,6 +262,7 @@ const TAB_LABEL_KEYS: Record<string, StringKey> = {
   tableDesign: 'ribbonTabTableDesign',
   tableLayout: 'ribbonTabTableLayout',
   pictureFormat: 'ribbonTabPictureFormat',
+  shapeFormat: 'ribbonTabShapeFormat',
 }
 
 /** CSS px per cm at 96dpi (size inputs display in centimeters) */
@@ -366,6 +373,77 @@ const COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorDarkBlue', hex: '002060' },
   { nameKey: 'ribbonColorPurple', hex: '7030A0' },
 ]
+
+/** Theme + standard color palette for shape fill/outline (Shape Format tab) */
+function ShapeColorPalette({
+  current,
+  noneLabel,
+  onPick,
+}: {
+  current: string | null
+  noneLabel: string
+  onPick: (hex: string | null) => void
+}) {
+  const { t } = useI18n()
+  return (
+    <div className="color-palette color-palette-word">
+      <button
+        className={`color-automatic ${!current ? 'selected' : ''}`}
+        onClick={() => onPick(null)}
+      >
+        {noneLabel}
+      </button>
+      <div className="color-section-title">{t('ribbonThemeColorsSection')}</div>
+      <div className="color-theme-base">
+        {THEME_COLORS.map((c) => (
+          <button
+            key={c.hex}
+            className={`color-swatch color-swatch-large ${current === c.hex ? 'selected' : ''}`}
+            title={t(c.nameKey)}
+            style={{ background: `#${c.hex}` }}
+            onClick={() => onPick(c.hex)}
+          />
+        ))}
+      </div>
+      <div className="color-theme-shades">
+        {THEME_COLOR_SHADES.flatMap((row, rowIndex) =>
+          row.map((hex, columnIndex) => (
+            <button
+              key={`${rowIndex}-${columnIndex}-${hex}`}
+              className={`color-swatch color-swatch-large ${current === hex ? 'selected' : ''}`}
+              title={t('ribbonThemeColorShadeTip', { r: rowIndex + 1, c: columnIndex + 1 })}
+              style={{ background: `#${hex}` }}
+              onClick={() => onPick(hex)}
+            />
+          )),
+        )}
+      </div>
+      <div className="color-section-title color-standard-title">{t('ribbonStandardColors')}</div>
+      <div className="color-standard-row">
+        {COLORS.map((c) => (
+          <button
+            key={c.hex}
+            className={`color-swatch color-swatch-large ${current === c.hex ? 'selected' : ''}`}
+            title={t(c.nameKey)}
+            style={{ background: `#${c.hex}` }}
+            onClick={() => onPick(c.hex)}
+          />
+        ))}
+      </div>
+      <label className="color-more">
+        <span className="color-more-icon">
+          <IconPalette size={16} />
+        </span>
+        {t('ribbonMoreColors')}
+        <input
+          type="color"
+          value={`#${current ?? '4472C4'}`}
+          onChange={(e) => onPick(e.target.value.slice(1).toUpperCase())}
+        />
+      </label>
+    </div>
+  )
+}
 
 /** Word text highlight colors (OOXML named values) */
 const HIGHLIGHTS = [
@@ -663,6 +741,45 @@ function RibbonInner({
       setTab((current) => (current === 'pictureFormat' ? lastRegularTab.current : current))
     }
   }, [inImage])
+
+  // ---- Shape Format (contextual tab when a floating box is selected, same mechanism) ----
+  const inShape = !sub && fs.textboxSelected
+  const shapeIsLine = !!fs.shapePrst?.startsWith('line')
+  const wasInShape = useRef(false)
+
+  useEffect(() => {
+    if (inShape && !wasInShape.current) {
+      wasInShape.current = true
+      setDropdown(null)
+      setTab('shapeFormat')
+    } else if (!inShape && wasInShape.current) {
+      wasInShape.current = false
+      setDropdown(null)
+      setTab((current) => (current === 'shapeFormat' ? lastRegularTab.current : current))
+    }
+  }, [inShape])
+
+  /** apply fill/outline to the selected floating box (first box of the node) */
+  const setShapeStyle = (patch: { fill?: string | null; borderColor?: string | null }) => {
+    if (!canEdit) return
+    const attrs = editor.getAttributes('docProtected')
+    const boxes = attrs?.textboxes as TextboxDisplay[] | null
+    if (!Array.isArray(boxes) || boxes.length === 0) return
+    const box = { ...boxes[0] }
+    if ('fill' in patch) {
+      if (patch.fill) box.fill = patch.fill
+      else delete box.fill
+    }
+    if ('borderColor' in patch) {
+      if (patch.borderColor) box.borderColor = patch.borderColor
+      else delete box.borderColor
+    }
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { textboxes: [box, ...boxes.slice(1)] })
+      .run()
+  }
 
   /**
    * Replace the selected image's bytes (shared by Replace Picture / remove background / crop).
@@ -1322,12 +1439,95 @@ function RibbonInner({
               {t(TAB_LABEL_KEYS[imageTab])}
             </button>
           ))}
+        {inShape &&
+          SHAPE_TABS.map((shapeTab) => (
+            <button
+              key={shapeTab}
+              className={`ribbon-tab ${tab === shapeTab ? 'active' : ''}`}
+              onClick={() => {
+                setTab(shapeTab)
+                setDropdown(null)
+              }}
+            >
+              {t(TAB_LABEL_KEYS[shapeTab])}
+            </button>
+          ))}
         <span className="ribbon-tabs-spacer" />
         {trailingActions}
       </div>
 
       <div className="ribbon-body">
-        {tab === 'pictureFormat' && inImage ? (
+        {tab === 'shapeFormat' && inShape ? (
+          <div className="table-ribbon-body">
+            <div className="ribbon-group">
+              <div className="ribbon-group-items">
+                {!shapeIsLine && (
+                  <div className="rb-split-wrap">
+                    <button
+                      className="rb-big"
+                      disabled={!canEdit}
+                      title={t('ribbonShapeFillTip')}
+                      onClick={() => setDropdown((v) => (v === 'shapeFill' ? null : 'shapeFill'))}
+                    >
+                      <span className="rb-big-icon">
+                        <IconShading />
+                        <span
+                          className="rb-color-bar"
+                          style={{ background: fs.shapeFill ? `#${fs.shapeFill}` : 'transparent' }}
+                        />
+                      </span>
+                      <span>{t('ribbonShapeFill')}</span>
+                    </button>
+                    {dropdown === 'shapeFill' && (
+                      <ShapeColorPalette
+                        current={fs.shapeFill}
+                        noneLabel={t('ribbonNoFill')}
+                        onPick={(hex) => {
+                          setShapeStyle({ fill: hex })
+                          setDropdown(null)
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="rb-split-wrap">
+                  <button
+                    className="rb-big"
+                    disabled={!canEdit}
+                    title={t('ribbonShapeOutlineTip')}
+                    onClick={() =>
+                      setDropdown((v) => (v === 'shapeOutline' ? null : 'shapeOutline'))
+                    }
+                  >
+                    <span className="rb-big-icon">
+                      <IconBorderAll />
+                      <span
+                        className="rb-color-bar"
+                        style={{
+                          background: fs.shapeBorderColor
+                            ? `#${fs.shapeBorderColor}`
+                            : 'transparent',
+                        }}
+                      />
+                    </span>
+                    <span>{t('ribbonShapeOutline')}</span>
+                  </button>
+                  {dropdown === 'shapeOutline' && (
+                    <ShapeColorPalette
+                      current={fs.shapeBorderColor}
+                      noneLabel={t('ribbonNoOutline')}
+                      onPick={(hex) => {
+                        setShapeStyle({ borderColor: hex })
+                        setDropdown(null)
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="ribbon-group-label">{t('ribbonGroupShapeStyles')}</div>
+            </div>
+          </div>
+        ) : tab === 'pictureFormat' && inImage ? (
           <div className="table-ribbon-body">
             {/* ---- Adjust: remove background / crop / replace picture ---- */}
             <div className="ribbon-group">

@@ -2481,6 +2481,8 @@ async function writeWorkbookTo(
       })
     } else if ('hidden' in op) {
       sheetOps.push({ kind: op.kind, start: op.start, end: op.end, hidden: op.hidden })
+    } else if ('before' in op) {
+      sheetOps.push({ kind: op.kind, index: op.index, count: op.count, before: op.before })
     } else {
       sheetOps.push({ kind: op.kind, index: op.index, count: op.count })
     }

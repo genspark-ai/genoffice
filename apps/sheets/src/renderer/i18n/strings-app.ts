@@ -134,7 +134,7 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: '工作簿未就绪。',
     appOpenWorkbookFirst: '请先打开工作簿。',
     appOpenXlsxFirst: '请先打开 XLSX 文件。',
-    appPivotCreated: '数据透视表已创建，目标单元格 {cell}，保存后写入文件。',
+    appPivotCreated: '已在 {cell} 创建透视表——保存时写入文件，保存后即可使用切片器、日程表和刷新。',
     appPivotCreateFailed: '创建数据透视表失败。',
     appPutCursorInPivot: '请先把光标放在要编辑的透视表输出区内。',
     appPivotNoCacheDef: '该透视表缺少缓存定义,无法编辑。',
@@ -166,6 +166,15 @@ export const appStrings = defineStrings({
     appSlicerApplied: '切片器 "{name}" 已应用——保存(⌘S)写入筛选后的透视表。',
     appSlicerCleared: '切片器 "{name}" 已清除筛选。',
     appSlicerRemoved: '切片器 "{name}" 已删除,成员已全部恢复。',
+    appTimelineHintIn: '基于当前透视表的日期字段插入日程表',
+    appTimelineHintOut: '先选中透视表输出区内的单元格,再插入日程表',
+    appTimelineNoDateFields: '这个透视表没有可用的日期字段——日程表需要值都是日期的未分组字段。',
+    appTimelineCreated: '日程表 "{name}" 已创建——点选月份即可筛选透视表。',
+    appTimelineApplied: '日程表 "{name}" 已应用——保存(⌘S)写入筛选后的透视表。',
+    appTimelineCleared: '日程表 "{name}" 已清除筛选。',
+    appTimelineRemoved: '日程表 "{name}" 已删除,成员已全部恢复。',
+    appTimelineEmptyRange: '所选月份范围内没有成员。',
+    appFieldFilterTaken: '所有符合条件的字段都已有切片器或日程表——先删除现有面板再新建。',
     appGoToNotReady: '工作簿尚未就绪，无法定位。',
     appGoToEmpty: '请输入单元格地址或已定义的名称。',
     appGoToUnresolved: '无法定位到 "{ref}"：地址无效，也不是可跳转的已定义名称。',
@@ -220,7 +229,7 @@ export const appStrings = defineStrings({
     appDvNeedsIndexed: '编辑数据验证需要该工作表先完成索引——稍后再试。',
     appDuplicateNeedsFullLoad: '复制工作表需要完整加载模式——这个工作簿太大，只做了流式加载。',
     appPivotSheetNoDuplicate: '该工作表含数据透视表——暂不支持复制该表。',
-    appMoveRowsColsUnsaved: '整行/整列移动暂时无法保存到导入的工作簿。',
+    appMoveRowsColsUnsaved: '整列移动暂时无法保存到导入的工作簿——整行移动已支持。',
     // Preview / apply / undo
     appNoWorkbookOpen: '当前没有打开的工作簿。',
     appDvListOptions: '列表：{items}',
@@ -420,6 +429,30 @@ export const appStrings = defineStrings({
     appSaveCanceled: '保存已取消。',
     appSaved: '已保存 {name}：重写了 {total} 个包条目中的 {touched} 个，其余逐字节保留。',
     appSaveFailed: '无法保存工作簿。',
+    appCfRuleUnsaveable: '这种条件格式规则无法保存到 xlsx——请换用其他规则类型。',
+    appSaveErrX14Dv: '这个工作表带有扩展(x14)数据验证，暂不支持编辑它的验证规则。',
+    appSaveErrMultiSelectList: '多选列表验证无法保存到 xlsx——请先删除该规则再保存。',
+    appSaveErrX14Cf: '该区域带有扩展(x14)条件格式，暂时无法修改。',
+    appSaveErrPivotWithSheetOps: '新建的透视表不能和工作表管理改动一起保存——请先保存透视表。',
+    appSaveErrPivotWithRowCol: '新建的透视表不能和所在工作表的行列改动一起保存——请先保存透视表。',
+    appSaveErrTableWithRowCol: '新建的表格不能和所在工作表的行列改动一起保存——请先保存表格。',
+    appSaveErrNamesWithStructural:
+      '定义名称的改动不能和行列/工作表结构改动一起保存——请分两次保存。',
+    appSaveErrChangedOnDisk: '文件在磁盘上被其他程序改动了——保存已中止，请重新打开后再试。',
+    appSaveErrStylesheetLimited: '这个工作簿的样式表缺少基础结构，样式改动无法保存。',
+    appSaveErrPackageGuard: '保存会改变工作簿的包结构——已中止以保护文件。',
+    appSaveErrChartUnsupported: '这个图表类型不支持该编辑，保存已中止——请撤销该图表改动。',
+    appSaveErrMoveOverlap:
+      '有公式、格式范围、图形或表格横跨被移动的行——这次保存已中止，请撤销该移动。',
+    appFromTextCsvTitle: '把 CSV/文本文件导入到当前选区',
+    appCsvImported: '已从文件导入 {rows} 行 × {columns} 列到 {cell}。',
+    appCsvEmpty: 'CSV 文件里没有数据。',
+    appCsvTooLarge: 'CSV 太大——超过 5 万单元格请用「打开」作为新工作簿。',
+    appCsvImportFailed: 'CSV 导入失败。',
+    appNoNotesOnSheet: '当前工作表没有批注。',
+    appNotePrevTitle: '跳到上一条批注',
+    appNoteNextTitle: '跳到下一条批注',
+    appShowCommentsTitle: '固定/取消固定所选单元格的批注气泡',
     appStructuralShiftBlocked:
       '此工作表上有图表或表格锚定在受影响的行/列上,无法平移,结构改动没有保存。请撤销该改动(⌘Z)后重新保存。',
     appAiChangesNotSaved: '已应用 AI 更改(未保存)。可用 ⌘Z 撤销;用 ⌘S 保存到文件。',
@@ -1285,7 +1318,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'The workbook is not ready.',
     appOpenWorkbookFirst: 'Open a workbook first.',
     appOpenXlsxFirst: 'Open an XLSX file first.',
-    appPivotCreated: 'PivotTable created at {cell} — written into the file on save.',
+    appPivotCreated:
+      'PivotTable created at {cell} — written into the file on save; save to enable slicers, timelines, and refresh.',
     appPivotCreateFailed: 'Failed to create the PivotTable.',
     appPutCursorInPivot: 'Place the cursor inside the output of the PivotTable you want to edit.',
     appPivotNoCacheDef: 'This PivotTable has no cache definition and cannot be edited.',
@@ -1322,6 +1356,17 @@ export const appStrings = defineStrings({
     appSlicerApplied: 'Slicer "{name}" applied — save (⌘S) to write the filtered PivotTable.',
     appSlicerCleared: 'Slicer "{name}" filter cleared.',
     appSlicerRemoved: 'Slicer "{name}" removed; all members restored.',
+    appTimelineHintIn: 'Insert a timeline for a date field of the current PivotTable',
+    appTimelineHintOut: 'Select a cell inside the PivotTable output first, then insert a timeline',
+    appTimelineNoDateFields:
+      'This PivotTable has no usable date fields — a timeline needs an ungrouped field whose values are all dates.',
+    appTimelineCreated: 'Timeline "{name}" created — click months to filter the PivotTable.',
+    appTimelineApplied: 'Timeline "{name}" applied — save (⌘S) to write the filtered PivotTable.',
+    appTimelineCleared: 'Timeline "{name}" filter cleared.',
+    appTimelineRemoved: 'Timeline "{name}" removed; all members restored.',
+    appTimelineEmptyRange: 'No members within the selected month range.',
+    appFieldFilterTaken:
+      'Every qualifying field already has a slicer or timeline — remove the existing one first.',
     appGoToNotReady: 'The workbook is not ready yet — cannot go to a reference.',
     appGoToEmpty: 'Enter a cell address or a defined name.',
     appGoToUnresolved: 'Cannot go to "{ref}": not a valid address or a navigable defined name.',
@@ -1389,7 +1434,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'This sheet contains a PivotTable — duplicating it is not supported yet.',
     appMoveRowsColsUnsaved:
-      'Moving whole rows or columns cannot be saved to imported workbooks yet.',
+      'Moving whole columns cannot be saved to imported workbooks yet — moving whole rows is supported.',
     appNoWorkbookOpen: 'No workbook is open.',
     appDvListOptions: 'List: {items}',
     appDvListFromRange: 'List (from range {range})',
@@ -1594,6 +1639,41 @@ export const appStrings = defineStrings({
     appSaved:
       'Saved {name}: rewrote {touched} of {total} package entries, the rest preserved byte-identical.',
     appSaveFailed: 'Unable to save the workbook.',
+    appCfRuleUnsaveable:
+      'This conditional formatting rule cannot be saved to xlsx — switch to another rule type.',
+    appSaveErrX14Dv:
+      'This sheet has extended (x14) data validation; editing its validation rules is not supported yet.',
+    appSaveErrMultiSelectList:
+      'Multi-select list validation cannot be saved to xlsx — delete the rule before saving.',
+    appSaveErrX14Cf:
+      'This range has extended (x14) conditional formatting and cannot be modified yet.',
+    appSaveErrPivotWithSheetOps:
+      'A newly created PivotTable cannot be saved together with sheet-management changes — save the PivotTable first.',
+    appSaveErrPivotWithRowCol:
+      'A newly created PivotTable cannot be saved together with row/column changes on its sheet — save the PivotTable first.',
+    appSaveErrTableWithRowCol:
+      'A newly created table cannot be saved together with row/column changes on its sheet — save the table first.',
+    appSaveErrNamesWithStructural:
+      'Defined-name changes cannot be saved together with row/column or sheet-structure changes — save them separately.',
+    appSaveErrChangedOnDisk:
+      'The file was changed on disk by another program — save aborted; reopen the file and try again.',
+    appSaveErrStylesheetLimited:
+      "This workbook's stylesheet is missing basic structure, so style changes cannot be saved.",
+    appSaveErrPackageGuard:
+      "Saving would change the workbook's package structure — aborted to protect the file.",
+    appSaveErrChartUnsupported:
+      'This chart type does not support that edit; save aborted — undo the chart change.',
+    appSaveErrMoveOverlap:
+      'A formula, formatted range, drawing, or table spans the moved rows; save aborted — undo the move.',
+    appFromTextCsvTitle: 'Import a CSV/text file into the current selection',
+    appCsvImported: 'Imported {rows} rows × {columns} columns from the file into {cell}.',
+    appCsvEmpty: 'The CSV file has no data.',
+    appCsvTooLarge: 'CSV is too large — over 50,000 cells; use Open to load it as a new workbook.',
+    appCsvImportFailed: 'CSV import failed.',
+    appNoNotesOnSheet: 'No comments on this sheet.',
+    appNotePrevTitle: 'Jump to the previous comment',
+    appNoteNextTitle: 'Jump to the next comment',
+    appShowCommentsTitle: "Pin/unpin the selected cell's comment bubble",
     appStructuralShiftBlocked:
       "A chart or table on this sheet is anchored to the affected rows/columns, so they can't shift; the structural change was not saved. Undo it (Cmd+Z) and save again.",
     appAiChangesNotSaved:
@@ -2453,7 +2533,7 @@ export const appStrings = defineStrings({
     appOpenWorkbookFirst: '先にブックを開いてください。',
     appOpenXlsxFirst: '先に XLSX ファイルを開いてください。',
     appPivotCreated:
-      'ピボットテーブルを作成しました。対象セルは {cell} です。保存するとファイルに書き込まれます。',
+      'ピボットテーブルを作成しました。対象セルは {cell} です。保存するとファイルに書き込まれます。保存後はスライサー、タイムライン、更新を利用できます。',
     appPivotCreateFailed: 'ピボットテーブルを作成できませんでした。',
     appPutCursorInPivot: '先に編集するピボットテーブルの出力範囲内にカーソルを置いてください。',
     appPivotNoCacheDef: 'このピボットテーブルにはキャッシュ定義がないため編集できません。',
@@ -2494,6 +2574,20 @@ export const appStrings = defineStrings({
       'スライサー "{name}" を適用しました。保存（⌘S）でフィルター後のピボットテーブルを書き込みます。',
     appSlicerCleared: 'スライサー "{name}" のフィルターを解除しました。',
     appSlicerRemoved: 'スライサー "{name}" を削除しました。メンバーはすべて元に戻りました。',
+    appTimelineHintIn: '現在のピボットテーブルの日付フィールドにタイムラインを挿入',
+    appTimelineHintOut:
+      '先にピボットテーブルの出力範囲内のセルを選択してから、タイムラインを挿入してください',
+    appTimelineNoDateFields:
+      'このピボットテーブルには利用できる日付フィールドがありません。タイムラインには、値がすべて日付であるグループ化されていないフィールドが必要です。',
+    appTimelineCreated:
+      'タイムライン "{name}" を作成しました。月をクリックするとピボットテーブルをフィルターできます。',
+    appTimelineApplied:
+      'タイムライン "{name}" を適用しました。保存（⌘S）でフィルター後のピボットテーブルを書き込みます。',
+    appTimelineCleared: 'タイムライン "{name}" のフィルターを解除しました。',
+    appTimelineRemoved: 'タイムライン "{name}" を削除しました。メンバーはすべて元に戻りました。',
+    appTimelineEmptyRange: '選択した月の範囲内にメンバーがありません。',
+    appFieldFilterTaken:
+      '対象となるフィールドにはすべてスライサーまたはタイムラインが設定されています。先に既存のものを削除してください。',
     appGoToNotReady: 'ブックの準備ができていないため、ジャンプできません。',
     appGoToEmpty: 'セルのアドレスまたは定義済みの名前を入力してください。',
     appGoToUnresolved:
@@ -2569,7 +2663,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'このシートにはピボットテーブルが含まれています — このシートのコピーには未対応です。',
     appMoveRowsColsUnsaved:
-      '行全体/列全体の移動は、インポートしたブックには現時点では保存できません。',
+      '列全体の移動は、インポートしたブックには現時点では保存できません——行全体の移動には対応しています。',
     // Preview / apply / undo
     appNoWorkbookOpen: '開いているブックがありません。',
     appDvListOptions: 'リスト：{items}',
@@ -2801,6 +2895,41 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} を保存しました：{total} 個のパッケージエントリのうち {touched} 個を書き換え、残りはバイト単位でそのまま保持しました。',
     appSaveFailed: 'ブックを保存できません。',
+    appCfRuleUnsaveable:
+      'この条件付き書式ルールは xlsx に保存できません — 別のルールの種類をお使いください。',
+    appSaveErrX14Dv:
+      'このシートには拡張(x14)のデータの入力規則があり、その入力規則の編集はまだサポートされていません。',
+    appSaveErrMultiSelectList:
+      '複数選択リストの入力規則は xlsx に保存できません — 保存する前にそのルールを削除してください。',
+    appSaveErrX14Cf: 'この範囲には拡張(x14)の条件付き書式があり、今のところ変更できません。',
+    appSaveErrPivotWithSheetOps:
+      '新規作成したピボットテーブルはシート管理の変更と一緒に保存できません — 先にピボットテーブルを保存してください。',
+    appSaveErrPivotWithRowCol:
+      '新規作成したピボットテーブルは同じシートの行/列の変更と一緒に保存できません — 先にピボットテーブルを保存してください。',
+    appSaveErrTableWithRowCol:
+      '新規作成したテーブルは同じシートの行/列の変更と一緒に保存できません — 先にテーブルを保存してください。',
+    appSaveErrNamesWithStructural:
+      '定義された名前の変更は行/列やシート構造の変更と一緒に保存できません — 2 回に分けて保存してください。',
+    appSaveErrChangedOnDisk:
+      'ファイルがディスク上で別のプログラムに変更されました — 保存を中止しました。開き直してからやり直してください。',
+    appSaveErrStylesheetLimited:
+      'このブックのスタイルシートには基本構造が欠けているため、スタイルの変更を保存できません。',
+    appSaveErrPackageGuard:
+      '保存するとブックのパッケージ構造が変わってしまいます — ファイル保護のため中止しました。',
+    appSaveErrChartUnsupported:
+      'このグラフの種類はこの編集をサポートしていないため保存を中止しました — グラフの変更を元に戻してください。',
+    appSaveErrMoveOverlap:
+      '数式、書式設定された範囲、図形、またはテーブルが移動対象の行にまたがっているため保存を中止しました — 移動を元に戻してください。',
+    appFromTextCsvTitle: 'CSV/テキストファイルを現在の選択範囲にインポート',
+    appCsvImported: 'ファイルから {rows} 行 × {columns} 列を {cell} にインポートしました。',
+    appCsvEmpty: 'CSV ファイルにデータがありません。',
+    appCsvTooLarge:
+      'CSV が大きすぎます——5 万セルを超える場合は「開く」で新しいブックとして開いてください。',
+    appCsvImportFailed: 'CSV のインポートに失敗しました。',
+    appNoNotesOnSheet: '現在のシートにコメントはありません。',
+    appNotePrevTitle: '前のコメントへ移動',
+    appNoteNextTitle: '次のコメントへ移動',
+    appShowCommentsTitle: '選択セルのコメント吹き出しを固定/固定解除',
     appStructuralShiftBlocked:
       'このシートのグラフやテーブルが対象の行/列に固定されているため移動できず、構造変更は保存されませんでした。元に戻して(⌘Z)から再度保存してください。',
     appAiChangesNotSaved:
@@ -3676,7 +3805,7 @@ export const appStrings = defineStrings({
     appOpenWorkbookFirst: '먼저 통합 문서를 여십시오.',
     appOpenXlsxFirst: '먼저 XLSX 파일을 여십시오.',
     appPivotCreated:
-      '피벗 테이블을 만들었습니다. 대상 셀은 {cell}이며, 저장하면 파일에 기록됩니다.',
+      '피벗 테이블을 만들었습니다. 대상 셀은 {cell}이며, 저장하면 파일에 기록됩니다. 저장 후에는 슬라이서, 시간 표시 막대, 새로 고침을 사용할 수 있습니다.',
     appPivotCreateFailed: '피벗 테이블을 만들지 못했습니다.',
     appPutCursorInPivot: '먼저 편집할 피벗 테이블 출력 영역 안에 커서를 두십시오.',
     appPivotNoCacheDef: '이 피벗 테이블에는 캐시 정의가 없어 편집할 수 없습니다.',
@@ -3716,6 +3845,19 @@ export const appStrings = defineStrings({
       '슬라이서 "{name}"을(를) 적용했습니다. 저장(⌘S)하면 필터링된 피벗 테이블이 기록됩니다.',
     appSlicerCleared: '슬라이서 "{name}"의 필터를 해제했습니다.',
     appSlicerRemoved: '슬라이서 "{name}"을(를) 삭제했습니다. 모든 구성원이 복원되었습니다.',
+    appTimelineHintIn: '현재 피벗 테이블의 날짜 필드로 시간 표시 막대 삽입',
+    appTimelineHintOut: '먼저 피벗 테이블 출력 영역의 셀을 선택한 후 시간 표시 막대를 삽입하십시오',
+    appTimelineNoDateFields:
+      '이 피벗 테이블에는 사용할 수 있는 날짜 필드가 없습니다. 시간 표시 막대에는 값이 모두 날짜인 그룹화되지 않은 필드가 필요합니다.',
+    appTimelineCreated:
+      '시간 표시 막대 "{name}"을(를) 만들었습니다. 월을 클릭하면 피벗 테이블이 필터링됩니다.',
+    appTimelineApplied:
+      '시간 표시 막대 "{name}"을(를) 적용했습니다. 저장(⌘S)하면 필터링된 피벗 테이블이 기록됩니다.',
+    appTimelineCleared: '시간 표시 막대 "{name}"의 필터를 해제했습니다.',
+    appTimelineRemoved: '시간 표시 막대 "{name}"을(를) 삭제했습니다. 모든 구성원이 복원되었습니다.',
+    appTimelineEmptyRange: '선택한 월 범위에 구성원이 없습니다.',
+    appFieldFilterTaken:
+      '조건에 맞는 모든 필드에 이미 슬라이서 또는 시간 표시 막대가 있습니다. 먼저 기존 항목을 제거하세요.',
     appGoToNotReady: '통합 문서가 아직 준비되지 않아 이동할 수 없습니다.',
     appGoToEmpty: '셀 주소나 정의된 이름을 입력하십시오.',
     appGoToUnresolved:
@@ -3783,7 +3925,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       '시트 복제에는 전체 로드 모드가 필요합니다. 이 통합 문서는 너무 커서 스트리밍 방식으로만 로드되었습니다.',
     appPivotSheetNoDuplicate: '이 시트에는 피벗 테이블이 있어 아직 시트 복제를 지원하지 않습니다.',
-    appMoveRowsColsUnsaved: '전체 행/열 이동은 가져온 통합 문서에 아직 저장할 수 없습니다.',
+    appMoveRowsColsUnsaved:
+      '전체 열 이동은 가져온 통합 문서에 아직 저장할 수 없습니다 — 전체 행 이동은 지원됩니다.',
     // Preview / apply / undo
     appNoWorkbookOpen: '열려 있는 통합 문서가 없습니다.',
     appDvListOptions: '목록: {items}',
@@ -4000,6 +4143,40 @@ export const appStrings = defineStrings({
     appSaved:
       '{name}을(를) 저장했습니다: 패키지 항목 {total}개 중 {touched}개를 다시 썼으며, 나머지는 바이트 그대로 유지했습니다.',
     appSaveFailed: '통합 문서를 저장할 수 없습니다.',
+    appCfRuleUnsaveable:
+      '이 조건부 서식 규칙은 xlsx로 저장할 수 없습니다 — 다른 규칙 유형을 사용하십시오.',
+    appSaveErrX14Dv:
+      '이 시트에는 확장(x14) 데이터 유효성 검사가 있어 해당 유효성 검사 규칙 편집은 아직 지원되지 않습니다.',
+    appSaveErrMultiSelectList:
+      '다중 선택 목록 유효성 검사는 xlsx로 저장할 수 없습니다 — 저장하기 전에 해당 규칙을 삭제하십시오.',
+    appSaveErrX14Cf: '이 영역에는 확장(x14) 조건부 서식이 있어 당분간 수정할 수 없습니다.',
+    appSaveErrPivotWithSheetOps:
+      '새로 만든 피벗 테이블은 시트 관리 변경과 함께 저장할 수 없습니다 — 먼저 피벗 테이블을 저장하십시오.',
+    appSaveErrPivotWithRowCol:
+      '새로 만든 피벗 테이블은 해당 시트의 행/열 변경과 함께 저장할 수 없습니다 — 먼저 피벗 테이블을 저장하십시오.',
+    appSaveErrTableWithRowCol:
+      '새로 만든 표는 해당 시트의 행/열 변경과 함께 저장할 수 없습니다 — 먼저 표를 저장하십시오.',
+    appSaveErrNamesWithStructural:
+      '정의된 이름 변경은 행/열 또는 시트 구조 변경과 함께 저장할 수 없습니다 — 두 번에 나누어 저장하십시오.',
+    appSaveErrChangedOnDisk:
+      '다른 프로그램이 디스크의 파일을 변경했습니다 — 저장을 중단했으니 파일을 다시 연 후 시도하십시오.',
+    appSaveErrStylesheetLimited:
+      '이 통합 문서의 스타일시트에 기본 구조가 없어 스타일 변경을 저장할 수 없습니다.',
+    appSaveErrPackageGuard:
+      '저장하면 통합 문서의 패키지 구조가 바뀝니다 — 파일 보호를 위해 중단했습니다.',
+    appSaveErrChartUnsupported:
+      '이 차트 종류는 해당 편집을 지원하지 않아 저장을 중단했습니다 — 차트 변경을 실행 취소하십시오.',
+    appSaveErrMoveOverlap:
+      '수식, 서식 범위, 도형 또는 표가 이동한 행에 걸쳐 있어 저장을 중단했습니다 — 해당 이동을 실행 취소하십시오.',
+    appFromTextCsvTitle: 'CSV/텍스트 파일을 현재 선택 영역으로 가져오기',
+    appCsvImported: '파일에서 {rows}행 × {columns}열을 {cell} 위치로 가져왔습니다.',
+    appCsvEmpty: 'CSV 파일에 데이터가 없습니다.',
+    appCsvTooLarge: "CSV가 너무 큽니다 — 5만 셀을 초과하면 '열기'로 새 통합 문서로 여십시오.",
+    appCsvImportFailed: 'CSV 가져오기에 실패했습니다.',
+    appNoNotesOnSheet: '현재 시트에 메모가 없습니다.',
+    appNotePrevTitle: '이전 메모로 이동',
+    appNoteNextTitle: '다음 메모로 이동',
+    appShowCommentsTitle: '선택한 셀의 메모 풍선 고정/고정 해제',
     appStructuralShiftBlocked:
       '이 시트의 차트나 표가 해당 행/열에 고정되어 있어 이동할 수 없으며, 구조 변경은 저장되지 않았습니다. 실행 취소(⌘Z) 후 다시 저장하세요.',
     appAiChangesNotSaved:
@@ -4879,7 +5056,7 @@ export const appStrings = defineStrings({
     appOpenWorkbookFirst: "Ouvrez d'abord un classeur.",
     appOpenXlsxFirst: "Ouvrez d'abord un fichier XLSX.",
     appPivotCreated:
-      "Tableau croisé dynamique créé en {cell} — écrit dans le fichier à l'enregistrement.",
+      "Tableau croisé dynamique créé en {cell} — écrit dans le fichier à l'enregistrement. Après l'enregistrement, les segments, les chronologies et l'actualisation seront disponibles.",
     appPivotCreateFailed: 'Échec de la création du tableau croisé dynamique.',
     appPutCursorInPivot:
       'Placez le curseur dans la zone de sortie du tableau croisé dynamique à modifier.',
@@ -4925,6 +5102,21 @@ export const appStrings = defineStrings({
       'Segment « {name} » appliqué — enregistrez (⌘S) pour écrire le tableau croisé dynamique filtré.',
     appSlicerCleared: 'Filtre du segment « {name} » effacé.',
     appSlicerRemoved: 'Segment « {name} » supprimé ; tous les membres ont été rétablis.',
+    appTimelineHintIn:
+      'Insérer une chronologie pour un champ de date du tableau croisé dynamique actuel',
+    appTimelineHintOut:
+      "Sélectionnez d'abord une cellule dans la zone du tableau croisé dynamique, puis insérez une chronologie",
+    appTimelineNoDateFields:
+      "Ce tableau croisé dynamique n'a aucun champ de date utilisable — une chronologie nécessite un champ non groupé dont les valeurs sont toutes des dates.",
+    appTimelineCreated:
+      'Chronologie « {name} » créée — cliquez sur les mois pour filtrer le tableau croisé dynamique.',
+    appTimelineApplied:
+      'Chronologie « {name} » appliquée — enregistrez (⌘S) pour écrire le tableau croisé dynamique filtré.',
+    appTimelineCleared: 'Filtre de la chronologie « {name} » effacé.',
+    appTimelineRemoved: 'Chronologie « {name} » supprimée ; tous les membres ont été rétablis.',
+    appTimelineEmptyRange: 'Aucun membre dans la plage de mois sélectionnée.',
+    appFieldFilterTaken:
+      "Tous les champs éligibles ont déjà un segment ou une chronologie — supprimez d'abord l'existant.",
     appGoToNotReady: "Le classeur n'est pas encore prêt — impossible d'atteindre une référence.",
     appGoToEmpty: 'Saisissez une adresse de cellule ou un nom défini.',
     appGoToUnresolved:
@@ -5001,7 +5193,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       "Cette feuille contient un tableau croisé dynamique — sa duplication n'est pas encore prise en charge.",
     appMoveRowsColsUnsaved:
-      'Le déplacement de lignes ou de colonnes entières ne peut pas encore être enregistré dans les classeurs importés.',
+      'Le déplacement de colonnes entières ne peut pas encore être enregistré dans les classeurs importés — le déplacement de lignes entières est pris en charge.',
     appNoWorkbookOpen: "Aucun classeur n'est ouvert.",
     appDvListOptions: 'Liste : {items}',
     appDvListFromRange: 'Liste (depuis la plage {range})',
@@ -5237,6 +5429,42 @@ export const appStrings = defineStrings({
     appSaved:
       "{name} enregistré : {touched} entrées de package réécrites sur {total}, le reste préservé à l'identique.",
     appSaveFailed: "Impossible d'enregistrer le classeur.",
+    appCfRuleUnsaveable:
+      'Cette règle de mise en forme conditionnelle ne peut pas être enregistrée en xlsx — utilisez un autre type de règle.',
+    appSaveErrX14Dv:
+      "Cette feuille comporte une validation des données étendue (x14) ; la modification de ses règles de validation n'est pas encore prise en charge.",
+    appSaveErrMultiSelectList:
+      "La validation par liste à sélection multiple ne peut pas être enregistrée en xlsx — supprimez la règle avant d'enregistrer.",
+    appSaveErrX14Cf:
+      'Cette plage comporte une mise en forme conditionnelle étendue (x14) et ne peut pas être modifiée pour le moment.',
+    appSaveErrPivotWithSheetOps:
+      "Un tableau croisé dynamique nouvellement créé ne peut pas être enregistré avec des changements de gestion des feuilles — enregistrez d'abord le tableau croisé dynamique.",
+    appSaveErrPivotWithRowCol:
+      "Un tableau croisé dynamique nouvellement créé ne peut pas être enregistré avec des changements de lignes/colonnes de sa feuille — enregistrez d'abord le tableau croisé dynamique.",
+    appSaveErrTableWithRowCol:
+      "Un tableau nouvellement créé ne peut pas être enregistré avec des changements de lignes/colonnes de sa feuille — enregistrez d'abord le tableau.",
+    appSaveErrNamesWithStructural:
+      'Les modifications de noms définis ne peuvent pas être enregistrées avec des changements de lignes/colonnes ou de structure des feuilles — enregistrez en deux fois.',
+    appSaveErrChangedOnDisk:
+      'Le fichier a été modifié sur le disque par un autre programme — enregistrement interrompu ; rouvrez le fichier puis réessayez.',
+    appSaveErrStylesheetLimited:
+      'La feuille de styles de ce classeur manque de structure de base ; les modifications de style ne peuvent pas être enregistrées.',
+    appSaveErrPackageGuard:
+      "L'enregistrement modifierait la structure du package du classeur — interrompu pour protéger le fichier.",
+    appSaveErrChartUnsupported:
+      'Ce type de graphique ne prend pas en charge cette modification ; enregistrement interrompu — annulez la modification du graphique.',
+    appSaveErrMoveOverlap:
+      'Une formule, une plage mise en forme, une forme ou un tableau chevauche les lignes déplacées ; enregistrement interrompu — annulez le déplacement.',
+    appFromTextCsvTitle: 'Importer un fichier CSV/texte dans la sélection actuelle',
+    appCsvImported: '{rows} lignes × {columns} colonnes importées du fichier vers {cell}.',
+    appCsvEmpty: 'Le fichier CSV ne contient aucune donnée.',
+    appCsvTooLarge:
+      'CSV trop volumineux — au-delà de 50 000 cellules, utilisez « Ouvrir » pour créer un nouveau classeur.',
+    appCsvImportFailed: "Échec de l'importation du CSV.",
+    appNoNotesOnSheet: 'Aucun commentaire dans la feuille actuelle.',
+    appNotePrevTitle: 'Aller au commentaire précédent',
+    appNoteNextTitle: 'Aller au commentaire suivant',
+    appShowCommentsTitle: 'Épingler/détacher la bulle de commentaire de la cellule sélectionnée',
     appStructuralShiftBlocked:
       "Un graphique ou un tableau de cette feuille est ancré aux lignes/colonnes concernées : impossible de les décaler, la modification structurelle n'a pas été enregistrée. Annulez-la (⌘Z) puis réenregistrez.",
     appAiChangesNotSaved:
@@ -6106,7 +6334,7 @@ export const appStrings = defineStrings({
     appOpenWorkbookFirst: 'Öffnen Sie zuerst eine Arbeitsmappe.',
     appOpenXlsxFirst: 'Öffnen Sie zuerst eine XLSX-Datei.',
     appPivotCreated:
-      'PivotTable in {cell} erstellt — wird beim Speichern in die Datei geschrieben.',
+      'PivotTable in {cell} erstellt — wird beim Speichern in die Datei geschrieben. Nach dem Speichern stehen Datenschnitte, Zeitachsen und Aktualisieren zur Verfügung.',
     appPivotCreateFailed: 'PivotTable konnte nicht erstellt werden.',
     appPutCursorInPivot:
       'Setzen Sie den Cursor in den Ausgabebereich der zu bearbeitenden PivotTable.',
@@ -6150,6 +6378,20 @@ export const appStrings = defineStrings({
       'Datenschnitt „{name}“ angewendet — mit ⌘S die gefilterte PivotTable speichern.',
     appSlicerCleared: 'Filter des Datenschnitts „{name}“ gelöscht.',
     appSlicerRemoved: 'Datenschnitt „{name}“ entfernt; alle Elemente wiederhergestellt.',
+    appTimelineHintIn: 'Zeitachse für ein Datumsfeld der aktuellen PivotTable einfügen',
+    appTimelineHintOut:
+      'Wählen Sie zuerst eine Zelle im PivotTable-Ausgabebereich aus, dann fügen Sie eine Zeitachse ein',
+    appTimelineNoDateFields:
+      'Diese PivotTable hat keine nutzbaren Datumsfelder — eine Zeitachse benötigt ein nicht gruppiertes Feld, dessen Werte alle Datumswerte sind.',
+    appTimelineCreated:
+      'Zeitachse „{name}“ erstellt — klicken Sie auf Monate, um die PivotTable zu filtern.',
+    appTimelineApplied:
+      'Zeitachse „{name}“ angewendet — mit ⌘S die gefilterte PivotTable speichern.',
+    appTimelineCleared: 'Filter der Zeitachse „{name}“ gelöscht.',
+    appTimelineRemoved: 'Zeitachse „{name}“ entfernt; alle Elemente wiederhergestellt.',
+    appTimelineEmptyRange: 'Keine Elemente im ausgewählten Monatsbereich.',
+    appFieldFilterTaken:
+      'Alle geeigneten Felder haben bereits einen Datenschnitt oder eine Zeitachse — entfernen Sie zuerst den vorhandenen.',
     appGoToNotReady: 'Die Arbeitsmappe ist noch nicht bereit — Navigation nicht möglich.',
     appGoToEmpty: 'Geben Sie eine Zelladresse oder einen definierten Namen ein.',
     appGoToUnresolved:
@@ -6225,7 +6467,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Dieses Blatt enthält eine PivotTable — sein Duplizieren wird noch nicht unterstützt.',
     appMoveRowsColsUnsaved:
-      'Das Verschieben ganzer Zeilen oder Spalten kann bei importierten Arbeitsmappen noch nicht gespeichert werden.',
+      'Das Verschieben ganzer Spalten kann bei importierten Arbeitsmappen noch nicht gespeichert werden — das Verschieben ganzer Zeilen wird unterstützt.',
     appNoWorkbookOpen: 'Keine Arbeitsmappe geöffnet.',
     appDvListOptions: 'Liste: {items}',
     appDvListFromRange: 'Liste (aus Bereich {range})',
@@ -6457,6 +6699,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} gespeichert: {touched} von {total} Paketeinträgen neu geschrieben, der Rest byteidentisch erhalten.',
     appSaveFailed: 'Die Arbeitsmappe kann nicht gespeichert werden.',
+    appCfRuleUnsaveable:
+      'Diese Regel für bedingte Formatierung kann nicht in xlsx gespeichert werden — verwenden Sie einen anderen Regeltyp.',
+    appSaveErrX14Dv:
+      'Dieses Blatt enthält erweiterte (x14) Datenüberprüfung; das Bearbeiten ihrer Überprüfungsregeln wird noch nicht unterstützt.',
+    appSaveErrMultiSelectList:
+      'Mehrfachauswahl-Listenüberprüfung kann nicht in xlsx gespeichert werden — löschen Sie die Regel vor dem Speichern.',
+    appSaveErrX14Cf:
+      'Dieser Bereich enthält erweiterte (x14) bedingte Formatierung und kann vorerst nicht geändert werden.',
+    appSaveErrPivotWithSheetOps:
+      'Eine neu erstellte PivotTable kann nicht zusammen mit Blattverwaltungsänderungen gespeichert werden — speichern Sie zuerst die PivotTable.',
+    appSaveErrPivotWithRowCol:
+      'Eine neu erstellte PivotTable kann nicht zusammen mit Zeilen-/Spaltenänderungen auf ihrem Blatt gespeichert werden — speichern Sie zuerst die PivotTable.',
+    appSaveErrTableWithRowCol:
+      'Eine neu erstellte Tabelle kann nicht zusammen mit Zeilen-/Spaltenänderungen auf ihrem Blatt gespeichert werden — speichern Sie zuerst die Tabelle.',
+    appSaveErrNamesWithStructural:
+      'Änderungen an definierten Namen können nicht zusammen mit Zeilen-/Spalten- oder Blattstrukturänderungen gespeichert werden — speichern Sie in zwei Schritten.',
+    appSaveErrChangedOnDisk:
+      'Die Datei wurde auf dem Datenträger von einem anderen Programm geändert — Speichern abgebrochen; öffnen Sie die Datei erneut und versuchen Sie es noch einmal.',
+    appSaveErrStylesheetLimited:
+      'Dem Stylesheet dieser Arbeitsmappe fehlt die Grundstruktur; Stiländerungen können nicht gespeichert werden.',
+    appSaveErrPackageGuard:
+      'Das Speichern würde die Paketstruktur der Arbeitsmappe verändern — zum Schutz der Datei abgebrochen.',
+    appSaveErrChartUnsupported:
+      'Dieser Diagrammtyp unterstützt diese Bearbeitung nicht; Speichern abgebrochen — machen Sie die Diagrammänderung rückgängig.',
+    appSaveErrMoveOverlap:
+      'Eine Formel, ein formatierter Bereich, eine Form oder eine Tabelle erstreckt sich über die verschobenen Zeilen; Speichern abgebrochen — machen Sie die Verschiebung rückgängig.',
+    appFromTextCsvTitle: 'CSV-/Textdatei in die aktuelle Auswahl importieren',
+    appCsvImported: '{rows} Zeilen × {columns} Spalten aus der Datei nach {cell} importiert.',
+    appCsvEmpty: 'Die CSV-Datei enthält keine Daten.',
+    appCsvTooLarge:
+      'CSV zu groß — bei mehr als 50.000 Zellen verwenden Sie „Öffnen“ für eine neue Arbeitsmappe.',
+    appCsvImportFailed: 'CSV-Import fehlgeschlagen.',
+    appNoNotesOnSheet: 'Auf dem aktuellen Blatt gibt es keine Kommentare.',
+    appNotePrevTitle: 'Zum vorherigen Kommentar springen',
+    appNoteNextTitle: 'Zum nächsten Kommentar springen',
+    appShowCommentsTitle: 'Kommentar-Sprechblase der ausgewählten Zelle anheften/lösen',
     appStructuralShiftBlocked:
       'Ein Diagramm oder eine Tabelle auf diesem Blatt ist an den betroffenen Zeilen/Spalten verankert; sie können nicht verschoben werden, die Strukturänderung wurde nicht gespeichert. Machen Sie sie rückgängig (⌘Z) und speichern Sie erneut.',
     appAiChangesNotSaved:
@@ -7322,7 +7600,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'El libro no está listo.',
     appOpenWorkbookFirst: 'Abra primero un libro.',
     appOpenXlsxFirst: 'Abra primero un archivo XLSX.',
-    appPivotCreated: 'Tabla dinámica creada en {cell} — se escribe en el archivo al guardar.',
+    appPivotCreated:
+      'Tabla dinámica creada en {cell} — se escribe en el archivo al guardar. Tras guardar, podrá usar segmentaciones de datos, escalas de tiempo y actualización.',
     appPivotCreateFailed: 'No se pudo crear la tabla dinámica.',
     appPutCursorInPivot:
       'Coloque el cursor dentro de la salida de la tabla dinámica que desea editar.',
@@ -7366,6 +7645,21 @@ export const appStrings = defineStrings({
     appSlicerCleared: 'Filtro de la segmentación "{name}" borrado.',
     appSlicerRemoved:
       'Segmentación de datos "{name}" eliminada; se restauraron todos los miembros.',
+    appTimelineHintIn:
+      'Insertar una escala de tiempo para un campo de fecha de la tabla dinámica actual',
+    appTimelineHintOut:
+      'Seleccione primero una celda dentro de la salida de la tabla dinámica y luego inserte una escala de tiempo',
+    appTimelineNoDateFields:
+      'Esta tabla dinámica no tiene campos de fecha utilizables — una escala de tiempo necesita un campo sin agrupar cuyos valores sean todos fechas.',
+    appTimelineCreated:
+      'Escala de tiempo "{name}" creada — haga clic en los meses para filtrar la tabla dinámica.',
+    appTimelineApplied:
+      'Escala de tiempo "{name}" aplicada — guarde (⌘S) para escribir la tabla dinámica filtrada.',
+    appTimelineCleared: 'Filtro de la escala de tiempo "{name}" borrado.',
+    appTimelineRemoved: 'Escala de tiempo "{name}" eliminada; se restauraron todos los miembros.',
+    appTimelineEmptyRange: 'No hay miembros en el intervalo de meses seleccionado.',
+    appFieldFilterTaken:
+      'Todos los campos aptos ya tienen una segmentación de datos o una escala de tiempo — elimine primero la existente.',
     appGoToNotReady: 'El libro aún no está listo — no se puede ir a una referencia.',
     appGoToEmpty: 'Escriba una dirección de celda o un nombre definido.',
     appGoToUnresolved:
@@ -7439,7 +7733,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Esta hoja contiene una tabla dinámica — su duplicación aún no se admite.',
     appMoveRowsColsUnsaved:
-      'Mover filas o columnas enteras aún no se puede guardar en libros importados.',
+      'Mover columnas enteras aún no se puede guardar en libros importados — mover filas enteras ya es compatible.',
     appNoWorkbookOpen: 'No hay ningún libro abierto.',
     appDvListOptions: 'Lista: {items}',
     appDvListFromRange: 'Lista (del rango {range})',
@@ -7667,6 +7961,42 @@ export const appStrings = defineStrings({
     appSaved:
       'Se guardó {name}: se reescribieron {touched} de {total} entradas del paquete; el resto se conservó byte a byte.',
     appSaveFailed: 'No se puede guardar el libro.',
+    appCfRuleUnsaveable:
+      'Esta regla de formato condicional no se puede guardar en xlsx — use otro tipo de regla.',
+    appSaveErrX14Dv:
+      'Esta hoja tiene validación de datos extendida (x14); editar sus reglas de validación aún no es compatible.',
+    appSaveErrMultiSelectList:
+      'La validación de lista de selección múltiple no se puede guardar en xlsx — elimine la regla antes de guardar.',
+    appSaveErrX14Cf:
+      'Este rango tiene formato condicional extendido (x14) y por ahora no se puede modificar.',
+    appSaveErrPivotWithSheetOps:
+      'Una tabla dinámica recién creada no se puede guardar junto con cambios de gestión de hojas — guarde primero la tabla dinámica.',
+    appSaveErrPivotWithRowCol:
+      'Una tabla dinámica recién creada no se puede guardar junto con cambios de filas/columnas en su hoja — guarde primero la tabla dinámica.',
+    appSaveErrTableWithRowCol:
+      'Una tabla recién creada no se puede guardar junto con cambios de filas/columnas en su hoja — guarde primero la tabla.',
+    appSaveErrNamesWithStructural:
+      'Los cambios de nombres definidos no se pueden guardar junto con cambios de filas/columnas o de estructura de hojas — guarde en dos pasos.',
+    appSaveErrChangedOnDisk:
+      'Otro programa modificó el archivo en el disco — guardado cancelado; vuelva a abrir el archivo e inténtelo de nuevo.',
+    appSaveErrStylesheetLimited:
+      'La hoja de estilos de este libro carece de estructura básica; los cambios de estilo no se pueden guardar.',
+    appSaveErrPackageGuard:
+      'Guardar cambiaría la estructura del paquete del libro — se canceló para proteger el archivo.',
+    appSaveErrChartUnsupported:
+      'Este tipo de gráfico no admite esa edición; guardado cancelado — deshaga el cambio del gráfico.',
+    appSaveErrMoveOverlap:
+      'Una fórmula, un rango con formato, una forma o una tabla abarca las filas movidas; guardado cancelado — deshaga el movimiento.',
+    appFromTextCsvTitle: 'Importar un archivo CSV/de texto en la selección actual',
+    appCsvImported: 'Se importaron {rows} filas × {columns} columnas del archivo en {cell}.',
+    appCsvEmpty: 'El archivo CSV no contiene datos.',
+    appCsvTooLarge:
+      'El CSV es demasiado grande — con más de 50.000 celdas, use «Abrir» como libro nuevo.',
+    appCsvImportFailed: 'Error al importar el CSV.',
+    appNoNotesOnSheet: 'No hay comentarios en la hoja actual.',
+    appNotePrevTitle: 'Ir al comentario anterior',
+    appNoteNextTitle: 'Ir al comentario siguiente',
+    appShowCommentsTitle: 'Fijar o soltar el globo de comentario de la celda seleccionada',
     appStructuralShiftBlocked:
       'Un gráfico o tabla de esta hoja está anclado a las filas/columnas afectadas; no se pueden desplazar y el cambio estructural no se guardó. Deshágalo (⌘Z) y vuelva a guardar.',
     appAiChangesNotSaved: 'Cambios de IA aplicados (sin guardar). Deshaga con ⌘Z; guarde con ⌘S.',
@@ -8521,7 +8851,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'เวิร์กบุ๊กยังไม่พร้อม',
     appOpenWorkbookFirst: 'เปิดเวิร์กบุ๊กก่อน',
     appOpenXlsxFirst: 'เปิดไฟล์ XLSX ก่อน',
-    appPivotCreated: 'สร้าง PivotTable แล้วที่ {cell} — จะเขียนลงไฟล์เมื่อบันทึก',
+    appPivotCreated:
+      'สร้าง PivotTable แล้วที่ {cell} — จะเขียนลงไฟล์เมื่อบันทึก หลังบันทึกจะใช้ตัวแบ่งส่วนข้อมูล ไทม์ไลน์ และการรีเฟรชได้',
     appPivotCreateFailed: 'สร้าง PivotTable ไม่สำเร็จ',
     appPutCursorInPivot: 'วางเคอร์เซอร์ในพื้นที่แสดงผลของ PivotTable ที่ต้องการแก้ไขก่อน',
     appPivotNoCacheDef: 'PivotTable นี้ไม่มีคำจำกัดความแคช จึงแก้ไขไม่ได้',
@@ -8559,6 +8890,18 @@ export const appStrings = defineStrings({
       'นำตัวแบ่งส่วนข้อมูล "{name}" ไปใช้แล้ว — บันทึก (⌘S) เพื่อเขียน PivotTable ที่กรองแล้ว',
     appSlicerCleared: 'ล้างตัวกรองของตัวแบ่งส่วนข้อมูล "{name}" แล้ว',
     appSlicerRemoved: 'ลบตัวแบ่งส่วนข้อมูล "{name}" แล้ว คืนค่าสมาชิกทั้งหมด',
+    appTimelineHintIn: 'แทรกไทม์ไลน์สำหรับเขตข้อมูลวันที่ของ PivotTable ปัจจุบัน',
+    appTimelineHintOut: 'เลือกเซลล์ภายในพื้นที่แสดงผลของ PivotTable ก่อน แล้วจึงแทรกไทม์ไลน์',
+    appTimelineNoDateFields:
+      'PivotTable นี้ไม่มีเขตข้อมูลวันที่ที่ใช้ได้ — ไทม์ไลน์ต้องใช้เขตข้อมูลที่ไม่ได้จัดกลุ่มและมีค่าเป็นวันที่ทั้งหมด',
+    appTimelineCreated: 'สร้างไทม์ไลน์ "{name}" แล้ว — คลิกเดือนเพื่อกรอง PivotTable',
+    appTimelineApplied:
+      'นำไทม์ไลน์ "{name}" ไปใช้แล้ว — บันทึก (⌘S) เพื่อเขียน PivotTable ที่กรองแล้ว',
+    appTimelineCleared: 'ล้างตัวกรองของไทม์ไลน์ "{name}" แล้ว',
+    appTimelineRemoved: 'ลบไทม์ไลน์ "{name}" แล้ว คืนค่าสมาชิกทั้งหมด',
+    appTimelineEmptyRange: 'ไม่มีสมาชิกในช่วงเดือนที่เลือก',
+    appFieldFilterTaken:
+      'เขตข้อมูลที่เข้าเงื่อนไขทั้งหมดมีตัวแบ่งส่วนข้อมูลหรือไทม์ไลน์อยู่แล้ว — ลบของเดิมก่อน',
     appGoToNotReady: 'เวิร์กบุ๊กยังไม่พร้อม — ไปยังตำแหน่งไม่ได้',
     appGoToEmpty: 'พิมพ์ที่อยู่เซลล์หรือชื่อที่กำหนดไว้',
     appGoToUnresolved:
@@ -8622,7 +8965,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'การทำสำเนาแผ่นงานต้องใช้โหมดโหลดเต็ม — เวิร์กบุ๊กนี้ใหญ่เกินไปจึงโหลดแบบสตรีมบางส่วน',
     appPivotSheetNoDuplicate: 'แผ่นงานนี้มี PivotTable — ยังไม่รองรับการทำสำเนาแผ่นงานนี้',
-    appMoveRowsColsUnsaved: 'การย้ายทั้งแถว/ทั้งคอลัมน์ยังบันทึกลงเวิร์กบุ๊กที่นำเข้าไม่ได้',
+    appMoveRowsColsUnsaved:
+      'การย้ายทั้งคอลัมน์ยังบันทึกลงเวิร์กบุ๊กที่นำเข้าไม่ได้ — ส่วนการย้ายทั้งแถวรองรับแล้ว',
     appNoWorkbookOpen: 'ไม่มีเวิร์กบุ๊กที่เปิดอยู่',
     appDvListOptions: 'รายการ: {items}',
     appDvListFromRange: 'รายการ (จากช่วง {range})',
@@ -8825,6 +9169,40 @@ export const appStrings = defineStrings({
     appSaved:
       'บันทึก {name} แล้ว: เขียนใหม่ {touched} จาก {total} รายการในแพ็กเกจ ส่วนที่เหลือคงเดิมทุกไบต์',
     appSaveFailed: 'บันทึกเวิร์กบุ๊กไม่ได้',
+    appCfRuleUnsaveable:
+      'กฎการจัดรูปแบบตามเงื่อนไขนี้ไม่สามารถบันทึกเป็น xlsx ได้ — โปรดใช้กฎประเภทอื่น',
+    appSaveErrX14Dv:
+      'ชีตนี้มีการตรวจสอบความถูกต้องของข้อมูลแบบขยาย (x14) ยังไม่รองรับการแก้ไขกฎการตรวจสอบของชีตนี้',
+    appSaveErrMultiSelectList:
+      'การตรวจสอบแบบรายการเลือกหลายรายการไม่สามารถบันทึกเป็น xlsx ได้ — โปรดลบกฎนั้นก่อนบันทึก',
+    appSaveErrX14Cf: 'ช่วงนี้มีการจัดรูปแบบตามเงื่อนไขแบบขยาย (x14) จึงยังแก้ไขไม่ได้ในขณะนี้',
+    appSaveErrPivotWithSheetOps:
+      'PivotTable ที่สร้างใหม่ไม่สามารถบันทึกพร้อมการเปลี่ยนแปลงการจัดการชีตได้ — โปรดบันทึก PivotTable ก่อน',
+    appSaveErrPivotWithRowCol:
+      'PivotTable ที่สร้างใหม่ไม่สามารถบันทึกพร้อมการเปลี่ยนแปลงแถว/คอลัมน์ของชีตนั้นได้ — โปรดบันทึก PivotTable ก่อน',
+    appSaveErrTableWithRowCol:
+      'ตารางที่สร้างใหม่ไม่สามารถบันทึกพร้อมการเปลี่ยนแปลงแถว/คอลัมน์ของชีตนั้นได้ — โปรดบันทึกตารางก่อน',
+    appSaveErrNamesWithStructural:
+      'การเปลี่ยนแปลงชื่อที่กำหนดไม่สามารถบันทึกพร้อมการเปลี่ยนแปลงแถว/คอลัมน์หรือโครงสร้างชีตได้ — โปรดแยกบันทึกเป็นสองครั้ง',
+    appSaveErrChangedOnDisk:
+      'ไฟล์ถูกโปรแกรมอื่นแก้ไขบนดิสก์ — ยกเลิกการบันทึกแล้ว โปรดเปิดไฟล์ใหม่แล้วลองอีกครั้ง',
+    appSaveErrStylesheetLimited:
+      'สไตล์ชีตของเวิร์กบุ๊กนี้ขาดโครงสร้างพื้นฐาน จึงบันทึกการเปลี่ยนแปลงสไตล์ไม่ได้',
+    appSaveErrPackageGuard:
+      'การบันทึกจะเปลี่ยนโครงสร้างแพ็กเกจของเวิร์กบุ๊ก — ยกเลิกแล้วเพื่อปกป้องไฟล์',
+    appSaveErrChartUnsupported:
+      'แผนภูมิประเภทนี้ไม่รองรับการแก้ไขดังกล่าว ยกเลิกการบันทึกแล้ว — โปรดเลิกทำการเปลี่ยนแปลงแผนภูมินั้น',
+    appSaveErrMoveOverlap:
+      'มีสูตร ช่วงที่จัดรูปแบบ รูปร่าง หรือตารางคร่อมแถวที่ถูกย้าย ยกเลิกการบันทึกแล้ว — โปรดเลิกทำการย้ายนั้น',
+    appFromTextCsvTitle: 'นำเข้าไฟล์ CSV/ข้อความไปยังส่วนที่เลือกปัจจุบัน',
+    appCsvImported: 'นำเข้า {rows} แถว × {columns} คอลัมน์จากไฟล์ไปยัง {cell} แล้ว',
+    appCsvEmpty: 'ไฟล์ CSV ไม่มีข้อมูล',
+    appCsvTooLarge: 'CSV ใหญ่เกินไป — หากเกิน 50,000 เซลล์ โปรดใช้ "เปิด" เป็นเวิร์กบุ๊กใหม่',
+    appCsvImportFailed: 'นำเข้า CSV ไม่สำเร็จ',
+    appNoNotesOnSheet: 'ชีตปัจจุบันไม่มีข้อคิดเห็น',
+    appNotePrevTitle: 'ไปยังข้อคิดเห็นก่อนหน้า',
+    appNoteNextTitle: 'ไปยังข้อคิดเห็นถัดไป',
+    appShowCommentsTitle: 'ปักหมุด/เลิกปักหมุดบอลลูนข้อคิดเห็นของเซลล์ที่เลือก',
     appStructuralShiftBlocked:
       'แผนภูมิหรือตารางในชีตนี้ยึดกับแถว/คอลัมน์ที่ได้รับผลกระทบ จึงเลื่อนไม่ได้ และการเปลี่ยนโครงสร้างไม่ถูกบันทึก โปรดเลิกทำ (⌘Z) แล้วบันทึกอีกครั้ง',
     appAiChangesNotSaved:
@@ -9673,7 +10051,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'Buku kerja belum siap.',
     appOpenWorkbookFirst: 'Buka buku kerja dahulu.',
     appOpenXlsxFirst: 'Buka file XLSX dahulu.',
-    appPivotCreated: 'PivotTable dibuat di {cell} — ditulis ke file saat disimpan.',
+    appPivotCreated:
+      'PivotTable dibuat di {cell} — ditulis ke file saat disimpan. Setelah disimpan, pemotong, garis waktu, dan refresh dapat digunakan.',
     appPivotCreateFailed: 'Gagal membuat PivotTable.',
     appPutCursorInPivot: 'Letakkan kursor di dalam area keluaran PivotTable yang ingin diedit.',
     appPivotNoCacheDef: 'PivotTable ini tidak memiliki definisi cache dan tidak dapat diedit.',
@@ -9711,6 +10090,19 @@ export const appStrings = defineStrings({
       'Pemotong "{name}" diterapkan — simpan (⌘S) untuk menulis PivotTable yang terfilter.',
     appSlicerCleared: 'Filter pemotong "{name}" dihapus.',
     appSlicerRemoved: 'Pemotong "{name}" dihapus; semua anggota dipulihkan.',
+    appTimelineHintIn: 'Sisipkan garis waktu untuk bidang tanggal PivotTable saat ini',
+    appTimelineHintOut:
+      'Pilih dahulu sel di dalam area keluaran PivotTable, lalu sisipkan garis waktu',
+    appTimelineNoDateFields:
+      'PivotTable ini tidak memiliki bidang tanggal yang dapat digunakan — garis waktu memerlukan bidang tanpa pengelompokan yang semua nilainya berupa tanggal.',
+    appTimelineCreated: 'Garis waktu "{name}" dibuat — klik bulan untuk memfilter PivotTable.',
+    appTimelineApplied:
+      'Garis waktu "{name}" diterapkan — simpan (⌘S) untuk menulis PivotTable yang terfilter.',
+    appTimelineCleared: 'Filter garis waktu "{name}" dihapus.',
+    appTimelineRemoved: 'Garis waktu "{name}" dihapus; semua anggota dipulihkan.',
+    appTimelineEmptyRange: 'Tidak ada anggota dalam rentang bulan yang dipilih.',
+    appFieldFilterTaken:
+      'Semua bidang yang memenuhi syarat sudah memiliki pemotong atau garis waktu — hapus dulu yang ada.',
     appGoToNotReady: 'Buku kerja belum siap — tidak dapat membuka referensi.',
     appGoToEmpty: 'Masukkan alamat sel atau nama yang ditentukan.',
     appGoToUnresolved:
@@ -9777,7 +10169,7 @@ export const appStrings = defineStrings({
       'Menduplikasi lembar memerlukan mode muat penuh — buku kerja ini terlalu besar dan dimuat sebagian secara streaming.',
     appPivotSheetNoDuplicate: 'Lembar ini berisi PivotTable — menduplikasinya belum didukung.',
     appMoveRowsColsUnsaved:
-      'Memindahkan seluruh baris atau kolom belum dapat disimpan pada buku kerja yang diimpor.',
+      'Memindahkan seluruh kolom belum dapat disimpan pada buku kerja yang diimpor — memindahkan seluruh baris sudah didukung.',
     appNoWorkbookOpen: 'Tidak ada buku kerja yang terbuka.',
     appDvListOptions: 'Daftar: {items}',
     appDvListFromRange: 'Daftar (dari rentang {range})',
@@ -9990,6 +10382,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} disimpan: menulis ulang {touched} dari {total} entri paket, sisanya dipertahankan identik per byte.',
     appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
+    appCfRuleUnsaveable:
+      'Aturan pemformatan bersyarat ini tidak dapat disimpan ke xlsx — gunakan jenis aturan lain.',
+    appSaveErrX14Dv:
+      'Sheet ini memiliki validasi data yang diperluas (x14); mengedit aturan validasinya belum didukung.',
+    appSaveErrMultiSelectList:
+      'Validasi daftar pilihan ganda tidak dapat disimpan ke xlsx — hapus aturan tersebut sebelum menyimpan.',
+    appSaveErrX14Cf:
+      'Rentang ini memiliki pemformatan bersyarat yang diperluas (x14) dan untuk saat ini tidak dapat diubah.',
+    appSaveErrPivotWithSheetOps:
+      'PivotTable yang baru dibuat tidak dapat disimpan bersama perubahan pengelolaan sheet — simpan PivotTable terlebih dahulu.',
+    appSaveErrPivotWithRowCol:
+      'PivotTable yang baru dibuat tidak dapat disimpan bersama perubahan baris/kolom di sheet-nya — simpan PivotTable terlebih dahulu.',
+    appSaveErrTableWithRowCol:
+      'Tabel yang baru dibuat tidak dapat disimpan bersama perubahan baris/kolom di sheet-nya — simpan tabel terlebih dahulu.',
+    appSaveErrNamesWithStructural:
+      'Perubahan nama yang ditentukan tidak dapat disimpan bersama perubahan baris/kolom atau struktur sheet — simpan dalam dua tahap.',
+    appSaveErrChangedOnDisk:
+      'File diubah di disk oleh program lain — penyimpanan dibatalkan; buka kembali file lalu coba lagi.',
+    appSaveErrStylesheetLimited:
+      'Stylesheet buku kerja ini tidak memiliki struktur dasar, jadi perubahan gaya tidak dapat disimpan.',
+    appSaveErrPackageGuard:
+      'Menyimpan akan mengubah struktur paket buku kerja — dibatalkan untuk melindungi file.',
+    appSaveErrChartUnsupported:
+      'Jenis bagan ini tidak mendukung pengeditan tersebut; penyimpanan dibatalkan — urungkan perubahan bagan itu.',
+    appSaveErrMoveOverlap:
+      'Ada rumus, rentang berformat, bentuk, atau tabel yang melintasi baris yang dipindahkan; penyimpanan dibatalkan — urungkan pemindahan itu.',
+    appFromTextCsvTitle: 'Impor file CSV/teks ke pilihan saat ini',
+    appCsvImported: 'Mengimpor {rows} baris × {columns} kolom dari file ke {cell}.',
+    appCsvEmpty: 'File CSV tidak berisi data.',
+    appCsvTooLarge:
+      'CSV terlalu besar — jika lebih dari 50.000 sel, gunakan "Buka" sebagai buku kerja baru.',
+    appCsvImportFailed: 'Impor CSV gagal.',
+    appNoNotesOnSheet: 'Tidak ada komentar di sheet saat ini.',
+    appNotePrevTitle: 'Lompat ke komentar sebelumnya',
+    appNoteNextTitle: 'Lompat ke komentar berikutnya',
+    appShowCommentsTitle: 'Sematkan/lepas sematan balon komentar sel yang dipilih',
     appStructuralShiftBlocked:
       'Bagan atau tabel di sheet ini tertaut ke baris/kolom yang terdampak sehingga tidak bisa digeser; perubahan struktur tidak disimpan. Urungkan (⌘Z) lalu simpan lagi.',
     appAiChangesNotSaved:
@@ -10848,7 +11276,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'Книга не готова.',
     appOpenWorkbookFirst: 'Сначала откройте книгу.',
     appOpenXlsxFirst: 'Сначала откройте файл XLSX.',
-    appPivotCreated: 'Сводная таблица создана в {cell} — записывается в файл при сохранении.',
+    appPivotCreated:
+      'Сводная таблица создана в {cell} — записывается в файл при сохранении. После сохранения будут доступны срезы, временные шкалы и обновление.',
     appPivotCreateFailed: 'Не удалось создать сводную таблицу.',
     appPutCursorInPivot:
       'Поместите курсор в область вывода сводной таблицы, которую хотите изменить.',
@@ -10889,6 +11318,20 @@ export const appStrings = defineStrings({
       'Срез «{name}» применён — сохраните (⌘S), чтобы записать отфильтрованную сводную таблицу.',
     appSlicerCleared: 'Фильтр среза «{name}» очищен.',
     appSlicerRemoved: 'Срез «{name}» удалён; все элементы восстановлены.',
+    appTimelineHintIn: 'Вставить временную шкалу для поля даты текущей сводной таблицы',
+    appTimelineHintOut:
+      'Сначала выделите ячейку в области вывода сводной таблицы, затем вставьте временную шкалу',
+    appTimelineNoDateFields:
+      'У этой сводной таблицы нет подходящих полей даты — временной шкале нужно несгруппированное поле, все значения которого являются датами.',
+    appTimelineCreated:
+      'Временная шкала «{name}» создана — щёлкайте месяцы, чтобы фильтровать сводную таблицу.',
+    appTimelineApplied:
+      'Временная шкала «{name}» применена — сохраните (⌘S), чтобы записать отфильтрованную сводную таблицу.',
+    appTimelineCleared: 'Фильтр временной шкалы «{name}» очищен.',
+    appTimelineRemoved: 'Временная шкала «{name}» удалена; все элементы восстановлены.',
+    appTimelineEmptyRange: 'В выбранном диапазоне месяцев нет элементов.',
+    appFieldFilterTaken:
+      'У всех подходящих полей уже есть срез или временная шкала — сначала удалите существующие.',
     appGoToNotReady: 'Книга ещё не готова — переход невозможен.',
     appGoToEmpty: 'Введите адрес ячейки или определённое имя.',
     appGoToUnresolved:
@@ -10961,7 +11404,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Этот лист содержит сводную таблицу — его дублирование пока не поддерживается.',
     appMoveRowsColsUnsaved:
-      'Перемещение целых строк или столбцов пока нельзя сохранить в импортированных книгах.',
+      'Перемещение целых столбцов пока нельзя сохранить в импортированных книгах — перемещение целых строк уже поддерживается.',
     appNoWorkbookOpen: 'Нет открытой книги.',
     appDvListOptions: 'Список: {items}',
     appDvListFromRange: 'Список (из диапазона {range})',
@@ -11178,6 +11621,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} сохранён: перезаписано {touched} из {total} элементов пакета, остальные сохранены байт в байт.',
     appSaveFailed: 'Не удаётся сохранить книгу.',
+    appCfRuleUnsaveable:
+      'Это правило условного форматирования нельзя сохранить в xlsx — выберите другой тип правила.',
+    appSaveErrX14Dv:
+      'На этом листе есть расширенная (x14) проверка данных; редактирование её правил проверки пока не поддерживается.',
+    appSaveErrMultiSelectList:
+      'Проверку данных со списком множественного выбора нельзя сохранить в xlsx — удалите это правило перед сохранением.',
+    appSaveErrX14Cf:
+      'В этом диапазоне есть расширенное (x14) условное форматирование, пока его нельзя изменить.',
+    appSaveErrPivotWithSheetOps:
+      'Новую сводную таблицу нельзя сохранить вместе с изменениями управления листами — сначала сохраните сводную таблицу.',
+    appSaveErrPivotWithRowCol:
+      'Новую сводную таблицу нельзя сохранить вместе с изменениями строк/столбцов её листа — сначала сохраните сводную таблицу.',
+    appSaveErrTableWithRowCol:
+      'Новую таблицу нельзя сохранить вместе с изменениями строк/столбцов её листа — сначала сохраните таблицу.',
+    appSaveErrNamesWithStructural:
+      'Изменения определённых имён нельзя сохранить вместе с изменениями строк/столбцов или структуры листов — сохраните в два приёма.',
+    appSaveErrChangedOnDisk:
+      'Файл на диске был изменён другой программой — сохранение прервано; откройте файл заново и повторите попытку.',
+    appSaveErrStylesheetLimited:
+      'В таблице стилей этой книги нет базовой структуры, изменения стилей сохранить нельзя.',
+    appSaveErrPackageGuard:
+      'Сохранение изменило бы структуру пакета книги — прервано для защиты файла.',
+    appSaveErrChartUnsupported:
+      'Этот тип диаграммы не поддерживает такое изменение, сохранение прервано — отмените изменение диаграммы.',
+    appSaveErrMoveOverlap:
+      'Формула, форматированный диапазон, фигура или таблица пересекает перемещаемые строки, сохранение прервано — отмените перемещение.',
+    appFromTextCsvTitle: 'Импортировать CSV/текстовый файл в текущее выделение',
+    appCsvImported: 'Импортировано {rows} строк × {columns} столбцов из файла в {cell}.',
+    appCsvEmpty: 'В CSV-файле нет данных.',
+    appCsvTooLarge:
+      'CSV слишком большой — если ячеек больше 50 000, откройте файл через «Открыть» как новую книгу.',
+    appCsvImportFailed: 'Не удалось импортировать CSV.',
+    appNoNotesOnSheet: 'На текущем листе нет примечаний.',
+    appNotePrevTitle: 'Перейти к предыдущему примечанию',
+    appNoteNextTitle: 'Перейти к следующему примечанию',
+    appShowCommentsTitle: 'Закрепить/открепить всплывающее примечание выделенной ячейки',
     appStructuralShiftBlocked:
       'Диаграмма или таблица на этом листе привязана к затрагиваемым строкам/столбцам, сдвиг невозможен; структурное изменение не сохранено. Отмените его (⌘Z) и сохраните снова.',
     appAiChangesNotSaved:
@@ -12032,7 +12511,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'المصنف غير جاهز.',
     appOpenWorkbookFirst: 'افتح مصنفًا أولاً.',
     appOpenXlsxFirst: 'افتح ملف XLSX أولاً.',
-    appPivotCreated: 'تم إنشاء الجدول المحوري في {cell} — يُكتب في الملف عند الحفظ.',
+    appPivotCreated:
+      'تم إنشاء الجدول المحوري في {cell} — يُكتب في الملف عند الحفظ. بعد الحفظ يمكن استخدام مقسمات طريقة العرض والمخططات الزمنية والتحديث.',
     appPivotCreateFailed: 'فشل إنشاء الجدول المحوري.',
     appPutCursorInPivot: 'ضع المؤشر داخل ناحية إخراج الجدول المحوري الذي تريد تحريره.',
     appPivotNoCacheDef: 'يفتقر هذا الجدول المحوري إلى تعريف ذاكرة تخزين مؤقت ولا يمكن تحريره.',
@@ -12072,6 +12552,18 @@ export const appStrings = defineStrings({
       'تم تطبيق مقسم طريقة العرض «{name}» — احفظ (⌘S) لكتابة الجدول المحوري بعد التصفية.',
     appSlicerCleared: 'تم مسح عامل تصفية مقسم طريقة العرض «{name}».',
     appSlicerRemoved: 'تمت إزالة مقسم طريقة العرض «{name}»؛ تمت استعادة جميع الأعضاء.',
+    appTimelineHintIn: 'إدراج مخطط زمني لحقل تاريخ في الجدول المحوري الحالي',
+    appTimelineHintOut: 'حدد أولاً خلية داخل ناحية إخراج الجدول المحوري ثم أدرج المخطط الزمني',
+    appTimelineNoDateFields:
+      'لا يحتوي هذا الجدول المحوري على حقول تاريخ صالحة — يتطلب المخطط الزمني حقلاً غير مجمّع تكون كل قيمه تواريخ.',
+    appTimelineCreated: 'تم إنشاء المخطط الزمني «{name}» — انقر فوق الأشهر لتصفية الجدول المحوري.',
+    appTimelineApplied:
+      'تم تطبيق المخطط الزمني «{name}» — احفظ (⌘S) لكتابة الجدول المحوري بعد التصفية.',
+    appTimelineCleared: 'تم مسح عامل تصفية المخطط الزمني «{name}».',
+    appTimelineRemoved: 'تمت إزالة المخطط الزمني «{name}»؛ تمت استعادة جميع الأعضاء.',
+    appTimelineEmptyRange: 'لا يوجد أعضاء في نطاق الأشهر المحدد.',
+    appFieldFilterTaken:
+      'كل الحقول المؤهلة لديها بالفعل مقسم طريقة عرض أو مخطط زمني — احذف الموجود أولاً.',
     appGoToNotReady: 'المصنف غير جاهز بعد — يتعذر الانتقال.',
     appGoToEmpty: 'أدخل عنوان خلية أو اسمًا معرفًا.',
     appGoToUnresolved:
@@ -12137,7 +12629,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'يتطلب تكرار الورقة وضع التحميل الكامل — هذا المصنف كبير جدًا ومحمّل جزئيًا بالبث.',
     appPivotSheetNoDuplicate: 'تحتوي هذه الورقة على جدول محوري — تكرارها غير مدعوم بعد.',
-    appMoveRowsColsUnsaved: 'لا يمكن بعد حفظ نقل صفوف أو أعمدة كاملة في المصنفات المستوردة.',
+    appMoveRowsColsUnsaved:
+      'لا يمكن بعد حفظ نقل أعمدة كاملة في المصنفات المستوردة — أما نقل صفوف كاملة فمدعوم.',
     appNoWorkbookOpen: 'لا يوجد مصنف مفتوح.',
     appDvListOptions: 'قائمة: {items}',
     appDvListFromRange: 'قائمة (من النطاق {range})',
@@ -12338,6 +12831,38 @@ export const appStrings = defineStrings({
     appSaved:
       'حُفظ {name}: أُعيدت كتابة {touched} من أصل {total} من إدخالات الحزمة، وبقي الباقي كما هو بايتًا ببايت.',
     appSaveFailed: 'يتعذر حفظ المصنف.',
+    appCfRuleUnsaveable: 'لا يمكن حفظ قاعدة التنسيق الشرطي هذه في xlsx — استخدم نوع قاعدة آخر.',
+    appSaveErrX14Dv:
+      'تحتوي هذه الورقة على تحقق موسّع (x14) من صحة البيانات، وتحرير قواعد التحقق الخاصة بها غير مدعوم بعد.',
+    appSaveErrMultiSelectList:
+      'لا يمكن حفظ التحقق بقائمة متعددة الاختيار في xlsx — احذف القاعدة قبل الحفظ.',
+    appSaveErrX14Cf: 'يحتوي هذا النطاق على تنسيق شرطي موسّع (x14) ولا يمكن تعديله حاليًا.',
+    appSaveErrPivotWithSheetOps:
+      'لا يمكن حفظ الجدول المحوري المنشأ حديثًا مع تغييرات إدارة الأوراق — احفظ الجدول المحوري أولاً.',
+    appSaveErrPivotWithRowCol:
+      'لا يمكن حفظ الجدول المحوري المنشأ حديثًا مع تغييرات الصفوف/الأعمدة في ورقته — احفظ الجدول المحوري أولاً.',
+    appSaveErrTableWithRowCol:
+      'لا يمكن حفظ الجدول المنشأ حديثًا مع تغييرات الصفوف/الأعمدة في ورقته — احفظ الجدول أولاً.',
+    appSaveErrNamesWithStructural:
+      'لا يمكن حفظ تغييرات الأسماء المعرفة مع تغييرات الصفوف/الأعمدة أو بنية الأوراق — احفظ على مرتين.',
+    appSaveErrChangedOnDisk:
+      'عدّل برنامج آخر الملف على القرص — أُوقف الحفظ؛ أعد فتح الملف ثم حاول مجددًا.',
+    appSaveErrStylesheetLimited:
+      'تفتقر ورقة أنماط هذا المصنف إلى البنية الأساسية، فلا يمكن حفظ تغييرات الأنماط.',
+    appSaveErrPackageGuard: 'سيغيّر الحفظ بنية حزمة المصنف — أُوقف لحماية الملف.',
+    appSaveErrChartUnsupported:
+      'نوع المخطط هذا لا يدعم هذا التحرير، وأُوقف الحفظ — تراجع عن تغيير المخطط.',
+    appSaveErrMoveOverlap:
+      'توجد صيغة أو نطاق منسق أو شكل أو جدول يمتد عبر الصفوف المنقولة، وأُوقف الحفظ — تراجع عن النقل.',
+    appFromTextCsvTitle: 'استيراد ملف CSV/نصي إلى التحديد الحالي',
+    appCsvImported: 'تم استيراد {rows} صفًا × {columns} عمودًا من الملف إلى {cell}.',
+    appCsvEmpty: 'لا توجد بيانات في ملف CSV.',
+    appCsvTooLarge: 'ملف CSV كبير جدًا — إذا تجاوز 50,000 خلية فاستخدم «فتح» كمصنف جديد.',
+    appCsvImportFailed: 'فشل استيراد CSV.',
+    appNoNotesOnSheet: 'لا توجد تعليقات في الورقة الحالية.',
+    appNotePrevTitle: 'الانتقال إلى التعليق السابق',
+    appNoteNextTitle: 'الانتقال إلى التعليق التالي',
+    appShowCommentsTitle: 'تثبيت/إلغاء تثبيت فقاعة تعليق الخلية المحددة',
     appStructuralShiftBlocked:
       'يوجد مخطط أو جدول في هذه الورقة مثبت على الصفوف/الأعمدة المتأثرة، فلا يمكن إزاحتها ولم يُحفظ التغيير الهيكلي. تراجع عنه (⌘Z) ثم احفظ مجددًا.',
     appAiChangesNotSaved:
@@ -13192,7 +13717,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'A pasta de trabalho não está pronta.',
     appOpenWorkbookFirst: 'Abra uma pasta de trabalho primeiro.',
     appOpenXlsxFirst: 'Abra um arquivo XLSX primeiro.',
-    appPivotCreated: 'Tabela Dinâmica criada em {cell} — gravada no arquivo ao salvar.',
+    appPivotCreated:
+      'Tabela Dinâmica criada em {cell} — gravada no arquivo ao salvar. Após salvar, você pode usar segmentações de dados, linhas do tempo e atualização.',
     appPivotCreateFailed: 'Falha ao criar a Tabela Dinâmica.',
     appPutCursorInPivot: 'Posicione o cursor dentro da saída da Tabela Dinâmica que deseja editar.',
     appPivotNoCacheDef: 'Esta Tabela Dinâmica não tem definição de cache e não pode ser editada.',
@@ -13234,6 +13760,20 @@ export const appStrings = defineStrings({
       'Segmentação "{name}" aplicada — salve (⌘S) para gravar a Tabela Dinâmica filtrada.',
     appSlicerCleared: 'Filtro da segmentação "{name}" limpo.',
     appSlicerRemoved: 'Segmentação "{name}" removida; todos os membros restaurados.',
+    appTimelineHintIn: 'Inserir uma linha do tempo para um campo de data da Tabela Dinâmica atual',
+    appTimelineHintOut:
+      'Selecione primeiro uma célula dentro da saída da Tabela Dinâmica e insira a linha do tempo',
+    appTimelineNoDateFields:
+      'Esta Tabela Dinâmica não tem campos de data utilizáveis — uma linha do tempo precisa de um campo não agrupado cujos valores sejam todos datas.',
+    appTimelineCreated:
+      'Linha do tempo "{name}" criada — clique nos meses para filtrar a Tabela Dinâmica.',
+    appTimelineApplied:
+      'Linha do tempo "{name}" aplicada — salve (⌘S) para gravar a Tabela Dinâmica filtrada.',
+    appTimelineCleared: 'Filtro da linha do tempo "{name}" limpo.',
+    appTimelineRemoved: 'Linha do tempo "{name}" removida; todos os membros restaurados.',
+    appTimelineEmptyRange: 'Nenhum membro no intervalo de meses selecionado.',
+    appFieldFilterTaken:
+      'Todos os campos qualificados já têm uma segmentação ou linha do tempo — remova a existente primeiro.',
     appGoToNotReady:
       'A pasta de trabalho ainda não está pronta — não é possível ir para uma referência.',
     appGoToEmpty: 'Digite um endereço de célula ou um nome definido.',
@@ -13310,7 +13850,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Esta planilha contém uma Tabela Dinâmica — duplicá-la ainda não é suportado.',
     appMoveRowsColsUnsaved:
-      'Mover linhas ou colunas inteiras ainda não pode ser salvo em pastas de trabalho importadas.',
+      'Mover colunas inteiras ainda não pode ser salvo em pastas de trabalho importadas — mover linhas inteiras já é suportado.',
     appNoWorkbookOpen: 'Nenhuma pasta de trabalho aberta.',
     appDvListOptions: 'Lista: {items}',
     appDvListFromRange: 'Lista (do intervalo {range})',
@@ -13534,6 +14074,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} salvo: {touched} de {total} entradas do pacote regravadas, o restante preservado byte a byte.',
     appSaveFailed: 'Não foi possível salvar a pasta de trabalho.',
+    appCfRuleUnsaveable:
+      'Esta regra de formatação condicional não pode ser salva em xlsx — use outro tipo de regra.',
+    appSaveErrX14Dv:
+      'Esta planilha tem validação de dados estendida (x14); editar suas regras de validação ainda não é suportado.',
+    appSaveErrMultiSelectList:
+      'A validação de lista de seleção múltipla não pode ser salva em xlsx — exclua a regra antes de salvar.',
+    appSaveErrX14Cf:
+      'Este intervalo tem formatação condicional estendida (x14) e por enquanto não pode ser modificado.',
+    appSaveErrPivotWithSheetOps:
+      'Uma Tabela Dinâmica recém-criada não pode ser salva junto com alterações de gerenciamento de planilhas — salve a Tabela Dinâmica primeiro.',
+    appSaveErrPivotWithRowCol:
+      'Uma Tabela Dinâmica recém-criada não pode ser salva junto com alterações de linhas/colunas na sua planilha — salve a Tabela Dinâmica primeiro.',
+    appSaveErrTableWithRowCol:
+      'Uma tabela recém-criada não pode ser salva junto com alterações de linhas/colunas na sua planilha — salve a tabela primeiro.',
+    appSaveErrNamesWithStructural:
+      'Alterações de nomes definidos não podem ser salvas junto com alterações de linhas/colunas ou de estrutura de planilhas — salve em duas etapas.',
+    appSaveErrChangedOnDisk:
+      'O arquivo foi alterado no disco por outro programa — salvamento cancelado; reabra o arquivo e tente novamente.',
+    appSaveErrStylesheetLimited:
+      'A folha de estilos desta pasta de trabalho não tem a estrutura básica; as alterações de estilo não podem ser salvas.',
+    appSaveErrPackageGuard:
+      'Salvar mudaria a estrutura do pacote da pasta de trabalho — cancelado para proteger o arquivo.',
+    appSaveErrChartUnsupported:
+      'Este tipo de gráfico não suporta essa edição; salvamento cancelado — desfaça a alteração do gráfico.',
+    appSaveErrMoveOverlap:
+      'Uma fórmula, um intervalo formatado, uma forma ou uma tabela atravessa as linhas movidas; salvamento cancelado — desfaça a movimentação.',
+    appFromTextCsvTitle: 'Importar um arquivo CSV/texto para a seleção atual',
+    appCsvImported: '{rows} linhas × {columns} colunas importadas do arquivo para {cell}.',
+    appCsvEmpty: 'O arquivo CSV não contém dados.',
+    appCsvTooLarge:
+      'CSV grande demais — com mais de 50.000 células, use "Abrir" como nova pasta de trabalho.',
+    appCsvImportFailed: 'Falha ao importar o CSV.',
+    appNoNotesOnSheet: 'Não há comentários na planilha atual.',
+    appNotePrevTitle: 'Ir para o comentário anterior',
+    appNoteNextTitle: 'Ir para o próximo comentário',
+    appShowCommentsTitle: 'Fixar/desafixar o balão de comentário da célula selecionada',
     appStructuralShiftBlocked:
       'Um gráfico ou tabela nesta planilha está ancorado às linhas/colunas afetadas; não é possível deslocá-las e a alteração estrutural não foi salva. Desfaça (⌘Z) e salve novamente.',
     appAiChangesNotSaved: 'Alterações de IA aplicadas (não salvas). Desfaça com ⌘Z; salve com ⌘S.',
@@ -14394,7 +14970,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'La cartella di lavoro non è pronta.',
     appOpenWorkbookFirst: 'Apri prima una cartella di lavoro.',
     appOpenXlsxFirst: 'Apri prima un file XLSX.',
-    appPivotCreated: 'Tabella pivot creata in {cell} — scritta nel file al salvataggio.',
+    appPivotCreated:
+      'Tabella pivot creata in {cell} — scritta nel file al salvataggio. Dopo il salvataggio saranno disponibili filtri dati, sequenze temporali e aggiornamento.',
     appPivotCreateFailed: 'Creazione della tabella pivot non riuscita.',
     appPutCursorInPivot: "Posiziona il cursore nell'output della tabella pivot da modificare.",
     appPivotNoCacheDef:
@@ -14436,6 +15013,22 @@ export const appStrings = defineStrings({
       'Filtro dati "{name}" applicato — salva (⌘S) per scrivere la tabella pivot filtrata.',
     appSlicerCleared: 'Filtro del filtro dati "{name}" cancellato.',
     appSlicerRemoved: 'Filtro dati "{name}" rimosso; tutti i membri sono stati ripristinati.',
+    appTimelineHintIn:
+      'Inserisci una sequenza temporale per un campo data della tabella pivot corrente',
+    appTimelineHintOut:
+      "Seleziona prima una cella nell'output della tabella pivot, poi inserisci la sequenza temporale",
+    appTimelineNoDateFields:
+      'Questa tabella pivot non ha campi data utilizzabili — una sequenza temporale richiede un campo non raggruppato i cui valori siano tutti date.',
+    appTimelineCreated:
+      'Sequenza temporale "{name}" creata — fai clic sui mesi per filtrare la tabella pivot.',
+    appTimelineApplied:
+      'Sequenza temporale "{name}" applicata — salva (⌘S) per scrivere la tabella pivot filtrata.',
+    appTimelineCleared: 'Filtro della sequenza temporale "{name}" cancellato.',
+    appTimelineRemoved:
+      'Sequenza temporale "{name}" rimossa; tutti i membri sono stati ripristinati.',
+    appTimelineEmptyRange: "Nessun membro nell'intervallo di mesi selezionato.",
+    appFieldFilterTaken:
+      'Tutti i campi idonei hanno già un filtro dati o una sequenza temporale — rimuovi prima quello esistente.',
     appGoToNotReady:
       'La cartella di lavoro non è ancora pronta — impossibile passare a un riferimento.',
     appGoToEmpty: 'Immetti un indirizzo di cella o un nome definito.',
@@ -14512,7 +15105,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Questo foglio contiene una tabella pivot — la sua duplicazione non è ancora supportata.',
     appMoveRowsColsUnsaved:
-      'Lo spostamento di intere righe o colonne non può ancora essere salvato nelle cartelle di lavoro importate.',
+      'Lo spostamento di intere colonne non può ancora essere salvato nelle cartelle di lavoro importate — lo spostamento di intere righe è supportato.',
     appNoWorkbookOpen: 'Nessuna cartella di lavoro aperta.',
     appDvListOptions: 'Elenco: {items}',
     appDvListFromRange: 'Elenco (dall’intervallo {range})',
@@ -14732,6 +15325,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} salvato: riscritte {touched} voci del pacchetto su {total}, il resto preservato byte per byte.',
     appSaveFailed: 'Impossibile salvare la cartella di lavoro.',
+    appCfRuleUnsaveable:
+      'Questa regola di formattazione condizionale non può essere salvata in xlsx — usa un altro tipo di regola.',
+    appSaveErrX14Dv:
+      'Questo foglio ha una convalida dati estesa (x14); la modifica delle sue regole di convalida non è ancora supportata.',
+    appSaveErrMultiSelectList:
+      'La convalida con elenco a selezione multipla non può essere salvata in xlsx — elimina la regola prima di salvare.',
+    appSaveErrX14Cf:
+      'Questo intervallo ha una formattazione condizionale estesa (x14) e per ora non può essere modificato.',
+    appSaveErrPivotWithSheetOps:
+      'Una tabella pivot appena creata non può essere salvata insieme a modifiche di gestione dei fogli — salva prima la tabella pivot.',
+    appSaveErrPivotWithRowCol:
+      'Una tabella pivot appena creata non può essere salvata insieme a modifiche di righe/colonne del suo foglio — salva prima la tabella pivot.',
+    appSaveErrTableWithRowCol:
+      'Una tabella appena creata non può essere salvata insieme a modifiche di righe/colonne del suo foglio — salva prima la tabella.',
+    appSaveErrNamesWithStructural:
+      'Le modifiche ai nomi definiti non possono essere salvate insieme a modifiche di righe/colonne o della struttura dei fogli — salva in due passaggi.',
+    appSaveErrChangedOnDisk:
+      'Il file è stato modificato su disco da un altro programma — salvataggio interrotto; riapri il file e riprova.',
+    appSaveErrStylesheetLimited:
+      'Il foglio di stile di questa cartella di lavoro manca della struttura di base; le modifiche di stile non possono essere salvate.',
+    appSaveErrPackageGuard:
+      'Il salvataggio cambierebbe la struttura del pacchetto della cartella di lavoro — interrotto per proteggere il file.',
+    appSaveErrChartUnsupported:
+      'Questo tipo di grafico non supporta tale modifica; salvataggio interrotto — annulla la modifica del grafico.',
+    appSaveErrMoveOverlap:
+      'Una formula, un intervallo formattato, una forma o una tabella attraversa le righe spostate; salvataggio interrotto — annulla lo spostamento.',
+    appFromTextCsvTitle: 'Importa un file CSV/di testo nella selezione corrente',
+    appCsvImported: 'Importate {rows} righe × {columns} colonne dal file in {cell}.',
+    appCsvEmpty: 'Il file CSV non contiene dati.',
+    appCsvTooLarge:
+      'CSV troppo grande — oltre 50.000 celle, usa "Apri" come nuova cartella di lavoro.',
+    appCsvImportFailed: 'Importazione del CSV non riuscita.',
+    appNoNotesOnSheet: 'Nessun commento nel foglio corrente.',
+    appNotePrevTitle: 'Vai al commento precedente',
+    appNoteNextTitle: 'Vai al commento successivo',
+    appShowCommentsTitle: 'Fissa/sblocca il fumetto del commento della cella selezionata',
     appStructuralShiftBlocked:
       'Un grafico o una tabella in questo foglio è ancorato alle righe/colonne interessate; non possono spostarsi e la modifica strutturale non è stata salvata. Annullala (⌘Z) e salva di nuovo.',
     appAiChangesNotSaved: 'Modifiche IA applicate (non salvate). Annulla con ⌘Z; salva con ⌘S.',
@@ -15597,7 +16226,7 @@ export const appStrings = defineStrings({
     appOpenWorkbookFirst: 'Najpierw otwórz skoroszyt.',
     appOpenXlsxFirst: 'Najpierw otwórz plik XLSX.',
     appPivotCreated:
-      'Utworzono tabelę przestawną w {cell} — zostanie zapisana w pliku przy zapisywaniu.',
+      'Utworzono tabelę przestawną w {cell} — zostanie zapisana w pliku przy zapisywaniu. Po zapisaniu dostępne będą fragmentatory, osie czasu i odświeżanie.',
     appPivotCreateFailed: 'Nie udało się utworzyć tabeli przestawnej.',
     appPutCursorInPivot:
       'Umieść kursor w obszarze wyników tabeli przestawnej, którą chcesz edytować.',
@@ -15641,6 +16270,20 @@ export const appStrings = defineStrings({
       'Zastosowano fragmentator „{name}” — zapisz (⌘S), aby zapisać przefiltrowaną tabelę przestawną.',
     appSlicerCleared: 'Wyczyszczono filtr fragmentatora „{name}”.',
     appSlicerRemoved: 'Usunięto fragmentator „{name}”; wszystkie elementy przywrócono.',
+    appTimelineHintIn: 'Wstaw oś czasu dla pola daty bieżącej tabeli przestawnej',
+    appTimelineHintOut:
+      'Najpierw zaznacz komórkę w obszarze wyników tabeli przestawnej, a następnie wstaw oś czasu',
+    appTimelineNoDateFields:
+      'Ta tabela przestawna nie ma odpowiednich pól daty — oś czasu wymaga niezgrupowanego pola, którego wszystkie wartości są datami.',
+    appTimelineCreated:
+      'Utworzono oś czasu „{name}” — klikaj miesiące, aby filtrować tabelę przestawną.',
+    appTimelineApplied:
+      'Zastosowano oś czasu „{name}” — zapisz (⌘S), aby zapisać przefiltrowaną tabelę przestawną.',
+    appTimelineCleared: 'Wyczyszczono filtr osi czasu „{name}”.',
+    appTimelineRemoved: 'Usunięto oś czasu „{name}”; wszystkie elementy przywrócono.',
+    appTimelineEmptyRange: 'Brak elementów w wybranym zakresie miesięcy.',
+    appFieldFilterTaken:
+      'Wszystkie kwalifikujące się pola mają już fragmentator lub oś czasu — najpierw usuń istniejący element.',
     appGoToNotReady: 'Skoroszyt nie jest jeszcze gotowy — nie można przejść do odwołania.',
     appGoToEmpty: 'Wprowadź adres komórki lub zdefiniowaną nazwę.',
     appGoToUnresolved:
@@ -15716,7 +16359,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Ten arkusz zawiera tabelę przestawną — jego duplikowanie nie jest jeszcze obsługiwane.',
     appMoveRowsColsUnsaved:
-      'Przenoszenia całych wierszy lub kolumn nie można jeszcze zapisać w zaimportowanych skoroszytach.',
+      'Przenoszenia całych kolumn nie można jeszcze zapisać w zaimportowanych skoroszytach — przenoszenie całych wierszy jest już obsługiwane.',
     appNoWorkbookOpen: 'Żaden skoroszyt nie jest otwarty.',
     appDvListOptions: 'Lista: {items}',
     appDvListFromRange: 'Lista (z zakresu {range})',
@@ -15934,6 +16577,42 @@ export const appStrings = defineStrings({
     appSaved:
       'Zapisano {name}: przepisano {touched} z {total} wpisów pakietu, resztę zachowano bajt po bajcie.',
     appSaveFailed: 'Nie można zapisać skoroszytu.',
+    appCfRuleUnsaveable:
+      'Tej reguły formatowania warunkowego nie można zapisać w xlsx — użyj innego typu reguły.',
+    appSaveErrX14Dv:
+      'Ten arkusz ma rozszerzoną (x14) poprawność danych; edytowanie jej reguł nie jest jeszcze obsługiwane.',
+    appSaveErrMultiSelectList:
+      'Poprawności danych z listą wielokrotnego wyboru nie można zapisać w xlsx — usuń regułę przed zapisaniem.',
+    appSaveErrX14Cf:
+      'Ten zakres ma rozszerzone (x14) formatowanie warunkowe i na razie nie można go zmieniać.',
+    appSaveErrPivotWithSheetOps:
+      'Nowo utworzonej tabeli przestawnej nie można zapisać razem ze zmianami zarządzania arkuszami — najpierw zapisz tabelę przestawną.',
+    appSaveErrPivotWithRowCol:
+      'Nowo utworzonej tabeli przestawnej nie można zapisać razem ze zmianami wierszy/kolumn jej arkusza — najpierw zapisz tabelę przestawną.',
+    appSaveErrTableWithRowCol:
+      'Nowo utworzonej tabeli nie można zapisać razem ze zmianami wierszy/kolumn jej arkusza — najpierw zapisz tabelę.',
+    appSaveErrNamesWithStructural:
+      'Zmian nazw zdefiniowanych nie można zapisać razem ze zmianami wierszy/kolumn ani struktury arkuszy — zapisz w dwóch krokach.',
+    appSaveErrChangedOnDisk:
+      'Plik został zmieniony na dysku przez inny program — zapisywanie przerwano; otwórz plik ponownie i spróbuj jeszcze raz.',
+    appSaveErrStylesheetLimited:
+      'Arkuszowi stylów tego skoroszytu brakuje podstawowej struktury; zmian stylów nie można zapisać.',
+    appSaveErrPackageGuard:
+      'Zapisanie zmieniłoby strukturę pakietu skoroszytu — przerwano, aby chronić plik.',
+    appSaveErrChartUnsupported:
+      'Ten typ wykresu nie obsługuje tej edycji; zapisywanie przerwano — cofnij zmianę wykresu.',
+    appSaveErrMoveOverlap:
+      'Formuła, sformatowany zakres, kształt lub tabela obejmuje przenoszone wiersze; zapisywanie przerwano — cofnij przeniesienie.',
+    appFromTextCsvTitle: 'Importuj plik CSV/tekstowy do bieżącego zaznaczenia',
+    appCsvImported: 'Zaimportowano {rows} wierszy × {columns} kolumn z pliku do {cell}.',
+    appCsvEmpty: 'Plik CSV nie zawiera danych.',
+    appCsvTooLarge:
+      'Plik CSV jest za duży — powyżej 50 000 komórek użyj polecenia „Otwórz” jako nowego skoroszytu.',
+    appCsvImportFailed: 'Import CSV nie powiódł się.',
+    appNoNotesOnSheet: 'W bieżącym arkuszu nie ma komentarzy.',
+    appNotePrevTitle: 'Przejdź do poprzedniego komentarza',
+    appNoteNextTitle: 'Przejdź do następnego komentarza',
+    appShowCommentsTitle: 'Przypnij/odepnij dymek komentarza zaznaczonej komórki',
     appStructuralShiftBlocked:
       'Wykres lub tabela w tym arkuszu jest zakotwiczona w zmienianych wierszach/kolumnach; nie można ich przesunąć, zmiana strukturalna nie została zapisana. Cofnij ją (⌘Z) i zapisz ponownie.',
     appAiChangesNotSaved:
@@ -16799,7 +17478,7 @@ export const appStrings = defineStrings({
     appOpenWorkbookFirst: 'Open eerst een werkmap.',
     appOpenXlsxFirst: 'Open eerst een XLSX-bestand.',
     appPivotCreated:
-      'Draaitabel gemaakt op {cell} — wordt bij het opslaan in het bestand geschreven.',
+      'Draaitabel gemaakt op {cell} — wordt bij het opslaan in het bestand geschreven. Na het opslaan kunt u slicers, tijdlijnen en vernieuwen gebruiken.',
     appPivotCreateFailed: 'Kan de draaitabel niet maken.',
     appPutCursorInPivot: 'Plaats de cursor in de uitvoer van de draaitabel die u wilt bewerken.',
     appPivotNoCacheDef: 'Deze draaitabel heeft geen cachedefinitie en kan niet worden bewerkt.',
@@ -16839,6 +17518,19 @@ export const appStrings = defineStrings({
       'Slicer "{name}" toegepast — sla op (⌘S) om de gefilterde draaitabel te schrijven.',
     appSlicerCleared: 'Filter van slicer "{name}" gewist.',
     appSlicerRemoved: 'Slicer "{name}" verwijderd; alle leden zijn hersteld.',
+    appTimelineHintIn: 'Een tijdlijn invoegen voor een datumveld van de huidige draaitabel',
+    appTimelineHintOut:
+      'Selecteer eerst een cel in de uitvoer van de draaitabel en voeg dan een tijdlijn in',
+    appTimelineNoDateFields:
+      'Deze draaitabel heeft geen bruikbare datumvelden — een tijdlijn vereist een niet-gegroepeerd veld waarvan alle waarden datums zijn.',
+    appTimelineCreated: 'Tijdlijn "{name}" gemaakt — klik op maanden om de draaitabel te filteren.',
+    appTimelineApplied:
+      'Tijdlijn "{name}" toegepast — sla op (⌘S) om de gefilterde draaitabel te schrijven.',
+    appTimelineCleared: 'Filter van tijdlijn "{name}" gewist.',
+    appTimelineRemoved: 'Tijdlijn "{name}" verwijderd; alle leden zijn hersteld.',
+    appTimelineEmptyRange: 'Geen leden binnen het geselecteerde maandbereik.',
+    appFieldFilterTaken:
+      'Elk geschikt veld heeft al een slicer of tijdlijn — verwijder eerst de bestaande.',
     appGoToNotReady: 'De werkmap is nog niet gereed — kan niet naar een verwijzing gaan.',
     appGoToEmpty: 'Voer een celadres of een gedefinieerde naam in.',
     appGoToUnresolved:
@@ -16915,7 +17607,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Dit werkblad bevat een draaitabel — dupliceren wordt nog niet ondersteund.',
     appMoveRowsColsUnsaved:
-      'Het verplaatsen van hele rijen of kolommen kan nog niet worden opgeslagen in geïmporteerde werkmappen.',
+      'Het verplaatsen van hele kolommen kan nog niet worden opgeslagen in geïmporteerde werkmappen — het verplaatsen van hele rijen wordt wel ondersteund.',
     appNoWorkbookOpen: 'Er is geen werkmap geopend.',
     appDvListOptions: 'Lijst: {items}',
     appDvListFromRange: 'Lijst (uit bereik {range})',
@@ -17141,6 +17833,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} opgeslagen: {touched} van {total} pakketitems herschreven, de rest byte-voor-byte behouden.',
     appSaveFailed: 'Kan de werkmap niet opslaan.',
+    appCfRuleUnsaveable:
+      'Deze regel voor voorwaardelijke opmaak kan niet in xlsx worden opgeslagen — gebruik een ander regeltype.',
+    appSaveErrX14Dv:
+      'Dit blad heeft uitgebreide (x14) gegevensvalidatie; het bewerken van de validatieregels wordt nog niet ondersteund.',
+    appSaveErrMultiSelectList:
+      'Validatie met een meerkeuzelijst kan niet in xlsx worden opgeslagen — verwijder de regel voordat u opslaat.',
+    appSaveErrX14Cf:
+      'Dit bereik heeft uitgebreide (x14) voorwaardelijke opmaak en kan voorlopig niet worden gewijzigd.',
+    appSaveErrPivotWithSheetOps:
+      'Een nieuw gemaakte draaitabel kan niet samen met bladbeheerwijzigingen worden opgeslagen — sla eerst de draaitabel op.',
+    appSaveErrPivotWithRowCol:
+      'Een nieuw gemaakte draaitabel kan niet samen met rij-/kolomwijzigingen op het blad worden opgeslagen — sla eerst de draaitabel op.',
+    appSaveErrTableWithRowCol:
+      'Een nieuw gemaakte tabel kan niet samen met rij-/kolomwijzigingen op het blad worden opgeslagen — sla eerst de tabel op.',
+    appSaveErrNamesWithStructural:
+      'Wijzigingen aan gedefinieerde namen kunnen niet samen met rij-/kolom- of bladstructuurwijzigingen worden opgeslagen — sla in twee stappen op.',
+    appSaveErrChangedOnDisk:
+      'Het bestand is op schijf gewijzigd door een ander programma — opslaan afgebroken; open het bestand opnieuw en probeer het nog eens.',
+    appSaveErrStylesheetLimited:
+      'Het stylesheet van deze werkmap mist de basisstructuur; stijlwijzigingen kunnen niet worden opgeslagen.',
+    appSaveErrPackageGuard:
+      'Opslaan zou de pakketstructuur van de werkmap veranderen — afgebroken om het bestand te beschermen.',
+    appSaveErrChartUnsupported:
+      'Dit grafiektype ondersteunt die bewerking niet; opslaan afgebroken — maak de grafiekwijziging ongedaan.',
+    appSaveErrMoveOverlap:
+      'Een formule, opgemaakt bereik, vorm of tabel loopt over de verplaatste rijen; opslaan afgebroken — maak de verplaatsing ongedaan.',
+    appFromTextCsvTitle: 'Een CSV-/tekstbestand in de huidige selectie importeren',
+    appCsvImported: '{rows} rijen × {columns} kolommen uit het bestand geïmporteerd naar {cell}.',
+    appCsvEmpty: 'Het CSV-bestand bevat geen gegevens.',
+    appCsvTooLarge:
+      "CSV te groot — gebruik bij meer dan 50.000 cellen 'Openen' als nieuwe werkmap.",
+    appCsvImportFailed: 'CSV-import mislukt.',
+    appNoNotesOnSheet: 'Geen opmerkingen op het huidige blad.',
+    appNotePrevTitle: 'Naar de vorige opmerking springen',
+    appNoteNextTitle: 'Naar de volgende opmerking springen',
+    appShowCommentsTitle: 'De opmerkingsballon van de geselecteerde cel vastzetten/losmaken',
     appStructuralShiftBlocked:
       'Een grafiek of tabel op dit blad is verankerd aan de betrokken rijen/kolommen; ze kunnen niet verschuiven en de structuurwijziging is niet opgeslagen. Maak deze ongedaan (⌘Z) en sla opnieuw op.',
     appAiChangesNotSaved:
@@ -18001,7 +18729,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'Buku kerja belum sedia.',
     appOpenWorkbookFirst: 'Buka buku kerja dahulu.',
     appOpenXlsxFirst: 'Buka fail XLSX dahulu.',
-    appPivotCreated: 'Jadual Pangsi dicipta di {cell} — ditulis ke dalam fail semasa disimpan.',
+    appPivotCreated:
+      'Jadual Pangsi dicipta di {cell} — ditulis ke dalam fail semasa disimpan. Selepas disimpan, penghiris, garis masa dan muat semula boleh digunakan.',
     appPivotCreateFailed: 'Gagal mencipta Jadual Pangsi.',
     appPutCursorInPivot: 'Letakkan kursor dalam output Jadual Pangsi yang ingin anda edit.',
     appPivotNoCacheDef: 'Jadual Pangsi ini tiada takrifan cache dan tidak boleh diedit.',
@@ -18041,6 +18770,18 @@ export const appStrings = defineStrings({
       'Penghiris "{name}" digunakan — simpan (⌘S) untuk menulis Jadual Pangsi yang ditapis.',
     appSlicerCleared: 'Penapis penghiris "{name}" dikosongkan.',
     appSlicerRemoved: 'Penghiris "{name}" dialih keluar; semua ahli dipulihkan.',
+    appTimelineHintIn: 'Selitkan garis masa untuk medan tarikh Jadual Pangsi semasa',
+    appTimelineHintOut: 'Pilih sel dalam output Jadual Pangsi dahulu, kemudian selitkan garis masa',
+    appTimelineNoDateFields:
+      'Jadual Pangsi ini tiada medan tarikh yang boleh digunakan — garis masa memerlukan medan tidak berkumpulan yang semua nilainya ialah tarikh.',
+    appTimelineCreated: 'Garis masa "{name}" dicipta — klik bulan untuk menapis Jadual Pangsi.',
+    appTimelineApplied:
+      'Garis masa "{name}" digunakan — simpan (⌘S) untuk menulis Jadual Pangsi yang ditapis.',
+    appTimelineCleared: 'Penapis garis masa "{name}" dikosongkan.',
+    appTimelineRemoved: 'Garis masa "{name}" dialih keluar; semua ahli dipulihkan.',
+    appTimelineEmptyRange: 'Tiada ahli dalam julat bulan yang dipilih.',
+    appFieldFilterTaken:
+      'Semua medan yang layak sudah mempunyai penghiris atau garis masa — buang yang sedia ada dahulu.',
     appGoToNotReady: 'Buku kerja belum sedia — tidak dapat pergi ke rujukan.',
     appGoToEmpty: 'Masukkan alamat sel atau nama tertakrif.',
     appGoToUnresolved:
@@ -18109,7 +18850,7 @@ export const appStrings = defineStrings({
     appPivotSheetNoDuplicate:
       'Helaian ini mengandungi Jadual Pangsi — pendupikasiannya belum disokong.',
     appMoveRowsColsUnsaved:
-      'Pengalihan keseluruhan baris atau lajur belum boleh disimpan ke buku kerja yang diimport.',
+      'Pengalihan keseluruhan lajur belum boleh disimpan ke buku kerja yang diimport — pengalihan keseluruhan baris sudah disokong.',
     appNoWorkbookOpen: 'Tiada buku kerja dibuka.',
     appDvListOptions: 'Senarai: {items}',
     appDvListFromRange: 'Senarai (dari julat {range})',
@@ -18319,6 +19060,42 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} disimpan: {touched} daripada {total} entri pakej ditulis semula, selebihnya dikekalkan bait demi bait.',
     appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
+    appCfRuleUnsaveable:
+      'Peraturan pemformatan bersyarat ini tidak boleh disimpan ke xlsx — gunakan jenis peraturan lain.',
+    appSaveErrX14Dv:
+      'Helaian ini mempunyai pengesahihan data lanjutan (x14); pengeditan peraturan pengesahihannya belum disokong.',
+    appSaveErrMultiSelectList:
+      'Pengesahihan senarai berbilang pilihan tidak boleh disimpan ke xlsx — padamkan peraturan itu sebelum menyimpan.',
+    appSaveErrX14Cf:
+      'Julat ini mempunyai pemformatan bersyarat lanjutan (x14) dan buat masa ini tidak boleh diubah.',
+    appSaveErrPivotWithSheetOps:
+      'Jadual Pangsi yang baru dicipta tidak boleh disimpan bersama perubahan pengurusan helaian — simpan Jadual Pangsi dahulu.',
+    appSaveErrPivotWithRowCol:
+      'Jadual Pangsi yang baru dicipta tidak boleh disimpan bersama perubahan baris/lajur helaiannya — simpan Jadual Pangsi dahulu.',
+    appSaveErrTableWithRowCol:
+      'Jadual yang baru dicipta tidak boleh disimpan bersama perubahan baris/lajur helaiannya — simpan jadual dahulu.',
+    appSaveErrNamesWithStructural:
+      'Perubahan nama tertakrif tidak boleh disimpan bersama perubahan baris/lajur atau struktur helaian — simpan dalam dua langkah.',
+    appSaveErrChangedOnDisk:
+      'Fail telah diubah pada cakera oleh program lain — penyimpanan dihentikan; buka semula fail dan cuba lagi.',
+    appSaveErrStylesheetLimited:
+      'Helaian gaya buku kerja ini kekurangan struktur asas; perubahan gaya tidak boleh disimpan.',
+    appSaveErrPackageGuard:
+      'Menyimpan akan mengubah struktur pakej buku kerja — dihentikan untuk melindungi fail.',
+    appSaveErrChartUnsupported:
+      'Jenis carta ini tidak menyokong suntingan itu; penyimpanan dihentikan — buat asal perubahan carta tersebut.',
+    appSaveErrMoveOverlap:
+      'Terdapat formula, julat berformat, bentuk atau jadual merentangi baris yang dialihkan; penyimpanan dihentikan — buat asal pengalihan itu.',
+    appFromTextCsvTitle: 'Import fail CSV/teks ke pilihan semasa',
+    appCsvImported: 'Mengimport {rows} baris × {columns} lajur daripada fail ke {cell}.',
+    appCsvEmpty: 'Fail CSV tiada data.',
+    appCsvTooLarge:
+      'CSV terlalu besar — jika melebihi 50,000 sel, gunakan "Buka" sebagai buku kerja baharu.',
+    appCsvImportFailed: 'Import CSV gagal.',
+    appNoNotesOnSheet: 'Tiada komen pada helaian semasa.',
+    appNotePrevTitle: 'Lompat ke komen sebelumnya',
+    appNoteNextTitle: 'Lompat ke komen seterusnya',
+    appShowCommentsTitle: 'Semat/nyahsemat belon komen sel yang dipilih',
     appStructuralShiftBlocked:
       'Carta atau jadual pada helaian ini berlabuh pada baris/lajur terjejas, jadi tidak boleh dianjak; perubahan struktur tidak disimpan. Buat asal (⌘Z) dan simpan semula.',
     appAiChangesNotSaved:
@@ -19168,7 +19945,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'חוברת העבודה אינה מוכנה.',
     appOpenWorkbookFirst: 'פתח תחילה חוברת עבודה.',
     appOpenXlsxFirst: 'פתח תחילה קובץ XLSX.',
-    appPivotCreated: 'טבלת ציר נוצרה ב-{cell} — תיכתב לקובץ בעת השמירה.',
+    appPivotCreated:
+      'טבלת ציר נוצרה ב-{cell} — תיכתב לקובץ בעת השמירה. לאחר השמירה ניתן להשתמש בכלי פריסה, ציר זמן ורענון.',
     appPivotCreateFailed: 'יצירת טבלת הציר נכשלה.',
     appPutCursorInPivot: 'מקם את הסמן בתוך הפלט של טבלת הציר שברצונך לערוך.',
     appPivotNoCacheDef: 'לטבלת ציר זו אין הגדרת מטמון ולא ניתן לערוך אותה.',
@@ -19205,6 +19983,16 @@ export const appStrings = defineStrings({
     appSlicerApplied: 'כלי הפריסה "{name}" הוחל — שמור (⌘S) כדי לכתוב את טבלת הציר המסוננת.',
     appSlicerCleared: 'המסנן של כלי הפריסה "{name}" נוקה.',
     appSlicerRemoved: 'כלי הפריסה "{name}" הוסר; כל החברים שוחזרו.',
+    appTimelineHintIn: 'הוסף ציר זמן עבור שדה תאריך של טבלת הציר הנוכחית',
+    appTimelineHintOut: 'בחר תחילה תא בתוך פלט טבלת הציר, ואז הוסף ציר זמן',
+    appTimelineNoDateFields:
+      'לטבלת ציר זו אין שדות תאריך שמישים — ציר זמן דורש שדה לא מקובץ שכל ערכיו הם תאריכים.',
+    appTimelineCreated: 'ציר הזמן "{name}" נוצר — לחץ על חודשים כדי לסנן את טבלת הציר.',
+    appTimelineApplied: 'ציר הזמן "{name}" הוחל — שמור (⌘S) כדי לכתוב את טבלת הציר המסוננת.',
+    appTimelineCleared: 'המסנן של ציר הזמן "{name}" נוקה.',
+    appTimelineRemoved: 'ציר הזמן "{name}" הוסר; כל החברים שוחזרו.',
+    appTimelineEmptyRange: 'אין חברים בטווח החודשים שנבחר.',
+    appFieldFilterTaken: 'לכל השדות המתאימים כבר יש כלי פריסה או ציר זמן — הסר תחילה את הקיים.',
     appGoToNotReady: 'חוברת העבודה אינה מוכנה עדיין — לא ניתן לעבור להפניה.',
     appGoToEmpty: 'הזן כתובת תא או שם מוגדר.',
     appGoToUnresolved: 'לא ניתן לעבור אל "{ref}": לא כתובת חוקית ולא שם מוגדר שניתן לנווט אליו.',
@@ -19265,7 +20053,7 @@ export const appStrings = defineStrings({
       'שכפול גיליון דורש מצב טעינה מלאה — חוברת עבודה זו גדולה מדי ונטענת בהזרמה חלקית.',
     appPivotSheetNoDuplicate: 'גיליון זה מכיל טבלת ציר — שכפולו אינו נתמך עדיין.',
     appMoveRowsColsUnsaved:
-      'הזזת שורות או עמודות שלמות אינה ניתנת לשמירה עדיין בחוברות עבודה מיובאות.',
+      'הזזת עמודות שלמות אינה ניתנת לשמירה עדיין בחוברות עבודה מיובאות — הזזת שורות שלמות כבר נתמכת.',
     appNoWorkbookOpen: 'אין חוברת עבודה פתוחה.',
     appDvListOptions: 'רשימה: {items}',
     appDvListFromRange: 'רשימה (מהטווח {range})',
@@ -19462,6 +20250,39 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} נשמר: {touched} מתוך {total} רשומות חבילה נכתבו מחדש, השאר נשמרו בייט אחר בייט.',
     appSaveFailed: 'לא ניתן לשמור את חוברת העבודה.',
+    appCfRuleUnsaveable: 'לא ניתן לשמור כלל עיצוב מותנה זה בקובץ xlsx — השתמשו בסוג כלל אחר.',
+    appSaveErrX14Dv:
+      'בגיליון זה יש אימות נתונים מורחב (x14); עריכת כללי האימות שלו עדיין אינה נתמכת.',
+    appSaveErrMultiSelectList:
+      'לא ניתן לשמור אימות רשימה מרובת בחירה בקובץ xlsx — מחקו את הכלל לפני השמירה.',
+    appSaveErrX14Cf: 'בטווח זה יש עיצוב מותנה מורחב (x14) ולא ניתן לשנותו בשלב זה.',
+    appSaveErrPivotWithSheetOps:
+      'לא ניתן לשמור טבלת ציר חדשה יחד עם שינויי ניהול גיליונות — שמרו קודם את טבלת הציר.',
+    appSaveErrPivotWithRowCol:
+      'לא ניתן לשמור טבלת ציר חדשה יחד עם שינויי שורות/עמודות בגיליון שלה — שמרו קודם את טבלת הציר.',
+    appSaveErrTableWithRowCol:
+      'לא ניתן לשמור טבלה חדשה יחד עם שינויי שורות/עמודות בגיליון שלה — שמרו קודם את הטבלה.',
+    appSaveErrNamesWithStructural:
+      'לא ניתן לשמור שינויים בשמות מוגדרים יחד עם שינויי שורות/עמודות או מבנה גיליונות — שמרו בשני שלבים.',
+    appSaveErrChangedOnDisk:
+      'הקובץ שונה בדיסק על ידי תוכנית אחרת — השמירה הופסקה; פתחו את הקובץ מחדש ונסו שוב.',
+    appSaveErrStylesheetLimited:
+      'לגיליון הסגנונות של חוברת עבודה זו חסר מבנה בסיסי, ולכן לא ניתן לשמור שינויי סגנון.',
+    appSaveErrPackageGuard:
+      'השמירה תשנה את מבנה החבילה של חוברת העבודה — הופסקה כדי להגן על הקובץ.',
+    appSaveErrChartUnsupported:
+      'סוג תרשים זה אינו תומך בעריכה זו; השמירה הופסקה — בטלו את שינוי התרשים.',
+    appSaveErrMoveOverlap:
+      'נוסחה, טווח מעוצב, צורה או טבלה חוצים את השורות שהוזזו; השמירה הופסקה — בטלו את ההזזה.',
+    appFromTextCsvTitle: 'ייבוא קובץ CSV/טקסט אל הבחירה הנוכחית',
+    appCsvImported: 'יובאו {rows} שורות × {columns} עמודות מהקובץ אל {cell}.',
+    appCsvEmpty: 'אין נתונים בקובץ ה-CSV.',
+    appCsvTooLarge: 'קובץ ה-CSV גדול מדי — מעל 50,000 תאים יש להשתמש ב"פתח" כחוברת עבודה חדשה.',
+    appCsvImportFailed: 'ייבוא ה-CSV נכשל.',
+    appNoNotesOnSheet: 'אין הערות בגיליון הנוכחי.',
+    appNotePrevTitle: 'מעבר להערה הקודמת',
+    appNoteNextTitle: 'מעבר להערה הבאה',
+    appShowCommentsTitle: 'הצמדה/ביטול הצמדה של בועת ההערה בתא שנבחר',
     appStructuralShiftBlocked:
       'תרשים או טבלה בגיליון זה מעוגנים לשורות/עמודות המושפעות ולכן אי אפשר להזיזן; השינוי המבני לא נשמר. בטלו אותו (⌘Z) ושמרו שוב.',
     appAiChangesNotSaved: 'שינויי ה-AI הוחלו (לא נשמרו). בטלו עם ⌘Z; שמרו לקובץ עם ⌘S.',
@@ -20309,7 +21130,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: 'कार्यपुस्तिका तैयार नहीं है।',
     appOpenWorkbookFirst: 'पहले एक कार्यपुस्तिका खोलें।',
     appOpenXlsxFirst: 'पहले एक XLSX फ़ाइल खोलें।',
-    appPivotCreated: 'पिवट टेबल {cell} पर बनाई गई — सहेजने पर फ़ाइल में लिखी जाती है।',
+    appPivotCreated:
+      'पिवट टेबल {cell} पर बनाई गई — सहेजने पर फ़ाइल में लिखी जाती है। सहेजने के बाद स्लाइसर, समयरेखा और रीफ़्रेश उपलब्ध होंगे।',
     appPivotCreateFailed: 'पिवट टेबल बनाने में विफल।',
     appPutCursorInPivot:
       'जिस पिवट टेबल को आप संपादित करना चाहते हैं, उसके आउटपुट के भीतर कर्सर रखें।',
@@ -20349,6 +21171,19 @@ export const appStrings = defineStrings({
       'स्लाइसर "{name}" लागू किया गया — फ़िल्टर की गई पिवट टेबल लिखने के लिए सहेजें (⌘S)।',
     appSlicerCleared: 'स्लाइसर "{name}" का फ़िल्टर साफ़ किया गया।',
     appSlicerRemoved: 'स्लाइसर "{name}" निकाला गया; सभी सदस्य पुनर्स्थापित।',
+    appTimelineHintIn: 'वर्तमान पिवट टेबल के दिनांक फ़ील्ड के लिए समयरेखा सम्मिलित करें',
+    appTimelineHintOut: 'पहले पिवट टेबल आउटपुट के भीतर एक सेल चुनें, फिर समयरेखा सम्मिलित करें',
+    appTimelineNoDateFields:
+      'इस पिवट टेबल में कोई उपयोगी दिनांक फ़ील्ड नहीं है — समयरेखा के लिए ऐसा असमूहीकृत फ़ील्ड चाहिए जिसके सभी मान दिनांक हों।',
+    appTimelineCreated:
+      'समयरेखा "{name}" बनाई गई — पिवट टेबल फ़िल्टर करने के लिए महीनों पर क्लिक करें।',
+    appTimelineApplied:
+      'समयरेखा "{name}" लागू की गई — फ़िल्टर की गई पिवट टेबल लिखने के लिए सहेजें (⌘S)।',
+    appTimelineCleared: 'समयरेखा "{name}" का फ़िल्टर साफ़ किया गया।',
+    appTimelineRemoved: 'समयरेखा "{name}" हटाई गई; सभी सदस्य पुनर्स्थापित।',
+    appTimelineEmptyRange: 'चुनी गई माह सीमा में कोई सदस्य नहीं है।',
+    appFieldFilterTaken:
+      'सभी योग्य फ़ील्ड में पहले से स्लाइसर या समयरेखा है — पहले मौजूदा को हटाएँ।',
     appGoToNotReady: 'कार्यपुस्तिका अभी तैयार नहीं है — संदर्भ पर नहीं जाया जा सकता।',
     appGoToEmpty: 'सेल पता या परिभाषित नाम दर्ज करें।',
     appGoToUnresolved:
@@ -20421,7 +21256,7 @@ export const appStrings = defineStrings({
       'शीट की प्रतिलिपि बनाने के लिए पूर्ण-लोड मोड चाहिए — यह कार्यपुस्तिका बहुत बड़ी है और आंशिक रूप से स्ट्रीम होती है।',
     appPivotSheetNoDuplicate: 'इस शीट में पिवट टेबल है — इसकी प्रतिलिपि बनाना अभी समर्थित नहीं है।',
     appMoveRowsColsUnsaved:
-      'पूरी पंक्तियाँ या स्तंभ स्थानांतरित करना अभी आयातित कार्यपुस्तिकाओं में सहेजा नहीं जा सकता।',
+      'पूरे स्तंभ स्थानांतरित करना अभी आयातित कार्यपुस्तिकाओं में सहेजा नहीं जा सकता — पूरी पंक्तियाँ स्थानांतरित करना समर्थित है।',
     appNoWorkbookOpen: 'कोई कार्यपुस्तिका खुली नहीं है।',
     appDvListOptions: 'सूची: {items}',
     appDvListFromRange: 'सूची (श्रेणी {range} से)',
@@ -20630,6 +21465,41 @@ export const appStrings = defineStrings({
     appSaved:
       '{name} सहेजा गया: {total} पैकेज प्रविष्टियों में से {touched} फिर से लिखी गईं, शेष बाइट-दर-बाइट संरक्षित।',
     appSaveFailed: 'कार्यपुस्तिका सहेजी नहीं जा सकी।',
+    appCfRuleUnsaveable:
+      'यह सशर्त स्वरूपण नियम xlsx में सहेजा नहीं जा सकता — कृपया दूसरा नियम प्रकार चुनें।',
+    appSaveErrX14Dv:
+      'इस शीट में विस्तारित (x14) डेटा सत्यापन है; इसके सत्यापन नियमों का संपादन अभी समर्थित नहीं है।',
+    appSaveErrMultiSelectList:
+      'बहु-चयन सूची सत्यापन xlsx में सहेजा नहीं जा सकता — सहेजने से पहले वह नियम हटाएँ।',
+    appSaveErrX14Cf: 'इस श्रेणी में विस्तारित (x14) सशर्त स्वरूपण है, इसे अभी बदला नहीं जा सकता।',
+    appSaveErrPivotWithSheetOps:
+      'नई बनाई गई पिवट टेबल को शीट प्रबंधन बदलावों के साथ नहीं सहेजा जा सकता — पहले पिवट टेबल सहेजें।',
+    appSaveErrPivotWithRowCol:
+      'नई बनाई गई पिवट टेबल को उसकी शीट के पंक्ति/स्तंभ बदलावों के साथ नहीं सहेजा जा सकता — पहले पिवट टेबल सहेजें।',
+    appSaveErrTableWithRowCol:
+      'नई बनाई गई तालिका को उसकी शीट के पंक्ति/स्तंभ बदलावों के साथ नहीं सहेजा जा सकता — पहले तालिका सहेजें।',
+    appSaveErrNamesWithStructural:
+      'परिभाषित नामों के बदलाव पंक्ति/स्तंभ या शीट संरचना बदलावों के साथ नहीं सहेजे जा सकते — दो बार में सहेजें।',
+    appSaveErrChangedOnDisk:
+      'फ़ाइल को डिस्क पर किसी अन्य प्रोग्राम ने बदल दिया — सहेजना रोक दिया गया; फ़ाइल फिर से खोलकर पुनः प्रयास करें।',
+    appSaveErrStylesheetLimited:
+      'इस कार्यपुस्तिका की स्टाइलशीट में बुनियादी संरचना नहीं है, इसलिए शैली बदलाव सहेजे नहीं जा सकते।',
+    appSaveErrPackageGuard:
+      'सहेजने से कार्यपुस्तिका की पैकेज संरचना बदल जाएगी — फ़ाइल की सुरक्षा के लिए रोक दिया गया।',
+    appSaveErrChartUnsupported:
+      'यह चार्ट प्रकार उस संपादन का समर्थन नहीं करता; सहेजना रोक दिया गया — चार्ट बदलाव को पूर्ववत करें।',
+    appSaveErrMoveOverlap:
+      'कोई सूत्र, स्वरूपित श्रेणी, आकृति या तालिका स्थानांतरित पंक्तियों पर फैली है; सहेजना रोक दिया गया — उस स्थानांतरण को पूर्ववत करें।',
+    appFromTextCsvTitle: 'CSV/पाठ फ़ाइल को वर्तमान चयन में आयात करें',
+    appCsvImported: 'फ़ाइल से {rows} पंक्तियाँ × {columns} स्तंभ {cell} में आयात किए गए।',
+    appCsvEmpty: 'CSV फ़ाइल में कोई डेटा नहीं है।',
+    appCsvTooLarge:
+      'CSV बहुत बड़ी है — 50,000 सेल से अधिक के लिए "खोलें" से नई कार्यपुस्तिका के रूप में खोलें।',
+    appCsvImportFailed: 'CSV आयात विफल रहा।',
+    appNoNotesOnSheet: 'वर्तमान शीट में कोई टिप्पणी नहीं है।',
+    appNotePrevTitle: 'पिछली टिप्पणी पर जाएँ',
+    appNoteNextTitle: 'अगली टिप्पणी पर जाएँ',
+    appShowCommentsTitle: 'चयनित सेल की टिप्पणी बबल को पिन/अनपिन करें',
     appStructuralShiftBlocked:
       'इस शीट का कोई चार्ट या तालिका प्रभावित पंक्तियों/स्तंभों से जुड़ी है, इसलिए वे खिसक नहीं सकते; संरचनात्मक बदलाव सहेजा नहीं गया। उसे पूर्ववत करें (⌘Z) और फिर सहेजें।',
     appAiChangesNotSaved:
@@ -21474,7 +22344,8 @@ export const appStrings = defineStrings({
     appWorkbookNotReady: '活頁簿尚未就緒。',
     appOpenWorkbookFirst: '請先開啟活頁簿。',
     appOpenXlsxFirst: '請先開啟 XLSX 檔案。',
-    appPivotCreated: '樞紐分析表已建立，目標儲存格 {cell}，儲存後寫入檔案。',
+    appPivotCreated:
+      '已在 {cell} 建立樞紐分析表——儲存時寫入檔案，儲存後即可使用交叉分析篩選器、時間表和重新整理。',
     appPivotCreateFailed: '建立樞紐分析表失敗。',
     appPutCursorInPivot: '請先把游標放在要編輯的樞紐分析表輸出範圍內。',
     appPivotNoCacheDef: '該樞紐分析表缺少快取定義，無法編輯。',
@@ -21507,6 +22378,15 @@ export const appStrings = defineStrings({
     appSlicerApplied: '交叉分析篩選器 "{name}" 已套用——儲存（⌘S）寫入篩選後的樞紐分析表。',
     appSlicerCleared: '交叉分析篩選器 "{name}" 已清除篩選。',
     appSlicerRemoved: '交叉分析篩選器 "{name}" 已刪除，成員已全部還原。',
+    appTimelineHintIn: '根據目前樞紐分析表的日期欄位插入時間表',
+    appTimelineHintOut: '先選取樞紐分析表輸出範圍內的儲存格，再插入時間表',
+    appTimelineNoDateFields: '這個樞紐分析表沒有可用的日期欄位——時間表需要值都是日期的未分組欄位。',
+    appTimelineCreated: '時間表 "{name}" 已建立——點選月份即可篩選樞紐分析表。',
+    appTimelineApplied: '時間表 "{name}" 已套用——儲存（⌘S）寫入篩選後的樞紐分析表。',
+    appTimelineCleared: '時間表 "{name}" 已清除篩選。',
+    appTimelineRemoved: '時間表 "{name}" 已刪除，成員已全部還原。',
+    appTimelineEmptyRange: '所選月份範圍內沒有成員。',
+    appFieldFilterTaken: '所有符合條件的欄位都已有交叉分析篩選器或時間表——請先刪除現有面板再新建。',
     appGoToNotReady: '活頁簿尚未就緒，無法定位。',
     appGoToEmpty: '請輸入儲存格位址或已定義的名稱。',
     appGoToUnresolved: '無法定位到 "{ref}"：位址無效，也不是可跳至的已定義名稱。',
@@ -21559,7 +22439,7 @@ export const appStrings = defineStrings({
     appDvNeedsIndexed: '編輯資料驗證需要該工作表先完成索引——請稍後再試。',
     appDuplicateNeedsFullLoad: '複製工作表需要完整載入模式——這個活頁簿太大，只做了串流載入。',
     appPivotSheetNoDuplicate: '該工作表含樞紐分析表——暫不支援複製該表。',
-    appMoveRowsColsUnsaved: '整列/整欄移動暫時無法儲存到匯入的活頁簿。',
+    appMoveRowsColsUnsaved: '整欄移動暫時無法儲存到匯入的活頁簿——整列移動已支援。',
     appNoWorkbookOpen: '目前沒有開啟的活頁簿。',
     appDvListOptions: '清單：{items}',
     appDvListFromRange: '清單（來自範圍 {range}）',
@@ -21751,6 +22631,32 @@ export const appStrings = defineStrings({
     appSaveCanceled: '儲存已取消。',
     appSaved: '已儲存 {name}：重寫了 {total} 個封裝項目中的 {touched} 個，其餘逐位元組保留。',
     appSaveFailed: '無法儲存活頁簿。',
+    appCfRuleUnsaveable: '這種設定格式化的條件規則無法儲存到 xlsx——請改用其他規則類型。',
+    appSaveErrX14Dv: '這個工作表帶有擴充(x14)資料驗證，暫不支援編輯它的驗證規則。',
+    appSaveErrMultiSelectList: '多選清單驗證無法儲存到 xlsx——請先刪除該規則再儲存。',
+    appSaveErrX14Cf: '該區域帶有擴充(x14)設定格式化的條件，暫時無法修改。',
+    appSaveErrPivotWithSheetOps:
+      '新建的樞紐分析表不能和工作表管理變更一起儲存——請先儲存樞紐分析表。',
+    appSaveErrPivotWithRowCol:
+      '新建的樞紐分析表不能和所在工作表的列/欄變更一起儲存——請先儲存樞紐分析表。',
+    appSaveErrTableWithRowCol: '新建的表格不能和所在工作表的列/欄變更一起儲存——請先儲存表格。',
+    appSaveErrNamesWithStructural:
+      '已定義名稱的變更不能和列/欄或工作表結構變更一起儲存——請分兩次儲存。',
+    appSaveErrChangedOnDisk: '檔案在磁碟上被其他程式變更了——儲存已中止，請重新開啟後再試。',
+    appSaveErrStylesheetLimited: '這個活頁簿的樣式表缺少基礎結構，樣式變更無法儲存。',
+    appSaveErrPackageGuard: '儲存會改變活頁簿的封裝結構——已中止以保護檔案。',
+    appSaveErrChartUnsupported: '這個圖表類型不支援該編輯，儲存已中止——請復原該圖表變更。',
+    appSaveErrMoveOverlap:
+      '有公式、格式範圍、圖形或表格橫跨被移動的列——這次儲存已中止，請復原該移動。',
+    appFromTextCsvTitle: '把 CSV/文字檔匯入到目前的選取範圍',
+    appCsvImported: '已從檔案匯入 {rows} 列 × {columns} 欄到 {cell}。',
+    appCsvEmpty: 'CSV 檔案裡沒有資料。',
+    appCsvTooLarge: 'CSV 太大——超過 5 萬儲存格請用「開啟」作為新活頁簿。',
+    appCsvImportFailed: 'CSV 匯入失敗。',
+    appNoNotesOnSheet: '目前工作表沒有註解。',
+    appNotePrevTitle: '跳到上一則註解',
+    appNoteNextTitle: '跳到下一則註解',
+    appShowCommentsTitle: '固定/取消固定所選儲存格的註解氣泡',
     appStructuralShiftBlocked:
       '此工作表上有圖表或表格錨定在受影響的列/欄上,無法平移,結構變更沒有儲存。請復原該變更(⌘Z)後重新儲存。',
     appAiChangesNotSaved: '已套用 AI 變更(未儲存)。可用 ⌘Z 復原;用 ⌘S 儲存到檔案。',

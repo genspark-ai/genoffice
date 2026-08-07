@@ -18,6 +18,7 @@ import type {
   EditChartOp,
   EditParagraph,
   EditTableStyleOp,
+  GetLayoutsResult,
   GradientFillSpec,
   InsertKind,
   LinkTargetOp,
@@ -27,11 +28,12 @@ import type {
   SlideComment,
   TransitionKind,
 } from '../shared/ipc'
-import { SlideCanvas } from './SlideCanvas'
+import { SlideCanvas, selectionChromeColor } from './SlideCanvas'
+import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
 import type { DrawRect } from './draw-shape'
 import { SlideThumb } from './SlideThumb'
 import { MasterView } from './MasterView'
-import { TextEditOverlay, firstFontFamily, liveBulletChar } from './TextEditOverlay'
+import { TextEditOverlay, firstFontFamily, liveAlign, liveBulletChar } from './TextEditOverlay'
 import { CropOverlay } from './CropOverlay'
 import { createImageLoader } from './image-loader'
 import { InkOverlay } from './InkOverlay'
@@ -237,6 +239,31 @@ function collectBulletChars(node: RenderNode, out: Set<string>) {
   else if (node.type === 'group') for (const child of node.children) collectBulletChars(child, out)
 }
 
+type ParaAlign = 'left' | 'center' | 'right' | 'justify'
+
+/** Per-paragraph alignment of one laid-out text body: layout stamps `align` on every line
+ * of a paragraph only when explicit, so an unset line reads as 'left' (the engine default —
+ * some alignment is always current). Only paragraph-start lines count (wrap continuations
+ * repeat the same value). */
+function collectBodyAligns(
+  text: { lines: Array<{ align?: ParaAlign; paraStart?: boolean }> } | undefined,
+  out: Set<ParaAlign>,
+) {
+  if (!text) return
+  if (!text.lines.length) {
+    out.add('left')
+    return
+  }
+  for (const line of text.lines) if (line.paraStart) out.add(line.align ?? 'left')
+}
+
+/** Same collection across a node's text bodies (group children, all table cells). */
+function collectAligns(node: RenderNode, out: Set<ParaAlign>) {
+  if (node.type === 'shape' || node.type === 'text') collectBodyAligns(node.text, out)
+  else if (node.type === 'table') for (const cell of node.cells) collectBodyAligns(cell.text, out)
+  else if (node.type === 'group') for (const child of node.children) collectAligns(child, out)
+}
+
 export function App() {
   const { lang } = useI18n()
   const [slides, setSlides] = useState<RenderSlide[]>([])
@@ -399,21 +426,8 @@ export function App() {
   const [eqDialogOpen, setEqDialogOpen] = useState(false)
   const recorderRef = useRef<{ rec: MediaRecorder; stream: MediaStream } | null>(null)
   const [recording, setRecording] = useState(false)
-  // ── Layout picking: layout list (loaded after the file opens) ─────────────────
-  const [layouts, setLayouts] = useState<Array<{
-    path: string
-    name: string
-    layoutType: string
-    placeholders: Array<{
-      type: string
-      idx: string
-      x: number
-      y: number
-      cx: number
-      cy: number
-      hint: string
-    }>
-  }> | null>(null)
+  // ── Layout picking: layout list + slide size (loaded after the file opens) ─────────────────
+  const [layoutsResult, setLayoutsResult] = useState<GetLayoutsResult | null>(null)
   // ── Picture crop mode ─────────────────────────────────────────────────────
   /** Non-null enters crop mode */
   const [cropTarget, setCropTarget] = useState<CropTargetState | null>(null)
@@ -560,7 +574,7 @@ export function App() {
           : t('appStatusNewBlank'),
       )
       // Fetch the layout list asynchronously (doesn't block opening)
-      void window.slidesApi.getLayouts().then((r) => setLayouts(r?.layouts ?? []))
+      void window.slidesApi.getLayouts().then((r) => setLayoutsResult(r))
     },
     [fitZoom],
   )
@@ -726,49 +740,101 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Zoom preview shared by trackpad pinch and the status-bar slider: a setZoom per event
+  // re-renders the whole App (thumbnails included) dozens of times per gesture and froze
+  // the pinch for seconds; instead the gesture only touches the CSS transform (rAF-batched)
+  // and the state commit is debounced to the gesture's end.
+  const zoomGestureRef = useRef<{
+    raf: number
+    timer: number
+    pending: number | null
+    anchor: { x: number; y: number } | null
+  }>({
+    raf: 0,
+    timer: 0,
+    pending: null,
+    anchor: null,
+  })
+  /** `next` may be a functional updater (based on the pending gesture value, so rapid
+   * steps compound correctly). `anchor` (client coords) is the screen point the zoom
+   * pivots around — the cursor for wheel/pinch; defaults to the viewport center. */
+  const previewZoom = useCallback(
+    (next: number | ((current: number) => number), anchor?: { x: number; y: number }) => {
+      const g = zoomGestureRef.current
+      const target = typeof next === 'function' ? next(g.pending ?? zoomLiveRef.current) : next
+      g.pending = Math.min(3, Math.max(0.25, target))
+      g.anchor = anchor ?? null
+      if (!g.raf) {
+        g.raf = requestAnimationFrame(() => {
+          g.raf = 0
+          const scaleEl = stageScaleRef.current
+          if (g.pending == null || !scaleEl) return
+          const wrap = stageWrapRef.current
+          // Content point (unscaled coords) currently under the anchor, measured from the
+          // applied transform itself so it stays correct regardless of commit timing
+          let ax = 0
+          let ay = 0
+          let px = 0
+          let py = 0
+          if (wrap) {
+            const wr = wrap.getBoundingClientRect()
+            ax = anchorClamp(g.anchor?.x, wr.left, wr.right) ?? wr.left + wr.width / 2
+            ay = anchorClamp(g.anchor?.y, wr.top, wr.bottom) ?? wr.top + wr.height / 2
+            const r = scaleEl.getBoundingClientRect()
+            const applied = scaleEl.offsetWidth ? r.width / scaleEl.offsetWidth : 1
+            px = (ax - r.left) / applied
+            py = (ay - r.top) / applied
+          }
+          scaleEl.style.transform = `scale(${g.pending})`
+          const box = zoomBoxRef.current
+          if (box) {
+            // offsetWidth ignores the transform = unscaled layout size (same basis as scaleBox)
+            box.style.width = `${scaleEl.offsetWidth * g.pending}px`
+            box.style.height = `${scaleEl.offsetHeight * g.pending}px`
+          }
+          // Scroll so the anchored content point stays under the anchor (the browser
+          // clamps at the scroll edges; while the content still fits it stays centered)
+          if (wrap) {
+            const r = scaleEl.getBoundingClientRect()
+            wrap.scrollLeft += px * g.pending - (ax - r.left)
+            wrap.scrollTop += py * g.pending - (ay - r.top)
+          }
+          // Selection chrome counter-scales per frame so it holds a constant on-screen size
+          window.dispatchEvent(new CustomEvent(ZOOM_PREVIEW_EVENT, { detail: g.pending }))
+        })
+      }
+      window.clearTimeout(g.timer)
+      g.timer = window.setTimeout(() => {
+        if (g.pending == null) return
+        setZoom(g.pending)
+        g.pending = null
+        g.anchor = null
+      }, 150)
+    },
+    [],
+  )
+  useEffect(() => {
+    const g = zoomGestureRef.current
+    return () => {
+      cancelAnimationFrame(g.raf)
+      window.clearTimeout(g.timer)
+    }
+  }, [])
+
   // Trackpad pinch zoom: Chromium synthesizes pinch gestures as ctrlKey+wheel events;
   // Ctrl/⌘ + wheel zoom also supported. Needs passive:false to preventDefault.
-  // setZoom per wheel event re-renders the whole App (thumbnails included) dozens of times per
-  // gesture and froze the pinch for seconds; instead the gesture only touches the CSS transform
-  // (rAF-batched) and the state commit is debounced to the gesture's end.
   useEffect(() => {
     const el = stageWrapRef.current
     if (!el) return
-    let raf = 0
-    let commitTimer = 0
-    let pending: number | null = null
-    const paint = () => {
-      raf = 0
-      const scaleEl = stageScaleRef.current
-      if (pending == null || !scaleEl) return
-      scaleEl.style.transform = `scale(${pending})`
-      const box = zoomBoxRef.current
-      if (box) {
-        // offsetWidth ignores the transform = unscaled layout size (same basis as scaleBox)
-        box.style.width = `${scaleEl.offsetWidth * pending}px`
-        box.style.height = `${scaleEl.offsetHeight * pending}px`
-      }
-    }
     const onWheel = (ev: WheelEvent) => {
       if (!ev.ctrlKey && !ev.metaKey) return
       ev.preventDefault()
       const factor = Math.exp(-ev.deltaY * 0.01)
-      pending = Math.min(3, Math.max(0.25, (pending ?? zoomLiveRef.current) * factor))
-      if (!raf) raf = requestAnimationFrame(paint)
-      window.clearTimeout(commitTimer)
-      commitTimer = window.setTimeout(() => {
-        if (pending == null) return
-        setZoom(pending)
-        pending = null
-      }, 150)
+      previewZoom((z) => z * factor, { x: ev.clientX, y: ev.clientY })
     }
     el.addEventListener('wheel', onWheel, { passive: false })
-    return () => {
-      el.removeEventListener('wheel', onWheel)
-      cancelAnimationFrame(raf)
-      window.clearTimeout(commitTimer)
-    }
-  }, [hasDoc, viewMode])
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [hasDoc, viewMode, previewZoom])
 
   const newBlank = useCallback(async () => {
     const r = await window.slidesApi.newBlank(FIT_WIDTH)
@@ -1536,9 +1602,10 @@ export function App() {
       else if (cmd === 'export-pdf') void exportPdf()
       else if (cmd === 'export-images') void exportImages()
       else if (cmd === 'print') setPrintDlgOpen(true)
-      else if (cmd === 'zoom-in') setZoom((z) => Math.min(z * 1.15, 3))
-      else if (cmd === 'zoom-out') setZoom((z) => Math.max(z / 1.15, 0.25))
-      else if (cmd === 'zoom-reset') setZoom(1)
+      // Through the preview path so the zoom pivots on the viewport center, not the scroll origin
+      else if (cmd === 'zoom-in') previewZoom((z) => Math.min(z * 1.15, 3))
+      else if (cmd === 'zoom-out') previewZoom((z) => Math.max(z / 1.15, 0.25))
+      else if (cmd === 'zoom-reset') previewZoom(1)
       else if (cmd === 'undo') void undo()
       else if (cmd === 'redo') void redo()
       else if (cmd === 'cut') {
@@ -1567,6 +1634,7 @@ export function App() {
     copySelected,
     pasteClipboard,
     masterItems,
+    previewZoom,
   ])
 
   // Load images (dataUrl → HTMLImageElement): picture elements + picture fills + background images
@@ -1818,16 +1886,20 @@ export function App() {
 
   // While editing, track font and size at the caret/selection (ribbon font group display)
   const [selFont, setSelFont] = useState<{ family: string; sizePt: number } | null>(null)
+  // Paragraph alignment at the editing caret/selection (overlay DOM); null outside editing
+  const [selAlign, setSelAlign] = useState<ParaAlign | null>(null)
   const inTextEdit = !!editing || !!editingCell
   useEffect(() => {
     if (!inTextEdit) {
       setSelFont(null)
+      setSelAlign(null)
       return
     }
     const update = () => {
       const focus = window.getSelection()?.focusNode
       const el = focus instanceof HTMLElement ? focus : focus?.parentElement
       if (!el?.isContentEditable) return
+      setSelAlign(liveAlign() ?? null)
       const cs = window.getComputedStyle(el)
       // Prefer the model font name baked into the run container (data-font) when the display font
       // is unchanged; the computed style may be a fallback/substitution product (e.g. Arial for DengXian)
@@ -1854,10 +1926,12 @@ export function App() {
     document.execCommand('foreColor', false, hex)
   }, [])
 
-  const onAlign = useCallback(
-    (align: 'left' | 'center' | 'right' | 'justify') => styleActions.onAlign(ctxRef.current, align),
-    [],
-  )
+  const onAlign = useCallback((align: ParaAlign) => {
+    styleActions.onAlign(ctxRef.current, align)
+    // execCommand mutates only the overlay DOM (no state change, selectionchange isn't
+    // guaranteed) — re-read so the ribbon highlight follows the click immediately
+    if (ctxRef.current.editing || ctxRef.current.editingCell) setSelAlign(liveAlign() ?? null)
+  }, [])
   const onTextToggle = useCallback(
     (kind: 'bold' | 'italic' | 'underline' | 'strike') =>
       styleActions.onTextToggle(ctxRef.current, kind),
@@ -2075,6 +2149,19 @@ export function App() {
     return [...found][0]!
   }, [selectedIds, editing, editingCell, inTextEdit, findNodeCtx, paraFmtTick])
 
+  // Current paragraph alignment for the ribbon highlight: unset text defaults to 'left',
+  // so text always has exactly one alignment current; null = mixed/no text (no highlight)
+  const curAlign = useMemo((): ParaAlign | null => {
+    if (inTextEdit) return selAlign
+    if (!selectedIds.length) return null
+    const found = new Set<ParaAlign>()
+    for (const id of selectedIds) {
+      const node = findNodeCtx(id)?.node
+      if (node) collectAligns(node, found)
+    }
+    return found.size === 1 ? [...found][0]! : null
+  }, [inTextEdit, selAlign, selectedIds, findNodeCtx])
+
   // Refresh the action-module context every render so extracted actions never see stale state
   ctxRef.current = {
     slides,
@@ -2225,7 +2312,8 @@ export function App() {
         onAddSlide={() => void addSlide()}
         onAddSection={() => void addSectionAt(current)}
         onAddSlideWithLayout={(lp) => void addSlideWithLayout(lp)}
-        layouts={layouts}
+        layouts={layoutsResult?.layouts ?? null}
+        layoutSize={layoutsResult?.size ?? null}
         formatOpen={showFormat}
         onToggleFormat={() =>
           setShowFormat((v) => {
@@ -2283,6 +2371,7 @@ export function App() {
         }
         onParagraphFormat={onParagraphFormat}
         curBulletChar={curBulletChar}
+        curAlign={curAlign}
         curFontFamily={fontStatus?.family ?? null}
         curFontSizePt={fontStatus?.sizePt ?? null}
         curFontSizeMixed={fontStatus?.sizeMixed ?? false}
@@ -2856,6 +2945,8 @@ export function App() {
                                 onCommit={commitEdit}
                                 onCancel={() => setEditing(null)}
                                 onFollowLink={followRunLink}
+                                frameColor={selectionChromeColor(slide, images)}
+                                zoom={zoom}
                               />
                             )}
                             {editingCell && cellEditNode && (
@@ -2866,6 +2957,8 @@ export function App() {
                                 onCancel={() => setEditingCell(null)}
                                 onTabNav={(paragraphs, dir) => void navigateCell(paragraphs, dir)}
                                 onFollowLink={followRunLink}
+                                frameColor={selectionChromeColor(slide, images)}
+                                zoom={zoom}
                               />
                             )}
                             {mediaPlay && mediaPlayNode && (
@@ -3077,22 +3170,7 @@ export function App() {
                   {t('appNotesLabel')}
                 </button>
               )}
-              <button className="zoom-btn" onClick={() => setZoom((z) => Math.max(z - 0.1, 0.25))}>
-                −
-              </button>
-              <input
-                className="zoom-slider"
-                type="range"
-                min={25}
-                max={300}
-                step={5}
-                value={Math.round(zoom * 100)}
-                onChange={(e) => setZoom(Number(e.target.value) / 100)}
-              />
-              <button className="zoom-btn" onClick={() => setZoom((z) => Math.min(z + 0.1, 3))}>
-                +
-              </button>
-              <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+              <ZoomControls zoom={zoom} onPreview={previewZoom} />
             </div>
           </footer>
         </div>
@@ -3255,5 +3333,56 @@ export function App() {
         />
       )}
     </div>
+  )
+}
+
+/** Clamp a zoom-anchor coordinate into the viewport span; undefined passes through (→ center). */
+function anchorClamp(v: number | undefined, min: number, max: number): number | undefined {
+  return v == null ? undefined : Math.min(Math.max(v, min), max)
+}
+
+/** Status-bar zoom controls. The slider keeps a local live value so the thumb and the %
+ * label track mid-drag while only this tiny component re-renders per tick; the drag goes
+ * through the shared preview path (CSS transform now, debounced App-level commit at the
+ * gesture's end) — a setZoom per tick re-renders the whole App and stutters. */
+function ZoomControls({
+  zoom,
+  onPreview,
+}: {
+  readonly zoom: number
+  readonly onPreview: (z: number | ((current: number) => number)) => void
+}) {
+  const [live, setLive] = useState(() => Math.round(zoom * 100))
+  // adopt outside commits (fit, pinch, menu) once they land
+  useEffect(() => setLive(Math.round(zoom * 100)), [zoom])
+  // Buttons go through the preview path too: the zoom pivots on the viewport center and
+  // rapid clicks compound on the pending value; `live` mirrors it so the % keeps up
+  const step = (dir: 1 | -1) => {
+    setLive((v) => Math.min(300, Math.max(25, v + dir * 10)))
+    onPreview((z) => Math.min(3, Math.max(0.25, z + dir * 0.1)))
+  }
+  return (
+    <>
+      <button className="zoom-btn" onClick={() => step(-1)}>
+        −
+      </button>
+      <input
+        className="zoom-slider"
+        type="range"
+        min={25}
+        max={300}
+        step={5}
+        value={live}
+        onChange={(e) => {
+          const v = Number(e.target.value)
+          setLive(v)
+          onPreview(v / 100)
+        }}
+      />
+      <button className="zoom-btn" onClick={() => step(1)}>
+        +
+      </button>
+      <span className="zoom-value">{live}%</span>
+    </>
   )
 }

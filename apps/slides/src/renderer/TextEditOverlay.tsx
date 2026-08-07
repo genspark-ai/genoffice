@@ -9,6 +9,8 @@ import type { GlyphRun, ShapeRenderNode, TextLine } from '@genoffice/pptx-render
 import type { EditParagraph, EditRun, LinkTargetOp } from '../shared/ipc'
 import { decodeLinkTarget, encodeLinkTarget } from '../shared/run-link'
 import { displayFontFamily } from './konva-adapter'
+import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
+import { FONT_SIZES } from './components/ribbon-shared'
 
 interface Props {
   node: ShapeRenderNode
@@ -25,6 +27,10 @@ interface Props {
   replaceWith?: string
   /** ⌘/Ctrl+click on a linked run follows the link (slide jump / external url) */
   onFollowLink?: (target: LinkTargetOp) => void
+  /** Edit-frame color (matches the canvas selection chrome: white on dark slide backgrounds) */
+  frameColor?: string
+  /** Canvas CSS zoom: the outline divides by it to keep a constant on-screen weight */
+  zoom?: number
 }
 
 /** Layout lines → paragraph grouping (paraStart marks wrap boundaries; missing means an independent paragraph, backward compatible). */
@@ -65,6 +71,77 @@ function editorParaRuns(
   return segs
 }
 
+/** Browser inline-box metrics of a font (Chromium: an inline text box is exactly
+ * ascent+descent tall, and a zero-size inline-block probe's offsetTop is the baseline).
+ * Cached per font. Returns zero heights in layout-less environments (jsdom) — callers
+ * skip compensation there. */
+const fontBoxCache = new Map<string, { height: number; ascent: number }>()
+function browserFontBox(
+  family: string,
+  sizePx: number,
+  bold?: boolean,
+  italic?: boolean,
+): { height: number; ascent: number } {
+  const key = `${family}|${Math.round(sizePx * 10)}|${bold ? 'b' : ''}${italic ? 'i' : ''}`
+  const hit = fontBoxCache.get(key)
+  if (hit) return hit
+  const host = document.createElement('div')
+  host.style.cssText =
+    'position:absolute;left:-9999px;top:0;visibility:hidden;line-height:normal;white-space:pre'
+  host.style.fontFamily = family
+  host.style.fontSize = `${sizePx}px`
+  host.style.fontWeight = bold ? 'bold' : 'normal'
+  host.style.fontStyle = italic ? 'italic' : 'normal'
+  const text = document.createElement('span')
+  text.textContent = 'Hg'
+  const probe = document.createElement('span')
+  probe.style.cssText = 'display:inline-block;width:0;height:0'
+  host.append(text, probe)
+  document.body.appendChild(host)
+  const hostTop = host.getBoundingClientRect().top
+  const m = {
+    height: text.getBoundingClientRect().height,
+    // zero-size inline-block: its box top sits exactly on the baseline (fractional,
+    // unlike offsetTop which rounds to whole px)
+    ascent: probe.getBoundingClientRect().top - hostTop,
+  }
+  host.remove()
+  fontBoxCache.set(key, m)
+  return m
+}
+
+/** Where the canvas actually draws the baseline, relative to the engine's baselineY.
+ * The Konva adapter positions Text by top = baselineY − 0.8em, and Konva paints with
+ * canvas2d 'middle' semantics — so the visible baseline lands at top + emHeightAscent,
+ * i.e. engineBaseline + (emHeightAscent − 0.8em). ≈0 for Latin sans (the 0.8 was tuned
+ * for it) but several px for CJK/serif metrics; the editor must match the pixels. */
+let baselineDropCtx: CanvasRenderingContext2D | null = null
+const baselineDropCache = new Map<string, number>()
+function konvaBaselineDrop(
+  family: string,
+  sizePx: number,
+  bold?: boolean,
+  italic?: boolean,
+): number {
+  const key = `${family}|${Math.round(sizePx * 10)}|${bold ? 'b' : ''}${italic ? 'i' : ''}`
+  const hit = baselineDropCache.get(key)
+  if (hit !== undefined) return hit
+  baselineDropCtx ??= document.createElement('canvas').getContext('2d')
+  if (!baselineDropCtx) return 0
+  const ctx = baselineDropCtx
+  ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePx}px ${family}`
+  // Same ink measured from both baselines: the ascent difference IS the exact distance
+  // from the 'middle' anchor down to the alphabetic baseline for this font (measuring
+  // beats modelling — Chromium derives 'middle' from per-font metrics)
+  ctx.textBaseline = 'alphabetic'
+  const a1 = ctx.measureText('Hg').actualBoundingBoxAscent
+  ctx.textBaseline = 'middle'
+  const a2 = ctx.measureText('Hg').actualBoundingBoxAscent
+  const drop = a1 > 0 || a2 > 0 ? sizePx / 2 + (a1 - a2) - 0.8 * sizePx : 0
+  baselineDropCache.set(key, drop)
+  return drop
+}
+
 /**
  * Layout lines → the editor's initial DOM: one <div> per model paragraph (data-src-para records
  * the source paragraph index, with paragraph alignment); wrap/word-split fragments merged back
@@ -78,9 +155,25 @@ function editorParaRuns(
  * anchoring with flex, so it must be removed from the first paragraph's top or the offset doubles).
  * Exported so tests can do "layout → DOM → extractParagraphs" round-trip assertions.
  */
-export function populateEditorDom(div: HTMLElement, lines: TextLine[], anchorDy = 0): void {
+export function populateEditorDom(
+  div: HTMLElement,
+  lines: TextLine[],
+  anchorDy = 0,
+  innerW?: number,
+): void {
   div.innerHTML = ''
   delete div.dataset.layoutReleased
+  // Root/strut font: the paragraph divs inherit it and it participates in every line box
+  const rootCs = div.isConnected ? window.getComputedStyle(div) : null
+  const strutFont = rootCs ? { family: rootCs.fontFamily, size: parseFloat(rootCs.fontSize) } : null
+  // Widest laid-out line: in a nowrap box the block grows to max-content, so centered/right
+  // paragraphs align within this width instead of the box (the canvas splits overflow to
+  // both sides) — compensated per paragraph below. Bullet glyphs are skipped: they never
+  // enter the editor DOM and the engine's alignment width excludes them too.
+  const maxLineW = Math.max(
+    0,
+    ...lines.map((ln) => ln.runs.reduce((acc, r) => acc + (r.isBullet ? 0 : r.widthPx), 0)),
+  )
   let prevEnd = anchorDy
   groupLinesToParagraphs(lines).forEach((paraLines, pi) => {
     const p = document.createElement('div')
@@ -89,16 +182,77 @@ export function populateEditorDom(div: HTMLElement, lines: TextLine[], anchorDy 
     const last = paraLines[paraLines.length - 1]!
     p.style.lineHeight = `${first.height}px`
     const gap = first.top - prevEnd
-    if (gap > 0.01) p.style.marginTop = `${gap}px`
+    if (Math.abs(gap) > 0.01) p.style.marginTop = `${gap}px`
     prevEnd = last.top + last.height
     // RTL paragraphs (Arabic/Hebrew) align in editing as on canvas: the browser sets direction by the first strong character
     p.dir = 'auto'
     const align = paraLines[0]?.align
     if (align) p.style.textAlign = align
+    // Body text starts at marL, exactly like the canvas (lists/indent used to snap to the
+    // inset edge on entering edit); first-line indent applies only without a bullet
+    const marL = first.marLPx ?? 0
+    if (marL) p.style.marginLeft = `${marL}px`
+    const indentPx = first.indentPx ?? 0
+    if (indentPx && !first.runs.some((r) => r.isBullet)) p.style.textIndent = `${indentPx}px`
+    // ── Glyph-position fidelity vs the canvas renderer ──
+    // Vertical: the canvas draws the dominant run's baseline at
+    // lineTop + engineAscent + konvaBaselineDrop (the adapter's 0.8em top approximation
+    // filtered through Konva's 'middle'-baseline painting); CSS puts the DOM baseline at
+    // half-leading + browser ascent. The difference is several px on CJK/serif or
+    // lnSpc ≠ 100% text and reads as the text jumping when editing starts. Measure both
+    // sides and cancel the difference with a relative offset (flow is unaffected).
+    let engineAscent = 0
+    let domBaseline = 0
+    let dominant: GlyphRun | null = null
+    for (const r of first.runs) {
+      const a = r.ascentPx ?? r.fontSizePx * 0.8
+      if (a > engineAscent) {
+        engineAscent = a
+        dominant = r
+      }
+    }
+    const drop = dominant
+      ? konvaBaselineDrop(
+          displayFontFamily(dominant.fontFamily ?? ''),
+          dominant.fontSizePx,
+          dominant.bold,
+          dominant.italic,
+        )
+      : 0
+    const canvasBaseline = engineAscent + drop
+    const participants: Array<{ family: string; size: number; bold?: boolean; italic?: boolean }> =
+      first.runs.map((r) => ({
+        family: displayFontFamily(r.fontFamily ?? ''),
+        size: r.fontSizePx,
+        bold: r.bold,
+        italic: r.italic,
+      }))
+    if (strutFont) participants.push({ family: strutFont.family, size: strutFont.size })
+    for (const f of participants) {
+      if (!f.family || !f.size) continue
+      const m = browserFontBox(f.family, f.size, f.bold, f.italic)
+      if (!m.height) continue
+      domBaseline = Math.max(domBaseline, (first.height - m.height) / 2 + m.ascent)
+    }
+    const dyFix = canvasBaseline > 0 && domBaseline > 0 ? canvasBaseline - domBaseline : 0
+    // Horizontal: nowrap overflow — the canvas centers/right-aligns within the box and
+    // spills both ways; the DOM block is max-content wide and anchored at the box's left.
+    // The difference is a constant per box (zero when the content fits or the box wraps).
+    let dxFix = 0
+    if (innerW != null && innerW > 0 && (align === 'center' || align === 'right')) {
+      const over = Math.max(0, maxLineW - innerW)
+      dxFix = align === 'center' ? -over / 2 : -over
+    }
+    if (Math.abs(dyFix) > 0.1 || Math.abs(dxFix) > 0.1) {
+      p.style.position = 'relative'
+      if (Math.abs(dyFix) > 0.1) p.style.top = `${dyFix}px`
+      if (Math.abs(dxFix) > 0.1) p.style.left = `${dxFix}px`
+    }
     const level = paraLines[0]?.level ?? 0
     if (level) {
       p.dataset.level = String(level)
-      p.style.marginLeft = `${level * 24}px` // Visual indent hint while editing (the canvas lays out by the real marL)
+      // Visual indent hint only when the real marL isn't known (the canvas lays out by marL)
+      if (!marL) p.style.marginLeft = `${level * 24}px`
     }
     // Original bullet kind, for the ribbon's toggle-off semantics while editing
     const bulletRun = first.runs.find((r) => r.isBullet)
@@ -164,7 +318,7 @@ export function populateEditorDom(div: HTMLElement, lines: TextLine[], anchorDy 
 }
 
 /** Fixed fragment advances align the untouched editor with canvas, but become stale after typing.
- * Release them on first input so inserted/deleted text can reflow naturally. */
+ * Release them so inserted/deleted text can reflow naturally. */
 export function releaseEditorLayoutConstraints(root: HTMLElement): void {
   if (root.dataset.layoutReleased === 'true') return
   root.dataset.layoutReleased = 'true'
@@ -172,6 +326,63 @@ export function releaseEditorLayoutConstraints(root: HTMLElement): void {
     fragment.style.display = ''
     fragment.style.width = ''
   })
+}
+
+/** Release one fragment's fixed advance (stale once its text or format changes). */
+function releaseFragment(el: Element | null | undefined): void {
+  if (!(el instanceof HTMLElement) || el.dataset.layoutFragment !== 'true') return
+  el.style.display = ''
+  el.style.width = ''
+}
+
+/** Nearest enclosing layout fragment of a DOM point (bounded by the editor root). */
+function fragmentAround(node: Node | null | undefined, root: HTMLElement): HTMLElement | null {
+  let el = node instanceof HTMLElement ? node : (node?.parentElement ?? null)
+  while (el && el !== root) {
+    if (el.dataset.layoutFragment === 'true') return el
+    el = el.parentElement
+  }
+  return null
+}
+
+/** Release only the fragments an edit touches (the given target ranges plus the current
+ * selection; a collapsed caret also frees its neighbor fragments — Backspace/Delete at a
+ * fragment edge mutates them). Untouched fragments keep their canvas-measured advances, so
+ * the rest of the text stays put: releasing everything on the first keystroke re-measured
+ * and re-wrapped the whole box with browser rules (natural advances + CJK line-break
+ * prohibitions the canvas engine doesn't apply) and made all the text visibly jump.
+ * Exported for tests. */
+export function releaseFragmentsAtEdit(
+  root: HTMLElement,
+  targetRanges: readonly AbstractRange[] = [],
+): void {
+  const ranges: AbstractRange[] = [...targetRanges]
+  const sel = window.getSelection()
+  if (sel?.rangeCount && root.contains(sel.anchorNode)) ranges.push(sel.getRangeAt(0))
+  if (!ranges.length) return
+  const frags = [...root.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+  for (const r of ranges) {
+    if (r.collapsed) {
+      const f = fragmentAround(r.startContainer, root)
+      if (!f) continue
+      const i = frags.indexOf(f)
+      releaseFragment(f)
+      releaseFragment(frags[i - 1])
+      releaseFragment(frags[i + 1])
+      continue
+    }
+    // Ranged edit (selection replace/delete, execCommand format): free every intersecting fragment
+    const live =
+      r instanceof Range
+        ? r
+        : (() => {
+            const x = document.createRange()
+            x.setStart(r.startContainer, r.startOffset)
+            x.setEnd(r.endContainer, r.endOffset)
+            return x
+          })()
+    for (const f of frags) if (live.intersectsNode(f)) releaseFragment(f)
+  }
 }
 
 export function TextEditOverlay({
@@ -183,8 +394,25 @@ export function TextEditOverlay({
   caretPoint,
   replaceWith,
   onFollowLink,
+  frameColor = '#232425',
+  zoom = 1,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  // The edit frame lives inside the CSS-scaled stage: during a zoom gesture only the
+  // transform advances, so the zoom-compensated outline would thicken and then snap at
+  // commit. Counter-scale it per previewed frame, same as the selection chrome.
+  useEffect(() => {
+    const onPreview = (e: Event) => {
+      const z = (e as CustomEvent<number>).detail
+      const el = frameRef.current
+      if (typeof z !== 'number' || !el) return
+      el.style.outlineWidth = `${2 / (globalThis.devicePixelRatio || 1) / Math.max(z, 0.1)}px`
+    }
+    window.addEventListener(ZOOM_PREVIEW_EVENT, onPreview)
+    return () => window.removeEventListener(ZOOM_PREVIEW_EVENT, onPreview)
+  }, [])
 
   const box = node.box
   const insets = node.text?.insets ?? { l: 0, t: 0, r: 0, b: 0 }
@@ -211,7 +439,7 @@ export function TextEditOverlay({
     // Same anchor offset as the engine (the dy text-layout bakes into line tops), removed back during populate
     const extraH = Math.max(box.h - insets.t - insets.b, 1) - (node.text?.contentHeight ?? 0)
     const anchorDy = anchor === 'middle' ? extraH / 2 : anchor === 'bottom' ? extraH : 0
-    populateEditorDom(div, node.text?.lines ?? [], anchorDy)
+    populateEditorDom(div, node.text?.lines ?? [], anchorDy, box.w - insets.l - insets.r)
     initialRef.current = JSON.stringify(extractParagraphs(div, norm))
     div.focus()
     const sel = window.getSelection()
@@ -254,6 +482,24 @@ export function TextEditOverlay({
     onCommit(paras)
   }
 
+  // Targeted layout release (native listeners: React's onBeforeInput synthetic event does
+  // not map to the real `beforeinput`). beforeinput sees the pre-mutation target ranges
+  // (Backspace at a fragment edge deletes into the neighbor); the input listener covers
+  // execCommand formatting (bold/font — width-changing, fires input without beforeinput).
+  useEffect(() => {
+    const div = ref.current
+    if (!div) return
+    const onBeforeInput = (ev: InputEvent) =>
+      releaseFragmentsAtEdit(div, ev.getTargetRanges?.() ?? [])
+    const onInput = () => releaseFragmentsAtEdit(div)
+    div.addEventListener('beforeinput', onBeforeInput)
+    div.addEventListener('input', onInput)
+    return () => {
+      div.removeEventListener('beforeinput', onBeforeInput)
+      div.removeEventListener('input', onInput)
+    }
+  }, [])
+
   // While focus is parked on a keep-edit control the editor is already blurred, so its
   // onBlur can't fire again — a press anywhere else must still commit instead of silently dropping the edit
   const commitRef = useRef(commit)
@@ -279,6 +525,7 @@ export function TextEditOverlay({
     // Height fixed to the shape box: overflowing content shows past it, the edit box doesn't grow with content;
     // border uses outline (takes no layout space) so the inner usable size matches canvas layout exactly
     <div
+      ref={frameRef}
       style={{
         position: 'absolute',
         left: box.x,
@@ -290,7 +537,9 @@ export function TextEditOverlay({
         flexDirection: 'column',
         justifyContent:
           anchor === 'middle' ? 'center' : anchor === 'bottom' ? 'flex-end' : 'flex-start',
-        outline: '2px solid var(--accent)',
+        // 2 device px, zoom-compensated: the canvas is CSS-scaled, and 2 CSS px reads
+        // twice as heavy on retina displays
+        outline: `${2 / (globalThis.devicePixelRatio || 1) / Math.max(zoom, 0.1)}px solid ${frameColor}`,
       }}
     >
       <div
@@ -305,7 +554,6 @@ export function TextEditOverlay({
           if (to?.closest('[data-keep-edit]')) return
           commit()
         }}
-        onInput={(e) => releaseEditorLayoutConstraints(e.currentTarget)}
         onClick={(e) => {
           // ⌘/Ctrl+click follows a run link (plain clicks keep editing, matching PowerPoint)
           if (!(e.metaKey || e.ctrlKey) || !onFollowLink) return
@@ -378,8 +626,14 @@ export function TextEditOverlay({
           // wrap=none: no wrapping (width follows content, same as the canvas overflow behavior); soft-break \n still breaks via pre.
           // insets use padding not margin: paragraph divs' marginTop (paragraph spacing) must not collapse with the root node
           width: wrap ? Math.max(box.w, 40 + insets.l + insets.r) : 'max-content',
-          minWidth: wrap ? undefined : 40 + insets.l + insets.r,
-          minHeight: baseFontSize * 1.2 + insets.t + insets.b,
+          // nowrap keeps max-content growth for overflow, but never below the box width:
+          // a narrower block would defeat per-paragraph text-align (centered titles would
+          // visually snap left on entering edit) — the canvas centers within the box
+          minWidth: wrap ? undefined : Math.max(box.w, 40 + insets.l + insets.r),
+          // Only an empty body needs a synthetic height (so typing matches the canvas line
+          // height); inflating a laid-out body distorts the flex vertical anchor — a
+          // middle-anchored single line with tight spacing sat a few px too high in edit
+          minHeight: node.text?.lines.length ? undefined : baseFontSize * 1.2 + insets.t + insets.b,
           padding: `${insets.t}px ${insets.r}px ${insets.b}px ${insets.l}px`,
           fontSize: baseFontSize,
           fontFamily: baseFont,
@@ -762,26 +1016,81 @@ export function liveBulletChar(): string | null | undefined {
   return found.size === 1 ? [...found][0]! : null
 }
 
+/** Paragraph alignment at the editing selection, read from the overlay DOM (execCommand
+ * justify* products live only there until commit). Blocks intersecting the selection count —
+ * the caret's block when collapsed; a block with no inline text-align falls back to the
+ * root's, then 'left' (the engine default, so some alignment is always current).
+ * undefined = no overlay mounted; null = mixed. */
+export function liveAlign(): 'left' | 'center' | 'right' | 'justify' | null | undefined {
+  const root = document.querySelector('[data-src-para]')?.parentElement
+  if (!(root instanceof HTMLElement)) return undefined
+  const rootAlign = cssAlign(root.style.textAlign)
+  const blocks = Array.from(root.children).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'DIV',
+  )
+  if (!blocks.length) return rootAlign ?? 'left'
+  const sel = window.getSelection()
+  const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null
+  const found = new Set<NonNullable<ReturnType<typeof cssAlign>>>()
+  for (const b of blocks) {
+    if (range && !range.intersectsNode(b)) continue
+    found.add(cssAlign(b.style.textAlign) ?? rootAlign ?? 'left')
+  }
+  // selection outside the overlay (e.g. focus stolen by ribbon chrome): read all blocks
+  if (!found.size)
+    for (const b of blocks) found.add(cssAlign(b.style.textAlign) ?? rootAlign ?? 'left')
+  return found.size === 1 ? [...found][0]! : null
+}
+
 /**
  * Font size increase/decrease while editing: execCommand('fontSize', 7) wraps the selection as a
- * placeholder, then <font size="7"> is replaced with a span scaled from the original px (inherited
- * from the parent computed style) — extractParagraphs reads back style.fontSize.
+ * placeholder, then <font size="7"> is replaced with a span whose size steps along the PowerPoint
+ * ladder from the original px (inherited from the parent computed style) — extractParagraphs
+ * reads back style.fontSize.
  */
-export function resizeSelectionFont(factor: number): void {
+export function resizeSelectionFont(dir: 1 | -1): void {
   const root = document.activeElement
   if (!(root instanceof HTMLElement) || !root.isContentEditable) return
   const norm = parseFloat(root.dataset.norm ?? '') || 1
   document.execCommand('styleWithCSS', false, 'false')
   document.execCommand('fontSize', false, '7')
+  const spans: HTMLElement[] = []
   root.querySelectorAll('font[size="7"]').forEach((f) => {
     const font = f as HTMLElement
     const basePx = parseFloat(window.getComputedStyle(font.parentElement ?? root).fontSize) || 18
+    const pt = stepFontSizePt(pxToPt(basePx, norm), dir)
     const span = document.createElement('span')
-    // Bounds in model px (8~400) converted to viewport px
-    span.style.fontSize = `${Math.min(400 * norm, Math.max(8 * norm, Math.round(basePx * factor)))}px`
+    span.style.fontSize = `${(pt * 96 * norm) / 72}px`
     while (font.firstChild) span.appendChild(font.firstChild)
     font.replaceWith(span)
+    // The resized text's canvas-measured advances are stale: free the enclosing/contained fragments
+    releaseFragment(span.closest('[data-layout-fragment]'))
+    span.querySelectorAll<HTMLElement>('[data-layout-fragment]').forEach(releaseFragment)
+    spans.push(span)
   })
+  reselectSpans(spans)
+}
+
+/** Next/previous ladder size; beyond the ladder ±10pt, clamped to 8~400 */
+function stepFontSizePt(cur: number, dir: 1 | -1): number {
+  const max = FONT_SIZES[FONT_SIZES.length - 1]!
+  if (dir > 0) return cur >= max ? Math.min(400, cur + 10) : FONT_SIZES.find((s) => s > cur)!
+  if (cur > max) return Math.max(max, cur - 10)
+  for (let i = FONT_SIZES.length - 1; i >= 0; i--) if (FONT_SIZES[i]! < cur) return FONT_SIZES[i]!
+  return FONT_SIZES[0]!
+}
+
+/** replaceWith kills the live selection — re-select the new spans so the highlight and repeated grow/shrink clicks survive */
+function reselectSpans(spans: HTMLElement[]): void {
+  if (!spans.length) return
+  const sel = window.getSelection()
+  if (!sel) return
+  const range = document.createRange()
+  range.setStartBefore(spans[0]!)
+  range.setEndAfter(spans[spans.length - 1]!)
+  sel.removeAllRanges()
+  sel.addRange(range)
+  saveEditSelection()
 }
 
 /** css font-family list → first family name (unquoted). Save/display only care about the preferred font. */
@@ -821,13 +1130,16 @@ export function setSelectionFontSizePt(pt: number): void {
   const px = Math.min(400, Math.max(8, (pt * 96) / 72)) * norm
   document.execCommand('styleWithCSS', false, 'false')
   document.execCommand('fontSize', false, '7')
+  const spans: HTMLElement[] = []
   root.querySelectorAll('font[size="7"]').forEach((f) => {
     const font = f as HTMLElement
     const span = document.createElement('span')
     span.style.fontSize = `${px}px`
     while (font.firstChild) span.appendChild(font.firstChild)
     font.replaceWith(span)
+    spans.push(span)
   })
+  reselectSpans(spans)
 }
 
 // Viewport px font size → model pt (divide back by viewport scale × autofit fontScale).

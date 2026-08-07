@@ -194,8 +194,12 @@ export async function loadFile(
     ctx.setPageColor(readPageColor(parsed))
     ctx.setPageColorDirty(false)
     ctx.setHeader(
-      parsed.headerText || parsed.headerParas?.length
-        ? { text: parsed.headerText ?? '', paras: parsed.headerParas ?? undefined }
+      parsed.headerText || parsed.headerHasPageNumber || parsed.headerParas?.length
+        ? {
+            text: parsed.headerText ?? '',
+            pageNumber: parsed.headerHasPageNumber,
+            paras: parsed.headerParas ?? undefined,
+          }
         : null,
     )
     ctx.setHeaderDirty(false)
@@ -639,8 +643,12 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
     ctx.setPageColor(readPageColor(reparsed))
     ctx.setPageColorDirty(false)
     ctx.setHeader(
-      reparsed.headerText || reparsed.headerParas?.length
-        ? { text: reparsed.headerText ?? '', paras: reparsed.headerParas ?? undefined }
+      reparsed.headerText || reparsed.headerHasPageNumber || reparsed.headerParas?.length
+        ? {
+            text: reparsed.headerText ?? '',
+            pageNumber: reparsed.headerHasPageNumber,
+            paras: reparsed.headerParas ?? undefined,
+          }
         : null,
     )
     ctx.setHeaderDirty(false)

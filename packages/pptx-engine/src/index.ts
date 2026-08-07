@@ -54,7 +54,7 @@ import type {
 } from './types'
 import { patchTableStyleXml, ensureTableStyleXml, type TableStyleEdit } from './table-edit'
 import { buildChartSpaceXml, type NewChartKind, type NewChartOptions } from './chart-insert'
-import { prepareInsertSlideWithLayout } from './layout'
+import { parseLayoutPlaceholders, placeholderSpXml, prepareInsertSlideWithLayout } from './layout'
 import {
   chooseLayout,
   collectSlideBundle,
@@ -154,6 +154,14 @@ export {
   type FormatPatchResult,
 } from './format-brush'
 export { listSlideLayouts, type SlideLayoutInfo, type LayoutPlaceholder } from './layout'
+export {
+  BUILTIN_LAYOUTS,
+  BUILTIN_LAYOUT_PREFIX,
+  builtinLayoutInfos,
+  ensureBuiltinLayout,
+  shouldOfferBuiltinLayouts,
+  type BuiltinLayoutDef,
+} from './builtin-layouts'
 export {
   parsePlaceholderMap,
   resolvePlaceholderTransform,
@@ -1321,12 +1329,18 @@ export function setElementConnection(
   return true
 }
 
+// title/ctrTitle share one slot; content placeholders (body/obj/subTitle/untyped) match by idx
+function phSlotKey(type: string, idx: string): string {
+  return type === 'title' || type === 'ctrTitle' ? 'title' : `body:${idx}`
+}
+
 /**
  * Switch an existing slide's layout: point the slide rels' slideLayout
  * relationship at the new layout, then reparse (inheritance chain/decoration
  * layer/placeholder default styles all refreshed). Placeholder positions are kept
  * (existing shapes stay put; use resetSlideLayout to snap
- * them back).
+ * them back). Layout placeholders with no counterpart on the slide are added as
+ * empty prompt boxes (PowerPoint semantics).
  */
 export function setSlideLayout(
   opened: OpenedPptx,
@@ -1362,6 +1376,29 @@ export function setSlideLayout(
     )
   }
   opened.archive.entries.set(relsPath, Buffer.from(next, 'utf8'))
+
+  const layoutPhs = parseLayoutPlaceholders(opened.archive.readText(layoutPath) ?? '')
+  const taken = new Set<string>()
+  let maxId = 1
+  for (const el of slide.elements) {
+    const xml = patchedElementXml(el)
+    const m = /<p:ph\b([^>]*?)\/?>/.exec(xml)
+    const type = m ? (/\btype="([^"]*)"/.exec(m[1]!)?.[1] ?? '') : ''
+    // ftr/sldNum/dt live outside the content-slot namespace (their idx 2/3/4 must not block body slots)
+    if (m && !['ftr', 'sldNum', 'dt'].includes(type))
+      taken.add(phSlotKey(type, /\bidx="([^"]*)"/.exec(m[1]!)?.[1] ?? ''))
+    for (const idm of xml.matchAll(/<p:cNvPr\s[^>]*\bid="(\d+)"/g))
+      maxId = Math.max(maxId, Number(idm[1]))
+  }
+  const missing = layoutPhs.filter((ph) => !taken.has(phSlotKey(ph.type, ph.idx)))
+  if (missing.length) {
+    const r = appendRawElements(
+      opened,
+      slideIndex,
+      missing.map((ph, i) => placeholderSpXml(ph, maxId + 1 + i)),
+    )
+    if (r) return r.slide
+  }
   return materializeSlide(opened, slideIndex)
 }
 

@@ -28,7 +28,7 @@ describe('live line-height factor decorations', () => {
     editor.destroy()
   })
 
-  it('replacing CJK text with Western text switches the factor back to 1.2', () => {
+  it('replacing CJK text with Western text switches back to the Latin factor', () => {
     const editor = new Editor({
       element: document.createElement('div'),
       extensions: editorExtensions,
@@ -41,7 +41,7 @@ describe('live line-height factor decorations', () => {
 
     editor.commands.setTextSelection({ from: 1, to: 3 })
     editor.commands.insertContent('latin')
-    expect(factorOf(editor)).toBe('1.2')
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-latin,1.2)')
 
     editor.destroy()
   })

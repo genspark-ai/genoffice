@@ -18,6 +18,7 @@ import type Konva from 'konva'
 import type {
   RenderSlide,
   RenderNode,
+  RenderFill,
   ShapeRenderNode,
   TableRenderNode,
   PictureRenderNode,
@@ -32,6 +33,7 @@ import {
   type SpacingIndicator,
 } from './snap'
 import { NodeBody, StaticNode } from './NodeBody'
+import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
 import { useI18n } from './i18n/locale'
 import {
   defaultDrawSize,
@@ -45,6 +47,188 @@ import { shapePreviewPath } from './components/gallery-previews'
 /** Whether a node is a connector (read-only, no Transformer attached). */
 function isConnectorNode(node: RenderNode): boolean {
   return (node.type === 'shape' || node.type === 'text') && !!(node as ShapeRenderNode).line
+}
+
+/** Perceived luminance (0..1) of a CSS color (#rgb/#rrggbb[aa]/rgb[a]()); null when unparseable. */
+function colorLuminance(color: string): number | null {
+  const c = color.trim()
+  let r: number, g: number, b: number
+  const hex6 = /^#([0-9a-f]{6})/i.exec(c)
+  const hex3 = /^#([0-9a-f]{3})$/i.exec(c)
+  const rgb = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(c)
+  if (hex6) {
+    r = parseInt(hex6[1]!.slice(0, 2), 16)
+    g = parseInt(hex6[1]!.slice(2, 4), 16)
+    b = parseInt(hex6[1]!.slice(4, 6), 16)
+  } else if (hex3) {
+    r = parseInt(hex3[1]![0]! + hex3[1]![0]!, 16)
+    g = parseInt(hex3[1]![1]! + hex3[1]![1]!, 16)
+    b = parseInt(hex3[1]![2]! + hex3[1]![2]!, 16)
+  } else if (rgb) {
+    r = Number(rgb[1])
+    g = Number(rgb[2])
+    b = Number(rgb[3])
+  } else {
+    return null
+  }
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+}
+
+/** Average luminance of an image (8×8 downsample), cached per element; null while not loaded. */
+const imageLumCache = new WeakMap<HTMLImageElement, number | null>()
+function imageLuminance(img: HTMLImageElement | undefined): number | null {
+  if (!img || !img.complete || !img.naturalWidth) return null
+  const hit = imageLumCache.get(img)
+  if (hit !== undefined) return hit
+  let lum: number | null
+  try {
+    const c = document.createElement('canvas')
+    c.width = 8
+    c.height = 8
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0, 8, 8)
+    const d = ctx.getImageData(0, 0, 8, 8).data
+    let sum = 0
+    for (let i = 0; i < d.length; i += 4)
+      sum += 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!
+    lum = sum / (d.length / 4) / 255
+  } catch {
+    lum = null // tainted canvas etc. — treat as unknown
+  }
+  imageLumCache.set(img, lum)
+  return lum
+}
+
+/** Luminance of a render fill; gradients average their stops, images sample the bitmap. */
+function fillLuminance(fill: RenderFill, images: Map<string, HTMLImageElement>): number | null {
+  if (fill.kind === 'solid') return colorLuminance(fill.color)
+  if (fill.kind === 'gradient') {
+    const vals = fill.stops
+      .map((s) => colorLuminance(s.color))
+      .filter((v): v is number => v != null)
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+  }
+  if (fill.kind === 'image')
+    return imageLuminance(fill.dataUrl ? images.get(fill.dataUrl) : undefined)
+  return null
+}
+
+/** Whether the slide's effective background is dark (selection chrome flips to white on it).
+ * Full-page background-like nodes paint over the slide background, so the topmost one wins. */
+function slideBackgroundIsDark(slide: RenderSlide, images: Map<string, HTMLImageElement>): boolean {
+  let lum: number | null = null
+  for (const n of slide.nodes) {
+    if (!n.background) continue
+    const l =
+      n.type === 'picture'
+        ? imageLuminance(
+            (n as PictureRenderNode).dataUrl
+              ? images.get((n as PictureRenderNode).dataUrl!)
+              : undefined,
+          )
+        : n.type === 'shape' || n.type === 'text'
+          ? fillLuminance((n as ShapeRenderNode).fill, images)
+          : null
+    if (l != null) lum = l
+  }
+  if (lum == null) lum = fillLuminance(slide.background, images)
+  return (lum ?? 1) < 0.5
+}
+
+/** Selection/edit chrome color for a slide: white on dark backgrounds, near-black otherwise
+ * (shared with the text-edit overlay so the edit frame matches the selection frame). */
+export function selectionChromeColor(
+  slide: RenderSlide,
+  images: Map<string, HTMLImageElement>,
+): string {
+  return slideBackgroundIsDark(slide, images) ? '#ffffff' : '#232425'
+}
+
+/** PowerPoint-style rotate handle: white disc with a clockwise circular arrow.
+ * Rendered once to an offscreen canvas (4× for retina) and applied to the
+ * Transformer's `rotater` anchor as a fill pattern (Konva anchors are Rects). */
+const ROTATER_SIZE = 19
+let rotaterIcon: HTMLCanvasElement | null = null
+function getRotaterIcon(): HTMLCanvasElement {
+  if (rotaterIcon) return rotaterIcon
+  const k = 4
+  const s = ROTATER_SIZE * k
+  const c = document.createElement('canvas')
+  c.width = s
+  c.height = s
+  const ctx = c.getContext('2d')!
+  const mid = s / 2
+  // disc: white fill + selection-color rim (~0.85px at final size, matching the frame hairline)
+  ctx.beginPath()
+  ctx.arc(mid, mid, mid - k, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.lineWidth = k * 0.85
+  ctx.strokeStyle = '#232425'
+  ctx.stroke()
+  // circular arrow: 300° arc with the gap at 12 o'clock (canvas angles grow clockwise)
+  const r = mid * 0.46
+  const end = (Math.PI * 4) / 3 // 240°, upper-left — the arrowhead end
+  ctx.beginPath()
+  ctx.arc(mid, mid, r, -Math.PI / 3, end)
+  ctx.lineWidth = 1.4 * k
+  ctx.lineCap = 'round'
+  ctx.stroke()
+  // arrowhead at the 240° end, pointing along the clockwise tangent (up-right, into the gap)
+  const ex = mid + r * Math.cos(end)
+  const ey = mid + r * Math.sin(end)
+  const tx = -Math.sin(end)
+  const ty = Math.cos(end)
+  const len = 2.7 * k
+  const half = 1.75 * k
+  ctx.beginPath()
+  ctx.moveTo(ex + tx * len, ey + ty * len)
+  ctx.lineTo(ex - ty * half, ey + tx * half)
+  ctx.lineTo(ex + ty * half, ey - tx * half)
+  ctx.closePath()
+  ctx.fillStyle = '#232425'
+  ctx.fill()
+  rotaterIcon = c
+  return c
+}
+
+/** Hover cursor for the rotate anchor: the same clockwise-arrow glyph as the
+ * handle, black with a white halo so it stays readable on any background
+ * (replaces Konva's default crosshair). The canvas is scaled with a CSS
+ * transform, which does not scale cursors, so callers pass the on-screen
+ * handle size (ROTATER_SIZE × zoom) × 1.3; hotspot at the image center. */
+function makeRotateCursor(sizePx: number): string {
+  const size = Math.max(10, Math.round(sizePx))
+  const arc = 'M16 5.07A8 8 0 1 1 8 5.07'
+  const head = 'M11.64 2.97L9.35 7.41L6.65 2.73Z'
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24">` +
+    '<g fill="none" stroke-linecap="round">' +
+    `<path d="${arc}" stroke="#fff" stroke-width="5.5"/>` +
+    `<path d="${head}" fill="#fff" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>` +
+    `<path d="${arc}" stroke="#232425" stroke-width="2.4"/>` +
+    `<path d="${head}" fill="#232425"/>` +
+    '</g></svg>'
+  const hot = Math.floor(size / 2)
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${hot} ${hot}, crosshair`
+}
+
+/** Restyle the Transformer's rotate anchor from the default square into the rotate icon.
+ * `size` is in canvas px (the caller applies zoom compensation and low-zoom shrinking). */
+function styleRotaterAnchor(anchor: Konva.Rect, size: number): void {
+  if (!anchor.hasName('rotater')) return
+  anchor.setAttrs({
+    width: size,
+    height: size,
+    offsetX: size / 2,
+    offsetY: size / 2,
+    cornerRadius: size / 2,
+    strokeEnabled: false,
+    fillPriority: 'pattern',
+    fillPatternImage: getRotaterIcon(),
+    fillPatternRepeat: 'no-repeat',
+    fillPatternScale: { x: size / (ROTATER_SIZE * 4), y: size / (ROTATER_SIZE * 4) },
+  })
 }
 
 /** Find a node by sourceId (top level + recursively inside groups; while editing inside a group the selection may contain children). */
@@ -155,16 +339,53 @@ function countNodes(nodes: RenderNode[]): number {
   return n
 }
 
+/** Below this node count a slide is "light": full-layer redraws are cheap enough to afford
+ * full-resolution rasterization at deep zoom (retina × 300% needs ratio 6; at that point the
+ * whole bitmap — content and selection chrome — would otherwise be a 2× upscale and read soft). */
+export const LIGHT_SLIDE_NODE_COUNT = 100
+
 /**
  * Main-canvas rasterization ratio. Zoom is a pure CSS transform on the Stage's container, so
  * without this the bitmap stays at devicePixelRatio and zoom>1 just stretches it (blurry).
- * Never below devicePixelRatio (zoom<1 keeps the old quality); capped to bound canvas memory.
- * Dense slides skip the zoom upscale and cap harder: full-layer redraw cost scales with
- * ratio² × node count, and bounding it is the cheap half of the freeze mitigation.
+ * Never below devicePixelRatio (zoom<1 keeps the old quality); capped to bound canvas memory —
+ * the cap is tiered by node count because full-layer redraw cost scales with ratio² × node
+ * count: light pages get the full dpr×zoom (up to 6, ~160 MB transient on a slide-sized stage),
+ * mid pages keep the historical 3, and dense slides skip the zoom upscale and cap harder.
  */
 export function canvasPixelRatio(devicePixelRatio: number, zoom: number, nodeCount = 0): number {
   if (nodeCount >= DENSE_SLIDE_NODE_COUNT) return Math.min(devicePixelRatio || 1, 2)
-  return Math.min((devicePixelRatio || 1) * Math.max(zoom, 1), 3)
+  const cap = nodeCount < LIGHT_SLIDE_NODE_COUNT ? 6 : 3
+  return Math.min((devicePixelRatio || 1) * Math.max(zoom, 1), cap)
+}
+
+/** Selection-chrome stroke width (canvas px): as thin as possible while staying SOLID.
+ * Chrome geometry sits at arbitrary fractional coordinates, so a stroke near 1 raster px
+ * anti-aliases into two ~50%-alpha pixels — faint gray, not a line. ~1.7 raster px keeps a
+ * fully-covered core at any alignment; the screen floor (~1.5 device px) keeps it solid
+ * when zooming out shrinks canvas px below device px. */
+function chromeHairline(zoom: number, nodeCount = 0): number {
+  const dpr = window.devicePixelRatio || 1
+  const z = Math.max(zoom, 0.1)
+  return Math.max(1.5 / (dpr * z), 1.7 / canvasPixelRatio(dpr, zoom, nodeCount))
+}
+
+/** Counter-scale the Transformer chrome for a given zoom so the frame, anchors and
+ * rotate handle hold a constant on-screen size. Called from JSX values on commits and
+ * imperatively per frame during a live zoom gesture — the Transformer sits on its own
+ * layer, so the per-frame redraw touches only the chrome, never the slide raster. */
+function applyChromeZoom(tr: Konva.Transformer, zoom: number, nodeCount: number): void {
+  const z = Math.max(zoom, 0.1)
+  const cs = Math.min(1, Math.sqrt(z))
+  const hl = chromeHairline(zoom, nodeCount)
+  tr.setAttrs({
+    borderStrokeWidth: hl,
+    anchorStrokeWidth: hl,
+    anchorSize: (8 * cs) / z,
+    rotateAnchorOffset: (50 * cs) / z,
+    anchorStyleFunc: (a: Konva.Rect) => styleRotaterAnchor(a, (ROTATER_SIZE * cs) / z),
+  })
+  tr.forceUpdate()
+  tr.getLayer()?.batchDraw()
 }
 
 export function SlideCanvas({
@@ -197,14 +418,24 @@ export function SlideCanvas({
   const nodeCount = useMemo(() => countNodes(slide.nodes), [slide])
   const dense = nodeCount >= DENSE_SLIDE_NODE_COUNT
 
-  // zoom is committed to state only after the gesture ends (App batches wheel events),
-  // so re-rasterizing here happens once per gesture, not per wheel event. The slide dep
-  // covers layers (re)created between zoom changes; the resolution media query covers
-  // devicePixelRatio changes (window dragged to another display) — it matches the current
-  // dpr, so it must be re-armed after each change.
+  // Zoom the raster and the selection chrome react to: during an active zoom (slider drag,
+  // repeated wheel commits) both hold their last settled value — the CSS transform scales
+  // them visually, which is smooth — and re-fit once the zoom stops changing. Recomputing
+  // per commit forced a full-layer re-raster each time (very expensive at high pixel
+  // ratios), which made the gesture stutter.
+  const [settledZoom, setSettledZoom] = useState(zoom)
+  useEffect(() => {
+    if (settledZoom === zoom) return
+    const t = window.setTimeout(() => setSettledZoom(zoom), 150)
+    return () => window.clearTimeout(t)
+  }, [zoom, settledZoom])
+
+  // Re-rasterize on settled zoom changes. The slide dep covers layers (re)created between
+  // zoom changes; the resolution media query covers devicePixelRatio changes (window dragged
+  // to another display) — it matches the current dpr, so it must be re-armed after each change.
   useEffect(() => {
     const apply = () => {
-      const ratio = canvasPixelRatio(window.devicePixelRatio, zoom, nodeCount)
+      const ratio = canvasPixelRatio(window.devicePixelRatio, settledZoom, nodeCount)
       for (const l of stageRef.current?.getLayers() ?? []) {
         if (l.getCanvas().getPixelRatio() !== ratio) {
           l.getCanvas().setPixelRatio(ratio)
@@ -225,7 +456,7 @@ export function SlideCanvas({
     }
     arm()
     return () => mq?.removeEventListener('change', onDprChange)
-  }, [zoom, slide])
+  }, [settledZoom, slide, nodeCount])
   const [guides, setGuides] = useState<Guide[]>([])
   // Equal-spacing double-headed arrows (while dragging); same-size matched elements (while resizing, listed per dimension)
   const [spacing, setSpacing] = useState<SpacingIndicator[]>([])
@@ -243,6 +474,38 @@ export function SlideCanvas({
     null,
   )
   const marqueeRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+
+  // Handles keep a constant on-screen size at zoom ≥ 1, but shrink gently (√zoom) when zoomed
+  // out so they stay proportionate to the shrinking content. Chrome sizing follows the
+  // committed zoom directly (the Transformer lives on its own cheap layer), not settledZoom —
+  // only the expensive raster ratio waits for the zoom to settle.
+  const chromeScale = Math.min(1, Math.sqrt(Math.max(zoom, 0.1)))
+
+  // Rotate hover cursor: 30% larger than the handle's current on-screen size
+  const rotateCursor = useMemo(
+    () => makeRotateCursor(ROTATER_SIZE * chromeScale * 1.3),
+    [chromeScale],
+  )
+
+  // Selection chrome flips to white on dark slide backgrounds so the frame stays visible
+  const selStroke = useMemo(() => selectionChromeColor(slide, images), [slide, images])
+
+  // Hairline width for the current zoom + raster resolution (canvas px)
+  const hairline = useMemo(() => chromeHairline(zoom, nodeCount), [zoom, nodeCount])
+
+  // During a live zoom gesture (pinch/slider) only the CSS transform moves — no React
+  // commit — so the chrome would stretch with the content and then snap back at commit.
+  // Counter-scale it imperatively every previewed frame instead; at commit the JSX lands
+  // on exactly the same values, so the gesture ends with no visible jump.
+  useEffect(() => {
+    const onPreview = (e: Event) => {
+      const z = (e as CustomEvent<number>).detail
+      if (typeof z !== 'number' || !trRef.current) return
+      applyChromeZoom(trRef.current, z, nodeCount)
+    }
+    window.addEventListener(ZOOM_PREVIEW_EVENT, onPreview)
+    return () => window.removeEventListener(ZOOM_PREVIEW_EVENT, onPreview)
+  }, [nodeCount])
 
   // In-flight shape draw gesture (slide coordinates); preview only shows past the click threshold
   const drawRef = useRef<{ x1: number; y1: number; x2: number; y2: number; shift: boolean } | null>(
@@ -530,6 +793,8 @@ export function SlideCanvas({
             selBBox={selBBox}
             spacingBoxes={spacingBoxes}
             suppressClickRef={suppressClickRef}
+            selStroke={selStroke}
+            selHairline={hairline}
           />
         ))}
         {guides.map((g, i) =>
@@ -752,8 +1017,8 @@ export function SlideCanvas({
               width={b.w + 6}
               height={b.h + 6}
               rotation={b.rotationDeg}
-              stroke="#c43e1c"
-              strokeWidth={1}
+              stroke={selStroke}
+              strokeWidth={hairline}
               dash={[4, 3]}
               fill="transparent"
               listening={false}
@@ -773,10 +1038,19 @@ export function SlideCanvas({
                 node={n as ShapeRenderNode}
                 slide={slide}
                 zoom={zoom}
+                stroke={selStroke}
+                hairline={hairline}
                 onCommit={onEditConnectorEndpoints}
               />
             )
           })()}
+      </Layer>
+      {/* Selection chrome on its own layer: counter-scaling it during a zoom gesture then
+          only redraws these few nodes — redrawing the content layer per frame is what
+          made the gesture stutter. The Transformer tracks nodes across layers fine.
+          Mirrors the content layer's draw-mode listening switch so the crosshair
+          gesture isn't swallowed by the transformer handles. */}
+      <Layer x={CANVAS_BLEED} y={CANVAS_BLEED} listening={!drawMode}>
         <Transformer
           ref={trRef}
           rotateEnabled
@@ -785,9 +1059,18 @@ export function SlideCanvas({
             selectedIds.length > 0 &&
             selectedIds.every((id) => findNodeDeep(slide.nodes, id)?.type === 'picture')
           }
-          borderStroke="#c43e1c"
-          anchorStroke="#c43e1c"
+          borderStroke={selStroke}
+          anchorStroke={selStroke}
           anchorFill="#ffffff"
+          // The canvas is CSS-scaled: divide every chrome size by zoom so the frame keeps a constant on-screen weight
+          borderStrokeWidth={hairline}
+          anchorStrokeWidth={hairline}
+          anchorSize={(8 * chromeScale) / Math.max(zoom, 0.1)}
+          rotateAnchorOffset={(50 * chromeScale) / Math.max(zoom, 0.1)}
+          anchorStyleFunc={(a) =>
+            styleRotaterAnchor(a, (ROTATER_SIZE * chromeScale) / Math.max(zoom, 0.1))
+          }
+          rotateAnchorCursor={rotateCursor}
           boundBoxFunc={(old, next) => {
             // Same-size snapping: when resizing a single, unrotated, non-picture element (keepRatio conflicts),
             // snap when width/height is close to another element's and highlight the matched element
@@ -882,11 +1165,17 @@ function ConnectorEndpointHandles({
   node,
   slide,
   zoom,
+  stroke,
+  hairline,
   onCommit,
 }: {
   node: ShapeRenderNode
   slide: RenderSlide
   zoom: number
+  /** Selection chrome color (flips to white on dark slide backgrounds) */
+  stroke: string
+  /** Selection-chrome stroke width (canvas px, zoom- and raster-compensated) */
+  hairline: number
   onCommit: NonNullable<Props['onEditConnectorEndpoints']>
 }) {
   const [drag, setDrag] = useState<{
@@ -924,8 +1213,8 @@ function ConnectorEndpointHandles({
       y={p.y}
       radius={4.5 / z}
       fill="#ffffff"
-      stroke="#c43e1c"
-      strokeWidth={1.5 / z}
+      stroke={stroke}
+      strokeWidth={1.5 * hairline}
       hitStrokeWidth={12 / z}
       draggable
       onMouseEnter={(e) => setCursor(e, 'crosshair')}
@@ -975,8 +1264,8 @@ function ConnectorEndpointHandles({
       {drag && (
         <Line
           points={[fixed.x, fixed.y, drag.x, drag.y]}
-          stroke="#c43e1c"
-          strokeWidth={1 / z}
+          stroke={stroke}
+          strokeWidth={hairline}
           dash={[4, 3]}
           listening={false}
         />
@@ -1024,6 +1313,10 @@ interface NodeProps {
   selectedIds?: string[]
   /** Set when a marquee drag just completed on this gesture: the trailing click must not select the node under the cursor */
   suppressClickRef?: React.MutableRefObject<boolean>
+  /** Selection chrome color (flips to white on dark slide backgrounds) */
+  selStroke?: string
+  /** Selection-chrome stroke width (canvas px, zoom- and raster-compensated) */
+  selHairline?: number
 }
 
 /** Throttle interval for live resize preview (ms): each preview runs an IPC round-trip + full-page relayout */
@@ -1052,6 +1345,8 @@ function NodeView({
   allowChildTextEdit,
   selectedIds,
   suppressClickRef,
+  selStroke = '#232425',
+  selHairline,
 }: NodeProps) {
   const { t } = useI18n()
   const { box } = node
@@ -1298,6 +1593,8 @@ function NodeView({
               insideGroupId={node.sourceId}
               allowChildTextEdit={plain}
               suppressClickRef={suppressClickRef}
+              selStroke={selStroke}
+              selHairline={selHairline}
             />
           ))}
         </Group>
@@ -1394,8 +1691,8 @@ function NodeView({
         <Rect
           width={box.w}
           height={box.h}
-          stroke="#c43e1c"
-          strokeWidth={1 / Math.max(zoom, 0.1)}
+          stroke={selStroke}
+          strokeWidth={selHairline ?? chromeHairline(zoom)}
           strokeScaleEnabled={false}
           listening={false}
         />

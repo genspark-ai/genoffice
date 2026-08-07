@@ -1354,7 +1354,7 @@ export async function writeXlsxAtomically(path: string, buffer: Buffer): Promise
   const temporaryPath = join(dirname(path), `.${crypto.randomUUID()}.tmp.xlsx`)
   try {
     await writeFile(temporaryPath, buffer, { flag: 'wx' })
-    const handle = await open(temporaryPath, 'r')
+    const handle = await open(temporaryPath, 'r+')
     try {
       await handle.sync()
     } finally {

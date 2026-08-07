@@ -41,6 +41,14 @@ export type StructuralJournalOp =
       readonly index: number
       readonly count: number
     }
+  /// Whole-row move: rows [index, index+count) relocate before the pre-move
+  /// row `before` — a bijection over the row axis (never deletes anything).
+  | {
+      readonly kind: 'move-rows'
+      readonly index: number
+      readonly count: number
+      readonly before: number
+    }
   | {
       readonly kind: 'merge-cells' | 'unmerge-cells'
       readonly range: {
@@ -817,14 +825,53 @@ interface RowColumnShift {
   readonly removing: boolean
   readonly index: number
   readonly count: number
+  /// Present for whole-row moves: the two adjacent blocks that swap places.
+  readonly swap?: SwapSpans
 }
 
-function toRowColumnShift(op: { kind: string; index: number; count: number }): RowColumnShift {
+interface SwapSpans {
+  readonly first: { readonly start: number; readonly end: number }
+  readonly second: { readonly start: number; readonly end: number }
+}
+
+/// A move as two adjacent index blocks swapping places (same model as the
+/// gateway's save-side transform).
+export function toSwapSpans(op: { index: number; count: number; before: number }): SwapSpans {
+  return op.before > op.index
+    ? {
+        first: { start: op.index, end: op.index + op.count - 1 },
+        second: { start: op.index + op.count, end: op.before - 1 },
+      }
+    : {
+        first: { start: op.before, end: op.index - 1 },
+        second: { start: op.index, end: op.index + op.count - 1 },
+      }
+}
+
+export function swapPosition(position: number, swap: SwapSpans): number {
+  if (position >= swap.first.start && position <= swap.first.end) {
+    return position + (swap.second.end - swap.second.start + 1)
+  }
+  if (position >= swap.second.start && position <= swap.second.end) {
+    return position - (swap.first.end - swap.first.start + 1)
+  }
+  return position
+}
+
+function toRowColumnShift(op: {
+  kind: string
+  index: number
+  count: number
+  before?: number
+}): RowColumnShift {
   return {
-    axis: op.kind === 'insert-rows' || op.kind === 'remove-rows' ? 'row' : 'column',
+    axis: op.kind === 'insert-cols' || op.kind === 'remove-cols' ? 'column' : 'row',
     removing: op.kind === 'remove-rows' || op.kind === 'remove-cols',
     index: op.index,
     count: op.count,
+    ...(op.kind === 'move-rows' && op.before !== undefined
+      ? { swap: toSwapSpans({ index: op.index, count: op.count, before: op.before }) }
+      : {}),
   }
 }
 
@@ -851,6 +898,19 @@ function shiftVisualAnchor(
   anchor: WorkbookVisualObject['anchor'],
   shift: RowColumnShift,
 ): WorkbookVisualObject['anchor'] {
+  if (shift.swap) {
+    // Judged as a pair: only anchors fully inside one swapped block move;
+    // anchors outside or spanning the blocks stay, straddles stay untouched
+    // (the session visual just keeps its screen position).
+    const fromRow = anchor.fromRow
+    const toRow = anchor.toRow
+    const { first, second } = shift.swap
+    const inside = (span: { start: number; end: number }): boolean =>
+      fromRow >= span.start && toRow <= span.end
+    if (!inside(first) && !inside(second)) return anchor
+    const mappedFrom = swapPosition(fromRow, shift.swap)
+    return { ...anchor, fromRow: mappedFrom, toRow: mappedFrom + (toRow - fromRow) }
+  }
   const from = moveAnchorMark(shift.axis === 'row' ? anchor.fromRow : anchor.fromColumn, shift)
   const to = moveAnchorMark(shift.axis === 'row' ? anchor.toRow : anchor.toColumn, shift)
   return shift.axis === 'row'
@@ -885,7 +945,18 @@ function shiftSeriesRef(ref: string, sheetName: string, shift: RowColumnShift): 
   let start = shift.axis === 'row' ? area.startRow : area.startColumn
   let end = shift.axis === 'row' ? area.endRow : area.endColumn
   const { index, count } = shift
-  if (shift.removing) {
+  if (shift.swap) {
+    // Three-way like the save side: ranges inside one block move with it,
+    // ranges outside or spanning stay; torn ranges keep their old text (the
+    // save's own chart-reference pass decides whether that fails closed).
+    const { first, second } = shift.swap
+    const inside = (span: { start: number; end: number }): boolean =>
+      start >= span.start && end <= span.end
+    if (!inside(first) && !inside(second)) return ref
+    const delta = swapPosition(start, shift.swap) - start
+    start += delta
+    end += delta
+  } else if (shift.removing) {
     if (start >= index && end < index + count) return null
     start = start >= index + count ? start - count : start >= index ? index : start
     end = end >= index + count ? end - count : end >= index ? index - 1 : end
@@ -964,12 +1035,19 @@ export function recordStructuralOp(
   const last = ops[ops.length - 1]
   const cancels =
     'index' in op &&
-    (op.kind === 'remove-rows' || op.kind === 'remove-cols') &&
     last !== undefined &&
-    last.kind === (op.kind === 'remove-rows' ? 'insert-rows' : 'insert-cols') &&
     'index' in last &&
+    ((op.kind === 'remove-rows' || op.kind === 'remove-cols') &&
+    last.kind === (op.kind === 'remove-rows' ? 'insert-rows' : 'insert-cols') &&
     last.index === op.index &&
     last.count === op.count
+      ? true
+      : // Undo of a move arrives as its exact inverse move.
+        op.kind === 'move-rows' &&
+        last.kind === 'move-rows' &&
+        op.count === last.count &&
+        op.index === (last.before > last.index ? last.before - last.count : last.before) &&
+        op.before === (last.before > last.index ? last.index : last.index + last.count))
   if (cancels) {
     ops.pop()
     if (ops.length === 0) journal.structuralOps.delete(sheetId)
@@ -983,10 +1061,12 @@ export function recordStructuralOp(
   // (`in` narrowing: TS doesn't compose `||` checks on multi-literal kinds.)
   if (!('index' in op)) return
   const rowColumnOp = op
-  const axis = op.kind === 'insert-rows' || op.kind === 'remove-rows' ? 'row' : 'column'
+  const axis = op.kind === 'insert-cols' || op.kind === 'remove-cols' ? 'column' : 'row'
   const removing = op.kind === 'remove-rows' || op.kind === 'remove-cols'
+  const swap = rowColumnOp.kind === 'move-rows' ? toSwapSpans(rowColumnOp) : null
   const movePosition = (position: number): number | null => {
     const { index, count } = rowColumnOp
+    if (swap) return swapPosition(position, swap)
     if (removing) {
       if (position >= index && position < index + count) return null
       return position >= index + count ? position - count : position

@@ -17,6 +17,7 @@ import {
   populateEditorDom,
   extractParagraphs,
   releaseEditorLayoutConstraints,
+  releaseFragmentsAtEdit,
   applySelectionParagraphFormat,
 } from '../src/renderer/TextEditOverlay'
 import { applyEditParagraphs, collectParagraphFormatPatches } from '../src/main/edit-text'
@@ -84,6 +85,36 @@ describe('run fragmentation: layout fragments merge back into original runs by s
     expect(
       fragments.every((fragment) => fragment.style.width === '' && fragment.style.display === ''),
     ).toBe(true)
+  })
+
+  it('a collapsed-caret edit releases only the touched fragment and its neighbors', () => {
+    const div = document.createElement('div')
+    populateEditorDom(div, layout([{ runs: [{ text: '可编辑文字排版' }] }]).lines)
+    const fragments = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+    expect(fragments.length).toBeGreaterThan(4)
+    const caret = document.createRange()
+    caret.setStart(fragments[2]!.firstChild!, 1)
+    caret.collapse(true)
+    releaseFragmentsAtEdit(div, [caret])
+    const released = fragments.map((f) => f.style.width === '')
+    expect(released.slice(1, 4)).toEqual([true, true, true])
+    // the rest keep their canvas-measured advances, so the surrounding text doesn't jump
+    expect(released[0]).toBe(false)
+    expect(released.slice(4).every((r) => !r)).toBe(true)
+  })
+
+  it('a ranged edit releases every fragment the range intersects', () => {
+    const div = document.createElement('div')
+    populateEditorDom(div, layout([{ runs: [{ text: '可编辑文字排版' }] }]).lines)
+    const fragments = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+    const range = document.createRange()
+    range.setStart(fragments[1]!.firstChild!, 0)
+    range.setEnd(fragments[3]!.firstChild!, 1)
+    releaseFragmentsAtEdit(div, [range])
+    const released = fragments.map((f) => f.style.width === '')
+    expect(released.slice(1, 4)).toEqual([true, true, true])
+    expect(released[0]).toBe(false)
+    expect(released.slice(4).every((r) => !r)).toBe(true)
   })
 
   it('CJK paragraph (laid out per character) is still a single run after commit', () => {

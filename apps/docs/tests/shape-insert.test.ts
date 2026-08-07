@@ -267,6 +267,48 @@ describe('shape insertion', () => {
     editor.destroy()
   })
 
+  it('inserts a line arrow as a stroke-only connector and round-trips it', async () => {
+    const { editor, parsed } = await openBlankDoc()
+    insertShapeAt(editor, 'lineArrow')
+
+    const box = editor.state.doc.lastChild?.attrs.textboxes?.[0] as TextboxDisplay
+    expect(box.prst).toBe('lineArrow')
+    expect(box.readOnly).toBe(true)
+    expect(box.fill).toBeUndefined()
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const xmlBlock = plan.saveBlocks.find((b) => b.kind === 'xml') as
+      { kind: 'xml'; xml: string } | undefined
+    expect(xmlBlock?.xml).toContain('prst="straightConnector1"')
+    expect(xmlBlock?.xml).toContain('<a:tailEnd type="triangle"/>')
+    expect(xmlBlock?.xml).toContain('<a:noFill/>')
+
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const reparsed = await parseDocx(saved)
+    const block = reparsed.blocks.find((b) => b.textboxes?.length)
+    expect(block?.textboxes?.[0].prst).toBe('lineArrow')
+    expect(block?.textboxes?.[0].readOnly).toBe(true)
+    editor.destroy()
+  })
+
+  it('straight lines ignore the drawn height; bent connectors keep it', async () => {
+    const { editor, parsed } = await openBlankDoc()
+    insertShapeAt(editor, 'line', { widthEmu: 2700000, heightEmu: 1800000 })
+    insertShapeAt(editor, 'lineBent', { widthEmu: 1800000, heightEmu: 1350000 })
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const reparsed = await parseDocx(saved)
+    const boxes = reparsed.blocks.flatMap((b) => b.textboxes ?? [])
+    const straight = boxes.find((b) => b.prst === 'line')
+    const bent = boxes.find((b) => b.prst === 'lineBent')
+    // 114300 EMU = 12 px grab band
+    expect(straight?.heightPx).toBe(12)
+    expect(straight?.widthPx).toBe(Math.round(2700000 / 9525))
+    expect(bent?.heightPx).toBe(Math.round(1350000 / 9525))
+    editor.destroy()
+  })
+
   it('moves a shape with its handle and persists the floating position', async () => {
     const { editor, parsed } = await openBlankDoc()
     insertShapeAt(editor, 'ellipse')

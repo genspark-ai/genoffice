@@ -320,7 +320,7 @@ export function assertManifestPreserved(
 }
 
 async function promoteFileAtomically(temporaryPath: string, path: string): Promise<void> {
-  const handle = await open(temporaryPath, 'r')
+  const handle = await open(temporaryPath, 'r+')
   try {
     await handle.sync()
   } finally {

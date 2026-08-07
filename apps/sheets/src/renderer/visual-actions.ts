@@ -417,7 +417,7 @@ export function insertShapeAtAnchor(
     shapeType,
     fillColor: '#DDEBF7',
   }
-  recordVisualAdd(state.editJournal, visual)
+  pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
   queueCtxVisualInstall(ctx, runtime, sheetId)
   ctx.setMessage(t('appShapeInserted'))
@@ -465,7 +465,7 @@ export function handleInsertShape(
       ? { name: 'TextBox', fillColor: '#FFFFFF', text: 'Text' }
       : { fillColor: '#DDEBF7' }),
   }
-  recordVisualAdd(state.editJournal, visual)
+  pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
   queueCtxVisualInstall(ctx, runtime, sheetId)
   ctx.setMessage(isTextBox ? t('appTextBoxInserted') : t('appShapeInserted'))
@@ -755,6 +755,15 @@ export function handleInsertScreenshot(
   insertPictureVisual(ctx, dataUrl, 'image/png', 'Screenshot.png', width, height)
 }
 
+export function handleInsertEquation(
+  ctx: VisualActionContext,
+  dataUrl: string,
+  width: number,
+  height: number,
+): void {
+  insertPictureVisual(ctx, dataUrl, 'image/png', 'Equation.png', width, height)
+}
+
 export function handleInsertIcon(
   ctx: VisualActionContext,
   dataUrl: string,
@@ -808,7 +817,7 @@ function insertPictureVisual(
     mediaDataUrl: dataUrl,
     name: fileName,
   }
-  recordVisualAdd(state.editJournal, visual)
+  pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
   queueCtxVisualInstall(ctx, runtime, sheetId)
   ctx.setMessage(t('appPictureInserted'))

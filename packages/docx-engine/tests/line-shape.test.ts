@@ -36,3 +36,41 @@ describe('line shapes', () => {
     expect(box!.paras).toEqual([])
   })
 })
+
+describe('patchShapeStyles', () => {
+  it('recolors fill and outline of a generated shape', async () => {
+    const { buildShapeParagraphXml } = await import('../src/generate')
+    const { patchShapeStyles } = await import('../src/generate')
+    const xml = buildShapeParagraphXml({
+      prst: 'heart',
+      fillHex: '4472C4',
+      borderHex: '2F5496',
+      withTextbox: true,
+    })
+    const out = patchShapeStyles(xml, [{ fillHex: 'FF0000', borderHex: '00B050' }])
+    expect(out).toContain('<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>')
+    expect(out).toContain('<a:ln><a:solidFill><a:srgbClr val="00B050"/></a:solidFill></a:ln>')
+    expect(out).not.toContain('4472C4')
+  })
+
+  it('clears fill to noFill and keeps the outline', async () => {
+    const { buildShapeParagraphXml, patchShapeStyles } = await import('../src/generate')
+    const xml = buildShapeParagraphXml({
+      prst: 'rect',
+      fillHex: '4472C4',
+      borderHex: '2F5496',
+      withTextbox: true,
+    })
+    const out = patchShapeStyles(xml, [{ fillHex: null }])
+    expect(out).toContain('<a:noFill/>')
+    expect(out).toContain('2F5496')
+  })
+
+  it('recolors a line stroke', async () => {
+    const { patchShapeStyles } = await import('../src/generate')
+    const xml = buildLineParagraphXml({ kind: 'lineArrow' })
+    const out = patchShapeStyles(xml, [{ borderHex: 'FF0000' }])
+    expect(out).toContain('<a:srgbClr val="FF0000"/>')
+    expect(out).toContain('<a:noFill/>')
+  })
+})

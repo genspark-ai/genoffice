@@ -47,6 +47,10 @@ export const initialSnapshot: WorkbookSnapshot = {
 export const FORMULA_MODE_MAX_CELLS = 50_000
 export const SET_RANGE_VALUES_MUTATION = 'sheet.mutation.set-range-values'
 export const SET_NUMFMT_MUTATION = 'sheet.mutation.set.numfmt'
+// Freeze and gridline toggles journal from their mutations so Univer's own
+// undo/redo re-records the restored state (ribbon handlers do not record).
+export const SET_FROZEN_MUTATION = 'sheet.mutation.set-frozen'
+export const TOGGLE_GRIDLINES_MUTATION = 'sheet.mutation.toggle-gridlines'
 // Undoing a numfmt set emits the remove mutation; only the ribbon echo cares.
 export const REMOVE_NUMFMT_MUTATION = 'sheet.mutation.remove.numfmt'
 // Row/column inserts/removals and merges are journaled and replayed at save
@@ -147,9 +151,13 @@ export const SHEET_LIFECYCLE_MUTATIONS = new Set([
   'sheet.mutation.set-worksheet-order',
   'sheet.mutation.set-worksheet-hidden',
 ])
-// Whole-row/column moves would need row heights and hidden flags to travel
-// with the snapshot. Still blocked.
-export const BLOCKED_COMMAND_PATTERN = /^sheet\.command\.(move-rows|move-cols)/
+// Whole-row moves persist as a journaled move op (the save relocates the
+// <row> elements, so heights and hidden flags travel for free); column moves
+// are still blocked pending the symmetric <c>/<col> treatment.
+export const BLOCKED_COMMAND_PATTERN = /^sheet\.command\.move-cols/
+export const MOVE_ROWS_COMMAND = 'sheet.command.move-rows'
+// The mutation carries {sourceRange, targetRange} in pre-move coordinates.
+export const MOVE_ROWS_MUTATION = 'sheet.mutation.move-rows'
 // Sheet duplication clones the worksheet part file-side; the journal records
 // the source so the save seeds the new part from it.
 export const COPY_SHEET_COMMAND = 'sheet.command.copy-sheet'

@@ -826,3 +826,26 @@ describe('toRecalcUserInput', () => {
     expect(toRecalcUserInput({ ...base, value: "'quoted" })).toBe("''quoted")
   })
 })
+
+describe('recordStructuralOp move-rows', () => {
+  it('remaps journaled cells through the swap and cancels the inverse move', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', {
+      1: { 0: { v: 'moved' } },
+      3: { 0: { v: 'displaced' } },
+      7: { 0: { v: 'outside' } },
+    })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'move-rows', index: 1, count: 1, before: 5 })
+    const cells = journal.cells.get('sheet-1')
+    expect(cells?.get('4:0')?.value).toBe('moved')
+    expect(cells?.get('2:0')?.value).toBe('displaced')
+    expect(cells?.get('7:0')?.value).toBe('outside')
+
+    // Undo arrives as the exact inverse move and cancels the pair.
+    recordStructuralOp(journal, 'sheet-1', { kind: 'move-rows', index: 4, count: 1, before: 1 })
+    expect(journal.structuralOps.get('sheet-1')).toBeUndefined()
+    const restored = journal.cells.get('sheet-1')
+    expect(restored?.get('1:0')?.value).toBe('moved')
+    expect(restored?.get('3:0')?.value).toBe('displaced')
+  })
+})

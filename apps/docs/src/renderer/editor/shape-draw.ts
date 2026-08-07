@@ -8,6 +8,8 @@
  */
 import type { Editor } from '@tiptap/core'
 import { shapeClipCss } from '@genoffice/ui'
+import { LINE_KINDS } from '@genoffice/docx-engine'
+import { isStraightLineKind, shapeBackgroundImage } from './shape-svg'
 
 const EMU_PER_PX = 9525
 /** Word's predefined single-click insert size: 1x1 inch. */
@@ -46,6 +48,20 @@ export function resolveDrawRect(
     w: Math.abs(dx),
     h: Math.abs(dy),
   }
+}
+
+/**
+ * Viewport y where the inserted box's top edge should land. Straight lines
+ * collapse to Word's 12px grab band with the stroke at its vertical center,
+ * while the ghost previewed the stroke at the drag rect's vertical center —
+ * so the band is centered on that line instead of pinned to rect.y.
+ */
+export function commitTargetY(
+  rect: DrawRectPx,
+  boxHeightPx: number,
+  straightLine: boolean,
+): number {
+  return straightLine ? rect.y + rect.h / 2 - boxHeightPx / 2 : rect.y
 }
 
 /** Drawn rect (viewport px) → shape extent in EMU, floored at 1px so the OOXML stays valid. */
@@ -97,6 +113,8 @@ export function startShapeDrawMode(
     return el ? parseFloat(getComputedStyle(el).zoom || '1') || 1 : 1
   }
 
+  const isLine = prst in LINE_KINDS
+
   const updateGhost = () => {
     if (!start || !cur) return
     if (Math.hypot(cur.x - start.x, cur.y - start.y) <= CLICK_THRESHOLD_PX) return
@@ -106,16 +124,33 @@ export function startShapeDrawMode(
       ghost.style.position = 'fixed'
       ghost.style.zIndex = '9999'
       ghost.style.pointerEvents = 'none'
-      // Ghost of the default Office-blue shape the gesture will insert
-      ghost.style.background = 'rgba(68,114,196,0.45)'
-      ghost.style.border = '1px solid #2F5496'
+      if (!isLine) {
+        // Ghost of the default Office-blue shape the gesture will insert
+        ghost.style.background = 'rgba(68,114,196,0.45)'
+        ghost.style.border = '1px solid #2F5496'
+      }
       ghost.style.boxSizing = 'border-box'
       document.body.appendChild(ghost)
     }
-    // Recomputed per move: path()-clipped presets are size-dependent
-    const clip = shapeClipCss(prst, r.w, r.h)
-    ghost.style.clipPath = clip?.clipPath ?? ''
-    ghost.style.borderRadius = clip?.borderRadius ?? ''
+    if (isLine) {
+      // Stroke-only preview of the line/connector the gesture will insert
+      // (straight kinds land level, so the ghost draws them level too)
+      const image = shapeBackgroundImage(
+        prst,
+        Math.max(8, r.w),
+        Math.max(8, r.h),
+        undefined,
+        '000000',
+      )
+      ghost.style.backgroundImage = image ?? ''
+      ghost.style.backgroundSize = '100% 100%'
+      ghost.style.backgroundRepeat = 'no-repeat'
+    } else {
+      // Recomputed per move: path()-clipped presets are size-dependent
+      const clip = shapeClipCss(prst, r.w, r.h)
+      ghost.style.clipPath = clip?.clipPath ?? ''
+      ghost.style.borderRadius = clip?.borderRadius ?? ''
+    }
     ghost.style.left = `${r.x}px`
     ghost.style.top = `${r.y}px`
     ghost.style.width = `${r.w}px`
@@ -148,7 +183,7 @@ export function startShapeDrawMode(
         if (!box) return
         const at = box.getBoundingClientRect()
         const dx = (rect.x - at.left) / zoom
-        const dy = (rect.y - at.top) / zoom
+        const dy = (commitTargetY(rect, at.height, isStraightLineKind(prst)) - at.top) / zoom
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
         view.dispatch(
           view.state.tr.setNodeMarkup(insertedAt, undefined, {

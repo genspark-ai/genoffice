@@ -9,7 +9,7 @@
   /* ribbon toggle states match the slides ribbon (--hover / --active-bg):
      neutral gray, not the app's green-tinted surface hover */
   --ribbon-hover: #f3f2f1;
-  --ribbon-active: #e2e0de;
+  --ribbon-active: #eaeaea;
   --border: #d5d9dc;
   --border-strong: #b9bec3;
   --text: #242424;
@@ -566,7 +566,7 @@ textarea:disabled {
 
 .ribbon-tool.large.as-button.ai-entry.active {
   /* neutral gray, shared with the docs/slides Genspark entries */
-  background: #ebebeb;
+  background: #eaeaea;
 }
 
 .ribbon-tool.large.ai-entry:hover .tool-icon-row,
@@ -2839,6 +2839,62 @@ textarea:focus {
   border-color: var(--border-strong);
 }
 
+/* Equation dialog */
+.equation-dialog {
+  width: 560px;
+}
+
+.equation-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.equation-presets button {
+  display: grid;
+  place-items: center;
+  min-height: 52px;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: none;
+  font-family: 'STIX Two Math', 'Cambria Math', 'Latin Modern Math', serif;
+  font-size: 13px;
+}
+
+.equation-presets button:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.equation-latex {
+  width: 100%;
+  margin-top: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.equation-preview {
+  display: grid;
+  place-items: center;
+  min-height: 90px;
+  margin-top: 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.equation-error {
+  padding: 0 12px;
+  color: var(--error, #c00000);
+  font-size: 12px;
+}
+
 /* Recommended Charts dialog */
 .recommended-charts-dialog {
   width: 640px;
@@ -3727,7 +3783,7 @@ textarea:focus {
     box-shadow var(--transition-fast);
 }
 
-/* textarea: 15px / 21px fixed line-height, auto-grow band
+/* textarea: 16px / 24px fixed line-height (chat body size), auto-grow band
  * (resting height 25% taller than default, matching the Genspark for PowerPoint prompt box) */
 .ai-input-box textarea {
   display: block;
@@ -3736,14 +3792,16 @@ textarea:focus {
   border: none;
   background: none;
   border-radius: var(--radius-16) var(--radius-16) 0 0;
-  padding: 12px 14px 4px;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 21px;
+  /* vertical gaps live on margin, not padding: textarea padding scrolls away
+   * with the content, so clipped lines would sit flush against chips/footer */
+  padding: 0 14px;
+  margin: 12px 0 4px;
+  font-size: 16px;
+  line-height: 24px;
   outline: none;
   color: var(--color-text-primary);
-  min-height: 64px;
-  max-height: 147px;
+  min-height: 48px;
+  max-height: 168px;
   overflow-y: auto;
 }
 
@@ -4180,6 +4238,43 @@ textarea:focus {
 }
 
 .slicer-member:hover:not(.selected) {
+  border-color: var(--excel-green);
+}
+
+.timeline-range {
+  padding: 6px 10px 0;
+  color: #5c6660;
+  font-size: 12px;
+}
+
+.timeline-months {
+  display: flex;
+  gap: 2px;
+  padding: 8px;
+  max-width: 260px;
+  overflow-x: auto;
+}
+
+.timeline-month {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 4px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: #f6f8f7;
+  color: #5c6660;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.timeline-month.selected {
+  background: var(--excel-green);
+  border-color: var(--excel-green);
+  color: #ffffff;
+}
+
+.timeline-month:hover:not(.selected) {
   border-color: var(--excel-green);
 }
 

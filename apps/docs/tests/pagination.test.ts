@@ -11,6 +11,7 @@ import {
   insertParityBlanks,
   lineBreakBoundaries,
   pageAt,
+  visiblePageCount,
   liveSections,
   pageNumbers,
   pageStartBlocks,
@@ -242,6 +243,29 @@ describe('pageAt', () => {
     expect(pageAt(slices, -50)).toBe(1)
     expect(pageAt(slices, 99999)).toBe(3)
     expect(pageAt([], 100)).toBe(1)
+  })
+})
+
+describe('visiblePageCount', () => {
+  // insertParityBlanks puts the zero-height blank before the real page, sharing its start
+  const withBlank = [
+    { start: 0, end: 800, section: 0 },
+    { start: 800, end: 800, section: 0 },
+    { start: 800, end: 1600, section: 1 },
+    { start: 1600, end: 2000, section: 1 },
+  ]
+
+  it('counts parity-blank pairs once so NUMPAGES matches the drawn pages', () => {
+    expect(visiblePageCount(withBlank)).toBe(3)
+    expect(visiblePageCount([{ start: 0, end: 800, section: 0 }])).toBe(1)
+    expect(visiblePageCount([])).toBe(0)
+  })
+
+  it('maps a physical pageAt index to its visible page number', () => {
+    // y=900 lands on physical slice 3 (the real page after the blank) = visible page 2
+    expect(visiblePageCount(withBlank, pageAt(withBlank, 900))).toBe(2)
+    expect(visiblePageCount(withBlank, pageAt(withBlank, 0))).toBe(1)
+    expect(visiblePageCount(withBlank, pageAt(withBlank, 1700))).toBe(3)
   })
 })
 

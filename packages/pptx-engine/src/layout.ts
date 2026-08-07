@@ -41,7 +41,7 @@ export interface SlideLayoutInfo {
   placeholders: LayoutPlaceholder[]
 }
 
-const HINT_MAP: Record<string, string> = {
+export const PH_HINT_MAP: Record<string, string> = {
   title: 'Click to add title',
   ctrTitle: 'Click to add title',
   body: 'Click to add text',
@@ -50,7 +50,7 @@ const HINT_MAP: Record<string, string> = {
   '': 'Click to add text',
 }
 
-const FUNCTION_TYPES = new Set(['ftr', 'sldNum', 'dt', 'pic'])
+export const FUNCTION_TYPES = new Set(['ftr', 'sldNum', 'dt', 'pic'])
 
 /** Quick-parse the <p:cSld> name attribute from the layout XML */
 function parseLayoutName(xml: string, fallback: string): string {
@@ -65,7 +65,7 @@ function parseLayoutType(xml: string): string {
 }
 
 /** Parse all placeholder geometry from the layout XML (only non-functional placeholders with an xfrm) */
-function parseLayoutPlaceholders(xml: string): LayoutPlaceholder[] {
+export function parseLayoutPlaceholders(xml: string): LayoutPlaceholder[] {
   const results: LayoutPlaceholder[] = []
   for (const spMatch of xml.matchAll(/<p:sp>([\s\S]*?)<\/p:sp>/g)) {
     const sp = spMatch[1]!
@@ -89,7 +89,7 @@ function parseLayoutPlaceholders(xml: string): LayoutPlaceholder[] {
     const cx = parseInt(extM[1]!, 10)
     const cy = parseInt(extM[2]!, 10)
     if (isNaN(x) || isNaN(y) || isNaN(cx) || isNaN(cy)) continue
-    results.push({ type, idx, x, y, cx, cy, hint: HINT_MAP[type] ?? 'Click to add text' })
+    results.push({ type, idx, x, y, cx, cy, hint: PH_HINT_MAP[type] ?? 'Click to add text' })
   }
   return results
 }
@@ -153,29 +153,31 @@ const EMPTY_SPTREE =
   '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
 
 /**
- * Build blank slide XML containing the layout's placeholders.
- * Each non-functional placeholder produces a minimal text box (<p:sp>) with a
- * hint text paragraph.
+ * One empty placeholder shape (<p:sp>) slice: explicit xfrm + empty paragraph
+ * (like a new PowerPoint slide; the click hint is drawn by the edit canvas, not persisted).
  */
+export function placeholderSpXml(
+  ph: Pick<LayoutPlaceholder, 'type' | 'idx' | 'x' | 'y' | 'cx' | 'cy'>,
+  id: number,
+): string {
+  const typeAttr = ph.type ? ` type="${escapeXmlAttr(ph.type)}"` : ''
+  const idxAttr = ph.idx ? ` idx="${escapeXmlAttr(ph.idx)}"` : ''
+  return (
+    `<p:sp>` +
+    `<p:nvSpPr>` +
+    `<p:cNvPr id="${id}" name="ph${ph.idx || '0'}"/>` +
+    `<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>` +
+    `<p:nvPr><p:ph${typeAttr}${idxAttr}/></p:nvPr>` +
+    `</p:nvSpPr>` +
+    `<p:spPr><a:xfrm><a:off x="${ph.x}" y="${ph.y}"/><a:ext cx="${ph.cx}" cy="${ph.cy}"/></a:xfrm></p:spPr>` +
+    `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody>` +
+    `</p:sp>`
+  )
+}
+
+/** Build blank slide XML containing the layout's placeholders. */
 function buildSlideXmlWithPlaceholders(placeholders: LayoutPlaceholder[]): string {
-  const shapes: string[] = []
-  let id = 2
-  for (const ph of placeholders) {
-    const typeAttr = ph.type ? ` type="${escapeXmlAttr(ph.type)}"` : ''
-    const idxAttr = ph.idx ? ` idx="${escapeXmlAttr(ph.idx)}"` : ''
-    shapes.push(
-      `<p:sp>` +
-        `<p:nvSpPr>` +
-        `<p:cNvPr id="${id++}" name="ph${ph.idx || '0'}"/>` +
-        `<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>` +
-        `<p:nvPr><p:ph${typeAttr}${idxAttr}/></p:nvPr>` +
-        `</p:nvSpPr>` +
-        `<p:spPr><a:xfrm><a:off x="${ph.x}" y="${ph.y}"/><a:ext cx="${ph.cx}" cy="${ph.cy}"/></a:xfrm></p:spPr>` +
-        // Empty paragraph (like a new PowerPoint slide): the click hint is drawn by the edit canvas, not persisted
-        `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody>` +
-        `</p:sp>`,
-    )
-  }
+  const shapes = placeholders.map((ph, i) => placeholderSpXml(ph, i + 2))
   const spTree = `<p:spTree>${EMPTY_SPTREE}${shapes.join('')}</p:spTree>`
   return (
     XMLDECL +

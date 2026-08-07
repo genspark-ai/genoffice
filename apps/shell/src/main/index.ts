@@ -29,6 +29,8 @@ import menuPptxIcon1x from './assets/menu-pptx.png?asset'
 import menuPptxIcon2x from './assets/menu-pptx@2x.png?asset'
 import menuPdfIcon1x from './assets/menu-pdf.png?asset'
 import menuPdfIcon2x from './assets/menu-pdf@2x.png?asset'
+import menuMdIcon1x from './assets/menu-md.png?asset'
+import menuMdIcon2x from './assets/menu-md@2x.png?asset'
 import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
@@ -134,7 +136,22 @@ import {
   requestPdfSaveAs,
   setPdfSaveAsInFlight,
 } from '../../../pdf/src/main/pdf-main'
-import type { AccountLoginEvent, RecentEntry, RecentPage, RenameResult } from '../shared/home-api'
+import {
+  configureMarkdownRuntime,
+  markdownFileRenamed,
+  requestMarkdownClose,
+  requestMarkdownSave,
+  sendMarkdownExportRequest,
+  setMarkdownDocxExportedHook,
+  setMarkdownFileSavedHook,
+} from '../../../markdown/src/main/markdown-main'
+import type {
+  AccountLoginEvent,
+  RecentEntry,
+  RecentPage,
+  RenameResult,
+  UiTheme,
+} from '../shared/home-api'
 import { HOME_CHANNELS } from '../shared/home-api'
 import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
@@ -190,6 +207,9 @@ const SLIDES_OUT = app.isPackaged
 const PDF_OUT = app.isPackaged
   ? join(process.resourcesPath, 'modules', 'pdf')
   : join(APPS_ROOT, 'pdf', 'out')
+const MARKDOWN_OUT = app.isPackaged
+  ? join(process.resourcesPath, 'modules', 'markdown')
+  : join(APPS_ROOT, 'markdown', 'out')
 const SIDECAR_BIN = app.isPackaged
   ? join(process.resourcesPath, 'native', SIDECAR_EXE)
   : join(APPS_ROOT, 'sheets', 'native', 'xlsx-engine', 'target', 'release', SIDECAR_EXE)
@@ -214,6 +234,11 @@ configurePdfRuntime({
   preloadPath: join(PDF_OUT, 'preload', 'index.js'),
   rendererUrl: process.env.PDF_RENDERER_URL,
   rendererFile: join(PDF_OUT, 'renderer', 'index.html'),
+})
+configureMarkdownRuntime({
+  preloadPath: join(MARKDOWN_OUT, 'preload', 'index.js'),
+  rendererUrl: process.env.MARKDOWN_RENDERER_URL,
+  rendererFile: join(MARKDOWN_OUT, 'renderer', 'index.html'),
 })
 
 // ---- UI language ----
@@ -244,16 +269,29 @@ function persistLang(lang: Lang): void {
   writeAppSetting(APP_SETTINGS_PATH(), 'language', lang)
 }
 
+let cachedUpdateChannel: UpdateChannel | null = null
+
 function currentUpdateChannel(): UpdateChannel {
+  if (cachedUpdateChannel) return cachedUpdateChannel
   const saved = readAppSettings(APP_SETTINGS_PATH()).updateChannel
-  return isUpdateChannel(saved) ? saved : 'stable'
+  cachedUpdateChannel = isUpdateChannel(saved) ? saved : 'stable'
+  return cachedUpdateChannel
+}
+
+let cachedTheme: UiTheme | null = null
+
+function currentTheme(): UiTheme {
+  if (cachedTheme) return cachedTheme
+  const saved = readAppSettings(APP_SETTINGS_PATH()).theme
+  cachedTheme = saved === 'light' || saved === 'dark' ? saved : 'system'
+  return cachedTheme
 }
 
 // ---- first-run onboarding ----
 // The GenTeam community page opened from the onboarding's second slide.
-// Stable short link served by the genspark.ai site; it 302s to the tokened
+// Stable short link served by the genoffice.ai site; it 302s to the tokened
 // invite link, which stays out of this repo and rotates server-side.
-const GENTEAM_URL = 'https://www.genspark.ai/genoffice/join'
+const GENTEAM_URL = 'https://genoffice.ai/join'
 
 const tMain = createI18n({
   zh: {
@@ -264,7 +302,11 @@ const tMain = createI18n({
     untitledSheet: '未命名表格',
     untitledDoc: '未命名文档',
     untitledDeck: '未命名演示文稿',
+    untitledMarkdown: '未命名 Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: '导出为 PDF…',
+    menuOpenInDocs: '转换为 Docs 文档并打开',
     menuOpen: '打开…',
     menuSave: '保存',
     menuSaveAs: '另存为…',
@@ -278,6 +320,7 @@ const tMain = createI18n({
     filterWord: 'Word 文档',
     filterExcel: 'Excel 工作簿',
     filterPpt: 'PowerPoint 演示文稿',
+    filterMarkdown: 'Markdown 文档',
     filterPdf: 'PDF 文档',
     errBadArgs: '参数无效',
     errBadName: '文件名不合法',
@@ -310,7 +353,11 @@ const tMain = createI18n({
     untitledSheet: 'Untitled Spreadsheet',
     untitledDoc: 'Untitled Document',
     untitledDeck: 'Untitled Presentation',
+    untitledMarkdown: 'Untitled Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Export as PDF…',
+    menuOpenInDocs: 'Convert & Open in AI Docs',
     menuOpen: 'Open…',
     menuSave: 'Save',
     menuSaveAs: 'Save As…',
@@ -324,6 +371,7 @@ const tMain = createI18n({
     filterWord: 'Word Documents',
     filterExcel: 'Excel Workbooks',
     filterPpt: 'PowerPoint Presentations',
+    filterMarkdown: 'Markdown Documents',
     filterPdf: 'PDF Documents',
     errBadArgs: 'Invalid arguments',
     errBadName: 'Invalid file name',
@@ -359,7 +407,11 @@ const tMain = createI18n({
     untitledSheet: '無題のスプレッドシート',
     untitledDoc: '無題のドキュメント',
     untitledDeck: '無題のプレゼンテーション',
+    untitledMarkdown: '無題の Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'PDF として書き出す…',
+    menuOpenInDocs: 'Docs 文書に変換して開く',
     menuOpen: '開く…',
     menuSave: '保存',
     menuSaveAs: '名前を付けて保存…',
@@ -373,6 +425,7 @@ const tMain = createI18n({
     filterWord: 'Word 文書',
     filterExcel: 'Excel ブック',
     filterPpt: 'PowerPoint プレゼンテーション',
+    filterMarkdown: 'Markdown ドキュメント',
     filterPdf: 'PDF ドキュメント',
     errBadArgs: '引数が無効です',
     errBadName: 'ファイル名が無効です',
@@ -408,7 +461,11 @@ const tMain = createI18n({
     untitledSheet: '제목 없는 스프레드시트',
     untitledDoc: '제목 없는 문서',
     untitledDeck: '제목 없는 프레젠테이션',
+    untitledMarkdown: '제목 없는 Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'PDF로 내보내기…',
+    menuOpenInDocs: 'Docs 문서로 변환하여 열기',
     menuOpen: '열기…',
     menuSave: '저장',
     menuSaveAs: '다른 이름으로 저장…',
@@ -422,6 +479,7 @@ const tMain = createI18n({
     filterWord: 'Word 문서',
     filterExcel: 'Excel 통합 문서',
     filterPpt: 'PowerPoint 프레젠테이션',
+    filterMarkdown: 'Markdown 문서',
     filterPdf: 'PDF 문서',
     errBadArgs: '잘못된 인수입니다',
     errBadName: '파일 이름이 잘못되었습니다',
@@ -457,7 +515,11 @@ const tMain = createI18n({
     untitledSheet: 'Feuille de calcul sans titre',
     untitledDoc: 'Document sans titre',
     untitledDeck: 'Présentation sans titre',
+    untitledMarkdown: 'Markdown sans titre',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Exporter en PDF…',
+    menuOpenInDocs: 'Convertir et ouvrir dans AI Docs',
     menuOpen: 'Ouvrir…',
     menuSave: 'Enregistrer',
     menuSaveAs: 'Enregistrer sous…',
@@ -471,6 +533,7 @@ const tMain = createI18n({
     filterWord: 'Documents Word',
     filterExcel: 'Classeurs Excel',
     filterPpt: 'Présentations PowerPoint',
+    filterMarkdown: 'Documents Markdown',
     filterPdf: 'Documents PDF',
     errBadArgs: 'Arguments non valides',
     errBadName: 'Nom de fichier non valide',
@@ -506,7 +569,11 @@ const tMain = createI18n({
     untitledSheet: 'Unbenannte Tabelle',
     untitledDoc: 'Unbenanntes Dokument',
     untitledDeck: 'Unbenannte Präsentation',
+    untitledMarkdown: 'Unbenanntes Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Als PDF exportieren…',
+    menuOpenInDocs: 'In AI Docs umwandeln und öffnen',
     menuOpen: 'Öffnen…',
     menuSave: 'Speichern',
     menuSaveAs: 'Speichern unter…',
@@ -520,6 +587,7 @@ const tMain = createI18n({
     filterWord: 'Word-Dokumente',
     filterExcel: 'Excel-Arbeitsmappen',
     filterPpt: 'PowerPoint-Präsentationen',
+    filterMarkdown: 'Markdown-Dokumente',
     filterPdf: 'PDF-Dokumente',
     errBadArgs: 'Ungültige Argumente',
     errBadName: 'Ungültiger Dateiname',
@@ -555,7 +623,11 @@ const tMain = createI18n({
     untitledSheet: 'Hoja de cálculo sin título',
     untitledDoc: 'Documento sin título',
     untitledDeck: 'Presentación sin título',
+    untitledMarkdown: 'Markdown sin título',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Exportar como PDF…',
+    menuOpenInDocs: 'Convertir y abrir en AI Docs',
     menuOpen: 'Abrir…',
     menuSave: 'Guardar',
     menuSaveAs: 'Guardar como…',
@@ -569,6 +641,7 @@ const tMain = createI18n({
     filterWord: 'Documentos de Word',
     filterExcel: 'Libros de Excel',
     filterPpt: 'Presentaciones de PowerPoint',
+    filterMarkdown: 'Documentos Markdown',
     filterPdf: 'Documentos PDF',
     errBadArgs: 'Argumentos no válidos',
     errBadName: 'Nombre de archivo no válido',
@@ -604,7 +677,11 @@ const tMain = createI18n({
     untitledSheet: 'สเปรดชีตไม่มีชื่อ',
     untitledDoc: 'เอกสารไม่มีชื่อ',
     untitledDeck: 'งานนำเสนอไม่มีชื่อ',
+    untitledMarkdown: 'Markdown ไม่มีชื่อ',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'ส่งออกเป็น PDF…',
+    menuOpenInDocs: 'แปลงและเปิดใน AI Docs',
     menuOpen: 'เปิด…',
     menuSave: 'บันทึก',
     menuSaveAs: 'บันทึกเป็น…',
@@ -618,6 +695,7 @@ const tMain = createI18n({
     filterWord: 'เอกสาร Word',
     filterExcel: 'เวิร์กบุ๊ก Excel',
     filterPpt: 'งานนำเสนอ PowerPoint',
+    filterMarkdown: 'เอกสาร Markdown',
     filterPdf: 'เอกสาร PDF',
     errBadArgs: 'อาร์กิวเมนต์ไม่ถูกต้อง',
     errBadName: 'ชื่อไฟล์ไม่ถูกต้อง',
@@ -652,7 +730,11 @@ const tMain = createI18n({
     untitledSheet: 'Spreadsheet tanpa judul',
     untitledDoc: 'Dokumen tanpa judul',
     untitledDeck: 'Presentasi tanpa judul',
+    untitledMarkdown: 'Markdown tanpa judul',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Ekspor sebagai PDF…',
+    menuOpenInDocs: 'Konversi & buka di AI Docs',
     menuOpen: 'Buka…',
     menuSave: 'Simpan',
     menuSaveAs: 'Simpan Sebagai…',
@@ -666,6 +748,7 @@ const tMain = createI18n({
     filterWord: 'Dokumen Word',
     filterExcel: 'Buku Kerja Excel',
     filterPpt: 'Presentasi PowerPoint',
+    filterMarkdown: 'Dokumen Markdown',
     filterPdf: 'Dokumen PDF',
     errBadArgs: 'Argumen tidak valid',
     errBadName: 'Nama file tidak valid',
@@ -701,7 +784,11 @@ const tMain = createI18n({
     untitledSheet: 'Таблица без названия',
     untitledDoc: 'Документ без названия',
     untitledDeck: 'Презентация без названия',
+    untitledMarkdown: 'Markdown без названия',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Экспортировать в PDF…',
+    menuOpenInDocs: 'Преобразовать и открыть в AI Docs',
     menuOpen: 'Открыть…',
     menuSave: 'Сохранить',
     menuSaveAs: 'Сохранить как…',
@@ -715,6 +802,7 @@ const tMain = createI18n({
     filterWord: 'Документы Word',
     filterExcel: 'Книги Excel',
     filterPpt: 'Презентации PowerPoint',
+    filterMarkdown: 'Документы Markdown',
     filterPdf: 'Документы PDF',
     errBadArgs: 'Недопустимые аргументы',
     errBadName: 'Недопустимое имя файла',
@@ -750,7 +838,11 @@ const tMain = createI18n({
     untitledSheet: 'جدول بيانات بلا عنوان',
     untitledDoc: 'مستند بدون عنوان',
     untitledDeck: 'عرض تقديمي بدون عنوان',
+    untitledMarkdown: 'Markdown بدون عنوان',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'تصدير بتنسيق PDF…',
+    menuOpenInDocs: 'التحويل والفتح في AI Docs',
     menuOpen: 'فتح…',
     menuSave: 'حفظ',
     menuSaveAs: 'حفظ باسم…',
@@ -764,6 +856,7 @@ const tMain = createI18n({
     filterWord: 'مستندات Word',
     filterExcel: 'مصنفات Excel',
     filterPpt: 'عروض PowerPoint التقديمية',
+    filterMarkdown: 'مستندات Markdown',
     filterPdf: 'مستندات PDF',
     errBadArgs: 'وسيطات غير صالحة',
     errBadName: 'اسم ملف غير صالح',
@@ -798,7 +891,11 @@ const tMain = createI18n({
     untitledSheet: 'Planilha sem título',
     untitledDoc: 'Documento sem título',
     untitledDeck: 'Apresentação sem título',
+    untitledMarkdown: 'Markdown sem título',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Exportar como PDF…',
+    menuOpenInDocs: 'Converter e abrir no AI Docs',
     menuOpen: 'Abrir…',
     menuSave: 'Salvar',
     menuSaveAs: 'Salvar Como…',
@@ -812,6 +909,7 @@ const tMain = createI18n({
     filterWord: 'Documentos do Word',
     filterExcel: 'Pastas de trabalho do Excel',
     filterPpt: 'Apresentações do PowerPoint',
+    filterMarkdown: 'Documentos Markdown',
     filterPdf: 'Documentos PDF',
     errBadArgs: 'Argumentos inválidos',
     errBadName: 'Nome de arquivo inválido',
@@ -847,7 +945,11 @@ const tMain = createI18n({
     untitledSheet: 'Foglio di calcolo senza titolo',
     untitledDoc: 'Documento senza titolo',
     untitledDeck: 'Presentazione senza titolo',
+    untitledMarkdown: 'Markdown senza titolo',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Esporta come PDF…',
+    menuOpenInDocs: 'Converti e apri in AI Docs',
     menuOpen: 'Apri…',
     menuSave: 'Salva',
     menuSaveAs: 'Salva con nome…',
@@ -861,6 +963,7 @@ const tMain = createI18n({
     filterWord: 'Documenti Word',
     filterExcel: 'Cartelle di lavoro Excel',
     filterPpt: 'Presentazioni PowerPoint',
+    filterMarkdown: 'Documenti Markdown',
     filterPdf: 'Documenti PDF',
     errBadArgs: 'Argomenti non validi',
     errBadName: 'Nome file non valido',
@@ -896,7 +999,11 @@ const tMain = createI18n({
     untitledSheet: 'Arkusz bez tytułu',
     untitledDoc: 'Dokument bez tytułu',
     untitledDeck: 'Prezentacja bez tytułu',
+    untitledMarkdown: 'Markdown bez tytułu',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Eksportuj jako PDF…',
+    menuOpenInDocs: 'Konwertuj i otwórz w AI Docs',
     menuOpen: 'Otwórz…',
     menuSave: 'Zapisz',
     menuSaveAs: 'Zapisz jako…',
@@ -910,6 +1017,7 @@ const tMain = createI18n({
     filterWord: 'Dokumenty programu Word',
     filterExcel: 'Skoroszyty programu Excel',
     filterPpt: 'Prezentacje programu PowerPoint',
+    filterMarkdown: 'Dokumenty Markdown',
     filterPdf: 'Dokumenty PDF',
     errBadArgs: 'Nieprawidłowe argumenty',
     errBadName: 'Nieprawidłowa nazwa pliku',
@@ -945,7 +1053,11 @@ const tMain = createI18n({
     untitledSheet: 'Naamloze spreadsheet',
     untitledDoc: 'Naamloos document',
     untitledDeck: 'Naamloze presentatie',
+    untitledMarkdown: 'Naamloos Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Exporteren als PDF…',
+    menuOpenInDocs: 'Converteren en openen in AI Docs',
     menuOpen: 'Openen…',
     menuSave: 'Opslaan',
     menuSaveAs: 'Opslaan als…',
@@ -959,6 +1071,7 @@ const tMain = createI18n({
     filterWord: 'Word-documenten',
     filterExcel: 'Excel-werkmappen',
     filterPpt: 'PowerPoint-presentaties',
+    filterMarkdown: 'Markdown-documenten',
     filterPdf: 'PDF-documenten',
     errBadArgs: 'Ongeldige argumenten',
     errBadName: 'Ongeldige bestandsnaam',
@@ -994,7 +1107,11 @@ const tMain = createI18n({
     untitledSheet: 'Hamparan tanpa tajuk',
     untitledDoc: 'Dokumen tanpa tajuk',
     untitledDeck: 'Persembahan tanpa tajuk',
+    untitledMarkdown: 'Markdown tanpa tajuk',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'Eksport sebagai PDF…',
+    menuOpenInDocs: 'Tukar & buka dalam AI Docs',
     menuOpen: 'Buka…',
     menuSave: 'Simpan',
     menuSaveAs: 'Simpan Sebagai…',
@@ -1008,6 +1125,7 @@ const tMain = createI18n({
     filterWord: 'Dokumen Word',
     filterExcel: 'Buku Kerja Excel',
     filterPpt: 'Persembahan PowerPoint',
+    filterMarkdown: 'Dokumen Markdown',
     filterPdf: 'Dokumen PDF',
     errBadArgs: 'Argumen tidak sah',
     errBadName: 'Nama fail tidak sah',
@@ -1043,7 +1161,11 @@ const tMain = createI18n({
     untitledSheet: 'גיליון אלקטרוני ללא שם',
     untitledDoc: 'מסמך ללא שם',
     untitledDeck: 'מצגת ללא שם',
+    untitledMarkdown: 'Markdown ללא שם',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'ייצוא כ-PDF…',
+    menuOpenInDocs: 'המרה ופתיחה ב-AI Docs',
     menuOpen: 'פתיחה…',
     menuSave: 'שמירה',
     menuSaveAs: 'שמירה בשם…',
@@ -1057,6 +1179,7 @@ const tMain = createI18n({
     filterWord: 'מסמכי Word',
     filterExcel: 'חוברות עבודה של Excel',
     filterPpt: 'מצגות PowerPoint',
+    filterMarkdown: 'מסמכי Markdown',
     filterPdf: 'מסמכי PDF',
     errBadArgs: 'ארגומנטים לא חוקיים',
     errBadName: 'שם קובץ לא חוקי',
@@ -1089,7 +1212,11 @@ const tMain = createI18n({
     untitledSheet: 'शीर्षकहीन स्प्रेडशीट',
     untitledDoc: 'बिना शीर्षक दस्तावेज़',
     untitledDeck: 'बिना शीर्षक प्रस्तुति',
+    untitledMarkdown: 'अनाम Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: 'PDF के रूप में निर्यात…',
+    menuOpenInDocs: 'AI Docs में बदलें और खोलें',
     menuOpen: 'खोलें…',
     menuSave: 'सहेजें',
     menuSaveAs: 'इस रूप में सहेजें…',
@@ -1103,6 +1230,7 @@ const tMain = createI18n({
     filterWord: 'Word दस्तावेज़',
     filterExcel: 'Excel वर्कबुक',
     filterPpt: 'PowerPoint प्रस्तुतियाँ',
+    filterMarkdown: 'Markdown दस्तावेज़',
     filterPdf: 'PDF दस्तावेज़',
     errBadArgs: 'अमान्य आर्ग्युमेंट',
     errBadName: 'अमान्य फ़ाइल नाम',
@@ -1138,7 +1266,11 @@ const tMain = createI18n({
     untitledSheet: '未命名試算表',
     untitledDoc: '未命名文件',
     untitledDeck: '未命名簡報',
+    untitledMarkdown: '未命名 Markdown',
     menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuExportPdf: '匯出為 PDF…',
+    menuOpenInDocs: '轉換為 Docs 文件並開啟',
     menuOpen: '開啟…',
     menuSave: '儲存',
     menuSaveAs: '另存新檔…',
@@ -1152,6 +1284,7 @@ const tMain = createI18n({
     filterWord: 'Word 文件',
     filterExcel: 'Excel 活頁簿',
     filterPpt: 'PowerPoint 簡報',
+    filterMarkdown: 'Markdown 文件',
     filterPdf: 'PDF 文件',
     errBadArgs: '參數無效',
     errBadName: '檔案名稱不合法',
@@ -1204,6 +1337,7 @@ function applyPendingProject(filePath: string): void {
   if (ext === 'docx') key = 'doc'
   else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') key = 'sheet'
   else if (ext === 'pptx') key = 'slide'
+  else if (ext === 'md' || ext === 'markdown') key = 'markdown'
   if (!key) return
   const projectId = pendingNewFileProject.get(key)
   if (!projectId) return
@@ -1231,6 +1365,9 @@ function applyMenuFor(kind: TabKind): void {
       break
     case 'pdf':
       buildPdfMenu()
+      break
+    case 'markdown':
+      buildMarkdownMenu()
       break
     default:
       buildHomeMenu()
@@ -1269,7 +1406,9 @@ function createShellWindow(): void {
         ? tm('untitledDoc')
         : kind === 'slides'
           ? tm('untitledDeck')
-          : tm('untitledSheet'),
+          : kind === 'markdown'
+            ? tm('untitledMarkdown')
+            : tm('untitledSheet'),
   )
   tabManager = manager
 
@@ -1309,6 +1448,16 @@ function createShellWindow(): void {
     recordRecentFile(path)
     applyPendingProject(path)
   })
+  // markdown untitled first save / Save As lands on a new path
+  setMarkdownFileSavedHook((wc, path) => {
+    manager.setTabFileFor(wc.id, path)
+    recordRecentFile(path)
+    applyPendingProject(path)
+  })
+  // markdown "convert & open in Docs" → route the fresh .docx to a docs tab
+  setMarkdownDocxExportedHook((path) => {
+    openDocumentPath(path)
+  })
 
   // Closing the whole window walks every dirty sheets/pdf/slides/docs tab through
   // the same save/don't-save/cancel prompt; any cancel aborts the close.
@@ -1319,11 +1468,13 @@ function createShellWindow(): void {
     if (closeConfirmed) return
     const dirtySheets = manager.dirtySheetsTabs()
     const dirtyPdf = manager.dirtyPdfTabs()
+    const dirtyMarkdown = manager.dirtyMarkdownTabs()
     const dirtySlides = manager.dirtySlidesTabs()
     const docsTabs = manager.docsTabs()
     if (
       dirtySheets.length === 0 &&
       dirtyPdf.length === 0 &&
+      dirtyMarkdown.length === 0 &&
       dirtySlides.length === 0 &&
       docsTabs.length === 0
     )
@@ -1337,6 +1488,10 @@ function createShellWindow(): void {
       for (const tab of dirtyPdf) {
         manager.activateTab(tab.id)
         if (!(await requestPdfClose(tab.webContents, win))) return
+      }
+      for (const tab of dirtyMarkdown) {
+        manager.activateTab(tab.id)
+        if (!(await requestMarkdownClose(tab.webContents, win))) return
       }
       for (const tab of dirtySlides) {
         manager.activateTab(tab.id)
@@ -1370,6 +1525,7 @@ const DOCX_RE = /\.docx$/i
 const XLSX_RE = /\.(xlsx|xls|csv)$/i
 const PPTX_RE = /\.pptx$/i
 const PDF_RE = /\.pdf$/i
+const MD_RE = /\.(md|markdown)$/i
 
 /** document formats we recognize but don't open — surfaced as a dialog, not silently dropped */
 const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|numbers)$/i
@@ -1379,13 +1535,28 @@ const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|n
  * legacy .doc/.ppt binaries so they are selectable and surface the explicit
  * "not supported" dialog via openDocumentPath instead of being grayed out.
  */
-const OPEN_DIALOG_EXTENSIONS = ['docx', 'doc', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'pdf']
+const OPEN_DIALOG_EXTENSIONS = [
+  'docx',
+  'doc',
+  'xlsx',
+  'xls',
+  'csv',
+  'pptx',
+  'ppt',
+  'pdf',
+  'md',
+  'markdown',
+]
 
 function supportedFileIn(argv: string[]): string | null {
   return (
     argv.find(
       (arg) =>
-        (DOCX_RE.test(arg) || XLSX_RE.test(arg) || PPTX_RE.test(arg) || PDF_RE.test(arg)) &&
+        (DOCX_RE.test(arg) ||
+          XLSX_RE.test(arg) ||
+          PPTX_RE.test(arg) ||
+          PDF_RE.test(arg) ||
+          MD_RE.test(arg)) &&
         existsSync(arg),
     ) ?? null
   )
@@ -1447,6 +1618,13 @@ function openDocumentPath(filePath: string): boolean {
     else tabManager.openPdfTab(filePath)
     return true
   }
+  if (MD_RE.test(filePath)) {
+    recordRecentFile(filePath)
+    const existing = tabManager.findMarkdownTabByPath(filePath)
+    if (existing) tabManager.activateTab(existing)
+    else tabManager.openMarkdownTab(filePath)
+    return true
+  }
   notifyUnsupportedFile(filePath)
   return false
 }
@@ -1496,6 +1674,14 @@ function newDocTab(): void {
 function newSlideTab(): void {
   try {
     tabManager?.openSlidesTab()
+  } catch (err) {
+    surfaceNewTabError(err)
+  }
+}
+
+function newMarkdownTab(): void {
+  try {
+    tabManager?.openMarkdownTab()
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1668,6 +1854,7 @@ function registerHomeIpc(): void {
         { name: tm('filterExcel'), extensions: ['xlsx', 'xls', 'csv'] },
         { name: tm('filterPpt'), extensions: ['pptx', 'ppt'] },
         { name: tm('filterPdf'), extensions: ['pdf'] },
+        { name: tm('filterMarkdown'), extensions: ['md', 'markdown'] },
       ],
       properties: ['openFile'],
     })
@@ -1693,6 +1880,13 @@ function registerHomeIpc(): void {
       pendingNewFileProject.set('slide', opts.projectId)
     }
     newSlideTab()
+  })
+
+  ipcMain.handle(HOME_CHANNELS.newMarkdown, (_event, opts?: { projectId?: string }) => {
+    if (opts?.projectId && opts.projectId !== 'default') {
+      pendingNewFileProject.set('markdown', opts.projectId)
+    }
+    newMarkdownTab()
   })
 
   ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
@@ -1730,6 +1924,7 @@ function registerHomeIpc(): void {
         if (t.kind === 'slides') slidesFileRenamed(t.webContents, path, target)
         else if (t.kind === 'docs') docsFileRenamed(t.webContents, path, target)
         else if (t.kind === 'sheets') sheetsFileRenamed(t.webContents, path, target)
+        else if (t.kind === 'markdown') markdownFileRenamed(t.webContents, path, target)
       }
       return { ok: true, path: target }
     },
@@ -1787,6 +1982,7 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.setUpdateChannel, (_event, channel: unknown) => {
     if (!isUpdateChannel(channel) || channel === currentUpdateChannel()) return
+    cachedUpdateChannel = channel
     writeAppSetting(APP_SETTINGS_PATH(), 'updateChannel', channel)
     applyUpdateChannel(channel)
   })
@@ -1798,6 +1994,16 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.setOnboardingSeen, () => {
     writeAppSetting(APP_SETTINGS_PATH(), 'onboardingSeen', true)
+  })
+
+  ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
+
+  ipcMain.handle(HOME_CHANNELS.setTheme, (_event, theme: unknown) => {
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system') return
+    if (theme === currentTheme()) return
+    cachedTheme = theme
+    writeAppSetting(APP_SETTINGS_PATH(), 'theme', theme)
+    for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
   })
 
   ipcMain.handle(HOME_CHANNELS.openGenTeam, () => {
@@ -1838,6 +2044,7 @@ interface MenuIconSet {
   xlsx: NativeImage
   pptx: NativeImage
   pdf: NativeImage
+  md: NativeImage
   home: NativeImage
 }
 let menuIconCache: MenuIconSet | null = null
@@ -1847,6 +2054,7 @@ function menuIcons(): MenuIconSet {
     xlsx: loadMenuIcon(menuXlsxIcon1x, menuXlsxIcon2x),
     pptx: loadMenuIcon(menuPptxIcon1x, menuPptxIcon2x),
     pdf: loadMenuIcon(menuPdfIcon1x, menuPdfIcon2x),
+    md: loadMenuIcon(menuMdIcon1x, menuMdIcon2x),
     home: loadMenuIcon(menuHomeIcon1x, menuHomeIcon2x),
   }
   return menuIconCache
@@ -1858,6 +2066,7 @@ const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
   sheets: 'xlsx',
   slides: 'pptx',
   pdf: 'pdf',
+  markdown: 'md',
 }
 
 function registerTabsIpc(): void {
@@ -1909,6 +2118,11 @@ function registerTabsIpc(): void {
         icon: menuIcons().pptx,
         click: () => newSlideTab(),
       },
+      {
+        label: tm('menuNewMarkdown'),
+        icon: menuIcons().md,
+        click: () => newMarkdownTab(),
+      },
       { type: 'separator' },
       { label: tm('menuOpen'), click: () => void openFileViaDialog() },
     ])
@@ -1951,6 +2165,7 @@ function buildHomeMenu(): void {
           click: () => void newSheetTab(),
         },
         { label: tm('menuNewSlide'), click: () => newSlideTab() },
+        { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
         { type: 'separator' },
         {
           label: tm('menuOpen'),
@@ -2010,6 +2225,84 @@ function buildPdfMenu(): void {
         {
           label: tm('menuExportDocx'),
           click: () => void exportPdfAsDocx(),
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuClose'),
+          accelerator: 'CmdOrCtrl+W',
+          click: () => tabManager?.closeActiveTab(),
+        },
+      ],
+    },
+    editMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    {
+      role: 'help',
+      label: tm('menuHelp'),
+      submenu: [{ label: tm('thirdPartyNotices'), click: () => void openThirdPartyNotices() }],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+// ---- markdown menu (markdown-main has no menu of its own; the shell owns markdown tabs) ----
+
+function buildMarkdownMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    {
+      label: tm('menuFile'),
+      submenu: [
+        {
+          label: tm('menuOpen'),
+          accelerator: 'CmdOrCtrl+O',
+          click: () => void openFileViaDialog(),
+        },
+        { type: 'separator' },
+        {
+          label: tm('backToHome'),
+          accelerator: 'Shift+CmdOrCtrl+H',
+          click: () => tabManager?.openHomeTab(),
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuSave'),
+          accelerator: 'CmdOrCtrl+S',
+          click: () => {
+            const tab = tabManager?.activeMarkdownTab()
+            if (tab) void requestMarkdownSave(tab.webContents, 'save')
+          },
+        },
+        {
+          label: tm('menuSaveAs'),
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => {
+            const tab = tabManager?.activeMarkdownTab()
+            if (tab) void requestMarkdownSave(tab.webContents, 'saveAs')
+          },
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuExportDocx'),
+          click: () => {
+            const tab = tabManager?.activeMarkdownTab()
+            if (tab) sendMarkdownExportRequest(tab.webContents, 'docx')
+          },
+        },
+        {
+          label: tm('menuExportPdf'),
+          click: () => {
+            const tab = tabManager?.activeMarkdownTab()
+            if (tab) sendMarkdownExportRequest(tab.webContents, 'pdf')
+          },
+        },
+        {
+          label: tm('menuOpenInDocs'),
+          click: () => {
+            const tab = tabManager?.activeMarkdownTab()
+            if (tab) sendMarkdownExportRequest(tab.webContents, 'docs')
+          },
         },
         { type: 'separator' },
         {
@@ -2203,6 +2496,7 @@ function installDockMenu(): void {
         click: () => void newSheetTab(),
       },
       { label: tm('menuNewSlide'), click: () => newSlideTab() },
+      { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
     ]),
   )
 }
