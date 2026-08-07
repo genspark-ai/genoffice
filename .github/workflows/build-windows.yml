@@ -9,6 +9,7 @@ on:
       - 'packages/**'
       - 'tools/configure-openrouter-fork.mjs'
       - 'tools/fix-openrouter-chat-route.mjs'
+      - 'tools/fix-openrouter-suite-routes.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-windows.yml'
@@ -42,6 +43,7 @@ jobs:
         run: |
           node tools/configure-openrouter-fork.mjs
           node tools/fix-openrouter-chat-route.mjs
+          node tools/fix-openrouter-suite-routes.mjs
 
       - name: Typecheck
         run: npm run typecheck
