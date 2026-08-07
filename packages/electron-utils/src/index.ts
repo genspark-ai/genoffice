@@ -25,3 +25,11 @@ export { fetchRemoteImage, remoteImageHeaders } from './remote-image'
 export { browsePage } from './browser'
 export type { BrowsePageOptions, BrowsePageResult } from './browser'
 export { AgentInstructionsStore } from './agent-instructions-store'
+export {
+  applyNetworkSettings,
+  applyProxy,
+  bootstrapNetworkSettings,
+  currentProxyUrl,
+  readNetworkSettings,
+  type NetworkSettings,
+} from './network-settings'

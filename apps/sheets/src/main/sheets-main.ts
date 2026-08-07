@@ -36,6 +36,7 @@ import type {
 import { z } from 'zod'
 import {
   appMenuLabels,
+  bootstrapNetworkSettings,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
@@ -2821,8 +2822,9 @@ export {
  * slides-main.applyMainProcessProxy): main-process Node fetch (undici) ignores
  * the system proxy by default, so direct connections from mainland networks to
  * overseas LLM endpoints like api.anthropic.com time out or get rejected by
- * egress region (403 Request not allowed). Environment variables take priority;
- * otherwise the system proxy is read via session.resolveProxy() after app ready.
+ * egress region (403 Request not allowed). The proxy configured in Settings
+ * wins; otherwise environment variables; otherwise the system proxy is read
+ * via session.resolveProxy() after app ready.
  */
 async function applyMainProcessProxy(): Promise<void> {
   const setDispatcher = async (proxyUrl: string) => {
@@ -2838,6 +2840,13 @@ async function applyMainProcessProxy(): Promise<void> {
       console.warn('[proxy] failed to set ProxyAgent:', e)
     }
   }
+  // Settings first, the same order the shell uses. An explicit proxy wins over
+  // both env vars and the system proxy, and is authoritative when it is empty
+  // too — a user who cleared the field wants direct connections, not the
+  // system proxy sneaking back in. Chromium's session is only reachable after
+  // ready and this runs during startup, so wait for it before either branch.
+  await app.whenReady()
+  if (bootstrapNetworkSettings(app.getPath('userData'))) return
   const envProxy =
     process.env.HTTPS_PROXY ||
     process.env.https_proxy ||
@@ -2850,7 +2859,6 @@ async function applyMainProcessProxy(): Promise<void> {
     return
   }
   try {
-    await app.whenReady()
     // PAC/rule proxies answer per-host: probe the host the login flow, the
     // Genspark LLM proxy and the gsk CLI actually target
     const resolved = await electronSession.defaultSession.resolveProxy('https://www.genspark.ai/')

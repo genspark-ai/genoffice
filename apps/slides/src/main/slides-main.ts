@@ -27,6 +27,7 @@ import { dirname, join } from 'node:path'
 import { gskApiKey, gskSlideGenerate, setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
+  bootstrapNetworkSettings,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
@@ -3881,9 +3882,10 @@ export function installSlidesMenu(): void {
 }
 
 /**
- * Attach a proxy to the main process's global fetch. Environment variables take priority;
- * otherwise, after app ready, read the system proxy via session.resolveProxy() (the critical
- * path for packaged builds launched by double-click).
+ * Attach a proxy to the main process's global fetch. The proxy configured in
+ * Settings wins; otherwise environment variables; otherwise the system proxy
+ * via session.resolveProxy() (the critical path for packaged builds launched
+ * by double-click).
  */
 async function applyMainProcessProxy(): Promise<void> {
   const setDispatcher = async (proxyUrl: string) => {
@@ -3899,6 +3901,13 @@ async function applyMainProcessProxy(): Promise<void> {
       console.warn('[proxy] failed to set ProxyAgent:', e)
     }
   }
+  // Settings first, the same order the shell uses. An explicit proxy wins over
+  // both env vars and the system proxy, and is authoritative when it is empty
+  // too — a user who cleared the field wants direct connections, not the
+  // system proxy sneaking back in. Chromium's session is only reachable after
+  // ready and this runs during startup, so wait for it before either branch.
+  await app.whenReady()
+  if (bootstrapNetworkSettings(app.getPath('userData'))) return
   const envProxy =
     process.env.HTTPS_PROXY ||
     process.env.https_proxy ||
@@ -3910,9 +3919,8 @@ async function applyMainProcessProxy(): Promise<void> {
     await setDispatcher(envProxy)
     return
   }
-  // No environment variables: read the system proxy (requires app ready)
+  // No environment variables: read the system proxy
   try {
-    await app.whenReady()
     // PAC/rule proxies answer per-host: probe the host the login flow, the
     // Genspark LLM proxy and the gsk CLI actually target
     const resolved = await electronSession.defaultSession.resolveProxy('https://www.genspark.ai/')

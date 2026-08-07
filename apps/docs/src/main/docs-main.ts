@@ -10,23 +10,17 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import {
-  BrowserWindow,
-  Menu,
-  WebContentsView,
-  app,
-  dialog,
-  ipcMain,
-  session,
-  shell,
-} from 'electron'
+import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import { buildInstructionsPrompt, skillBodyForTool } from '@genoffice/agent-core'
 import type { AgentRules, AppSurface, UserSkill } from '@genoffice/agent-core'
 import {
   AgentInstructionsStore,
   appMenuLabels,
+  applyNetworkSettings,
   browsePage,
+  bootstrapNetworkSettings as bootstrapNetworkSettingsIn,
   contextMenuLabels,
+  currentProxyUrl,
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
@@ -75,8 +69,6 @@ import {
   hasGskAuth,
   webSearch,
   imageSearch,
-  setGskProxyUrl,
-  setTavilyApiKey,
   tavilyExtract,
 } from '@genoffice/ai-search'
 import type {
@@ -2504,15 +2496,7 @@ function readAiSettings(): AiSettings {
   return settings
 }
 
-/**
- * Push the network-facing settings into the modules that hold them as process
- * state. Called on load and after every save so a settings change takes effect
- * without a restart, the same way the provider switch does.
- */
-export function applyNetworkSettings(settings: AiSettings): void {
-  setTavilyApiKey(settings.tavilyApiKey ?? '')
-  void applyProxy(settings.proxyUrl ?? '')
-}
+export { applyNetworkSettings, applyProxy, currentProxyUrl } from '@genoffice/electron-utils'
 
 /**
  * Load the persisted network settings at startup. Returns true when the user
@@ -2522,9 +2506,7 @@ export function applyNetworkSettings(settings: AiSettings): void {
  * proxy would otherwise be picked up.
  */
 export function bootstrapNetworkSettings(): boolean {
-  const settings = readAiSettings()
-  applyNetworkSettings(settings)
-  return !!normalizeProxyUrl(settings.proxyUrl)
+  return bootstrapNetworkSettingsIn(app.getPath('userData'))
 }
 
 /** file-backed rules + skills, shared by every editor module through this IPC */
@@ -2617,54 +2599,6 @@ function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | 
 /** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
 function needsApiKey(provider: AiProviderId): boolean {
   return provider !== 'custom'
-}
-
-/** last proxy handed to undici/Chromium, so a no-op save does not churn them */
-let appliedProxyUrl: string | null = null
-
-/**
- * Route outbound traffic through the user's proxy.
- *
- * Three consumers need telling separately, which is why this is not one call:
- * main-process `fetch` runs on undici and ignores the system proxy entirely;
- * Chromium sessions carry the renderer, sign-in window and the agent browser;
- * and the gsk CLI is a child process that only sees environment variables.
- *
- * An empty url restores direct connections, so clearing the field in the
- * dialog actually turns the proxy off rather than leaving the old one wired.
- */
-export async function applyProxy(rawUrl: string): Promise<void> {
-  const proxyUrl = normalizeProxyUrl(rawUrl)
-  if (proxyUrl === appliedProxyUrl) return
-  appliedProxyUrl = proxyUrl
-  setGskProxyUrl(proxyUrl)
-  try {
-    const { ProxyAgent, getGlobalDispatcher, setGlobalDispatcher, Agent } = await import('undici')
-    if (proxyUrl) {
-      setGlobalDispatcher(new ProxyAgent(proxyUrl))
-    } else if (getGlobalDispatcher() instanceof ProxyAgent) {
-      setGlobalDispatcher(new Agent())
-    }
-  } catch (err) {
-    console.warn('[proxy] failed to set undici dispatcher:', err)
-  }
-  try {
-    // proxyRules '' clears it; Chromium understands socks5:// here too
-    await session.defaultSession.setProxy(proxyUrl ? { proxyRules: proxyUrl } : { mode: 'system' })
-  } catch (err) {
-    console.warn('[proxy] failed to set session proxy:', err)
-  }
-  console.log(
-    proxyUrl
-      ? // strip user:pass before logging
-        `[proxy] outbound via ${proxyUrl.replace(/\/\/[^@/]*@/, '//***@')}`
-      : '[proxy] direct (system default)',
-  )
-}
-
-/** current proxy, for callers that need to pass it on (e.g. the agent browser) */
-export function currentProxyUrl(): string {
-  return appliedProxyUrl ?? ''
 }
 
 /** a finite number inside [min, max], else null ("not set") */
