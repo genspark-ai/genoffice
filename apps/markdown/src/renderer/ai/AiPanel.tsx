@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
+import type { ChatMeta } from '@genoffice/project-store'
 import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
@@ -111,6 +112,9 @@ export function AiPanel({
   /** tool activity of the whole run, for transcript persistence */
   const runToolsRef = useRef<ToolActivity[]>([])
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** this file's stored conversations, for the session picker */
+  const [sessions, setSessions] = useState<ChatMeta[]>([])
+  const [sessionsOpen, setSessionsOpen] = useState(false)
   /** messages sent before resolveChat returned, flushed once the chat id is known */
   const pendingPersistRef = useRef<
     Array<{ role: 'user' | 'assistant'; text: string; tools?: ToolActivity[] }>
@@ -347,6 +351,86 @@ export function AiPanel({
 
   const retry = (): void => send(runInstructionRef.current)
 
+  /**
+   * Start a genuinely new session. Clearing React state alone used to leave the
+   * store appending to the same chatId, so the "new" conversation was the old
+   * one with the transcript hidden; the store now mints a fresh chatId and the
+   * previous session stays reachable from the picker.
+   */
+  const newChat = (): void => {
+    stop()
+    loopRef.current?.reset()
+    setBusy(false)
+    setChat([])
+    setSessionsOpen(false)
+    void window.projectApi
+      ?.newChat({ filePath: filePathRef.current ?? null, tempChatId: `unsaved-${Date.now()}` })
+      .then((ids) => {
+        chatIdsRef.current = ids
+      })
+      .catch(() => {
+        /* the panel stays usable; messages keep going to the current chat */
+      })
+  }
+
+  /** Open the picker on this file's stored conversations, newest first. */
+  const openSessions = (): void => {
+    setSessionsOpen((open) => !open)
+    void window.projectApi
+      ?.listChatsForFile({ filePath: filePathRef.current ?? null })
+      .then((list) => setSessions([...list].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))))
+      .catch(() => setSessions([]))
+  }
+
+  /** Load one of them back into the panel. */
+  const loadSession = (chatId: string): void => {
+    setSessionsOpen(false)
+    const api = window.projectApi
+    if (!api || chatIdsRef.current?.chatId === chatId) return
+    // restore() only seeds an idle, empty loop, so drop the live turn first
+    stop()
+    loopRef.current?.reset()
+    setBusy(false)
+    setChat([])
+    void api
+      .switchChat({ filePath: filePathRef.current ?? null, chatId })
+      .then(async (ids) => {
+        chatIdsRef.current = ids
+        const msgs = await api.loadChat({
+          projectId: ids.projectId,
+          chatId: ids.chatId,
+          limit: 200,
+        })
+        setChat(
+          msgs.map((m) => ({
+            role: m.role,
+            text: m.text,
+            tools: m.tools?.map((tool) => ({
+              name: tool.name,
+              summary: tool.summary,
+              isError: tool.isError,
+              output: tool.output ? tool.output.slice(0, TOOL_OUTPUT_MAX_CHARS) : undefined,
+            })),
+          })),
+        )
+        loopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
+      })
+      .catch(() => {
+        /* silent: the panel keeps whatever it had */
+      })
+  }
+
+  /** dismiss the session picker on any click outside it */
+  useEffect(() => {
+    if (!sessionsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-session-menu, .ai-panel-header-actions')) setSessionsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [sessionsOpen])
+
   // ribbon presets auto-send; while a run is active they land in the composer instead
   const presetNonceRef = useRef(0)
   useEffect(() => {
@@ -432,17 +516,16 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={openSessions}
+            title={t('aiSessionsTitle')}
+            aria-expanded={sessionsOpen}
+          >
+            <IconClock />
+          </button>
           {chat.length > 0 && (
-            <button
-              className="ai-header-btn"
-              onClick={() => {
-                stop()
-                loopRef.current?.reset()
-                setBusy(false)
-                setChat([])
-              }}
-              title={t('aiNewChat')}
-            >
+            <button className="ai-header-btn" onClick={newChat} title={t('aiNewChat')}>
               <IconNewChat />
             </button>
           )}
@@ -450,6 +533,27 @@ export function AiPanel({
             <IconCollapse />
           </button>
         </div>
+        {sessionsOpen && (
+          <div className="ai-session-menu" role="menu">
+            {sessions.length === 0 ? (
+              <div className="ai-session-empty">{t('aiSessionsEmpty')}</div>
+            ) : (
+              sessions.map((s) => (
+                <button
+                  key={s.chatId}
+                  role="menuitem"
+                  className={`ai-session-item${s.chatId === chatIdsRef.current?.chatId ? ' ai-session-item-active' : ''}`}
+                  onClick={() => loadSession(s.chatId)}
+                >
+                  <span className="ai-session-item-title">{s.title || t('aiSessionUntitled')}</span>
+                  <span className="ai-session-item-time">
+                    {new Date(s.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </header>
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>

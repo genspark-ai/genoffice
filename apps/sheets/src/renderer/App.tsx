@@ -105,6 +105,7 @@ import {
   type AgentImage,
 } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
+import type { ChatMeta } from '@genoffice/project-store'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
 import {
@@ -598,6 +599,13 @@ export function App(): React.JSX.Element {
   const workbookOpeningRef = useRef(false)
   /** Current session's projectId/chatId (resolved when the workbook opens) */
   const chatRefIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** render-visible mirror of chatRefIdsRef, so the picker can mark the active session */
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
+  /** keep both in step: the ref is what async callbacks read, the state is what renders */
+  const bindChat = (ids: { projectId: string; chatId: string } | null): void => {
+    chatRefIdsRef.current = ids
+    setActiveChatId(ids?.chatId ?? null)
+  }
 
   // File renamed externally (in the shell Home list) → sync the title-bar file
   // name (the save path is synced by the main process)
@@ -693,7 +701,7 @@ export function App(): React.JSX.Element {
     const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
     if (!api) return
     // Reset (new workbook or new session)
-    chatRefIdsRef.current = null
+    bindChat(null)
     setHistoricChat([])
     const tempChatId = `unsaved-${Date.now()}`
     const sessionId = workbookFile?.sessionId
@@ -702,7 +710,7 @@ export function App(): React.JSX.Element {
     void api
       .resolveChat(resolveArgs)
       .then(async (ids) => {
-        chatRefIdsRef.current = ids
+        bindChat(ids)
         const msgs = await api.loadChat({
           projectId: ids.projectId,
           chatId: ids.chatId,
@@ -1049,6 +1057,18 @@ export function App(): React.JSX.Element {
     agentLoopRef.current?.cancel()
   }
 
+  /** args identifying this workbook's chats; sheets has no path in the renderer */
+  function chatScopeArgs(): { filePath: null; sessionId?: string } {
+    const sessionId = workbookFile?.sessionId
+    return sessionId === undefined ? { filePath: null } : { filePath: null, sessionId }
+  }
+
+  /**
+   * Start a genuinely new session. Clearing React state alone used to leave the
+   * store appending to the same chatId, so the "new" conversation was the old
+   * one with the transcript hidden; the store now mints a fresh chatId and the
+   * previous session stays reachable from the picker.
+   */
   function handleNewChat(): void {
     agentLoopRef.current?.reset()
     setAiBusy(false)
@@ -1057,6 +1077,64 @@ export function App(): React.JSX.Element {
     setPreview(null)
     lazyPreviewRef.current = null
     setMessage(t('appNewConversation'))
+    void (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+      ?.newChat({ ...chatScopeArgs(), tempChatId: `unsaved-${Date.now()}` })
+      .then((ids) => {
+        bindChat(ids)
+      })
+      .catch(() => {
+        /* the panel stays usable; messages keep going to the current chat */
+      })
+  }
+
+  /** This workbook's stored conversations, newest first, for the session picker. */
+  function handleListSessions(): Promise<ChatMeta[]> {
+    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    if (!api) return Promise.resolve([])
+    return api
+      .listChatsForFile(chatScopeArgs())
+      .then((list) => [...list].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)))
+      .catch(() => [])
+  }
+
+  /** Load an earlier conversation back into the panel. */
+  function handleLoadSession(chatId: string): void {
+    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    if (!api || chatRefIdsRef.current?.chatId === chatId) return
+    // restore() only seeds an idle, empty loop, so drop the live turn first
+    agentLoopRef.current?.reset()
+    setAiBusy(false)
+    setChat([])
+    setHistoricChat([])
+    setPreview(null)
+    lazyPreviewRef.current = null
+    void api
+      .switchChat({ ...chatScopeArgs(), chatId })
+      .then(async (ids) => {
+        bindChat(ids)
+        const msgs = await api.loadChat({
+          projectId: ids.projectId,
+          chatId: ids.chatId,
+          limit: 200,
+        })
+        setHistoricChat(
+          msgs.map((m) => ({
+            role: m.role,
+            text: m.text,
+            tools:
+              m.tools?.map((t) => ({
+                summary: t.summary,
+                isError: !!t.isError,
+                ...(t.name ? { name: t.name } : {}),
+                ...(t.output ? { output: t.output.slice(0, 2000) } : {}),
+              })) ?? [],
+          })),
+        )
+        agentLoopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
+      })
+      .catch(() => {
+        /* silent: the panel keeps whatever it had */
+      })
   }
 
   /** DSL context the AgentSkill reads/writes through — reuses the exact same
@@ -3099,6 +3177,9 @@ export function App(): React.JSX.Element {
         onSend={handleSend}
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
+        onListSessions={handleListSessions}
+        onLoadSession={handleLoadSession}
+        activeChatId={activeChatId}
         onUndo={handleUndo}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}

@@ -67,6 +67,9 @@ export const strings = {
     aiTidyPrompt:
       '整理全文排版：修正标题层级、统一列表格式、去除多余的加粗和斜体、清理多余空行；只调整格式，不要改动任何文字内容',
     aiNewChat: '新对话',
+    aiSessionsTitle: '历史会话',
+    aiSessionsEmpty: '还没有其他会话',
+    aiSessionUntitled: '未命名会话',
     aiCollapsePanel: '收起面板',
     aiEmptyTitle: '问问这篇文档',
     aiEmptyBody: '撰写、改写、总结、翻译，或从零生成一篇文档',
@@ -170,6 +173,9 @@ export const strings = {
     aiTidyPrompt:
       'Tidy up the document formatting — fix heading levels, unify list formatting, remove unnecessary bold and italics, and clean up extra blank lines. Adjust formatting only — do not change any text content',
     aiNewChat: 'New chat',
+    aiSessionsTitle: 'Conversations',
+    aiSessionsEmpty: 'No other conversations yet',
+    aiSessionUntitled: 'Untitled conversation',
     aiCollapsePanel: 'Collapse panel',
     aiEmptyTitle: 'Ask about this document',
     aiEmptyBody: 'Draft, rewrite, summarize, translate, or generate a document from scratch',
@@ -274,6 +280,9 @@ export const strings = {
     aiTidyPrompt:
       '文書全体の書式を整理してください。見出しレベルの修正、リスト形式の統一、不要な太字・斜体の削除、余分な空行の整理など。書式のみを調整し、本文の内容は一切変更しないでください',
     aiNewChat: '新しいチャット',
+    aiSessionsTitle: '会話履歴',
+    aiSessionsEmpty: '他の会話はまだありません',
+    aiSessionUntitled: '無題の会話',
     aiCollapsePanel: 'パネルを折りたたむ',
     aiEmptyTitle: 'このドキュメントについて質問',
     aiEmptyBody: '執筆、書き換え、要約、翻訳、またはゼロから文書を生成',
@@ -378,6 +387,9 @@ export const strings = {
     aiTidyPrompt:
       '문서 전체 서식을 정리해 주세요. 제목 수준 수정, 목록 형식 통일, 불필요한 굵게/기울임 제거, 불필요한 빈 줄 정리 등. 서식만 조정하고 본문 내용은 절대 변경하지 마세요',
     aiNewChat: '새 대화',
+    aiSessionsTitle: '대화 기록',
+    aiSessionsEmpty: '아직 다른 대화가 없습니다',
+    aiSessionUntitled: '제목 없는 대화',
     aiCollapsePanel: '패널 접기',
     aiEmptyTitle: '이 문서에 대해 질문하세요',
     aiEmptyBody: '작성, 다시 쓰기, 요약, 번역 또는 처음부터 문서 생성',
@@ -482,6 +494,9 @@ export const strings = {
     aiTidyPrompt:
       "Réorganisez la mise en forme du document : corrigez les niveaux de titres, unifiez le format des listes, supprimez le gras et l'italique superflus et nettoyez les lignes vides en trop. Ne modifiez que la mise en forme, sans changer le texte",
     aiNewChat: 'Nouvelle conversation',
+    aiSessionsTitle: 'Conversations',
+    aiSessionsEmpty: 'Aucune autre conversation',
+    aiSessionUntitled: 'Conversation sans titre',
     aiCollapsePanel: 'Réduire le panneau',
     aiEmptyTitle: 'Interrogez ce document',
     aiEmptyBody: 'Rédiger, réécrire, résumer, traduire ou générer un document',
@@ -587,6 +602,9 @@ export const strings = {
     aiTidyPrompt:
       'Bereinige die Formatierung des Dokuments: korrigiere Überschriftenebenen, vereinheitliche Listenformate, entferne überflüssiges Fett und Kursiv und räume überzählige Leerzeilen auf. Ändere nur die Formatierung, nicht den Textinhalt',
     aiNewChat: 'Neuer Chat',
+    aiSessionsTitle: 'Unterhaltungen',
+    aiSessionsEmpty: 'Noch keine weiteren Unterhaltungen',
+    aiSessionUntitled: 'Unbenannte Unterhaltung',
     aiCollapsePanel: 'Panel einklappen',
     aiEmptyTitle: 'Fragen Sie zu diesem Dokument',
     aiEmptyBody: 'Verfassen, umschreiben, zusammenfassen, übersetzen oder neu generieren',
@@ -691,6 +709,9 @@ export const strings = {
     aiTidyPrompt:
       'Ordena el formato del documento: corrige los niveles de los títulos, unifica el formato de las listas, elimina negritas y cursivas innecesarias y limpia las líneas en blanco sobrantes. Ajusta solo el formato, sin cambiar el texto',
     aiNewChat: 'Nueva conversación',
+    aiSessionsTitle: 'Conversaciones',
+    aiSessionsEmpty: 'Aún no hay otras conversaciones',
+    aiSessionUntitled: 'Conversación sin título',
     aiCollapsePanel: 'Contraer panel',
     aiEmptyTitle: 'Pregunta sobre este documento',
     aiEmptyBody: 'Redacta, reescribe, resume, traduce o genera un documento',
@@ -796,6 +817,9 @@ export const strings = {
     aiTidyPrompt:
       'จัดระเบียบรูปแบบเอกสารทั้งฉบับ เช่น แก้ไขระดับหัวข้อ ปรับรูปแบบรายการให้สอดคล้องกัน ลบตัวหนาและตัวเอียงที่ไม่จำเป็น และลบบรรทัดว่างส่วนเกิน ปรับเฉพาะรูปแบบเท่านั้น ห้ามแก้ไขเนื้อหาข้อความ',
     aiNewChat: 'แชทใหม่',
+    aiSessionsTitle: 'ประวัติการสนทนา',
+    aiSessionsEmpty: 'ยังไม่มีการสนทนาอื่น',
+    aiSessionUntitled: 'การสนทนาที่ไม่มีชื่อ',
     aiCollapsePanel: 'ยุบแผง',
     aiEmptyTitle: 'ถามเกี่ยวกับเอกสารนี้',
     aiEmptyBody: 'เขียน แก้ไข สรุป แปล หรือสร้างเอกสารตั้งแต่ต้น',
@@ -900,6 +924,9 @@ export const strings = {
     aiTidyPrompt:
       'Rapikan format dokumen: perbaiki tingkat judul, seragamkan format daftar, hapus cetak tebal dan miring yang tidak perlu, dan bersihkan baris kosong berlebih. Sesuaikan format saja — jangan ubah isi teks apa pun',
     aiNewChat: 'Obrolan baru',
+    aiSessionsTitle: 'Percakapan',
+    aiSessionsEmpty: 'Belum ada percakapan lain',
+    aiSessionUntitled: 'Percakapan tanpa judul',
     aiCollapsePanel: 'Ciutkan panel',
     aiEmptyTitle: 'Tanyakan tentang dokumen ini',
     aiEmptyBody: 'Tulis, tulis ulang, ringkas, terjemahkan, atau buat dokumen baru',
@@ -1004,6 +1031,9 @@ export const strings = {
     aiTidyPrompt:
       'Приведите в порядок форматирование документа: исправьте уровни заголовков, унифицируйте оформление списков, уберите лишние жирный шрифт и курсив, удалите лишние пустые строки. Меняйте только форматирование, не изменяя текст',
     aiNewChat: 'Новый чат',
+    aiSessionsTitle: 'Разговоры',
+    aiSessionsEmpty: 'Других разговоров пока нет',
+    aiSessionUntitled: 'Разговор без названия',
     aiCollapsePanel: 'Свернуть панель',
     aiEmptyTitle: 'Спросите об этом документе',
     aiEmptyBody: 'Написать, переписать, суммировать, перевести или создать документ',
@@ -1108,6 +1138,9 @@ export const strings = {
     aiTidyPrompt:
       'رتّب تنسيق المستند: صحّح مستويات العناوين، ووحّد تنسيق القوائم، وأزل الخط الغامق والمائل غير الضروريين، ونظّف الأسطر الفارغة الزائدة. عدّل التنسيق فقط دون تغيير أي محتوى نصي',
     aiNewChat: 'محادثة جديدة',
+    aiSessionsTitle: 'المحادثات',
+    aiSessionsEmpty: 'لا توجد محادثات أخرى بعد',
+    aiSessionUntitled: 'محادثة بلا عنوان',
     aiCollapsePanel: 'طي اللوحة',
     aiEmptyTitle: 'اسأل عن هذا المستند',
     aiEmptyBody: 'اكتب أو أعد الصياغة أو لخّص أو ترجم أو أنشئ مستنداً من الصفر',
@@ -1212,6 +1245,9 @@ export const strings = {
     aiTidyPrompt:
       'Organize a formatação do documento: corrija os níveis dos títulos, unifique o formato das listas, remova negrito e itálico desnecessários e limpe linhas em branco excedentes. Ajuste apenas a formatação, sem alterar o texto',
     aiNewChat: 'Nova conversa',
+    aiSessionsTitle: 'Conversas',
+    aiSessionsEmpty: 'Ainda não há outras conversas',
+    aiSessionUntitled: 'Conversa sem título',
     aiCollapsePanel: 'Recolher painel',
     aiEmptyTitle: 'Pergunte sobre este documento',
     aiEmptyBody: 'Redija, reescreva, resuma, traduza ou gere um documento',
@@ -1316,6 +1352,9 @@ export const strings = {
     aiTidyPrompt:
       'Riordina la formattazione del documento: correggi i livelli dei titoli, uniforma il formato degli elenchi, rimuovi grassetto e corsivo superflui ed elimina le righe vuote in eccesso. Modifica solo la formattazione, senza cambiare il testo',
     aiNewChat: 'Nuova chat',
+    aiSessionsTitle: 'Conversazioni',
+    aiSessionsEmpty: 'Nessun’altra conversazione',
+    aiSessionUntitled: 'Conversazione senza titolo',
     aiCollapsePanel: 'Comprimi pannello',
     aiEmptyTitle: 'Chiedi di questo documento',
     aiEmptyBody: 'Scrivi, riscrivi, riassumi, traduci o genera un documento',
@@ -1420,6 +1459,9 @@ export const strings = {
     aiTidyPrompt:
       'Uporządkuj formatowanie dokumentu: popraw poziomy nagłówków, ujednolić formatowanie list, usuń zbędne pogrubienia i kursywę oraz nadmiarowe puste wiersze. Zmieniaj tylko formatowanie, nie zmieniaj treści tekstu',
     aiNewChat: 'Nowy czat',
+    aiSessionsTitle: 'Rozmowy',
+    aiSessionsEmpty: 'Brak innych rozmów',
+    aiSessionUntitled: 'Rozmowa bez tytułu',
     aiCollapsePanel: 'Zwiń panel',
     aiEmptyTitle: 'Zapytaj o ten dokument',
     aiEmptyBody: 'Pisz, przepisuj, streszczaj, tłumacz lub generuj dokument',
@@ -1524,6 +1566,9 @@ export const strings = {
     aiTidyPrompt:
       'Ruim de opmaak van het document op: corrigeer kopniveaus, maak lijstopmaak uniform, verwijder onnodige vetgedrukte en cursieve tekst en verwijder overtollige lege regels. Pas alleen de opmaak aan, verander de tekst niet',
     aiNewChat: 'Nieuwe chat',
+    aiSessionsTitle: 'Gesprekken',
+    aiSessionsEmpty: 'Nog geen andere gesprekken',
+    aiSessionUntitled: 'Naamloos gesprek',
     aiCollapsePanel: 'Paneel inklappen',
     aiEmptyTitle: 'Vraag over dit document',
     aiEmptyBody: 'Schrijf, herschrijf, vat samen, vertaal of genereer een document',
@@ -1628,6 +1673,9 @@ export const strings = {
     aiTidyPrompt:
       'Kemaskan format dokumen: betulkan aras tajuk, seragamkan format senarai, buang huruf tebal dan condong yang tidak perlu, dan bersihkan baris kosong berlebihan. Laraskan format sahaja — jangan ubah sebarang kandungan teks',
     aiNewChat: 'Sembang baharu',
+    aiSessionsTitle: 'Perbualan',
+    aiSessionsEmpty: 'Tiada perbualan lain lagi',
+    aiSessionUntitled: 'Perbualan tanpa tajuk',
     aiCollapsePanel: 'Runtuhkan panel',
     aiEmptyTitle: 'Tanya tentang dokumen ini',
     aiEmptyBody: 'Tulis, tulis semula, ringkas, terjemah atau jana dokumen',
@@ -1732,6 +1780,9 @@ export const strings = {
     aiTidyPrompt:
       'סדר את עיצוב המסמך: תקן רמות כותרות, אחד את עיצוב הרשימות, הסר הדגשות והטיות מיותרות ונקה שורות ריקות עודפות. שנה עיצוב בלבד — אל תשנה שום תוכן טקסט',
     aiNewChat: 'שיחה חדשה',
+    aiSessionsTitle: 'שיחות',
+    aiSessionsEmpty: 'אין עדיין שיחות אחרות',
+    aiSessionUntitled: 'שיחה ללא שם',
     aiCollapsePanel: 'כווצו את החלונית',
     aiEmptyTitle: 'שאלו על המסמך הזה',
     aiEmptyBody: 'נסחו, שכתבו, סכמו, תרגמו או צרו מסמך מאפס',
@@ -1836,6 +1887,9 @@ export const strings = {
     aiTidyPrompt:
       'दस्तावेज़ का स्वरूपण व्यवस्थित करें: शीर्षक स्तर ठीक करें, सूची स्वरूपण एकरूप करें, अनावश्यक बोल्ड और इटैलिक हटाएँ और अतिरिक्त खाली पंक्तियाँ साफ़ करें। केवल स्वरूपण बदलें — किसी भी पाठ सामग्री को न बदलें',
     aiNewChat: 'नई चैट',
+    aiSessionsTitle: 'बातचीत',
+    aiSessionsEmpty: 'अभी कोई अन्य बातचीत नहीं',
+    aiSessionUntitled: 'बिना शीर्षक बातचीत',
     aiCollapsePanel: 'पैनल संक्षिप्त करें',
     aiEmptyTitle: 'इस दस्तावेज़ के बारे में पूछें',
     aiEmptyBody: 'लिखें, फिर से लिखें, सारांश दें, अनुवाद करें या नया दस्तावेज़ बनाएँ',
@@ -1940,6 +1994,9 @@ export const strings = {
     aiTidyPrompt:
       '整理全文排版：修正標題層級、統一清單格式、去除多餘的粗體和斜體、清理多餘空行；只調整格式，不要改動任何文字內容',
     aiNewChat: '新對話',
+    aiSessionsTitle: '歷史對話',
+    aiSessionsEmpty: '還沒有其他對話',
+    aiSessionUntitled: '未命名對話',
     aiCollapsePanel: '收合面板',
     aiEmptyTitle: '詢問這份文件',
     aiEmptyBody: '撰寫、改寫、摘要、翻譯，或從零生成文件',

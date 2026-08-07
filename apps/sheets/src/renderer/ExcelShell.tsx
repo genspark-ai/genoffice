@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SHAPE_GALLERY_GROUPS, ShapePreview } from '@genoffice/ui'
+import type { ChatMeta } from '@genoffice/project-store'
 
 import {
   CaretIcon,
@@ -142,6 +143,10 @@ interface ExcelShellProps {
   readonly onSend: (instruction?: string) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
+  /** this workbook's stored conversations, newest first */
+  readonly onListSessions: () => Promise<ChatMeta[]>
+  readonly onLoadSession: (chatId: string) => void
+  readonly activeChatId: string | null
   readonly onUndo: () => void
   readonly onCommand: (command: string) => void
   /// Left side of the status bar (ready / streaming / AI progress messages).
@@ -255,6 +260,9 @@ export function ExcelShell({
   onSend,
   onStop,
   onNewChat,
+  onListSessions,
+  onLoadSession,
+  activeChatId,
   onUndo,
   onCommand,
   statusMessage,
@@ -436,6 +444,9 @@ export function ExcelShell({
           onSend={onSend}
           onStop={onStop}
           onNewChat={onNewChat}
+          onListSessions={onListSessions}
+          onLoadSession={onLoadSession}
+          activeChatId={activeChatId}
           onUndo={onUndo}
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}

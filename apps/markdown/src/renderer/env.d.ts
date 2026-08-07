@@ -6,7 +6,16 @@ import type { MarkdownApi } from '../shared/ipc'
 declare global {
   interface Window {
     markdownApi: MarkdownApi
-    projectApi?: Pick<ProjectApi, 'resolveChat' | 'appendChat' | 'loadChat' | 'rebindChat'>
+    projectApi?: Pick<
+      ProjectApi,
+      | 'resolveChat'
+      | 'appendChat'
+      | 'loadChat'
+      | 'rebindChat'
+      | 'listChatsForFile'
+      | 'newChat'
+      | 'switchChat'
+    >
   }
 }
 
