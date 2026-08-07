@@ -2613,6 +2613,19 @@ function boundedNumber(value: unknown, min: number, max: number): number | null 
 function sanitizeModelSettings(input: Partial<AiModelSettings> | undefined): AiModelSettings {
   return {
     mode: input?.mode === 'custom' ? 'custom' : 'genspark',
+    // the library the dialog now has: unknown ids are dropped rather than
+    // trusted, and a blank label falls back to the model when it is stored
+    profiles: (Array.isArray(input?.profiles) ? (input.profiles as unknown[]) : [])
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+      .map((p) => ({
+        id: String(p.id ?? ''),
+        label: String(p.label ?? ''),
+        baseUrl: String(p.baseUrl ?? ''),
+        model: String(p.model ?? ''),
+        apiKey: String(p.apiKey ?? ''),
+      }))
+      .filter((p) => p.id !== ''),
+    profileId: typeof input?.profileId === 'string' ? input.profileId : null,
     baseUrl: String(input?.baseUrl ?? ''),
     model: String(input?.model ?? ''),
     apiKey: String(input?.apiKey ?? ''),

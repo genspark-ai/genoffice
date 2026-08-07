@@ -144,6 +144,8 @@ describe('toModelSettings', () => {
   it('flattens a live custom endpoint', () => {
     expect(toModelSettings(withCustom({ apiKey: 'sk-1' }))).toEqual({
       mode: 'custom',
+      profiles: [],
+      profileId: null,
       baseUrl: 'http://localhost:11434/v1',
       model: 'local-model',
       apiKey: 'sk-1',
@@ -159,6 +161,8 @@ describe('toModelSettings', () => {
     const settings = withCustom({ model: '' })
     expect(toModelSettings(settings)).toEqual({
       mode: 'genspark',
+      profiles: [],
+      profileId: null,
       baseUrl: 'http://localhost:11434/v1',
       model: '',
       apiKey: '',
@@ -175,6 +179,8 @@ describe('applyModelSettings', () => {
   it('stores a custom endpoint and selects it', () => {
     const next = applyModelSettings(defaultAiSettings(), {
       mode: 'custom',
+      profiles: [],
+      profileId: null,
       baseUrl: ' https://api.deepseek.com/v1 ',
       model: ' deepseek-chat ',
       apiKey: ' sk-2 ',
@@ -199,6 +205,8 @@ describe('applyModelSettings', () => {
   it('keeps the typed endpoint when switching back to genspark', () => {
     const next = applyModelSettings(defaultAiSettings(), {
       mode: 'genspark',
+      profiles: [],
+      profileId: null,
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
       apiKey: 'sk-2',
@@ -215,6 +223,8 @@ describe('applyModelSettings', () => {
   it('refuses to select an incomplete custom endpoint, so AI keeps working', () => {
     const next = applyModelSettings(defaultAiSettings(), {
       mode: 'custom',
+      profiles: [],
+      profileId: null,
       baseUrl: 'https://api.deepseek.com/v1',
       model: '',
       apiKey: '',
@@ -231,6 +241,8 @@ describe('applyModelSettings', () => {
     const settings = defaultAiSettings({ anthropic: 'preset-key' })
     const next = applyModelSettings(settings, {
       mode: 'custom',
+      profiles: [],
+      profileId: null,
       baseUrl: 'http://localhost:1234/v1',
       model: 'm',
       apiKey: '',
@@ -246,6 +258,8 @@ describe('applyModelSettings', () => {
   it('round-trips through toModelSettings', () => {
     const input: AiModelSettings = {
       mode: 'custom',
+      profiles: [],
+      profileId: null,
       baseUrl: 'http://localhost:8000/v1',
       model: 'qwen2.5',
       apiKey: '',
@@ -255,12 +269,26 @@ describe('applyModelSettings', () => {
       tavilyApiKey: '',
       proxyUrl: '',
     }
-    expect(toModelSettings(applyModelSettings(defaultAiSettings(), input))).toEqual(input)
+    // a first-ever endpoint gains a row of its own, so compare everything but
+    // the generated id
+    const out = toModelSettings(applyModelSettings(defaultAiSettings(), input))
+    expect(out).toMatchObject({ ...input, profiles: expect.any(Array), profileId: out.profileId })
+    expect(out.profiles).toEqual([
+      {
+        id: out.profileId,
+        label: 'qwen2.5',
+        baseUrl: 'http://localhost:8000/v1',
+        model: 'qwen2.5',
+        apiKey: '',
+      },
+    ])
   })
 
   it('round-trips the generation knobs too', () => {
     const input: AiModelSettings = {
       mode: 'custom',
+      profiles: [],
+      profileId: null,
       baseUrl: 'http://localhost:8000/v1',
       model: 'qwen2.5',
       apiKey: '',
@@ -278,7 +306,9 @@ describe('applyModelSettings', () => {
       maxTokens: 32_000,
       reasoningEffort: 'high',
     })
-    expect(toModelSettings(next)).toEqual(input)
+    // the endpoint also became a row, so the id is the only difference
+    const out = toModelSettings(next)
+    expect(out).toMatchObject({ ...input, profiles: expect.any(Array), profileId: out.profileId })
   })
 })
 
@@ -364,6 +394,8 @@ describe('network settings persistence', () => {
   it('round-trips the Tavily key and proxy through the dialog projection', () => {
     const next = applyModelSettings(defaultAiSettings(), {
       mode: 'genspark',
+      profiles: [],
+      profileId: null,
       baseUrl: '',
       model: '',
       apiKey: '',

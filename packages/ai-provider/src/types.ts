@@ -77,12 +77,33 @@ export interface LegacyAiSettings {
 }
 
 /**
- * The AI backend as the settings dialog presents it: either the Genspark
- * account or one custom OpenAI-compatible endpoint. A flat projection of
+ * One row of the settings dialog's model list. It carries its own endpoint so
+ * a row the user added but has not selected still saves what they typed into
+ * it, rather than inheriting the selected row's endpoint.
+ */
+export interface AiProfileSummary {
+  id: string
+  label: string
+  baseUrl: string
+  model: string
+  apiKey: string
+}
+
+/**
+ * The AI backend as the settings dialog presents it: the Genspark account or
+ * one of the saved OpenAI-compatible endpoints. A flat projection of
  * AiSettings, so the UI never has to know about the provider matrix.
  */
 export interface AiModelSettings {
   mode: 'genspark' | 'custom'
+  /**
+   * Saved endpoints, in display order. The fields below belong to `profileId`;
+   * adding a row here creates a profile and removing one deletes it, which is
+   * how the dialog manages the list the sidebar switches between.
+   */
+  profiles: AiProfileSummary[]
+  /** which profile the fields below edit; null when the list is empty */
+  profileId: string | null
   /** OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1 */
   baseUrl: string
   model: string

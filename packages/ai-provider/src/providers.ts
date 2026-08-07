@@ -196,9 +196,20 @@ export function newProfileId(): string {
 
 /** Flatten full settings into the shape the settings dialog edits. */
 export function toModelSettings(settings: AiSettings): AiModelSettings {
-  const custom = settings.providers?.custom
+  const live = activeProfile(settings)
+  // the fields below describe the selected profile, so read them from it
+  // rather than from providers.custom, which only mirrors it
+  const custom = live ?? settings.providers?.custom
   return {
     mode: activeProvider(settings) === 'custom' ? 'custom' : 'genspark',
+    profiles: (settings.customProfiles ?? []).map((p) => ({
+      id: p.id,
+      label: p.label,
+      baseUrl: p.baseUrl ?? '',
+      model: p.model,
+      apiKey: p.apiKey,
+    })),
+    profileId: live?.id ?? null,
     baseUrl: custom?.baseUrl ?? '',
     model: custom?.model ?? '',
     apiKey: custom?.apiKey ?? '',
@@ -229,29 +240,47 @@ export function applyModelSettings(settings: AiSettings, input: AiModelSettings)
     ...(input.maxTokens === null ? {} : { maxTokens: input.maxTokens }),
     ...(input.reasoningEffort === null ? {} : { reasoningEffort: input.reasoningEffort }),
   }
-  // The dialog edits one endpoint — the selected profile. Fold its edits back
-  // into the library rather than replacing it, or saving from the settings
-  // window would delete every other model the user has added.
-  const live = activeProfile(settings)
-  const profiles: AiCustomProfile[] = isCustomConfigured(custom)
-    ? live
-      ? (settings.customProfiles ?? []).map((p) =>
-          p.id === live.id ? { ...custom, id: p.id, label: p.label } : p,
-        )
-      : [{ ...custom, id: newProfileId(), label: custom.model }]
-    : (settings.customProfiles ?? [])
+  // `input.profiles` is the library as the dialog now has it — rows the user
+  // added, removed or renamed — and `input.profileId` says which one the
+  // endpoint fields above describe. Existing rows keep their stored endpoint;
+  // only the selected one takes the edits, so saving never disturbs the others.
+  const stored = new Map((settings.customProfiles ?? []).map((p) => [p.id, p]))
+  const profiles: AiCustomProfile[] = input.profiles.map((row) => {
+    // the selected row takes the tuning knobs too; every other row keeps its
+    // stored tuning and the endpoint the dialog is carrying for it
+    if (row.id === input.profileId) return { ...custom, id: row.id, label: row.label.trim() }
+    const previous = stored.get(row.id)
+    return {
+      ...previous,
+      baseUrl: row.baseUrl.trim(),
+      model: row.model.trim(),
+      apiKey: row.apiKey.trim(),
+      id: row.id,
+      label: row.label.trim(),
+    }
+  })
+
+  // A first-ever endpoint typed in without a row of its own still needs
+  // somewhere to live, or it would vanish on the next read.
+  if (!profiles.length && isCustomConfigured(custom)) {
+    profiles.push({ ...custom, id: newProfileId(), label: custom.model })
+  }
+  const selected =
+    profiles.find((p) => p.id === input.profileId) ?? (profiles.length ? profiles[0] : undefined)
 
   const next: AiSettings = {
     provider: input.mode === 'custom' ? 'custom' : 'genspark',
     providers: { ...settings.providers, custom },
     ...(profiles.length ? { customProfiles: profiles } : {}),
-    ...(live ? { activeProfileId: live.id } : {}),
+    ...(selected ? { activeProfileId: selected.id } : {}),
     tavilyApiKey: input.tavilyApiKey.trim(),
     proxyUrl: normalizeProxyUrl(input.proxyUrl),
   }
+  // the live endpoint must follow the selection, not the last thing typed
+  const settled = syncActiveProfile(next)
   // an incomplete custom endpoint would silently disable AI; keep Genspark live instead
-  next.provider = activeProvider(next)
-  return next
+  settled.provider = activeProvider(settled)
+  return settled
 }
 
 /**

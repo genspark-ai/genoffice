@@ -25,9 +25,21 @@ export const INSTRUCTION_SCOPES: readonly InstructionScope[] = [
   'pdf',
 ]
 
+/** mirrors AiProfileSummary in @genoffice/ai-provider */
+export interface AiProfileSummary {
+  id: string
+  label: string
+  baseUrl: string
+  model: string
+  apiKey: string
+}
+
 /** mirrors AiModelSettings in @genoffice/ai-provider */
 export interface AiModelSettings {
   mode: 'genspark' | 'custom'
+  /** saved endpoints; the fields below belong to `profileId` */
+  profiles: AiProfileSummary[]
+  profileId: string | null
   baseUrl: string
   model: string
   apiKey: string

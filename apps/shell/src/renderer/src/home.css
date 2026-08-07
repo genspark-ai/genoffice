@@ -1225,6 +1225,86 @@ body.vib .home {
   margin-top: 16px;
 }
 
+/* saved custom endpoints: the library the AI sidebar switches between */
+.ai-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.ai-profile {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 11px;
+  background: var(--surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+}
+
+.ai-profile:hover {
+  background: var(--surface-subtle);
+}
+
+.ai-profile.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.ai-profile-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-profile-model {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ai-profile-remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: var(--radius-8);
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-profile-remove:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.ai-profile-add {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px dashed var(--color-border-default);
+  background: none;
+  border-radius: var(--radius-8);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-profile-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .ai-mode {
   display: flex;
   gap: 10px;

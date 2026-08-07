@@ -174,9 +174,73 @@ function ModelSection({
 
   const saver = useSaver<AiModelSettings>((v) => window.genofficeSettings.saveAi(v), onSaved)
 
+  /** the endpoint fields edit the selected row, so keep the row in step */
   const edit = (patch: Partial<AiModelSettings>) => {
-    setDraft((prev) => ({ ...prev, ...patch }))
+    setDraft((prev) => {
+      const next = { ...prev, ...patch }
+      const touchesEndpoint =
+        'baseUrl' in patch || 'model' in patch || 'apiKey' in patch || 'label' in patch
+      if (touchesEndpoint && next.profileId) {
+        next.profiles = next.profiles.map((p) =>
+          p.id === next.profileId
+            ? { ...p, baseUrl: next.baseUrl, model: next.model, apiKey: next.apiKey }
+            : p,
+        )
+      }
+      return next
+    })
     setTest({ state: 'idle' })
+  }
+
+  /** Show a different row: the fields describe whichever row is selected. */
+  const selectProfile = (id: string) => {
+    if (id === draft.profileId) return
+    setDraft((prev) => {
+      const row = prev.profiles.find((p) => p.id === id)
+      if (!row) return prev
+      return { ...prev, profileId: id, baseUrl: row.baseUrl, model: row.model, apiKey: row.apiKey }
+    })
+    setTest({ state: 'idle' })
+  }
+
+  const addProfile = () => {
+    // a client-side id; the main process keeps whatever it is handed, so a row
+    // added and saved in one go stays the same profile afterwards
+    const id = `new-${Date.now().toString(36)}`
+    setDraft((prev) => ({
+      ...prev,
+      profiles: [...prev.profiles, { id, label: '', baseUrl: '', model: '', apiKey: '' }],
+      profileId: id,
+      baseUrl: '',
+      model: '',
+      apiKey: '',
+    }))
+    setTest({ state: 'idle' })
+  }
+
+  const removeProfile = (id: string) => {
+    setDraft((prev) => {
+      const profiles = prev.profiles.filter((p) => p.id !== id)
+      if (prev.profileId !== id) return { ...prev, profiles }
+      // the selection went with it: fall to the first row, or to no model at all
+      const next = profiles[0]
+      return {
+        ...prev,
+        profiles,
+        profileId: next?.id ?? null,
+        baseUrl: next?.baseUrl ?? '',
+        model: next?.model ?? '',
+        apiKey: next?.apiKey ?? '',
+      }
+    })
+    setTest({ state: 'idle' })
+  }
+
+  const renameProfile = (label: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      profiles: prev.profiles.map((p) => (p.id === prev.profileId ? { ...p, label } : p)),
+    }))
   }
 
   const runTest = () => {
@@ -235,6 +299,52 @@ function ModelSection({
 
       {custom && (
         <div className="ai-fields">
+          {/* the library the sidebar switches between; the fields below edit the selected row */}
+          <div className="ai-profile-list" role="radiogroup" aria-label={t('aiDlgModels')}>
+            {draft.profiles.map((p) => (
+              <div
+                key={p.id}
+                className={`ai-profile${p.id === draft.profileId ? ' active' : ''}`}
+                role="radio"
+                aria-checked={p.id === draft.profileId}
+                tabIndex={0}
+                onClick={() => selectProfile(p.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    selectProfile(p.id)
+                  }
+                }}
+              >
+                <span className="ai-profile-name">{p.label || p.model || t('aiDlgUnnamed')}</span>
+                <span className="ai-profile-model">{p.model}</span>
+                <button
+                  type="button"
+                  className="ai-profile-remove"
+                  title={t('aiDlgRemoveModel')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeProfile(p.id)
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button type="button" className="ai-profile-add" onClick={addProfile}>
+              {t('aiDlgAddModel')}
+            </button>
+          </div>
+          <label className="ai-field">
+            <span className="ai-field-label">{t('aiDlgModelName')}</span>
+            <input
+              className="ai-input"
+              spellCheck={false}
+              placeholder={t('aiDlgModelNamePlaceholder')}
+              value={draft.profiles.find((p) => p.id === draft.profileId)?.label ?? ''}
+              onChange={(e) => renameProfile(e.target.value)}
+            />
+          </label>
           <label className="ai-field">
             <span className="ai-field-label">Base URL</span>
             <input
