@@ -1,134 +1,125 @@
-# GenOffice
+# GenOffice — OpenRouter & NVIDIA NIM Fork
 
-An AI-native office suite for macOS and Windows: word processor, spreadsheet,
-presentations, and PDF — five Electron apps sharing one engine layer, built
-around AI editing as a first-class workflow rather than a bolted-on chat box.
+An AI-native desktop office suite for Windows/macOS with a word processor, spreadsheet, presentations and PDF tools. This fork extends the upstream GenOffice project with **bring-your-own-key AI access through OpenRouter and direct NVIDIA NIM**, removing the requirement to use Genspark sign-in for the primary AI workflow.
 
-[![Meet GenOffice — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
+> **Fork status:** active experimental fork. OpenRouter and NVIDIA NIM integration is being tested across Docs, Sheets and Slides. Some visual/multimodal features may require a vision-capable model.
 
-[Watch the demo video on YouTube](https://www.youtube.com/watch?v=B2pLdMX95v4)
+## Fork AI features
 
-## Download
+- **OpenRouter BYOK** — enter your own OpenRouter API key inside the application.
+- **OpenRouter Free Router** — use `openrouter/free` when available.
+- **NVIDIA NIM Direct** — use an NVIDIA `nvapi-...` key without routing through OpenRouter.
+- **Multiple NVIDIA models** — experiment with supported Nemotron, Kimi, DeepSeek, Qwen and MiniMax endpoints as available from NVIDIA.
+- **Shared provider configuration** — Docs, Sheets and Slides are being routed through the same configurable AI provider layer.
+- **Streaming + tool calling** — retains GenOffice's agent-based document, workbook and presentation editing workflow.
+- **Real provider errors** — provider/capacity errors should be surfaced directly instead of being converted into a Genspark login prompt.
+- **Local key configuration** — API credentials are configured in the desktop application rather than embedded into the Windows build.
 
-| Platform                        | Requirements                                | Download                                                                                                                             |
-| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS** (Apple Silicon)       | macOS 11+                                   | [GenOffice-0.5.83-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOffice-0.5.83-arm64.dmg)          |
-| **Windows** (x64)               | Windows 10+                                 | [GenOfficeSetup-v0.5.79.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOfficeSetup-v0.5.79.exe)          |
-| **Linux** — Debian / Ubuntu     | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer) | [genoffice_0.5.149_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/genoffice_0.5.149_amd64.deb) |
-| **Linux** — other distributions | x86_64, glibc 2.34+, FUSE 2                 | [GenOffice-0.5.149.AppImage](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/GenOffice-0.5.149.AppImage)   |
+### Current provider choices
 
-All builds come from `main`; the macOS and Windows installers are signed.
-Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
+| Provider | Key | Typical use |
+| --- | --- | --- |
+| **OpenRouter** | `sk-or-v1-...` | Flexible model access and OpenRouter Free Router |
+| **NVIDIA NIM (Direct)** | `nvapi-...` | Direct NVIDIA-hosted models including Nemotron and other available NIM endpoints |
 
-### Installing on Linux
+Model availability, free access and rate limits are controlled by the respective provider and can change over time. A model being listed in the UI does not guarantee that every API key has access to it.
 
-The deb installs with apt — it pulls in the dependencies and adds GenOffice
-to the applications menu:
+### Multimodal note
 
-```bash
-sudo apt install ./genoffice_0.5.149_amd64.deb
-```
+Some Slides operations, such as visual analysis/beautification, can send rendered slide imagery to the AI model. Those operations require a **multimodal/vision-capable model and endpoint**. Text-only models can still work for normal chat, document generation and compatible tool-calling tasks but may fail on visual slide operations.
 
-The AppImage instead runs in place: install the FUSE 2 runtime
-(`sudo apt install libfuse2`; on Ubuntu 24.04 the package is `libfuse2t64`),
-make the file executable, then run it:
+## Download / Windows builds
 
-```bash
-chmod +x GenOffice-0.5.149.AppImage
-./GenOffice-0.5.149.AppImage
-```
+This fork includes a GitHub Actions workflow named **Build Windows EXE**. Windows installers are produced as workflow artifacts after the customization scripts, full TypeScript typecheck and packaging steps complete successfully.
+
+Do not use the upstream download links below if you specifically want the OpenRouter/NVIDIA modifications; build/download the Windows artifact from this fork's Actions workflow.
 
 ## Apps
 
-| App           | Product              | What it is                                                                                                                                                                                                                                                                                                                                                    |
-| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/docs`   | **GenOffice Docs**   | `.docx` word processor. Byte-preserving round trip: only dirty paragraphs are regenerated (paragraph patch), everything else in the original file is kept byte-for-byte, so opening and saving never breaks layout in Word. Paginated view whose line metrics reproduce the original document's layout, tracked changes, comments, styles, equations, ink.    |
-| `apps/sheets` | **GenOffice Sheets** | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing. |
-| `apps/slides` | **GenOffice Slides** | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                    |
-| `apps/pdf`    | **GenOffice PDF**    | `.pdf` viewer/editor on pdf.js + pdf-lib: annotations, forms, outlines, stamps, signatures, page operations, and printing support.                                                                                                                                                                                                                            |
-| `apps/shell`  | **GenOffice**        | The suite shell: home screen, tabbed hosting of the four editors, auto-update.                                                                                                                                                                                                                                                                                |
+| App | Product | What it is |
+| --- | --- | --- |
+| `apps/docs` | **GenOffice Docs** | `.docx` word processor with paginated editing, tracked changes, comments, styles, equations and AI editing. |
+| `apps/sheets` | **GenOffice Sheets** | `.xlsx` spreadsheet editor built around Univer with GenOffice extensions, import/export, charts, pivots and AI workbook tools. |
+| `apps/slides` | **GenOffice Slides** | `.pptx` presentation editor with an in-house parse/render/edit engine and AI slide tools. |
+| `apps/pdf` | **GenOffice PDF** | `.pdf` viewer/editor using pdf.js + pdf-lib. |
+| `apps/shell` | **GenOffice** | Electron suite shell hosting the editors and shared configuration. |
 
-Every app embeds the same AI panel: block-granular AI editing with version
-snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
-state in the others.
+Every editor uses GenOffice's agent architecture: the AI can do more than return chat text; supported models can call tools that operate on document, workbook and presentation state.
 
-**AI providers.** The apps sign in to a Genspark account and route model
-calls through the Genspark service side; no model API key is stored locally.
+## AI architecture in this fork
+
+```text
+Docs / Sheets / Slides
+          │
+          ▼
+   Shared AI / Agent layer
+          │
+     ┌────┴────┐
+     ▼         ▼
+ OpenRouter  NVIDIA NIM
+     │         │
+     ▼         ▼
+ selected    selected
+  model       model
+```
+
+The goal is to keep provider-specific authentication and routing out of individual editor behavior so that a provider failure does not incorrectly trigger legacy Genspark authentication UI.
 
 ## Engine packages
 
-All pure TypeScript, no Electron dependency, unit-tested (except the UI kit):
+The project keeps the upstream GenOffice engine structure:
 
-- `packages/docx-engine` — docx parsing → block tree (with `docxIndex`
-  anchors and passthrough), OOXML fragment generation, byte-level paragraph
-  patching.
-- `packages/pptx-engine` / `packages/pptx-render` — pptx model and rendering.
-- `packages/file-parse` — text extraction for AI attachments (office formats,
-  text formats).
-- `packages/agent-core` — the AI agent loop and skill composition shared by
-  every app.
-- `packages/ai-provider` — provider abstraction and streaming for the model
-  backends.
-- `packages/ai-search` — Genspark auth + web/image search tools.
-- `packages/i18n`, `packages/ui`, `packages/project-store`,
-  `packages/electron-utils` — shared i18n core, React UI kit, recent-files
-  store, and Electron main-process helpers.
+- `packages/docx-engine` — DOCX parsing, block tree and OOXML patching.
+- `packages/pptx-engine` / `packages/pptx-render` — PPTX model and rendering.
+- `packages/file-parse` — text extraction for AI attachments.
+- `packages/agent-core` — shared AI agent loop and skill composition.
+- `packages/ai-provider` — provider abstraction and streaming model backends.
+- `packages/ai-search` — upstream search/auth-related functionality; some legacy Genspark-related code may still remain while the fork migration continues.
+- `packages/i18n`, `packages/ui`, `packages/project-store`, `packages/electron-utils` — shared infrastructure.
 
 ## Development
 
 ```bash
 npm install
-npm run fixtures     # generate test .docx fixtures
-npm test             # engine + app unit tests (docs/sheets/slides need no display)
-npm run typecheck    # tsc --noEmit across every workspace
-npm run dev          # all four editors + shell against Vite dev servers
-npm run dev:docs     # a single app (same pattern works per workspace)
-npm run dist:mac     # package macOS dmg (regenerates third-party notices)
-npm run dist:win     # package Windows nsis installer
+npm run fixtures
+npm test
+npm run typecheck
+npm run dev
+npm run dev:docs
+npm run dist:mac
+npm run dist:win
 ```
 
-The sheets app additionally needs a Rust toolchain for its xlsx sidecar
-(`cargo` on PATH); `npm run build -w @genoffice/sheets` compiles it
-automatically.
+The Sheets app additionally needs a Rust toolchain for its XLSX sidecar.
 
-Local UI/e2e driver scripts (Playwright + Electron, for local acceptance, not
-committed by default) live in [`scripts/drivers/`](scripts/drivers/README.md).
+## Windows fork build
 
-## Architecture notes (docx round trip)
+The Windows workflow applies the fork customization scripts before compilation, including the OpenRouter route changes, suite-level Genspark fallback cleanup, NVIDIA provider integration and expanded NVIDIA model choices. It then runs:
 
-```
-open docx ─► archive original by hash (never touched)
-          ─► docx-engine parses word/document.xml top-level elements (w:p / w:tbl / …)
-          ─► Block tree, each block anchored by docxIndex + original XML slice
-          ─► Tiptap streaming editor (manual + AI editing, dirty tracking)
-save      ─► dirty blocks → OOXML fragments (referencing existing styles only)
-          ─► splice into original document.xml (untouched blocks keep original bytes)
-          ─► repack zip; all other entries copied byte-for-byte
+```text
+npm ci
+→ apply fork customization scripts
+→ npm run typecheck
+→ npm run dist:win
+→ upload installer artifact
 ```
 
-The same philosophy holds in sheets and slides: the original file is the
-source of truth, edits are applied as narrow patches, and everything the
-editor didn't touch survives the round trip untouched.
+## Architecture notes
+
+GenOffice uses **Electron + React/TypeScript** for the desktop application, with shared engine packages and native/Rust components where appropriate. The original office file remains the source of truth and editors aim to apply narrow changes so untouched file content survives round trips.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for the process security posture (renderer
-sandboxing, IPC validation, external-link gating) and the threat models for
-AI-generated content.
+API keys are user-supplied credentials. Do not commit API keys to this repository or bake personal keys into public builds. Treat documents sent to an AI provider according to that provider's privacy and data-handling terms.
 
-## Third-party notices
+See [SECURITY.md](SECURITY.md) for the upstream process-security posture and AI-generated-content threat model.
 
-`npm run notices` regenerates the bundled third-party license summary
-(`tools/gen-third-party-notices.mjs`); all runtime dependencies are
-MIT/Apache-2.0/OFL, and the bundled fonts (Liberation, Carlito, Caladea, Noto
-CJK subsets) are OFL/Apache.
+## Upstream project
+
+This repository is a fork/customization of **GenOffice by Mainfunc/Genspark**. The original project contains the core office editors and agent architecture. This fork's main focus is configurable direct AI-provider access.
 
 ## License
 
-GenOffice is licensed under the [Apache License 2.0](LICENSE), with one
-exception: the `ee/` directory is reserved for future enterprise modules and
-is covered by the [GenOffice Enterprise License](ee/LICENSE).
+GenOffice is licensed under the [Apache License 2.0](LICENSE), with the upstream exception for the `ee/` directory described in [`ee/LICENSE`](ee/LICENSE).
 
-The GenOffice and Genspark names and logos are trademarks of Mainfunc, Inc.
-The Apache-2.0 license does not grant permission to use them (see section 6);
-forks should use their own branding.
+The **GenOffice** and **Genspark** names and logos are trademarks of Mainfunc, Inc. The Apache-2.0 license does not grant trademark rights. This fork should use its own branding if distributed as an independent product.
