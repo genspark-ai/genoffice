@@ -260,6 +260,12 @@ export class ProjectStore {
     const chatId = index.chatIdByPath?.[oldPath] ?? ProjectStore.chatIdForFile(oldPath)
     if (index.chatIdByPath?.[oldPath] !== undefined) delete index.chatIdByPath[oldPath]
     index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [newPath]: chatId }
+    // the file's other conversations follow it too, or they would be orphaned
+    const allChats = index.chatsByPath?.[oldPath]
+    if (allChats) {
+      delete index.chatsByPath![oldPath]
+      index.chatsByPath = { ...index.chatsByPath, [newPath]: allChats }
+    }
     this.writeIndex(index)
   }
 
@@ -364,6 +370,32 @@ export class ProjectStore {
     }
   }
 
+  /** Opening user message, first line, for labelling a session in the picker. */
+  private chatTitle(projectId: string, chatId: string): string {
+    const opening = this.loadChat(projectId, chatId, 20).find((m) => m.role === 'user')
+    const firstLine = (opening?.text ?? '').split('\n').find((l) => l.trim()) ?? ''
+    return firstLine.trim().slice(0, 120)
+  }
+
+  /** Metadata for one chat, whether or not its JSONL exists yet. */
+  private chatMeta(projectId: string, chatId: string): ChatMeta {
+    const fullPath = this.chatPath(projectId, chatId)
+    let updatedAt = nowIso()
+    let createdAt = updatedAt
+    let approxCount = 0
+    try {
+      const st = statSync(fullPath)
+      updatedAt = st.mtime.toISOString()
+      // birthtime is 0 on filesystems that do not record it; fall back to mtime
+      createdAt = st.birthtimeMs > 0 ? st.birthtime.toISOString() : updatedAt
+      // Estimate: assume an average of 120 bytes per line
+      approxCount = Math.round(st.size / 120)
+    } catch {
+      // a chat whose first reply has not landed yet has no file: keep the defaults
+    }
+    return { chatId, updatedAt, createdAt, approxCount, title: this.chatTitle(projectId, chatId) }
+  }
+
   /**
    * Lists metadata of all chats in a project.
    */
@@ -371,25 +403,64 @@ export class ProjectStore {
     const dir = this.chatsDir(projectId)
     if (!existsSync(dir)) return []
     try {
-      const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
-      return files.map((f) => {
-        const chatId = f.replace(/\.jsonl$/, '')
-        const fullPath = join(dir, f)
-        let updatedAt = nowIso()
-        let approxCount = 0
-        try {
-          const st = statSync(fullPath)
-          updatedAt = st.mtime.toISOString()
-          // Estimate: assume an average of 120 bytes per line
-          approxCount = Math.round(st.size / 120)
-        } catch {
-          // use defaults if stat fails
-        }
-        return { chatId, updatedAt, approxCount }
-      })
+      return readdirSync(dir)
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => this.chatMeta(projectId, f.replace(/\.jsonl$/, '')))
     } catch {
       return []
     }
+  }
+
+  /**
+   * Every chat belonging to one file, oldest first, with the active one marked
+   * by resolveChatForFile. Files that predate multi-session support have a
+   * single chat and no chatsByPath entry, so seed the list from the active id.
+   */
+  listChatsForFile(filePath: string): ChatMeta[] {
+    const projectId = this.resolveProjectForFile(filePath)
+    const index = this.readIndex()
+    const known = index.chatsByPath?.[filePath]
+    const ids = known?.length ? known : [this.chatIdForPath(filePath)]
+    return ids.map((chatId) => this.chatMeta(projectId, chatId))
+  }
+
+  /**
+   * Starts a fresh conversation for a file and makes it the active one, so the
+   * next resolveChatForFile lands on it. The previous chat keeps its JSONL and
+   * stays reachable through listChatsForFile / setActiveChatForFile — which is
+   * the difference between "new chat" clearing the panel and it actually
+   * starting a new session.
+   */
+  newChatForFile(filePath: string): { projectId: string; chatId: string } {
+    const projectId = this.resolveProjectForFile(filePath)
+    const index = this.readIndex()
+    const previous = index.chatIdByPath?.[filePath] ?? ProjectStore.chatIdForFile(filePath)
+    const existing = index.chatsByPath?.[filePath] ?? [previous]
+    // suffix rather than a hash of the path: the base id still identifies the
+    // file, which keeps the timeline's chatId → filePath lookup working
+    const base = ProjectStore.chatIdForFile(filePath)
+    let n = existing.length
+    let chatId = `${base}-${n}`
+    while (existing.includes(chatId)) chatId = `${base}-${++n}`
+    index.chatsByPath = { ...(index.chatsByPath ?? {}), [filePath]: [...existing, chatId] }
+    index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [filePath]: chatId }
+    this.writeIndex(index)
+    return { projectId, chatId }
+  }
+
+  /**
+   * Loads an earlier conversation of a file by making it active again.
+   * Returns false for a chatId that does not belong to this file, so a stale
+   * renderer cannot point a file at someone else's history.
+   */
+  setActiveChatForFile(filePath: string, chatId: string): boolean {
+    const index = this.readIndex()
+    const known = index.chatsByPath?.[filePath] ?? [this.chatIdForPath(filePath)]
+    if (!known.includes(chatId)) return false
+    index.chatsByPath = { ...(index.chatsByPath ?? {}), [filePath]: known }
+    index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [filePath]: chatId }
+    this.writeIndex(index)
+    return true
   }
 
   /**
@@ -649,26 +720,30 @@ export class ProjectStore {
     targetProj.updatedAt = nowIso()
     this.writeProject(targetProj)
 
-    // 4. Move the corresponding chat's JSONL (materialize buffered opening messages first)
-    const chatId = this.chatIdForPath(filePath)
-    this.flushPending(fromProjectId, chatId)
-    const srcChatPath = this.chatPath(fromProjectId, chatId)
-    const dstChatPath = this.chatPath(targetProjectId, chatId)
-    try {
-      if (existsSync(srcChatPath)) {
-        ensureDir(this.chatsDir(targetProjectId))
-        renameSync(srcChatPath, dstChatPath)
+    // 4. Move every one of the file's chats, not just the active one, or the
+    //    older sessions would stay behind in the source project (materialize
+    //    buffered opening messages first)
+    const chatIds = index.chatsByPath?.[filePath] ?? [this.chatIdForPath(filePath)]
+    for (const chatId of chatIds) {
+      this.flushPending(fromProjectId, chatId)
+      const srcChatPath = this.chatPath(fromProjectId, chatId)
+      const dstChatPath = this.chatPath(targetProjectId, chatId)
+      try {
+        if (existsSync(srcChatPath)) {
+          ensureDir(this.chatsDir(targetProjectId))
+          renameSync(srcChatPath, dstChatPath)
+        }
+      } catch (err) {
+        console.warn('[project-store] moveFileToProject chat rename failed:', err)
       }
-    } catch (err) {
-      console.warn('[project-store] moveFileToProject chat rename failed:', err)
-    }
 
-    // 5. Migrate the seq counter cache
-    const oldKey = this.seqKey(fromProjectId, chatId)
-    const newKey = this.seqKey(targetProjectId, chatId)
-    const cur = this.seqCounters.get(oldKey)
-    this.seqCounters.delete(oldKey)
-    if (cur !== undefined) this.seqCounters.set(newKey, cur)
+      // 5. Migrate the seq counter cache
+      const oldKey = this.seqKey(fromProjectId, chatId)
+      const newKey = this.seqKey(targetProjectId, chatId)
+      const cur = this.seqCounters.get(oldKey)
+      this.seqCounters.delete(oldKey)
+      if (cur !== undefined) this.seqCounters.set(newKey, cur)
+    }
   }
 
   /**

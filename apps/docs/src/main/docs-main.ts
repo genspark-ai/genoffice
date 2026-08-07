@@ -2966,16 +2966,25 @@ export function registerProjectIpc(): void {
   if (projectIpcRegistered) return
   projectIpcRegistered = true
 
+  /** The file a chat request is about; sheets has no path in the renderer and passes sessionId instead */
+  const chatFilePath = (
+    event: Electron.IpcMainInvokeEvent,
+    args: { filePath?: string | null; sessionId?: string },
+  ): string | null => {
+    if (args.filePath) return args.filePath
+    if (args.sessionId && sessionPathResolver) {
+      return sessionPathResolver(event.sender.id, args.sessionId)
+    }
+    return null
+  }
+
   /** Resolve projectId + chatId from a file path (sheets without a path resolves via sessionId) */
   ipcMain.handle(
     'project:resolveChat',
     (event, args: { filePath: string | null; tempChatId?: string; sessionId?: string }) => {
       const store = getProjectStore()
       store.ensureDefaultProject()
-      let resolvedPath = args.filePath
-      if (!resolvedPath && args.sessionId && sessionPathResolver) {
-        resolvedPath = sessionPathResolver(event.sender.id, args.sessionId)
-      }
+      const resolvedPath = chatFilePath(event, args)
       if (!resolvedPath) {
         return {
           projectId: 'default',
@@ -3098,6 +3107,52 @@ export function registerProjectIpc(): void {
   ipcMain.handle('project:timeline', (_event, args: { projectId: string; limit?: number }) => {
     return getProjectStore().getProjectTimeline(args.projectId, args.limit ?? 20)
   })
+
+  // ── sessions: one file can hold several conversations ──
+  // An unsaved file has no path to key sessions on, so these return the empty
+  // list / the current chat rather than inventing a session the store cannot
+  // find again after the first save.
+
+  /** Every conversation belonging to one file, oldest first */
+  ipcMain.handle(
+    'project:listChatsForFile',
+    (event, args: { filePath?: string | null; sessionId?: string }) => {
+      const resolvedPath = chatFilePath(event, args)
+      if (!resolvedPath) return []
+      const store = getProjectStore()
+      store.ensureDefaultProject()
+      return store.listChatsForFile(resolvedPath)
+    },
+  )
+
+  /** Start a fresh conversation for a file and make it the active one */
+  ipcMain.handle(
+    'project:newChat',
+    (event, args: { filePath?: string | null; sessionId?: string; tempChatId?: string }) => {
+      const resolvedPath = chatFilePath(event, args)
+      const store = getProjectStore()
+      store.ensureDefaultProject()
+      if (!resolvedPath) {
+        return { projectId: 'default', chatId: args.tempChatId ?? `unsaved-${Date.now()}` }
+      }
+      return store.newChatForFile(resolvedPath)
+    },
+  )
+
+  /** Load an earlier conversation by making it active again */
+  ipcMain.handle(
+    'project:switchChat',
+    (event, args: { filePath?: string | null; sessionId?: string; chatId: string }) => {
+      const resolvedPath = chatFilePath(event, args)
+      const store = getProjectStore()
+      store.ensureDefaultProject()
+      if (!resolvedPath) return { projectId: 'default', chatId: args.chatId }
+      // a stale renderer may name a chat this file no longer owns: fall back to
+      // whatever is active rather than pointing it at someone else's history
+      store.setActiveChatForFile(resolvedPath, args.chatId)
+      return store.resolveChatForFile(resolvedPath)
+    },
+  )
 }
 
 /** document/attachment/window IPC (everything except the AI proxy above) */

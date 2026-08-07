@@ -363,5 +363,9 @@ const projectApi: ProjectApi = {
   deleteProject: (args) => ipcRenderer.invoke('project:delete', args),
   moveFile: (args) => ipcRenderer.invoke('project:moveFile', args),
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
+  // sessions: one file can hold several conversations
+  listChatsForFile: (args) => ipcRenderer.invoke('project:listChatsForFile', args),
+  newChat: (args) => ipcRenderer.invoke('project:newChat', args),
+  switchChat: (args) => ipcRenderer.invoke('project:switchChat', args),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)

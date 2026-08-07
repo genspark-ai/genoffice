@@ -70,20 +70,31 @@ export interface ProjectIndex {
   /** absolute path → projectId */
   fileMap: Record<string, string>
   /**
-   * Absolute path → stable chatId (registered on first resolve).
+   * Absolute path → the file's *active* chatId (registered on first resolve).
    * Once assigned, a chatId never changes with the path; renaming/moving a file
    * only updates the key here, so history follows the file.
    * Old data without this map falls back to sha256(path) derivation.
    */
   chatIdByPath?: Record<string, string>
+  /**
+   * Absolute path → every chatId ever opened for it, oldest first. A file can
+   * hold several conversations: starting a new one appends here and makes it
+   * the active entry in chatIdByPath. Absent for files that only ever had the
+   * one chat, which is what all pre-existing data looks like.
+   */
+  chatsByPath?: Record<string, string[]>
 }
 
 export interface ChatMeta {
   chatId: string
   /** Last modification time of the JSONL file (UTC ISO) */
   updatedAt: string
+  /** Creation time of the JSONL file (UTC ISO); falls back to updatedAt */
+  createdAt: string
   /** Approximate line count (estimated from file bytes, not exact) */
   approxCount: number
+  /** First line of the opening user message, for labelling the session picker */
+  title: string
 }
 
 // ────────────────────────────────────────────────────────────
