@@ -268,6 +268,12 @@ const api: SlidesApi = {
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
+  aiBrowsePage: (url: string, opts?: { includeLinks?: boolean }) =>
+    ipcRenderer.invoke('ai:browse-page', url, opts),
+  aiExtractPages: (urls: string[], advanced?: boolean) =>
+    ipcRenderer.invoke('ai:extract-pages', urls, advanced),
+  aiInstructionsPrompt: (surface: string) => ipcRenderer.invoke('ai:instructions-prompt', surface),
+  aiSkillBody: (surface: string, id: string) => ipcRenderer.invoke('ai:skill-body', surface, id),
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),

@@ -71,6 +71,12 @@ const api: DesktopApi = {
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),
+  aiBrowsePage: (url: string, opts?: { includeLinks?: boolean }) =>
+    ipcRenderer.invoke('ai:browse-page', url, opts),
+  aiExtractPages: (urls: string[], advanced?: boolean) =>
+    ipcRenderer.invoke('ai:extract-pages', urls, advanced),
+  aiInstructionsPrompt: (surface: string) => ipcRenderer.invoke('ai:instructions-prompt', surface),
+  aiSkillBody: (surface: string, id: string) => ipcRenderer.invoke('ai:skill-body', surface, id),
   imageSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:image-search', query, maxResults),
   fetchImage: (url: string) => ipcRenderer.invoke('ai:fetch-image', url),

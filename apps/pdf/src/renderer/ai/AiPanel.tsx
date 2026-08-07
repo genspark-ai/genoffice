@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop } from '@genoffice/agent-core'
+import { AgentLoop, composeSkills } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
@@ -8,6 +8,7 @@ import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
+import { createAppWebSkill } from './web-skill'
 import { createPdfSkill } from './pdf-skill'
 import { createElectronTransport } from './transport'
 import type { PdfAiDeps } from './tools'
@@ -85,6 +86,11 @@ export function AiPanel({
   }
 
   // The loop is built once; every mutable value goes through a ref getter
+  // browse / extract / load_skill, plus the user's rules and skill catalogue
+  // lazily, once: useRef(fn()) would rebuild the adapter and refire its IPC
+  // on every render
+  const webSkillRef = useRef<ReturnType<typeof createAppWebSkill> | null>(null)
+  webSkillRef.current ??= createAppWebSkill()
   const loopRef = useRef<AgentLoop | null>(null)
   if (!loopRef.current) {
     const deps: PdfAiDeps = {
@@ -105,7 +111,7 @@ export function AiPanel({
     }
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),
-      skill: createPdfSkill(deps),
+      skill: composeSkills('pdf+web', '', [webSkillRef.current!.skill, createPdfSkill(deps)]),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {

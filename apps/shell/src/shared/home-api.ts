@@ -134,6 +134,8 @@ export interface HomeApi {
   openLoginUrl(): Promise<void>
   /** log out (clears the saved API key; the login state is shared globally with the gsk CLI) */
   accountLogout(): Promise<void>
+  /** open the standalone settings window */
+  openSettings(): Promise<void>
   /** current AI backend selection (shared by every editor module) */
   getAiModelSettings(): Promise<AiModelSettings>
   /** persist the AI backend selection; returns what was actually stored (an incomplete custom endpoint falls back to Genspark) */
@@ -273,6 +275,7 @@ export const HOME_CHANNELS = {
   cloudProjects: 'home:cloud-projects',
   cloudProjectsCached: 'home:cloud-projects-cached',
   openCloudProject: 'home:open-cloud-project',
+  openSettings: 'home:open-settings',
 } as const
 
 /**

@@ -11,6 +11,7 @@ import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
+import { createAppWebSkill } from './web-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
@@ -457,6 +458,11 @@ export function AiPanel({
     })
   }
 
+  // browse / extract / load_skill, plus the user's rules and skill catalogue
+  // lazily, once: useRef(fn()) would rebuild the adapter and refire its IPC
+  // on every render
+  const webSkillRef = useRef<ReturnType<typeof createAppWebSkill> | null>(null)
+  webSkillRef.current ??= createAppWebSkill()
   const loopRef = useRef<AgentLoop<PmNode> | null>(null)
   if (!loopRef.current) {
     const numIds = (): NumIds => ({
@@ -467,7 +473,8 @@ export function AiPanel({
       transport: createElectronTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
       maxTurns: DOCS_AGENT_MAX_TURNS,
-      skill: composeSkills('docs+files', '', [
+      skill: composeSkills('docs+files+web', '', [
+        webSkillRef.current!.skill,
         createDocsSkill(
           () => editorRef.current,
           numIds,

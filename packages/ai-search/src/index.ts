@@ -14,10 +14,12 @@ import {
   type WebSearchResult,
 } from './shared'
 import { gskImageSearch, gskWebSearch, hasGskAuth } from './gsk'
+import { hasTavilyKey, tavilyImageSearch, tavilySearch } from './tavily'
 
 export type { ImageSearchResult, WebSearchResult } from './shared'
 export * from './gsk'
 export * from './genoffice-auth'
+export * from './tavily'
 
 const SERPER_KEY = () => process.env.SERPER_API_KEY ?? ''
 
@@ -31,6 +33,16 @@ export async function webSearch(
   answer?: string
   method: string
 }> {
+  // Tavily first when the user configured a key: it returns extracted article
+  // text rather than snippets, and it is the one backend they pay for
+  if (hasTavilyKey()) {
+    try {
+      const r = await tavilySearch(query, maxResults)
+      if (r.results.length) return { ...r, method: 'tavily' }
+    } catch {
+      /* fall back to gsk/Serper/DuckDuckGo */
+    }
+  }
   if (hasGskAuth()) {
     try {
       const r = await gskWebSearch(query, maxResults)
@@ -84,6 +96,14 @@ export async function imageSearch(
   images: ImageSearchResult[]
   method: string
 }> {
+  if (hasTavilyKey()) {
+    try {
+      const images = await tavilyImageSearch(query, maxResults)
+      if (images.length) return { images, method: 'tavily' }
+    } catch {
+      /* fall back to gsk/Serper/DuckDuckGo */
+    }
+  }
   if (hasGskAuth()) {
     try {
       const images = await gskImageSearch(query, maxResults)

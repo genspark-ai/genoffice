@@ -147,6 +147,9 @@ const homeApi: HomeApi = {
   async accountLogout() {
     await ipcRenderer.invoke(HOME_CHANNELS.accountLogout)
   },
+  async openSettings() {
+    await ipcRenderer.invoke(HOME_CHANNELS.openSettings)
+  },
   async getAiModelSettings() {
     const result: unknown = await ipcRenderer.invoke(AI_CHANNELS.getModelSettings)
     return asAiModelSettings(result)

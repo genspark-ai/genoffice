@@ -22,3 +22,6 @@ export {
   type FetchWithSsrfGuardOptions,
 } from './safe-remote-url'
 export { fetchRemoteImage, remoteImageHeaders } from './remote-image'
+export { browsePage } from './browser'
+export type { BrowsePageOptions, BrowsePageResult } from './browser'
+export { AgentInstructionsStore } from './agent-instructions-store'

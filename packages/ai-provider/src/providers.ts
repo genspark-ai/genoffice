@@ -111,7 +111,30 @@ export function defaultAiSettings(
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }
-  return { provider: 'genspark', providers }
+  return { provider: 'genspark', providers, tavilyApiKey: '', proxyUrl: '' }
+}
+
+/** proxy schemes undici's ProxyAgent and Chromium's proxyRules both understand */
+const PROXY_SCHEMES = ['http:', 'https:', 'socks5:', 'socks4:']
+
+/**
+ * Validate and normalize a user-typed proxy URL. A bare `host:port` is read as
+ * `http://host:port`, the common shape people paste from a proxy client.
+ * Returns '' for anything unusable, so a typo degrades to "no proxy" rather
+ * than breaking every outbound request with an unparseable dispatcher.
+ */
+export function normalizeProxyUrl(raw: string | undefined): string {
+  const value = (raw ?? '').trim()
+  if (!value) return ''
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`
+  try {
+    const url = new URL(withScheme)
+    if (!PROXY_SCHEMES.includes(url.protocol.toLowerCase())) return ''
+    if (!url.hostname) return ''
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -149,6 +172,10 @@ export function toModelSettings(settings: AiSettings): AiModelSettings {
     temperature: custom?.temperature ?? null,
     maxTokens: custom?.maxTokens ?? null,
     reasoningEffort: custom?.reasoningEffort ?? null,
+    // network settings are independent of the provider choice: Tavily and the
+    // proxy apply whether calls go to Genspark or a custom endpoint
+    tavilyApiKey: settings.tavilyApiKey ?? '',
+    proxyUrl: settings.proxyUrl ?? '',
   }
 }
 
@@ -170,6 +197,8 @@ export function applyModelSettings(settings: AiSettings, input: AiModelSettings)
   const next: AiSettings = {
     provider: input.mode === 'custom' ? 'custom' : 'genspark',
     providers: { ...settings.providers, custom },
+    tavilyApiKey: input.tavilyApiKey.trim(),
+    proxyUrl: normalizeProxyUrl(input.proxyUrl),
   }
   // an incomplete custom endpoint would silently disable AI; keep Genspark live instead
   next.provider = activeProvider(next)
@@ -186,6 +215,12 @@ export function resolveAiSettings(
   stored: Partial<AiSettings> & LegacyAiSettings,
   defaults: AiSettings,
 ): AiSettings {
+  // network settings live outside the provider matrix, so they survive both
+  // the legacy migration and the normal merge
+  const network = {
+    tavilyApiKey: stored.tavilyApiKey ?? defaults.tavilyApiKey ?? '',
+    proxyUrl: normalizeProxyUrl(stored.proxyUrl ?? defaults.proxyUrl),
+  }
   if (!stored.providers) {
     if (stored.apiKey) {
       defaults.providers.custom = {
@@ -194,10 +229,11 @@ export function resolveAiSettings(
         baseUrl: stored.baseUrl ?? 'https://api.openai.com/v1',
       }
     }
-    return defaults
+    return { ...defaults, ...network }
   }
   return {
     provider: stored.provider ?? defaults.provider,
     providers: { ...defaults.providers, ...stored.providers },
+    ...network,
   }
 }

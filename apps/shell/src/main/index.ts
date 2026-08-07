@@ -73,7 +73,16 @@ import {
   recordRecentFile,
   removeRecentFiles,
   replaceRecentFile,
+  bootstrapNetworkSettings,
+  deleteAgentSkill,
+  importAgentSkills,
+  listAgentSkills,
+  readAgentRules,
+  readModelSettings,
   registerAiIpc,
+  saveAgentSkill,
+  writeAgentRules,
+  writeModelSettings,
   registerProjectIpc,
   toggleStarredFile,
   registerDocsIpc,
@@ -131,6 +140,7 @@ import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
 import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
+import { refreshSettingsWindow, showSettingsWindow } from './settings-window'
 import { TabManager } from './tab-manager'
 import { applyUpdateChannel, initAutoUpdater } from './updater'
 import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
@@ -1567,6 +1577,58 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.getAppVersion, (): string => app.getVersion())
 
+  // The settings window is opened from the home account menu. Its host wires
+  // the window to handlers that already exist here, so language, update
+  // channel and account behave identically wherever they are changed from.
+  ipcMain.handle(HOME_CHANNELS.openSettings, (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    showSettingsWindow(parent, {
+      loadSnapshot: async () => {
+        const info = loadGenofficeAuth() ? await gskLoginInfo() : null
+        return {
+          ai: readModelSettings(),
+          rules: readAgentRules(),
+          skills: listAgentSkills(),
+          language: currentLang(),
+          updateChannel: currentUpdateChannel(),
+          appVersion: app.getVersion(),
+          account: info
+            ? { loggedIn: true, ...(info.email ? { email: info.email } : {}) }
+            : { loggedIn: !!loadGenofficeAuth() },
+        }
+      },
+      saveAi: (settings) => writeModelSettings(settings),
+      saveRules: (rules) => writeAgentRules(rules),
+      saveSkill: (skill) => saveAgentSkill(skill),
+      deleteSkill: (id) => deleteAgentSkill(id),
+      importSkillContents: (files) => importAgentSkills(files),
+      setLanguage: (lang) => {
+        if (!isLang(lang) || lang === currentLang()) return
+        persistLang(lang)
+        buildHomeMenu()
+        installDockMenu()
+        installBackToHomeItems()
+        for (const wc of webContents.getAllWebContents()) wc.send('app:language-changed', lang)
+      },
+      setUpdateChannel: (channel) => {
+        if (channel === currentUpdateChannel()) return
+        writeAppSetting(APP_SETTINGS_PATH(), 'updateChannel', channel)
+        applyUpdateChannel(channel)
+      },
+      accountLogin: () =>
+        startGenofficeLogin((progress) => {
+          if (progress.url) void shell.openExternal(progress.url)
+          // the window re-reads its snapshot, which is where the new state shows up
+          if (progress.phase === 'success') refreshSettingsWindow()
+        }),
+      accountLogout: async () => {
+        await genofficeLogout()
+        clearCloudProjectsStore(cloudProjectsStorePath())
+        refreshSettingsWindow()
+      },
+    })
+  })
+
   ipcMain.handle(HOME_CHANNELS.recents, (_event, query: unknown): RecentPage =>
     pageRecentPaths(readRecentFiles(), query, new Set(readStarredFiles())),
   )
@@ -2154,6 +2216,10 @@ function installDockMenu(): void {
 let proxyBootstrap: Promise<void> = Promise.resolve()
 
 async function installMainProcessProxy(): Promise<void> {
+  // An explicit proxy in the settings wins over both env vars and the system
+  // proxy, and is authoritative when it is empty too — a user who cleared the
+  // field wants direct connections, not the system proxy sneaking back in.
+  if (bootstrapNetworkSettings()) return
   let proxyUrl = [
     process.env.HTTPS_PROXY,
     process.env.https_proxy,

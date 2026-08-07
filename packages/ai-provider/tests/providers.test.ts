@@ -5,6 +5,7 @@ import {
   applyModelSettings,
   defaultAiSettings,
   isCustomConfigured,
+  normalizeProxyUrl,
   resolveAiSettings,
   toModelSettings,
 } from '../src/providers'
@@ -147,6 +148,8 @@ describe('toModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     })
   })
 
@@ -160,6 +163,8 @@ describe('toModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     })
   })
 })
@@ -174,6 +179,8 @@ describe('applyModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     })
     expect(next.provider).toBe('custom')
     // surrounding whitespace from a paste never reaches the request; the unset
@@ -196,6 +203,8 @@ describe('applyModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     })
     expect(next.provider).toBe('genspark')
     expect(next.providers.custom.model).toBe('deepseek-chat')
@@ -210,6 +219,8 @@ describe('applyModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     })
     expect(next.provider).toBe('genspark')
   })
@@ -224,6 +235,8 @@ describe('applyModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     })
     expect(next.providers.anthropic).toEqual(settings.providers.anthropic)
   })
@@ -237,6 +250,8 @@ describe('applyModelSettings', () => {
       temperature: null,
       maxTokens: null,
       reasoningEffort: null,
+      tavilyApiKey: '',
+      proxyUrl: '',
     }
     expect(toModelSettings(applyModelSettings(defaultAiSettings(), input))).toEqual(input)
   })
@@ -250,8 +265,12 @@ describe('applyModelSettings', () => {
       temperature: 0.9,
       maxTokens: 32_000,
       reasoningEffort: 'high',
+      tavilyApiKey: '',
+      proxyUrl: '',
     }
     const next = applyModelSettings(defaultAiSettings(), input)
+    // the knobs belong to the provider config; Tavily and the proxy are
+    // top-level network settings, independent of which provider is selected
     expect(next.providers.custom).toMatchObject({
       temperature: 0.9,
       maxTokens: 32_000,
@@ -310,5 +329,62 @@ describe('maxTokensField', () => {
 
   it('sends the configured ceiling', () => {
     expect(maxTokensField({ ...base, maxTokens: 4096 })).toEqual({ max_tokens: 4096 })
+  })
+})
+
+describe('normalizeProxyUrl', () => {
+  it('accepts the schemes undici and Chromium both understand', () => {
+    expect(normalizeProxyUrl('http://127.0.0.1:7897')).toBe('http://127.0.0.1:7897')
+    expect(normalizeProxyUrl('https://proxy.example.com:8443')).toBe(
+      'https://proxy.example.com:8443',
+    )
+    expect(normalizeProxyUrl('socks5://127.0.0.1:1080')).toBe('socks5://127.0.0.1:1080')
+    expect(normalizeProxyUrl('socks4://127.0.0.1:1080')).toBe('socks4://127.0.0.1:1080')
+  })
+
+  it('reads a bare host:port as http, the shape people paste from a proxy client', () => {
+    expect(normalizeProxyUrl('127.0.0.1:7897')).toBe('http://127.0.0.1:7897')
+  })
+
+  it('keeps credentials, which authenticated corporate proxies need', () => {
+    expect(normalizeProxyUrl('http://user:pass@proxy:3128')).toBe('http://user:pass@proxy:3128')
+  })
+
+  it('degrades a typo to no-proxy rather than breaking every request', () => {
+    expect(normalizeProxyUrl('ftp://nope:21')).toBe('')
+    expect(normalizeProxyUrl('http://')).toBe('')
+    expect(normalizeProxyUrl('   ')).toBe('')
+    expect(normalizeProxyUrl(undefined)).toBe('')
+  })
+})
+
+describe('network settings persistence', () => {
+  it('round-trips the Tavily key and proxy through the dialog projection', () => {
+    const next = applyModelSettings(defaultAiSettings(), {
+      mode: 'genspark',
+      baseUrl: '',
+      model: '',
+      apiKey: '',
+      temperature: null,
+      maxTokens: null,
+      reasoningEffort: null,
+      tavilyApiKey: '  tvly-abc  ',
+      proxyUrl: '127.0.0.1:7897',
+    })
+    expect(next.tavilyApiKey).toBe('tvly-abc')
+    expect(next.proxyUrl).toBe('http://127.0.0.1:7897')
+    expect(toModelSettings(next)).toMatchObject({
+      tavilyApiKey: 'tvly-abc',
+      proxyUrl: 'http://127.0.0.1:7897',
+    })
+  })
+
+  it('survives the legacy single-endpoint migration', () => {
+    const resolved = resolveAiSettings(
+      { apiKey: 'legacy', tavilyApiKey: 'tvly-x', proxyUrl: 'socks5://127.0.0.1:1080' },
+      defaultAiSettings(),
+    )
+    expect(resolved.tavilyApiKey).toBe('tvly-x')
+    expect(resolved.proxyUrl).toBe('socks5://127.0.0.1:1080')
   })
 })

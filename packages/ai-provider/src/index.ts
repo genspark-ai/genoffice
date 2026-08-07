@@ -27,6 +27,7 @@ export {
   applyModelSettings,
   defaultAiSettings,
   isCustomConfigured,
+  normalizeProxyUrl,
   resolveAiSettings,
   toModelSettings,
 } from './providers'

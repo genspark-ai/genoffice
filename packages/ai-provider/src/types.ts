@@ -41,6 +41,13 @@ export interface AiProviderMeta {
 export interface AiSettings {
   provider: AiProviderId
   providers: Record<AiProviderId, AiProviderConfig>
+  /** Tavily key for web/image search and page extraction; empty falls back to the other backends */
+  tavilyApiKey?: string
+  /**
+   * Explicit outbound proxy (`http://`, `https://`, `socks5://`, `socks4://`).
+   * Empty keeps the previous behaviour: proxy env vars, then the system proxy.
+   */
+  proxyUrl?: string
 }
 
 /** pre-provider settings shape (single OpenAI-compatible endpoint); migrated into "custom" */
@@ -68,6 +75,10 @@ export interface AiModelSettings {
   maxTokens: number | null
   /** null = don't send `reasoning_effort` */
   reasoningEffort: ReasoningEffort | null
+  /** Tavily key; empty disables the Tavily backend rather than erroring */
+  tavilyApiKey: string
+  /** explicit proxy URL; empty means env vars / system proxy as before */
+  proxyUrl: string
 }
 
 export interface AiChatRequest {

@@ -205,6 +205,35 @@ export interface DesktopApi {
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */
   aiGskLogin(): Promise<void>
+  /** Render a URL in the built-in browser and return its text (agent browse_page) */
+  aiBrowsePage(
+    url: string,
+    opts?: { includeLinks?: boolean },
+  ): Promise<{
+    ok: boolean
+    error?: string
+    page?: {
+      url: string
+      title: string
+      text: string
+      truncated: boolean
+      links?: Array<{ text: string; href: string }>
+    }
+  }>
+  /** Fetch pages as markdown via Tavily (agent extract_pages) */
+  aiExtractPages(
+    urls: string[],
+    advanced?: boolean,
+  ): Promise<{
+    ok: boolean
+    error?: string
+    pages?: Array<{ url: string; title: string; content: string }>
+    failed?: string[]
+  }>
+  /** User rules + skill catalogue for this surface, assembled in main */
+  aiInstructionsPrompt(surface: string): Promise<string>
+  /** Body of one user skill, scope-checked for this surface (agent load_skill) */
+  aiSkillBody(surface: string, id: string): Promise<string>
   webSearch(
     query: string,
     maxResults?: number,

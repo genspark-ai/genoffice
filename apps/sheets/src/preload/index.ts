@@ -275,6 +275,22 @@ const desktopApi: DesktopApi = {
   async aiGskLogin() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiGskLogin)
   },
+  async aiBrowsePage(url, opts) {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw new Error('Invalid URL.')
+    return (await ipcRenderer.invoke(IPC_CHANNELS.aiBrowsePage, url, opts)) as never
+  },
+  async aiExtractPages(urls, advanced) {
+    if (!Array.isArray(urls)) throw new Error('Invalid URL list.')
+    return (await ipcRenderer.invoke(IPC_CHANNELS.aiExtractPages, urls, advanced)) as never
+  },
+  async aiInstructionsPrompt(surface) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiInstructionsPrompt, surface)
+    return typeof result === 'string' ? result : ''
+  },
+  async aiSkillBody(surface, id) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiSkillBody, surface, id)
+    return typeof result === 'string' ? result : ''
+  },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {
       throw new Error('Invalid search query.')

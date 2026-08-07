@@ -18,6 +18,7 @@ import {
 } from './slides-skill'
 import { extractJsonObject, parseOutlineJson } from './outline-json'
 import { createFilesSkill } from './files-skill'
+import { createAppWebSkill } from './web-skill'
 import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
@@ -600,6 +601,11 @@ export function AiPanel({
     })
   }
 
+  // browse / extract / load_skill, plus the user's rules and skill catalogue
+  // lazily, once: useRef(fn()) would rebuild the adapter and refire its IPC
+  // on every render
+  const webSkillRef = useRef<ReturnType<typeof createAppWebSkill> | null>(null)
+  webSkillRef.current ??= createAppWebSkill()
   const loopRef = useRef<AgentLoop | null>(null)
   if (!loopRef.current) {
     // The three slides generation steps (style/planning/per-page HTML) force the high-quality model (only with the anthropic provider;
@@ -1069,7 +1075,8 @@ export function AiPanel({
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
-      skill: composeSkills('slides+files', '', [
+      skill: composeSkills('slides+files+web', '', [
+        webSkillRef.current!.skill,
         createSlidesSkill(access),
         createFilesSkill(
           () => attachmentsRef.current,
