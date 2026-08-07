@@ -76,7 +76,10 @@ export async function buildDocxFixture(): Promise<Uint8Array> {
 
 function slideXml(paragraphs: string[][]): string {
   const paras = paragraphs
-    .map((runs) => `<a:p>${runs.map((t) => `<a:r><a:t>${t}</a:t></a:r>`).join('')}</a:p>`)
+    .map(
+      (runs) =>
+        `<a:p>${runs.map((t) => `<a:r><a:t xml:space="preserve">${t}</a:t></a:r>`).join('')}</a:p>`,
+    )
     .join('')
   return (
     `${XML_DECL}<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ` +
@@ -85,11 +88,20 @@ function slideXml(paragraphs: string[][]): string {
   )
 }
 
-/** minimal pptx: only the slide parts our parser reads (3 slides incl. slide10 for numeric ordering) */
+/** minimal pptx: only the slide parts our parser reads (4 slides incl. slide10 for numeric ordering) */
 export async function buildPptxFixture(): Promise<Uint8Array> {
   const zip = new JSZip()
   zip.file('ppt/slides/slide1.xml', slideXml([['Product', 'Intro'], ['First slide subtitle']]))
-  zip.file('ppt/slides/slide2.xml', slideXml([['Market Analysis']]))
+  zip.file('ppt/slides/slide2.xml', slideXml([['Market Analysis'], ['Order ', '0042']]))
+  // <a:br> as an open/close pair rather than self-closing, the way XML reformatters emit it
+  zip.file(
+    'ppt/slides/slide3.xml',
+    `${XML_DECL}<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ` +
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+      '<p:cSld><p:spTree><p:sp><p:txBody><a:p>' +
+      '<a:r><a:t>Before</a:t></a:r><a:br>\n  </a:br><a:br>\n  </a:br><a:r><a:t>After</a:t></a:r>' +
+      '</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>',
+  )
   zip.file('ppt/slides/slide10.xml', slideXml([['Summary Slide']]))
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
 }
@@ -106,14 +118,17 @@ export async function buildXlsxFixture(): Promise<Uint8Array> {
   zip.file(
     'xl/_rels/workbook.xml.rels',
     `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+      // Target is padded on purpose: xsd:anyURI collapses whitespace, so the reader must too
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target=" worksheets/sheet1.xml "/>' +
       '</Relationships>',
   )
   zip.file(
     'xl/sharedStrings.xml',
-    `${XML_DECL}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">` +
+    `${XML_DECL}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">` +
       '<si><t>Name</t></si>' +
       '<si><r><t>Sco</t></r><r><t>res</t></r></si>' +
+      '<si><t>02139</t></si>' +
+      '<si><r><t xml:space="preserve">Total </t></r><r><t>due</t></r></si>' +
       '</sst>',
   )
   zip.file(
@@ -121,6 +136,9 @@ export async function buildXlsxFixture(): Promise<Uint8Array> {
     `${XML_DECL}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>` +
       '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>' +
       '<row r="2"><c r="A2" t="inlineStr"><is><t>Alice</t></is></c><c r="B2"><v>95</v></c><c r="D2" t="b"><v>1</v></c></row>' +
+      '<row r="3"><c r="A3" t="s"><v>2</v></c><c r="B3" t="s"><v>3</v></c></row>' +
+      '<row r="4"><c r="A4" t="str"><f>A2&amp;" pts"</f><v xml:space="preserve"> Alice pts </v></c></row>' +
+      '<row r="5"><c r="A5" t="e"><v xml:space="preserve"> #N/A </v></c></row>' +
       '</sheetData></worksheet>',
   )
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })

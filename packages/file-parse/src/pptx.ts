@@ -1,7 +1,9 @@
 import JSZip from 'jszip'
 import { XMLParser } from 'fast-xml-parser'
 
-const parser = new XMLParser({ ignoreAttributes: true })
+// Text fidelity: no trim (xml:space="preserve" runs carry the spaces between words),
+// no numeric coercion of tag values (otherwise <a:t>02139</a:t> becomes a number and loses characters)
+const parser = new XMLParser({ ignoreAttributes: true, trimValues: false, parseTagValue: false })
 
 function slideNumber(path: string): number {
   const m = /slide(\d+)\.xml$/.exec(path)
@@ -9,19 +11,20 @@ function slideNumber(path: string): number {
 }
 
 /** collect the text of all a:t descendants of one node */
-function collectText(node: unknown, out: string[]): void {
+function collectText(node: unknown, out: string[], isText = false): void {
   if (node == null) return
   if (typeof node === 'string' || typeof node === 'number') {
-    out.push(String(node))
+    // untrimmed, a non-a:t element written across lines carries its whitespace as a value
+    if (isText) out.push(String(node))
     return
   }
   if (Array.isArray(node)) {
-    for (const item of node) collectText(item, out)
+    for (const item of node) collectText(item, out, isText)
     return
   }
   if (typeof node === 'object') {
     for (const [key, value] of Object.entries(node)) {
-      if (key === 'a:t') collectText(value, out)
+      if (key === 'a:t') collectText(value, out, true)
       else if (typeof value === 'object') collectText(value, out)
     }
   }
