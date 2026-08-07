@@ -11,7 +11,6 @@ export {
 } from './patch'
 export {
   TABLE_HEADER_FILL,
-  WORDART_PRESETS,
   applyImageWrap,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
@@ -31,6 +30,11 @@ export {
   patchTableCellTexts,
   patchTextboxHeights,
   patchTextboxParas,
+  patchTextboxSizes,
+  patchDrawingExtent,
+  buildLineParagraphXml,
+  LINE_KINDS,
+  type TextboxSizePatch,
   type CellTextsPatch,
   type FieldTextPatch,
   type GenerateContext,

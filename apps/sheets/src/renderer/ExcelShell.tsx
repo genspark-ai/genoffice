@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { SHAPE_GALLERY_GROUPS, ShapePreview } from '@genoffice/ui'
 
 import {
   CaretIcon,
@@ -1265,27 +1266,15 @@ function Ribbon({
               <ToolSymbol symbol="◇" />
               {t('appShapes')}
               <CaretIcon />
-              <MenuSelect
-                cover
+              <ShapeGallerySelect
                 label="Shapes"
-                options={[
-                  { value: 'rect', label: t('appShapeRect') },
-                  { value: 'roundRect', label: t('appShapeRoundRect') },
-                  { value: 'ellipse', label: t('appShapeEllipse') },
-                  { value: 'triangle', label: t('appShapeTriangle') },
-                  { value: 'diamond', label: t('appShapeDiamond') },
-                  { value: 'rightArrow', label: t('appShapeRightArrow') },
-                  { value: 'leftArrow', label: t('appShapeLeftArrow') },
-                  { value: 'pentagon', label: t('appShapePentagon') },
-                  { value: 'hexagon', label: t('appShapeHexagon') },
-                ]}
-                onPick={(value) => onCommand(`insert-shape:${value}`)}
+                onPick={(prst) => onCommand(`insert-shape:${prst}`)}
               />
             </span>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button className="styles-row as-button" onClick={() => onCommand('insert-icons')}>
               <ToolSymbol symbol="✧" />
               {t('appIcons')}
-            </span>
+            </button>
             <span className="styles-row reserved" title={t('appNotAvailableYet')}>
               <ToolSymbol symbol="⬡" />
               {t('app3dModels')}
@@ -1297,18 +1286,23 @@ function Ribbon({
               <ToolSymbol symbol="▤" />
               SmartArt
             </span>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button className="styles-row as-button" onClick={() => onCommand('insert-screenshot')}>
               <ToolSymbol symbol="⧉" />
               {t('appScreenshot')}
-              <CaretIcon />
-            </span>
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCheckbox')}>
           <RibbonReserved large label={t('appGroupCheckbox')} symbol="☑" />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCharts')}>
-          <RibbonReserved large label={t('appRecommendedCharts')} symbol="📊" />
+          <RibbonButton
+            large
+            label={t('appRecommendedCharts')}
+            detail={t('appFromSelection')}
+            symbol="📊"
+            onClick={() => onCommand('recommended-charts-open')}
+          />
           <div className="chart-grid">
             <button
               title={t('appChartGridTitle', { type: t('appChartColumn') })}
@@ -2608,6 +2602,78 @@ function MenuSelect({
             >
               {option.label}
             </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/// Cross-app shared shape gallery (slides parity), minus Lines — the grid
+/// renderer draws shapes as filled paths and cannot show stroke-only connectors.
+const SHEET_SHAPE_GROUPS = SHAPE_GALLERY_GROUPS.filter(
+  (g) => g.groupKey !== 'ribbonShapeGroupLines',
+)
+
+/// Shapes dropdown: grouped outline-icon grid (same look/content as docs and
+/// slides); the trigger is an invisible cover like MenuSelect's `cover` mode.
+function ShapeGallerySelect({
+  label,
+  onPick,
+}: {
+  readonly label: string
+  readonly onPick: (prst: string) => void
+}): React.JSX.Element {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent): void => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div ref={wrapRef} className="menu-select menu-select-cover">
+      <button
+        type="button"
+        className="cover-select"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      />
+      {open && (
+        <div className="menu-select-drop rb-shape-gallery" role="listbox" aria-label={label}>
+          {SHEET_SHAPE_GROUPS.map((group) => (
+            <div key={group.groupKey}>
+              <div className="rb-drop-title">{t(group.groupKey as StringKey)}</div>
+              <div className="rb-shape-grid">
+                {group.shapes.map((s) => (
+                  <button
+                    type="button"
+                    key={s.prst}
+                    className="rb-shape-cell"
+                    title={t(s.labelKey as StringKey)}
+                    onClick={() => {
+                      setOpen(false)
+                      onPick(s.prst)
+                    }}
+                  >
+                    <ShapePreview prst={s.prst} size={18} />
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

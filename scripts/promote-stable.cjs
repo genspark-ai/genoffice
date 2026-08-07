@@ -8,8 +8,12 @@
  *
  * The marketing download aliases (GenOffice.dmg / GenOfficeSetup.exe) also
  * track the stable channel: per-merge beta publishes skip them, and this
- * script re-points each alias to the promoted version via a server-side
- * blob copy (no download/re-upload).
+ * script re-points each alias by downloading the promoted installer to the
+ * runner and re-uploading it under the alias name — the same auth path the
+ * build pipelines use. (A server-side `az storage blob copy start` cannot
+ * read the source blob: the container is private and the connection string
+ * does not sign the copy source, so Azure rejects it with
+ * CannotVerifyCopySource.)
  *
  * Usage:
  *   node scripts/promote-stable.cjs [--mac <version>|latest] [--win <version>|latest] [--force] [--dry-run]
@@ -118,24 +122,27 @@ function blobExists(url) {
   })
 }
 
-/** server-side copy within the same container (installer alias re-point);
- * same-account copies complete synchronously enough for CI use */
-function azCopyBlob(target, sourceBlob, destBlob) {
+// installer content types match the build pipelines' upload steps
+// (mac-release-upload.cjs / windows-build.yml)
+function contentTypeFor(name) {
+  if (name.endsWith('.dmg')) return 'application/x-apple-diskimage'
+  if (name.endsWith('.exe')) return 'application/x-msdownload'
+  return 'application/octet-stream'
+}
+
+function azDownload(target, blobName, localPath) {
   execFileSync(
     'az',
     [
       'storage',
       'blob',
-      'copy',
-      'start',
-      '--destination-container',
+      'download',
+      '--container-name',
       target.container,
-      '--destination-blob',
-      `${target.prefix}/${destBlob}`,
-      '--source-container',
-      target.container,
-      '--source-blob',
-      `${target.prefix}/${sourceBlob}`,
+      '--name',
+      `${target.prefix}/${blobName}`,
+      '--file',
+      localPath,
       '--output',
       'none',
     ],
@@ -143,29 +150,35 @@ function azCopyBlob(target, sourceBlob, destBlob) {
   )
 }
 
-function azUpload(target, localPath, blobName) {
-  execFileSync(
-    'az',
-    [
-      'storage',
-      'blob',
-      'upload',
-      '--container-name',
-      target.container,
-      '--file',
-      localPath,
-      '--name',
-      `${target.prefix}/${blobName}`,
-      '--overwrite',
-      '--content-type',
-      'text/yaml',
-      '--content-cache-control',
-      'no-cache',
-      '--output',
-      'none',
-    ],
-    { stdio: 'inherit' },
-  )
+function azUpload(target, localPath, blobName, { contentType, noCache = false } = {}) {
+  const args = [
+    'storage',
+    'blob',
+    'upload',
+    '--container-name',
+    target.container,
+    '--file',
+    localPath,
+    '--name',
+    `${target.prefix}/${blobName}`,
+    '--overwrite',
+    '--content-type',
+    contentType,
+    '--output',
+    'none',
+  ]
+  if (noCache) args.push('--content-cache-control', 'no-cache')
+  execFileSync('az', args, { stdio: 'inherit' })
+}
+
+/** re-point the installer alias: pull the promoted installer to the runner
+ * and re-upload it under the alias name (same upload auth as the build
+ * pipelines — a server-side copy cannot authenticate its private source) */
+function repointAlias(target, tmpDir, sourceBlob, aliasBlob) {
+  const localPath = path.join(tmpDir, sourceBlob)
+  azDownload(target, sourceBlob, localPath)
+  azUpload(target, localPath, aliasBlob, { contentType: contentTypeFor(aliasBlob) })
+  fs.rmSync(localPath, { force: true })
 }
 
 async function promoteOne(target, platform, requestedVersion) {
@@ -203,10 +216,11 @@ async function promoteOne(target, platform, requestedVersion) {
 
   // alias first, feed last: a client reading the new feed mid-promote must
   // already find every artifact it references
-  azCopyBlob(target, installerName, platform.alias)
-  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'promote-')), platform.feed)
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'promote-'))
+  repointAlias(target, tmpDir, installerName, platform.alias)
+  const tmp = path.join(tmpDir, platform.feed)
   fs.writeFileSync(tmp, archived)
-  azUpload(target, tmp, platform.feed)
+  azUpload(target, tmp, platform.feed, { contentType: 'text/yaml', noCache: true })
   console.log(`[promote-stable] published ${target.base}/${platform.feed}`)
 }
 

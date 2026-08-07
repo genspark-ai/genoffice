@@ -3,7 +3,7 @@
  *
  * Verifies:
  *  1. buildWordArtParagraphXml produces the correct structure
- *  2. Every preset style produces valid XML
+ *  2. Every shared preset produces valid XML with a readable solid color
  *  3. insert → save → Word structure assertions (wps:wsp + w:txbxContent, no fill, large text)
  *  4. Text is readable after re-parsing
  *  5. The wordArtId field is kept in the display model (display-only, not written to OOXML)
@@ -14,9 +14,9 @@ import {
   buildWordArtParagraphXml,
   parseDocx,
   saveDocx,
-  WORDART_PRESETS,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
+import { WORDART_PRESETS, wordArtSolidColor, type WordArtPreset } from '@genoffice/ui'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -32,24 +32,25 @@ async function openBlankDoc() {
   return { editor, parsed }
 }
 
-function makeWordArtTextbox(wordArtId: string): TextboxDisplay {
-  const preset = WORDART_PRESETS.find((p) => p.id === wordArtId) ?? WORDART_PRESETS[0]
+function makeWordArtTextbox(preset: WordArtPreset): TextboxDisplay {
+  const solidHex = wordArtSolidColor(preset).replace('#', '')
   return {
     widthPx: Math.round(2700000 / 9525),
     heightPx: Math.round(720000 / 9525),
-    wordArtId,
+    wordArtId: preset.id,
     paras: [
       {
-        runs: [{ text: 'WordArt', color: preset.colorHex, bold: true, sizeHalfPoints: 72 }],
+        runs: [{ text: 'WordArt', color: solidHex, bold: true, sizeHalfPoints: 72 }],
         align: 'center',
       },
     ],
   }
 }
 
-function insertWordArt(editor: Editor, wordArtId: string) {
+function insertWordArt(editor: Editor, preset: WordArtPreset) {
   const xml = buildWordArtParagraphXml({
-    wordArtId,
+    colorHex: wordArtSolidColor(preset).replace('#', ''),
+    italic: preset.italic,
     widthEmu: 2700000,
     heightEmu: 720000,
     id: 1,
@@ -61,9 +62,9 @@ function insertWordArt(editor: Editor, wordArtId: string) {
       attrs: {
         docxIndex: null,
         blockType: 'passthrough',
-        label: `WordArt(${wordArtId})`,
+        label: `WordArt(${preset.id})`,
         genXml: xml,
-        textboxes: [makeWordArtTextbox(wordArtId)],
+        textboxes: [makeWordArtTextbox(preset)],
       },
     })
     .run()
@@ -71,14 +72,14 @@ function insertWordArt(editor: Editor, wordArtId: string) {
 
 describe('WordArt insertion', () => {
   it('buildWordArtParagraphXml generates XML with the correct WPS structure', () => {
-    const xml = buildWordArtParagraphXml({ wordArtId: 'wordArt-1', id: 1 })
+    const xml = buildWordArtParagraphXml({ colorHex: '4472C4', id: 1 })
     expect(xml).toContain('wps:wsp')
     expect(xml).toContain('w:txbxContent')
     expect(xml).toContain('wp:anchor')
     expect(xml).toContain('mc:AlternateContent')
     // large text: sz=72 (36pt)
     expect(xml).toContain('w:val="72"')
-    // preset color
+    // requested color
     expect(xml).toContain('4472C4')
     // center alignment
     expect(xml).toContain('w:val="center"')
@@ -93,28 +94,40 @@ describe('WordArt insertion', () => {
     expect(xml).toContain('w:val="72"')
   })
 
-  it('WORDART_PRESETS contains at least 4 presets', () => {
+  it('shared WORDART_PRESETS are well-formed', () => {
     expect(WORDART_PRESETS.length).toBeGreaterThanOrEqual(4)
     for (const p of WORDART_PRESETS) {
       expect(p.id).toBeTruthy()
-      expect(p.label).toBeTruthy()
-      expect(p.colorHex).toMatch(/^[0-9A-Fa-f]{6}$/)
+      expect(p.nameKey).toBeTruthy()
+      expect(p.fill).toMatch(/^#[0-9A-Fa-f]{6}$/)
     }
   })
 
-  it.each(WORDART_PRESETS.map((p) => [p.id, p.label] as [string, string]))(
-    'preset %s (%s) generates XML containing the matching color',
-    (id) => {
-      const preset = WORDART_PRESETS.find((p) => p.id === id)!
-      const xml = buildWordArtParagraphXml({ wordArtId: id, id: 1 })
-      expect(xml).toContain(preset.colorHex)
+  it.each(WORDART_PRESETS.map((p) => [p.id, p] as [string, WordArtPreset]))(
+    'preset %s generates XML containing its solid-color approximation',
+    (_id, preset) => {
+      const solidHex = wordArtSolidColor(preset).replace('#', '')
+      const xml = buildWordArtParagraphXml({ colorHex: solidHex, italic: preset.italic, id: 1 })
+      expect(xml).toContain(solidHex)
       expect(xml).toContain('wps:wsp')
     },
   )
 
+  it('light fills fall back to the outline color so saved text stays readable', () => {
+    const whiteOrange = WORDART_PRESETS.find((p) => p.id === 'white-orange')!
+    expect(wordArtSolidColor(whiteOrange)).toBe('#ED7D31')
+    const blue = WORDART_PRESETS.find((p) => p.id === 'blue')!
+    expect(wordArtSolidColor(blue)).toBe('#4472C4')
+  })
+
+  it('italic presets carry <w:i/> in the run properties', () => {
+    const xml = buildWordArtParagraphXml({ colorHex: '70AD47', italic: true, id: 1 })
+    expect(xml).toContain('<w:i/>')
+  })
+
   it('WordArt insert → saveBlocks contains kind:xml with wps:wsp', async () => {
     const { editor, parsed } = await openBlankDoc()
-    insertWordArt(editor, 'wordArt-1')
+    insertWordArt(editor, WORDART_PRESETS[0])
 
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const xmlBlock = plan.saveBlocks.find((b) => b.kind === 'xml') as
@@ -129,14 +142,14 @@ describe('WordArt insertion', () => {
     const { editor, parsed } = await openBlankDoc()
 
     // Override default text to check it round-trips
-    const xml = buildWordArtParagraphXml({ wordArtId: 'wordArt-2', text: 'Test text', id: 2 })
+    const xml = buildWordArtParagraphXml({ text: 'Test text', colorHex: 'ED7D31', id: 2 })
     const textbox: TextboxDisplay = {
       widthPx: Math.round(2700000 / 9525),
       heightPx: Math.round(720000 / 9525),
-      wordArtId: 'wordArt-2',
+      wordArtId: 'white-orange',
       paras: [
         {
-          runs: [{ text: 'Test text', color: '7B2FBE', bold: true, sizeHalfPoints: 72 }],
+          runs: [{ text: 'Test text', color: 'ED7D31', bold: true, sizeHalfPoints: 72 }],
           align: 'center',
         },
       ],
@@ -167,7 +180,7 @@ describe('WordArt insertion', () => {
 
   it('saving WordArt with an empty text box does not corrupt the document structure', async () => {
     const { editor, parsed } = await openBlankDoc()
-    insertWordArt(editor, 'wordArt-3')
+    insertWordArt(editor, WORDART_PRESETS[2])
 
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const saved = await saveDocx(parsed, plan.saveBlocks)
@@ -177,9 +190,8 @@ describe('WordArt insertion', () => {
     editor.destroy()
   })
 
-  it('outline WordArt (noFill) XML contains the noFill element', () => {
-    const xml = buildWordArtParagraphXml({ wordArtId: 'wordArt-3', id: 1 })
-    // shape fill is noFill for wordArt-3
+  it('the WordArt shape itself has no background fill', () => {
+    const xml = buildWordArtParagraphXml({ colorHex: '4472C4', id: 1 })
     expect(xml).toContain('<a:noFill/>')
   })
 })

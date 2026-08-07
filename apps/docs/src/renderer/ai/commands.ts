@@ -2,7 +2,9 @@ import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode, Schema } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 import { generateTocFieldXml, type TocEntry } from '@genoffice/docx-engine'
+import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
+import { isTrackedDeleted, liveText } from './protocol'
 
 /**
  * Structured edit commands: the model emits a
@@ -155,6 +157,8 @@ export interface CommandResult {
   matched: number
   changed: number
   skippedProtected: number
+  /** targets skipped because the text is a pending tracked deletion */
+  skippedDeleted?: number
   detail?: string
 }
 
@@ -411,7 +415,8 @@ function blockText(node: PmDocNode): string {
   if (node.type.name === 'docProtected') {
     return [node.attrs.label, node.attrs.previewText].filter(Boolean).join(' ')
   }
-  return node.textContent
+  // match against current content only, or targets would hit already-deleted revision text
+  return liveText(node)
 }
 
 function matchTarget(doc: PmDocNode, target: Target, sel: SelRange): TopBlock[] {
@@ -473,7 +478,13 @@ function runUpdateTextStyle(
   // patch applied onto each text node's existing docTextStyle attrs
   const markPatch: Record<string, unknown> = {}
   for (const f of cmd.fields) {
-    if ((TEXT_ATTR_KEYS as readonly string[]).includes(f)) {
+    if (f === 'font') {
+      // route to the matching rFonts slot; clearing clears both
+      const v = cmd.style.font
+      if (!v) Object.assign(markPatch, { font: null, fontAscii: null })
+      else if (isEastAsianFontName(v)) markPatch.font = v
+      else markPatch.fontAscii = v
+    } else if ((TEXT_ATTR_KEYS as readonly string[]).includes(f)) {
       markPatch[f] = cmd.style[f as (typeof TEXT_ATTR_KEYS)[number]] ?? null
     } else if (f === 'baselineOffset') {
       const value = cmd.style.baselineOffset
@@ -513,14 +524,8 @@ function runUpdateTextStyle(
           const childFrom = from + offset
           const childTo = childFrom + child.nodeSize
           const existing = child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs ?? {}
-          const merged: Record<string, unknown> = {
-            color: existing.color ?? null,
-            sizeHalfPoints: existing.sizeHalfPoints ?? null,
-            font: existing.font ?? null,
-            highlight: existing.highlight ?? null,
-            vertAlign: existing.vertAlign ?? null,
-            ...markPatch,
-          }
+          // spread keeps every non-listed attr (fontAscii/styleId/rawRPr…) alive
+          const merged: Record<string, unknown> = { ...existing, ...markPatch }
           const empty = Object.values(merged).every((v) => v === null)
           if (empty) tr.removeMark(childFrom, childTo, schema.marks.docTextStyle)
           else tr.addMark(childFrom, childTo, schema.marks.docTextStyle.create(merged))
@@ -599,20 +604,27 @@ function runReplaceAllText(tr: Transaction, schema: Schema, cmd: ReplaceAllText)
   const replacements: Array<{ from: number; to: number; marks: PmDocNode['marks'] }> = []
   const touchedIndexes = new Set<number>()
   let skippedProtected = 0
+  let skippedDeleted = 0
 
   for (const b of blocks) {
     if (b.node.type.name === 'docProtected') {
       if (blockText(b.node).includes(cmd.containsText)) skippedProtected++
       continue
     }
+    const blockDeleted = isTrackedDeleted(b.node)
     b.node.forEach((child, offset) => {
       if (!child.isText || !child.text) return
+      const struck = blockDeleted || child.marks.some((m) => m.type.name === 'del')
       const hay = matchCase ? child.text : child.text.toLowerCase()
       let at = hay.indexOf(needle)
       while (at !== -1) {
-        const from = b.pos + 1 + offset + at
-        replacements.push({ from, to: from + needle.length, marks: child.marks })
-        touchedIndexes.add(b.index)
+        if (struck) {
+          skippedDeleted++
+        } else {
+          const from = b.pos + 1 + offset + at
+          replacements.push({ from, to: from + needle.length, marks: child.marks })
+          touchedIndexes.add(b.index)
+        }
         at = hay.indexOf(needle, at + needle.length)
       }
     })
@@ -633,6 +645,7 @@ function runReplaceAllText(tr: Transaction, schema: Schema, cmd: ReplaceAllText)
     matched: touchedIndexes.size,
     changed: touchedIndexes.size,
     skippedProtected,
+    skippedDeleted,
     detail: t('aiCmdReplacedCount', { count: replacements.length }),
   }
 }
@@ -644,15 +657,20 @@ function runDeleteBlocks(
   sel: SelRange,
 ): CommandResult {
   const blocks = topLevelBlocks(tr.doc)
-  const matched = matchTarget(tr.doc, cmd.target, sel)
+  const matchedAll = matchTarget(tr.doc, cmd.target, sel)
+  // deleting a pending deletion is a no-op (the tracker re-materializes it struck);
+  // skip and report so the model does not retry forever
+  const matched = matchedAll.filter((b) => !isTrackedDeleted(b.node))
+  const skippedDeleted = matchedAll.length - matched.length
   if (matched.length === blocks.length && matched.length > 0) {
     // doc requires block+: deleting everything leaves one empty paragraph
     tr.replaceWith(0, tr.doc.content.size, schema.nodes.docParagraph.create())
     return {
       command: 'deleteBlocks',
-      matched: matched.length,
+      matched: matchedAll.length,
       changed: matched.length,
       skippedProtected: 0,
+      skippedDeleted,
     }
   }
   for (const b of [...matched].sort((a, z) => z.pos - a.pos)) {
@@ -660,9 +678,10 @@ function runDeleteBlocks(
   }
   return {
     command: 'deleteBlocks',
-    matched: matched.length,
+    matched: matchedAll.length,
     changed: matched.length,
     skippedProtected: 0,
+    skippedDeleted,
   }
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { patchTextboxHeights, patchTextboxParas, type TextboxParaPatch } from '../src/generate'
+import {
+  patchTextboxHeights,
+  patchTextboxParas,
+  patchTextboxSizes,
+  type TextboxParaPatch,
+} from '../src/generate'
 import { parseDocx } from '../src/parse'
 import { buildDocx } from './helpers/build-docx'
 
@@ -52,16 +57,14 @@ describe('textbox editing', () => {
   })
 
   it('extracts text insets and paragraph geometry used by Word', async () => {
-    const formatted = TEXTBOX_PARAGRAPH
-      .replace(
-        '<wps:txbx>',
-        '<wps:bodyPr lIns="0" tIns="47625" rIns="95250" bIns="0"/><wps:txbx>',
-      )
-      .replace(
-        '<w:p><w:r><w:rPr><w:rFonts',
-        '<w:p><w:pPr><w:spacing w:line="312" w:lineRule="auto" w:before="211" w:after="40"/>' +
-          '<w:ind w:left="180" w:right="90" w:firstLine="60"/></w:pPr><w:r><w:rPr><w:rFonts',
-      )
+    const formatted = TEXTBOX_PARAGRAPH.replace(
+      '<wps:txbx>',
+      '<wps:bodyPr lIns="0" tIns="47625" rIns="95250" bIns="0"/><wps:txbx>',
+    ).replace(
+      '<w:p><w:r><w:rPr><w:rFonts',
+      '<w:p><w:pPr><w:spacing w:line="312" w:lineRule="auto" w:before="211" w:after="40"/>' +
+        '<w:ind w:left="180" w:right="90" w:firstLine="60"/></w:pPr><w:r><w:rPr><w:rFonts',
+    )
     const doc = await parseDocx(await buildDocx({ bodyXml: formatted }))
     const box = doc.blocks[0].textboxes?.[0]
 
@@ -79,6 +82,23 @@ describe('textbox editing', () => {
       indentRight: 90,
       indentFirstLine: 60,
     })
+  })
+
+  it('pins the height of an auto-fit box: drops spAutoFit and round-trips fixed', async () => {
+    const autoFitXml = TEXTBOX_PARAGRAPH.replace(
+      '<wps:txbx>',
+      '<wps:bodyPr><a:spAutoFit/></wps:bodyPr><wps:txbx>',
+    )
+    const out = patchTextboxSizes(autoFitXml, [{ wPx: null, hPx: 240 }])
+    expect(out).toContain('<wp:extent cx="6038850" cy="2286000"/>')
+    expect(out).toContain('<a:ext cx="6038850" cy="2286000"/>')
+    expect(out).not.toContain('<a:spAutoFit')
+    expect(out).toContain('<a:noAutofit/>')
+
+    // reopening now yields a fixed-height box instead of autofit
+    const doc = await parseDocx(await buildDocx({ bodyXml: out }))
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box?.heightPx).toBe(240)
   })
 
   it('updates DrawingML and VML fallback heights without changing box styling', () => {
@@ -99,7 +119,12 @@ describe('textbox editing', () => {
       [
         para({
           runs: [
-            { text: '**Current date:** July 21', font: 'Courier New', color: '415461', sizeHalfPoints: 22 },
+            {
+              text: '**Current date:** July 21',
+              font: 'Courier New',
+              color: '415461',
+              sizeHalfPoints: 22,
+            },
           ],
         }),
         null, // untouched
@@ -144,19 +169,25 @@ describe('textbox editing', () => {
     const centered = patchTextboxParas(TEXTBOX_PARAGRAPH, [
       [para({ runs: [{ text: 'Hi' }], align: 'center' }), null],
     ])
-    expect(centered).toContain('<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">Hi</w:t></w:r></w:p>')
+    expect(centered).toContain(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">Hi</w:t></w:r></w:p>',
+    )
 
     // align undefined keeps the template pPr (second para is centered)
     const kept = patchTextboxParas(TEXTBOX_PARAGRAPH, [
       [null, para({ runs: [{ text: 'STILL', bold: true }] })],
     ])
-    expect(kept).toContain('<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">STILL</w:t></w:r>')
+    expect(kept).toContain(
+      '<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">STILL</w:t></w:r>',
+    )
 
     // align null strips the centered jc from the second paragraph
     const removed = patchTextboxParas(TEXTBOX_PARAGRAPH, [
       [null, para({ runs: [{ text: 'LEFT', bold: true }], align: null })],
     ])
-    expect(removed).toContain('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">LEFT</w:t></w:r></w:p>')
+    expect(removed).toContain(
+      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">LEFT</w:t></w:r></w:p>',
+    )
   })
 
   it('patches the VML fallback twin with the same paragraphs', () => {
@@ -192,7 +223,9 @@ describe('textbox editing', () => {
   it('round-trips: patched XML re-parses with the new rich formatting', async () => {
     const patched = patchTextboxParas(TEXTBOX_PARAGRAPH, [
       [
-        para({ runs: [{ text: '**Current date:** July 21', font: 'Courier New', color: 'FF0000' }] }),
+        para({
+          runs: [{ text: '**Current date:** July 21', font: 'Courier New', color: 'FF0000' }],
+        }),
         para({ runs: [{ text: 'IMPORTANT', bold: true, color: '0070C0' }], align: 'center' }),
       ],
     ])

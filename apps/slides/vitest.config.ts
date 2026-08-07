@@ -18,6 +18,10 @@ export default defineConfig({
         '../../packages/pptx-engine/src/background-promote.ts',
       ),
       '@genoffice/pptx-engine': resolve(here, '../../packages/pptx-engine/src/index.ts'),
+      '@genoffice/pptx-render/preset-geometry': resolve(
+        here,
+        '../../packages/pptx-render/src/preset-geometry.ts',
+      ),
       '@genoffice/pptx-render': resolve(here, '../../packages/pptx-render/src/index.ts'),
     },
   },

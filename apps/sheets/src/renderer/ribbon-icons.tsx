@@ -258,8 +258,10 @@ export const RIBBON_GLYPH_ICONS: Record<string, ReactElement> = {
   ),
   // ---- comments / review ----
   '🗨': (
+    // Square-corner comment bubble with text lines, shared with docs/slides IconComment
     <Icon>
-      <path d="M4.75 8.25a3 3 0 0 1 3-3h8.5a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-5.5l-3 2.75v-2.75a3 3 0 0 1-3-3Z" />
+      <path d="M 4.51 4.87 h 14.99 v 10.22 h -8.18 L 7.23 19.18 v -4.09 h -2.73 z" />
+      <path d="M 7.91 8.28 h 8.18 M 7.91 11.68 h 5.45" />
     </Icon>
   ),
   '🗑': (

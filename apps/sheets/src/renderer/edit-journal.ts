@@ -14,6 +14,7 @@ import type {
 } from '../shared/desktop-api'
 import { columnLabel, parseRange } from '../domain/cell-address'
 import { splitSheetRef } from '../domain/chart-visual'
+import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
 import { INDENT_STEP_PX } from './selection-format'
 
 /// Tracks the user's cell edits on a streamed external workbook. Streaming
@@ -663,18 +664,6 @@ export function updateVisualAdd(
   }
   return true
 }
-
-const ADDABLE_SHAPE_TYPES = [
-  'rect',
-  'roundRect',
-  'ellipse',
-  'triangle',
-  'diamond',
-  'rightArrow',
-  'leftArrow',
-  'pentagon',
-  'hexagon',
-] as const
 
 /// Session table adds for the save request; tables on removed sheets drop.
 export function toSaveTableAdds(journal: EditJournal): WorkbookTableAdd[] {

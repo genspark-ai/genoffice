@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor } from '../font-list'
+import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
 import { cssFontFamily } from '../line-metrics'
 import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
 import { setSelectionAlign } from '../editor/direction'
@@ -336,7 +336,9 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
       ? 'italic'
       : 'regular'
 
-  const [font, setFont] = useState((textAttrs.font as string | null) ?? '')
+  const [font, setFont] = useState(
+    (textAttrs.font as string | null) ?? (textAttrs.fontAscii as string | null) ?? '',
+  )
   const [size, setSize] = useState(
     textAttrs.sizeHalfPoints ? Number(textAttrs.sizeHalfPoints) / 2 : 11,
   )
@@ -358,7 +360,12 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
       .setMark('docTextStyle', {
         color: hex === '000000' ? null : hex,
         sizeHalfPoints: Math.round(size * 2),
-        font: font || null,
+        // picks target only their script's rFonts slot; the other slot survives
+        ...(!font
+          ? { font: null, fontAscii: null }
+          : isEastAsianFontName(font)
+            ? { font }
+            : { fontAscii: font }),
         highlight: textAttrs.highlight ?? null,
         vertAlign: vertAlign || null,
       })

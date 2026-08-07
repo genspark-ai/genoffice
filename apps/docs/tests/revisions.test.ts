@@ -932,6 +932,52 @@ describe('IME composition deferral', () => {
     expect(editor.state.doc.textContent).toBe('aXd')
     editor.destroy()
   })
+
+  // Chromium dispatches the pinyin→hanzi commit after view.composing flips
+  // false; it must fold into the composition, not strike the provisional text
+  it('does not strike the provisional pinyin removed by the commit transaction', () => {
+    const { editor, end } = composingEditor([para(text('ab'))])
+    editor.view.dispatch(editor.state.tr.insertText('ni', 3, 3))
+    end()
+    editor.view.dispatch(editor.state.tr.insertText('你', 3, 5).setMeta('composition', 1))
+    editor.view.dispatch(editor.state.tr) // the compositionend poke
+    expect(editor.state.doc.textContent).toBe('ab你')
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0].kind).toBe('ins')
+    expect(editor.state.doc.textBetween(ranges[0].from, ranges[0].to)).toBe('你')
+    editor.destroy()
+  })
+
+  it('marks only the typed character when the IME re-read rewrites the whole run', () => {
+    const { editor, end } = composingEditor([para(text('Hello world'))])
+    // PM's DOM re-parse can replace the entire run around the composed char
+    editor.view.dispatch(editor.state.tr.insertText('Hello 中world', 1, 12))
+    end()
+    editor.view.dispatch(editor.state.tr)
+    expect(editor.state.doc.textContent).toBe('Hello 中world')
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0].kind).toBe('ins')
+    expect(editor.state.doc.textBetween(ranges[0].from, ranges[0].to)).toBe('中')
+    editor.destroy()
+  })
+
+  it('marks only the committed character when the commit rewrites the whole paragraph', () => {
+    const { editor, end } = composingEditor([para(text('ab'))])
+    editor.view.dispatch(editor.state.tr.insertText('ni', 3, 3))
+    end()
+    editor.view.dispatch(editor.state.tr.insertText('ab你', 1, 5).setMeta('composition', 1))
+    editor.view.dispatch(editor.state.tr)
+    expect(editor.state.doc.textContent).toBe('ab你')
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0]).toMatchObject({ kind: 'ins', author: 'Tester' })
+    expect(editor.state.doc.textBetween(ranges[0].from, ranges[0].to)).toBe('你')
+    acceptAllRevisions(editor)
+    expect(editor.state.doc.textContent).toBe('ab你')
+    editor.destroy()
+  })
 })
 
 describe('repeated backspace under track changes', () => {

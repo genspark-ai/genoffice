@@ -35,6 +35,8 @@ import {
   IconObjFlipH,
   IconObjFlipV,
   IconPaste,
+  IconPlayCurrent,
+  IconPlayFromStart,
   IconPosition,
   IconSection,
   IconShrinkFont,
@@ -89,6 +91,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     onPaste,
     onResetLayout,
     onSetLayout,
+    onSlideShow,
     onStrike,
     onTextColor,
     onTextToggle,
@@ -125,8 +128,12 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     setParaOpen,
     setSizeDraft,
     setSizeOpen,
+    setSlideShowFromStart,
+    setSlideShowOpen,
     sizeDraft,
     sizeOpen,
+    slideShowFromStart,
+    slideShowOpen,
     t,
   } = rb
   const [hangDraft, setHangDraft] = useState('')
@@ -244,6 +251,69 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
           >
             <IconFormatPainter size={14} />
           </button>
+        </div>
+      </Group>
+      <div className="ribbon-sep" />
+      <Group label={t('ribbonTabSlideShow')}>
+        <div className="rb-drop-wrap">
+          <button
+            className="rb-big"
+            disabled={!hasDoc}
+            onClick={() => onSlideShow(slideShowFromStart)}
+            title={t(slideShowFromStart ? 'ribbonFromBeginningTip' : 'ribbonFromCurrentTip')}
+          >
+            <span className="rb-big-icon">
+              {slideShowFromStart ? (
+                <IconPlayFromStart size={BIG} />
+              ) : (
+                <IconPlayCurrent size={BIG} />
+              )}
+              <span
+                className={`rb-caret-hit${slideShowOpen ? ' active' : ''}`}
+                onMouseDown={(e) => {
+                  e.stopPropagation()
+                  closeSiblingPanels(e, closePanels, 'slideShow')
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (hasDoc) setSlideShowOpen((v) => !v)
+                }}
+              >
+                <RbCaret />
+              </span>
+            </span>
+            <span>{t(slideShowFromStart ? 'ribbonFromBeginning' : 'ribbonFromCurrent')}</span>
+          </button>
+          {slideShowOpen && (
+            <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => {
+                  setSlideShowOpen(false)
+                  setSlideShowFromStart(true)
+                  onSlideShow(true)
+                }}
+                title={t('ribbonFromBeginningTip')}
+              >
+                <span className="rb-menu-glyph">
+                  <IconPlayFromStart size={20} />
+                </span>
+                {t('ribbonFromBeginning')}
+              </button>
+              <button
+                onClick={() => {
+                  setSlideShowOpen(false)
+                  setSlideShowFromStart(false)
+                  onSlideShow(false)
+                }}
+                title={t('ribbonFromCurrentTip')}
+              >
+                <span className="rb-menu-glyph">
+                  <IconPlayCurrent size={20} />
+                </span>
+                {t('ribbonFromCurrent')}
+              </button>
+            </div>
+          )}
         </div>
       </Group>
       <div className="ribbon-sep" />

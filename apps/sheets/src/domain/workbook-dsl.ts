@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
 import { columnIndex, columnLabel, formatAddress, parseRange, rangeCellCount } from './cell-address'
 import { computeSortChanges } from './sort-range'
 
@@ -166,18 +167,7 @@ const addChartSchema = z.object({
 const addShapeSchema = z.object({
   op: z.literal('add_shape'),
   sheetId: z.string().min(1),
-  shapeType: z.enum([
-    'rect',
-    'roundRect',
-    'ellipse',
-    'triangle',
-    'diamond',
-    'rightArrow',
-    'leftArrow',
-    'pentagon',
-    'hexagon',
-    'textbox',
-  ]),
+  shapeType: z.enum([...ADDABLE_SHAPE_TYPES, 'textbox']),
   anchorCell: cellAddressSchema,
   fillColor: hexColorSchema.optional(),
   text: z.string().max(1000).optional(),

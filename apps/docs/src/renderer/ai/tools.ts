@@ -9,6 +9,7 @@ import {
   buildDocumentContext,
   insertBlocksAfter,
   isBlankDocument,
+  isTrackedDeleted,
   parseHtmlFragment,
   replaceBlockRange,
   serializeRangeToHtml,
@@ -442,8 +443,18 @@ function executeSyncTool(
           : offset > 0
             ? `\n(end of range: ${html.length} characters in total)`
             : ''
+      let empty = '(range is empty)'
+      if (!slice) {
+        let deletedBlocks = 0
+        for (let i = range.start; i <= range.end; i++) {
+          if (isTrackedDeleted(editor.state.doc.child(i))) deletedBlocks++
+        }
+        if (deletedBlocks > 0) {
+          empty = `(the ${deletedBlocks} block(s) in this range are pending tracked deletions — that text is already deleted and hidden from reads; do not delete or rewrite it again)`
+        }
+      }
       return {
-        output: slice ? slice + note : '(range is empty)',
+        output: slice ? slice + note : empty,
         mutated: false,
         summary: t('aiSumReadBlocksRange', { start: range.start, end: range.end }),
       }
@@ -663,8 +674,14 @@ function executeSyncTool(
       if (!outcome.ok)
         return fail(t('aiSumApplyCommands'), outcome.error ?? 'command execution failed')
       const changed = outcome.results.reduce((sum, r) => sum + r.changed, 0)
+      const skippedDeleted = outcome.results.reduce((sum, r) => sum + (r.skippedDeleted ?? 0), 0)
+      // explicit model-facing note so it stops retrying deletions of already-deleted text
+      const deletedNote =
+        skippedDeleted > 0
+          ? `\nNote: ${skippedDeleted} matched target(s) were skipped because that text is a pending tracked deletion (already struck through). It is not current content — do not try to delete or replace it again; the user accepts/rejects revisions in the Review tab.`
+          : ''
       return {
-        output: outcome.summary,
+        output: outcome.summary + deletedNote,
         mutated: changed > 0,
         summary: outcome.summary,
       }

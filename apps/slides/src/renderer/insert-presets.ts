@@ -2,6 +2,7 @@
  * Preset data for the Insert tab: shape gallery / icon gallery / WordArt / SmartArt / chart samples / equation templates.
  * Display names go through i18n (lazy getters, follow language switches); prst/id/geometry data stay unchanged.
  */
+import { SHAPE_GALLERY_GROUPS } from '@genoffice/ui'
 import { t, type StringKey } from './i18n/locale'
 import type { SmartArtLayout } from '../../../../packages/pptx-engine/src/smartart-layout'
 
@@ -27,59 +28,14 @@ const shapeGroup = (key: StringKey, shapes: ShapeDef[]): { group: string; shapes
   shapes,
 })
 
-export const SHAPE_GALLERY: Array<{ group: string; shapes: ShapeDef[] }> = [
-  shapeGroup('ribbonShapeGroupLines', [
-    shape('line', 'ribbonShapeLine'),
-    shape('lineArrow', 'ribbonShapeLineArrow'),
-    shape('lineArrowDouble', 'ribbonShapeLineArrowDouble'),
-    shape('lineBent', 'ribbonShapeLineBent'),
-    shape('lineCurved', 'ribbonShapeLineCurved'),
-  ]),
-  shapeGroup('ribbonShapeGroupBasic', [
-    shape('rect', 'ribbonShapeRect'),
-    shape('roundRect', 'ribbonShapeRoundRect'),
-    shape('ellipse', 'ribbonShapeEllipse'),
-    shape('triangle', 'ribbonShapeTriangle'),
-    shape('rtTriangle', 'ribbonShapeRtTriangle'),
-    shape('diamond', 'ribbonShapeDiamond'),
-    shape('parallelogram', 'ribbonShapeParallelogram'),
-    shape('trapezoid', 'ribbonShapeTrapezoid'),
-    shape('pentagon', 'ribbonShapePentagon'),
-    shape('hexagon', 'ribbonShapeHexagon'),
-    shape('octagon', 'ribbonShapeOctagon'),
-    shape('plus', 'ribbonShapePlus'),
-    shape('mathPlus', 'ribbonShapeMathPlus'),
-    shape('leftBrace', 'ribbonShapeLeftBrace'),
-    shape('rightBrace', 'ribbonShapeRightBrace'),
-    shape('blockArc', 'ribbonShapeBlockArc'),
-  ]),
-  shapeGroup('ribbonShapeGroupArrows', [
-    shape('rightArrow', 'ribbonShapeRightArrow'),
-    shape('leftArrow', 'ribbonShapeLeftArrow'),
-    shape('upArrow', 'ribbonShapeUpArrow'),
-    shape('downArrow', 'ribbonShapeDownArrow'),
-    shape('leftRightArrow', 'ribbonShapeLeftRightArrow'),
-    shape('upDownArrow', 'ribbonShapeUpDownArrow'),
-    shape('chevron', 'ribbonShapeChevron'),
-    shape('homePlate', 'ribbonShapeHomePlate'),
-    shape('notchedRightArrow', 'ribbonShapeNotchedRightArrow'),
-  ]),
-  shapeGroup('ribbonShapeGroupStars', [
-    shape('star4', 'ribbonShapeStar4'),
-    shape('star5', 'ribbonShapeStar5'),
-    shape('star6', 'ribbonShapeStar6'),
-    shape('star8', 'ribbonShapeStar8'),
-  ]),
-  shapeGroup('ribbonShapeGroupFlowchart', [
-    shape('flowChartDecision', 'ribbonShapeFlowDecision'),
-    shape('flowChartTerminator', 'ribbonShapeFlowTerminator'),
-  ]),
-  shapeGroup('ribbonShapeGroupCallouts', [
-    shape('wedgeRectCallout', 'ribbonShapeWedgeRectCallout'),
-    shape('wedgeRoundRectCallout', 'ribbonShapeWedgeRoundRectCallout'),
-    shape('wedgeEllipseCallout', 'ribbonShapeWedgeEllipseCallout'),
-  ]),
-]
+/** Built from the cross-app shared gallery so every app shows the same shapes. */
+export const SHAPE_GALLERY: Array<{ group: string; shapes: ShapeDef[] }> = SHAPE_GALLERY_GROUPS.map(
+  (g) =>
+    shapeGroup(
+      g.groupKey as StringKey,
+      g.shapes.map((sh) => shape(sh.prst, sh.labelKey as StringKey)),
+    ),
+)
 
 // ── Icon gallery (24px stroke style, rasterized then inserted as PNG images) ──────────────
 
@@ -204,83 +160,7 @@ export function iconSvg(def: IconDef, color: string, size = 512): string {
 
 export const ICON_COLORS = ['#404040', '#4472C4', '#ED7D31', '#70AD47', '#C00000', '#7030A0']
 
-// ── WordArt presets ──────────────────────────────────────────────────────
-
-export interface WordArtPreset {
-  id: string
-  label: string
-  fill: string
-  outline?: { color: string; widthEmu: number }
-  bold?: boolean
-  italic?: boolean
-}
-
-/**
- * 12 presets modeled on the PowerPoint WordArt gallery: solid bold / white text with colored
- * stroke / colored text with dark stroke / black-gold, metallic silver, etc. (stroke widths
- * in EMU: 12700=1pt, 19050=1.5pt).
- */
-export const WORDART_PRESETS: WordArtPreset[] = [
-  // Solid bold series
-  { id: 'blue', label: 'A', fill: '#4472C4', bold: true },
-  { id: 'gold', label: 'A', fill: '#FFC000', bold: true },
-  { id: 'red', label: 'A', fill: '#C00000', bold: true },
-  { id: 'purple', label: 'A', fill: '#7030A0', bold: true },
-  { id: 'green-italic', label: 'A', fill: '#70AD47', bold: true, italic: true },
-  // White text + colored stroke (outline text effect)
-  {
-    id: 'white-orange',
-    label: 'A',
-    fill: '#FFFFFF',
-    outline: { color: '#ED7D31', widthEmu: 19050 },
-    bold: true,
-  },
-  {
-    id: 'white-red',
-    label: 'A',
-    fill: '#FFFFFF',
-    outline: { color: '#C00000', widthEmu: 19050 },
-    bold: true,
-  },
-  // Colored text + dark stroke (3D feel)
-  {
-    id: 'gold-brown',
-    label: 'A',
-    fill: '#FFC000',
-    outline: { color: '#7F5F00', widthEmu: 12700 },
-    bold: true,
-  },
-  {
-    id: 'sky-navy',
-    label: 'A',
-    fill: '#00B0F0',
-    outline: { color: '#1F4E79', widthEmu: 12700 },
-    bold: true,
-  },
-  // Dark text + bright stroke
-  {
-    id: 'navy-white',
-    label: 'A',
-    fill: '#1F3864',
-    outline: { color: '#FFFFFF', widthEmu: 12700 },
-    bold: true,
-  },
-  {
-    id: 'black-gold',
-    label: 'A',
-    fill: '#0D0D0D',
-    outline: { color: '#FFC000', widthEmu: 19050 },
-    bold: true,
-  },
-  // Metallic silver
-  {
-    id: 'silver-dark',
-    label: 'A',
-    fill: '#D9D9D9',
-    outline: { color: '#595959', widthEmu: 12700 },
-    bold: true,
-  },
-]
+// WordArt presets are shared across apps — see @genoffice/ui wordart-presets.ts.
 
 // ── SmartArt layouts ──────────────────────────────────────────────────
 

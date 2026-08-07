@@ -7,12 +7,13 @@ import {
   genofficeAuthPath,
   genofficeLoginInFlight,
   genofficeLogout,
+  genofficeProxyFallbackPreferred,
   loadGenofficeAuth,
   resetGenofficeAuthCache,
   startGenofficeLogin,
   type GskLoginProgress,
 } from '../src/genoffice-auth'
-import { gskApiKey } from '../src/gsk'
+import { gskApiKey, setGskProxyUrl } from '../src/gsk'
 
 const CODE = 'a'.repeat(64)
 const AUTH_URL = `https://www.genspark.ai/api/office_addin_auth/verify?code=${CODE}`
@@ -31,6 +32,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
   delete process.env.GENOFFICE_AUTH_DIR
   delete process.env.GSK_API_KEY
+  setGskProxyUrl('')
   resetGenofficeAuthCache()
 })
 
@@ -127,10 +129,69 @@ describe('startGenofficeLogin', () => {
   })
 
   it('reports a network failure at device_code as error "network"', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')))
+    const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'))
+    vi.stubGlobal('fetch', fetchMock)
     const events = await loginAndCollect()
     expect(events).toEqual([{ phase: 'error', error: 'network' }])
     expect(loadGenofficeAuth()).toBeNull()
+    // no proxy registered → nothing better to retry through
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries through the registered proxy channel when the direct fetch cannot connect', async () => {
+    setGskProxyUrl('http://127.0.0.1:7890')
+    const flow = stubFlow()
+    let deviceCodeCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (String(input).includes('/device_code') && ++deviceCodeCalls === 1) {
+          throw new Error('ECONNRESET')
+        }
+        return flow(input, init)
+      }),
+    )
+    const events = await loginAndCollect()
+    expect(deviceCodeCalls).toBe(2)
+    expect(events.at(-1)).toEqual({ phase: 'success' })
+    expect(genofficeApiKey()).toBe('gsk-genoffice-key')
+    expect(genofficeProxyFallbackPreferred()).toBe(true)
+  })
+
+  it('treats a gateway status (502) as channel failure: fails over without adopting the channel', async () => {
+    setGskProxyUrl('http://127.0.0.1:7890')
+    const fetchMock = vi.fn(async () => jsonResponse({}, { status: 502 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const events = await loginAndCollect()
+    expect(events).toEqual([{ phase: 'error', error: 'network' }])
+    // both channels tried, neither adopted
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(genofficeProxyFallbackPreferred()).toBe(false)
+  })
+
+  it('counts an endpoint 4xx (authorization_pending) as channel success', async () => {
+    setGskProxyUrl('http://127.0.0.1:7890')
+    const flow = stubFlow({ pendingPolls: 0 })
+    let deviceCodeCalls = 0
+    let tokenCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/device_code') && ++deviceCodeCalls === 1) {
+          throw new Error('ECONNRESET')
+        }
+        if (url.includes('/office_addin_auth/token') && ++tokenCalls === 1) {
+          return jsonResponse({ status: 'pending' }, { status: 400 })
+        }
+        return flow(input, init)
+      }),
+    )
+    const events = await loginAndCollect()
+    expect(events.at(-1)).toEqual({ phase: 'success' })
+    // the 400 poll neither failed over to a second attempt nor dropped the preference
+    expect(tokenCalls).toBe(2)
+    expect(genofficeProxyFallbackPreferred()).toBe(true)
   })
 
   it('reports an expired device code as error "expired"', async () => {

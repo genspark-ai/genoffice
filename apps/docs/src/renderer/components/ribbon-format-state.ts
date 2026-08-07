@@ -4,6 +4,7 @@ import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/table
 import type { DocDefaults, StyleInfo } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
 import { effectiveSizeHalfPoints } from '../editor/text-style-resolve'
+import { textHasCjk } from '../line-metrics'
 import { cachedByDoc } from '../doc-cache'
 
 /**
@@ -154,6 +155,21 @@ export function computeFormatState(
   const imageSelected = protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl
 
   const textAttrs = ed.getAttributes('docTextStyle')
+  // Dual-slot runs: like Word's font box, show the slot matching the script at the caret
+  const displayFont = (): string => {
+    const font = str(textAttrs.font)
+    const fontAscii = str(textAttrs.fontAscii)
+    if (!font || !fontAscii || font === fontAscii) return font ?? fontAscii ?? ''
+    const { from, to } = ed.state.selection
+    const sample =
+      from === to
+        ? ed.state.doc.textBetween(
+            Math.max(0, from - 1),
+            Math.min(ed.state.doc.content.size, from + 1),
+          )
+        : ed.state.doc.textBetween(from, Math.min(to, from + 32), ' ')
+    return textHasCjk(sample) ? font : fontAscii
+  }
   const paraAttrs = sub ? ed.getAttributes('docParagraph') : paraAttrsOf(editor)
   const mainPara = paraAttrsOf(editor)
 
@@ -186,7 +202,7 @@ export function computeFormatState(
     textColor: str(textAttrs.color),
     charStyleId: str(textAttrs.styleId),
     fontSizePt: (effectiveSizeHalfPoints(ed, styles, docDefaults) ?? 22) / 2,
-    fontFamily: str(textAttrs.font) ?? '',
+    fontFamily: displayFont(),
     headingLevel: editor.isActive('docHeading')
       ? Number(editor.getAttributes('docHeading').level ?? 1)
       : null,

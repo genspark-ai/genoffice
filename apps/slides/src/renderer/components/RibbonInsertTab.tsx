@@ -1,13 +1,14 @@
 /** Insert tab of the slides ribbon. Extracted from Ribbon.tsx. */
 import type { InsertKind } from '../../shared/ipc'
+import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import {
   CHART_GALLERY,
   ICON_COLORS,
   ICON_GALLERY,
   SHAPE_GALLERY,
   SMARTART_GALLERY,
-  WORDART_PRESETS,
 } from '../insert-presets'
+import type { StringKey } from '../i18n/locale'
 import { ChartKindThumb } from './ChartTypeDialog'
 import { ShapePreview, SmartArtPreview } from './gallery-previews'
 import {
@@ -46,6 +47,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
     onAddSlide,
     onAddSlideWithLayout,
     onInsert,
+    onPickShape,
     onInsertChart,
     onInsertField,
     onInsertIcon,
@@ -326,7 +328,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
                       title={s.label}
                       onClick={() => {
                         setInsertDrop(null)
-                        onInsert(s.prst as InsertKind)
+                        onPickShape(s.prst as InsertKind)
                       }}
                     >
                       <ShapePreview prst={s.prst} size={18} />
@@ -462,10 +464,12 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
               <button
                 key={p.id}
                 className="rb-wordart-cell"
-                title={t('ribbonWordArtCellTip')}
+                title={t(p.nameKey as StringKey)}
                 style={{
                   color: p.fill,
-                  WebkitTextStroke: p.outline ? `1px ${p.outline.color}` : undefined,
+                  WebkitTextStroke: p.outline
+                    ? `${wordArtStrokePx(p.outline.widthEmu)}px ${p.outline.color}`
+                    : undefined,
                   fontWeight: p.bold ? 800 : 400,
                   fontStyle: p.italic ? 'italic' : undefined,
                 }}
@@ -474,7 +478,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
                   onInsertWordArt(p)
                 }}
               >
-                A
+                {t('ribbonWordArtPreviewChar')}
               </button>
             ))}
           </div>,

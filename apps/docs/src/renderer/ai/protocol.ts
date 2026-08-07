@@ -44,7 +44,7 @@ export const COMMANDS_GUIDE = [
   '  blockIndexes?: number[]      // indexes from the "document block list"',
   "  scope?: 'selection' | 'document'  // selection = only blocks covered by the current selection",
   '}',
-  "{ updateTextStyle: { target, style: { color?, highlight?, sizeHalfPoints?, font?, bold?, italic?, underline?, strike?, baselineOffset?: 'SUPERSCRIPT'|'SUBSCRIPT'|'NONE', link?: {url}|null }, fields: string[] } }  // value null = clear that property",
+  "{ updateTextStyle: { target, style: { color?, highlight?, sizeHalfPoints?, font?, bold?, italic?, underline?, strike?, baselineOffset?: 'SUPERSCRIPT'|'SUBSCRIPT'|'NONE', link?: {url}|null }, fields: string[] } }  // value null = clear that property; font applies only to its own script's slot (an East Asian font keeps the run's Latin font and vice versa)",
   "{ updateParagraphStyle: { target, style: { align?: 'left'|'center'|'right'|'justify', lineSpacing?, indentLeft?, indentRight?, indentFirstLine?, spaceBefore?, spaceAfter?, pageBreakBefore?, shadingFill?, borders?: subset of 'tblr'|null }, fields: string[] } }  // indentFirstLine positive = first-line indent, negative = hanging; a two-character indent for CJK text ≈ font size in pt × 40 twips",
   '{ setHeadingLevel: { target, level: 0-6 } }  // 0 = demote to body paragraph',
   '{ replaceAllText: { containsText, replaceText, matchCase? } }',
@@ -111,6 +111,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- When the user has text selected, the message includes the selection block indexes and content; rewrite-style requests apply to the selection by default;',
   '- Web search: use web_search when you need up-to-date information/data/fact checking; search before writing about uncertain facts — do not fabricate;',
   '- Illustrations: when the user wants pictures, first image_search (English keywords work better) → pick a suitable result → insert_image with its imageUrl to insert into the document;',
+  '- Tracked deletions (struck-through revision text) are not part of the current content and are hidden from the block list/read_blocks/stats; when a [tracked deletion] tag or a skipped-deletion notice appears, that text is already deleted — never try to delete or rewrite it again (the user accepts/rejects revisions in the Review tab);',
   '- Charts: use insert_chart for data visualization (bar/line/pie; saved as native Word charts); use edit_chart to change the data of an existing chart block in the block list; data must be real, from the document or search results;',
   '- One reply may chain multiple tools; after everything is done, always finish with a short plain-text summary.',
   '',
@@ -176,6 +177,42 @@ export function blockRangePositions(
   return { from, to }
 }
 
+// ---- tracked deletions (pending revisions are not current content) ----
+
+const hasDelMark = (node: ProseMirrorNode) => node.marks.some((m) => m.type.name === 'del')
+
+/** block text as it reads once pending tracked deletions are applied (textContent minus del runs) */
+export function liveText(node: ProseMirrorNode): string {
+  if ((node.attrs?.blockRevision as { kind?: string } | null)?.kind === 'del') return ''
+  let out = ''
+  const walk = (child: ProseMirrorNode): void => {
+    if (hasDelMark(child)) return
+    if (child.isText) out += child.text ?? ''
+    else if (child.isLeaf) out += child.type.spec.leafText?.(child) ?? ''
+    else child.forEach(walk)
+  }
+  node.forEach(walk)
+  return out
+}
+
+/**
+ * The whole block is a pending deletion revision (struck through in the editor).
+ * Checked structurally, not by text length: atom leaves (inline formulas, ruby)
+ * carry no textContent, so a live formula must still count as live content.
+ */
+export function isTrackedDeleted(node: ProseMirrorNode): boolean {
+  if ((node.attrs?.blockRevision as { kind?: string } | null)?.kind === 'del') return true
+  let hasContent = false
+  let hasLive = false
+  node.descendants((child) => {
+    if (child.isText || (child.isInline && child.isLeaf)) {
+      hasContent = true
+      if (!hasDelMark(child)) hasLive = true
+    }
+  })
+  return hasContent && !hasLive
+}
+
 // ---- blocks -> restricted HTML ----
 
 function escapeHtml(text: string): string {
@@ -186,6 +223,8 @@ function inlineToHtml(content: PmNode[] | undefined): string {
   if (!content) return ''
   let html = ''
   for (const node of content) {
+    // del-marked runs are pending deletions, not current content
+    if ((node.marks ?? []).some((m: PmMark) => m.type === 'del')) continue
     if (node.type === 'hardBreak') {
       html += '<br>'
       continue
@@ -220,6 +259,7 @@ function inlineToHtml(content: PmNode[] | undefined): string {
 function inlineToPlainText(content: PmNode[] | undefined): string {
   if (!content) return ''
   return content
+    .filter((n) => !(n.marks ?? []).some((m: PmMark) => m.type === 'del'))
     .map((n) => (n.type === 'hardBreak' ? '\n' : n.type === 'text' ? (n.text ?? '') : ''))
     .join('')
 }
@@ -268,7 +308,13 @@ export function serializeRangeToHtml(editor: Editor, startIndex: number, endInde
     listBuffer = null
   }
 
-  for (const node of children) {
+  for (let i = 0; i < children.length; i++) {
+    const node = children[i]
+    if (isTrackedDeleted(editor.state.doc.child(startIndex + i))) {
+      // the deleted block still separates the surrounding lists in the document
+      flushList()
+      continue
+    }
     if (node.type === 'docHeading') {
       flushList()
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6)
@@ -319,6 +365,7 @@ interface ContextEntry {
   type: string
   preview: string
   isHeading: boolean
+  deleted: boolean
 }
 
 /**
@@ -329,35 +376,48 @@ interface ContextEntry {
 export function buildDocumentContext(editor: Editor): string {
   const entries: ContextEntry[] = []
   let index = 0
+  let fullText = ''
+  let hasPendingDeletions = false
   editor.state.doc.forEach((node) => {
     let type: string
     let preview: string
     let isHeading = false
-    if (node.type.name === 'docHeading') {
-      type = `h${Math.min(Math.max(Number(node.attrs.level) || 1, 1), 6)}`
-      preview = node.textContent
-      isHeading = true
-    } else if (node.type.name === 'docListItem') {
-      type = 'li'
-      preview = node.textContent
-    } else if (node.type.name === 'docTable') {
-      type = 'table'
-      preview = node.textContent
-    } else if (node.type.name === 'docProtected') {
+    let deleted: boolean
+    if (node.type.name === 'docProtected') {
+      // protected blocks can only be block-level deletions (blockRevision)
+      deleted = isTrackedDeleted(node)
       type = String(node.attrs.label || node.attrs.blockType || 'protected')
       preview = String(node.attrs.previewText ?? '')
+      if (deleted) hasPendingDeletions = true
+      else fullText += node.textContent
     } else {
-      type = 'p'
-      preview = node.textContent
+      deleted = isTrackedDeleted(node)
+      const live = liveText(node)
+      // deleted blocks show their struck text so the model can talk about the
+      // revision, but that text never counts as current content
+      preview = deleted ? node.textContent : live
+      if (!deleted) fullText += live
+      if (deleted || live !== node.textContent) hasPendingDeletions = true
+      if (node.type.name === 'docHeading') {
+        type = `h${Math.min(Math.max(Number(node.attrs.level) || 1, 1), 6)}`
+        isHeading = true
+      } else if (node.type.name === 'docListItem') {
+        type = 'li'
+      } else if (node.type.name === 'docTable') {
+        type = 'table'
+      } else {
+        type = 'p'
+      }
     }
-    entries.push({ index, type, preview: preview.replace(/\s+/g, ' ').trim(), isHeading })
+    entries.push({ index, type, preview: preview.replace(/\s+/g, ' ').trim(), isHeading, deleted })
     index++
   })
 
   const render = (bodyMax: number) =>
-    entries.map(
-      (e) => `${e.index}|${e.type}|${clip(e.preview, e.isHeading ? PREVIEW_MAX_CHARS : bodyMax)}`,
-    )
+    entries.map((e) => {
+      const body = clip(e.preview, e.isHeading ? PREVIEW_MAX_CHARS : bodyMax)
+      return `${e.index}|${e.type}|${e.deleted ? '[tracked deletion] ' : ''}${body}`
+    })
   let lines = render(PREVIEW_MAX_CHARS)
   if (lines.join('\n').length > DOC_CONTEXT_MAX_CHARS) lines = render(PREVIEW_TIGHT_CHARS)
   if (lines.join('\n').length > DOC_CONTEXT_MAX_CHARS) {
@@ -388,7 +448,6 @@ export function buildDocumentContext(editor: Editor): string {
     : `No selection; cursor is in block ${scope.startIndex}`
 
   // authoritative stats for answer mode (previews above may be clipped)
-  const fullText = editor.state.doc.textContent
   const statsLine = `Full-text stats: words ${countWords(fullText)}, characters (no spaces) ${
     fullText.replace(/\s/g, '').length
   }, characters (with spaces) ${fullText.length}`
@@ -397,6 +456,11 @@ export function buildDocumentContext(editor: Editor): string {
     `The document has ${entries.length} blocks, listed below (index|type|content preview):`,
     ...lines,
     statsLine,
+    ...(hasPendingDeletions
+      ? [
+          'Tracked changes: blocks tagged [tracked deletion] and struck-through text inside other blocks are pending deletion revisions — that text is already deleted, is excluded from stats/read_blocks, and must never be deleted or rewritten again; the user accepts/rejects revisions in the Review tab.',
+        ]
+      : []),
     selLine,
   ].join('\n')
 }
@@ -627,7 +691,8 @@ function parseTable(el: Element): PmNode | null {
 function parseCodeBlock(el: Element): PmNode | null {
   const text = (el.textContent ?? '').replace(/^\n/, '').replace(/\s+$/, '')
   if (!text) return null
-  const mark: PmMark = { type: 'docTextStyle', attrs: { font: CODE_BLOCK_PRESET.font } }
+  // Latin slot only: monospace applies to code text, an inherited CJK font stays intact
+  const mark: PmMark = { type: 'docTextStyle', attrs: { fontAscii: CODE_BLOCK_PRESET.font } }
   const content: PmNode[] = []
   text.split('\n').forEach((line, i) => {
     if (i > 0) content.push({ type: 'hardBreak' })
