@@ -42,7 +42,7 @@ Images and charts remain anchored to worksheet ranges while the user scrolls. Em
 The main interface-level gaps:
 
 - row/column inserts/deletions and merge/unmerge save on fully-loaded workbooks (≤50k cells) only; sheets with tables or anchored charts fail closed at save time (cross-sheet references are rewritten automatically);
-- sheet rename/add/delete save on any external workbook; range moves and sheet reorder/duplicate/hide remain blocked;
+- sheet rename/add/delete save on any external workbook; range moves remain blocked;
 - complete Excel chart themes, effects, 3D variants, and chart/image editing panels;
 - pattern-fill editing and diagonal-border controls (edge borders, full color pickers, and fill clearing shipped);
 - page layout and printing configuration.
