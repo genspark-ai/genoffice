@@ -305,6 +305,9 @@ function buildBorder(baseBorderXml: string, delta: WorkbookStyleEdit): string {
     : `<border${attributes}>${content}</border>`
 }
 
+/** CT_CellAlignment attributes with no model field; readingOrder is the cell's RTL flag */
+const ALIGNMENT_CARRIED = ['relativeIndent', 'justifyLastLine', 'shrinkToFit', 'readingOrder']
+
 function buildAlignment(baseXf: string, delta: WorkbookStyleEdit): string {
   const baseAlignment = /<alignment\b[^>]*\/?>/.exec(baseXf)?.[0] ?? ''
   const horizontal = delta.horizontalAlignment ?? readAttribute(baseAlignment, 'horizontal')
@@ -327,14 +330,39 @@ function buildAlignment(baseXf: string, delta: WorkbookStyleEdit): string {
         ? undefined
         : String(delta.indent)
       : readAttribute(baseAlignment, 'indent')
-  const attributes = [
+  const modeled = [
     ...(horizontal ? [`horizontal="${horizontal}"`] : []),
     ...(vertical ? [`vertical="${vertical}"`] : []),
     ...(wrap ? ['wrapText="1"'] : []),
     ...(rotation ? [`textRotation="${rotation}"`] : []),
     ...(indent ? [`indent="${indent}"`] : []),
   ]
+  // carrying must not create an <alignment> that would not otherwise exist, which would
+  // start applying an alignment the cell was inheriting; once the element is there anyway
+  // the cell already applies it, so the rest of its attributes belong with it
+  // applyAlignment is xsd:boolean, which spells true both ways
+  const applyAlignment = readCoreAttribute(baseXf, 'applyAlignment')
+  const applies = modeled.length > 0 || applyAlignment === '1' || applyAlignment === 'true'
+  const attributes =
+    applies && ownsItsAlignment(baseXf)
+      ? [...modeled, ...carriedAttributes(baseAlignment, ALIGNMENT_CARRIED)]
+      : modeled
   return attributes.length === 0 ? '' : `<alignment ${attributes.join(' ')}/>`
+}
+
+/**
+ * Whether the regex reads above can be trusted to have found the cell's own alignment.
+ * CT_Xf allows only alignment, protection and extLst, so an xf holding nothing but the
+ * first two cannot hide a second <alignment> or an applyAlignment belonging to someone
+ * else. Anything further, an extension or an mc:AlternateContent branch, could supply
+ * either, and a vendor's reading order is not the cell's; carry nothing and leave the
+ * result as it was.
+ */
+function ownsItsAlignment(xf: string): boolean {
+  for (const element of xf.matchAll(/<\/?([\w.-]+(?::[\w.-]+)?)/g)) {
+    if (!/^(xf|alignment|protection)$/.test(element[1] ?? '')) return false
+  }
+  return true
 }
 
 /// Merges protection flag deltas over the base xf's <protection>. Attributes
@@ -389,6 +417,19 @@ function extractElements(inner: string, tag: string): string[] {
 
 function readAttribute(element: string, name: string): string | undefined {
   return new RegExp(`\\b${name}="([^"]*)"`).exec(element)?.[1]
+}
+
+/** like readAttribute, but never matches a namespace-prefixed name */
+function readCoreAttribute(element: string, name: string): string | undefined {
+  return new RegExp(`(?<![\\w:.-])${name}="([^"]*)"`).exec(element)?.[1]
+}
+
+/** attributes the style model does not represent, kept verbatim off the base element */
+function carriedAttributes(element: string, names: readonly string[]): string[] {
+  return names.flatMap((name) => {
+    const value = readCoreAttribute(element, name)
+    return value === undefined ? [] : [`${name}="${value}"`]
+  })
 }
 
 function toArgb(hexColor: string): string {
