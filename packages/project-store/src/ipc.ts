@@ -80,8 +80,12 @@ export interface GetTimelineArgs {
 
 /** One file's conversations: the session picker's list, and the two ways to move between them */
 export interface FileChatsArgs {
-  /** Absolute path of the currently open file */
-  filePath: string
+  /** Absolute path of the currently open file; null means an unsaved new file */
+  filePath: string | null
+  /** Sheets mode: look up the file path by sessionId (handled in the main process) */
+  sessionId?: string
+  /** Temp chatId for unsaved files, e.g. "unsaved-<timestamp>" */
+  tempChatId?: string
 }
 
 export interface SwitchChatArgs extends FileChatsArgs {

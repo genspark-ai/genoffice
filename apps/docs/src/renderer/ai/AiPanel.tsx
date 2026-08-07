@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import type { ChatMeta } from '@genoffice/project-store'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
@@ -308,6 +309,9 @@ export function AiPanel({
   }, [])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
+  /** this file's stored conversations, for the session picker */
+  const [sessions, setSessions] = useState<ChatMeta[]>([])
+  const [sessionsOpen, setSessionsOpen] = useState(false)
   // bumped on selection/doc changes so the scope hint & quick actions stay fresh
   const [, setScopeTick] = useState(0)
   const logRef = useRef<HTMLDivElement>(null)
@@ -360,38 +364,53 @@ export function AiPanel({
   >([])
 
   // ── Chat-history persistence ────────────────────────────────────────────
+  const projectApi = () => (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+
+  /** Show a stored conversation and hand it back to the model as prior context. */
+  const showStoredChat = async (ids: { projectId: string; chatId: string }): Promise<void> => {
+    const api = projectApi()
+    if (!api) return
+    chatRefIds.current = ids
+    const msgs = await api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
+    setHistoricChat(
+      msgs.map((m) => ({
+        role: m.role,
+        text: m.text,
+        tools: m.tools?.map((t) => ({
+          name: t.name,
+          summary: t.summary,
+          isError: t.isError,
+          output: t.output ? t.output.slice(0, TOOL_OUTPUT_MAX_CHARS) : undefined,
+        })),
+      })),
+    )
+    // restore model context: follow-ups after reopening a file continue the previous conversation (only when the loop is idle with no history)
+    loopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
+  }
+
   useEffect(() => {
-    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    const api = projectApi()
     if (!api) return
     const tempChatId = `unsaved-${Date.now()}`
     void api
       .resolveChat({ filePath: filePath ?? null, tempChatId })
-      .then((ids) => {
-        chatRefIds.current = ids
-        return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
-      })
-      .then((msgs) => {
-        if (msgs.length === 0) return
-        setHistoricChat(
-          msgs.map((m) => ({
-            role: m.role,
-            text: m.text,
-            tools: m.tools?.map((t) => ({
-              name: t.name,
-              summary: t.summary,
-              isError: t.isError,
-              output: t.output ? t.output.slice(0, TOOL_OUTPUT_MAX_CHARS) : undefined,
-            })),
-          })),
-        )
-        // restore model context: follow-ups after reopening a file continue the previous conversation (only when the loop is idle with no history)
-        loopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
-      })
+      .then((ids) => showStoredChat(ids))
       .catch(() => {
         /* history load failures are silent */
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /** dismiss the session picker on any click outside it */
+  useEffect(() => {
+    if (!sessionsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-session-menu, .ai-panel-header-actions')) setSessionsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [sessionsOpen])
 
   /** After an unsaved document's first save yields a real path, bind the unsaved-* history to that file (recoverable by path on reopen) */
   useEffect(() => {
@@ -706,11 +725,56 @@ export function AiPanel({
 
   const continueRun = () => runWith(DOCS_CONTINUE_INSTRUCTION, t('aiContinue'))
 
+  /**
+   * Start a genuinely new session. Clearing React state alone used to leave the
+   * store appending to the same chatId, so the "new" conversation was the old
+   * one with the transcript hidden; the store now mints a fresh chatId and the
+   * previous session stays reachable from the picker.
+   */
   const newChat = () => {
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
+    setHistoricChat([])
+    setSessionsOpen(false)
     inputRef.current?.focus()
+    void projectApi()
+      ?.newChat({ filePath: filePath ?? null, tempChatId: `unsaved-${Date.now()}` })
+      .then((ids) => {
+        chatRefIds.current = ids
+      })
+      .catch(() => {
+        /* the panel stays usable; messages keep going to the current chat */
+      })
+  }
+
+  /** Open the picker on this file's stored conversations, newest first. */
+  const openSessions = () => {
+    setSessionsOpen((open) => !open)
+    void projectApi()
+      ?.listChatsForFile({ filePath: filePath ?? null })
+      .then((list) => {
+        setSessions([...list].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)))
+      })
+      .catch(() => setSessions([]))
+  }
+
+  /** Load one of them back into the panel. */
+  const loadSession = (chatId: string) => {
+    setSessionsOpen(false)
+    if (chatRefIds.current?.chatId === chatId) return
+    const api = projectApi()
+    if (!api) return
+    // restore() only seeds an idle, empty loop, so drop the live turn first
+    loopRef.current?.reset()
+    setBusy(false)
+    setChat([])
+    void api
+      .switchChat({ filePath: filePath ?? null, chatId })
+      .then((ids) => showStoredChat(ids))
+      .catch(() => {
+        /* silent: the panel keeps whatever it had */
+      })
   }
 
   const copyMessage = (text: string, idx: number) => {
@@ -859,6 +923,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={openSessions}
+            title={t('aiSessionsTitle')}
+            aria-expanded={sessionsOpen}
+          >
+            <IconClock size={15} />
+          </button>
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChatTitle')}>
               <IconNewChat size={16} />
@@ -870,6 +942,27 @@ export function AiPanel({
             </button>
           )}
         </div>
+        {sessionsOpen && (
+          <div className="ai-session-menu" role="menu">
+            {sessions.length === 0 ? (
+              <div className="ai-session-empty">{t('aiSessionsEmpty')}</div>
+            ) : (
+              sessions.map((s) => (
+                <button
+                  key={s.chatId}
+                  role="menuitem"
+                  className={`ai-session-item${s.chatId === chatRefIds.current?.chatId ? ' ai-session-item-active' : ''}`}
+                  onClick={() => loadSession(s.chatId)}
+                >
+                  <span className="ai-session-item-title">{s.title || t('aiSessionUntitled')}</span>
+                  <span className="ai-session-item-time">
+                    {new Date(s.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>

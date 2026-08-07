@@ -1235,6 +1235,73 @@ body.vib .slide-list {
   color: var(--text);
 }
 
+/* session picker: anchored under the header, over the transcript */
+.ai-panel-header {
+  position: relative;
+}
+
+.ai-session-menu {
+  position: absolute;
+  top: calc(100% - 1px);
+  right: 8px;
+  z-index: 20;
+  min-width: 220px;
+  max-width: min(320px, calc(100% - 16px));
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.ai-session-empty {
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.ai-session-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-session-item:hover {
+  background: var(--hover);
+}
+
+.ai-session-item-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ai-session-item-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ai-session-item-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .ai-header-btn.ai-undo-btn {
   width: auto;
   gap: 4px;
