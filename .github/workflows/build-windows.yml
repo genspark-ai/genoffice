@@ -8,6 +8,7 @@ on:
       - 'apps/**'
       - 'packages/**'
       - 'tools/configure-openrouter-fork.mjs'
+      - 'tools/fix-openrouter-chat-route.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-windows.yml'
@@ -38,7 +39,9 @@ jobs:
         run: npm ci
 
       - name: Apply OpenRouter + Nemotron fork customizations
-        run: node tools/configure-openrouter-fork.mjs
+        run: |
+          node tools/configure-openrouter-fork.mjs
+          node tools/fix-openrouter-chat-route.mjs
 
       - name: Typecheck
         run: npm run typecheck
