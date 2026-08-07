@@ -932,8 +932,9 @@ const visualUndoRuntimes = new WeakSet<object>()
 /// direction is read via the underlying sheet object. The bundled grid never
 /// mirrors RTL — this is data-fidelity state only.
 export function worksheetIsRightToLeft(worksheet: unknown): boolean {
-  const isRtl = (worksheet as { isRightToLeft?: () => BooleanNumber | undefined } | null)
-    ?.isRightToLeft?.()
+  const isRtl = (
+    worksheet as { isRightToLeft?: () => BooleanNumber | undefined } | null
+  )?.isRightToLeft?.()
   return isRtl === BooleanNumber.TRUE
 }
 

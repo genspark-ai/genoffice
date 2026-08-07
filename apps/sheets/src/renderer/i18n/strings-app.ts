@@ -2711,7 +2711,8 @@ export const appStrings = defineStrings({
     appGridlinesShown: '目盛線を表示しました。',
     appShowingFormulas: '数式を表示しています — もう一度切り替えると値を表示します。',
     appShowingValues: '計算結果を表示しています。',
-    appRtlSheetEnabledSave: 'ワークシート方向を右から左（RTL）に設定しました — 保存時に反映されます。',
+    appRtlSheetEnabledSave:
+      'ワークシート方向を右から左（RTL）に設定しました — 保存時に反映されます。',
     appRtlSheetDisabledSave: 'ワークシート方向を左から右に設定しました — 保存時に反映されます。',
     appTraceNoFormula: '参照元のトレース：アクティブセルに数式がありません。',
     appTraceNoRefs: '参照元のトレース：この数式にはセル参照がありません。',
@@ -3919,8 +3920,10 @@ export const appStrings = defineStrings({
     appGridlinesShown: '눈금선을 표시했습니다.',
     appShowingFormulas: '수식을 표시하는 중입니다 — 다시 전환하면 값이 표시됩니다.',
     appShowingValues: '계산 결과를 표시하는 중입니다.',
-    appRtlSheetEnabledSave: '워크시트 방향을 오른쪽에서 왼쪽(RTL)으로 설정했습니다 — 저장 시 반영됩니다.',
-    appRtlSheetDisabledSave: '워크시트 방향을 왼쪽에서 오른쪽으로 설정했습니다 — 저장 시 반영됩니다.',
+    appRtlSheetEnabledSave:
+      '워크시트 방향을 오른쪽에서 왼쪽(RTL)으로 설정했습니다 — 저장 시 반영됩니다.',
+    appRtlSheetDisabledSave:
+      '워크시트 방향을 왼쪽에서 오른쪽으로 설정했습니다 — 저장 시 반영됩니다.',
     appTraceNoFormula: '참조되는 셀 추적: 활성 셀에 수식이 없습니다.',
     appTraceNoRefs: '참조되는 셀 추적: 이 수식에는 셀 참조가 없습니다.',
     appTracedPrecedents: '참조되는 범위 {count}개를 추적했습니다.',
@@ -5151,8 +5154,10 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Quadrillage affiché.',
     appShowingFormulas: 'Affichage des formules — basculez à nouveau pour les valeurs.',
     appShowingValues: 'Affichage des valeurs calculées.',
-    appRtlSheetEnabledSave: 'Direction de la feuille définie sur droite-à-gauche (RTL) — appliquée à la sauvegarde.',
-    appRtlSheetDisabledSave: 'Direction de la feuille définie sur gauche-à-droite — appliquée à la sauvegarde.',
+    appRtlSheetEnabledSave:
+      'Direction de la feuille définie sur droite-à-gauche (RTL) — appliquée à la sauvegarde.',
+    appRtlSheetDisabledSave:
+      'Direction de la feuille définie sur gauche-à-droite — appliquée à la sauvegarde.',
     appTraceNoFormula: "Repérer les antécédents : la cellule active n'a pas de formule.",
     appTraceNoRefs: "Repérer les antécédents : cette formule n'a aucune référence de cellule.",
     appTracedPrecedents: '{count} plage(s) antécédente(s) repérée(s).',
@@ -6373,7 +6378,8 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Gitternetzlinien eingeblendet.',
     appShowingFormulas: 'Formeln werden angezeigt — erneut umschalten für Werte.',
     appShowingValues: 'Berechnete Werte werden angezeigt.',
-    appRtlSheetEnabledSave: 'Blattrichtung rechts-nach-links (RTL) — wird beim Speichern übernommen.',
+    appRtlSheetEnabledSave:
+      'Blattrichtung rechts-nach-links (RTL) — wird beim Speichern übernommen.',
     appRtlSheetDisabledSave: 'Blattrichtung links-nach-rechts — wird beim Speichern übernommen.',
     appTraceNoFormula: 'Spur zum Vorgänger: Die aktive Zelle hat keine Formel.',
     appTraceNoRefs: 'Spur zum Vorgänger: Diese Formel hat keine Zellbezüge.',
@@ -7588,8 +7594,10 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Líneas de cuadrícula mostradas.',
     appShowingFormulas: 'Mostrando fórmulas — vuelva a alternar para ver los valores.',
     appShowingValues: 'Mostrando los valores calculados.',
-    appRtlSheetEnabledSave: 'Dirección de la hoja definida como derecha a izquierda (RTL) — aplicada al guardar.',
-    appRtlSheetDisabledSave: 'Dirección de la hoja definida como izquierda a derecha — aplicada al guardar.',
+    appRtlSheetEnabledSave:
+      'Dirección de la hoja definida como derecha a izquierda (RTL) — aplicada al guardar.',
+    appRtlSheetDisabledSave:
+      'Dirección de la hoja definida como izquierda a derecha — aplicada al guardar.',
     appTraceNoFormula: 'Rastrear precedentes: la celda activa no tiene fórmula.',
     appTraceNoRefs: 'Rastrear precedentes: esta fórmula no tiene referencias de celda.',
     appTracedPrecedents: 'Se rastrearon {count} rango(s) precedente(s).',
@@ -13471,8 +13479,10 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Linhas de grade exibidas.',
     appShowingFormulas: 'Exibindo fórmulas — alterne novamente para ver os valores.',
     appShowingValues: 'Exibindo valores calculados.',
-    appRtlSheetEnabledSave: 'Direção da folha definida como direita para a esquerda (RTL) — aplicada ao salvar.',
-    appRtlSheetDisabledSave: 'Direção da folha definida como esquerda para a direita — aplicada ao salvar.',
+    appRtlSheetEnabledSave:
+      'Direção da folha definida como direita para a esquerda (RTL) — aplicada ao salvar.',
+    appRtlSheetDisabledSave:
+      'Direção da folha definida como esquerda para a direita — aplicada ao salvar.',
     appTraceNoFormula: 'Rastrear Precedentes: a célula ativa não tem fórmula.',
     appTraceNoRefs: 'Rastrear Precedentes: esta fórmula não tem referências de células.',
     appTracedPrecedents: '{count} intervalo(s) precedente(s) rastreado(s).',
@@ -14674,8 +14684,10 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Griglia visualizzata.',
     appShowingFormulas: 'Formule visualizzate — attiva/disattiva di nuovo per i valori.',
     appShowingValues: 'Valori calcolati visualizzati.',
-    appRtlSheetEnabledSave: 'Direzione del foglio impostata su destra-verso-sinistra (RTL) — applicata al salvataggio.',
-    appRtlSheetDisabledSave: 'Direzione del foglio impostata su sinistra-verso-destra — applicata al salvataggio.',
+    appRtlSheetEnabledSave:
+      'Direzione del foglio impostata su destra-verso-sinistra (RTL) — applicata al salvataggio.',
+    appRtlSheetDisabledSave:
+      'Direzione del foglio impostata su sinistra-verso-destra — applicata al salvataggio.',
     appTraceNoFormula: 'Individua precedenti: la cella attiva non contiene una formula.',
     appTraceNoRefs: 'Individua precedenti: questa formula non ha riferimenti di cella.',
     appTracedPrecedents: '{count} intervallo/i precedente/i individuato/i.',
@@ -15878,7 +15890,8 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Linie siatki pokazane.',
     appShowingFormulas: 'Wyświetlanie formuł — przełącz ponownie, aby zobaczyć wartości.',
     appShowingValues: 'Wyświetlanie obliczonych wartości.',
-    appRtlSheetEnabledSave: 'Kierunek arkusza ustawiony na prawy-lewy (RTL) — stosowany przy zapisie.',
+    appRtlSheetEnabledSave:
+      'Kierunek arkusza ustawiony na prawy-lewy (RTL) — stosowany przy zapisie.',
     appRtlSheetDisabledSave: 'Kierunek arkusza ustawiony na lewy-prawy — stosowany przy zapisie.',
     appTraceNoFormula: 'Śledź poprzedniki: aktywna komórka nie zawiera formuły.',
     appTraceNoRefs: 'Śledź poprzedniki: ta formuła nie zawiera odwołań do komórek.',
@@ -17087,7 +17100,8 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Rasterlijnen weergegeven.',
     appShowingFormulas: 'Formules worden weergegeven — schakel opnieuw voor waarden.',
     appShowingValues: 'Berekende waarden worden weergegeven.',
-    appRtlSheetEnabledSave: 'Bladrichting ingesteld op rechts-naar-links (RTL) — toegepast bij opslaan.',
+    appRtlSheetEnabledSave:
+      'Bladrichting ingesteld op rechts-naar-links (RTL) — toegepast bij opslaan.',
     appRtlSheetDisabledSave: 'Bladrichting ingesteld op links-naar-rechts — toegepast bij opslaan.',
     appTraceNoFormula: 'Broncellen aanwijzen: de actieve cel bevat geen formule.',
     appTraceNoRefs: 'Broncellen aanwijzen: deze formule bevat geen celverwijzingen.',
@@ -18275,8 +18289,10 @@ export const appStrings = defineStrings({
     appGridlinesShown: 'Garis grid ditunjukkan.',
     appShowingFormulas: 'Memaparkan formula — togol sekali lagi untuk nilai.',
     appShowingValues: 'Memaparkan nilai terkira.',
-    appRtlSheetEnabledSave: 'Arah helaian ditetapkan kepada kanan-ke-kiri (RTL) — digunakan semasa menyimpan.',
-    appRtlSheetDisabledSave: 'Arah helaian ditetapkan kepada kiri-ke-kanan — digunakan semasa menyimpan.',
+    appRtlSheetEnabledSave:
+      'Arah helaian ditetapkan kepada kanan-ke-kiri (RTL) — digunakan semasa menyimpan.',
+    appRtlSheetDisabledSave:
+      'Arah helaian ditetapkan kepada kiri-ke-kanan — digunakan semasa menyimpan.',
     appTraceNoFormula: 'Surih Presedens: sel aktif tiada formula.',
     appTraceNoRefs: 'Surih Presedens: formula ini tiada rujukan sel.',
     appTracedPrecedents: '{count} julat presedens disurih.',

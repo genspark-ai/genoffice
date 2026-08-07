@@ -229,9 +229,7 @@ describe('text box rich-text edit and save', () => {
         ...node.attrs,
         textboxes: boxes.map((box) => ({
           ...box,
-          paras: box.paras.map((para, i) =>
-            i === 1 ? { ...para, bidi: true } : para,
-          ),
+          paras: box.paras.map((para, i) => (i === 1 ? { ...para, bidi: true } : para)),
         })),
       }),
     )
