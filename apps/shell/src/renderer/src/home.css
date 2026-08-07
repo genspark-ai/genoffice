@@ -12,6 +12,7 @@
   --radius-6: 6px;
   --radius-8: 8px;
   --color-error: #ef4444;
+  --color-error-hover: #dc2626;
   --color-border-default: #eaeaea;
   --color-bg-overlay: rgb(0 0 0 / 50%);
   --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
@@ -44,7 +45,7 @@
 /* ── Dark mode overrides ─────────────────────────────────── */
 
 /* Explicit dark: [data-theme="dark"] on <html> */
-[data-theme="dark"] {
+[data-theme='dark'] {
   --accent: #4a9eff;
   --accent-hover: #3a8eef;
   --surface: #1e1e1e;
@@ -83,7 +84,7 @@
 
 /* System dark: no data-theme or data-theme="system" — follow OS preference */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
     --accent: #4a9eff;
     --accent-hover: #3a8eef;
     --surface: #1e1e1e;
@@ -1122,7 +1123,7 @@ body.vib .home {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #dc2626;
+  background: var(--color-error-hover);
 }
 
 .modal-overlay {

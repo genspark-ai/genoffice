@@ -426,12 +426,12 @@ const CHANNEL_OPTIONS = [
 ] as const
 
 const THEME_OPTIONS = [
-  { value: 'light' as const, labelKey: 'themeLight' as const, icon: 'sun' },
-  { value: 'dark' as const, labelKey: 'themeDark' as const, icon: 'moon' },
-  { value: 'system' as const, labelKey: 'themeSystem' as const, icon: 'system' },
+  { value: 'light' as const, labelKey: 'themeLight' as const },
+  { value: 'dark' as const, labelKey: 'themeDark' as const },
+  { value: 'system' as const, labelKey: 'themeSystem' as const },
 ] as const
 
-type ThemeValue = typeof THEME_OPTIONS[number]['value']
+type ThemeValue = (typeof THEME_OPTIONS)[number]['value']
 
 function AccountEntry({
   onStatusChange,
@@ -839,7 +839,12 @@ function AccountEntry({
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                <path
+                  d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
               </svg>
               <span className="lang-row-label">{t('theme')}</span>
               <span className="lang-row-current">
