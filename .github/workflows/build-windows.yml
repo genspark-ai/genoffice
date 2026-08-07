@@ -10,6 +10,7 @@ on:
       - 'tools/configure-openrouter-fork.mjs'
       - 'tools/fix-openrouter-chat-route.mjs'
       - 'tools/fix-openrouter-suite-routes.mjs'
+      - 'tools/add-nvidia-provider.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/build-windows.yml'
@@ -39,11 +40,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Apply OpenRouter + Nemotron fork customizations
+      - name: Apply AI provider customizations
         run: |
           node tools/configure-openrouter-fork.mjs
           node tools/fix-openrouter-chat-route.mjs
           node tools/fix-openrouter-suite-routes.mjs
+          node tools/add-nvidia-provider.mjs
 
       - name: Typecheck
         run: npm run typecheck
