@@ -52,8 +52,16 @@ Every app embeds the same AI panel: block-granular AI editing with version
 snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
 state in the others.
 
-**AI providers.** The apps sign in to a Genspark account and route model
-calls through the Genspark service side; no model API key is stored locally.
+**AI providers.** By default the apps sign in to a Genspark account and route
+model calls through the Genspark service side, with no model API key stored
+locally. **AI Model** in the home screen's account menu can instead point every
+app at any OpenAI-compatible endpoint (base URL, model name, optional API key —
+local servers such as Ollama, LM Studio or vLLM need no key), along with
+temperature, a max-token ceiling and `reasoning_effort`. Leaving a tuning box
+blank omits that field from the request entirely, which is what reasoning
+models (GPT-5, o-series) require — they reject any temperature but their own.
+The choice is stored once in `userData/ai-settings.json` and applies to Docs,
+Sheets, Slides and PDF alike, including tabs that are already open.
 
 ## Engine packages
 

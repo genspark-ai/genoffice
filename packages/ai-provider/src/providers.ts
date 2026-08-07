@@ -1,4 +1,11 @@
-import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from './types'
+import type {
+  AiModelSettings,
+  AiProviderConfig,
+  AiProviderId,
+  AiProviderMeta,
+  AiSettings,
+  LegacyAiSettings,
+} from './types'
 
 /**
  * Genspark server-side LLM proxy endpoints. All three protocols share the
@@ -105,6 +112,68 @@ export function defaultAiSettings(
     }
   }
   return { provider: 'genspark', providers }
+}
+
+/**
+ * A custom endpoint is usable once it has somewhere to send the request and a
+ * model to name in it. The API key stays optional: local servers (Ollama,
+ * LM Studio, vLLM) accept anonymous requests.
+ */
+export function isCustomConfigured(config: AiProviderConfig | undefined): boolean {
+  return !!config?.baseUrl?.trim() && !!config.model.trim()
+}
+
+/**
+ * The provider a request actually goes to. Genspark (gsk login) is the default
+ * and the fallback; a user-configured custom endpoint wins when it is both
+ * selected and complete, so a half-filled settings form never silently breaks
+ * AI features. Shared by every app's main process so docs, sheets, slides and
+ * pdf always agree on which backend is live.
+ */
+export function activeProvider(settings: AiSettings): AiProviderId {
+  return settings.provider === 'custom' && isCustomConfigured(settings.providers?.custom)
+    ? 'custom'
+    : 'genspark'
+}
+
+/** Flatten full settings into the shape the settings dialog edits. */
+export function toModelSettings(settings: AiSettings): AiModelSettings {
+  const custom = settings.providers?.custom
+  return {
+    mode: activeProvider(settings) === 'custom' ? 'custom' : 'genspark',
+    baseUrl: custom?.baseUrl ?? '',
+    model: custom?.model ?? '',
+    apiKey: custom?.apiKey ?? '',
+    // the dialog has no "unspecified" state: an absent stored value reads back
+    // as null, i.e. "leave it to the model"
+    temperature: custom?.temperature ?? null,
+    maxTokens: custom?.maxTokens ?? null,
+    reasoningEffort: custom?.reasoningEffort ?? null,
+  }
+}
+
+/**
+ * Fold the dialog's edits back into full settings. The custom endpoint is kept
+ * even when the user switches back to Genspark, so toggling between the two
+ * does not lose a typed-in configuration.
+ */
+export function applyModelSettings(settings: AiSettings, input: AiModelSettings): AiSettings {
+  const custom: AiProviderConfig = {
+    baseUrl: input.baseUrl.trim(),
+    model: input.model.trim(),
+    apiKey: input.apiKey.trim(),
+    // null is meaningful here (omit the field), so it is stored as-is
+    temperature: input.temperature,
+    ...(input.maxTokens === null ? {} : { maxTokens: input.maxTokens }),
+    ...(input.reasoningEffort === null ? {} : { reasoningEffort: input.reasoningEffort }),
+  }
+  const next: AiSettings = {
+    provider: input.mode === 'custom' ? 'custom' : 'genspark',
+    providers: { ...settings.providers, custom },
+  }
+  // an incomplete custom endpoint would silently disable AI; keep Genspark live instead
+  next.provider = activeProvider(next)
+  return next
 }
 
 /**

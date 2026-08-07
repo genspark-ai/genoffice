@@ -8,11 +8,25 @@ export interface GenSparkAccountStatus {
   email?: string
 }
 
+/** OpenAI-compatible `reasoning_effort` budget for models that think before answering */
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
+
 export interface AiProviderConfig {
   apiKey: string
   model: string
   /** only used by the custom (OpenAI-compatible) provider */
   baseUrl?: string | undefined
+  /**
+   * Sampling temperature. `undefined` keeps the built-in default; `null` drops
+   * the field from the request entirely — reasoning models (GPT-5, o-series)
+   * reject every value but their own default, so "don't send it" has to be
+   * expressible.
+   */
+  temperature?: number | null | undefined
+  /** output token ceiling; overrides the per-request default when set */
+  maxTokens?: number | undefined
+  /** sent as `reasoning_effort` to OpenAI-compatible endpoints; omitted when unset */
+  reasoningEffort?: ReasoningEffort | undefined
 }
 
 export interface AiProviderMeta {
@@ -34,6 +48,26 @@ export interface LegacyAiSettings {
   baseUrl?: string
   apiKey?: string
   model?: string
+}
+
+/**
+ * The AI backend as the settings dialog presents it: either the Genspark
+ * account or one custom OpenAI-compatible endpoint. A flat projection of
+ * AiSettings, so the UI never has to know about the provider matrix.
+ */
+export interface AiModelSettings {
+  mode: 'genspark' | 'custom'
+  /** OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1 */
+  baseUrl: string
+  model: string
+  /** empty is allowed: local servers (Ollama, LM Studio, vLLM) accept anonymous requests */
+  apiKey: string
+  /** null = leave it to the model (the only setting reasoning models accept) */
+  temperature: number | null
+  /** null = use the app's per-request default */
+  maxTokens: number | null
+  /** null = don't send `reasoning_effort` */
+  reasoningEffort: ReasoningEffort | null
 }
 
 export interface AiChatRequest {

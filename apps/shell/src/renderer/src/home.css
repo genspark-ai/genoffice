@@ -1075,6 +1075,255 @@ body.vib .home {
   margin-top: 24px;
 }
 
+.btn-primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+/* ---- AI model dialog ---- */
+
+.ai-modal {
+  width: min(520px, 92vw);
+  max-width: 520px;
+}
+
+.ai-modal-scope {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ai-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ai-mode {
+  display: flex;
+  gap: 10px;
+  padding: 11px 13px;
+  text-align: start;
+  background: var(--surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ai-mode:hover {
+  background: var(--surface-subtle);
+}
+
+.ai-mode.active {
+  border-color: var(--accent);
+  background: rgb(35 103 236 / 4%);
+}
+
+/* radio affordance drawn in CSS so the row stays a single focusable control */
+.ai-mode-dot {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+}
+
+.ai-mode.active .ai-mode-dot {
+  border-color: var(--accent);
+  border-width: 4.5px;
+}
+
+.ai-mode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ai-mode-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ai-mode-badge {
+  padding: 1px 7px;
+  background: var(--surface-subtle);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.ai-mode-badge.on {
+  background: rgb(34 165 96 / 12%);
+  color: #1a8a4e;
+}
+
+.ai-mode-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.ai-inline-login {
+  margin-top: 12px;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.ai-inline-login:hover {
+  text-decoration: underline;
+}
+
+.ai-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin-top: 16px;
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ai-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.ai-field-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ai-input {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ai-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ai-input.invalid {
+  border-color: var(--color-error);
+}
+
+select.ai-input {
+  appearance: none;
+  padding-inline-end: 26px;
+  /* chevron drawn inline so the control needs no image asset */
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    right 12px center,
+    right 7px center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+.ai-tuning {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-field-hint.error {
+  color: var(--color-error);
+}
+
+.ai-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.ai-input-wrap .ai-input {
+  padding-inline-end: 58px;
+}
+
+.ai-key-toggle {
+  position: absolute;
+  inset-block: 1px;
+  inset-inline-end: 1px;
+  padding: 0 10px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ai-key-toggle:hover {
+  color: var(--text);
+}
+
+.ai-test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.ai-test-ok,
+.ai-test-fail {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-test-ok {
+  color: #1a8a4e;
+}
+
+.ai-test-fail {
+  color: var(--color-error);
+}
+
+.ai-need-fields {
+  margin-inline-end: auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ── Project sidebar (P1) ─────────────────────────────── */
 
 .sidebar-divider {

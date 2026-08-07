@@ -35,11 +35,19 @@ import { parseFileToText } from '@genoffice/file-parse'
 import {
   AiCreditsError,
   AiTimeoutError,
+  activeProvider,
+  applyModelSettings,
   chatForProvider,
   defaultAiSettings,
+  isReasoningEffort,
   resolveAiSettings,
   streamForProvider,
+  toModelSettings,
   type AiChatRequest,
+  type AiChatResponse,
+  type AiModelSettings,
+  type AiProviderConfig,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
@@ -2469,18 +2477,68 @@ const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 const activeAiStreams = new Map<string, AbortController>()
 
 /**
+ * Read the settings file and normalize the provider selection: a complete
+ * custom endpoint is honoured, anything else falls back to Genspark.
+ */
+function readAiSettings(): AiSettings {
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  return settings
+}
+
+/**
+ * Backend for one request. The settings file — not the renderer's snapshot —
+ * is the source of truth, so changing the model in the home window takes
+ * effect in every already-open docs/sheets/slides/pdf tab without a reload.
+ * The genspark key never lands in the file; it comes from the gsk login state
+ * per request.
+ */
+function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | undefined } {
+  const settings = readAiSettings()
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    return { provider, config: { ...config, apiKey: gskApiKey() } }
+  }
+  return { provider, config }
+}
+
+/** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
+function needsApiKey(provider: AiProviderId): boolean {
+  return provider !== 'custom'
+}
+
+/** a finite number inside [min, max], else null ("not set") */
+function boundedNumber(value: unknown, min: number, max: number): number | null {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return null
+  return n >= min && n <= max ? n : null
+}
+
+/** normalize an untrusted renderer payload into the settings the dialog can express */
+function sanitizeModelSettings(input: Partial<AiModelSettings> | undefined): AiModelSettings {
+  return {
+    mode: input?.mode === 'custom' ? 'custom' : 'genspark',
+    baseUrl: String(input?.baseUrl ?? ''),
+    model: String(input?.model ?? ''),
+    apiKey: String(input?.apiKey ?? ''),
+    temperature: input?.temperature === null ? null : boundedNumber(input?.temperature, 0, 2),
+    maxTokens:
+      input?.maxTokens === null
+        ? null
+        : boundedNumber(Math.trunc(Number(input?.maxTokens)), 1, 1_000_000),
+    reasoningEffort: isReasoningEffort(input?.reasoningEffort) ? input.reasoningEffort : null,
+  }
+}
+
+/**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
  * register them exactly once for all window types (docs, sheets, home) —
  * sheets' standalone AI handlers use the same channel names.
  */
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
-  })
+  ipcMain.handle('ai:get-settings', (): AiSettings => readAiSettings())
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
   ipcMain.handle(
@@ -2501,20 +2559,25 @@ export function registerAiIpc(): void {
     writeJson(SETTINGS_PATH(), settings)
   })
 
+  // Flat read/write pair for the settings dialog. One file, one selection —
+  // whatever is set here is what docs, sheets, slides and pdf all call.
+  ipcMain.handle('ai:get-model-settings', (): AiModelSettings => toModelSettings(readAiSettings()))
+
+  ipcMain.handle('ai:set-model-settings', (_event, input: AiModelSettings): AiModelSettings => {
+    const next = applyModelSettings(readAiSettings(), sanitizeModelSettings(input))
+    writeJson(SETTINGS_PATH(), next)
+    return toModelSettings(next)
+  })
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // the genspark key never enters the settings file; requests take it from the gsk login state
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const { provider, config } = activeAiConfig()
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -2614,13 +2677,9 @@ export function registerAiIpc(): void {
   )
 
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
-    const { settings, system, user } = request
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    if (!config?.apiKey) {
+    const { system, user } = request
+    const { provider, config } = activeAiConfig()
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
@@ -2633,6 +2692,31 @@ export function registerAiIpc(): void {
       return { ok: false, error: String(err) }
     }
   })
+
+  // Dry-run a candidate custom endpoint from the settings dialog: a one-token
+  // round trip that surfaces a wrong URL / model / key before it is saved.
+  ipcMain.handle(
+    'ai:test-provider',
+    async (_event, input: Partial<AiModelSettings>): Promise<AiChatResponse> => {
+      // tested with the same knobs it will run with, so a rejected temperature
+      // or reasoning_effort surfaces here rather than on the user's first turn
+      const draft = sanitizeModelSettings({ ...input, mode: 'custom' })
+      const config: AiProviderConfig = {
+        baseUrl: draft.baseUrl.trim(),
+        model: draft.model.trim(),
+        apiKey: draft.apiKey.trim(),
+        temperature: draft.temperature,
+        ...(draft.maxTokens === null ? {} : { maxTokens: draft.maxTokens }),
+        ...(draft.reasoningEffort === null ? {} : { reasoningEffort: draft.reasoningEffort }),
+      }
+      if (!config.baseUrl || !config.model) return { ok: false, error: tm('errNoModel') }
+      try {
+        return await chatForProvider('custom', config, 'You are a connection test.', 'Reply OK.')
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 }
 
 // ── project-store IPC (shared across docs / slides / sheets) ──────────────

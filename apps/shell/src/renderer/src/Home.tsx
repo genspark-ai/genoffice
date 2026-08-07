@@ -7,11 +7,13 @@ import iconPptx from './assets/file-pptx.svg'
 import iconPdf from './assets/file-pdf.svg'
 import type {
   AccountStatus,
+  AiModelSettings,
   CloudProjectKind,
   CloudProjectsSnapshot,
   HomeApi,
   ProjectHomeApi,
   ProjectSummaryEntry,
+  ReasoningEffort,
   RecentEntry,
 } from '../../shared/home-api'
 import { fileCountKey, visiblePageCount } from './counts'
@@ -425,6 +427,313 @@ const CHANNEL_OPTIONS = [
   { value: 'beta', labelKey: 'channelBeta' },
 ] as const
 
+const EMPTY_AI_SETTINGS: AiModelSettings = {
+  mode: 'genspark',
+  baseUrl: '',
+  model: '',
+  apiKey: '',
+  temperature: null,
+  maxTokens: null,
+  reasoningEffort: null,
+}
+
+const REASONING_EFFORT_OPTIONS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
+
+/** widest range any OpenAI-compatible backend accepts; outside it the request is rejected */
+const TEMPERATURE_RANGE = { min: 0, max: 2 }
+const MAX_TOKENS_RANGE = { min: 1, max: 1_000_000 }
+
+/**
+ * A blank box means "don't send this field", which is exactly what a reasoning
+ * model needs. Anything else must parse and be in range, or the dialog blocks
+ * saving rather than letting the backend reject every later turn.
+ */
+function parseOptionalNumber(
+  text: string,
+  range: { min: number; max: number },
+  integer = false,
+): { value: number | null; invalid: boolean } {
+  const trimmed = text.trim()
+  if (!trimmed) return { value: null, invalid: false }
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < range.min || parsed > range.max) {
+    return { value: null, invalid: true }
+  }
+  if (integer && !Number.isInteger(parsed)) return { value: null, invalid: true }
+  return { value: parsed, invalid: false }
+}
+
+/**
+ * AI backend picker: the signed-in Genspark account, or any OpenAI-compatible
+ * endpoint the user runs or pays for themselves. One selection, stored once,
+ * used by every editor module — hence the scope note in the header.
+ */
+function AiModelDialog({
+  initial,
+  loggedIn,
+  onLogin,
+  onSaved,
+  onClose,
+}: {
+  initial: AiModelSettings
+  loggedIn: boolean
+  onLogin: () => void
+  onSaved: (settings: AiModelSettings) => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const [draft, setDraft] = useState<AiModelSettings>(initial)
+  const [showKey, setShowKey] = useState(false)
+  const [test, setTest] = useState<{ state: 'idle' | 'busy' | 'ok' | 'fail'; error?: string }>({
+    state: 'idle',
+  })
+  const [saving, setSaving] = useState(false)
+  // the numeric boxes keep their raw text: reformatting mid-keystroke would
+  // fight the user typing "0.7" (the "0." state parses to a different number)
+  const [tempText, setTempText] = useState(
+    initial.temperature === null ? '' : String(initial.temperature),
+  )
+  const [maxTokensText, setMaxTokensText] = useState(
+    initial.maxTokens === null ? '' : String(initial.maxTokens),
+  )
+
+  const custom = draft.mode === 'custom'
+  const temperature = parseOptionalNumber(tempText, TEMPERATURE_RANGE)
+  const maxTokens = parseOptionalNumber(maxTokensText, MAX_TOKENS_RANGE, true)
+  const badNumber = custom && (temperature.invalid || maxTokens.invalid)
+  const incomplete = custom && (!draft.baseUrl.trim() || !draft.model.trim())
+  const blocked = incomplete || badNumber
+
+  /** what would actually be saved: the draft with the numeric boxes resolved */
+  const resolved = (): AiModelSettings => ({
+    ...draft,
+    temperature: temperature.value,
+    maxTokens: maxTokens.value,
+  })
+
+  const edit = (patch: Partial<AiModelSettings>) => {
+    setDraft((prev) => ({ ...prev, ...patch }))
+    // any edit invalidates a previous verdict — it described the old endpoint
+    setTest({ state: 'idle' })
+  }
+
+  const runTest = () => {
+    if (blocked) return
+    setTest({ state: 'busy' })
+    void window.aiOffice
+      .testAiProvider(resolved())
+      .then((result) =>
+        setTest(result.ok ? { state: 'ok' } : { state: 'fail', error: result.error }),
+      )
+      .catch((err: unknown) => setTest({ state: 'fail', error: String(err) }))
+  }
+
+  const save = () => {
+    if (blocked) return
+    setSaving(true)
+    void window.aiOffice
+      .setAiModelSettings(resolved())
+      .then((stored) => {
+        onSaved(stored)
+        onClose()
+      })
+      .finally(() => setSaving(false))
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal ai-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('aiDlgTitle')}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onClose()
+        }}
+      >
+        <h3>{t('aiDlgTitle')}</h3>
+        <p className="ai-modal-scope">{t('aiDlgScope')}</p>
+
+        <div className="ai-mode-list" role="radiogroup" aria-label={t('aiDlgTitle')}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!custom}
+            className={`ai-mode${!custom ? ' active' : ''}`}
+            onClick={() => edit({ mode: 'genspark' })}
+          >
+            <span className="ai-mode-dot" aria-hidden="true" />
+            <span className="ai-mode-body">
+              <span className="ai-mode-title">
+                {t('accountGenspark')}
+                <span className={`ai-mode-badge${loggedIn ? ' on' : ''}`}>
+                  {loggedIn ? t('loggedIn') : t('aiDlgNotSignedIn')}
+                </span>
+              </span>
+              <span className="ai-mode-desc">{t('aiDlgGensparkDesc')}</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            role="radio"
+            aria-checked={custom}
+            className={`ai-mode${custom ? ' active' : ''}`}
+            onClick={() => edit({ mode: 'custom' })}
+          >
+            <span className="ai-mode-dot" aria-hidden="true" />
+            <span className="ai-mode-body">
+              <span className="ai-mode-title">{t('aiDlgCustom')}</span>
+              <span className="ai-mode-desc">{t('aiDlgCustomDesc')}</span>
+            </span>
+          </button>
+        </div>
+
+        {!custom && !loggedIn && (
+          <button className="ai-inline-login" onClick={onLogin}>
+            {t('loginGenspark')}
+          </button>
+        )}
+
+        {custom && (
+          <div className="ai-fields">
+            <label className="ai-field">
+              <span className="ai-field-label">Base URL</span>
+              <input
+                className="ai-input"
+                autoFocus
+                spellCheck={false}
+                placeholder="https://api.deepseek.com/v1"
+                value={draft.baseUrl}
+                onChange={(event) => edit({ baseUrl: event.target.value })}
+              />
+              <span className="ai-field-hint">{t('aiDlgBaseUrlHint')}</span>
+            </label>
+
+            <label className="ai-field">
+              <span className="ai-field-label">Model</span>
+              <input
+                className="ai-input"
+                spellCheck={false}
+                placeholder="deepseek-chat"
+                value={draft.model}
+                onChange={(event) => edit({ model: event.target.value })}
+              />
+            </label>
+
+            <label className="ai-field">
+              <span className="ai-field-label">API Key</span>
+              <span className="ai-input-wrap">
+                <input
+                  className="ai-input"
+                  type={showKey ? 'text' : 'password'}
+                  spellCheck={false}
+                  placeholder="sk-..."
+                  value={draft.apiKey}
+                  onChange={(event) => edit({ apiKey: event.target.value })}
+                />
+                <button
+                  type="button"
+                  className="ai-key-toggle"
+                  aria-label={showKey ? t('aiDlgHideKey') : t('aiDlgShowKey')}
+                  onClick={() => setShowKey((v) => !v)}
+                >
+                  {showKey ? t('aiDlgHideKey') : t('aiDlgShowKey')}
+                </button>
+              </span>
+              <span className="ai-field-hint">{t('aiDlgKeyOptional')}</span>
+            </label>
+
+            <div className="ai-tuning">
+              <label className="ai-field">
+                <span className="ai-field-label">Temperature</span>
+                <input
+                  className={`ai-input${temperature.invalid ? ' invalid' : ''}`}
+                  inputMode="decimal"
+                  spellCheck={false}
+                  placeholder={t('aiDlgModelDefault')}
+                  aria-invalid={temperature.invalid}
+                  value={tempText}
+                  onChange={(event) => {
+                    setTempText(event.target.value)
+                    setTest({ state: 'idle' })
+                  }}
+                />
+              </label>
+              <label className="ai-field">
+                <span className="ai-field-label">Max tokens</span>
+                <input
+                  className={`ai-input${maxTokens.invalid ? ' invalid' : ''}`}
+                  inputMode="numeric"
+                  spellCheck={false}
+                  placeholder={t('aiDlgModelDefault')}
+                  aria-invalid={maxTokens.invalid}
+                  value={maxTokensText}
+                  onChange={(event) => {
+                    setMaxTokensText(event.target.value)
+                    setTest({ state: 'idle' })
+                  }}
+                />
+              </label>
+              <label className="ai-field">
+                <span className="ai-field-label">Reasoning effort</span>
+                <select
+                  className="ai-input"
+                  value={draft.reasoningEffort ?? ''}
+                  onChange={(event) =>
+                    edit({
+                      reasoningEffort: (event.target.value || null) as ReasoningEffort | null,
+                    })
+                  }
+                >
+                  <option value="">{t('aiDlgModelDefault')}</option>
+                  {REASONING_EFFORT_OPTIONS.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {effort}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <span className={`ai-field-hint${badNumber ? ' error' : ''}`}>
+              {badNumber
+                ? t('aiDlgBadNumber', { min: TEMPERATURE_RANGE.min, max: TEMPERATURE_RANGE.max })
+                : t('aiDlgTuningHint')}
+            </span>
+
+            <div className="ai-test-row">
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={blocked || test.state === 'busy'}
+                onClick={runTest}
+              >
+                {test.state === 'busy' ? t('aiDlgTesting') : t('aiDlgTest')}
+              </button>
+              {test.state === 'ok' && <span className="ai-test-ok">{t('aiDlgTestOk')}</span>}
+              {test.state === 'fail' && (
+                <span className="ai-test-fail" title={test.error}>
+                  {test.error ?? t('aiDlgTestFail')}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="modal-buttons">
+          {incomplete && <span className="ai-need-fields">{t('aiDlgNeedFields')}</span>}
+          <button className="btn btn-secondary" onClick={onClose}>
+            {t('cancel')}
+          </button>
+          <button className="btn btn-primary" disabled={blocked || saving} onClick={save}>
+            {t('aiDlgSave')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AccountEntry({
   onStatusChange,
 }: {
@@ -461,6 +770,9 @@ function AccountEntry({
   const chanCloseTimer = useRef<number | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
   const [appVersion, setAppVersion] = useState('')
+  // AI backend selection, shared by every editor module; null until first read
+  const [aiSettings, setAiSettings] = useState<AiModelSettings | null>(null)
+  const [aiDialogOpen, setAiDialogOpen] = useState(false)
 
   // query login state + app version once on mount
   useEffect(() => {
@@ -470,6 +782,9 @@ function AccountEntry({
     })
     void window.aiOffice.getAppVersion?.().then((v) => {
       if (alive && v) setAppVersion(v)
+    })
+    void window.aiOffice.getAiModelSettings?.().then((s) => {
+      if (alive) setAiSettings(s)
     })
     return () => {
       alive = false
@@ -662,6 +977,18 @@ function AccountEntry({
 
   return (
     <div className="account-entry">
+      {aiDialogOpen && (
+        <AiModelDialog
+          initial={aiSettings ?? EMPTY_AI_SETTINGS}
+          loggedIn={loggedIn}
+          onLogin={() => {
+            setAiDialogOpen(false)
+            startLogin()
+          }}
+          onSaved={setAiSettings}
+          onClose={() => setAiDialogOpen(false)}
+        />
+      )}
       {menuOpen && (
         <div className="account-menu" role="menu">
           {loggedIn ? (
@@ -701,6 +1028,33 @@ function AccountEntry({
             </>
           )}
           <div className="account-menu-divider" />
+          <button
+            className="account-menu-item lang-row"
+            role="menuitem"
+            onClick={() => {
+              closeMenu()
+              setAiDialogOpen(true)
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect
+                x="3.2"
+                y="4.4"
+                width="9.6"
+                height="8"
+                rx="2"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <path d="M8 2v2.4M1.6 8.4h1.6M12.8 8.4h1.6" stroke="currentColor" strokeWidth="1.2" />
+              <circle cx="6.3" cy="8.2" r="0.9" fill="currentColor" />
+              <circle cx="9.7" cy="8.2" r="0.9" fill="currentColor" />
+            </svg>
+            <span className="lang-row-label">{t('aiModelRow')}</span>
+            <span className="lang-row-current">
+              {aiSettings?.mode === 'custom' ? aiSettings.model || t('aiDlgCustom') : 'Genspark'}
+            </span>
+          </button>
           <div
             className="lang-row-wrap"
             ref={langRowRef}

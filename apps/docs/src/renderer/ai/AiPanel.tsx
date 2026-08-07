@@ -585,11 +585,11 @@ export function AiPanel({
             return next
           })
           // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktop
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
+          // gsk status rather than matching the localized error text. Under a
+          // custom endpoint signing in fixes nothing, so the button stays off.
+          void Promise.all([window.desktop.getAiSettings(), window.desktop.aiGskStatus()])
+            .then(([current, status]) => {
+              if (current.provider !== 'genspark' || status.loggedIn) return
               setChat((prev) => {
                 const next = [...prev]
                 const last = next.at(-1)

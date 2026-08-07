@@ -22,6 +22,37 @@ export type UiLanguage =
   | 'hi'
   | 'zh-TW'
 
+/**
+ * AI backend selection, as edited by the settings dialog and stored in
+ * userData/ai-settings.json — one setting shared by docs, sheets, slides and
+ * pdf. Kept self-contained here (mirrors AiModelSettings in
+ * @genoffice/ai-provider, which the main process resolves it against).
+ */
+export interface AiModelSettings {
+  /** 'genspark' routes through the signed-in account; 'custom' calls the endpoint below directly */
+  mode: 'genspark' | 'custom'
+  /** OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1 */
+  baseUrl: string
+  model: string
+  /** may be empty: local servers (Ollama, LM Studio, vLLM) accept anonymous requests */
+  apiKey: string
+  /** null leaves the field out of the request — reasoning models reject any value but their own */
+  temperature: number | null
+  /** null uses each app's per-request default */
+  maxTokens: number | null
+  /** null omits `reasoning_effort` */
+  reasoningEffort: ReasoningEffort | null
+}
+
+/** OpenAI-compatible thinking budget (mirrors ReasoningEffort in @genoffice/ai-provider) */
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
+
+/** result of dry-running a custom endpoint from the settings dialog */
+export interface AiProviderTestResult {
+  ok: boolean
+  error?: string
+}
+
 /** a recent file entry shown on the home screen; type derives from the extension */
 export interface RecentEntry {
   path: string
@@ -103,6 +134,12 @@ export interface HomeApi {
   openLoginUrl(): Promise<void>
   /** log out (clears the saved API key; the login state is shared globally with the gsk CLI) */
   accountLogout(): Promise<void>
+  /** current AI backend selection (shared by every editor module) */
+  getAiModelSettings(): Promise<AiModelSettings>
+  /** persist the AI backend selection; returns what was actually stored (an incomplete custom endpoint falls back to Genspark) */
+  setAiModelSettings(settings: AiModelSettings): Promise<AiModelSettings>
+  /** dry-run a custom endpoint without saving it */
+  testAiProvider(settings: Omit<AiModelSettings, 'mode'>): Promise<AiProviderTestResult>
   /** app version (from package.json / electron app.getVersion) */
   getAppVersion(): Promise<string>
   /** whether the first-run onboarding has been completed or skipped (persisted in userData/app-settings.json) */
@@ -236,6 +273,16 @@ export const HOME_CHANNELS = {
   cloudProjects: 'home:cloud-projects',
   cloudProjectsCached: 'home:cloud-projects-cached',
   openCloudProject: 'home:open-cloud-project',
+} as const
+
+/**
+ * App-wide AI handlers, registered once by docs-main's registerAiIpc (not in
+ * the home namespace) and shared with every editor module; pass-through only.
+ */
+export const AI_CHANNELS = {
+  getModelSettings: 'ai:get-model-settings',
+  setModelSettings: 'ai:set-model-settings',
+  testProvider: 'ai:test-provider',
 } as const
 
 export const PROJECT_CHANNELS = {

@@ -2,6 +2,7 @@ import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiProviderConfig, AiProviderId } from './types'
+import { reasoningEffortField, resolveMaxTokens, temperatureField } from './tuning'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
 // ---- streaming (SSE line splitting shared by all providers) ----
@@ -287,7 +288,8 @@ async function anthropicTurn(
       },
       body: JSON.stringify({
         model: config.model,
-        max_tokens: maxTokens,
+        max_tokens: resolveMaxTokens(config, maxTokens),
+        ...temperatureField(config),
         system,
         messages: anthropicMessages(messages),
         ...(tools.length > 0
@@ -530,7 +532,10 @@ async function geminiTurn(
             ],
           }
         : {}),
-      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+      generationConfig: {
+        ...temperatureField(config),
+        maxOutputTokens: resolveMaxTokens(config, maxTokens),
+      },
     }),
   })
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
@@ -729,7 +734,7 @@ async function openAiCompatibleTurn(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: maxTokens,
+      max_tokens: resolveMaxTokens(config, maxTokens),
       messages: openAiMessages(system, messages),
       ...(tools.length > 0
         ? {
@@ -739,7 +744,8 @@ async function openAiCompatibleTurn(
             })),
           }
         : {}),
-      temperature: 0.3,
+      ...temperatureField(config),
+      ...reasoningEffortField(config),
       stream: true,
     }),
   })

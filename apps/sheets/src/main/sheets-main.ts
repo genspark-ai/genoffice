@@ -51,10 +51,12 @@ import { ProjectStore } from '@genoffice/project-store'
 import {
   AiCreditsError,
   AiTimeoutError,
+  activeProvider,
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
   streamForProvider,
+  type AiProviderConfig,
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
@@ -2101,18 +2103,45 @@ export function registerSheetsIpc(): void {
 
 let aiIpcRegistered = false
 
+/**
+ * Read the settings file and normalize the provider selection: a complete
+ * custom endpoint is honoured, anything else falls back to Genspark.
+ */
+function readAiSettings(): AiSettings {
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  return settings
+}
+
+/**
+ * Backend for one request. The settings file — not the renderer's snapshot —
+ * is the source of truth, so a model change in the home window reaches an
+ * already-open sheets tab without a reload. The genspark key never enters the
+ * file; it comes from the gsk login state per request.
+ */
+function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | undefined } {
+  const settings = readAiSettings()
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    return { provider, config: { ...config, apiKey: gskApiKey() } }
+  }
+  return { provider, config }
+}
+
+/** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
+function needsApiKey(provider: AiProviderId): boolean {
+  return provider !== 'custom'
+}
+
 export function registerSheetsAiIpc(): void {
   if (aiIpcRegistered) return
   aiIpcRegistered = true
 
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return readAiSettings()
   })
 
   // Genspark account (gsk login state): the auth source for AI features; the
@@ -2140,12 +2169,8 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
     sessionFor(event)
     const request = aiChatRequestSchema.parse(input)
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    if (!config?.apiKey) {
+    const { provider, config } = activeAiConfig()
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
@@ -2165,17 +2190,11 @@ export function registerSheetsAiIpc(): void {
     const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
-    // Genspark's key never enters the settings file; it is read from the gsk
-    // login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const { provider, config } = activeAiConfig()
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',

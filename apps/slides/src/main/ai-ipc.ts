@@ -10,9 +10,12 @@ import { join } from 'node:path'
 import {
   AiCreditsError,
   AiTimeoutError,
+  activeProvider,
   defaultAiSettings,
   resolveAiSettings,
   streamForProvider,
+  type AiProviderConfig,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
@@ -55,14 +58,40 @@ function writeJson(path: string, value: unknown): void {
 
 const activeAiStreams = new Map<string, AbortController>()
 
+/**
+ * Read the settings file and normalize the provider selection: a complete
+ * custom endpoint is honoured, anything else falls back to Genspark.
+ */
+function readAiSettings(): AiSettings {
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  return settings
+}
+
+/**
+ * Backend for one request. The settings file — not the renderer's snapshot —
+ * is the source of truth, so a model change in the home window reaches an
+ * already-open slides tab without a reload. The genspark key never enters the
+ * file; it comes from the gsk login state per request.
+ */
+function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | undefined } {
+  const settings = readAiSettings()
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    return { provider, config: { ...config, apiKey: gskApiKey() } }
+  }
+  return { provider, config }
+}
+
+/** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
+function needsApiKey(provider: AiProviderId): boolean {
+  return provider !== 'custom'
+}
+
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
-    settings.provider = 'genspark'
-    return settings
-  })
+  ipcMain.handle('ai:get-settings', (): AiSettings => readAiSettings())
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
   ipcMain.handle(
@@ -84,19 +113,14 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // The genspark key never enters the settings file; it is fetched from the gsk login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const { provider, config } = activeAiConfig()
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
