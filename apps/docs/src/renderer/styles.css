@@ -4098,6 +4098,35 @@ body.docs-crop-active
   color: var(--color-text-primary);
 }
 
+/* Compact text pill for the TinyFish web-access connect control (header row). */
+.ai-tinyfish-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-bg-subtle, #e6e6e6);
+  border-radius: var(--radius-8);
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-tinyfish-btn:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.ai-tinyfish-btn.connected {
+  color: var(--accent, #1a73e8);
+  border-color: var(--accent, #1a73e8);
+}
+
 /* collapsed AI sidebar: thin rail on the left edge */
 .ai-rail {
   display: flex;

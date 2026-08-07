@@ -245,6 +245,22 @@ export function AiPanel({
     () => localStorage.getItem(TRACK_CHANGES_KEY) === '1',
   )
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [tinyfishConnected, setTinyfishConnected] = useState(false)
+  // TinyFish web-access status; polled so the header button reflects completion of
+  // the browser sign-in, which finishes out-of-process (main process + browser).
+  useEffect(() => {
+    let active = true
+    const check = () =>
+      void window.desktop.tinyfishStatus().then((s) => {
+        if (active) setTinyfishConnected(s.connected)
+      })
+    check()
+    const id = window.setInterval(check, 3000)
+    return () => {
+      active = false
+      window.clearInterval(id)
+    }
+  }, [])
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
   /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
@@ -862,6 +878,17 @@ export function AiPanel({
               <IconSidebarCollapse size={15} />
             </button>
           )}
+          <button
+            className={tinyfishConnected ? 'ai-tinyfish-btn connected' : 'ai-tinyfish-btn'}
+            onClick={() =>
+              void (tinyfishConnected
+                ? window.desktop.tinyfishSignOut()
+                : window.desktop.tinyfishSignIn())
+            }
+            title={tinyfishConnected ? t('aiTinyfishDisconnect') : t('aiTinyfishConnect')}
+          >
+            {tinyfishConnected ? t('aiTinyfishConnected') : t('aiTinyfishConnect')}
+          </button>
         </div>
       </div>
 

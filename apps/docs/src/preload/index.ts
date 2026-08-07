@@ -73,6 +73,10 @@ const api: DesktopApi = {
     ipcRenderer.invoke('ai:web-search', query, maxResults),
   imageSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:image-search', query, maxResults),
+  fetchUrl: (url: string) => ipcRenderer.invoke('ai:fetch-url', url),
+  tinyfishStatus: () => ipcRenderer.invoke('ai:tinyfish-status'),
+  tinyfishSignIn: () => ipcRenderer.invoke('ai:tinyfish-signin'),
+  tinyfishSignOut: () => ipcRenderer.invoke('ai:tinyfish-signout'),
   fetchImage: (url: string) => ipcRenderer.invoke('ai:fetch-image', url),
   pickAttachments: () => ipcRenderer.invoke('files:pick'),
   addAttachmentPaths: (paths: string[]) => ipcRenderer.invoke('files:add', paths),

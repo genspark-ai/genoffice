@@ -111,6 +111,18 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'fetch_url',
+    description:
+      "Fetch the full readable text of a web page by URL. Use after web_search when you need the actual page content, not just the title/snippet — e.g. to pull facts or data into the document. Do not guess a page's contents from its snippet.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'the page URL to fetch' },
+      },
+      required: ['url'],
+    },
+  },
+  {
     name: 'image_search',
     description:
       'Search for images. Returns a list of image imageUrl entries; after picking one, insert it into the document with insert_image.',
@@ -311,6 +323,23 @@ async function executeAsyncTool(
         summary: t('aiSumWebSearchDone', { query, count: r.results.length }),
       }
     }
+    case 'fetch_url': {
+      const url = String(call.input.url ?? '').trim()
+      if (!url) return fail(t('aiSumFetchUrl'), 'url must not be empty')
+      const r = await window.desktop.fetchUrl(url)
+      // a backend failure must not read as empty content — the model would fabricate conclusions
+      if (r.method === 'error') {
+        return fail(
+          t('aiSumFetchUrl'),
+          `fetch failed (service error, not empty content — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
+      return {
+        output: `Source: ${url}\n---\n${r.text}`,
+        mutated: false,
+        summary: t('aiSumFetchUrlDone', { url }),
+      }
+    }
     case 'image_search': {
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiSumImageSearch'), 'query must not be empty')
@@ -403,7 +432,12 @@ export function executeTool(
   // synchronously (doesn't break existing tests). No settle here: marking the doc
   // seen after the long download would baptize user edits made meanwhile —
   // insert_image maintains the baseline itself right at its synchronous write.
-  if (call.name === 'web_search' || call.name === 'image_search' || call.name === 'insert_image') {
+  if (
+    call.name === 'web_search' ||
+    call.name === 'image_search' ||
+    call.name === 'insert_image' ||
+    call.name === 'fetch_url'
+  ) {
     return executeAsyncTool(editor, call, signal)
   }
   return settle(executeSyncTool(editor, call, numIds, track))

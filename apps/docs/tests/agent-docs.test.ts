@@ -432,6 +432,69 @@ describe('web_search backend failures', () => {
   })
 })
 
+describe('fetch_url tool', () => {
+  it('rejects an empty url before hitting the backend', async () => {
+    const editor = createEditor(fixture())
+    const w = window as unknown as { desktop?: unknown }
+    const saved = w.desktop
+    w.desktop = {
+      fetchUrl: async () => ({ text: 'should not be called', method: 'stub' }),
+    }
+    try {
+      const exec = await executeTool(
+        editor,
+        { id: 't', name: 'fetch_url', input: { url: '  ' } },
+        NUM_IDS,
+      )
+      expect(exec.isError).toBe(true)
+      expect(exec.output).toContain('url must not be empty')
+    } finally {
+      w.desktop = saved
+    }
+  })
+
+  it("method 'error' surfaces as a tool error, not as page content", async () => {
+    const editor = createEditor(fixture())
+    const w = window as unknown as { desktop?: unknown }
+    const saved = w.desktop
+    w.desktop = {
+      fetchUrl: async () => ({ text: '', method: 'error', error: 'refused unsafe URL' }),
+    }
+    try {
+      const exec = await executeTool(
+        editor,
+        { id: 't', name: 'fetch_url', input: { url: 'http://localhost/admin' } },
+        NUM_IDS,
+      )
+      expect(exec.isError).toBe(true)
+      expect(exec.output).toContain('refused unsafe URL')
+    } finally {
+      w.desktop = saved
+    }
+  })
+
+  it('formats fetched content with its source URL on the happy path', async () => {
+    const editor = createEditor(fixture())
+    const w = window as unknown as { desktop?: unknown }
+    const saved = w.desktop
+    w.desktop = {
+      fetchUrl: async (url: string) => ({ text: `body of ${url}`, method: 'stub' }),
+    }
+    try {
+      const exec = await executeTool(
+        editor,
+        { id: 't', name: 'fetch_url', input: { url: 'https://example.com/a' } },
+        NUM_IDS,
+      )
+      expect(exec.isError).toBeUndefined()
+      expect(exec.output).toContain('Source: https://example.com/a')
+      expect(exec.output).toContain('body of https://example.com/a')
+    } finally {
+      w.desktop = saved
+    }
+  })
+})
+
 describe('insert_image freshness baseline', () => {
   /** jsdom never decodes images; fake one that reports a fixed natural size */
   class FakeImage {

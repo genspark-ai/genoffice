@@ -231,6 +231,20 @@ export interface DesktopApi {
     /** failure reason when method === 'error' */
     error?: string
   }>
+  fetchUrl(
+    url: string,
+  ): Promise<{
+    text: string
+    method: string
+    /** failure reason when method === 'error' */
+    error?: string
+  }>
+  /** Whether TinyFish web access is signed in (drives the Connect TinyFish UI) */
+  tinyfishStatus(): Promise<{ connected: boolean }>
+  /** Start the TinyFish browser sign-in (fire-and-forget; poll tinyfishStatus) */
+  tinyfishSignIn(): Promise<void>
+  /** Forget the stored TinyFish token */
+  tinyfishSignOut(): Promise<void>
   fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
   /** file picker for chat attachments (multi-select) */
   pickAttachments(): Promise<AttachmentAddResult | null>

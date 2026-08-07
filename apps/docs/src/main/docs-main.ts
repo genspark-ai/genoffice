@@ -51,6 +51,10 @@ import {
   hasGskAuth,
   webSearch,
   imageSearch,
+  fetchUrl,
+  signInToTinyFish,
+  signOutTinyFish,
+  hasTinyFishAuth,
 } from '@genoffice/ai-search'
 import type {
   AttachmentAddResult,
@@ -2497,6 +2501,22 @@ export function registerAiIpc(): void {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
+  // TinyFish web access (MCP over OAuth): status drives the "Connect TinyFish" UI;
+  // sign-in is fire-and-forget like gsk-login — the frontend polls status to update.
+  ipcMain.handle('ai:tinyfish-status', (): { connected: boolean } => ({
+    connected: hasTinyFishAuth(),
+  }))
+
+  ipcMain.handle('ai:tinyfish-signin', () => {
+    void signInToTinyFish((url) => void shell.openExternal(url)).catch((err) => {
+      console.error('TinyFish sign-in failed:', err)
+    })
+  })
+
+  ipcMain.handle('ai:tinyfish-signout', () => {
+    signOutTinyFish()
+  })
+
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
     writeJson(SETTINGS_PATH(), settings)
   })
@@ -2585,6 +2605,13 @@ export function registerAiIpc(): void {
       return await imageSearch(String(query), typeof maxResults === 'number' ? maxResults : 8)
     } catch (err) {
       return { images: [], method: 'error', error: String(err) }
+    }
+  })
+  ipcMain.handle('ai:fetch-url', async (_event, url: string) => {
+    try {
+      return await fetchUrl(String(url))
+    } catch (err) {
+      return { text: '', method: 'error', error: String(err) }
     }
   })
 

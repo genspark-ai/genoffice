@@ -14,12 +14,46 @@ import {
   type WebSearchResult,
 } from './shared'
 import { gskImageSearch, gskWebSearch, hasGskAuth } from './gsk'
+import { isSafeRemoteUrl } from '@genoffice/electron-utils'
+import { fetchViaTinyFish, TinyFishAuthRequired } from './tinyfish-mcp'
 
 export type { ImageSearchResult, WebSearchResult } from './shared'
 export * from './gsk'
 export * from './genoffice-auth'
+export * from './tinyfish-mcp'
 
 const SERPER_KEY = () => process.env.SERPER_API_KEY ?? ''
+
+// ── Web fetch ───────────────────────────────────────────────────────
+
+/**
+ * Fetch the readable text content of a web page by URL. Runs in the main
+ * process (same as webSearch) so it can hit the network without renderer CORS.
+ * Mirrors webSearch's failure convention: returns method: 'error' rather than
+ * throwing, so the renderer can distinguish a service failure from empty content.
+ */
+export async function fetchUrl(
+  url: string,
+): Promise<{ text: string; method: string; error?: string }> {
+  // The URL comes from AI tool calls (prompt-injectable via web-search results), so
+  // gate it before any network use. In the intended design the real fetch runs on
+  // TinyFish's servers (this process only calls TinyFish's fixed endpoint), so this
+  // is defense-in-depth + input hygiene. If we ever fetch the URL directly from the
+  // main process instead, use fetchWithSsrfGuard so every redirect hop is revalidated.
+  if (!(await isSafeRemoteUrl(url))) {
+    return { text: '', method: 'error', error: 'refused: URL is not a public http(s) address' }
+  }
+  try {
+    const text = await fetchViaTinyFish(url)
+    return { text, method: 'mcp' }
+  } catch (err) {
+    // Not signed in yet: surface a clear "connect first" message rather than a raw error.
+    if (err instanceof TinyFishAuthRequired) {
+      return { text: '', method: 'error', error: 'not connected to TinyFish — connect TinyFish first' }
+    }
+    return { text: '', method: 'error', error: String(err) }
+  }
+}
 
 // ── Web search ──────────────────────────────────────────────────────
 
