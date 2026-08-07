@@ -2631,6 +2631,20 @@ function toUniverDvRule(
   const formula2 = rule.formulas[1]
   if (type === 'list' && formula1 !== undefined) {
     const literal = formula1.trim()
+    // The insert-checkbox degrade writes list "1,0" (xlsx-dv.ts); restore it.
+    if (literal === '"1,0"') {
+      return {
+        uid,
+        type: 'checkbox',
+        ranges: rule.ranges.map((area) => ({
+          startRow: area.startRow,
+          startColumn: area.startColumn,
+          endRow: area.endRow,
+          endColumn: area.endColumn,
+        })),
+        allowBlank: rule.allowBlank,
+      }
+    }
     formula1 =
       literal.startsWith('"') && literal.endsWith('"')
         ? literal.slice(1, -1)

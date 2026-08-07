@@ -137,6 +137,10 @@ export interface TextLine {
   align?: 'left' | 'center' | 'right' | 'justify'
   /** Paragraph indent level (editor Tab multi-level list display) */
   level?: number
+  /** Paragraph left margin in px (editor display: body text starts here, not at the inset edge) */
+  marLPx?: number
+  /** First-line indent in px (editor display; only applies when the paragraph has no bullet) */
+  indentPx?: number
 }
 
 export interface RenderTextLayout {

@@ -26,6 +26,9 @@ electron-builder.env
 /*.zip
 /windows/
 
+# Playwright artifacts
+/test-results/
+
 .cursor/rules/git-remote.mdc
 __pycache__/
 /notes/

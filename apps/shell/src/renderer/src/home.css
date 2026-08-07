@@ -12,6 +12,7 @@
   --radius-6: 6px;
   --radius-8: 8px;
   --color-error: #ef4444;
+  --color-error-hover: #dc2626;
   --color-border-default: #eaeaea;
   --color-bg-overlay: rgb(0 0 0 / 50%);
   --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
@@ -38,13 +39,16 @@
   --timeline-user-bg: #eef1f5;
   --timeline-user-text: #5a6170;
 
+  /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
+  --logo-invert: 0;
+
   color-scheme: light;
 }
 
 /* ── Dark mode overrides ─────────────────────────────────── */
 
 /* Explicit dark: [data-theme="dark"] on <html> */
-[data-theme="dark"] {
+[data-theme='dark'] {
   --accent: #4a9eff;
   --accent-hover: #3a8eef;
   --surface: #1e1e1e;
@@ -77,13 +81,14 @@
   --danger-border: #5a3030;
   --timeline-user-bg: #2a2a3a;
   --timeline-user-text: #b0b0c0;
+  --logo-invert: 1;
 
   color-scheme: dark;
 }
 
 /* System dark: no data-theme or data-theme="system" — follow OS preference */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
     --accent: #4a9eff;
     --accent-hover: #3a8eef;
     --surface: #1e1e1e;
@@ -115,6 +120,7 @@
     --danger-border: #5a3030;
     --timeline-user-bg: #2a2a3a;
     --timeline-user-text: #b0b0c0;
+    --logo-invert: 1;
     color-scheme: dark;
   }
 }
@@ -188,6 +194,7 @@ body.vib .home {
   display: block;
   height: 28px;
   width: auto;
+  filter: invert(var(--logo-invert));
 }
 
 .sidebar-nav {
@@ -744,7 +751,7 @@ body.vib .home {
   background: none;
   font: inherit;
   font-size: 13px;
-  color: #606366;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -1089,13 +1096,8 @@ body.vib .home {
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* design-system interaction states */
-.btn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
+/* design-system interaction states; hover fills live on each variant below */
 .btn:active:not(:disabled) {
-  opacity: 0.8;
   transform: scale(0.98);
 }
 
@@ -1122,7 +1124,7 @@ body.vib .home {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #dc2626;
+  background: var(--color-error-hover);
 }
 
 .modal-overlay {

@@ -91,12 +91,18 @@ export type PageGapSpec = {
   /** Previous page's footer / next page's header (ready-made positioned .page-gap-hf elements) and their content signature */
   hfEls?: HTMLElement[]
   hfKey?: string
+  /** w:tblHeader repetition: cloned header rows rendered right after a table gap
+   *  (the slicing engine already reserved their height on the new page) */
+  repeatHeaderEls?: HTMLElement[]
+  repeatHeaderKey?: string
 } & ({ el: HTMLElement } | { pos: number; kind?: 'inline' | 'table' | 'cut' })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
 export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
   const decos: Decoration[] = []
+  let ordinal = -1
   for (const gap of gaps) {
+    ordinal++
     const { metrics, notes, hfEls } = gap
     let pos: number
     let kind: 'block' | 'inline' | 'table' | 'cut'
@@ -119,19 +125,38 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
         () => {
           const el = makeGapEl(metrics, kind)
           if (notes) el.appendChild(notes)
-          // header/footer strips only fit the full-width gap variants (a table-row
-          // gap has no reliable absolute-positioning context; cut markers have no height)
           if (hfEls && (kind === 'block' || kind === 'inline')) {
             for (const hf of hfEls) el.appendChild(hf)
+          } else if (hfEls && kind === 'table') {
+            // table-row gaps position their strips inside the absolutely-filled cell;
+            // only zero-height cut markers still can't carry them
+            const fill = el.querySelector('.page-gap-table-fill')
+            if (fill) for (const hf of hfEls) fill.appendChild(hf)
           }
           return el
         },
         {
           side: -1,
-          key: `page-gap-${kind[0]}-${pos}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
+          // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
+          // position without changing the page, so an ordinal key lets sameGaps
+          // skip the dispatch entirely and lets PM reuse the widget DOM when a
+          // dispatch does happen
+          key: `page-gap-${kind[0]}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
         },
       ),
     )
+    // repeated header rows (w:tblHeader) directly after the table gap: one widget per
+    // cloned tr, side 0 so they land between the gap (side -1) and the split row
+    if (kind === 'table' && gap.repeatHeaderEls?.length) {
+      gap.repeatHeaderEls.forEach((rowEl, i) => {
+        decos.push(
+          Decoration.widget(pos, () => rowEl, {
+            side: 0,
+            key: `page-gap-rh-${pos}-${i}-${gap.repeatHeaderKey ?? ''}`,
+          }),
+        )
+      })
+    }
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)

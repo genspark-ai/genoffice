@@ -51,7 +51,13 @@ for (const rel of [
 // requires this config to read extraResources, and the dist:* scripts run
 // notices before build:all, when the out dirs legitimately don't exist yet.
 function assertModuleTreesPresent() {
-  for (const rel of ['../docs/out', '../sheets/out', '../slides/out', '../pdf/out']) {
+  for (const rel of [
+    '../docs/out',
+    '../sheets/out',
+    '../slides/out',
+    '../pdf/out',
+    '../markdown/out',
+  ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
         `electron-builder extraResources source missing: ${rel} (run npm run build:all first)`,
@@ -96,6 +102,10 @@ const config = {
     {
       from: '../pdf/out',
       to: 'modules/pdf',
+    },
+    {
+      from: '../markdown/out',
+      to: 'modules/markdown',
     },
     {
       from: '../../node_modules/@genspark/cli',
@@ -149,6 +159,18 @@ const config = {
       name: 'PDF Document',
       role: 'Editor',
       mimeType: 'application/pdf',
+    },
+    {
+      ext: 'md',
+      name: 'Markdown Document',
+      role: 'Editor',
+      mimeType: 'text/markdown',
+    },
+    {
+      ext: 'markdown',
+      name: 'Markdown Document',
+      role: 'Editor',
+      mimeType: 'text/markdown',
     },
   ],
   npmRebuild: false,

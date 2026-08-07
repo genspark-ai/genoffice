@@ -11,6 +11,7 @@
     sans-serif;
   --onb-btn-primary: #232425;
   --onb-btn-primary-hover: #393a3b;
+  --onb-btn-primary-text: #fff;
   --onb-brand: #0f7fff;
   --onb-text-primary: #232425;
   --onb-text-secondary: #606366;
@@ -290,7 +291,7 @@
   border: none;
   border-radius: 12px;
   background: var(--onb-btn-primary);
-  color: #fff;
+  color: var(--onb-btn-primary-text);
   font-size: 14px;
   letter-spacing: -0.154px;
   text-align: center;
@@ -323,9 +324,10 @@
 
 /* ── Dark mode onboarding overrides ──────────────────────── */
 
-[data-theme="dark"] .onb-overlay {
+[data-theme='dark'] .onb-overlay {
   --onb-btn-primary: #e4e4e4;
   --onb-btn-primary-hover: #ccc;
+  --onb-btn-primary-text: #1a1a1a;
   --onb-text-primary: #e4e4e4;
   --onb-text-secondary: #a0a0a0;
   --onb-text-tertiary: #777;
@@ -335,21 +337,22 @@
   --onb-border-strong: #555;
 }
 
-[data-theme="dark"] .onb-card {
+[data-theme='dark'] .onb-card {
   background: #2a2a2a;
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.5),
     0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-[data-theme="dark"] .onb-join {
+[data-theme='dark'] .onb-join {
   background: #2a2a2a;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .onb-overlay {
+  :root:not([data-theme='light']):not([data-theme='dark']) .onb-overlay {
     --onb-btn-primary: #e4e4e4;
     --onb-btn-primary-hover: #ccc;
+    --onb-btn-primary-text: #1a1a1a;
     --onb-text-primary: #e4e4e4;
     --onb-text-secondary: #a0a0a0;
     --onb-text-tertiary: #777;
@@ -358,13 +361,13 @@
     --onb-border-default: #444;
     --onb-border-strong: #555;
   }
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .onb-card {
+  :root:not([data-theme='light']):not([data-theme='dark']) .onb-card {
     background: #2a2a2a;
     box-shadow:
       0 24px 64px rgba(0, 0, 0, 0.5),
       0 2px 8px rgba(0, 0, 0, 0.3);
   }
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .onb-join {
+  :root:not([data-theme='light']):not([data-theme='dark']) .onb-join {
     background: #2a2a2a;
   }
 }

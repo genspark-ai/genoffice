@@ -19,8 +19,8 @@ import type { SlideThemePreset } from './themes'
 import { t } from './i18n/locale'
 
 export function onFormat(cmd: FormatCmd): void {
-  if (cmd === 'fontSizeUp') resizeSelectionFont(1.2)
-  else if (cmd === 'fontSizeDown') resizeSelectionFont(1 / 1.2)
+  if (cmd === 'fontSizeUp') resizeSelectionFont(1)
+  else if (cmd === 'fontSizeDown') resizeSelectionFont(-1)
   else document.execCommand(cmd)
 }
 

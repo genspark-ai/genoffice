@@ -104,6 +104,15 @@ async function settle() {
   }
 }
 
+/** Zoom buttons go through the shared preview path: the CSS transform lands on the next
+ * rAF and the React commit after a 150ms debounce — flush both before asserting. */
+async function flushZoomPreview() {
+  await act(async () => {
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    await new Promise((r) => setTimeout(r, 180))
+  })
+}
+
 function stageZoom(container: HTMLElement): number {
   const el = container.querySelector<HTMLElement>('.stage-scale')
   expect(el, 'stage-scale should be mounted').not.toBeNull()
@@ -207,6 +216,7 @@ describe('stage fit-to-window follow', () => {
     // "+" bottom-bar button: manual zoom, exits fit mode
     const plus = [...container!.querySelectorAll<HTMLButtonElement>('.zoom-btn')].at(-1)!
     act(() => plus.click())
+    await flushZoomPreview()
     expect(stageZoom(container!)).toBeCloseTo(1.1, 5)
 
     // container shrinks: 1.1 no longer fits → clamp down to the new fit
@@ -226,6 +236,7 @@ describe('stage fit-to-window follow', () => {
     // "−" bottom-bar button: manual zoom out below fit
     const minus = container!.querySelector<HTMLButtonElement>('.zoom-btn')!
     act(() => minus.click())
+    await flushZoomPreview()
     expect(stageZoom(container!)).toBeCloseTo(0.9, 5)
 
     // resize with fit still 1: 0.9 fits already → the user's choice is kept
@@ -244,6 +255,7 @@ describe('stage fit-to-window follow', () => {
     // manual zoom to 2.0 — still fits geometrically
     const plus = [...container!.querySelectorAll<HTMLButtonElement>('.zoom-btn')].at(-1)!
     for (let i = 0; i < 5; i++) act(() => plus.click())
+    await flushZoomPreview()
     expect(stageZoom(container!)).toBeCloseTo(2.0, 5)
 
     // a resize that still fits 200% must NOT wipe the manual zoom down to 1.5

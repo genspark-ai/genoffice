@@ -128,7 +128,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
   const documentXml = await docFile.async('string')
 
   const theme = await parseTheme(zip)
-  const { styles, docDefaults } = await parseStyles(zip, theme.colors)
+  const { styles, docDefaults } = await parseStyles(zip, theme.colors, theme.fonts)
   const headingStyleIds = new Map<number, string>()
   let listParagraphStyleId: string | undefined
   for (const info of styles.values()) {
@@ -166,6 +166,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     chartParts,
     noteNumbers,
     themeColors: theme.colors,
+    themeFonts: theme.fonts,
   }
   let sdtGroupSeq = 0
   for (const el of scan.elements) {
@@ -290,6 +291,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     footerImages: footer?.images ?? null,
     footerText: footer?.text ?? null,
     footerHasPageNumber: footer?.hasPageNumber ?? false,
+    headerHasPageNumber: header?.hasPageNumber ?? false,
     titlePg,
     evenAndOddHeaders,
     headerFirst: hfPartInfo(headerFirst),
@@ -325,6 +327,27 @@ interface BuildContext {
   noteNumbers: Map<string, number>
   /** live palette for w:themeColor resolution, null when the doc has no theme */
   themeColors?: ThemeColors | null
+  /** theme font scheme for w:asciiTheme/... resolution */
+  themeFonts?: ThemeFonts | null
+}
+
+/** numbering reference of a paragraph: direct w:numPr, falling back to the pStyle's
+ * numPr (ListBullet/ListNumber style-driven lists carry no numPr on the paragraph).
+ * numId="0" is Word's explicit "no numbering" and yields undefined. */
+function listRefOf(
+  ctx: BuildContext,
+  pPr: XNode | undefined,
+  styleId: string | undefined,
+): { numId: string; ilvl: number } | undefined {
+  const numPr = pPr ? findChild(pPr, 'w:numPr') : undefined
+  const directNumId = numPr ? attrsOf(findChild(numPr, 'w:numId') ?? {})['w:val'] : undefined
+  const directIlvl = numPr ? attrsOf(findChild(numPr, 'w:ilvl') ?? {})['w:val'] : undefined
+  if (directNumId === '0') return undefined
+  const styleNumPr = styleId ? ctx.styles.get(styleId)?.numPr : undefined
+  const numId = directNumId ?? styleNumPr?.numId
+  if (!numId) return undefined
+  const ilvl = directIlvl !== undefined ? parseInt(directIlvl, 10) || 0 : (styleNumPr?.ilvl ?? 0)
+  return { numId, ilvl }
 }
 
 /** bullet/ordered classification of one list level (mixed lists differ per ilvl) */
@@ -871,32 +894,27 @@ function buildTextParagraph(
   }
 
   // list item?
-  const numPr = pPr ? findChild(pPr, 'w:numPr') : undefined
+  const listRef = listRefOf(ctx, pPr, styleId)
   /** extra revision fields shared across all return paths */
   const revExtras = {
     ...(moveRevision ? { moveRevision } : {}),
     ...(pPrChangeInfo ? { pPrChangeInfo } : {}),
   }
-  if (numPr) {
-    const numId = attrsOf(findChild(numPr, 'w:numId') ?? {})['w:val']
-    const ilvl = attrsOf(findChild(numPr, 'w:ilvl') ?? {})['w:val'] ?? '0'
-    if (numId) {
-      const ilvlNum = parseInt(ilvl, 10) || 0
-      const kind = listKindOf(ctx, numId, ilvlNum)
-      return {
-        ...base,
-        type: 'listItem',
-        styleId,
-        list: { kind, numId, ilvl: ilvlNum },
-        format,
-        rawPPr,
-        bookmarks,
-        hiddenBookmarks,
-        commentStarts,
-        commentEnds,
-        runs,
-        ...revExtras,
-      }
+  if (listRef) {
+    const kind = listKindOf(ctx, listRef.numId, listRef.ilvl)
+    return {
+      ...base,
+      type: 'listItem',
+      styleId,
+      list: { kind, numId: listRef.numId, ilvl: listRef.ilvl },
+      format,
+      rawPPr,
+      bookmarks,
+      hiddenBookmarks,
+      commentStarts,
+      commentEnds,
+      runs,
+      ...revExtras,
     }
   }
 
@@ -1319,10 +1337,16 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
         // lineSpacing in 'auto' sense is not applicable for atLeast/exact, keep undefined
       }
     }
+    // autospacing=1 means Word ignores the literal before/after and computes its own;
+    // dropping the literal (→ style/docDefaults cascade) is closer than honoring it.
+    // Explicit "0" must be kept — it overrides the style's spacing.
+    const autoBefore =
+      attrs['w:beforeAutospacing'] === '1' || attrs['w:beforeAutospacing'] === 'true'
+    const autoAfter = attrs['w:afterAutospacing'] === '1' || attrs['w:afterAutospacing'] === 'true'
     const before = parseInt(attrs['w:before'] ?? '', 10)
-    if (before > 0) format.spaceBefore = before
+    if (before >= 0 && attrs['w:before'] !== undefined && !autoBefore) format.spaceBefore = before
     const after = parseInt(attrs['w:after'] ?? '', 10)
-    if (after >= 0 && attrs['w:after'] !== undefined) format.spaceAfter = after
+    if (after >= 0 && attrs['w:after'] !== undefined && !autoAfter) format.spaceAfter = after
   }
   const ind = findChild(pPr, 'w:ind')
   if (ind) {
@@ -1500,7 +1524,7 @@ function extractRuns(
       if (instr) fieldInstr += textOf(instr)
       else if (fieldSeparated && fieldDepth === 1) {
         // REF cached result is the display text; other fields' caches are dropped
-        const cached = buildRun(node, link, ctx.themeColors)
+        const cached = buildRun(node, link, ctx.themeColors, ctx.themeFonts)
         if (cached) fieldCached += cached.text
       }
       return
@@ -1525,7 +1549,7 @@ function extractRuns(
         return
       }
     }
-    const run = buildRun(node, link, ctx.themeColors)
+    const run = buildRun(node, link, ctx.themeColors, ctx.themeFonts)
     if (run) pushRun(run, rev)
   }
   const walk = (nodes: XNode[], link?: Run['link'], rev?: RevCtx) => {
@@ -1603,7 +1627,46 @@ function onOffOf(parent: XNode, name: string): boolean | undefined {
   return !['0', 'false', 'none', 'off'].includes(val.toLowerCase())
 }
 
-function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null): Run | null {
+/** w:rFonts with theme references resolved: theme attrs supersede same-slot literal
+ * values (ECMA-376 §17.3.2.26). Unresolvable references fall back to the literal. */
+function themedRFonts(
+  attrs: Record<string, string | undefined>,
+  fonts: ThemeFonts | null | undefined,
+): { ascii?: string; hAnsi?: string; eastAsia?: string } {
+  const themeVal = (ref: string | undefined): string | undefined => {
+    if (!ref || !fonts) return undefined
+    switch (ref) {
+      case 'majorAscii':
+      case 'majorHAnsi':
+        return fonts.major || undefined
+      case 'minorAscii':
+      case 'minorHAnsi':
+        return fonts.minor || undefined
+      case 'majorEastAsia':
+        return fonts.majorEastAsia || undefined
+      case 'minorEastAsia':
+        return fonts.eastAsia || undefined
+      case 'majorBidi':
+        return fonts.majorCs || undefined
+      case 'minorBidi':
+        return fonts.minorCs || undefined
+      default:
+        return undefined
+    }
+  }
+  return {
+    ascii: themeVal(attrs['w:asciiTheme']) ?? attrs['w:ascii'],
+    hAnsi: themeVal(attrs['w:hAnsiTheme']) ?? attrs['w:hAnsi'],
+    eastAsia: themeVal(attrs['w:eastAsiaTheme']) ?? attrs['w:eastAsia'],
+  }
+}
+
+function buildRun(
+  rNode: XNode,
+  link?: Run['link'],
+  theme?: ThemeColors | null,
+  themeFonts?: ThemeFonts | null,
+): Run | null {
   let text = ''
   for (const child of childrenOf(rNode)) {
     const name = nameOf(child)
@@ -1642,10 +1705,10 @@ function buildRun(rNode: XNode, link?: Run['link'], theme?: ThemeColors | null):
     if (color) run.color = color
     const sz = attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val']
     if (sz) run.sizeHalfPoints = parseInt(sz, 10) || undefined
-    const fonts = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
-    const font = fonts['w:eastAsia'] ?? fonts['w:ascii'] ?? fonts['w:hAnsi']
+    const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
+    const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
     if (font) run.font = font
-    const fontAscii = fonts['w:ascii'] ?? fonts['w:hAnsi']
+    const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) run.fontAscii = fontAscii
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) run.charSpacingTwips = spc
@@ -1782,6 +1845,34 @@ function extractTable(xml: string, ctx: BuildContext): TableModel | undefined {
 }
 
 /** One w:tbl node → display model (shared by top-level tables and tables nested in cells) */
+/**
+ * Per-column widths reconstructed from cell w:tcW (dxa) across all rows: the first
+ * un-spanned cell seen per grid slot wins. Undefined unless every column got a value —
+ * partial data would skew the ratio worse than the tblGrid fallback.
+ */
+function tcwColumnWidths(tbl: XNode): number[] | undefined {
+  const cols: number[] = []
+  let colCount = 0
+  for (const tr of childrenThroughSdt(tbl, 'w:tr')) {
+    let idx = 0
+    for (const tc of childrenThroughSdt(tr, 'w:tc')) {
+      const tcPr = findChild(tc, 'w:tcPr')
+      const span = Math.max(
+        1,
+        Number(attrsOf(findChild(tcPr ?? {}, 'w:gridSpan') ?? {})['w:val']) || 1,
+      )
+      const a = attrsOf(findChild(tcPr ?? {}, 'w:tcW') ?? {})
+      const w = !a['w:type'] || a['w:type'] === 'dxa' ? Number(a['w:w']) || 0 : 0
+      if (span === 1 && w > 0 && !(cols[idx] > 0)) cols[idx] = w
+      idx += span
+    }
+    colCount = Math.max(colCount, idx)
+  }
+  if (colCount === 0) return undefined
+  for (let i = 0; i < colCount; i++) if (!(cols[i] > 0)) return undefined
+  return cols.slice(0, colCount)
+}
+
 function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefined {
   const grid = findChild(tbl, 'w:tblGrid')
   let colWidthsPct: number[] | undefined
@@ -1794,30 +1885,19 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
       if (widths.every((w) => w > 0)) colWidthsTwips = widths
     }
   }
-  if (!colWidthsTwips) {
-    // No usable grid (third-party generators may omit tblGrid): fall back to each first-row
-    // cell's w:tcW, splitting gridSpan cell widths evenly across the spanned columns
-    const firstRowTcs = childrenThroughSdt(childrenThroughSdt(tbl, 'w:tr')[0] ?? {}, 'w:tc')
-    const tcWidths: number[] = []
-    let usable = firstRowTcs.length > 0
-    for (const tc of firstRowTcs) {
-      const tcPr = findChild(tc, 'w:tcPr')
-      const a = attrsOf(findChild(tcPr ?? {}, 'w:tcW') ?? {})
-      const w = !a['w:type'] || a['w:type'] === 'dxa' ? Number(a['w:w']) || 0 : 0
-      if (w <= 0) {
-        usable = false
-        break
-      }
-      const span = Math.max(
-        1,
-        Number(attrsOf(findChild(tcPr ?? {}, 'w:gridSpan') ?? {})['w:val']) || 1,
-      )
-      for (let i = 0; i < span; i++) tcWidths.push(w / span)
-    }
-    if (usable) {
-      const total = tcWidths.reduce((a, b) => a + b, 0)
-      colWidthsTwips = tcWidths
-      colWidthsPct = tcWidths.map((w) => (w / total) * 100)
+  // Cell-level w:tcW is Word's actual layout input for auto tables; generators often
+  // leave a stale evenly-split tblGrid behind. When the two disagree, tcW wins.
+  const tcwWidths = tcwColumnWidths(tbl)
+  if (tcwWidths) {
+    const tcwTotal = tcwWidths.reduce((a, b) => a + b, 0)
+    const tcwPct = tcwWidths.map((w) => (w / tcwTotal) * 100)
+    const disagree =
+      !colWidthsPct ||
+      colWidthsPct.length !== tcwPct.length ||
+      colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2)
+    if (disagree) {
+      colWidthsPct = tcwPct
+      colWidthsTwips = tcwWidths
     }
   }
   const tblPrNode = findChild(tbl, 'w:tblPr')
@@ -2075,13 +2155,15 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
     cell.paras.push(textOf(p))
     const pPr = findChild(p, 'w:pPr')
     const format = extractParaFormat(pPr ?? {})
-    const numPr = pPr ? findChild(pPr, 'w:numPr') : undefined
-    const numId = numPr ? attrsOf(findChild(numPr, 'w:numId') ?? {})['w:val'] : undefined
-    const cellIlvl = numPr
-      ? parseInt(attrsOf(findChild(numPr, 'w:ilvl') ?? {})['w:val'] ?? '0', 10) || 0
-      : 0
-    const list =
-      numPr && numId ? { kind: listKindOf(ctx, numId, cellIlvl), numId, ilvl: cellIlvl } : undefined
+    const cellStyleId = pPr ? attrsOf(findChild(pPr, 'w:pStyle') ?? {})['w:val'] : undefined
+    const cellRef = listRefOf(ctx, pPr, cellStyleId)
+    const list = cellRef
+      ? {
+          kind: listKindOf(ctx, cellRef.numId, cellRef.ilvl),
+          numId: cellRef.numId,
+          ilvl: cellRef.ilvl,
+        }
+      : undefined
     richParas.push({ ...format, ...(list ? { list } : {}), runs: extractRuns(p, ctx) })
     if (!cell.align) {
       const jc = attrsOf(findChild(findChild(p, 'w:pPr') ?? {}, 'w:jc') ?? {})['w:val']
@@ -2178,13 +2260,15 @@ function hfContentFromXml(
   kind: 'header' | 'footer',
   theme?: ThemeColors | null,
 ): { text: string; hasPageNumber: boolean; watermark: string | null; paras: HfParagraph[] } {
-  const hasPageNumber = /<w:instrText[^>]*>[^<]*\bPAGE\b/.test(xml)
   // Rewrite each field span (begin..end) for display. PAGE becomes the '#'
   // marker and NUMPAGES the private-use marker (the renderer substitutes real
   // numbers), dropping their stale cached results; other fields (DATE, STYLEREF,
   // ...) keep their cached result runs (Word refreshes them on open). fldChar
   // attribute matching is tolerant (Pages writes w:fldLock="0" etc.).
-  const cleaned = xml.replace(
+  // hasPageNumber is set by the same match that emits '#', so the two can't drift
+  // (Word may split "PAGE" across several instrText runs).
+  let hasPageNumber = false
+  let cleaned = xml.replace(
     /<w:fldChar[^>]*w:fldCharType="begin"[^>]*\/>[\s\S]*?<w:fldChar[^>]*w:fldCharType="end"[^>]*\/>/g,
     (span) => {
       const instr = (span.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? [])
@@ -2198,7 +2282,10 @@ function hfContentFromXml(
       if (/\bNUMPAGES\b/.test(instr)) {
         return emit(`<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`)
       }
-      if (/\bPAGE\b/.test(instr)) return emit(`<w:r>${rPr}<w:t>#</w:t></w:r>`)
+      if (/\bPAGE\b/.test(instr)) {
+        hasPageNumber = true
+        return emit(`<w:r>${rPr}<w:t>#</w:t></w:r>`)
+      }
       const cached = /<w:fldChar[^>]*w:fldCharType="separate"[^>]*\/>([\s\S]*)$/.exec(span)?.[1]
       // complete result runs between separate and end (partial run fragments at the edges drop out)
       return emit(
@@ -2206,6 +2293,19 @@ function hfContentFromXml(
           .filter((run) => run.includes('<w:t'))
           .join(''),
       )
+    },
+  )
+  // <w:fldSimple w:instr=" PAGE "> single-element field form
+  cleaned = cleaned.replace(
+    /<w:fldSimple[^>]*w:instr="([^"]*)"[^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
+    (whole, instr: string, inner: string | undefined) => {
+      const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
+      if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
+      if (/\bPAGE\b/.test(instr)) {
+        hasPageNumber = true
+        return `<w:r>${rPr}<w:t>#</w:t></w:r>`
+      }
+      return inner ?? whole
     },
   )
   return {
@@ -2681,6 +2781,7 @@ async function extractChart(xml: string, ctx: BuildContext): Promise<ChartDispla
 async function parseStyles(
   zip: JSZip,
   theme?: ThemeColors | null,
+  themeFonts?: ThemeFonts | null,
 ): Promise<{ styles: Map<string, StyleInfo>; docDefaults?: DocDefaults }> {
   const styles = new Map<string, StyleInfo>()
   const file = zip.file('word/styles.xml')
@@ -2702,9 +2803,9 @@ async function parseStyles(
     const rPr = findChild(findChild(defaultsNode, 'w:rPrDefault') ?? {}, 'w:rPr')
     const sz = rPr ? attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val'] : undefined
     if (sz) dd.sizeHalfPoints = parseInt(sz, 10) || undefined
-    const rFonts = rPr ? attrsOf(findChild(rPr, 'w:rFonts') ?? {}) : {}
-    if (rFonts['w:ascii']) dd.asciiFont = rFonts['w:ascii']
-    if (rFonts['w:eastAsia']) dd.eastAsiaFont = rFonts['w:eastAsia']
+    const ddRf = themedRFonts(rPr ? attrsOf(findChild(rPr, 'w:rFonts') ?? {}) : {}, themeFonts)
+    if (ddRf.ascii ?? ddRf.hAnsi) dd.asciiFont = ddRf.ascii ?? ddRf.hAnsi
+    if (ddRf.eastAsia) dd.eastAsiaFont = ddRf.eastAsia
     if (rPr) {
       const onFlag = (tag: string) => {
         const node = findChild(rPr, tag)
@@ -2772,6 +2873,17 @@ async function parseStyles(
       const val = attrsOf(node)['w:val']
       return val === '0' || val === 'false' ? undefined : true
     }
+    let numPr: StyleInfo['numPr']
+    if (type === 'paragraph') {
+      const styleNumPr = findChild(findChild(styleNode, 'w:pPr') ?? {}, 'w:numPr')
+      if (styleNumPr) {
+        const numId = attrsOf(findChild(styleNumPr, 'w:numId') ?? {})['w:val']
+        if (numId && numId !== '0') {
+          const ilvl = parseInt(attrsOf(findChild(styleNumPr, 'w:ilvl') ?? {})['w:val'] ?? '0', 10)
+          numPr = { numId, ilvl: ilvl || 0 }
+        }
+      }
+    }
     styles.set(styleId, {
       styleId,
       name,
@@ -2779,8 +2891,10 @@ async function parseStyles(
       headingLevel,
       semiHidden: onFlag('w:semiHidden'),
       qFormat: onFlag('w:qFormat'),
-      display: type === 'table' ? undefined : styleDisplayOf(styleNode, theme),
+      display: type === 'table' ? undefined : styleDisplayOf(styleNode, theme, themeFonts),
       tableDisplay: type === 'table' ? tableStyleDisplayOf(styleNode, theme) : undefined,
+      numPr,
+      isDefault: attrs['w:default'] === '1' || attrs['w:default'] === 'true' ? true : undefined,
     })
   }
 
@@ -2809,6 +2923,7 @@ async function parseStyles(
     ) {
       info.headingLevel = parent.headingLevel
     }
+    if (info.type === 'paragraph' && !info.numPr && parent?.numPr) info.numPr = parent.numPr
     return info
   }
   for (const styleId of styles.keys()) resolve(styleId, new Set())
@@ -2825,6 +2940,7 @@ async function parseStyles(
     'underline',
     'strike',
     'font',
+    'fontAscii',
   ] as const
   for (const [fromId, toId] of linkedIds) {
     const a = styles.get(fromId)
@@ -2859,6 +2975,9 @@ function mergeTableDisplay(
     ...(child ?? {}),
     ...(parent.firstRow || child?.firstRow
       ? { firstRow: { ...(parent.firstRow ?? {}), ...(child?.firstRow ?? {}) } }
+      : {}),
+    ...(parent.paraSpacing || child?.paraSpacing
+      ? { paraSpacing: { ...(parent.paraSpacing ?? {}), ...(child?.paraSpacing ?? {}) } }
       : {}),
   }
   return Object.keys(merged).length > 0 ? merged : undefined
@@ -2899,11 +3018,32 @@ function tableStyleDisplayOf(
   if (borders) display.borders = borders
   const cellMar = cellMarginsOf(findChild(styleTblPr ?? {}, 'w:tblCellMar'))
   if (cellMar) display.cellMarTwips = cellMar
+  const stylePPrSpacing = findChild(findChild(styleNode, 'w:pPr') ?? {}, 'w:spacing')
+  if (stylePPrSpacing) {
+    const a = attrsOf(stylePPrSpacing)
+    const ps: NonNullable<TableStyleDisplay['paraSpacing']> = {}
+    const before = parseInt(a['w:before'] ?? '', 10)
+    if (before >= 0 && a['w:before'] !== undefined) ps.beforeTwips = before
+    const after = parseInt(a['w:after'] ?? '', 10)
+    if (after >= 0 && a['w:after'] !== undefined) ps.afterTwips = after
+    const line = parseInt(a['w:line'] ?? '', 10)
+    if (line > 0) {
+      ps.lineRawTwips = line
+      const rule = (a['w:lineRule'] ?? 'auto') as 'auto' | 'atLeast' | 'exact'
+      ps.lineRule = rule
+      if (rule === 'auto') ps.lineSpacing = Math.round((line / 240) * 100) / 100
+    }
+    if (Object.keys(ps).length > 0) display.paraSpacing = ps
+  }
   return Object.keys(display).length > 0 ? display : undefined
 }
 
 /** display-only formatting the style contributes on screen (Word renders these from styles.xml) */
-function styleDisplayOf(styleNode: XNode, theme?: ThemeColors | null): StyleDisplay | undefined {
+function styleDisplayOf(
+  styleNode: XNode,
+  theme?: ThemeColors | null,
+  themeFonts?: ThemeFonts | null,
+): StyleDisplay | undefined {
   const display: StyleDisplay = {}
   const rPr = findChild(styleNode, 'w:rPr')
   if (rPr) {
@@ -2919,8 +3059,10 @@ function styleDisplayOf(styleNode: XNode, theme?: ThemeColors | null): StyleDisp
     if (u) display.underline = u !== 'none'
     const strike = onOffOf(rPr, 'w:strike')
     if (strike !== undefined) display.strike = strike
-    const fonts = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
-    const font = fonts['w:eastAsia'] ?? fonts['w:ascii'] ?? fonts['w:hAnsi']
+    const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
+    const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
+    const fontAscii = rf.ascii ?? rf.hAnsi
+    if (fontAscii) display.fontAscii = fontAscii
     if (font) display.font = font
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) display.charSpacingTwips = spc
@@ -2946,6 +3088,9 @@ function styleDisplayOf(styleNode: XNode, theme?: ThemeColors | null): StyleDisp
     if (boolProp(pPr, 'w:keepNext')) display.keepNext = true
     if (boolProp(pPr, 'w:keepLines')) display.keepLines = true
     if (boolProp(pPr, 'w:contextualSpacing')) display.contextualSpacing = true
+    const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
+    if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
+    else if (jc === 'both' || jc === 'distribute') display.align = 'justify'
     const ind = findChild(pPr, 'w:ind')
     if (ind) {
       const a = attrsOf(ind)

@@ -31,6 +31,8 @@ export {
   patchTextboxHeights,
   patchTextboxParas,
   patchTextboxSizes,
+  patchShapeStyles,
+  type ShapeStylePatch,
   patchDrawingExtent,
   buildLineParagraphXml,
   LINE_KINDS,

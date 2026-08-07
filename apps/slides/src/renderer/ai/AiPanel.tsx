@@ -1250,7 +1250,7 @@ export function AiPanel({
       return
     }
     ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, 147)}px`
+    ta.style.height = `${Math.min(ta.scrollHeight, 168)}px`
     // `open` dep: re-measure after expand restores a draft
   }, [input, open])
 

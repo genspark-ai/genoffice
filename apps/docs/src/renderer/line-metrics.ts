@@ -120,7 +120,21 @@ export function lineHeightFactor(fontFamily: string): number {
   ) {
     return 1.3
   }
-  // Western and default (Calibri, Arial, Times, Liberation, etc.)
+  // Western single-line factors follow each font's hhea metrics (Word's single
+  // spacing): a 4% surplus per line cascades into whole-paragraph pagination
+  // drift, so the big Office faces get their real values.
+  if (f.includes('times') || f.includes('liberation serif')) return 1.15
+  if (f.includes('georgia')) return 1.14
+  if (f.includes('cambria') || f.includes('caladea')) return 1.17
+  if (
+    f === 'arial' ||
+    f.startsWith('arial ') ||
+    f.includes('helvetica') ||
+    f.includes('liberation sans')
+  )
+    return 1.15
+  if (f.includes('calibri') || f.includes('carlito')) return 1.22
+  // default (Lato, Segoe, unknown Western)
   return 1.2
 }
 
@@ -217,6 +231,39 @@ export function computeLineHeight(
  * breaks aligned with Word and the offline pagination model. CJK families fall
  * back to macOS equivalents (CJK width is always 1em, so this is mostly glyph appearance).
  */
+/**
+ * Whether a font family actually resolves on this machine. document.fonts.check
+ * is useless in Chromium (true for any unknown system-ish family), so this
+ * measures a mixed-script sample against both generic fallbacks: a family that
+ * changes neither width doesn't exist.
+ */
+const fontAvailableCache = new Map<string, boolean>()
+export function isFontAvailable(font: string): boolean {
+  if (typeof document === 'undefined') return false
+  const cached = fontAvailableCache.get(font)
+  if (cached !== undefined) return cached
+  let available = false
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      const sample = '한글あア中文abcWXYmm123'
+      const quoted = `"${font.replace(/"/g, '')}"`
+      const widthWith = (family: string) => {
+        ctx.font = `32px ${family}`
+        return ctx.measureText(sample).width
+      }
+      available =
+        widthWith(`${quoted}, monospace`) !== widthWith('monospace') ||
+        widthWith(`${quoted}, serif`) !== widthWith('serif')
+    }
+  } catch {
+    /* headless/test environments treat every font as missing */
+  }
+  fontAvailableCache.set(font, available)
+  return available
+}
+
 export function cssFontFamily(font: string): string {
   const f = font.toLowerCase()
   const chain = (...families: string[]) =>
@@ -262,6 +309,31 @@ export function cssFontFamily(font: string): string {
   const TC_SANS = ['Microsoft JhengHei', 'PingFang TC', 'Heiti TC', 'Noto Sans TC']
   const TC_SERIF = ['PMingLiU', 'MingLiU', 'Songti TC', 'Noto Serif TC']
   const nfkc = font.normalize('NFKC')
+  // Word substitutes a *missing* East Asian font with the locale's default face —
+  // a serif (Mincho/Batang) — regardless of the requested font's classification.
+  // Classic Windows faces (Malgun/Meiryo/Yu Gothic...) have solid macOS
+  // equivalents in the chains and keep their classification.
+  const missingLocally = () => !isFontAvailable(font)
+  // Noto CJK / Source Han / Nanum regional variants route by suffix; the generic
+  // fallback tail below would otherwise land them on the bundled Simplified-only subset
+  const cjkVariant = /^(?:noto|source han) (sans|serif)(?: cjk)? ?(jp|kr|k\b|tc|tw|hk)/i.exec(nfkc)
+  if (cjkVariant) {
+    const serif = /serif/i.test(cjkVariant[1]) || missingLocally()
+    const region = cjkVariant[2].toLowerCase()
+    const chainFor =
+      region === 'jp'
+        ? serif
+          ? JA_SERIF
+          : JA_SANS
+        : region === 'kr' || region === 'k'
+          ? serif
+            ? KO_SERIF
+            : KO_SANS
+          : serif
+            ? TC_SERIF
+            : TC_SANS
+    return `${chain(font, ...chainFor)},${serif ? 'serif' : 'sans-serif'}`
+  }
   if (
     /[぀-ヿ]|mincho|meiryo|hiragino|osaka|yugoth|yu (gothic|mincho)|ms (ui )?p?(gothic|mincho)|明朝|biz ud|kozuka|小塚/i.test(
       nfkc,
@@ -275,7 +347,12 @@ export function cssFontFamily(font: string): string {
       nfkc,
     )
   ) {
-    const serif = /batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서/i.test(nfkc)
+    // vendor faces (Nanum...) missing locally follow Word's Batang-ward substitution;
+    // Windows core faces (Malgun/Gulim/Dotum) map cleanly to the sans chain
+    const knownCore = /malgun|맑은|gulim|굴림|dotum|돋움|apple (sd )?gothic/i.test(nfkc)
+    const serif =
+      /batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서/i.test(nfkc) ||
+      (!knownCore && missingLocally())
     return `${chain(font, ...(serif ? KO_SERIF : KO_SANS))},${serif ? 'serif' : 'sans-serif'}`
   }
   if (

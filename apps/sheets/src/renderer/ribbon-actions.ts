@@ -28,6 +28,7 @@ import {
 } from './app-constants'
 import {
   handleFormatAsTable,
+  handleImportCsv,
   handleOutline,
   openAdvancedFilterDialog,
   type DataToolsContext,
@@ -45,7 +46,11 @@ import {
 } from './edit-journal'
 import { applyShowFormulasView, formulaViewSheets } from './formula-view'
 import { t } from './i18n/locale'
-import { handleOpenSlicerPicker, type PivotActionContext } from './pivot-actions'
+import {
+  handleOpenSlicerPicker,
+  handleOpenTimelinePicker,
+  type PivotActionContext,
+} from './pivot-actions'
 import { INDENT_STEP_PX } from './selection-format'
 import { collectDependents, collectPrecedents, installTraceArrows } from './trace-arrows'
 import {
@@ -96,12 +101,12 @@ export interface RibbonCommandContext {
   setSymbolDialogOpen: (open: boolean) => void
   setScreenshotDialogOpen: (open: boolean) => void
   setIconsDialogOpen: (open: boolean) => void
+  setEquationDialogOpen: (open: boolean) => void
   openRecommendedCharts: () => void
   setPendingEdits: (count: number) => void
   visualContext: () => VisualActionContext
   dataToolsContext: () => DataToolsContext
   pivotContext: () => PivotActionContext
-  recordFreezeJournal: (sheetId: string | undefined, rows: number, columns: number) => void
   handlePageLayoutCommand: (rest: string) => void
   handleExportPdf: () => Promise<void>
 }
@@ -418,6 +423,23 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     case 'insert-icons':
       ctx.setIconsDialogOpen(true)
       return
+    case 'insert-equation':
+      ctx.setEquationDialogOpen(true)
+      return
+    case 'import-csv':
+      handleImportCsv(ctx.dataToolsContext())
+      return
+    case 'insert-checkbox': {
+      // The DV command gate in App cancels this (with its own message) while
+      // the sheet's file rules are still streaming in.
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()
+      if (!active) {
+        ctx.setMessage(t('appSelectCellFirst'))
+        return
+      }
+      active.setDataValidation(runtime.univerAPI.newDataValidation().requireCheckbox().build())
+      return
+    }
     case 'note-open':
       // Opens the note editor popup at the primary selected cell; the
       // journal snapshots the sheet's notes and ⌘S writes legacy comments.
@@ -425,6 +447,38 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       return
     case 'note-delete':
       void runtime.univerAPI.executeCommand('sheet.command.delete-note')
+      return
+    case 'note-prev':
+    case 'note-next': {
+      const workbook = runtime.univerAPI.getActiveWorkbook()
+      const sheet = workbook?.getActiveSheet()
+      const active = workbook?.getActiveRange()
+      if (!sheet || !active) return
+      const notes = [...sheet.getNotes()].sort((a, b) => a.row - b.row || a.col - b.col)
+      if (notes.length === 0) {
+        ctx.setMessage(t('appNoNotesOnSheet'))
+        return
+      }
+      const row = active.getRow()
+      const column = active.getColumn()
+      // Reading order with wrap-around, like Excel's Previous/Next Comment.
+      const target =
+        command === 'note-next'
+          ? (notes.find((note) => note.row > row || (note.row === row && note.col > column)) ??
+            notes[0])
+          : ([...notes]
+              .reverse()
+              .find((note) => note.row < row || (note.row === row && note.col < column)) ??
+            notes[notes.length - 1])
+      if (!target) return
+      sheet.getRange(target.row, target.col, 1, 1).activate()
+      sheet.scrollToCell(target.row, target.col)
+      void runtime.univerAPI.executeCommand('sheet.operation.add-note-popup')
+      return
+    }
+    case 'note-show-toggle':
+      // Pins/unpins the popup of the note at the selection (no-op elsewhere).
+      void runtime.univerAPI.executeCommand('sheet.command.toggle-note-popup')
       return
     case 'zoom-in':
     case 'zoom-out':
@@ -439,16 +493,16 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       return
     }
     case 'freeze-top-row':
+      // Freeze/gridline changes journal from their mutations (App listener),
+      // so Univer's undo/redo keeps the journal in step.
       if (worksheet) {
         worksheet.setFreeze({ startRow: 1, startColumn: -1, xSplit: 0, ySplit: 1 })
-        ctx.recordFreezeJournal(worksheet.getSheetId(), 1, 0)
         ctx.setMessage(t('appTopRowFrozen'))
       }
       return
     case 'freeze-first-col':
       if (worksheet) {
         worksheet.setFreeze({ startRow: -1, startColumn: 1, xSplit: 1, ySplit: 0 })
-        ctx.recordFreezeJournal(worksheet.getSheetId(), 0, 1)
         ctx.setMessage(t('appFirstColFrozen'))
       }
       return
@@ -471,8 +525,6 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       const state = ctx.lazyWorkbookRef.current
       const sheetId = worksheet.getSheetId()
       if (state && !isSheetRemoved(state.editJournal, sheetId)) {
-        recordPageSetup(state.editJournal, sheetId, { showGridlines: !nextHidden })
-        ctx.setPendingEdits(journalSize(state.editJournal))
         ctx.setMessage(nextHidden ? t('appGridlinesHiddenSave') : t('appGridlinesShownSave'))
       } else {
         ctx.setMessage(nextHidden ? t('appGridlinesHidden') : t('appGridlinesShown'))
@@ -624,16 +676,12 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
           xSplit: active.getColumn(),
           ySplit: active.getRow(),
         })
-        ctx.recordFreezeJournal(worksheet.getSheetId(), active.getRow(), active.getColumn())
         ctx.setMessage(t('appFrozenAtSelection'))
       }
       return
     }
     case 'unfreeze':
-      if (worksheet) {
-        worksheet.cancelFreeze()
-        ctx.recordFreezeJournal(worksheet.getSheetId(), 0, 0)
-      }
+      if (worksheet) worksheet.cancelFreeze()
       return
     case 'insert-row-here':
     case 'delete-row-here':
@@ -683,6 +731,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
   }
   if (command === 'slicer-open') {
     handleOpenSlicerPicker(ctx.pivotContext())
+    return
+  }
+  if (command === 'timeline-open') {
+    handleOpenTimelinePicker(ctx.pivotContext())
     return
   }
   if (command.startsWith('insert-shape:')) {

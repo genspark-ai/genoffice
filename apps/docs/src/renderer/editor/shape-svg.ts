@@ -113,10 +113,10 @@ export function shapePreviewPathD(prst: string, w: number, h: number): string | 
 }
 
 /**
- * Shape visual as CSS background properties (data-URI SVG at the box's pixel
- * size, insets included so the stroke isn't clipped at the edges).
+ * Shape visual as a CSS background-image url() (data-URI SVG at the box's
+ * pixel size, insets included so the stroke isn't clipped at the edges).
  */
-export function shapeBackgroundCss(
+export function shapeBackgroundImage(
   prst: string,
   w: number,
   h: number,
@@ -142,8 +142,18 @@ export function shapeBackgroundCss(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="-1 -1 ${w} ${h}">` +
     parts.join('') +
     '</svg>'
-  return (
-    `background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}");` +
-    'background-size:100% 100%;background-repeat:no-repeat'
-  )
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
+/** Same visual as full CSS background properties (for style strings). */
+export function shapeBackgroundCss(
+  prst: string,
+  w: number,
+  h: number,
+  fillHex?: string,
+  borderHex?: string,
+): string | null {
+  const image = shapeBackgroundImage(prst, w, h, fillHex, borderHex)
+  if (!image) return null
+  return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }

@@ -886,6 +886,8 @@ function layoutAll(
         ...(ln.softBreakAfter != null ? { softBreakAfter: ln.softBreakAfter } : {}),
         ...(p.align ? { align: p.align } : {}),
         ...(p.level ? { level: p.level } : {}),
+        ...(marLPx ? { marLPx } : {}),
+        ...(indentPx ? { indentPx } : {}),
       })
       y += ln.height
     })

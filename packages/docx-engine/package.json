@@ -6,7 +6,8 @@
   "type": "module",
   "description": "docx parsing (Block tree with docxIndex anchors), OOXML fragment generation, paragraph-patch save",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./math": "./src/math.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

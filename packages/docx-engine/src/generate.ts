@@ -253,7 +253,9 @@ export interface FieldTextPatch {
 export function patchFieldParagraphXml(xml: string, patch: FieldTextPatch): string {
   const nodes = textNodes(xml, 'w:t')
   if (nodes.length === 0) return xml
-  const tabIndex = xml.search(/<w:tab(?:\s[^>]*)?\/>/)
+  // run-level tab only (attribute-less CT_Empty) — `<w:tab w:val=…/>` inside
+  // w:tabs is a tab-stop definition and must not split the left/right texts
+  const tabIndex = xml.search(/<w:tab\/>/)
   if (patch.right !== undefined && tabIndex === -1) return xml
   const leftNodes = tabIndex === -1 ? nodes : nodes.filter((node) => node.start < tabIndex)
   const rightNodes = tabIndex === -1 ? [] : nodes.filter((node) => node.start > tabIndex)
@@ -678,6 +680,69 @@ export function patchTextboxSizes(
     return next
   })
   return resizedXml
+}
+
+export interface ShapeStylePatch {
+  /** solid fill hex without '#'; null = a:noFill; undefined = keep */
+  fillHex?: string | null
+  /** outline color hex without '#'; null = no outline; undefined = keep */
+  borderHex?: string | null
+}
+
+/** Replace the first fill slot (a:solidFill/a:noFill) inside an XML slice. */
+function replaceFillSlot(xml: string, hex: string | null): string {
+  const markup = hex ? `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>` : '<a:noFill/>'
+  if (/<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(xml)) {
+    return xml.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/, markup)
+  }
+  if (xml.includes('<a:noFill/>')) return xml.replace('<a:noFill/>', markup)
+  return xml
+}
+
+/** Recolor floating shapes/textboxes/lines (same drawing set as extractTextboxes). */
+export function patchShapeStyles(
+  paragraphXml: string,
+  styles: ReadonlyArray<ShapeStylePatch | null | undefined>,
+): string {
+  if (styles.every((s) => s == null || (s.fillHex === undefined && s.borderHex === undefined)))
+    return paragraphXml
+  const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
+  let out = ''
+  let cursor = 0
+  let boxIndex = -1
+  for (const drawing of drawings) {
+    let drawingXml = paragraphXml.slice(drawing.start, drawing.end)
+    if (!isBoxDrawing(drawingXml)) continue
+    boxIndex++
+    const style = styles[boxIndex]
+    if (!style || (style.fillHex === undefined && style.borderHex === undefined)) continue
+    const spPrMatch = /<wps:spPr>[\s\S]*?<\/wps:spPr>/.exec(drawingXml)
+    if (spPrMatch) {
+      let spPr = spPrMatch[0]
+      const lnStart = spPr.search(/<a:ln[\s>]/)
+      if (style.fillHex !== undefined) {
+        // the shape fill slot lives before a:ln; outline colors stay untouched
+        const head = lnStart === -1 ? spPr : spPr.slice(0, lnStart)
+        const tail = lnStart === -1 ? '' : spPr.slice(lnStart)
+        spPr = replaceFillSlot(head, style.fillHex) + tail
+      }
+      if (style.borderHex !== undefined) {
+        const lnMatch = /<a:ln[\s>][\s\S]*?<\/a:ln>/.exec(spPr)
+        if (lnMatch) {
+          spPr = spPr.replace(lnMatch[0], replaceFillSlot(lnMatch[0], style.borderHex))
+        } else if (style.borderHex) {
+          spPr = spPr.replace(
+            '</wps:spPr>',
+            `<a:ln><a:solidFill><a:srgbClr val="${style.borderHex}"/></a:solidFill></a:ln></wps:spPr>`,
+          )
+        }
+      }
+      drawingXml = drawingXml.replace(spPrMatch[0], spPr)
+    }
+    out += paragraphXml.slice(cursor, drawing.start) + drawingXml
+    cursor = drawing.end
+  }
+  return out + paragraphXml.slice(cursor)
 }
 
 /** Rewrite the first drawing's extent (chart/SmartArt graphicFrame paragraphs). */

@@ -31,6 +31,9 @@ export interface RibbonFormatState {
   imageHeightPx: number | null
   imageHasDocxIndex: boolean
   textboxSelected: boolean
+  shapeFill: string | null
+  shapeBorderColor: string | null
+  shapePrst: string | null
   cellKey: number | null
   cellHeightCm: number | null
   cellWidthCm: number | null
@@ -76,6 +79,9 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   imageHeightPx: null,
   imageHasDocxIndex: false,
   textboxSelected: false,
+  shapeFill: null,
+  shapeBorderColor: null,
+  shapePrst: null,
   cellKey: null,
   cellHeightCm: null,
   cellWidthCm: null,
@@ -189,6 +195,15 @@ export function computeFormatState(
     imageHeightPx: num(protAttrs.imageHeightPx),
     imageHasDocxIndex: protAttrs.docxIndex != null,
     textboxSelected: Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0,
+    shapeFill: Array.isArray(protAttrs.textboxes)
+      ? str((protAttrs.textboxes[0] as { fill?: string } | undefined)?.fill)
+      : null,
+    shapeBorderColor: Array.isArray(protAttrs.textboxes)
+      ? str((protAttrs.textboxes[0] as { borderColor?: string } | undefined)?.borderColor)
+      : null,
+    shapePrst: Array.isArray(protAttrs.textboxes)
+      ? str((protAttrs.textboxes[0] as { prst?: string } | undefined)?.prst)
+      : null,
     cellKey,
     cellHeightCm,
     cellWidthCm,

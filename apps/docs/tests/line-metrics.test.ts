@@ -28,11 +28,11 @@ const TWIPS_TO_PX = 96 / 1440
 describe('HeuristicMetrics', () => {
   const m = new HeuristicMetrics()
 
-  it('natural line height of 12pt text is about 14.4px (1.2em)', () => {
+  it('natural line height of 12pt Arial follows its hhea factor (1.15em)', () => {
     const fontSizePx = 12 * (96 / 72) // 16px
     const style = { fontFamily: 'Arial', fontSizePx, bold: false, italic: false }
     const metrics = m.metrics(style)
-    expect(metrics.lineHeight).toBeCloseTo(fontSizePx * 1.2, 1)
+    expect(metrics.lineHeight).toBeCloseTo(fontSizePx * 1.15, 1)
     expect(metrics.ascent).toBeCloseTo(fontSizePx * 0.8, 1)
     expect(metrics.descent).toBeCloseTo(fontSizePx * 0.2, 1)
   })

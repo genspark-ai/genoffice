@@ -289,14 +289,36 @@ export async function handleSave(
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : ''
-    // Structural-shift guard (charts/tables anchored to the rows being shifted):
-    // say it in plain language instead of the raw gateway error with part names
-    if (message.includes('cannot shift here')) {
-      ctx.setMessage(t('appStructuralShiftBlocked'))
-      if (!quiet) showToast(t('appStructuralShiftBlocked'), 'error')
-      return
-    }
-    ctx.setMessage(message || t('appSaveFailed'))
-    if (!quiet) showToast(message || t('appSaveFailed'), 'error')
+    const failed = localizeSaveError(message) ?? (message || t('appSaveFailed'))
+    ctx.setMessage(failed)
+    if (!quiet) showToast(failed, 'error')
   }
+}
+
+/// Gateway save errors users can trigger through normal editing, keyed by a
+/// stable substring; unmatched messages surface verbatim (English) as before.
+const SAVE_ERROR_PATTERNS = [
+  ['cannot shift here', 'appStructuralShiftBlocked'],
+  ['extended (x14) data validation', 'appSaveErrX14Dv'],
+  ['Multi-select list rules', 'appSaveErrMultiSelectList'],
+  ['extended conditional formatting (x14)', 'appSaveErrX14Cf'],
+  ['data-bar extension format (x14)', 'appSaveErrX14Cf'],
+  ['A new pivot cannot be saved together with sheet management', 'appSaveErrPivotWithSheetOps'],
+  ['A new pivot cannot be saved together with row/column', 'appSaveErrPivotWithRowCol'],
+  ['A new table cannot be saved together with row/column', 'appSaveErrTableWithRowCol'],
+  ['Defined-name edits cannot be saved together', 'appSaveErrNamesWithStructural'],
+  ['The workbook changed on disk', 'appSaveErrChangedOnDisk'],
+  ['style edits cannot be saved', 'appSaveErrStylesheetLimited'],
+  ['Saving would change the workbook package structure', 'appSaveErrPackageGuard'],
+  ['charts support', 'appSaveErrChartUnsupported'],
+  ['Converting a', 'appSaveErrChartUnsupported'],
+  ['Replacing series on a', 'appSaveErrChartUnsupported'],
+  ['overlaps the moved rows', 'appSaveErrMoveOverlap'],
+  ['Moving the header row of table', 'appSaveErrMoveOverlap'],
+  ['Moving the totals row of table', 'appSaveErrMoveOverlap'],
+] as const
+
+export function localizeSaveError(message: string): string | null {
+  const hit = SAVE_ERROR_PATTERNS.find(([pattern]) => message.includes(pattern))
+  return hit ? t(hit[1]) : null
 }

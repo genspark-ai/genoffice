@@ -6,7 +6,12 @@
  * page-layout view), everything lands in the saved file.
  */
 import { columnLabel } from '../domain/cell-address'
-import { isSheetRemoved, journalSize, recordPageSetup, type PageSetupJournalState } from './edit-journal'
+import {
+  isSheetRemoved,
+  journalSize,
+  recordPageSetup,
+  type PageSetupJournalState,
+} from './edit-journal'
 import type { HeaderFooterResult } from './HeaderFooterDialog'
 import { t } from './i18n/locale'
 import { buildSheetPrintPayload, type PrintWorksheet } from './print-html'
@@ -28,20 +33,6 @@ export interface PageLayoutContext {
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null }
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
-}
-
-/// Freeze rides the page-setup journal (sheetView pane on save); Univer's
-/// own freeze state renders it, so recording is all that is left to do.
-export function recordFreezeJournal(
-  ctx: PageLayoutContext,
-  sheetId: string | undefined,
-  rows: number,
-  columns: number,
-): void {
-  const state = ctx.lazyWorkbookRef.current
-  if (!state || !sheetId || isSheetRemoved(state.editJournal, sheetId)) return
-  recordPageSetup(state.editJournal, sheetId, { frozenRows: rows, frozenColumns: columns })
-  ctx.setPendingEdits(journalSize(state.editJournal))
 }
 
 export function handlePageLayoutCommand(ctx: PageLayoutContext, rest: string): void {

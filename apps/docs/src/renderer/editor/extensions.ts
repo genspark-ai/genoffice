@@ -160,10 +160,15 @@ function blockAttrs(
   if (node.attrs.align) {
     styles.push(`text-align:${node.attrs.align === 'distribute' ? 'justify' : node.attrs.align}`)
   }
-  // the line-height factor follows paragraph content (approximating Word's max-of-inline-fonts line height):
-  // paragraphs containing CJK get 1.3, pure-Western ones 1.2; empty paragraphs inherit the document-level variable
+  // the line-height factor follows paragraph content (approximating Word's max-of-inline-fonts
+  // line height): CJK paragraphs get the CJK factor, pure-Western ones the document's
+  // font-aware Latin factor (doc-style-css sets --doc-line-factor-latin per body font)
   if (node.textContent) {
-    styles.push(`--doc-line-factor:${textHasCjk(node.textContent) ? 1.3 : 1.2}`)
+    styles.push(
+      `--doc-line-factor:${
+        textHasCjk(node.textContent) ? 1.3 : 'var(--doc-line-factor-latin,1.2)'
+      }`,
+    )
   }
   const lh = cssLineHeight(
     (node.attrs.lineRule as 'auto' | 'atLeast' | 'exact' | null) ?? undefined,
@@ -188,8 +193,11 @@ function blockAttrs(
     if (listGeometry && firstLine < 0) styles.push(`--li-hang:${-firstLine / 20}pt`)
     else styles.push(`text-indent:${firstLine / 20}pt`)
   }
-  if (node.attrs.spaceBefore) styles.push(`margin-top:${Number(node.attrs.spaceBefore) / 20}pt`)
-  if (node.attrs.spaceAfter) styles.push(`margin-bottom:${Number(node.attrs.spaceAfter) / 20}pt`)
+  // explicit 0 must still emit (w:after="0" overrides the style/docDefaults margin)
+  if (node.attrs.spaceBefore != null)
+    styles.push(`margin-top:${Number(node.attrs.spaceBefore) / 20}pt`)
+  if (node.attrs.spaceAfter != null)
+    styles.push(`margin-bottom:${Number(node.attrs.spaceAfter) / 20}pt`)
   if (node.attrs.shadingFill) styles.push(`background-color:#${node.attrs.shadingFill}`)
   if (node.attrs.borders) {
     const borders = String(node.attrs.borders)
@@ -597,7 +605,7 @@ function lineFactorDecos(doc: PmNode): DecorationSet {
       }
       decos.push(
         Decoration.node(pos, pos + node.nodeSize, {
-          style: `--doc-line-factor:${cjk ? 1.3 : 1.2}`,
+          style: `--doc-line-factor:${cjk ? 1.3 : 'var(--doc-line-factor-latin,1.2)'}`,
         }),
       )
     }
@@ -721,7 +729,7 @@ const tableCellAttrs = {
 }
 
 /** One OOXML border → CSS border value; 'none' means explicitly borderless */
-function borderLineCss(
+export function borderLineCss(
   b: { style: string; szEighths?: number; color?: string } | undefined | null,
 ): string | null {
   if (!b) return null
@@ -763,6 +771,10 @@ function tableCellHtml(node: PmNode): Record<string, string> {
       : node.attrs.textDirection === 'btLr'
         ? 'writing-mode:sideways-lr'
         : '',
+    // font-weight before background: jsdom's CSSOM drops the background getter
+    // when font-weight follows it (order is irrelevant to real browsers)
+    node.attrs.bold ? 'font-weight:600' : '',
+    node.attrs.color ? `color:#${node.attrs.color}` : '',
     node.attrs.fill ? `background:#${node.attrs.fill}` : '',
     node.attrs.align ? `text-align:${node.attrs.align}` : '',
     node.attrs.vAlign && node.attrs.vAlign !== 'top'
@@ -797,16 +809,16 @@ export type TableBordersAttr = Partial<
 >
 
 /**
- * Table-level w:tblBorders → outer frame on the table element + inner-line CSS variables
- * (td takes inner lines via --doc-b-h/--doc-b-v; border-collapse lets the outer frame win
- * on edge cells). Undeclared = keep the default grid lines.
+ * Table-level w:tblBorders → CSS variables consumed by edge/inside cell rules
+ * (--doc-b-t/r/b/l on edge cells beat the inside lines even when the frame is
+ * explicitly none). Undeclared = no borders, matching Word's printed output.
  */
 export function tableBordersCss(b: TableBordersAttr | null): string[] {
   if (!b) return []
   const styles: string[] = []
+  const edge = { top: 't', right: 'r', bottom: 'b', left: 'l' } as const
   for (const side of ['top', 'right', 'bottom', 'left'] as const) {
-    const v = borderLineCss(b[side])
-    if (v) styles.push(`border-${side}:${v}`)
+    styles.push(`--doc-b-${edge[side]}:${borderLineCss(b[side]) ?? 'none'}`)
   }
   styles.push(`--doc-b-h:${borderLineCss(b.insideH) ?? 'none'}`)
   styles.push(`--doc-b-v:${borderLineCss(b.insideV) ?? 'none'}`)
@@ -871,18 +883,18 @@ export const DocTable = Node.create({
     // A colgroup with normalized percentages defines the column grid whenever the
     // pct list matches the grid, so a table clamped to the content box compresses
     // its columns proportionally instead of overflowing via fixed td px widths.
-    let firstRowSpans = false
     let firstRowCols = 0
     node.firstChild?.forEach((cell) => {
-      const span = Number(cell.attrs.colspan) || 1
-      if (span > 1) firstRowSpans = true
-      firstRowCols += span
+      firstRowCols += Number(cell.attrs.colspan) || 1
     })
-    const pct = node.attrs.colWidthsPct as number[] | null
-    if (
-      pct?.length &&
-      (firstRowSpans || (pct.length === firstRowCols && pct.every((w) => w > 0)))
-    ) {
+    const rawPct = node.attrs.colWidthsPct as number[] | null
+    if (rawPct?.length) {
+      // zero-width grid slots get a small floor, short grids pad with the average —
+      // dropping the whole colgroup falls back to fixed-layout even splitting, which
+      // is always worse than an approximate grid
+      const pct = rawPct.map((w) => (w > 0 ? w : 0.5))
+      const avg = pct.reduce((sum, w) => sum + w, 0) / pct.length
+      while (pct.length < firstRowCols) pct.push(avg)
       const total = pct.reduce((sum, w) => sum + w, 0) || 100
       return [
         'table',
@@ -2307,8 +2319,8 @@ const TextboxParagraph = Node.create({
       node.attrs.indentLeft ? `margin-left:${Number(node.attrs.indentLeft) / 20}pt` : '',
       node.attrs.indentRight ? `margin-right:${Number(node.attrs.indentRight) / 20}pt` : '',
       node.attrs.indentFirstLine ? `text-indent:${Number(node.attrs.indentFirstLine) / 20}pt` : '',
-      node.attrs.spaceBefore ? `margin-top:${Number(node.attrs.spaceBefore) / 20}pt` : '',
-      node.attrs.spaceAfter ? `margin-bottom:${Number(node.attrs.spaceAfter) / 20}pt` : '',
+      node.attrs.spaceBefore != null ? `margin-top:${Number(node.attrs.spaceBefore) / 20}pt` : '',
+      node.attrs.spaceAfter != null ? `margin-bottom:${Number(node.attrs.spaceAfter) / 20}pt` : '',
       node.attrs.shadingFill ? `background-color:#${node.attrs.shadingFill}` : '',
     ]
       .filter(Boolean)

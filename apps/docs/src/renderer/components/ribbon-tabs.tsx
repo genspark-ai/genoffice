@@ -2,14 +2,17 @@ import { useState } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
 import { SHAPE_GALLERY_GROUPS, wordArtSolidColor, type WordArtPreset } from '@genoffice/ui'
 import {
+  buildLineParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
+  LINE_KINDS,
   type HeaderFooter,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
 import { tableModelToPmNode } from '../editor/convert'
+import { isStraightLineKind } from '../editor/shape-svg'
 import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import iconEditor from '../assets/icon-editor.png'
@@ -222,13 +225,11 @@ export function insertTextboxAt(editor: Editor): void {
 }
 
 /**
- * Shape gallery for the picker dropdown: the cross-app shared groups (slides
- * parity), minus Lines — the page renderer draws shapes as filled clipped
- * boxes and cannot show stroke-only connectors yet.
+ * Shape gallery for the picker dropdown: the full cross-app shared groups
+ * (slides parity). Line/connector kinds insert stroke-only wps shapes
+ * (buildLineParagraphXml); filled presets insert prstGeom shapes.
  */
-export const DOC_SHAPE_GROUPS = SHAPE_GALLERY_GROUPS.filter(
-  (g) => g.groupKey !== 'ribbonShapeGroupLines',
-)
+export const DOC_SHAPE_GROUPS = SHAPE_GALLERY_GROUPS
 
 const DOC_SHAPES = DOC_SHAPE_GROUPS.flatMap((g) => g.shapes)
 
@@ -259,6 +260,7 @@ export function insertShapeAt(
   prst: string,
   opts?: { widthEmu?: number; heightEmu?: number; atPos?: number },
 ): number | null {
+  if (prst in LINE_KINDS) return insertLineAt(editor, prst, opts)
   const widthEmu = opts?.widthEmu ?? 1800000
   const heightEmu = opts?.heightEmu ?? 1080000
   const xml = buildShapeParagraphXml({
@@ -285,6 +287,58 @@ export function insertShapeAt(
       docxIndex: null,
       blockType: 'passthrough',
       label: t('ribbonShapeLabel', { name: shapeLabel(prst) }),
+      genXml: xml,
+      textboxes: [textbox],
+    },
+  }
+  const { $from } = editor.state.selection
+  const position = opts?.atPos ?? ($from.depth > 0 ? $from.after(1) : editor.state.selection.to)
+  return editor.chain().focus().insertContentAt(position, content).run() ? position : null
+}
+
+/** Word's horizontal-line extent (12 px grab band); straight lines always save this cy. */
+const LINE_HEIGHT_EMU = 114300
+
+/**
+ * Insert a floating stroke-only line/connector (noFill wps:wsp) at the cursor
+ * or an explicit position. Straight kinds ignore the drawn height and land as
+ * a level line (the docx model stores Word's zero-ish-height extent); bent and
+ * curved connectors keep the drawn box.
+ */
+function insertLineAt(
+  editor: Editor,
+  kind: string,
+  opts?: { widthEmu?: number; heightEmu?: number; atPos?: number },
+): number | null {
+  const widthEmu = opts?.widthEmu ?? 1800000
+  const heightEmu = isStraightLineKind(kind) ? LINE_HEIGHT_EMU : (opts?.heightEmu ?? 1080000)
+  const xml = buildLineParagraphXml({
+    kind,
+    widthEmu,
+    heightEmu,
+    id: Math.floor(Math.random() * 900000) + 100000,
+    colorHex: '000000',
+  })
+  // Mirror what parse.ts' lineBoxOf yields on reopen: read-only display box,
+  // stroke color on borderColor, zero insets.
+  const textbox: TextboxDisplay = {
+    borderColor: '000000',
+    widthPx: Math.round(widthEmu / 9525),
+    heightPx: Math.round(heightEmu / 9525),
+    prst: kind,
+    paras: [],
+    readOnly: true,
+    insetTopPx: 0,
+    insetRightPx: 0,
+    insetBottomPx: 0,
+    insetLeftPx: 0,
+  }
+  const content = {
+    type: 'docProtected',
+    attrs: {
+      docxIndex: null,
+      blockType: 'passthrough',
+      label: t('ribbonShapeLabel', { name: shapeLabel(kind) }),
       genXml: xml,
       textboxes: [textbox],
     },

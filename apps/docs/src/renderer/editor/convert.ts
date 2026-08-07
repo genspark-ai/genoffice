@@ -11,6 +11,8 @@ import {
   type CellTextsPatch,
   patchDrawingExtent,
   patchTextboxSizes,
+  patchShapeStyles,
+  type ShapeStylePatch,
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
@@ -794,6 +796,7 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         const tableTexts = tableTextsPatch(node, original)
         const textboxTexts = textboxParasPatch(node, original)
         const textboxSizes = textboxSizesPatch(node, original)
+        const textboxStyles = textboxStylesPatch(node, original)
         const textboxOffsetX =
           node.attrs?.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) : undefined
         const textboxOffsetY =
@@ -842,13 +845,14 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
           changedCount++
           pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
         } else if (
-          (textboxTexts || textboxSizes || textboxPositionChanged) &&
+          (textboxTexts || textboxSizes || textboxStyles || textboxPositionChanged) &&
           original.originalXml
         ) {
           changedCount++
           let xml = original.originalXml
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
+          if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
           if (textboxPositionChanged) {
             const wrap =
               (node.attrs?.imageWrap as ImageWrap | null) ?? original.imageWrap ?? 'square-left'
@@ -894,6 +898,13 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
             table.rows.map((row) => row.map((cell) => cell.paras)),
           )
         }
+        // editor-generated TOC lines: write the auto-refreshed page number back
+        // (right only — the title is already in the genXml, and a left+right
+        // patch bails out entirely when the title text nodes don't line up)
+        const genField = node.attrs?.fieldDisplay as FieldDisplay | null
+        if (genField?.kind === 'tocLine' && genField.right) {
+          xml = patchFieldParagraphXml(xml, { right: genField.right })
+        }
         // patch textbox paragraphs for newly-inserted textboxes/shapes with text
         const genTextboxes = node.attrs?.textboxes as TextboxDisplay[] | null
         const hasNonEmptyTextbox =
@@ -917,6 +928,11 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
               wPx: genBox.widthPx ?? null,
               hPx: isStraightLineKind(genBox.prst) ? null : (genBox.heightPx ?? null),
             },
+          ])
+        }
+        if (genBox) {
+          xml = patchShapeStyles(xml, [
+            { fillHex: genBox.fill ?? null, borderHex: genBox.borderColor ?? null },
           ])
         }
         // apply wrap changes for floating textboxes/shapes
@@ -1295,6 +1311,25 @@ function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | n
   return changed ? sizes : null
 }
 
+function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | null)[] | null {
+  const current = node.attrs?.textboxes as TextboxDisplay[] | null
+  const initial = original.textboxes
+  if (!current || !initial || current.length !== initial.length) return null
+  let changed = false
+  const styles = current.map((box, index) => {
+    const fillHex =
+      (box.fill ?? null) !== (initial[index].fill ?? null) ? (box.fill ?? null) : undefined
+    const borderHex =
+      (box.borderColor ?? null) !== (initial[index].borderColor ?? null)
+        ? (box.borderColor ?? null)
+        : undefined
+    if (fillHex === undefined && borderHex === undefined) return null
+    changed = true
+    return { fillHex, borderHex }
+  })
+  return changed ? styles : null
+}
+
 function fieldTextPatch(node: PmNode, original: Block): FieldTextPatch | null {
   const current = node.attrs?.fieldDisplay as FieldDisplay | null
   const initial = original.fieldDisplay
@@ -1349,8 +1384,8 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.indentLeft) format.indentLeft = Number(node.attrs.indentLeft)
   if (node.attrs?.indentRight) format.indentRight = Number(node.attrs.indentRight)
   if (node.attrs?.indentFirstLine) format.indentFirstLine = Number(node.attrs.indentFirstLine)
-  if (node.attrs?.spaceBefore) format.spaceBefore = Number(node.attrs.spaceBefore)
-  if (node.attrs?.spaceAfter) format.spaceAfter = Number(node.attrs.spaceAfter)
+  if (node.attrs?.spaceBefore != null) format.spaceBefore = Number(node.attrs.spaceBefore)
+  if (node.attrs?.spaceAfter != null) format.spaceAfter = Number(node.attrs.spaceAfter)
   if (node.attrs?.pageBreakBefore) format.pageBreakBefore = true
   if (node.attrs?.bidi) format.bidi = true
   if (node.attrs?.shadingFill) format.shadingFill = String(node.attrs.shadingFill)

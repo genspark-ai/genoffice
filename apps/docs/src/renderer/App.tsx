@@ -55,6 +55,7 @@ import {
   effectiveTopPx,
   effectiveBottomPx,
   formatPageNumber,
+  visiblePageCount,
   type SectionGeom,
   type SectionHfHeights,
   type PageSlice,
@@ -101,6 +102,7 @@ import {
 } from './editor/active-editor'
 import type { CompareEntry } from './editor/compare'
 import { collectHeadings } from './editor/headings'
+import { applyTocPageDisplays } from './editor/toc-refresh'
 import { setSelectionAlign } from './editor/direction'
 
 import {
@@ -113,7 +115,7 @@ import { InkOverlay } from './components/InkOverlay'
 import { collectRevisions, gotoRevision, type TrackChangesStorage } from './editor/revisions'
 import { NavPane } from './components/NavPane'
 import { Ruler } from './components/Ruler'
-import { docLineFactor, docThemeCss } from './doc-style-css'
+import { docBodyFont, docLineFactor, docThemeCss } from './doc-style-css'
 import { isDocDirty } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
@@ -163,6 +165,13 @@ import {
 const _IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
+
+/** tiny stable string hash for decoration keys */
+function hashStr(str: string): number {
+  let h = 0
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0
+  return h
+}
 
 const EMPTY_BLOCKS: Block[] = []
 
@@ -1492,7 +1501,8 @@ export function App() {
       }
       return { mBlocks: blocks, slices: s, secs: live }
     })
-    const nums = secs.length > 1 ? pageNumbers(slices, secs) : slices.map((_, i) => i + 1)
+    // same page-number algorithm as the footer path (w:pgNumType start offsets apply to single-section docs too)
+    const nums = secs.length > 0 ? pageNumbers(slices, secs) : slices.map((_, i) => i + 1)
     const byEl = new Map(mBlocks.filter((b) => b.el).map((b) => [b.el as HTMLElement, b.top]))
     const pages: number[] = []
     for (const h of collectHeadings(editor.state.doc)) {
@@ -1537,15 +1547,18 @@ export function App() {
       const scrollRect = scroller.getBoundingClientRect()
       const origin = pmRect.top + mTopPx * factor
       const midScreen = Math.min(scrollRect.top + scrollRect.height / 2, pmRect.bottom)
-      // slices use gapless virtual coordinates; subtract the page-gap height above the midpoint (including mid-paragraph inline gaps)
+      // slices use gapless virtual coordinates; subtract the page-gap height above the midpoint
+      // (including mid-paragraph inline gaps and repeated-header clone rows, which carry
+      // page-repeat-header but not page-gap)
       let gapAbove = 0
-      for (const gap of pm.querySelectorAll('.page-gap')) {
+      for (const gap of pm.querySelectorAll('.page-gap, .page-repeat-header')) {
         const r = gap.getBoundingClientRect()
         if (r.top < midScreen) gapAbove += Math.min(r.height, midScreen - r.top)
       }
       const midY = (midScreen - origin - gapAbove) / factor
-      const current = pageAt(slices, midY)
-      const total = slices.length
+      // visible-page numbering so the status bar and F9 NUMPAGES agree with the gap widgets
+      const current = visiblePageCount(slices, pageAt(slices, midY))
+      const total = visiblePageCount(slices)
       setPageInfo((prev) =>
         prev.current === current && prev.total === total ? prev : { current, total },
       )
@@ -1553,12 +1566,17 @@ export function App() {
     const remeasure = () => {
       const pm = pmEl()
       if (!pm) return
+      const tStart = performance.now()
+      let tMeasure = 0
+      let tSlice = 0
       // a columned canvas measures + slices in the single-flow measuring state (fillLineBoxes
       // also reads the DOM for line sampling, so it must share the state); display-state DOM
       // reads like gap positioning happen outside the measuring state
       const measured = measureSingleFlow(pm, () => {
+        const t0 = performance.now()
         const origin = pm.getBoundingClientRect().top + mTopPx * factor
         const { blocks, totalHeight } = measureBlocks(pm, origin, factor)
+        tMeasure = performance.now() - t0
         // multi-section: assign blocks to sections by docxIndex; each section has its own content height / forced breaks.
         // liveSections: when a section-break block is deleted, that section merges into the next in real time (effective before saving)
         const secList = sections.length > 0 ? liveSections(sections, blocks) : null
@@ -1572,6 +1590,7 @@ export function App() {
         )
         const flowH = withEndnotes?.totalHeight ?? totalHeight
         const hfHs = secList ? hfHeightsOf(secList) : null
+        const t1 = performance.now()
         const s = secList
           ? sliceWithLineSplit(
               blocks,
@@ -1587,6 +1606,7 @@ export function App() {
               factor,
               blockMetaOf,
             )
+        tSlice = performance.now() - t1
         return { blocks, secList, hfHs, s }
       })
       const { blocks, secList, hfHs } = measured
@@ -1603,9 +1623,36 @@ export function App() {
             : slices.length,
         )
       }
+      // Auto-refresh TOC page numbers from the fresh slicing, like Word's field
+      // update. Gated on dirtyRef — our pagination approximates Word's, so a
+      // pristine open keeps the file's numbers. History-exempt: a field result
+      // change is not an edit to undo.
+      if (editor && dirtyRef.current && slices.length > 0) {
+        const nums = secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1)
+        const byEl = new Map(blocks.filter((b) => b.el).map((b) => [b.el as HTMLElement, b.top]))
+        const headings = collectHeadings(editor.state.doc)
+        // formatted with the owning section's pgNumType, like the header/footer numbers
+        const displays = headings.map((h) => {
+          const dom = editor.view.nodeDOM(h.pos) as HTMLElement | null
+          const top = dom ? byEl.get(dom) : undefined
+          if (top === undefined) return undefined
+          const idx = Math.min(Math.max(pageAt(slices, top + 1), 1), nums.length)
+          const fmt =
+            secList?.[Math.min(slices[idx - 1].section, secList.length - 1)]?.pageNumberFmt
+          return formatPageNumber(nums[idx - 1] ?? idx, fmt)
+        })
+        const tr = editor.state.tr
+        if (applyTocPageDisplays(editor.state.doc, tr, headings, displays)) {
+          tr.setMeta('addToHistory', false)
+          editor.view.dispatch(tr)
+        }
+      }
       // M4 always-on pagination in the canvas: render page gaps before page-leading blocks
       // (print view only; gaps don't count as content — measureBlocks subtracts them, so
       // slice results are gap-independent and refresh is idempotent)
+      let tGapsBuild: number | undefined
+      let tSetGaps: number | undefined
+      const tGaps0 = performance.now()
       if (editor) {
         const gaps: PageGapSpec[] = []
         const gapIds = new Set<string>()
@@ -1662,6 +1709,7 @@ export function App() {
             )
           const hfSig = (v: HeaderFooter | null | undefined) =>
             v ? `${v.text}·${v.pageNumber ? 1 : 0}·${v.paras?.length ?? 0}` : ''
+          const visiblePages = visiblePageCount(slices)
           slices.slice(1).forEach((slice, k) => {
             // an even/odd section's zero-height blank page shares its start with the following page: draw only one gap band on the canvas
             if (slice.start === slices[k].start) return
@@ -1689,7 +1737,7 @@ export function App() {
                 value: gapFooter.value ?? { text: '' },
                 images: gapFooter.images,
                 pageNo: pageNoTextOf(k),
-                pageTotal: slices.length,
+                pageTotal: visiblePages,
               })
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
@@ -1703,7 +1751,7 @@ export function App() {
                 value: gapHeader.value ?? { text: '' },
                 images: gapHeader.images,
                 pageNo: pageNoTextOf(k + 1),
-                pageTotal: slices.length,
+                pageTotal: visiblePages,
               })
               el.style.bottom = 'auto'
               el.style.top = `calc(100% - ${Math.max(0, metrics.marginTop - box.headerDist)}px)`
@@ -1716,7 +1764,7 @@ export function App() {
                     hfEls,
                     // key must cover everything baked into the widgets (both pages'
                     // formatted numbers + total count), or stale PAGE/NUMPAGES survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${slices.length}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}`,
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
@@ -1764,7 +1812,8 @@ export function App() {
               const elTop = b.el.getBoundingClientRect().top
               let matched = false
               for (const tr of Array.from(b.el.querySelectorAll('tr')).filter(
-                (r) => !r.closest('.doc-nested-table'),
+                (r) =>
+                  !r.closest('.doc-nested-table') && !r.classList.contains('page-repeat-header'),
               )) {
                 const trTop = tr.getBoundingClientRect().top
                 const gapsAbove = gapRects.reduce((s, g) => (g.top <= trTop ? s + g.height : s), 0)
@@ -1773,9 +1822,48 @@ export function App() {
                   matched = true
                   try {
                     const $pos = editor.view.state.doc.resolve(editor.view.posAtDOM(tr, 0))
+                    // w:tblHeader repetition: the engine reserved slice.repeatHeader.height
+                    // at the top of this page's column, so cloning the source header rows
+                    // below the gap fills exactly that space. Clones are decorations —
+                    // page-gap-inline keeps them out of the virtual coordinates.
+                    let repeatHeaderEls: HTMLElement[] | undefined
+                    if (slice.repeatHeader) {
+                      const tableEl = tr.closest('table')
+                      const srcRows = tableEl
+                        ? (Array.from(tableEl.querySelectorAll(':scope > tbody > tr')).filter(
+                            (r) =>
+                              !r.classList.contains('page-gap') &&
+                              !r.classList.contains('page-repeat-header'),
+                          ) as HTMLElement[])
+                        : []
+                      const els: HTMLElement[] = []
+                      let acc = 0
+                      for (const row of srcRows) {
+                        if (acc >= slice.repeatHeader.height - 1.5) break
+                        const clone = row.cloneNode(true) as HTMLElement
+                        clone.classList.add('page-gap-inline', 'page-repeat-header')
+                        clone.setAttribute('contenteditable', 'false')
+                        els.push(clone)
+                        acc += row.getBoundingClientRect().height / factor
+                      }
+                      if (els.length > 0) repeatHeaderEls = els
+                    }
                     for (let d = $pos.depth; d > 0; d--) {
                       if ($pos.node(d).type.name === 'docTableRow') {
-                        gaps.push({ pos: $pos.before(d), kind: 'table', metrics })
+                        gaps.push({
+                          pos: $pos.before(d),
+                          kind: 'table',
+                          metrics,
+                          ...hfProps,
+                          ...(repeatHeaderEls
+                            ? {
+                                repeatHeaderEls,
+                                // content signature: header edits with unchanged height
+                                // must still rebuild the widgets (same rule as hfKey)
+                                repeatHeaderKey: `${repeatHeaderEls.length}-${Math.round(slice.repeatHeader!.height)}-${hashStr(repeatHeaderEls.map((e) => e.innerHTML).join('§'))}`,
+                              }
+                            : {}),
+                        })
                         break
                       }
                     }
@@ -1789,6 +1877,7 @@ export function App() {
                 // inline cut point (page break mid-line): the cut falls in a line's band gap; locate the first line after it and insert a zero-height dashed marker
                 const anchor = nextLineAnchor(b.el, slice.start - b.top, factor)
                 const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
+                // no hfProps: a zero-height cut marker can't host header/footer strips
                 if (pos != null) gaps.push({ pos, kind: 'cut', metrics })
               }
               return
@@ -1810,8 +1899,36 @@ export function App() {
             })
             markShown()
           })
+          // TOC page numbers: the file's cached PAGEREF results are stale (generators
+          // write them against a layout that never matches; Word silently refreshes on
+          // open, we never write back). Backfill the display from the live layout —
+          // DOM-only, inside contenteditable=false subtrees the save path never reads.
+          const tocLines = pm.querySelectorAll<HTMLElement>('.doc-toc-line[data-toc-anchor]')
+          if (tocLines.length > 0) {
+            const anchorIdx = new Map<string, number>()
+            for (const b of parsed.blocks) {
+              if (b.docxIndex == null) continue
+              for (const a of b.hiddenBookmarks ?? []) anchorIdx.set(a, b.docxIndex)
+            }
+            const topByIdx = new Map<number, number>()
+            for (const b of blocks) {
+              if (b.docxIndex != null) topByIdx.set(b.docxIndex, b.top)
+            }
+            for (const el of tocLines) {
+              const idx = anchorIdx.get(el.getAttribute('data-toc-anchor') ?? '')
+              const top = idx === undefined ? undefined : topByIdx.get(idx)
+              if (top === undefined) continue
+              const pageEl = el.querySelector('.doc-toc-page')
+              // pageAt is 1-based; pageNoTextOf indexes nums/slices 0-based
+              const pageIdx = Math.max(0, Math.min(pageAt(slices, top + 1) - 1, slices.length - 1))
+              if (pageEl && slices.length > 0) pageEl.textContent = pageNoTextOf(pageIdx)
+            }
+          }
         }
+        tGapsBuild = performance.now() - tGaps0
+        const tSet0 = performance.now()
         setPageGaps(editor.view, gaps)
+        tSetGaps = performance.now() - tSet0
         // the last page paints as a full sheet like the ones above it:
         // extend the canvas to that page's paper bottom, measured from the last gap
         const gapEls = pm.querySelectorAll('.page-gap')
@@ -1831,7 +1948,19 @@ export function App() {
         ;(window as unknown as Record<string, unknown>).__pageDebug = {
           slices,
           blocks: blocks.map((b) => ({ top: b.top, height: b.height, docxIndex: b.docxIndex })),
+          remeasureMs: performance.now() - tStart,
+          measureMs: tMeasure,
+          sliceMs: tSlice,
+          gapsBuildMs: tGapsBuild,
+          setGapsMs: tSetGaps,
         }
+        requestAnimationFrame(() => {
+          const tf = performance.now()
+          requestAnimationFrame(() => {
+            const dbg = (window as unknown as Record<string, Record<string, unknown>>).__pageDebug
+            if (dbg) dbg.frameMs = performance.now() - tf
+          })
+        })
         setGapNoteIds((prev) => {
           if (prev.size === gapIds.size && [...gapIds].every((id) => prev.has(id))) return prev
           return gapIds
@@ -2479,7 +2608,7 @@ export function App() {
       )}
       {/* Theme CSS comes from live state, so a Design ▸ Themes/Fonts/Colors pick shows
           on the page immediately instead of only in the saved file */}
-      {doc && <style>{docThemeCss(themeFonts, themeColors)}</style>}
+      {doc && <style>{docThemeCss(themeFonts, themeColors, !!docBodyFont(doc.parsed))}</style>}
       {colFlow && viewMode === 'print' && (
         // columns (sectPr w:cols): column gap follows the document's w:space; measuring-columns
         // is the single-flow measuring state (columns removed, content-box width = column width,

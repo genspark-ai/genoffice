@@ -14,16 +14,24 @@ export const THEME_REL_TYPE =
 
 export const THEME_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.theme+xml'
 
-/** read the latin major/minor typefaces (+major east-asian) from theme1.xml */
+/** read the latin/ea/cs major+minor typefaces from theme1.xml */
 export function readThemeFonts(themeXml: string): ThemeFonts | null {
   const major = fontOf(themeXml, 'a:majorFont')
   const minor = fontOf(themeXml, 'a:minorFont')
   if (!major && !minor) return null
-  const eaMatch = sectionOf(themeXml, 'a:minorFont')?.match(/<a:ea typeface="([^"]*)"/)
+  const slot = (tag: string, kind: 'a:ea' | 'a:cs') =>
+    sectionOf(themeXml, tag)?.match(new RegExp(`<${kind} typeface="([^"]*)"`))?.[1] || undefined
+  const eastAsia = slot('a:minorFont', 'a:ea')
+  const majorEastAsia = slot('a:majorFont', 'a:ea')
+  const minorCs = slot('a:minorFont', 'a:cs')
+  const majorCs = slot('a:majorFont', 'a:cs')
   return {
     major: major ?? '',
     minor: minor ?? '',
-    ...(eaMatch?.[1] ? { eastAsia: eaMatch[1] } : {}),
+    ...(eastAsia ? { eastAsia } : {}),
+    ...(majorEastAsia ? { majorEastAsia } : {}),
+    ...(minorCs ? { minorCs } : {}),
+    ...(majorCs ? { majorCs } : {}),
   }
 }
 
@@ -53,7 +61,16 @@ export function applyThemeFonts(themeXml: string, fonts: ThemeFonts): string {
   return xml
 }
 
-const COLOR_TAGS = ['dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6'] as const
+const COLOR_TAGS = [
+  'dk2',
+  'lt2',
+  'accent1',
+  'accent2',
+  'accent3',
+  'accent4',
+  'accent5',
+  'accent6',
+] as const
 
 /** all clrScheme slots, including read-only ones (dk1/lt1 may be sysClr) */
 const READ_TAGS = ['dk1', 'lt1', ...COLOR_TAGS, 'hlink', 'folHlink'] as const

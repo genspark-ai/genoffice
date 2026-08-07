@@ -11,7 +11,7 @@
   --hover: #f3f2f1;
   --pressed: #edebe9;
   /* selected/pressed plate: neutral gray (slides/sheets/pdf ribbon parity) */
-  --active-bg: #e2e0de;
+  --active-bg: #eaeaea;
   --canvas: #e6e6e6;
   --ai-highlight: #fff3c4;
   --ai-highlight-border: #f2b900;
@@ -477,7 +477,7 @@ button {
 /* Neutral gray, not the Word-blue --active-bg: the Genspark entry is the same
    control across docs/sheets/slides, so its open state matches their ribbons. */
 .rb-big.ai-entry.active {
-  background: #ebebeb;
+  background: #eaeaea;
 }
 
 .rb-big.ai-entry:hover:not(:disabled) .rb-big-icon,
@@ -2645,6 +2645,8 @@ th.cell-rev-del {
   font-size: 11pt;
   line-height: 1.35;
   color: #000;
+  /* Word's autoSpaceDE/DN (on by default): 1/8em gap between CJK and Latin/digits */
+  text-autospace: normal;
 }
 
 .workspace-dark {
@@ -2718,7 +2720,9 @@ th.cell-rev-del {
   position: relative;
   height: auto;
   padding: 0;
-  border: 0;
+  /* !important: the td edge-border rules (--doc-b-l/r on first/last-child) come
+     later in the sheet and would otherwise frame the page gutter */
+  border: 0 !important;
   background: var(--page-bg, var(--surface));
 }
 
@@ -3180,11 +3184,12 @@ th.cell-rev-del {
 .doc-table th {
   position: relative;
   box-sizing: border-box;
-  /* default grid lines; tables with w:tblBorders override via --doc-b-h/--doc-b-v, the outer frame wins through the table element's border collapse */
-  border-top: var(--doc-b-h, 1px solid #808080);
-  border-bottom: var(--doc-b-h, 1px solid #808080);
-  border-left: var(--doc-b-v, 1px solid #808080);
-  border-right: var(--doc-b-v, 1px solid #808080);
+  /* undeclared borders render as none (Word's on-screen gridlines are non-printing
+     view furniture, not part of the document); w:tblBorders drives --doc-b-* */
+  border-top: var(--doc-b-h, none);
+  border-bottom: var(--doc-b-h, none);
+  border-left: var(--doc-b-v, none);
+  border-right: var(--doc-b-v, none);
   /* Word default cell margins: 108 twips (7.2px) sides / 0 top-bottom; w:tblCellMar overrides via table-level variables */
   padding: var(--doc-cell-pad, 0 7.2px);
   vertical-align: top;
@@ -3194,8 +3199,38 @@ th.cell-rev-del {
   overflow-wrap: normal;
 }
 
+/* repeated header rows after a table page break (w:tblHeader): pure decoration —
+   not selectable, not editable, invisible to hit-testing. display beats the
+   .page-gap-inline inline-block (that class only marks them as measurement gaps). */
+.doc-table tr.page-repeat-header {
+  display: table-row;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* outer edges: table-level outer borders beat the inside-line variables even when the
+   frame is explicitly none (border-collapse would otherwise let inside lines win) */
+.doc-table tr:first-child > td,
+.doc-table tr:first-child > th {
+  border-top: var(--doc-b-t, var(--doc-b-h, none));
+}
+.doc-table tr:last-child > td,
+.doc-table tr:last-child > th {
+  border-bottom: var(--doc-b-b, var(--doc-b-h, none));
+}
+.doc-table td:first-child,
+.doc-table th:first-child {
+  border-left: var(--doc-b-l, var(--doc-b-v, none));
+}
+.doc-table td:last-child,
+.doc-table th:last-child {
+  border-right: var(--doc-b-r, var(--doc-b-v, none));
+}
+
+/* header cells follow the document model (cell bold/align attrs), not the UA defaults */
 .doc-table th {
-  font-weight: 600;
+  font-weight: inherit;
+  text-align: inherit;
 }
 
 .doc-table .selectedCell {
@@ -5068,7 +5103,7 @@ body.docs-crop-active
     box-shadow var(--transition-fast);
 }
 
-/* textarea: 15px / 21px fixed line-height, auto-grow band
+/* textarea: 16px / 24px fixed line-height (chat body size), auto-grow band
  * (resting height matches the sheets panel, 25% taller than default) */
 .ai-input-box textarea {
   display: block;
@@ -5077,15 +5112,17 @@ body.docs-crop-active
   border: none;
   background: none;
   border-radius: var(--radius-16) var(--radius-16) 0 0;
-  padding: 12px 14px 4px;
-  font-size: 15px;
-  font-weight: 500;
+  /* vertical gaps live on margin, not padding: textarea padding scrolls away
+   * with the content, so clipped lines would sit flush against chips/footer */
+  padding: 0 14px;
+  margin: 12px 0 4px;
+  font-size: 16px;
   font-family: inherit;
-  line-height: 21px;
+  line-height: 24px;
   outline: none;
   color: var(--color-text-primary);
-  min-height: 64px;
-  max-height: 147px;
+  min-height: 48px;
+  max-height: 168px;
   overflow-y: auto;
 }
 

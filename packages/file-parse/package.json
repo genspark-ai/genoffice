@@ -17,7 +17,7 @@
     "@genoffice/docx-engine": "*",
     "fast-xml-parser": "^5.3.4",
     "jszip": "^3.10.1",
-    "pdfjs-dist": "^5.4.54"
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

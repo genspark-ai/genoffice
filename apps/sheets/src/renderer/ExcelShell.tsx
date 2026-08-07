@@ -1293,7 +1293,13 @@ function Ribbon({
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCheckbox')}>
-          <RibbonReserved large label={t('appGroupCheckbox')} symbol="☑" />
+          <RibbonButton
+            large
+            label={t('appGroupCheckbox')}
+            detail={t('appAtSelection')}
+            symbol="☑"
+            onClick={() => onCommand('insert-checkbox')}
+          />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCharts')}>
           <RibbonButton
@@ -1391,10 +1397,14 @@ function Ribbon({
               <ToolSymbol symbol="▥" />
               {t('appSlicer')}
             </button>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button
+              className="styles-row as-button"
+              title={onIsSelectionInPivot() ? t('appTimelineHintIn') : t('appTimelineHintOut')}
+              onClick={() => onCommand('timeline-open')}
+            >
               <ToolSymbol symbol="🕒" />
               {t('appTimeline')}
-            </span>
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupLinks')}>
@@ -1433,11 +1443,10 @@ function Ribbon({
         </RibbonGroup>
         <RibbonGroup label={t('appGroupSymbols')}>
           <div className="row-stack">
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button className="styles-row as-button" onClick={() => onCommand('insert-equation')}>
               <ToolSymbol symbol="π" />
               {t('appEquation')}
-              <CaretIcon />
-            </span>
+            </button>
             <button className="styles-row as-button" onClick={() => onCommand('insert-symbol')}>
               <ToolSymbol symbol="Ω" />
               {t('appSymbol')}
@@ -1765,10 +1774,14 @@ function Ribbon({
         <RibbonGroup label={t('appGroupGetData')}>
           <RibbonReserved large menu label={t('appGroupGetData')} symbol="🛢" />
           <div className="row-stack">
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button
+              className="styles-row as-button"
+              title={t('appFromTextCsvTitle')}
+              onClick={() => onCommand('import-csv')}
+            >
               <ToolSymbol symbol="🗎" />
               {t('appFromTextCsv')}
-            </span>
+            </button>
             <span className="styles-row reserved" title={t('appNotAvailableYet')}>
               <ToolSymbol symbol="⟳" />
               {t('appRefreshAll')}
@@ -1992,18 +2005,30 @@ function Ribbon({
             onClick={() => onCommand('note-delete')}
           />
           <div className="row-stack">
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            <button
+              className="styles-row as-button"
+              title={t('appNotePrevTitle')}
+              onClick={() => onCommand('note-prev')}
+            >
               <ToolSymbol symbol="←" />
               {t('appPrevious')}
-            </span>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            </button>
+            <button
+              className="styles-row as-button"
+              title={t('appNoteNextTitle')}
+              onClick={() => onCommand('note-next')}
+            >
               <ToolSymbol symbol="→" />
               {t('appNext')}
-            </span>
-            <span className="styles-row reserved" title={t('appNotAvailableYet')}>
+            </button>
+            <button
+              className="styles-row as-button"
+              title={t('appShowCommentsTitle')}
+              onClick={() => onCommand('note-show-toggle')}
+            >
               <ToolSymbol symbol="🗨" />
               {t('appShowComments')}
-            </span>
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupNotes')}>

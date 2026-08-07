@@ -568,6 +568,7 @@ export interface AddSlideWithLayoutOp {
 /** Query the pptx's slideLayout list (for the new-slide dropdown panel). */
 export interface GetLayoutsResult {
   layouts: Array<{
+    /** Zip path; 'builtin:<key>' = built-in standard layout, injected into the package on first use */
     path: string
     name: string
     layoutType: string
@@ -582,6 +583,8 @@ export interface GetLayoutsResult {
       hint: string
     }>
   }>
+  /** Slide size (EMU), for normalizing the placeholder previews */
+  size: { cx: number; cy: number }
 }
 
 /** Element z-order adjustment (elements order = spTree order). */

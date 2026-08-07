@@ -114,6 +114,10 @@ import {
   mergeTableCells,
   setSlideLayout,
   resetSlideLayout,
+  builtinLayoutInfos,
+  ensureBuiltinLayout,
+  shouldOfferBuiltinLayouts,
+  BUILTIN_LAYOUT_PREFIX,
   setSlideSize,
   setPictureOpacity,
   setElementConnection,
@@ -2003,11 +2007,26 @@ export function registerSlidesIpc(): void {
     }
   })
 
+  // 'builtin:<key>' virtual paths get injected into the package on first use
+  const resolveLayoutPath = (session: Session, layoutPath?: string): string | undefined => {
+    if (!layoutPath?.startsWith(BUILTIN_LAYOUT_PREFIX)) return layoutPath
+    return (
+      ensureBuiltinLayout(
+        session.opened.archive,
+        session.opened.deck.size,
+        layoutPath.slice(BUILTIN_LAYOUT_PREFIX.length),
+      ) ?? undefined
+    )
+  }
+
   ipcMain.handle('slides:add-slide-with-layout', (e, op: AddSlideWithLayoutOp) => {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     pushHistory(session)
-    const slide = insertSlideWithLayout(session.opened, op.sourceIndex, op.layoutPath)
+    const layoutPath = resolveLayoutPath(session, op.layoutPath)
+    const slide = layoutPath
+      ? insertSlideWithLayout(session.opened, op.sourceIndex, layoutPath)
+      : null
     if (!slide) {
       session.undoStack.pop()
       return null
@@ -2023,7 +2042,14 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     const layouts = listSlideLayouts(session.opened.archive)
-    return { layouts }
+    // Decks whose own layouts carry no placeholders (AI-generated single blank layout)
+    // get the built-in standard set, injected into the package on first use
+    if (shouldOfferBuiltinLayouts(layouts)) {
+      layouts.push(
+        ...builtinLayoutInfos(session.opened.deck.size, new Set(layouts.map((l) => l.name))),
+      )
+    }
+    return { layouts, size: { ...session.opened.deck.size } }
   })
 
   // ── Master edit view ───────────────────────────────────────────────
@@ -2221,9 +2247,12 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     pushHistory(session)
-    const r = op.layoutPath
-      ? setSlideLayout(session.opened, op.slideIndex, op.layoutPath)
-      : resetSlideLayout(session.opened, op.slideIndex)
+    const layoutPath = resolveLayoutPath(session, op.layoutPath)
+    const r = layoutPath
+      ? setSlideLayout(session.opened, op.slideIndex, layoutPath)
+      : op.layoutPath
+        ? null
+        : resetSlideLayout(session.opened, op.slideIndex)
     if (!r) {
       session.undoStack.pop()
       return null
