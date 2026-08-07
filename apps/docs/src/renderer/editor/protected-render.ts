@@ -486,6 +486,7 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
     })
     const pStyles = [
       para.align ? `text-align:${para.align}` : '',
+      para.bidi ? 'direction:rtl' : '',
       para.lineSpacing ? `line-height:${para.lineSpacing * 1.2}` : '',
       para.indentLeft ? `margin-left:${para.indentLeft / 20}pt` : '',
       para.indentRight ? `margin-right:${para.indentRight / 20}pt` : '',

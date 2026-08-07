@@ -4,7 +4,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
 
 /** paragraph-like blocks that carry the bidi attribute */
-const DIR_BLOCKS = new Set(['docParagraph', 'docHeading', 'docListItem'])
+const DIR_BLOCKS = new Set(['docParagraph', 'docHeading', 'docListItem', 'textboxPara'])
 
 /** strong RTL (UAX#9 R/AL) scripts: Hebrew, Arabic, Syriac, Thaana, NKo, Samaritan, Mandaic */
 const RTL_CHAR =
@@ -25,9 +25,9 @@ export function firstStrongDir(text: string): 'ltr' | 'rtl' | null {
   return null
 }
 
-/** bidi attr of the paragraph-like node at the cursor (false in textbox sub-editors, which have no bidi) */
+/** bidi attr of the paragraph-like node at the cursor */
 export function activeBidi(editor: Editor): boolean {
-  for (const name of ['docHeading', 'docListItem', 'docParagraph']) {
+  for (const name of ['docHeading', 'docListItem', 'docParagraph', 'textboxPara']) {
     if (editor.isActive(name)) return editor.getAttributes(name).bidi === true
   }
   return false

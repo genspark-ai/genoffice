@@ -55,6 +55,8 @@ const worksheetMetadataSchema = z
     showGridLines: z.boolean(),
     /// sheetView/@showFormulas — the sheet opens in formula view.
     showFormulas: z.boolean().optional(),
+    /// sheetView/@rightToLeft — RTL sheet direction (data fidelity only).
+    rightToLeft: z.boolean().optional(),
     tables: z.array(
       z
         .object({
@@ -753,6 +755,7 @@ export const workbookPageSetupStateSchema = z
     printHeadings: z.boolean().optional(),
     showGridlines: z.boolean().optional(),
     showFormulas: z.boolean().optional(),
+    rightToLeft: z.boolean().optional(),
     printArea: z.union([z.string().min(1).max(255), z.null()]).optional(),
     printTitles: z.union([z.string().regex(/^\d{1,7}:\d{1,7}$/), z.null()]).optional(),
     /// Frozen pane counts; both present together, 0/0 removes the pane.

@@ -2445,17 +2445,17 @@ function RibbonInner({
                   <span className="rb-mini-sep" />
                   <button
                     className={`rb-icon ${!fs.bidi ? 'active' : ''}`}
-                    disabled={!canEdit || !!sub}
+                    disabled={!canEdit}
                     title={t('ribbonDirLtrTip')}
-                    onClick={() => setParagraphDirection(editor, 'ltr')}
+                    onClick={() => setParagraphDirection(ed, 'ltr')}
                   >
                     <IconDirLtr />
                   </button>
                   <button
                     className={`rb-icon ${fs.bidi ? 'active' : ''}`}
-                    disabled={!canEdit || !!sub}
+                    disabled={!canEdit}
                     title={t('ribbonDirRtlTip')}
-                    onClick={() => setParagraphDirection(editor, 'rtl')}
+                    onClick={() => setParagraphDirection(ed, 'rtl')}
                   >
                     <IconDirRtl />
                   </button>

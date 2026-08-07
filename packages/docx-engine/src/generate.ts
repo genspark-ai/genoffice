@@ -433,11 +433,13 @@ function patchNestedInCell(
  * Replacement content for one textbox paragraph. `runs` carry the full rich
  * style (bold, color, size, ...) and are regenerated as fresh OOXML runs.
  * `align`: undefined keeps the original pPr untouched, null removes w:jc,
- * a value rewrites it.
+ * a value rewrites it. `bidi`: undefined keeps the original pPr untouched,
+ * false removes w:bidi, true writes it.
  */
 export interface TextboxParaPatch {
   runs: Run[]
   align?: 'left' | 'center' | 'right' | 'justify' | 'distribute' | null
+  bidi?: boolean
 }
 
 /** plain text of one w:p fragment (w:t + tabs/breaks), for change detection */
@@ -473,6 +475,19 @@ function pPrWithJc(pPr: string, align: TextboxParaPatch['align']): string {
   return out.slice(0, insertAt) + jc + out.slice(insertAt)
 }
 
+/** set or remove w:bidi (RTL paragraph) inside a pPr fragment */
+function pPrWithBidi(pPr: string, bidi: boolean): string {
+  const out = pPr.replace(/<w:pPr([^>]*)\/>/, '<w:pPr$1></w:pPr>').replace(/<w:bidi\/>/, '')
+  if (!bidi) return out === '<w:pPr></w:pPr>' ? '' : out
+  const mark = '<w:bidi/>'
+  if (!out) return `<w:pPr>${mark}</w:pPr>`
+  // keep w:bidi grouped with the other direct pPr properties, before w:jc/rPr
+  const jcIdx = out.indexOf('<w:jc ')
+  const rPrIdx = out.indexOf('<w:rPr')
+  const insertAt = jcIdx === -1 ? (rPrIdx === -1 ? out.lastIndexOf('</w:pPr>') : rPrIdx) : jcIdx
+  return out.slice(0, insertAt) + mark + out.slice(insertAt)
+}
+
 /**
  * Rebuild the paragraphs of one w:txbxContent. `paras[i]` = null keeps the
  * original paragraph bytes; a patch regenerates the paragraph from its rich
@@ -499,6 +514,7 @@ function patchTxbxContent(
     const template = originals[Math.min(i, originals.length - 1)]
     let pPr = /<w:pPr[\s\S]*?<\/w:pPr>|<w:pPr[^>]*\/>/.exec(template)?.[0] ?? ''
     if (patch.align !== undefined) pPr = pPrWithJc(pPr, patch.align)
+    if (patch.bidi !== undefined) pPr = pPrWithBidi(pPr, patch.bidi)
     // no rel allocation inside textboxes: only links that already have an rId
     // survive re-generation, new links degrade to plain text
     parts.push(`<w:p>${pPr}${runsXml(patch.runs, null)}</w:p>`)

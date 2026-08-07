@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import JSZip from 'jszip'
 import { Editor } from '@tiptap/core'
 import { parseDocx, saveDocx, type TextboxDisplay } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+
+async function documentXmlOf(bytes: Uint8Array): Promise<string> {
+  const zip = await JSZip.loadAsync(bytes)
+  return (await zip.file('word/document.xml')!.async('string')) as string
+}
 
 const TXBX_CONTENT =
   '<w:txbxContent>' +
@@ -209,6 +215,37 @@ describe('text box rich-text edit and save', () => {
       expect.objectContaining({ text: 'ICAL', italic: true }),
     ])
     // centered alignment survives (align is re-applied from the display model)
+    expect(box?.paras[1].align).toBe('center')
+    editor.destroy()
+  })
+
+  it('RTL (bidi) on a textbox paragraph round-trips through the save patch', async () => {
+    const { editor, parsed } = await openTextboxDoc()
+    const pos = textboxNodePos(editor)
+    const node = editor.state.doc.nodeAt(pos)!
+    const boxes = node.attrs.textboxes as TextboxDisplay[]
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        textboxes: boxes.map((box) => ({
+          ...box,
+          paras: box.paras.map((para, i) =>
+            i === 1 ? { ...para, bidi: true } : para,
+          ),
+        })),
+      }),
+    )
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(1)
+
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await documentXmlOf(saved)
+    expect(xml).toContain('<w:bidi/>')
+    const reparsed = await parseDocx(saved)
+    const box = reparsed.blocks.find((b) => b.textboxes)?.textboxes?.[0]
+    // direction is explicit like align: removed in the model, dropped in the XML
+    expect(box?.paras[1].bidi).toBe(true)
     expect(box?.paras[1].align).toBe('center')
     editor.destroy()
   })

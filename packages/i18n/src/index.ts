@@ -88,6 +88,14 @@ export function htmlLang(lang: Lang): string {
   return HTML_LANGS[lang]
 }
 
+/** RTL (right-to-left) UI languages: their chrome and AI panels mirror right-to-left */
+const RTL_LANGS = new Set<Lang>(['ar', 'he'])
+
+/** direction for document.documentElement.dir (drives UI mirroring for RTL languages) */
+export function htmlDir(lang: Lang): 'rtl' | 'ltr' {
+  return RTL_LANGS.has(lang) ? 'rtl' : 'ltr'
+}
+
 export type Params = Record<string, string | number>
 
 /** fill {name} placeholders; unknown placeholders are left as-is */

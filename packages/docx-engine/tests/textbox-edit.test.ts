@@ -190,6 +190,35 @@ describe('textbox editing', () => {
     )
   })
 
+  it('writes, keeps, or removes w:bidi according to bidi', () => {
+    // bidi true adds w:bidi before w:jc on the second (already centered) paragraph
+    const rtl = patchTextboxParas(TEXTBOX_PARAGRAPH, [
+      [null, para({ runs: [{ text: 'نص', bold: true }], bidi: true })],
+    ])
+    expect(rtl).toContain('<w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr>')
+
+    // align undefined + bidi undefined keeps the template pPr untouched
+    const kept = patchTextboxParas(TEXTBOX_PARAGRAPH, [
+      [null, para({ runs: [{ text: 'STILL', bold: true }] })],
+    ])
+    expect(kept).toContain(
+      '<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">STILL</w:t></w:r>',
+    )
+
+    // bidi false strips w:bidi from a paragraph that had it
+    const withBidi = TEXTBOX_PARAGRAPH.replace(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>',
+      '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr>',
+    )
+    const ltr = patchTextboxParas(withBidi, [
+      [null, para({ runs: [{ text: 'LTR', bold: true }], bidi: false })],
+    ])
+    expect(ltr).not.toContain('<w:bidi/>')
+    expect(ltr).toContain(
+      '<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">LTR</w:t></w:r>',
+    )
+  })
+
   it('patches the VML fallback twin with the same paragraphs', () => {
     const out = patchTextboxParas(TEXTBOX_PARAGRAPH, [[para({ runs: [{ text: 'NEW' }] }), null]])
     const hits = out.match(/<w:t xml:space="preserve">NEW<\/w:t>/g) ?? []

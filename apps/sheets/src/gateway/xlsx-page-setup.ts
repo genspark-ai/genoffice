@@ -29,6 +29,10 @@ export interface SheetPageSetupState {
   readonly printHeadings?: boolean | undefined
   readonly showGridlines?: boolean | undefined
   readonly showFormulas?: boolean | undefined
+  /// sheetView/@rightToLeft — RTL sheet direction (data fidelity only; the
+  /// on-screen grid stays LTR because the bundled grid renderer never
+  /// mirrors the flag).
+  readonly rightToLeft?: boolean | undefined
   readonly printArea?: string | null | undefined
   readonly printTitles?: string | null | undefined
   readonly frozenRows?: number | undefined
@@ -282,6 +286,11 @@ export function applyPageSetupState(worksheetXml: string, state: SheetPageSetupS
   if (state.showFormulas !== undefined) {
     // showFormulas defaults to false; drop the attribute to restore it.
     xml = setSheetViewAttr(xml, 'showFormulas', state.showFormulas ? '1' : null)
+  }
+
+  if (state.rightToLeft !== undefined) {
+    // rightToLeft defaults to false; drop the attribute to restore it.
+    xml = setSheetViewAttr(xml, 'rightToLeft', state.rightToLeft ? '1' : null)
   }
 
   const printOptions: Record<string, string | null> = {}

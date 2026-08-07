@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, htmlLang, type Lang, type Params } from '@genoffice/i18n'
+import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
 import { strings } from './strings'
 
 const translate = createI18n(strings)
@@ -72,15 +72,16 @@ const LocaleContext = createContext<Lang>('zh')
 
 export function LocaleProvider({ initial, children }: { initial: Lang; children: ReactNode }) {
   const [lang, setLang] = useState<Lang>(initial)
-  useEffect(
-    () =>
-      window.desktopApi.onLanguageChanged((next) => {
-        setModuleLang(next)
-        document.documentElement.lang = htmlLang(next)
-        setLang(next)
-      }),
-    [],
-  )
+  useEffect(() => {
+    // RTL UI (Arabic/Hebrew): mirror the chrome + AI panels right-to-left
+    document.documentElement.dir = htmlDir(initial)
+    return window.desktopApi.onLanguageChanged((next) => {
+      setModuleLang(next)
+      document.documentElement.lang = htmlLang(next)
+      document.documentElement.dir = htmlDir(next)
+      setLang(next)
+    })
+  }, [initial])
   return <LocaleContext.Provider value={lang}>{children}</LocaleContext.Provider>
 }
 

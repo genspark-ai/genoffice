@@ -210,6 +210,7 @@ export interface PageLayoutEcho {
   readonly printGridlines?: boolean | undefined
   readonly printHeadings?: boolean | undefined
   readonly showGridlines: boolean
+  readonly rightToLeft?: boolean | undefined
   readonly printArea?: string | null | undefined
   readonly printTitles?: string | null | undefined
   readonly header?: HeaderFooterParts | null | undefined
@@ -1897,6 +1898,10 @@ function Ribbon({
             <button className="check-item" onClick={() => onCommand('toggle-gridlines')}>
               <i className="check-box">{pageLayout.showGridlines ? '✓' : ''}</i>
               {t('appGridlines')}
+            </button>
+            <button className="check-item" onClick={() => onCommand('toggle-right-to-left')}>
+              <i className="check-box">{pageLayout.rightToLeft ? '✓' : ''}</i>
+              {t('appSheetRightToLeft')}
             </button>
             <span className="check-item reserved-check">
               <i className="check-box">✓</i>

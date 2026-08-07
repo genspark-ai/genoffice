@@ -55,6 +55,7 @@ import {
   normalizeLinkTarget,
   pushVisualUndo,
   queueSparklineInstall,
+  worksheetIsRightToLeft,
 } from './univer-sync'
 import {
   BORDER_COMMAND_TYPES,
@@ -495,6 +496,28 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         ctx.setPendingEdits(journalSize(state.editJournal))
       }
       ctx.setMessage(next ? t('appShowingFormulas') : t('appShowingValues'))
+      return
+    }
+    case 'toggle-right-to-left': {
+      // RTL is per-sheet direction state (sheetView/@rightToLeft). The Univer
+      // command updates the sheet config so the toggle survives sheet
+      // switches; the journal persists it as data fidelity on save.
+      const workbook = runtime.univerAPI.getActiveWorkbook()
+      const activeSheet = workbook?.getActiveSheet()
+      const sheetId = activeSheet?.getSheetId()
+      if (!workbook || !activeSheet || !sheetId) return
+      const next = !worksheetIsRightToLeft(activeSheet)
+      void runtime.univerAPI.executeCommand('sheet.command.set-worksheet-right-to-left', {
+        unitId: workbook.getId(),
+        subUnitId: sheetId,
+        rightToLeft: next ? BooleanNumber.TRUE : BooleanNumber.FALSE,
+      })
+      const state = ctx.lazyWorkbookRef.current
+      if (state && !isSheetRemoved(state.editJournal, sheetId)) {
+        recordPageSetup(state.editJournal, sheetId, { rightToLeft: next })
+        ctx.setPendingEdits(journalSize(state.editJournal))
+      }
+      ctx.setMessage(next ? t('appRtlSheetEnabledSave') : t('appRtlSheetDisabledSave'))
       return
     }
     case 'trace-precedents':

@@ -113,10 +113,11 @@ const num = (v: unknown): number | null => {
 }
 
 /** attrs of the paragraph-like node at the cursor (mirrors activeParaAttrs in ribbon-tabs) */
-function paraAttrsOf(editor: Editor): Record<string, unknown> {
-  if (editor.isActive('docHeading')) return editor.getAttributes('docHeading')
-  if (editor.isActive('docListItem')) return editor.getAttributes('docListItem')
-  return editor.getAttributes('docParagraph')
+function paraAttrsOf(ed: Editor): Record<string, unknown> {
+  if (ed.isActive('textboxPara')) return ed.getAttributes('textboxPara')
+  if (ed.isActive('docHeading')) return ed.getAttributes('docHeading')
+  if (ed.isActive('docListItem')) return ed.getAttributes('docListItem')
+  return ed.getAttributes('docParagraph')
 }
 
 export function computeFormatState(
@@ -170,7 +171,7 @@ export function computeFormatState(
         : ed.state.doc.textBetween(from, Math.min(to, from + 32), ' ')
     return textHasCjk(sample) ? font : fontAscii
   }
-  const paraAttrs = sub ? ed.getAttributes('docParagraph') : paraAttrsOf(editor)
+  const paraAttrs = paraAttrsOf(ed)
   const mainPara = paraAttrsOf(editor)
 
   return {

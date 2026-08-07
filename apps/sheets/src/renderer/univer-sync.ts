@@ -307,6 +307,9 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
             columnCount: Math.max(MINIMUM_SHEET_COLUMN_COUNT, sheet.columnCount, visualColumnCount),
             hidden: sheet.hidden ? BooleanNumber.TRUE : BooleanNumber.FALSE,
             showGridlines: sheet.showGridLines ? BooleanNumber.TRUE : BooleanNumber.FALSE,
+            ...(sheet.rightToLeft === undefined
+              ? {}
+              : { rightToLeft: sheet.rightToLeft ? BooleanNumber.TRUE : BooleanNumber.FALSE }),
             ...(sheet.tabColor === null ? {} : { tabColor: sheet.tabColor }),
             ...(sheet.defaultRowHeight === null
               ? {}
@@ -924,6 +927,15 @@ const VISUAL_UNDO_COMMAND_ID = 'sheets.mutation.visual-edit-step'
 const visualUndoRegistry = new Map<number, VisualUndoStep>()
 let visualUndoSequence = 0
 const visualUndoRuntimes = new WeakSet<object>()
+
+/// The univerAPI facade doesn't surface isRightToLeft, so the sheet's RTL
+/// direction is read via the underlying sheet object. The bundled grid never
+/// mirrors RTL — this is data-fidelity state only.
+export function worksheetIsRightToLeft(worksheet: unknown): boolean {
+  const isRtl = (worksheet as { isRightToLeft?: () => BooleanNumber | undefined } | null)
+    ?.isRightToLeft?.()
+  return isRtl === BooleanNumber.TRUE
+}
 
 /// Interactive visual ops (chart edits, moves, deletes, inserts) enter
 /// Univer's own undo stack as a custom mutation pair, so ⌘Z interleaves

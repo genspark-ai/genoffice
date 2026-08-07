@@ -1244,7 +1244,7 @@ function nestedTextsDiff(current: TableModel, original: TableModel): (string[] |
 
 /** rich-run signature of one textbox paragraph, for per-paragraph change detection */
 export function textboxParaSignature(para: TextboxDisplay['paras'][number]): string {
-  return JSON.stringify([para.align ?? null, normalizedRuns(para.runs)])
+  return JSON.stringify([para.align ?? null, para.bidi ?? false, normalizedRuns(para.runs)])
 }
 
 /**
@@ -1271,8 +1271,8 @@ function textboxParasPatch(
       if (j < origParas.length && textboxParaSignature(p) === textboxParaSignature(origParas[j])) {
         return null
       }
-      // align is always explicit so a removed alignment also clears w:jc
-      return { runs: mergeRuns(p.runs), align: p.align ?? null }
+      // align/bidi are always explicit so a removed alignment/direction also clears them
+      return { runs: mergeRuns(p.runs), align: p.align ?? null, bidi: p.bidi ?? false }
     })
   })
   return changed ? boxes : null

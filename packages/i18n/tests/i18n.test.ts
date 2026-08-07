@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createI18n, format, htmlLang, isLang, LANGS, normalizeLang } from '../src/index'
+import { createI18n, format, htmlDir, htmlLang, isLang, LANGS, normalizeLang } from '../src/index'
 
 describe('normalizeLang', () => {
   it('maps zh variants to zh', () => {
@@ -88,6 +88,17 @@ describe('htmlLang', () => {
     expect(htmlLang('ko')).toBe('ko-KR')
     expect(htmlLang('zh-TW')).toBe('zh-TW')
     for (const lang of LANGS) expect(htmlLang(lang)).toMatch(/^[a-z]{2}-[A-Z]{2}$/)
+  })
+})
+
+describe('htmlDir', () => {
+  it('mirrors RTL languages right-to-left and everything else left-to-right', () => {
+    expect(htmlDir('ar')).toBe('rtl')
+    expect(htmlDir('he')).toBe('rtl')
+    for (const lang of LANGS) {
+      if (lang === 'ar' || lang === 'he') expect(htmlDir(lang)).toBe('rtl')
+      else expect(htmlDir(lang)).toBe('ltr')
+    }
   })
 })
 

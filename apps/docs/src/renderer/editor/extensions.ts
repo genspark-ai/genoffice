@@ -1800,6 +1800,7 @@ function textboxDocJson(box: TextboxDisplay): Record<string, unknown> {
     type: 'docParagraph',
     attrs: {
       align: para.align ?? null,
+      bidi: para.bidi ?? false,
       lineSpacing: para.lineSpacing ?? null,
       indentLeft: para.indentLeft ?? null,
       indentRight: para.indentRight ?? null,
@@ -1821,6 +1822,7 @@ function subEditorParas(sub: Editor): TextboxPara[] {
     const attrs = p.attrs ?? {}
     const keys = [
       'align',
+      'bidi',
       'lineSpacing',
       'indentLeft',
       'indentRight',
@@ -2282,6 +2284,7 @@ const TextboxParagraph = Node.create({
   addAttributes() {
     return {
       align: { default: null as string | null },
+      bidi: { default: false },
       lineSpacing: { default: null as number | null },
       indentLeft: { default: null as number | null },
       indentRight: { default: null as number | null },
@@ -2303,6 +2306,7 @@ const TextboxParagraph = Node.create({
       node.attrs.align
         ? `text-align:${node.attrs.align === 'distribute' ? 'justify' : node.attrs.align}`
         : '',
+      node.attrs.bidi ? 'direction:rtl' : '',
       node.attrs.lineSpacing ? `line-height:${Number(node.attrs.lineSpacing) * 1.2}` : '',
       node.attrs.indentLeft ? `margin-left:${Number(node.attrs.indentLeft) / 20}pt` : '',
       node.attrs.indentRight ? `margin-right:${Number(node.attrs.indentRight) / 20}pt` : '',
@@ -2336,6 +2340,7 @@ const textboxSubExtensions = [
   TextStyleMark,
   CommentMark,
   UndoRedo,
+  AutoDirectionExtension,
 ]
 
 // ---- find & replace highlighting ----

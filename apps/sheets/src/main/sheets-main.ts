@@ -9,8 +9,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import {
@@ -2616,9 +2617,10 @@ async function openWorkbookSession(
   suggestSaveAs?: string,
   csvImport?: boolean,
 ): Promise<WorkbookFile> {
-  const [opened, digest] = await Promise.all([
+  const [opened, digest, rightToLeftFlags] = await Promise.all([
     client.open(path).then((result) => sidecarOpenResultSchema.parse(result)),
     sha256File(path),
+    readSheetRightToLeft(client, path),
   ])
   sessions.set(opened.sessionId, {
     path,
@@ -2629,11 +2631,96 @@ async function openWorkbookSession(
   })
   return workbookFileSchema.parse({
     ...opened,
+    sheets: opened.sheets.map((sheet) => ({
+      ...sheet,
+      ...(rightToLeftFlags.get(sheet.id) === undefined
+        ? {}
+        : { rightToLeft: rightToLeftFlags.get(sheet.id) }),
+    })),
     path,
     sha256: digest,
     readOnly: false,
     needsSaveAs: suggestSaveAs !== undefined,
   })
+}
+
+/// Reads `sheetView/@rightToLeft` for every worksheet via the sidecar's
+/// archive commands. The bundled native engine surfaces @showFormulas but not
+/// @rightToLeft, so the open-time RTL flags are parsed in JS from the
+/// workbook parts (prebuilt binary — no native rebuild needed). The flag is
+/// data-fidelity only: the on-screen grid stays LTR because the bundled grid
+/// renderer never mirrors it. Any failure degrades to "no RTL flags" and
+/// never blocks the open.
+async function readSheetRightToLeft(
+  client: XlsxSidecarClient,
+  path: string,
+): Promise<Map<string, boolean>> {
+  const flags = new Map<string, boolean>()
+  try {
+    const manifest = (await client.archiveManifest(path)) as { entries: { name: string }[] }
+    const worksheetParts = (manifest.entries ?? [])
+      .map((entry) => entry.name)
+      .filter((name) => /^xl\/worksheets\/[^/]+\.xml$/.test(name))
+    if (worksheetParts.length === 0) return flags
+    const scanned = (await client.scanEntries({
+      path,
+      entries: worksheetParts,
+      needle: 'rightToLeft',
+    })) as { matches: string[] }
+    const matching = scanned.matches ?? []
+    if (matching.length === 0) return flags
+
+    const workDir = await mkdtemp(join(tmpdir(), 'ai-excel-rtl-'))
+    try {
+      const extracted = (await client.readEntries({
+        path,
+        entries: ['xl/workbook.xml', 'xl/_rels/workbook.xml.rels', ...matching],
+        outputDir: workDir,
+      })) as { entries: { name: string; path: string }[] }
+      const byName = new Map(extracted.entries.map((entry) => [entry.name, entry.path]))
+      const workbookPath = byName.get('xl/workbook.xml')
+      const relsPath = byName.get('xl/_rels/workbook.xml.rels')
+      if (!workbookPath || !relsPath) return flags
+      const workbook = await readFile(workbookPath, 'utf8')
+      const rels = await readFile(relsPath, 'utf8')
+
+      // workbook.xml.rels: r:id → worksheet part (Target is relative to xl/).
+      const targetById = new Map<string, string>()
+      for (const match of rels.matchAll(/<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)) {
+        const rid = match[1]
+        const target = match[2]
+        if (!rid || !target) continue
+        const part = target.startsWith('/') ? target.slice(1) : `xl/${target}`
+        targetById.set(rid, part)
+      }
+      // workbook.xml: sheetId → worksheet part via r:id.
+      const partBySheetId = new Map<string, string>()
+      for (const match of workbook.matchAll(/<sheet\b[^>]*sheetId="(\d+)"[^>]*r:id="([^"]+)"/g)) {
+        const sheetId = match[1]
+        const rid = match[2]
+        if (!sheetId || !rid) continue
+        const part = targetById.get(rid)
+        if (part) partBySheetId.set(sheetId, part)
+      }
+      // The engine's sheet id is `sheet-{sheetId}`; the first sheetView's
+      // rightToLeft="1" makes the sheet RTL.
+      for (const part of matching) {
+        const filePath = byName.get(part)
+        if (!filePath) continue
+        const xml = await readFile(filePath, 'utf8')
+        const view = /<sheetView\b[^>]*rightToLeft="([^"]+)"[^>]*\/?>/.exec(xml)
+        if (!view || (view[1] !== '1' && view[1] !== 'true')) continue
+        for (const [sheetId, sheetPart] of partBySheetId) {
+          if (sheetPart === part) flags.set(`sheet-${sheetId}`, true)
+        }
+      }
+    } finally {
+      await rm(workDir, { recursive: true, force: true })
+    }
+  } catch {
+    // Best-effort: the workbook opens without RTL flags.
+  }
+  return flags
 }
 
 /** which legacy charset an Excel CSV most likely uses, judged by the UI language */

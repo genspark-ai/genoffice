@@ -30,6 +30,7 @@ import {
   sheetOutline,
   syncUniver,
   univerDefinedNames,
+  worksheetIsRightToLeft,
 } from './univer-sync'
 import {
   journalSuppression,
@@ -2961,6 +2962,8 @@ export function App(): React.JSX.Element {
       ...journalState,
       showGridlines:
         journalState.showGridlines ?? (worksheet ? !worksheet.hasHiddenGridLines() : true),
+      rightToLeft:
+        journalState.rightToLeft ?? (worksheet ? worksheetIsRightToLeft(worksheet) : false),
     }
   })()
 
