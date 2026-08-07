@@ -1087,6 +1087,16 @@ export function App(): React.JSX.Element {
       })
   }
 
+  /** Current AI settings, for the sidebar model switcher. */
+  function handleListModels(): Promise<AiSettings | null> {
+    return window.desktopApi?.getAiSettings().catch(() => null) ?? Promise.resolve(null)
+  }
+
+  /** Switch the live model; null selects the Genspark account. */
+  function handleSelectModel(profileId: string | null): Promise<AiSettings | null> {
+    return window.desktopApi?.setActiveModel(profileId).catch(() => null) ?? Promise.resolve(null)
+  }
+
   /** This workbook's stored conversations, newest first, for the session picker. */
   function handleListSessions(): Promise<ChatMeta[]> {
     const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
@@ -3178,6 +3188,8 @@ export function App(): React.JSX.Element {
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
         onListSessions={handleListSessions}
+        onListModels={handleListModels}
+        onSelectModel={handleSelectModel}
         onLoadSession={handleLoadSession}
         activeChatId={activeChatId}
         onUndo={handleUndo}

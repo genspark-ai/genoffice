@@ -67,6 +67,9 @@ export const strings = {
     aiTidyPrompt:
       '整理全文排版：修正标题层级、统一列表格式、去除多余的加粗和斜体、清理多余空行；只调整格式，不要改动任何文字内容',
     aiNewChat: '新对话',
+    aiModelSwitch: '切换模型',
+    aiModelGenspark: 'Genspark 官方',
+    aiModelManageHint: '在“设置 › 模型”中添加模型',
     aiSessionsTitle: '历史会话',
     aiSessionsEmpty: '还没有其他会话',
     aiSessionUntitled: '未命名会话',
@@ -173,6 +176,9 @@ export const strings = {
     aiTidyPrompt:
       'Tidy up the document formatting — fix heading levels, unify list formatting, remove unnecessary bold and italics, and clean up extra blank lines. Adjust formatting only — do not change any text content',
     aiNewChat: 'New chat',
+    aiModelSwitch: 'Switch model',
+    aiModelGenspark: 'Genspark official',
+    aiModelManageHint: 'Add models in Settings › Model',
     aiSessionsTitle: 'Conversations',
     aiSessionsEmpty: 'No other conversations yet',
     aiSessionUntitled: 'Untitled conversation',
@@ -280,6 +286,9 @@ export const strings = {
     aiTidyPrompt:
       '文書全体の書式を整理してください。見出しレベルの修正、リスト形式の統一、不要な太字・斜体の削除、余分な空行の整理など。書式のみを調整し、本文の内容は一切変更しないでください',
     aiNewChat: '新しいチャット',
+    aiModelSwitch: 'モデルを切り替え',
+    aiModelGenspark: 'Genspark 公式',
+    aiModelManageHint: '「設定 › モデル」でモデルを追加',
     aiSessionsTitle: '会話履歴',
     aiSessionsEmpty: '他の会話はまだありません',
     aiSessionUntitled: '無題の会話',
@@ -387,6 +396,9 @@ export const strings = {
     aiTidyPrompt:
       '문서 전체 서식을 정리해 주세요. 제목 수준 수정, 목록 형식 통일, 불필요한 굵게/기울임 제거, 불필요한 빈 줄 정리 등. 서식만 조정하고 본문 내용은 절대 변경하지 마세요',
     aiNewChat: '새 대화',
+    aiModelSwitch: '모델 전환',
+    aiModelGenspark: 'Genspark 공식',
+    aiModelManageHint: '설정 › 모델에서 모델 추가',
     aiSessionsTitle: '대화 기록',
     aiSessionsEmpty: '아직 다른 대화가 없습니다',
     aiSessionUntitled: '제목 없는 대화',
@@ -494,6 +506,9 @@ export const strings = {
     aiTidyPrompt:
       "Réorganisez la mise en forme du document : corrigez les niveaux de titres, unifiez le format des listes, supprimez le gras et l'italique superflus et nettoyez les lignes vides en trop. Ne modifiez que la mise en forme, sans changer le texte",
     aiNewChat: 'Nouvelle conversation',
+    aiModelSwitch: 'Changer de modèle',
+    aiModelGenspark: 'Genspark officiel',
+    aiModelManageHint: 'Ajoutez des modèles dans Paramètres › Modèle',
     aiSessionsTitle: 'Conversations',
     aiSessionsEmpty: 'Aucune autre conversation',
     aiSessionUntitled: 'Conversation sans titre',
@@ -602,6 +617,9 @@ export const strings = {
     aiTidyPrompt:
       'Bereinige die Formatierung des Dokuments: korrigiere Überschriftenebenen, vereinheitliche Listenformate, entferne überflüssiges Fett und Kursiv und räume überzählige Leerzeilen auf. Ändere nur die Formatierung, nicht den Textinhalt',
     aiNewChat: 'Neuer Chat',
+    aiModelSwitch: 'Modell wechseln',
+    aiModelGenspark: 'Genspark offiziell',
+    aiModelManageHint: 'Modelle unter Einstellungen › Modell hinzufügen',
     aiSessionsTitle: 'Unterhaltungen',
     aiSessionsEmpty: 'Noch keine weiteren Unterhaltungen',
     aiSessionUntitled: 'Unbenannte Unterhaltung',
@@ -709,6 +727,9 @@ export const strings = {
     aiTidyPrompt:
       'Ordena el formato del documento: corrige los niveles de los títulos, unifica el formato de las listas, elimina negritas y cursivas innecesarias y limpia las líneas en blanco sobrantes. Ajusta solo el formato, sin cambiar el texto',
     aiNewChat: 'Nueva conversación',
+    aiModelSwitch: 'Cambiar de modelo',
+    aiModelGenspark: 'Genspark oficial',
+    aiModelManageHint: 'Añade modelos en Ajustes › Modelo',
     aiSessionsTitle: 'Conversaciones',
     aiSessionsEmpty: 'Aún no hay otras conversaciones',
     aiSessionUntitled: 'Conversación sin título',
@@ -817,6 +838,9 @@ export const strings = {
     aiTidyPrompt:
       'จัดระเบียบรูปแบบเอกสารทั้งฉบับ เช่น แก้ไขระดับหัวข้อ ปรับรูปแบบรายการให้สอดคล้องกัน ลบตัวหนาและตัวเอียงที่ไม่จำเป็น และลบบรรทัดว่างส่วนเกิน ปรับเฉพาะรูปแบบเท่านั้น ห้ามแก้ไขเนื้อหาข้อความ',
     aiNewChat: 'แชทใหม่',
+    aiModelSwitch: 'สลับโมเดล',
+    aiModelGenspark: 'Genspark อย่างเป็นทางการ',
+    aiModelManageHint: 'เพิ่มโมเดลใน การตั้งค่า › โมเดล',
     aiSessionsTitle: 'ประวัติการสนทนา',
     aiSessionsEmpty: 'ยังไม่มีการสนทนาอื่น',
     aiSessionUntitled: 'การสนทนาที่ไม่มีชื่อ',
@@ -924,6 +948,9 @@ export const strings = {
     aiTidyPrompt:
       'Rapikan format dokumen: perbaiki tingkat judul, seragamkan format daftar, hapus cetak tebal dan miring yang tidak perlu, dan bersihkan baris kosong berlebih. Sesuaikan format saja — jangan ubah isi teks apa pun',
     aiNewChat: 'Obrolan baru',
+    aiModelSwitch: 'Ganti model',
+    aiModelGenspark: 'Genspark resmi',
+    aiModelManageHint: 'Tambah model di Pengaturan › Model',
     aiSessionsTitle: 'Percakapan',
     aiSessionsEmpty: 'Belum ada percakapan lain',
     aiSessionUntitled: 'Percakapan tanpa judul',
@@ -1031,6 +1058,9 @@ export const strings = {
     aiTidyPrompt:
       'Приведите в порядок форматирование документа: исправьте уровни заголовков, унифицируйте оформление списков, уберите лишние жирный шрифт и курсив, удалите лишние пустые строки. Меняйте только форматирование, не изменяя текст',
     aiNewChat: 'Новый чат',
+    aiModelSwitch: 'Сменить модель',
+    aiModelGenspark: 'Genspark официальный',
+    aiModelManageHint: 'Добавьте модели в «Настройки › Модель»',
     aiSessionsTitle: 'Разговоры',
     aiSessionsEmpty: 'Других разговоров пока нет',
     aiSessionUntitled: 'Разговор без названия',
@@ -1138,6 +1168,9 @@ export const strings = {
     aiTidyPrompt:
       'رتّب تنسيق المستند: صحّح مستويات العناوين، ووحّد تنسيق القوائم، وأزل الخط الغامق والمائل غير الضروريين، ونظّف الأسطر الفارغة الزائدة. عدّل التنسيق فقط دون تغيير أي محتوى نصي',
     aiNewChat: 'محادثة جديدة',
+    aiModelSwitch: 'تبديل النموذج',
+    aiModelGenspark: 'Genspark الرسمي',
+    aiModelManageHint: 'أضف النماذج من الإعدادات › النموذج',
     aiSessionsTitle: 'المحادثات',
     aiSessionsEmpty: 'لا توجد محادثات أخرى بعد',
     aiSessionUntitled: 'محادثة بلا عنوان',
@@ -1245,6 +1278,9 @@ export const strings = {
     aiTidyPrompt:
       'Organize a formatação do documento: corrija os níveis dos títulos, unifique o formato das listas, remova negrito e itálico desnecessários e limpe linhas em branco excedentes. Ajuste apenas a formatação, sem alterar o texto',
     aiNewChat: 'Nova conversa',
+    aiModelSwitch: 'Trocar modelo',
+    aiModelGenspark: 'Genspark oficial',
+    aiModelManageHint: 'Adicione modelos em Configurações › Modelo',
     aiSessionsTitle: 'Conversas',
     aiSessionsEmpty: 'Ainda não há outras conversas',
     aiSessionUntitled: 'Conversa sem título',
@@ -1352,6 +1388,9 @@ export const strings = {
     aiTidyPrompt:
       'Riordina la formattazione del documento: correggi i livelli dei titoli, uniforma il formato degli elenchi, rimuovi grassetto e corsivo superflui ed elimina le righe vuote in eccesso. Modifica solo la formattazione, senza cambiare il testo',
     aiNewChat: 'Nuova chat',
+    aiModelSwitch: 'Cambia modello',
+    aiModelGenspark: 'Genspark ufficiale',
+    aiModelManageHint: 'Aggiungi modelli in Impostazioni › Modello',
     aiSessionsTitle: 'Conversazioni',
     aiSessionsEmpty: 'Nessun’altra conversazione',
     aiSessionUntitled: 'Conversazione senza titolo',
@@ -1459,6 +1498,9 @@ export const strings = {
     aiTidyPrompt:
       'Uporządkuj formatowanie dokumentu: popraw poziomy nagłówków, ujednolić formatowanie list, usuń zbędne pogrubienia i kursywę oraz nadmiarowe puste wiersze. Zmieniaj tylko formatowanie, nie zmieniaj treści tekstu',
     aiNewChat: 'Nowy czat',
+    aiModelSwitch: 'Zmień model',
+    aiModelGenspark: 'Genspark oficjalny',
+    aiModelManageHint: 'Dodaj modele w Ustawienia › Model',
     aiSessionsTitle: 'Rozmowy',
     aiSessionsEmpty: 'Brak innych rozmów',
     aiSessionUntitled: 'Rozmowa bez tytułu',
@@ -1566,6 +1608,9 @@ export const strings = {
     aiTidyPrompt:
       'Ruim de opmaak van het document op: corrigeer kopniveaus, maak lijstopmaak uniform, verwijder onnodige vetgedrukte en cursieve tekst en verwijder overtollige lege regels. Pas alleen de opmaak aan, verander de tekst niet',
     aiNewChat: 'Nieuwe chat',
+    aiModelSwitch: 'Model wisselen',
+    aiModelGenspark: 'Genspark officieel',
+    aiModelManageHint: 'Voeg modellen toe via Instellingen › Model',
     aiSessionsTitle: 'Gesprekken',
     aiSessionsEmpty: 'Nog geen andere gesprekken',
     aiSessionUntitled: 'Naamloos gesprek',
@@ -1673,6 +1718,9 @@ export const strings = {
     aiTidyPrompt:
       'Kemaskan format dokumen: betulkan aras tajuk, seragamkan format senarai, buang huruf tebal dan condong yang tidak perlu, dan bersihkan baris kosong berlebihan. Laraskan format sahaja — jangan ubah sebarang kandungan teks',
     aiNewChat: 'Sembang baharu',
+    aiModelSwitch: 'Tukar model',
+    aiModelGenspark: 'Genspark rasmi',
+    aiModelManageHint: 'Tambah model dalam Tetapan › Model',
     aiSessionsTitle: 'Perbualan',
     aiSessionsEmpty: 'Tiada perbualan lain lagi',
     aiSessionUntitled: 'Perbualan tanpa tajuk',
@@ -1780,6 +1828,9 @@ export const strings = {
     aiTidyPrompt:
       'סדר את עיצוב המסמך: תקן רמות כותרות, אחד את עיצוב הרשימות, הסר הדגשות והטיות מיותרות ונקה שורות ריקות עודפות. שנה עיצוב בלבד — אל תשנה שום תוכן טקסט',
     aiNewChat: 'שיחה חדשה',
+    aiModelSwitch: 'החלפת מודל',
+    aiModelGenspark: 'Genspark רשמי',
+    aiModelManageHint: 'הוספת מודלים בהגדרות › מודל',
     aiSessionsTitle: 'שיחות',
     aiSessionsEmpty: 'אין עדיין שיחות אחרות',
     aiSessionUntitled: 'שיחה ללא שם',
@@ -1887,6 +1938,9 @@ export const strings = {
     aiTidyPrompt:
       'दस्तावेज़ का स्वरूपण व्यवस्थित करें: शीर्षक स्तर ठीक करें, सूची स्वरूपण एकरूप करें, अनावश्यक बोल्ड और इटैलिक हटाएँ और अतिरिक्त खाली पंक्तियाँ साफ़ करें। केवल स्वरूपण बदलें — किसी भी पाठ सामग्री को न बदलें',
     aiNewChat: 'नई चैट',
+    aiModelSwitch: 'मॉडल बदलें',
+    aiModelGenspark: 'Genspark आधिकारिक',
+    aiModelManageHint: 'सेटिंग्स › मॉडल में मॉडल जोड़ें',
     aiSessionsTitle: 'बातचीत',
     aiSessionsEmpty: 'अभी कोई अन्य बातचीत नहीं',
     aiSessionUntitled: 'बिना शीर्षक बातचीत',
@@ -1994,6 +2048,9 @@ export const strings = {
     aiTidyPrompt:
       '整理全文排版：修正標題層級、統一清單格式、去除多餘的粗體和斜體、清理多餘空行；只調整格式，不要改動任何文字內容',
     aiNewChat: '新對話',
+    aiModelSwitch: '切換模型',
+    aiModelGenspark: 'Genspark 官方',
+    aiModelManageHint: '在「設定 › 模型」中新增模型',
     aiSessionsTitle: '歷史對話',
     aiSessionsEmpty: '還沒有其他對話',
     aiSessionUntitled: '未命名對話',

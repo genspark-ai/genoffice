@@ -1974,6 +1974,8 @@ export interface DesktopApi {
   aiSkillBody(surface: string, id: string): Promise<string>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  /** Switch the live model; null selects the Genspark account. Returns the settled settings. */
+  setActiveModel(profileId: string | null): Promise<AiSettings>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>

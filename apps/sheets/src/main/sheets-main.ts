@@ -56,6 +56,7 @@ import {
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
+  syncActiveProfile,
   streamForProvider,
   type AiProviderConfig,
   type AiProviderId,
@@ -2165,6 +2166,26 @@ export function registerSheetsAiIpc(): void {
     sessionFor(event)
     const settings = aiSettingsInputSchema.parse(input)
     writeJson(SETTINGS_PATH(), settings)
+  })
+
+  /**
+   * Switch the live model from the AI sidebar. A null profileId means the
+   * Genspark account. The file is re-read here rather than trusting a renderer
+   * snapshot, so two panels switching at once cannot clobber each other's
+   * unrelated settings — and because every request re-reads the file, the
+   * switch reaches tabs that are already open.
+   */
+  ipcMain.handle('ai:set-active-model', (_event, profileId: unknown): AiSettings => {
+    const current = readAiSettings()
+    const id = typeof profileId === 'string' ? profileId : null
+    const next = syncActiveProfile({
+      ...current,
+      provider: id ? 'custom' : 'genspark',
+      ...(id ? { activeProfileId: id } : {}),
+    })
+    next.provider = activeProvider(next)
+    writeJson(SETTINGS_PATH(), next)
+    return next
   })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {

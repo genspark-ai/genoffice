@@ -1235,9 +1235,71 @@ body.vib .slide-list {
   color: var(--text);
 }
 
-/* session picker: anchored under the header, over the transcript */
+/* session picker and model switcher: anchored under the header, over the transcript */
 .ai-panel-header {
   position: relative;
+}
+
+/* model chip: sits beside the title, names whatever is answering */
+.ai-model-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 150px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  background: none;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ai-model-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-model-btn-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ai-model-btn-caret {
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid currentcolor;
+}
+
+.ai-model-menu {
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 12px;
+  z-index: 20;
+  min-width: 220px;
+  max-width: min(320px, calc(100% - 16px));
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.ai-model-menu-hint {
+  padding: 6px 9px 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-dim);
 }
 
 .ai-session-menu {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SHAPE_GALLERY_GROUPS, ShapePreview } from '@genoffice/ui'
+import type { AiSettings } from '@genoffice/ai-provider'
 import type { ChatMeta } from '@genoffice/project-store'
 
 import {
@@ -145,6 +146,9 @@ interface ExcelShellProps {
   readonly onNewChat: () => void
   /** this workbook's stored conversations, newest first */
   readonly onListSessions: () => Promise<ChatMeta[]>
+  /** current AI settings, and the switch, for the sidebar model picker */
+  readonly onListModels: () => Promise<AiSettings | null>
+  readonly onSelectModel: (profileId: string | null) => Promise<AiSettings | null>
   readonly onLoadSession: (chatId: string) => void
   readonly activeChatId: string | null
   readonly onUndo: () => void
@@ -261,6 +265,8 @@ export function ExcelShell({
   onStop,
   onNewChat,
   onListSessions,
+  onListModels,
+  onSelectModel,
   onLoadSession,
   activeChatId,
   onUndo,
@@ -445,6 +451,8 @@ export function ExcelShell({
           onStop={onStop}
           onNewChat={onNewChat}
           onListSessions={onListSessions}
+          onListModels={onListModels}
+          onSelectModel={onSelectModel}
           onLoadSession={onLoadSession}
           activeChatId={activeChatId}
           onUndo={onUndo}

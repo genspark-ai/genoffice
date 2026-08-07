@@ -1,5 +1,6 @@
 export type {
   AiChatRequest,
+  AiCustomProfile,
   AiChatResponse,
   AiModelSettings,
   AiProviderConfig,
@@ -23,12 +24,15 @@ export {
 export {
   AI_PROVIDERS,
   GENSPARK_LLM_BASE_URLS,
+  activeProfile,
   activeProvider,
   applyModelSettings,
   defaultAiSettings,
   isCustomConfigured,
+  newProfileId,
   normalizeProxyUrl,
   resolveAiSettings,
+  syncActiveProfile,
   toModelSettings,
 } from './providers'
 export { chatForProvider } from './chat'

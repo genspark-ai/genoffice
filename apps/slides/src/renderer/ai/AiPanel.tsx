@@ -6,6 +6,7 @@ import {
   type AgentImage,
   type ToolDisplay,
 } from '@genoffice/agent-core'
+import { activeProfile, activeProvider } from '@genoffice/ai-provider'
 import type { ChatMeta } from '@genoffice/project-store'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
@@ -400,6 +401,9 @@ export function AiPanel({
   /** this deck's stored conversations, for the session picker */
   const [sessions, setSessions] = useState<ChatMeta[]>([])
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  /** live model selection; fetched fresh so a switch made in another tab shows here */
+  const [models, setModels] = useState<AiSettings | null>(null)
+  const [modelsOpen, setModelsOpen] = useState(false)
   /* Answered clarify receipts (answered-state card): view-only record, not chat data */
   const [clarifyAnswers, setClarifyAnswers] = useState<
     Array<{ afterIdx: number; qa: Array<{ q: string; a: string }> }>
@@ -497,6 +501,54 @@ export function AiPanel({
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [sessionsOpen])
+
+  // ── model switcher ──────────────────────────────────────────────────────
+  /** label for whatever is answering right now */
+  const activeModelLabel = (): string => {
+    const live = models ?? settings
+    if (activeProvider(live) !== 'custom') return t('aiModelGenspark')
+    const profile = activeProfile(live)
+    return profile?.label || profile?.model || t('aiModelGenspark')
+  }
+
+  const refreshModels = () => {
+    void window.slidesApi
+      ?.getAiSettings()
+      .then(setModels)
+      .catch(() => {
+        /* the header falls back to the settings prop */
+      })
+  }
+
+  useEffect(refreshModels, [])
+
+  const openModels = () => {
+    setModelsOpen((open) => !open)
+    setSessionsOpen(false)
+    refreshModels()
+  }
+
+  /** null selects the Genspark account */
+  const selectModel = (profileId: string | null) => {
+    setModelsOpen(false)
+    void window.slidesApi
+      ?.setActiveModel(profileId)
+      .then(setModels)
+      .catch(() => {
+        /* silent: the previous model stays live */
+      })
+  }
+
+  /** dismiss the model picker on any click outside it */
+  useEffect(() => {
+    if (!modelsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-model-menu, .ai-model-btn')) setModelsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [modelsOpen])
 
   /** After an unsaved draft lands and gets a real path, bind the unsaved-* history to that file (recoverable by path on reopen) */
   useEffect(() => {
@@ -1651,6 +1703,16 @@ export function AiPanel({
         <span className="ai-panel-title">
           <GensparkMark size={22} />
           {t('aiPanelTitle')}
+          <button
+            type="button"
+            className="ai-model-btn"
+            onClick={openModels}
+            title={t('aiModelSwitch')}
+            aria-expanded={modelsOpen}
+          >
+            <span className="ai-model-btn-label">{activeModelLabel()}</span>
+            <span className="ai-model-btn-caret" aria-hidden="true" />
+          </button>
         </span>
         <div className="ai-panel-header-actions">
           <button
@@ -1672,6 +1734,34 @@ export function AiPanel({
             </button>
           )}
         </div>
+        {modelsOpen && (
+          <div className="ai-model-menu" role="menu">
+            <button
+              role="menuitem"
+              className={`ai-session-item${activeProvider(models ?? settings) !== 'custom' ? ' ai-session-item-active' : ''}`}
+              onClick={() => selectModel(null)}
+            >
+              <span className="ai-session-item-title">{t('aiModelGenspark')}</span>
+            </button>
+            {(models ?? settings).customProfiles?.map((p) => (
+              <button
+                key={p.id}
+                role="menuitem"
+                className={`ai-session-item${
+                  activeProvider(models ?? settings) === 'custom' &&
+                  activeProfile(models ?? settings)?.id === p.id
+                    ? ' ai-session-item-active'
+                    : ''
+                }`}
+                onClick={() => selectModel(p.id)}
+              >
+                <span className="ai-session-item-title">{p.label || p.model}</span>
+                <span className="ai-session-item-time">{p.model}</span>
+              </button>
+            ))}
+            <div className="ai-model-menu-hint">{t('aiModelManageHint')}</div>
+          </div>
+        )}
         {sessionsOpen && (
           <div className="ai-session-menu" role="menu">
             {sessions.length === 0 ? (

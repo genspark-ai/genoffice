@@ -38,9 +38,28 @@ export interface AiProviderMeta {
   needsBaseUrl?: boolean
 }
 
+/**
+ * One saved OpenAI-compatible endpoint. Users keep several — a local Ollama, a
+ * work gateway, a reasoning model — and switch between them from the AI
+ * sidebar without opening settings.
+ */
+export interface AiCustomProfile extends AiProviderConfig {
+  id: string
+  /** user-facing name; blank falls back to the model id */
+  label: string
+}
+
 export interface AiSettings {
   provider: AiProviderId
   providers: Record<AiProviderId, AiProviderConfig>
+  /**
+   * The saved custom endpoints, in display order. `providers.custom` stays the
+   * one that requests actually use, so every request builder is unchanged; the
+   * active profile is copied into it on read.
+   */
+  customProfiles?: AiCustomProfile[]
+  /** id of the live profile; ignored while provider is not 'custom' */
+  activeProfileId?: string
   /** Tavily key for web/image search and page extraction; empty falls back to the other backends */
   tavilyApiKey?: string
   /**

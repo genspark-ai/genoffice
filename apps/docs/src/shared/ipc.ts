@@ -175,6 +175,8 @@ export interface DesktopApi {
   pickImage(): Promise<PickImageResult | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  /** Switch the live model; null selects the Genspark account. Returns the settled settings. */
+  setActiveModel(profileId: string | null): Promise<AiSettings>
   /** system print dialog for the current window */
   print(): Promise<void>
   /** render the document to PDF and ask where to save; size in twips.

@@ -1286,6 +1286,8 @@ export interface SlidesApi {
   onRenamed: (handler: (newPath: string) => void) => () => void
   getAiSettings: () => Promise<AiSettings>
   setAiSettings: (settings: AiSettings) => Promise<void>
+  /** Switch the live model; null selects the Genspark account. Returns the settled settings. */
+  setActiveModel: (profileId: string | null) => Promise<AiSettings>
   aiStream: (request: AiStreamRequest) => Promise<void>
   aiStreamCancel: (requestId: string) => Promise<void>
   /** Genspark account status (gsk login state); with withEmail also fetches the email (needs a network request, slower) */

@@ -251,6 +251,11 @@ const desktopApi: DesktopApi = {
   async setAiSettings(settings) {
     await ipcRenderer.invoke(IPC_CHANNELS.aiSetSettings, settings)
   },
+  async setActiveModel(profileId) {
+    const result: unknown = await ipcRenderer.invoke('ai:set-active-model', profileId)
+    if (!isRecord(result)) throw new Error('Invalid AI settings response.')
+    return result as unknown as AiSettings
+  },
   async aiChat(request) {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiChat, request)
     if (!isRecord(result) || typeof result.ok !== 'boolean') {

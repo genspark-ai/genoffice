@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   AI_PROVIDERS,
+  activeProfile,
   activeProvider,
   applyModelSettings,
   defaultAiSettings,
   isCustomConfigured,
   normalizeProxyUrl,
   resolveAiSettings,
+  syncActiveProfile,
   toModelSettings,
 } from '../src/providers'
 import {
@@ -386,5 +388,173 @@ describe('network settings persistence', () => {
     )
     expect(resolved.tavilyApiKey).toBe('tvly-x')
     expect(resolved.proxyUrl).toBe('socks5://127.0.0.1:1080')
+  })
+})
+
+// ────────────────────────────────────────────────────────────
+// Custom model profiles (sidebar switcher)
+// ────────────────────────────────────────────────────────────
+
+const ollama = {
+  id: 'p-ollama',
+  label: 'Local Ollama',
+  baseUrl: 'http://localhost:11434/v1',
+  model: 'qwen3',
+  apiKey: '',
+}
+const gateway = {
+  id: 'p-gateway',
+  label: 'Work gateway',
+  baseUrl: 'https://gw.example.com/v1',
+  model: 'gpt-5.2',
+  apiKey: 'sk-work',
+  temperature: null,
+}
+
+describe('custom model profiles', () => {
+  it('migrates a pre-profiles custom endpoint into profile #1 and keeps it live', () => {
+    const settings = resolveAiSettings(
+      {
+        provider: 'custom',
+        providers: {
+          ...defaultAiSettings().providers,
+          custom: {
+            baseUrl: 'https://api.deepseek.com/v1',
+            model: 'deepseek-chat',
+            apiKey: 'sk-d',
+          },
+        },
+      },
+      defaultAiSettings(),
+    )
+
+    expect(settings.customProfiles).toHaveLength(1)
+    expect(settings.customProfiles?.[0]).toMatchObject({
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+      // no name was ever typed, so the model id stands in
+      label: 'deepseek-chat',
+    })
+    expect(settings.activeProfileId).toBe(settings.customProfiles?.[0]?.id)
+    // the endpoint requests use is untouched by the migration
+    expect(activeProvider(settings)).toBe('custom')
+    expect(settings.providers.custom.model).toBe('deepseek-chat')
+  })
+
+  it('invents no profile when no custom endpoint was ever configured', () => {
+    const settings = resolveAiSettings({}, defaultAiSettings())
+    expect(settings.customProfiles).toBeUndefined()
+    expect(activeProvider(settings)).toBe('genspark')
+  })
+
+  it('makes the selected profile the endpoint requests use', () => {
+    const settings = resolveAiSettings(
+      {
+        provider: 'custom',
+        providers: defaultAiSettings().providers,
+        customProfiles: [ollama, gateway],
+        activeProfileId: 'p-gateway',
+      },
+      defaultAiSettings(),
+    )
+
+    expect(settings.providers.custom).toEqual({
+      baseUrl: 'https://gw.example.com/v1',
+      model: 'gpt-5.2',
+      apiKey: 'sk-work',
+      temperature: null,
+    })
+    // id/label are library bookkeeping and must not reach a request
+    expect(settings.providers.custom).not.toHaveProperty('id')
+    expect(settings.providers.custom).not.toHaveProperty('label')
+  })
+
+  it('falls back to the first profile when the selected id is gone', () => {
+    const settings = resolveAiSettings(
+      {
+        provider: 'custom',
+        providers: defaultAiSettings().providers,
+        customProfiles: [ollama, gateway],
+        activeProfileId: 'p-deleted',
+      },
+      defaultAiSettings(),
+    )
+
+    expect(settings.activeProfileId).toBe('p-ollama')
+    expect(settings.providers.custom.model).toBe('qwen3')
+  })
+
+  it('switching profiles swaps the live endpoint without touching the library', () => {
+    const base = resolveAiSettings(
+      {
+        provider: 'custom',
+        providers: defaultAiSettings().providers,
+        customProfiles: [ollama, gateway],
+        activeProfileId: 'p-ollama',
+      },
+      defaultAiSettings(),
+    )
+
+    const switched = syncActiveProfile({ ...base, activeProfileId: 'p-gateway' })
+
+    expect(switched.providers.custom.model).toBe('gpt-5.2')
+    expect(switched.customProfiles).toEqual(base.customProfiles)
+    expect(activeProfile(switched)?.label).toBe('Work gateway')
+  })
+
+  it('leaves settings alone when the library is empty', () => {
+    const settings = defaultAiSettings()
+    expect(syncActiveProfile(settings)).toBe(settings)
+    expect(activeProfile(settings)).toBeUndefined()
+  })
+})
+
+describe('applyModelSettings with a profile library', () => {
+  const stored = () =>
+    resolveAiSettings(
+      {
+        provider: 'custom',
+        providers: defaultAiSettings().providers,
+        customProfiles: [ollama, gateway],
+        activeProfileId: 'p-gateway',
+      },
+      defaultAiSettings(),
+    )
+
+  it('edits the selected profile instead of replacing the library', () => {
+    const next = applyModelSettings(stored(), {
+      ...toModelSettings(stored()),
+      mode: 'custom',
+      model: 'gpt-5.2-mini',
+    })
+
+    expect(next.customProfiles).toHaveLength(2)
+    // the other model the user added survives a save
+    expect(next.customProfiles?.find((p) => p.id === 'p-ollama')?.model).toBe('qwen3')
+    const edited = next.customProfiles?.find((p) => p.id === 'p-gateway')
+    expect(edited?.model).toBe('gpt-5.2-mini')
+    // the name the user gave it is not clobbered by an endpoint edit
+    expect(edited?.label).toBe('Work gateway')
+    expect(next.providers.custom.model).toBe('gpt-5.2-mini')
+  })
+
+  it('keeps the library when the user switches back to Genspark', () => {
+    const next = applyModelSettings(stored(), { ...toModelSettings(stored()), mode: 'genspark' })
+
+    expect(next.provider).toBe('genspark')
+    expect(next.customProfiles).toHaveLength(2)
+  })
+
+  it('seeds the library from a first-ever custom endpoint', () => {
+    const next = applyModelSettings(defaultAiSettings(), {
+      ...toModelSettings(defaultAiSettings()),
+      mode: 'custom',
+      baseUrl: 'http://localhost:1234/v1',
+      model: 'llama4',
+    })
+
+    expect(next.customProfiles).toHaveLength(1)
+    expect(next.customProfiles?.[0]).toMatchObject({ model: 'llama4', label: 'llama4' })
+    expect(activeProvider(next)).toBe('custom')
   })
 })

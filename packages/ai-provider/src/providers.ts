@@ -1,4 +1,5 @@
 import type {
+  AiCustomProfile,
   AiModelSettings,
   AiProviderConfig,
   AiProviderId,
@@ -159,6 +160,40 @@ export function activeProvider(settings: AiSettings): AiProviderId {
     : 'genspark'
 }
 
+/** Strip the library-only fields: what reaches a request is a plain provider config. */
+function profileConfig(profile: AiCustomProfile): AiProviderConfig {
+  const { id: _id, label: _label, ...config } = profile
+  return config
+}
+
+/** The profile `activeProfileId` names, falling back to the first saved one. */
+export function activeProfile(settings: AiSettings): AiCustomProfile | undefined {
+  const profiles = settings.customProfiles
+  if (!profiles?.length) return undefined
+  return profiles.find((p) => p.id === settings.activeProfileId) ?? profiles[0]
+}
+
+/**
+ * Copy the selected profile into `providers.custom`, which is the only place
+ * the request builders look. Keeping the indirection here means switching
+ * models needs no change in `chatForProvider` / `streamForProvider` / any main
+ * process, and a settings file written by an older build still resolves.
+ */
+export function syncActiveProfile(settings: AiSettings): AiSettings {
+  const profile = activeProfile(settings)
+  if (!profile) return settings
+  return {
+    ...settings,
+    activeProfileId: profile.id,
+    providers: { ...settings.providers, custom: profileConfig(profile) },
+  }
+}
+
+/** Stable-enough id for a new profile; the settings file is single-writer. */
+export function newProfileId(): string {
+  return `p${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
+}
+
 /** Flatten full settings into the shape the settings dialog edits. */
 export function toModelSettings(settings: AiSettings): AiModelSettings {
   const custom = settings.providers?.custom
@@ -194,9 +229,23 @@ export function applyModelSettings(settings: AiSettings, input: AiModelSettings)
     ...(input.maxTokens === null ? {} : { maxTokens: input.maxTokens }),
     ...(input.reasoningEffort === null ? {} : { reasoningEffort: input.reasoningEffort }),
   }
+  // The dialog edits one endpoint — the selected profile. Fold its edits back
+  // into the library rather than replacing it, or saving from the settings
+  // window would delete every other model the user has added.
+  const live = activeProfile(settings)
+  const profiles: AiCustomProfile[] = isCustomConfigured(custom)
+    ? live
+      ? (settings.customProfiles ?? []).map((p) =>
+          p.id === live.id ? { ...custom, id: p.id, label: p.label } : p,
+        )
+      : [{ ...custom, id: newProfileId(), label: custom.model }]
+    : (settings.customProfiles ?? [])
+
   const next: AiSettings = {
     provider: input.mode === 'custom' ? 'custom' : 'genspark',
     providers: { ...settings.providers, custom },
+    ...(profiles.length ? { customProfiles: profiles } : {}),
+    ...(live ? { activeProfileId: live.id } : {}),
     tavilyApiKey: input.tavilyApiKey.trim(),
     proxyUrl: normalizeProxyUrl(input.proxyUrl),
   }
@@ -229,11 +278,31 @@ export function resolveAiSettings(
         baseUrl: stored.baseUrl ?? 'https://api.openai.com/v1',
       }
     }
-    return { ...defaults, ...network }
+    return withProfiles({ ...defaults, ...network })
   }
-  return {
+  return withProfiles({
     provider: stored.provider ?? defaults.provider,
     providers: { ...defaults.providers, ...stored.providers },
+    ...(stored.customProfiles ? { customProfiles: stored.customProfiles } : {}),
+    ...(stored.activeProfileId ? { activeProfileId: stored.activeProfileId } : {}),
     ...network,
+  })
+}
+
+/**
+ * Settle the profile library. A file written before profiles existed has a
+ * configured `providers.custom` and no list, so that endpoint becomes profile
+ * #1 and stays live — an upgrade changes nothing the user can see. Once a list
+ * exists the selected profile wins, since that is what the sidebar switches.
+ */
+function withProfiles(settings: AiSettings): AiSettings {
+  if (settings.customProfiles?.length) return syncActiveProfile(settings)
+  const custom = settings.providers?.custom
+  if (!isCustomConfigured(custom)) return settings
+  const profile: AiCustomProfile = {
+    ...(custom as AiProviderConfig),
+    id: newProfileId(),
+    label: custom?.model?.trim() ?? '',
   }
+  return { ...settings, customProfiles: [profile], activeProfileId: profile.id }
 }
