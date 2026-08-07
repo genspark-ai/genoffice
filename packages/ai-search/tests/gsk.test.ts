@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
   gskChildEnv,
+  gskChildProxyReady,
   setGskProxyUrl,
   parseGskOutput,
   parseGskWebSearch,
@@ -75,9 +76,21 @@ describe('gskChildEnv', () => {
     expect(env.all_proxy).toBeUndefined()
   })
 
-  it('ignores SOCKS proxies (undici env proxy is http(s)-only)', () => {
+  it('forwards a SOCKS proxy as the loopback bridge that fronts it', async () => {
+    // undici's env proxy is http(s)-only, so the child is pointed at a local
+    // HTTP CONNECT server that speaks SOCKS upstream on its behalf
     setGskProxyUrl('socks5://127.0.0.1:1080')
+    await gskChildProxyReady()
     const env = gskChildEnv({ ALL_PROXY: 'socks5://127.0.0.1:1080' })
+    expect(env.NODE_USE_ENV_PROXY).toBe('1')
+    expect(env.HTTPS_PROXY).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    expect(env.HTTPS_PROXY).not.toBe('socks5://127.0.0.1:1080')
+  })
+
+  it('forwards nothing for a SOCKS flavour the bridge cannot speak', async () => {
+    setGskProxyUrl('socks4://127.0.0.1:1080')
+    await gskChildProxyReady()
+    const env = gskChildEnv({ PATH: '/bin' })
     expect(env.NODE_USE_ENV_PROXY).toBeUndefined()
     expect(env.HTTPS_PROXY).toBeUndefined()
   })
