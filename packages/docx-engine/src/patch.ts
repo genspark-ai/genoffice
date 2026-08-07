@@ -1,5 +1,11 @@
 import JSZip from 'jszip'
-import { applyImageWrap, generateParagraphXml, inlineRunsXml, splitXmlChildren } from './generate'
+import {
+  applyImageWrap,
+  generateParagraphXml,
+  inlineRunsXml,
+  mergePPrFormat,
+  splitXmlChildren,
+} from './generate'
 import {
   NOTE_CONTENT_TYPE,
   NOTE_PART_PATH,
@@ -1261,9 +1267,9 @@ function headerFooterPartXml(
     let pageEmitted = !hf.pageNumber
     content = hf.paras
       .map((para) => {
-        const jc = para.align
-          ? `<w:pPr><w:jc w:val="${para.align === 'justify' ? 'both' : para.align}"/></w:pPr>`
-          : ''
+        // the parsed format, not just w:jc: hand-building it here dropped w:bidi and wrote
+        // the visual align back as the logical one, flipping RTL headers to LTR
+        const pPr = mergePPrFormat('<w:pPr/>', para)
         let runs = ''
         for (const run of para.runs) {
           if (run.text.includes(TOTAL_PAGES_MARK) || (!pageEmitted && run.text.includes('#'))) {
@@ -1284,7 +1290,7 @@ function headerFooterPartXml(
             runs += inlineRunsXml([run])
           }
         }
-        return `<w:p>${jc}${runs}</w:p>`
+        return `<w:p>${pPr}${runs}</w:p>`
       })
       .join('')
     if (!pageEmitted) content += `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${pageField}</w:p>`

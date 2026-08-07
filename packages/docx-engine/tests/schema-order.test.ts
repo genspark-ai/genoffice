@@ -22,7 +22,10 @@ function assertSchemaOrder(fragment: string, rootTag: string, order: readonly st
   for (const child of splitXmlChildren(inner)) {
     const rank = order.indexOf(child.name)
     if (rank === -1) continue
-    expect(rank, `${child.name} appears after ${prevName}, violating the ${rootTag} schema order`).toBeGreaterThanOrEqual(prev)
+    expect(
+      rank,
+      `${child.name} appears after ${prevName}, violating the ${rootTag} schema order`,
+    ).toBeGreaterThanOrEqual(prev)
     prev = rank
     prevName = child.name
   }
@@ -37,7 +40,10 @@ describe('rPr schema order (mergeRPrModel)', () => {
     ['add bold', { text: 'x', bold: true }],
     ['add italic + highlight', { text: 'x', italic: true, highlight: 'yellow' }],
     ['change color + size', { text: 'x', color: 'FF0000', sizeHalfPoints: 36 }],
-    ['add style + vertAlign', { text: 'x', styleId: 'Emphasis', vertAlign: 'superscript' as const }],
+    [
+      'add style + vertAlign',
+      { text: 'x', styleId: 'Emphasis', vertAlign: 'superscript' as const },
+    ],
     ['clear underline + add font', { text: 'x', underline: false, font: '微软雅黑' }],
   ])('%s keeps CT_RPr child order', (_label, run) => {
     const out = mergeRPrModel(RAW, { ...run }, false)
@@ -76,5 +82,23 @@ describe('pPr schema order (mergePPrFormat)', () => {
     // The paragraph-mark rPr must still sit at the end (one of the highest-ranked known
     // elements inside pPr)
     expect(out).toContain('<w:rPr><w:b/></w:rPr>')
+  })
+
+  // The fresh-build branch ('<w:pPr/>', taken by the header/footer writer) has no raw
+  // children to interleave against, so it has to sort on its own.
+  it.each([
+    ['bidi + align', { bidi: true, align: 'left' as const }],
+    ['tabs + bidi', { bidi: true, tabStops: [{ pos: 720, val: 'left' as const }] }],
+    [
+      'framePr + tabs + bidi + align',
+      {
+        align: 'center' as const,
+        bidi: true,
+        tabStops: [{ pos: 1440, val: 'right' as const }],
+        dropCap: { type: 'drop' as const, lines: 3 },
+      },
+    ],
+  ])('%s keeps CT_PPr child order when built from the model alone', (_label, format) => {
+    assertSchemaOrder(mergePPrFormat('<w:pPr/>', format), 'w:pPr', PPR_CHILD_ORDER)
   })
 })

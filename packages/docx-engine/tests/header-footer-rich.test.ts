@@ -12,6 +12,22 @@ async function base() {
 }
 
 describe('rich header / footer', () => {
+  it('keeps an RTL header right-to-left and keeps its alignment side', async () => {
+    const { parsed, saveBlocks } = await base()
+    const saved = await saveDocx(parsed, saveBlocks, {
+      header: {
+        text: '',
+        paras: [
+          { bidi: true, align: 'left', runs: [{ text: 'ترويسة عربية' }] },
+          { bidi: true, runs: [{ text: 'بدون محاذاة' }] },
+        ],
+      },
+    })
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.headerParas![0]).toMatchObject({ bidi: true, align: 'left' })
+    expect(reparsed.headerParas![1]?.bidi).toBe(true)
+  })
+
   it('saves multi-paragraph styled header and reparses it as headerParas', async () => {
     const { parsed, saveBlocks } = await base()
     const saved = await saveDocx(parsed, saveBlocks, {

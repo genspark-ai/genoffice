@@ -1145,8 +1145,12 @@ export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): 
   const open = /^<w:pPr(?: [^>]*)?>/.exec(rawPPr)?.[0]
   const fresh = formatPPrChildren(format)
   if (!open) {
-    // '<w:pPr/>' or unrecognized: rebuild from the format model alone
-    return fresh.length > 0 ? `<w:pPr>${fresh.map((c) => c.xml).join('')}</w:pPr>` : ''
+    // '<w:pPr/>' or unrecognized: rebuild from the format model alone, in schema order
+    // (formatPPrChildren emits by concern, and CT_PPr order is not optional)
+    const sorted = [...fresh].sort(
+      (a, b) => PPR_CHILD_ORDER.indexOf(a.name) - PPR_CHILD_ORDER.indexOf(b.name),
+    )
+    return sorted.length > 0 ? `<w:pPr>${sorted.map((c) => c.xml).join('')}</w:pPr>` : ''
   }
   const inner = rawPPr.slice(open.length, rawPPr.length - '</w:pPr>'.length)
   // build set of managed tags for this format (base + conditional)
