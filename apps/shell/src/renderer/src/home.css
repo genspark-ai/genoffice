@@ -33,6 +33,7 @@
   --avatar-bg: #e8ebef;
   --badge-bg: #eaf0fd;
   --checkbox-bg: #ececec;
+  --success: #1a8a4e;
   --danger: #d13438;
   --danger-bg: #fdf3f3;
   --danger-border: #f0c8c9;
@@ -76,6 +77,7 @@
   --avatar-bg: #333;
   --badge-bg: #2a3a4a;
   --checkbox-bg: #333;
+  --success: #4ade80;
   --danger: #d13438;
   --danger-bg: #3a2020;
   --danger-border: #5a3030;
@@ -115,6 +117,7 @@
     --avatar-bg: #333;
     --badge-bg: #2a3a4a;
     --checkbox-bg: #333;
+    --success: #4ade80;
     --danger: #d13438;
     --danger-bg: #3a2020;
     --danger-border: #5a3030;
@@ -1241,7 +1244,7 @@ body.vib .home {
 
 .ai-mode.active {
   border-color: var(--accent);
-  background: rgb(35 103 236 / 4%);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 /* radio affordance drawn in CSS so the row stays a single focusable control */
@@ -1285,7 +1288,7 @@ body.vib .home {
 
 .ai-mode-badge.on {
   background: rgb(34 165 96 / 12%);
-  color: #1a8a4e;
+  color: var(--success);
 }
 
 .ai-mode-desc {
@@ -1421,7 +1424,7 @@ select.ai-input {
 }
 
 .ai-test-ok {
-  color: #1a8a4e;
+  color: var(--success);
 }
 
 .ai-test-fail {

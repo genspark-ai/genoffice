@@ -43,7 +43,7 @@ body {
 }
 
 .settings-nav-item:hover {
-  background: rgb(0 0 0 / 5%);
+  background: var(--bg-hover);
 }
 
 .settings-nav-item.active {
@@ -92,7 +92,7 @@ body {
 
 .settings-saved {
   font-size: 12px;
-  color: #1a8a4e;
+  color: var(--success);
 }
 
 .settings-textarea {
@@ -139,7 +139,7 @@ body {
 
 .settings-drop.active {
   border-color: var(--accent);
-  background: rgb(35 103 236 / 5%);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
   color: var(--accent);
 }
 
