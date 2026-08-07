@@ -12,7 +12,7 @@ acknowledge reports within 72 hours.
 All application windows run with the full Electron renderer lockdown:
 
 - `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` for every
-  document window and tab view (docs, sheets, slides, pdf, shell, updater).
+  document window and tab view (docs, sheets, slides, pdf, markdown, shell, updater).
 - Renderers reach the main process only through typed, validated IPC channels
   (payloads are schema-checked in the main process; sheets uses zod end to end).
 - Every `shell.openExternal` call goes through a single shared gate

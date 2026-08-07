@@ -1,8 +1,8 @@
 # GenOffice
 
 An AI-native office suite for macOS and Windows: word processor, spreadsheet,
-presentations, and PDF — five Electron apps sharing one engine layer, built
-around AI editing as a first-class workflow rather than a bolted-on chat box.
+presentations, PDF, and Markdown — six Electron apps sharing one engine layer,
+built around AI editing as a first-class workflow rather than a bolted-on chat box.
 
 [![Meet GenOffice — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
@@ -46,7 +46,7 @@ chmod +x GenOffice-0.5.149.AppImage
 | `apps/sheets` | **GenOffice Sheets** | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing. |
 | `apps/slides` | **GenOffice Slides** | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                    |
 | `apps/pdf`    | **GenOffice PDF**    | `.pdf` viewer/editor on pdf.js + pdf-lib: annotations, forms, outlines, stamps, signatures, page operations, and printing support.                                                                                                                                                                                                                            |
-| `apps/shell`  | **GenOffice**        | The suite shell: home screen, tabbed hosting of the four editors, auto-update.                                                                                                                                                                                                                                                                                |
+| `apps/shell`  | **GenOffice**        | The suite shell: home screen, tabbed hosting of the five editors, auto-update.                                                                                                                                                                                                                                                                                |
 
 Every app embeds the same AI panel: block-granular AI editing with version
 snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
@@ -81,7 +81,7 @@ npm install
 npm run fixtures     # generate test .docx fixtures
 npm test             # engine + app unit tests (docs/sheets/slides need no display)
 npm run typecheck    # tsc --noEmit across every workspace
-npm run dev          # all four editors + shell against Vite dev servers
+npm run dev          # all five editors + shell against Vite dev servers
 npm run dev:docs     # a single app (same pattern works per workspace)
 npm run dist:mac     # package macOS dmg (regenerates third-party notices)
 npm run dist:win     # package Windows nsis installer
