@@ -35,11 +35,13 @@ import type {
 } from 'electron'
 import { z } from 'zod'
 import {
+  AgentInstructionsStore,
   appMenuLabels,
   bootstrapNetworkSettings,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  registerAgentToolIpc,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -2137,9 +2139,24 @@ function needsApiKey(provider: AiProviderId): boolean {
   return provider !== 'custom'
 }
 
+let instructionsStore: AgentInstructionsStore | null = null
+
+/** lazily built: userData is only resolvable once the app is ready */
+function instructions(): AgentInstructionsStore {
+  if (!instructionsStore) instructionsStore = new AgentInstructionsStore(app.getPath('userData'))
+  return instructionsStore
+}
+
 export function registerSheetsAiIpc(): void {
   if (aiIpcRegistered) return
   aiIpcRegistered = true
+
+  // Gated by includeAiHandlers, so this only runs standalone; in the shell
+  // docs-main owns the generic ai:* channels. Without it the agent's browse /
+  // skills / memory tools answered "No handler registered" here. Must sit
+  // after the guard: this function runs once per window, and registering a
+  // duplicate ipcMain handler throws.
+  registerAgentToolIpc(instructions)
 
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)

@@ -11,19 +11,17 @@ import {
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
-import { buildInstructionsPrompt, skillBodyForTool } from '@genoffice/agent-core'
-import type { AgentRules, AppSurface, UserMemory, UserSkill } from '@genoffice/agent-core'
+import type { AgentRules, UserMemory, UserSkill } from '@genoffice/agent-core'
 import {
   AgentInstructionsStore,
   appMenuLabels,
   applyNetworkSettings,
-  browsePage,
   bootstrapNetworkSettings as bootstrapNetworkSettingsIn,
   contextMenuLabels,
-  currentProxyUrl,
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  registerAgentToolIpc,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -70,7 +68,6 @@ import {
   hasGskAuth,
   webSearch,
   imageSearch,
-  tavilyExtract,
 } from '@genoffice/ai-search'
 import type {
   AttachmentAddResult,
@@ -2759,111 +2756,10 @@ export function registerAiIpc(): void {
     instructions().deleteSkill(String(id ?? ''))
   })
 
-  /**
-   * Prompt section for one surface, assembled in main so every editor gets the
-   * same scope filtering rather than each renderer reimplementing it. Read at
-   * the start of a turn, so an edit in the settings window applies to the next
-   * message without reopening the document.
-   */
-  ipcMain.handle('ai:instructions-prompt', (_event, surface: AppSurface): string =>
-    buildInstructionsPrompt(
-      instructions().readRules(),
-      instructions().listSkills(),
-      surface,
-      instructions().readMemories(),
-    ),
-  )
-
-  /**
-   * Backs view_page: render what the sender is showing and hand back a PNG.
-   *
-   * capturePage forces a frame even when the window is occluded or on another
-   * desktop, which a CDP screenshot does not — an agent run must not depend on
-   * the document being the frontmost window. The rect comes from the renderer
-   * because only it knows where the page element sits; an empty one captures
-   * the whole view.
-   */
-  ipcMain.handle(
-    'ai:capture-page',
-    async (
-      event,
-      rect?: { x: number; y: number; width: number; height: number },
-    ): Promise<string> => {
-      try {
-        const usable =
-          rect && rect.width >= 1 && rect.height >= 1
-            ? {
-                x: Math.max(0, Math.round(rect.x)),
-                y: Math.max(0, Math.round(rect.y)),
-                width: Math.round(rect.width),
-                height: Math.round(rect.height),
-              }
-            : undefined
-        const image = await (usable ? event.sender.capturePage(usable) : event.sender.capturePage())
-        // an empty capture is a real outcome (occluded, zero-sized); '' lets
-        // the tool report it instead of shipping a blank image to the model
-        return image.isEmpty() ? '' : image.toPNG().toString('base64')
-      } catch (err) {
-        console.warn('[ai] capture-page failed:', err)
-        return ''
-      }
-    },
-  )
-
-  /** backs the remember tool; false when the text was not worth storing */
-  ipcMain.handle(
-    'ai:remember',
-    (_event, text: unknown): boolean => instructions().addMemory(text) !== null,
-  )
-
-  /**
-   * Backs the forget tool. The model only knows a memory by the wording it can
-   * see in the prompt, so match on that rather than exposing ids to it.
-   */
-  ipcMain.handle('ai:forget', (_event, text: unknown): boolean => {
-    const wanted = String(text ?? '')
-      .trim()
-      .toLowerCase()
-    const hit = instructions()
-      .readMemories()
-      .find((m) => m.text.toLowerCase() === wanted)
-    return hit ? instructions().deleteMemory(hit.id) : false
-  })
-
-  /** backs the load_skill tool: the body, only if that skill is in scope here */
-  ipcMain.handle('ai:skill-body', (_event, surface: AppSurface, id: string): string =>
-    skillBodyForTool(instructions().listSkills(), surface, String(id ?? '')),
-  )
-
-  // ── agent browsing + page extraction ─────────────────────────────
-
-  ipcMain.handle(
-    'ai:browse-page',
-    async (_event, url: string, opts?: { maxChars?: number; includeLinks?: boolean }) => {
-      try {
-        const page = await browsePage(url, {
-          ...(opts?.maxChars ? { maxChars: opts.maxChars } : {}),
-          includeLinks: opts?.includeLinks === true,
-          proxyUrl: currentProxyUrl(),
-        })
-        return { ok: true as const, page }
-      } catch (err) {
-        return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-      }
-    },
-  )
-
-  /** Tavily's server-side extraction: cheaper than browsing and beats bot walls */
-  ipcMain.handle('ai:extract-pages', async (_event, urls: string[], advanced?: boolean) => {
-    try {
-      const result = await tavilyExtract(Array.isArray(urls) ? urls.map(String) : [], {
-        advanced: advanced === true,
-      })
-      return { ok: true as const, ...result }
-    } catch (err) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-    }
-  })
+  // instructions-prompt, skill-body, remember, forget, capture-page,
+  // browse-page and extract-pages: the agent's own tool backends, shared with
+  // the standalone slides and sheets processes rather than living only here.
+  registerAgentToolIpc(instructions)
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, system, messages } = request

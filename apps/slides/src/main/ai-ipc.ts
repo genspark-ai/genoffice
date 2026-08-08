@@ -23,7 +23,11 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
-import { fetchRemoteImage } from '@genoffice/electron-utils'
+import {
+  AgentInstructionsStore,
+  fetchRemoteImage,
+  registerAgentToolIpc,
+} from '@genoffice/electron-utils'
 import {
   webSearch,
   imageSearch,
@@ -59,6 +63,14 @@ function writeJson(path: string, value: unknown): void {
 
 const activeAiStreams = new Map<string, AbortController>()
 
+let instructionsStore: AgentInstructionsStore | null = null
+
+/** lazily built: userData is only resolvable once the app is ready */
+function instructions(): AgentInstructionsStore {
+  if (!instructionsStore) instructionsStore = new AgentInstructionsStore(app.getPath('userData'))
+  return instructionsStore
+}
+
 /**
  * Read the settings file and normalize the provider selection: a complete
  * custom endpoint is honoured, anything else falls back to Genspark.
@@ -92,6 +104,12 @@ function needsApiKey(provider: AiProviderId): boolean {
 }
 
 export function registerAiIpc(): void {
+  // Standalone only: in shell aggregate mode docs-main owns the generic ai:*
+  // channels and this whole function is never called. Without it the agent's
+  // browse / skills / memory / view_page tools all answered "No handler
+  // registered" when slides ran as its own process.
+  registerAgentToolIpc(instructions)
+
   ipcMain.handle('ai:get-settings', (): AiSettings => readAiSettings())
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
