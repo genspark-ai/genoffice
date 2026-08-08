@@ -12,14 +12,19 @@
  *  - `extract_pages` pull several URLs as markdown via Tavily (no rendering)
  *  - `load_skill`   fetch the body of one of the user's own skills
  *  - `remember` / `forget`  the agent's own notes on how this user works
+ *  - `view_page`    render the open document and look at it
  *
  * Web/image search stays in each app's existing search skill; this module adds
  * the reading half, which is what "browse the web" actually needs.
  */
 import { LOAD_SKILL_TOOL, type AppSurface } from './instructions'
 import { FORGET_TOOL, MEMORY_TOOL_GUIDANCE, REMEMBER_TOOL } from './memory'
+
 import type { AgentSkill } from './skill'
 import type { AgentToolDef } from './types'
+
+/** render the open document so the model can judge layout, not just structure */
+export const VIEW_PAGE_TOOL = 'view_page'
 
 export interface BrowsePageBridgeResult {
   ok: boolean
@@ -50,6 +55,27 @@ export interface WebSkillBridge {
   remember(text: string): Promise<boolean>
   /** drop a recorded preference by its exact text; false when nothing matched */
   forget(text: string): Promise<boolean>
+  /**
+   * Render what the view is currently showing and return it as PNG images, so
+   * the model can judge spacing, overflow and balance rather than inferring
+   * them from the structure. Absent in apps that have nothing to render.
+   *
+   * Deliberately takes no page number: capture reads the live DOM, so a
+   * specific page would first have to be scrolled or selected into view, and
+   * the renderer adapters have no handle on the editor's navigation state. The
+   * tool says so rather than quietly returning whichever page happened to be
+   * on screen.
+   */
+  viewPage?(): Promise<ViewPageBridgeResult>
+}
+
+export interface ViewPageBridgeResult {
+  ok: boolean
+  error?: string
+  /** raw base64 PNGs, no data: prefix */
+  images?: string[]
+  /** what was actually captured, e.g. 'slide 3 of 12' */
+  label?: string
 }
 
 export interface WebSkillOptions {
@@ -69,9 +95,14 @@ const BROWSE_PROMPT = `## Browsing
 ## Memory
 - \`${REMEMBER_TOOL}\` stores one short preference so it survives into later conversations. ${MEMORY_TOOL_GUIDANCE}
 - \`${FORGET_TOOL}\` removes one, by its exact recorded wording. Use it when the user says a preference no longer holds.
-- Anything already recorded appears under 'What you remember about this user'. Do not re-record what is listed there.`
+- Anything already recorded appears under 'What you remember about this user'. Do not re-record what is listed there.
 
-function browseTools(includeLoadSkill: boolean): AgentToolDef[] {
+## Looking at the page
+- \`${VIEW_PAGE_TOOL}\` renders the open document and returns it as an image, so you can see the layout instead of inferring it from the structure. Use it for questions about spacing, overflow, alignment and balance — and again after a layout change, to check the result rather than assuming it worked.
+- It captures what is on screen right now, and takes no page number. To look at a particular page or slide, bring it into view first with the document tools, then call this.
+- Reading the content is still the job of the document tools; this is for judging how it looks.`
+
+function browseTools(includeLoadSkill: boolean, includeViewPage: boolean): AgentToolDef[] {
   const tools: AgentToolDef[] = [
     {
       name: 'browse_page',
@@ -134,6 +165,14 @@ function browseTools(includeLoadSkill: boolean): AgentToolDef[] {
       },
     },
   )
+  if (includeViewPage) {
+    tools.push({
+      name: VIEW_PAGE_TOOL,
+      description:
+        'Render what the document is currently showing and look at it. Use this to judge layout — spacing, overflow, alignment, balance — and to check a layout change actually landed. Captures the current view only; scroll or select the page you want first.',
+      inputSchema: { type: 'object', properties: {} },
+    })
+  }
   if (includeLoadSkill) {
     tools.push({
       name: LOAD_SKILL_TOOL,
@@ -157,7 +196,7 @@ export function createWebSkill(options: WebSkillOptions): AgentSkill {
     // lazy: composeSkills and the loop both read this per request, so a skill
     // the user adds mid-session becomes callable on the next turn
     get tools(): AgentToolDef[] {
-      return browseTools(hasUserSkills())
+      return browseTools(hasUserSkills(), typeof bridge.viewPage === 'function')
     },
     buildContext: () => instructionsPrompt(),
     executeTool: async (call) => {
@@ -204,6 +243,29 @@ export function createWebSkill(options: WebSkillOptions): AgentSkill {
           output: (body || '(no content)') + failed,
           mutated: false,
           summary: `Extracted ${pages.length} page(s)`,
+        }
+      }
+
+      if (call.name === VIEW_PAGE_TOOL) {
+        if (!bridge.viewPage) {
+          return { output: 'This app cannot render pages.', isError: true, summary: 'view_page' }
+        }
+        const result = await bridge.viewPage()
+        if (!result.ok || !result.images?.length) {
+          return {
+            output: result.error ?? 'Could not render the page',
+            isError: true,
+            summary: 'view_page',
+          }
+        }
+        const label = result.label ?? 'the page'
+        return {
+          // the pictures ride a user turn the loop appends; this text is only
+          // the tool's own acknowledgement, which is all a tool result can hold
+          output: `Rendered ${label}. The image follows.`,
+          mutated: false,
+          summary: `Viewed ${label}`,
+          images: result.images.map((base64) => ({ base64, mime: 'image/png' })),
         }
       }
 

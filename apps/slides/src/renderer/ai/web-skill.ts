@@ -1,4 +1,5 @@
 import { createWebSkill, type AgentSkill } from '@genoffice/agent-core'
+import { captureRect } from '@genoffice/ui'
 
 /**
  * The shared browse / extract / load_skill skill, bound to this app's preload
@@ -55,6 +56,12 @@ export function createAppWebSkill(): { skill: AgentSkill; refresh: () => Promise
       loadSkill: (id) => window.slidesApi.aiSkillBody('pptx', id),
       remember: (text) => window.slidesApi.aiRemember(text),
       forget: (text) => window.slidesApi.aiForget(text),
+      viewPage: async () => {
+        const base64 = await window.slidesApi.aiCapturePage(captureRect('.stage-rel'))
+        return base64
+          ? { ok: true, images: [base64], label: 'the slide' }
+          : { ok: false, error: 'Nothing could be rendered right now.' }
+      },
     },
   })
 

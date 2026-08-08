@@ -2774,6 +2774,42 @@ export function registerAiIpc(): void {
     ),
   )
 
+  /**
+   * Backs view_page: render what the sender is showing and hand back a PNG.
+   *
+   * capturePage forces a frame even when the window is occluded or on another
+   * desktop, which a CDP screenshot does not — an agent run must not depend on
+   * the document being the frontmost window. The rect comes from the renderer
+   * because only it knows where the page element sits; an empty one captures
+   * the whole view.
+   */
+  ipcMain.handle(
+    'ai:capture-page',
+    async (
+      event,
+      rect?: { x: number; y: number; width: number; height: number },
+    ): Promise<string> => {
+      try {
+        const usable =
+          rect && rect.width >= 1 && rect.height >= 1
+            ? {
+                x: Math.max(0, Math.round(rect.x)),
+                y: Math.max(0, Math.round(rect.y)),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              }
+            : undefined
+        const image = await (usable ? event.sender.capturePage(usable) : event.sender.capturePage())
+        // an empty capture is a real outcome (occluded, zero-sized); '' lets
+        // the tool report it instead of shipping a blank image to the model
+        return image.isEmpty() ? '' : image.toPNG().toString('base64')
+      } catch (err) {
+        console.warn('[ai] capture-page failed:', err)
+        return ''
+      }
+    },
+  )
+
   /** backs the remember tool; false when the text was not worth storing */
   ipcMain.handle(
     'ai:remember',

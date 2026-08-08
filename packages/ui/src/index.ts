@@ -1,5 +1,6 @@
 export { AiComposer } from './AiComposer'
 export { AiTypingIndicator } from './AiTypingIndicator'
+export { captureRect, type CaptureRect } from './capture-rect'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'
 export {

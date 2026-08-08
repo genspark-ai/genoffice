@@ -81,6 +81,13 @@ const STALE_TOOL_OUTPUT_MAX = 1_000
 /** Cap on consecutive tool-input parse failures (a successful parse resets it); abort beyond it (keeps the model from burning turns on bad JSON) */
 const MAX_INPUT_PARSE_RETRIES = 3
 
+/**
+ * Images one tool turn may hand back. Each is a full-page render worth
+ * hundreds of KB of base64, so a model that keeps capturing would otherwise
+ * push the rest of the conversation out of the window within a few turns.
+ */
+const MAX_TOOL_IMAGES_PER_TURN = 4
+
 const TURN_LIMIT_NOTE =
   '[System] The tool-call turn limit for this request has been reached; no more tools may be called this turn. ' +
   'Answer directly from the information already gathered; if the task is unfinished, briefly state what is done and what remains.'
@@ -405,6 +412,19 @@ export class AgentLoop<TSnapshot = unknown> {
     if (!this.compactionEnabled()) return
     const { maxBytes } = this.compactBudget()
     if (historySize(this.history) <= maxBytes) return
+    // A render is worth hundreds of KB and is almost never re-read once the
+    // model has acted on it, so the oldest ones go first — and go entirely,
+    // since half an image is worth nothing. Only turns the loop itself created
+    // for tool output; images the user attached are theirs to keep.
+    let renders = 0
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      const m = this.history[i]!
+      if (m.role !== 'user' || !m.fromTool || !m.images?.length) continue
+      renders++
+      if (renders <= 1) continue
+      delete m.images
+      m.text = '(image from an earlier tool call, dropped to save space)'
+    }
     let recent = 0
     for (let i = this.history.length - 1; i >= 0; i--) {
       const m = this.history[i]!
@@ -533,6 +553,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.history.push({ role: 'assistant', text: this.turnText, toolCalls })
     const generation = this.generation
     const results: AgentToolResult[] = []
+    const toolImages: AgentImage[] = []
     for (const call of toolCalls) {
       // The user hit stop while an earlier tool was running: skip remaining tools,
       // but fill in paired error results to keep tool_use/tool_result pairs valid for the next request
@@ -581,6 +602,7 @@ export class AgentLoop<TSnapshot = unknown> {
         output: execution.output,
         isError: execution.isError,
       })
+      if (execution.images?.length) toolImages.push(...execution.images)
       events?.onToolExecuted?.({
         call,
         execution,
@@ -588,6 +610,23 @@ export class AgentLoop<TSnapshot = unknown> {
       })
     }
     this.history.push({ role: 'tool', results })
+
+    // A tool that produced images (a rendered page, a slide) hands them over
+    // here: tool results are text on every provider, so the pictures ride a
+    // follow-up user turn, which all three accept. Capped so a tool looping on
+    // captures cannot bury the conversation in screenshots.
+    const images = toolImages.slice(0, MAX_TOOL_IMAGES_PER_TURN)
+    if (images.length > 0) {
+      this.history.push({
+        role: 'user',
+        text:
+          images.length === 1
+            ? '(image returned by the previous tool call)'
+            : `(${images.length} images returned by the previous tool calls)`,
+        images,
+        fromTool: true,
+      })
+    }
 
     // Cancelled while tools were executing: finish immediately, no further model request
     if (this.cancelled) {

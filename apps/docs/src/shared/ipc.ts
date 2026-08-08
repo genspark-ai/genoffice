@@ -238,6 +238,8 @@ export interface DesktopApi {
   aiSkillBody(surface: string, id: string): Promise<string>
   /** record a preference; false when the text was not worth storing */
   aiRemember(text: string): Promise<boolean>
+  /** render what this view is showing; base64 PNG, '' when nothing could be captured */
+  aiCapturePage(rect?: { x: number; y: number; width: number; height: number }): Promise<string>
   /** drop a recorded preference by exact wording; false when nothing matched */
   aiForget(text: string): Promise<boolean>
   webSearch(
