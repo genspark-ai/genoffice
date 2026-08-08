@@ -14,6 +14,14 @@ export interface AgentToolCall {
   inputError?: string | undefined
   /** The argument stream was cut off by the token limit (stop_reason max_tokens); the loop asks the model to split the call instead of "fixing JSON" */
   truncated?: boolean | undefined
+  /**
+   * Gemini's per-call thinking signature, carried so it can be echoed back on
+   * the next turn. Gemini rejects a follow-up whose function calls have lost it
+   * (`HTTP 400 ... missing a thought_signature in functionCall parts`), which
+   * only bites from the second tool round onwards. Opaque: never inspected,
+   * only stored and handed back, and absent for every other provider.
+   */
+  thoughtSignature?: string | undefined
 }
 
 export interface AgentToolResult {
