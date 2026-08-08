@@ -56,17 +56,26 @@ export interface WebSkillBridge {
   /** drop a recorded preference by its exact text; false when nothing matched */
   forget(text: string): Promise<boolean>
   /**
-   * Render what the view is currently showing and return it as PNG images, so
-   * the model can judge spacing, overflow and balance rather than inferring
-   * them from the structure. Absent in apps that have nothing to render.
+   * Render a page as PNG images, so the model can judge spacing, overflow and
+   * balance rather than inferring them from the structure. Absent in apps that
+   * have nothing to render.
    *
-   * Deliberately takes no page number: capture reads the live DOM, so a
-   * specific page would first have to be scrolled or selected into view, and
-   * the renderer adapters have no handle on the editor's navigation state. The
-   * tool says so rather than quietly returning whichever page happened to be
-   * on screen.
+   * `page` is 1-based, and only ever passed when the app also implements
+   * `viewPageCount` — an app that can only show what is on screen never sees
+   * one and never advertises the argument.
    */
-  viewPage?(): Promise<ViewPageBridgeResult>
+  viewPage?(page?: number): Promise<ViewPageBridgeResult>
+  /**
+   * How many pages `viewPage` can reach, for apps that can render any of them
+   * off-screen rather than only what is displayed.
+   *
+   * Presence is the capability flag: it gates the `page` argument on the tool,
+   * so a deck advertises "slide 1-12" while a document that can only capture
+   * its viewport advertises no argument at all. Reporting a number the app
+   * cannot actually render would be worse than reporting none — the model
+   * would ask for a page and reason about whatever came back instead.
+   */
+  viewPageCount?(): number
 }
 
 export interface ViewPageBridgeResult {
@@ -99,10 +108,15 @@ const BROWSE_PROMPT = `## Browsing
 
 ## Looking at the page
 - \`${VIEW_PAGE_TOOL}\` renders the open document and returns it as an image, so you can see the layout instead of inferring it from the structure. Use it for questions about spacing, overflow, alignment and balance — and again after a layout change, to check the result rather than assuming it worked.
-- It captures what is on screen right now, and takes no page number. To look at a particular page or slide, bring it into view first with the document tools, then call this.
+- Its arguments say what this app can do. With a \`page\` argument you can render any page directly; without one it captures what is on screen, so bring the page you care about into view first.
 - Reading the content is still the job of the document tools; this is for judging how it looks.`
 
-function browseTools(includeLoadSkill: boolean, includeViewPage: boolean): AgentToolDef[] {
+function browseTools(
+  includeLoadSkill: boolean,
+  includeViewPage: boolean,
+  /** undefined when the app can only capture what is on screen */
+  pageCount: number | undefined,
+): AgentToolDef[] {
   const tools: AgentToolDef[] = [
     {
       name: 'browse_page',
@@ -166,12 +180,31 @@ function browseTools(includeLoadSkill: boolean, includeViewPage: boolean): Agent
     },
   )
   if (includeViewPage) {
-    tools.push({
-      name: VIEW_PAGE_TOOL,
-      description:
-        'Render what the document is currently showing and look at it. Use this to judge layout — spacing, overflow, alignment, balance — and to check a layout change actually landed. Captures the current view only; scroll or select the page you want first.',
-      inputSchema: { type: 'object', properties: {} },
-    })
+    // Two shapes, because the apps genuinely differ: a deck can render any
+    // slide off-screen, while a document that paginates visually can only
+    // capture its viewport. Each advertises exactly what it can honour.
+    tools.push(
+      pageCount === undefined
+        ? {
+            name: VIEW_PAGE_TOOL,
+            description:
+              'Render what the document is currently showing and look at it. Use this to judge layout — spacing, overflow, alignment, balance — and to check a layout change actually landed. Captures the current view only; scroll to the page you want first.',
+            inputSchema: { type: 'object', properties: {} },
+          }
+        : {
+            name: VIEW_PAGE_TOOL,
+            description: `Render one page and look at it. Use this to judge layout — spacing, overflow, alignment, balance — and to check a layout change actually landed. Renders the page directly, so it neither needs nor changes what is on screen.`,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                page: {
+                  type: 'number',
+                  description: `1-based page number, 1 to ${pageCount}; omit for the page in view`,
+                },
+              },
+            },
+          },
+    )
   }
   if (includeLoadSkill) {
     tools.push({
@@ -196,7 +229,11 @@ export function createWebSkill(options: WebSkillOptions): AgentSkill {
     // lazy: composeSkills and the loop both read this per request, so a skill
     // the user adds mid-session becomes callable on the next turn
     get tools(): AgentToolDef[] {
-      return browseTools(hasUserSkills(), typeof bridge.viewPage === 'function')
+      return browseTools(
+        hasUserSkills(),
+        typeof bridge.viewPage === 'function',
+        bridge.viewPageCount?.(),
+      )
     },
     buildContext: () => instructionsPrompt(),
     executeTool: async (call) => {
@@ -250,7 +287,23 @@ export function createWebSkill(options: WebSkillOptions): AgentSkill {
         if (!bridge.viewPage) {
           return { output: 'This app cannot render pages.', isError: true, summary: 'view_page' }
         }
-        const result = await bridge.viewPage()
+        const total = bridge.viewPageCount?.()
+        let page: number | undefined
+        if (total !== undefined && call.input.page !== undefined) {
+          const raw = Number(call.input.page)
+          page = Number.isFinite(raw) ? Math.trunc(raw) : NaN
+          // Out of range is the model holding a wrong idea of the document, so
+          // say so instead of clamping to an edge page it did not ask for and
+          // letting it draw conclusions from the wrong one.
+          if (!Number.isFinite(page) || page < 1 || page > total) {
+            return {
+              output: `There is no page ${String(call.input.page)}; this document has ${total}.`,
+              isError: true,
+              summary: 'view_page',
+            }
+          }
+        }
+        const result = await bridge.viewPage(page)
         if (!result.ok || !result.images?.length) {
           return {
             output: result.error ?? 'Could not render the page',

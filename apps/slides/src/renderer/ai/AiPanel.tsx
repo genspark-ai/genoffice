@@ -676,7 +676,13 @@ export function AiPanel({
   // lazily, once: useRef(fn()) would rebuild the adapter and refire its IPC
   // on every render
   const webSkillRef = useRef<ReturnType<typeof createAppWebSkill> | null>(null)
-  webSkillRef.current ??= createAppWebSkill()
+  // refs, not the render-time values: the skill is built once and would
+  // otherwise render whatever deck existed when the panel first mounted
+  webSkillRef.current ??= createAppWebSkill({
+    slides: () => slidesRef.current,
+    images: () => imagesRef.current,
+    current: () => currentRef.current,
+  })
   const loopRef = useRef<AgentLoop | null>(null)
   if (!loopRef.current) {
     // The three slides generation steps (style/planning/per-page HTML) force the high-quality model (only with the anthropic provider;

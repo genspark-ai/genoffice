@@ -105,9 +105,9 @@ describe('view_page', () => {
     expect(result.mutated).toBe(false)
   })
 
-  // It captures the live DOM, so it can only ever return the current view.
-  // Advertising a page number it cannot honour would have the model reason
-  // confidently about the wrong slide.
+  // An app that can only capture its viewport must not advertise a page
+  // number: the model would ask for page 3, be handed whatever is on screen,
+  // and reason confidently about the wrong one.
   it('takes no arguments, and ignores a page number if one is invented', async () => {
     const viewPage = vi.fn().mockResolvedValue({ ok: true, images: ['X'] })
     const { skill: s } = skill({ viewPage })
@@ -116,7 +116,7 @@ describe('view_page', () => {
     expect(def.description).toContain('current view')
 
     await s.executeTool!(call(VIEW_PAGE_TOOL, { page: 3 }))
-    expect(viewPage).toHaveBeenCalledWith()
+    expect(viewPage).toHaveBeenCalledWith(undefined)
   })
 
   it('reports a failed render as an error rather than an empty image', async () => {
@@ -124,5 +124,68 @@ describe('view_page', () => {
     const result = await s.executeTool!(call(VIEW_PAGE_TOOL, {}))
     expect(result.isError).toBe(true)
     expect(result.images).toBeUndefined()
+  })
+})
+
+// Apps that can render off-screen (a deck) reach any page; the capability is
+// declared by viewPageCount, and the tool schema follows it.
+describe('view_page with page targeting', () => {
+  const targeting = (count = 12) =>
+    skill({
+      viewPage: vi
+        .fn()
+        .mockResolvedValue({ ok: true, images: ['X'], label: `slide 4 of ${count}` }),
+      viewPageCount: () => count,
+    })
+
+  it('advertises the page argument, with the real range', () => {
+    const def = targeting().skill.tools.find((t) => t.name === VIEW_PAGE_TOOL)!
+    const props = def.inputSchema.properties as { page?: { description?: string } }
+    expect(props.page).toBeDefined()
+    expect(props.page!.description).toContain('1 to 12')
+    // no longer the viewport-only wording
+    expect(def.description).not.toContain('current view')
+  })
+
+  it('re-reads the count each turn, so a growing deck is described correctly', () => {
+    let count = 3
+    const { skill: s } = skill({
+      viewPage: vi.fn(),
+      viewPageCount: () => count,
+    })
+    count = 30
+    const props = s.tools.find((t) => t.name === VIEW_PAGE_TOOL)!.inputSchema.properties as {
+      page: { description: string }
+    }
+    expect(props.page.description).toContain('1 to 30')
+  })
+
+  it('passes the requested page through, truncating a fractional one', async () => {
+    const { skill: s, bridge } = targeting()
+    await s.executeTool!(call(VIEW_PAGE_TOOL, { page: 4.9 }))
+    expect(bridge.viewPage).toHaveBeenCalledWith(4)
+  })
+
+  it('omitting the page asks the bridge for whatever is in view', async () => {
+    const { skill: s, bridge } = targeting()
+    await s.executeTool!(call(VIEW_PAGE_TOOL, {}))
+    expect(bridge.viewPage).toHaveBeenCalledWith(undefined)
+  })
+
+  // Clamping would hand back a page it did not ask for and let it draw
+  // conclusions from that one instead.
+  it.each([0, 13, -2, Number.NaN])('refuses page %s rather than clamping', async (page) => {
+    const { skill: s, bridge } = targeting()
+    const result = await s.executeTool!(call(VIEW_PAGE_TOOL, { page }))
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('has 12')
+    expect(bridge.viewPage).not.toHaveBeenCalled()
+  })
+
+  it('reports which page it actually rendered', async () => {
+    const { skill: s } = targeting()
+    const result = await s.executeTool!(call(VIEW_PAGE_TOOL, { page: 4 }))
+    expect(result.output).toContain('slide 4 of 12')
+    expect(result.images).toEqual([{ base64: 'X', mime: 'image/png' }])
   })
 })
