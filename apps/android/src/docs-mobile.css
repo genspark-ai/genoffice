@@ -1,0 +1,13 @@
+html,body,#root{width:100%;height:100%;overflow:hidden}
+.android-docs-host{width:100%;height:100%;overflow:hidden;background:#eef0f3}
+.genoffice-android-editor .android-docs-host{height:100%;padding-top:env(safe-area-inset-top)}
+.genoffice-android-editor .app-shell,.genoffice-android-editor .docs-app,.genoffice-android-editor main{max-width:none}
+.genoffice-android-editor button,.genoffice-android-editor input,.genoffice-android-editor select,.genoffice-android-editor textarea{touch-action:manipulation}
+.genoffice-android-editor .ribbon{overflow-x:auto;max-width:100vw}
+.genoffice-android-editor .editor-scroll,.genoffice-android-editor .editor-canvas,.genoffice-android-editor .document-scroll{max-width:100vw;overflow:auto}
+@media (max-width: 800px){
+  .genoffice-android-editor .ribbon{font-size:12px}
+  .genoffice-android-editor .ribbon button{min-width:38px;min-height:38px}
+  .genoffice-android-editor .page{margin-left:8px!important;margin-right:8px!important}
+  .genoffice-android-editor .document-page{max-width:calc(100vw - 16px)!important}
+}
