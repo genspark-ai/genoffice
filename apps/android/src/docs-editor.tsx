@@ -8,7 +8,7 @@ import '../../docs/src/renderer/fonts/fonts.css'
 
 let installed = false
 
-export function DocsEditorScreen(): JSX.Element {
+export function DocsEditorScreen(): React.JSX.Element {
   useEffect(() => {
     if (!installed) {
       installAndroidDesktopApi()
