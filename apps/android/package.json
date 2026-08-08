@@ -1,0 +1,31 @@
+{
+  "name": "@genoffice/android",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GenOffice Android shell powered by Capacitor",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5180",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5180",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.4.2",
+    "@capacitor/core": "8.4.2",
+    "@capacitor/filesystem": "8.0.2",
+    "@capacitor/share": "8.0.2",
+    "@capacitor/status-bar": "8.0.2",
+    "@capacitor/keyboard": "8.0.0",
+    "@capacitor/app": "8.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.4.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}
