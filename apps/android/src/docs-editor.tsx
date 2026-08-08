@@ -5,6 +5,7 @@ import { LocaleProvider, setModuleLang } from '../../docs/src/renderer/i18n/loca
 import { installAndroidDesktopApi } from './docs-platform'
 import '../../docs/src/renderer/styles.css'
 import '../../docs/src/renderer/fonts/fonts.css'
+import './docs-mobile.css'
 
 let installed = false
 
