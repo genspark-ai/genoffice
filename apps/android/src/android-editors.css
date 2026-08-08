@@ -1,0 +1,13 @@
+html,body,#root{width:100%;height:100%;overflow:hidden}
+.android-sheets-host,.android-slides-host,.android-pdf-host{width:100%;height:100%;overflow:hidden;background:#fff}
+.android-sheets-host>*{height:100%}
+.android-slides-host>*{height:100%}
+.android-pdf-host{display:flex;flex-direction:column}
+.android-pdf-toolbar{height:48px;flex:0 0 48px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#fff;border-bottom:1px solid #ddd;z-index:100}
+.android-pdf-toolbar button{border:0;border-radius:8px;padding:8px 14px;background:#2563eb;color:#fff;font-weight:600}
+.android-pdf-toolbar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:13px}
+.android-pdf-view{min-height:0;flex:1;overflow:hidden}
+.android-pdf-view>#root,.android-pdf-view>div{height:100%}
+.genoffice-android-sheets button,.genoffice-android-sheets input,.genoffice-android-sheets textarea,.genoffice-android-slides button,.genoffice-android-slides input,.genoffice-android-slides textarea{touch-action:manipulation}
+.genoffice-android-slides .ribbon-tabs{padding-left:10px}
+@media(max-width:800px){.genoffice-android-slides .ribbon-body{overflow-x:auto}.genoffice-android-sheets .univer-sheet-container{min-width:0}}
