@@ -1,20 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Directory, Filesystem } from '@capacitor/filesystem'
-import { Share } from '@capacitor/share'
 import { PDFDocument } from 'pdf-lib'
-import { App as PdfApp } from '../../pdf/src/renderer/App'
+import PdfApp from '../../pdf/src/renderer/App'
 import { installRendererStub, aiDefaults } from './editor-stubs'
 import { savePdfSession, writePdfToDocuments, type AndroidPdfSession } from './pdf-android-platform'
 import '../../pdf/src/renderer/styles.css'
 
 let installed = false
 let pendingPdf: AndroidPdfSession | null = null
-
-const bytesToB64 = (bytes: Uint8Array): string => {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return btoa(binary)
-}
 
 async function choosePdf(): Promise<void> {
   const input = document.createElement('input')
@@ -75,8 +68,7 @@ export function PdfEditorScreen(): React.JSX.Element {
           try {
             const base = await PDFDocument.load(pendingPdf.bytes)
             const add = await PDFDocument.load(await file.arrayBuffer())
-            const indices = add.getPageIndices()
-            const copied = await base.copyPages(add, indices)
+            const copied = await base.copyPages(add, add.getPageIndices())
             const at = Math.max(-1, Math.min(request.afterPageIndex ?? -1, base.getPageCount() - 1))
             copied.forEach((page, i) => base.insertPage(at + 1 + i, page))
             pendingPdf = { ...pendingPdf, bytes: await base.save() }
