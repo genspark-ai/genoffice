@@ -182,6 +182,13 @@ export interface CloudProjectEntry {
 }
 
 /** full local copy of the cloud project list; filtering/paging are client-side */
+/**
+ * Why a sync failed, when the reason changes what the user should do about it.
+ * 'credits' in particular must not be offered a Retry button — the account is
+ * out of credits and retrying can never succeed.
+ */
+export type CloudProjectsError = 'credits' | 'signedOut' | 'network' | 'unknown'
+
 export interface CloudProjectsSnapshot {
   /** false when gsk is unavailable (CLI missing or not logged in) */
   available: boolean
@@ -189,6 +196,8 @@ export interface CloudProjectsSnapshot {
   projects: CloudProjectEntry[]
   /** ms epoch of the last successful sync (0 when never synced) */
   syncedAt: number
+  /** set when the sync failed; `projects` then holds whatever was cached */
+  error?: CloudProjectsError
 }
 
 export interface AccountStatus {

@@ -1245,6 +1245,9 @@ function CloudProjectsView() {
     void window.aiOffice.openCloudProject?.(projectUrl)
   }
 
+  /** Genspark itself, for the out-of-credits case where there is nothing to retry */
+  const openCloudHome = () => openProject('/')
+
   // filter / search / sort are all local over the snapshot — no requests
   const q = query.trim().toLowerCase()
   let list = snapshot?.projects.filter((proj) => kind === 'all' || proj.kind === kind) ?? []
@@ -1343,6 +1346,35 @@ function CloudProjectsView() {
           <button className="btn btn-secondary" onClick={() => startSync()}>
             {t('cloudRetry')}
           </button>
+        </p>
+      )
+    }
+    // A sync that failed still returns whatever was cached; say why, and only
+    // offer Retry when retrying could actually change the outcome — an
+    // out-of-credits account would just fail again.
+    if (snapshot.error && list.length === 0) {
+      return (
+        <p className="empty proj-empty">
+          <span className="empty-hint">
+            {t(
+              snapshot.error === 'credits'
+                ? 'cloudNoCredits'
+                : snapshot.error === 'signedOut'
+                  ? 'cloudSignedOut'
+                  : snapshot.error === 'network'
+                    ? 'cloudNetwork'
+                    : 'cloudError',
+            )}
+          </span>
+          {snapshot.error === 'credits' ? (
+            <button className="btn btn-secondary" onClick={openCloudHome}>
+              {t('cloudOpenGenspark')}
+            </button>
+          ) : (
+            <button className="btn btn-secondary" onClick={() => startSync()}>
+              {t('cloudRetry')}
+            </button>
+          )}
         </p>
       )
     }
