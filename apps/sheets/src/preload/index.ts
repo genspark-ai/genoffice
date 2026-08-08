@@ -296,6 +296,12 @@ const desktopApi: DesktopApi = {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiSkillBody, surface, id)
     return typeof result === 'string' ? result : ''
   },
+  async aiRemember(text) {
+    return (await ipcRenderer.invoke('ai:remember', text)) === true
+  },
+  async aiForget(text) {
+    return (await ipcRenderer.invoke('ai:forget', text)) === true
+  },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {
       throw new Error('Invalid search query.')

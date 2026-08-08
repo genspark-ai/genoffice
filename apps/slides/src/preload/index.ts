@@ -276,6 +276,8 @@ const api: SlidesApi = {
     ipcRenderer.invoke('ai:extract-pages', urls, advanced),
   aiInstructionsPrompt: (surface: string) => ipcRenderer.invoke('ai:instructions-prompt', surface),
   aiSkillBody: (surface: string, id: string) => ipcRenderer.invoke('ai:skill-body', surface, id),
+  aiRemember: (text: string) => ipcRenderer.invoke('ai:remember', text),
+  aiForget: (text: string) => ipcRenderer.invoke('ai:forget', text),
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),

@@ -216,6 +216,10 @@ export interface PdfApi {
   aiInstructionsPrompt(surface: string): Promise<string>
   /** Body of one user skill, scope-checked for this surface (agent load_skill) */
   aiSkillBody(surface: string, id: string): Promise<string>
+  /** record a preference; false when the text was not worth storing */
+  aiRemember(text: string): Promise<boolean>
+  /** drop a recorded preference by exact wording; false when nothing matched */
+  aiForget(text: string): Promise<boolean>
   getAiSettings(): Promise<AiSettings>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

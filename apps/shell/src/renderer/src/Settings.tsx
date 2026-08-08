@@ -89,7 +89,9 @@ export function SettingsApp({ initial }: { initial: SettingsSnapshot }) {
           <ModelSection ai={snapshot.ai} account={snapshot.account} onSaved={reload} />
         )}
         {section === 'network' && <NetworkSection ai={snapshot.ai} onSaved={reload} />}
-        {section === 'rules' && <RulesSection rules={snapshot.rules} onSaved={reload} />}
+        {section === 'rules' && (
+          <RulesSection rules={snapshot.rules} memories={snapshot.memories} onSaved={reload} />
+        )}
         {section === 'skills' && <SkillsSection skills={snapshot.skills} onChanged={reload} />}
         {section === 'general' && <GeneralSection snapshot={snapshot} onChanged={reload} />}
       </main>
@@ -528,7 +530,15 @@ function NetworkSection({ ai, onSaved }: { ai: AiModelSettings; onSaved: () => v
 
 // ── Rules ───────────────────────────────────────────────────────────
 
-function RulesSection({ rules, onSaved }: { rules: AgentRules; onSaved: () => void }) {
+function RulesSection({
+  rules,
+  memories,
+  onSaved,
+}: {
+  rules: AgentRules
+  memories: SettingsSnapshot['memories']
+  onSaved: () => void
+}) {
   const { t } = useI18n()
   const [draft, setDraft] = useState<AgentRules>(rules)
   const saver = useSaver<AgentRules>((v) => window.genofficeSettings.saveRules(v), onSaved)
@@ -553,7 +563,62 @@ function RulesSection({ rules, onSaved }: { rules: AgentRules; onSaved: () => vo
           {t('aiDlgSave')}
         </button>
       </div>
+      <h3 className="settings-subhead">{t('setMemoryTitle')}</h3>
+      <p className="settings-hint">{t('setMemoryHint')}</p>
+      <MemorySection memories={memories} onChanged={onSaved} />
     </Section>
+  )
+}
+
+/**
+ * What the agent recorded about the user, and the means to delete it. This is
+ * the counterweight to letting the agent write to its own prompt: memories are
+ * written from conversation, a conversation can contain document text, so the
+ * user has to be able to see the list and remove anything that does not belong.
+ */
+function MemorySection({
+  memories,
+  onChanged,
+}: {
+  memories: SettingsSnapshot['memories']
+  onChanged: () => void
+}) {
+  const { t } = useI18n()
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const remove = (id: string) => {
+    setBusy(id)
+    void window.genofficeSettings
+      .deleteMemory(id)
+      .then(onChanged)
+      .finally(() => setBusy(null))
+  }
+
+  if (memories.length === 0) {
+    return <p className="settings-hint">{t('setMemoryEmpty')}</p>
+  }
+  return (
+    <ul className="settings-skills">
+      {memories.map((m) => (
+        <li key={m.id} className="settings-skill">
+          <div className="settings-skill-head">
+            <span className="settings-memory-text">{m.text}</span>
+            <span className="settings-skill-id">
+              {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : ''}
+            </span>
+          </div>
+          <div className="settings-actions">
+            <button
+              className="btn btn-secondary"
+              disabled={busy === m.id}
+              onClick={() => remove(m.id)}
+            >
+              {t('setMemoryForget')}
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 

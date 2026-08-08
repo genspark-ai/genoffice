@@ -14,6 +14,7 @@
  *
  * Pure functions only: file storage lives in the Electron main process.
  */
+import { buildMemoryPrompt, type UserMemory } from './memory'
 
 /**
  * Where an instruction applies. 'docx' / 'pptx' / 'sheets' / 'pdf' name the
@@ -202,13 +203,22 @@ export function skillBodyForTool(skills: UserSkill[], surface: AppSurface, id: s
   return `# ${skill.name}\n\n${skill.body}`
 }
 
-/** Combined instruction block appended to an app's system prompt. */
+/**
+ * Combined instruction block appended to an app's system prompt: what the user
+ * told the agent, then what the agent worked out about the user. Memory comes
+ * last so a rule the user wrote outranks a preference the agent inferred.
+ */
 export function buildInstructionsPrompt(
   rules: AgentRules,
   skills: UserSkill[],
   surface: AppSurface,
+  memories: readonly UserMemory[] = [],
 ): string {
-  return [buildRulesPrompt(rules, surface), buildSkillsPrompt(skills, surface)]
+  return [
+    buildRulesPrompt(rules, surface),
+    buildSkillsPrompt(skills, surface),
+    buildMemoryPrompt(memories),
+  ]
     .filter(Boolean)
     .join('\n\n')
 }

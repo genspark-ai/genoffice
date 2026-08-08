@@ -58,6 +58,13 @@ export interface AiProviderTestResult {
 /** mirrors AgentRules in @genoffice/agent-core */
 export type AgentRules = Partial<Record<InstructionScope, string>>
 
+/** mirrors UserMemory in @genoffice/agent-core */
+export interface UserMemory {
+  id: string
+  text: string
+  createdAt: number
+}
+
 /** mirrors UserSkill in @genoffice/agent-core */
 export interface UserSkill {
   id: string
@@ -72,6 +79,8 @@ export interface SettingsSnapshot {
   ai: AiModelSettings
   rules: AgentRules
   skills: UserSkill[]
+  /** what the agent recorded about the user; shown so it can be corrected */
+  memories: UserMemory[]
   language: string
   updateChannel: 'stable' | 'beta'
   appVersion: string
@@ -86,6 +95,7 @@ export interface SettingsApi {
   saveRules(rules: AgentRules): Promise<AgentRules>
   saveSkill(skill: Partial<UserSkill> & { name: string; body: string }): Promise<UserSkill>
   deleteSkill(id: string): Promise<void>
+  deleteMemory(id: string): Promise<void>
   /** native multi-select picker; returns the skills that were imported */
   importSkillFiles(): Promise<UserSkill[]>
   /** drag-and-drop path: the renderer already read the files */
@@ -104,6 +114,7 @@ export const SETTINGS_CHANNELS = {
   saveRules: 'settings:save-rules',
   saveSkill: 'settings:save-skill',
   deleteSkill: 'settings:delete-skill',
+  deleteMemory: 'settings:delete-memory',
   importSkillFiles: 'settings:import-skill-files',
   importSkillContents: 'settings:import-skill-contents',
   setLanguage: 'settings:set-language',

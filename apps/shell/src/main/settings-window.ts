@@ -26,6 +26,7 @@ export interface SettingsWindowHost {
   saveRules: (rules: AgentRules) => AgentRules
   saveSkill: (input: Partial<UserSkill> & { name: string; body: string }) => UserSkill
   deleteSkill: (id: string) => void
+  deleteMemory: (id: string) => void
   importSkillContents: (files: Array<{ filename: string; content: string }>) => UserSkill[]
   setLanguage: (lang: string) => void
   setUpdateChannel: (channel: 'stable' | 'beta') => void
@@ -51,6 +52,7 @@ function registerIpc(): void {
   ipcMain.handle(SETTINGS_CHANNELS.saveRules, (_e, rules: AgentRules) => host?.saveRules(rules))
   ipcMain.handle(SETTINGS_CHANNELS.saveSkill, (_e, skill) => host?.saveSkill(skill))
   ipcMain.handle(SETTINGS_CHANNELS.deleteSkill, (_e, id: string) => host?.deleteSkill(String(id)))
+  ipcMain.handle(SETTINGS_CHANNELS.deleteMemory, (_e, id: string) => host?.deleteMemory(String(id)))
   ipcMain.handle(SETTINGS_CHANNELS.importSkillContents, (_e, files) =>
     host?.importSkillContents(Array.isArray(files) ? files : []),
   )

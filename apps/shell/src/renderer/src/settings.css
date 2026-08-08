@@ -158,6 +158,22 @@ body {
   list-style: none;
 }
 
+/* the memory list sits under the rules editor, inside the same section */
+.settings-subhead {
+  margin: 22px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* a recorded preference is a sentence, so it wraps rather than truncating —
+   the user has to be able to read the whole thing to judge whether to keep it */
+.settings-memory-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .settings-skill {
   padding: 12px 14px;
   border: 1px solid var(--color-border-default);

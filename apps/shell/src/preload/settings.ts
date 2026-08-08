@@ -40,6 +40,9 @@ const api: SettingsApi = {
   async deleteSkill(id) {
     await ipcRenderer.invoke(SETTINGS_CHANNELS.deleteSkill, id)
   },
+  async deleteMemory(id) {
+    await ipcRenderer.invoke(SETTINGS_CHANNELS.deleteMemory, id)
+  },
   async importSkillFiles() {
     const result: unknown = await ipcRenderer.invoke(SETTINGS_CHANNELS.importSkillFiles)
     return Array.isArray(result) ? (result as UserSkill[]) : []

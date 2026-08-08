@@ -53,6 +53,8 @@ export function createAppWebSkill(): { skill: AgentSkill; refresh: () => Promise
       browsePage: (url, opts) => window.slidesApi.aiBrowsePage(url, opts),
       extractPages: (urls, advanced) => window.slidesApi.aiExtractPages(urls, advanced),
       loadSkill: (id) => window.slidesApi.aiSkillBody('pptx', id),
+      remember: (text) => window.slidesApi.aiRemember(text),
+      forget: (text) => window.slidesApi.aiForget(text),
     },
   })
 

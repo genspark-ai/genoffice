@@ -79,6 +79,8 @@ const api: DesktopApi = {
     ipcRenderer.invoke('ai:extract-pages', urls, advanced),
   aiInstructionsPrompt: (surface: string) => ipcRenderer.invoke('ai:instructions-prompt', surface),
   aiSkillBody: (surface: string, id: string) => ipcRenderer.invoke('ai:skill-body', surface, id),
+  aiRemember: (text: string) => ipcRenderer.invoke('ai:remember', text),
+  aiForget: (text: string) => ipcRenderer.invoke('ai:forget', text),
   imageSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:image-search', query, maxResults),
   fetchImage: (url: string) => ipcRenderer.invoke('ai:fetch-image', url),

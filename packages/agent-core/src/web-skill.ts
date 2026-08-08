@@ -11,11 +11,13 @@
  *  - `browse_page`  render a URL in the built-in browser and read it
  *  - `extract_pages` pull several URLs as markdown via Tavily (no rendering)
  *  - `load_skill`   fetch the body of one of the user's own skills
+ *  - `remember` / `forget`  the agent's own notes on how this user works
  *
  * Web/image search stays in each app's existing search skill; this module adds
  * the reading half, which is what "browse the web" actually needs.
  */
 import { LOAD_SKILL_TOOL, type AppSurface } from './instructions'
+import { FORGET_TOOL, MEMORY_TOOL_GUIDANCE, REMEMBER_TOOL } from './memory'
 import type { AgentSkill } from './skill'
 import type { AgentToolDef } from './types'
 
@@ -44,6 +46,10 @@ export interface WebSkillBridge {
   extractPages(urls: string[], advanced: boolean): Promise<ExtractPagesBridgeResult>
   /** body of a user skill, already scope-filtered for this surface */
   loadSkill(id: string): Promise<string>
+  /** record a preference; false when the text was not worth storing */
+  remember(text: string): Promise<boolean>
+  /** drop a recorded preference by its exact text; false when nothing matched */
+  forget(text: string): Promise<boolean>
 }
 
 export interface WebSkillOptions {
@@ -58,7 +64,12 @@ export interface WebSkillOptions {
 const BROWSE_PROMPT = `## Browsing
 - \`browse_page\` opens a URL in the built-in browser and returns the rendered text, so it works on pages that only render with JavaScript. Use it when a search snippet is not enough and you need what the page actually says.
 - \`extract_pages\` is the cheaper bulk option: it returns several URLs as markdown without rendering them. Prefer it when you already have the links and just need the text.
-- Quote or cite what you read; never present a page's claims as your own knowledge.`
+- Quote or cite what you read; never present a page's claims as your own knowledge.
+
+## Memory
+- \`${REMEMBER_TOOL}\` stores one short preference so it survives into later conversations. ${MEMORY_TOOL_GUIDANCE}
+- \`${FORGET_TOOL}\` removes one, by its exact recorded wording. Use it when the user says a preference no longer holds.
+- Anything already recorded appears under 'What you remember about this user'. Do not re-record what is listed there.`
 
 function browseTools(includeLoadSkill: boolean): AgentToolDef[] {
   const tools: AgentToolDef[] = [
@@ -99,6 +110,30 @@ function browseTools(includeLoadSkill: boolean): AgentToolDef[] {
       },
     },
   ]
+  tools.push(
+    {
+      name: REMEMBER_TOOL,
+      description: `Remember one durable preference about how this user wants you to work. ${MEMORY_TOOL_GUIDANCE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'One sentence, in the third person' },
+        },
+        required: ['text'],
+      },
+    },
+    {
+      name: FORGET_TOOL,
+      description: 'Forget a preference you recorded earlier, matched on its exact wording.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The recorded wording, copied exactly' },
+        },
+        required: ['text'],
+      },
+    },
+  )
   if (includeLoadSkill) {
     tools.push({
       name: LOAD_SKILL_TOOL,
@@ -169,6 +204,28 @@ export function createWebSkill(options: WebSkillOptions): AgentSkill {
           output: (body || '(no content)') + failed,
           mutated: false,
           summary: `Extracted ${pages.length} page(s)`,
+        }
+      }
+
+      if (call.name === REMEMBER_TOOL || call.name === FORGET_TOOL) {
+        const text = String(call.input.text ?? '').trim()
+        if (!text) {
+          return { output: 'text must not be empty', isError: true, summary: call.name }
+        }
+        const remembering = call.name === REMEMBER_TOOL
+        const ok = remembering ? await bridge.remember(text) : await bridge.forget(text)
+        // not an error: the model asked for something reasonable and the store
+        // declined (too long, or nothing matched). Say so and let it move on.
+        return {
+          output: ok
+            ? remembering
+              ? 'Remembered.'
+              : 'Forgotten.'
+            : remembering
+              ? 'Not stored — the text was empty or unusable.'
+              : 'Nothing recorded matches that wording exactly.',
+          mutated: false,
+          summary: remembering ? `Remembered: ${text}` : `Forgot: ${text}`,
         }
       }
 

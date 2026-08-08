@@ -76,8 +76,10 @@ import {
   removeRecentFiles,
   replaceRecentFile,
   bootstrapNetworkSettings,
+  deleteAgentMemory,
   deleteAgentSkill,
   importAgentSkills,
+  listAgentMemories,
   listAgentSkills,
   readAgentRules,
   readModelSettings,
@@ -1775,6 +1777,7 @@ function registerHomeIpc(): void {
           ai: readModelSettings(),
           rules: readAgentRules(),
           skills: listAgentSkills(),
+          memories: listAgentMemories(),
           language: currentLang(),
           updateChannel: currentUpdateChannel(),
           appVersion: app.getVersion(),
@@ -1787,6 +1790,7 @@ function registerHomeIpc(): void {
       saveRules: (rules) => writeAgentRules(rules),
       saveSkill: (skill) => saveAgentSkill(skill),
       deleteSkill: (id) => deleteAgentSkill(id),
+      deleteMemory: (id) => void deleteAgentMemory(id),
       importSkillContents: (files) => importAgentSkills(files),
       setLanguage: (lang) => {
         if (!isLang(lang) || lang === currentLang()) return

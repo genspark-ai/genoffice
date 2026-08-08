@@ -12,7 +12,7 @@ import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promis
 import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import { buildInstructionsPrompt, skillBodyForTool } from '@genoffice/agent-core'
-import type { AgentRules, AppSurface, UserSkill } from '@genoffice/agent-core'
+import type { AgentRules, AppSurface, UserMemory, UserSkill } from '@genoffice/agent-core'
 import {
   AgentInstructionsStore,
   appMenuLabels,
@@ -2557,6 +2557,15 @@ export function saveAgentSkill(
   })
 }
 
+/** Memories the agent recorded, for the settings window to show and prune. */
+export function listAgentMemories(): UserMemory[] {
+  return instructions().readMemories()
+}
+
+export function deleteAgentMemory(id: string): boolean {
+  return instructions().deleteMemory(String(id ?? ''))
+}
+
 export function deleteAgentSkill(id: string): void {
   instructions().deleteSkill(String(id ?? ''))
 }
@@ -2757,8 +2766,33 @@ export function registerAiIpc(): void {
    * message without reopening the document.
    */
   ipcMain.handle('ai:instructions-prompt', (_event, surface: AppSurface): string =>
-    buildInstructionsPrompt(instructions().readRules(), instructions().listSkills(), surface),
+    buildInstructionsPrompt(
+      instructions().readRules(),
+      instructions().listSkills(),
+      surface,
+      instructions().readMemories(),
+    ),
   )
+
+  /** backs the remember tool; false when the text was not worth storing */
+  ipcMain.handle(
+    'ai:remember',
+    (_event, text: unknown): boolean => instructions().addMemory(text) !== null,
+  )
+
+  /**
+   * Backs the forget tool. The model only knows a memory by the wording it can
+   * see in the prompt, so match on that rather than exposing ids to it.
+   */
+  ipcMain.handle('ai:forget', (_event, text: unknown): boolean => {
+    const wanted = String(text ?? '')
+      .trim()
+      .toLowerCase()
+    const hit = instructions()
+      .readMemories()
+      .find((m) => m.text.toLowerCase() === wanted)
+    return hit ? instructions().deleteMemory(hit.id) : false
+  })
 
   /** backs the load_skill tool: the body, only if that skill is in scope here */
   ipcMain.handle('ai:skill-body', (_event, surface: AppSurface, id: string): string =>

@@ -42,6 +42,8 @@ const api: PdfApi = {
   aiExtractPages: (urls, advanced) => ipcRenderer.invoke(AI_CHANNELS.extractPages, urls, advanced),
   aiInstructionsPrompt: (surface) => ipcRenderer.invoke(AI_CHANNELS.instructionsPrompt, surface),
   aiSkillBody: (surface, id) => ipcRenderer.invoke(AI_CHANNELS.skillBody, surface, id),
+  aiRemember: (text: string) => ipcRenderer.invoke('ai:remember', text),
+  aiForget: (text: string) => ipcRenderer.invoke('ai:forget', text),
   onAiStream: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, chunk: AiStreamChunk) => handler(chunk)
     ipcRenderer.on(AI_CHANNELS.streamChunk, listener)

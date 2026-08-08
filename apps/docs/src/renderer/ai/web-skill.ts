@@ -53,6 +53,8 @@ export function createAppWebSkill(): { skill: AgentSkill; refresh: () => Promise
       browsePage: (url, opts) => window.desktop.aiBrowsePage(url, opts),
       extractPages: (urls, advanced) => window.desktop.aiExtractPages(urls, advanced),
       loadSkill: (id) => window.desktop.aiSkillBody('docx', id),
+      remember: (text) => window.desktop.aiRemember(text),
+      forget: (text) => window.desktop.aiForget(text),
     },
   })
 

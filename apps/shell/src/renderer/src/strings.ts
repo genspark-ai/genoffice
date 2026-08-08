@@ -181,6 +181,10 @@ export const strings = {
     setProxyHint:
       '支持 http://、https://、socks5:// 或 host:port。对模型调用、搜索、登录和内置浏览器都生效。留空则使用系统代理。',
     setRulesHint: '常驻指令。全局规则对所有应用生效；单个应用的规则会叠加在其之上。',
+    setMemoryTitle: 'AI 记住的偏好',
+    setMemoryHint: 'AI 在对话中记录的你的使用偏好，每次回答都会参考。删掉不该记的条目。',
+    setMemoryEmpty: 'AI 还没有记录任何偏好。',
+    setMemoryForget: '删除',
     setRulesGlobalPh: '例如：始终使用简体中文回答；不要编造数据。',
     setRulesScopedPh: '仅在该应用中生效的规则',
     setSkillsHint: '分步操作手册。只有标题和描述会进入提示词，Agent 在任务匹配时才加载全文。',
@@ -399,6 +403,11 @@ export const strings = {
       'http://, https://, socks5:// or host:port. Applies to model calls, search, sign-in and the built-in browser. Leave empty to use the system proxy.',
     setRulesHint:
       'Always-on instructions. The global block applies everywhere; a per-app block is added on top of it in that app.',
+    setMemoryTitle: 'What the AI remembers',
+    setMemoryHint:
+      'Preferences the AI recorded from your conversations and applies to every reply. Delete anything it should not have kept.',
+    setMemoryEmpty: 'The AI has not recorded any preferences yet.',
+    setMemoryForget: 'Delete',
     setRulesGlobalPh: 'e.g. Always answer in British English. Never invent figures.',
     setRulesScopedPh: 'Rules that only apply in this app',
     setSkillsHint:
@@ -638,6 +647,11 @@ export const strings = {
       'http://、https://、socks5:// または host:port。モデル呼び出し、検索、サインイン、内蔵ブラウザーに適用されます。空欄ならシステムプロキシを使用します。',
     setRulesHint:
       '常時適用の指示。全体ルールはすべてに適用され、アプリ別ルールがその上に追加されます。',
+    setMemoryTitle: 'AI が覚えている設定',
+    setMemoryHint:
+      'AI が会話から記録し、毎回の回答に反映するあなたの好みです。不要な項目は削除してください。',
+    setMemoryEmpty: 'まだ記録された好みはありません。',
+    setMemoryForget: '削除',
     setRulesGlobalPh: '例：常に日本語で回答する。数値を捏造しない。',
     setRulesScopedPh: 'このアプリだけに適用されるルール',
     setSkillsHint:
@@ -870,6 +884,11 @@ export const strings = {
       'http://, https://, socks5:// 또는 host:port. 모델 호출, 검색, 로그인, 내장 브라우저에 적용됩니다. 비워 두면 시스템 프록시를 사용합니다.',
     setRulesHint:
       '항상 적용되는 지침입니다. 전역 규칙은 모든 곳에, 앱별 규칙은 그 위에 더해집니다.',
+    setMemoryTitle: 'AI가 기억하는 선호',
+    setMemoryHint:
+      'AI가 대화에서 기록해 매 답변에 반영하는 선호입니다. 남기면 안 되는 항목은 삭제하세요.',
+    setMemoryEmpty: '아직 기록된 선호가 없습니다.',
+    setMemoryForget: '삭제',
     setRulesGlobalPh: '예: 항상 한국어로 답변한다. 수치를 지어내지 않는다.',
     setRulesScopedPh: '이 앱에서만 적용되는 규칙',
     setSkillsHint:
@@ -1110,6 +1129,11 @@ export const strings = {
       "http://, https://, socks5:// ou host:port. S'applique aux appels au modèle, à la recherche, à la connexion et au navigateur intégré. Laissez vide pour le proxy système.",
     setRulesHint:
       "Instructions permanentes. Le bloc global s'applique partout ; celui d'une appli s'y ajoute.",
+    setMemoryTitle: 'Ce dont l’IA se souvient',
+    setMemoryHint:
+      'Préférences que l’IA a retenues de vos conversations et applique à chaque réponse. Supprimez ce qu’elle n’aurait pas dû garder.',
+    setMemoryEmpty: 'L’IA n’a encore rien retenu.',
+    setMemoryForget: 'Supprimer',
     setRulesGlobalPh: 'ex. : Répondre toujours en français. Ne jamais inventer de chiffres.',
     setRulesScopedPh: 'Règles propres à cette appli',
     setSkillsHint:
@@ -1352,6 +1376,11 @@ export const strings = {
       'http://, https://, socks5:// oder host:port. Gilt für Modellaufrufe, Suche, Anmeldung und den integrierten Browser. Leer lassen für den Systemproxy.',
     setRulesHint:
       'Dauerhafte Anweisungen. Der globale Block gilt überall, ein App-Block kommt dort obendrauf.',
+    setMemoryTitle: 'Was die KI sich merkt',
+    setMemoryHint:
+      'Vorlieben, die die KI aus Ihren Gesprächen notiert und bei jeder Antwort berücksichtigt. Löschen Sie, was sie nicht behalten sollte.',
+    setMemoryEmpty: 'Die KI hat noch nichts notiert.',
+    setMemoryForget: 'Löschen',
     setRulesGlobalPh: 'z. B.: Immer auf Deutsch antworten. Keine Zahlen erfinden.',
     setRulesScopedPh: 'Regeln nur für diese App',
     setSkillsHint:
@@ -1593,6 +1622,11 @@ export const strings = {
       'http://, https://, socks5:// o host:port. Se aplica a las llamadas al modelo, la búsqueda, el inicio de sesión y el navegador integrado. Déjalo vacío para el proxy del sistema.',
     setRulesHint:
       'Instrucciones permanentes. El bloque global se aplica en todas partes; el de cada app se suma encima.',
+    setMemoryTitle: 'Lo que la IA recuerda',
+    setMemoryHint:
+      'Preferencias que la IA anotó de tus conversaciones y aplica en cada respuesta. Elimina lo que no debería haber guardado.',
+    setMemoryEmpty: 'La IA aún no ha anotado ninguna preferencia.',
+    setMemoryForget: 'Eliminar',
     setRulesGlobalPh: 'p. ej.: Responder siempre en español. No inventar cifras.',
     setRulesScopedPh: 'Reglas solo para esta app',
     setSkillsHint:
@@ -1825,6 +1859,10 @@ export const strings = {
     setProxyHint:
       'http://, https://, socks5:// หรือ host:port ใช้กับการเรียกโมเดล การค้นหา การลงชื่อเข้าใช้ และเบราว์เซอร์ในตัว เว้นว่างเพื่อใช้พร็อกซีของระบบ',
     setRulesHint: 'คำสั่งที่ใช้ตลอด กฎรวมใช้ได้ทุกที่ ส่วนกฎของแต่ละแอปจะเพิ่มทับลงไป',
+    setMemoryTitle: 'สิ่งที่ AI จดจำ',
+    setMemoryHint: 'ความชอบที่ AI บันทึกจากบทสนทนาและใช้กับทุกคำตอบ ลบรายการที่ไม่ควรถูกบันทึกไว้',
+    setMemoryEmpty: 'AI ยังไม่ได้บันทึกความชอบใด ๆ',
+    setMemoryForget: 'ลบ',
     setRulesGlobalPh: 'เช่น ตอบเป็นภาษาไทยเสมอ อย่าแต่งตัวเลขขึ้นเอง',
     setRulesScopedPh: 'กฎที่ใช้เฉพาะในแอปนี้',
     setSkillsHint:
@@ -2059,6 +2097,11 @@ export const strings = {
       'http://, https://, socks5:// atau host:port. Berlaku untuk panggilan model, pencarian, login, dan peramban bawaan. Kosongkan untuk proksi sistem.',
     setRulesHint:
       'Instruksi yang selalu aktif. Blok global berlaku di mana saja; blok per aplikasi ditambahkan di atasnya.',
+    setMemoryTitle: 'Yang diingat AI',
+    setMemoryHint:
+      'Preferensi yang AI catat dari percakapan Anda dan diterapkan pada setiap jawaban. Hapus apa pun yang tidak seharusnya disimpan.',
+    setMemoryEmpty: 'AI belum mencatat preferensi apa pun.',
+    setMemoryForget: 'Hapus',
     setRulesGlobalPh: 'mis. Selalu jawab dalam bahasa Indonesia. Jangan mengarang angka.',
     setRulesScopedPh: 'Aturan khusus aplikasi ini',
     setSkillsHint:
@@ -2295,6 +2338,11 @@ export const strings = {
       'http://, https://, socks5:// или host:port. Действует на вызовы модели, поиск, вход и встроенный браузер. Пусто — системный прокси.',
     setRulesHint:
       'Постоянные инструкции. Общий блок действует везде, блок приложения добавляется поверх.',
+    setMemoryTitle: 'Что запомнил ИИ',
+    setMemoryHint:
+      'Предпочтения, которые ИИ записал из ваших разговоров и учитывает в каждом ответе. Удалите то, что не следовало сохранять.',
+    setMemoryEmpty: 'ИИ пока ничего не записал.',
+    setMemoryForget: 'Удалить',
     setRulesGlobalPh: 'напр.: Всегда отвечать по-русски. Не выдумывать цифры.',
     setRulesScopedPh: 'Правила только для этого приложения',
     setSkillsHint:
@@ -2527,6 +2575,11 @@ export const strings = {
     setProxyHint:
       'http:// أو https:// أو socks5:// أو host:port. ينطبق على استدعاءات النموذج والبحث وتسجيل الدخول والمتصفح المدمج. اتركه فارغًا لاستخدام وكيل النظام.',
     setRulesHint: 'تعليمات دائمة. الكتلة العامة تنطبق في كل مكان، وتُضاف فوقها كتلة كل تطبيق.',
+    setMemoryTitle: 'ما يتذكره الذكاء الاصطناعي',
+    setMemoryHint:
+      'تفضيلات سجّلها الذكاء الاصطناعي من محادثاتك ويطبّقها في كل رد. احذف ما لا ينبغي الاحتفاظ به.',
+    setMemoryEmpty: 'لم يسجّل الذكاء الاصطناعي أي تفضيلات بعد.',
+    setMemoryForget: 'حذف',
     setRulesGlobalPh: 'مثال: أجب دائمًا بالعربية. لا تختلق أرقامًا.',
     setRulesScopedPh: 'قواعد خاصة بهذا التطبيق فقط',
     setSkillsHint:
@@ -2756,6 +2809,11 @@ export const strings = {
       'http://, https://, socks5:// ou host:port. Aplica-se às chamadas ao modelo, pesquisa, início de sessão e navegador integrado. Deixe vazio para o proxy do sistema.',
     setRulesHint:
       'Instruções permanentes. O bloco global aplica-se em todo o lado; o de cada app acresce a esse.',
+    setMemoryTitle: 'O que a IA lembra',
+    setMemoryHint:
+      'Preferências que a IA anotou das suas conversas e aplica em cada resposta. Apague o que ela não devia ter guardado.',
+    setMemoryEmpty: 'A IA ainda não anotou nenhuma preferência.',
+    setMemoryForget: 'Apagar',
     setRulesGlobalPh: 'ex.: Responder sempre em português. Nunca inventar números.',
     setRulesScopedPh: 'Regras apenas para esta app',
     setSkillsHint:
@@ -2984,6 +3042,11 @@ export const strings = {
       'http://, https://, socks5:// oppure host:port. Vale per chiamate al modello, ricerca, accesso e browser integrato. Lascia vuoto per il proxy di sistema.',
     setRulesHint:
       'Istruzioni sempre attive. Il blocco globale vale ovunque; quello di un’app si aggiunge sopra.',
+    setMemoryTitle: 'Cosa ricorda l’IA',
+    setMemoryHint:
+      'Preferenze che l’IA ha annotato dalle tue conversazioni e applica a ogni risposta. Elimina ciò che non avrebbe dovuto conservare.',
+    setMemoryEmpty: 'L’IA non ha ancora annotato nulla.',
+    setMemoryForget: 'Elimina',
     setRulesGlobalPh: 'es.: Rispondere sempre in italiano. Non inventare cifre.',
     setRulesScopedPh: 'Regole valide solo in questa app',
     setSkillsHint:
@@ -3211,6 +3274,11 @@ export const strings = {
       'http://, https://, socks5:// lub host:port. Dotyczy wywołań modelu, wyszukiwania, logowania i wbudowanej przeglądarki. Puste pole oznacza proxy systemowe.',
     setRulesHint:
       'Instrukcje stale aktywne. Blok globalny działa wszędzie; blok aplikacji dokłada się do niego.',
+    setMemoryTitle: 'Co pamięta AI',
+    setMemoryHint:
+      'Preferencje zapisane przez AI z twoich rozmów i stosowane w każdej odpowiedzi. Usuń to, czego nie powinna była zachować.',
+    setMemoryEmpty: 'AI nie zapisała jeszcze żadnych preferencji.',
+    setMemoryForget: 'Usuń',
     setRulesGlobalPh: 'np. Zawsze odpowiadaj po polsku. Nie zmyślaj liczb.',
     setRulesScopedPh: 'Reguły tylko dla tej aplikacji',
     setSkillsHint:
@@ -3438,6 +3506,11 @@ export const strings = {
       'http://, https://, socks5:// of host:port. Geldt voor modelaanroepen, zoeken, inloggen en de ingebouwde browser. Laat leeg voor de systeemproxy.',
     setRulesHint:
       'Altijd actieve instructies. Het globale blok geldt overal; een app-blok komt daar bovenop.',
+    setMemoryTitle: 'Wat de AI onthoudt',
+    setMemoryHint:
+      'Voorkeuren die de AI uit je gesprekken noteerde en bij elk antwoord toepast. Verwijder wat niet bewaard had mogen worden.',
+    setMemoryEmpty: 'De AI heeft nog niets genoteerd.',
+    setMemoryForget: 'Verwijderen',
     setRulesGlobalPh: 'bijv. Antwoord altijd in het Nederlands. Verzin geen cijfers.',
     setRulesScopedPh: 'Regels alleen voor deze app',
     setSkillsHint:
@@ -3663,6 +3736,11 @@ export const strings = {
       'http://, https://, socks5:// atau host:port. Terpakai untuk panggilan model, carian, log masuk dan pelayar terbina dalam. Biarkan kosong untuk proksi sistem.',
     setRulesHint:
       'Arahan sentiasa aktif. Blok global terpakai di mana-mana; blok aplikasi ditambah di atasnya.',
+    setMemoryTitle: 'Apa yang AI ingat',
+    setMemoryHint:
+      'Keutamaan yang AI catat daripada perbualan anda dan digunakan pada setiap jawapan. Padam apa-apa yang tidak sepatutnya disimpan.',
+    setMemoryEmpty: 'AI belum mencatat sebarang keutamaan.',
+    setMemoryForget: 'Padam',
     setRulesGlobalPh: 'cth. Sentiasa jawab dalam Bahasa Melayu. Jangan reka angka.',
     setRulesScopedPh: 'Peraturan khusus aplikasi ini',
     setSkillsHint:
@@ -3882,6 +3960,10 @@ export const strings = {
     setProxyHint:
       'http://‏, https://‏, socks5://‏ או host:port. חל על קריאות למודל, חיפוש, התחברות והדפדפן המובנה. השאירו ריק כדי להשתמש בפרוקסי המערכת.',
     setRulesHint: 'הוראות קבועות. הבלוק הגלובלי חל בכל מקום; בלוק של אפליקציה מתווסף מעליו.',
+    setMemoryTitle: 'מה ה‑AI זוכר',
+    setMemoryHint: 'העדפות שה‑AI רשם משיחותיך ומיישם בכל תשובה. מחק כל דבר שלא היה אמור להישמר.',
+    setMemoryEmpty: 'ה‑AI עדיין לא רשם העדפות.',
+    setMemoryForget: 'מחיקה',
     setRulesGlobalPh: 'למשל: ענה תמיד בעברית. אל תמציא מספרים.',
     setRulesScopedPh: 'כללים לאפליקציה זו בלבד',
     setSkillsHint:
@@ -4106,6 +4188,11 @@ export const strings = {
       'http://, https://, socks5:// या host:port। मॉडल कॉल, खोज, साइन-इन और अंतर्निहित ब्राउज़र पर लागू। खाली छोड़ें तो सिस्टम प्रॉक्सी।',
     setRulesHint:
       'हमेशा लागू निर्देश। वैश्विक ब्लॉक हर जगह लागू; ऐप-विशिष्ट ब्लॉक उसके ऊपर जुड़ता है।',
+    setMemoryTitle: 'AI को क्या याद है',
+    setMemoryHint:
+      'AI ने आपकी बातचीत से दर्ज की गई प्राथमिकताएँ, जो हर उत्तर में लागू होती हैं। जो नहीं रहना चाहिए उसे हटाएँ।',
+    setMemoryEmpty: 'AI ने अभी कोई प्राथमिकता दर्ज नहीं की।',
+    setMemoryForget: 'हटाएँ',
     setRulesGlobalPh: 'जैसे: हमेशा हिन्दी में उत्तर दें। आँकड़े न गढ़ें।',
     setRulesScopedPh: 'केवल इस ऐप के नियम',
     setSkillsHint:
@@ -4322,6 +4409,10 @@ export const strings = {
     setProxyHint:
       '支援 http://、https://、socks5:// 或 host:port。對模型呼叫、搜尋、登入與內建瀏覽器皆生效。留空則使用系統代理。',
     setRulesHint: '常駐指令。全域規則對所有應用程式生效；個別應用程式的規則會疊加其上。',
+    setMemoryTitle: 'AI 記住的偏好',
+    setMemoryHint: 'AI 在對話中記錄的你的使用偏好，每次回覆都會參考。刪掉不該記的項目。',
+    setMemoryEmpty: 'AI 還沒有記錄任何偏好。',
+    setMemoryForget: '刪除',
     setRulesGlobalPh: '例如：一律使用繁體中文回答；不要編造數據。',
     setRulesScopedPh: '僅在此應用程式生效的規則',
     setSkillsHint: '逐步操作手冊。只有標題與描述會進入提示詞，Agent 在任務相符時才載入全文。',
