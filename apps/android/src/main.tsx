@@ -10,6 +10,7 @@ import { SheetsEditorScreen } from './sheets-editor'
 import { SlidesEditorScreen } from './slides-editor'
 import { PdfEditorScreen } from './pdf-editor'
 import './styles.css'
+import './android-editors.css'
 
 type Screen = 'home' | 'docs' | 'sheets' | 'slides' | 'pdf' | 'ai'
 const SETTINGS_KEY = 'genoffice.android.ai.settings'
