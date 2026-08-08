@@ -38,10 +38,22 @@ describe('parseFileToText: pptx', () => {
     expect(result.text).toContain('Order 0042')
   })
 
+  it('keeps a:br as a line break and a:fld in document order', async () => {
+    const path = writeFixture('deck.pptx', await buildPptxFixture())
+    const result = await parseFileToText(path)
+    // two breaks, so the run text is not concatenated and the field lands between its runs;
+    // the slide also carries a comment naming those tags, which must not reach the walker
+    expect(result.text).toContain('## Slide 3\nBefore\n\nAfter\nPage 3 of 10')
+  })
+
   it('takes text from a:t only, not from whitespace inside sibling elements', async () => {
     const path = writeFixture('deck.pptx', await buildPptxFixture())
     const result = await parseFileToText(path)
-    expect(result.text!.split('\n\n')).toContain('## Slide 3\nBeforeAfter')
+    // the a:br elements are written across lines; that layout whitespace is a value too
+    expect(result.text).toContain('Before')
+    expect(result.text).not.toMatch(/Before\n[^\S\n]/)
+    // and the comment the slide carries is markup, not text
+    expect(result.text).not.toContain('authoring note')
   })
 })
 

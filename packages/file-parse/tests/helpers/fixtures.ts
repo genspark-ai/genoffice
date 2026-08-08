@@ -98,8 +98,16 @@ export async function buildPptxFixture(): Promise<Uint8Array> {
     'ppt/slides/slide3.xml',
     `${XML_DECL}<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ` +
       'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
-      '<p:cSld><p:spTree><p:sp><p:txBody><a:p>' +
+      '<p:cSld><p:spTree><p:sp><p:txBody>' +
+      // a comment naming the very tags the walker looks for: rewriting markup as text
+      // instead of parsing it consumes the terminator and the whole slide fails to parse
+      '<!-- authoring note: <a:br/> and <a:fld> -->' +
+      '<a:p>' +
       '<a:r><a:t>Before</a:t></a:r><a:br>\n  </a:br><a:br>\n  </a:br><a:r><a:t>After</a:t></a:r>' +
+      '</a:p>\n  <a:p>\n    ' +
+      '<a:r><a:t xml:space="preserve">Page </a:t></a:r>\n    ' +
+      '<a:fld id="{G}" type="slidenum"><a:t>3</a:t></a:fld>\n    ' +
+      '<a:r><a:t xml:space="preserve"> of 10</a:t></a:r>\n  ' +
       '</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>',
   )
   zip.file('ppt/slides/slide10.xml', slideXml([['Summary Slide']]))
