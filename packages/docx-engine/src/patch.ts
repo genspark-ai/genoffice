@@ -5,6 +5,7 @@ import {
   NOTE_PART_PATH,
   NOTE_REL_TYPE,
   buildNotesXml,
+  rootAttributes,
   type NoteKind,
 } from './notes'
 import {
@@ -1353,6 +1354,10 @@ function headerFooterPartXml(
  * their original bytes (rich formatting/multiple paragraphs/inline hyperlinks are
  * preserved); only new or edited comments fall back to a plain-text rebuild.
  */
+const COMMENTS_NS =
+  'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+  'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"'
+
 function buildCommentsXml(comments: CommentInfo[], originalXml: string | null): string {
   const originals = new Map<string, { text: string; xml: string }>()
   if (originalXml) {
@@ -1387,12 +1392,8 @@ function buildCommentsXml(comments: CommentInfo[], originalXml: string | null): 
       return `<w:comment ${attrs}>${paras}</w:comment>`
     })
     .join('')
-  return (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-    '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
-    ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">' +
-    `${body}</w:comments>`
-  )
+  const ns = rootAttributes(originalXml, 'w:comments', COMMENTS_NS)
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:comments ${ns}>${body}</w:comments>`
 }
 
 /** word/commentsExtended.xml: one commentEx per comment (reply parent-child + resolved flag) */

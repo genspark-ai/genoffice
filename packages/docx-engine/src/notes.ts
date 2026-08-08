@@ -34,6 +34,22 @@ const NOTE_NS =
   'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 
+/**
+ * Root attributes for a regenerated part. Entries are spliced back in as original bytes, so
+ * the root has to keep declaring whatever prefixes those bytes use: Word puts w14:paraId on
+ * every paragraph it writes, and a literal namespace list leaves that prefix unbound.
+ */
+export function rootAttributes(
+  originalXml: string | null,
+  rootTag: string,
+  fallback: string,
+): string {
+  const attrs = originalXml
+    ? new RegExp(`<${rootTag}\\b([^>]*?)/?>`).exec(originalXml)?.[1]?.trim()
+    : undefined
+  return attrs && attrs.includes('xmlns:') ? attrs : fallback
+}
+
 /** real notes (separator entries excluded), in file order */
 export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
   return noteEntriesOf(xml, kind).map(({ id, text, xml: entryXml }) => {
@@ -185,7 +201,7 @@ export function buildNotesXml(
     .join('')
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-    `<${ROOT[kind]} ${NOTE_NS}>${structural}${body}</${ROOT[kind]}>`
+    `<${ROOT[kind]} ${rootAttributes(originalXml, ROOT[kind], NOTE_NS)}>${structural}${body}</${ROOT[kind]}>`
   )
 }
 
