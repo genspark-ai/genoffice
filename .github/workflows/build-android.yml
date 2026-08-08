@@ -7,6 +7,7 @@ on:
     paths:
       - 'apps/android/**'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/build-android.yml'
 
 permissions:
@@ -35,9 +36,19 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          accept-android-sdk-licenses: true
 
-      - name: Install Android SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
+          command -v sdkmanager
+          sdkmanager --version
+          sdkmanager --list_installed | head -n 80
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -55,7 +66,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: apps/android/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
