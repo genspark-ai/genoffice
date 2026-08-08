@@ -1,13 +1,27 @@
-html,body,#root{width:100%;height:100%;overflow:hidden}
-.android-sheets-host,.android-slides-host,.android-pdf-host{width:100%;height:100%;overflow:hidden;background:#fff}
-.android-sheets-host>*{height:100%}
-.android-slides-host>*{height:100%}
+html,body,#root{width:100%;height:100%;margin:0;overflow:hidden}
+*,*::before,*::after{box-sizing:border-box}
+.android-sheets-host,.android-slides-host,.android-pdf-host{width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;background:#fff}
+.android-sheets-host>*{height:100%;min-width:0}
+.android-slides-host>*{height:100%;min-width:0}
 .android-pdf-host{display:flex;flex-direction:column}
-.android-pdf-toolbar{height:48px;flex:0 0 48px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#fff;border-bottom:1px solid #ddd;z-index:100}
-.android-pdf-toolbar button{border:0;border-radius:8px;padding:8px 14px;background:#2563eb;color:#fff;font-weight:600}
-.android-pdf-toolbar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:13px}
-.android-pdf-view{min-height:0;flex:1;overflow:hidden}
-.android-pdf-view>#root,.android-pdf-view>div{height:100%}
+.android-pdf-toolbar{height:48px;flex:0 0 48px;display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff;border-bottom:1px solid #ddd;z-index:100;min-width:0}
+.android-pdf-toolbar button{border:0;border-radius:8px;padding:8px 12px;background:#2563eb;color:#fff;font-weight:600;min-height:36px;white-space:nowrap;touch-action:manipulation}
+.android-pdf-toolbar span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:13px}
+.android-pdf-view{min-width:0;min-height:0;flex:1;overflow:hidden}
+.android-pdf-view>#root,.android-pdf-view>div{width:100%;height:100%;min-width:0;min-height:0}
 .genoffice-android-sheets button,.genoffice-android-sheets input,.genoffice-android-sheets textarea,.genoffice-android-slides button,.genoffice-android-slides input,.genoffice-android-slides textarea{touch-action:manipulation}
-.genoffice-android-slides .ribbon-tabs{padding-left:10px}
-@media(max-width:800px){.genoffice-android-slides .ribbon-body{overflow-x:auto}.genoffice-android-sheets .univer-sheet-container{min-width:0}}
+.genoffice-android-slides .ribbon-tabs{padding-left:8px;max-width:100vw;overflow-x:auto;white-space:nowrap}
+.genoffice-android-slides .ribbon-body{max-width:100vw;overflow-x:auto;overflow-y:hidden}
+@media(max-width:800px){
+  .genoffice-android-slides .ribbon-tabs{font-size:12px;-webkit-overflow-scrolling:touch}
+  .genoffice-android-slides .ribbon-body{font-size:12px;-webkit-overflow-scrolling:touch}
+  .genoffice-android-slides .ribbon button{min-width:38px;min-height:38px}
+  .genoffice-android-sheets .univer-sheet-container{width:100%;min-width:0;max-width:100vw}
+  .genoffice-android-sheets .univer-toolbar{max-width:100vw;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .android-pdf-toolbar{height:50px;flex-basis:50px;padding:6px 8px;gap:6px}
+  .android-pdf-toolbar button{padding:7px 10px;font-size:13px}
+}
+@media(max-width:420px){
+  .android-pdf-toolbar button{padding:7px 8px;font-size:12px}
+  .android-pdf-toolbar span{font-size:12px}
+}
