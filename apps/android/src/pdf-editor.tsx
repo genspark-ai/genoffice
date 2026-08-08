@@ -9,6 +9,72 @@ import '../../pdf/src/renderer/styles.css'
 let installed = false
 let pendingPdf: AndroidPdfSession | null = null
 
+// Install the PDF renderer bridge before PdfApp mounts to avoid a first-render
+// API race that can leave the Android WebView completely white.
+function installPdfBridge(): void {
+  if (installed) return
+  installRendererStub('pdfApi', {
+    consumePending: async () => pendingPdf?.path ?? null,
+    readFile: async (path: string) => {
+      if (pendingPdf?.path === path) return pendingPdf.bytes.buffer.slice(pendingPdf.bytes.byteOffset, pendingPdf.bytes.byteOffset + pendingPdf.bytes.byteLength)
+      throw new Error('Android PDF is no longer available in this session')
+    },
+    save: async (request: any) => saveCurrent(request),
+    extractPages: async (request: any) => {
+      if (!pendingPdf) return { ok: false, error: 'No PDF is open.' }
+      try {
+        const source = await PDFDocument.load(pendingPdf.bytes)
+        const out = await PDFDocument.create()
+        const indices = Array.isArray(request.pages) ? request.pages.filter((p: number) => p >= 0 && p < source.getPageCount()) : []
+        const pages = await out.copyPages(source, indices)
+        pages.forEach((p) => out.addPage(p))
+        const saved = await writePdfToDocuments(request.suggestedName || 'Extracted.pdf', await out.save())
+        return saved.ok ? { ok: true, savedPath: saved.path } : { ok: false, error: saved.error ?? 'Export failed.' }
+      } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    },
+    insertPdf: async (request: any) => {
+      if (!pendingPdf) return { ok: false, error: 'No PDF is open.' }
+      const input = document.createElement('input')
+      input.type = 'file'; input.accept = '.pdf,application/pdf'
+      const file = await new Promise<File | null>((resolve) => { input.onchange = () => resolve(input.files?.[0] ?? null); input.click() })
+      if (!file) return { ok: true, canceled: true }
+      try {
+        const base = await PDFDocument.load(pendingPdf.bytes)
+        const add = await PDFDocument.load(await file.arrayBuffer())
+        const copied = await base.copyPages(add, add.getPageIndices())
+        const at = Math.max(-1, Math.min(request.afterPageIndex ?? -1, base.getPageCount() - 1))
+        copied.forEach((page, i) => base.insertPage(at + 1 + i, page))
+        pendingPdf = { ...pendingPdf, bytes: await base.save() }
+        window.dispatchEvent(new Event('genoffice-android-pdf-open'))
+        return { ok: true, insertedCount: copied.length }
+      } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    },
+    exportImages: async (request: any) => {
+      try {
+        const base = (request.baseName || 'page').replace(/[^a-zA-Z0-9_-]/g, '_')
+        for (let i = 0; i < (request.images ?? []).length; i++) {
+          const name = `${base}-${request.pageNumbers?.[i] ?? i + 1}.png`
+          await Filesystem.writeFile({ path: `GenOffice/Exports/${name}`, directory: Directory.Documents, data: request.images[i], recursive: true })
+        }
+        return { ok: true, savedDir: 'GenOffice/Exports', count: request.images?.length ?? 0 }
+      } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    },
+    setDirty: () => {},
+    onCloseSaveRequest: () => () => {},
+    sendCloseSaveResult: () => {},
+    onSaveAsRequest: (handler: (targetPath: string) => void) => { (globalThis as any).__genofficePdfSaveAs = handler; return () => { delete (globalThis as any).__genofficePdfSaveAs } },
+    sendSaveAsResult: () => {},
+    onSaveAsFlow: () => () => {},
+    getAiSettings: async () => aiDefaults(),
+    aiStream: async () => {},
+    aiStreamCancel: async () => {},
+    onAiStream: () => () => {},
+    getLanguage: async () => 'en',
+    onLanguageChanged: () => () => {},
+  })
+  installed = true
+}
+
 async function choosePdf(): Promise<void> {
   const input = document.createElement('input')
   input.type = 'file'
@@ -33,75 +99,19 @@ async function saveCurrent(request: any, targetPath?: string): Promise<{ ok: boo
   return { ok: true }
 }
 
+installPdfBridge()
+document.body.classList.add('genoffice-android-pdf')
+
 export function PdfEditorScreen(): React.JSX.Element {
   const [generation, setGeneration] = useState(0)
 
   useEffect(() => {
     const onOpen = () => setGeneration((value) => value + 1)
     window.addEventListener('genoffice-android-pdf-open', onOpen)
-    if (!installed) {
-      installRendererStub('pdfApi', {
-        consumePending: async () => pendingPdf?.path ?? null,
-        readFile: async (path: string) => {
-          if (pendingPdf?.path === path) return pendingPdf.bytes.buffer.slice(pendingPdf.bytes.byteOffset, pendingPdf.bytes.byteOffset + pendingPdf.bytes.byteLength)
-          throw new Error('Android PDF is no longer available in this session')
-        },
-        save: async (request: any) => saveCurrent(request),
-        extractPages: async (request: any) => {
-          if (!pendingPdf) return { ok: false, error: 'No PDF is open.' }
-          try {
-            const source = await PDFDocument.load(pendingPdf.bytes)
-            const out = await PDFDocument.create()
-            const indices = Array.isArray(request.pages) ? request.pages.filter((p: number) => p >= 0 && p < source.getPageCount()) : []
-            const pages = await out.copyPages(source, indices)
-            pages.forEach((p) => out.addPage(p))
-            const saved = await writePdfToDocuments(request.suggestedName || 'Extracted.pdf', await out.save())
-            return saved.ok ? { ok: true, savedPath: saved.path } : { ok: false, error: saved.error ?? 'Export failed.' }
-          } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-        },
-        insertPdf: async (request: any) => {
-          if (!pendingPdf) return { ok: false, error: 'No PDF is open.' }
-          const input = document.createElement('input')
-          input.type = 'file'; input.accept = '.pdf,application/pdf'
-          const file = await new Promise<File | null>((resolve) => { input.onchange = () => resolve(input.files?.[0] ?? null); input.click() })
-          if (!file) return { ok: true, canceled: true }
-          try {
-            const base = await PDFDocument.load(pendingPdf.bytes)
-            const add = await PDFDocument.load(await file.arrayBuffer())
-            const copied = await base.copyPages(add, add.getPageIndices())
-            const at = Math.max(-1, Math.min(request.afterPageIndex ?? -1, base.getPageCount() - 1))
-            copied.forEach((page, i) => base.insertPage(at + 1 + i, page))
-            pendingPdf = { ...pendingPdf, bytes: await base.save() }
-            setGeneration((value) => value + 1)
-            return { ok: true, insertedCount: copied.length }
-          } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-        },
-        exportImages: async (request: any) => {
-          try {
-            const base = (request.baseName || 'page').replace(/[^a-zA-Z0-9_-]/g, '_')
-            for (let i = 0; i < (request.images ?? []).length; i++) {
-              const name = `${base}-${request.pageNumbers?.[i] ?? i + 1}.png`
-              await Filesystem.writeFile({ path: `GenOffice/Exports/${name}`, directory: Directory.Documents, data: request.images[i], recursive: true })
-            }
-            return { ok: true, savedDir: 'GenOffice/Exports', count: request.images?.length ?? 0 }
-          } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-        },
-        setDirty: () => {},
-        onCloseSaveRequest: () => () => {},
-        sendCloseSaveResult: () => {},
-        onSaveAsRequest: (handler: (targetPath: string) => void) => { (globalThis as any).__genofficePdfSaveAs = handler; return () => { delete (globalThis as any).__genofficePdfSaveAs } },
-        sendSaveAsResult: () => {},
-        onSaveAsFlow: () => () => {},
-        getAiSettings: async () => aiDefaults(),
-        aiStream: async () => {},
-        aiStreamCancel: async () => {},
-        onAiStream: () => () => {},
-        getLanguage: async () => 'en',
-        onLanguageChanged: () => () => {},
-      })
-      installed = true
+    return () => {
+      window.removeEventListener('genoffice-android-pdf-open', onOpen)
+      document.body.classList.remove('genoffice-android-pdf')
     }
-    return () => window.removeEventListener('genoffice-android-pdf-open', onOpen)
   }, [])
 
   return (
