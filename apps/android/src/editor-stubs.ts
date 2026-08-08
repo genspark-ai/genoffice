@@ -18,3 +18,24 @@ export function installRendererStub(name: string, overrides: Record<string, unkn
 export function aiDefaults() {
   return defaultAiSettings()
 }
+
+// Slides reads its renderer APIs during initial mount. Seed the minimal Android
+// compatibility APIs at module evaluation time so the first render cannot race
+// a useEffect-based installation in the screen component.
+installRendererStub('slidesApi', {
+  getAiSettings: async () => aiDefaults(),
+  setAiSettings: async (settings: unknown) => localStorage.setItem('genoffice.android.ai.settings', JSON.stringify(settings)),
+  aiGskStatus: async () => ({ loggedIn: false }),
+  consumePendingOpen: async () => null,
+  consumeNewPresentation: async () => true,
+  setAutoSavePref: () => {},
+  onMenuAction: () => () => {},
+  onCloseCheck: () => () => {},
+  reportCloseCheck: () => {},
+  onCloseSaveRequest: () => () => {},
+  reportCloseSaveResult: () => {},
+})
+installRendererStub('desktopApi', {
+  getAiSettings: async () => aiDefaults(),
+  aiGskStatus: async () => ({ loggedIn: false }),
+})
