@@ -6,6 +6,7 @@ import { StatusBar, Style } from '@capacitor/status-bar'
 import { Capacitor } from '@capacitor/core'
 import { AI_PROVIDERS, chatForProvider, defaultAiSettings } from '@genoffice/ai-provider'
 import type { AiProviderId, AiSettings } from '@genoffice/ai-provider'
+import { DocsEditorScreen } from './docs-editor'
 import './styles.css'
 
 type Screen = 'home' | 'docs' | 'sheets' | 'slides' | 'pdf' | 'ai'
@@ -43,10 +44,9 @@ function AiPanel() {
 
   const setProvider = (provider: AiProviderId) => {
     const nextMeta = AI_PROVIDERS.find((p) => p.id === provider)!
-    persist({ ...settings, provider })
-    if (!settings.providers[provider]?.model) {
-      persist({ ...settings, provider, providers: { ...settings.providers, [provider]: { apiKey: '', model: nextMeta.defaultModel, baseUrl: '' } } })
-    }
+    const providers = { ...settings.providers }
+    if (!providers[provider]?.model) providers[provider] = { apiKey: '', model: nextMeta.defaultModel, baseUrl: '' }
+    persist({ ...settings, provider, providers })
   }
 
   const updateConfig = (patch: Partial<typeof config>) => {
@@ -72,31 +72,23 @@ function AiPanel() {
   return (
     <div className="ai-panel">
       <h1>AI Assistant</h1>
-      <p className="muted">Use the same provider layer as desktop. No Genspark login is required.</p>
-
+      <p className="muted">Shared GenOffice provider layer, also available inside Docs.</p>
       <label>Provider</label>
       <select value={settings.provider} onChange={(e) => setProvider(e.target.value as AiProviderId)}>
         {AI_PROVIDERS.filter((p) => p.id !== 'genspark').map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
       </select>
-
       <label>Model</label>
       {meta.models.length ? (
         <select value={config.model} onChange={(e) => updateConfig({ model: e.target.value })}>
           {meta.models.map((model) => <option key={model} value={model}>{model}</option>)}
         </select>
-      ) : (
-        <input value={config.model} onChange={(e) => updateConfig({ model: e.target.value })} placeholder="Model name" />
-      )}
-
+      ) : <input value={config.model} onChange={(e) => updateConfig({ model: e.target.value })} placeholder="Model name" />}
       {meta.needsBaseUrl && <><label>Base URL</label><input value={config.baseUrl ?? ''} onChange={(e) => updateConfig({ baseUrl: e.target.value })} placeholder="https://your-provider.example/v1" /></>}
-
       <label>API key</label>
       <input type="password" value={config.apiKey} onChange={(e) => updateConfig({ apiKey: e.target.value })} placeholder={meta.keyPlaceholder} autoComplete="off" />
-
       <label>Request</label>
       <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={5} />
       <button className="primary" disabled={busy} onClick={() => void send()}>{busy ? 'Thinking…' : 'Send to AI'}</button>
-
       {error && <div className="notice warning"><strong>Request failed</strong><span>{error}</span></div>}
       {answer && <div className="answer"><strong>Response</strong><pre>{answer}</pre></div>}
     </div>
@@ -122,47 +114,40 @@ function MobileShell() {
   const open = (screen: Screen) => setActive(screen)
 
   return (
-    <main className="mobile-shell">
-      <header className="topbar">
+    <main className={`mobile-shell ${active === 'docs' ? 'editor-mode' : ''}`}>
+      {active !== 'docs' && <header className="topbar">
         <div><div className="brand">GenOffice</div><div className="subtitle">Android</div></div>
         <button className="settings" aria-label="AI settings" onClick={() => open('ai')}>⚙</button>
-      </header>
+      </header>}
 
-      <section className="content">
+      {active === 'docs' ? <DocsEditorScreen /> : <section className="content">
         {active === 'home' ? (
           <>
             <h1>Office, wherever you are.</h1>
-            <p className="muted">Android foundation is connected to the shared GenOffice TypeScript workspace.</p>
+            <p className="muted">The Android app now runs the real shared Docs editor instead of a placeholder shell.</p>
             <div className="cards">
-              {([
-                ['docs', 'Docs', 'DOCX'], ['sheets', 'Sheets', 'XLSX'], ['slides', 'Slides', 'PPTX'], ['pdf', 'PDF', 'PDF'],
-              ] as const).map(([id, title, ext]) => (
-                <button key={id} className="app-card" onClick={() => open(id)}>
-                  <span className="icon">{ext}</span><span><strong>{title}</strong><small>Android editor adapter</small></span><span className="arrow">›</span>
-                </button>
-              ))}
+              <button className="app-card" onClick={() => open('docs')}><span className="icon">DOCX</span><span><strong>Docs</strong><small>Open, edit and save Word documents</small></span><span className="arrow">›</span></button>
+              {([['sheets', 'Sheets', 'XLSX'], ['slides', 'Slides', 'PPTX'], ['pdf', 'PDF', 'PDF']] as const).map(([id, title, ext]) => <button key={id} className="app-card" onClick={() => open(id)}><span className="icon">{ext}</span><span><strong>{title}</strong><small>Android editor adapter</small></span><span className="arrow">›</span></button>)}
             </div>
             <button className="ai-card" onClick={() => open('ai')}><strong>AI Assistant</strong><span>OpenRouter, NVIDIA Nemotron and other compatible providers</span><b>Open →</b></button>
           </>
-        ) : active === 'ai' ? (
-          <AiPanel />
-        ) : (
+        ) : active === 'ai' ? <AiPanel /> : (
           <>
             <button className="back" onClick={() => open('home')}>‹ Back</button>
             <h1>{active[0].toUpperCase() + active.slice(1)}</h1>
-            <p className="muted">The native Android editor adapter is being connected to this shared engine.</p>
-            <div className="notice warning"><strong>Editor adapter</strong><span>Electron IPC is intentionally not used here. DOCX/XLSX/PPTX/PDF file operations will be implemented through Capacitor-native file APIs and shared engines.</span></div>
+            <p className="muted">The same platform-adapter architecture is reserved for Sheets, Slides and PDF.</p>
+            <div className="notice"><strong>Next editor</strong><span>This screen is intentionally kept separate from Docs so the working Android Docs port remains stable while the other engines are adapted.</span></div>
           </>
         )}
-      </section>
+      </section>}
 
-      <nav className="bottom-nav">
+      {active !== 'docs' && <nav className="bottom-nav">
         <button className={active === 'home' ? 'active' : ''} onClick={() => open('home')}>Home</button>
         <button className={active === 'docs' ? 'active' : ''} onClick={() => open('docs')}>Docs</button>
         <button className={active === 'sheets' ? 'active' : ''} onClick={() => open('sheets')}>Sheets</button>
         <button className={active === 'slides' ? 'active' : ''} onClick={() => open('slides')}>Slides</button>
         <button className={active === 'ai' ? 'active' : ''} onClick={() => open('ai')}>AI</button>
-      </nav>
+      </nav>}
     </main>
   )
 }
