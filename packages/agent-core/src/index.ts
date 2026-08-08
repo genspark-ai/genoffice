@@ -41,6 +41,18 @@ export type {
   WebSkillBridge,
   WebSkillOptions,
 } from './web-skill'
+export {
+  FORGET_TOOL,
+  MAX_MEMORIES,
+  MAX_MEMORY_BUDGET_CHARS,
+  MAX_MEMORY_CHARS,
+  MEMORY_TOOL_GUIDANCE,
+  REMEMBER_TOOL,
+  buildMemoryPrompt,
+  memoriesWithinBudget,
+  normalizeMemoryText,
+} from './memory'
+export type { UserMemory } from './memory'
 export { AgentLoop, COMPLETED_VIA_TOOLS_TEXT, sanitizeAgentPayload } from './loop'
 export type {
   AgentLoopEvents,

@@ -4,6 +4,11 @@
  * Layout under userData:
  *   agent-rules.json     { global?, docx?, pptx?, sheets?, pdf? }
  *   agent-skills/<id>.md  one markdown file per skill, front matter and all
+ *   agent-memory.json    [{ id, text, createdAt }] the agent's own notes
+ *
+ * Memory is JSON rather than one file per entry: entries are one-sentence
+ * facts the agent writes and rewrites, not documents anyone would edit by
+ * hand, so the per-file affordance skills need buys nothing here.
  *
  * Skills are plain files on purpose: the user can drop a `skill.md` in with a
  * file manager, edit one in their own editor, or keep them in a git repo, and
@@ -16,15 +21,19 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  MAX_MEMORIES,
   coerceScope,
+  normalizeMemoryText,
   parseSkillMarkdown,
   serializeSkillMarkdown,
   type AgentRules,
   type InstructionScope,
+  type UserMemory,
   type UserSkill,
 } from '@genoffice/agent-core'
 
 const RULES_FILE = 'agent-rules.json'
+const MEMORY_FILE = 'agent-memory.json'
 const SKILLS_DIR = 'agent-skills'
 /** guards against a pasted novel becoming the system prompt on every turn */
 const MAX_RULE_CHARS = 20_000
@@ -39,6 +48,10 @@ export class AgentInstructionsStore {
 
   private get skillsDir(): string {
     return join(this.baseDir, SKILLS_DIR)
+  }
+
+  private get memoryPath(): string {
+    return join(this.baseDir, MEMORY_FILE)
   }
 
   // ── rules ─────────────────────────────────────────────────────────
@@ -145,6 +158,62 @@ export class AgentInstructionsStore {
     if (existsSync(path)) rmSync(path)
   }
 
+  // ── memory ────────────────────────────────────────────────────────
+
+  /** Recorded preferences, newest first. A corrupt file reads as none. */
+  readMemories(): UserMemory[] {
+    try {
+      if (!existsSync(this.memoryPath)) return []
+      const raw: unknown = JSON.parse(readFileSync(this.memoryPath, 'utf-8'))
+      if (!Array.isArray(raw)) return []
+      return raw
+        .map((entry) => {
+          const e = entry as { id?: unknown; text?: unknown; createdAt?: unknown }
+          const text = normalizeMemoryText(e.text)
+          const id = String(e.id ?? '')
+          if (!text || !id) return null
+          const createdAt = Number(e.createdAt)
+          return { id, text, createdAt: Number.isFinite(createdAt) ? createdAt : 0 }
+        })
+        .filter((m): m is UserMemory => m !== null)
+        .sort((a, b) => b.createdAt - a.createdAt)
+    } catch {
+      // a corrupted file must not take AI features down with it
+      return []
+    }
+  }
+
+  /**
+   * Record one preference. Returns null when there is nothing worth storing.
+   * Restating an existing preference refreshes it instead of adding a copy, so
+   * a chatty agent cannot fill the prompt budget with duplicates.
+   */
+  addMemory(text: unknown): UserMemory | null {
+    const clean = normalizeMemoryText(text)
+    if (!clean) return null
+    const existing = this.readMemories()
+    const duplicate = existing.find((m) => m.text.toLowerCase() === clean.toLowerCase())
+    const entry: UserMemory = duplicate
+      ? { ...duplicate, createdAt: Date.now() }
+      : { id: freshMemoryId(), text: clean, createdAt: Date.now() }
+    this.writeMemories([entry, ...existing.filter((m) => m.id !== entry.id)].slice(0, MAX_MEMORIES))
+    return entry
+  }
+
+  /** Returns false when there was nothing with that id to remove. */
+  deleteMemory(id: string): boolean {
+    const existing = this.readMemories()
+    const next = existing.filter((m) => m.id !== id)
+    if (next.length === existing.length) return false
+    this.writeMemories(next)
+    return true
+  }
+
+  private writeMemories(memories: UserMemory[]): void {
+    mkdirSync(this.baseDir, { recursive: true })
+    writeFileSync(this.memoryPath, JSON.stringify(memories, null, 2))
+  }
+
   /** unused stem, suffixing `-2`, `-3`… when the name is already taken */
   private freshId(base: string): string {
     const stem = base || 'skill'
@@ -155,6 +224,10 @@ export class AgentInstructionsStore {
     }
     return `${stem}-${Date.now()}`
   }
+}
+
+function freshMemoryId(): string {
+  return `m${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
 }
 
 /** filename-safe, lowercase, no traversal */
