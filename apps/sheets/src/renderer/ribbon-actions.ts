@@ -375,6 +375,8 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       )
       return
     case 'clear-contents':
+      // Omit ranges so Univer reads SheetsSelectionsService, the canonical
+      // source for both the visible primary and Ctrl-disjoint selections.
       void runtime.univerAPI.executeCommand('sheet.command.clear-selection-content')
       return
     case 'clear-formats':

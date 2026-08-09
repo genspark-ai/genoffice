@@ -128,6 +128,23 @@ describe('recordSetRangeValues', () => {
     })
   })
 
+  it('records every cell in a multi-range content-clear mutation without resetting styles', () => {
+    const journal = createEditJournal()
+    const recorded = recordSetRangeValues(journal, 'sheet-1', {
+      0: { 0: { v: null }, 1: { v: null } },
+      2: { 3: { v: null } },
+      3: { 3: { v: null } },
+    })
+
+    expect(recorded).toHaveLength(4)
+    expect([...journal.cells.get('sheet-1')!.values()]).toEqual([
+      { row: 0, column: 0, hasValue: true, value: null },
+      { row: 0, column: 1, hasValue: true, value: null },
+      { row: 2, column: 3, hasValue: true, value: null },
+      { row: 3, column: 3, hasValue: true, value: null },
+    ])
+  })
+
   it('records Clear Formats (s: null) as a style reset that drops earlier deltas', () => {
     const journal = createEditJournal()
     recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { s: { bl: 1 } } } })

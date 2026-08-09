@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { HorizontalAlign } from '@univerjs/core'
 
@@ -130,5 +130,90 @@ describe('handleRibbonCommand number format', () => {
     const { ctx, model } = makeDispatchHarness()
     handleRibbonCommand(ctx, 'format:h:mm:ss AM/PM')
     expect(model.numberFormat).toBe('h:mm:ss AM/PM')
+  })
+})
+
+describe('handleRibbonCommand clear contents', () => {
+  it("delegates range discovery to Univer's authoritative selection service", () => {
+    const calls: { id: string; params: unknown }[] = []
+    const firstRange = {
+      getRange: () => ({ startRow: 0, endRow: 0, startColumn: 0, endColumn: 1 }),
+    }
+    const secondRange = {
+      getRange: () => ({ startRow: 2, endRow: 4, startColumn: 3, endColumn: 3 }),
+    }
+    const ctx = {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({
+              getActiveSheet: () => ({
+                getSelection: () => ({
+                  getActiveRange: () => firstRange,
+                  getActiveRangeList: () => [firstRange, secondRange],
+                }),
+              }),
+            }),
+            executeCommand: (id: string, params: unknown) => {
+              calls.push({ id, params })
+              return Promise.resolve(true)
+            },
+          },
+        },
+      },
+    } as unknown as RibbonCommandContext
+
+    handleRibbonCommand(ctx, 'clear-contents')
+
+    expect(calls).toEqual([{ id: 'sheet.command.clear-selection-content', params: undefined }])
+  })
+
+  it('does not depend on the facade active-range list shape', () => {
+    const calls: { id: string; params: unknown }[] = []
+    const primary = { getRange: () => ({ startRow: 0, endRow: 0, startColumn: 0, endColumn: 4 }) }
+    const ctx = {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({
+              getActiveSheet: () => ({
+                getSelection: () => ({
+                  getActiveRange: () => primary,
+                  getActiveRangeList: () => [],
+                }),
+              }),
+            }),
+            executeCommand: (id: string, params: unknown) => {
+              calls.push({ id, params })
+              return Promise.resolve(true)
+            },
+          },
+        },
+      },
+    } as unknown as RibbonCommandContext
+
+    handleRibbonCommand(ctx, 'clear-contents')
+
+    expect(calls).toEqual([{ id: 'sheet.command.clear-selection-content', params: undefined }])
+  })
+
+  it('lets Univer reject a clear when no selection exists', () => {
+    const executeCommand = vi.fn<(id: string, params: unknown) => Promise<boolean>>(() =>
+      Promise.resolve(true),
+    )
+    const ctx = {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({ getActiveSheet: () => ({ getSelection: () => null }) }),
+            executeCommand,
+          },
+        },
+      },
+    } as unknown as RibbonCommandContext
+
+    handleRibbonCommand(ctx, 'clear-contents')
+
+    expect(executeCommand).toHaveBeenCalledWith('sheet.command.clear-selection-content')
   })
 })

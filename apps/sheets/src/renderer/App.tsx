@@ -97,6 +97,7 @@ import UniverPresetSheetsTableEnUS from '@univerjs/preset-sheets-table/locales/e
 import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
+import { installGridKeyboardShortcuts } from './grid-keyboard'
 
 import {
   AgentLoop,
@@ -1157,6 +1158,7 @@ export function App(): React.JSX.Element {
     })
     loadSnapshotIntoUniver(runtime, initialSnapshot, 'new-workbook', 'Untitled')
     univerRef.current = runtime
+    const gridKeyboardDisposable = installGridKeyboardShortcuts(runtime)
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
@@ -2044,6 +2046,7 @@ export function App(): React.JSX.Element {
       clickDisposable.dispose()
       if (contentTimer) clearTimeout(contentTimer)
       contentDisposable.dispose()
+      gridKeyboardDisposable.dispose()
       if (visualInstallTimerRef.current) clearTimeout(visualInstallTimerRef.current)
       disposeVisuals(visualDisposablesRef.current)
       visualViewportKeyRef.current = ''
