@@ -47,6 +47,7 @@ import {
   type BlockMeta,
   type PageNoteItem,
   pageAt,
+  singleCutCell,
   sectionColGeom,
   sectionColumns,
   sectionFirstPages,
@@ -120,6 +121,7 @@ import { isDocDirty } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
   hfFromPart,
+  restingHfAreaVariant,
   type DocState,
   type HfVariantKey,
   type HfVariantsState,
@@ -313,7 +315,17 @@ export function App() {
   const [titlePgDirty, setTitlePgDirty] = useState(false)
   const [evenOddHf, setEvenOddHf] = useState(false)
   const [evenOddHfDirty, setEvenOddHfDirty] = useState(false)
-  const [hfView, setHfView] = useState<HfView>('default')
+  const [hfView, setHfViewState] = useState<HfView>('default')
+  /** false until the user picks a variant (chip/toggle); resting areas then follow their page's variant instead */
+  const [hfViewTouched, setHfViewTouched] = useState(false)
+  const setHfView = (v: HfView) => {
+    setHfViewState(v)
+    setHfViewTouched(true)
+  }
+  const [pageInfo, setPageInfo] = useState({ current: 1, total: 1 })
+  // last page's number for the document-end footer: text for the page marker, num for
+  // even/odd parity (section restarts / pageNumberFmt make both differ from the physical count)
+  const [lastPageNo, setLastPageNo] = useState<{ text: string; num: number } | null>(null)
   /** Page-number-format dialog + pending final-section pgNumType write (non-final sections rewrite sectPr via pgNumDirtySections) */
   const [pgNumModal, setPgNumModal] = useState<{ fmt: string; start: string } | null>(null)
   const [pgNumEdit, setPgNumEdit] = useState<{ fmt?: string; start?: number } | null>(null)
@@ -351,18 +363,30 @@ export function App() {
     }
     return sectionHfEdits[`${sec.lastBlockIndex}:${kind}`] ?? fromPart()
   }
+  /** Variant an on-canvas area shows/edits: explicit chip choice wins; at rest the header area is page 1 and the footer area the last page */
+  const areaView = (kind: 'header' | 'footer'): HfView =>
+    hfViewTouched
+      ? effHfView
+      : restingHfAreaVariant(kind, {
+          titlePg,
+          evenOddHf,
+          pageCount: pageInfo.total,
+          ...(lastPageNo ? { lastPageNo: lastPageNo.num } : {}),
+        })
+  const headerAreaView = areaView('header')
+  const footerAreaView = areaView('footer')
   const shownHeader =
-    effHfView === 'first'
+    headerAreaView === 'first'
       ? hfVariants.headerFirst
-      : effHfView === 'even'
+      : headerAreaView === 'even'
         ? hfVariants.headerEven
         : multiHf
           ? sectionHfValue('header')
           : header
   const shownFooter =
-    effHfView === 'first'
+    footerAreaView === 'first'
       ? hfVariants.footerFirst
-      : effHfView === 'even'
+      : footerAreaView === 'even'
         ? hfVariants.footerEven
         : multiHf
           ? sectionHfValue('footer')
@@ -371,10 +395,11 @@ export function App() {
   const hfImagesOf = (kind: 'header' | 'footer') => {
     const parsed = doc?.parsed
     if (!parsed) return undefined
-    if (effHfView === 'first') {
+    const view = kind === 'header' ? headerAreaView : footerAreaView
+    if (view === 'first') {
       return (kind === 'header' ? parsed.headerFirst : parsed.footerFirst)?.images
     }
-    if (effHfView === 'even') {
+    if (view === 'even') {
       return (kind === 'header' ? parsed.headerEven : parsed.footerEven)?.images
     }
     if (multiHf) {
@@ -386,13 +411,14 @@ export function App() {
   }
 
   const commitHf = (kind: 'header' | 'footer', next: HeaderFooter) => {
+    const view = kind === 'header' ? headerAreaView : footerAreaView
     // multi-section and not the final one: use the per-section edit channel (that section becomes its own part; earlier sections are unaffected)
-    if (effHfView === 'default' && multiHf && hfSectionClamped < sections.length - 1) {
+    if (view === 'default' && multiHf && hfSectionClamped < sections.length - 1) {
       const sec = sections[hfSectionClamped]
       setSectionHfEdits((m) => ({ ...m, [`${sec.lastBlockIndex}:${kind}`]: next }))
       return
     }
-    if (effHfView === 'default') {
+    if (view === 'default') {
       if (kind === 'header') {
         setHeader(next)
         setHeaderDirty(true)
@@ -403,7 +429,7 @@ export function App() {
       return
     }
     const key: HfVariantKey =
-      effHfView === 'first'
+      view === 'first'
         ? kind === 'header'
           ? 'headerFirst'
           : 'footerFirst'
@@ -506,10 +532,6 @@ export function App() {
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [showFontDialog, setShowFontDialog] = useState(false)
   const [showParaDialog, setShowParaDialog] = useState(false)
-  const [pageInfo, setPageInfo] = useState({ current: 1, total: 1 })
-  // last page's displayed number for the document-end footer '#' marker
-  // (section restarts / pageNumberFmt make it differ from the physical count)
-  const [lastPageNo, setLastPageNo] = useState<number | string | null>(null)
   const [, forceRender] = useReducer((x: number) => x + 1, 0)
   const dirtyRef = useRef(false)
   // serializes save(): overlapping saves (Cmd+S vs autosave timer vs blur) would
@@ -651,6 +673,11 @@ export function App() {
 
   useEffect(() => window.desktop.onTeardown?.(() => setTornDown(true)), [])
 
+  // keep the native View menu's checkmarks (AI Sidebar / Dark Mode) in sync
+  useEffect(() => {
+    window.desktop.reportViewMenuState?.({ aiSidebar: showAi, darkCanvas })
+  }, [showAi, darkCanvas])
+
   // Crash-recovery copy: while the document is dirty, push a serialized
   // copy to the main process every 30s; a normal save (or discarding on close) removes
   // it, and reopening the file offers Restore/Discard when a newer copy exists.
@@ -763,7 +790,11 @@ export function App() {
     setTitlePgDirty,
     setEvenOddHf,
     setEvenOddHfDirty,
-    setHfView,
+    // opening a document resets to the resting per-page variant selection
+    setHfView: (v: HfView) => {
+      setHfViewState(v)
+      setHfViewTouched(false)
+    },
     pgNumEdit,
     pgNumDirtySections,
     setPgNumEdit,
@@ -1614,14 +1645,16 @@ export function App() {
       // document-end footer shows the last page's displayed number, not the physical count
       if (slices.length > 0) {
         const lastIdx = slices.length - 1
-        setLastPageNo(
-          secList
+        const num = secList ? pageNumbers(slices, secList)[lastIdx] : slices.length
+        setLastPageNo({
+          num,
+          text: secList
             ? formatPageNumber(
-                pageNumbers(slices, secList)[lastIdx],
+                num,
                 secList[Math.min(slices[lastIdx].section, secList.length - 1)]?.pageNumberFmt,
               )
-            : slices.length,
-        )
+            : String(num),
+        })
       }
       // Auto-refresh TOC page numbers from the fresh slicing, like Word's field
       // update. Gated on dirtyRef — our pagination approximates Word's, so a
@@ -1710,6 +1743,9 @@ export function App() {
           const hfSig = (v: HeaderFooter | null | undefined) =>
             v ? `${v.text}·${v.pageNumber ? 1 : 0}·${v.paras?.length ?? 0}` : ''
           const visiblePages = visiblePageCount(slices)
+          // stopgap until per-section canvas geometry: a landscape section's header/footer
+          // strip must not overflow the (portrait) canvas paper it is drawn on
+          const canvasPaperW = pmRect.width / factor
           slices.slice(1).forEach((slice, k) => {
             // an even/odd section's zero-height blank page shares its start with the following page: draw only one gap band on the canvas
             if (slice.start === slices[k].start) return
@@ -1741,7 +1777,7 @@ export function App() {
               })
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
-              el.style.width = `${box.width - 120}px`
+              el.style.width = `${Math.min(box.width, canvasPaperW) - 120}px`
               hfEls.push(el)
             }
             if (hfHasVisibleContent(gapHeader.value, gapHeader.images)) {
@@ -1755,7 +1791,7 @@ export function App() {
               })
               el.style.bottom = 'auto'
               el.style.top = `calc(100% - ${Math.max(0, metrics.marginTop - box.headerDist)}px)`
-              el.style.width = `${box.width - 120}px`
+              el.style.width = `${Math.min(box.width, canvasPaperW) - 120}px`
               hfEls.push(el)
             }
             const hfProps =
@@ -1811,6 +1847,7 @@ export function App() {
               )
               const elTop = b.el.getBoundingClientRect().top
               let matched = false
+              let cutRow: Element | null = null
               for (const tr of Array.from(b.el.querySelectorAll('tr')).filter(
                 (r) =>
                   !r.closest('.doc-nested-table') && !r.classList.contains('page-repeat-header'),
@@ -1818,6 +1855,9 @@ export function App() {
                 const trTop = tr.getBoundingClientRect().top
                 const gapsAbove = gapRects.reduce((s, g) => (g.top <= trTop ? s + g.height : s), 0)
                 const off = (trTop - elTop - gapsAbove) / factor
+                // last real row starting at/above the cut = the row the cut falls inside
+                if (!tr.classList.contains('page-gap') && off <= slice.start - b.top + 0.5)
+                  cutRow = tr
                 if (Math.abs(off - (slice.start - b.top)) < 1.5) {
                   matched = true
                   try {
@@ -1874,11 +1914,31 @@ export function App() {
                 }
               }
               if (!matched) {
-                // inline cut point (page break mid-line): the cut falls in a line's band gap; locate the first line after it and insert a zero-height dashed marker
+                // in-row cut point (page break between a cell's lines): anchor at the first line after it
                 const anchor = nextLineAnchor(b.el, slice.start - b.top, factor)
                 const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
-                // no hfProps: a zero-height cut marker can't host header/footer strips
-                if (pos != null) gaps.push({ pos, kind: 'cut', metrics })
+                if (anchor == null || pos == null) return
+                const cutCell = singleCutCell(cutRow)
+                if (cutCell) {
+                  // single-column row: insert a real inline gap band; bleed to the paper
+                  // edges from the anchor's block (the widget's containing block)
+                  const r = (
+                    anchor.node.parentElement?.closest('td > *, th > *') ?? cutCell
+                  ).getBoundingClientRect()
+                  gaps.push({
+                    pos,
+                    kind: 'cell',
+                    metrics: {
+                      ...metrics,
+                      marginLeft: metrics.marginLeft + (r.left - pmRect.left) / factor,
+                      marginRight: metrics.marginRight + (pmRect.right - r.right) / factor,
+                    },
+                    ...hfProps,
+                  })
+                } else {
+                  // multi-cell row: keep the zero-height dashed marker (no hfProps — it can't host header/footer strips)
+                  gaps.push({ pos, kind: 'cut', metrics })
+                }
               }
               return
             }
@@ -2740,7 +2800,7 @@ export function App() {
                           </button>
                           {titlePg && (
                             <button
-                              className={effHfView === 'first' ? 'on' : ''}
+                              className={headerAreaView === 'first' ? 'on' : ''}
                               onClick={() => setHfView('first')}
                             >
                               {t('appFirstPage')}
@@ -2748,7 +2808,7 @@ export function App() {
                           )}
                           {(titlePg || evenOddHf) && (
                             <button
-                              className={effHfView === 'default' ? 'on' : ''}
+                              className={headerAreaView === 'default' ? 'on' : ''}
                               onClick={() => setHfView('default')}
                             >
                               {evenOddHf ? t('appOddPage') : t('appDefaultPage')}
@@ -2756,7 +2816,7 @@ export function App() {
                           )}
                           {evenOddHf && (
                             <button
-                              className={effHfView === 'even' ? 'on' : ''}
+                              className={headerAreaView === 'even' ? 'on' : ''}
                               onClick={() => setHfView('even')}
                             >
                               {t('appEvenPage')}
@@ -2765,7 +2825,7 @@ export function App() {
                         </div>
                       )}
                       {(multiHf ||
-                        effHfView !== 'default' ||
+                        (hfViewTouched && effHfView !== 'default') ||
                         shownHeader?.text ||
                         shownHeader?.paras?.length ||
                         hfImagesOf('header')?.length) && (
@@ -2833,7 +2893,7 @@ export function App() {
                         </div>
                       )}
                       {(multiHf ||
-                        effHfView !== 'default' ||
+                        (hfViewTouched && effHfView !== 'default') ||
                         shownFooter?.text ||
                         shownFooter?.pageNumber ||
                         shownFooter?.paras?.length ||
@@ -2844,7 +2904,7 @@ export function App() {
                           images={hfImagesOf('footer')}
                           readOnly={isProtected || readMode}
                           onCommit={(next) => commitHf('footer', next)}
-                          pageNo={lastPageNo ?? pageInfo.total}
+                          pageNo={lastPageNo?.text ?? pageInfo.total}
                           pageTotal={pageInfo.total}
                         />
                       )}

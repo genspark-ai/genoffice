@@ -5,9 +5,15 @@ export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
   save: 'pdf:save',
+  validateTextEdits: 'pdf:validate-text-edits',
+  listEditFonts: 'pdf:list-edit-fonts',
+  listPageImages: 'pdf:list-page-images',
+  pageImagePng: 'pdf:page-image-png',
+  pagePreviewPng: 'pdf:page-preview-png',
   extractPages: 'pdf:extract-pages',
   insertPdf: 'pdf:insert-pdf',
   exportImages: 'pdf:export-images',
+  generateImage: 'pdf:generate-image',
   dirtyChanged: 'pdf:dirty-changed',
   closeSaveRequest: 'pdf:close-save-request',
   closeSaveResult: 'pdf:close-save-result',
@@ -16,7 +22,11 @@ export const PDF_CHANNELS = {
   saveAsFlow: 'pdf:save-as-flow',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
+  getTheme: 'app:get-theme',
+  themeChanged: 'app:theme-changed',
 } as const
+
+export type UiTheme = 'light' | 'dark' | 'system'
 
 export type MarkupType = 'highlight' | 'underline' | 'strikeout'
 
@@ -86,6 +96,160 @@ export interface MetadataInput {
   keywords?: string
 }
 
+/**
+ * Content-stream text replacement (pdfium). The renderer only knows pdf.js text items;
+ * the main process re-locates the actual text objects by rect intersection and verifies
+ * against oldText, because one pdf.js item may span many objects (CJK is often one per glyph).
+ */
+export interface TextEditInput {
+  pageIndex: number
+  /** PDF user space [x1,y1,x2,y2] of the run being replaced */
+  rect: [number, number, number, number]
+  /** Text currently displayed in rect; matching is whitespace-insensitive */
+  oldText: string
+  /** Replacement; '\n' splits it into stacked lines (one text object per line) */
+  newText: string
+  /** Original run's font size in PDF pt (fallback sizing for the rebuilt object) */
+  fontSize: number
+  /** User-chosen size in PDF pt; absent = keep the original run's size */
+  newFontSize?: number
+  /** User-chosen fill color (0-255 RGB); absent = keep the original run's color */
+  newColor?: [number, number, number]
+  /** Selection-level fill colors: [start,end) code-unit ranges into newText, ascending
+      and non-overlapping. Chars outside every range keep newColor ?? the original run's
+      color. The engine splits each rebuilt line into one text object per color. */
+  colorRuns?: { start: number; end: number; color: [number, number, number] }[]
+  /** User-chosen rebuild font (EDIT_FONTS id); absent = keep the original font (embedded
+      subset when it covers the replacement, else the same-named installed font, else
+      fallback). An explicit id is honored only when the face's cmap covers the whole
+      replacement (else fallback) */
+  newFont?: string
+  /** Baseline origin (PDF user space) for the rebuilt first line. Paragraph edits set
+      this to the block's left edge / first baseline — the matched anchor object may be
+      an indented or mid-paragraph run. Absent = the anchor object's own position.
+      Ignored when the edit resolves to a fragment of a larger run. */
+  origin?: [number, number]
+  /** Baseline-to-baseline step between '\n' lines in PDF pt (paragraph edits pass the
+      block's original leading); absent = fontSize × 1.2. Ignored for fragment matches. */
+  lineLeading?: number
+  /** Per-'\n'-line horizontal offset from origin.x in PDF pt — centered/right-aligned
+      paragraph reflow places each line at its own x. Missing entries mean 0; ignored
+      for fragment matches. */
+  lineXOffsets?: number[]
+  /** Paragraph alignment, renderer-side metadata (preview rendering and draft reopen);
+      the engine positions lines purely from origin + lineXOffsets */
+  align?: 'left' | 'center' | 'right'
+  /** The paragraph editor's logical text as typed (hard line breaks intact),
+      renderer-side metadata for reopening the draft — the wrapped newText can't
+      tell a soft wrap from a deliberate break. The engine ignores it. */
+  blockSource?: string
+  /** Bold/italic for the rebuilt run, resolved via font variants: the chosen edit
+      font's matching face file, or the original family's matching installed face.
+      Degrades silently to the base face when no variant covers the replacement. */
+  newBold?: boolean
+  newItalic?: boolean
+}
+
+/** Dry-run match result for one pending text edit */
+export interface TextEditValidation {
+  /** null = the edit would apply; string = reason it would be skipped */
+  reason: string | null
+  /** Ink bounds [x1,y1,x2,y2] of the matched text objects (PDF user space). The renderer's
+      edit rect is a pdf.js layout box (font metrics); glyph ink can poke out of it, so the
+      preview cover must use the engine's real bounds or remnants of the old run show through */
+  bounds?: [number, number, number, number]
+}
+
+/** Curated fonts selectable for rebuilt text runs. Single-face .ttf on every platform we
+    ship — the subsetter cannot read .ttc collections, which rules out the macOS CJK faces.
+    Availability is machine-dependent: the main process reports the usable subset. */
+export const EDIT_FONTS = [
+  { id: 'arial', label: 'Arial', css: "Arial, 'Helvetica Neue', sans-serif" },
+  { id: 'times', label: 'Times New Roman', css: "'Times New Roman', Times, serif" },
+  { id: 'courier', label: 'Courier New', css: "'Courier New', monospace" },
+] as const
+
+/** Target z-band for a content-stream image: under every text run (above the page
+    background) or on top of the page's content */
+export type ImageLayer = 'belowText' | 'aboveText'
+
+/**
+ * Content-stream image operations (pdfium). Existing images are addressed by their
+ * bounds as reported by listPageImages — the main process re-matches the actual object
+ * by rect at save time (fail-soft, like text edits), since object indices shift.
+ */
+export type ImageEditInput =
+  | {
+      kind: 'insertImage'
+      pageIndex: number
+      /** base64 PNG, without the data: prefix */
+      image: string
+      /** PDF user space [x1,y1,x2,y2] footprint */
+      rect: [number, number, number, number]
+      layer: ImageLayer
+      /** Final display rotation of the page (0/90/180/270); the image content is
+          counter-rotated so it shows upright on rotated pages */
+      rotate?: number
+    }
+  | {
+      kind: 'transformImage'
+      pageIndex: number
+      /** Bounds of the target image when listed (match key) */
+      oldRect: [number, number, number, number]
+      /** Final footprint (already width/height-swapped when quarterTurns is odd) */
+      rect: [number, number, number, number]
+      /** Present = also move the object to this z-band */
+      layer?: ImageLayer
+      /** Screen-clockwise quarter turns (0-3) applied about the image center.
+          2D rotations commute with the page /Rotate mapping, so no adjustment
+          for rotated pages is needed */
+      quarterTurns?: number
+    }
+  | {
+      kind: 'replaceImage'
+      pageIndex: number
+      /** Bounds of the target image when listed (match key) */
+      oldRect: [number, number, number, number]
+      /** Final footprint (drag/resize/rotate after the swap works like a transform) */
+      rect: [number, number, number, number]
+      /** base64 PNG replacing the image's pixels */
+      image: string
+      layer?: ImageLayer
+      quarterTurns?: number
+    }
+  | { kind: 'deleteImage'; pageIndex: number; oldRect: [number, number, number, number] }
+
+/** An existing content-stream image on a page */
+export interface PageImageRef {
+  pageIndex: number
+  /** PDF user space [x1,y1,x2,y2] */
+  rect: [number, number, number, number]
+  /** Painted after the page's first text run (i.e. covers text it overlaps) */
+  aboveText: boolean
+}
+
+/** Live-preview render request: a page region with some images removed */
+export interface PagePreviewRequest {
+  path: string
+  pageIndex: number
+  /** Images to erase, addressed by their listed rects (PDF user space) */
+  excludeRects: [number, number, number, number][]
+  /** Region to render, in display coords at scale 1 (after total rotation, y down) */
+  clip: { x: number; y: number; width: number; height: number }
+  /** Output bitmap width in px (height follows the clip aspect) */
+  pxWidth: number
+  /** Extra unsaved display rotation on top of the page's /Rotate: 0-3 quarter turns cw */
+  rotate: number
+}
+
+/** An image edit that could not be matched to the document at save time and was skipped */
+export interface ImageEditFailure {
+  /** Position in the request's imageEdits array */
+  editIndex: number
+  pageIndex: number
+  reason: string
+}
+
 export interface FormValueInput {
   name: string
   kind: 'text' | 'checkbox' | 'radio' | 'choice'
@@ -106,6 +270,10 @@ export interface SavePdfRequest {
   drawings: DrawingInput[]
   formValues: FormValueInput[]
   stamps: StampInput[]
+  /** Applied to the source bytes before all annotation work — these rewrite page content streams */
+  textEdits?: TextEditInput[]
+  /** Content-stream image operations, applied right after textEdits (same pdfium stage) */
+  imageEdits?: ImageEditInput[]
   /** Page rotation deltas (original page index → multiple of 90 clockwise) */
   rotations?: { pageIndex: number; delta: number }[]
   /** Pages to delete (original page indices) */
@@ -115,7 +283,22 @@ export interface SavePdfRequest {
   metadata?: MetadataInput
 }
 
-export type SavePdfResult = { ok: true } | { ok: false; error: string }
+/** A text edit that could not be matched to the document at save time and was skipped */
+export interface TextEditFailure {
+  pageIndex: number
+  oldText: string
+  reason: string
+}
+
+export type SavePdfResult =
+  | { ok: true; skippedTextEdits?: TextEditFailure[]; skippedImageEdits?: ImageEditFailure[] }
+  | { ok: false; error: string }
+
+/** Dry-run matching for pending text edits against the file on disk (no mutation) */
+export interface ValidateTextEditsRequest {
+  path: string
+  edits: TextEditInput[]
+}
 
 /** Extract pages into a new PDF: main process shows a save dialog; cancel returns canceled */
 export interface ExtractPagesRequest {
@@ -158,7 +341,23 @@ export const AI_CHANNELS = {
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
+  imageSearch: 'ai:image-search',
+  fetchImage: 'ai:fetch-image',
 } as const
+
+export interface ImageSearchResponse {
+  images: Array<{
+    title: string
+    imageUrl: string
+    sourceUrl: string
+    source: string
+    width?: number
+    height?: number
+  }>
+  method: string
+  /** failure reason when method === 'error' */
+  error?: string
+}
 
 /** API exposed by preload to the renderer (window.pdfApi) */
 export interface PdfApi {
@@ -168,9 +367,33 @@ export interface PdfApi {
   readFile(path: string): Promise<ArrayBuffer>
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
   save(request: SavePdfRequest): Promise<SavePdfResult>
+  /** Dry-run match of pending text edits against the file: reason null = would apply */
+  validateTextEdits(request: ValidateTextEditsRequest): Promise<TextEditValidation[]>
+  /** EDIT_FONTS ids whose font file exists on this machine */
+  listEditFonts(): Promise<string[]>
+  /** Enumerate the content-stream images of every page (for image edit mode) */
+  listPageImages(path: string): Promise<PageImageRef[]>
+  /** Render one existing image object to PNG (base64) for move/resize ghost previews; null if it can't be matched */
+  pageImagePng(request: {
+    path: string
+    pageIndex: number
+    rect: [number, number, number, number]
+  }): Promise<string | null>
+  /** Live-preview render of a page region with the given images removed (base64 PNG);
+      the renderer patches it over the raster so touched images vanish before save */
+  pagePreviewPng(request: PagePreviewRequest): Promise<string | null>
   extractPages(request: ExtractPagesRequest): Promise<ExtractPagesResult>
   insertPdf(request: InsertPdfRequest): Promise<InsertPdfResult>
   exportImages(request: ExportImagesRequest): Promise<ExportImagesResult>
+  /** Web image search for AI tools (app-wide ai:image-search handler) */
+  imageSearch(query: string, maxResults?: number): Promise<ImageSearchResponse>
+  /** Download an image URL in the main process (SSRF-guarded, avoids CORS); null on failure */
+  fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
+  /** AI image generation via Genspark (gsk); returns a downloadable URL or an error message */
+  generateImage(op: { prompt: string; aspectRatio?: string }): Promise<{
+    url?: string
+    error?: string
+  }>
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void
   /** Main process picked "Save" in the close prompt → renderer saves and replies via sendCloseSaveResult */
@@ -183,6 +406,8 @@ export interface PdfApi {
   onSaveAsFlow(handler: (inFlight: boolean) => void): () => void
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
+  getTheme(): Promise<UiTheme>
+  onThemeChanged(handler: (theme: UiTheme) => void): () => void
   getAiSettings(): Promise<AiSettings>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

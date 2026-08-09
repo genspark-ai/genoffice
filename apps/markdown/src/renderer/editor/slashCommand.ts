@@ -32,8 +32,8 @@ function chain(editor: Editor, range: Range) {
 }
 
 /**
- * Block-type conversions (heading/callout/toggle/…) are illegal inside a list
- * item — wrapIn/setHeading would silently fail after the range was already
+ * Block-type conversions (heading/code block/…) are illegal inside a list
+ * item — setHeading would silently fail after the range was already
  * deleted. Lift the current item out of its list(s) first (Notion behavior).
  */
 export function liftFromList(editor: Editor): void {
@@ -109,18 +109,6 @@ export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem
       labelKey: 'styleCodeBlock',
       keywords: ['codeblock', '```'],
       run: (e, r) => void blockChain(e, r).toggleCodeBlock().run(),
-    },
-    {
-      id: 'callout',
-      labelKey: 'insertCallout',
-      keywords: ['admonition', 'note', 'info'],
-      run: (e, r) => void blockChain(e, r).setCallout().run(),
-    },
-    {
-      id: 'toggle',
-      labelKey: 'insertToggle',
-      keywords: ['details', 'collapse', 'fold'],
-      run: (e, r) => void blockChain(e, r).setToggle().run(),
     },
     {
       id: 'table',

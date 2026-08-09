@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applySectionSettings,
   applySectionStartType,
+  PAGE_MARK,
   parseDocx,
   readSections,
   readSectionSettings,
@@ -90,7 +91,7 @@ describe('readSections enumerates all sections', () => {
     expect(sections.map((s) => s.firstBlockIndex)).toEqual([0, 2, 4])
   })
 
-  it('hfParts: parses all header/footer parts by rId (PAGE field displayed as #)', async () => {
+  it('hfParts: parses all header/footer parts by rId (PAGE field displayed as PAGE_MARK)', async () => {
     const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
     const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
     const headerXml = `${XML}<w:hdr ${W}><w:p><w:r><w:t>第一节页眉</w:t></w:r></w:p></w:hdr>`
@@ -126,7 +127,7 @@ describe('readSections enumerates all sections', () => {
     const parsed = await parseDocx(bytes)
     expect(parsed.hfParts?.rId20?.text).toBe('第一节页眉')
     expect(parsed.hfParts?.rId21?.hasPageNumber).toBe(true)
-    expect(parsed.hfParts?.rId21?.text).toContain('#')
+    expect(parsed.hfParts?.rId21?.text).toContain(PAGE_MARK)
     const sections = readSections(parsed)
     expect(sections[0].headerRefs.default).toBe('rId20')
     expect(sections[0].footerRefs.default).toBe('rId21')

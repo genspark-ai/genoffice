@@ -31,6 +31,8 @@ export type {
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
+export type UiTheme = 'light' | 'dark' | 'system'
+
 export interface OpenResult {
   path: string
   slides: RenderSlide[]
@@ -655,6 +657,11 @@ export interface EditPictureSrcRectOp {
   sourceId: string
   /** Crop ratio per edge 0..1; null = remove the crop (full image) */
   srcRect: { l: number; t: number; r: number; b: number } | null
+  /** Crop confirm also shrinks the element frame to the on-screen crop frame; applied
+   * in the same undo step so one undo restores both frame and crop. Px relative to
+   * the fitWidthPx viewport (rotation is left unchanged). Requires fitWidthPx. */
+  boxPx?: { x: number; y: number; w: number; h: number }
+  fitWidthPx?: number
 }
 
 /** Group elements: merge ≥2 editable elements into one group. */
@@ -798,6 +805,17 @@ export interface AddImageBytesOp {
   hPx: number
   fitWidthPx: number
   name?: string
+}
+
+/** Swap a picture's backing image in place: frame, z-order, border and effects survive. */
+export interface ReplacePictureBytesOp {
+  slideIndex: number
+  sourceId: string
+  /** base64 without the data: prefix */
+  base64: string
+  ext: string
+  /** Keep the crop window — only valid when the new image shares the old one's pixel geometry (e.g. background removal) */
+  keepSrcRect?: boolean
 }
 
 /** Insert renderer-recorded media bytes (screen-recording webm etc.). */
@@ -990,6 +1008,10 @@ export interface SlidesApi {
       lang: 'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar',
     ) => void,
   ) => () => void
+  /** current UI theme preference (persisted by the shell in app-settings.json) */
+  getTheme: () => Promise<UiTheme>
+  /** theme switched from the shell home page */
+  onThemeChanged: (handler: (theme: UiTheme) => void) => () => void
   openPptx: (fitWidthPx: number) => Promise<OpenResult | null>
   openPptxPath: (path: string, fitWidthPx: number) => Promise<OpenResult | null>
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>
@@ -1142,6 +1164,10 @@ export interface SlidesApi {
   ) => Promise<
     { slide: RenderSlide; sourceId: string } | { error: 'unsupported'; ext: string } | null
   >
+  /** Swap a picture's backing image in place (frame/z-order/effects survive) */
+  replacePictureBytes: (
+    op: ReplacePictureBytesOp,
+  ) => Promise<RenderSlide | { error: 'unsupported'; ext: string } | null>
   /** Show the system dialog to pick a video/audio file and embed it into the current page */
   insertMedia: (
     slideIndex: number,
@@ -1323,6 +1349,13 @@ export interface SlidesApi {
     hPx: number
     fitWidthPx: number
   }) => Promise<{ slide: RenderSlide; sourceId: string } | null>
+  /** Download a URL and swap it into an existing picture in place (frame/z-order/effects survive) */
+  replacePictureUrl: (op: {
+    slideIndex: number
+    sourceId: string
+    url: string
+    keepSrcRect?: boolean
+  }) => Promise<RenderSlide | null>
   /** gsk (Genspark) AI image generation/editing, returns the image URL (error prompts login when logged out) */
   generateImage: (op: {
     prompt: string

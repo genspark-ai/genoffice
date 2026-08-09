@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { TOTAL_PAGES_MARK, type HfImage, type HfParagraph, type Run } from '@genoffice/docx-engine'
+import {
+  PAGE_MARK,
+  TOTAL_PAGES_MARK,
+  type HfImage,
+  type HfParagraph,
+  type Run,
+} from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
+import { hfUsesLegacyHash } from '../editor/hf-dom'
 import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
 
 export interface HfValue {
@@ -8,6 +15,10 @@ export interface HfValue {
   pageNumber?: boolean
   paras?: HfParagraph[]
 }
+
+/** visible edit-surface stand-ins for the invisible private-use field sentinels */
+const PAGE_TOKEN = '{PAGE}'
+const TOTAL_TOKEN = '{NUMPAGES}'
 
 function runStyle(run: Run): React.CSSProperties {
   const style: React.CSSProperties = {}
@@ -26,8 +37,8 @@ function runStyle(run: Run): React.CSSProperties {
 function parasOf(value: HfValue): HfParagraph[] {
   if (value.paras?.length) return value.paras
   const runs: Run[] = value.text ? [{ text: value.text }] : []
-  if (value.pageNumber && !value.text.includes('#')) {
-    runs.push({ text: runs.length > 0 ? ' #' : '#' })
+  if (value.pageNumber && !value.text.includes('#') && !value.text.includes(PAGE_MARK)) {
+    runs.push({ text: runs.length > 0 ? ` ${PAGE_MARK}` : PAGE_MARK })
   }
   return [{ align: 'center', runs }]
 }
@@ -35,8 +46,8 @@ function parasOf(value: HfValue): HfParagraph[] {
 /**
  * Header / footer zone on the page: renders the rich paragraphs,
  * double-click enters in-place editing (plain text per paragraph; each line
- * keeps its paragraph format and first-run styling), blur commits. The '#'
- * marker stands for the automatic page number.
+ * keeps its paragraph format and first-run styling), blur commits. PAGE /
+ * NUMPAGES sentinels edit as visible {PAGE} / {NUMPAGES} tokens.
  */
 export function HeaderFooterArea({
   kind,
@@ -72,7 +83,13 @@ export function HeaderFooterArea({
     if (!editing) return
     const el = editRef.current
     if (!el) return
-    el.innerText = paras.map((p) => p.runs.map((r) => r.text).join('')).join('\n')
+    // table-row (cells) paragraphs stay out of the text editing flow
+    el.innerText = paras
+      .filter((p) => !p.cells)
+      .map((p) => p.runs.map((r) => r.text).join(''))
+      .join('\n')
+      .replaceAll(PAGE_MARK, PAGE_TOKEN)
+      .replaceAll(TOTAL_PAGES_MARK, TOTAL_TOKEN)
     cancelRef.current = false
     initialTextRef.current = el.innerText
     el.focus()
@@ -93,19 +110,36 @@ export function HeaderFooterArea({
       return
     }
     if (el.innerText === initialTextRef.current) return
-    const lines = el.innerText.replace(/\n+$/, '').split('\n')
-    const nextParas: HfParagraph[] = lines.map((line, i) => {
-      const template = paras[Math.min(i, paras.length - 1)]
+    const lines = el.innerText
+      .replace(/\n+$/, '')
+      .replaceAll(PAGE_TOKEN, PAGE_MARK)
+      .replaceAll(TOTAL_TOKEN, TOTAL_PAGES_MARK)
+      .split('\n')
+    const textParas = paras.filter((p) => !p.cells)
+    const templates: HfParagraph[] =
+      textParas.length > 0 ? textParas : [{ align: 'center', runs: [] }]
+    const edited: HfParagraph[] = lines.map((line, i) => {
+      const template = templates[Math.min(i, templates.length - 1)]
       const style = template.runs[0] ?? {}
       return { ...template, runs: line === '' ? [] : [{ ...style, text: line }] }
     })
-    const text = nextParas.map((p) => p.runs.map((r) => r.text).join('')).join('')
+    // splice cells rows back at their original positions among the text paragraphs
+    const nextParas: HfParagraph[] = []
+    let ei = 0
+    for (const p of paras) {
+      if (p.cells) nextParas.push(p)
+      else if (ei < edited.length) nextParas.push(edited[ei++])
+    }
+    nextParas.push(...edited.slice(ei))
+    const text = edited.map((p) => p.runs.map((r) => r.text).join('')).join('')
     onCommit({ ...value, text, paras: nextParas })
   }
 
   const display = (text: string) => {
-    const t = text.replaceAll(TOTAL_PAGES_MARK, String(pageTotal ?? 1))
-    return value.pageNumber ? t.replace('#', String(pageNo ?? 1)) : t
+    const t = text
+      .replaceAll(TOTAL_PAGES_MARK, String(pageTotal ?? 1))
+      .replaceAll(PAGE_MARK, String(pageNo ?? 1))
+    return hfUsesLegacyHash(value) ? t.replace('#', String(pageNo ?? 1)) : t
   }
 
   return (
@@ -115,7 +149,11 @@ export function HeaderFooterArea({
         readOnly
           ? undefined
           : t(kind === 'header' ? 'appDblclickEditHeader' : 'appDblclickEditFooter') +
-            (value.pageNumber ? t('appHfPageNumHint') : '')
+            (value.pageNumber
+              ? hfUsesLegacyHash(value)
+                ? t('appHfPageNumHint')
+                : t('appHfPageNumHint').replace('#', PAGE_TOKEN)
+              : '')
       }
       onDoubleClick={() => {
         if (!readOnly && !editing) setEditing(true)
@@ -169,30 +207,59 @@ function HfContent({
 }) {
   return (
     <>
-      {paras.map((para, i) => (
-        <div
-          key={i}
-          className="page-hf-para"
-          style={{
-            ...(para.bidi ? { direction: 'rtl' as const } : {}),
-            ...(para.align
-              ? {
-                  textAlign:
-                    para.align === 'left' || para.align === 'center' || para.align === 'right'
-                      ? para.align
-                      : ('justify' as const),
-                }
-              : {}),
-          }}
-        >
-          {para.runs.length === 0 ? ' ' : null}
-          {para.runs.map((run, j) => (
-            <span key={j} style={runStyle(run)}>
-              {display(run.text)}
-            </span>
-          ))}
-        </div>
-      ))}
+      {paras.map((para, i) =>
+        para.cells ? (
+          // layout-table row: read-only flex columns (excluded from text editing)
+          <div key={i} className="page-hf-para page-hf-row">
+            {para.cells.map((cell, j) => (
+              <div
+                key={j}
+                className="page-hf-cell"
+                style={{
+                  ...(cell.widthPct ? { width: `${cell.widthPct}%` } : {}),
+                  ...(cell.align
+                    ? {
+                        textAlign:
+                          cell.align === 'left' || cell.align === 'center' || cell.align === 'right'
+                            ? cell.align
+                            : ('justify' as const),
+                      }
+                    : {}),
+                }}
+              >
+                {cell.runs.map((run, k) => (
+                  <span key={k} style={runStyle(run)}>
+                    {display(run.text)}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            key={i}
+            className="page-hf-para"
+            style={{
+              ...(para.bidi ? { direction: 'rtl' as const } : {}),
+              ...(para.align
+                ? {
+                    textAlign:
+                      para.align === 'left' || para.align === 'center' || para.align === 'right'
+                        ? para.align
+                        : ('justify' as const),
+                  }
+                : {}),
+            }}
+          >
+            {para.runs.length === 0 ? ' ' : null}
+            {para.runs.map((run, j) => (
+              <span key={j} style={runStyle(run)}>
+                {display(run.text)}
+              </span>
+            ))}
+          </div>
+        ),
+      )}
     </>
   )
 }

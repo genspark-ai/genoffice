@@ -13,9 +13,11 @@ import type { PDFPage, PDFRef } from 'pdf-lib'
 import type {
   DrawingInput,
   FormValueInput,
+  ImageEditFailure,
   MarkupInput,
   MetadataInput,
   SavePdfRequest,
+  TextEditFailure,
 } from '../shared/ipc'
 
 const num = (v: number) => Math.round(v * 100) / 100
@@ -332,13 +334,78 @@ function applyMetadata(pdfDoc: PDFDocument, meta: MetadataInput): void {
  * The source file is only ever read: Save As (targetPath !== sourcePath) must never mutate
  * the original document, and a failed or cancelled save leaves both paths untouched.
  * In-place Save passes targetPath === sourcePath.
+ * Returns the text edits that no longer matched the document and were skipped.
  */
+export interface SavePdfSkips {
+  skippedTextEdits: TextEditFailure[]
+  skippedImageEdits: ImageEditFailure[]
+}
+
+/** Original page index → index in the saved file (after this request's deletions/reorder);
+    null = the page is gone from the output */
+function finalPageIndex(request: SavePdfRequest, p: number): number | null {
+  if (request.pageOrder) {
+    const i = request.pageOrder.indexOf(p)
+    return i >= 0 ? i : null
+  }
+  const del = request.deletedPages ?? []
+  if (del.includes(p)) return null
+  return p - del.filter((d) => d < p).length
+}
+
+/**
+ * Read-back verification of applied content-stream edits against the final bytes.
+ * Anything that fails here would have been silent data loss; the caller aborts the
+ * save before the bytes reach disk, keeping the original file and the pending edits.
+ */
+async function verifyContentEdits(
+  bytes: Uint8Array,
+  request: SavePdfRequest,
+  skips: SavePdfSkips,
+): Promise<void> {
+  const failures: { pageIndex: number; reason: string }[] = []
+  const appliedText = (request.textEdits ?? []).filter(
+    (e) =>
+      !skips.skippedTextEdits.some((s) => s.pageIndex === e.pageIndex && s.oldText === e.oldText),
+  )
+  if (appliedText.length > 0) {
+    const { verifyTextEdits } = await import('./text-edit')
+    const remapped = appliedText.flatMap((e) => {
+      const pageIndex = finalPageIndex(request, e.pageIndex)
+      return pageIndex === null ? [] : [{ pageIndex, newText: e.newText }]
+    })
+    failures.push(...(await verifyTextEdits(bytes, remapped)))
+  }
+  const appliedImages = (request.imageEdits ?? []).filter(
+    (e, i) => e.kind !== 'deleteImage' && !skips.skippedImageEdits.some((s) => s.editIndex === i),
+  )
+  if (appliedImages.length > 0) {
+    const { verifyImageEdits } = await import('./image-edit')
+    const remapped = appliedImages.flatMap((e) => {
+      const pageIndex = finalPageIndex(request, e.pageIndex)
+      return pageIndex === null || e.kind === 'deleteImage' ? [] : [{ pageIndex, rect: e.rect }]
+    })
+    failures.push(...(await verifyImageEdits(bytes, remapped)))
+  }
+  if (failures.length > 0) {
+    const pages = [...new Set(failures.map((f) => f.pageIndex + 1))].sort((a, b) => a - b)
+    // "save-verify-failed pages=…" is parsed by the renderer to localize the notice
+    throw new Error(
+      `save-verify-failed pages=${pages.join(',')}: ${failures[0]!.reason}; the file was not written`,
+    )
+  }
+}
+
 export async function savePdfToPath(
   sourcePath: string,
   targetPath: string,
   request: SavePdfRequest,
-): Promise<void> {
-  const bytes = await applySaveRequest(new Uint8Array(await readFile(sourcePath)), request)
+): Promise<SavePdfSkips> {
+  const { bytes, ...skips } = await applySaveRequest(
+    new Uint8Array(await readFile(sourcePath)),
+    request,
+  )
+  await verifyContentEdits(bytes, request, skips)
   const tmp = `${targetPath}.gensave-${process.pid}.tmp`
   try {
     await writeFile(tmp, bytes)
@@ -347,13 +414,38 @@ export async function savePdfToPath(
     await rm(tmp, { force: true })
     throw err
   }
+  return skips
+}
+
+export interface AppliedSaveRequest {
+  bytes: Uint8Array
+  /** Text edits that could not be matched to the document; the rest of the request is in `bytes` */
+  skippedTextEdits: TextEditFailure[]
+  /** Same, for content-stream image operations */
+  skippedImageEdits: ImageEditFailure[]
 }
 
 /** Apply markups + form values + page ops, returning new bytes. Original objects are not reordered (pdf-lib keeps untouched objects). */
 export async function applySaveRequest(
   bytes: Uint8Array,
   request: SavePdfRequest,
-): Promise<Uint8Array> {
+): Promise<AppliedSaveRequest> {
+  let skippedTextEdits: TextEditFailure[] = []
+  let skippedImageEdits: ImageEditFailure[] = []
+  if (request.textEdits && request.textEdits.length > 0) {
+    // Content-stream rewrite must land before pdf-lib touches the bytes: everything
+    // below annotates on top of whatever the pages now say
+    const { applyTextEdits } = await import('./text-edit')
+    const applied = await applyTextEdits(bytes, request.textEdits)
+    bytes = applied.bytes
+    skippedTextEdits = applied.skipped
+  }
+  if (request.imageEdits && request.imageEdits.length > 0) {
+    const { applyImageEdits } = await import('./image-edit')
+    const applied = await applyImageEdits(bytes, request.imageEdits)
+    bytes = applied.bytes
+    skippedImageEdits = applied.skipped
+  }
   const pdfDoc = await PDFDocument.load(bytes, { updateMetadata: false })
   if (request.formValues.length > 0) applyFormValues(pdfDoc, request.formValues)
   const pages = pdfDoc.getPages()
@@ -406,12 +498,20 @@ export async function applySaveRequest(
     }
   }
   try {
-    return await pdfDoc.save({ useObjectStreams: false })
+    return {
+      bytes: await pdfDoc.save({ useObjectStreams: false }),
+      skippedTextEdits,
+      skippedImageEdits,
+    }
   } catch (err) {
     // Form values beyond WinAnsi (e.g. CJK) make pdf-lib's appearance generation fail:
     // skip it and set NeedAppearances so viewers rebuild them (Acrobat/pdfjs both support this)
     if (request.formValues.length === 0) throw err
     pdfDoc.getForm().acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
-    return await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
+    return {
+      bytes: await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false }),
+      skippedTextEdits,
+      skippedImageEdits,
+    }
   }
 }

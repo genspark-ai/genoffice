@@ -33,6 +33,8 @@ for (const rel of [
   '../../node_modules/@genspark/cli/node_modules/commander',
   '../../node_modules/ws',
   '../../node_modules/electron/dist/LICENSES.chromium.html',
+  '../../node_modules/@embedpdf/pdfium/dist/pdfium.wasm',
+  '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
 ]) {
   if (!existsSync(join(__dirname, rel))) {
     throw new Error(
@@ -106,6 +108,16 @@ const config = {
     {
       from: '../markdown/out',
       to: 'modules/markdown',
+    },
+    // PDF text editing engines: the bundled main resolves these under
+    // Resources/wasm when node_modules is absent (apps/pdf/src/main/wasm-path.ts)
+    {
+      from: '../../node_modules/@embedpdf/pdfium/dist/pdfium.wasm',
+      to: 'wasm/pdfium.wasm',
+    },
+    {
+      from: '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
+      to: 'wasm/hb-subset.wasm',
     },
     {
       from: '../../node_modules/@genspark/cli',
@@ -210,9 +222,21 @@ const config = {
   // sidecar was actually built for. Packaging arm64 on an x64 host, or the
   // reverse, needs a matching `cargo build --target` first.
   linux: {
-    // AppImage only: it needs no packaging identity, whereas deb/rpm would
-    // require a Debian maintainer and homepage in the repo metadata.
-    target: ['AppImage'],
+    // AppImage (self-contained, any distro) + deb (apt install, pulls in the
+    // GTK/NSS runtime deps). Default artifact names are kept on purpose —
+    // GenOffice-<v>.AppImage / genoffice_<v>_amd64.deb — because the public
+    // README download links and the already-published linux-v0.5.149 release
+    // use them.
+    target: [
+      { target: 'AppImage', arch: ['x64'] },
+      { target: 'deb', arch: ['x64'] },
+    ],
+    // deb control metadata; values match the manually published 0.5.149 deb
+    // so apt sees the new packages as the same lineage. Homepage comes from
+    // package.json "homepage"; the Package field is pinned in the deb block
+    // below (packageName is a per-target option, rejected here by the schema).
+    maintainer: 'Mainfunc, Inc. <team@genspark.ai>',
+    vendor: 'Mainfunc, Inc. <team@genspark.ai>',
     category: 'Office',
     icon: 'build/icon.png',
     // mac and win name the binary from productName; linux instead derives it
@@ -235,6 +259,18 @@ const config = {
         to: 'native/xlsx-sidecar',
       },
     ],
+  },
+  // Same "@genoffice/shell" problem as executableName above: the default deb
+  // artifact name derives from package.json "name", and the scope's "/" makes
+  // fpm treat "@genoffice" as a directory. Spell the published name out
+  // (genoffice_<version>_amd64.deb, matching the linux-v0.5.149 release).
+  // packageName pins the control Package field to the same value the 0.5.149
+  // deb shipped with — apt treats a different Package name as an unrelated
+  // install, breaking upgrades. Without it, fpm receives productName
+  // "GenOffice" and only happens to downcase it to the right value.
+  deb: {
+    artifactName: 'genoffice_${version}_${arch}.deb',
+    packageName: 'genoffice',
   },
   nsis: {
     oneClick: false,

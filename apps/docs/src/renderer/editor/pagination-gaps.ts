@@ -47,7 +47,9 @@ export interface GapMetrics {
 /** height of the gray inter-page band inside a page gap */
 export const GAP_BAND = 28
 
-function makeGapEl(m: GapMetrics, kind: 'block' | 'inline' | 'table' | 'cut'): HTMLElement {
+export type GapKind = 'block' | 'inline' | 'table' | 'cut' | 'cell'
+
+export function makeGapEl(m: GapMetrics, kind: GapKind): HTMLElement {
   const gap = document.createElement(kind === 'table' ? 'tr' : 'div')
   gap.contentEditable = 'false'
   if (kind === 'cut') {
@@ -72,13 +74,19 @@ function makeGapEl(m: GapMetrics, kind: 'block' | 'inline' | 'table' | 'cut'): H
     gap.appendChild(cell)
     return gap
   }
-  gap.className = kind === 'inline' ? 'page-gap page-gap-inline' : 'page-gap'
+  gap.className =
+    kind === 'cell'
+      ? // in-cell gap (single-column in-row table cut): inline gap + opaque bands covering the cell's fill/borders
+        'page-gap page-gap-inline page-gap-cell'
+      : kind === 'inline'
+        ? 'page-gap page-gap-inline'
+        : 'page-gap'
   gap.style.marginLeft = `-${m.marginLeft}px`
   gap.style.marginRight = `-${m.marginRight}px`
   // inline-block (not block-level): avoids block-in-inline anonymous-box splitting,
   // which would re-apply text-indent/alignment on continuation lines and drift line
   // breaks; negative margins don't widen an inline-block, so width explicitly adds the bleed
-  if (kind === 'inline') gap.style.width = `calc(100% + ${m.marginLeft + m.marginRight}px)`
+  if (kind !== 'block') gap.style.width = `calc(100% + ${m.marginLeft + m.marginRight}px)`
   return gap
 }
 
@@ -95,7 +103,7 @@ export type PageGapSpec = {
    *  (the slicing engine already reserved their height on the new page) */
   repeatHeaderEls?: HTMLElement[]
   repeatHeaderKey?: string
-} & ({ el: HTMLElement } | { pos: number; kind?: 'inline' | 'table' | 'cut' })
+} & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
 export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
@@ -105,7 +113,7 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
     ordinal++
     const { metrics, notes, hfEls } = gap
     let pos: number
-    let kind: 'block' | 'inline' | 'table' | 'cut'
+    let kind: GapKind
     if ('el' in gap) {
       kind = 'block'
       try {
@@ -125,7 +133,7 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
         () => {
           const el = makeGapEl(metrics, kind)
           if (notes) el.appendChild(notes)
-          if (hfEls && (kind === 'block' || kind === 'inline')) {
+          if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
             for (const hf of hfEls) el.appendChild(hf)
           } else if (hfEls && kind === 'table') {
             // table-row gaps position their strips inside the absolutely-filled cell;
@@ -141,7 +149,8 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
           // position without changing the page, so an ordinal key lets sameGaps
           // skip the dispatch entirely and lets PM reuse the widget DOM when a
           // dispatch does happen
-          key: `page-gap-${kind[0]}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
+          // full kind, not kind[0]: 'cut' and 'cell' would collide and skip the rebuild
+          key: `page-gap-${kind}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
         },
       ),
     )

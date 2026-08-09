@@ -1,13 +1,14 @@
 name: Promote to Stable
 
 # Manually promote an already-published beta build to the stable update
-# channel. No rebuild: rewrites latest.yml / latest-mac.yml on the CDN to
-# the versioned feed archive uploaded when the build went to beta, and
-# re-points the marketing download aliases (GenOffice.dmg /
-# GenOfficeSetup.exe) to the promoted version by downloading the installer
-# and re-uploading it under the alias name (server-side copy cannot read
-# the private source container).
-# Windows and mac version sequences are independent. Empty inputs default
+# channel. No rebuild: rewrites latest.yml / latest-mac.yml /
+# latest-linux.yml on the CDN to the versioned feed archive uploaded when
+# the build went to beta, and re-points the marketing download aliases
+# (GenOffice.dmg / GenOfficeSetup.exe / GenOffice.AppImage + GenOffice.deb)
+# to the promoted version by downloading the installer and re-uploading it
+# under the alias name (server-side copy cannot read the private source
+# container).
+# Per-platform version sequences are independent. Empty inputs default
 # to each platform's newest beta version; type "skip" to leave a platform
 # untouched.
 
@@ -20,6 +21,10 @@ on:
         default: ''
       win_version:
         description: 'windows version to promote (x.y.z; empty = latest beta; "skip" = leave windows untouched)'
+        required: false
+        default: ''
+      linux_version:
+        description: 'linux version to promote (x.y.z; empty = latest beta; "skip" = leave linux untouched)'
         required: false
         default: ''
       force:
@@ -49,6 +54,7 @@ jobs:
           GENOFFICE_UPDATE_URL: ${{ secrets.GENOFFICE_UPDATE_URL }}
           MAC_VERSION: ${{ inputs.mac_version }}
           WIN_VERSION: ${{ inputs.win_version }}
+          LINUX_VERSION: ${{ inputs.linux_version }}
           FORCE: ${{ inputs.force }}
         run: |
           set -eu
@@ -57,13 +63,15 @@ jobs:
           # the beta feed and re-validates everything server-side.
           [ -z "$MAC_VERSION" ] && MAC_VERSION="latest"
           [ -z "$WIN_VERSION" ] && WIN_VERSION="latest"
+          [ -z "$LINUX_VERSION" ] && LINUX_VERSION="latest"
           [ "$MAC_VERSION" = "skip" ] && MAC_VERSION=""
           [ "$WIN_VERSION" = "skip" ] && WIN_VERSION=""
-          if [ -z "$MAC_VERSION" ] && [ -z "$WIN_VERSION" ]; then
-            echo "nothing to promote — both platforms set to skip"
+          [ "$LINUX_VERSION" = "skip" ] && LINUX_VERSION=""
+          if [ -z "$MAC_VERSION" ] && [ -z "$WIN_VERSION" ] && [ -z "$LINUX_VERSION" ]; then
+            echo "nothing to promote — all platforms set to skip"
             exit 1
           fi
-          for v in "$MAC_VERSION" "$WIN_VERSION"; do
+          for v in "$MAC_VERSION" "$WIN_VERSION" "$LINUX_VERSION"; do
             if [ -n "$v" ] && [ "$v" != "latest" ] && ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
               echo "invalid version: $v (expected x.y.z, \"latest\", or \"skip\")"
               exit 1
@@ -81,5 +89,6 @@ jobs:
           ARGS=""
           [ -n "$MAC_VERSION" ] && ARGS="$ARGS --mac $MAC_VERSION"
           [ -n "$WIN_VERSION" ] && ARGS="$ARGS --win $WIN_VERSION"
+          [ -n "$LINUX_VERSION" ] && ARGS="$ARGS --linux $LINUX_VERSION"
           [ "$FORCE" = "true" ] && ARGS="$ARGS --force"
           node scripts/promote-stable.cjs $ARGS

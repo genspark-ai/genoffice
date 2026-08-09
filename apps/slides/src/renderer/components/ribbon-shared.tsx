@@ -197,6 +197,7 @@ export type RibbonPanelKey =
   | 'layoutPick'
   | 'slideSize'
   | 'transparency'
+  | 'pictureBorder'
   | 'table'
   | 'layout'
   | 'translate'
@@ -290,7 +291,7 @@ export interface Props {
   onExportImages: () => void
   onFormat: (cmd: FormatCmd) => void
   zoom: number
-  onZoom: (z: number) => void
+  onZoom: (z: number | ((current: number) => number)) => void
   showThumbs: boolean
   onToggleThumbs: () => void
   aiOpen: boolean
@@ -501,10 +502,16 @@ export interface Props {
   contextPictureCanCutout?: boolean
   /** Picture: enter crop mode */
   onPictureCrop?: () => void
+  /** Crop mode is live — the Crop button shows its selected state */
+  cropActive?: boolean
   /** Picture opacity (1 = opaque) */
   onPictureOpacity?: (opacity: number) => void
   /** Picture: enter cutout (background removal) mode */
   onPictureCutout?: () => void
+  /** Selected picture's current border (null = none) */
+  contextPictureStroke?: { color: string; widthPt: number; dashPreset?: string } | null
+  /** Picture border (null clears it) */
+  onPictureStroke?: (stroke: { color: string; widthPt: number; dash?: string } | null) => void
   /** Execute a table style operation */
   onEditTableStyle?: (op: Omit<EditTableStyleOp, 'slideIndex' | 'sourceId'>) => void
   /** Selected table's header-row/banded-rows current state (toggle display) */

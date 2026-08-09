@@ -13,6 +13,8 @@ interface IndexedItem {
   y: number
   w: number
   h: number
+  /** Rotated run (tilted baseline) — excluded from block grouping */
+  rot?: boolean
 }
 
 export interface PageEntry {
@@ -46,6 +48,10 @@ export async function buildSearchIndex(doc: PDFDocumentProxy): Promise<SearchInd
       if (typeof it.str !== 'string') continue
       if (it.str.length > 0 && it.transform) {
         const h = it.height || Math.hypot(it.transform[2] ?? 0, it.transform[3] ?? 0)
+        // Rotation tilts the baseline (b ≠ 0). A non-zero c alone is horizontal
+        // shear — synthetic italics — which stays horizontally set and must keep
+        // participating in block grouping.
+        const rot = Math.abs(it.transform[1] ?? 0) > h * 1e-3
         items.push({
           start: text.length,
           end: text.length + it.str.length,
@@ -53,6 +59,7 @@ export async function buildSearchIndex(doc: PDFDocumentProxy): Promise<SearchInd
           y: it.transform[5] ?? 0,
           w: it.width ?? 0,
           h,
+          ...(rot ? { rot: true } : {}),
         })
         text += it.str
       }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildSlashItems, filterSlashItems } from '../src/renderer/editor/slashCommand'
-import { resolveImageSrc } from '../src/renderer/editor/localImage'
+import { resolveImageSrc, unresolveImageSrc } from '../src/renderer/editor/localImage'
 
 // Undestroyed views leave DOMObserver flush timers that fire after jsdom teardown
 // ("document is not defined" unhandled error) — destroy every editor we create.
@@ -88,15 +88,14 @@ describe('slash block commands inside a list (lift-first behavior)', () => {
     return found
   }
 
-  it('callout from a list item lifts out of the list instead of silently failing', async () => {
+  it('code block from a list item lifts out of the list instead of silently failing', async () => {
     const editor = await editorWith('- first\n- second x/')
     const caret = caretAfter(editor, 'x/')
     editor.commands.setTextSelection(caret)
-    const callout = buildSlashItems().find((i) => i.id === 'callout')!
-    callout.run(editor, { from: caret - 1, to: caret })
-    expect(editor.isActive('callout')).toBe(true)
+    const code = buildSlashItems().find((i) => i.id === 'code')!
+    code.run(editor, { from: caret - 1, to: caret })
+    expect(editor.isActive('codeBlock')).toBe(true)
     const md = editor.getMarkdown()
-    expect(md).toContain(':::callout')
     expect(md).toContain('- first')
     expect(md).not.toContain('- second x')
   })
@@ -111,13 +110,13 @@ describe('slash block commands inside a list (lift-first behavior)', () => {
     expect(editor.getMarkdown()).toContain('## todo x')
   })
 
-  it('toggle from a nested list item escapes every level', async () => {
+  it('heading from a nested list item escapes every level', async () => {
     const editor = await editorWith('- outer\n  - inner x/')
     const caret = caretAfter(editor, 'x/')
     editor.commands.setTextSelection(caret)
-    const toggle = buildSlashItems().find((i) => i.id === 'toggle')!
-    toggle.run(editor, { from: caret - 1, to: caret })
-    expect(editor.isActive('toggle')).toBe(true)
+    const h3 = buildSlashItems().find((i) => i.id === 'h3')!
+    h3.run(editor, { from: caret - 1, to: caret })
+    expect(editor.isActive('heading', { level: 3 })).toBe(true)
     expect(editor.isActive('listItem')).toBe(false)
   })
 })
@@ -178,6 +177,32 @@ describe('block keymap commands (secondbrain parity)', () => {
     texts = []
     editor.state.doc.forEach((n) => texts.push(n.textContent))
     expect(texts).toEqual(['alpha', 'beta', 'gamma'])
+  })
+})
+
+describe('unresolveImageSrc', () => {
+  it('leaves non md-asset URLs untouched', () => {
+    expect(unresolveImageSrc('https://x.test/a.png', '/docs')).toBe('https://x.test/a.png')
+    expect(unresolveImageSrc('assets/p.png', '/docs')).toBe('assets/p.png')
+  })
+
+  it('maps a resolved URL back to the authored relative path', () => {
+    const url = resolveImageSrc('assets/p.png', '/Users/me/notes')
+    expect(unresolveImageSrc(url, '/Users/me/notes')).toBe('assets/p.png')
+  })
+
+  it('decodes encoded segments', () => {
+    const url = resolveImageSrc('assets/图 1.png', '/n')
+    expect(unresolveImageSrc(url, '/n')).toBe('assets/图 1.png')
+  })
+
+  it('keeps an absolute path when it lives outside the base dir', () => {
+    expect(unresolveImageSrc('md-asset:///tmp/pic.png', '/docs')).toBe('/tmp/pic.png')
+  })
+
+  it('round-trips Windows base dirs', () => {
+    const url = resolveImageSrc('assets/p.png', 'C:\\notes')
+    expect(unresolveImageSrc(url, 'C:\\notes')).toBe('assets/p.png')
   })
 })
 

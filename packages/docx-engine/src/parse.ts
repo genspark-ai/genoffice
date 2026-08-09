@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
 import { computeListMarkers, type ListItemRef } from './list-markers'
+import { isMetafileMime, metafileToDataUrl } from './metafile'
 import { ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
 import { NOTE_PART_PATH, parseNotesXml } from './notes'
@@ -9,7 +10,7 @@ import { scanBody, type BodyElement } from './scan'
 import { findSourcesPart, parseSourcesXml } from './sources'
 import { decodeSymbolChar, decodeSymbolText } from './symbol-fonts'
 import { THEME_PART_PATH, readThemeColors, readThemeFonts, resolveThemeColor } from './theme'
-import { TOTAL_PAGES_MARK } from './types'
+import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
 import type {
   Block,
   ChartDisplay,
@@ -21,6 +22,7 @@ import type {
   NoteInfo,
   HfImage,
   HfParagraph,
+  HfTableCell,
   HfPartInfo,
   NumberingDef,
   NumberingLevel,
@@ -154,6 +156,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
   endnotes.forEach((n, i) => noteNumbers.set(`endnote:${n.id}`, i + 1))
 
   const scan = scanBody(documentXml)
+  const mediaByRid = await tableBlipMedia(scan.elements, documentXml, zip, rels)
   const elements: BodyElement[] = []
   const blocks: Block[] = []
   const chartParts: Record<string, string> = {}
@@ -167,6 +170,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     noteNumbers,
     themeColors: theme.colors,
     themeFonts: theme.fonts,
+    mediaByRid,
   }
   let sdtGroupSeq = 0
   for (const el of scan.elements) {
@@ -329,6 +333,8 @@ interface BuildContext {
   themeColors?: ThemeColors | null
   /** theme font scheme for w:asciiTheme/... resolution */
   themeFonts?: ThemeFonts | null
+  /** pre-resolved a:blip rId -> data/external URL for pictures inside w:tbl (extractCell is sync, media reads are async) */
+  mediaByRid?: Map<string, string>
 }
 
 /** numbering reference of a paragraph: direct w:numPr, falling back to the pStyle's
@@ -524,6 +530,25 @@ function sdtTableXml(sdtXml: string): string | null {
   return null
 }
 
+/** Range/marker elements that are invisible in Word when they land at body top level */
+const INVISIBLE_BODY_MARKERS = new Set([
+  'w:bookmarkStart',
+  'w:bookmarkEnd',
+  'w:commentRangeStart',
+  'w:commentRangeEnd',
+  'w:proofErr',
+  'w:permStart',
+  'w:permEnd',
+  'w:moveFromRangeStart',
+  'w:moveFromRangeEnd',
+  'w:moveToRangeStart',
+  'w:moveToRangeEnd',
+  'w:customXmlInsRangeStart',
+  'w:customXmlInsRangeEnd',
+  'w:customXmlDelRangeStart',
+  'w:customXmlDelRangeEnd',
+])
+
 async function buildBlock(
   el: BodyElement,
   index: number,
@@ -600,6 +625,9 @@ async function buildBlock(
     // No usable paragraph found → passthrough
     return { ...base, type: 'passthrough', label: 'Content control', previewText: '' }
   }
+  if (INVISIBLE_BODY_MARKERS.has(el.name)) {
+    return { ...base, type: 'passthrough', label: el.name, invisibleMarker: true }
+  }
   if (el.name !== 'w:p') {
     return { ...base, type: 'passthrough', label: el.name, previewText: '' }
   }
@@ -628,9 +656,21 @@ async function buildBlock(
       previewText: plainText(detect),
     }
   }
+  // Field chars inside textbox content don't make the paragraph itself a field
+  // paragraph: research-report sidebars are VML textboxes embedding PAGE/date
+  // fields, and those paragraphs must reach the textbox display path below
+  //. Textbox blocks are protected passthrough anyway.
+  const fieldDetect = detect.includes('<w:txbxContent') ? stripTextboxes(detect) : detect
+  const hasFields =
+    fieldDetect.includes('<w:fldChar') ||
+    fieldDetect.includes('<w:fldSimple') ||
+    fieldDetect.includes('<w:instrText')
   // Field paragraphs whose visible result is a picture (e.g. INCLUDEPICTURE)
   // should still display the image; the block stays protected either way.
+  // Non-field drawing paragraphs take the drawing branch below, which keeps
+  // mixed text + inline-image paragraphs editable.
   if (
+    hasFields &&
     detect.includes('<w:drawing') &&
     !detect.includes('<c:chart') &&
     !detect.includes('r:dm=') &&
@@ -641,16 +681,7 @@ async function buildBlock(
       return { ...base, type: 'image', label: 'Image', imageDataUrl: image, ...imageMeta(detect) }
     }
   }
-  // Field chars inside textbox content don't make the paragraph itself a field
-  // paragraph: research-report sidebars are VML textboxes embedding PAGE/date
-  // fields, and those paragraphs must reach the textbox display path below
-  //. Textbox blocks are protected passthrough anyway.
-  const fieldDetect = detect.includes('<w:txbxContent') ? stripTextboxes(detect) : detect
-  if (
-    fieldDetect.includes('<w:fldChar') ||
-    fieldDetect.includes('<w:fldSimple') ||
-    fieldDetect.includes('<w:instrText')
-  ) {
+  if (hasFields) {
     // XE (index entry) fields are invisible markers; a paragraph whose only
     // fields are XE stays editable (extractRuns round-trips the markers).
     if (!onlyXeFields(detect)) {
@@ -759,33 +790,71 @@ async function buildBlock(
     }
     const image = await extractImage(detect, ctx)
     if (image) {
+      // inline picture(s) sharing the paragraph with real text: an image block
+      // would silently drop that text, so keep the paragraph editable with
+      // run-level images. Anchored pictures keep the image-block treatment.
+      if (!detect.includes('<wp:anchor') && plainText(stripTextboxes(detect)).trim() !== '') {
+        await resolveBlipMedia(detect, ctx)
+        return buildTextParagraph(base, xml, ctx, true)
+      }
       return { ...base, type: 'image', label: 'Image', imageDataUrl: image, ...imageMeta(detect) }
     }
+    const textboxes = extractTextboxes(detect, ctx)
+    const boxTexts = textboxes.flatMap((t) =>
+      t.paras.map((p) => p.runs.map((r) => r.text).join('')),
+    )
+    const strayText = plainText(stripTextboxes(detect)).trim()
     // Anchored decorative shape (underline rule, background box...) in a
     // paragraph that also carries real text: parse it as a normal paragraph so
     // the text stays readable/editable. The shape lives in runs we do not
     // regenerate — the block still saves byte-identical while untouched, and
     // only loses the decoration if the user actually edits this paragraph.
-    if (plainText(stripTextboxes(detect)).trim() !== '') {
+    // Content-carrying textboxes are the exception: the plain-paragraph path
+    // would silently drop their text, so the block stays a textbox passthrough
+    // (the stray text joins the preview instead of vanishing).
+    if (strayText !== '' && !boxTexts.some((t) => t.trim() !== '')) {
       return buildTextParagraph(base, xml, ctx)
     }
     // Anchored textboxes (code boxes, callout cards): all visible text lives in
     // w:txbxContent. Extract a display-only model so content and box styling
     // render; the block stays protected and saves byte-identical.
-    const textboxes = extractTextboxes(detect, ctx)
     if (textboxes.length > 0) {
       return {
         ...base,
         type: 'passthrough',
         label: 'Text box',
-        previewText: textboxes
-          .flatMap((t) => t.paras.map((p) => p.runs.map((r) => r.text).join('')))
-          .join('\n'),
+        previewText: (strayText !== '' ? [strayText, ...boxTexts] : boxTexts).join('\n'),
         textboxes,
         ...imageMeta(detect),
       }
     }
-    return { ...base, type: 'passthrough', label: 'Drawing object', decorative: isThinRule(detect) }
+    // Picture whose media cannot be shown (rel missing / pointing at a
+    // non-media part, or metafile conversion failed): empty frame at the
+    // declared extent
+    // instead of a bare chip. Bytes still pass through untouched.
+    if (detect.includes('<a:blip') || detect.includes('<pic:pic')) {
+      const docPr = /<wp:docPr [^>]*\/?>/.exec(detect)?.[0] ?? ''
+      const alt = /\bdescr="([^"]+)"/.exec(docPr)?.[1] ?? /\bname="([^"]+)"/.exec(docPr)?.[1]
+      return {
+        ...base,
+        type: 'passthrough',
+        label: 'Image',
+        brokenImage: true,
+        ...(alt ? { previewText: decodeEntities(alt) } : {}),
+        ...imageMeta(detect),
+      }
+    }
+    if (isInvisibleEmptyShape(detect)) {
+      return { ...base, type: 'passthrough', label: 'Drawing object', invisibleMarker: true }
+    }
+    const decorative = isThinRule(detect)
+    return {
+      ...base,
+      type: 'passthrough',
+      label: 'Drawing object',
+      decorative,
+      ...(decorative ? ruleDisplayOf(detect) : {}),
+    }
   }
 
   return buildTextParagraph(base, xml, ctx)
@@ -818,6 +887,7 @@ function buildTextParagraph(
   base: Pick<Block, 'id' | 'docxIndex' | 'originalXml'>,
   xml: string,
   ctx: BuildContext,
+  withImages = false,
 ): Block {
   let parsed: XNode[]
   try {
@@ -833,14 +903,26 @@ function buildTextParagraph(
 
   const pPr = findChild(pNode, 'w:pPr')
   const styleId = pPr ? attrsOf(findChild(pPr, 'w:pStyle') ?? {})['w:val'] : undefined
-  const format = pPr ? extractParaFormat(pPr) : undefined
+  let format = pPr ? extractParaFormat(pPr) : undefined
+  // style-chain autoSpace off reaches the block: the renderer reads it per paragraph
+  if (format?.autoSpace === undefined && styleId) {
+    if (ctx.styles.get(styleId)?.display?.autoSpace === false) {
+      format = { ...(format ?? {}), autoSpace: false }
+    }
+  }
   const rawPPr = rawPPrOf(xml)
   // inline math: raw <m:oMath> fragments in document order, aligned with the
   // walk below (strip fallback/textbox copies so indexes match visited nodes)
   const mathXml = stripTextboxes(
     xml.includes('<mc:Fallback') ? xml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, '') : xml,
   )
-  const runs = extractRuns(pNode, ctx, ommlFragmentsOf(mathXml), rubyFragmentsOf(mathXml))
+  const runs = extractRuns(
+    pNode,
+    ctx,
+    ommlFragmentsOf(mathXml),
+    rubyFragmentsOf(mathXml),
+    withImages,
+  )
   const { bookmarks, hiddenBookmarks } = bookmarkNamesOf(stripTextboxes(xml))
   const { commentStarts, commentEnds } = crossParaCommentMarkers(stripTextboxes(xml))
 
@@ -1035,6 +1117,51 @@ function isThinRule(xml: string): boolean {
   return Number.isFinite(cy) && cy > 0 && cy <= 130000
 }
 
+/** stroke color/thickness (a:ln) + extent width of a decorative rule drawing */
+function ruleDisplayOf(
+  xml: string,
+): Pick<Block, 'ruleColorHex' | 'ruleThicknessPx' | 'ruleWidthPx'> {
+  const out: Pick<Block, 'ruleColorHex' | 'ruleThicknessPx' | 'ruleWidthPx'> = {}
+  const ln = /<a:ln\b[^>]*>[\s\S]*?<\/a:ln>/.exec(xml)?.[0]
+  if (ln) {
+    const color = /<a:solidFill>\s*<a:srgbClr val="([0-9A-Fa-f]{6})"/.exec(ln)?.[1]
+    if (color) out.ruleColorHex = color.toUpperCase()
+    const w = parseInt(/<a:ln\b[^>]*\bw="(\d+)"/.exec(ln)?.[1] ?? '', 10)
+    if (Number.isFinite(w) && w > 0) out.ruleThicknessPx = Math.max(1, Math.round(w / EMU_PER_PX))
+  }
+  const cx = parseInt(/<wp:extent cx="(\d+)"/.exec(xml)?.[1] ?? '', 10)
+  if (Number.isFinite(cx) && cx > 0) out.ruleWidthPx = Math.round(cx / EMU_PER_PX)
+  return out
+}
+
+/**
+ * Converter artifact: every shape explicitly declares noFill + noFill outline
+ * and carries no picture, no text and no effects — Word renders nothing, so
+ * the block renders as nothing too (still passthrough, bytes untouched).
+ */
+function isInvisibleEmptyShape(xml: string): boolean {
+  if (!xml.includes('<wps:wsp') || xml.includes('<a:blip') || plainText(xml).trim() !== '') {
+    return false
+  }
+  let parsed: XNode[]
+  try {
+    parsed = xmlParser.parse(xml) as XNode[]
+  } catch {
+    return false
+  }
+  const shapes: XNode[] = []
+  collectNodes(parsed, 'wps:wsp', shapes)
+  if (shapes.length === 0) return false
+  return shapes.every((shape) => {
+    const spPr = findChild(shape, 'wps:spPr')
+    if (!spPr || !findChild(spPr, 'a:noFill')) return false
+    const ln = findChild(spPr, 'a:ln')
+    if (!ln || !findChild(ln, 'a:noFill')) return false
+    const effects = findChild(spPr, 'a:effectLst')
+    return !effects || childrenOf(effects).length === 0
+  })
+}
+
 /** drop textbox content so "does the paragraph itself have text" checks work */
 function stripTextboxes(xml: string): string {
   return xml.includes('<w:txbxContent')
@@ -1201,6 +1328,77 @@ function lineBoxOf(shape: XNode): TextboxDisplay | null {
   return box
 }
 
+/** a:schemeClr val -> ThemeColors slot (DrawingML names; text/bg aliases mapped) */
+const SCHEME_CLR_SLOTS: Record<string, keyof ThemeColors> = {
+  tx1: 'dk1',
+  bg1: 'lt1',
+  tx2: 'dk2',
+  bg2: 'lt2',
+  dk1: 'dk1',
+  lt1: 'lt1',
+  dk2: 'dk2',
+  lt2: 'lt2',
+  accent1: 'accent1',
+  accent2: 'accent2',
+  accent3: 'accent3',
+  accent4: 'accent4',
+  accent5: 'accent5',
+  accent6: 'accent6',
+  hlink: 'hlink',
+  folHlink: 'folHlink',
+}
+
+/** one a:gs stop -> sRGB triple (srgbClr or theme-resolved schemeClr, lumMod/lumOff applied) */
+function gradStopRgb(gs: XNode, theme?: ThemeColors | null): number[] | null {
+  const srgb = attrsOf(findChild(gs, 'a:srgbClr') ?? {})['val']
+  const scheme = srgb ? undefined : findChild(gs, 'a:schemeClr')
+  let base: string | undefined = srgb
+  if (!base && scheme) {
+    const slot = SCHEME_CLR_SLOTS[attrsOf(scheme)['val'] ?? '']
+    if (!slot) return null
+    base =
+      (theme?.[slot] as string | undefined) ??
+      (slot === 'dk1' ? '000000' : slot === 'lt1' ? 'FFFFFF' : undefined)
+  }
+  if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) return null
+  let rgb = [0, 2, 4].map((i) => parseInt(base!.slice(i, i + 2), 16))
+  if (scheme) {
+    const pct = (name: string): number | null => {
+      const v = parseInt(attrsOf(findChild(scheme, name) ?? {})['val'] ?? '', 10)
+      return Number.isFinite(v) ? Math.min(100000, Math.max(0, v)) / 100000 : null
+    }
+    const lumMod = pct('a:lumMod')
+    if (lumMod !== null) rgb = rgb.map((c) => c * lumMod)
+    const lumOff = pct('a:lumOff')
+    if (lumOff !== null) rgb = rgb.map((c) => c + 255 * lumOff)
+  }
+  return rgb
+}
+
+/**
+ * a:gradFill approximated as a solid color (display only): equal-weight sRGB
+ * average of all stops — the first stop alone is often white and loses the
+ * visible tint entirely.
+ */
+function gradFillApproxHex(spPr: XNode, theme?: ThemeColors | null): string | undefined {
+  const gsLst = findChild(findChild(spPr, 'a:gradFill') ?? {}, 'a:gsLst')
+  if (!gsLst) return undefined
+  const stops = childrenOf(gsLst)
+    .filter((n) => nameOf(n) === 'a:gs')
+    .map((gs) => gradStopRgb(gs, theme))
+    .filter((rgb): rgb is number[] => rgb !== null)
+  if (stops.length === 0) return undefined
+  return [0, 1, 2]
+    .map((i) => stops.reduce((sum, rgb) => sum + rgb[i], 0) / stops.length)
+    .map((c) =>
+      Math.round(Math.min(255, Math.max(0, c)))
+        .toString(16)
+        .padStart(2, '0')
+        .toUpperCase(),
+    )
+    .join('')
+}
+
 function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
   // wrapSquare gate keeps converter-emitted decorative rules on the thin-rule path
   const hasLineShapes = xml.includes('<wp:wrapSquare') && LINE_PRSTS_RE.test(xml)
@@ -1254,6 +1452,10 @@ function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
         'val'
       ]
       if (fill) box.fill = fill
+      else {
+        const grad = gradFillApproxHex(spPr, ctx.themeColors)
+        if (grad) box.fill = grad
+      }
       const ln = findChild(spPr, 'a:ln')
       const border = ln
         ? attrsOf(findChild(findChild(ln, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})['val']
@@ -1311,6 +1513,15 @@ const JC_ALIGN: Record<string, ParaFormat['align']> = {
   end: 'right',
   both: 'justify',
   distribute: 'distribute',
+}
+
+/** w:autoSpaceDE/DN (Word default on): false only when both are explicitly off */
+function autoSpaceOf(pPr: XNode): boolean | undefined {
+  const de = onOffOf(pPr, 'w:autoSpaceDE')
+  const dn = onOffOf(pPr, 'w:autoSpaceDN')
+  if (de === false && dn === false) return false
+  if (de === true || dn === true) return true
+  return undefined
 }
 
 function extractParaFormat(pPr: XNode): ParaFormat | undefined {
@@ -1372,6 +1583,8 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
     if (wcVal === '0' || wcVal === 'false') format.widowControl = false
   }
   if (boolProp(pPr, 'w:contextualSpacing')) format.contextualSpacing = true
+  const autoSpace = autoSpaceOf(pPr)
+  if (autoSpace !== undefined) format.autoSpace = autoSpace
   const shd = findChild(pPr, 'w:shd')
   if (shd) {
     const fill = attrsOf(shd)['w:fill']
@@ -1439,13 +1652,26 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
 /** Simple instructions foldable into an editable inline-field run (the cached result is the display text) */
 const SIMPLE_INLINE_FIELD_RE = /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILENAME|AUTHOR|PAGE)\b/
 
+/** HYPERLINK "url" (optional \o "tip"): the only field form folded into an editable link run;
+ * any other switch (\l bookmark, \t frame...) keeps the protected-passthrough path */
+function convertibleHyperlink(instr: string): { href: string; tooltip?: string } | null {
+  const m = /^\s*HYPERLINK\s+"([^"\\]+)"\s*(?:\\o\s+"([^"]*)"\s*)?$/.exec(decodeEntities(instr))
+  if (!m) return null
+  return { href: m[1], ...(m[2] ? { tooltip: m[2] } : {}) }
+}
+
 function onlyXeFields(xml: string): boolean {
   if (xml.includes('<w:fldSimple')) return false
   const instrs = xml.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? []
   if (instrs.length === 0) return false
   return instrs.every((fragment) => {
     const text = decodeEntities(fragment.replace(/<[^>]+>/g, ''))
-    return /^\s*XE[\s"]/.test(text) || /^\s*REF\s/.test(text) || SIMPLE_INLINE_FIELD_RE.test(text)
+    return (
+      /^\s*XE[\s"]/.test(text) ||
+      /^\s*REF\s/.test(text) ||
+      SIMPLE_INLINE_FIELD_RE.test(text) ||
+      convertibleHyperlink(text) !== null
+    )
   })
 }
 
@@ -1454,6 +1680,7 @@ function extractRuns(
   ctx: BuildContext,
   mathFragments: string[] = [],
   rubyFragments: string[] = [],
+  withImages = false,
 ): Run[] {
   const runs: Run[] = []
   let mathIndex = 0
@@ -1482,6 +1709,7 @@ function extractRuns(
   let fieldInstr = ''
   let fieldSeparated = false
   let fieldCached = ''
+  let fieldCachedRuns: Run[] = []
   const pushRun = (run: Run, rev?: RevCtx) => {
     if (activeComments.size > 0) run.commentIds = [...activeComments].sort()
     if (rev?.ins) run.ins = rev.ins
@@ -1498,6 +1726,7 @@ function extractRuns(
           fieldInstr = ''
           fieldSeparated = false
           fieldCached = ''
+          fieldCachedRuns = []
         }
       } else if (type === 'separate') {
         if (fieldDepth === 1) fieldSeparated = true
@@ -1506,16 +1735,28 @@ function extractRuns(
         if (fieldDepth === 0) {
           const xe = /^\s*XE\s+(?:"([^"]*)"|(\S+))/.exec(fieldInstr)
           const ref = /^\s*REF\s+(?:"([^"]+)"|([^\s\\]+))/.exec(fieldInstr)
+          const hyper = convertibleHyperlink(fieldInstr)
           if (xe) pushRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
           else if (ref) {
             const name = ref[1] ?? ref[2]
             pushRun({ text: fieldCached || name, refField: name, refInstr: fieldInstr }, rev)
+          } else if (hyper) {
+            // fold the field into plain link runs (the cached result keeps its
+            // formatting); regeneration emits w:hyperlink + a fresh rel
+            const linkVal: Run['link'] = {
+              href: hyper.href,
+              ...(hyper.tooltip ? { tooltip: hyper.tooltip } : {}),
+            }
+            if (fieldCachedRuns.length > 0) {
+              for (const cached of fieldCachedRuns) pushRun({ ...cached, link: linkVal }, rev)
+            } else pushRun({ text: hyper.href, link: linkVal }, rev)
           } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
             pushRun({ text: fieldCached || ' ', instrField: fieldInstr.trim() }, rev)
           }
           fieldInstr = ''
           fieldSeparated = false
           fieldCached = ''
+          fieldCachedRuns = []
         }
       }
       return
@@ -1526,9 +1767,12 @@ function extractRuns(
       const instr = findChild(node, 'w:instrText')
       if (instr) fieldInstr += textOf(instr)
       else if (fieldSeparated && fieldDepth === 1) {
-        // REF cached result is the display text; other fields' caches are dropped
+        // REF/HYPERLINK cached result is the display text; other fields' caches are dropped
         const cached = buildRun(node, link, ctx.themeColors, ctx.themeFonts)
-        if (cached) fieldCached += cached.text
+        if (cached) {
+          fieldCached += cached.text
+          fieldCachedRuns.push(cached)
+        }
       }
       return
     }
@@ -1552,7 +1796,13 @@ function extractRuns(
         return
       }
     }
-    const run = buildRun(node, link, ctx.themeColors, ctx.themeFonts)
+    const run = buildRun(
+      node,
+      link,
+      ctx.themeColors,
+      ctx.themeFonts,
+      withImages ? ctx.mediaByRid : undefined,
+    )
     if (run) pushRun(run, rev)
   }
   const walk = (nodes: XNode[], link?: Run['link'], rev?: RevCtx) => {
@@ -1630,12 +1880,29 @@ function onOffOf(parent: XNode, name: string): boolean | undefined {
   return !['0', 'false', 'none', 'off'].includes(val.toLowerCase())
 }
 
+/** Word's face for an East Asian theme slot whose typeface is empty (<a:ea typeface=""/>) */
+const EMPTY_EA_THEME_FONT = 'DengXian'
+
+/** empty EA slot faces by settings.xml w:themeFontLang w:eastAsia (zh-CN / missing → DengXian) */
+const EMPTY_EA_SLOT_BY_LANG: Record<string, { major: string; minor: string }> = {
+  ja: { major: 'Yu Gothic', minor: 'Yu Mincho' },
+}
+
+function emptyEaSlotFont(fonts: ThemeFonts, eaRef: string | undefined): string {
+  const lang = fonts.eaLang?.toLowerCase().split('-')[0]
+  const byLang = lang ? EMPTY_EA_SLOT_BY_LANG[lang] : undefined
+  if (!byLang) return EMPTY_EA_THEME_FONT
+  return eaRef === 'majorEastAsia' ? byLang.major : byLang.minor
+}
+
 /** w:rFonts with theme references resolved: theme attrs supersede same-slot literal
- * values (ECMA-376 §17.3.2.26). Unresolvable references fall back to the literal. */
+ * values (ECMA-376 §17.3.2.26). Unresolvable references fall back to the literal,
+ * except an empty eastAsia theme slot: Word keeps the theme's authority and renders
+ * the theme language's default face, never the leftover literal name (eaSlotEmpty marks this). */
 function themedRFonts(
   attrs: Record<string, string | undefined>,
   fonts: ThemeFonts | null | undefined,
-): { ascii?: string; hAnsi?: string; eastAsia?: string } {
+): { ascii?: string; hAnsi?: string; eastAsia?: string; cs?: string; eaSlotEmpty?: boolean } {
   const themeVal = (ref: string | undefined): string | undefined => {
     if (!ref || !fonts) return undefined
     switch (ref) {
@@ -1657,10 +1924,16 @@ function themedRFonts(
         return undefined
     }
   }
+  const eaRef = attrs['w:eastAsiaTheme']
+  const themedEa = themeVal(eaRef)
+  const eaSlotEmpty =
+    !themedEa && !!fonts && (eaRef === 'majorEastAsia' || eaRef === 'minorEastAsia')
   return {
     ascii: themeVal(attrs['w:asciiTheme']) ?? attrs['w:ascii'],
     hAnsi: themeVal(attrs['w:hAnsiTheme']) ?? attrs['w:hAnsi'],
-    eastAsia: themeVal(attrs['w:eastAsiaTheme']) ?? attrs['w:eastAsia'],
+    eastAsia: themedEa ?? (eaSlotEmpty ? emptyEaSlotFont(fonts!, eaRef) : attrs['w:eastAsia']),
+    cs: themeVal(attrs['w:cstheme']) ?? attrs['w:cs'],
+    ...(eaSlotEmpty ? { eaSlotEmpty } : {}),
   }
 }
 
@@ -1669,6 +1942,7 @@ function buildRun(
   link?: Run['link'],
   theme?: ThemeColors | null,
   themeFonts?: ThemeFonts | null,
+  mediaByRid?: Map<string, string>,
 ): Run | null {
   let text = ''
   for (const child of childrenOf(rNode)) {
@@ -1687,10 +1961,28 @@ function buildRun(
           decodeSymbolChar(a['w:font'] ?? '', code) ?? String.fromCodePoint((code & 0xff) + 0xf000)
     }
   }
-  if (text === '') return null
+  let image: Run['image']
+  if (mediaByRid) {
+    const drawing = findChild(rNode, 'w:drawing')
+    if (drawing) {
+      const drawingXml = serializeXNode(drawing)
+      const rId = /<a:blip[^>]*r:(?:embed|link)="([^"]+)"/.exec(drawingXml)?.[1]
+      const dataUrl = rId ? mediaByRid.get(rId) : undefined
+      if (dataUrl) {
+        image = { dataUrl, xml: drawingXml }
+        const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(drawingXml)
+        const cx = Number(extent?.[1])
+        const cy = Number(extent?.[2])
+        if (cx > 0) image.widthPx = Math.round(cx / EMU_PER_PX)
+        if (cy > 0) image.heightPx = Math.round(cy / EMU_PER_PX)
+      }
+    }
+  }
+  if (text === '' && !image) return null
 
   const rPr = findChild(rNode, 'w:rPr')
   const run: Run = { text }
+  if (image) run.image = image
   if (link) run.link = link
   if (rPr) {
     run.rawRPr = serializeXNode(rPr)
@@ -1713,6 +2005,7 @@ function buildRun(
     if (font) run.font = font
     const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) run.fontAscii = fontAscii
+    if (rf.cs) run.csFont = rf.cs
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) run.charSpacingTwips = spc
     const wScale = parseInt(attrsOf(findChild(rPr, 'w:w') ?? {})['w:val'] ?? '', 10)
@@ -1792,6 +2085,7 @@ function sameStyle(a: Run, b: Run): boolean {
   if (a.instrField !== undefined || b.instrField !== undefined) return false
   if (a.math || b.math) return false
   if (a.ruby || b.ruby) return false
+  if (a.image || b.image) return false
   return (
     (a.rawRPr ?? '') === (b.rawRPr ?? '') &&
     a.styleId === b.styleId &&
@@ -1803,6 +2097,7 @@ function sameStyle(a: Run, b: Run): boolean {
     a.sizeHalfPoints === b.sizeHalfPoints &&
     a.font === b.font &&
     a.fontAscii === b.fontAscii &&
+    a.csFont === b.csFont &&
     a.highlight === b.highlight &&
     a.vertAlign === b.vertAlign &&
     (a.link?.href ?? '') === (b.link?.href ?? '') &&
@@ -1864,7 +2159,8 @@ function tcwColumnWidths(tbl: XNode): number[] | undefined {
         1,
         Number(attrsOf(findChild(tcPr ?? {}, 'w:gridSpan') ?? {})['w:val']) || 1,
       )
-      const a = attrsOf(findChild(tcPr ?? {}, 'w:tcW') ?? {})
+      // duplicated w:tcW: Word keeps the last occurrence (generators leave stale first values)
+      const a = attrsOf(findChildren(tcPr ?? {}, 'w:tcW').at(-1) ?? {})
       const w = !a['w:type'] || a['w:type'] === 'dxa' ? Number(a['w:w']) || 0 : 0
       if (span === 1 && w > 0 && !(cols[idx] > 0)) cols[idx] = w
       idx += span
@@ -1922,6 +2218,7 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
 
   const rows: TableCell[][] = []
   const rowHeightsTwips: Array<number | null> = []
+  const rowHeightRules: NonNullable<TableModel['rowHeightRules']> = []
   const rowRevisions: NonNullable<TableModel['rowRevisions']> = []
   for (const tr of childrenThroughSdt(tbl, 'w:tr')) {
     const cells: TableCell[] = []
@@ -1939,8 +2236,12 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
     if (cells.length > 0) {
       rows.push(cells)
       const trPr = findChild(tr, 'w:trPr')
-      const h = trPr ? Number(attrsOf(findChild(trPr, 'w:trHeight') ?? {})['w:val']) : NaN
-      rowHeightsTwips.push(Number.isFinite(h) && h > 0 ? h : null)
+      const trH = trPr ? attrsOf(findChild(trPr, 'w:trHeight') ?? {}) : {}
+      const h = Number(trH['w:val'])
+      const hasH = Number.isFinite(h) && h > 0
+      // Word clamps trHeight to 31680 twips / 22in (MS-OI29500 2.1.51); some generators leak EMU-scale values here
+      rowHeightsTwips.push(hasH ? Math.min(h, 31680) : null)
+      rowHeightRules.push(hasH ? (trH['w:hRule'] === 'exact' ? 'exact' : 'atLeast') : null)
       rowRevisions.push(trPr ? rowRevisionOf(trPr) : null)
     }
   }
@@ -1962,7 +2263,10 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
   const tblStyle = attrsOf(findChild(findChild(tbl, 'w:tblPr') ?? {}, 'w:tblStyle') ?? {})['w:val']
   if (tblStyle) model.tblStyleId = tblStyle
   if (tblPrNode && boolProp(tblPrNode, 'w:bidiVisual')) model.bidiVisual = true
-  if (rowHeightsTwips.some((h) => h !== null)) model.rowHeightsTwips = rowHeightsTwips
+  if (rowHeightsTwips.some((h) => h !== null)) {
+    model.rowHeightsTwips = rowHeightsTwips
+    model.rowHeightRules = rowHeightRules
+  }
   if (rowRevisions.some((r) => r !== null)) model.rowRevisions = rowRevisions
   return model
 }
@@ -2039,21 +2343,38 @@ function applyTableStyleDisplay(
         ? (bits & bit) !== 0
         : dflt
   const firstRowOn = flag('w:firstRow', 0x20, true)
+  const lastRowOn = flag('w:lastRow', 0x40, false)
+  const firstColOn = flag('w:firstColumn', 0x80, true)
+  const lastColOn = flag('w:lastColumn', 0x100, false)
   const hBandOn = !flag('w:noHBand', 0x200, false)
 
+  const totalCols = Math.max(
+    ...rows.map((row) => row.reduce((sum, c) => sum + (c.colSpan ?? 1), 0)),
+  )
   rows.forEach((row, r) => {
     const isFirst = firstRowOn && r === 0
+    const isLast = lastRowOn && r === rows.length - 1
     const bandRow = firstRowOn ? r - 1 : r
     const bandFill =
       hBandOn && bandRow >= 0 ? (bandRow % 2 === 0 ? ts.band1Fill : ts.band2Fill) : undefined
+    let col = 0
     for (const cell of row) {
+      const span = cell.colSpan ?? 1
+      // Word's conditional-format precedence: rows beat columns, all beat bands/whole-table
+      const conds = [
+        isFirst ? ts.firstRow : undefined,
+        isLast ? ts.lastRow : undefined,
+        firstColOn && col === 0 ? ts.firstCol : undefined,
+        lastColOn && col + span === totalCols ? ts.lastCol : undefined,
+      ]
+      col += span
       if (cell.fill === undefined) {
-        cell.fill = (isFirst ? (ts.firstRow?.fill ?? ts.fill) : (bandFill ?? ts.fill)) ?? undefined
+        cell.fill = conds.find((c) => c?.fill)?.fill ?? bandFill ?? ts.fill ?? undefined
       }
-      if (isFirst) {
-        if (ts.firstRow?.bold && cell.bold === undefined) cell.bold = true
-        if (ts.firstRow?.color && !cell.color) cell.color = ts.firstRow.color
-      }
+      const bold = conds.some((c) => c?.bold) || ts.wholeTable?.bold
+      if (bold && cell.bold === undefined) cell.bold = true
+      const color = conds.find((c) => c?.color)?.color ?? ts.wholeTable?.color
+      if (color && !cell.color) cell.color = color
     }
   })
 }
@@ -2146,15 +2467,22 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
   }
 
   // Tables nested in a cell: parsed as read-only sub-tables (byte fidelity is the
-  // outer table's responsibility)
-  const nested = childrenThroughSdt(tc, 'w:tbl')
-    .map((n) => extractTableModel(n, ctx))
-    .filter((m): m is TableModel => !!m)
-  if (nested.length > 0) cell.nestedTables = nested
-
+  // outer table's responsibility); anchors record their position among the paragraphs
+  const nested: TableModel[] = []
+  const nestedAnchors: number[] = []
   let sawBold = false
   let sawNonBold = false
-  for (const p of childrenThroughSdt(tc, 'w:p')) {
+  const runColors = new Set<string>()
+  for (const block of childrenThroughSdt(tc, ['w:p', 'w:tbl'])) {
+    if (nameOf(block) === 'w:tbl') {
+      const model = extractTableModel(block, ctx)
+      if (model) {
+        nested.push(model)
+        nestedAnchors.push(cell.paras.length)
+      }
+      continue
+    }
+    const p = block
     cell.paras.push(textOf(p))
     const pPr = findChild(p, 'w:pPr')
     const format = extractParaFormat(pPr ?? {})
@@ -2167,7 +2495,11 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
           ilvl: cellRef.ilvl,
         }
       : undefined
-    richParas.push({ ...format, ...(list ? { list } : {}), runs: extractRuns(p, ctx) })
+    richParas.push({
+      ...format,
+      ...(list ? { list } : {}),
+      runs: extractRuns(p, ctx, [], [], true),
+    })
     if (!cell.align) {
       const jc = attrsOf(findChild(findChild(p, 'w:pPr') ?? {}, 'w:jc') ?? {})['w:val']
       if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') {
@@ -2178,10 +2510,7 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
       const rPr = findChild(r, 'w:rPr')
       if (rPr && boolProp(rPr, 'w:b')) sawBold = true
       else sawNonBold = true
-      if (!cell.color && rPr) {
-        const color = colorFrom(rPr, ctx.themeColors)
-        if (color) cell.color = color
-      }
+      if (textOf(r) !== '') runColors.add((rPr && colorFrom(rPr, ctx.themeColors)) ?? 'none')
     }
   }
   // drop trailing empty paragraphs so cells don't get artificially tall
@@ -2190,7 +2519,17 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
     richParas.pop()
   }
   cell.richParas = richParas
+  if (nested.length > 0) {
+    cell.nestedTables = nested
+    // clamp anchors that pointed past the trimmed tail
+    cell.nestedTableAnchors = nestedAnchors.map((a) => Math.min(a, cell.paras.length))
+  }
   if (sawBold && !sawNonBold) cell.bold = true
+  // cell.color only when every text run agrees (mixed colors stay run-level)
+  if (runColors.size === 1) {
+    const only = runColors.values().next().value as string
+    if (only !== 'none') cell.color = only
+  }
   return cell
 }
 
@@ -2257,19 +2596,20 @@ async function parseEvenAndOddHeaders(zip: JSZip): Promise<boolean> {
   return m !== null && !/w:val="(?:0|false)"/.test(m[0])
 }
 
-/** header/footer part XML -> display content (PAGE fields shown as '#') */
+/** header/footer part XML -> display content (PAGE fields shown as PAGE_MARK) */
 function hfContentFromXml(
   xml: string,
   kind: 'header' | 'footer',
   theme?: ThemeColors | null,
 ): { text: string; hasPageNumber: boolean; watermark: string | null; paras: HfParagraph[] } {
-  // Rewrite each field span (begin..end) for display. PAGE becomes the '#'
-  // marker and NUMPAGES the private-use marker (the renderer substitutes real
-  // numbers), dropping their stale cached results; other fields (DATE, STYLEREF,
-  // ...) keep their cached result runs (Word refreshes them on open). fldChar
-  // attribute matching is tolerant (Pages writes w:fldLock="0" etc.).
-  // hasPageNumber is set by the same match that emits '#', so the two can't drift
-  // (Word may split "PAGE" across several instrText runs).
+  // Rewrite each field span (begin..end) for display. PAGE and NUMPAGES become
+  // private-use markers (the renderer substitutes real numbers; a literal '#'
+  // in the part text must never be mistaken for the field), dropping their
+  // stale cached results; other fields (DATE, STYLEREF, ...) keep their cached
+  // result runs (Word refreshes them on open). fldChar attribute matching is
+  // tolerant (Pages writes w:fldLock="0" etc.).
+  // hasPageNumber is set by the same match that emits PAGE_MARK, so the two
+  // can't drift (Word may split "PAGE" across several instrText runs).
   let hasPageNumber = false
   let cleaned = xml.replace(
     /<w:fldChar[^>]*w:fldCharType="begin"[^>]*\/>[\s\S]*?<w:fldChar[^>]*w:fldCharType="end"[^>]*\/>/g,
@@ -2287,7 +2627,7 @@ function hfContentFromXml(
       }
       if (/\bPAGE\b/.test(instr)) {
         hasPageNumber = true
-        return emit(`<w:r>${rPr}<w:t>#</w:t></w:r>`)
+        return emit(`<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`)
       }
       const cached = /<w:fldChar[^>]*w:fldCharType="separate"[^>]*\/>([\s\S]*)$/.exec(span)?.[1]
       // complete result runs between separate and end (partial run fragments at the edges drop out)
@@ -2306,7 +2646,7 @@ function hfContentFromXml(
       if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
       if (/\bPAGE\b/.test(instr)) {
         hasPageNumber = true
-        return `<w:r>${rPr}<w:t>#</w:t></w:r>`
+        return `<w:r>${rPr}<w:t>${PAGE_MARK}</w:t></w:r>`
       }
       return inner ?? whole
     },
@@ -2315,7 +2655,7 @@ function hfContentFromXml(
     text: plainText(cleaned),
     hasPageNumber,
     watermark: kind === 'header' ? readWatermarkText(xml) : null,
-    // strip leftover field chars so the '#' page marker parses as plain text
+    // strip leftover field chars so the page marker parses as plain text
     paras: hfParagraphs(cleaned.replace(/<w:fldChar[^>]*\/>/g, ''), theme),
   }
 }
@@ -2399,7 +2739,15 @@ function hfParagraphs(partXml: string, theme?: ThemeColors | null): HfParagraph[
     themeColors: theme,
   } as unknown as BuildContext
   const out: HfParagraph[] = []
-  for (const pNode of findChildren(root, 'w:p')) {
+  for (const node of childrenOf(root)) {
+    const name = nameOf(node)
+    if (name === 'w:tbl') {
+      // layout tables (logo | title | date rows): one display paragraph per row
+      out.push(...hfTableRowParagraphs(node, ctx))
+      continue
+    }
+    if (name !== 'w:p') continue
+    const pNode = node
     const runs = extractRuns(pNode, ctx)
     if (runs.length === 0 && (findChild(pNode, 'w:r') || findChild(pNode, 'w:pict'))) {
       // Government-style footers keep their text (e.g. the "— PAGE —" page number)
@@ -2412,7 +2760,55 @@ function hfParagraphs(partXml: string, theme?: ThemeColors | null): HfParagraph[
     out.push({ ...(pPr ? extractParaFormat(pPr) : {}), runs })
   }
   // trailing all-empty paragraphs are layout noise
-  while (out.length > 0 && out[out.length - 1].runs.length === 0) out.pop()
+  while (out.length > 0 && out[out.length - 1].runs.length === 0 && !out[out.length - 1].cells) {
+    out.pop()
+  }
+  return out
+}
+
+/** header/footer top-level table → one paragraph per row, cells as width-proportioned columns */
+function hfTableRowParagraphs(tbl: XNode, ctx: BuildContext): HfParagraph[] {
+  const grid = findChild(tbl, 'w:tblGrid')
+  const gridCols = grid
+    ? findChildren(grid, 'w:gridCol').map((g) => Number(attrsOf(g)['w:w']) || 0)
+    : []
+  const out: HfParagraph[] = []
+  for (const tr of childrenThroughSdt(tbl, 'w:tr')) {
+    const tcs = childrenThroughSdt(tr, 'w:tc')
+    const widths = tcs.map((tc) => {
+      const a = attrsOf(findChild(findChild(tc, 'w:tcPr') ?? {}, 'w:tcW') ?? {})
+      const v = Number(a['w:w'])
+      return a['w:type'] !== 'pct' && Number.isFinite(v) && v > 0 ? v : 0
+    })
+    if (widths.some((w) => w <= 0) && gridCols.some((w) => w > 0)) {
+      let col = 0
+      tcs.forEach((tc, i) => {
+        const span =
+          Number(attrsOf(findChild(findChild(tc, 'w:tcPr') ?? {}, 'w:gridSpan') ?? {})['w:val']) ||
+          1
+        widths[i] = gridCols.slice(col, col + span).reduce((s, w) => s + w, 0)
+        col += span
+      })
+    }
+    const total = widths.reduce((s, w) => s + w, 0)
+    const cells = tcs.map((tc, i) => {
+      const runs: Run[] = []
+      let align: HfTableCell['align']
+      for (const p of childrenThroughSdt(tc, 'w:p')) {
+        const pRuns = extractRuns(p, ctx)
+        if (runs.length > 0 && pRuns.length > 0) runs.push({ text: ' ' })
+        runs.push(...pRuns)
+        const pPr = findChild(p, 'w:pPr')
+        if (!align && pPr) align = extractParaFormat(pPr)?.align
+      }
+      return {
+        runs,
+        ...(align ? { align } : {}),
+        ...(total > 0 && widths[i] > 0 ? { widthPct: (widths[i] / total) * 100 } : {}),
+      }
+    })
+    if (cells.some((c) => c.runs.some((r) => r.text !== ''))) out.push({ runs: [], cells })
+  }
   return out
 }
 
@@ -2453,14 +2849,38 @@ async function parseTheme(
   const file = zip.file(THEME_PART_PATH)
   if (!file) return { fonts: null, colors: null }
   const xml = await file.async('string')
-  return { fonts: readThemeFonts(xml), colors: readThemeColors(xml) }
+  const fonts = readThemeFonts(xml)
+  if (fonts) {
+    const eaLang = await readThemeFontLangEa(zip)
+    if (eaLang) fonts.eaLang = eaLang
+  }
+  return { fonts, colors: readThemeColors(xml) }
+}
+
+/** settings.xml w:themeFontLang w:eastAsia */
+async function readThemeFontLangEa(zip: JSZip): Promise<string | undefined> {
+  const file = zip.file('word/settings.xml')
+  if (!file) return undefined
+  return /<w:themeFontLang\b[^>]*\bw:eastAsia="([^"]+)"/.exec(await file.async('string'))?.[1]
 }
 
 function plainText(xml: string): string {
   const texts: string[] = []
-  const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g
+  // a space at cell boundaries keeps table text from gluing together
+  const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<\/w:tc>/g
   let m: RegExpExecArray | null
-  while ((m = re.exec(xml)) !== null) texts.push(m[1])
+  let pendingGap = false
+  while ((m = re.exec(xml)) !== null) {
+    if (m[0] === '</w:tc>') {
+      pendingGap = texts.length > 0
+      continue
+    }
+    if (pendingGap) {
+      texts.push(' ')
+      pendingGap = false
+    }
+    texts.push(m[1])
+  }
   return decodeEntities(texts.join(''))
 }
 
@@ -2614,6 +3034,9 @@ type ImageMeta = Pick<
   | 'imageOffsetYEmu'
   | 'imagePosH'
   | 'imagePosV'
+  | 'imageRotDeg'
+  | 'imageFlipH'
+  | 'imageFlipV'
 >
 
 function imageMeta(xml: string): ImageMeta {
@@ -2628,6 +3051,16 @@ function imageMeta(xml: string): ImageMeta {
   const jc = /<w:jc w:val="([^"]+)"/.exec(xml)?.[1]
   if (jc === 'center') meta.imageAlign = 'center'
   else if (jc === 'right' || jc === 'end') meta.imageAlign = 'right'
+  // rotation/flip live on the pic's own xfrm (an anchored textbox sibling has its own wps xfrm)
+  const picXfrm = /<pic:spPr[^>]*>[\s\S]*?<a:xfrm([^>]*)>/.exec(xml)?.[1]
+  if (picXfrm) {
+    const rot = parseInt(/\brot="(-?\d+)"/.exec(picXfrm)?.[1] ?? '', 10)
+    if (Number.isFinite(rot) && rot !== 0) {
+      meta.imageRotDeg = ((Math.round(rot / 60000) % 360) + 360) % 360
+    }
+    if (/\bflipH="(?:1|true)"/.test(picXfrm)) meta.imageFlipH = true
+    if (/\bflipV="(?:1|true)"/.test(picXfrm)) meta.imageFlipV = true
+  }
   const anchor = /<wp:anchor[^>]*>/.exec(xml)?.[0]
   if (anchor) {
     if (/behindDoc="1"/.test(anchor)) meta.imageWrap = 'behind'
@@ -2677,7 +3110,61 @@ async function mediaDataUrl(
   if (!file) return null
   const mime = IMAGE_MIME[path.split('.').pop()?.toLowerCase() ?? '']
   if (!mime) return null
+  if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
   return `data:${mime};base64,${await file.async('base64')}`
+}
+
+/**
+ * Pre-resolve blip rIds found inside w:tbl (extractCell is sync, media reads
+ * are async). Scoped to tables to bound memory.
+ */
+async function tableBlipMedia(
+  elements: BodyElement[],
+  documentXml: string,
+  zip: JSZip,
+  rels: Map<string, RelInfo>,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const rIds = new Set<string>()
+  for (const el of elements) {
+    if (el.name !== 'w:tbl' && el.name !== 'w:sdt') continue
+    let slice = documentXml.slice(el.start, el.end)
+    if (el.name === 'w:sdt') {
+      const from = slice.indexOf('<w:tbl')
+      if (from === -1) continue
+      slice = slice.slice(from, slice.lastIndexOf('</w:tbl>') + '</w:tbl>'.length)
+    }
+    for (const m of slice.matchAll(/<a:blip[^>]*r:(?:embed|link)="([^"]+)"/g)) rIds.add(m[1])
+  }
+  for (const rId of rIds) {
+    const rel = rels.get(rId)
+    if (!rel) continue
+    if (rel.targetMode === 'External' || /^https?:\/\//i.test(rel.target)) {
+      out.set(rId, rel.target)
+      continue
+    }
+    const dataUrl = await mediaDataUrl(zip, rels, rId)
+    if (dataUrl) out.set(rId, dataUrl)
+  }
+  return out
+}
+
+/** resolve a paragraph's blip rIds into ctx.mediaByRid so extractRuns (sync) can build image runs */
+async function resolveBlipMedia(xml: string, ctx: BuildContext): Promise<void> {
+  const media = ctx.mediaByRid
+  if (!media) return
+  for (const m of xml.matchAll(/<a:blip[^>]*r:(?:embed|link)="([^"]+)"/g)) {
+    const rId = m[1]
+    if (media.has(rId)) continue
+    const rel = ctx.rels.get(rId)
+    if (!rel) continue
+    if (rel.targetMode === 'External' || /^https?:\/\//i.test(rel.target)) {
+      media.set(rId, rel.target)
+      continue
+    }
+    const dataUrl = await mediaDataUrl(ctx.zip, ctx.rels, rId)
+    if (dataUrl) media.set(rId, dataUrl)
+  }
 }
 
 async function extractImage(xml: string, ctx: BuildContext): Promise<string | null> {
@@ -2698,7 +3185,8 @@ async function extractImage(xml: string, ctx: BuildContext): Promise<string | nu
   if (!file) return null
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
   const mime = IMAGE_MIME[ext]
-  if (!mime || mime === 'image/emf' || mime === 'image/wmf') return null
+  if (!mime) return null
+  if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
   const base64 = await file.async('base64')
   return `data:${mime};base64,${base64}`
 }
@@ -2746,7 +3234,10 @@ async function oleDisplay(
   const file = path ? ctx.zip.file(path) : null
   if (file && path) {
     const mime = IMAGE_MIME[path.split('.').pop()?.toLowerCase() ?? '']
-    if (mime && mime !== 'image/emf' && mime !== 'image/wmf') {
+    if (isMetafileMime(mime)) {
+      const converted = await metafileToDataUrl(await file.async('arraybuffer'), mime)
+      if (converted) out.imageDataUrl = converted
+    } else if (mime) {
       out.imageDataUrl = `data:${mime};base64,${await file.async('base64')}`
     }
   }
@@ -2781,6 +3272,17 @@ async function extractChart(xml: string, ctx: BuildContext): Promise<ChartDispla
   return display
 }
 
+/** Word's substitution face when the East Asian font slot is empty, by w:lang w:eastAsia */
+const EA_LANG_DEFAULT_FONT: Record<string, string> = {
+  ko: 'Batang',
+  'ko-kr': 'Batang',
+  ja: 'MS Mincho',
+  'ja-jp': 'MS Mincho',
+  'zh-cn': 'SimSun',
+  'zh-tw': 'PMingLiU',
+  'zh-hk': 'PMingLiU',
+}
+
 async function parseStyles(
   zip: JSZip,
   theme?: ThemeColors | null,
@@ -2808,7 +3310,15 @@ async function parseStyles(
     if (sz) dd.sizeHalfPoints = parseInt(sz, 10) || undefined
     const ddRf = themedRFonts(rPr ? attrsOf(findChild(rPr, 'w:rFonts') ?? {}) : {}, themeFonts)
     if (ddRf.ascii ?? ddRf.hAnsi) dd.asciiFont = ddRf.ascii ?? ddRf.hAnsi
-    if (ddRf.eastAsia) dd.eastAsiaFont = ddRf.eastAsia
+    // docDefaults keeps the lang-based backfill below for the empty-slot case
+    if (ddRf.eastAsia && !ddRf.eaSlotEmpty) dd.eastAsiaFont = ddRf.eastAsia
+    // Empty EA slot + explicit w:lang w:eastAsia: Word substitutes the locale's
+    // default face (e.g. ko-KR theme with <a:ea typeface=""/> renders Batang)
+    const eaLang = rPr ? attrsOf(findChild(rPr, 'w:lang') ?? {})['w:eastAsia'] : undefined
+    if (!dd.eastAsiaFont && eaLang) {
+      const eaDefault = EA_LANG_DEFAULT_FONT[eaLang.toLowerCase()]
+      if (eaDefault) dd.eastAsiaFont = eaDefault
+    }
     if (rPr) {
       const onFlag = (tag: string) => {
         const node = findChild(rPr, tag)
@@ -2944,6 +3454,7 @@ async function parseStyles(
     'strike',
     'font',
     'fontAscii',
+    'csFont',
   ] as const
   for (const [fromId, toId] of linkedIds) {
     const a = styles.get(fromId)
@@ -2973,15 +3484,12 @@ function mergeTableDisplay(
   parent: TableStyleDisplay,
   child: TableStyleDisplay | undefined,
 ): TableStyleDisplay | undefined {
-  const merged: TableStyleDisplay = {
-    ...parent,
-    ...(child ?? {}),
-    ...(parent.firstRow || child?.firstRow
-      ? { firstRow: { ...(parent.firstRow ?? {}), ...(child?.firstRow ?? {}) } }
-      : {}),
-    ...(parent.paraSpacing || child?.paraSpacing
-      ? { paraSpacing: { ...(parent.paraSpacing ?? {}), ...(child?.paraSpacing ?? {}) } }
-      : {}),
+  const merged: TableStyleDisplay = { ...parent, ...(child ?? {}) }
+  const DEEP = ['wholeTable', 'firstRow', 'firstCol', 'lastCol', 'lastRow', 'paraSpacing'] as const
+  for (const key of DEEP) {
+    if (parent[key] || child?.[key]) {
+      merged[key] = { ...(parent[key] ?? {}), ...(child?.[key] ?? {}) } as never
+    }
   }
   return Object.keys(merged).length > 0 ? merged : undefined
 }
@@ -2998,18 +3506,26 @@ function tableStyleDisplayOf(
   }
   const baseFill = shdFill(findChild(styleNode, 'w:tcPr'))
   if (baseFill) display.fill = baseFill
+  const styleRPr = findChild(styleNode, 'w:rPr')
+  if (styleRPr) {
+    const wholeTable: NonNullable<TableStyleDisplay['wholeTable']> = {}
+    const color = colorFrom(styleRPr, theme)
+    if (color) wholeTable.color = color
+    if (boolProp(styleRPr, 'w:b')) wholeTable.bold = true
+    if (Object.keys(wholeTable).length > 0) display.wholeTable = wholeTable
+  }
   for (const cond of findChildren(styleNode, 'w:tblStylePr')) {
     const type = attrsOf(cond)['w:type']
     const tcPr = findChild(cond, 'w:tcPr')
     const fill = shdFill(tcPr)
-    if (type === 'firstRow') {
+    if (type === 'firstRow' || type === 'firstCol' || type === 'lastCol' || type === 'lastRow') {
       const rPr = findChild(cond, 'w:rPr')
-      const firstRow: NonNullable<TableStyleDisplay['firstRow']> = {}
-      if (fill) firstRow.fill = fill
-      if (rPr && boolProp(rPr, 'w:b')) firstRow.bold = true
+      const fmt: NonNullable<TableStyleDisplay['firstRow']> = {}
+      if (fill) fmt.fill = fill
+      if (rPr && boolProp(rPr, 'w:b')) fmt.bold = true
       const color = colorFrom(rPr, theme)
-      if (color) firstRow.color = color
-      if (Object.keys(firstRow).length > 0) display.firstRow = firstRow
+      if (color) fmt.color = color
+      if (Object.keys(fmt).length > 0) display[type] = fmt
     } else if (type === 'band1Horz' && fill) {
       display.band1Fill = fill
     } else if (type === 'band2Horz' && fill) {
@@ -3066,6 +3582,7 @@ function styleDisplayOf(
     const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
     const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) display.fontAscii = fontAscii
+    if (rf.cs) display.csFont = rf.cs
     if (font) display.font = font
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) display.charSpacingTwips = spc
@@ -3091,6 +3608,8 @@ function styleDisplayOf(
     if (boolProp(pPr, 'w:keepNext')) display.keepNext = true
     if (boolProp(pPr, 'w:keepLines')) display.keepLines = true
     if (boolProp(pPr, 'w:contextualSpacing')) display.contextualSpacing = true
+    const autoSpace = autoSpaceOf(pPr)
+    if (autoSpace !== undefined) display.autoSpace = autoSpace
     const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
     if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
     else if (jc === 'both' || jc === 'distribute') display.align = 'justify'
@@ -3197,11 +3716,12 @@ async function parseProtection(zip: JSZip): Promise<DocProtection | null> {
 }
 
 function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
-  const start = parseInt(attrsOf(findChild(lvlNode, 'w:start') ?? {})['w:val'] ?? '1', 10)
+  // ECMA-376: a w:lvl without w:start starts at 0 (Word renders "0.")
+  const start = parseInt(attrsOf(findChild(lvlNode, 'w:start') ?? {})['w:val'] ?? '0', 10)
   const level: NumberingLevel = {
     numFmt: attrsOf(findChild(lvlNode, 'w:numFmt') ?? {})['w:val'] ?? 'decimal',
     lvlText: decodeEntities(attrsOf(findChild(lvlNode, 'w:lvlText') ?? {})['w:val'] ?? ''),
-    start: Number.isFinite(start) ? start : 1,
+    start: Number.isFinite(start) ? start : 0,
   }
   const lvlPPr = findChild(lvlNode, 'w:pPr')
   const ind = lvlPPr ? findChild(lvlPPr, 'w:ind') : undefined

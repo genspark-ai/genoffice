@@ -53,6 +53,7 @@ export interface FontMetricsProvider {
  */
 function charAdvanceEm(code: number): number {
   if (
+    isHangul(code) ||
     (code >= 0x3000 && code <= 0x30ff) ||
     (code >= 0x3400 && code <= 0x9fff) ||
     (code >= 0xf900 && code <= 0xfaff) ||
@@ -94,6 +95,10 @@ export class HeuristicMetrics implements FontMetricsProvider {
   }
 }
 
+/** Korean font names (Windows/Noto/Source Han/Nanum faces + bundled subsets) */
+const KO_FONT_RE =
+  /malgun|맑은|batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서|gulim|굴림|dotum|돋움|nanum|나눔|genoffice (sans|serif) kr|(noto|source han) (sans|serif)[^,]*\bk(r|orean)?\b/i
+
 /**
  * Per-font line-height factor (based on measured Windows font metrics).
  * PMingLiU/MingLiU: ~1.0em; SimSun and other Simplified fonts: ~1.3em; Western: 1.2em.
@@ -104,6 +109,12 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f.includes('pmingliu') || f.includes('mingliu') || f.includes('細明體')) {
     return 1.0
   }
+  // Korean faces: Word lays out East Asian auto line rule at winTotal × 1.3
+  // (probe-verified vs Word PDFs): Malgun 1.3301 × 1.3 ≈ 1.73, Batang/Gulim 1.0 × 1.3
+  if (KO_FONT_RE.test(f)) return /malgun|맑은/.test(f) ? 1.73 : 1.3
+  // Noto/Source Han SC declares substitute into the SimSun class when missing
+  // (bundled subsets count as missing), so they take the SimSun factor
+  if (/^(noto|source han) (sans|serif)( cjk)? ?(sc|cn)\b/.test(f)) return 1.3
   // expanded Simplified Chinese fonts (SimSun/NSimSun/SimHei/FangSong/KaiTi/Microsoft YaHei)
   if (
     f.includes('simsun') ||
@@ -114,6 +125,8 @@ export function lineHeightFactor(fontFamily: string): number {
     f.includes('kaiti') ||
     f.includes('microsoft yahei') ||
     f.includes('microsoftyahei') ||
+    f.includes('dengxian') ||
+    f.includes('等线') ||
     f.includes('simhei') ||
     f.includes('simfang') ||
     f.includes('simkai')
@@ -237,6 +250,28 @@ export function computeLineHeight(
  * measures a mixed-script sample against both generic fallbacks: a family that
  * changes neither width doesn't exist.
  */
+/**
+ * Bundled web fonts (fonts.css). The canvas probe resolves them, but they are
+ * last-resort subset faces, so substitution decisions treat them as missing.
+ */
+export const BUNDLED_FONTS = new Set([
+  'Noto Sans CJK SC',
+  'Noto Serif CJK SC',
+  'GenOffice Sans KR',
+  'GenOffice Serif KR',
+  'GenOffice Fullwidth TC',
+  'GenOffice Songti SC',
+  'Carlito GO',
+  'Caladea',
+  'Liberation Serif',
+  'Liberation Sans',
+  'Liberation Mono',
+])
+const BUNDLED_LC = new Set([...BUNDLED_FONTS].map((f) => f.toLowerCase()))
+export function isBundledFont(name: string): boolean {
+  return BUNDLED_LC.has(name.toLowerCase())
+}
+
 const fontAvailableCache = new Map<string, boolean>()
 export function isFontAvailable(font: string): boolean {
   if (typeof document === 'undefined') return false
@@ -271,7 +306,7 @@ export function cssFontFamily(font: string): string {
   // CJK fallback at chain end (GB2312 subset bundled in fonts.css): no tofu even without system Chinese fonts
   const CJK_SERIF = 'Noto Serif CJK SC'
   const CJK_SANS = 'Noto Sans CJK SC'
-  if (f.includes('calibri')) return `${chain(font, 'Carlito', CJK_SANS)},sans-serif`
+  if (f.includes('calibri')) return `${chain(font, 'Carlito GO', CJK_SANS)},sans-serif`
   if (f.includes('cambria') && !f.includes('math'))
     return `${chain(font, 'Caladea', CJK_SERIF)},serif`
   if (f.includes('times')) return `${chain(font, 'Liberation Serif', CJK_SERIF)},serif`
@@ -286,8 +321,11 @@ export function cssFontFamily(font: string): string {
     f.includes('zhongsong')
   )
     return `${chain(font, 'STZhongsong', 'Songti SC', 'STSong', 'SimSun', CJK_SERIF)},serif`
+  // 'GenOffice Songti SC' (fonts.css local() alias of Songti SC): macOS Chromium
+  // refuses synthetic bold for 'Songti SC' by name at weight 600/700; the alias,
+  // registered weight-normal only, lets Blink synthesize. Unresolvable elsewhere.
   if (f.includes('simsun') || f.includes('宋体') || f.includes('nsimsun')) {
-    return `${chain(font, 'Songti SC', 'STSong', 'SimSun', CJK_SERIF)},serif`
+    return `${chain(font, 'GenOffice Songti SC', 'STSong', 'SimSun', CJK_SERIF)},serif`
   }
   if (f.includes('simhei') || f.includes('黑体') || f.includes('细黑') || f.includes('xihei'))
     return `${chain(font, 'Heiti SC', 'STHeiti', 'SimHei', 'PingFang SC', CJK_SANS)},sans-serif`
@@ -304,19 +342,39 @@ export function cssFontFamily(font: string): string {
   // Japanese/Korean/Traditional Chinese: fall back within the same script (win/mac family names as mutual backups) so Han glyphs don't render with Simplified forms
   const JA_SANS = ['Yu Gothic', 'Hiragino Sans', 'Meiryo', 'Noto Sans JP']
   const JA_SERIF = ['Yu Mincho', 'Hiragino Mincho ProN', 'MS Mincho', 'Noto Serif JP']
-  const KO_SANS = ['Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR']
-  const KO_SERIF = ['Batang', 'AppleMyungjo', 'Noto Serif KR']
+  const KO_SANS = ['Malgun Gothic', 'GenOffice Sans KR', 'Apple SD Gothic Neo', 'Noto Sans KR']
+  const KO_SERIF = ['Batang', 'GenOffice Serif KR', 'AppleMyungjo', 'Noto Serif KR']
   const TC_SANS = ['Microsoft JhengHei', 'PingFang TC', 'Heiti TC', 'Noto Sans TC']
-  const TC_SERIF = ['PMingLiU', 'MingLiU', 'Songti TC', 'Noto Serif TC']
+  // 'GenOffice Fullwidth TC' (fonts.css): fullwidth U+FF0D/FF0F/FF3C/FF3F/FF5E whose Songti TC glyphs look half-width
+  const TC_SERIF = ['PMingLiU', 'MingLiU', 'GenOffice Fullwidth TC', 'Songti TC', 'Noto Serif TC']
+  const SC_SANS = ['PingFang SC', 'Microsoft YaHei', CJK_SANS]
+  const SC_SERIF = ['GenOffice Songti SC', 'STSong', 'SimSun', CJK_SERIF]
   const nfkc = font.normalize('NFKC')
+  // Arabic: bundled Noto subsets stand in for missing fonts; Chromium's silent
+  // fallback is a Geeza Pro-style UI face, larger and heavier than the naskh
+  // serif Word substitutes. Unknown Arabic names default to the naskh chain.
+  if (
+    /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(font) ||
+    /naskh|kufi|arabic|urdu|geeza|amiri|scheherazade|lateef|harmattan|aldhabi|andalus|nastaliq|al bayan|baghdad|damascus|diwan|farisi|mishafi|nadeem|beirut/i.test(
+      nfkc,
+    )
+  ) {
+    const sans = /kufi|sans|dubai|segoe/i.test(nfkc)
+    const chainFor = sans
+      ? ['Noto Sans Arabic', 'Geeza Pro']
+      : ['Noto Naskh Arabic', 'Geeza Pro', 'Al Bayan']
+    return `${chain(font, ...chainFor)},${sans ? 'sans-serif' : 'serif'}`
+  }
   // Word substitutes a *missing* East Asian font with the locale's default face —
   // a serif (Mincho/Batang) — regardless of the requested font's classification.
   // Classic Windows faces (Malgun/Meiryo/Yu Gothic...) have solid macOS
   // equivalents in the chains and keep their classification.
-  const missingLocally = () => !isFontAvailable(font)
+  const missingLocally = () => isBundledFont(font) || !isFontAvailable(font)
   // Noto CJK / Source Han / Nanum regional variants route by suffix; the generic
   // fallback tail below would otherwise land them on the bundled Simplified-only subset
-  const cjkVariant = /^(?:noto|source han) (sans|serif)(?: cjk)? ?(jp|kr|k\b|tc|tw|hk)/i.exec(nfkc)
+  const cjkVariant = /^(?:noto|source han) (sans|serif)(?: cjk)? ?(jp|kr|k|tc|tw|hk|sc|cn)\b/i.exec(
+    nfkc,
+  )
   if (cjkVariant) {
     const serif = /serif/i.test(cjkVariant[1]) || missingLocally()
     const region = cjkVariant[2].toLowerCase()
@@ -329,10 +387,16 @@ export function cssFontFamily(font: string): string {
           ? serif
             ? KO_SERIF
             : KO_SANS
-          : serif
-            ? TC_SERIF
-            : TC_SANS
-    return `${chain(font, ...chainFor)},${serif ? 'serif' : 'sans-serif'}`
+          : region === 'sc' || region === 'cn'
+            ? serif
+              ? SC_SERIF
+              : SC_SANS
+            : serif
+              ? TC_SERIF
+              : TC_SANS
+    // a bundled face at the chain head would win over the substitution; it stays only as the tail safety net
+    const head = isBundledFont(font) ? [] : [font]
+    return `${chain(...head, ...chainFor)},${serif ? 'serif' : 'sans-serif'}`
   }
   if (
     /[぀-ヿ]|mincho|meiryo|hiragino|osaka|yugoth|yu (gothic|mincho)|ms (ui )?p?(gothic|mincho)|明朝|biz ud|kozuka|小塚/i.test(
@@ -375,10 +439,41 @@ export function cssFontFamily(font: string): string {
  */
 export function cssDualFontFamily(ascii: string, eastAsia: string): string {
   if (ascii === eastAsia) return cssFontFamily(ascii)
+  // Korean ascii face (e.g. theme latin = Malgun): its fallback chain covers hangul
+  // and would swallow the eastAsia font, so keep only the literal family
+  if (KO_FONT_RE.test(ascii.normalize('NFKC'))) {
+    return `'${ascii.replace(/'/g, '')}',${cssFontFamily(eastAsia)}`
+  }
   const latin = cssFontFamily(ascii)
     .split(',')
     .filter((f) => !/noto (sans|serif) cjk/i.test(f) && !/^(serif|sans-serif|monospace)$/.test(f))
   return `${latin.join(',')},${cssFontFamily(eastAsia)}`
+}
+
+/** Text contains complex-script characters (Arabic/Hebrew/Syriac/Thaana/NKo), i.e. the w:cs font slot applies */
+export function textHasComplexScript(text: string): boolean {
+  return /[\u0590-\u05FF\u0600-\u077F\u0780-\u07FF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(
+    text,
+  )
+}
+
+/**
+ * Fallback chain for a run whose text hits the w:cs slot: the cs chain leads
+ * (minus its generic tail) so complex-script glyphs use it, then the run's
+ * Latin/East Asian chain for everything else.
+ */
+export function cssCsFontFamily(cs: string, ascii?: string, eastAsia?: string): string {
+  const base =
+    ascii && eastAsia && ascii !== eastAsia
+      ? cssDualFontFamily(ascii, eastAsia)
+      : ascii || eastAsia
+        ? cssFontFamily((ascii || eastAsia)!)
+        : ''
+  if (!base) return cssFontFamily(cs)
+  const head = cssFontFamily(cs)
+    .split(',')
+    .filter((f) => !/^(serif|sans-serif|monospace)$/.test(f))
+  return [...new Set([...head, ...base.split(',')])].join(',')
 }
 
 /** Text contains CJK characters (decides the line-height factor: CJK lines measure ~1.3em per Chinese font metrics) */
@@ -387,6 +482,30 @@ export function textHasCjk(text: string): boolean {
     if (isCjk(ch.codePointAt(0) ?? 0)) return true
   }
   return false
+}
+
+/** Text contains hangul (Korean paragraphs take the Korean line factor, not the 1.3 Chinese one) */
+export function textHasHangul(text: string): boolean {
+  for (const ch of text) {
+    if (isHangul(ch.codePointAt(0) ?? 0)) return true
+  }
+  return false
+}
+
+/** Per-paragraph --doc-line-factor value by script (approximates Word's max-of-inline-fonts line height) */
+export function paraLineFactorCss(text: string): string {
+  if (textHasHangul(text)) return 'var(--doc-line-factor-kr,1.3)'
+  if (textHasCjk(text)) return '1.3'
+  return 'var(--doc-line-factor-latin,1.2)'
+}
+
+/** --doc-line-factor-kr source: the document's East Asian face when Korean, else the Batang-class default */
+export function krLineFactor(fontFamily: string | undefined): number {
+  return fontFamily && isKoreanFontName(fontFamily) ? lineHeightFactor(fontFamily) : 1.3
+}
+
+export function isKoreanFontName(fontFamily: string): boolean {
+  return KO_FONT_RE.test(fontFamily.normalize('NFKC'))
 }
 
 /**
@@ -426,11 +545,79 @@ export function snapSpacingToGrid(spacingTwips: number, docGrid: DocGrid | undef
 
 function isCjk(cp: number): boolean {
   return (
+    isHangul(cp) ||
     (cp >= 0x3000 && cp <= 0x30ff) ||
     (cp >= 0x3400 && cp <= 0x9fff) ||
     (cp >= 0xf900 && cp <= 0xfaff) ||
     (cp >= 0xff00 && cp <= 0xffef)
   )
+}
+
+function isHangul(cp: number): boolean {
+  return (
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0x1100 && cp <= 0x11ff) ||
+    (cp >= 0x3130 && cp <= 0x318f) ||
+    (cp >= 0xa960 && cp <= 0xa97f) ||
+    (cp >= 0xd7b0 && cp <= 0xd7ff)
+  )
+}
+
+// ─── CJK-Latin autospace pads ────────────────────────────────────────────────
+// Word's autoSpaceDE/DN gap measures ~1/4em while Chromium's text-autospace is
+// fixed at 1/8em; the renderer inserts a zero-width .doc-autospace-pad span
+// whose margin supplies the other 1/8em. Pads only go between a directly
+// adjacent CJK letter and a Latin letter/digit — never next to spaces or
+// punctuation — matching where Chromium applies its native gap.
+
+/** Han/kana/hangul letters; CJK punctuation and full/halfwidth forms get no gap */
+function isCjkAutospaceSide(cp: number): boolean {
+  if (cp >= 0x3000 && cp <= 0x303f) return false
+  if (cp === 0x30fb) return false
+  if (cp >= 0xff00 && cp <= 0xffef) return false
+  return isCjk(cp)
+}
+
+function isLatinAlnum(cp: number): boolean {
+  if ((cp >= 0x30 && cp <= 0x39) || (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a)) {
+    return true
+  }
+  // Latin-1 Supplement / Extended letters, minus multiply/divide signs
+  return cp >= 0xc0 && cp <= 0x24f && cp !== 0xd7 && cp !== 0xf7
+}
+
+export function needsAutospacePad(prevCp: number, nextCp: number): boolean {
+  return (
+    (isCjkAutospaceSide(prevCp) && isLatinAlnum(nextCp)) ||
+    (isLatinAlnum(prevCp) && isCjkAutospaceSide(nextCp))
+  )
+}
+
+function lastCodePoint(text: string): number {
+  const tail = text.charCodeAt(text.length - 1)
+  if (tail >= 0xdc00 && tail <= 0xdfff && text.length > 1) {
+    return text.codePointAt(text.length - 2)!
+  }
+  return tail
+}
+
+/** pad between two adjacent stretches of text (last char of prev vs first of next) */
+export function autospacePadBetween(prev: string, next: string): boolean {
+  if (!prev || !next) return false
+  return needsAutospacePad(lastCodePoint(prev), next.codePointAt(0)!)
+}
+
+/** UTF-16 offsets inside text where a pad belongs (between offset-1 and offset) */
+export function autospaceBoundaries(text: string): number[] {
+  const out: number[] = []
+  let prev = -1
+  for (let i = 0; i < text.length;) {
+    const cp = text.codePointAt(i)!
+    if (prev >= 0 && needsAutospacePad(prev, cp)) out.push(i)
+    prev = cp
+    i += cp > 0xffff ? 2 : 1
+  }
+  return out
 }
 
 // ─── Line-break simulation ───────────────────────────────────────────────────
@@ -443,6 +630,7 @@ function isCjk(cp: number): boolean {
 function cjkLineHFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
   if (f.includes('pmingliu') || f.includes('mingliu')) return 1.0
+  if (KO_FONT_RE.test(f)) return lineHeightFactor(fontFamily)
   return 1.3
 }
 

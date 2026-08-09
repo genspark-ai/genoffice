@@ -3,13 +3,21 @@ import {} from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
 import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
-import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
+import {
+  autospaceBoundaries,
+  autospacePadBetween,
+  cssCsFontFamily,
+  cssDualFontFamily,
+  cssFontFamily,
+  textHasComplexScript,
+} from '../line-metrics'
 import { shapeBackgroundCss } from './shape-svg'
 import { t } from '../i18n/locale'
 import {
   type ChartDisplay,
   type FieldDisplay,
   type FormulaDisplay,
+  type Run,
   type TableModel,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
@@ -25,11 +33,13 @@ import {
   ProtectedContentEditor,
   TableBordersAttr,
   borderLineCss,
+  cellClipStyle,
   cellPadCss,
   preventProtectedLineBreak,
   protectedText,
   tableBordersCss,
 } from './extensions'
+import { cellClipTwips } from './convert'
 
 // Word: links and TOC entries jump on modifier+click only
 const jumpHint = () =>
@@ -460,31 +470,72 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
     .join(';')
 }
 
+const AUTOSPACE_PAD_SPEC: DomSpec = ['span', { class: 'doc-autospace-pad' }]
+
+/** static-DOM counterpart of the editor's autospace pad decorations */
+function padSegments(text: string): unknown[] {
+  const cuts = autospaceBoundaries(text)
+  if (cuts.length === 0) return [text]
+  const out: unknown[] = []
+  let start = 0
+  for (const cut of cuts) {
+    out.push(text.slice(start, cut), AUTOSPACE_PAD_SPEC)
+    start = cut
+  }
+  out.push(text.slice(start))
+  return out
+}
+
+/** run → styled <span> spec, shared by textbox and table-cell rendering */
+export function runSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
+  const cs = run.csFont && textHasComplexScript(run.text) ? run.csFont : undefined
+  const runStyle = [
+    run.color ? `color:#${run.color}` : '',
+    run.bold ? 'font-weight:700' : '',
+    run.italic ? 'font-style:italic' : '',
+    run.underline ? 'text-decoration:underline' : '',
+    run.font || run.fontAscii || cs
+      ? `font-family:${
+          cs
+            ? cssCsFontFamily(cs, run.fontAscii, run.font)
+            : run.font && run.fontAscii
+              ? cssDualFontFamily(run.fontAscii, run.font)
+              : cssFontFamily((run.font ?? run.fontAscii)!)
+        }`
+      : '',
+    run.sizeHalfPoints ? `font-size:${run.sizeHalfPoints / 2}pt` : '',
+    // explicit autoSpaceDE/DN off also disables the browser's native gap (same as the editor path)
+    autoSpace === false ? 'text-autospace:no-autospace' : '',
+  ]
+    .filter(Boolean)
+    .join(';')
+  const content = autoSpace === false ? [run.text] : padSegments(run.text)
+  return runStyle ? ['span', { style: runStyle }, ...content] : ['span', {}, ...content]
+}
+
+/** run spans with pads at run-boundary CJK-Latin seams (empty runs keep their span, no pad) */
+function runSpansWithPads(runs: Run[], autoSpace?: boolean): DomSpec[] {
+  const out: DomSpec[] = []
+  let prevText = ''
+  for (const run of runs) {
+    if (run.text !== '') {
+      if (autoSpace !== false && autospacePadBetween(prevText, run.text)) {
+        out.push(AUTOSPACE_PAD_SPEC)
+      }
+      prevText = run.text
+    }
+    out.push(runSpanSpec(run, autoSpace))
+  }
+  return out
+}
+
 export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
   const style = textboxBoxStyle(box)
   const boxAttrs: Record<string, string> = { class: 'doc-textbox' }
   if (style) boxAttrs.style = style
 
   const paras: DomSpec[] = box.paras.map((para) => {
-    const spans: DomSpec[] = para.runs.map((run) => {
-      const runStyle = [
-        run.color ? `color:#${run.color}` : '',
-        run.bold ? 'font-weight:700' : '',
-        run.italic ? 'font-style:italic' : '',
-        run.underline ? 'text-decoration:underline' : '',
-        run.font || run.fontAscii
-          ? `font-family:${
-              run.font && run.fontAscii
-                ? cssDualFontFamily(run.fontAscii, run.font)
-                : cssFontFamily((run.font ?? run.fontAscii)!)
-            }`
-          : '',
-        run.sizeHalfPoints ? `font-size:${run.sizeHalfPoints / 2}pt` : '',
-      ]
-        .filter(Boolean)
-        .join(';')
-      return runStyle ? ['span', { style: runStyle }, run.text] : ['span', {}, run.text]
-    })
+    const spans: DomSpec[] = runSpansWithPads(para.runs, para.autoSpace)
     const pStyles = [
       para.align ? `text-align:${para.align}` : '',
       para.lineSpacing ? `line-height:${para.lineSpacing * 1.2}` : '',
@@ -563,14 +614,48 @@ export function renderTableSpec(model: TableModel): DomSpec {
       if (style) tdAttrs.style = style
       if (cell.colSpan && cell.colSpan > 1) tdAttrs.colspan = String(cell.colSpan)
       if (rowSpan > 1) tdAttrs.rowspan = String(rowSpan)
+      // run-level styles preserved; <br> separators keep innerText \n-split
+      // semantics that nested-table edit write-back depends on
+      const paraBlocks: unknown[][] = cell.richParas?.length
+        ? cell.richParas.map((p) => [
+            ...runSpansWithPads(
+              p.runs.filter((run) => run.text !== ''),
+              p.autoSpace,
+            ),
+          ])
+        : cell.paras.map((p) => (p === '' ? [] : [...padSegments(p)]))
+      // nested tables spliced in at their paragraph anchors (cells with them are never editable)
+      const nested = cell.nestedTables ?? []
+      const anchorOf = (i: number) =>
+        Math.min(cell.nestedTableAnchors?.[i] ?? paraBlocks.length, paraBlocks.length)
       const content: unknown[] = []
-      cell.paras.forEach((p, i) => {
-        if (i > 0) content.push(['br', {}])
-        if (p !== '') content.push(p)
+      let ni = 0
+      let lastWasTable = false
+      paraBlocks.forEach((blk, pi) => {
+        while (ni < nested.length && anchorOf(ni) <= pi) {
+          content.push(renderTableSpec(nested[ni++]))
+          lastWasTable = true
+        }
+        if (pi > 0 && !lastWasTable) content.push(['br', {}])
+        content.push(...blk)
+        lastWasTable = false
       })
-      for (const nt of cell.nestedTables ?? []) content.push(renderTableSpec(nt))
+      while (ni < nested.length) content.push(renderTableSpec(nested[ni++]))
       if (content.length === 0) content.push('\u00a0')
-      tds.push(['td', tdAttrs, ...content])
+      const clip = cellClipTwips(model, ri, cell, rowSpan)
+      if (clip !== null) {
+        tds.push([
+          'td',
+          tdAttrs,
+          [
+            'div',
+            { class: 'cell-clip', style: cellClipStyle(cell.vAlign ?? null, clip) },
+            ...content,
+          ],
+        ])
+      } else {
+        tds.push(['td', tdAttrs, ...content])
+      }
     })
     const trAttrs: Record<string, string> = {}
     const rh = model.rowHeightsTwips?.[ri]

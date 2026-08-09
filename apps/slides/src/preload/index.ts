@@ -7,6 +7,7 @@ import type {
   AddImageBytesOp,
   AddInkOp,
   AddMediaBytesOp,
+  ReplacePictureBytesOp,
   AddSmartArtOp,
   ApplyThemeOp,
   AddBlankSlideOp,
@@ -75,6 +76,7 @@ import type {
   MenuCommand,
   OpenResult,
   SlidesApi,
+  UiTheme,
 } from '../shared/ipc'
 
 const api: SlidesApi = {
@@ -86,6 +88,12 @@ const api: SlidesApi = {
     ) => handler(lang)
     ipcRenderer.on('app:language-changed', listener)
     return () => ipcRenderer.removeListener('app:language-changed', listener)
+  },
+  getTheme: () => ipcRenderer.invoke('app:get-theme'),
+  onThemeChanged: (handler) => {
+    const listener = (_event: IpcRendererEvent, theme: UiTheme) => handler(theme)
+    ipcRenderer.on('app:theme-changed', listener)
+    return () => ipcRenderer.removeListener('app:theme-changed', listener)
   },
   openPptx: (fitWidthPx) => ipcRenderer.invoke('slides:open', fitWidthPx),
   openPptxPath: (path, fitWidthPx) => ipcRenderer.invoke('slides:open-path', path, fitWidthPx),
@@ -189,6 +197,8 @@ const api: SlidesApi = {
   addChart: (op: AddChartOp) => ipcRenderer.invoke('slides:add-chart', op),
   addSmartArt: (op: AddSmartArtOp) => ipcRenderer.invoke('slides:add-smartart', op),
   addImageBytes: (op: AddImageBytesOp) => ipcRenderer.invoke('slides:add-image-bytes', op),
+  replacePictureBytes: (op: ReplacePictureBytesOp) =>
+    ipcRenderer.invoke('slides:replace-picture-bytes', op),
   insertMedia: (slideIndex: number, kind: 'video' | 'audio', fitWidthPx: number) =>
     ipcRenderer.invoke('slides:insert-media', slideIndex, kind, fitWidthPx),
   addMediaBytes: (op: AddMediaBytesOp) => ipcRenderer.invoke('slides:add-media-bytes', op),
@@ -282,6 +292,12 @@ const api: SlidesApi = {
     hPx: number
     fitWidthPx: number
   }) => ipcRenderer.invoke('ai:insert-image-url', op),
+  replacePictureUrl: (op: {
+    slideIndex: number
+    sourceId: string
+    url: string
+    keepSrcRect?: boolean
+  }) => ipcRenderer.invoke('ai:replace-picture-url', op),
   generateImage: (op: {
     prompt: string
     model?: string

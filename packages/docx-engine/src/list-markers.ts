@@ -1,5 +1,5 @@
-import { decodeSymbolText, isSymbolFont } from './symbol-fonts'
-import type { NumberingDef } from './types'
+import { decodeSymbolText, isSymbolFont, toSymbolPua } from './symbol-fonts'
+import type { NumberingDef, NumberingLevel } from './types'
 
 /** Word represents bullets with Symbol/Wingdings private-use characters; map them to common glyphs */
 const BULLET_GLYPHS: Record<string, string> = {
@@ -100,6 +100,28 @@ export interface ListItemRef {
   ilvl: number
 }
 
+export interface ListMarkerInfo {
+  /** display text (symbol glyphs decoded to Unicode) */
+  text: string
+  /** bullets declared in a symbol-encoded font: original glyph in U+F0xx form, so the renderer can pass it through when the font is installed */
+  symbolChar?: string
+  symbolFont?: string
+}
+
+/** text-font substitutes draw solid round bullets smaller than the Word symbol glyph
+ *  (glyph-box ratios: Symbol bullet 0.29em vs Arial 0.25em; Wingdings circle 0.58em vs Arial 0.43em) */
+const SUBSTITUTE_BULLET_SCALE: Record<string, number> = { '•': 1.25, '●': 1.35 }
+
+export function bulletMarkerScale(glyph: string): number {
+  return SUBSTITUTE_BULLET_SCALE[glyph] ?? 1
+}
+
+function bulletInfo(text: string, level: NumberingLevel): ListMarkerInfo {
+  const font = level.font?.trim()
+  if (!font || !isSymbolFont(font)) return { text }
+  return { text, symbolChar: toSymbolPua(level.lvlText), symbolFont: font }
+}
+
 /**
  * Word numbering semantics: counters accumulate document-wide per abstractNum
  * (plain paragraphs in between don't break the sequence); when a level appears,
@@ -107,10 +129,10 @@ export interface ListItemRef {
  * the level. Returns a marker array the same length as items; items without a
  * definition return null (CSS fallback handles them).
  */
-export function computeListMarkers(
+export function computeListMarkerInfos(
   items: ListItemRef[],
   defs: Map<string, NumberingDef>,
-): (string | null)[] {
+): (ListMarkerInfo | null)[] {
   const counters = new Map<string, number[]>()
   const overrideApplied = new Set<string>()
   return items.map((item) => {
@@ -126,8 +148,8 @@ export function computeListMarkers(
       const glyph = decoded ?? BULLET_GLYPHS[level.lvlText] ?? level.lvlText
       // undecodable symbol-font glyphs, private-use or empty ones fall back to the per-level default
       if (!glyph || /[-]/.test(glyph) || (decoded === null && isSymbolFont(level.font)))
-        return DEFAULT_BULLETS[lvl % 9]
-      return glyph
+        return bulletInfo(DEFAULT_BULLETS[lvl % 9], level)
+      return bulletInfo(glyph, level)
     }
 
     const c = counters.get(def.abstractNumId) ?? []
@@ -147,6 +169,13 @@ export function computeListMarkers(
       const value = c[refLvl] ?? refDef?.start ?? 1
       return formatNumber(value, refDef?.numFmt ?? 'decimal')
     })
-    return marker || null
+    return marker ? { text: marker } : null
   })
+}
+
+export function computeListMarkers(
+  items: ListItemRef[],
+  defs: Map<string, NumberingDef>,
+): (string | null)[] {
+  return computeListMarkerInfos(items, defs).map((m) => m?.text ?? null)
 }

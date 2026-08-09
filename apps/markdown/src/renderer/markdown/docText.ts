@@ -60,6 +60,51 @@ export function buildFrontmatterRaw(inner: string): string {
   return trimmed === '' ? '' : `${FENCE}\n${trimmed}\n${FENCE}\n\n`
 }
 
+/**
+ * One-way migration for legacy documents: earlier versions serialized callout
+ * and toggle blocks as Pandoc-style fenced divs (`:::callout {type="…"}` /
+ * `:::toggle {summary="…"}` / `:::`). Those extensions are gone — without this
+ * strip the fence lines would show up as literal `:::` text in the editor.
+ * The body content is kept; a toggle summary degrades to a bold paragraph.
+ */
+export function stripLegacyFencedDivs(body: string): string {
+  const lines = body.split('\n')
+  const out: string[] = []
+  let codeFence: string | null = null
+  let openDivs = 0
+  for (const line of lines) {
+    const fence = /^(`{3,}|~{3,})/.exec(line.trimStart())
+    if (codeFence) {
+      out.push(line)
+      if (fence && fence[1][0] === codeFence[0] && fence[1].length >= codeFence.length) {
+        codeFence = null
+      }
+      continue
+    }
+    if (fence) {
+      codeFence = fence[1]
+      out.push(line)
+      continue
+    }
+    // the attribute block is matched greedily to the last `}` on the line:
+    // the legacy serializer escaped only quotes, so a summary containing `}`
+    // (e.g. {summary="a } b"}) would not match a [^}]* pattern
+    const open = /^:::(callout|toggle)\s*(\{.*\})?\s*$/.exec(line)
+    if (open) {
+      openDivs++
+      const summary = open[2] ? /summary="((?:[^"\\]|\\.)*)"/.exec(open[2]) : null
+      if (summary?.[1]) out.push(`**${summary[1].replace(/\\"/g, '"')}**`, '')
+      continue
+    }
+    if (openDivs > 0 && /^:::\s*$/.test(line)) {
+      openDivs--
+      continue
+    }
+    out.push(line)
+  }
+  return out.join('\n')
+}
+
 /** Reassemble the full file text from the envelope and the (re)serialized body */
 export function serializeDocText(envelope: DocEnvelope, body: string): string {
   let text = envelope.frontmatter + body

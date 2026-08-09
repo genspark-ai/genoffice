@@ -2,6 +2,7 @@ import type { Editor, JSONContent } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { AgentToolCall, AgentToolDef, ToolExecution } from '@genoffice/agent-core'
 import { markAiRange } from '../editor/aiHighlight'
+import { stripLegacyFencedDivs } from '../markdown/docText'
 import { t } from '../i18n/locale'
 
 const CONTEXT_MAX_CHARS = 8000
@@ -166,7 +167,12 @@ function blockRange(doc: PmNode, from: number, to: number): { from: number; to: 
 }
 
 function parseMarkdownToNodes(editor: Editor, markdown: string): PmNode[] {
-  const json = editor.markdown?.parse(markdown)
+  // model output guard: `:::` fenced divs are not GFM and would land as
+  // literal text — strip the fences and keep the body (same as file open).
+  // Raw HTML needs no guard: parse runs it through the schema, so semantic
+  // tags degrade to their GFM equivalents (<b>→bold, <img>→image) and
+  // anything the schema cannot represent loses its styling, keeping text.
+  const json = editor.markdown?.parse(stripLegacyFencedDivs(markdown))
   const content = json?.content ?? []
   return content.map((c) => editor.schema.nodeFromJSON(c))
 }

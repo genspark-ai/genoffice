@@ -6,7 +6,8 @@
   "type": "module",
   "description": "Shared renderer UI components for the office apps (AI panel composer, icons); styling stays per-app via the shared class names",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

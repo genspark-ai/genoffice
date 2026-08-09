@@ -32,6 +32,8 @@ export interface Run {
   /** Latin-slot font (w:rFonts ascii/hAnsi) when the run declares one; may equal `font`.
    * Kept separate so editing one script's font never flattens the other slot. */
   fontAscii?: string
+  /** Complex-script font (w:rFonts cs/cstheme). Display only; saving is kept faithful by rawRPr */
+  csFont?: string
   /** Character spacing (w:spacing, twips, may be negative). Display only; saving is kept faithful by rawRPr */
   charSpacingTwips?: number
   /** Horizontal character scale percent (w:w). Display only (approximated as spacing); saving is kept faithful by rawRPr */
@@ -108,6 +110,12 @@ export interface Run {
    * and emitted verbatim when the paragraph regenerates.
    */
   ruby?: { rt: string; xml: string }
+  /**
+   * Inline picture in a table cell. `dataUrl` is for display; `xml` is the
+   * exact <w:drawing> fragment, re-wrapped in a w:r and emitted verbatim
+   * when the cell regenerates.
+   */
+  image?: { dataUrl: string; widthPx?: number; heightPx?: number; xml: string }
 }
 
 /** One comment from word/comments.xml (read-only display model). */
@@ -208,6 +216,8 @@ export interface ParaFormat {
   keepLines?: boolean
   /** widow/orphan control (w:widowControl; Word default=true) */
   widowControl?: boolean
+  /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN; Word default=true); false when both are explicitly off */
+  autoSpace?: boolean
   /** ignore space-after when followed by same-style para (w:contextualSpacing) */
   contextualSpacing?: boolean
   /** paragraph shading fill, hex without '#' (w:shd w:fill) */
@@ -290,6 +300,17 @@ export interface SectionInfo {
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
   runs: Run[]
+  /** layout-table row: one entry per cell, rendered as columns. Display-only —
+   *  saving keeps the part's original w:tbl bytes and never serializes cells. */
+  cells?: HfTableCell[]
+}
+
+/** one cell of a header/footer layout-table row */
+export interface HfTableCell {
+  runs: Run[]
+  align?: ParaAlign
+  /** column width as % of the row (w:tcW, falling back to tblGrid) */
+  widthPct?: number
 }
 
 /** one w:lvl of a numbering definition */
@@ -328,14 +349,17 @@ export interface HeaderFooter {
   pageNumber?: boolean
   /**
    * Rich paragraphs; when present they are the content source of truth and
-   * the part regenerates one w:p per entry ('#' in a run text becomes the
-   * PAGE field when pageNumber is set). Absent = legacy single centered line.
+   * the part regenerates one w:p per entry (PAGE_MARK \u2014 or a user-typed '#'
+   * when no PAGE_MARK exists \u2014 becomes the PAGE field when pageNumber is
+   * set). Absent = legacy single centered line.
    */
   paras?: HfParagraph[]
 }
 
-/** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses '#' the same way) */
+/** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
 export const TOTAL_PAGES_MARK = '\uE000'
+/** Placeholder for PAGE fields in headers/footers; a private-use character so literal '#' text in the part can never be mistaken for the field position */
+export const PAGE_MARK = '\uE001'
 
 /** display-only image in a header/footer part (logos etc.; saving preserves the part's bytes) */
 export interface HfImage {
@@ -348,7 +372,7 @@ export interface HfImage {
 
 /** Parsed content of one header/footer part (any w:type variant). */
 export interface HfPartInfo {
-  /** plain text, PAGE fields shown as '#', NUMPAGES as TOTAL_PAGES_MARK */
+  /** plain text, PAGE fields shown as PAGE_MARK, NUMPAGES as TOTAL_PAGES_MARK */
   text: string
   hasPageNumber: boolean
   paras: HfParagraph[]
@@ -486,6 +510,8 @@ export interface TableCell {
   cellMarTwips?: CellMargins
   /** nested tables inside this cell (shown as read-only sub-tables; bytes kept faithful by the outer table) */
   nestedTables?: TableModel[]
+  /** per nested table: how many cell paragraphs precede it (reading-order anchor); absent = after all paragraphs */
+  nestedTableAnchors?: number[]
   colSpan?: number
   /** 'restart' opens a vertical merge, 'continue' is a merged-away cell */
   vMerge?: 'restart' | 'continue'
@@ -529,6 +555,8 @@ export interface TableModel {
   indentTwips?: number
   /** per-row height (twips, w:trHeight; null = not set), aligned with rows */
   rowHeightsTwips?: Array<number | null>
+  /** per-row height rule (w:trHeight w:hRule; absent/legacy models = atLeast), aligned with rows */
+  rowHeightRules?: Array<'atLeast' | 'exact' | null>
   /** per-row raw <w:trPr>…</w:trPr> bytes (passed through verbatim), aligned with rows */
   rawTrPrs?: Array<string | null>
   /** row-level revisions (trPr w:ins/w:del = inserted/deleted row), aligned with rows */
@@ -606,6 +634,11 @@ export interface NewImage {
   align?: 'left' | 'center' | 'right'
   /** floating wrap mode; absent = inline */
   wrap?: ImageWrap
+  /** rotation in degrees clockwise (a:xfrm rot) */
+  rotDeg?: number
+  /** mirror flips (a:xfrm flipH/flipV) */
+  flipH?: boolean
+  flipV?: boolean
 }
 
 export type BlockType = 'paragraph' | 'heading' | 'listItem' | 'table' | 'image' | 'passthrough'
@@ -672,6 +705,11 @@ export interface Block {
   /** margin-relative wp:align of a floating image (Word position-gallery presets) */
   imagePosH?: 'left' | 'center' | 'right'
   imagePosV?: 'top' | 'center' | 'bottom'
+  /** picture rotation in degrees clockwise 0-359 (pic a:xfrm rot / 60000) */
+  imageRotDeg?: number
+  /** picture mirror flips (pic a:xfrm flipH/flipV) */
+  imageFlipH?: boolean
+  imageFlipV?: boolean
   /** editable structure (type === 'table'); untouched original XML still saves byte-identically */
   table?: TableModel
   /** display-only rendering for field passthrough paragraphs (TOC lines etc.) */
@@ -680,6 +718,18 @@ export interface Block {
   hidden?: boolean
   /** protected drawing that is just a decorative rule; render as a line, not a chip */
   decorative?: boolean
+  /** stroke display of a decorative rule (a:ln); absent = default 1px full-width line */
+  ruleColorHex?: string
+  ruleThicknessPx?: number
+  ruleWidthPx?: number
+  /** picture whose rel/media is broken (or metafile-only): render an empty frame + alt text */
+  brokenImage?: boolean
+  /**
+   * Invisible range marker leaked to body top level (w:bookmarkEnd, w:proofErr…):
+   * renders as nothing but keeps its body position. Not `hidden` — hidden blocks
+   * are moved to the body tail on save, which would relocate the marker.
+   */
+  invisibleMarker?: boolean
   /** display-only content of anchored textboxes (code boxes, callouts) */
   textboxes?: TextboxDisplay[]
   /** text tokens of an OMML formula, in document order */
@@ -818,6 +868,8 @@ export interface StyleDisplay {
   font?: string
   /** latin-slot font when it differs from the east-asian one (w:ascii/w:hAnsi) */
   fontAscii?: string
+  /** complex-script font (w:rFonts cs/cstheme) */
+  csFont?: string
   /** character spacing (rPr w:spacing, twips, may be negative) */
   charSpacingTwips?: number
   /** multiple of single line spacing (w:spacing w:line, lineRule auto) */
@@ -840,14 +892,22 @@ export interface StyleDisplay {
   contextualSpacing?: boolean
   /** paragraph alignment from the style (w:pPr w:jc) */
   align?: 'left' | 'center' | 'right' | 'justify'
+  /** CJK-Latin/digit auto spacing from the style pPr (w:autoSpaceDE/DN) */
+  autoSpace?: boolean
 }
 
 /** display-only formatting a table style contributes (fills applied per tblLook flags) */
 export interface TableStyleDisplay {
   /** whole-table cell shading (hex without '#') */
   fill?: string
+  /** whole-table run formatting (style-level w:rPr) */
+  wholeTable?: { color?: string; bold?: boolean }
   /** conditional first-row formatting (w:tblStylePr w:type="firstRow") */
   firstRow?: { fill?: string; bold?: boolean; color?: string }
+  /** conditional first/last-column and last-row formatting (w:tblStylePr) */
+  firstCol?: { fill?: string; bold?: boolean; color?: string }
+  lastCol?: { fill?: string; bold?: boolean; color?: string }
+  lastRow?: { fill?: string; bold?: boolean; color?: string }
   /** odd-band row shading (band1Horz) */
   band1Fill?: string
   /** even-band row shading (band2Horz) */
@@ -956,6 +1016,8 @@ export interface ThemeFonts {
   /** a:majorFont / a:minorFont a:cs typefaces (complex script), optional */
   majorCs?: string
   minorCs?: string
+  /** settings.xml w:themeFontLang w:eastAsia — picks Word's face for empty EA theme slots */
+  eaLang?: string
 }
 
 /** Color scheme values (hex without '#') from a:clrScheme. */
@@ -996,7 +1058,7 @@ export interface ParsedDoc {
   protection: DocProtection | null
   /** plain text of the default page header, null when the document has none */
   headerText?: string | null
-  /** rich paragraphs of the default header (PAGE fields appear as '#' runs) */
+  /** rich paragraphs of the default header (PAGE fields appear as PAGE_MARK runs) */
   headerParas?: HfParagraph[] | null
   /** rich paragraphs of the default footer */
   footerParas?: HfParagraph[] | null
@@ -1005,7 +1067,7 @@ export interface ParsedDoc {
   footerImages?: HfImage[] | null
   /** text watermark (VML textpath) in the default header, null when none */
   watermarkText?: string | null
-  /** plain text of the default page footer (PAGE fields appear as "#") */
+  /** plain text of the default page footer (PAGE fields appear as PAGE_MARK) */
   footerText?: string | null
   /** the default footer contains an automatic page number field */
   footerHasPageNumber?: boolean

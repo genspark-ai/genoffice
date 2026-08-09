@@ -16,6 +16,7 @@ import {
   dialog,
   ipcMain,
   nativeImage,
+  nativeTheme,
   session,
   shell,
   webContents,
@@ -1935,12 +1936,15 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
+  // editor tabs ask via the app-wide channel (symmetric with app:get-language)
+  ipcMain.handle('app:get-theme', (): UiTheme => currentTheme())
 
   ipcMain.handle(HOME_CHANNELS.setTheme, (_event, theme: unknown) => {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'system') return
     if (theme === currentTheme()) return
     cachedTheme = theme
     writeAppSetting(APP_SETTINGS_PATH(), 'theme', theme)
+    nativeTheme.themeSource = theme
     for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
   })
 
@@ -2544,6 +2548,8 @@ app.whenReady().then(() => {
   // mutable lang, whose 'zh' default otherwise wins the race for whichever
   // tab loads first (e.g. sheets booting in Chinese while docs shows English).
   currentLang()
+  // native menus/dialogs/scrollbars follow the persisted theme from first paint
+  nativeTheme.themeSource = currentTheme()
   startSheetsCaptureServer()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()

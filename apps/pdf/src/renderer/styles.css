@@ -1,18 +1,114 @@
+/* Shared chrome/AI-panel tokens come from @genoffice/ui/tokens.css (imported
+ * before this file in main.tsx); only pdf-specific values live here. */
 :root {
   --accent: #c43e1c;
   --accent-dark: #a33517;
   --accent-soft: #fbeae5;
-  --surface: #ffffff;
-  --chrome-bg: #ffffff;
-  --border: #e1dfdd;
-  --border-strong: #c8c6c4;
-  --text: #252423;
-  --text-dim: #605e5c;
-  --hover: #f3f2f1;
-  --pressed: #edebe9;
-  /* selected/pressed plate: neutral gray (slides/docs ribbon parity) */
-  --active-bg: #eaeaea;
-  --canvas: #e6e6e6;
+
+  /* pdf-local chrome shades */
+  --pdf-error: #c0392b;
+  --pdf-error-border: rgb(192 57 43 / 45%);
+  --pdf-error-bg-hover: rgb(192 57 43 / 8%);
+  --pdf-ok: #217346;
+  --pdf-thumb-border-hover: #a8a6a4;
+  --pdf-prop-bg: rgb(0 0 0 / 3%);
+  --pdf-focus-ring: rgb(35 36 37 / 20%);
+  --pdf-shimmer-base: #666;
+  --pdf-shimmer-hi: #d9d9d9;
+  --pdf-statusbar-bg: #f3f4f6;
+  --pdf-statusbar-border: #e1e4e8;
+  --pdf-statusbar-hover: rgb(0 0 0 / 8%);
+  --pdf-swatch-ring: rgb(0 0 0 / 15%);
+
+  /* content-side constants: pages are paper, page overlays sit on paper —
+   * these never follow the theme */
+  --pdf-paper: #fff;
+  --pdf-on-accent: #fff;
+  --pdf-select: #2b66ff;
+  --pdf-select-glow: rgb(43 102 255 / 90%);
+  --pdf-ink-highlight: #ffde59;
+  --pdf-ink-strike: #db3830;
+  --pdf-form-border: rgb(60 120 216 / 55%);
+  --pdf-form-bg: rgb(235 243 255 / 55%);
+  --pdf-form-text: #222;
+  --pdf-sign-drop-bg: rgb(60 120 216 / 6%);
+  --pdf-search-hit-bg: rgb(255 214 0 / 35%);
+  --pdf-search-hit-cur-bg: rgb(255 150 50 / 55%);
+  --pdf-search-hit-cur-outline: #f08c00;
+  --pdf-link-hover-bg: rgb(60 120 216 / 12%);
+  --pdf-link-hover-ring: rgb(60 120 216 / 35%);
+  --pdf-text-selection: rgb(56 108 255 / 32%);
+  --pdf-page-hover-outline: rgb(0 0 0 / 35%);
+  /* text edit overlays sit on the rendered page, so paper/ink stay unthemed like form-text */
+  --pdf-textedit-paper: #fff;
+  --pdf-textedit-ink: #111;
+  --pdf-textedit-ring: rgb(60 120 216 / 90%);
+  --pdf-textedit-hover-bg: rgb(60 120 216 / 10%);
+  --pdf-textblock-ring: rgb(96 99 102 / 40%);
+  --pdf-textblock-ring-hover: rgb(60 120 216 / 65%);
+  --pdf-textblock-hover-bg: rgb(60 120 216 / 5%);
+
+  /* image edit overlays also sit on paper; unthemed like the text-edit set */
+  --pdf-imgedit-hover-bg: rgb(60 120 216 / 8%);
+  --pdf-imgedit-veil-bg: rgb(255 255 255 / 62%);
+  --pdf-imgedit-del-line: rgb(219 56 48 / 75%);
+  --pdf-imgedit-ghost-bg: rgb(60 120 216 / 6%);
+
+  /* dark chrome in both themes */
+  --pdf-toast-bg: rgb(32 33 36 / 92%);
+  --pdf-toast-text: #fff;
+  --pdf-toast-action: #8ab4f8;
+
+  /* black translucent masks/shadows hold in both themes */
+  --pdf-mask-bg: rgb(0 0 0 / 50%);
+  --pdf-shadow-menu: 0 8px 24px rgb(0 0 0 / 18%);
+  --pdf-shadow-popup: 0 4px 16px rgb(0 0 0 / 15%);
+  --pdf-shadow-toast: 0 4px 16px rgb(0 0 0 / 25%);
+  --pdf-shadow-modal: 0 3px 30px rgb(0 0 0 / 8%);
+  --pdf-shadow-page: 0 1px 4px rgb(0 0 0 / 18%);
+  --pdf-shadow-pin: 0 1px 4px rgb(0 0 0 / 30%);
+  --pdf-shadow-drop: 0 6px 20px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
+  --pdf-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
+}
+
+[data-theme='dark'] {
+  --accent: #e8663f;
+  --accent-dark: #d4552f;
+  --accent-soft: #43261d;
+  --pdf-error: #e57373;
+  --pdf-error-border: rgb(229 115 115 / 50%);
+  --pdf-error-bg-hover: rgb(229 115 115 / 12%);
+  --pdf-ok: #58b380;
+  --pdf-thumb-border-hover: #777;
+  --pdf-prop-bg: rgb(255 255 255 / 5%);
+  --pdf-focus-ring: rgb(255 255 255 / 30%);
+  --pdf-shimmer-base: #8a8a8a;
+  --pdf-shimmer-hi: #d0d0d0;
+  --pdf-statusbar-bg: #252525;
+  --pdf-statusbar-border: #3a3a3a;
+  --pdf-statusbar-hover: rgb(255 255 255 / 10%);
+  --pdf-swatch-ring: rgb(255 255 255 / 30%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --accent: #e8663f;
+    --accent-dark: #d4552f;
+    --accent-soft: #43261d;
+    --pdf-error: #e57373;
+    --pdf-error-border: rgb(229 115 115 / 50%);
+    --pdf-error-bg-hover: rgb(229 115 115 / 12%);
+    --pdf-ok: #58b380;
+    --pdf-thumb-border-hover: #777;
+    --pdf-prop-bg: rgb(255 255 255 / 5%);
+    --pdf-focus-ring: rgb(255 255 255 / 30%);
+    --pdf-shimmer-base: #8a8a8a;
+    --pdf-shimmer-hi: #d0d0d0;
+    --pdf-statusbar-bg: #252525;
+    --pdf-statusbar-border: #3a3a3a;
+    --pdf-statusbar-hover: rgb(255 255 255 / 10%);
+    --pdf-swatch-ring: rgb(255 255 255 / 30%);
+  }
 }
 
 * {
@@ -117,7 +213,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: #232425;
+  color: var(--text-primary);
 }
 
 .qa-btn svg {
@@ -132,6 +228,49 @@ button {
 .qa-btn:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.qa-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+
+/* ── ribbon tab strip (docs/Word-style: semibold labels, accent underline on the active tab) ── */
+.ribbon-tab {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 7px 9px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  /* transparent border keeps the row height; the visible underline is the
+     ::after, sized to the label text rather than the padded button */
+  border-bottom: 2.5px solid transparent;
+}
+
+.ribbon-tab:hover {
+  color: var(--accent);
+}
+
+.ribbon-tab.active {
+  color: var(--accent);
+}
+
+/* active underline: exactly the text width (insets = horizontal padding) */
+.ribbon-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: -2.5px;
+  height: 2.5px;
+  border-radius: 1px;
+  background: var(--accent);
 }
 
 .ribbon-body {
@@ -197,7 +336,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #232425;
+  color: var(--text-primary);
   /* hover/active plate box: sheets .tool-icon-row parity — stretches edge to
      edge of the button and rounds, while the label below stays outside */
   align-self: stretch;
@@ -241,6 +380,41 @@ button {
   background: none;
 }
 
+/* The AI entry buttons read as one piece: hover/press tint the whole button
+   (icon + label together), unlike the other tall buttons where only the icon
+   row is painted. Same treatment as the docs ribbon. */
+.rb-big.ai-entry {
+  border-radius: 4px;
+}
+
+.rb-big.ai-entry:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.rb-big.ai-entry.active {
+  background: var(--active-bg);
+  color: var(--text);
+}
+
+.rb-big.ai-entry:hover:not(:disabled) .rb-big-icon,
+.rb-big.ai-entry.active .rb-big-icon {
+  background: transparent;
+}
+
+.ai-feature-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-brand-secondary);
+}
+
+.ai-feature-icon svg {
+  /* 24px renders the 24-unit viewBox 1:1, so the 1.5 stroke paints 1.5px */
+  width: 24px;
+  height: 24px;
+}
+
 .rb-col {
   display: flex;
   flex-direction: column;
@@ -280,7 +454,7 @@ button {
   border-radius: 3px;
   font-size: 13px;
   cursor: pointer;
-  color: #232425;
+  color: var(--text-primary);
   padding: 0 5px;
 }
 
@@ -319,19 +493,19 @@ button {
 }
 
 .tb-save-error {
-  color: #c0392b;
+  color: var(--pdf-error);
   font-size: 12px;
   margin-right: 4px;
 }
 
 .tb-save-ok {
-  color: #217346;
+  color: var(--pdf-ok);
   font-size: 12px;
   margin-right: 4px;
 }
 
 .tb-save-pending {
-  color: var(--text-dim, #6b6b6b);
+  color: var(--text-dim);
   font-size: 12px;
   margin-right: 4px;
 }
@@ -345,7 +519,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  box-shadow: var(--pdf-shadow-menu);
   padding: 5px;
 }
 
@@ -382,7 +556,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+  box-shadow: var(--pdf-shadow-popup);
   transform: translateX(-50%);
   user-select: none;
 }
@@ -415,16 +589,16 @@ button {
 }
 
 .sel-swatch-hl {
-  background: #ffde59;
+  background: var(--pdf-ink-highlight);
 }
 
 .sel-swatch-ul {
-  color: #2b66ff;
+  color: var(--pdf-select);
   text-decoration: underline;
 }
 
 .sel-swatch-st {
-  color: #db3830;
+  color: var(--pdf-ink-strike);
   text-decoration: line-through;
 }
 
@@ -447,7 +621,7 @@ button {
 }
 
 .pdf-markup:hover {
-  outline: 1px dashed rgb(0 0 0 / 35%);
+  outline: 1px dashed var(--pdf-page-hover-outline);
 }
 
 /* ── Annotation selection (click selects; deletion via the popup or Delete key) ── */
@@ -457,38 +631,62 @@ button {
 .pdf-stamp-selected,
 .pdf-stamp-selected:hover,
 .pdf-note-pin-selected {
-  outline: 2px solid #2b66ff;
+  outline: 1px solid var(--pdf-select);
   outline-offset: 1px;
 }
 
 .pdf-draw-selected {
-  filter: drop-shadow(0 0 3px rgb(43 102 255 / 90%));
+  filter: drop-shadow(0 0 3px var(--pdf-select-glow));
 }
 
 .pdf-del-popup {
   position: fixed;
   z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   padding: 4px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+  box-shadow: var(--pdf-shadow-popup);
   transform: translateX(-50%);
   user-select: none;
 }
 
 .pdf-del-popup button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   background: none;
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 5px;
   font-size: 12px;
-  color: #db3830;
+  color: var(--text);
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.pdf-del-popup button svg {
+  flex: none;
+  opacity: 0.8;
 }
 
 .pdf-del-popup button:hover {
   background: var(--hover);
+}
+
+.pdf-del-popup .pdf-del-popup-danger:hover {
+  background: var(--pdf-error-bg-hover);
+  color: var(--pdf-error);
+}
+
+.pdf-del-popup-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 3px 2px;
+  background: var(--border);
 }
 
 /* ── Transient toast (deleted annotation + undo) ── */
@@ -503,18 +701,18 @@ button {
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
-  background: rgb(32 33 36 / 92%);
-  color: #fff;
+  background: var(--pdf-toast-bg);
+  color: var(--pdf-toast-text);
   font-size: 13px;
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+  box-shadow: var(--pdf-shadow-toast);
 }
 
 .pdf-toast button {
   border: none;
   background: none;
   padding: 0;
-  color: #8ab4f8;
+  color: var(--pdf-toast-action);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -522,6 +720,13 @@ button {
 
 .pdf-toast button:hover {
   text-decoration: underline;
+}
+
+/* Message toast (save failures, skipped text edits): sits above the delete toast slot
+   so the two never overlap, and wraps long reasons instead of spanning the window */
+.pdf-toast-notice {
+  bottom: 64px;
+  max-width: min(70vw, 560px);
 }
 
 /* ── AcroForm form overlay ── */
@@ -535,42 +740,42 @@ button {
 .pdf-form-input {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid rgb(60 120 216 / 55%);
-  background: rgb(235 243 255 / 55%);
+  border: 1px solid var(--pdf-form-border);
+  background: var(--pdf-form-bg);
   border-radius: 2px;
   padding: 0 3px;
   font-family: inherit;
-  color: #222;
+  color: var(--pdf-form-text);
   resize: none;
 }
 
 .pdf-form-input:focus {
   outline: none;
-  border-color: #2b66ff;
-  background: #fff;
+  border-color: var(--pdf-select);
+  background: var(--pdf-paper);
 }
 
 .pdf-form-checkbox {
   position: absolute;
   margin: 0;
-  accent-color: #2b66ff;
+  accent-color: var(--pdf-select);
 }
 
 .pdf-form-select {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid rgb(60 120 216 / 55%);
-  background: rgb(235 243 255 / 55%);
+  border: 1px solid var(--pdf-form-border);
+  background: var(--pdf-form-bg);
   border-radius: 2px;
   padding: 0 2px;
   font-family: inherit;
-  color: #222;
+  color: var(--pdf-form-text);
 }
 
 .pdf-form-select:focus {
   outline: none;
-  border-color: #2b66ff;
-  background: #fff;
+  border-color: var(--pdf-select);
+  background: var(--pdf-paper);
 }
 
 /* ================= Body: thumbnail sidebar + page scroll area ================= */
@@ -620,7 +825,7 @@ button {
 .pdf-thumb-box {
   /* fluid: follows the resizable sidebar width (aspect ratio set inline per page) */
   width: 100%;
-  background: #fff;
+  background: var(--pdf-paper);
   border: 2px solid var(--border-strong);
   border-radius: 4px;
   overflow: hidden;
@@ -632,7 +837,7 @@ button {
 }
 
 .pdf-thumb:hover .pdf-thumb-box {
-  border-color: #a8a6a4;
+  border-color: var(--pdf-thumb-border-hover);
 }
 
 .pdf-thumb-active .pdf-thumb-box {
@@ -653,6 +858,7 @@ button {
   flex: 1;
   overflow: auto;
   padding: 0 24px;
+  background: var(--canvas);
 }
 
 /* One row: one page in single-page mode, two side by side in two-page mode */
@@ -686,7 +892,7 @@ button {
   inset: 0;
   z-index: 8;
   cursor: crosshair;
-  background: rgb(60 120 216 / 6%);
+  background: var(--pdf-sign-drop-bg);
 }
 
 /* Translucent preview of the pending signature following the cursor */
@@ -712,8 +918,8 @@ button {
 
   position: relative;
   flex-shrink: 0;
-  background: #fff;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  background: var(--pdf-paper);
+  box-shadow: var(--pdf-shadow-page);
 }
 
 .pdf-page-content {
@@ -792,7 +998,7 @@ button {
 
 .pdf-password-error {
   font-size: 12px;
-  color: #c0392b;
+  color: var(--pdf-error);
 }
 
 .pdf-password-btn {
@@ -801,7 +1007,7 @@ button {
   border: none;
   border-radius: 5px;
   background: var(--accent);
-  color: #fff;
+  color: var(--pdf-on-accent);
   font-size: 13px;
   cursor: pointer;
 }
@@ -823,7 +1029,8 @@ button {
   position: absolute;
   inset: 0;
   z-index: 50;
-  background: rgb(0 0 0 / 18%);
+  background: var(--pdf-mask-bg);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -834,8 +1041,8 @@ button {
   min-width: 300px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 22%);
+  border-radius: 16px;
+  box-shadow: var(--pdf-shadow-modal);
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -864,7 +1071,7 @@ button {
 }
 
 .pdf-modal-input.invalid {
-  border-color: #c0392b;
+  border-color: var(--pdf-error);
 }
 
 .pdf-modal-actions {
@@ -873,25 +1080,53 @@ button {
   gap: 8px;
 }
 
+/* Genspark DS modal footer buttons: secondary = bg-subtle, primary = black (#232425) */
 .pdf-modal-btn {
-  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12.5px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.pdf-modal-btn:hover {
-  background: var(--hover);
+.pdf-modal-btn:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.pdf-modal-btn:active:not(:disabled) {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
+.pdf-modal-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--pdf-focus-ring);
+}
+
+.pdf-modal-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .pdf-modal-btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  border-color: var(--color-btn-primary);
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+}
+
+.pdf-modal-btn.primary:hover:not(:disabled) {
+  border-color: var(--color-btn-primary-hover);
+  background: var(--color-btn-primary-hover);
+  color: var(--color-btn-primary-text);
 }
 
 /* ── Full-text search ── */
@@ -908,7 +1143,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+  box-shadow: var(--pdf-shadow-popup);
 }
 
 .pdf-search-input {
@@ -944,14 +1179,14 @@ button {
 
 .pdf-search-hit {
   position: absolute;
-  background: rgb(255 214 0 / 35%);
+  background: var(--pdf-search-hit-bg);
   border-radius: 2px;
   mix-blend-mode: multiply;
 }
 
 .pdf-search-hit-cur {
-  background: rgb(255 150 50 / 55%);
-  outline: 1.5px solid #f08c00;
+  background: var(--pdf-search-hit-cur-bg);
+  outline: 1.5px solid var(--pdf-search-hit-cur-outline);
 }
 
 /* ── Drawing annotation layer ── */
@@ -994,13 +1229,360 @@ button {
   justify-content: center;
   border: none;
   border-radius: 4px 4px 4px 0;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  box-shadow: var(--pdf-shadow-pin);
   cursor: pointer;
   padding: 0;
 }
 
 .pdf-note-pin:hover {
   opacity: 0.75;
+}
+
+/* ── Text edit (content-stream replacement) ── */
+
+/* Covers the original run with page background; the saved PDF gets the real rewrite */
+/* Blanks the matched run's real ink; the preview/editor boxes only cover the layout rect */
+.pdf-textedit-cover {
+  position: absolute;
+  z-index: 3;
+  background: var(--pdf-textedit-paper);
+  pointer-events: none;
+}
+
+.pdf-textedit-preview {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: pre;
+  line-height: 1;
+  background: var(--pdf-textedit-paper);
+  color: var(--pdf-textedit-ink);
+  cursor: pointer;
+}
+
+.pdf-textedit-preview:hover,
+.pdf-textedit-selected {
+  outline: 1px solid var(--pdf-textedit-ring);
+}
+
+.pdf-textedit-input {
+  position: absolute;
+  z-index: 6;
+  padding: 0 2px;
+  border: 1px solid var(--pdf-textedit-ring);
+  border-radius: 2px;
+  background: var(--pdf-textedit-paper);
+  color: var(--pdf-textedit-ink);
+  line-height: 1;
+  font-family: inherit;
+  box-sizing: content-box;
+  min-width: 60px;
+}
+
+.pdf-editing-text .textLayer span:hover {
+  cursor: text;
+}
+
+/* Paragraph boxes in edit-text mode (see text-block.ts): a faint outline on every
+   block so editable units read at a glance (WPS-style); page-anchored chrome, so
+   the ring colors stay unthemed like the rest of the text-edit set */
+.pdf-textblock-box {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  outline: 1px dashed var(--pdf-textblock-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+  transition: opacity 0.15s;
+}
+.pdf-textblock-box.is-hover {
+  outline-color: var(--pdf-textblock-ring-hover);
+  background: var(--pdf-textblock-hover-bg);
+}
+.pdf-textblock-box.is-faded {
+  opacity: 0.2;
+}
+
+/* Hover affordance for edit-text mode: one box over the whole merged line
+   (see text-line.ts), replacing the per-run span outline */
+.pdf-textline-hover {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  outline: 1px dashed var(--pdf-textedit-ring);
+  background: var(--pdf-textedit-hover-bg);
+}
+
+/* Wrapper for the multiline editor: hosts the floating style bar above the textarea */
+.pdf-textedit-editor {
+  position: absolute;
+  z-index: 6;
+}
+
+.pdf-textedit-editor .pdf-textedit-input {
+  position: static;
+  display: block;
+  /* x scrolls once auto-grow hits the page-edge cap; height already fits all lines */
+  overflow: auto hidden;
+  white-space: pre;
+  line-height: 1.2;
+  resize: none;
+}
+
+/* Block (paragraph) editor: width is locked to the block, so the textarea's own
+   soft wrap is the reflow preview — no x-scroll, break anywhere like the committed
+   CJK-aware wrap */
+.pdf-textedit-editor .pdf-textedit-input.pdf-textedit-block {
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Selection-color mirror: sits exactly over the textarea (same box metrics, border
+   kept but transparent) and paints the per-run colors while the textarea's own text
+   is transparent — caret and selection highlight stay the textarea's */
+.pdf-textedit-editor .pdf-textedit-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  overflow: hidden;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: none;
+  line-height: 1.2;
+  font-family: inherit;
+  box-sizing: content-box;
+  min-width: 60px;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.pdf-textedit-editor .pdf-textedit-ghost.pdf-textedit-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Style bar: font size + text color, floats above the run being edited */
+.pdf-textedit-bar {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  margin-bottom: 5px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--pdf-shadow-pin);
+  white-space: nowrap;
+}
+
+.pdf-textedit-sizenum {
+  width: 48px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.pdf-textedit-fontsel {
+  max-width: 130px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.pdf-textedit-toggle {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdf-textedit-toggle-i {
+  font-style: italic;
+  font-weight: 400;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.pdf-textedit-toggle:hover {
+  background: var(--hover);
+}
+
+.pdf-textedit-toggle.active {
+  background: var(--pdf-textedit-hover-bg);
+  border-color: var(--pdf-textedit-ring);
+  color: var(--text);
+}
+
+.pdf-textedit-swatch {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pdf-textedit-swatch.active {
+  outline: 2px solid var(--pdf-textedit-ring);
+  outline-offset: 1px;
+}
+
+.pdf-textedit-more {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.pdf-textedit-more input[type='color'] {
+  width: 22px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 1px;
+  cursor: pointer;
+}
+
+/* ── Image edit (content-stream image ops) ── */
+
+.pdf-imgedit-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* Below-text previews: multiply with the page raster so existing ink shows
+   through, matching how the saved PDF paints text over the image */
+.pdf-imgedit-under {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+/* Night mode inverts the page bitmap (ink becomes light); screen keeps it visible */
+.pdf-night .pdf-imgedit-under {
+  mix-blend-mode: screen;
+}
+
+.pdf-imgedit-img,
+.pdf-imgedit-ghostbox,
+.pdf-imgedit-hit,
+.pdf-imgedit-del,
+.pdf-imgedit-handle,
+.pdf-imgedit-liveghost {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+/* Purely visual copy of an existing image while it is dragged/resized; the
+   transparent hit box on top keeps the pointer capture */
+.pdf-imgedit-liveghost {
+  pointer-events: none;
+}
+
+.pdf-imgedit-img,
+.pdf-imgedit-ghostbox,
+.pdf-imgedit-hit,
+.pdf-imgedit-del,
+.pdf-imgedit-handle {
+  pointer-events: auto;
+}
+
+/* Another tool owns the pointer (draw/sign/place/text-edit): previews stay visible but inert */
+.pdf-imgedit-passive .pdf-imgedit-img,
+.pdf-imgedit-passive .pdf-imgedit-ghostbox,
+.pdf-imgedit-passive .pdf-imgedit-hit,
+.pdf-imgedit-passive .pdf-imgedit-del,
+.pdf-imgedit-passive .pdf-imgedit-handle {
+  pointer-events: none;
+}
+
+.pdf-imgedit-img,
+.pdf-imgedit-ghostbox,
+.pdf-imgedit-hit {
+  cursor: move;
+  touch-action: none;
+}
+
+.pdf-imgedit-img:hover,
+.pdf-imgedit-hit:hover,
+.pdf-imgedit-selected {
+  outline: 1.5px solid var(--pdf-textedit-ring);
+}
+
+.pdf-imgedit-hit:hover {
+  background: var(--pdf-imgedit-hover-bg);
+}
+
+/* Ghost of a moved existing image while its pixels are still loading */
+.pdf-imgedit-ghostbox {
+  border: 1.5px dashed var(--pdf-textedit-ring);
+  background: var(--pdf-imgedit-ghost-bg);
+}
+
+/* Live-preview patch: the touched region re-rendered by pdfium without the
+   moved/resized/deleted images (document content, so it also inverts at night) */
+.pdf-page-livepreview {
+  position: absolute;
+  pointer-events: none;
+}
+
+.pdf-night .pdf-page-livepreview {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Pending deletion: veiled with a cross, click to select/revert */
+.pdf-imgedit-del {
+  cursor: pointer;
+  background:
+    linear-gradient(
+      to top right,
+      transparent 48.8%,
+      var(--pdf-imgedit-del-line) 48.8%,
+      var(--pdf-imgedit-del-line) 51.2%,
+      transparent 51.2%
+    ),
+    linear-gradient(
+      to bottom right,
+      transparent 48.8%,
+      var(--pdf-imgedit-del-line) 48.8%,
+      var(--pdf-imgedit-del-line) 51.2%,
+      transparent 51.2%
+    ),
+    var(--pdf-imgedit-veil-bg);
+  border: 1.5px dashed var(--pdf-imgedit-del-line);
+}
+
+.pdf-imgedit-handle {
+  z-index: 5;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  background: var(--pdf-paper);
+  touch-action: none;
 }
 
 /* ── Stamp (watermark/header-footer) preview and config ── */
@@ -1013,7 +1595,7 @@ button {
 }
 
 .pdf-stamp-preview:hover {
-  outline: 1px dashed rgb(0 0 0 / 35%);
+  outline: 1px dashed var(--pdf-page-hover-outline);
 }
 
 .pdf-modal-wide {
@@ -1075,7 +1657,7 @@ button {
   height: 96px;
   border: 1px dashed var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--pdf-paper);
   font-size: 26px;
   font-weight: 600;
   overflow: hidden;
@@ -1088,7 +1670,7 @@ button {
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  background: rgb(0 0 0 / 3%);
+  background: var(--pdf-prop-bg);
   border-radius: 6px;
 }
 
@@ -1154,13 +1736,13 @@ button {
 .pdf-sign-tab.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--pdf-on-accent);
 }
 
 .pdf-sign-pad {
   border: 1px dashed var(--border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--pdf-paper);
   cursor: crosshair;
   touch-action: none;
 }
@@ -1186,7 +1768,7 @@ button {
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--pdf-paper);
   font-size: 26px;
   white-space: nowrap;
   cursor: pointer;
@@ -1205,7 +1787,7 @@ button {
   justify-content: center;
   border: 1px dashed var(--border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--pdf-paper);
   cursor: pointer;
   overflow: hidden;
   padding: 6px;
@@ -1246,8 +1828,8 @@ button {
 }
 
 .pdf-draw-handle {
-  fill: #fff;
-  stroke: var(--accent, #2b66ff);
+  fill: var(--pdf-paper);
+  stroke: var(--accent);
   stroke-width: 1.5;
 }
 
@@ -1260,7 +1842,7 @@ button {
 
 .rb-big-icon .rb-caret {
   margin-left: 3px;
-  color: #605e5c;
+  color: var(--text-dim);
 }
 
 /* color strip under the glyph showing the current draw color */
@@ -1276,7 +1858,7 @@ button {
   bottom: -3px;
   height: 4px;
   border-radius: 1px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--pdf-swatch-ring);
 }
 
 .rb-drop-wrap {
@@ -1301,9 +1883,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.14),
-    0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--pdf-shadow-drop);
   padding: 8px;
 }
 
@@ -1336,7 +1916,7 @@ button {
   gap: 6px;
   margin-top: 3px;
   padding-top: 6px;
-  border-top: 1px solid var(--border, #e3e3e3);
+  border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
@@ -1386,8 +1966,8 @@ button {
 }
 
 .pdf-link:hover {
-  background: rgb(60 120 216 / 12%);
-  box-shadow: 0 0 0 1px rgb(60 120 216 / 35%);
+  background: var(--pdf-link-hover-bg);
+  box-shadow: 0 0 0 1px var(--pdf-link-hover-ring);
 }
 
 /* ── AI tool rows (unified with docs/slides/sheets) ── */
@@ -1420,22 +2000,22 @@ button {
   font-family: inherit;
   font-size: 14px;
   line-height: 1.5;
-  color: #909499;
+  color: var(--color-text-tertiary);
   transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ai-work-group-summary:hover {
-  color: #606366;
+  color: var(--color-text-secondary);
 }
 
 .ai-work-group-summary:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(35, 36, 37, 0.2);
+  box-shadow: 0 0 0 3px var(--pdf-focus-ring);
   border-radius: 4px;
 }
 
 .ai-work-group-summary.running {
-  color: #606366;
+  color: var(--color-text-secondary);
 }
 
 .ai-work-group-summary.running .ai-work-group-label {
@@ -1481,7 +2061,7 @@ button {
   align-items: flex-start;
   gap: 12px;
   padding: 8px 0;
-  color: #909499;
+  color: var(--color-text-tertiary);
   animation: ai-row-ease-in 320ms ease-out;
 }
 
@@ -1496,7 +2076,7 @@ button {
   top: 32px;
   bottom: -4px;
   width: 1px;
-  background: #eaeaea;
+  background: var(--color-border-default);
 }
 
 .ai-step-icon {
@@ -1506,15 +2086,15 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #909499;
+  color: var(--color-text-tertiary);
 }
 
 .ai-step-icon.done {
-  color: #606366;
+  color: var(--color-text-secondary);
 }
 
 .ai-step-icon.error {
-  color: #b91c1c;
+  color: var(--pdf-error);
 }
 
 .ai-step-icon.running svg {
@@ -1548,7 +2128,7 @@ button {
 .ai-step-title {
   font-size: 14px;
   line-height: 1.3;
-  color: #606366;
+  color: var(--color-text-secondary);
   text-align: left;
   background: none;
   border: none;
@@ -1563,12 +2143,12 @@ button {
 }
 
 .ai-step-title.clickable:hover {
-  color: #232425;
+  color: var(--color-text-primary);
 }
 
 .ai-step-title.clickable:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(35, 36, 37, 0.2);
+  box-shadow: 0 0 0 3px var(--pdf-focus-ring);
   border-radius: 4px;
 }
 
@@ -1603,7 +2183,7 @@ button {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #0f7fff;
+  background: var(--color-brand-secondary);
 }
 
 .ai-tool-chip-spinner::before {
@@ -1672,13 +2252,13 @@ button {
 
 /* expanded step detail: subtle gray card, no border */
 .ai-tool-output {
-  background: #f5f5f5;
+  background: var(--color-bg-subtle);
   border: none;
   border-radius: 12px;
   font-family:
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 14px;
-  color: #232425;
+  color: var(--color-text-primary);
   max-height: 300px;
   overflow-y: auto;
   width: 100%;
@@ -1724,7 +2304,7 @@ button {
   min-height: 0;
   width: var(--ai-panel-width, 360px);
   overflow: hidden;
-  transition: width 180ms ease;
+  transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ai-dock.collapsed {
@@ -1803,26 +2383,6 @@ button {
 .ai-panel-resizing {
   cursor: col-resize;
   user-select: none;
-}
-
-/* Design tokens — AI panel chrome only (same values as docs/sheets/slides).
- * The viewer chrome around the panel keeps its own variables. */
-:root {
-  --gs-font-sans:
-    'Arial', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    sans-serif;
-  --color-text-primary: #232425;
-  --color-text-secondary: #606366;
-  --color-text-tertiary: #909499;
-  --color-bg-page: #ffffff;
-  --color-bg-subtle: #f5f5f5;
-  --color-border-default: #eaeaea;
-  --color-border-strong: #d0d3d8;
-  --radius-16: 16px;
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --text-body-lg: 18px;
-  --text-small: 14px;
-  --text-caption: 12px;
 }
 
 .ai-panel-header {
@@ -1908,7 +2468,7 @@ button {
   justify-content: center;
   height: 30px;
   font-size: 14px;
-  color: #999;
+  color: var(--color-text-tertiary);
 }
 
 .ai-chat-empty {
@@ -1976,8 +2536,8 @@ button {
 /* User pill: gray, fully rounded (no tail) */
 .ai-msg-user {
   align-self: flex-end;
-  color: #232425;
-  background: #f5f5f5;
+  color: var(--color-text-primary);
+  background: var(--color-bg-subtle);
   padding: 8px 16px;
   border-radius: 14px;
   max-width: 80%;
@@ -1990,13 +2550,13 @@ button {
   background: none;
   padding: 0;
   max-width: 100%;
-  color: #232425;
+  color: var(--color-text-primary);
   white-space: normal;
 }
 
 .ai-msg-error {
-  border-color: rgb(192 57 43 / 45%);
-  color: #c0392b;
+  border-color: var(--pdf-error-border);
+  color: var(--pdf-error);
 }
 
 .ai-md p,
@@ -2039,8 +2599,8 @@ button {
 .ai-md code {
   border-radius: 4px;
   padding: 1px 6px;
-  background: #f5f5f5;
-  color: #606366;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 14px;
 } /* Thinking indicator: shimmer label above two grow/shrink dots */
@@ -2058,15 +2618,14 @@ button {
   font-size: 14px;
   line-height: 1;
   letter-spacing: 0.01em;
-  color: #666;
+  color: var(--pdf-shimmer-base);
   -webkit-text-fill-color: transparent;
-  background: #666 -webkit-gradient(
-      linear,
-      100% 0,
-      0 0,
-      from(#666),
-      color-stop(0.5, #d9d9d9),
-      to(#666)
+  background: var(--pdf-shimmer-base)
+    linear-gradient(
+      to left,
+      var(--pdf-shimmer-base),
+      var(--pdf-shimmer-hi) 50%,
+      var(--pdf-shimmer-base)
     );
   background-clip: text;
   -webkit-background-clip: text;
@@ -2103,7 +2662,7 @@ button {
 
 .ai-typing-dot-grow,
 .ai-typing-dot-shrink {
-  background: #0f7fff;
+  background: var(--color-brand-secondary);
   border-radius: 50%;
 }
 
@@ -2151,7 +2710,7 @@ button {
   height: 1em;
   margin-left: 2px;
   border-radius: 1px;
-  background: #606366;
+  background: var(--color-text-secondary);
   vertical-align: text-bottom;
   animation: ai-caret-blink 900ms steps(1, end) infinite;
 }
@@ -2187,7 +2746,7 @@ button {
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-16);
   background: var(--color-bg-page);
-  box-shadow: 0 6px 30px rgb(0 0 0 / 8%);
+  box-shadow: var(--pdf-shadow-composer);
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -2337,7 +2896,7 @@ button {
 }
 
 .textLayer span::selection {
-  background: rgba(56, 108, 255, 0.32);
+  background: var(--pdf-text-selection);
 }
 
 /* pdfjs uses endOfContent to carry cross-page selection */
@@ -2356,21 +2915,21 @@ button {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #c62828;
+  color: var(--pdf-error);
 }
 
 .ai-retry-btn {
-  border: 1px solid rgb(198 40 40 / 45%);
+  border: 1px solid var(--pdf-error-border);
   border-radius: 4px;
   background: none;
   padding: 1px 8px;
   font-size: 12px;
-  color: #c62828;
+  color: var(--pdf-error);
   cursor: pointer;
 }
 
 .ai-retry-btn:hover {
-  background: rgb(198 40 40 / 8%);
+  background: var(--pdf-error-bg-hover);
 }
 
 /* ================= status bar (unified chrome shared with docs/sheets/slides) ================= */
@@ -2383,9 +2942,9 @@ button {
   padding: 0 12px;
   height: 24px;
   font-size: 11.5px;
-  color: #605e5c;
-  background: #f3f4f6;
-  border-top: 1px solid #e1e4e8;
+  color: var(--text-dim);
+  background: var(--pdf-statusbar-bg);
+  border-top: 1px solid var(--pdf-statusbar-border);
 }
 
 .status-left {
@@ -2421,12 +2980,12 @@ button {
 }
 
 .zoom-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--pdf-statusbar-hover);
 }
 
 .zoom-slider {
   width: 110px;
-  accent-color: #8a8886;
+  accent-color: var(--text-muted);
   height: 3px;
 }
 

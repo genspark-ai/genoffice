@@ -6,10 +6,13 @@
  * Output: onConfirm({ l, t, r, b }) or onCancel().
  *
  * Coordinate system: everything in the Konva Stage's CSS px (fitWidth viewport).
- * srcRect l/t/r/b are 0..1 crop ratios (OOXML semantics: the fraction cropped from each edge).
+ * Non-destructive: the full original image is shown ghosted behind the crop frame
+ * (reconstructed from the current srcRect), and the frame may be dragged OUTWARD
+ * up to the original bounds to restore cropped-away content. The confirmed
+ * l/t/r/b are absolute 0..1 fractions of the full original image; null = frame
+ * covers the whole original (crop removed).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useI18n } from './i18n/locale'
 
 export interface CropRect {
   l: number
@@ -26,10 +29,13 @@ export interface NodeBox {
 }
 
 interface Props {
-  /** The picture element's pixel box (in the fitWidth viewport coordinate system) */
+  /** The picture element's current (cropped) pixel box — the frame's start position */
   box: NodeBox
-  /** Existing crop (0..1); undefined means no crop */
-  srcRect?: CropRect
+  /** Full original-image extent; the frame is clamped to this, not to `box` */
+  fullBox: NodeBox
+  /** Source bitmap for the ghost preview (crop area beyond the current view) */
+  imgSrc?: string
+  /** Absolute fractions of the full original image; null = crop removed */
   onConfirm: (rect: CropRect | null) => void
   onCancel: () => void
 }
@@ -38,6 +44,46 @@ type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
 const HANDLE_SIZE = 8
 const HANDLE_HALF = HANDLE_SIZE / 2
+
+/**
+ * Swallow the next `click` the browser synthesizes from the current mousedown.
+ * Lives outside the component: `confirm()` unmounts the overlay before the
+ * mouseup/click fire, so an effect-scoped listener would be removed by the
+ * cleanup and never see the click it is meant to block.
+ */
+function swallowNextClick() {
+  const timer = window.setTimeout(() => {
+    window.removeEventListener('click', swallow, { capture: true })
+  }, 400)
+  function swallow(ev: MouseEvent) {
+    window.clearTimeout(timer)
+    ev.preventDefault()
+    ev.stopPropagation()
+  }
+  window.addEventListener('click', swallow, { capture: true, once: true })
+}
+
+/** PowerPoint-style crop cursor for the edge-midpoint handles: a T-bar (⊥) whose
+ * stem points outward from the picture; dragging pushes that edge inward. */
+function cropCursor(rotation: number, fallback: string): string {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">' +
+    `<g transform="rotate(${rotation} 12 12)">` +
+    '<path d="M9 3h6v9h5v5H4v-5h5z" fill="#000" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '</g></svg>'
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 10 10, ${fallback}`
+}
+
+const CURSOR: Record<HandleId, string> = {
+  nw: 'nwse-resize',
+  n: cropCursor(0, 'ns-resize'),
+  ne: 'nesw-resize',
+  e: cropCursor(90, 'ew-resize'),
+  se: 'nwse-resize',
+  s: cropCursor(180, 'ns-resize'),
+  sw: 'nesw-resize',
+  w: cropCursor(270, 'ew-resize'),
+}
 
 /**
  * Positions of the 8 handles relative to the crop frame's top-left
@@ -60,40 +106,26 @@ function handlePositions(cx: number, cy: number, cw: number, ch: number) {
 }
 
 /**
- * srcRect (0..1 ratios) → pixel crop frame (relative to the stage coordinate system)
+ * Pixel crop frame → absolute crop ratios 0..1 of the full original image
  */
-function rectFromSrcRect(box: NodeBox, sr: CropRect) {
-  const cx = box.x + sr.l * box.w
-  const cy = box.y + sr.t * box.h
-  const cw = box.w * (1 - sr.l - sr.r)
-  const ch = box.h * (1 - sr.t - sr.b)
-  return { cx, cy, cw, ch }
+function srcRectFromRect(full: NodeBox, cx: number, cy: number, cw: number, ch: number): CropRect {
+  const l = (cx - full.x) / full.w
+  const t = (cy - full.y) / full.h
+  const r = (full.x + full.w - cx - cw) / full.w
+  const b = (full.y + full.h - cy - ch) / full.h
+  // the frame is clamped inside `full` with a 20px minimum, so each fraction is
+  // naturally in [0, 1) and opposite edges sum below 1 - only guard rounding noise
+  const clamp = (v: number) => Math.max(0, v)
+  return { l: clamp(l), t: clamp(t), r: clamp(r), b: clamp(b) }
 }
 
-/**
- * Pixel crop frame → srcRect 0..1
- */
-function srcRectFromRect(box: NodeBox, cx: number, cy: number, cw: number, ch: number): CropRect {
-  const l = (cx - box.x) / box.w
-  const t = (cy - box.y) / box.h
-  const r = (box.x + box.w - cx - cw) / box.w
-  const b = (box.y + box.h - cy - ch) / box.h
-  return {
-    l: Math.max(0, Math.min(0.95, l)),
-    t: Math.max(0, Math.min(0.95, t)),
-    r: Math.max(0, Math.min(0.95, r)),
-    b: Math.max(0, Math.min(0.95, b)),
-  }
-}
-
-export function CropOverlay({ box, srcRect, onConfirm, onCancel }: Props) {
-  const { t } = useI18n()
-  const initial = srcRect ?? { l: 0, t: 0, r: 0, b: 0 }
-  const initRect = rectFromSrcRect(box, initial)
-  const [cx, setCx] = useState(initRect.cx)
-  const [cy, setCy] = useState(initRect.cy)
-  const [cw, setCw] = useState(initRect.cw)
-  const [ch, setCh] = useState(initRect.ch)
+export function CropOverlay({ box, fullBox, imgSrc, onConfirm, onCancel }: Props) {
+  // The frame starts at the current visible region; the ghost of the full original
+  // renders behind it, so dragging outward reveals (and restores) cropped content.
+  const [cx, setCx] = useState(box.x)
+  const [cy, setCy] = useState(box.y)
+  const [cw, setCw] = useState(box.w)
+  const [ch, setCh] = useState(box.h)
 
   const dragRef = useRef<{
     handle: HandleId
@@ -169,11 +201,11 @@ export function CropOverlay({ box, srcRect, onConfirm, onCancel }: Props) {
           nw = d.startCw - (nx - d.startCx)
           break
       }
-      // Clamp within the picture bounds
-      nx = Math.max(box.x, nx)
-      ny = Math.max(box.y, ny)
-      nw = Math.min(nw, box.x + box.w - nx)
-      nh = Math.min(nh, box.y + box.h - ny)
+      // Clamp within the ORIGINAL image bounds — outward drag restores cropped content
+      nx = Math.max(fullBox.x, nx)
+      ny = Math.max(fullBox.y, ny)
+      nw = Math.min(nw, fullBox.x + fullBox.w - nx)
+      nh = Math.min(nh, fullBox.y + fullBox.h - ny)
       setCx(nx)
       setCy(ny)
       setCw(nw)
@@ -188,14 +220,14 @@ export function CropOverlay({ box, srcRect, onConfirm, onCancel }: Props) {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [box])
+  }, [fullBox])
 
   // Keyboard: Enter confirm, Esc cancel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault()
-        const r = srcRectFromRect(box, cx, cy, cw, ch)
+        const r = srcRectFromRect(fullBox, cx, cy, cw, ch)
         const isEmpty = !r.l && !r.t && !r.r && !r.b
         onConfirm(isEmpty ? null : r)
       } else if (e.key === 'Escape') {
@@ -205,29 +237,44 @@ export function CropOverlay({ box, srcRect, onConfirm, onCancel }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [box, cx, cy, cw, ch, onConfirm, onCancel])
+  }, [fullBox, cx, cy, cw, ch, onConfirm, onCancel])
 
   const confirm = useCallback(() => {
-    const r = srcRectFromRect(box, cx, cy, cw, ch)
+    const r = srcRectFromRect(fullBox, cx, cy, cw, ch)
     const isEmpty = !r.l && !r.t && !r.r && !r.b
     onConfirm(isEmpty ? null : r)
-  }, [box, cx, cy, cw, ch, onConfirm])
+  }, [fullBox, cx, cy, cw, ch, onConfirm])
+
+  // The overlay only covers the slide canvas; a mousedown anywhere beyond it
+  // (thumbnails, ribbon, the gray backdrop) also confirms — capture phase so the
+  // crop lands before whatever was clicked reacts to its own event.
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const root = rootRef.current
+      if (root && e.target instanceof Node && root.contains(e.target)) return
+      if (e.button !== 0) return // primary button only (right-click = context menu)
+      // The first outside press only confirms: swallow it (and the click it
+      // synthesizes) so the control under the cursor does not also act - e.g. Undo
+      // racing the in-flight crop IPC, or the Crop button re-entering crop mode
+      // from pre-commit geometry. The click swallower is registered outside this
+      // effect so unmounting the overlay cannot cancel it.
+      e.preventDefault()
+      e.stopPropagation()
+      swallowNextClick()
+      confirm()
+    }
+    window.addEventListener('mousedown', onDown, true)
+    return () => {
+      window.removeEventListener('mousedown', onDown, true)
+    }
+  }, [confirm])
 
   const handles = handlePositions(cx, cy, cw, ch)
 
-  const CURSOR: Record<HandleId, string> = {
-    nw: 'nwse-resize',
-    n: 'ns-resize',
-    ne: 'nesw-resize',
-    e: 'ew-resize',
-    se: 'nwse-resize',
-    s: 'ns-resize',
-    sw: 'nesw-resize',
-    w: 'ew-resize',
-  }
-
   return (
     <div
+      ref={rootRef}
       className="crop-overlay"
       onMouseDown={(e) => {
         // Clicking outside the handles = confirm
@@ -236,23 +283,48 @@ export function CropOverlay({ box, srcRect, onConfirm, onCancel }: Props) {
       }}
       style={{ position: 'absolute', inset: 0, cursor: 'default' }}
     >
-      {/* Mask layer: translucent outside the crop frame */}
+      {/* Ghost of the FULL original image: crisp inside the frame (masks dim the rest) */}
+      {imgSrc && (
+        <img
+          src={imgSrc}
+          alt=""
+          draggable={false}
+          style={{
+            position: 'absolute',
+            left: fullBox.x,
+            top: fullBox.y,
+            width: fullBox.w,
+            height: fullBox.h,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Mask layer: translucent outside the crop frame, over the whole original */}
       {/* top */}
       <div
         className="crop-mask"
-        style={{ left: box.x, top: box.y, width: box.w, height: cy - box.y }}
+        style={{ left: fullBox.x, top: fullBox.y, width: fullBox.w, height: cy - fullBox.y }}
       />
       {/* bottom */}
       <div
         className="crop-mask"
-        style={{ left: box.x, top: cy + ch, width: box.w, height: box.y + box.h - cy - ch }}
+        style={{
+          left: fullBox.x,
+          top: cy + ch,
+          width: fullBox.w,
+          height: fullBox.y + fullBox.h - cy - ch,
+        }}
       />
       {/* left (middle strip) */}
-      <div className="crop-mask" style={{ left: box.x, top: cy, width: cx - box.x, height: ch }} />
+      <div
+        className="crop-mask"
+        style={{ left: fullBox.x, top: cy, width: cx - fullBox.x, height: ch }}
+      />
       {/* right (middle strip) */}
       <div
         className="crop-mask"
-        style={{ left: cx + cw, top: cy, width: box.x + box.w - cx - cw, height: ch }}
+        style={{ left: cx + cw, top: cy, width: fullBox.x + fullBox.w - cx - cw, height: ch }}
       />
 
       {/* Crop frame border */}
@@ -277,11 +349,6 @@ export function CropOverlay({ box, srcRect, onConfirm, onCancel }: Props) {
           onMouseDown={(e) => onMouseDown(id, e)}
         />
       ))}
-
-      {/* Confirmation hint */}
-      <div className="crop-hint" style={{ left: box.x, top: box.y + box.h + 8 }}>
-        {t('appCropHint')}
-      </div>
     </div>
   )
 }

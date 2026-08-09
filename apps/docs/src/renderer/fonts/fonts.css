@@ -9,26 +9,28 @@
  * the offline pagination model (lo-fonts measures the same set of files).
  */
 
+/* "Carlito GO": Carlito with Vietnamese stacked diacritics fixed at build time
+   (tools/patch-carlito-vi.py); renamed per OFL Reserved Font Name clause */
 @font-face {
-  font-family: 'Carlito';
+  font-family: 'Carlito GO';
   src: url('./Carlito-Regular.ttf');
   font-weight: normal;
   font-style: normal;
 }
 @font-face {
-  font-family: 'Carlito';
+  font-family: 'Carlito GO';
   src: url('./Carlito-Bold.ttf');
   font-weight: bold;
   font-style: normal;
 }
 @font-face {
-  font-family: 'Carlito';
+  font-family: 'Carlito GO';
   src: url('./Carlito-Italic.ttf');
   font-weight: normal;
   font-style: italic;
 }
 @font-face {
-  font-family: 'Carlito';
+  font-family: 'Carlito GO';
   src: url('./Carlito-BoldItalic.ttf');
   font-weight: bold;
   font-style: italic;
@@ -149,6 +151,114 @@
 @font-face {
   font-family: 'Noto Serif CJK SC';
   src: url('./NotoSerifCJKsc-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/*
+ * Korean fallback: Noto Sans/Serif CJK KR subsets (KS X 1001 syllables + jamo),
+ * renamed per OFL since advances are normalized to the Windows faces Word
+ * substitutes (Batang/Malgun): hangul 1.0em; serif digits/space match Batang;
+ * sans Basic Latin matches Malgun (tools/normalize-kr-sans-hmtx.py).
+ */
+@font-face {
+  font-family: 'GenOffice Sans KR';
+  src: url('./GenOfficeSansKR-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Serif KR';
+  src: url('./GenOfficeSerifKR-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/*
+ * Arabic fallback: unmodified Noto Naskh/Sans Arabic subsets (Arabic blocks +
+ * presentation forms + digits/punctuation). Without them, missing Arabic fonts
+ * fall through to the CJK/generic tail and Chromium picks a Geeza Pro-style UI
+ * face — larger and heavier than the naskh serif Word substitutes.
+ */
+@font-face {
+  font-family: 'Noto Naskh Arabic';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Noto Sans Arabic';
+  src: url('./NotoSansArabic-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* macOS's PMingLiU stand-in (Songti TC) draws these fullwidth glyphs at
+ * ~0.2-0.5em of ink inside the 1em advance — U+FF0F looks like a spaced
+ * half-width slash. Serve them from the bundled Noto subset (ink matches
+ * PMingLiU); real PMingLiU still precedes this face in the TC serif chain. */
+@font-face {
+  font-family: 'GenOffice Fullwidth TC';
+  src: url('./NotoSerifCJKsc-Regular-subset.woff2') format('woff2');
+  unicode-range: U+FF0D, U+FF0F, U+FF3C, U+FF3F, U+FF5E;
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* macOS Chromium refuses to synthesize bold for 'Songti SC' requested by family
+ * name at weight 600/700 (only 900 selects Black). This local() alias, registered
+ * at weight normal only, forces Blink to synthesize bold at >=600. On Windows the
+ * local() sources don't resolve and the chain falls through to SimSun. */
+@font-face {
+  font-family: 'GenOffice Songti SC';
+  src: local('STSongti-SC-Regular'), local('Songti SC Regular');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Superscript/subscript digits are outside the KR subsets and would fall
+ * through to AppleMyungjo, whose U+2082 is a full-width (1.0em) glyph —
+ * "Cu₂O" rendered as "Cu₂ O". Serve them from bundled latin faces instead. */
+@font-face {
+  font-family: 'GenOffice Sans KR';
+  src: url('./Carlito-Regular.ttf') format('truetype');
+  unicode-range: U+2070-209F, U+00B2-00B3, U+00B9;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Serif KR';
+  /* Carlito, not Caladea/LiberationSerif: only Carlito covers the whole block */
+  src: url('./Carlito-Regular.ttf') format('truetype');
+  unicode-range: U+2070-209F, U+00B2-00B3, U+00B9;
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Same for the Cambria→Caladea chain and the CJK SC subsets: none covers the
+ * sub/superscript block, so BaSO₄ falls to a system symbol font (small, dark
+ * glyphs). Ranges list only codepoints the substitute face actually has (and
+ * skip glyphs the base face covers itself, e.g. Caladea's ²³¹ⁿ), so everything
+ * else keeps today's fallback. Liberation Serif for the serif faces (style
+ * match), Carlito for the sans one. Normal weight only, like the KR fix. */
+@font-face {
+  font-family: 'Caladea';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+2074-2079, U+2080-2094;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Noto Serif CJK SC';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+2074-2079, U+207F, U+2080-2094;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Noto Sans CJK SC';
+  src: url('./Carlito-Regular.ttf') format('truetype');
+  unicode-range: U+2070-2071, U+2074-2094;
   font-weight: normal;
   font-style: normal;
 }

@@ -22,6 +22,9 @@ import type {
 /** Resolve an authored image src to embeddable bytes; null → fall back to alt text */
 export type ImageLoader = (src: string) => Promise<NewImage | null>
 
+/** widest image that fits the A4 text column */
+export const DOCX_MAX_IMAGE_PX = 620
+
 export interface DocxMapping {
   blocks: SaveBlock[]
   options: SaveOptions
@@ -33,12 +36,6 @@ const INDENT_STEP = 360
 const DECIMAL_ABSTRACT_NUM_ID = '1'
 const CODE_FONT = 'Consolas'
 const CODE_FILL = 'F2F3F5'
-const CALLOUT_FILL: Record<string, string> = {
-  info: 'E8F0FE',
-  tip: 'E6F4EA',
-  warning: 'FEF3E2',
-  danger: 'FCE8E6',
-}
 
 // ── inline content → Run[] ──
 
@@ -55,8 +52,6 @@ function runsFromInline(content: JSONContent[] | undefined): Run[] {
       if (mark.type === 'bold') run.bold = true
       else if (mark.type === 'italic') run.italic = true
       else if (mark.type === 'strike') run.strike = true
-      else if (mark.type === 'underline') run.underline = true
-      else if (mark.type === 'highlight') run.highlight = 'yellow'
       else if (mark.type === 'code') run.font = CODE_FONT
       else if (mark.type === 'link' && typeof mark.attrs?.href === 'string') {
         run.link = { href: mark.attrs.href }
@@ -176,7 +171,11 @@ function mapTable(node: JSONContent): TableModel {
 function walkBlock(ctx: WalkContext, node: JSONContent, base?: ParaFormat): void {
   switch (node.type) {
     case 'paragraph':
-      pushParagraph(ctx, { type: 'paragraph', runs: runsFromInline(node.content), format: base })
+      pushParagraph(ctx, {
+        type: 'paragraph',
+        runs: runsFromInline(node.content),
+        format: base,
+      })
       break
     case 'heading': {
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6) as number
@@ -227,27 +226,6 @@ function walkBlock(ctx: WalkContext, node: JSONContent, base?: ParaFormat): void
     case 'table':
       ctx.blocks.push({ kind: 'xml', xml: generateTableModelXml(mapTable(node)) })
       break
-    case 'callout': {
-      const fill = CALLOUT_FILL[String(node.attrs?.type ?? 'info')] ?? CALLOUT_FILL.info
-      for (const child of node.content ?? []) {
-        walkBlock(ctx, child, mergeFormat(base, { indentLeft: 120, shadingFill: fill }))
-      }
-      break
-    }
-    case 'toggle': {
-      const summary = String(node.attrs?.summary ?? '')
-      if (summary) {
-        pushParagraph(ctx, {
-          type: 'paragraph',
-          runs: [{ text: summary, bold: true }],
-          format: base,
-        })
-      }
-      for (const child of node.content ?? []) {
-        walkBlock(ctx, child, mergeFormat(base, { indentLeft: INDENT_STEP }))
-      }
-      break
-    }
     default: {
       // unknown block: keep its text so nothing silently disappears
       const text = plainText(node)

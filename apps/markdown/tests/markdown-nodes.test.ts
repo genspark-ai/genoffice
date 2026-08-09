@@ -36,40 +36,8 @@ function roundTrip(editor: Editor, md: string): { out: string; stable: boolean }
   return { out, stable: JSON.stringify(first) === JSON.stringify(second) }
 }
 
-describe('markdown round-trip for M2 nodes', () => {
+describe('markdown round-trip for GFM nodes', () => {
   const editor = createEditor()
-
-  it('callout with a non-default type', () => {
-    const md = ':::callout {type="warning"}\nBe careful.\n:::'
-    const { out, stable } = roundTrip(editor, md)
-    expect(out).toContain(':::callout')
-    expect(out).toContain('type="warning"')
-    expect(out).toContain('Be careful.')
-    expect(stable).toBe(true)
-  })
-
-  it('callout with the default type omits the attribute', () => {
-    const { out, stable } = roundTrip(editor, ':::callout\nNote text.\n:::')
-    expect(out).toContain(':::callout')
-    expect(out).not.toContain('type=')
-    expect(stable).toBe(true)
-  })
-
-  it('toggle keeps its summary and drops editor-only open state', () => {
-    const md = ':::toggle {summary="More info"}\nHidden body.\n:::'
-    const { out, stable } = roundTrip(editor, md)
-    expect(out).toContain(':::toggle')
-    expect(out).toContain('summary="More info"')
-    expect(out).not.toContain('open=')
-    expect(stable).toBe(true)
-  })
-
-  it('callout containing a list', () => {
-    const md = ':::callout {type="tip"}\n- one\n- two\n:::'
-    const { out, stable } = roundTrip(editor, md)
-    expect(out).toContain('- one')
-    expect(stable).toBe(true)
-  })
 
   it('task list', () => {
     const md = '- [ ] open item\n- [x] done item'
@@ -95,21 +63,11 @@ describe('markdown round-trip for M2 nodes', () => {
     expect(stable).toBe(true)
   })
 
-  it('plain constructs still round-trip alongside the custom nodes', () => {
+  it('plain constructs round-trip', () => {
     const md = '# Title\n\n> quoted\n\n```js\ncode()\n```\n\n---'
     const { out, stable } = roundTrip(editor, md)
     expect(out).toContain('# Title')
     expect(out).toContain('```js')
-    expect(stable).toBe(true)
-  })
-})
-
-describe('highlight and code block language', () => {
-  const editor = createEditor()
-
-  it('==highlight== round-trips', () => {
-    const { out, stable } = roundTrip(editor, 'some ==marked text== here')
-    expect(out).toContain('==marked text==')
     expect(stable).toBe(true)
   })
 
@@ -118,26 +76,79 @@ describe('highlight and code block language', () => {
     expect(out).toContain('```python')
     expect(stable).toBe(true)
   })
+
+  it('nested lists serialize with 4-space indents (strict-CommonMark safe)', () => {
+    // 2-space indents would be below the ordered item's content column ("1. "
+    // = 3 chars), so GitHub would flatten the sub-list when re-parsing the file
+    const ordered = roundTrip(editor, '1. one\n    - sub\n2. two')
+    expect(ordered.out).toContain('\n    - sub')
+    expect(ordered.stable).toBe(true)
+
+    const bullets = roundTrip(editor, '- a\n    - b\n        - c')
+    expect(bullets.out).toContain('\n    - b')
+    expect(bullets.out).toContain('\n        - c')
+    expect(bullets.stable).toBe(true)
+
+    // files saved by earlier versions used 2-space indents — still parsed as nested
+    const legacy = roundTrip(editor, '- a\n  - b')
+    expect(legacy.out).toContain('\n    - b')
+  })
 })
 
-describe('underline (ships inside StarterKit v3)', () => {
+describe('only pure markdown syntax is ever produced', () => {
   const editor = createEditor()
 
-  it('toggleUnderline applies the mark', () => {
-    editor.commands.setContent('word', { contentType: 'markdown' })
-    editor.commands.selectAll()
-    expect(editor.commands.toggleUnderline()).toBe(true)
-    expect(editor.isActive('underline')).toBe(true)
+  it('underline and highlight commands are gone', () => {
+    // both would serialize as non-GFM syntax (`++u++` / `==mark==`)
+    expect('toggleUnderline' in editor.commands).toBe(false)
+    expect('toggleHighlight' in editor.commands).toBe(false)
   })
 
-  it('an underline applied in the editor survives serialize → reparse', () => {
-    editor.commands.setContent('word', { contentType: 'markdown' })
-    editor.commands.selectAll()
-    editor.commands.toggleUnderline()
-    const md = editor.getMarkdown()
-    expect(md).toContain('word')
-    editor.commands.setContent(md, { contentType: 'markdown' })
-    editor.commands.selectAll()
-    expect(editor.isActive('underline')).toBe(true)
+  it('alignment and line-height commands are gone', () => {
+    expect('setTextAlign' in editor.commands).toBe(false)
+    expect('setLineHeight' in editor.commands).toBe(false)
+  })
+
+  it('callout and toggle nodes are gone from the schema', () => {
+    expect(editor.schema.nodes.callout).toBeUndefined()
+    expect(editor.schema.nodes.toggle).toBeUndefined()
+  })
+})
+
+describe('legacy HTML content degrades to plain markdown, keeping the text', () => {
+  const editor = createEditor()
+
+  function parseAndSerialize(md: string): string {
+    const manager = editor.markdown!
+    return manager.serialize(manager.parse(md))
+  }
+
+  it('a styled span drops the styling but keeps the text', () => {
+    const out = parseAndSerialize('a <span style="color: #ff0000">red text</span> b')
+    expect(out).not.toContain('<span')
+    expect(out).toContain('red text')
+  })
+
+  it('an aligned paragraph becomes a plain paragraph with marks intact', () => {
+    const out = parseAndSerialize(
+      '<p style="text-align: center">centered <strong>text</strong></p>',
+    )
+    expect(out).not.toContain('<p')
+    expect(out).toContain('centered **text**')
+  })
+
+  it('an aligned heading becomes a plain heading', () => {
+    const out = parseAndSerialize('<h2 style="text-align: right">title</h2>')
+    expect(out).toBe('## title')
+  })
+
+  it('a resized image goes back to pure image syntax', () => {
+    const out = parseAndSerialize('<img src="assets/d.png" alt="d" width="300" align="center">')
+    expect(out).toBe('![d](assets/d.png)')
+  })
+
+  it('u and mark tags drop the tag but keep the text', () => {
+    const out = parseAndSerialize('a <u>underlined</u> and <mark>marked</mark> b')
+    expect(out).toBe('a underlined and marked b')
   })
 })

@@ -23,7 +23,6 @@
     "@genoffice/ui": "*",
     "@tiptap/core": "3.29.2",
     "@tiptap/extension-code-block": "3.29.2",
-    "@tiptap/extension-highlight": "3.29.2",
     "@tiptap/extension-image": "3.29.2",
     "@tiptap/extension-list": "3.29.2",
     "@tiptap/extension-table": "3.29.2",

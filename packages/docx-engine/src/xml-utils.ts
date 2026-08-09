@@ -50,12 +50,13 @@ export function findChildren(node: XNode, name: string): XNode[] {
  * or paragraphs at any level; for display purposes the wrapper is transparent
  * (research-report templates wrap every field in an sdt).
  */
-export function childrenThroughSdt(node: XNode, name: string): XNode[] {
+export function childrenThroughSdt(node: XNode, name: string | readonly string[]): XNode[] {
+  const names = Array.isArray(name) ? (name as readonly string[]) : [name as string]
   const out: XNode[] = []
   const visit = (n: XNode): void => {
     for (const child of childrenOf(n)) {
       const cn = nameOf(child)
-      if (cn === name) out.push(child)
+      if (cn !== undefined && names.includes(cn)) out.push(child)
       else if (cn === 'w:sdt') {
         const content = findChild(child, 'w:sdtContent')
         if (content) visit(content)

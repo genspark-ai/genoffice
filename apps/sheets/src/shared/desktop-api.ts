@@ -1441,6 +1441,9 @@ export const workbookSaveRequestSchema = z
   .strict()
   .refine(
     (request) =>
+      // Explicit Save As is a valid request even with nothing to apply: it
+      // writes the unchanged workbook to a new path.
+      request.mode === 'save-as' ||
       request.edits.length > 0 ||
       request.structuralOps.length > 0 ||
       request.chartEdits.length > 0 ||
@@ -1895,6 +1898,8 @@ export interface AttachmentImageResult {
   error?: string
 }
 
+export type UiTheme = 'light' | 'dark' | 'system'
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -1904,6 +1909,10 @@ export interface DesktopApi {
       lang: 'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar',
     ) => void,
   ): () => void
+  /** current UI theme preference (persisted by the shell in app-settings.json) */
+  getTheme(): Promise<UiTheme>
+  /** theme switched from the shell home page */
+  onThemeChanged(handler: (theme: UiTheme) => void): () => void
   selectWorkbook(): Promise<WorkbookFile | null>
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>

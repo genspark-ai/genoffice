@@ -7,6 +7,7 @@ import type {
   AiStreamRequest,
   DesktopApi,
   MenuCommand,
+  UiTheme,
 } from '../shared/ipc'
 import type { ProjectApi } from '@genoffice/project-store'
 
@@ -19,6 +20,12 @@ const api: DesktopApi = {
     ) => handler(lang)
     ipcRenderer.on('app:language-changed', listener)
     return () => ipcRenderer.removeListener('app:language-changed', listener)
+  },
+  getTheme: () => ipcRenderer.invoke('app:get-theme'),
+  onThemeChanged: (handler) => {
+    const listener = (_event: IpcRendererEvent, theme: UiTheme) => handler(theme)
+    ipcRenderer.on('app:theme-changed', listener)
+    return () => ipcRenderer.removeListener('app:theme-changed', listener)
   },
   openDocx: () => ipcRenderer.invoke('docs:open'),
   openDocxPath: (path: string) => ipcRenderer.invoke('docs:open-path', path),
@@ -101,6 +108,11 @@ const api: DesktopApi = {
     ipcRenderer.on('docs:close-check', listener)
     return () => ipcRenderer.removeListener('docs:close-check', listener)
   },
+  reportViewMenuState: (state: { aiSidebar: boolean; darkCanvas: boolean }) =>
+    ipcRenderer.send('docs:view-menu-state', {
+      aiSidebar: state?.aiSidebar === true,
+      darkCanvas: state?.darkCanvas === true,
+    }),
   reportCloseCheck: (state: { dirty: boolean; autoSave: boolean; filePath?: string | null }) =>
     ipcRenderer.send('docs:close-check-result', {
       dirty: state?.dirty === true,

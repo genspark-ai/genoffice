@@ -68,6 +68,7 @@ import {
   IconAnimStar,
   IconAnimNone,
   IconCrop,
+  IconPageBorders,
   IconNoneX,
   IconPathRight,
   IconPathDown,
@@ -78,6 +79,7 @@ import {
 // brand-supplied Review AI icon art (44px = 22px @2x), color baked in
 import iconSpelling from '../assets/icon-spelling.png'
 import iconTranslate from '../assets/icon-translate.png'
+import iconTransparency from '../assets/icon-transparency.png'
 import { ChartTypeDialog } from './ChartTypeDialog'
 import {
   BIG,
@@ -850,7 +852,10 @@ export function Ribbon({
   contextChartStyle,
   chartColorSchemes,
   contextPictureCanCutout,
+  contextPictureStroke,
+  onPictureStroke,
   onPictureCrop,
+  cropActive,
   onPictureOpacity,
   onPictureCutout,
   onEditTableStyle,
@@ -883,6 +888,32 @@ export function Ribbon({
   const [layoutPickOpen, setLayoutPickOpen] = useState(false)
   const [slideSizeOpen, setSlideSizeOpen] = useState(false)
   const [transparencyOpen, setTransparencyOpen] = useState(false)
+  const [pictureBorderOpen, setPictureBorderOpen] = useState(false)
+  // Debounced picture-border commit: color drags fire repeatedly, and a pending
+  // color commit must not clobber a width click landing meanwhile
+  const pictureBorderTimer = useRef<number | null>(null)
+  const pictureBorderDraft = useRef<{ color: string; widthPt: number } | null>(null)
+  const commitPictureBorder = (
+    patch: Partial<{ color: string; widthPt: number }>,
+    immediate = false,
+  ) => {
+    if (pictureBorderTimer.current) window.clearTimeout(pictureBorderTimer.current)
+    const base = pictureBorderDraft.current ?? {
+      color: toPickerHex(contextPictureStroke?.color) ?? '#000000',
+      widthPt: contextPictureStroke?.widthPt ?? 1,
+    }
+    const draft = { ...base, ...patch }
+    pictureBorderDraft.current = draft
+    const fire = () => {
+      pictureBorderTimer.current = null
+      onPictureStroke?.({
+        ...draft,
+        ...(contextPictureStroke?.dashPreset ? { dash: contextPictureStroke.dashPreset } : {}),
+      })
+    }
+    if (immediate) fire()
+    else pictureBorderTimer.current = window.setTimeout(fire, 200)
+  }
   const [lastColor, setLastColor] = useState('#C43E1C')
   // Bullet color "more colors" native picker echo
   const [lastBulletColor, setLastBulletColor] = useState('#C43E1C')
@@ -935,6 +966,7 @@ export function Ribbon({
     if (!keep.includes('layoutPick')) setLayoutPickOpen(false)
     if (!keep.includes('slideSize')) setSlideSizeOpen(false)
     if (!keep.includes('transparency')) setTransparencyOpen(false)
+    if (!keep.includes('pictureBorder')) setPictureBorderOpen(false)
     if (!keep.includes('table')) setTableOpen(false)
     if (!keep.includes('layout')) setLayoutOpen(false)
     if (!keep.includes('translate')) setTranslateOpen(false)
@@ -2256,7 +2288,7 @@ export function Ribbon({
                 <button
                   className="rb-small"
                   disabled={!hasDoc}
-                  onClick={() => onZoom(Math.min(zoom * 1.15, 3))}
+                  onClick={() => onZoom((z) => Math.min(z * 1.15, 3))}
                 >
                   <IconZoomIn size={18} />
                   <span>{t('ribbonZoomIn')}</span>
@@ -2264,7 +2296,7 @@ export function Ribbon({
                 <button
                   className="rb-small"
                   disabled={!hasDoc}
-                  onClick={() => onZoom(Math.max(zoom / 1.15, 0.25))}
+                  onClick={() => onZoom((z) => Math.max(z / 1.15, 0.25))}
                 >
                   <IconZoomOut size={18} />
                   <span>{t('ribbonZoomOut')}</span>
@@ -2673,8 +2705,9 @@ export function Ribbon({
                   onClick={() => setTransparencyOpen((v) => !v)}
                   title={t('ribbonTransparency')}
                 >
-                  <span className="rb-big-icon" style={{ fontSize: 20 }}>
-                    ◐<RbCaret />
+                  <span className="rb-big-icon">
+                    <img src={iconTransparency} width={22} height={22} alt="" />
+                    <RbCaret />
                   </span>
                   <span>{t('ribbonTransparency')}</span>
                 </button>
@@ -2696,9 +2729,76 @@ export function Ribbon({
               </div>
             </Group>
             <div className="ribbon-sep" />
+            <Group label={t('paneFormatOutline')}>
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big ${pictureBorderOpen ? 'active' : ''}`}
+                  disabled={!onPictureStroke}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'pictureBorder')
+                  }}
+                  onClick={() => {
+                    pictureBorderDraft.current = null
+                    setPictureBorderOpen((v) => !v)
+                  }}
+                  title={t('paneFormatOutline')}
+                >
+                  <span className="rb-big-icon">
+                    <IconPageBorders size={BIG} />
+                    <RbCaret />
+                  </span>
+                  <span>{t('paneFormatOutline')}</span>
+                </button>
+                {pictureBorderOpen && (
+                  <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
+                    <label className="rb-menu-input">
+                      {t('paneFormatOutlineColor')}
+                      <input
+                        type="color"
+                        defaultValue={toPickerHex(contextPictureStroke?.color) ?? '#000000'}
+                        onPointerDown={(e) => armColorInput(e.currentTarget)}
+                        onChange={(e) => commitPictureBorder({ color: e.target.value })}
+                      />
+                    </label>
+                    <div className="rb-menu-sep" />
+                    {[0.5, 1, 1.5, 2.25, 3, 4.5, 6].map((pt) => (
+                      <button
+                        key={pt}
+                        className={contextPictureStroke?.widthPt === pt ? 'active' : ''}
+                        onClick={() => {
+                          setPictureBorderOpen(false)
+                          commitPictureBorder({ widthPt: pt }, true)
+                        }}
+                      >
+                        {pt} pt
+                      </button>
+                    ))}
+                    <div className="rb-menu-sep" />
+                    <button
+                      className={!contextPictureStroke ? 'active' : ''}
+                      onClick={() => {
+                        setPictureBorderOpen(false)
+                        // A pending debounced color commit still holds the prior draft
+                        // in its closure and would re-apply the border after the clear
+                        if (pictureBorderTimer.current) {
+                          window.clearTimeout(pictureBorderTimer.current)
+                          pictureBorderTimer.current = null
+                        }
+                        pictureBorderDraft.current = null
+                        onPictureStroke?.(null)
+                      }}
+                    >
+                      {t('paneFormatNoOutline')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Group>
+            <div className="ribbon-sep" />
             <Group label={t('ribbonGroupSize')}>
               <button
-                className="rb-big"
+                className={`rb-big ${cropActive ? 'active' : ''}`}
                 title={t('ribbonCropTip')}
                 disabled={!onPictureCrop}
                 onClick={onPictureCrop}

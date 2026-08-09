@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { decodeSymbolChar, decodeSymbolText, isSymbolFont, parseDocx } from '../src/index'
+import {
+  decodeSymbolChar,
+  decodeSymbolText,
+  isSymbolFont,
+  parseDocx,
+  toSymbolPua,
+} from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -24,6 +30,21 @@ describe('symbol font decoding helpers', () => {
     expect(decodeSymbolText('Symbol', 'abg')).toBe('αβγ')
     expect(decodeSymbolText('Wingdings', 'l e')).toBeNull()
     expect(decodeSymbolText('Calibri', 'abc')).toBeNull()
+  })
+
+  it('maps the Wingdings 2 circle/square bullet series', () => {
+    expect(decodeSymbolChar('Wingdings 2', 0x97)).toBe('●')
+    expect(decodeSymbolChar('Wingdings 2', 0xf09b)).toBe('○')
+    expect(decodeSymbolChar('Wingdings 2', 0xf09e)).toBe('◉')
+    expect(decodeSymbolChar('Wingdings 2', 0xf0a1)).toBe('■')
+    expect(decodeSymbolChar('Wingdings 2', 0xf0a4)).toBe('□')
+  })
+
+  it('normalizes raw glyph bytes to their U+F0xx form', () => {
+    expect(toSymbolPua('l')).toBe('\uF06C')
+    expect(toSymbolPua('·')).toBe('\uF0B7')
+    expect(toSymbolPua('\uF0B7')).toBe('\uF0B7')
+    expect(toSymbolPua(' l')).toBe(' \uF06C')
   })
 })
 

@@ -69,6 +69,9 @@ export interface TableRowBox {
   /** in-row safe cut points (relative to row top, px, ascending): spanning all cells without splitting any text line/image.
    *  Word allows in-row page breaks by default; without cut points or with cantSplit the row is atomic */
   cutYs?: number[]
+  /** bottom of the lowest content band (text/image rects) relative to row top (px, 0 = empty row):
+   *  lets pagination clip declared-height fill below the content instead of pushing pages */
+  contentBottom?: number
 }
 
 /** One column of a multi-column page: a content range in the continuous flow (in-column break semantics match pages) */
@@ -271,18 +274,30 @@ export function computeSectionedSlicesF2(
   let colCount = 1 // column count of the current region
   let colH = contentH // column height of the current region
   let colIdx = 0 // current column index
-  let colStart = 0 // starting Y of the current column (absolute)
   let usedInCol = 0 // height used in the current column
   let pendingBreak = false
   let pendingColBreak = false
 
+  // Safety net: a document legitimately needs at most a few column turns per
+  // block (forced breaks, line/row splits) — far beyond that means a placement
+  // loop stopped converging. Degrade by treating everything as fitting (the
+  // rest piles onto the current page, with a warning) instead of looping forever.
+  const maxColumnTurns = Math.max(65536, blocks.length * 8)
+  let columnTurns = 0
+  let runaway = false
+
   const pushColumn = (y: number, headerH = 0, headerTop = 0) => {
+    if (++columnTurns > maxColumnTurns && !runaway) {
+      runaway = true
+      console.warn(
+        `[pagination] column-turn limit ${maxColumnTurns} exceeded at y=${y}; placing remaining content without page breaks`,
+      )
+    }
     const page = pages[pages.length - 1]
     page.regions[page.regions.length - 1].entries.push({
       y,
       ...(headerH > 0 ? { repeatHeader: { top: headerTop, height: headerH } } : {}),
     })
-    colStart = y
     usedInCol = headerH
   }
   // open a new region at the current page's regionTop (column count/height per section)
@@ -315,8 +330,8 @@ export function computeSectionedSlicesF2(
     }
   }
 
-  // whether height h fits in the current column
-  const fits = (h: number): boolean => usedInCol + h <= colH + 0.01
+  // whether height h fits in the current column (runaway degrade: everything fits)
+  const fits = (h: number): boolean => runaway || usedInCol + h <= colH + 0.01
   // whether the current column is empty (just changed columns or at column top)
   const colEmpty = () => usedInCol <= 0.01
   // whether the current page is entirely blank (guards forced breaks against empty pages)
@@ -383,7 +398,17 @@ export function computeSectionedSlicesF2(
 
     // ── Tables: row-level page breaking ────────────────────────────────────
     if (block.tableRows && block.tableRows.length > 0) {
-      _placeTable(block, block.tableRows, colH, fits, place, colEmpty, newColumn, curSection)
+      _placeTable(
+        block,
+        block.tableRows,
+        colH,
+        fits,
+        place,
+        () => Math.max(colH - usedInCol, 0),
+        colEmpty,
+        newColumn,
+        curSection,
+      )
       if (block.spaceAfterPx) place(block.spaceAfterPx) // space after the table (may overflow into the bottom margin)
       if (block.breakAfter) pendingBreak = true
       if (block.colBreakAfter) pendingColBreak = true
@@ -417,11 +442,15 @@ export function computeSectionedSlicesF2(
             curSection,
           )
         } else {
-          // no line data: hard cut
-          while (!fits(block.height)) {
-            newColumn(colStart + colH, curSection)
+          // no line data: hard pixel cuts consuming the remainder column by
+          // column. (Retesting the full block height after each turn never
+          // fits a block taller than one column and used to loop forever.)
+          let offset = 0
+          while (block.height - offset > colH - usedInCol + 0.01 && !runaway) {
+            offset += Math.max(colH - usedInCol, 1)
+            newColumn(block.top + Math.min(offset, block.height), curSection)
           }
-          place(block.height)
+          place(block.height - offset)
         }
       } else {
         place(block.height)
@@ -462,10 +491,13 @@ export function computeSectionedSlicesF2(
       let chainH = 0
       for (let k = bi; k <= effectiveChainEnd; k++) chainH += blocks[k].height
 
-      // anchor first-line height (only relevant when the anchor lacks breakBefore)
+      // anchor first-line height (only relevant when the anchor lacks breakBefore);
+      // anchored tables count their first row only (Word keeps the heading with the table head, not the whole table)
       const anchorFirstLineH =
         !anchorHasBreak && anchorBlock
-          ? (anchorBlock.lineBoxes?.[0]?.height ?? anchorBlock.height)
+          ? (anchorBlock.lineBoxes?.[0]?.height ??
+            anchorBlock.tableRows?.[0]?.height ??
+            anchorBlock.height)
           : 0
       const chainPlusAnchorH = chainH + anchorFirstLineH
 
@@ -573,6 +605,7 @@ function _placeTable(
   contentH: number,
   fits: (h: number) => boolean,
   place: (h: number) => void,
+  remain: () => number,
   pageEmpty: () => boolean,
   newPage: (y: number, section: number, headerH?: number, headerTop?: number) => void,
   curSection: number,
@@ -605,43 +638,63 @@ function _placeTable(
     const repeatH = placedHeader && ri >= headerRows ? headerHeight : 0
 
     if (!fits(row.height)) {
+      const contentEnd =
+        row.contentBottom !== undefined ? Math.min(row.contentBottom, row.height) : row.height
       // in-row page break (Word default): without cantSplit and with safe cut points,
       // place segment by segment at the cut points. If the first segment doesn't fit,
-      // turn the page first (equivalent to pushing the whole row); rows taller than a page also flow segment by segment
+      // turn the page first (equivalent to pushing the whole row)
       let cuts = !row.cantSplit && row.cutYs ? [...row.cutYs] : []
-      if (!row.cantSplit && row.height > contentH) {
-        // A fixed-height row can be taller than a page while containing only one
-        // text band, so DOM line sampling may provide too few natural cuts. Keep
-        // every segment page-sized; natural inter-band cuts remain preferred and
-        // a hard content-band cut is only inserted where no legal cut advances.
-        const bounded: number[] = []
-        let previous = 0
-        for (const candidate of [...cuts, row.height]) {
-          while (candidate - previous > contentH + 0.01) {
-            previous += contentH
-            bounded.push(previous)
-          }
-          if (candidate < row.height - 0.5 && candidate > previous + 0.5) {
-            bounded.push(candidate)
-            previous = candidate
-          }
-        }
-        cuts = bounded
-      }
-      if (cuts.length > 0) {
+      const placeSegments = (bounds: number[]) => {
         let prev = 0
-        for (const cut of [...cuts, row.height]) {
+        for (const cut of bounds) {
           const seg = cut - prev
           if (seg <= 0.5) continue
           if (!fits(seg) && !pageEmpty()) newPage(rowCursor + prev, curSection, repeatH, block.top)
           place(seg)
           prev = cut
         }
+        return prev
+      }
+      // Only rows taller than a page get their declared-height fill clipped to the
+      // page remainder (Word truncates over-tall rows within the page). Page-sized
+      // rows keep the fill glued to the last segment: a clipped fill would desync
+      // bookkeeping from DOM height, leaking shading/empty rows past the page edge.
+      if (row.height > contentH + 0.01) {
+        if (!row.cantSplit && contentEnd > contentH) {
+          // A fixed-height row can be taller than a page while containing only one
+          // text band, so DOM line sampling may provide too few natural cuts. Keep
+          // every segment page-sized; natural inter-band cuts remain preferred and
+          // a hard content-band cut is only inserted where no legal cut advances.
+          const bounded: number[] = []
+          let previous = 0
+          for (const candidate of [...cuts, contentEnd]) {
+            while (candidate - previous > contentH + 0.01) {
+              previous += contentH
+              bounded.push(previous)
+            }
+            if (candidate < row.height - 0.5 && candidate > previous + 0.5) {
+              bounded.push(candidate)
+              previous = candidate
+            }
+          }
+          cuts = bounded
+        }
+        cuts = cuts.filter((c) => c < contentEnd - 0.01)
+        if (cuts.length > 0 || contentEnd < row.height - 0.5) {
+          const prev = placeSegments([...cuts, contentEnd])
+          const fill = row.height - prev
+          if (fill > 0.5) place(Math.min(fill, remain()))
+          rowCursor += row.height
+          if (row.isHeader && ri < headerRows) placedHeader = true
+          continue
+        }
+      } else if (cuts.length > 0) {
+        placeSegments([...cuts, row.height])
         rowCursor += row.height
         if (row.isHeader && ri < headerRows) placedHeader = true
         continue
       }
-      // cantSplit / no cut points: the row is atomic; turn the page first if it doesn't fit
+      // cantSplit / empty / no cut points: the row is atomic; turn the page first if it doesn't fit
       if (!pageEmpty()) newPage(rowCursor, curSection, repeatH, block.top)
     }
     place(row.height)
@@ -764,12 +817,10 @@ function _placeParaBlock(
     if (splitLine > 0) {
       const newHead = nLines - splitLine
       if (newHead === 1) {
-        // widow at page top: keep the last line on the current page too
-        splitLine += 1
-        if (splitLine >= nLines) {
-          // whole paragraph on the current page? then fits(totalH) should have been true; this is an edge case, push to the next page
-          splitLine = -1
-        }
+        // widow at page top: give up one line here so the next page gets 2 lines (Word)
+        splitLine -= 1
+        // fewer than 2 lines left at page bottom would be an orphan: push the whole paragraph
+        if (splitLine < 2) splitLine = -1
       }
     }
   } else if (!widowOn) {
@@ -1220,12 +1271,21 @@ export function measureBlocks(
     const top = (rect.top - origin - gapAccum) / zoomFactor
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
+    const hasBreak = !!el.querySelector('.doc-field-pagebreak, .doc-page-br')
+    // break-only paragraph: count the whole block (br line + ProseMirror trailing-break
+    // phantom line) as trailing space so it never pushes to — and blanks — a page. Word's
+    // real rule is that the br/paragraph-mark line must fit or the paragraph pushes into a
+    // deliberate blank page, but our page fill drifts a few px per page in both directions,
+    // and a fit-check flips borderline pages into spurious mid-document blanks (worse than
+    // occasionally dropping an intentional one)
+    const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !el.querySelector('img')
     blocks.push({
       top,
       height,
       breakBefore: el.classList.contains('page-break-before') || undefined,
-      breakAfter: el.querySelector('.doc-field-pagebreak, .doc-page-br') ? true : undefined,
+      breakAfter: hasBreak || undefined,
       el,
+      ...(breakOnly ? { spaceAfterPx: height } : {}),
       ...(idxAttr ? { docxIndex: parseInt(idxAttr, 10) } : {}),
     })
     gapAccum += innerGap
@@ -1238,7 +1298,7 @@ export function measureBlocks(
   for (let i = 0; i + 1 < blocks.length; i++) {
     const gap = blocks[i + 1].top - (blocks[i].top + blocks[i].height)
     if (gap > 0.5) {
-      blocks[i].spaceAfterPx = gap
+      blocks[i].spaceAfterPx = (blocks[i].spaceAfterPx ?? 0) + gap
       blocks[i].height += gap
     }
   }
@@ -1352,14 +1412,23 @@ export function fillLineBoxes(
     }
   })
   let changed = false
-  for (const block of blocks) {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
     if (!block.el || block.lineBoxes || block.tableRows) continue
     const contentH = geomOf(block.section ?? 0)?.contentHeight ?? 0
     if (contentH <= 0) continue
     const bottom = block.top + block.height
     const crossing = breaks.some((y) => block.top < y && y < bottom)
     const atPageTop = breaks.some((y) => Math.abs(block.top - y) < 0.5)
-    if (block.height <= contentH && !crossing && !atPageTop) continue
+    if (
+      block.height <= contentH &&
+      !crossing &&
+      !atPageTop &&
+      // tables anchoring a keepNext chain always need row data: the chain head only
+      // has to share a page with the first row, so the whole-table height is misleading
+      !(i > 0 && blocks[i - 1].keepNext && !block.keepNext && block.el.querySelector('tr'))
+    )
+      continue
 
     // line boxes tile only the text area (block height includes the merged-in space-after, which lines must not cover)
     const textH = block.height - (block.spaceAfterPx ?? 0)
@@ -1493,14 +1562,22 @@ function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number):
     if (off > 0.5) tops.push(off)
   }
   return tileBoxes(tops, blockHeight).map((b, i) => {
-    const cutYs = trs[i]
-      ? rowCutYs(trs[i], b.offsetInBlock, b.height, elTop, gapAbove, zoomFactor)
-      : []
-    return { height: b.height, ...(cutYs.length > 0 ? { cutYs } : {}) }
+    if (!trs[i]) return { height: b.height }
+    const { cuts, contentBottom } = rowCutYs(
+      trs[i],
+      b.offsetInBlock,
+      b.height,
+      elTop,
+      gapAbove,
+      zoomFactor,
+    )
+    return { height: b.height, contentBottom, ...(cuts.length > 0 ? { cutYs: cuts } : {}) }
   })
 }
 
-/** In-row safe cut points (relative to row top, px, ascending): span all cells without splitting any text-line/image rect */
+/** In-row safe cut points (relative to row top, px, ascending): line-level candidates
+ *  per cell (Word breaks between any two lines), rejecting cuts that would cross a
+ *  line box in another cell. Also reports the lowest content-band bottom. */
 function rowCutYs(
   tr: Element,
   rowTop: number,
@@ -1508,35 +1585,70 @@ function rowCutYs(
   elTop: number,
   gapAbove: (top: number) => number,
   zoomFactor: number,
-): number[] {
-  const bands: Array<[number, number]> = []
-  const add = (r: DOMRect) => {
-    if (r.height <= 0 || r.width <= 0) return
-    bands.push([
-      (r.top - elTop - gapAbove(r.top)) / zoomFactor - rowTop,
-      (r.bottom - elTop - gapAbove(r.bottom)) / zoomFactor - rowTop,
-    ])
-  }
-  const walker = document.createTreeWalker(tr, NodeFilter.SHOW_TEXT)
+): { cuts: number[]; contentBottom: number } {
+  const cells = Array.from(tr.children).filter((c) => c.tagName === 'TD' || c.tagName === 'TH')
   const range = document.createRange()
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (n.parentElement?.closest('.page-gap')) continue
-    range.selectNodeContents(n)
-    for (const r of range.getClientRects()) add(r)
+  const cellBands: Array<Array<[number, number]>> = []
+  for (const cell of cells) {
+    const bands: Array<[number, number]> = []
+    const add = (r: DOMRect) => {
+      if (r.height <= 0 || r.width <= 0) return
+      bands.push([
+        (r.top - elTop - gapAbove(r.top)) / zoomFactor - rowTop,
+        (r.bottom - elTop - gapAbove(r.bottom)) / zoomFactor - rowTop,
+      ])
+    }
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT)
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.parentElement?.closest('.page-gap')) continue
+      range.selectNodeContents(n)
+      for (const r of range.getClientRects()) add(r)
+    }
+    for (const obj of cell.querySelectorAll('img, svg, canvas')) {
+      // in-cell gap decorations may carry header/footer images: not row content
+      if (obj.closest('.page-gap')) continue
+      add(obj.getBoundingClientRect())
+    }
+    if (bands.length > 0) cellBands.push(bands)
   }
-  for (const obj of tr.querySelectorAll('img, svg, canvas')) add(obj.getBoundingClientRect())
-  if (bands.length === 0) return []
-  bands.sort((a, b) => a[0] - b[0])
-  const merged: Array<[number, number]> = []
-  for (const band of bands) {
-    const last = merged[merged.length - 1]
-    if (last && band[0] < last[1] + 1) last[1] = Math.max(last[1], band[1])
-    else merged.push([band[0], band[1]])
+  const contentBottom = cellBands.reduce(
+    (max, bands) => bands.reduce((m, [, b]) => Math.max(m, b), max),
+    0,
+  )
+  return { cuts: cellCutYs(cellBands, rowHeight), contentBottom }
+}
+
+/** Rects sharing vertical overlap collapse into one line interval (same criterion as domLineRects) */
+function clusterLineBands(bands: Array<[number, number]>): Array<[number, number]> {
+  const sorted = [...bands].sort((a, b) => a[0] - b[0])
+  const lines: Array<[number, number]> = []
+  for (const [top, bottom] of sorted) {
+    const last = lines[lines.length - 1]
+    if (last && top < last[1] - 1) last[1] = Math.max(last[1], bottom)
+    else lines.push([top, bottom])
   }
+  return lines
+}
+
+/** Pure core of rowCutYs (testable without DOM): per-cell rect bands → safe cut ys.
+ *  Candidates are midpoints between a cell's consecutive lines (a zero gap still
+ *  counts); a candidate falling inside any cell's line box is unsafe (0.5px
+ *  tolerance for sub-pixel jitter). */
+export function cellCutYs(cellBands: Array<Array<[number, number]>>, rowHeight: number): number[] {
+  const cellLines = cellBands.map(clusterLineBands)
+  const candidates: number[] = []
+  for (const lines of cellLines) {
+    for (let i = 0; i + 1 < lines.length; i++) {
+      candidates.push((lines[i][1] + lines[i + 1][0]) / 2)
+    }
+  }
+  candidates.sort((a, b) => a - b)
   const cuts: number[] = []
-  for (let i = 0; i + 1 < merged.length; i++) {
-    const cut = (merged[i][1] + merged[i + 1][0]) / 2
-    if (cut > 2 && cut < rowHeight - 2) cuts.push(cut)
+  for (const y of candidates) {
+    if (y <= 2 || y >= rowHeight - 2) continue
+    if (cellLines.some((lines) => lines.some(([t, b]) => y > t + 0.5 && y < b - 0.5))) continue
+    if (cuts.length > 0 && y - cuts[cuts.length - 1] < 1) continue
+    cuts.push(y)
   }
   return cuts
 }
@@ -1682,6 +1794,16 @@ export function nextLineAnchor(
     if (ln.offset >= offsetInBlock - 1.5) return toAnchor(ln)
   }
   return null
+}
+
+/** In-row cut decoration policy: a single-cell row can host a real inline gap band
+ *  (one cell spans the whole cut) — returns that cell; multi-cell rows keep the
+ *  zero-height cut marker (same-y bands across cells are not modeled) — returns null. */
+export function singleCutCell(row: Element | null): Element | null {
+  const cells = row
+    ? Array.from(row.children).filter((c) => c.tagName === 'TD' || c.tagName === 'TH')
+    : []
+  return cells.length === 1 ? cells[0] : null
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateTocFieldXml, parseDocx } from '../src/index'
+import { generateParagraphXml, generateTocFieldXml, parseDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 // TOC entry paragraph as Word writes it: TOC field begin + hyperlink entry
@@ -93,5 +93,60 @@ describe('generateTocFieldXml', () => {
       expect(block.fieldDisplay?.left).toBe(entries[i].text)
       expect(block.fieldDisplay?.level).toBe(entries[i].level)
     }
+  })
+})
+
+describe('HYPERLINK field folding', () => {
+  const hyperlinkField = (instr: string) =>
+    '<w:r><w:t xml:space="preserve">see </w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    `<w:r><w:instrText>${instr}</w:instrText></w:r>` +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    '<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>creativets.org</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+
+  const LIST_HYPERLINK_PARAGRAPH =
+    '<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>' +
+    '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+    hyperlinkField('HYPERLINK "http://creativets.org" \\o "tip"') +
+    '</w:p>'
+
+  it('a pure HYPERLINK field folds into an editable link run, keeping list geometry', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: LIST_HYPERLINK_PARAGRAPH, withNumbering: true }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('listItem')
+    expect(block.list).toMatchObject({ numId: '1', ilvl: 0 })
+    expect(block.runs?.map((r) => r.text).join('')).toBe('see creativets.org')
+    const linkRun = block.runs?.find((r) => r.link)
+    expect(linkRun).toMatchObject({
+      text: 'creativets.org',
+      link: { href: 'http://creativets.org', tooltip: 'tip' },
+    })
+    // cached-result formatting survives the fold
+    expect(linkRun?.rawRPr).toContain('<w:u w:val="single"/>')
+  })
+
+  it('the folded link regenerates as a w:hyperlink with a fresh rel', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: LIST_HYPERLINK_PARAGRAPH, withNumbering: true }),
+    )
+    const block = doc.blocks[0]
+    const xml = generateParagraphXml(
+      { type: 'listItem', list: block.list, runs: block.runs ?? [] },
+      {
+        headingStyleIds: new Map(),
+        allocateHyperlinkRel: (href) => (href === 'http://creativets.org' ? 'rId77' : 'rId0'),
+      },
+    )
+    expect(xml).toContain('<w:hyperlink r:id="rId77" w:tooltip="tip">')
+    expect(xml).toContain('creativets.org')
+  })
+
+  it('a HYPERLINK with a bookmark switch stays a protected field paragraph', async () => {
+    const para = `<w:p>${hyperlinkField('HYPERLINK \\l "bm1"')}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    expect(doc.blocks[0].type).toBe('passthrough')
   })
 })

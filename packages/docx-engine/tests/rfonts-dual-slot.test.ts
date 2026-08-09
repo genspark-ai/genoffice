@@ -138,3 +138,113 @@ describe('rFonts dual-slot model', () => {
     expect(xml).not.toContain('eastAsia')
   })
 })
+
+describe('eastAsia theme slot', () => {
+  const themePart = (eaMajor: string) => ({
+    path: 'word/theme/theme1.xml',
+    xml:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+      '<a:themeElements><a:fontScheme name="T">' +
+      `<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface="${eaMajor}"/><a:cs typeface=""/></a:majorFont>` +
+      '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>' +
+      '</a:fontScheme></a:themeElements></a:theme>',
+    contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+  })
+  const HEADING_RFONTS = '<w:rFonts w:eastAsiaTheme="majorEastAsia" w:eastAsia="Noto Sans CJK SC"/>'
+
+  it('an empty theme slot resolves to DengXian, not the leftover literal', async () => {
+    const para = `<w:p><w:r><w:rPr>${HEADING_RFONTS}</w:rPr><w:t>标题</w:t></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para, extraParts: [themePart('')] }))
+    expect(doc.blocks[0].runs![0].font).toBe('DengXian')
+  })
+
+  it('a populated theme slot wins over the literal', async () => {
+    const para = `<w:p><w:r><w:rPr>${HEADING_RFONTS}</w:rPr><w:t>标题</w:t></w:r></w:p>`
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: para, extraParts: [themePart('SimHei')] }),
+    )
+    expect(doc.blocks[0].runs![0].font).toBe('SimHei')
+  })
+
+  it('a theme ref without a theme part falls back to the literal', async () => {
+    const para = `<w:p><w:r><w:rPr>${HEADING_RFONTS}</w:rPr><w:t>标题</w:t></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    expect(doc.blocks[0].runs![0].font).toBe('Noto Sans CJK SC')
+  })
+
+  it('themeFontLang ja resolves empty slots to Yu Gothic (major) / Yu Mincho (minor)', async () => {
+    const settingsPart = {
+      path: 'word/settings.xml',
+      xml:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:themeFontLang w:val="en-US" w:eastAsia="ja-JP"/></w:settings>',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+    }
+    const para =
+      `<w:p><w:r><w:rPr>${HEADING_RFONTS}</w:rPr><w:t>見出し</w:t></w:r>` +
+      '<w:r><w:rPr><w:rFonts w:eastAsiaTheme="minorEastAsia"/></w:rPr><w:t>本文</w:t></w:r></w:p>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: para, extraParts: [themePart(''), settingsPart] }),
+    )
+    expect(doc.themeFonts?.eaLang).toBe('ja-JP')
+    expect(doc.blocks[0].runs![0].font).toBe('Yu Gothic')
+    expect(doc.blocks[0].runs![1].font).toBe('Yu Mincho')
+  })
+
+  it('an empty theme slot on a style rPr also resolves to DengXian', async () => {
+    const styles =
+      '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/>' +
+      `<w:rPr>${HEADING_RFONTS}<w:b/></w:rPr></w:style>`
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>标题</w:t></w:r></w:p>',
+        extraStylesXml: styles,
+        extraParts: [themePart('')],
+      }),
+    )
+    expect(doc.styles.get('Heading1')!.display?.font).toBe('DengXian')
+  })
+})
+
+describe('w:cs slot (complex-script font)', () => {
+  it('parses the cs slot into csFont', async () => {
+    const run = await mixedRun()
+    expect(run.csFont).toBe('Arial')
+  })
+
+  it('resolves w:cstheme via the theme part', async () => {
+    const themeXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+      '<a:themeElements><a:fontScheme name="T">' +
+      '<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface="Times New Roman"/></a:majorFont>' +
+      '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface="Arabic Typesetting"/></a:minorFont>' +
+      '</a:fontScheme></a:themeElements></a:theme>'
+    const para =
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cstheme="minorBidi"/></w:rPr>' +
+      '<w:t>latin body</w:t></w:r></w:p>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: para,
+        extraParts: [
+          {
+            path: 'word/theme/theme1.xml',
+            xml: themeXml,
+            contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+          },
+        ],
+      }),
+    )
+    expect(doc.blocks[0].runs![0].csFont).toBe('Arabic Typesetting')
+  })
+
+  it('no cs slot means no csFont', async () => {
+    const para =
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>' +
+      '<w:t>latin only</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    expect(doc.blocks[0].runs![0].csFont).toBeUndefined()
+  })
+})

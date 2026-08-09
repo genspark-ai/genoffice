@@ -92,18 +92,6 @@ describe('docx export', () => {
     expect(code?.runs?.[0]?.text).toContain('const b = 2')
   })
 
-  it('callout and toggle degrade to styled paragraphs, keeping all text', async () => {
-    const md =
-      ':::callout {type="warning"}\nBe careful.\n:::\n\n:::toggle {summary="More"}\nHidden.\n:::'
-    const parsed = await exportAndParse(md)
-    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
-    expect(texts).toContain('Be careful.')
-    expect(texts).toContain('More')
-    expect(texts).toContain('Hidden.')
-    const summary = parsed.blocks.find((b) => (b.runs ?? [])[0]?.text === 'More')
-    expect(summary?.runs?.[0]?.bold).toBe(true)
-  })
-
   it('links survive as hyperlink runs', async () => {
     const parsed = await exportAndParse('Visit [Genspark](https://genspark.ai) now.')
     const para = parsed.blocks.find((b) => b.type === 'paragraph')
@@ -127,16 +115,17 @@ describe('docx export', () => {
   })
 })
 
-describe('inline mark coverage in docx export', () => {
-  it('underline and highlight survive as run properties', async () => {
-    const editor = createEditor('plain')
-    editor.commands.setContent('some ==marked== and <u>underlined</u> text', {
-      contentType: 'markdown',
-    })
-    const bytes = await exportDocxBytes(editor.getJSON(), noImages)
-    const parsed = await parseDocx(bytes)
+describe('legacy HTML content degrades to plain runs in docx export', () => {
+  it('legacy styled HTML keeps its text without the styling', async () => {
+    const parsed = await exportAndParse(
+      '<p style="text-align: center"><span style="color: #e11d48">red</span> mid</p>\n\n' +
+        'plain <span style="background-color: #ffff00">lit</span> end',
+    )
+    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
+    expect(texts.some((t) => t.includes('red') && t.includes('mid'))).toBe(true)
+    expect(texts.some((t) => t.includes('lit'))).toBe(true)
     const runs = parsed.blocks.flatMap((b) => b.runs ?? [])
-    expect(runs.find((r) => r.highlight)?.text).toBe('marked')
-    expect(runs.find((r) => r.underline)?.text).toBe('underlined')
+    expect(runs.every((r) => !r.color && !r.highlight)).toBe(true)
+    expect(parsed.blocks.every((b) => b.format?.align !== 'center')).toBe(true)
   })
 })

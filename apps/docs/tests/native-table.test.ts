@@ -85,6 +85,7 @@ describe('native editable tables', () => {
           sizeHalfPoints: null,
           font: 'Calibri',
           fontAscii: 'Calibri',
+          csFont: null,
           charSpacingTwips: null,
           charScaleEm: null,
           highlight: null,
@@ -338,5 +339,45 @@ describe('native editable tables', () => {
     expect(whole.editor.commands.keyboardShortcut('Delete')).toBe(true)
     expect(whole.editor.state.doc.firstChild?.type.name).not.toBe('docTable')
     whole.editor.destroy()
+  })
+
+  it('wraps hRule="exact" row cells in a fixed-height clip box; atLeast rows stay unwrapped', async () => {
+    const xml =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:trHeight w:val="907" w:hRule="exact"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>X</w:t></w:r></w:p></w:tc></w:tr>' +
+      '<w:tr><w:trPr><w:trHeight w:val="907" w:hRule="atLeast"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>Y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const rows = editor.view.dom.querySelectorAll('tr')
+    const clip = rows[0].querySelector(':scope > td > div.cell-clip') as HTMLElement
+    expect(clip).toBeTruthy()
+    expect(clip.style.height).toBe('60.5px')
+    expect(rows[1].querySelector('.cell-clip')).toBeNull()
+    editor.destroy()
+  })
+
+  it('still wraps an exact row whose padding consumes the whole height (clip height 0)', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblCellMar><w:top w:w="500" w:type="dxa"/>' +
+      '<w:bottom w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:trHeight w:val="907" w:hRule="exact"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>X</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const clip = editor.view.dom.querySelector('td > div.cell-clip') as HTMLElement
+    expect(clip).toBeTruthy()
+    expect(clip.style.height).toBe('0px')
+    editor.destroy()
   })
 })

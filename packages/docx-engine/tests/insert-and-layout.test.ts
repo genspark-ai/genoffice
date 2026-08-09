@@ -96,6 +96,36 @@ describe('inserting new images', () => {
     expect(last.type).toBe('image')
     expect(last.imageDataUrl).toMatch(/^data:image\/png;base64,/)
   })
+
+  it('records rotation bounding-box overflow in effectExtent for new images', async () => {
+    const bytes = await buildKitchenSinkDocx()
+    const doc = await parseDocx(bytes)
+    const visible = doc.blocks.filter((b) => !b.hidden).map((b) => b.docxIndex!)
+    // 200x100px turned 90°: overflows the unrotated footprint by
+    // (bboxH - cy)/2 = (200-100)px/2 * 9525 EMU on top/bottom
+    const saved = await saveDocx(doc, [
+      ...originals(visible),
+      {
+        kind: 'image',
+        image: {
+          base64: TINY_PNG_BASE64,
+          mime: 'image/png',
+          widthPx: 200,
+          heightPx: 100,
+          rotDeg: 90,
+          flipH: true,
+        },
+      },
+    ])
+    const xml = await docXmlOf(saved)
+    expect(xml).toContain(`<wp:effectExtent l="0" t="${50 * 9525}" r="0" b="${50 * 9525}"/>`)
+    expect(xml).toContain(`rot="${90 * 60000}"`)
+    expect(xml).toContain('flipH="1"')
+    const reparsed = await parseDocx(saved)
+    const last = reparsed.blocks.filter((b) => !b.hidden).at(-1)!
+    expect(last.imageRotDeg).toBe(90)
+    expect(last.imageFlipH).toBe(true)
+  })
 })
 
 describe('section settings (page setup)', () => {

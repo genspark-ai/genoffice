@@ -52,13 +52,16 @@ function dragHandlePlugin(editor: Editor): Plugin {
       plus.type = 'button'
       plus.className = 'md-gutter-btn md-gutter-plus'
       plus.innerHTML = PLUS_SVG
-      plus.title = t('blockAddBelow')
+      plus.dataset.tip = t('blockAddBelow')
+      plus.setAttribute('aria-label', t('blockAddBelow'))
 
       const grip = document.createElement('button')
       grip.type = 'button'
       grip.className = 'md-gutter-btn md-gutter-grip'
       grip.draggable = true
       grip.innerHTML = GRIP_SVG
+      grip.dataset.tip = t('blockGripHint')
+      grip.setAttribute('aria-label', t('blockGripHint'))
 
       handle.append(plus, grip)
 
@@ -194,6 +197,9 @@ function dragHandlePlugin(editor: Editor): Plugin {
         )
           return
         hideMenu()
+        // the open menu blocked the grace-period hide — don't leave the gutter
+        // stranded unless the pointer is back over the editor (hover re-syncs it)
+        if (!(event.target instanceof Node) || !view.dom.contains(event.target)) hideHandle()
       }
 
       const onScrollOrLeave = () => {
@@ -201,9 +207,29 @@ function dragHandlePlugin(editor: Editor): Plugin {
         hideMenu()
       }
 
+      // The gutter sits 52px left of the block with a page-background gap in
+      // between, so reaching it always raises mouseleave on the editor first.
+      // Hide on a grace period instead of instantly; entering the gutter (or
+      // coming back into the editor) cancels the pending hide.
+      let hideTimer: number | null = null
+      const cancelHide = () => {
+        if (hideTimer !== null) window.clearTimeout(hideTimer)
+        hideTimer = null
+      }
+      const scheduleHide = () => {
+        cancelHide()
+        hideTimer = window.setTimeout(() => {
+          hideTimer = null
+          if (menu.style.display !== 'block') hideHandle()
+        }, 250)
+      }
+
       view.dom.addEventListener('mousemove', onMouseMove)
-      view.dom.addEventListener('mouseleave', onScrollOrLeave)
+      view.dom.addEventListener('mouseenter', cancelHide)
+      view.dom.addEventListener('mouseleave', scheduleHide)
       handle.addEventListener('mousemove', (e) => e.stopPropagation())
+      handle.addEventListener('mouseenter', cancelHide)
+      handle.addEventListener('mouseleave', scheduleHide)
       grip.addEventListener('dragstart', onDragStart)
       grip.addEventListener('click', onGripClick)
       plus.addEventListener('click', onPlusClick)
@@ -216,8 +242,10 @@ function dragHandlePlugin(editor: Editor): Plugin {
           if (!prevState.doc.eq(view.state.doc)) hideMenu()
         },
         destroy() {
+          cancelHide()
           view.dom.removeEventListener('mousemove', onMouseMove)
-          view.dom.removeEventListener('mouseleave', onScrollOrLeave)
+          view.dom.removeEventListener('mouseenter', cancelHide)
+          view.dom.removeEventListener('mouseleave', scheduleHide)
           document.removeEventListener('mousedown', onDocMouseDown, true)
           document.removeEventListener('scroll', onScrollOrLeave, true)
           handle.remove()

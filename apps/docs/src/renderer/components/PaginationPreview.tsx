@@ -34,6 +34,60 @@ import { HeaderFooterArea } from './HeaderFooterArea'
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
 
+/** Snapshot of one top-level canvas block for pruned per-page clones (virtual gapless coordinates, layout px) */
+export interface CloneChild {
+  html: string
+  vTop: number
+  vBottom: number
+  /** CSS margins (layout px): spacer heights must exclude them to keep flow positions exact */
+  mt: number
+  mb: number
+  /** zero-height marker (hidden bookmarks etc.): always kept, never worth pruning */
+  zero: boolean
+}
+
+/**
+ * Per-page full-document clones cost pages × doc DOM; past this budget (top-level
+ * blocks × pages) a 300+-page document OOMs the renderer during preview/export
+ * ("Promise was collected"), so pages switch to pruned clones: blocks outside the
+ * page window collapse into fixed-height spacers.
+ */
+const CLONE_PRUNE_BUDGET = 150_000
+/** window slack around a page (px): keeps neighbours whose floats/overflow bleed into the page */
+const CLONE_PRUNE_PAD = 2000
+
+/** pruned clone for one page window: blocks intersecting [from-pad, to+pad] verbatim, pruned runs as spacers (exported for tests) */
+export function prunedCloneHtml(kids: CloneChild[], from: number, to: number): string {
+  const lo = from - CLONE_PRUNE_PAD
+  const hi = to + CLONE_PRUNE_PAD
+  const parts: string[] = []
+  let lastKept: CloneChild | null = null
+  let pruned = false
+  for (const c of kids) {
+    if (!c.zero && (c.vBottom <= lo || c.vTop >= hi)) {
+      pruned = true
+      continue
+    }
+    if (pruned) {
+      // spacer replaces the pruned run; its height re-derives the next block's
+      // border-box top from the previous kept block's margin edge (spacers
+      // suppress margin collapse, so both adjacent margins apply in full)
+      const base = lastKept ? lastKept.vBottom + lastKept.mb : 0
+      const h = Math.max(0, c.vTop - c.mt - base)
+      parts.push(
+        `<div class="pv-prune-spacer" style="margin:0;border:0;padding:0;height:${h}px"></div>`,
+      )
+      pruned = false
+    }
+    parts.push(c.html)
+    // zero markers advance the flow position too (a spacer may have been
+    // emitted before them); skipping them leaves `base` stale and the next
+    // spacer re-adds the distance already consumed, shifting content down
+    lastKept = c
+  }
+  return parts.join('')
+}
+
 export interface HfSet {
   header: HeaderFooter | null
   footer: HeaderFooter | null
@@ -105,6 +159,8 @@ export function PaginationPreview({
   /** Top Y of the endnote area (virtual coordinates); null = no endnotes */
   const [endnotesTop, setEndnotesTop] = useState<number | null>(null)
   const [html, setHtml] = useState('')
+  /** non-null = pruned-clone mode (large documents): per-page windows instead of full clones */
+  const [cloneKids, setCloneKids] = useState<CloneChild[] | null>(null)
   /** Live section list: a section whose break block was deleted (unsaved) merges into the next, matching the canvas */
   const [secs, setSecs] = useState<SectionInfo[]>(sections)
 
@@ -193,7 +249,41 @@ export function PaginationPreview({
       }
       setSlices(computed)
       setPageNotes(pageFootnotesOf ? pageFootnotesOf(blocks, computed) : [])
-      setHtml(pm.innerHTML)
+      // Per-page full clones explode on large documents (pages × doc DOM →
+      // renderer OOM / "Promise was collected" during printToPDF). Past the
+      // budget, snapshot per-block geometry and render pruned windows instead.
+      const kidEls = Array.from(pm.children) as HTMLElement[]
+      if (computed.length * kidEls.length >= CLONE_PRUNE_BUDGET) {
+        const metas: CloneChild[] = []
+        let gapAccum = 0
+        for (const el of kidEls) {
+          const rect = el.getBoundingClientRect()
+          if (el.classList.contains('page-gap')) {
+            gapAccum += rect.height
+            continue
+          }
+          let innerGap = 0
+          for (const g of el.querySelectorAll('.page-gap-inline'))
+            innerGap += g.getBoundingClientRect().height
+          const cs = window.getComputedStyle(el)
+          const vTop = (rect.top - origin - gapAccum) / factor
+          const h = (rect.height - innerGap) / factor
+          gapAccum += innerGap
+          metas.push({
+            html: el.outerHTML,
+            vTop,
+            vBottom: vTop + h,
+            mt: parseFloat(cs.marginTop) || 0,
+            mb: parseFloat(cs.marginBottom) || 0,
+            zero: rect.height <= 0,
+          })
+        }
+        setCloneKids(metas)
+        setHtml('')
+      } else {
+        setCloneKids(null)
+        setHtml(pm.innerHTML)
+      }
     } finally {
       if (colFlow) pm.classList.remove('measuring-columns')
     }
@@ -374,7 +464,15 @@ export function PaginationPreview({
                   >
                     <div
                       className="doc-page pv-content"
-                      dangerouslySetInnerHTML={{ __html: html }}
+                      dangerouslySetInnerHTML={{
+                        __html: cloneKids
+                          ? prunedCloneHtml(
+                              cloneKids,
+                              slice.repeatHeader.top,
+                              slice.repeatHeader.top + slice.repeatHeader.height,
+                            )
+                          : html,
+                      }}
                     />
                   </div>
                 </div>
@@ -411,7 +509,15 @@ export function PaginationPreview({
                               >
                                 <div
                                   className="doc-page pv-content"
-                                  dangerouslySetInnerHTML={{ __html: html }}
+                                  dangerouslySetInnerHTML={{
+                                    __html: cloneKids
+                                      ? prunedCloneHtml(
+                                          cloneKids,
+                                          col.repeatHeader.top,
+                                          col.repeatHeader.top + col.repeatHeader.height,
+                                        )
+                                      : html,
+                                  }}
                                 />
                               </div>
                             </div>
@@ -431,7 +537,11 @@ export function PaginationPreview({
                             >
                               <div
                                 className="doc-page pv-content"
-                                dangerouslySetInnerHTML={{ __html: html }}
+                                dangerouslySetInnerHTML={{
+                                  __html: cloneKids
+                                    ? prunedCloneHtml(cloneKids, col.start, col.end)
+                                    : html,
+                                }}
                               />
                             </div>
                           </div>
@@ -463,7 +573,16 @@ export function PaginationPreview({
                   <div className="pv-offset" style={{ marginTop: -slice.start, width: wrapW }}>
                     <div
                       className="doc-page pv-content"
-                      dangerouslySetInnerHTML={{ __html: html }}
+                      dangerouslySetInnerHTML={{
+                        __html: cloneKids
+                          ? prunedCloneHtml(
+                              cloneKids,
+                              slice.start,
+                              // last page opens its clip to full capacity; the window must cover it
+                              i === slices.length - 1 ? slice.start + contentH : slice.end,
+                            )
+                          : html,
+                      }}
                     />
                   </div>
                 </div>

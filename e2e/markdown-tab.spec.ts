@@ -25,14 +25,14 @@ test.describe('markdown editor', () => {
     }
   })
 
-  test('slash menu inserts a callout that serializes as a fenced div', async () => {
+  test('legacy fenced divs degrade on open; slash menu inserts a GFM task list', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-'))
-    const mdPath = join(dir, 'callout.md')
-    await writeFile(mdPath, '# Doc\n\nBody.\n')
+    const mdPath = join(dir, 'legacy.md')
+    await writeFile(mdPath, '# Doc\n\n:::callout {type="info"}\nBe careful.\n:::\n')
 
     const launched = await launchShell({
       onboardingSeen: true,
-      videoDir: 'markdown-slash-callout',
+      videoDir: 'markdown-slash-task',
       openFile: mdPath,
     })
     const { app } = launched
@@ -40,24 +40,28 @@ test.describe('markdown editor', () => {
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
       const editor = editorPage.locator('.doc-editor')
       await expect(editor.locator('h1')).toHaveText('Doc')
+      // the legacy callout fences are stripped on open; the body text survives
+      await expect(editor).toContainText('Be careful.')
+      await expect(editor).not.toContainText(':::')
 
       await editor.click()
       await editorPage.keyboard.press('ControlOrMeta+End')
       await editorPage.keyboard.press('Enter')
       await editorPage.keyboard.type('/')
       await expect(editorPage.locator('.slash-menu')).toBeVisible()
-      await editorPage.keyboard.type('call')
-      await editorPage.locator('.slash-item', { hasText: /Callout|标注块/ }).click()
-      await expect(editor.locator('.md-callout')).toBeVisible()
+      await editorPage.keyboard.type('task')
+      await editorPage.locator('.slash-item', { hasText: /Task list|任务列表/ }).click()
+      await expect(editor.locator('ul[data-type="taskList"]')).toBeVisible()
       await editorPage.keyboard.type('Heads up!')
       await editorPage.keyboard.press('ControlOrMeta+s')
       await expect(editorPage.locator('.status-save')).toHaveText(/Saved|已保存/)
 
       const saved = await readFile(mdPath, 'utf8')
-      expect(saved).toContain(':::callout')
-      expect(saved).toContain('Heads up!')
+      expect(saved).toContain('- [ ] Heads up!')
+      expect(saved).toContain('Be careful.')
+      expect(saved).not.toContain(':::')
     } finally {
-      await closeAndSaveVideo(launched, 'markdown-slash-callout')
+      await closeAndSaveVideo(launched, 'markdown-slash-task')
     }
   })
 
@@ -132,6 +136,45 @@ test.describe('markdown editor', () => {
       await editorPage.screenshot({ path: screenshotPath('markdown-ai-preset') })
     } finally {
       await closeAndSaveVideo(launched, 'markdown-ai-preset')
+    }
+  })
+
+  test('ribbon bold serializes as GFM; quick-access save and undo work', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-'))
+    const mdPath = join(dir, 'style.md')
+    await writeFile(mdPath, 'Hello style\n')
+
+    const launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'markdown-bold-qat',
+      openFile: mdPath,
+    })
+    const { app } = launched
+    try {
+      const editorPage = await waitForPageWithUrl(app, 'markdown/out')
+      const editor = editorPage.locator('.doc-editor')
+      await expect(editor).toContainText('Hello style')
+
+      await editor.click()
+      await editorPage.keyboard.press('ControlOrMeta+a')
+      await editorPage.getByTitle(/^(加粗|Bold)$/).click()
+      await expect(editor.locator('strong')).toHaveText('Hello style')
+
+      // quick-access row: save button writes the file, undo reverts the mark
+      const qaButtons = editorPage.locator('.ribbon-tabs .qa-btn')
+      await qaButtons.nth(0).click()
+      await expect(editorPage.locator('.status-save')).toHaveText(/Saved|已保存/)
+      const saved = await readFile(mdPath, 'utf8')
+      expect(saved).toContain('**Hello style**')
+
+      await qaButtons.nth(1).click()
+      await expect(editor.locator('strong')).toHaveCount(0)
+
+      // save again so the window closes without a dirty-document prompt
+      await qaButtons.nth(0).click()
+      await expect.poll(() => readFile(mdPath, 'utf8')).not.toContain('**')
+    } finally {
+      await closeAndSaveVideo(launched, 'markdown-bold-qat')
     }
   })
 

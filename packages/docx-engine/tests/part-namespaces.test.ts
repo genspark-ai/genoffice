@@ -4,8 +4,11 @@
  * reports as unreadable content. fast-xml-parser's validator does not catch this: it is not
  * namespace-aware, so the check here has to be.
  */
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
+import { parseDocx, saveDocx } from '../src/index'
 import { buildNotesXml, rootAttributes } from '../src/notes'
+import { buildDocx } from './helpers/build-docx'
 
 /** every prefix used on an element or attribute must be declared on the root */
 function unboundPrefixes(xml: string): string[] {
@@ -58,5 +61,52 @@ describe('regenerated part namespaces', () => {
     expect(rootAttributes('<w:comments xmlns:w="a" xmlns:r="b">', 'w:comments', 'FALLBACK')).toBe(
       'xmlns:w="a" xmlns:r="b"',
     )
+  })
+
+  it('appends required namespaces the reused root does not declare', () => {
+    expect(rootAttributes('<w:comments xmlns:w="a">', 'w:comments', 'FB', { w14: 'b' })).toBe(
+      'xmlns:w="a" xmlns:w14="b"',
+    )
+    expect(
+      rootAttributes('<w:comments xmlns:w="a" xmlns:w14="b">', 'w:comments', 'FB', { w14: 'c' }),
+    ).toBe('xmlns:w="a" xmlns:w14="b"')
+  })
+
+  it('binds w14 when comments are rebuilt from an original that never declared it', async () => {
+    // A non-Word producer may write comments.xml with only xmlns:w; the save path
+    // gives every comment a w14:paraId, so the reused root must gain that binding.
+    const commentsXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:comment w:id="1" w:author="Alice"><w:p><w:r><w:t>original</w:t></w:r></w:p></w:comment>' +
+      '</w:comments>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>text</w:t></w:r>' +
+          '<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>',
+        extraParts: [
+          {
+            path: 'word/comments.xml',
+            xml: commentsXml,
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+          },
+        ],
+      }),
+    )
+    const blocks = parsed.blocks
+      .filter((b) => !b.hidden && b.docxIndex !== null)
+      .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! }))
+    const saved = await saveDocx(parsed, blocks, {
+      comments: [
+        { id: '1', author: 'Alice', text: 'original' },
+        { id: '2', author: 'Bob', text: 'reply', parentId: '1' },
+      ],
+    })
+    const zip = await JSZip.loadAsync(saved)
+    const out = await zip.file('word/comments.xml')!.async('string')
+    expect(out).toContain('w14:paraId=')
+    expect(unboundPrefixes(out)).toEqual([])
   })
 })

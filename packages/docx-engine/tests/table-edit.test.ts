@@ -223,6 +223,21 @@ describe('tcPr/trPr fidelity and new attributes', () => {
     expect(model.rowHeightsTwips).toEqual([500])
     expect(model.rawTrPrs?.[0]).toContain('<w:cantSplit/>')
   })
+
+  it('parse clamps EMU-polluted trHeight to the Word maximum (31680 twips)', async () => {
+    const { parseDocx } = await import('../src/index')
+    const { buildDocx } = await import('./helpers/build-docx')
+    const tbl =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:trHeight w:val="504000" w:hRule="atLeast"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr>' +
+      '<w:tr><w:trPr><w:trHeight w:val="500"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: tbl }))
+    const model = parsed.blocks.find((b) => b.type === 'table')!.table!
+    expect(model.rowHeightsTwips).toEqual([31680, 500])
+  })
 })
 
 describe('tblStyleId table style reference', () => {

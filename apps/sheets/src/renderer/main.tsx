@@ -1,10 +1,12 @@
 import ReactDOM from 'react-dom/client'
 import { htmlLang, type Lang } from '@genoffice/i18n'
 
+import '@genoffice/ui/tokens.css'
 import '@univerjs/preset-sheets-core/lib/index.css'
 
 import { App } from './App'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
+import type { UiTheme } from '../shared/desktop-api'
 import './styles.css'
 
 if (import.meta.hot) {
@@ -19,15 +21,28 @@ if (import.meta.hot) {
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root.')
 
+function applyTheme(theme: UiTheme): void {
+  if (theme === 'system') document.documentElement.removeAttribute('data-theme')
+  else document.documentElement.setAttribute('data-theme', theme)
+}
+
 async function bootstrap(): Promise<void> {
   let lang: Lang = 'zh'
+  let theme: UiTheme = 'system'
   try {
-    lang = await window.desktopApi.getLanguage()
+    // per-promise catch: standalone runs have no app:get-theme handler, and
+    // that rejection must not drop a resolved language
+    ;[lang, theme] = await Promise.all([
+      window.desktopApi.getLanguage().catch(() => 'zh' as const),
+      window.desktopApi.getTheme().catch(() => 'system' as const),
+    ])
   } catch {
-    /* dev renderer without the preload handler */
+    /* dev renderer without the preload bridge */
   }
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
+  applyTheme(theme)
+  window.desktopApi?.onThemeChanged(applyTheme)
   ReactDOM.createRoot(root!).render(
     <LocaleProvider initial={lang}>
       <App />

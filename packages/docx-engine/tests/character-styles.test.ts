@@ -151,6 +151,40 @@ describe('linkedStyle (w:link) and docDefaults backfill', () => {
     expect(doc.docDefaults).toMatchObject({ bold: true, color: '333333', sizeHalfPoints: 21 })
     expect(doc.docDefaults?.italic).toBeUndefined()
   })
+
+  it('empty East Asian slot + explicit w:lang w:eastAsia backfills the locale default face', async () => {
+    const JSZip = (await import('jszip')).default
+    const withDefaults = async (rPr: string) => {
+      const zip = await JSZip.loadAsync(
+        await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }),
+      )
+      const stylesXml = await zip.file('word/styles.xml')!.async('string')
+      zip.file(
+        'word/styles.xml',
+        stylesXml.replace(
+          /(<w:styles[^>]*>)/,
+          `$1<w:docDefaults><w:rPrDefault><w:rPr>${rPr}</w:rPr></w:rPrDefault></w:docDefaults>`,
+        ),
+      )
+      return parseDocx(await zip.generateAsync({ type: 'uint8array' }))
+    }
+    // theme EA typeface empty → w:eastAsiaTheme resolves to nothing → lang decides
+    const rFonts = '<w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia"/>'
+    const ko = await withDefaults(`${rFonts}<w:lang w:val="en-US" w:eastAsia="ko-KR"/>`)
+    expect(ko.docDefaults?.eastAsiaFont).toBe('Batang')
+    const ja = await withDefaults(`${rFonts}<w:lang w:eastAsia="ja-JP"/>`)
+    expect(ja.docDefaults?.eastAsiaFont).toBe('MS Mincho')
+    const zh = await withDefaults(`${rFonts}<w:lang w:eastAsia="zh-CN"/>`)
+    expect(zh.docDefaults?.eastAsiaFont).toBe('SimSun')
+    // en-US EA lang or no lang: slot stays empty
+    const en = await withDefaults(`${rFonts}<w:lang w:eastAsia="en-US"/>`)
+    expect(en.docDefaults?.eastAsiaFont).toBeUndefined()
+    const none = await withDefaults(rFonts)
+    expect(none.docDefaults?.eastAsiaFont).toBeUndefined()
+    // explicit literal face wins over the lang backfill
+    const literal = await withDefaults('<w:rFonts w:eastAsia="Gulim"/><w:lang w:eastAsia="ko-KR"/>')
+    expect(literal.docDefaults?.eastAsiaFont).toBe('Gulim')
+  })
 })
 
 describe('styleUpserts style write-back', () => {

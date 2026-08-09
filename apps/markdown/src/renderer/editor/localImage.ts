@@ -1,5 +1,4 @@
 import { Image } from '@tiptap/extension-image'
-import { mergeAttributes } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
 /** Directory of the open .md file; relative image paths resolve against it for display */
@@ -27,6 +26,23 @@ export function resolveImageSrc(src: string, baseDir: string | null = imageBaseD
   if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return src
   if (!baseDir) return src
   return toAssetUrl(`${baseDir.replace(/\\/g, '/').replace(/\/$/, '')}/${src}`)
+}
+
+/**
+ * Reverse of {@link resolveImageSrc}: map a display URL (md-asset://) back to
+ * the authored path so DOM-parsed content (copy/paste inside the editor) never
+ * bakes display URLs into the stored document / serialized markdown.
+ */
+export function unresolveImageSrc(src: string, baseDir: string | null = imageBaseDir): string {
+  if (!src.startsWith('md-asset://')) return src
+  let path = decodeURIComponent(src.slice('md-asset://'.length))
+  // Windows drive paths were prefixed with '/' to form a valid URL path
+  if (/^\/[a-zA-Z]:\//.test(path)) path = path.slice(1)
+  if (baseDir) {
+    const base = `${baseDir.replace(/\\/g, '/').replace(/\/$/, '')}/`
+    if (path.startsWith(base)) return path.slice(base.length)
+  }
+  return path
 }
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -72,13 +88,24 @@ async function persistAndInsert(
  * Pasted / dropped image files are persisted into `assets/` beside the file.
  */
 export const LocalImage = Image.extend({
-  renderHTML({ node, HTMLAttributes }) {
-    return [
-      'img',
-      mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
-        src: resolveImageSrc(String(node.attrs.src ?? '')),
-      }),
-    ]
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      // resolved at the attribute level so the renderer displays the
+      // md-asset:// URL while the stored value keeps the authored path
+      src: {
+        default: null,
+        parseHTML: (element) => unresolveImageSrc(element.getAttribute('src') ?? ''),
+        renderHTML: (attrs) => ({ src: resolveImageSrc(String(attrs.src ?? '')) }),
+      },
+    }
+  },
+
+  renderMarkdown: (node) => {
+    const src = String(node.attrs?.src ?? '')
+    const alt = String(node.attrs?.alt ?? '')
+    const title = String(node.attrs?.title ?? '')
+    return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`
   },
 
   addProseMirrorPlugins() {

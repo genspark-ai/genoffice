@@ -34,6 +34,11 @@ export interface ImagePatch {
    */
   posOffsetX?: number
   posOffsetY?: number
+  /** rotation in degrees clockwise; 0 removes the rot attribute; undefined keeps */
+  rotDeg?: number
+  /** mirror flips; false removes the attribute; undefined keeps */
+  flipH?: boolean
+  flipV?: boolean
 }
 
 /**
@@ -42,6 +47,23 @@ export interface ImagePatch {
  */
 export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
   let out = xml
+  if (patch.rotDeg !== undefined || patch.flipH !== undefined || patch.flipV !== undefined) {
+    // rotation/flip live on the pic's own xfrm, not an anchored textbox sibling's
+    out = out.replace(/(<pic:spPr[^>]*>[\s\S]*?)<a:xfrm([^>]*)>/, (_whole, prefix, attrs) => {
+      let a = attrs as string
+      const setAttr = (name: string, value: string | null) => {
+        a = a.replace(new RegExp(`\\s*\\b${name}="[^"]*"`), '')
+        if (value != null) a += ` ${name}="${value}"`
+      }
+      if (patch.rotDeg !== undefined) {
+        const norm = ((Math.round(patch.rotDeg) % 360) + 360) % 360
+        setAttr('rot', norm ? String(norm * 60000) : null)
+      }
+      if (patch.flipH !== undefined) setAttr('flipH', patch.flipH ? '1' : null)
+      if (patch.flipV !== undefined) setAttr('flipV', patch.flipV ? '1' : null)
+      return `${prefix}<a:xfrm${a}>`
+    })
+  }
   if (patch.widthPx && patch.heightPx) {
     const cx = Math.max(1, Math.round(patch.widthPx * EMU_PER_PX))
     const cy = Math.max(1, Math.round(patch.heightPx * EMU_PER_PX))
@@ -49,6 +71,31 @@ export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
       tag.replace(/cx="\d+"/, `cx="${cx}"`).replace(/cy="\d+"/, `cy="${cy}"`)
     out = out.replace(/<wp:extent[^>]*\/?>/, resize)
     out = out.replace(/<a:ext[^>]*\/>/, resize)
+  }
+  // Word lays the drawing out against the unrotated wp:extent plus
+  // wp:effectExtent: a 90°/270° turn of a non-square picture needs the extra
+  // bounding-box space recorded there or Word crops / misplaces it. Recompute
+  // only when rotation changes, or the size changes while a rotation is in
+  // effect — flips leave the bounding box alone, and untouched drawings keep
+  // their original effectExtent (possibly Word-authored shadow/glow padding).
+  {
+    const rotM = /<pic:spPr[^>]*>[\s\S]*?<a:xfrm[^>]*?\brot="(-?\d+)"/.exec(out)
+    const extM = /<wp:extent[^>]*?\bcx="(\d+)"[^>]*?\bcy="(\d+)"/.exec(out)
+    const touchRot = patch.rotDeg !== undefined
+    const touchSize = !!(patch.widthPx && patch.heightPx)
+    if (extM && (touchRot || (touchSize && rotM))) {
+      const rad = (((rotM ? Number(rotM[1]) : 0) / 60000) * Math.PI) / 180
+      const cx = Number(extM[1])
+      const cy = Number(extM[2])
+      const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
+      const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
+      const dx = Math.max(0, Math.round((bw - cx) / 2))
+      const dy = Math.max(0, Math.round((bh - cy) / 2))
+      const ee = `<wp:effectExtent l="${dx}" t="${dy}" r="${dx}" b="${dy}"/>`
+      if (/<wp:effectExtent\b[^>]*\/>/.test(out))
+        out = out.replace(/<wp:effectExtent\b[^>]*\/>/, ee)
+      else out = out.replace(/(<wp:extent\b[^>]*\/?>)/, `$1${ee}`)
+    }
   }
   if (patch.align !== undefined) {
     out = out.replace(/<w:jc w:val="[^"]*"\/>/, '')
@@ -348,12 +395,21 @@ function patchCellXml(tcXml: string, paras: string[]): string | null {
   const pPr = /<w:pPr[\s\S]*?<\/w:pPr>|<w:pPr[^>]*\/>/.exec(firstP)?.[0] ?? ''
   const firstRun = /<w:r(?: [^>]*)?>[\s\S]*?<\/w:r>/.exec(firstP)?.[0] ?? ''
   const rPr = /<w:rPr[\s\S]*?<\/w:rPr>/.exec(firstRun)?.[0] ?? ''
+  // picture runs are not part of the text model; carry them over verbatim so a
+  // text edit in a cell with an inline image doesn't drop the image
+  const drawingRuns = tcXml.includes('<w:drawing')
+    ? xmlSegments(tcXml, 'w:r', 0, tcXml.length)
+        .map((seg) => tcXml.slice(seg.start, seg.end))
+        .filter((r) => r.includes('<w:drawing'))
+        .join('')
+    : ''
   const body = paras
-    .map((t) =>
-      t === ''
-        ? `<w:p>${pPr}</w:p>`
-        : `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXmlText(t)}</w:t></w:r></w:p>`,
-    )
+    .map((t, i) => {
+      const keep = i === 0 ? drawingRuns : ''
+      return t === ''
+        ? `<w:p>${pPr}${keep}</w:p>`
+        : `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXmlText(t)}</w:t></w:r>${keep}</w:p>`
+    })
     .join('')
   return openTag + tcPr + body + '</w:tc>'
 }
@@ -1055,7 +1111,10 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
       ['right', 'r'],
     ] as const) {
       const el = kids.find((k) => k.name === `w:${side}`)
-      if (el && rawAttr(el.xml, 'w:val') !== 'none') rawBorders += ch
+      // mirror extractParaFormat: nil is a reset, not a border, or the raw/model
+      // comparison never matches and the pBdr always gets rebuilt from the model
+      const val = el ? rawAttr(el.xml, 'w:val') : undefined
+      if (el && val !== 'none' && val !== 'nil') rawBorders += ch
     }
   }
   const norm = (s: string | undefined) => (s ? [...new Set(s)].sort().join('') : '')
@@ -1429,22 +1488,28 @@ function tableCellXml(
         align: cell.align,
         runs: text === '' ? [] : [{ text, bold: cell.bold, color: cell.color }],
       }))
-  const content = paragraphs
-    .map((paragraph) => {
-      const align = paragraph.align ?? cell.align
-      const list = 'list' in paragraph ? paragraph.list : undefined
-      // schema order inside pPr: numPr before jc
-      const numPr = list
-        ? `<w:numPr><w:ilvl w:val="${list.ilvl}"/><w:numId w:val="${escapeXmlAttr(list.numId)}"/></w:numPr>`
-        : ''
-      const jc = align ? `<w:jc w:val="${align === 'justify' ? 'both' : align}"/>` : ''
-      const pPr = numPr || jc ? `<w:pPr>${numPr}${jc}</w:pPr>` : ''
-      return `<w:p>${pPr}${runsXml(paragraph.runs, null)}</w:p>`
-    })
-    .join('')
-  // nested tables are regenerated from the model; OOXML requires tc to end with w:p
-  const nested = (cell.nestedTables ?? []).map((nt) => generateTableModelXml(nt)).join('')
-  return `<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${content}${nested ? `${nested}<w:p/>` : ''}</w:tc>`
+  const paraXmls = paragraphs.map((paragraph) => {
+    const align = paragraph.align ?? cell.align
+    const list = 'list' in paragraph ? paragraph.list : undefined
+    // schema order inside pPr: numPr before jc
+    const numPr = list
+      ? `<w:numPr><w:ilvl w:val="${list.ilvl}"/><w:numId w:val="${escapeXmlAttr(list.numId)}"/></w:numPr>`
+      : ''
+    const jc = align ? `<w:jc w:val="${align === 'justify' ? 'both' : align}"/>` : ''
+    const pPr = numPr || jc ? `<w:pPr>${numPr}${jc}</w:pPr>` : ''
+    return `<w:p>${pPr}${runsXml(paragraph.runs, null)}</w:p>`
+  })
+  // nested tables are regenerated from the model at their paragraph anchors (reverse
+  // insertion keeps anchor indexes valid); OOXML requires tc to end with w:p
+  const nested = cell.nestedTables ?? []
+  const items = paraXmls.map((xml) => ({ tbl: false, xml }))
+  for (let i = nested.length - 1; i >= 0; i--) {
+    const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraXmls.length, paraXmls.length)
+    items.splice(at, 0, { tbl: true, xml: generateTableModelXml(nested[i]) })
+  }
+  const tail = items.length === 0 || items[items.length - 1].tbl ? '<w:p/>' : ''
+  const content = items.map((item) => item.xml).join('')
+  return `<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${content}${tail}</w:tc>`
 }
 
 /**
@@ -1491,7 +1556,8 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       if (trPr && !trPr.endsWith('</w:trPr>')) trPr = ''
       const h = model.rowHeightsTwips?.[ri]
       if (h != null && h > 0) {
-        const tag = `<w:trHeight w:val="${Math.round(h)}" w:hRule="atLeast"/>`
+        const rule = model.rowHeightRules?.[ri] === 'exact' ? 'exact' : 'atLeast'
+        const tag = `<w:trHeight w:val="${Math.round(h)}" w:hRule="${rule}"/>`
         if (!trPr) trPr = `<w:trPr>${tag}</w:trPr>`
         else if (/<w:trHeight[^>]*\/>/.test(trPr)) trPr = trPr.replace(/<w:trHeight[^>]*\/>/, tag)
         else trPr = trPr.replace('</w:trPr>', `${tag}</w:trPr>`)
@@ -1789,6 +1855,11 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   if (run.math) return run.math.omml
   // atomic phonetic guide: the exact <w:ruby> fragment re-wrapped in a run
   if (run.ruby) return `<w:r>${run.ruby.xml}</w:r>`
+  // atomic cell picture: the exact <w:drawing> fragment re-wrapped in a run
+  if (run.image) {
+    const text = run.text === '' ? '' : generateRunXml({ ...run, image: undefined }, insideLink)
+    return `${text}<w:r>${run.image.xml}</w:r>`
+  }
   if (run.noteRef) {
     const tag = run.noteRef.kind === 'footnote' ? 'w:footnoteReference' : 'w:endnoteReference'
     return (

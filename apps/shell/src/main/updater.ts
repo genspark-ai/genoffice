@@ -18,8 +18,11 @@ import { closeUpdateWindow, pushUpdateState, showUpdateWindow } from './update-w
  *
  * UX is the strong-guidance modal card (update-window.ts), not a native
  * dialog. Windows updates through the NSIS installer (latest.yml); macOS
- * through the zip target (latest-mac.yml), both published by the internal
- * release pipeline.
+ * through the zip target (latest-mac.yml); Linux through the AppImage
+ * target (latest-linux.yml) — all published by the internal release
+ * pipeline. On Linux only AppImage runs self-update (electron-updater
+ * replaces the .AppImage file in place, no root needed); deb installs have
+ * no updater — users upgrade via `apt install ./<new>.deb`.
  *
  * Dev preview: GENOFFICE_FAKE_UPDATE=<version> in an unpacked run opens the
  * window with a simulated download so the UI can be exercised end to end.
@@ -259,7 +262,9 @@ let started = false
 // version the user declined this session — don't nag again until next launch
 let dismissedVersion: string | null = null
 
-// electron-updater feed name per user-facing channel (latest.yml / beta.yml)
+// electron-updater feed name per user-facing channel. The platform suffix is
+// appended by electron-updater itself: 'beta' resolves to beta.yml on
+// Windows, beta-mac.yml on macOS, beta-linux.yml on Linux x64.
 const CHANNEL_FEED: Record<UpdateChannel, string> = { stable: 'latest', beta: 'beta' }
 
 // true once the packaged-run updater is configured; channel switches before
@@ -321,9 +326,13 @@ export function initAutoUpdater(
   // Unpacked runs have no app-update.yml and must not hit the CDN with a
   // dev version. Windows updates via NSIS (latest.yml), macOS via the zip
   // target + latest-mac.yml (Squirrel.Mac requires a signed, notarized app
-  // — dmg is first-install only).
+  // — dmg is first-install only), Linux via the AppImage target +
+  // latest-linux.yml. On Linux the updater only works for AppImage runs
+  // (electron-updater's AppImageUpdater needs the APPIMAGE env var the
+  // AppImage runtime sets); deb installs update manually via apt.
   if (!app.isPackaged) return
-  if (process.platform !== 'win32' && process.platform !== 'darwin') return
+  const isLinuxAppImage = process.platform === 'linux' && Boolean(process.env.APPIMAGE)
+  if (process.platform !== 'win32' && process.platform !== 'darwin' && !isLinuxAppImage) return
 
   updaterActive = true
   autoUpdater.channel = CHANNEL_FEED[initialChannel]

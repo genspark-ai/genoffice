@@ -19,7 +19,11 @@ export const MARKDOWN_CHANNELS = {
   exportPdf: 'markdown:export-pdf',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
+  getTheme: 'app:get-theme',
+  themeChanged: 'app:theme-changed',
 } as const
+
+export type UiTheme = 'light' | 'dark' | 'system'
 
 export type SaveMode = 'save' | 'saveAs'
 
@@ -122,6 +126,8 @@ export interface MarkdownApi {
   exportPdf(request: ExportPdfRequest): Promise<ExportResult>
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
+  getTheme(): Promise<UiTheme>
+  onThemeChanged(handler: (theme: UiTheme) => void): () => void
   getAiSettings(): Promise<AiSettings>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

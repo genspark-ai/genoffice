@@ -1,20 +1,272 @@
+/* Per-app accent (word-blue family) + docs-only tokens.
+ * Chrome tokens (surface/text/border/…, AI panel --color-*) come from
+ * @genoffice/ui/tokens.css; nothing here may shadow those names. */
 :root {
   --word-blue: #185abd;
   --word-blue-dark: #124a9e;
   --word-heading: #2f5496;
-  --surface: #ffffff;
-  --chrome-bg: #ffffff;
-  --border: #e1dfdd;
-  --border-strong: #c8c6c4;
-  --text: #252423;
-  --text-dim: #605e5c;
-  --hover: #f3f2f1;
-  --pressed: #edebe9;
-  /* selected/pressed plate: neutral gray (slides/sheets/pdf ribbon parity) */
-  --active-bg: #eaeaea;
-  --canvas: #e6e6e6;
+  --accent: var(--word-blue);
+  --accent-dark: var(--word-blue-dark);
+  --accent-soft: #e8f1fb;
+
+  --docs-heading-3: #1f3864;
+  --docs-accent-ghost: rgb(24 90 189 / 10%);
+  --docs-copilot-bg-a: #f5f0ff;
+  --docs-copilot-bg-b: #eef6ff;
+  --docs-swatch-outline: rgb(0 0 0 / 15%);
+  --docs-swatch-outline-strong: rgb(0 0 0 / 25%);
+  --docs-swatch-border: #a6a6a6;
+  --docs-ins-ink: #166534;
+  --docs-ins-bg: rgb(22 101 52 / 6%);
+  --docs-del-ink: #b91c1c;
+  --docs-del-bg: rgb(185 28 28 / 6%);
+  --docs-ai-error: #c62828;
+  --docs-ai-error-border: rgb(198 40 40 / 45%);
+  --docs-ai-error-bg: rgb(198 40 40 / 8%);
+  --docs-ok-ink: #2e7d32;
+  --docs-ok-bg: #e6f2e6;
+  --docs-ok-border: #a5d6a7;
+  --docs-ok-dot: #2e9e44;
+  --docs-chip-bg: #f6f8fc;
+  --docs-brand-ghost: rgb(15 127 255 / 8%);
+  --docs-brand-ghost-weak: rgb(15 127 255 / 6%);
+  --docs-brand-ring: rgb(15 127 255 / 40%);
+  --docs-focus-ring: rgb(35 36 37 / 20%);
+  --docs-focus-ring-blue: rgb(74 141 246 / 30%);
+  --docs-scroll-thumb: rgb(0 0 0 / 25%);
+  --docs-tooltip-bg: #232425;
+  --docs-tooltip-ink: #ffffff;
+  --docs-shimmer-base: #666666;
+  --docs-shimmer-hi: #d9d9d9;
+  --docs-statusbar-bg: #f3f4f6;
+  --docs-statusbar-border: #e1e4e8;
+  --docs-statusbar-hover: rgb(0 0 0 / 8%);
+  --docs-zoom-slider: #8a8886;
+  --docs-ruler-bg: #f3f2f1;
+  --docs-ruler-tick: #b9b9b9;
+  --docs-ruler-border: #d6d6d6;
+  --docs-ruler-ink: #666;
+  --docs-ruler-btn-bg: #e0e0e0;
+  --docs-ruler-btn-hover: #d0d0d0;
+  --docs-ruler-btn-border: #ccc;
+  --docs-ruler-btn-ink: #333;
+  --docs-ruler-tab-guide: #aaa;
+  --docs-ruler-zone: rgb(0 0 0 / 8%);
+  --docs-tstyle-border: #b8bcc4;
+  --docs-tstyle-header: #7f8b9d;
+  --docs-tstyle-row: #eef1f5;
+  --docs-gap-cut: #b6c2d2;
+  --docs-pv-canvas: #525659;
+  --docs-read-canvas: #f5f1e8;
+  --docs-overlay: rgb(0 0 0 / 50%);
+  --docs-page-shadow: 0 1px 3px rgb(0 0 0 / 28%), 0 4px 16px rgb(0 0 0 / 10%);
+  --docs-gap-inset: inset 0 8px 8px -8px rgb(0 0 0 / 35%), inset 0 -3px 3px -3px rgb(0 0 0 / 18%);
+  --docs-shadow-menu: 0 8px 24px rgb(0 0 0 / 18%);
+  --docs-shadow-ctx: 0 8px 28px rgb(0 0 0 / 22%);
+  --docs-shadow-modal: 0 3px 30px rgb(0 0 0 / 8%);
+  --docs-shadow-chip: 0 2px 8px rgb(0 0 0 / 12%);
+  --docs-shadow-tooltip: 0 4px 6px rgb(0 0 0 / 10%);
+  --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
+  --docs-shadow-toast: 0 4px 16px rgb(0 0 0 / 18%);
+
+  /* brand-fixed chrome: identical in both themes */
+  --docs-on-accent: #fff;
+  --docs-on-accent-dim: rgb(255 255 255 / 75%);
+  --docs-comment-accent: #e8a33d;
+  --docs-badge-gradient: linear-gradient(135deg, #6a5cff 0%, #2b88f8 55%, #29c3a6 120%);
+  --docs-shadow-badge: 0 2px 6px rgb(74 92 255 / 25%);
+  --docs-shadow-badge-strong: 0 2px 6px rgb(74 92 255 / 35%);
+  --docs-chip-remove-bg: #000;
+  --docs-chip-remove-hover: #4b4e51;
+  --docs-chip-remove-ink: #fff;
+  --docs-knob-dot: #fff;
+  --docs-toast-bg: rgb(35 35 37 / 92%);
+  --docs-toast-error-bg: rgb(196 49 75 / 95%);
+  --docs-toast-ink: #fff;
+  --docs-toast-ok: #34c759;
+
+  /* content-side constants: everything painted on the white paper (including
+   * the AI change highlight) keeps its light value in both themes */
   --ai-highlight: #fff3c4;
   --ai-highlight-border: #f2b900;
+  --docs-paper: #ffffff;
+  --docs-paper-ink: #000;
+  --docs-paper-ink-dim: #333;
+  --docs-paper-ink-mid: #555;
+  --docs-paper-ink-soft: #777;
+  --docs-paper-ink-faint: #888;
+  --docs-paper-heading: #2f5496;
+  --docs-paper-h3: #1f3864;
+  --docs-paper-link: #0563c1;
+  --docs-paper-accent: #185abd;
+  --docs-paper-mark: #2b7cd3;
+  --docs-paper-grid: rgb(43 124 211 / 13%);
+  --docs-paper-hf-line: #d0d0d0;
+  --docs-paper-chip-bg: #fafafa;
+  --docs-paper-select-bg: #e8f1fb;
+  --docs-paper-stripe: #f0f0f0;
+  --docs-paper-chart-grid: #e0e0e0;
+  --docs-paper-chart-border: #d9d9d9;
+  --docs-paper-field-bg: rgb(0 0 0 / 7%);
+  --docs-paper-field-bg-inverse: rgb(255 255 255 / 12%);
+  --docs-paper-watermark: rgb(128 128 128 / 18%);
+  --docs-paper-rev-ink: #b91c1c;
+  --docs-paper-ins-bg: rgb(22 163 74 / 8%);
+  --docs-paper-del-bg: rgb(220 38 38 / 8%);
+  --docs-paper-del-line: #dc2626;
+  --docs-paper-ppr: #f59e0b;
+  --docs-paper-ppr-ink: #b45309;
+  --docs-paper-ppr-bg: #fef3c7;
+  --docs-paper-ppr-border: #fcd34d;
+  --docs-paper-rpr: #c98a00;
+  --docs-paper-sdt-border: #a0c0e8;
+  --docs-paper-sdt-ink: #5080b0;
+  --docs-paper-sdt-bg: #eef4fb;
+  --docs-paper-comment-bg: rgb(255 196 0 / 22%);
+  --docs-paper-comment-flash: rgb(255 170 0 / 55%);
+  --docs-paper-comment-line: #e8a33d;
+  --docs-paper-xe-ink: #8a6d3b;
+  --docs-paper-xe-bg: #fdf6e3;
+  --docs-paper-xe-border: #d5c48a;
+  --docs-paper-hit-bg: #ffe28a;
+  --docs-paper-hit-active-bg: #ff9632;
+  --docs-paper-hit-active-ink: #fff;
+}
+
+[data-theme='dark'] {
+  --word-blue: #4a9eff;
+  --word-blue-dark: #3a8eef;
+  --word-heading: #6cabf0;
+  --accent-soft: #1e3a5f;
+
+  --docs-heading-3: #7fa8e0;
+  --docs-accent-ghost: rgb(74 158 255 / 18%);
+  --docs-copilot-bg-a: #322c46;
+  --docs-copilot-bg-b: #253546;
+  --docs-swatch-outline: rgb(255 255 255 / 25%);
+  --docs-swatch-outline-strong: rgb(255 255 255 / 30%);
+  --docs-swatch-border: #666;
+  --docs-ins-ink: #6fcf8f;
+  --docs-ins-bg: rgb(111 207 143 / 10%);
+  --docs-del-ink: #f28b82;
+  --docs-del-bg: rgb(242 139 130 / 10%);
+  --docs-ai-error: #f28b82;
+  --docs-ai-error-border: rgb(242 139 130 / 45%);
+  --docs-ai-error-bg: rgb(242 139 130 / 12%);
+  --docs-ok-ink: #7bd88a;
+  --docs-ok-bg: #16351c;
+  --docs-ok-border: #2e5c36;
+  --docs-ok-dot: #34c759;
+  --docs-chip-bg: #2a2f36;
+  --docs-brand-ghost: rgb(74 158 255 / 14%);
+  --docs-brand-ghost-weak: rgb(74 158 255 / 10%);
+  --docs-brand-ring: rgb(74 158 255 / 45%);
+  --docs-focus-ring: rgb(228 228 228 / 25%);
+  --docs-focus-ring-blue: rgb(74 158 255 / 40%);
+  --docs-scroll-thumb: rgb(255 255 255 / 28%);
+  --docs-tooltip-bg: #e4e4e4;
+  --docs-tooltip-ink: #1e1e1e;
+  --docs-shimmer-base: #8a8a8a;
+  --docs-shimmer-hi: #d0d0d0;
+  --docs-statusbar-bg: #252525;
+  --docs-statusbar-border: #3a3a3a;
+  --docs-statusbar-hover: rgb(255 255 255 / 10%);
+  --docs-zoom-slider: #8a8a8a;
+  --docs-ruler-bg: #2d2d2d;
+  --docs-ruler-tick: #6a6a6a;
+  --docs-ruler-border: #444;
+  --docs-ruler-ink: #a0a0a0;
+  --docs-ruler-btn-bg: #3a3a3a;
+  --docs-ruler-btn-hover: #4a4a4a;
+  --docs-ruler-btn-border: #555;
+  --docs-ruler-btn-ink: #d0d0d0;
+  --docs-ruler-tab-guide: #777;
+  --docs-ruler-zone: rgb(255 255 255 / 10%);
+  --docs-tstyle-border: #5a5f66;
+  --docs-tstyle-header: #8a93a3;
+  --docs-tstyle-row: #333;
+  --docs-gap-cut: #56606c;
+  --docs-pv-canvas: #1f1f1f;
+  --docs-read-canvas: #2a2622;
+  --docs-overlay: rgb(0 0 0 / 55%);
+  --docs-page-shadow: 0 1px 3px rgb(0 0 0 / 60%), 0 4px 16px rgb(0 0 0 / 40%);
+  --docs-gap-inset: inset 0 8px 8px -8px rgb(0 0 0 / 65%), inset 0 -3px 3px -3px rgb(0 0 0 / 40%);
+  --docs-shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
+  --docs-shadow-ctx: 0 8px 28px rgb(0 0 0 / 60%);
+  --docs-shadow-modal: 0 20px 50px rgb(0 0 0 / 65%);
+  --docs-shadow-chip: 0 2px 8px rgb(0 0 0 / 40%);
+  --docs-shadow-tooltip: 0 4px 6px rgb(0 0 0 / 30%);
+  --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
+  --docs-shadow-toast: 0 4px 16px rgb(0 0 0 / 45%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --word-blue: #4a9eff;
+    --word-blue-dark: #3a8eef;
+    --word-heading: #6cabf0;
+    --accent-soft: #1e3a5f;
+
+    --docs-heading-3: #7fa8e0;
+    --docs-accent-ghost: rgb(74 158 255 / 18%);
+    --docs-copilot-bg-a: #322c46;
+    --docs-copilot-bg-b: #253546;
+    --docs-swatch-outline: rgb(255 255 255 / 25%);
+    --docs-swatch-outline-strong: rgb(255 255 255 / 30%);
+    --docs-swatch-border: #666;
+    --docs-ins-ink: #6fcf8f;
+    --docs-ins-bg: rgb(111 207 143 / 10%);
+    --docs-del-ink: #f28b82;
+    --docs-del-bg: rgb(242 139 130 / 10%);
+    --docs-ai-error: #f28b82;
+    --docs-ai-error-border: rgb(242 139 130 / 45%);
+    --docs-ai-error-bg: rgb(242 139 130 / 12%);
+    --docs-ok-ink: #7bd88a;
+    --docs-ok-bg: #16351c;
+    --docs-ok-border: #2e5c36;
+    --docs-ok-dot: #34c759;
+    --docs-chip-bg: #2a2f36;
+    --docs-brand-ghost: rgb(74 158 255 / 14%);
+    --docs-brand-ghost-weak: rgb(74 158 255 / 10%);
+    --docs-brand-ring: rgb(74 158 255 / 45%);
+    --docs-focus-ring: rgb(228 228 228 / 25%);
+    --docs-focus-ring-blue: rgb(74 158 255 / 40%);
+    --docs-scroll-thumb: rgb(255 255 255 / 28%);
+    --docs-tooltip-bg: #e4e4e4;
+    --docs-tooltip-ink: #1e1e1e;
+    --docs-shimmer-base: #8a8a8a;
+    --docs-shimmer-hi: #d0d0d0;
+    --docs-statusbar-bg: #252525;
+    --docs-statusbar-border: #3a3a3a;
+    --docs-statusbar-hover: rgb(255 255 255 / 10%);
+    --docs-zoom-slider: #8a8a8a;
+    --docs-ruler-bg: #2d2d2d;
+    --docs-ruler-tick: #6a6a6a;
+    --docs-ruler-border: #444;
+    --docs-ruler-ink: #a0a0a0;
+    --docs-ruler-btn-bg: #3a3a3a;
+    --docs-ruler-btn-hover: #4a4a4a;
+    --docs-ruler-btn-border: #555;
+    --docs-ruler-btn-ink: #d0d0d0;
+    --docs-ruler-tab-guide: #777;
+    --docs-ruler-zone: rgb(255 255 255 / 10%);
+    --docs-tstyle-border: #5a5f66;
+    --docs-tstyle-header: #8a93a3;
+    --docs-tstyle-row: #333;
+    --docs-gap-cut: #56606c;
+    --docs-pv-canvas: #1f1f1f;
+    --docs-read-canvas: #2a2622;
+    --docs-overlay: rgb(0 0 0 / 55%);
+    --docs-page-shadow: 0 1px 3px rgb(0 0 0 / 60%), 0 4px 16px rgb(0 0 0 / 40%);
+    --docs-gap-inset: inset 0 8px 8px -8px rgb(0 0 0 / 65%), inset 0 -3px 3px -3px rgb(0 0 0 / 40%);
+    --docs-shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
+    --docs-shadow-ctx: 0 8px 28px rgb(0 0 0 / 60%);
+    --docs-shadow-modal: 0 20px 50px rgb(0 0 0 / 65%);
+    --docs-shadow-chip: 0 2px 8px rgb(0 0 0 / 40%);
+    --docs-shadow-tooltip: 0 4px 6px rgb(0 0 0 / 30%);
+    --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
+    --docs-shadow-toast: 0 4px 16px rgb(0 0 0 / 45%);
+  }
 }
 
 * {
@@ -83,7 +335,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: #232325;
+  color: var(--text-primary);
 }
 
 .qa-btn svg {
@@ -96,7 +348,7 @@ button {
 }
 
 .qa-btn:disabled {
-  color: #909499;
+  color: var(--text-tertiary);
   cursor: default;
 }
 
@@ -108,7 +360,7 @@ button {
   border-bottom: 1px solid var(--border-strong);
   user-select: none;
   /* shared toolbar ink (glyphs, letterforms, labels) — same as sheets/slides */
-  color: #232425;
+  color: var(--text-primary);
 }
 
 .ribbon-tabs {
@@ -188,7 +440,7 @@ button {
 }
 
 .ribbon-tab-file {
-  color: #fff;
+  color: var(--docs-on-accent);
   background: var(--word-blue);
   border-radius: 4px;
   padding: 6px 16px;
@@ -213,7 +465,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 5px;
 }
 
@@ -253,7 +505,7 @@ button {
   width: 1px;
   height: 16px;
   margin: 0 6px;
-  background: var(--border-strong, #c8c6c4);
+  background: var(--border-strong);
   flex-shrink: 0;
 }
 
@@ -262,7 +514,7 @@ button {
   align-items: center;
   gap: 6px;
   border: 1px solid var(--border);
-  background: linear-gradient(135deg, #f5f0ff, #eef6ff);
+  background: linear-gradient(135deg, var(--docs-copilot-bg-a), var(--docs-copilot-bg-b));
   border-radius: 14px;
   padding: 4px 14px;
   font-size: 12.5px;
@@ -282,7 +534,7 @@ button {
   width: 22px;
   height: 22px;
   border-radius: 7px;
-  box-shadow: 0 2px 6px rgba(74, 92, 255, 0.25);
+  box-shadow: var(--docs-shadow-badge);
 }
 
 /* Genspark brand logo (Ribbon AI button and AI panel title) */
@@ -385,7 +637,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #232425;
+  color: var(--text-primary);
 }
 
 /* hover/open paint only the icon row — the label below
@@ -407,7 +659,7 @@ button {
 .rb-big-icon .rb-caret-svg {
   display: block;
   margin-left: 3px;
-  color: #605e5c;
+  color: var(--text-dim);
 }
 
 .rb-big-icon-colored {
@@ -420,7 +672,7 @@ button {
   right: 1px;
   bottom: -3px;
   width: auto;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--docs-swatch-outline);
 }
 
 /* AI badge marking AI-backed entry points (ribbon buttons and context-menu items), same look as slides */
@@ -431,9 +683,9 @@ button {
   width: 22px;
   height: 22px;
   border-radius: 7px;
-  color: #fff;
-  background: linear-gradient(135deg, #6a5cff 0%, #2b88f8 55%, #29c3a6 120%);
-  box-shadow: 0 2px 6px rgba(74, 92, 255, 0.35);
+  color: var(--docs-on-accent);
+  background: var(--docs-badge-gradient);
+  box-shadow: var(--docs-shadow-badge-strong);
 }
 
 .copilot-badge-menu {
@@ -474,10 +726,8 @@ button {
   background: var(--hover);
 }
 
-/* Neutral gray, not the Word-blue --active-bg: the Genspark entry is the same
-   control across docs/sheets/slides, so its open state matches their ribbons. */
 .rb-big.ai-entry.active {
-  background: #eaeaea;
+  background: var(--active-bg);
 }
 
 .rb-big.ai-entry:hover:not(:disabled) .rb-big-icon,
@@ -511,7 +761,7 @@ button {
   /* 14px glyphs, matching the slides/sheets clipboard stacks */
   width: 14px;
   height: 14px;
-  color: #232425;
+  color: var(--text-primary);
   /* CSS resizes these below their attr size — re-pin the painted stroke
      (1.43 units × 14/16 ≈ 1.25px) */
   stroke-width: 1.43;
@@ -753,13 +1003,13 @@ button {
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
 }
 
 .color-swatch {
   width: 22px;
   height: 22px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--docs-swatch-outline);
   border-radius: 3px;
   cursor: pointer;
 }
@@ -953,7 +1203,7 @@ button {
   place-items: center;
   width: 28px;
   height: 28px;
-  color: #0f7fff;
+  color: var(--color-brand-secondary);
 }
 
 .ai-feature-icon svg {
@@ -975,7 +1225,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 4px;
 }
 
@@ -1080,7 +1330,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   max-height: 420px;
   overflow-y: auto;
 }
@@ -1106,13 +1356,13 @@ button {
   width: 88px;
   height: 116px;
   overflow: hidden;
-  background: #fff;
+  background: var(--docs-paper);
   border: 1px solid var(--border-strong);
   border-radius: 2px;
   padding: 4px 5px;
   font-size: 4px;
   line-height: 1.3;
-  color: #333;
+  color: var(--docs-paper-ink-dim);
   text-align: left;
   pointer-events: none;
 }
@@ -1138,7 +1388,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 8px;
 }
 
@@ -1168,7 +1418,7 @@ button {
 
 .table-cell.hot {
   /* blue-tinted like an in-document selection, not the gray toolbar plate */
-  background: #e8f1fb;
+  background: var(--accent-soft);
   border-color: var(--word-blue);
 }
 
@@ -1188,7 +1438,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 8px;
 }
 
@@ -1223,14 +1473,14 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 6px;
 }
 
 .shape-group-title {
   padding: 6px 4px 2px;
   font-size: 11px;
-  color: var(--text-dim, #797775);
+  color: var(--text-dim);
 }
 
 .shape-grid {
@@ -1271,16 +1521,16 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 8px;
 }
 
 .wordart-cell {
   width: 44px;
   height: 44px;
-  border: 1px solid var(--border, #e3e3e3);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--surface, #fff);
+  background: var(--surface);
   font-size: 26px;
   font-family: Georgia, serif;
   cursor: pointer;
@@ -1290,7 +1540,7 @@ button {
 }
 
 .wordart-cell:hover {
-  border-color: var(--accent, #b26b00);
+  border-color: var(--accent);
 }
 
 /* ---- Drop cap dropdown menu ---- */
@@ -1309,7 +1559,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 8px;
   min-width: 200px;
 }
@@ -1361,7 +1611,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 6px;
 }
 
@@ -1385,7 +1635,7 @@ button {
 
 .equation-gallery-name {
   font-size: 11px;
-  color: var(--text-dim, #777);
+  color: var(--text-dim);
   align-self: flex-start;
 }
 
@@ -1432,13 +1682,13 @@ button {
 
 .equation-preview-hint {
   font-size: 12px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   font-family: system-ui, sans-serif;
 }
 
 .equation-preview-error {
   font-size: 12px;
-  color: #c0392b;
+  color: var(--danger);
   font-family: system-ui, sans-serif;
 }
 
@@ -1448,7 +1698,7 @@ button {
   gap: 6px;
   margin-top: 8px;
   font-size: 12px;
-  color: var(--text-dim, #666);
+  color: var(--text-dim);
   user-select: none;
 }
 
@@ -1466,7 +1716,7 @@ button {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 5px;
 }
 
@@ -1498,19 +1748,26 @@ button {
   background: var(--active-bg);
 }
 
+/* w:trHeight hRule="exact": Word clips overflow instead of growing the row. td height is
+   min-height in CSS table layout, so cells wrap content in this fixed-height box instead;
+   clip (not hidden) so contenteditable's programmatic scrolls can't shift the content */
+.cell-clip {
+  overflow: clip;
+}
+
 /* table row/cell revisions: insert = green background, delete = red background (inline text has separate ins/del underline/strike styles) */
 tr.row-rev-ins > td,
 tr.row-rev-ins > th,
 td.cell-rev-ins,
 th.cell-rev-ins {
-  background: rgba(22, 163, 74, 0.08);
+  background: var(--docs-paper-ins-bg);
 }
 
 tr.row-rev-del > td,
 tr.row-rev-del > th,
 td.cell-rev-del,
 th.cell-rev-del {
-  background: rgba(220, 38, 38, 0.08);
+  background: var(--docs-paper-del-bg);
 }
 
 /* no-markup mode = as if all accepted: deleted rows hidden, insert background removed */
@@ -1724,7 +1981,7 @@ th.cell-rev-del {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 8px;
 }
 
@@ -1787,7 +2044,7 @@ th.cell-rev-del {
 }
 
 .style-card-preview.style-h3 {
-  color: #1f3864;
+  color: var(--docs-heading-3);
   font-size: 13px;
 }
 
@@ -1823,7 +2080,7 @@ th.cell-rev-del {
 .show-marks .doc-page h3::after,
 .show-marks .doc-page h4::after {
   content: '¶';
-  color: #2b7cd3;
+  color: var(--docs-paper-mark);
   opacity: 0.55;
   font-size: 0.85em;
   margin-left: 2px;
@@ -1839,7 +2096,7 @@ th.cell-rev-del {
 
 /* page border (w:pgBorders): a box inset from the page edge */
 .page-bordered .doc-page {
-  outline: 1.5px solid #333;
+  outline: 1.5px solid var(--docs-paper-ink-dim);
   outline-offset: -32px;
 }
 
@@ -1890,19 +2147,19 @@ th.cell-rev-del {
 
 /* Move-from revision: strikethrough + light red background (content moved away) */
 .has-move-from {
-  background: rgba(220, 38, 38, 0.08);
+  background: var(--docs-paper-del-bg);
   text-decoration: line-through;
-  text-decoration-color: #dc2626;
+  text-decoration-color: var(--docs-paper-del-line);
 }
 
 /* Move-to revision: light green background (content moved in) */
 .has-move-to {
-  background: rgba(22, 163, 74, 0.08);
+  background: var(--docs-paper-ins-bg);
 }
 
 /* pPrChange (tracked paragraph format change): light amber left border + badge */
 .has-ppr-change {
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid var(--docs-paper-ppr);
   padding-left: 4px;
   position: relative;
 }
@@ -1912,9 +2169,9 @@ th.cell-rev-del {
   content: attr(data-ppr-change-label);
   margin-left: 6px;
   font-size: 8px;
-  color: #b45309;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
+  color: var(--docs-paper-ppr-ink);
+  background: var(--docs-paper-ppr-bg);
+  border: 1px solid var(--docs-paper-ppr-border);
   border-radius: 2px;
   padding: 0 3px;
   vertical-align: middle;
@@ -1923,7 +2180,7 @@ th.cell-rev-del {
 
 .has-sdt {
   position: relative;
-  border: 1px solid #a0c0e8;
+  border: 1px solid var(--docs-paper-sdt-border);
   border-radius: 2px;
   padding: 1px 2px;
   margin: 0 -2px;
@@ -1937,9 +2194,9 @@ th.cell-rev-del {
   left: 0;
   font-size: 8px;
   line-height: 1;
-  color: #5080b0;
-  background: #eef4fb;
-  border: 1px solid #a0c0e8;
+  color: var(--docs-paper-sdt-ink);
+  background: var(--docs-paper-sdt-bg);
+  border: 1px solid var(--docs-paper-sdt-border);
   border-radius: 2px 2px 0 0;
   padding: 0 3px;
   pointer-events: none;
@@ -1961,7 +2218,7 @@ th.cell-rev-del {
   width: calc(var(--page-w, 816px) - 120px);
   text-align: center;
   font-size: 9pt;
-  color: #777;
+  color: var(--docs-paper-ink-soft);
   overflow: hidden;
   z-index: 1;
   cursor: default;
@@ -1970,6 +2227,18 @@ th.cell-rev-del {
 .page-hf-para {
   white-space: pre-wrap;
   min-height: 1.3em;
+}
+
+/* header/footer layout-table row: cells as width-proportioned columns (display-only) */
+.page-hf-row {
+  display: flex;
+  align-items: baseline;
+  text-align: left;
+}
+
+.page-hf-cell {
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 /* logo and other images in the part (display-only, excluded from text editing) */
@@ -1991,8 +2260,8 @@ th.cell-rev-del {
   outline: 2px solid var(--word-blue);
   outline-offset: 2px;
   border-radius: 2px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--docs-paper);
+  color: var(--docs-paper-ink);
   overflow: visible;
   cursor: text;
 }
@@ -2006,13 +2275,13 @@ th.cell-rev-del {
 
 .page-hf-header {
   top: var(--header-dist, 48px);
-  border-bottom: 1px dashed #d0d0d0;
+  border-bottom: 1px dashed var(--docs-paper-hf-line);
   padding-bottom: 2px;
 }
 
 .page-hf-footer {
   bottom: var(--footer-dist, 48px);
-  border-top: 1px dashed #d0d0d0;
+  border-top: 1px dashed var(--docs-paper-hf-line);
   padding-top: 2px;
 }
 
@@ -2033,14 +2302,14 @@ th.cell-rev-del {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  color: var(--text-dim, #777);
+  color: var(--text-dim);
   cursor: pointer;
 }
 
 .hf-variant-chips button.on {
   background: var(--word-blue);
   border-color: var(--word-blue);
-  color: #fff;
+  color: var(--docs-on-accent);
 }
 
 /* "Different first page" entry next to the header itself: while the
@@ -2051,7 +2320,7 @@ th.cell-rev-del {
 .hf-chips-idle {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
   padding-bottom: max(0px, calc(var(--header-dist, 48px) - 24px));
 }
 
@@ -2103,7 +2372,7 @@ th.cell-rev-del {
 
 .nav-item:hover {
   background: var(--hover);
-  color: #2b7cd3;
+  color: var(--accent);
 }
 
 .nav-l2 {
@@ -2127,15 +2396,15 @@ th.cell-rev-del {
 
 /* tracked changes: insertions underlined, deletions struck through (Word revisions) */
 .doc-ins {
-  color: #b91c1c;
+  color: var(--docs-paper-rev-ink);
   text-decoration: underline;
-  text-decoration-color: #b91c1c;
+  text-decoration-color: var(--docs-paper-rev-ink);
 }
 
 .doc-del {
-  color: #b91c1c;
+  color: var(--docs-paper-rev-ink);
   text-decoration: line-through;
-  text-decoration-color: #b91c1c;
+  text-decoration-color: var(--docs-paper-rev-ink);
   opacity: 0.72;
 }
 
@@ -2237,21 +2506,21 @@ th.cell-rev-del {
 }
 
 .compare-left {
-  color: #b91c1c;
+  color: var(--docs-del-ink);
   text-decoration: line-through;
   opacity: 0.8;
 }
 
 .compare-right {
-  color: #166534;
+  color: var(--docs-ins-ink);
 }
 
 .compare-added {
-  background: rgba(22, 101, 52, 0.06);
+  background: var(--docs-ins-bg);
 }
 
 .compare-removed {
-  background: rgba(185, 28, 28, 0.06);
+  background: var(--docs-del-bg);
 }
 
 /* comment composer (new comment) */
@@ -2293,9 +2562,9 @@ th.cell-rev-del {
 }
 
 .comment-compose-actions button.primary {
-  background: #2b579a;
-  border-color: #2b579a;
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--docs-on-accent);
 }
 
 .comment-card-del {
@@ -2314,20 +2583,20 @@ th.cell-rev-del {
 
 .comment-card-del:hover {
   background: var(--hover);
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 /* comments: in-text highlight + right-side pane */
 .doc-comment {
-  background: rgba(255, 196, 0, 0.22);
-  border-bottom: 2px solid #e8a33d;
+  background: var(--docs-paper-comment-bg);
+  border-bottom: 2px solid var(--docs-paper-comment-line);
   cursor: pointer;
 }
 
 /* range picked for a comment that is still being composed */
 .comment-pending {
-  background: rgba(255, 196, 0, 0.22);
-  border-bottom: 2px dashed #e8a33d;
+  background: var(--docs-paper-comment-bg);
+  border-bottom: 2px dashed var(--docs-paper-comment-line);
 }
 
 /* Word: body shading of resolved threads is hidden (the jump flash animation can still briefly reveal the position) */
@@ -2340,16 +2609,16 @@ th.cell-rev-del {
 }
 
 .doc-comment-flash {
-  animation: comment-flash 1.2s ease-out;
+  animation: comment-flash 350ms cubic-bezier(0, 0, 0.2, 1);
 }
 
 @keyframes comment-flash {
   0%,
   40% {
-    background: rgba(255, 170, 0, 0.55);
+    background: var(--docs-paper-comment-flash);
   }
   100% {
-    background: rgba(255, 196, 0, 0.22);
+    background: var(--docs-paper-comment-bg);
   }
 }
 
@@ -2408,7 +2677,7 @@ th.cell-rev-del {
   text-align: left;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg, #fff);
+  background: var(--surface);
   padding: 8px 10px;
   cursor: pointer;
   font-size: 12.5px;
@@ -2416,12 +2685,12 @@ th.cell-rev-del {
 }
 
 .comment-card:hover {
-  border-color: #e8a33d;
+  border-color: var(--docs-comment-accent);
 }
 
 .comment-card.active {
-  border-color: #e8a33d;
-  box-shadow: 0 0 0 1px #e8a33d;
+  border-color: var(--docs-comment-accent);
+  box-shadow: 0 0 0 1px var(--docs-comment-accent);
 }
 
 .comment-card-head {
@@ -2436,8 +2705,8 @@ th.cell-rev-del {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #e8a33d;
-  color: #fff;
+  background: var(--docs-comment-accent);
+  color: var(--docs-on-accent);
   font-size: 10px;
   font-weight: 600;
   display: flex;
@@ -2463,7 +2732,7 @@ th.cell-rev-del {
 .comment-anchor {
   font-size: 11px;
   color: var(--text-dim);
-  border-left: 2px solid #e8a33d;
+  border-left: 2px solid var(--docs-comment-accent);
   padding-left: 6px;
   margin-bottom: 4px;
   overflow: hidden;
@@ -2488,13 +2757,19 @@ th.cell-rev-del {
   height: 20px;
   margin: 0 auto 6px;
   background:
-    repeating-linear-gradient(to right, #b9b9b9 0, #b9b9b9 1px, transparent 1px, transparent 12px)
+    repeating-linear-gradient(
+        to right,
+        var(--docs-ruler-tick) 0,
+        var(--docs-ruler-tick) 1px,
+        transparent 1px,
+        transparent 12px
+      )
       bottom / 100% 5px no-repeat,
-    #f3f2f1;
-  border: 1px solid #d6d6d6;
+    var(--docs-ruler-bg);
+  border: 1px solid var(--docs-ruler-border);
   border-radius: 2px;
   font-size: 9px;
-  color: #666;
+  color: var(--docs-ruler-ink);
   user-select: none;
   overflow: hidden;
   cursor: pointer;
@@ -2506,9 +2781,9 @@ th.cell-rev-del {
   top: 0;
   width: 20px;
   height: 100%;
-  background: #e0e0e0;
+  background: var(--docs-ruler-btn-bg);
   border: none;
-  border-right: 1px solid #ccc;
+  border-right: 1px solid var(--docs-ruler-btn-border);
   font-size: 9px;
   font-weight: bold;
   cursor: pointer;
@@ -2516,11 +2791,11 @@ th.cell-rev-del {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #333;
+  color: var(--docs-ruler-btn-ink);
 }
 
 .ruler-tab-type:hover {
-  background: #d0d0d0;
+  background: var(--docs-ruler-btn-hover);
 }
 
 /* tab stop markers on ruler */
@@ -2531,7 +2806,7 @@ th.cell-rev-del {
   height: 10px;
   font-size: 8px;
   font-weight: bold;
-  color: #185abd;
+  color: var(--accent);
   cursor: move;
   transform: translateX(-50%);
   text-align: center;
@@ -2541,8 +2816,8 @@ th.cell-rev-del {
 }
 
 .ruler-tab:hover {
-  color: #0c3c82;
-  background: rgba(24, 90, 189, 0.1);
+  color: var(--accent-dark);
+  background: var(--docs-accent-ghost);
 }
 
 /* default tab stop guide (no interaction) */
@@ -2551,7 +2826,7 @@ th.cell-rev-del {
   bottom: 0;
   width: 1px;
   height: 4px;
-  background: #aaa;
+  background: var(--docs-ruler-tab-guide);
   transform: translateX(-50%);
   z-index: 1;
   pointer-events: none;
@@ -2561,7 +2836,7 @@ th.cell-rev-del {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--docs-ruler-zone);
 }
 
 .ruler-num {
@@ -2585,7 +2860,7 @@ th.cell-rev-del {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 10px;
   width: 260px;
 }
@@ -2603,7 +2878,7 @@ th.cell-rev-del {
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 12.5px;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--text);
 }
 
@@ -2625,32 +2900,41 @@ th.cell-rev-del {
 }
 
 .hf-menu-actions .btn-primary {
-  background: #2b7cd3;
-  border-color: #2b7cd3;
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--docs-on-accent);
 }
 
 /* the page: size/margins/background follow the docx sectPr via CSS vars */
 .doc-page {
   width: var(--page-w, 816px);
   margin: 0 auto;
-  background: var(--page-bg, var(--surface));
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.28),
-    0 4px 16px rgba(0, 0, 0, 0.1);
+  background: var(--page-bg, var(--docs-paper));
+  box-shadow: var(--docs-page-shadow);
   padding: var(--page-pad, 96px 96px 120px);
   min-height: var(--page-h, 1056px);
   outline: none;
   font-family: Calibri, 'DengXian', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 11pt;
   line-height: 1.35;
-  color: #000;
+  color: var(--docs-paper-ink);
   /* Word's autoSpaceDE/DN (on by default): 1/8em gap between CJK and Latin/digits */
   text-autospace: normal;
+  /* the other half of Word's ~1/4em gap, delivered by .doc-autospace-pad spans */
+  --doc-autospace-pad: 0.125em;
 }
 
+/* zero-width pad at CJK/Latin boundaries. Plain inline (not inline-block): an
+   atomic inline would suppress Chromium's own text-autospace gap, while an
+   empty inline keeps it and the margin stacks on top. */
+.doc-autospace-pad {
+  margin-inline-start: var(--doc-autospace-pad, 0.125em);
+}
+
+/* "dark canvas" view toggle: one variable override, orthogonal to the global
+   theme — every canvas-band rule below reads var(--canvas) */
 .workspace-dark {
-  background: #3d3d3d;
+  --canvas: #3d3d3d;
 }
 
 /* visual page-break indicator (w:pageBreakBefore) */
@@ -2669,7 +2953,7 @@ th.cell-rev-del {
   transform: translateX(-50%);
   font-size: 10px;
   color: var(--text-dim);
-  background: var(--page-bg, var(--surface));
+  background: var(--page-bg, var(--docs-paper));
   padding: 0 8px;
 }
 
@@ -2692,13 +2976,7 @@ th.cell-rev-del {
   left: 0;
   right: 0;
   background: var(--canvas);
-  box-shadow:
-    inset 0 8px 8px -8px rgba(0, 0, 0, 0.35),
-    inset 0 -3px 3px -3px rgba(0, 0, 0, 0.18);
-}
-
-.workspace-dark .page-gap::before {
-  background: #3d3d3d;
+  box-shadow: var(--docs-gap-inset);
 }
 
 /* inline gap for mid-paragraph page breaks: inserted at the broken line inside the paragraph, takes its own line, excluded from text selection/cursor */
@@ -2707,6 +2985,13 @@ th.cell-rev-del {
   vertical-align: top;
   pointer-events: none;
   text-indent: 0;
+}
+
+/* in-cell gap (single-column in-row table cut): opaque paper background so the cell's
+   shading/borders don't cross the band; z-index lifts it above collapsed-border painting */
+.page-gap-cell {
+  background: var(--page-bg, var(--docs-paper));
+  z-index: 1;
 }
 
 /* In-table gap at a row boundary. A real spanning cell isolates collapsed
@@ -2723,7 +3008,7 @@ th.cell-rev-del {
   /* !important: the td edge-border rules (--doc-b-l/r on first/last-child) come
      later in the sheet and would otherwise frame the page gutter */
   border: 0 !important;
-  background: var(--page-bg, var(--surface));
+  background: var(--page-bg, var(--docs-paper));
 }
 
 .page-gap-table::before {
@@ -2736,14 +3021,10 @@ th.cell-rev-del {
   inset: 0;
   background: linear-gradient(
     to bottom,
-    var(--page-bg, var(--surface)) 0 var(--gap-mb, 96px),
+    var(--page-bg, var(--docs-paper)) 0 var(--gap-mb, 96px),
     var(--canvas) var(--gap-mb, 96px) calc(var(--gap-mb, 96px) + 28px),
-    var(--page-bg, var(--surface)) calc(var(--gap-mb, 96px) + 28px) 100%
+    var(--page-bg, var(--docs-paper)) calc(var(--gap-mb, 96px) + 28px) 100%
   );
-}
-
-.workspace-dark .page-gap-table-fill {
-  --canvas: #3d3d3d;
 }
 
 /* footnote area at the top of a page gap (previous page's bottom, Word behavior): the gap was already enlarged by the reserved height;
@@ -2756,7 +3037,7 @@ th.cell-rev-del {
   pointer-events: auto;
   font-size: 10pt;
   line-height: 1.3;
-  color: var(--text, #333);
+  color: var(--docs-paper-ink-dim);
   text-indent: 0;
   text-align: left;
 }
@@ -2765,7 +3046,7 @@ th.cell-rev-del {
   content: '';
   display: block;
   width: 33%;
-  border-top: 1px solid #888;
+  border-top: 1px solid var(--docs-paper-ink-faint);
   margin-bottom: 4px;
 }
 
@@ -2789,14 +3070,14 @@ th.cell-rev-del {
   box-sizing: border-box;
   font-size: 10pt;
   line-height: 1.3;
-  color: #333;
+  color: var(--docs-paper-ink-dim);
 }
 
 .pv-footnotes::before {
   content: '';
   display: block;
   width: 33%;
-  border-top: 1px solid #888;
+  border-top: 1px solid var(--docs-paper-ink-faint);
   margin-bottom: 4px;
 }
 
@@ -2811,13 +3092,13 @@ th.cell-rev-del {
   box-sizing: border-box;
   font-size: 10pt;
   line-height: 1.3;
-  color: #333;
+  color: var(--docs-paper-ink-dim);
 }
 
 .pv-endnote-separator {
   /* matches FOOTNOTE_SEPARATOR_H (16px): 11 + 1 border + 4 bottom spacing */
   width: 33%;
-  border-top: 1px solid #888;
+  border-top: 1px solid var(--docs-paper-ink-faint);
   margin-bottom: 4px;
   height: 11px;
 }
@@ -2844,7 +3125,7 @@ th.cell-rev-del {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  background: #525659;
+  background: var(--docs-pv-canvas);
 }
 
 .pv-toolbar {
@@ -2865,13 +3146,13 @@ th.cell-rev-del {
 }
 
 .pv-count {
-  color: var(--text-dim, #777);
+  color: var(--text-dim);
 }
 
 .pv-hint {
   margin-left: auto;
   font-size: 12px;
-  color: var(--text-dim, #777);
+  color: var(--text-dim);
 }
 
 .pv-close {
@@ -2886,7 +3167,7 @@ th.cell-rev-del {
 .pv-close:hover {
   background: var(--word-blue);
   border-color: var(--word-blue);
-  color: #fff;
+  color: var(--docs-on-accent);
 }
 
 .pv-scroll {
@@ -2898,16 +3179,14 @@ th.cell-rev-del {
 .pv-page {
   position: relative;
   margin: 0 auto 24px;
-  background: #fff;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.28),
-    0 4px 16px rgba(0, 0, 0, 0.1);
+  background: var(--docs-paper);
+  box-shadow: var(--docs-page-shadow);
   box-sizing: border-box;
   overflow: hidden;
   font-family: Calibri, 'DengXian', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 11pt;
   line-height: 1.35;
-  color: #000;
+  color: var(--docs-paper-ink);
 }
 
 .pv-clip {
@@ -2966,7 +3245,7 @@ th.cell-rev-del {
   right: 8px;
   bottom: 8px;
   font-size: 10px;
-  color: #aaa;
+  color: var(--docs-paper-ink-faint);
   user-select: none;
 }
 
@@ -2983,67 +3262,70 @@ th.cell-rev-del {
 
 .doc-page h1 {
   font-size: 16pt;
-  color: var(--word-heading);
+  color: var(--docs-paper-heading);
 }
 
 .doc-page h2 {
   font-size: 13pt;
-  color: var(--word-heading);
+  color: var(--docs-paper-heading);
 }
 
 .doc-page h3 {
   font-size: 12pt;
-  color: #1f3864;
+  color: var(--docs-paper-h3);
 }
 
 .doc-page h4,
 .doc-page h5,
 .doc-page h6 {
   font-size: 11pt;
-  color: var(--word-heading);
+  color: var(--docs-paper-heading);
   font-style: italic;
 }
 
 .doc-link {
-  color: #0563c1;
+  color: var(--docs-paper-link);
   text-decoration: underline;
   cursor: pointer;
 }
 
 /* flat list items (1:1 with w:p anchors)
    geometry comes from w:ind (--li-left text indent / --li-hang hanging marker-area width,
-   emitted by extensions.ts); defaults replicate the old fixed per-level indents. The marker
+   emitted by extensions.ts; --style-li-left is the style-level w:ind fallback from
+   doc-style-css.ts); defaults replicate the old fixed per-level indents. The marker
    is an inline hanging box: it fills the hanging area, and when too wide it pushes the body
    text aside instead of overlapping it (Word behavior).
    Logical (inline-start) geometry so RTL list items (direction:rtl via w:bidi)
    mirror automatically: indent and marker land on the right side. */
 .doc-li {
   position: relative;
-  padding-inline-start: var(--li-left, 0.55in);
+  padding-inline-start: var(--li-left, var(--style-li-left, 0.55in));
   margin: 0 0 4pt;
 }
 
 .doc-li.ilvl-1 {
-  padding-inline-start: var(--li-left, 0.85in);
+  padding-inline-start: var(--li-left, var(--style-li-left, 0.85in));
 }
 
 .doc-li.ilvl-2 {
-  padding-inline-start: var(--li-left, 1.15in);
+  padding-inline-start: var(--li-left, var(--style-li-left, 1.15in));
 }
 
 .doc-li.ilvl-3 {
-  padding-inline-start: var(--li-left, 1.45in);
+  padding-inline-start: var(--li-left, var(--style-li-left, 1.45in));
 }
 
 .doc-li.ilvl-4 {
-  padding-inline-start: var(--li-left, 1.75in);
+  padding-inline-start: var(--li-left, var(--style-li-left, 1.75in));
 }
 
 .doc-li::before {
   display: inline-block;
   min-width: var(--li-hang, 0.25in);
   margin-inline-start: calc(-1 * var(--li-hang, 0.25in));
-  font-size: var(--li-marker-size, inherit);
+  font-family: var(--li-marker-font, inherit);
+  font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
+  line-height: var(--li-marker-lh, inherit);
 }
 
 .doc-li-bullet::before {
@@ -3094,7 +3376,7 @@ th.cell-rev-del {
   border-radius: 3px;
   padding: 10px 14px;
   margin: 0 0 8pt;
-  background: #fafafa;
+  background: var(--docs-paper-chip-bg);
   cursor: grab;
   user-select: none;
 }
@@ -3111,7 +3393,7 @@ th.cell-rev-del {
   height: 18px;
   border: 1px solid var(--word-blue);
   border-radius: 3px;
-  background: var(--surface);
+  background: var(--docs-paper);
   color: var(--word-blue);
   font: 13px/1 sans-serif;
   cursor: move;
@@ -3137,7 +3419,7 @@ th.cell-rev-del {
   height: 11px;
   border: 1px solid var(--word-blue);
   border-radius: 2px;
-  background: var(--surface);
+  background: var(--docs-paper);
   cursor: nwse-resize;
   opacity: 0;
   pointer-events: none;
@@ -3193,10 +3475,9 @@ th.cell-rev-del {
   /* Word default cell margins: 108 twips (7.2px) sides / 0 top-bottom; w:tblCellMar overrides via table-level variables */
   padding: var(--doc-cell-pad, 0 7.2px);
   vertical-align: top;
-  /* a word wider than the cell's line box overflows the cell
-     instead of stacking letter-by-letter; prosemirror-view's built-in
-     .ProseMirror { word-wrap: break-word } would otherwise inherit in */
-  overflow-wrap: normal;
+  /* Word breaks a token wider than the cell character-by-character rather
+     than letting it overflow (unless w:noWrap, which we don't model yet) */
+  overflow-wrap: break-word;
 }
 
 /* repeated header rows after a table page break (w:tblHeader): pure decoration —
@@ -3337,7 +3618,7 @@ th.cell-rev-del {
 }
 
 .table-tool-group button.danger {
-  color: #a12622;
+  color: var(--danger);
 }
 
 .table-tool-delete {
@@ -3357,7 +3638,7 @@ th.cell-rev-del {
   min-width: 28px;
   min-height: 24px;
   padding: 0;
-  border-color: #a6a6a6;
+  border-color: var(--docs-swatch-border);
 }
 
 .table-tool-group .table-style-clear {
@@ -3442,6 +3723,22 @@ th.cell-rev-del {
   word-break: break-word;
 }
 
+/* inline pictures in table cells (document content, theme-independent) */
+.doc-inline-img {
+  max-width: 100%;
+}
+
+/* body-level invisible markers (stray bookmarkEnd…): occupy no space at all */
+.doc-protected-invisible {
+  height: 0;
+  overflow: hidden;
+  border: none;
+  padding: 0;
+  margin: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* empty section-break paragraphs: invisible unless hovered/selected */
 .doc-protected-sectbreak {
   border-color: transparent;
@@ -3480,7 +3777,34 @@ th.cell-rev-del {
 .doc-rule-line {
   display: block;
   height: 1px;
-  background: #333;
+  background: var(--docs-paper-ink-dim);
+}
+
+/* broken pictures: empty frame placeholder (frame/text colors are inline —
+   they substitute document content and must not follow the theme) */
+.doc-protected-broken-img {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+
+.doc-protected-broken-img:hover {
+  border-color: var(--border-strong);
+}
+
+.doc-broken-img-frame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 8px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+  user-select: none;
 }
 
 /* field paragraphs whose visible result is rendered directly (TOC lines, page
@@ -3508,7 +3832,7 @@ th.cell-rev-del {
 }
 
 .doc-toc-line:hover .doc-toc-title {
-  color: var(--accent, #2b579a);
+  color: var(--accent);
   text-decoration: underline;
 }
 
@@ -3532,7 +3856,7 @@ th.cell-rev-del {
 
 .doc-toc-dots {
   flex: 1;
-  border-bottom: 2px dotted #555;
+  border-bottom: 2px dotted var(--docs-paper-ink-mid);
   transform: translateY(-3px);
   min-width: 24px;
 }
@@ -3541,7 +3865,7 @@ th.cell-rev-del {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-tertiary, #999);
+  color: var(--text-tertiary);
   font-size: 10px;
   user-select: none;
 }
@@ -3634,7 +3958,7 @@ th.cell-rev-del {
 
 /* embedded charts: SVG preview + editable data sheet */
 .doc-protected-chart {
-  background: var(--surface, #fff);
+  background: var(--docs-paper);
 }
 
 .doc-chart {
@@ -3647,7 +3971,7 @@ th.cell-rev-del {
   font-size: 13pt;
   font-weight: 600;
   text-align: center;
-  color: var(--text, #333);
+  color: var(--docs-paper-ink-dim);
 }
 
 .doc-chart-svg {
@@ -3657,7 +3981,7 @@ th.cell-rev-del {
 }
 
 .doc-chart-grid {
-  stroke: var(--border, #e0e0e0);
+  stroke: var(--docs-paper-chart-grid);
   stroke-width: 1;
 }
 
@@ -3666,7 +3990,7 @@ th.cell-rev-del {
     10px 'Segoe UI',
     var(--ui-cjk),
     sans-serif;
-  fill: var(--text-dim, #888);
+  fill: var(--docs-paper-ink-faint);
 }
 
 .doc-chart-data {
@@ -3678,7 +4002,7 @@ th.cell-rev-del {
 
 .doc-chart-data th,
 .doc-chart-data td {
-  border: 1px solid var(--border, #d9d9d9);
+  border: 1px solid var(--docs-paper-chart-border);
   padding: 2px 10px;
   min-width: 52px;
   text-align: right;
@@ -3692,7 +4016,7 @@ th.cell-rev-del {
 .doc-chart-data th.doc-chart-cat {
   font-weight: 600;
   text-align: center;
-  background: color-mix(in srgb, var(--word-blue) 6%, transparent);
+  background: color-mix(in srgb, var(--docs-paper-accent) 6%, transparent);
 }
 
 .doc-chart-data th.doc-chart-name {
@@ -3707,8 +4031,8 @@ th.cell-rev-del {
     45deg,
     transparent,
     transparent 4px,
-    #f0f0f0 4px,
-    #f0f0f0 8px
+    var(--docs-paper-stripe) 4px,
+    var(--docs-paper-stripe) 8px
   );
 }
 
@@ -3725,7 +4049,7 @@ th.cell-rev-del {
   border: 1px solid var(--word-blue);
   outline: 1px solid var(--word-blue);
   /* blue-tinted like an in-document selection, not the gray toolbar plate */
-  background: #e8f1fb;
+  background: var(--docs-paper-select-bg);
 }
 
 .doc-protected-label {
@@ -3797,13 +4121,13 @@ th.cell-rev-del {
   font-size: 11px;
   padding: 2px 6px;
   cursor: pointer;
-  color: var(--text-dim, #777);
+  color: var(--text-dim);
 }
 
 .find-opt.on {
   background: var(--word-blue);
   border-color: var(--word-blue);
-  color: #fff;
+  color: var(--docs-on-accent);
 }
 
 /* data grid of the Insert Chart dialog */
@@ -3837,12 +4161,12 @@ th.cell-rev-del {
 
 /* cross-reference (REF field): gray field shading */
 .doc-ref-field {
-  background: rgba(0, 0, 0, 0.07);
+  background: var(--docs-paper-field-bg);
   border-radius: 2px;
 }
 
 .workspace-dark .doc-ref-field {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--docs-paper-field-bg-inverse);
 }
 
 /* Bookmark / Cross-reference dialogs */
@@ -3857,7 +4181,7 @@ th.cell-rev-del {
 }
 
 .modal-error {
-  color: #c00000;
+  color: var(--danger);
   font-size: 12px;
   margin-bottom: 6px;
 }
@@ -3871,7 +4195,7 @@ th.cell-rev-del {
 
 .bookmark-empty {
   padding: 14px;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   font-size: 13px;
 }
 
@@ -3898,7 +4222,7 @@ th.cell-rev-del {
 
 .bookmark-preview {
   flex: 1;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
@@ -3909,7 +4233,7 @@ th.cell-rev-del {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   font-size: 15px;
 }
 
@@ -3952,7 +4276,7 @@ th.cell-rev-del {
   bottom: -6px;
   width: 11px;
   height: 11px;
-  background: #fff;
+  background: var(--docs-paper);
   border: 2px solid var(--word-blue);
   border-radius: 50%;
   cursor: nwse-resize;
@@ -4015,9 +4339,9 @@ body.docs-crop-active
   height: 34px;
   padding: 0 16px;
   border: none;
-  border-radius: 4px;
+  border-radius: 12px;
   background: var(--word-blue);
-  color: #fff;
+  color: var(--docs-on-accent);
   font-size: 13px;
   cursor: pointer;
 }
@@ -4038,7 +4362,7 @@ body.docs-crop-active
   font-size: 13px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 3px;
+  border-radius: 12px;
 }
 
 .btn-ghost:hover {
@@ -4090,36 +4414,6 @@ body.docs-crop-active
 }
 
 /* ================= AI panel (Copilot-style pane) ================= */
-
-/* Design tokens — AI panel chrome only.
- * Canonical names/values from colors_and_type.css; the editor chrome
- * around the panel keeps its own editor theme variables. */
-:root {
-  --gs-font-sans:
-    'Arial', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    sans-serif;
-  --color-btn-primary: #232425;
-  --color-btn-primary-hover: #393a3b;
-  --color-btn-primary-text: #ffffff;
-  --color-brand-secondary: #0f7fff;
-  --color-text-primary: #232425;
-  --color-text-secondary: #606366;
-  --color-text-tertiary: #909499;
-  --color-bg-page: #ffffff;
-  --color-bg-subtle: #f5f5f5;
-  --color-border-default: #eaeaea;
-  --color-border-strong: #d0d3d8;
-  --color-border-brand: #0f7fff;
-  --color-error: #ef4444;
-  --radius-8: 8px;
-  --radius-12: 12px;
-  --radius-16: 16px;
-  --radius-30: 30px;
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --text-body-lg: 18px;
-  --text-small: 14px;
-  --text-caption: 12px;
-}
 
 .ai-panel {
   position: relative;
@@ -4223,7 +4517,7 @@ body.docs-crop-active
   writing-mode: vertical-rl;
   font-size: 12px;
   letter-spacing: 2px;
-  color: #605e5c;
+  color: var(--text-dim);
 }
 
 .ai-chat {
@@ -4244,7 +4538,7 @@ body.docs-crop-active
   justify-content: center;
   height: 30px;
   font-size: 14px;
-  color: #999;
+  color: var(--color-text-tertiary);
 }
 
 .ai-chat-empty {
@@ -4407,22 +4701,22 @@ body.docs-crop-active
   font-family: inherit;
   font-size: 14px;
   line-height: 1.5;
-  color: #909499;
+  color: var(--color-text-tertiary);
   transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ai-work-group-summary:hover {
-  color: #606366;
+  color: var(--color-text-secondary);
 }
 
 .ai-work-group-summary:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(35, 36, 37, 0.2);
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
   border-radius: 4px;
 }
 
 .ai-work-group-summary.running {
-  color: #606366;
+  color: var(--color-text-secondary);
 }
 
 .ai-work-group-summary.running .ai-work-group-label {
@@ -4468,7 +4762,7 @@ body.docs-crop-active
   align-items: flex-start;
   gap: 12px;
   padding: 8px 0;
-  color: #909499;
+  color: var(--color-text-tertiary);
   animation: ai-row-ease-in 320ms ease-out;
 }
 
@@ -4483,7 +4777,7 @@ body.docs-crop-active
   top: 32px;
   bottom: -4px;
   width: 1px;
-  background: #eaeaea;
+  background: var(--color-border-default);
 }
 
 .ai-step-icon {
@@ -4493,15 +4787,15 @@ body.docs-crop-active
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #909499;
+  color: var(--color-text-tertiary);
 }
 
 .ai-step-icon.done {
-  color: #606366;
+  color: var(--color-text-secondary);
 }
 
 .ai-step-icon.error {
-  color: #b91c1c;
+  color: var(--color-error);
 }
 
 .ai-step-icon.running svg {
@@ -4535,7 +4829,7 @@ body.docs-crop-active
 .ai-step-title {
   font-size: 14px;
   line-height: 1.3;
-  color: #606366;
+  color: var(--color-text-secondary);
   text-align: left;
   background: none;
   border: none;
@@ -4550,12 +4844,12 @@ body.docs-crop-active
 }
 
 .ai-step-title.clickable:hover {
-  color: #232425;
+  color: var(--text-primary);
 }
 
 .ai-step-title.clickable:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(35, 36, 37, 0.2);
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
   border-radius: 4px;
 }
 
@@ -4590,7 +4884,7 @@ body.docs-crop-active
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #0f7fff;
+  background: var(--color-brand-secondary);
 }
 
 .ai-tool-chip-spinner::before {
@@ -4672,13 +4966,13 @@ body.docs-crop-active
 
 /* expanded step detail: subtle gray card, no border */
 .ai-tool-output {
-  background: #f5f5f5;
+  background: var(--color-bg-subtle);
   border: none;
   border-radius: 12px;
   font-family:
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-size: 14px;
-  color: #232425;
+  color: var(--text-primary);
   max-height: 300px;
   overflow-y: auto;
   width: 100%;
@@ -4715,15 +5009,14 @@ body.docs-crop-active
   font-size: 14px;
   line-height: 1;
   letter-spacing: 0.01em;
-  color: #666;
+  color: var(--docs-shimmer-base);
   -webkit-text-fill-color: transparent;
-  background: #666 -webkit-gradient(
-      linear,
-      100% 0,
-      0 0,
-      from(#666),
-      color-stop(0.5, #d9d9d9),
-      to(#666)
+  background: var(--docs-shimmer-base)
+    linear-gradient(
+      to left,
+      var(--docs-shimmer-base),
+      var(--docs-shimmer-hi) 50%,
+      var(--docs-shimmer-base)
     );
   background-clip: text;
   -webkit-background-clip: text;
@@ -4760,7 +5053,7 @@ body.docs-crop-active
 
 .ai-typing-dot-grow,
 .ai-typing-dot-shrink {
-  background: #0f7fff;
+  background: var(--color-brand-secondary);
   border-radius: 50%;
 }
 
@@ -4808,7 +5101,7 @@ body.docs-crop-active
   height: 1em;
   margin-left: 2px;
   border-radius: 1px;
-  background: #606366;
+  background: var(--color-text-secondary);
   vertical-align: text-bottom;
   animation: ai-caret-blink 900ms steps(1, end) infinite;
 }
@@ -4867,7 +5160,7 @@ body.docs-crop-active
 
 .ai-msg-tool-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(74, 141, 246, 0.3);
+  box-shadow: 0 0 0 3px var(--docs-focus-ring-blue);
 }
 
 /* Tooltip: dark pill under the button, 0.3s hover delay */
@@ -4883,17 +5176,17 @@ body.docs-crop-active
   translate: -50% 0;
   margin-top: 6px;
   padding: 4px 8px;
-  background: #232425;
-  color: #fff;
+  background: var(--docs-tooltip-bg);
+  color: var(--docs-tooltip-ink);
   font-size: 12px;
   line-height: 1.5;
   border-radius: 10px;
-  box-shadow: 0 4px 6px rgb(0 0 0 / 10%);
+  box-shadow: var(--docs-shadow-tooltip);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.15s ease;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
   transition-delay: 0s;
   z-index: 10;
 }
@@ -4916,7 +5209,7 @@ body.docs-crop-active
   border: 1px solid var(--word-blue);
   border-radius: 6px;
   background: var(--word-blue);
-  color: #fff;
+  color: var(--docs-on-accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -4997,7 +5290,7 @@ body.docs-crop-active
 
 .ai-msg-error {
   margin-top: 6px;
-  color: #c62828;
+  color: var(--docs-ai-error);
   font-size: 13px;
 }
 
@@ -5030,7 +5323,7 @@ body.docs-crop-active
   margin: 4px 0 0;
   padding: 6px 8px;
   border-radius: 6px;
-  background: #f8f8f8;
+  background: var(--color-bg-subtle);
   border: 1px solid var(--border);
   max-height: 200px;
   overflow: auto;
@@ -5045,8 +5338,8 @@ body.docs-crop-active
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #2e7d32;
-  background: #e6f2e6;
+  color: var(--docs-ok-ink);
+  background: var(--docs-ok-bg);
   border-radius: 999px;
   padding: 2px 9px;
 }
@@ -5078,7 +5371,7 @@ body.docs-crop-active
   gap: 5px;
   padding: 3px 10px;
   border-radius: var(--radius-30);
-  background: rgba(15, 127, 255, 0.08);
+  background: var(--docs-brand-ghost);
   font-size: var(--text-caption);
   color: var(--color-brand-secondary);
   font-weight: 500;
@@ -5097,7 +5390,7 @@ body.docs-crop-active
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-16);
   background: var(--color-bg-page);
-  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--docs-shadow-composer);
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -5197,8 +5490,8 @@ body.docs-crop-active
 }
 
 .ai-track-btn.on {
-  border-color: rgba(15, 127, 255, 0.4);
-  background: rgba(15, 127, 255, 0.06);
+  border-color: var(--docs-brand-ring);
+  background: var(--docs-brand-ghost-weak);
   color: var(--color-brand-secondary);
 }
 
@@ -5240,7 +5533,7 @@ body.docs-crop-active
 }
 
 .ai-attachments.is-scrolling::-webkit-scrollbar-thumb {
-  background: rgb(0 0 0 / 25%);
+  background: var(--docs-scroll-thumb);
 }
 
 /* Image attachments: square thumbnail with a round dark remove button on its corner */
@@ -5268,8 +5561,8 @@ body.docs-crop-active
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: #000;
-  color: #fff;
+  background: var(--docs-chip-remove-bg);
+  color: var(--docs-chip-remove-ink);
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
@@ -5277,7 +5570,7 @@ body.docs-crop-active
 }
 
 .ai-attachment-thumb-remove:hover {
-  background: #4b4e51;
+  background: var(--docs-chip-remove-hover);
 }
 
 /* The card's 1px border shifts its absolutely-positioned button inward by 1px
@@ -5295,7 +5588,7 @@ body.docs-crop-active
   width: 56px;
   height: 56px;
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--bg-content);
 }
 
 .ai-attachment-thumb .ai-attachment-thumb-pending img {
@@ -5313,9 +5606,9 @@ body.docs-crop-active
   width: 190px;
   height: 56px;
   padding: 0 14px 0 8px;
-  border: 1px solid #ececee;
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--bg-content);
 }
 
 /* the type icon sits in its own bordered white tile, like the Genspark card */
@@ -5327,7 +5620,7 @@ body.docs-crop-active
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .ai-attachment-card-icon img {
@@ -5348,7 +5641,7 @@ body.docs-crop-active
   overflow: hidden;
   font-size: 13px;
   font-weight: 500;
-  color: #232425;
+  color: var(--text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5356,7 +5649,7 @@ body.docs-crop-active
 .ai-attachment-card-size {
   margin-top: 4px;
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 .ai-attachment-chip {
@@ -5366,7 +5659,7 @@ body.docs-crop-active
   padding: 2px 4px 2px 9px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: #f6f8fc;
+  background: var(--docs-chip-bg);
   font-size: 11.5px;
   color: var(--text);
   max-width: 100%;
@@ -5401,7 +5694,7 @@ body.docs-crop-active
 .ai-attach-notice {
   margin-bottom: 7px;
   font-size: 11.5px;
-  color: #c62828;
+  color: var(--docs-ai-error);
 }
 
 /* whole-panel drop target highlight */
@@ -5476,9 +5769,9 @@ body.docs-crop-active
   height: 24px;
   font-size: 11.5px;
   /* neutral chrome, unified with slides/sheets — no app-brand tint */
-  color: #605e5c;
-  background: #f3f4f6;
-  border-top: 1px solid #e1e4e8;
+  color: var(--text-dim);
+  background: var(--docs-statusbar-bg);
+  border-top: 1px solid var(--docs-statusbar-border);
 }
 
 .status-left {
@@ -5534,12 +5827,12 @@ body.docs-crop-active
 }
 
 .zoom-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--docs-statusbar-hover);
 }
 
 .zoom-slider {
   width: 110px;
-  accent-color: #8a8886;
+  accent-color: var(--docs-zoom-slider);
   height: 3px;
 }
 
@@ -5553,7 +5846,8 @@ body.docs-crop-active
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--docs-overlay);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5563,9 +5857,9 @@ body.docs-crop-active
 .modal {
   width: 440px;
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 22px 24px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--docs-shadow-modal);
 }
 
 .modal h2 {
@@ -5607,6 +5901,57 @@ body.docs-crop-active
   font-size: 13px;
   outline: none;
   background: var(--surface);
+}
+
+/* Genspark DS modal footer buttons: secondary = bg-subtle, primary = black (#232425) */
+.modal-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.modal-actions button:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.modal-actions button:active:not(:disabled) {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
+.modal-actions button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
+}
+
+.modal-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modal-actions button.primary,
+.modal-actions .btn-primary {
+  border-color: var(--color-btn-primary);
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+}
+
+.modal-actions button.primary:hover:not(:disabled),
+.modal-actions .btn-primary:hover:not(:disabled) {
+  border-color: var(--color-btn-primary-hover);
+  background: var(--color-btn-primary-hover);
+  color: var(--color-btn-primary-text);
 }
 
 .modal-actions {
@@ -5670,7 +6015,7 @@ body.docs-crop-active
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #2e9e44;
+  background: var(--docs-ok-dot);
 }
 
 /* ProseMirror basics */
@@ -5697,7 +6042,7 @@ body.docs-crop-active
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-menu);
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -5781,13 +6126,13 @@ body.docs-crop-active
 }
 
 .search-hit {
-  background: #ffe28a;
+  background: var(--docs-paper-hit-bg);
   border-radius: 2px;
 }
 
 .search-hit-active {
-  background: #ff9632;
-  color: #fff;
+  background: var(--docs-paper-hit-active-bg);
+  color: var(--docs-paper-hit-active-ink);
 }
 
 /* ---- autosave toggle (pill in the title bar) ---- */
@@ -5824,7 +6169,7 @@ body.docs-crop-active
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--docs-knob-dot);
   transition: left 0.15s;
 }
 
@@ -6021,7 +6366,7 @@ body.docs-crop-active
 }
 
 .read-mode .editor-scroll {
-  background: #f5f1e8;
+  background: var(--docs-read-canvas);
   padding-top: 44px;
 }
 
@@ -6035,7 +6380,7 @@ body.docs-crop-active
   border: 1px solid var(--border-strong);
   border-radius: 15px;
   background: var(--surface);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--docs-shadow-chip);
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
@@ -6112,7 +6457,7 @@ body.docs-crop-active
   content: '⊕';
   position: absolute;
   left: 0;
-  color: #8a8886;
+  color: var(--docs-paper-ink-faint);
   font-size: 0.8em;
   top: 0.25em;
 }
@@ -6121,8 +6466,8 @@ body.docs-crop-active
 
 .show-grid .doc-page {
   background-image:
-    linear-gradient(to right, rgba(43, 124, 211, 0.13) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(43, 124, 211, 0.13) 1px, transparent 1px);
+    linear-gradient(to right, var(--docs-paper-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--docs-paper-grid) 1px, transparent 1px);
   background-size: 24px 24px;
   background-origin: content-box;
   background-clip: content-box;
@@ -6189,7 +6534,7 @@ body.docs-crop-active
   font-size: 84px;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: rgba(128, 128, 128, 0.18);
+  color: var(--docs-paper-watermark);
   white-space: nowrap;
   overflow: hidden;
   pointer-events: none;
@@ -6210,13 +6555,13 @@ body.docs-crop-active
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--docs-swatch-outline);
 }
 
 /* ---- References → Footnotes/Endnotes: reference marker + page-bottom notes area ---- */
 
 .doc-note-ref {
-  color: var(--word-blue);
+  color: var(--docs-paper-accent);
   cursor: default;
 }
 
@@ -6273,7 +6618,7 @@ ruby.doc-ruby.ProseMirror-selectednode {
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   background: var(--surface);
-  color: var(--text-dim, #666);
+  color: var(--text-dim);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s;
@@ -6298,24 +6643,24 @@ ruby.doc-ruby.ProseMirror-selectednode {
   width: var(--page-w, 816px);
   margin: -100px auto 0;
   padding: 8px 96px 28px;
-  background: var(--page-bg, var(--surface));
+  background: var(--page-bg, var(--docs-paper));
   font-size: 9pt;
   line-height: 1.5;
-  color: #333;
+  color: var(--docs-paper-ink-dim);
 }
 
 .page-notes::before {
   content: '';
   display: block;
   width: 33%;
-  border-top: 1px solid #888;
+  border-top: 1px solid var(--docs-paper-ink-faint);
   margin-bottom: 6px;
 }
 
 .page-notes-label {
   margin-top: 8px;
   font-weight: 600;
-  color: #555;
+  color: var(--docs-paper-ink-mid);
 }
 
 /* endnotes follow the footnote block as their own area: cancel the pull-up overlap and stack below */
@@ -6338,7 +6683,7 @@ ruby.doc-ruby.ProseMirror-selectednode {
 
 .page-note sup {
   flex: none;
-  color: var(--word-blue);
+  color: var(--docs-paper-accent);
 }
 
 .page-note-text {
@@ -6353,7 +6698,7 @@ ruby.doc-ruby.ProseMirror-selectednode {
   background: none;
   padding: 0 3px;
   font-size: 11px;
-  color: #999;
+  color: var(--docs-paper-ink-faint);
   cursor: pointer;
   visibility: hidden;
 }
@@ -6372,9 +6717,9 @@ ruby.doc-ruby.ProseMirror-selectednode {
   display: inline-block;
   font-size: 9px;
   line-height: 1.3;
-  color: #8a6d3b;
-  background: #fdf6e3;
-  border: 1px dashed #d5c48a;
+  color: var(--docs-paper-xe-ink);
+  background: var(--docs-paper-xe-bg);
+  border: 1px dashed var(--docs-paper-xe-border);
   border-radius: 2px;
   padding: 0 3px;
   margin: 0 1px;
@@ -6399,7 +6744,7 @@ ruby.doc-ruby.ProseMirror-selectednode {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--docs-shadow-ctx);
   font-size: 13px;
 }
 
@@ -6419,11 +6764,11 @@ ruby.doc-ruby.ProseMirror-selectednode {
 
 .ctx-item:hover:not(:disabled) {
   background: var(--word-blue);
-  color: #fff;
+  color: var(--docs-on-accent);
 }
 
 .ctx-item:hover:not(:disabled) .ctx-key {
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--docs-on-accent-dim);
 }
 
 .ctx-item:disabled {
@@ -6466,7 +6811,7 @@ ruby.doc-ruby.ProseMirror-selectednode {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--docs-shadow-ctx);
 }
 
 /* ---- Font / Paragraph dialogs ---- */
@@ -6590,14 +6935,14 @@ ruby.doc-ruby.ProseMirror-selectednode {
 .ink-swatch {
   width: 16px;
   height: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--docs-swatch-outline-strong);
   border-radius: 3px;
   cursor: pointer;
   padding: 0;
 }
 
 .ink-swatch.active {
-  outline: 2px solid var(--accent, #185abd);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -6620,12 +6965,12 @@ ruby.doc-ruby.ProseMirror-selectednode {
 }
 
 .ink-width:hover {
-  background: var(--hover, rgba(0, 0, 0, 0.06));
+  background: var(--hover);
 }
 
 .ink-width.active {
-  border-color: var(--accent, #185abd);
-  background: var(--hover, rgba(24, 90, 189, 0.08));
+  border-color: var(--accent);
+  background: var(--hover);
 }
 
 .ink-width-dot {
@@ -6698,12 +7043,12 @@ ruby.doc-ruby.ProseMirror-selectednode {
 }
 
 .table-tool-button.active {
-  background: var(--word-blue-soft, #d5e3f5);
+  background: var(--accent-soft);
 }
 
 /* run-level format revision (w:rPrChange): amber underline hint */
 .has-rpr-change {
-  text-decoration: underline wavy #c98a00;
+  text-decoration: underline wavy var(--docs-paper-rpr);
   text-decoration-skip-ink: none;
   text-underline-offset: 3px;
 }
@@ -6732,7 +7077,7 @@ tr > .page-gap-cut {
   top: 0;
   left: -100vw;
   width: 200vw;
-  border-top: 2px dashed #b6c2d2;
+  border-top: 2px dashed var(--docs-gap-cut);
 }
 
 /* nested table inside a cell (read-only child table) */
@@ -6765,7 +7110,7 @@ tr > .page-gap-cut {
 }
 
 .list-gallery-card:hover {
-  border-color: var(--accent, #2b579a);
+  border-color: var(--accent);
 }
 
 .list-gallery-multi {
@@ -6793,7 +7138,7 @@ tr > .page-gap-cut {
 }
 
 .list-gallery-define:hover {
-  color: var(--accent, #2b579a);
+  color: var(--accent);
 }
 
 /* Define New Multilevel List dialog */
@@ -6875,15 +7220,15 @@ tr > .page-gap-cut {
 .table-style-card-grid {
   width: 40px;
   height: 22px;
-  border: 1px solid #b8bcc4;
-  border-top: 5px solid #7f8b9d;
-  background: repeating-linear-gradient(#fff 0 4px, #eef1f5 4px 8px);
+  border: 1px solid var(--docs-tstyle-border);
+  border-top: 5px solid var(--docs-tstyle-header);
+  background: repeating-linear-gradient(var(--surface) 0 4px, var(--docs-tstyle-row) 4px 8px);
   border-radius: 2px;
 }
 
 .table-style-card-grid.plain {
-  border-top: 1px solid #b8bcc4;
-  background: #fff;
+  border-top: 1px solid var(--docs-tstyle-border);
+  background: var(--surface);
 }
 
 /* comment threads: replies and resolution */
@@ -6930,8 +7275,8 @@ tr > .page-gap-cut {
 
 .comment-resolved-badge {
   font-size: 10px;
-  color: #2e7d32;
-  border: 1px solid #a5d6a7;
+  color: var(--docs-ok-ink);
+  border: 1px solid var(--docs-ok-border);
   border-radius: 3px;
   padding: 0 4px;
 }
@@ -6982,7 +7327,7 @@ tr > .page-gap-cut {
   min-height: 0;
   width: var(--ai-panel-width, 360px);
   overflow: hidden;
-  transition: width 180ms ease;
+  transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ai-dock.collapsed {
@@ -7012,31 +7357,31 @@ tr > .page-gap-cut {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #c62828;
+  color: var(--docs-ai-error);
 }
 
 .ai-retry-btn {
-  border: 1px solid rgb(198 40 40 / 45%);
+  border: 1px solid var(--docs-ai-error-border);
   border-radius: 4px;
   background: none;
   padding: 1px 8px;
   font-size: 12px;
-  color: #c62828;
+  color: var(--docs-ai-error);
   cursor: pointer;
 }
 
 .ai-retry-btn:hover {
-  background: rgb(198 40 40 / 8%);
+  background: var(--docs-ai-error-bg);
 }
 
 .ai-login-btn {
   margin-top: 8px;
-  border: 1px solid var(--accent, #1a73e8);
+  border: 1px solid var(--accent);
   border-radius: 6px;
-  background: var(--accent, #1a73e8);
+  background: var(--accent);
   padding: 4px 14px;
   font-size: 13px;
-  color: #fff;
+  color: var(--docs-on-accent);
   cursor: pointer;
 }
 
@@ -7057,10 +7402,10 @@ tr > .page-gap-cut {
   gap: 8px;
   padding: 8px 16px;
   border-radius: 8px;
-  background: rgba(35, 35, 37, 0.92);
-  color: #fff;
+  background: var(--docs-toast-bg);
+  color: var(--docs-toast-ink);
   font-size: 13px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--docs-shadow-toast);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -7078,7 +7423,7 @@ tr > .page-gap-cut {
 }
 
 .app-toast.error {
-  background: rgba(196, 49, 75, 0.95);
+  background: var(--docs-toast-error-bg);
 }
 
 .app-toast-icon {
@@ -7088,7 +7433,7 @@ tr > .page-gap-cut {
 }
 
 .app-toast.success .app-toast-icon {
-  color: #34c759;
+  color: var(--docs-toast-ok);
 }
 
 /* body row (AI dock + content column) — the status bar spans only the content
@@ -7116,7 +7461,7 @@ tr > .page-gap-cut {
 .rb-drop-title {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-dim, #777);
+  color: var(--text-dim);
   padding: 4px 2px 3px;
 }
 
@@ -7150,8 +7495,8 @@ tr > .page-gap-cut {
 }
 
 .rb-shape-cell:hover {
-  border-color: var(--accent, #2b579a);
-  background: var(--hover, rgba(0, 0, 0, 0.06));
+  border-color: var(--accent);
+  background: var(--hover);
 }
 
 /* Gallery variant keeps .shape-palette's anchored-card chrome but stacks grouped grids */

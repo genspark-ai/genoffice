@@ -2,26 +2,28 @@
 /**
  * scripts/promote-stable.cjs — promote an already-published beta build to the
  * stable update channel. No rebuild: the versioned feed archive uploaded at
- * beta-publish time (GenOffice-mac-arm64-<v>.yml / GenOffice-win-<v>.yml) is
- * re-uploaded as the stable feed (latest-mac.yml / latest.yml). The binaries
- * it points to are already on the CDN under the same prefix.
+ * beta-publish time (GenOffice-mac-arm64-<v>.yml / GenOffice-win-<v>.yml /
+ * GenOffice-linux-<v>.yml) is re-uploaded as the stable feed
+ * (latest-mac.yml / latest.yml / latest-linux.yml). The binaries it points
+ * to are already on the CDN under the same prefix.
  *
- * The marketing download aliases (GenOffice.dmg / GenOfficeSetup.exe) also
- * track the stable channel: per-merge beta publishes skip them, and this
- * script re-points each alias by downloading the promoted installer to the
- * runner and re-uploading it under the alias name — the same auth path the
- * build pipelines use. (A server-side `az storage blob copy start` cannot
- * read the source blob: the container is private and the connection string
- * does not sign the copy source, so Azure rejects it with
- * CannotVerifyCopySource.)
+ * The marketing download aliases (GenOffice.dmg / GenOfficeSetup.exe /
+ * GenOffice.AppImage + GenOffice.deb) also track the stable channel:
+ * per-merge beta publishes skip them, and this script re-points each alias
+ * by downloading the promoted installer to the runner and re-uploading it
+ * under the alias name — the same auth path the build pipelines use. (A
+ * server-side `az storage blob copy start` cannot read the source blob: the
+ * container is private and the connection string does not sign the copy
+ * source, so Azure rejects it with CannotVerifyCopySource.)
  *
  * Usage:
- *   node scripts/promote-stable.cjs [--mac <version>|latest] [--win <version>|latest] [--force] [--dry-run]
+ *   node scripts/promote-stable.cjs [--mac <version>|latest] [--win <version>|latest] [--linux <version>|latest] [--force] [--dry-run]
  *
- * At least one of --mac/--win is required (version sequences are independent
- * per platform). "latest" resolves to the version currently served by the
- * platform's beta feed. Guard: refuses to publish a version that is not
- * strictly newer than the current stable feed unless --force is passed.
+ * At least one of --mac/--win/--linux is required (version sequences are
+ * independent per platform). "latest" resolves to the version currently
+ * served by the platform's beta feed. Guard: refuses to publish a version
+ * that is not strictly newer than the current stable feed unless --force is
+ * passed.
  *
  * Requires: az CLI + AZURE_STORAGE_CONNECTION_STRING + GENOFFICE_UPDATE_URL
  * (https://<cdn-host>/<container>/<prefix>, same convention as the upload
@@ -54,24 +56,33 @@ function argValue(flag) {
 }
 
 // installer names follow the build pipelines: electron-builder's default
-// mac artifact name (arm64 CI builds) and windows-build.yml's staged
-// versioned copy. The alias is the stable marketing download link.
+// mac/linux artifact names (arm64 mac CI builds, x64 linux) and
+// windows-build.yml's staged versioned copy. Each alias is a stable
+// marketing download link; linux has two (AppImage + deb).
 const PLATFORMS = [
   {
     flag: '--mac',
     archive: (v) => `GenOffice-mac-arm64-${v}.yml`,
     feed: 'latest-mac.yml',
     betaFeed: 'beta-mac.yml',
-    installer: (v) => `GenOffice-${v}-arm64.dmg`,
-    alias: 'GenOffice.dmg',
+    aliases: [{ installer: (v) => `GenOffice-${v}-arm64.dmg`, alias: 'GenOffice.dmg' }],
   },
   {
     flag: '--win',
     archive: (v) => `GenOffice-win-${v}.yml`,
     feed: 'latest.yml',
     betaFeed: 'beta.yml',
-    installer: (v) => `GenOfficeSetup-v${v}.exe`,
-    alias: 'GenOfficeSetup.exe',
+    aliases: [{ installer: (v) => `GenOfficeSetup-v${v}.exe`, alias: 'GenOfficeSetup.exe' }],
+  },
+  {
+    flag: '--linux',
+    archive: (v) => `GenOffice-linux-${v}.yml`,
+    feed: 'latest-linux.yml',
+    betaFeed: 'beta-linux.yml',
+    aliases: [
+      { installer: (v) => `GenOffice-${v}.AppImage`, alias: 'GenOffice.AppImage' },
+      { installer: (v) => `genoffice_${v}_amd64.deb`, alias: 'GenOffice.deb' },
+    ],
   },
 ]
 
@@ -127,6 +138,8 @@ function blobExists(url) {
 function contentTypeFor(name) {
   if (name.endsWith('.dmg')) return 'application/x-apple-diskimage'
   if (name.endsWith('.exe')) return 'application/x-msdownload'
+  if (name.endsWith('.AppImage')) return 'application/vnd.appimage'
+  if (name.endsWith('.deb')) return 'application/vnd.debian.binary-package'
   return 'application/octet-stream'
 }
 
@@ -200,9 +213,14 @@ async function promoteOne(target, platform, requestedVersion) {
     fatal(`${archiveName} declares version ${archivedVersion}, expected ${version}`)
   }
 
-  const installerName = platform.installer(version)
-  if (!(await blobExists(`${target.base}/${installerName}`))) {
-    fatal(`${installerName} not found on the CDN — cannot re-point ${platform.alias}`)
+  const aliases = platform.aliases.map(({ installer, alias }) => ({
+    installerName: installer(version),
+    alias,
+  }))
+  for (const { installerName, alias } of aliases) {
+    if (!(await blobExists(`${target.base}/${installerName}`))) {
+      fatal(`${installerName} not found on the CDN — cannot re-point ${alias}`)
+    }
   }
 
   const stable = await fetchText(`${target.base}/${platform.feed}`)
@@ -211,13 +229,17 @@ async function promoteOne(target, platform, requestedVersion) {
   if (!verdict.ok) fatal(`${platform.feed}: ${verdict.reason}`)
 
   console.log(`[promote-stable] ${platform.feed}: ${stableVersion ?? '(none)'} -> ${version}`)
-  console.log(`[promote-stable] ${platform.alias} -> ${installerName}`)
+  for (const { installerName, alias } of aliases) {
+    console.log(`[promote-stable] ${alias} -> ${installerName}`)
+  }
   if (dryRun) return
 
-  // alias first, feed last: a client reading the new feed mid-promote must
+  // aliases first, feed last: a client reading the new feed mid-promote must
   // already find every artifact it references
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'promote-'))
-  repointAlias(target, tmpDir, installerName, platform.alias)
+  for (const { installerName, alias } of aliases) {
+    repointAlias(target, tmpDir, installerName, alias)
+  }
   const tmp = path.join(tmpDir, platform.feed)
   fs.writeFileSync(tmp, archived)
   azUpload(target, tmp, platform.feed, { contentType: 'text/yaml', noCache: true })
@@ -228,7 +250,8 @@ async function main() {
   const requested = PLATFORMS.map((p) => ({ p, version: argValue(p.flag) })).filter(
     (r) => r.version,
   )
-  if (requested.length === 0) fatal('nothing to do — pass --mac <version> and/or --win <version>')
+  if (requested.length === 0)
+    fatal('nothing to do — pass --mac <version>, --win <version>, and/or --linux <version>')
   const target = channelTarget()
   if (!dryRun && !process.env.AZURE_STORAGE_CONNECTION_STRING) {
     fatal('AZURE_STORAGE_CONNECTION_STRING env not set')

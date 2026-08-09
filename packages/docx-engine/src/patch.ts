@@ -55,7 +55,7 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from './types'
-import { TOTAL_PAGES_MARK } from './types'
+import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
 import { patchParagraphTexts } from './text-patch'
 import { WATERMARK_NS, watermarkParagraphXml } from './watermark'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
@@ -68,8 +68,15 @@ export type SaveBlock = (
   | { kind: 'generated'; block: GeneratedBlock }
   /** self-contained OOXML fragment created by the editor (e.g. a new table);
    *  docxIndex marks the source block (kept when a section-break paragraph is
-   *  rewritten, used to inject per-section header references) */
-  | { kind: 'xml'; xml: string; docxIndex?: number }
+   *  rewritten, used to inject per-section header references); replaceImage
+   *  swaps the fragment's picture bytes in place (new media part, a:blip
+   *  re-pointed) so crop/background-removal keep the original drawing XML */
+  | {
+      kind: 'xml'
+      xml: string
+      docxIndex?: number
+      replaceImage?: { base64: string; mime: NewImage['mime'] }
+    }
   /** a new inline image; bytes become word/media/... + relationship */
   | { kind: 'image'; image: NewImage }
   /** a new embedded chart; data becomes word/charts/chartN.xml + relationship */
@@ -428,7 +435,8 @@ export async function saveDocx(
   const newMedia: Array<{ path: string; base64: string }> = []
   const usedExtensions = new Set<string>()
   let imageSeq = nextImageSeq(zip)
-  const embedImage = (image: NewImage): string => {
+  /** Land image bytes as a media part + relationship; returns the new rId. */
+  const embedImageMedia = (image: { base64: string; mime: NewImage['mime'] }): string => {
     const ext = IMAGE_EXT[image.mime]
     const mediaPath = `word/media/aidocs${imageSeq++}.${ext}`
     const rId = `rId${nextRelNum++}`
@@ -440,21 +448,35 @@ export async function saveDocx(
     })
     newMedia.push({ path: mediaPath, base64: image.base64 })
     usedExtensions.add(ext)
+    return rId
+  }
+  const embedImage = (image: NewImage): string => {
+    const rId = embedImageMedia(image)
     const cx = Math.max(1, Math.round(image.widthPx * EMU_PER_PX))
     const cy = Math.max(1, Math.round(image.heightPx * EMU_PER_PX))
+    // Word lays the drawing out against the unrotated wp:extent plus
+    // wp:effectExtent: a rotated non-square picture needs the bounding-box
+    // overflow recorded there (same math as patchImageParagraphXml)
+    const rot = image.rotDeg ? ((Math.round(image.rotDeg) % 360) + 360) % 360 : 0
+    const rad = (rot * Math.PI) / 180
+    const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
+    const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
+    const eeX = Math.max(0, Math.round((bw - cx) / 2))
+    const eeY = Math.max(0, Math.round((bh - cy) / 2))
     const docPrId = 9000 + imageSeq
     const pPr =
       image.align && image.align !== 'left' ? `<w:pPr><w:jc w:val="${image.align}"/></w:pPr>` : ''
     const xml =
       `<w:p>${pPr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
       `<wp:extent cx="${cx}" cy="${cy}"/>` +
+      `<wp:effectExtent l="${eeX}" t="${eeY}" r="${eeX}" b="${eeY}"/>` +
       `<wp:docPr id="${docPrId}" name="Picture ${docPrId}"/>` +
       '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
       '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
       '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
       `<pic:nvPicPr><pic:cNvPr id="${docPrId}" name="Picture ${docPrId}"/><pic:cNvPicPr/></pic:nvPicPr>` +
       `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+      `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${image.flipH ? ' flipH="1"' : ''}${image.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
       '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
       '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
     return image.wrap ? applyImageWrap(xml, image.wrap) : xml
@@ -884,6 +906,7 @@ export async function saveDocx(
     } else if (fb.kind === 'xml') {
       xml = fb.xml
       fbDocxIndex = fb.docxIndex
+      if (fb.replaceImage) xml = retargetImageBlip(xml, embedImageMedia(fb.replaceImage))
     } else if (fb.kind === 'chart') {
       xml = await embedChart(fb.chart, fb.extentPx)
     } else {
@@ -1202,8 +1225,9 @@ export async function saveDocx(
 
 /**
  * Standalone header/footer part: one centered paragraph, optional PAGE field.
- * A '#' in the text marks where the page number goes (e.g. "- # -"). Headers
- * additionally carry the page watermark shape when one is set.
+ * PAGE_MARK in the text marks where the page number goes; a user-typed '#'
+ * still counts when no PAGE_MARK exists (e.g. "- # -"). Headers additionally
+ * carry the page watermark shape when one is set.
  */
 /** Add the namespaces a VML watermark needs to the original part's root tag (existing ones untouched) */
 function withWatermarkNs(openTag: string): string {
@@ -1263,20 +1287,38 @@ function headerFooterPartXml(
     '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
   let content: string
   if (hf.paras) {
-    // rich paragraphs; the first '#' run becomes the PAGE field when enabled,
-    // every TOTAL_PAGES_MARK becomes a NUMPAGES field
-    let pageEmitted = !hf.pageNumber
+    // rich paragraphs; every PAGE_MARK becomes a PAGE field and every
+    // TOTAL_PAGES_MARK a NUMPAGES field. Only when no PAGE_MARK exists does a
+    // user-typed '#' stand in (first occurrence only — literal '#' text in a
+    // part that has real marks must stay literal).
+    const hasPageMark = hf.paras.some((p) =>
+      [p.runs, ...(p.cells?.map((c) => c.runs) ?? [])].some((rs) =>
+        rs.some((r) => r.text.includes(PAGE_MARK)),
+      ),
+    )
+    let pageEmitted = !hf.pageNumber || hasPageMark
     content = hf.paras
+      // table-row paragraphs are display-only: the part's original w:tbl bytes are kept below
+      .filter((para) => !para.cells)
       .map((para) => {
         // the parsed format, not just w:jc: hand-building it here dropped w:bidi and wrote
         // the visual align back as the logical one, flipping RTL headers to LTR
         const pPr = mergePPrFormat('<w:pPr/>', para)
         let runs = ''
         for (const run of para.runs) {
-          if (run.text.includes(TOTAL_PAGES_MARK) || (!pageEmitted && run.text.includes('#'))) {
+          if (
+            run.text.includes(TOTAL_PAGES_MARK) ||
+            run.text.includes(PAGE_MARK) ||
+            (!pageEmitted && run.text.includes('#'))
+          ) {
             run.text.split(TOTAL_PAGES_MARK).forEach((seg, k) => {
               if (k > 0) runs += numPagesField
-              if (!pageEmitted && seg.includes('#')) {
+              if (seg.includes(PAGE_MARK)) {
+                seg.split(PAGE_MARK).forEach((piece, j) => {
+                  if (j > 0) runs += pageField
+                  if (piece) runs += inlineRunsXml([{ ...run, text: piece }])
+                })
+              } else if (!pageEmitted && seg.includes('#')) {
                 const [before, ...rest] = seg.split('#')
                 runs +=
                   inlineRunsXml(before ? [{ ...run, text: before }] : []) +
@@ -1298,7 +1340,9 @@ function headerFooterPartXml(
   } else {
     const textWithTotal = (t: string) => t.split(TOTAL_PAGES_MARK).map(textRun).join(numPagesField)
     const runs: string[] = []
-    if (hf.pageNumber && hf.text.includes('#')) {
+    if (hf.text.includes(PAGE_MARK)) {
+      runs.push(hf.text.split(PAGE_MARK).map(textWithTotal).join(pageField))
+    } else if (hf.pageNumber && hf.text.includes('#')) {
       const [before, ...rest] = hf.text.split('#')
       runs.push(textWithTotal(before), pageField, textWithTotal(rest.join('#')))
     } else {
@@ -1398,7 +1442,11 @@ function buildCommentsXml(comments: CommentInfo[], originalXml: string | null): 
       return `<w:comment ${attrs}>${paras}</w:comment>`
     })
     .join('')
-  const ns = rootAttributes(originalXml, 'w:comments', COMMENTS_NS)
+  // Rebuilt comments always emit w14:paraId (ensured above), so w14 must be bound even
+  // when the original root — e.g. from a non-Word producer — never declared it.
+  const ns = rootAttributes(originalXml, 'w:comments', COMMENTS_NS, {
+    w14: 'http://schemas.microsoft.com/office/word/2010/wordml',
+  })
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:comments ${ns}>${body}</w:comments>`
 }
 
@@ -1511,4 +1559,30 @@ function nextImageSeq(zip: JSZip): number {
     if (m) max = Math.max(max, parseInt(m[1], 10))
   }
   return max + 1
+}
+
+/**
+ * Re-point a drawing paragraph's first <a:blip> at a new image relationship
+ * (external r:link becomes embedded) and drop a stale <a:srcRect> crop — the
+ * editor shows the full image, so a Word-authored crop window applied to the
+ * swapped bytes would show an arbitrary region.
+ */
+function retargetImageBlip(xml: string, rId: string): string {
+  const blip = /<a:blip\b[^>]*\/?>/.exec(xml)
+  if (!blip) return xml
+  let tag = blip[0]
+  // Word "insert and link" pictures carry both attributes: a surviving r:link
+  // would let Word refresh from the old external file, discarding the swap
+  if (/r:embed="/.test(tag))
+    tag = tag.replace(/r:embed="[^"]*"/, `r:embed="${rId}"`).replace(/\s+r:link="[^"]*"/, '')
+  else if (/r:link="/.test(tag)) tag = tag.replace(/r:link="[^"]*"/, `r:embed="${rId}"`)
+  else tag = tag.replace(/<a:blip\b/, `<a:blip r:embed="${rId}"`)
+  return (
+    (xml.slice(0, blip.index) + tag + xml.slice(blip.index + blip[0].length))
+      .replace(/<a:srcRect\b[^>]*\/>/, '')
+      // The replacement is always raster and Word prefers a leftover Office-2016
+      // <asvg:svgBlip> extension over the retargeted r:embed — drop the extension
+      .replace(/<a:ext\b[^>]*>\s*<\w+:svgBlip\b[\s\S]*?<\/a:ext>/, '')
+      .replace(/<a:extLst>\s*<\/a:extLst>/, '')
+  )
 }

@@ -31,6 +31,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: '去除背景',
     ribbonRemoveBgTip: '去除背景：基于颜色容差抠图（替换为透明 PNG）',
     ribbonCrop: '裁剪',
+    ribbonRotateRight: '向右旋转 90°',
+    ribbonRotateLeft: '向左旋转 90°',
+    ribbonFlipH: '水平翻转',
+    ribbonFlipV: '垂直翻转',
     ribbonCropTip: '裁剪图片（拖动手柄，Enter 确认）',
     ribbonCropHint: '拖动手柄或在框内拖动选择保留区域;Enter 应用,Esc 取消',
     ribbonReplacePicture: '替换图片',
@@ -696,6 +700,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Remove background: color-tolerance cutout (replaced with a transparent PNG)',
     ribbonCrop: 'Crop',
+    ribbonRotateRight: 'Rotate Right 90°',
+    ribbonRotateLeft: 'Rotate Left 90°',
+    ribbonFlipH: 'Flip Horizontal',
+    ribbonFlipV: 'Flip Vertical',
     ribbonCropTip: 'Crop the picture (drag the handles, Enter to confirm)',
     ribbonCropHint:
       'Drag the handles or move the box to choose the area to keep; Enter to apply, Esc to cancel',
@@ -1353,6 +1361,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: '背景の削除',
     ribbonRemoveBgTip: '背景の削除：色の許容差に基づく切り抜き（透明 PNG に置き換え）',
     ribbonCrop: 'トリミング',
+    ribbonRotateRight: '右へ90°回転',
+    ribbonRotateLeft: '左へ90°回転',
+    ribbonFlipH: '左右反転',
+    ribbonFlipV: '上下反転',
     ribbonCropTip: '画像をトリミング（ハンドルをドラッグ、Enter で確定）',
     ribbonCropHint:
       'ハンドルをドラッグするか枠内を移動して残す範囲を選択。Enter で適用、Esc でキャンセル',
@@ -2031,6 +2043,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: '배경 제거',
     ribbonRemoveBgTip: '배경 제거: 색 허용 오차 기반 추출(투명 PNG로 대체)',
     ribbonCrop: '자르기',
+    ribbonRotateRight: '오른쪽으로 90° 회전',
+    ribbonRotateLeft: '왼쪽으로 90° 회전',
+    ribbonFlipH: '좌우 대칭',
+    ribbonFlipV: '상하 대칭',
     ribbonCropTip: '그림 자르기(핸들을 끌고 Enter 키로 확인)',
     ribbonCropHint:
       '핸들을 끌거나 상자를 이동해 유지할 영역을 선택하세요. Enter로 적용, Esc로 취소',
@@ -2707,6 +2723,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       "Supprimer l'arrière-plan : détourage par tolérance de couleur (remplacé par un PNG transparent)",
     ribbonCrop: 'Rogner',
+    ribbonRotateRight: 'Rotation 90° à droite',
+    ribbonRotateLeft: 'Rotation 90° à gauche',
+    ribbonFlipH: 'Retourner horizontalement',
+    ribbonFlipV: 'Retourner verticalement',
     ribbonCropTip: "Rogner l'image (faites glisser les poignées, Entrée pour confirmer)",
     ribbonCropHint:
       'Faites glisser les poignées ou déplacez le cadre pour choisir la zone à conserver ; Entrée pour appliquer, Échap pour annuler',
@@ -3375,6 +3395,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Hintergrund entfernen: Freistellen per Farbtoleranz (durch transparentes PNG ersetzt)',
     ribbonCrop: 'Zuschneiden',
+    ribbonRotateRight: '90° nach rechts drehen',
+    ribbonRotateLeft: '90° nach links drehen',
+    ribbonFlipH: 'Horizontal spiegeln',
+    ribbonFlipV: 'Vertikal spiegeln',
     ribbonCropTip: 'Bild zuschneiden (Ziehpunkte ziehen, Eingabetaste zum Bestätigen)',
     ribbonCropHint:
       'Ziehpunkte ziehen oder Rahmen verschieben, um den zu behaltenden Bereich zu wählen; Eingabetaste zum Anwenden, Esc zum Abbrechen',
@@ -4043,6 +4067,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Quitar fondo: recorte por tolerancia de color (reemplazado por un PNG transparente)',
     ribbonCrop: 'Recortar',
+    ribbonRotateRight: 'Girar 90° a la derecha',
+    ribbonRotateLeft: 'Girar 90° a la izquierda',
+    ribbonFlipH: 'Voltear horizontalmente',
+    ribbonFlipV: 'Voltear verticalmente',
     ribbonCropTip: 'Recortar la imagen (arrastre los controladores, Entrar para confirmar)',
     ribbonCropHint:
       'Arrastre los controladores o mueva el cuadro para elegir el área que desea conservar; Entrar para aplicar, Esc para cancelar',
@@ -4713,6 +4741,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: 'เอาพื้นหลังออก',
     ribbonRemoveBgTip: 'เอาพื้นหลังออก: ตัดภาพตามค่าความคลาดเคลื่อนของสี (แทนที่ด้วย PNG โปร่งใส)',
     ribbonCrop: 'ครอบตัด',
+    ribbonRotateRight: 'หมุนขวา 90°',
+    ribbonRotateLeft: 'หมุนซ้าย 90°',
+    ribbonFlipH: 'พลิกแนวนอน',
+    ribbonFlipV: 'พลิกแนวตั้ง',
     ribbonCropTip: 'ครอบตัดรูปภาพ (ลากจุดจับ กด Enter เพื่อยืนยัน)',
     ribbonCropHint:
       'ลากจุดจับหรือย้ายกรอบเพื่อเลือกพื้นที่ที่จะเก็บไว้ กด Enter เพื่อนำไปใช้ Esc เพื่อยกเลิก',
@@ -5366,6 +5398,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Hapus latar belakang: pemotongan berdasarkan toleransi warna (diganti dengan PNG transparan)',
     ribbonCrop: 'Pangkas',
+    ribbonRotateRight: 'Putar Kanan 90°',
+    ribbonRotateLeft: 'Putar Kiri 90°',
+    ribbonFlipH: 'Balik Horizontal',
+    ribbonFlipV: 'Balik Vertikal',
     ribbonCropTip: 'Pangkas gambar (seret gagang, Enter untuk mengonfirmasi)',
     ribbonCropHint:
       'Seret gagang atau pindahkan kotak untuk memilih area yang dipertahankan; Enter untuk menerapkan, Esc untuk membatalkan',
@@ -6026,6 +6062,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: 'Удалить фон',
     ribbonRemoveBgTip: 'Удалить фон: вырезание по допуску цвета (заменяется прозрачным PNG)',
     ribbonCrop: 'Обрезка',
+    ribbonRotateRight: 'Повернуть вправо на 90°',
+    ribbonRotateLeft: 'Повернуть влево на 90°',
+    ribbonFlipH: 'Отразить по горизонтали',
+    ribbonFlipV: 'Отразить по вертикали',
     ribbonCropTip: 'Обрезать рисунок (перетащите маркеры, Enter — подтвердить)',
     ribbonCropHint:
       'Перетащите маркеры или переместите рамку, чтобы выбрать сохраняемую область; Enter — применить, Esc — отмена',
@@ -6689,6 +6729,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: 'إزالة الخلفية',
     ribbonRemoveBgTip: 'إزالة الخلفية: اقتصاص حسب تفاوت اللون (تُستبدل بصورة PNG شفافة)',
     ribbonCrop: 'اقتصاص',
+    ribbonRotateRight: 'تدوير لليمين 90 درجة',
+    ribbonRotateLeft: 'تدوير لليسار 90 درجة',
+    ribbonFlipH: 'انعكاس أفقي',
+    ribbonFlipV: 'انعكاس رأسي',
     ribbonCropTip: 'اقتصاص الصورة (اسحب المقابض، Enter للتأكيد)',
     ribbonCropHint:
       'اسحب المقابض أو حرّك الإطار لاختيار المنطقة المراد الاحتفاظ بها؛ Enter للتطبيق وEsc للإلغاء',
@@ -7343,6 +7387,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Remover plano de fundo: recorte por tolerância de cor (substituído por um PNG transparente)',
     ribbonCrop: 'Cortar',
+    ribbonRotateRight: 'Girar 90° para a direita',
+    ribbonRotateLeft: 'Girar 90° para a esquerda',
+    ribbonFlipH: 'Inverter horizontalmente',
+    ribbonFlipV: 'Inverter verticalmente',
     ribbonCropTip: 'Cortar a imagem (arraste as alças, Enter para confirmar)',
     ribbonCropHint:
       'Arraste as alças ou mova a caixa para escolher a área a manter; Enter para aplicar, Esc para cancelar',
@@ -8004,6 +8052,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Rimuovi sfondo: ritaglio in base alla tolleranza del colore (sostituito con un PNG trasparente)',
     ribbonCrop: 'Ritaglia',
+    ribbonRotateRight: 'Ruota a destra di 90°',
+    ribbonRotateLeft: 'Ruota a sinistra di 90°',
+    ribbonFlipH: 'Capovolgi orizzontalmente',
+    ribbonFlipV: 'Capovolgi verticalmente',
     ribbonCropTip: "Ritaglia l'immagine (trascina le maniglie, Invio per confermare)",
     ribbonCropHint:
       "Trascina le maniglie o sposta il riquadro per scegliere l'area da mantenere; Invio per applicare, Esc per annullare",
@@ -8671,6 +8723,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Usuń tło: wycinanie na podstawie tolerancji koloru (zastąpione przezroczystym plikiem PNG)',
     ribbonCrop: 'Przytnij',
+    ribbonRotateRight: 'Obróć w prawo o 90°',
+    ribbonRotateLeft: 'Obróć w lewo o 90°',
+    ribbonFlipH: 'Odbij w poziomie',
+    ribbonFlipV: 'Odbij w pionie',
     ribbonCropTip: 'Przytnij obraz (przeciągnij uchwyty, Enter, aby potwierdzić)',
     ribbonCropHint:
       'Przeciągnij uchwyty lub przesuń ramkę, aby wybrać obszar do zachowania; Enter, aby zastosować, Esc, aby anulować',
@@ -9333,6 +9389,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Achtergrond verwijderen: uitsnijden op basis van kleurtolerantie (vervangen door een transparante PNG)',
     ribbonCrop: 'Bijsnijden',
+    ribbonRotateRight: '90° rechtsom draaien',
+    ribbonRotateLeft: '90° linksom draaien',
+    ribbonFlipH: 'Horizontaal spiegelen',
+    ribbonFlipV: 'Verticaal spiegelen',
     ribbonCropTip: 'De afbeelding bijsnijden (sleep de grepen, Enter om te bevestigen)',
     ribbonCropHint:
       'Sleep de grepen of verplaats het kader om het te behouden gebied te kiezen; Enter om toe te passen, Esc om te annuleren',
@@ -9999,6 +10059,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'Alih keluar latar belakang: potongan berdasarkan toleransi warna (digantikan dengan PNG lutsinar)',
     ribbonCrop: 'Pangkas',
+    ribbonRotateRight: 'Putar Kanan 90°',
+    ribbonRotateLeft: 'Putar Kiri 90°',
+    ribbonFlipH: 'Balikkan Melintang',
+    ribbonFlipV: 'Balikkan Menegak',
     ribbonCropTip: 'Pangkas gambar (seret pemegang, Enter untuk mengesahkan)',
     ribbonCropHint:
       'Seret pemegang atau alihkan kotak untuk memilih kawasan yang hendak dikekalkan; Enter untuk menggunakan, Esc untuk membatalkan',
@@ -10660,6 +10724,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: 'הסרת רקע',
     ribbonRemoveBgTip: 'הסרת רקע: חיתוך לפי סבילות צבע (מוחלף ב-PNG שקוף)',
     ribbonCrop: 'חיתוך',
+    ribbonRotateRight: 'סיבוב 90° ימינה',
+    ribbonRotateLeft: 'סיבוב 90° שמאלה',
+    ribbonFlipH: 'היפוך אופקי',
+    ribbonFlipV: 'היפוך אנכי',
     ribbonCropTip: 'חיתוך התמונה (גרור את הידיות, Enter לאישור)',
     ribbonCropHint:
       'גרור את הידיות או הזז את המסגרת כדי לבחור את האזור שיישמר; Enter להחלה, Esc לביטול',
@@ -11310,6 +11378,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBgTip:
       'पृष्ठभूमि हटाएँ: रंग सहनशीलता के आधार पर कटआउट (पारदर्शी PNG से बदला जाता है)',
     ribbonCrop: 'काट-छाँट करें',
+    ribbonRotateRight: '90° दाएँ घुमाएँ',
+    ribbonRotateLeft: '90° बाएँ घुमाएँ',
+    ribbonFlipH: 'क्षैतिज पलटें',
+    ribbonFlipV: 'लंबवत पलटें',
     ribbonCropTip: 'चित्र की काट-छाँट करें (हैंडल खींचें, पुष्टि के लिए Enter दबाएँ)',
     ribbonCropHint:
       'रखे जाने वाले क्षेत्र को चुनने के लिए हैंडल खींचें या बॉक्स को हिलाएँ; लागू करने के लिए Enter, रद्द करने के लिए Esc',
@@ -11972,6 +12044,10 @@ export const ribbonStrings = defineStrings({
     ribbonRemoveBg: '移除背景',
     ribbonRemoveBgTip: '移除背景：依色彩容許度去背（取代為透明 PNG）',
     ribbonCrop: '裁剪',
+    ribbonRotateRight: '向右旋轉 90°',
+    ribbonRotateLeft: '向左旋轉 90°',
+    ribbonFlipH: '水平翻轉',
+    ribbonFlipV: '垂直翻轉',
     ribbonCropTip: '裁剪圖片（拖曳控點，Enter 確認）',
     ribbonCropHint: '拖曳控點或在框內拖曳以選擇保留區域；Enter 套用，Esc 取消',
     ribbonReplacePicture: '取代圖片',

@@ -1,0 +1,164 @@
+/* GenOffice design tokens — the single source of truth for UI chrome colors.
+ * Theme switching: light defaults in :root, [data-theme='dark'] overrides,
+ * prefers-color-scheme fallback for system mode (no data-theme attribute).
+ * Per-app accents (--accent / --accent-dark / --accent-soft) live in each
+ * app's styles.css. Document content colors (paper, cells, exports, chart
+ * palettes) never live here and never reference these tokens. */
+
+:root {
+  /* chrome */
+  --surface: #ffffff;
+  --surface-subtle: #f6f7f9;
+  --chrome-bg: #ffffff;
+  --canvas: #e6e6e6;
+  --border: #e3e6ea;
+  --border-subtle: #efefef;
+  --border-strong: #d9d9d9;
+  --border-hover: #d3d7dd;
+  --text: #242424;
+  --text-primary: #232425;
+  --text-secondary: #606366;
+  --text-tertiary: #909499;
+  --text-muted: #878e96;
+  --text-dim: #605e5c;
+  --hover: #f3f2f1;
+  --pressed: #edebe9;
+  --active-bg: #e2e0de;
+  --bg-hover: #f5f5f5;
+  --bg-hover-subtle: #f0f2f5;
+  --bg-hover-strong: #e8eaee;
+  --bg-hover-accent: #e0e4ea;
+  --bg-content: #fafafa;
+  --icon-muted: #b9bfc7;
+  --danger: #d13438;
+  --danger-bg: #fdf3f3;
+  --danger-border: #f0c8c9;
+  --color-bg-overlay: rgb(0 0 0 / 50%);
+  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
+
+  /* AI panel (canonical names from the former per-app copies) */
+  --gs-font-sans:
+    'Arial', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    sans-serif;
+  --color-btn-primary: #232425;
+  --color-btn-primary-hover: #393a3b;
+  --color-btn-primary-text: #ffffff;
+  --color-brand-secondary: #0f7fff;
+  --color-text-primary: #232425;
+  --color-text-secondary: #606366;
+  --color-text-tertiary: #909499;
+  --color-bg-page: #ffffff;
+  --color-bg-subtle: #f5f5f5;
+  --color-border-default: #eaeaea;
+  --color-border-strong: #d0d3d8;
+  --color-border-brand: #0f7fff;
+  --color-error: #ef4444;
+  --color-error-hover: #dc2626;
+
+  /* non-color */
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-30: 30px;
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --text-body-lg: 18px;
+  --text-small: 14px;
+  --text-caption: 12px;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --surface: #1e1e1e;
+  --surface-subtle: #2a2a2a;
+  --chrome-bg: #252525;
+  --canvas: #2b2b2b;
+  --border: #3a3a3a;
+  --border-subtle: #3a3a3a;
+  --border-strong: #555;
+  --border-hover: #555;
+  --text: #e4e4e4;
+  --text-primary: #e4e4e4;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #a0a0a0;
+  --text-muted: #8a8a8a;
+  --text-dim: #a0a0a0;
+  --hover: #333;
+  --pressed: #3c3c3c;
+  --active-bg: #454545;
+  --bg-hover: #333;
+  --bg-hover-subtle: #333;
+  --bg-hover-strong: #444;
+  --bg-hover-accent: #444;
+  --bg-content: #1a1a1a;
+  --icon-muted: #666;
+  --danger: #d13438;
+  --danger-bg: #3a2020;
+  --danger-border: #5a3030;
+  --color-bg-overlay: rgb(0 0 0 / 60%);
+  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+
+  --color-btn-primary: #e4e4e4;
+  --color-btn-primary-hover: #d0d0d0;
+  --color-btn-primary-text: #1e1e1e;
+  --color-brand-secondary: #4a9eff;
+  --color-text-primary: #e4e4e4;
+  --color-text-secondary: #a0a0a0;
+  --color-text-tertiary: #8a8a8a;
+  --color-bg-page: #1e1e1e;
+  --color-bg-subtle: #2a2a2a;
+  --color-border-default: #3a3a3a;
+  --color-border-strong: #555;
+  --color-border-brand: #4a9eff;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --surface: #1e1e1e;
+    --surface-subtle: #2a2a2a;
+    --chrome-bg: #252525;
+    --canvas: #2b2b2b;
+    --border: #3a3a3a;
+    --border-subtle: #3a3a3a;
+    --border-strong: #555;
+    --border-hover: #555;
+    --text: #e4e4e4;
+    --text-primary: #e4e4e4;
+    --text-secondary: #a0a0a0;
+    --text-tertiary: #a0a0a0;
+    --text-muted: #8a8a8a;
+    --text-dim: #a0a0a0;
+    --hover: #333;
+    --pressed: #3c3c3c;
+    --active-bg: #454545;
+    --bg-hover: #333;
+    --bg-hover-subtle: #333;
+    --bg-hover-strong: #444;
+    --bg-hover-accent: #444;
+    --bg-content: #1a1a1a;
+    --icon-muted: #666;
+    --danger: #d13438;
+    --danger-bg: #3a2020;
+    --danger-border: #5a3030;
+    --color-bg-overlay: rgb(0 0 0 / 60%);
+    --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+
+    --color-btn-primary: #e4e4e4;
+    --color-btn-primary-hover: #d0d0d0;
+    --color-btn-primary-text: #1e1e1e;
+    --color-brand-secondary: #4a9eff;
+    --color-text-primary: #e4e4e4;
+    --color-text-secondary: #a0a0a0;
+    --color-text-tertiary: #8a8a8a;
+    --color-bg-page: #1e1e1e;
+    --color-bg-subtle: #2a2a2a;
+    --color-border-default: #3a3a3a;
+    --color-border-strong: #555;
+    --color-border-brand: #4a9eff;
+
+    color-scheme: dark;
+  }
+}

@@ -1,127 +1,45 @@
+/* Shared chrome/AI-panel tokens come from @genoffice/ui/tokens.css (imported
+ * before this file in main.tsx); only shell-specific tokens live here. */
 :root {
-  --accent: #2367ec;
-  --accent-hover: #1b58cf;
-  --surface: #ffffff;
-  --surface-subtle: #f6f7f9;
-  --border: #e3e6ea;
-  --text: #242424;
-  --text-muted: #878e96;
-  --text-secondary: #606366;
-
-  /* Design tokens (confirm dialog) */
-  --radius-6: 6px;
-  --radius-8: 8px;
-  --color-error: #ef4444;
-  --color-error-hover: #dc2626;
-  --color-border-default: #eaeaea;
-  --color-bg-overlay: rgb(0 0 0 / 50%);
-  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
+  /* Genspark DS v4.1: guide/onboarding accent is the brand blue */
+  --accent: #0f7fff;
+  --accent-hover: #0e72e5;
   --modal-width-sm: 480px;
-
-  /* Extended palette (hardcoded colors → variables for dark mode) */
-  --bg-hover: #f5f5f5;
-  --bg-hover-subtle: #f0f2f5;
-  --bg-hover-strong: #e8eaee;
-  --bg-hover-accent: #e0e4ea;
-  --bg-content: #fafafa;
-  --text-primary: #232425;
-  --text-tertiary: #909499;
-  --border-subtle: #efefef;
-  --border-strong: #d9d9d9;
-  --border-hover: #d3d7dd;
-  --icon-muted: #b9bfc7;
   --avatar-bg: #e8ebef;
   --badge-bg: #eaf0fd;
   --checkbox-bg: #ececec;
-  --danger: #d13438;
-  --danger-bg: #fdf3f3;
-  --danger-border: #f0c8c9;
   --timeline-user-bg: #eef1f5;
   --timeline-user-text: #5a6170;
 
   /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
   --logo-invert: 0;
-
-  color-scheme: light;
 }
 
 /* ── Dark mode overrides ─────────────────────────────────── */
 
 /* Explicit dark: [data-theme="dark"] on <html> */
 [data-theme='dark'] {
-  --accent: #4a9eff;
-  --accent-hover: #3a8eef;
-  --surface: #1e1e1e;
-  --surface-subtle: #2a2a2a;
-  --border: #3a3a3a;
-  --text: #e4e4e4;
-  --text-muted: #8a8a8a;
-  --text-secondary: #a0a0a0;
-  --color-border-default: #3a3a3a;
-  --color-bg-overlay: rgb(0 0 0 / 60%);
-  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
-
-  /* Extended palette dark overrides */
-  --bg-hover: #333;
-  --bg-hover-subtle: #333;
-  --bg-hover-strong: #444;
-  --bg-hover-accent: #444;
-  --bg-content: #1a1a1a;
-  --text-primary: #e4e4e4;
-  --text-tertiary: #a0a0a0;
-  --border-subtle: #3a3a3a;
-  --border-strong: #555;
-  --border-hover: #555;
-  --icon-muted: #666;
+  --accent: #3f99ff;
+  --accent-hover: #5ba5ff;
   --avatar-bg: #333;
   --badge-bg: #2a3a4a;
   --checkbox-bg: #333;
-  --danger: #d13438;
-  --danger-bg: #3a2020;
-  --danger-border: #5a3030;
   --timeline-user-bg: #2a2a3a;
   --timeline-user-text: #b0b0c0;
   --logo-invert: 1;
-
-  color-scheme: dark;
 }
 
 /* System dark: no data-theme or data-theme="system" — follow OS preference */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']):not([data-theme='dark']) {
-    --accent: #4a9eff;
-    --accent-hover: #3a8eef;
-    --surface: #1e1e1e;
-    --surface-subtle: #2a2a2a;
-    --border: #3a3a3a;
-    --text: #e4e4e4;
-    --text-muted: #8a8a8a;
-    --text-secondary: #a0a0a0;
-    --color-border-default: #3a3a3a;
-    --color-bg-overlay: rgb(0 0 0 / 60%);
-    --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
-    /* Extended palette dark overrides */
-    --bg-hover: #333;
-    --bg-hover-subtle: #333;
-    --bg-hover-strong: #444;
-    --bg-hover-accent: #444;
-    --bg-content: #1a1a1a;
-    --text-primary: #e4e4e4;
-    --text-tertiary: #a0a0a0;
-    --border-subtle: #3a3a3a;
-    --border-strong: #555;
-    --border-hover: #555;
-    --icon-muted: #666;
+    --accent: #3f99ff;
+    --accent-hover: #5ba5ff;
     --avatar-bg: #333;
     --badge-bg: #2a3a4a;
     --checkbox-bg: #333;
-    --danger: #d13438;
-    --danger-bg: #3a2020;
-    --danger-border: #5a3030;
     --timeline-user-bg: #2a2a3a;
     --timeline-user-text: #b0b0c0;
     --logo-invert: 1;
-    color-scheme: dark;
   }
 }
 
@@ -1976,5 +1894,15 @@ body.vib .home {
 @keyframes cloud-refresh-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+/* Motion accessibility: suppress all animation for users who opt out */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

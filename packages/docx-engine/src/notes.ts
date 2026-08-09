@@ -38,16 +38,26 @@ const NOTE_NS =
  * Root attributes for a regenerated part. Entries are spliced back in as original bytes, so
  * the root has to keep declaring whatever prefixes those bytes use: Word puts w14:paraId on
  * every paragraph it writes, and a literal namespace list leaves that prefix unbound.
+ *
+ * `required` lists namespaces the rebuild itself emits (e.g. w14 on rebuilt comments): they
+ * are appended when the reused original root does not declare them, since an original from
+ * a non-Word producer may bind fewer prefixes than our generated markup uses.
  */
 export function rootAttributes(
   originalXml: string | null,
   rootTag: string,
   fallback: string,
+  required: Record<string, string> = {},
 ): string {
   const attrs = originalXml
     ? new RegExp(`<${rootTag}\\b([^>]*?)/?>`).exec(originalXml)?.[1]?.trim()
     : undefined
-  return attrs && attrs.includes('xmlns:') ? attrs : fallback
+  const base = attrs && attrs.includes('xmlns:') ? attrs : fallback
+  const missing = Object.entries(required)
+    .filter(([prefix]) => !base.includes(`xmlns:${prefix}=`))
+    .map(([prefix, uri]) => ` xmlns:${prefix}="${uri}"`)
+    .join('')
+  return base + missing
 }
 
 /** real notes (separator entries excluded), in file order */

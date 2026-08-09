@@ -2,7 +2,7 @@ import { Extension, Mark } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssDualFontFamily, cssFontFamily } from '../line-metrics'
+import { cssCsFontFamily, cssDualFontFamily, cssFontFamily } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import {} from '@genoffice/docx-engine'
@@ -358,7 +358,13 @@ export function fontAttrsFromFamilyChain(chain: string | undefined): Record<stri
   const families = (chain ?? '')
     .split(',')
     .map((x) => x.trim().replace(/^["']|["']$/g, ''))
-    .filter((x) => x && !/^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/i.test(x))
+    .filter(
+      (x) =>
+        x &&
+        !/^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/i.test(x) &&
+        // internal fonts.css aliases (GenOffice Songti SC etc.) are not user picks
+        !/^genoffice /i.test(x),
+    )
   const ea = families.find(
     (f, i) => isEastAsianFontName(f) && (i === 0 || !/^noto (sans|serif) cjk sc$/i.test(f)),
   )
@@ -417,6 +423,8 @@ export const TextStyleMark = Mark.create({
       font: { default: null as string | null },
       // Latin slot (w:ascii/w:hAnsi) when it differs from the primary/eastAsia font
       fontAscii: { default: null as string | null },
+      // complex-script slot (w:cs); convert sets it only when the run text needs it
+      csFont: { default: null as string | null },
       charSpacingTwips: { default: null as number | null },
       // letter spacing (em, negative = condensed) converted from w:w scaling; precomputed by convert per run text
       charScaleEm: { default: null as number | null },
@@ -446,11 +454,18 @@ export const TextStyleMark = Mark.create({
     if (mark.attrs.color) styles.push(`color:#${mark.attrs.color}`)
     if (mark.attrs.sizeHalfPoints)
       styles.push(`font-size:${Number(mark.attrs.sizeHalfPoints) / 2}pt`)
-    if (mark.attrs.font || mark.attrs.fontAscii) {
+    if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
       const ea = mark.attrs.font ? String(mark.attrs.font) : null
       const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null
+      const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
       styles.push(
-        `font-family:${ea && ascii ? cssDualFontFamily(ascii, ea) : cssFontFamily((ea ?? ascii)!)}`,
+        `font-family:${
+          cs
+            ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
+            : ea && ascii
+              ? cssDualFontFamily(ascii, ea)
+              : cssFontFamily((ea ?? ascii)!)
+        }`,
       )
     }
     const spacingPt = mark.attrs.charSpacingTwips ? Number(mark.attrs.charSpacingTwips) / 20 : 0

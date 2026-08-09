@@ -53,6 +53,18 @@ describe('mergePPrFormat keeps unedited groups byte-identical', () => {
     expect(out).toContain('w:firstLineChars="200"')
   })
 
+  it('nil border resets do not force a pBdr rebuild', async () => {
+    // parse skips w:val="nil" sides, so the raw comparison must skip them too —
+    // otherwise every save rebuilds w:pBdr and drops the bottom border's color/size
+    const raw =
+      '<w:pPr><w:pBdr><w:top w:val="nil"/><w:left w:val="nil"/><w:right w:val="nil"/>' +
+      '<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/></w:pBdr></w:pPr>'
+    const bytes = await buildDocx({ bodyXml: `<w:p>${raw}<w:r><w:t>x</w:t></w:r></w:p>` })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks[0].format?.borders).toBe('b')
+    expect(mergePPrFormat(raw, doc.blocks[0].format)).toBe(raw)
+  })
+
   it('changing indent rebuilds w:ind and drops the char-unit variants', () => {
     // Word prefers *Chars over the twips attrs, so a stale firstLineChars would
     // override the user's new indent — the rebuilt w:ind must not carry them

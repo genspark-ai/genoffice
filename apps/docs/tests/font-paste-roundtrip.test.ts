@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { fontAttrsFromFamilyChain } from '../src/renderer/editor/marks'
 import { cssDualFontFamily, cssFontFamily } from '../src/renderer/line-metrics'
 
@@ -80,9 +81,61 @@ describe('fontAttrsFromFamilyChain', () => {
     })
   })
 
+  it('skips internal GenOffice aliases even at the chain head', () => {
+    expect(
+      fontAttrsFromFamilyChain("'GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC',serif"),
+    ).toEqual({ font: 'STSong' })
+  })
+
   it('handles foreign single-family styles', () => {
     expect(fontAttrsFromFamilyChain('SimSun')).toEqual({ font: 'SimSun' })
     expect(fontAttrsFromFamilyChain('Calibri')).toEqual({ font: 'Calibri', fontAscii: 'Calibri' })
     expect(fontAttrsFromFamilyChain(undefined)).toEqual({})
+  })
+})
+
+describe('complex-script (w:cs) render chain', () => {
+  function editorHtml(text: string, attrs: Record<string, unknown>): string {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: null },
+            content: [{ type: 'text', text, marks: [{ type: 'docTextStyle', attrs }] }],
+          },
+        ],
+      },
+    })
+    const html = editor.getHTML()
+    editor.destroy()
+    return html
+  }
+
+  it('csFont leads the family chain, then the Latin chain', () => {
+    const html = editorHtml('مرحبا Contract', {
+      font: 'Calibri',
+      fontAscii: 'Calibri',
+      csFont: 'Arabic Typesetting',
+    })
+    expect(html).toContain(
+      'font-family: &quot;Arabic Typesetting&quot;, &quot;Noto Naskh Arabic&quot;, &quot;Geeza Pro&quot;, &quot;Al Bayan&quot;, &quot;Calibri&quot;, &quot;Carlito GO&quot;, &quot;Noto Sans CJK SC&quot;, sans-serif',
+    )
+  })
+
+  it('run marks get csFont only when the text is complex-script', () => {
+    const runs = [
+      { text: 'مرحبا', csFont: 'Amiri', font: 'Calibri', fontAscii: 'Calibri' },
+      { text: 'latin only', csFont: 'Amiri', font: 'Calibri', fontAscii: 'Calibri' },
+    ]
+    const doc = blocksToPmDoc([{ type: 'paragraph', docxIndex: 0, runs } as never])
+    const marks = doc.content![0].content!.map(
+      (n) => n.marks!.find((m) => m.type === 'docTextStyle')!.attrs!,
+    )
+    expect(marks[0].csFont).toBe('Amiri')
+    expect(marks[1].csFont).toBeNull()
   })
 })

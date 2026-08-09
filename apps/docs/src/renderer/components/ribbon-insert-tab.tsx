@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import type { Editor } from '@tiptap/core'
 import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
+import { hfHasPageField, hfWithoutPageMarks } from '../editor/hf-dom'
 import { EquationGallery, EquationModal } from './EquationModal'
 import { COVER_PRESETS, insertCoverPage, type CoverPreset } from '../editor/cover-pages'
 import { startShapeDrawMode } from '../editor/shape-draw'
@@ -1066,12 +1067,8 @@ export function InsertTab({
                 </button>
                 <button
                   onClick={() => {
-                    if (footer?.pageNumber || footer?.text.includes('#')) {
-                      onFooter({ text: (footer?.text ?? '').replace(/#/g, ''), pageNumber: false })
-                    }
-                    if (header?.pageNumber || header?.text.includes('#')) {
-                      onHeader({ text: (header?.text ?? '').replace(/#/g, ''), pageNumber: false })
-                    }
+                    if (hfHasPageField(footer)) onFooter(hfWithoutPageMarks(footer!))
+                    if (hfHasPageField(header)) onHeader(hfWithoutPageMarks(header!))
                     setDropdown(() => null)
                   }}
                 >

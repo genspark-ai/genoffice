@@ -15,17 +15,10 @@ export {
   IconTable,
   IconPicture,
   IconLink,
-  IconHighlight,
+  IconSave,
   IconUndo,
   IconRedo,
   IconCopy,
-  IconRowInsertAbove,
-  IconRowInsertBelow,
-  IconColInsertLeft,
-  IconColInsertRight,
-  IconRowDelete,
-  IconColDelete,
-  IconTableDelete,
 } from '../../../../docs/src/renderer/components/icons'
 
 interface IconProps {
@@ -77,28 +70,83 @@ export function IconHr(props: IconProps) {
   )
 }
 
-export function IconCallout(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 2.8v10.4" />
-      <path d="M5.8 5.2h7.2M5.8 8h5" />
-    </Svg>
-  )
-}
-
-export function IconToggle(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3.2 4.2l3.2 2.4-3.2 2.4z" fill="currentColor" stroke="none" />
-      <path d="M8.6 5.4h5M8.6 8h5M4 12h9.6" />
-    </Svg>
-  )
-}
-
 export function IconProperties(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M2.5 4.4h11M2.5 8h11M2.5 11.6h6.2" />
+    </Svg>
+  )
+}
+
+/* ── table-menu glyphs: insert = explicit "+", delete = explicit "×" ──
+ * (redrawn locally — the docs arrow variants read as "move" at 15px) */
+
+export function IconRowInsertAbove(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 1.7v4M6 3.7h4" />
+      <rect x="2.2" y="7.8" width="11.6" height="6" rx="0.8" />
+      <path d="M2.2 10.8h11.6" strokeWidth="1" />
+    </Svg>
+  )
+}
+
+export function IconRowInsertBelow(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.2" y="2.2" width="11.6" height="6" rx="0.8" />
+      <path d="M2.2 5.2h11.6" strokeWidth="1" />
+      <path d="M8 10.3v4M6 12.3h4" />
+    </Svg>
+  )
+}
+
+export function IconColInsertLeft(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M1.7 8h4M3.7 6v4" />
+      <rect x="7.8" y="2.2" width="6" height="11.6" rx="0.8" />
+      <path d="M10.8 2.2v11.6" strokeWidth="1" />
+    </Svg>
+  )
+}
+
+export function IconColInsertRight(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.2" y="2.2" width="6" height="11.6" rx="0.8" />
+      <path d="M5.2 2.2v11.6" strokeWidth="1" />
+      <path d="M10.3 8h4M12.3 6v4" />
+    </Svg>
+  )
+}
+
+export function IconRowDelete(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3.4 2.6h9.2M3.4 13.4h9.2" opacity="0.4" strokeWidth="1" />
+      <rect x="2.2" y="5" width="11.6" height="6" rx="0.8" />
+      <path d="M6.8 6.8l2.4 2.4M9.2 6.8l-2.4 2.4" />
+    </Svg>
+  )
+}
+
+export function IconColDelete(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 3.4v9.2M13.4 3.4v9.2" opacity="0.4" strokeWidth="1" />
+      <rect x="5" y="2.2" width="6" height="11.6" rx="0.8" />
+      <path d="M6.8 6.8l2.4 2.4M9.2 6.8l-2.4 2.4" />
+    </Svg>
+  )
+}
+
+export function IconTableDelete(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2" y="2.6" width="9" height="8.4" rx="0.8" />
+      <path d="M2 5.4h9M6.5 2.6v8.4" strokeWidth="1" />
+      <path d="M10.7 10.4l3.2 3.2M13.9 10.4l-3.2 3.2" />
     </Svg>
   )
 }

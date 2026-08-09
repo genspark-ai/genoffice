@@ -2011,6 +2011,12 @@ export function App() {
     return !pic.media && !!pic.dataUrl
   }, [selectedNode])
 
+  const contextPictureStroke = useMemo(() => {
+    if (selectedNode?.type !== 'picture') return null
+    const s = (selectedNode as PictureRenderNode).stroke
+    return s ? { color: s.color, widthPt: s.widthPt, dashPreset: s.dashPreset } : null
+  }, [selectedNode])
+
   const contextChartStyle = useMemo(
     () =>
       selectedNode?.type === 'chart' ? ((selectedNode as ChartRenderNode).styleInfo ?? null) : null,
@@ -2298,7 +2304,7 @@ export function App() {
         onExportImages={() => void exportImages()}
         onFormat={onFormat}
         zoom={zoom}
-        onZoom={setZoom}
+        onZoom={previewZoom}
         showThumbs={showThumbs}
         onToggleThumbs={() => setShowThumbs((v) => !v)}
         aiOpen={showAi}
@@ -2444,7 +2450,12 @@ export function App() {
         contextChartStyle={contextChartStyle}
         chartColorSchemes={chartColorSchemes}
         contextPictureCanCutout={contextPictureCanCutout}
+        contextPictureStroke={contextPictureStroke}
+        onPictureStroke={(stroke) => {
+          if (selectedNode?.type === 'picture') void onStroke(selectedNode.sourceId, stroke)
+        }}
         onPictureCrop={startCrop}
+        cropActive={cropTarget != null}
         onPictureCutout={startCutout}
         onPictureOpacity={(opacity) => {
           if (!selectedNode || selectedNode.type !== 'picture') return
@@ -3037,7 +3048,8 @@ export function App() {
                             {cropTarget && (
                               <CropOverlay
                                 box={cropTarget.box}
-                                srcRect={cropTarget.srcRect}
+                                fullBox={cropTarget.fullBox}
+                                imgSrc={cropTarget.dataUrl}
                                 onConfirm={(rect) => void commitCrop(rect)}
                                 onCancel={cancelCrop}
                               />

@@ -73,6 +73,15 @@ jobs:
           fi
           npm run format:check
 
+      - name: Check theme colors
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:theme-colors
+
       - name: Lint
         run: npm run lint
 

@@ -78,6 +78,36 @@ describe('insert_content', () => {
   })
 })
 
+describe('model output is sanitized to pure GFM', () => {
+  it('raw HTML in tool input degrades to plain text', () => {
+    const editor = createEditor()
+    executeTool(
+      editor,
+      call('insert_content', {
+        afterIndex: -1,
+        markdown: '<p style="text-align: center"><span style="color: red">note</span> here</p>',
+      }),
+    )
+    const md = editor.getMarkdown()
+    expect(md).toContain('note here')
+    expect(md).not.toContain('<')
+  })
+
+  it('legacy ::: fenced divs in tool input are stripped, keeping the body', () => {
+    const editor = createEditor()
+    executeTool(
+      editor,
+      call('insert_content', {
+        afterIndex: -1,
+        markdown: ':::callout {type="warning"}\nBe careful.\n:::',
+      }),
+    )
+    const md = editor.getMarkdown()
+    expect(md).toContain('Be careful.')
+    expect(md).not.toContain(':::')
+  })
+})
+
 describe('replace_blocks', () => {
   it('rewrites a block range', () => {
     const editor = createEditor('# A\n\nold text\n\nkeep me')

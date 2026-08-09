@@ -182,7 +182,7 @@ export async function loadFile(
   try {
     const parsed = await parseDocx(new Uint8Array(result.data))
     ctx.editor.storage.listNumbering.defs = parsed.numbering
-    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: result.path, fileName: result.name, hash: result.hash })
@@ -270,7 +270,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const bytes = await buildBlankDocx({ eastAsiaFont: defaultEastAsiaFontFor(getLang()) })
     const parsed = await parseDocx(bytes)
     ctx.editor.storage.listNumbering.defs = parsed.numbering
-    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: null, fileName: t('appUntitledDocx'), hash: '', isBlank: true })
@@ -607,7 +607,7 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
     // Reload from saved bytes so docxIndex anchors point at the new file.
     const reparsed = await parseDocx(bytes)
     editor.storage.listNumbering.defs = reparsed.numbering
-    const rebasedPm = blocksToPmDoc(reparsed.blocks)
+    const rebasedPm = blocksToPmDoc(reparsed.blocks, readSections(reparsed))
     let unchanged = false
     try {
       unchanged = editor.state.doc.eq(editor.schema.nodeFromJSON(rebasedPm))

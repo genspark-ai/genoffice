@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { PAGE_MARK, parseDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 /**
@@ -61,12 +61,12 @@ describe('footer content inside a VML textbox', () => {
   it('parses the textbox paragraph into non-empty footer content with the PAGE marker', async () => {
     const parsed = await parseWithFooter(GOV_TEXTBOX_FOOTER)
     expect(parsed.footerHasPageNumber).toBe(true)
-    // the "\u2014 N \u2014" literal runs survive; the PAGE field becomes the '#' marker
-    expect(parsed.footerText).toBe('\u2014 # \u2014')
+    // the "\u2014 N \u2014" literal runs survive; the PAGE field becomes the PAGE_MARK marker
+    expect(parsed.footerText).toBe(`\u2014 ${PAGE_MARK} \u2014`)
     expect(parsed.footerParas).not.toBeNull()
     expect(parsed.footerParas!.length).toBeGreaterThan(0)
     const line = parsed.footerParas!.flatMap((p) => p.runs.map((r) => r.text)).join('')
-    expect(line).toBe('\u2014 # \u2014')
+    expect(line).toBe(`\u2014 ${PAGE_MARK} \u2014`)
     // run formatting from inside the textbox is preserved
     const firstRun = parsed.footerParas![0].runs[0]
     expect(firstRun.font).toBe('SimSun')
@@ -79,7 +79,9 @@ describe('footer content inside a VML textbox', () => {
     expect(part).toBeDefined()
     expect(part!.hasPageNumber).toBe(true)
     expect(part!.paras.length).toBeGreaterThan(0)
-    expect(part!.paras.flatMap((p) => p.runs.map((r) => r.text)).join('')).toBe('\u2014 # \u2014')
+    expect(part!.paras.flatMap((p) => p.runs.map((r) => r.text)).join('')).toBe(
+      `\u2014 ${PAGE_MARK} \u2014`,
+    )
   })
 
   it('footer PAGE field with a cached result drops the stale number and keeps literal runs', async () => {
@@ -98,9 +100,9 @@ describe('footer content inside a VML textbox', () => {
       '</w:p></w:ftr>'
     const parsed = await parseWithFooter(plainFooter)
     expect(parsed.footerHasPageNumber).toBe(true)
-    expect(parsed.footerText).toBe('\u2014 # \u2014')
+    expect(parsed.footerText).toBe(`\u2014 ${PAGE_MARK} \u2014`)
     expect(parsed.footerParas!.flatMap((p) => p.runs.map((r) => r.text)).join('')).toBe(
-      '\u2014 # \u2014',
+      `\u2014 ${PAGE_MARK} \u2014`,
     )
   })
 

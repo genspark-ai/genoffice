@@ -3,8 +3,10 @@ import {
   cssDualFontFamily,
   cssFontFamily,
   cssLineHeight,
+  krLineFactor,
   lineHeightFactor,
   textHasCjk,
+  isKoreanFontName,
 } from './line-metrics'
 
 /**
@@ -55,9 +57,16 @@ export function docHasCjk(parsed: ParsedDocFull): boolean {
  * line height). Recomputed live while editing via App's liveDocCjk.
  */
 export function docLineFactor(parsed: ParsedDocFull, hasCjk: boolean): number {
-  const dd = parsed.docDefaults
+  // Normal's EA face wins over docDefaults (a Normal declaring e.g. Noto KR must
+  // not fall back to the SimSun 1.3 factor). font === fontAscii means only a
+  // Latin slot was declared (StyleDisplay.font is EA-first) — not an EA choice.
+  const normal = defaultParaDisplay(parsed)
+  const normalEa =
+    normal?.font && (normal.font !== normal.fontAscii || isKoreanFontName(normal.font))
+      ? normal.font
+      : undefined
   return hasCjk
-    ? lineHeightFactor(dd?.eastAsiaFont ?? '宋体')
+    ? lineHeightFactor(normalEa ?? parsed.docDefaults?.eastAsiaFont ?? 'SimSun')
     : lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')
 }
 
@@ -93,6 +102,12 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // Latin factor for per-paragraph overrides (blockAttrs): pure-Western paragraphs
     // follow the body font's real single-line metric instead of a flat 1.2
     decls.push(`--doc-line-factor-latin:${lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')}`)
+    // Korean factor for hangul paragraphs (Batang-class 1.15 unless the EA face says otherwise)
+    const normalEaKr =
+      normal?.font && (normal.font !== normal.fontAscii || isKoreanFontName(normal.font))
+        ? normal.font
+        : undefined
+    decls.push(`--doc-line-factor-kr:${krLineFactor(normalEaKr ?? dd?.eastAsiaFont)}`)
     // dual-slot baseline: Latin families first, then the East Asian chain
     const baseAscii = normal?.fontAscii ?? dd?.asciiFont
     const baseEa = normal?.font ?? dd?.eastAsiaFont
@@ -114,14 +129,15 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       cssLineHeight(dd?.lineRule, dd?.lineRawTwips, dd?.lineSpacing)
     decls.push(`line-height:${lh ?? `calc(${factor} * 1)`}`)
     rules.push(`.doc-page { ${decls.join(';')} }`)
-    // docDefaults paragraph spacing is Word's real fallback (the static stylesheet's
-    // 8pt is a guess); declared per block so --doc-line-factor set inline on a
-    // paragraph re-evaluates the line-height var (it wouldn't through inheritance)
+    // Word's fallback when neither Normal nor docDefaults declares w:spacing is 0
+    // (the static stylesheet's 8pt guess inflated undeclared docs, table cells worst);
+    // declared per block so --doc-line-factor set inline on a paragraph re-evaluates
+    // the line-height var (it wouldn't through inheritance)
     const blockSel =
       '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6'
     const blockDecls = [
       `margin-top:${((normal?.spaceBeforeTwips ?? dd?.spaceBeforeTwips ?? 0) / 20).toFixed(1)}pt`,
-      `margin-bottom:${((normal?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 160) / 20).toFixed(1)}pt`,
+      `margin-bottom:${((normal?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 0) / 20).toFixed(1)}pt`,
       `line-height:${lh ?? `calc(${factor} * 1)`}`,
     ]
     rules.push(`${blockSel} { ${blockDecls.join(';')} }`)
@@ -205,8 +221,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       decls.push(`margin-top:${(d.spaceBeforeTwips / 20).toFixed(1)}pt`)
     if (d.spaceAfterTwips !== undefined)
       decls.push(`margin-bottom:${(d.spaceAfterTwips / 20).toFixed(1)}pt`)
-    if (d.indentLeftTwips) decls.push(`margin-left:${(d.indentLeftTwips / 20).toFixed(1)}pt`)
-    if (d.indentRightTwips) decls.push(`margin-right:${(d.indentRightTwips / 20).toFixed(1)}pt`)
+    if (d.indentRightTwips)
+      decls.push(`margin-inline-end:${(d.indentRightTwips / 20).toFixed(1)}pt`)
     if (d.indentFirstLineTwips)
       decls.push(`text-indent:${(d.indentFirstLineTwips / 20).toFixed(1)}pt`)
     if (d.align) decls.push(`text-align:${d.align}`)
@@ -215,6 +231,15 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (info.headingLevel && info.headingLevel >= 4 && !d.italic) decls.push('font-style:normal')
     if (decls.length > 0) {
       rules.push(`.doc-page [data-style="${CSS.escape(info.styleId)}"] { ${decls.join(';')} }`)
+    }
+    // Word merges indents per property (direct ind > numbering level ind > style ind), never
+    // adds them: list items run on --li-left geometry, so the style indent must not also apply
+    // as a margin — it only feeds the --li-left fallback chain (styles.css)
+    if (d.indentLeftTwips) {
+      const s = `[data-style="${CSS.escape(info.styleId)}"]`
+      const pt = (d.indentLeftTwips / 20).toFixed(1)
+      rules.push(`.doc-page ${s}:not(.doc-li) { margin-inline-start:${pt}pt }`)
+      rules.push(`.doc-page .doc-li${s} { --style-li-left:${pt}pt }`)
     }
     // w:contextualSpacing: consecutive same-style paragraphs swallow the spacing
     // between them (ListParagraph/ListBullet carry this — Word lists are tight)

@@ -1327,16 +1327,41 @@ export function toA1Address(row: number, column: number): string {
   return `${letters}${row + 1}`
 }
 
+/**
+ * Flush a freshly written file before it is renamed into place. The handle
+ * must be writable — Windows' FlushFileBuffers rejects read-only handles
+ * with EPERM (#356) — and the flush is best-effort on top of that: inside
+ * cloud-sync folders (OneDrive/Dropbox) or under AV locks, reopening or
+ * syncing can still be refused with EPERM/EACCES/EBUSY. The bytes are
+ * already written at this point, so a refused flush only weakens crash
+ * durability and must not fail the save itself.
+ */
+export async function syncFileBestEffort(path: string): Promise<void> {
+  const tolerated = (error: unknown) =>
+    ['EPERM', 'EACCES', 'EBUSY', 'EINVAL', 'ENOSYS'].includes(
+      (error as NodeJS.ErrnoException).code ?? '',
+    )
+  let handle
+  try {
+    handle = await open(path, 'r+')
+  } catch (error: unknown) {
+    if (tolerated(error)) return
+    throw error
+  }
+  try {
+    await handle.sync()
+  } catch (error: unknown) {
+    if (!tolerated(error)) throw error
+  } finally {
+    await handle.close()
+  }
+}
+
 export async function writeXlsxAtomically(path: string, buffer: Buffer): Promise<void> {
   const temporaryPath = join(dirname(path), `.${crypto.randomUUID()}.tmp.xlsx`)
   try {
     await writeFile(temporaryPath, buffer, { flag: 'wx' })
-    const handle = await open(temporaryPath, 'r+')
-    try {
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
+    await syncFileBestEffort(temporaryPath)
     await rename(temporaryPath, path)
   } catch (error: unknown) {
     await rm(temporaryPath, { force: true })

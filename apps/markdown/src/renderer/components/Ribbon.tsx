@@ -8,16 +8,14 @@ import { GensparkMark } from '../ai/AiPanel'
 import { liftFromList } from '../editor/slashCommand'
 import {
   IconBullets,
-  IconHighlight,
   IconHr,
-  IconIndentDec,
-  IconIndentInc,
   IconInlineCode,
   IconLink,
   IconNumbered,
   IconPicture,
   IconProperties,
   IconRedo,
+  IconSave,
   IconTable,
   IconTaskList,
   IconUndo,
@@ -26,6 +24,10 @@ import {
 interface Props {
   editor: Editor | null
   disabled: boolean
+  dirty: boolean
+  onSave: () => void
+  autoSave: boolean
+  onToggleAutoSave: (on: boolean) => void
   imageEnabled: boolean
   onInsertImage: () => void
   frontmatterOpen: boolean
@@ -35,18 +37,7 @@ interface Props {
   onAiPreset: (instruction: string) => void
 }
 
-type BlockStyle =
-  | 'paragraph'
-  | 'h1'
-  | 'h2'
-  | 'h3'
-  | 'h4'
-  | 'h5'
-  | 'h6'
-  | 'quote'
-  | 'codeBlock'
-  | 'callout'
-  | 'toggle'
+type BlockStyle = 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'quote' | 'codeBlock'
 
 const STYLE_LABEL: Record<BlockStyle, StringKey> = {
   paragraph: 'styleParagraph',
@@ -58,17 +49,12 @@ const STYLE_LABEL: Record<BlockStyle, StringKey> = {
   h6: 'styleH6',
   quote: 'styleQuote',
   codeBlock: 'styleCodeBlock',
-  callout: 'insertCallout',
-  toggle: 'insertToggle',
 }
 
 function applyBlockStyle(editor: Editor, style: BlockStyle): void {
   // block-type conversions are illegal inside list items — leave the list first
   liftFromList(editor)
   const chain = editor.chain().focus()
-  // unwrap wrappers the target style does not keep
-  if (style !== 'callout' && editor.isActive('callout')) chain.unsetCallout()
-  if (style !== 'toggle' && editor.isActive('toggle')) chain.unsetToggle()
   switch (style) {
     case 'paragraph':
       chain.setParagraph().run()
@@ -78,12 +64,6 @@ function applyBlockStyle(editor: Editor, style: BlockStyle): void {
       break
     case 'codeBlock':
       chain.setCodeBlock().run()
-      break
-    case 'callout':
-      chain.setCallout().run()
-      break
-    case 'toggle':
-      chain.setToggle().run()
       break
     default:
       chain.setHeading({ level: Number(style.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6 }).run()
@@ -162,6 +142,10 @@ function IconBtn({
 export function Ribbon({
   editor,
   disabled,
+  dirty,
+  onSave,
+  autoSave,
+  onToggleAutoSave,
   imageEnabled,
   onInsertImage,
   frontmatterOpen,
@@ -179,31 +163,24 @@ export function Ribbon({
     editor,
     selector: ({ editor: e }) => {
       if (!e) return null
-      const style: BlockStyle = e.isActive('callout')
-        ? 'callout'
-        : e.isActive('toggle')
-          ? 'toggle'
-          : e.isActive('codeBlock')
-            ? 'codeBlock'
-            : e.isActive('blockquote')
-              ? 'quote'
-              : e.isActive('heading')
-                ? (`h${e.getAttributes('heading').level}` as BlockStyle)
-                : 'paragraph'
+      const style: BlockStyle = e.isActive('codeBlock')
+        ? 'codeBlock'
+        : e.isActive('blockquote')
+          ? 'quote'
+          : e.isActive('heading')
+            ? (`h${e.getAttributes('heading').level}` as BlockStyle)
+            : 'paragraph'
       return {
         style,
         empty: e.isEmpty,
         bold: e.isActive('bold'),
         italic: e.isActive('italic'),
         strike: e.isActive('strike'),
-        underline: e.isActive('underline'),
-        highlight: e.isActive('highlight'),
         code: e.isActive('code'),
         link: e.isActive('link'),
         bullet: e.isActive('bulletList'),
         ordered: e.isActive('orderedList'),
         task: e.isActive('taskList'),
-        inList: e.isActive('listItem') || e.isActive('taskItem'),
         canUndo: e.can().undo(),
         canRedo: e.can().redo(),
       }
@@ -231,8 +208,9 @@ export function Ribbon({
     setLinkOpen(false)
   }
 
-  const listItemName = state?.task ? 'taskItem' : 'listItem'
-  const ICON = 16
+  // 20px inline-row rendering, same as the docs toolbar these icons come from
+  // (pinned stroke paints 1.5px at this size per the suite-wide icon rules)
+  const ICON = 20
 
   const aiPresets = [
     { kind: 'summarize', btn: 'aiSummarizeBtn', prompt: 'aiSummarizePrompt' },
@@ -242,236 +220,230 @@ export function Ribbon({
 
   return (
     <div className="ribbon">
-      <div className="ribbon-group">
-        <div className="ribbon-group-items">
-          <button
-            type="button"
-            className={`rb-big ai-entry${aiOpen ? ' active' : ''}`}
-            title={t('aiOpenAssistant')}
-            disabled={disabled}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onToggleAi}
-          >
-            <span className="rb-big-icon">
-              <GensparkMark size={26} />
-            </span>
-            <span>Genspark AI</span>
-          </button>
-          {aiPresets.map(({ kind, btn, prompt }) => (
-            <button
-              key={kind}
-              type="button"
-              className="rb-big ai-entry"
-              title={t(prompt)}
-              disabled={off || state?.empty}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onAiPreset(t(prompt))}
-            >
-              <span className="rb-big-icon">
-                <span className="ai-feature-icon" aria-hidden="true">
-                  <AiFeatureIcon kind={kind} />
-                </span>
-              </span>
-              <span>{t(btn)}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="rb-sep" />
-
-      <div className="rb-group">
-        <IconBtn
+      {/* quick-access row above the toolbar (save / undo / redo / autosave), same as the docs QAT row */}
+      <div className="ribbon-tabs">
+        <button
+          type="button"
+          className="qa-btn"
+          title={t('save')}
+          disabled={off || !dirty}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onSave}
+        >
+          <IconSave size={16} />
+        </button>
+        <button
+          type="button"
+          className="qa-btn"
           title={t('undo')}
           disabled={off || !state?.canUndo}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor?.chain().focus().undo().run()}
         >
-          <IconUndo size={ICON} />
-        </IconBtn>
-        <IconBtn
+          <IconUndo size={16} />
+        </button>
+        <button
+          type="button"
+          className="qa-btn"
           title={t('redo')}
           disabled={off || !state?.canRedo}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor?.chain().focus().redo().run()}
         >
-          <IconRedo size={ICON} />
-        </IconBtn>
+          <IconRedo size={16} />
+        </button>
+        <label className={`autosave-toggle${autoSave ? ' on' : ''}`} title={t('autoSaveTip')}>
+          <span className="autosave-knob" />
+          <span className="autosave-text">{t('autoSave')}</span>
+          <input
+            type="checkbox"
+            checked={autoSave}
+            onChange={(e) => onToggleAutoSave(e.target.checked)}
+          />
+        </label>
       </div>
 
-      <div className="rb-sep" />
-
-      <select
-        className="rb-style"
-        value={state?.style ?? 'paragraph'}
-        disabled={off}
-        onChange={(e) => editor && applyBlockStyle(editor, e.target.value as BlockStyle)}
-      >
-        {(Object.keys(STYLE_LABEL) as BlockStyle[]).map((s) => (
-          <option key={s} value={s}>
-            {t(STYLE_LABEL[s])}
-          </option>
-        ))}
-      </select>
-
-      <div className="rb-sep" />
-
-      <div className="rb-group">
-        <IconBtn
-          title={t('bold')}
-          active={state?.bold}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleBold().run()}
-        >
-          <span className="rb-glyph" style={{ fontWeight: 800 }}>
-            B
-          </span>
-        </IconBtn>
-        <IconBtn
-          title={t('italic')}
-          active={state?.italic}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleItalic().run()}
-        >
-          <span className="rb-glyph" style={{ fontStyle: 'italic' }}>
-            I
-          </span>
-        </IconBtn>
-        <IconBtn
-          title={t('underline')}
-          active={state?.underline}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleUnderline().run()}
-        >
-          <span className="rb-glyph" style={{ textDecoration: 'underline' }}>
-            U
-          </span>
-        </IconBtn>
-        <IconBtn
-          title={t('strike')}
-          active={state?.strike}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleStrike().run()}
-        >
-          <span className="rb-glyph" style={{ textDecoration: 'line-through' }}>
-            S
-          </span>
-        </IconBtn>
-        <IconBtn
-          title={t('highlight')}
-          active={state?.highlight}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleHighlight().run()}
-        >
-          <IconHighlight size={ICON} />
-        </IconBtn>
-        <IconBtn
-          title={t('inlineCode')}
-          active={state?.code}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleCode().run()}
-        >
-          <IconInlineCode size={ICON} />
-        </IconBtn>
-        <span className="rb-link-anchor">
-          <IconBtn title={t('link')} active={state?.link} disabled={off} onClick={openLink}>
-            <IconLink size={ICON} />
-          </IconBtn>
-          {linkOpen && (
-            <span className="rb-link-pop" onMouseDown={(e) => e.stopPropagation()}>
-              <input
-                ref={linkInputRef}
-                value={linkUrl}
-                placeholder={t('linkPlaceholder')}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') applyLink()
-                  if (e.key === 'Escape') setLinkOpen(false)
-                }}
-              />
-              <button type="button" onClick={applyLink}>
-                {t('linkApply')}
+      <div className="ribbon-body">
+        <div className="ribbon-group">
+          <div className="ribbon-group-items">
+            <button
+              type="button"
+              className={`rb-big ai-entry${aiOpen ? ' active' : ''}`}
+              title={t('aiOpenAssistant')}
+              disabled={disabled}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onToggleAi}
+            >
+              <span className="rb-big-icon">
+                <GensparkMark size={26} />
+              </span>
+              <span>Genspark AI</span>
+            </button>
+            {aiPresets.map(({ kind, btn, prompt }) => (
+              <button
+                key={kind}
+                type="button"
+                className="rb-big ai-entry"
+                title={t(prompt)}
+                disabled={off || state?.empty}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onAiPreset(t(prompt))}
+              >
+                <span className="rb-big-icon">
+                  <span className="ai-feature-icon" aria-hidden="true">
+                    <AiFeatureIcon kind={kind} />
+                  </span>
+                </span>
+                <span>{t(btn)}</span>
               </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rb-sep" />
+
+        <select
+          className="rb-style"
+          value={state?.style ?? 'paragraph'}
+          disabled={off}
+          onChange={(e) => editor && applyBlockStyle(editor, e.target.value as BlockStyle)}
+        >
+          {(Object.keys(STYLE_LABEL) as BlockStyle[]).map((s) => (
+            <option key={s} value={s}>
+              {t(STYLE_LABEL[s])}
+            </option>
+          ))}
+        </select>
+
+        <div className="rb-sep" />
+
+        <div className="rb-group">
+          <IconBtn
+            title={t('bold')}
+            active={state?.bold}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+          >
+            <span className="rb-glyph" style={{ fontWeight: 800 }}>
+              B
             </span>
-          )}
-        </span>
+          </IconBtn>
+          <IconBtn
+            title={t('italic')}
+            active={state?.italic}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleItalic().run()}
+          >
+            <span className="rb-glyph" style={{ fontStyle: 'italic' }}>
+              I
+            </span>
+          </IconBtn>
+          <IconBtn
+            title={t('strike')}
+            active={state?.strike}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleStrike().run()}
+          >
+            <span className="rb-glyph" style={{ textDecoration: 'line-through' }}>
+              S
+            </span>
+          </IconBtn>
+          <IconBtn
+            title={t('inlineCode')}
+            active={state?.code}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleCode().run()}
+          >
+            <IconInlineCode size={ICON} />
+          </IconBtn>
+          <span className="rb-link-anchor">
+            <IconBtn title={t('link')} active={state?.link} disabled={off} onClick={openLink}>
+              <IconLink size={ICON} />
+            </IconBtn>
+            {linkOpen && (
+              <span className="rb-link-pop" onMouseDown={(e) => e.stopPropagation()}>
+                <input
+                  ref={linkInputRef}
+                  value={linkUrl}
+                  placeholder={t('linkPlaceholder')}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyLink()
+                    if (e.key === 'Escape') setLinkOpen(false)
+                  }}
+                />
+                <button type="button" onClick={applyLink}>
+                  {t('linkApply')}
+                </button>
+              </span>
+            )}
+          </span>
+        </div>
+
+        <div className="rb-sep" />
+
+        <div className="rb-group">
+          <IconBtn
+            title={t('bulletList')}
+            active={state?.bullet}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          >
+            <IconBullets size={ICON} />
+          </IconBtn>
+          <IconBtn
+            title={t('orderedList')}
+            active={state?.ordered}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          >
+            <IconNumbered size={ICON} />
+          </IconBtn>
+          <IconBtn
+            title={t('taskList')}
+            active={state?.task}
+            disabled={off}
+            onClick={() => editor?.chain().focus().toggleTaskList().run()}
+          >
+            <IconTaskList size={ICON} />
+          </IconBtn>
+        </div>
+
+        <div className="rb-sep" />
+
+        <div className="rb-group">
+          <IconBtn
+            title={t('insertTable')}
+            disabled={off}
+            onClick={() =>
+              editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+            }
+          >
+            <IconTable size={ICON} />
+          </IconBtn>
+          <IconBtn title={t('insertImage')} disabled={off || !imageEnabled} onClick={onInsertImage}>
+            <IconPicture size={ICON} />
+          </IconBtn>
+          <IconBtn
+            title={t('insertHr')}
+            disabled={off}
+            onClick={() => editor?.chain().focus().setHorizontalRule().run()}
+          >
+            <IconHr size={ICON} />
+          </IconBtn>
+        </div>
+
+        <div className="rb-spacer" />
+
+        <IconBtn
+          title={t('fmProperties')}
+          active={frontmatterOpen}
+          disabled={disabled}
+          onClick={onToggleFrontmatter}
+        >
+          <IconProperties size={ICON} />
+        </IconBtn>
       </div>
-
-      <div className="rb-sep" />
-
-      <div className="rb-group">
-        <IconBtn
-          title={t('bulletList')}
-          active={state?.bullet}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleBulletList().run()}
-        >
-          <IconBullets size={ICON} />
-        </IconBtn>
-        <IconBtn
-          title={t('orderedList')}
-          active={state?.ordered}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-        >
-          <IconNumbered size={ICON} />
-        </IconBtn>
-        <IconBtn
-          title={t('taskList')}
-          active={state?.task}
-          disabled={off}
-          onClick={() => editor?.chain().focus().toggleTaskList().run()}
-        >
-          <IconTaskList size={ICON} />
-        </IconBtn>
-        <IconBtn
-          title={t('outdent')}
-          disabled={off || !state?.inList}
-          onClick={() => editor?.chain().focus().liftListItem(listItemName).run()}
-        >
-          <IconIndentDec size={ICON} />
-        </IconBtn>
-        <IconBtn
-          title={t('indent')}
-          disabled={off || !state?.inList}
-          onClick={() => editor?.chain().focus().sinkListItem(listItemName).run()}
-        >
-          <IconIndentInc size={ICON} />
-        </IconBtn>
-      </div>
-
-      <div className="rb-sep" />
-
-      <div className="rb-group">
-        <IconBtn
-          title={t('insertTable')}
-          disabled={off}
-          onClick={() =>
-            editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-          }
-        >
-          <IconTable size={ICON} />
-        </IconBtn>
-        <IconBtn title={t('insertImage')} disabled={off || !imageEnabled} onClick={onInsertImage}>
-          <IconPicture size={ICON} />
-        </IconBtn>
-        <IconBtn
-          title={t('insertHr')}
-          disabled={off}
-          onClick={() => editor?.chain().focus().setHorizontalRule().run()}
-        >
-          <IconHr size={ICON} />
-        </IconBtn>
-      </div>
-
-      <div className="rb-spacer" />
-
-      <IconBtn
-        title={t('fmProperties')}
-        active={frontmatterOpen}
-        disabled={disabled}
-        onClick={onToggleFrontmatter}
-      >
-        <IconProperties size={ICON} />
-      </IconBtn>
     </div>
   )
 }

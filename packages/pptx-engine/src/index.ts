@@ -779,6 +779,58 @@ export function setPictureOpacity(slide: Slide, sourceId: string, opacity: numbe
   return true
 }
 
+/**
+ * Swap a picture's backing image for new bytes, keeping frame, z-order, border
+ * and effects. New media part + rel; the <a:blip> reference is re-pointed via
+ * byte surgery baked into originalXml (same pattern as setPictureOpacity).
+ * srcRect is kept only when the caller knows the new image shares the old one's
+ * pixel geometry (e.g. background-removal output) — otherwise the stale crop
+ * would show an arbitrary window of the new image.
+ */
+export function replacePictureBytes(
+  opened: OpenedPptx,
+  slide: Slide,
+  sourceId: string,
+  bytes: Uint8Array,
+  ext: string,
+  opts?: { keepSrcRect?: boolean },
+): boolean {
+  const el = slide.elements.find((e) => e.id === sourceId && e.type === 'picture')
+  if (!el) return false
+  const pic = el as import('./types').PictureElement
+  let xml = patchedElementXml(el)
+  const blip = /<a:blip\b[^>]*\/?>/.exec(xml)
+  if (!blip) return false
+  const added = addImageMediaAndRel(opened, slide, bytes, ext)
+  if (!added) return false
+  let tag = blip[0]
+  // A coexisting r:link ("insert and link" pictures) would keep refreshing from
+  // the old external file, so it is dropped once the embed points at new bytes
+  if (/r:embed="/.test(tag))
+    tag = tag.replace(/r:embed="[^"]*"/, `r:embed="${added.rid}"`).replace(/\s+r:link="[^"]*"/, '')
+  else if (/r:link="/.test(tag)) tag = tag.replace(/r:link="[^"]*"/, `r:embed="${added.rid}"`)
+  else tag = tag.replace(/<a:blip\b/, `<a:blip r:embed="${added.rid}"`)
+  xml = xml.slice(0, blip.index) + tag + xml.slice(blip.index + blip[0].length)
+  // The replacement is always raster (IMAGE_MIME gate), and PowerPoint prefers a
+  // leftover Office-2016 <asvg:svgBlip> extension over the retargeted r:embed —
+  // drop that extension entry (and its wrapper when nothing else remains)
+  xml = xml
+    .replace(/<a:ext\b[^>]*>\s*<\w+:svgBlip\b[\s\S]*?<\/a:ext>/, '')
+    .replace(/<a:extLst>\s*<\/a:extLst>/, '')
+  if (!opts?.keepSrcRect) {
+    xml = xml.replace(/<a:srcRect\b[^>]*\/>|<a:srcRect\b[^>]*>[\s\S]*?<\/a:srcRect>/, '')
+    delete pic.srcRect
+  }
+  pic.mediaRef = added.mediaPath
+  delete pic.dataUrl // the media resolver re-derives it from the new mediaRef
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtySrcRect = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  slide.structureDirty = true
+  return true
+}
+
 // ── New slides (duplicate an existing slide / blank slide) ────────────
 
 const SLIDE_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml'

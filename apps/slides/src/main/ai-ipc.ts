@@ -30,7 +30,7 @@ import {
   gskLoginInfo,
   hasGskAuth,
 } from '@genoffice/ai-search'
-import { addPicture } from '@genoffice/pptx-engine'
+import { addPicture, replacePictureBytes } from '@genoffice/pptx-engine'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'
 import { pushHistory, rebuildSlide, sessions } from './session-state'
@@ -273,6 +273,41 @@ export function registerSlidesOnlyAiIpc(): void {
         session.fitWidthPx = op.fitWidthPx
         const rebuilt = rebuildSlide(session, op.slideIndex)
         return rebuilt ? { slide: rebuilt, sourceId: el.id } : null
+      } catch {
+        return null
+      }
+    },
+  )
+
+  // Download an image from a URL and swap it into an existing picture in place
+  // (frame/z-order/effects survive). Same URL hardening as ai:insert-image-url.
+  ipcMain.handle(
+    'ai:replace-picture-url',
+    async (e, op: { slideIndex: number; sourceId: string; url: string; keepSrcRect?: boolean }) => {
+      const session = sessions.get(e.sender.id)
+      if (!session) return null
+      const slide = session.opened.deck.slides[op.slideIndex]
+      if (!slide) return null
+      try {
+        const resp = await fetchRemoteImage(String(op.url))
+        if (!resp || !resp.ok) return null
+        const buf = Buffer.from(await resp.arrayBuffer())
+        const ct = resp.headers.get('content-type') ?? ''
+        const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : 'jpg'
+        pushHistory(session)
+        const ok = replacePictureBytes(
+          session.opened,
+          slide,
+          String(op.sourceId),
+          new Uint8Array(buf),
+          ext,
+          op.keepSrcRect ? { keepSrcRect: true } : undefined,
+        )
+        if (!ok) {
+          session.undoStack.pop()
+          return null
+        }
+        return rebuildSlide(session, op.slideIndex)
       } catch {
         return null
       }
