@@ -161,7 +161,7 @@ describe('textbox editing', () => {
       '<w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t xml:space="preserve">red part</w:t></w:r>',
     )
     expect(out).toContain(
-      '<w:r><w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr><w:t xml:space="preserve"> bold part</w:t></w:r>',
+      '<w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr><w:t xml:space="preserve"> bold part</w:t></w:r>',
     )
   })
 
@@ -178,7 +178,7 @@ describe('textbox editing', () => {
       [null, para({ runs: [{ text: 'STILL', bold: true }] })],
     ])
     expect(kept).toContain(
-      '<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">STILL</w:t></w:r>',
+      '<w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">STILL</w:t></w:r>',
     )
 
     // align null strips the centered jc from the second paragraph
@@ -186,7 +186,7 @@ describe('textbox editing', () => {
       [null, para({ runs: [{ text: 'LEFT', bold: true }], align: null })],
     ])
     expect(removed).toContain(
-      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">LEFT</w:t></w:r></w:p>',
+      '<w:p><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">LEFT</w:t></w:r></w:p>',
     )
   })
 
@@ -203,7 +203,7 @@ describe('textbox editing', () => {
     ])
     // new paragraph reuses the centered pPr of the last original
     expect(out).toContain(
-      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">line3</w:t></w:r></w:p>',
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">line3</w:t></w:r></w:p>',
     )
     // empty paragraph keeps pPr only
     expect(out).toContain('<w:p><w:pPr><w:jc w:val="center"/></w:pPr></w:p>')

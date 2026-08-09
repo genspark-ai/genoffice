@@ -2014,6 +2014,10 @@ function revisionRPrChangeXml(run: Run): string | null {
   const props: string[] = []
   if (old.styleId) props.push(`<w:rStyle w:val="${escapeXmlAttr(old.styleId)}"/>`)
   if (old.font || old.fontAscii) props.push(freshRFontsXml(old.font, old.fontAscii))
+  // no Cs twins here: this nested w:rPr records what the run looked like before the tracked
+  // revision, and old.bold cannot tell w:b from w:b plus w:bCs. Adding them would invent a
+  // complex-script flag the document never had, so rejecting the revision would bold Arabic
+  // that was never bold.
   if (old.bold) props.push('<w:b/>')
   if (old.italic) props.push('<w:i/>')
   if (old.strike) props.push('<w:strike/>')
@@ -2043,8 +2047,14 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   if (run.font || run.fontAscii) {
     out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii) })
   }
-  if (run.bold) out.push({ name: 'w:b', xml: '<w:b/>' })
-  if (run.italic) out.push({ name: 'w:i', xml: '<w:i/>' })
+  // the Cs twins carry the same flag for complex-script text; without them clicking Bold
+  // on Arabic or Hebrew changes nothing on screen, which is what Word writes too
+  if (run.bold) {
+    out.push({ name: 'w:b', xml: '<w:b/>' }, { name: 'w:bCs', xml: '<w:bCs/>' })
+  }
+  if (run.italic) {
+    out.push({ name: 'w:i', xml: '<w:i/>' }, { name: 'w:iCs', xml: '<w:iCs/>' })
+  }
   if (run.strike) out.push({ name: 'w:strike', xml: '<w:strike/>' })
   if (run.color)
     out.push({ name: 'w:color', xml: `<w:color w:val="${escapeXmlAttr(run.color)}"/>` })
