@@ -25,12 +25,12 @@ bolted-on chat box.
 
 ## Download
 
-| Platform                        | Requirements                                | Download                                                                                                                             |
-| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS** (Apple Silicon)       | macOS 11+                                   | [GenOffice-0.5.83-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOffice-0.5.83-arm64.dmg)          |
-| **Windows** (x64)               | Windows 10+                                 | [GenOfficeSetup-v0.5.79.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.5.83/GenOfficeSetup-v0.5.79.exe)          |
-| **Linux** — Debian / Ubuntu     | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer) | [genoffice_0.5.149_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/genoffice_0.5.149_amd64.deb) |
-| **Linux** — other distributions | x86_64, glibc 2.34+, FUSE 2                 | [GenOffice-0.5.149.AppImage](https://github.com/genspark-ai/genoffice/releases/download/linux-v0.5.149/GenOffice-0.5.149.AppImage)   |
+| Platform                        | Requirements                                | Download                                                                                                                    |
+| ------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **macOS** (Apple Silicon)       | macOS 11+                                   | [GenOffice-0.6.13-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/GenOffice-0.6.13-arm64.dmg) |
+| **Windows** (x64)               | Windows 10+                                 | [GenOfficeSetup-v0.6.13.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/GenOfficeSetup-v0.6.13.exe) |
+| **Linux** — Debian / Ubuntu     | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer) | [genoffice_0.6.13_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/genoffice_0.6.13_amd64.deb) |
+| **Linux** — other distributions | x86_64, glibc 2.34+, FUSE 2                 | [GenOffice-0.6.13.AppImage](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/GenOffice-0.6.13.AppImage)   |
 
 All builds come from `main`; the macOS and Windows installers are signed.
 Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
@@ -41,7 +41,7 @@ The deb installs with apt — it pulls in the dependencies and adds GenOffice
 to the applications menu:
 
 ```bash
-sudo apt install ./genoffice_0.5.149_amd64.deb
+sudo apt install ./genoffice_0.6.13_amd64.deb
 ```
 
 The AppImage instead runs in place: install the FUSE 2 runtime
@@ -49,8 +49,8 @@ The AppImage instead runs in place: install the FUSE 2 runtime
 make the file executable, then run it:
 
 ```bash
-chmod +x GenOffice-0.5.149.AppImage
-./GenOffice-0.5.149.AppImage
+chmod +x GenOffice-0.6.13.AppImage
+./GenOffice-0.6.13.AppImage
 ```
 
 ## Apps
