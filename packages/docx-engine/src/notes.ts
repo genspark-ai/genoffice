@@ -35,19 +35,27 @@ const NOTE_NS =
   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 
 /**
- * Root attributes for a regenerated part. Entries are spliced back in as original bytes, so
- * the root has to keep declaring whatever prefixes those bytes use: Word puts w14:paraId on
- * every paragraph it writes, and a literal namespace list leaves that prefix unbound.
+ * Root attributes for a regenerated part. The part mixes two sources, so the root has to
+ * declare the prefixes of both: entries spliced back in as original bytes may use anything
+ * the original root declared (Word puts w14:paraId on every paragraph it writes), and
+ * entries this engine writes use the prefixes in `required`. Keeping only one side leaves
+ * the other unbound, which Word reports as unreadable content.
  */
 export function rootAttributes(
   originalXml: string | null,
   rootTag: string,
-  fallback: string,
+  required: string,
 ): string {
   const attrs = originalXml
     ? new RegExp(`<${rootTag}\\b([^>]*?)/?>`).exec(originalXml)?.[1]?.trim()
     : undefined
-  return attrs && attrs.includes('xmlns:') ? attrs : fallback
+  if (!attrs || !attrs.includes('xmlns:')) return required
+  const prefixOf = (declaration: string) => /xmlns:([\w.-]+)=/.exec(declaration)?.[1] ?? ''
+  const declared = new Set([...attrs.matchAll(/xmlns:[\w.-]+=/g)].map((m) => prefixOf(m[0])))
+  const missing = [...required.matchAll(/xmlns:[\w.-]+="[^"]*"/g)]
+    .map((m) => m[0])
+    .filter((declaration) => !declared.has(prefixOf(declaration)))
+  return missing.length === 0 ? attrs : `${attrs} ${missing.join(' ')}`
 }
 
 /** real notes (separator entries excluded), in file order */

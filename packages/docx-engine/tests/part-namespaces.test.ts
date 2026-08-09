@@ -60,3 +60,29 @@ describe('regenerated part namespaces', () => {
     )
   })
 })
+
+describe('regenerated parts declare what they write, not only what they inherited', () => {
+  // comments.xml is the case that bites: buildCommentsXml stamps w14:paraId on every
+  // comment it writes, so reusing a root that declares only w leaves that prefix unbound.
+  it('adds a required prefix the original root did not declare', () => {
+    const original =
+      '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    const required =
+      'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+      'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"'
+    const out = rootAttributes(original, 'w:comments', required)
+    expect(out).toContain('xmlns:w14=')
+    expect(unboundPrefixes(`<w:comments ${out}><w:p w14:paraId="1"/></w:comments>`)).toEqual([])
+  })
+
+  it('still keeps a prefix only the original had', () => {
+    const original =
+      '<w:comments xmlns:w="W" xmlns:r="R" xmlns:w14="W14" xmlns:mc="MC" mc:Ignorable="w14">'
+    const out = rootAttributes(original, 'w:comments', 'xmlns:w="W" xmlns:w14="W14"')
+    for (const prefix of ['xmlns:w=', 'xmlns:r=', 'xmlns:w14=', 'xmlns:mc=']) {
+      expect(out).toContain(prefix)
+    }
+    // and does not duplicate one both sides declare
+    expect(out.match(/xmlns:w14=/g)).toHaveLength(1)
+  })
+})
