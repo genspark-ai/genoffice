@@ -1,0 +1,31 @@
+/* GenOffice Android — shared mobile-first editor chrome. The underlying desktop
+ * editors stay intact; this layer changes presentation and touch ergonomics. */
+:root{--go-blue:#2563eb;--go-bg:#f4f5f7;--go-surface:#fff;--go-border:#e1e4e8;--go-text:#17191c;--go-muted:#69717d}
+.android-mobile-editor{width:100%;height:100%;display:flex;flex-direction:column;background:var(--go-bg);overflow:hidden}
+.android-mobile-top{height:52px;flex:0 0 52px;display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--go-surface);border-bottom:1px solid var(--go-border);z-index:200}
+.android-mobile-top button,.android-mobile-bottom button{border:0;background:transparent;color:var(--go-text);min-width:40px;min-height:40px;border-radius:9px;font:inherit;touch-action:manipulation}
+.android-mobile-top button:active,.android-mobile-bottom button:active{background:#eef1f5}
+.android-mobile-back{font-size:25px;line-height:1}
+.android-mobile-title{min-width:0;flex:1;font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.android-mobile-subtitle{display:block;font-size:10px;font-weight:500;color:var(--go-muted);margin-top:1px}
+.android-mobile-menu{font-size:20px}
+.android-mobile-canvas{position:relative;flex:1;min-height:0;overflow:hidden}
+.android-mobile-bottom{height:58px;flex:0 0 58px;display:flex;align-items:center;justify-content:space-around;padding:5px 4px calc(5px + env(safe-area-inset-bottom));background:var(--go-surface);border-top:1px solid var(--go-border);z-index:200}
+.android-mobile-bottom button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;color:#5f6670;min-width:64px}
+.android-mobile-bottom button b{font-size:19px;font-weight:500;line-height:19px}
+.android-mobile-bottom button.active{color:var(--go-blue);font-weight:700}
+.android-mobile-tools{position:absolute;left:8px;right:8px;bottom:8px;padding:8px;display:none;grid-template-columns:repeat(4,1fr);gap:6px;background:#fff;border:1px solid var(--go-border);border-radius:14px;box-shadow:0 8px 30px #0002;z-index:300}
+.android-mobile-tools.open{display:grid}
+.android-mobile-tools button{min-height:44px;border:0;border-radius:10px;background:#f4f5f7;font:inherit;font-size:12px;touch-action:manipulation}
+.android-mobile-tools button:active{background:#e8ebef}
+/* Desktop ribbons/toolbars are retained for tablets and desktop-sized WebViews.
+ * Phones use the bottom navigation and contextual Tools sheet instead. */
+@media(max-width:700px){
+  .android-mobile-editor .ribbon,.android-mobile-editor .ribbon-tabs,.android-mobile-editor .ribbon-body{display:none!important}
+  .android-mobile-editor .toolbar{display:none!important}
+  .android-mobile-editor .editor-toolbar{display:none!important}
+  .android-mobile-editor .page{margin-left:8px!important;margin-right:8px!important}
+  .android-mobile-editor .document-page{max-width:calc(100vw - 16px)!important}
+  .android-mobile-editor button,.android-mobile-editor input,.android-mobile-editor select,.android-mobile-editor textarea{touch-action:manipulation}
+}
+@media(min-width:701px){.android-mobile-bottom{display:none}.android-mobile-top{height:44px;flex-basis:44px}.android-mobile-tools{display:none!important}}
