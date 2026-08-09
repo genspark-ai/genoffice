@@ -2,7 +2,14 @@
  * IPC interface type definitions (shared by the renderer and main processes).
  * No Electron dependency; importable from the renderer.
  */
-import type { ChatAttachment, ChatMessage, ChatMeta, ProjectSummary, TimelineEntry, ToolActivity } from './types.js'
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ChatMeta,
+  ProjectSummary,
+  TimelineEntry,
+  ToolActivity,
+} from './types.js'
 
 export type { ChatAttachment, ChatMessage, ChatMeta, ProjectSummary, TimelineEntry, ToolActivity }
 
@@ -71,6 +78,20 @@ export interface GetTimelineArgs {
   limit?: number
 }
 
+/** One file's conversations: the session picker's list, and the two ways to move between them */
+export interface FileChatsArgs {
+  /** Absolute path of the currently open file; null means an unsaved new file */
+  filePath: string | null
+  /** Sheets mode: look up the file path by sessionId (handled in the main process) */
+  sessionId?: string
+  /** Temp chatId for unsaved files, e.g. "unsaved-<timestamp>" */
+  tempChatId?: string
+}
+
+export interface SwitchChatArgs extends FileChatsArgs {
+  chatId: string
+}
+
 /** Project storage API the main process exposes to the renderer */
 export interface ProjectApi {
   /**
@@ -97,4 +118,11 @@ export interface ProjectApi {
   moveFile(args: MoveFileArgs): Promise<void>
   /** Gets the project timeline */
   getTimeline(args: GetTimelineArgs): Promise<TimelineEntry[]>
+  // ── sessions ──
+  /** Every conversation belonging to one file, oldest first */
+  listChatsForFile(args: FileChatsArgs): Promise<ChatMeta[]>
+  /** Starts a fresh conversation for a file and makes it the active one */
+  newChat(args: FileChatsArgs): Promise<ResolveChatResult>
+  /** Loads an earlier conversation by making it active again */
+  switchChat(args: SwitchChatArgs): Promise<ResolveChatResult>
 }

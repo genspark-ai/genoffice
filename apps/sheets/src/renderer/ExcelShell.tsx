@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SHAPE_GALLERY_GROUPS, ShapePreview } from '@genoffice/ui'
+import type { AiSettings } from '@genoffice/ai-provider'
+import type { ChatMeta } from '@genoffice/project-store'
 
 import {
   CaretIcon,
@@ -142,6 +144,13 @@ interface ExcelShellProps {
   readonly onSend: (instruction?: string) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
+  /** this workbook's stored conversations, newest first */
+  readonly onListSessions: () => Promise<ChatMeta[]>
+  /** current AI settings, and the switch, for the sidebar model picker */
+  readonly onListModels: () => Promise<AiSettings | null>
+  readonly onSelectModel: (profileId: string | null) => Promise<AiSettings | null>
+  readonly onLoadSession: (chatId: string) => void
+  readonly activeChatId: string | null
   readonly onUndo: () => void
   readonly onCommand: (command: string) => void
   /// Left side of the status bar (ready / streaming / AI progress messages).
@@ -255,6 +264,11 @@ export function ExcelShell({
   onSend,
   onStop,
   onNewChat,
+  onListSessions,
+  onListModels,
+  onSelectModel,
+  onLoadSession,
+  activeChatId,
   onUndo,
   onCommand,
   statusMessage,
@@ -436,6 +450,11 @@ export function ExcelShell({
           onSend={onSend}
           onStop={onStop}
           onNewChat={onNewChat}
+          onListSessions={onListSessions}
+          onListModels={onListModels}
+          onSelectModel={onSelectModel}
+          onLoadSession={onLoadSession}
+          activeChatId={activeChatId}
           onUndo={onUndo}
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}

@@ -10,16 +10,24 @@ import { join } from 'node:path'
 import {
   AiCreditsError,
   AiTimeoutError,
+  activeProvider,
   defaultAiSettings,
   resolveAiSettings,
+  syncActiveProfile,
   streamForProvider,
+  type AiProviderConfig,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
-import { fetchRemoteImage } from '@genoffice/electron-utils'
+import {
+  AgentInstructionsStore,
+  fetchRemoteImage,
+  registerAgentToolIpc,
+} from '@genoffice/electron-utils'
 import {
   webSearch,
   imageSearch,
@@ -55,14 +63,54 @@ function writeJson(path: string, value: unknown): void {
 
 const activeAiStreams = new Map<string, AbortController>()
 
+let instructionsStore: AgentInstructionsStore | null = null
+
+/** lazily built: userData is only resolvable once the app is ready */
+function instructions(): AgentInstructionsStore {
+  if (!instructionsStore) instructionsStore = new AgentInstructionsStore(app.getPath('userData'))
+  return instructionsStore
+}
+
+/**
+ * Read the settings file and normalize the provider selection: a complete
+ * custom endpoint is honoured, anything else falls back to Genspark.
+ */
+function readAiSettings(): AiSettings {
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  return settings
+}
+
+/**
+ * Backend for one request. The settings file — not the renderer's snapshot —
+ * is the source of truth, so a model change in the home window reaches an
+ * already-open slides tab without a reload. The genspark key never enters the
+ * file; it comes from the gsk login state per request.
+ */
+function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | undefined } {
+  const settings = readAiSettings()
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    return { provider, config: { ...config, apiKey: gskApiKey() } }
+  }
+  return { provider, config }
+}
+
+/** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
+function needsApiKey(provider: AiProviderId): boolean {
+  return provider !== 'custom'
+}
+
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
-    settings.provider = 'genspark'
-    return settings
-  })
+  // Standalone only: in shell aggregate mode docs-main owns the generic ai:*
+  // channels and this whole function is never called. Without it the agent's
+  // browse / skills / memory / view_page tools all answered "No handler
+  // registered" when slides ran as its own process.
+  registerAgentToolIpc(instructions)
+
+  ipcMain.handle('ai:get-settings', (): AiSettings => readAiSettings())
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
   ipcMain.handle(
@@ -83,20 +131,35 @@ export function registerAiIpc(): void {
     writeJson(AI_SETTINGS_PATH(), settings)
   })
 
+  /**
+   * Switch the live model from the AI sidebar. A null profileId means the
+   * Genspark account. The file is re-read here rather than trusting a renderer
+   * snapshot, so two panels switching at once cannot clobber each other's
+   * unrelated settings — and because every request re-reads the file, the
+   * switch reaches tabs that are already open.
+   */
+  ipcMain.handle('ai:set-active-model', (_event, profileId: unknown): AiSettings => {
+    const current = readAiSettings()
+    const id = typeof profileId === 'string' ? profileId : null
+    const next = syncActiveProfile({
+      ...current,
+      provider: id ? 'custom' : 'genspark',
+      ...(id ? { activeProfileId: id } : {}),
+    })
+    next.provider = activeProvider(next)
+    writeJson(AI_SETTINGS_PATH(), next)
+    return next
+  })
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // The genspark key never enters the settings file; it is fetched from the gsk login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const { provider, config } = activeAiConfig()
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',

@@ -20,7 +20,8 @@ import {
   COPYRIGHT_HOSTS,
   asRecord,
   firstItem,
-  gskProxyUrl,
+  gskChildProxyReady,
+  gskChildProxyUrl,
   safeHost,
   type ImageSearchResult,
   type WebSearchResult,
@@ -110,18 +111,21 @@ export function hasGskAuth(): boolean {
 
 // The main process's undici dispatcher (see the apps' proxy bootstraps) never
 // reaches child processes: without forwarding they dial genspark.ai directly.
-export { setGskProxyUrl, gskProxyUrl } from './shared'
+export { setGskProxyUrl, gskProxyUrl, gskChildProxyUrl, gskChildProxyReady } from './shared'
 
 /**
  * env for gsk CLI children: Electron-as-Node plus proxy forwarding. The CLI
  * uses Node's built-in fetch, which ignores proxy env vars unless
  * NODE_USE_ENV_PROXY=1 (Node >= 24 — Electron 41 ships Node 24). Only
- * http(s):// proxies are forwarded; undici's env proxy cannot speak SOCKS.
+ * http(s):// proxies can be forwarded, because undici's env proxy cannot speak
+ * SOCKS — so a SOCKS proxy is fronted by a loopback HTTP bridge and that
+ * bridge's url is what reaches the child (see socks-bridge.ts).
  */
 export function gskChildEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, ELECTRON_RUN_AS_NODE: '1' }
   const proxy = [
-    gskProxyUrl(),
+    // a SOCKS proxy arrives here as the loopback http bridge that fronts it
+    gskChildProxyUrl(),
     base.HTTPS_PROXY,
     base.https_proxy,
     base.HTTP_PROXY,
@@ -170,9 +174,12 @@ export function parseGskOutput(stdout: string): unknown {
   throw new Error(`No JSON found in gsk output: ${stdout.slice(0, 300)}`)
 }
 
-function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
+async function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
   const entry = resolveGskEntry()
   if (!entry) return Promise.reject(new Error('@genspark/cli is not installed'))
+  // a SOCKS proxy is fronted by a bridge that may still be binding its port;
+  // without this the first call after a settings change would dial direct
+  await gskChildProxyReady()
   // inject the resolved key so the CLI bills the same identity as our direct HTTP calls
   const key = gskApiKey()
   return new Promise((resolve, reject) => {

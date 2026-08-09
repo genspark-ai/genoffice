@@ -11,12 +11,17 @@ import {
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
+import type { AgentRules, UserMemory, UserSkill } from '@genoffice/agent-core'
 import {
+  AgentInstructionsStore,
   appMenuLabels,
+  applyNetworkSettings,
+  bootstrapNetworkSettings as bootstrapNetworkSettingsIn,
   contextMenuLabels,
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  registerAgentToolIpc,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -35,11 +40,21 @@ import { parseFileToText } from '@genoffice/file-parse'
 import {
   AiCreditsError,
   AiTimeoutError,
+  activeProvider,
+  applyModelSettings,
   chatForProvider,
   defaultAiSettings,
+  isReasoningEffort,
+  normalizeProxyUrl,
   resolveAiSettings,
   streamForProvider,
+  syncActiveProfile,
+  toModelSettings,
   type AiChatRequest,
+  type AiChatResponse,
+  type AiModelSettings,
+  type AiProviderConfig,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
@@ -2469,18 +2484,176 @@ const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 const activeAiStreams = new Map<string, AbortController>()
 
 /**
+ * Read the settings file and normalize the provider selection: a complete
+ * custom endpoint is honoured, anything else falls back to Genspark.
+ */
+function readAiSettings(): AiSettings {
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  return settings
+}
+
+export { applyNetworkSettings, applyProxy, currentProxyUrl } from '@genoffice/electron-utils'
+
+/**
+ * Load the persisted network settings at startup. Returns true when the user
+ * configured an explicit proxy, which tells the app bootstraps to skip their
+ * env-var / system-proxy detection: an explicit choice must win over both, and
+ * must also be honoured when it says "no proxy" on a machine whose system
+ * proxy would otherwise be picked up.
+ */
+export function bootstrapNetworkSettings(): boolean {
+  return bootstrapNetworkSettingsIn(app.getPath('userData'))
+}
+
+/** file-backed rules + skills, shared by every editor module through this IPC */
+let instructionsStore: AgentInstructionsStore | null = null
+function instructions(): AgentInstructionsStore {
+  if (!instructionsStore) instructionsStore = new AgentInstructionsStore(app.getPath('userData'))
+  return instructionsStore
+}
+
+// ── settings accessors for the shell's settings window ──────────────
+// The window talks to the shell, but the storage lives here alongside the
+// handlers the editors use, so both read and write the same files.
+
+export function readModelSettings(): AiModelSettings {
+  return toModelSettings(readAiSettings())
+}
+
+export function writeModelSettings(input: AiModelSettings): AiModelSettings {
+  const next = applyModelSettings(readAiSettings(), sanitizeModelSettings(input))
+  writeJson(SETTINGS_PATH(), next)
+  applyNetworkSettings(next)
+  return toModelSettings(next)
+}
+
+export function readAgentRules(): AgentRules {
+  return instructions().readRules()
+}
+
+export function writeAgentRules(rules: AgentRules): AgentRules {
+  return instructions().writeRules(rules ?? {})
+}
+
+export function listAgentSkills(): UserSkill[] {
+  return instructions().listSkills()
+}
+
+export function saveAgentSkill(
+  input: Partial<UserSkill> & { name: string; body: string },
+): UserSkill {
+  return instructions().saveSkill({
+    ...(input.id ? { id: input.id } : {}),
+    name: String(input.name ?? ''),
+    description: input.description ?? '',
+    scopes: input.scopes ?? ['global'],
+    body: String(input.body ?? ''),
+    enabled: input.enabled !== false,
+  })
+}
+
+/** Memories the agent recorded, for the settings window to show and prune. */
+export function listAgentMemories(): UserMemory[] {
+  return instructions().readMemories()
+}
+
+export function deleteAgentMemory(id: string): boolean {
+  return instructions().deleteMemory(String(id ?? ''))
+}
+
+export function deleteAgentSkill(id: string): void {
+  instructions().deleteSkill(String(id ?? ''))
+}
+
+export function importAgentSkills(
+  files: Array<{ filename: string; content: string }>,
+): UserSkill[] {
+  const saved: UserSkill[] = []
+  for (const file of (Array.isArray(files) ? files : []).slice(0, 50)) {
+    try {
+      saved.push(
+        instructions().importSkillMarkdown(
+          String(file?.content ?? ''),
+          String(file?.filename ?? 'skill.md'),
+        ),
+      )
+    } catch (err) {
+      console.warn('[skills] import failed:', err)
+    }
+  }
+  return saved
+}
+
+/**
+ * Backend for one request. The settings file — not the renderer's snapshot —
+ * is the source of truth, so changing the model in the home window takes
+ * effect in every already-open docs/sheets/slides/pdf tab without a reload.
+ * The genspark key never lands in the file; it comes from the gsk login state
+ * per request.
+ */
+function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | undefined } {
+  const settings = readAiSettings()
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    return { provider, config: { ...config, apiKey: gskApiKey() } }
+  }
+  return { provider, config }
+}
+
+/** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
+function needsApiKey(provider: AiProviderId): boolean {
+  return provider !== 'custom'
+}
+
+/** a finite number inside [min, max], else null ("not set") */
+function boundedNumber(value: unknown, min: number, max: number): number | null {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return null
+  return n >= min && n <= max ? n : null
+}
+
+/** normalize an untrusted renderer payload into the settings the dialog can express */
+function sanitizeModelSettings(input: Partial<AiModelSettings> | undefined): AiModelSettings {
+  return {
+    mode: input?.mode === 'custom' ? 'custom' : 'genspark',
+    // the library the dialog now has: unknown ids are dropped rather than
+    // trusted, and a blank label falls back to the model when it is stored
+    profiles: (Array.isArray(input?.profiles) ? (input.profiles as unknown[]) : [])
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+      .map((p) => ({
+        id: String(p.id ?? ''),
+        label: String(p.label ?? ''),
+        baseUrl: String(p.baseUrl ?? ''),
+        model: String(p.model ?? ''),
+        apiKey: String(p.apiKey ?? ''),
+      }))
+      .filter((p) => p.id !== ''),
+    profileId: typeof input?.profileId === 'string' ? input.profileId : null,
+    baseUrl: String(input?.baseUrl ?? ''),
+    model: String(input?.model ?? ''),
+    apiKey: String(input?.apiKey ?? ''),
+    temperature: input?.temperature === null ? null : boundedNumber(input?.temperature, 0, 2),
+    maxTokens:
+      input?.maxTokens === null
+        ? null
+        : boundedNumber(Math.trunc(Number(input?.maxTokens)), 1, 1_000_000),
+    reasoningEffort: isReasoningEffort(input?.reasoningEffort) ? input.reasoningEffort : null,
+    tavilyApiKey: String(input?.tavilyApiKey ?? '').trim(),
+    // normalized here too: an unusable proxy string must never reach undici
+    proxyUrl: normalizeProxyUrl(String(input?.proxyUrl ?? '')),
+  }
+}
+
+/**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
  * register them exactly once for all window types (docs, sheets, home) —
  * sheets' standalone AI handlers use the same channel names.
  */
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
-  })
+  ipcMain.handle('ai:get-settings', (): AiSettings => readAiSettings())
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
   ipcMain.handle(
@@ -2501,20 +2674,102 @@ export function registerAiIpc(): void {
     writeJson(SETTINGS_PATH(), settings)
   })
 
+  /**
+   * Switch the live model from the AI sidebar. A null profileId means the
+   * Genspark account. The file is re-read here rather than trusting a renderer
+   * snapshot, so two panels switching at once cannot clobber each other's
+   * unrelated settings — and because every request re-reads the file, the
+   * switch reaches tabs that are already open.
+   */
+  ipcMain.handle('ai:set-active-model', (_event, profileId: unknown): AiSettings => {
+    const current = readAiSettings()
+    const id = typeof profileId === 'string' ? profileId : null
+    const next = syncActiveProfile({
+      ...current,
+      provider: id ? 'custom' : 'genspark',
+      ...(id ? { activeProfileId: id } : {}),
+    })
+    next.provider = activeProvider(next)
+    writeJson(SETTINGS_PATH(), next)
+    return next
+  })
+
+  // Flat read/write pair for the settings dialog. One file, one selection —
+  // whatever is set here is what docs, sheets, slides and pdf all call.
+  ipcMain.handle('ai:get-model-settings', (): AiModelSettings => toModelSettings(readAiSettings()))
+
+  ipcMain.handle('ai:set-model-settings', (_event, input: AiModelSettings): AiModelSettings => {
+    const next = applyModelSettings(readAiSettings(), sanitizeModelSettings(input))
+    writeJson(SETTINGS_PATH(), next)
+    // Tavily key and proxy are live process state, not just file contents
+    applyNetworkSettings(next)
+    return toModelSettings(next)
+  })
+
+  // ── user instructions: rules + skills ────────────────────────────
+  // Read by every editor module when it builds its system prompt, and by the
+  // shell's manager UI. One store, so a skill written once applies everywhere
+  // its scope allows.
+
+  ipcMain.handle('ai:get-instructions', (): { rules: AgentRules; skills: UserSkill[] } => ({
+    rules: instructions().readRules(),
+    skills: instructions().listSkills(),
+  }))
+
+  ipcMain.handle('ai:set-rules', (_event, rules: AgentRules): AgentRules =>
+    instructions().writeRules(rules ?? {}),
+  )
+
+  ipcMain.handle(
+    'ai:save-skill',
+    (_event, input: Parameters<AgentInstructionsStore['saveSkill']>[0]) =>
+      instructions().saveSkill({
+        ...input,
+        name: String(input?.name ?? ''),
+        body: String(input?.body ?? ''),
+      }),
+  )
+
+  /** bulk upload: each entry is one skill.md the user picked */
+  ipcMain.handle(
+    'ai:import-skills',
+    (_event, files: Array<{ filename: string; content: string }>): UserSkill[] => {
+      const list = Array.isArray(files) ? files : []
+      const saved: UserSkill[] = []
+      for (const file of list.slice(0, 50)) {
+        try {
+          saved.push(
+            instructions().importSkillMarkdown(
+              String(file?.content ?? ''),
+              String(file?.filename ?? 'skill.md'),
+            ),
+          )
+        } catch (err) {
+          console.warn('[skills] import failed:', err)
+        }
+      }
+      return saved
+    },
+  )
+
+  ipcMain.handle('ai:delete-skill', (_event, id: string) => {
+    instructions().deleteSkill(String(id ?? ''))
+  })
+
+  // instructions-prompt, skill-body, remember, forget, capture-page,
+  // browse-page and extract-pages: the agent's own tool backends, shared with
+  // the standalone slides and sheets processes rather than living only here.
+  registerAgentToolIpc(instructions)
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // the genspark key never enters the settings file; requests take it from the gsk login state
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const { provider, config } = activeAiConfig()
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -2614,13 +2869,9 @@ export function registerAiIpc(): void {
   )
 
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
-    const { settings, system, user } = request
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    if (!config?.apiKey) {
+    const { system, user } = request
+    const { provider, config } = activeAiConfig()
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
@@ -2633,6 +2884,31 @@ export function registerAiIpc(): void {
       return { ok: false, error: String(err) }
     }
   })
+
+  // Dry-run a candidate custom endpoint from the settings dialog: a one-token
+  // round trip that surfaces a wrong URL / model / key before it is saved.
+  ipcMain.handle(
+    'ai:test-provider',
+    async (_event, input: Partial<AiModelSettings>): Promise<AiChatResponse> => {
+      // tested with the same knobs it will run with, so a rejected temperature
+      // or reasoning_effort surfaces here rather than on the user's first turn
+      const draft = sanitizeModelSettings({ ...input, mode: 'custom' })
+      const config: AiProviderConfig = {
+        baseUrl: draft.baseUrl.trim(),
+        model: draft.model.trim(),
+        apiKey: draft.apiKey.trim(),
+        temperature: draft.temperature,
+        ...(draft.maxTokens === null ? {} : { maxTokens: draft.maxTokens }),
+        ...(draft.reasoningEffort === null ? {} : { reasoningEffort: draft.reasoningEffort }),
+      }
+      if (!config.baseUrl || !config.model) return { ok: false, error: tm('errNoModel') }
+      try {
+        return await chatForProvider('custom', config, 'You are a connection test.', 'Reply OK.')
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 }
 
 // ── project-store IPC (shared across docs / slides / sheets) ──────────────
@@ -2690,16 +2966,25 @@ export function registerProjectIpc(): void {
   if (projectIpcRegistered) return
   projectIpcRegistered = true
 
+  /** The file a chat request is about; sheets has no path in the renderer and passes sessionId instead */
+  const chatFilePath = (
+    event: Electron.IpcMainInvokeEvent,
+    args: { filePath?: string | null; sessionId?: string },
+  ): string | null => {
+    if (args.filePath) return args.filePath
+    if (args.sessionId && sessionPathResolver) {
+      return sessionPathResolver(event.sender.id, args.sessionId)
+    }
+    return null
+  }
+
   /** Resolve projectId + chatId from a file path (sheets without a path resolves via sessionId) */
   ipcMain.handle(
     'project:resolveChat',
     (event, args: { filePath: string | null; tempChatId?: string; sessionId?: string }) => {
       const store = getProjectStore()
       store.ensureDefaultProject()
-      let resolvedPath = args.filePath
-      if (!resolvedPath && args.sessionId && sessionPathResolver) {
-        resolvedPath = sessionPathResolver(event.sender.id, args.sessionId)
-      }
+      const resolvedPath = chatFilePath(event, args)
       if (!resolvedPath) {
         return {
           projectId: 'default',
@@ -2822,6 +3107,52 @@ export function registerProjectIpc(): void {
   ipcMain.handle('project:timeline', (_event, args: { projectId: string; limit?: number }) => {
     return getProjectStore().getProjectTimeline(args.projectId, args.limit ?? 20)
   })
+
+  // ── sessions: one file can hold several conversations ──
+  // An unsaved file has no path to key sessions on, so these return the empty
+  // list / the current chat rather than inventing a session the store cannot
+  // find again after the first save.
+
+  /** Every conversation belonging to one file, oldest first */
+  ipcMain.handle(
+    'project:listChatsForFile',
+    (event, args: { filePath?: string | null; sessionId?: string }) => {
+      const resolvedPath = chatFilePath(event, args)
+      if (!resolvedPath) return []
+      const store = getProjectStore()
+      store.ensureDefaultProject()
+      return store.listChatsForFile(resolvedPath)
+    },
+  )
+
+  /** Start a fresh conversation for a file and make it the active one */
+  ipcMain.handle(
+    'project:newChat',
+    (event, args: { filePath?: string | null; sessionId?: string; tempChatId?: string }) => {
+      const resolvedPath = chatFilePath(event, args)
+      const store = getProjectStore()
+      store.ensureDefaultProject()
+      if (!resolvedPath) {
+        return { projectId: 'default', chatId: args.tempChatId ?? `unsaved-${Date.now()}` }
+      }
+      return store.newChatForFile(resolvedPath)
+    },
+  )
+
+  /** Load an earlier conversation by making it active again */
+  ipcMain.handle(
+    'project:switchChat',
+    (event, args: { filePath?: string | null; sessionId?: string; chatId: string }) => {
+      const resolvedPath = chatFilePath(event, args)
+      const store = getProjectStore()
+      store.ensureDefaultProject()
+      if (!resolvedPath) return { projectId: 'default', chatId: args.chatId }
+      // a stale renderer may name a chat this file no longer owns: fall back to
+      // whatever is active rather than pointing it at someone else's history
+      store.setActiveChatForFile(resolvedPath, args.chatId)
+      return store.resolveChatForFile(resolvedPath)
+    },
+  )
 }
 
 /** document/attachment/window IPC (everything except the AI proxy above) */

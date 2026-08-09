@@ -896,3 +896,156 @@ it('rejects an unknown provider id', async () => {
     streamForProvider('unknown' as never, { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
   ).rejects.toThrow(/Unknown provider/)
 })
+
+// Gemini attaches a thinking signature to every function call and rejects the
+// next turn when it comes back without one ("Function call is missing a
+// thought_signature in functionCall parts", HTTP 400 INVALID_ARGUMENT). It only
+// bites from the second tool round onwards, so both halves matter: capture it
+// on the way in, echo it verbatim on the way out.
+describe('gemini thought_signature round-trip', () => {
+  const SIG = 'EtoECtcEARFNMg-signature-blob'
+
+  it('captures it from a streaming OpenAI-compatible tool call', async () => {
+    const body = sseStream([
+      `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"regenerate_slide","arguments":"{\\"index\\":2}"},"extra_content":{"google":{"thought_signature":"${SIG}"}}}]}}]}`,
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { toolCalls, cb } = collector()
+    await streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb)
+    expect(toolCalls[0]!.thoughtSignature).toBe(SIG)
+  })
+
+  it('captures it when it arrives on a later chunk than the name', async () => {
+    const body = sseStream([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"regenerate_slide"}}]}}]}',
+      `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"index\\":2}"},"extra_content":{"google":{"thought_signature":"${SIG}"}}}]}}]}`,
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { toolCalls, cb } = collector()
+    await streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb)
+    expect(toolCalls[0]!.thoughtSignature).toBe(SIG)
+  })
+
+  it('captures it from a non-stream JSON response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: 'c1',
+                    type: 'function',
+                    function: { name: 'regenerate_slide', arguments: '{"index":2}' },
+                    extra_content: { google: { thought_signature: SIG } },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        }),
+      ),
+    )
+    const { toolCalls, cb } = collector()
+    await streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb)
+    expect(toolCalls[0]!.thoughtSignature).toBe(SIG)
+  })
+
+  it('echoes it back on the OpenAI-compatible request, in the shape Gemini sent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'm' },
+      'sys',
+      [
+        { role: 'user', text: 'go' },
+        {
+          role: 'assistant',
+          text: '',
+          toolCalls: [
+            { id: 'c1', name: 'regenerate_slide', input: { index: 2 }, thoughtSignature: SIG },
+          ],
+        },
+        { role: 'tool', results: [{ id: 'c1', name: 'regenerate_slide', output: 'done' }] },
+      ],
+      [],
+      100,
+      cb,
+    ).catch(() => undefined)
+    const sent = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
+      messages: Array<{ role: string; tool_calls?: Array<Record<string, unknown>> }>
+    }
+    const assistant = sent.messages.find((m) => m.role === 'assistant')!
+    expect(assistant.tool_calls![0]!.extra_content).toEqual({
+      google: { thought_signature: SIG },
+    })
+  })
+
+  it('sends no extra_content for providers that never supplied one', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'm' },
+      'sys',
+      [
+        { role: 'user', text: 'go' },
+        { role: 'assistant', text: '', toolCalls: [{ id: 'c1', name: 'f', input: {} }] },
+        { role: 'tool', results: [{ id: 'c1', name: 'f', output: 'done' }] },
+      ],
+      [],
+      100,
+      cb,
+    ).catch(() => undefined)
+    const sent = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
+      messages: Array<{ role: string; tool_calls?: Array<Record<string, unknown>> }>
+    }
+    const assistant = sent.messages.find((m) => m.role === 'assistant')!
+    expect(assistant.tool_calls![0]).not.toHaveProperty('extra_content')
+  })
+
+  it('carries it on the native Gemini route too, where it sits beside functionCall', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse(
+          sseStream([
+            `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"regenerate_slide","args":{"index":2}},"thoughtSignature":"${SIG}"}]},"finishReason":"STOP"}]}`,
+          ]),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const { toolCalls, cb } = collector()
+    await streamForProvider('gemini', { apiKey: 'k', model: 'g' }, 'sys', [], [], 100, cb)
+    expect(toolCalls[0]!.thoughtSignature).toBe(SIG)
+
+    // and back out again on the next turn
+    await streamForProvider(
+      'gemini',
+      { apiKey: 'k', model: 'g' },
+      'sys',
+      [
+        { role: 'user', text: 'go' },
+        { role: 'assistant', text: '', toolCalls: toolCalls.slice(0, 1) },
+      ],
+      [],
+      100,
+      cb,
+    ).catch(() => undefined)
+    const sent = JSON.parse(fetchMock.mock.calls[1]![1].body as string) as {
+      contents: Array<{ role: string; parts: Array<Record<string, unknown>> }>
+    }
+    const model = sent.contents.find((c) => c.role === 'model')!
+    expect(model.parts[0]).toMatchObject({ thoughtSignature: SIG })
+  })
+})

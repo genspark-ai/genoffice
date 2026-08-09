@@ -27,8 +27,10 @@ All operations below are **layout-class**: they can share a batch with content/f
 - `{kind:"duplicate", unique?, format}` — highlights duplicate values by default; unique:true highlights unique values instead
 - `{kind:"top10", rank:10, percent?, bottom?, format}`
 - `{kind:"formula", formula:"=B2>100", format}` — formula starts with =, written with relative references anchored at the range's top-left cell
+- `{kind:"average", operator:"above"|"below"|"aboveOrEqual"|"belowOrEqual", format}` — compares against the range's own average
 - `{kind:"colorScale", minColor:"#63BE7B", midColor?, maxColor:"#F8696B"}` — color scale (no format field)
 - `{kind:"dataBar", color?}` — data bar (no format field)
+- `{kind:"iconSet", set, reverse?, hideValue?}` — icon set (no format field); thresholds are spaced evenly. set is one of 3Arrows, 3ArrowsGray, 3Flags, 3TrafficLights1, 3TrafficLights2, 3Signs, 3Symbols, 3Symbols2, 4Arrows, 4ArrowsGray, 4RedToBlack, 4Rating, 4TrafficLights, 5Arrows, 5ArrowsGray, 5Quarters, 5Rating. reverse:true puts the best icon at the low end; hideValue:true shows only icons
 
 format: `{fillColor?, fontColor?, bold?, italic?}` with at least one property. Highlight colors follow the low-saturation principle (light background, dark text), e.g. red #FFC7CE/#9C0006, green #C6EFCE/#006100, yellow #FFEB9C/#9C6500.
 

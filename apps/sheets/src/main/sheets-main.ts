@@ -35,10 +35,13 @@ import type {
 } from 'electron'
 import { z } from 'zod'
 import {
+  AgentInstructionsStore,
   appMenuLabels,
+  bootstrapNetworkSettings,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  registerAgentToolIpc,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -51,10 +54,13 @@ import { ProjectStore } from '@genoffice/project-store'
 import {
   AiCreditsError,
   AiTimeoutError,
+  activeProvider,
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
+  syncActiveProfile,
   streamForProvider,
+  type AiProviderConfig,
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
@@ -2101,18 +2107,60 @@ export function registerSheetsIpc(): void {
 
 let aiIpcRegistered = false
 
+/**
+ * Read the settings file and normalize the provider selection: a complete
+ * custom endpoint is honoured, anything else falls back to Genspark.
+ */
+function readAiSettings(): AiSettings {
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  return settings
+}
+
+/**
+ * Backend for one request. The settings file — not the renderer's snapshot —
+ * is the source of truth, so a model change in the home window reaches an
+ * already-open sheets tab without a reload. The genspark key never enters the
+ * file; it comes from the gsk login state per request.
+ */
+function activeAiConfig(): { provider: AiProviderId; config: AiProviderConfig | undefined } {
+  const settings = readAiSettings()
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    return { provider, config: { ...config, apiKey: gskApiKey() } }
+  }
+  return { provider, config }
+}
+
+/** custom endpoints may be anonymous (Ollama, LM Studio, vLLM); every other provider needs a key */
+function needsApiKey(provider: AiProviderId): boolean {
+  return provider !== 'custom'
+}
+
+let instructionsStore: AgentInstructionsStore | null = null
+
+/** lazily built: userData is only resolvable once the app is ready */
+function instructions(): AgentInstructionsStore {
+  if (!instructionsStore) instructionsStore = new AgentInstructionsStore(app.getPath('userData'))
+  return instructionsStore
+}
+
 export function registerSheetsAiIpc(): void {
   if (aiIpcRegistered) return
   aiIpcRegistered = true
 
+  // Gated by includeAiHandlers, so this only runs standalone; in the shell
+  // docs-main owns the generic ai:* channels. Without it the agent's browse /
+  // skills / memory tools answered "No handler registered" here. Must sit
+  // after the guard: this function runs once per window, and registering a
+  // duplicate ipcMain handler throws.
+  registerAgentToolIpc(instructions)
+
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return readAiSettings()
   })
 
   // Genspark account (gsk login state): the auth source for AI features; the
@@ -2137,15 +2185,31 @@ export function registerSheetsAiIpc(): void {
     writeJson(SETTINGS_PATH(), settings)
   })
 
+  /**
+   * Switch the live model from the AI sidebar. A null profileId means the
+   * Genspark account. The file is re-read here rather than trusting a renderer
+   * snapshot, so two panels switching at once cannot clobber each other's
+   * unrelated settings — and because every request re-reads the file, the
+   * switch reaches tabs that are already open.
+   */
+  ipcMain.handle('ai:set-active-model', (_event, profileId: unknown): AiSettings => {
+    const current = readAiSettings()
+    const id = typeof profileId === 'string' ? profileId : null
+    const next = syncActiveProfile({
+      ...current,
+      provider: id ? 'custom' : 'genspark',
+      ...(id ? { activeProfileId: id } : {}),
+    })
+    next.provider = activeProvider(next)
+    writeJson(SETTINGS_PATH(), next)
+    return next
+  })
+
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
     sessionFor(event)
     const request = aiChatRequestSchema.parse(input)
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    if (!config?.apiKey) {
+    const { provider, config } = activeAiConfig()
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
@@ -2165,17 +2229,11 @@ export function registerSheetsAiIpc(): void {
     const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
-    // Genspark's key never enters the settings file; it is read from the gsk
-    // login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const { provider, config } = activeAiConfig()
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (needsApiKey(provider) && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -2802,8 +2860,9 @@ export {
  * slides-main.applyMainProcessProxy): main-process Node fetch (undici) ignores
  * the system proxy by default, so direct connections from mainland networks to
  * overseas LLM endpoints like api.anthropic.com time out or get rejected by
- * egress region (403 Request not allowed). Environment variables take priority;
- * otherwise the system proxy is read via session.resolveProxy() after app ready.
+ * egress region (403 Request not allowed). The proxy configured in Settings
+ * wins; otherwise environment variables; otherwise the system proxy is read
+ * via session.resolveProxy() after app ready.
  */
 async function applyMainProcessProxy(): Promise<void> {
   const setDispatcher = async (proxyUrl: string) => {
@@ -2819,6 +2878,13 @@ async function applyMainProcessProxy(): Promise<void> {
       console.warn('[proxy] failed to set ProxyAgent:', e)
     }
   }
+  // Settings first, the same order the shell uses. An explicit proxy wins over
+  // both env vars and the system proxy, and is authoritative when it is empty
+  // too — a user who cleared the field wants direct connections, not the
+  // system proxy sneaking back in. Chromium's session is only reachable after
+  // ready and this runs during startup, so wait for it before either branch.
+  await app.whenReady()
+  if (bootstrapNetworkSettings(app.getPath('userData'))) return
   const envProxy =
     process.env.HTTPS_PROXY ||
     process.env.https_proxy ||
@@ -2831,7 +2897,6 @@ async function applyMainProcessProxy(): Promise<void> {
     return
   }
   try {
-    await app.whenReady()
     // PAC/rule proxies answer per-host: probe the host the login flow, the
     // Genspark LLM proxy and the gsk CLI actually target
     const resolved = await electronSession.defaultSession.resolveProxy('https://www.genspark.ai/')

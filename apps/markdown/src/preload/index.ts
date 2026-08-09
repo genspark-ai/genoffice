@@ -44,6 +44,8 @@ const api: MarkdownApi = {
     return () => ipcRenderer.removeListener(MARKDOWN_CHANNELS.languageChanged, listener)
   },
   getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  setActiveModel: (profileId: string | null) =>
+    ipcRenderer.invoke('ai:set-active-model', profileId),
   aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
   aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),
   onAiStream: (handler) => {
@@ -55,11 +57,24 @@ const api: MarkdownApi = {
 }
 
 /** Chat persistence: the shared project:* handlers are registered once by the shell (docs-main registerProjectIpc) */
-const projectApi: Pick<ProjectApi, 'resolveChat' | 'appendChat' | 'loadChat' | 'rebindChat'> = {
+const projectApi: Pick<
+  ProjectApi,
+  | 'resolveChat'
+  | 'appendChat'
+  | 'loadChat'
+  | 'rebindChat'
+  | 'listChatsForFile'
+  | 'newChat'
+  | 'switchChat'
+> = {
   resolveChat: (args) => ipcRenderer.invoke('project:resolveChat', args),
   appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
   loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
   rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
+  // sessions: one file can hold several conversations
+  listChatsForFile: (args) => ipcRenderer.invoke('project:listChatsForFile', args),
+  newChat: (args) => ipcRenderer.invoke('project:newChat', args),
+  switchChat: (args) => ipcRenderer.invoke('project:switchChat', args),
 }
 
 contextBridge.exposeInMainWorld('markdownApi', api)

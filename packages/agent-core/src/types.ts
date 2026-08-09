@@ -14,6 +14,14 @@ export interface AgentToolCall {
   inputError?: string | undefined
   /** The argument stream was cut off by the token limit (stop_reason max_tokens); the loop asks the model to split the call instead of "fixing JSON" */
   truncated?: boolean | undefined
+  /**
+   * Gemini's per-call thinking signature, carried so it can be echoed back on
+   * the next turn. Gemini rejects a follow-up whose function calls have lost it
+   * (`HTTP 400 ... missing a thought_signature in functionCall parts`), which
+   * only bites from the second tool round onwards. Opaque: never inspected,
+   * only stored and handed back, and absent for every other provider.
+   */
+  thoughtSignature?: string | undefined
 }
 
 export interface AgentToolResult {
@@ -33,7 +41,18 @@ export interface AgentImage {
 }
 
 export type AgentMessage =
-  | { role: 'user'; text: string; images?: AgentImage[] | undefined }
+  | {
+      role: 'user'
+      text: string
+      images?: AgentImage[] | undefined
+      /**
+       * This turn only exists to carry images a tool produced (see
+       * `ToolExecution.images`), not anything the user attached. Compaction
+       * uses it to reclaim stale renders, which the user's own attachments
+       * must keep.
+       */
+      fromTool?: boolean | undefined
+    }
   | { role: 'assistant'; text: string; toolCalls?: AgentToolCall[] | undefined }
   | { role: 'tool'; results: AgentToolResult[] }
 
@@ -63,6 +82,18 @@ export interface ToolExecution {
    * Ignored when tool results are assembled into an AgentMessage.
    */
   display?: ToolDisplay
+  /**
+   * Images the tool produced for the model to look at — a rendered page, a
+   * slide as it will actually print.
+   *
+   * They cannot travel in `output`, because a tool result is text on every
+   * provider we support: Anthropic allows image blocks inside a tool_result,
+   * the OpenAI-compatible `tool` message is a plain string, and Gemini's
+   * functionResponse carries a JSON struct. Only a *user* turn accepts images
+   * on all three, so the loop appends one after the tool results rather than
+   * trying to smuggle them into the result itself.
+   */
+  images?: AgentImage[]
 }
 
 // ---- run phase (drives the in-progress status line in chat UIs) ----

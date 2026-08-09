@@ -2,6 +2,7 @@ import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiProviderConfig, AiProviderId } from './types'
+import { reasoningEffortField, resolveMaxTokens, temperatureField } from './tuning'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
 // ---- streaming (SSE line splitting shared by all providers) ----
@@ -145,6 +146,19 @@ function throwIfCreditsNotice(bodyText: string): void {
 }
 
 /** Don't throw on parse failure (it would kill the whole stream); return error so the loop feeds it back for retry */
+/**
+ * Gemini's OpenAI-compatible shim hangs the thinking signature off the tool
+ * call rather than putting it inside `function`, so a parser that reads only
+ * id/name/arguments drops it and the next turn is rejected. Verified against a
+ * live response: message.tool_calls[].extra_content.google.thought_signature.
+ */
+function thoughtSignatureOf(toolCall: unknown): string | undefined {
+  const extra = (toolCall as { extra_content?: { google?: { thought_signature?: unknown } } })
+    ?.extra_content
+  const value = extra?.google?.thought_signature
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 function parseToolInput(json: string): { input: Record<string, unknown>; error?: string } {
   if (!json.trim()) return { input: {} }
   try {
@@ -287,7 +301,8 @@ async function anthropicTurn(
       },
       body: JSON.stringify({
         model: config.model,
-        max_tokens: maxTokens,
+        max_tokens: resolveMaxTokens(config, maxTokens),
+        ...temperatureField(config),
         system,
         messages: anthropicMessages(messages),
         ...(tools.length > 0
@@ -399,7 +414,11 @@ function geminiContents(messages: AgentMessage[]): unknown[] {
       const parts: unknown[] = []
       if (m.text) parts.push({ text: m.text })
       for (const call of m.toolCalls ?? []) {
-        parts.push({ functionCall: { name: call.name, args: call.input } })
+        // thoughtSignature sits beside functionCall on the part, not inside it
+        parts.push({
+          functionCall: { name: call.name, args: call.input },
+          ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
+        })
       }
       // Gemini rejects model turns with empty parts lists.
       if (parts.length === 0) parts.push({ text: '(no content)' })
@@ -435,6 +454,7 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
         parts?: Array<{
           text?: string
           functionCall?: { name?: string; args?: Record<string, unknown> }
+          thoughtSignature?: string
         }>
       }
       finishReason?: string
@@ -464,6 +484,7 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
           id: crypto.randomUUID(),
           name: part.functionCall.name,
           input: part.functionCall.args ?? {},
+          thoughtSignature: part.thoughtSignature,
         })
       }
     }
@@ -530,7 +551,10 @@ async function geminiTurn(
             ],
           }
         : {}),
-      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+      generationConfig: {
+        ...temperatureField(config),
+        maxOutputTokens: resolveMaxTokens(config, maxTokens),
+      },
     }),
   })
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
@@ -557,6 +581,7 @@ async function geminiTurn(
           parts?: Array<{
             text?: string
             functionCall?: { name?: string; args?: Record<string, unknown> }
+            thoughtSignature?: string
           }>
         }
         finishReason?: string
@@ -584,6 +609,7 @@ async function geminiTurn(
           id: crypto.randomUUID(),
           name: part.functionCall.name,
           input: part.functionCall.args ?? {},
+          thoughtSignature: part.thoughtSignature,
         })
       }
     }
@@ -633,6 +659,15 @@ function openAiMessages(system: string, messages: AgentMessage[]): unknown[] {
                 id: call.id,
                 type: 'function',
                 function: { name: call.name, arguments: JSON.stringify(call.input) },
+                // echoed back in the exact shape Gemini sent it; other
+                // providers never set it and never see the field
+                ...(call.thoughtSignature
+                  ? {
+                      extra_content: {
+                        google: { thought_signature: call.thoughtSignature },
+                      },
+                    }
+                  : {}),
               })),
             }
           : {}),
@@ -680,6 +715,7 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       name: tc.function.name,
       input,
       inputError: error,
+      thoughtSignature: thoughtSignatureOf(tc),
     })
   }
   // a 'length' finish may have cut off the last tool call's arguments
@@ -729,7 +765,7 @@ async function openAiCompatibleTurn(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: maxTokens,
+      max_tokens: resolveMaxTokens(config, maxTokens),
       messages: openAiMessages(system, messages),
       ...(tools.length > 0
         ? {
@@ -739,7 +775,8 @@ async function openAiCompatibleTurn(
             })),
           }
         : {}),
-      temperature: 0.3,
+      ...temperatureField(config),
+      ...reasoningEffortField(config),
       stream: true,
     }),
   })
@@ -754,7 +791,10 @@ async function openAiCompatibleTurn(
     return emitOpenAiJsonMessage(jsonBody, cb)
   }
   // tool call arguments stream in fragments keyed by index
-  const pendingTools = new Map<number, { id: string; name: string; json: string }>()
+  const pendingTools = new Map<
+    number,
+    { id: string; name: string; json: string; thoughtSignature?: string | undefined }
+  >()
   let stopReason: string | undefined
   let abnormalFinish: string | undefined
   let sawFinish = false
@@ -771,6 +811,7 @@ async function openAiCompatibleTurn(
           name: pending.name,
           input,
           inputError: error,
+          thoughtSignature: pending.thoughtSignature,
           // a 'length' finish cuts off the last streaming tool's arguments
           ...(stopReason === 'max_tokens' && index === lastIndex ? { truncated: true } : {}),
         })
@@ -791,6 +832,7 @@ async function openAiCompatibleTurn(
             index: number
             id?: string
             function?: { name?: string; arguments?: string }
+            extra_content?: { google?: { thought_signature?: string } }
           }>
         }
         finish_reason?: string | null
@@ -813,6 +855,8 @@ async function openAiCompatibleTurn(
       if (tc.id) pending.id = tc.id
       if (tc.function?.name) pending.name += tc.function.name
       if (tc.function?.arguments) pending.json += tc.function.arguments
+      // it rides whichever chunk Gemini chooses, so latch the first one seen
+      pending.thoughtSignature ??= thoughtSignatureOf(tc)
       pendingTools.set(tc.index, pending)
     }
     if (choice.finish_reason) {

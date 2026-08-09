@@ -13,7 +13,13 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "@genoffice/agent-core": "*",
+    "@genoffice/ai-provider": "*",
+    "@genoffice/ai-search": "*"
+  },
   "devDependencies": {
+    "@genoffice/agent-core": "*",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   }

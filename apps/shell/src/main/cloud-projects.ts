@@ -1,7 +1,12 @@
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { gskApiKey, gskListPastProjects, hasGskAuth } from '@genoffice/ai-search'
-import type { CloudProjectEntry, CloudProjectKind, CloudProjectsSnapshot } from '../shared/home-api'
+import type {
+  CloudProjectEntry,
+  CloudProjectKind,
+  CloudProjectsError,
+  CloudProjectsSnapshot,
+} from '../shared/home-api'
 
 const SYNC_PAGE = 100
 /** bound on sync cost for huge accounts (10 requests) */
@@ -72,9 +77,52 @@ let syncInFlight: Promise<CloudProjectsSnapshot> | null = null
 let syncInFlightOwner = ''
 
 /**
+ * The account changed mid-sync. Not a user-facing failure — the run is
+ * abandoned so half of one account's projects can never be shown under
+ * another's — so it keeps rejecting rather than becoming an error snapshot.
+ */
+class AccountChangedError extends Error {}
+
+/**
+ * Map a gsk CLI failure onto something the UI can act on. The CLI reports the
+ * reason in its message ('gsk returned an error: Insufficient credits'), and
+ * without this every cause collapsed into one "load failed, try again later"
+ * with a Retry button — which is actively wrong for an out-of-credits account,
+ * where retrying can never work.
+ */
+export function cloudErrorReason(error: unknown): CloudProjectsError {
+  const text = (error instanceof Error ? error.message : String(error)).toLowerCase()
+  if (text.includes('insufficient credit') || text.includes('credit balance')) return 'credits'
+  if (
+    text.includes('unauthorized') ||
+    text.includes('not logged in') ||
+    text.includes('401') ||
+    text.includes('api key')
+  ) {
+    return 'signedOut'
+  }
+  if (
+    text.includes('etimedout') ||
+    text.includes('econnrefused') ||
+    text.includes('enotfound') ||
+    text.includes('econnreset') ||
+    text.includes('network') ||
+    text.includes('socket') ||
+    text.includes('timed out')
+  ) {
+    return 'network'
+  }
+  return 'unknown'
+}
+
+/**
  * Full-list sync, deduped so concurrent callers on the SAME account share one
  * run. A caller under a different key never gets the other account's promise;
  * it starts its own run (the orphaned one aborts at its next owner check).
+ *
+ * A failure resolves rather than rejects: the snapshot carries the classified
+ * reason and whatever was cached, so the UI can say what went wrong instead of
+ * offering Retry for something retrying cannot fix.
  */
 export function syncCloudProjects(storePath: string): Promise<CloudProjectsSnapshot> {
   if (!hasGskAuth()) {
@@ -82,9 +130,21 @@ export function syncCloudProjects(storePath: string): Promise<CloudProjectsSnaps
   }
   const owner = cloudStoreOwner()
   if (!syncInFlight || syncInFlightOwner !== owner) {
-    const run = doSync(storePath, owner).finally(() => {
-      if (syncInFlight === run) syncInFlight = null
-    })
+    const run = doSync(storePath, owner)
+      .catch((err: unknown): CloudProjectsSnapshot => {
+        if (err instanceof AccountChangedError) throw err
+        // keep whatever was cached so a failed refresh does not blank the list
+        const cached = readCloudProjectsStore(storePath)
+        return {
+          available: true,
+          projects: cached?.projects ?? [],
+          syncedAt: cached?.syncedAt ?? 0,
+          error: cloudErrorReason(err),
+        }
+      })
+      .finally(() => {
+        if (syncInFlight === run) syncInFlight = null
+      })
     syncInFlight = run
     syncInFlightOwner = owner
   }
@@ -100,8 +160,8 @@ export function syncCloudProjects(storePath: string): Promise<CloudProjectsSnaps
  * `owner` is the account the sync was started for. Each page is fetched with
  * the LIVE key, so if the account switches (or logs out) mid-sync the pages
  * would belong to someone else; the check after every fetch aborts the run
- * before mixed data can be returned or written to disk. The rejection reaches
- * the renderer as a failed sync (null), which keeps whatever it had.
+ * before mixed data can be returned or written to disk. The rejection is
+ * classified by syncCloudProjects, which hands the renderer the cached list.
  */
 async function doSync(storePath: string, owner: string): Promise<CloudProjectsSnapshot> {
   const stored = readCloudProjectsStore(storePath)
@@ -116,7 +176,7 @@ async function doSync(storePath: string, owner: string): Promise<CloudProjectsSn
       offset,
     })
     if (cloudStoreOwner() !== owner) {
-      throw new Error('cloud projects sync aborted: account changed mid-sync')
+      throw new AccountChangedError('cloud projects sync aborted: account changed mid-sync')
     }
     const entries: CloudProjectEntry[] = page.projects
       .map((p) => ({

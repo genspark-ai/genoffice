@@ -175,6 +175,8 @@ export interface DesktopApi {
   pickImage(): Promise<PickImageResult | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  /** Switch the live model; null selects the Genspark account. Returns the settled settings. */
+  setActiveModel(profileId: string | null): Promise<AiSettings>
   /** system print dialog for the current window */
   print(): Promise<void>
   /** render the document to PDF and ask where to save; size in twips.
@@ -205,6 +207,41 @@ export interface DesktopApi {
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */
   aiGskLogin(): Promise<void>
+  /** Render a URL in the built-in browser and return its text (agent browse_page) */
+  aiBrowsePage(
+    url: string,
+    opts?: { includeLinks?: boolean },
+  ): Promise<{
+    ok: boolean
+    error?: string
+    page?: {
+      url: string
+      title: string
+      text: string
+      truncated: boolean
+      links?: Array<{ text: string; href: string }>
+    }
+  }>
+  /** Fetch pages as markdown via Tavily (agent extract_pages) */
+  aiExtractPages(
+    urls: string[],
+    advanced?: boolean,
+  ): Promise<{
+    ok: boolean
+    error?: string
+    pages?: Array<{ url: string; title: string; content: string }>
+    failed?: string[]
+  }>
+  /** User rules + skill catalogue for this surface, assembled in main */
+  aiInstructionsPrompt(surface: string): Promise<string>
+  /** Body of one user skill, scope-checked for this surface (agent load_skill) */
+  aiSkillBody(surface: string, id: string): Promise<string>
+  /** record a preference; false when the text was not worth storing */
+  aiRemember(text: string): Promise<boolean>
+  /** render what this view is showing; base64 PNG, '' when nothing could be captured */
+  aiCapturePage(rect?: { x: number; y: number; width: number; height: number }): Promise<string>
+  /** drop a recorded preference by exact wording; false when nothing matched */
+  aiForget(text: string): Promise<boolean>
   webSearch(
     query: string,
     maxResults?: number,

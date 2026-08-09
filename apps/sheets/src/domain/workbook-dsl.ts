@@ -453,6 +453,69 @@ const cfFormatSchema = z
     message: 'The rule format must set at least one property.',
   })
 
+/**
+ * Icon sets the AI may request. Deliberately a copy of the gateway's
+ * OOXML_ICON_SETS rather than an import — the domain layer does not depend on
+ * the gateway — and `xlsx-cf.test.ts` asserts the two stay in step, so a set
+ * the save path cannot write can never be offered here.
+ */
+export const AI_ICON_SETS = [
+  '3Arrows',
+  '3ArrowsGray',
+  '3Flags',
+  '3TrafficLights1',
+  '3TrafficLights2',
+  '3Signs',
+  '3Symbols',
+  '3Symbols2',
+  '4Arrows',
+  '4ArrowsGray',
+  '4RedToBlack',
+  '4Rating',
+  '4TrafficLights',
+  '5Arrows',
+  '5ArrowsGray',
+  '5Quarters',
+  '5Rating',
+] as const
+
+/** rating sets list worst icon first; every other set lists the best one first */
+const WORST_FIRST_AI_ICON_SETS = new Set(['4Rating', '5Rating'])
+
+/**
+ * Even thresholds for an icon set the AI asked for by name, in the order
+ * Univer stores them — best icon first, thresholds descending.
+ *
+ * The ids run 0..n-1 (or fully reversed) on purpose: the save path only
+ * accepts those two orderings, so a rule built here always survives the round
+ * trip to xlsx rather than failing closed at save time.
+ */
+export function aiIconConfigs(
+  set: string,
+  reverse: boolean,
+): Array<{
+  iconType: string
+  iconId: string
+  operator: string
+  value: { type: string; value: number }
+}> {
+  const count = Number(set[0])
+  const worstFirst = WORST_FIRST_AI_ICON_SETS.has(set)
+  return Array.from({ length: count }, (_, index) => {
+    // index 0 is the top band; the lowest band is the catch-all minimum
+    const natural = worstFirst ? count - 1 - index : index
+    return {
+      iconType: set,
+      iconId: String(reverse ? count - 1 - natural : natural),
+      operator: 'greaterThanOrEqual',
+      value: {
+        type: index === count - 1 ? 'min' : 'percent',
+        value: Math.round(((count - 1 - index) * 100) / count),
+      },
+    }
+  })
+}
+
 export const cfRuleSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('number'),
@@ -502,6 +565,12 @@ export const cfRuleSchema = z.discriminatedUnion('kind', [
     format: cfFormatSchema,
   }),
   z.object({
+    kind: z.literal('average'),
+    /** relative to the range's own average; exact equality has no xlsx representation */
+    operator: z.enum(['above', 'below', 'aboveOrEqual', 'belowOrEqual']),
+    format: cfFormatSchema,
+  }),
+  z.object({
     kind: z.literal('colorScale'),
     minColor: hexColorSchema,
     midColor: hexColorSchema.optional(),
@@ -510,6 +579,15 @@ export const cfRuleSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('dataBar'),
     color: hexColorSchema.optional(),
+  }),
+  z.object({
+    kind: z.literal('iconSet'),
+    /** OOXML icon set; the leading digit is how many icons it has */
+    set: z.enum(AI_ICON_SETS),
+    /** put the best icon at the low end instead of the high end */
+    reverse: z.boolean().optional(),
+    /** show only the icons, hiding the underlying values */
+    hideValue: z.boolean().optional(),
   }),
 ])
 
@@ -1547,10 +1625,14 @@ function cfRuleLabel(rule: CfRule): string {
       return `${rule.bottom ? 'bottom' : 'top'} ${rule.rank}${rule.percent ? '%' : ''}`
     case 'formula':
       return rule.formula
+    case 'average':
+      return `${rule.operator} average`
     case 'colorScale':
       return `color scale ${rule.minColor} → ${rule.maxColor}`
     case 'dataBar':
       return `data bar${rule.color ? ` ${rule.color}` : ''}`
+    case 'iconSet':
+      return `icon set ${rule.set}${rule.reverse ? ' reversed' : ''}`
   }
 }
 

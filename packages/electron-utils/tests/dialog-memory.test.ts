@@ -1,10 +1,15 @@
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
 import { showOpenDialogWithMemory, showSaveDialogWithMemory } from '../src/index'
 
 import type { Dialog } from 'electron'
+
+// node:path is platform-specific: dirname(join('/work', 'a.docx')) is '/work'
+// on POSIX but '\work' on Windows. Derive the expected directory the same way
+// the implementation does instead of hardcoding a separator.
+const WORK_DIR = dirname(join('/work', 'file.ext'))
 
 function fakeDialog(overrides: Partial<Dialog> = {}): Dialog {
   return {
@@ -29,7 +34,7 @@ describe('showOpenDialogWithMemory', () => {
     const dialog = fakeDialog({ showOpenDialog: pickedOpen([join('/work', 'report.docx')]) })
     await showOpenDialogWithMemory(dialog, undefined, {})
     await showOpenDialogWithMemory(dialog, undefined, {})
-    expect(dialog.showOpenDialog).toHaveBeenLastCalledWith({ defaultPath: '/work' })
+    expect(dialog.showOpenDialog).toHaveBeenLastCalledWith({ defaultPath: WORK_DIR })
   })
 
   it('forwards the parent window when given', async () => {
@@ -75,7 +80,7 @@ describe('showSaveDialogWithMemory', () => {
     const dialog = fakeDialog({ showSaveDialog: pickedSave(join('/work', 'deck.pptx')) })
     await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'deck.pptx' })
     await showOpenDialogWithMemory(dialog, undefined, {})
-    expect(dialog.showOpenDialog).toHaveBeenCalledWith({ defaultPath: '/work' })
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith({ defaultPath: WORK_DIR })
   })
 
   it('keeps an explicit absolute defaultPath untouched', async () => {

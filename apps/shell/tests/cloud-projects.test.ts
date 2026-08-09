@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gskListPastProjects, type GskPastProjectsPage } from '@genoffice/ai-search'
 import {
+  cloudErrorReason,
   cloudStoreOwner,
   clearCloudProjectsStore,
   readCloudProjectsStore,
@@ -163,5 +164,60 @@ describe('cloud projects sync account isolation', () => {
     const snapB = await second
     expect(snapB.projects.map((p) => p.title)).toEqual(['Deck B'])
     expect(readCloudProjectsStore(storePath)?.projects[0]?.title).toBe('Deck B')
+  })
+})
+
+// A failed sync used to reject, and the home screen turned every cause into
+// "load failed, try again later" with a Retry button. For an out-of-credits
+// account that is actively wrong: retrying can never succeed.
+describe('cloudErrorReason', () => {
+  it('recognises the out-of-credits message the gsk CLI actually returns', () => {
+    // verbatim from `gsk projects` on a free account with a zero balance
+    expect(cloudErrorReason(new Error('gsk returned an error: Insufficient credits'))).toBe(
+      'credits',
+    )
+  })
+
+  it('recognises an expired sign-in', () => {
+    expect(cloudErrorReason(new Error('Request failed: 401 Unauthorized'))).toBe('signedOut')
+    expect(cloudErrorReason(new Error('gsk: not logged in'))).toBe('signedOut')
+  })
+
+  it('recognises the shapes a blocked or proxy-less network produces', () => {
+    for (const message of [
+      'connect ECONNREFUSED 127.0.0.1:7890',
+      'fetch failed: ETIMEDOUT',
+      'getaddrinfo ENOTFOUND www.genspark.ai',
+    ]) {
+      expect(cloudErrorReason(new Error(message)), message).toBe('network')
+    }
+  })
+
+  it('falls back to unknown rather than guessing', () => {
+    expect(cloudErrorReason(new Error('something else entirely'))).toBe('unknown')
+    expect(cloudErrorReason('not even an Error')).toBe('unknown')
+  })
+})
+
+describe('syncCloudProjects failure handling', () => {
+  let failDir: string
+
+  beforeEach(() => {
+    failDir = mkdtempSync(join(tmpdir(), 'cloud-fail-'))
+  })
+
+  afterEach(() => {
+    rmSync(failDir, { recursive: true, force: true })
+  })
+
+  it('resolves with the reason and the cached list instead of rejecting', async () => {
+    const storePath = join(failDir, 'cloud.json')
+    listMock.mockRejectedValueOnce(new Error('gsk returned an error: Insufficient credits'))
+
+    const snapshot = await syncCloudProjects(storePath)
+
+    expect(snapshot.error).toBe('credits')
+    // the home screen keeps rendering whatever it already had
+    expect(Array.isArray(snapshot.projects)).toBe(true)
   })
 })

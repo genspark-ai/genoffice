@@ -865,3 +865,127 @@ function mkdirSyncHelper(p: string): void {
     /* ignore */
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// Multiple sessions per file
+// ────────────────────────────────────────────────────────────
+
+describe('per-file sessions', () => {
+  let tmpDir: string
+  let store: ProjectStore
+  const doc = join('/docs', 'report.docx')
+
+  /** a chat only gets a JSONL once an assistant reply lands */
+  function converse(projectId: string, chatId: string, userText: string): void {
+    store.appendChatMessage(projectId, chatId, { role: 'user', text: userText })
+    store.appendChatMessage(projectId, chatId, { role: 'assistant', text: 'ok' })
+  }
+
+  beforeEach(() => {
+    tmpDir = makeTempDir()
+    store = new ProjectStore(tmpDir)
+    store.ensureDefaultProject()
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('starts with the one chat a file has always had', () => {
+    const { chatId } = store.resolveChatForFile(doc)
+    expect(store.listChatsForFile(doc).map((c) => c.chatId)).toEqual([chatId])
+  })
+
+  it('newChatForFile mints a distinct chat and makes it active', () => {
+    const first = store.resolveChatForFile(doc)
+    const second = store.newChatForFile(doc)
+
+    expect(second.chatId).not.toBe(first.chatId)
+    expect(second.projectId).toBe(first.projectId)
+    // the next resolve lands on the new one — this is what makes "new chat" real
+    expect(store.resolveChatForFile(doc).chatId).toBe(second.chatId)
+    expect(store.listChatsForFile(doc).map((c) => c.chatId)).toEqual([first.chatId, second.chatId])
+  })
+
+  it('keeps the earlier conversation intact instead of appending to it', () => {
+    const first = store.resolveChatForFile(doc)
+    converse(first.projectId, first.chatId, 'summarise chapter one')
+
+    const second = store.newChatForFile(doc)
+    converse(second.projectId, second.chatId, 'now translate it')
+
+    expect(store.loadChat(first.projectId, first.chatId).map((m) => m.text)).toEqual([
+      'summarise chapter one',
+      'ok',
+    ])
+    expect(store.loadChat(second.projectId, second.chatId).map((m) => m.text)).toEqual([
+      'now translate it',
+      'ok',
+    ])
+  })
+
+  it('labels each session by its opening user message', () => {
+    const first = store.resolveChatForFile(doc)
+    converse(first.projectId, first.chatId, 'summarise chapter one\nand keep it short')
+    const second = store.newChatForFile(doc)
+    converse(second.projectId, second.chatId, 'now translate it')
+
+    expect(store.listChatsForFile(doc).map((c) => c.title)).toEqual([
+      'summarise chapter one',
+      'now translate it',
+    ])
+  })
+
+  it('switches back to an earlier session', () => {
+    const first = store.resolveChatForFile(doc)
+    const second = store.newChatForFile(doc)
+
+    expect(store.setActiveChatForFile(doc, first.chatId)).toBe(true)
+    expect(store.resolveChatForFile(doc).chatId).toBe(first.chatId)
+    // and forward again
+    expect(store.setActiveChatForFile(doc, second.chatId)).toBe(true)
+    expect(store.resolveChatForFile(doc).chatId).toBe(second.chatId)
+  })
+
+  it('refuses a chatId that belongs to another file', () => {
+    const other = store.resolveChatForFile(join('/docs', 'other.docx'))
+    const mine = store.resolveChatForFile(doc)
+
+    expect(store.setActiveChatForFile(doc, other.chatId)).toBe(false)
+    expect(store.resolveChatForFile(doc).chatId).toBe(mine.chatId)
+  })
+
+  it('carries every session across a rename, not just the active one', () => {
+    const first = store.resolveChatForFile(doc)
+    const second = store.newChatForFile(doc)
+    const renamed = join('/docs', 'report-final.docx')
+
+    store.fileRenamed(doc, renamed)
+
+    expect(store.listChatsForFile(renamed).map((c) => c.chatId)).toEqual([
+      first.chatId,
+      second.chatId,
+    ])
+    expect(store.resolveChatForFile(renamed).chatId).toBe(second.chatId)
+  })
+
+  it('moves every session when the file moves to another project', () => {
+    const first = store.resolveChatForFile(doc)
+    converse(first.projectId, first.chatId, 'stays with the file')
+    const second = store.newChatForFile(doc)
+    converse(second.projectId, second.chatId, 'so does this one')
+
+    const target = store.createProject('Q3 review')
+    store.moveFileToProject(doc, target.id)
+
+    expect(store.loadChat(target.id, first.chatId).map((m) => m.text)).toContain(
+      'stays with the file',
+    )
+    expect(store.loadChat(target.id, second.chatId).map((m) => m.text)).toContain(
+      'so does this one',
+    )
+    expect(existsSync(join(tmpDir, 'projects', 'default', 'chats', `${first.chatId}.jsonl`))).toBe(
+      false,
+    )
+  })
+})

@@ -66,6 +66,44 @@ function assertModuleTreesPresent() {
   }
 }
 
+const SIDECAR_DIR = '../sheets/native/xlsx-engine/target'
+
+/**
+ * Where the xlsx sidecar actually landed.
+ *
+ * A cross-compile (`cargo build --target <triple>`) writes to
+ * target/<triple>/release; a plain host build — what `npm run native:build`
+ * does, so what any local `dist:*` produces — writes to target/release. The
+ * release pipeline cross-compiles Windows to the gnu triple, so that stays
+ * first and CI is unaffected; the host directory is the fallback.
+ *
+ * Guessing wrong is not a loud failure: electron-builder only *logs* a missing
+ * extraResources source and still exits 0, so the installer ships without a
+ * sidecar and every workbook open fails at runtime. assertSidecarPresent turns
+ * that into a build error instead.
+ */
+function sidecarSource(triple, exe) {
+  const candidates = [`${SIDECAR_DIR}/${triple}/release/${exe}`, `${SIDECAR_DIR}/release/${exe}`]
+  return candidates.find((rel) => existsSync(join(__dirname, rel))) ?? candidates[0]
+}
+
+/**
+ * Runs from beforePack, not at module load: the sidecar is a build:all output,
+ * and gen-third-party-notices requires this config before build:all has run.
+ */
+function assertSidecarPresent(rel) {
+  if (!existsSync(join(__dirname, rel))) {
+    throw new Error(
+      `xlsx sidecar missing: ${rel}\n` +
+        'Run `npm run build:all` (or `npm run native:build -w @genoffice/sheets`) first.\n' +
+        'electron-builder would otherwise ship an installer without it, and every ' +
+        'workbook open would fail at runtime.',
+    )
+  }
+}
+
+const WIN_SIDECAR = sidecarSource('x86_64-pc-windows-gnu', 'xlsx-sidecar.exe')
+
 /** @type {import('electron-builder').Configuration} */
 const config = {
   appId: 'com.genoffice.app',
@@ -198,7 +236,7 @@ const config = {
     ],
     extraResources: [
       {
-        from: '../sheets/native/xlsx-engine/target/x86_64-pc-windows-gnu/release/xlsx-sidecar.exe',
+        from: WIN_SIDECAR,
         to: 'native/xlsx-sidecar.exe',
       },
     ],
@@ -240,8 +278,15 @@ const config = {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
   },
-  beforePack: async () => {
+  beforePack: async (context) => {
     assertModuleTreesPresent()
+    // mac and linux pin cargo's host target/release, which is the only place it
+    // can be for them; only windows has two candidates to choose between
+    assertSidecarPresent(
+      context.electronPlatformName === 'win32'
+        ? WIN_SIDECAR
+        : `${SIDECAR_DIR}/release/xlsx-sidecar`,
+    )
   },
   dmg: {
     sign: true,

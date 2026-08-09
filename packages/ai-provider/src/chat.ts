@@ -1,5 +1,6 @@
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
+import { maxTokensField, reasoningEffortField, resolveMaxTokens, temperatureField } from './tuning'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
@@ -23,7 +24,8 @@ async function chatAnthropic(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: 8192,
+      max_tokens: resolveMaxTokens(config, 8192),
+      ...temperatureField(config),
       system,
       messages: [{ role: 'user', content: user }],
     }),
@@ -63,7 +65,11 @@ async function chatGemini(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { temperature: 0.3 },
+      generationConfig: {
+        ...temperatureField(config),
+        // gemini spells the ceiling differently; still only sent when configured
+        ...(config.maxTokens ? { maxOutputTokens: config.maxTokens } : {}),
+      },
     }),
   })
   wd.touch()
@@ -102,7 +108,9 @@ async function chatOpenAiCompatible(
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      temperature: 0.3,
+      ...temperatureField(config),
+      ...maxTokensField(config),
+      ...reasoningEffortField(config),
     }),
   })
   wd.touch()

@@ -251,6 +251,11 @@ const desktopApi: DesktopApi = {
   async setAiSettings(settings) {
     await ipcRenderer.invoke(IPC_CHANNELS.aiSetSettings, settings)
   },
+  async setActiveModel(profileId) {
+    const result: unknown = await ipcRenderer.invoke('ai:set-active-model', profileId)
+    if (!isRecord(result)) throw new Error('Invalid AI settings response.')
+    return result as unknown as AiSettings
+  },
   async aiChat(request) {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiChat, request)
     if (!isRecord(result) || typeof result.ok !== 'boolean') {
@@ -274,6 +279,28 @@ const desktopApi: DesktopApi = {
   },
   async aiGskLogin() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiGskLogin)
+  },
+  async aiBrowsePage(url, opts) {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw new Error('Invalid URL.')
+    return (await ipcRenderer.invoke(IPC_CHANNELS.aiBrowsePage, url, opts)) as never
+  },
+  async aiExtractPages(urls, advanced) {
+    if (!Array.isArray(urls)) throw new Error('Invalid URL list.')
+    return (await ipcRenderer.invoke(IPC_CHANNELS.aiExtractPages, urls, advanced)) as never
+  },
+  async aiInstructionsPrompt(surface) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiInstructionsPrompt, surface)
+    return typeof result === 'string' ? result : ''
+  },
+  async aiSkillBody(surface, id) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiSkillBody, surface, id)
+    return typeof result === 'string' ? result : ''
+  },
+  async aiRemember(text) {
+    return (await ipcRenderer.invoke('ai:remember', text)) === true
+  },
+  async aiForget(text) {
+    return (await ipcRenderer.invoke('ai:forget', text)) === true
   },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {
@@ -427,6 +454,10 @@ const projectApi: ProjectApi = {
   deleteProject: (args) => ipcRenderer.invoke('project:delete', args),
   moveFile: (args) => ipcRenderer.invoke('project:moveFile', args),
   getTimeline: (args) => ipcRenderer.invoke('project:timeline', args),
+  // sessions: one file can hold several conversations
+  listChatsForFile: (args) => ipcRenderer.invoke('project:listChatsForFile', args),
+  newChat: (args) => ipcRenderer.invoke('project:newChat', args),
+  switchChat: (args) => ipcRenderer.invoke('project:switchChat', args),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)
 

@@ -105,6 +105,7 @@ import {
   type AgentImage,
 } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
+import type { ChatMeta } from '@genoffice/project-store'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
 import {
@@ -122,6 +123,7 @@ import type { ActiveSheetInfo, SheetsSkillDeps } from './ai/tools'
 import type { AiChatMessage } from './ai/AiChatPanel'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { createFilesSkill } from './ai/files-skill'
+import { createAppWebSkill } from './ai/web-skill'
 import { createSearchSkill } from './ai/search-skill'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
 import type {
@@ -597,6 +599,13 @@ export function App(): React.JSX.Element {
   const workbookOpeningRef = useRef(false)
   /** Current session's projectId/chatId (resolved when the workbook opens) */
   const chatRefIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** render-visible mirror of chatRefIdsRef, so the picker can mark the active session */
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
+  /** keep both in step: the ref is what async callbacks read, the state is what renders */
+  const bindChat = (ids: { projectId: string; chatId: string } | null): void => {
+    chatRefIdsRef.current = ids
+    setActiveChatId(ids?.chatId ?? null)
+  }
 
   // File renamed externally (in the shell Home list) → sync the title-bar file
   // name (the save path is synced by the main process)
@@ -692,7 +701,7 @@ export function App(): React.JSX.Element {
     const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
     if (!api) return
     // Reset (new workbook or new session)
-    chatRefIdsRef.current = null
+    bindChat(null)
     setHistoricChat([])
     const tempChatId = `unsaved-${Date.now()}`
     const sessionId = workbookFile?.sessionId
@@ -701,7 +710,7 @@ export function App(): React.JSX.Element {
     void api
       .resolveChat(resolveArgs)
       .then(async (ids) => {
-        chatRefIdsRef.current = ids
+        bindChat(ids)
         const msgs = await api.loadChat({
           projectId: ids.projectId,
           chatId: ids.chatId,
@@ -788,12 +797,18 @@ export function App(): React.JSX.Element {
   /** true once any tool of the run mutated the workbook */
   const runMutatedRef = useRef(false)
 
+  // browse / extract / load_skill, plus the user's rules and skill catalogue
+  // lazily, once: useRef(fn()) would rebuild the adapter and refire its IPC
+  // on every render
+  const webSkillRef = useRef<ReturnType<typeof createAppWebSkill> | null>(null)
+  webSkillRef.current ??= createAppWebSkill()
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
       transport: createElectronTransport(() => aiSettingsRef.current!),
       systemSuffix: aiLangDirective,
-      skill: composeSkills('sheets+files', '', [
+      skill: composeSkills('sheets+files+web', '', [
+        webSkillRef.current!.skill,
         createWorkbookSkill(sheetsSkillDeps()),
         createFilesSkill(() => attachmentsRef.current),
         createSearchSkill(),
@@ -929,11 +944,11 @@ export function App(): React.JSX.Element {
             return next
           })
           // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktopApi
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
+          // gsk status rather than matching the localized error text. Under a
+          // custom endpoint signing in fixes nothing, so the button stays off.
+          void Promise.all([window.desktopApi.getAiSettings(), window.desktopApi.aiGskStatus()])
+            .then(([current, status]) => {
+              if (current.provider !== 'genspark' || status.loggedIn) return
               setChat((previous) => {
                 const next = [...previous]
                 const last = next.at(-1)
@@ -1042,6 +1057,18 @@ export function App(): React.JSX.Element {
     agentLoopRef.current?.cancel()
   }
 
+  /** args identifying this workbook's chats; sheets has no path in the renderer */
+  function chatScopeArgs(): { filePath: null; sessionId?: string } {
+    const sessionId = workbookFile?.sessionId
+    return sessionId === undefined ? { filePath: null } : { filePath: null, sessionId }
+  }
+
+  /**
+   * Start a genuinely new session. Clearing React state alone used to leave the
+   * store appending to the same chatId, so the "new" conversation was the old
+   * one with the transcript hidden; the store now mints a fresh chatId and the
+   * previous session stays reachable from the picker.
+   */
   function handleNewChat(): void {
     agentLoopRef.current?.reset()
     setAiBusy(false)
@@ -1050,6 +1077,74 @@ export function App(): React.JSX.Element {
     setPreview(null)
     lazyPreviewRef.current = null
     setMessage(t('appNewConversation'))
+    void (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+      ?.newChat({ ...chatScopeArgs(), tempChatId: `unsaved-${Date.now()}` })
+      .then((ids) => {
+        bindChat(ids)
+      })
+      .catch(() => {
+        /* the panel stays usable; messages keep going to the current chat */
+      })
+  }
+
+  /** Current AI settings, for the sidebar model switcher. */
+  function handleListModels(): Promise<AiSettings | null> {
+    return window.desktopApi?.getAiSettings().catch(() => null) ?? Promise.resolve(null)
+  }
+
+  /** Switch the live model; null selects the Genspark account. */
+  function handleSelectModel(profileId: string | null): Promise<AiSettings | null> {
+    return window.desktopApi?.setActiveModel(profileId).catch(() => null) ?? Promise.resolve(null)
+  }
+
+  /** This workbook's stored conversations, newest first, for the session picker. */
+  function handleListSessions(): Promise<ChatMeta[]> {
+    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    if (!api) return Promise.resolve([])
+    return api
+      .listChatsForFile(chatScopeArgs())
+      .then((list) => [...list].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)))
+      .catch(() => [])
+  }
+
+  /** Load an earlier conversation back into the panel. */
+  function handleLoadSession(chatId: string): void {
+    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    if (!api || chatRefIdsRef.current?.chatId === chatId) return
+    // restore() only seeds an idle, empty loop, so drop the live turn first
+    agentLoopRef.current?.reset()
+    setAiBusy(false)
+    setChat([])
+    setHistoricChat([])
+    setPreview(null)
+    lazyPreviewRef.current = null
+    void api
+      .switchChat({ ...chatScopeArgs(), chatId })
+      .then(async (ids) => {
+        bindChat(ids)
+        const msgs = await api.loadChat({
+          projectId: ids.projectId,
+          chatId: ids.chatId,
+          limit: 200,
+        })
+        setHistoricChat(
+          msgs.map((m) => ({
+            role: m.role,
+            text: m.text,
+            tools:
+              m.tools?.map((t) => ({
+                summary: t.summary,
+                isError: !!t.isError,
+                ...(t.name ? { name: t.name } : {}),
+                ...(t.output ? { output: t.output.slice(0, 2000) } : {}),
+              })) ?? [],
+          })),
+        )
+        agentLoopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
+      })
+      .catch(() => {
+        /* silent: the panel keeps whatever it had */
+      })
   }
 
   /** DSL context the AgentSkill reads/writes through — reuses the exact same
@@ -3092,6 +3187,11 @@ export function App(): React.JSX.Element {
         onSend={handleSend}
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
+        onListSessions={handleListSessions}
+        onListModels={handleListModels}
+        onSelectModel={handleSelectModel}
+        onLoadSession={handleLoadSession}
+        activeChatId={activeChatId}
         onUndo={handleUndo}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}

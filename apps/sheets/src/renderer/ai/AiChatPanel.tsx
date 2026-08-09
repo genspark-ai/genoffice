@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { activeProfile, activeProvider, type AiSettings } from '@genoffice/ai-provider'
+import type { ChatMeta } from '@genoffice/project-store'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -164,6 +166,11 @@ export function AiChatPanel({
   onSend,
   onStop,
   onNewChat,
+  onListSessions,
+  onListModels,
+  onSelectModel,
+  onLoadSession,
+  activeChatId,
   onUndo,
   onExpand,
   onCollapse,
@@ -191,6 +198,13 @@ export function AiChatPanel({
   readonly onSend: (instruction?: string) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
+  /** this workbook's stored conversations, newest first */
+  readonly onListSessions: () => Promise<ChatMeta[]>
+  /** current AI settings, and the switch, for the sidebar model picker */
+  readonly onListModels: () => Promise<AiSettings | null>
+  readonly onSelectModel: (profileId: string | null) => Promise<AiSettings | null>
+  readonly onLoadSession: (chatId: string) => void
+  readonly activeChatId: string | null
   readonly onUndo: () => void
   readonly onExpand: () => void
   readonly onCollapse: () => void
@@ -200,12 +214,72 @@ export function AiChatPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const stickToBottomRef = useRef(true)
   const [dragOver, setDragOver] = useState(false)
+  /** this workbook's stored conversations, for the session picker */
+  const [sessions, setSessions] = useState<ChatMeta[]>([])
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  /** live model selection; fetched fresh so a switch made in another tab shows here */
+  const [models, setModels] = useState<AiSettings | null>(null)
+  const [modelsOpen, setModelsOpen] = useState(false)
   const asideRef = useRef<HTMLElement | null>(null)
   const [resizing, setResizing] = useState(false)
   /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
   const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
   /** image paths with a read already issued — one readAttachmentImage per attach, even while pending */
   const previewRequestedRef = useRef(new Set<string>())
+
+  // ── model switcher ──────────────────────────────────────────────────────
+  /** label for whatever is answering right now */
+  const activeModelLabel = (): string => {
+    if (!models || activeProvider(models) !== 'custom') return t('aiModelGenspark')
+    const profile = activeProfile(models)
+    return profile?.label || profile?.model || t('aiModelGenspark')
+  }
+
+  const refreshModels = () => {
+    void onListModels().then((s) => s && setModels(s))
+  }
+
+  useEffect(refreshModels, [])
+
+  const openModels = (): void => {
+    setModelsOpen((open) => !open)
+    setSessionsOpen(false)
+    refreshModels()
+  }
+
+  /** null selects the Genspark account */
+  const selectModel = (profileId: string | null): void => {
+    setModelsOpen(false)
+    void onSelectModel(profileId).then((s) => s && setModels(s))
+  }
+
+  /** dismiss the model picker on any click outside it */
+  useEffect(() => {
+    if (!modelsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-model-menu, .ai-model-btn')) setModelsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [modelsOpen])
+
+  /** Open the picker on this workbook's stored conversations. */
+  const openSessions = (): void => {
+    setSessionsOpen((open) => !open)
+    void onListSessions().then(setSessions)
+  }
+
+  /** dismiss the session picker on any click outside it */
+  useEffect(() => {
+    if (!sessionsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-session-menu, .ai-panel-header-actions')) setSessionsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [sessionsOpen])
   useEffect(() => {
     const alive = new Set(attachments.map((a) => a.path))
     // drop previews (and request markers) of removed attachments, so memory is reclaimed and a re-attach re-reads
@@ -395,10 +469,35 @@ export function AiChatPanel({
         <span className="ai-panel-title">
           <GensparkMark size={22} />
           Genspark
+          <button
+            type="button"
+            className="ai-model-btn"
+            onClick={openModels}
+            title={t('aiModelSwitch')}
+            aria-expanded={modelsOpen}
+          >
+            <span className="ai-model-btn-label">{activeModelLabel()}</span>
+            <span className="ai-model-btn-caret" aria-hidden="true" />
+          </button>
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={openSessions}
+            title={t('aiSessionsTitle')}
+            aria-expanded={sessionsOpen}
+          >
+            <IconClock size={15} />
+          </button>
           {(chat.length > 0 || historicChat.length > 0) && (
-            <button className="ai-header-btn" onClick={onNewChat} title={t('aiNewChat')}>
+            <button
+              className="ai-header-btn"
+              onClick={() => {
+                setSessionsOpen(false)
+                onNewChat()
+              }}
+              title={t('aiNewChat')}
+            >
               <IconNewChat size={15} />
             </button>
           )}
@@ -406,6 +505,57 @@ export function AiChatPanel({
             <IconCollapse size={15} />
           </button>
         </div>
+        {modelsOpen && (
+          <div className="ai-model-menu" role="menu">
+            <button
+              role="menuitem"
+              className={`ai-session-item${!models || activeProvider(models) !== 'custom' ? ' ai-session-item-active' : ''}`}
+              onClick={() => selectModel(null)}
+            >
+              <span className="ai-session-item-title">{t('aiModelGenspark')}</span>
+            </button>
+            {models?.customProfiles?.map((p) => (
+              <button
+                key={p.id}
+                role="menuitem"
+                className={`ai-session-item${
+                  activeProvider(models) === 'custom' && activeProfile(models)?.id === p.id
+                    ? ' ai-session-item-active'
+                    : ''
+                }`}
+                onClick={() => selectModel(p.id)}
+              >
+                <span className="ai-session-item-title">{p.label || p.model}</span>
+                <span className="ai-session-item-time">{p.model}</span>
+              </button>
+            ))}
+            <div className="ai-model-menu-hint">{t('aiModelManageHint')}</div>
+          </div>
+        )}
+        {sessionsOpen && (
+          <div className="ai-session-menu" role="menu">
+            {sessions.length === 0 ? (
+              <div className="ai-session-empty">{t('aiSessionsEmpty')}</div>
+            ) : (
+              sessions.map((s) => (
+                <button
+                  key={s.chatId}
+                  role="menuitem"
+                  className={`ai-session-item${s.chatId === activeChatId ? ' ai-session-item-active' : ''}`}
+                  onClick={() => {
+                    setSessionsOpen(false)
+                    onLoadSession(s.chatId)
+                  }}
+                >
+                  <span className="ai-session-item-title">{s.title || t('aiSessionUntitled')}</span>
+                  <span className="ai-session-item-time">
+                    {new Date(s.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </header>
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
@@ -679,6 +829,15 @@ function IconNewChat({ size }: { size: number }): React.JSX.Element {
         strokeLinejoin="round"
       />
       <path d="M12.2 9.4v4M10.2 11.4h4" />
+    </Svg>
+  )
+}
+
+function IconClock({ size }: { size: number }): React.JSX.Element {
+  return (
+    <Svg size={size}>
+      <circle cx="8" cy="8" r="5.8" />
+      <path d="M8 4.6V8l2.4 1.6" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   )
 }

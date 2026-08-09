@@ -1,0 +1,263 @@
+/* Standalone settings window: sidebar + scrolling panel.
+   Reuses the .ai-* field primitives and .btn styles from home.css. */
+@import './home.css';
+
+body {
+  overflow: hidden;
+}
+
+.settings {
+  display: flex;
+  height: 100vh;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  width: 200px;
+  padding: 18px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-subtle);
+  overflow-y: auto;
+}
+
+.settings-nav-title {
+  padding: 0 10px;
+  margin-bottom: 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-nav-item {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.settings-nav-item:hover {
+  background: var(--bg-hover);
+}
+
+.settings-nav-item.active {
+  background: var(--surface);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+}
+
+.settings-body {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 28px 32px;
+  overflow-y: auto;
+}
+
+.settings-section > h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.settings-hint,
+.settings-empty {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.settings-note {
+  margin: 18px 0 0;
+  padding: 10px 12px;
+  background: var(--surface-subtle);
+  border-radius: var(--radius-8);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.settings-saved {
+  font-size: 12px;
+  color: var(--success);
+}
+
+.settings-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  resize: vertical;
+}
+
+.settings-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-textarea.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.settings-rule {
+  margin-bottom: 14px;
+}
+
+/* ── skills ── */
+
+.settings-drop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-8);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.settings-drop.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--accent);
+}
+
+.settings-drop-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* the memory list sits under the rules editor, inside the same section */
+.settings-subhead {
+  margin: 22px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* a recorded preference is a sentence, so it wraps rather than truncating —
+   the user has to be able to read the whole thing to judge whether to keep it */
+.settings-memory-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-skill {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+}
+
+.settings-skill.off {
+  opacity: 0.6;
+}
+
+.settings-skill-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.settings-skill-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-skill-id {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.settings-skill-desc {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.settings-skill-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.settings-chip {
+  padding: 2px 8px;
+  background: var(--surface-subtle);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.settings-chip.off {
+  background: rgb(239 68 68 / 12%);
+  color: var(--color-error);
+}
+
+.settings-skill-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-scope-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.settings-scope-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ── general ── */
+
+.settings-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.settings-version {
+  font-size: 13px;
+  color: var(--text-secondary);
+}

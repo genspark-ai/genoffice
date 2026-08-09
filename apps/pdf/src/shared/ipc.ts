@@ -158,6 +158,10 @@ export const AI_CHANNELS = {
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
+  browsePage: 'ai:browse-page',
+  extractPages: 'ai:extract-pages',
+  instructionsPrompt: 'ai:instructions-prompt',
+  skillBody: 'ai:skill-body',
 } as const
 
 /** API exposed by preload to the renderer (window.pdfApi) */
@@ -183,6 +187,39 @@ export interface PdfApi {
   onSaveAsFlow(handler: (inFlight: boolean) => void): () => void
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
+  /** Render a URL in the built-in browser and return its text (agent browse_page) */
+  aiBrowsePage(
+    url: string,
+    opts?: { includeLinks?: boolean },
+  ): Promise<{
+    ok: boolean
+    error?: string
+    page?: {
+      url: string
+      title: string
+      text: string
+      truncated: boolean
+      links?: Array<{ text: string; href: string }>
+    }
+  }>
+  /** Fetch pages as markdown via Tavily (agent extract_pages) */
+  aiExtractPages(
+    urls: string[],
+    advanced?: boolean,
+  ): Promise<{
+    ok: boolean
+    error?: string
+    pages?: Array<{ url: string; title: string; content: string }>
+    failed?: string[]
+  }>
+  /** User rules + skill catalogue for this surface, assembled in main */
+  aiInstructionsPrompt(surface: string): Promise<string>
+  /** Body of one user skill, scope-checked for this surface (agent load_skill) */
+  aiSkillBody(surface: string, id: string): Promise<string>
+  /** record a preference; false when the text was not worth storing */
+  aiRemember(text: string): Promise<boolean>
+  /** drop a recorded preference by exact wording; false when nothing matched */
+  aiForget(text: string): Promise<boolean>
   getAiSettings(): Promise<AiSettings>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

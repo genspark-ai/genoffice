@@ -6,6 +6,8 @@ import {
   type AgentImage,
   type ToolDisplay,
 } from '@genoffice/agent-core'
+import { activeProfile, activeProvider } from '@genoffice/ai-provider'
+import type { ChatMeta } from '@genoffice/project-store'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -18,6 +20,7 @@ import {
 } from './slides-skill'
 import { extractJsonObject, parseOutlineJson } from './outline-json'
 import { createFilesSkill } from './files-skill'
+import { createAppWebSkill } from './web-skill'
 import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
@@ -395,6 +398,12 @@ export function AiPanel({
   }, [])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
+  /** this deck's stored conversations, for the session picker */
+  const [sessions, setSessions] = useState<ChatMeta[]>([])
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  /** live model selection; fetched fresh so a switch made in another tab shows here */
+  const [models, setModels] = useState<AiSettings | null>(null)
+  const [modelsOpen, setModelsOpen] = useState(false)
   /* Answered clarify receipts (answered-state card): view-only record, not chat data */
   const [clarifyAnswers, setClarifyAnswers] = useState<
     Array<{ afterIdx: number; qa: Array<{ q: string; a: string }> }>
@@ -444,39 +453,102 @@ export function AiPanel({
   >([])
 
   // ── Chat history persistence ──────────────────────────────────────────────
+  const projectApi = () => (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+
+  /** Show a stored conversation and hand it back to the model as prior context. */
+  const showStoredChat = async (ids: { projectId: string; chatId: string }): Promise<void> => {
+    const api = projectApi()
+    if (!api) return
+    chatRefIds.current = ids
+    const msgs = await api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
+    setHistoricChat(
+      msgs.map((m) => ({
+        role: m.role,
+        text: m.text,
+        tools: m.tools?.map((t) => ({
+          name: t.name,
+          summary: t.summary,
+          isError: t.isError,
+          output: t.output ? t.output.slice(0, TOOL_OUTPUT_MAX_CHARS) : undefined,
+        })),
+      })),
+    )
+    // Restore model context: follow-ups after reopening a file continue the earlier conversation (only when the loop is idle with no history)
+    loopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
+  }
+
   /** Resolve chatId and load history on first mount (AiPanel resets by key; no need to watch currentFilePath changes) */
   useEffect(() => {
-    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    const api = projectApi()
     if (!api) return
     const tempChatId = `unsaved-${Date.now()}`
     void api
       .resolveChat({ filePath: currentFilePath ?? null, tempChatId })
-      .then((ids) => {
-        chatRefIds.current = ids
-        return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
-      })
-      .then((msgs) => {
-        if (msgs.length === 0) return
-        setHistoricChat(
-          msgs.map((m) => ({
-            role: m.role,
-            text: m.text,
-            tools: m.tools?.map((t) => ({
-              name: t.name,
-              summary: t.summary,
-              isError: t.isError,
-              output: t.output ? t.output.slice(0, TOOL_OUTPUT_MAX_CHARS) : undefined,
-            })),
-          })),
-        )
-        // Restore model context: follow-ups after reopening a file continue the earlier conversation (only when the loop is idle with no history)
-        loopRef.current?.restore(msgs.map((m) => ({ role: m.role, text: m.text })))
-      })
+      .then((ids) => showStoredChat(ids))
       .catch(() => {
         /* History load failures are silent */
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /** dismiss the session picker on any click outside it */
+  useEffect(() => {
+    if (!sessionsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-session-menu, .ai-panel-header-actions')) setSessionsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [sessionsOpen])
+
+  // ── model switcher ──────────────────────────────────────────────────────
+  /** label for whatever is answering right now */
+  const activeModelLabel = (): string => {
+    const live = models ?? settings
+    if (activeProvider(live) !== 'custom') return t('aiModelGenspark')
+    const profile = activeProfile(live)
+    return profile?.label || profile?.model || t('aiModelGenspark')
+  }
+
+  const refreshModels = () => {
+    void window.slidesApi
+      ?.getAiSettings()
+      .then(setModels)
+      .catch(() => {
+        /* the header falls back to the settings prop */
+      })
+  }
+
+  useEffect(refreshModels, [])
+
+  const openModels = () => {
+    setModelsOpen((open) => !open)
+    setSessionsOpen(false)
+    refreshModels()
+  }
+
+  /** null selects the Genspark account */
+  const selectModel = (profileId: string | null) => {
+    setModelsOpen(false)
+    void window.slidesApi
+      ?.setActiveModel(profileId)
+      .then(setModels)
+      .catch(() => {
+        /* silent: the previous model stays live */
+      })
+  }
+
+  /** dismiss the model picker on any click outside it */
+  useEffect(() => {
+    if (!modelsOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('.ai-model-menu, .ai-model-btn')) setModelsOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [modelsOpen])
 
   /** After an unsaved draft lands and gets a real path, bind the unsaved-* history to that file (recoverable by path on reopen) */
   useEffect(() => {
@@ -600,6 +672,17 @@ export function AiPanel({
     })
   }
 
+  // browse / extract / load_skill, plus the user's rules and skill catalogue
+  // lazily, once: useRef(fn()) would rebuild the adapter and refire its IPC
+  // on every render
+  const webSkillRef = useRef<ReturnType<typeof createAppWebSkill> | null>(null)
+  // refs, not the render-time values: the skill is built once and would
+  // otherwise render whatever deck existed when the panel first mounted
+  webSkillRef.current ??= createAppWebSkill({
+    slides: () => slidesRef.current,
+    images: () => imagesRef.current,
+    current: () => currentRef.current,
+  })
   const loopRef = useRef<AgentLoop | null>(null)
   if (!loopRef.current) {
     // The three slides generation steps (style/planning/per-page HTML) force the high-quality model (only with the anthropic provider;
@@ -1069,7 +1152,8 @@ export function AiPanel({
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
-      skill: composeSkills('slides+files', '', [
+      skill: composeSkills('slides+files+web', '', [
+        webSkillRef.current!.skill,
         createSlidesSkill(access),
         createFilesSkill(
           () => attachmentsRef.current,
@@ -1183,11 +1267,11 @@ export function AiPanel({
             return next
           })
           // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.slidesApi
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
+          // gsk status rather than matching the localized error text. Under a
+          // custom endpoint signing in fixes nothing, so the button stays off.
+          void Promise.all([window.slidesApi.getAiSettings(), window.slidesApi.aiGskStatus()])
+            .then(([current, status]) => {
+              if (current.provider !== 'genspark' || status.loggedIn) return
               setChat((prev) => {
                 const next = [...prev]
                 const last = next.at(-1)
@@ -1445,13 +1529,58 @@ export function AiPanel({
 
   const retry = () => runWith(lastInstructionRef.current, lastDisplayTextRef.current)
 
+  /**
+   * Start a genuinely new session. Clearing React state alone used to leave the
+   * store appending to the same chatId, so the "new" conversation was the old
+   * one with the transcript hidden; the store now mints a fresh chatId and the
+   * previous session stays reachable from the picker.
+   */
   const newChat = () => {
     dismissClarify()
     qcAbortRef.current?.abort()
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
+    setHistoricChat([])
+    setSessionsOpen(false)
     inputRef.current?.focus()
+    void projectApi()
+      ?.newChat({ filePath: currentFilePath ?? null, tempChatId: `unsaved-${Date.now()}` })
+      .then((ids) => {
+        chatRefIds.current = ids
+      })
+      .catch(() => {
+        /* the panel stays usable; messages keep going to the current chat */
+      })
+  }
+
+  /** Open the picker on this deck's stored conversations, newest first. */
+  const openSessions = () => {
+    setSessionsOpen((open) => !open)
+    void projectApi()
+      ?.listChatsForFile({ filePath: currentFilePath ?? null })
+      .then((list) => setSessions([...list].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))))
+      .catch(() => setSessions([]))
+  }
+
+  /** Load one of them back into the panel. */
+  const loadSession = (chatId: string) => {
+    setSessionsOpen(false)
+    if (chatRefIds.current?.chatId === chatId) return
+    const api = projectApi()
+    if (!api) return
+    // restore() only seeds an idle, empty loop, so drop the live turn first
+    dismissClarify()
+    qcAbortRef.current?.abort()
+    loopRef.current?.reset()
+    setBusy(false)
+    setChat([])
+    void api
+      .switchChat({ filePath: currentFilePath ?? null, chatId })
+      .then((ids) => showStoredChat(ids))
+      .catch(() => {
+        /* silent: the panel keeps whatever it had */
+      })
   }
 
   const copyMessage = (text: string, idx: number) => {
@@ -1580,8 +1709,26 @@ export function AiPanel({
         <span className="ai-panel-title">
           <GensparkMark size={22} />
           {t('aiPanelTitle')}
+          <button
+            type="button"
+            className="ai-model-btn"
+            onClick={openModels}
+            title={t('aiModelSwitch')}
+            aria-expanded={modelsOpen}
+          >
+            <span className="ai-model-btn-label">{activeModelLabel()}</span>
+            <span className="ai-model-btn-caret" aria-hidden="true" />
+          </button>
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={openSessions}
+            title={t('aiSessionsTitle')}
+            aria-expanded={sessionsOpen}
+          >
+            <IconClock size={15} />
+          </button>
           {chat.length > 0 && (
             <button className="ai-header-btn" onClick={newChat} title={t('aiNewChat')}>
               <IconNewChat size={15} />
@@ -1593,6 +1740,55 @@ export function AiPanel({
             </button>
           )}
         </div>
+        {modelsOpen && (
+          <div className="ai-model-menu" role="menu">
+            <button
+              role="menuitem"
+              className={`ai-session-item${activeProvider(models ?? settings) !== 'custom' ? ' ai-session-item-active' : ''}`}
+              onClick={() => selectModel(null)}
+            >
+              <span className="ai-session-item-title">{t('aiModelGenspark')}</span>
+            </button>
+            {(models ?? settings).customProfiles?.map((p) => (
+              <button
+                key={p.id}
+                role="menuitem"
+                className={`ai-session-item${
+                  activeProvider(models ?? settings) === 'custom' &&
+                  activeProfile(models ?? settings)?.id === p.id
+                    ? ' ai-session-item-active'
+                    : ''
+                }`}
+                onClick={() => selectModel(p.id)}
+              >
+                <span className="ai-session-item-title">{p.label || p.model}</span>
+                <span className="ai-session-item-time">{p.model}</span>
+              </button>
+            ))}
+            <div className="ai-model-menu-hint">{t('aiModelManageHint')}</div>
+          </div>
+        )}
+        {sessionsOpen && (
+          <div className="ai-session-menu" role="menu">
+            {sessions.length === 0 ? (
+              <div className="ai-session-empty">{t('aiSessionsEmpty')}</div>
+            ) : (
+              sessions.map((s) => (
+                <button
+                  key={s.chatId}
+                  role="menuitem"
+                  className={`ai-session-item${s.chatId === chatRefIds.current?.chatId ? ' ai-session-item-active' : ''}`}
+                  onClick={() => loadSession(s.chatId)}
+                >
+                  <span className="ai-session-item-title">{s.title || t('aiSessionUntitled')}</span>
+                  <span className="ai-session-item-time">
+                    {new Date(s.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>

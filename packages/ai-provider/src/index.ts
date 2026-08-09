@@ -1,6 +1,8 @@
 export type {
   AiChatRequest,
+  AiCustomProfile,
   AiChatResponse,
+  AiModelSettings,
   AiProviderConfig,
   AiProviderId,
   AiProviderMeta,
@@ -9,12 +11,29 @@ export type {
   AiStreamRequest,
   GenSparkAccountStatus,
   LegacyAiSettings,
+  ReasoningEffort,
 } from './types'
+export {
+  DEFAULT_TEMPERATURE,
+  isReasoningEffort,
+  maxTokensField,
+  reasoningEffortField,
+  resolveMaxTokens,
+  temperatureField,
+} from './tuning'
 export {
   AI_PROVIDERS,
   GENSPARK_LLM_BASE_URLS,
+  activeProfile,
+  activeProvider,
+  applyModelSettings,
   defaultAiSettings,
+  isCustomConfigured,
+  newProfileId,
+  normalizeProxyUrl,
   resolveAiSettings,
+  syncActiveProfile,
+  toModelSettings,
 } from './providers'
 export { chatForProvider } from './chat'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'

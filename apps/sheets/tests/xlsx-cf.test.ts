@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  OOXML_ICON_SETS,
   applyCfRules,
   buildDxfXml,
   cfRuleUnsaveableReason,
   iconSetSaveable,
 } from '../src/gateway/xlsx-cf'
+import { AI_ICON_SETS, aiIconConfigs } from '../src/domain/workbook-dsl'
 
 const SHEET =
   '<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>' +
@@ -469,5 +471,52 @@ describe('cfRuleUnsaveableReason', () => {
       }),
     ).toMatch(/cannot be saved/)
     expect(cfRuleUnsaveableReason({ type: 'somethingElse' })).toMatch(/Unsupported/)
+  })
+})
+
+describe('icon sets offered to the AI', () => {
+  it('matches the set the save path can write, so a requested rule never fails closed', () => {
+    expect([...AI_ICON_SETS].sort()).toEqual([...OOXML_ICON_SETS].sort())
+  })
+
+  it('generates a saveable config for every offered set, in both directions', () => {
+    for (const set of AI_ICON_SETS) {
+      expect(iconSetSaveable(aiIconConfigs(set, false)), `${set}`).toBe(true)
+      expect(iconSetSaveable(aiIconConfigs(set, true)), `${set} reversed`).toBe(true)
+    }
+  })
+
+  it('serializes a generated icon set through the real save path', () => {
+    const rules = [
+      {
+        ranges: [{ startRow: 0, endRow: 4, startColumn: 0, endColumn: 0 }],
+        stopIfTrue: false,
+        rule: {
+          type: 'iconSet',
+          isShowValue: true,
+          config: aiIconConfigs('3TrafficLights1', false),
+        },
+      },
+    ]
+    const xml = applyCfRules(SHEET, rules, { internDxf: () => 0 })
+    expect(xml).toContain('<iconSet iconSet="3TrafficLights1"')
+    expect(xml).not.toContain('reverse="1"')
+    // one catch-all minimum plus two percent thresholds
+    expect(xml.match(/<cfvo/g)).toHaveLength(3)
+  })
+
+  it('marks a reversed generated icon set as reversed rather than failing closed', () => {
+    const rules = [
+      {
+        ranges: [{ startRow: 0, endRow: 4, startColumn: 0, endColumn: 0 }],
+        stopIfTrue: false,
+        rule: {
+          type: 'iconSet',
+          isShowValue: true,
+          config: aiIconConfigs('3TrafficLights1', true),
+        },
+      },
+    ]
+    expect(applyCfRules(SHEET, rules, { internDxf: () => 0 })).toContain('reverse="1"')
   })
 })
