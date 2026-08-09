@@ -1387,7 +1387,10 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
       ['right', 'r'],
     ] as const) {
       const el = findChild(pBdr, `w:${side}`)
-      if (el && attrsOf(el)['w:val'] !== 'none') borders += ch
+      // ST_Border spells "no border" both ways, and Word writes nil whenever a style-level
+      // border is reset, so treating it as present stamps a rule the document never had
+      const val = el ? attrsOf(el)['w:val'] : undefined
+      if (el && val !== 'none' && val !== 'nil') borders += ch
     }
     if (borders) format.borders = borders
   }

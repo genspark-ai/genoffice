@@ -1,3 +1,4 @@
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { parseDocx, saveDocx, TOTAL_PAGES_MARK, type SaveBlock } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
@@ -224,5 +225,50 @@ describe('header edits keep image paragraphs', () => {
     expect(hdr).toContain(LOGO_P) // the logo paragraph keeps its original bytes
     expect(hdr).toContain('新页眉文字')
     expect(hdr).not.toContain('旧页眉文字')
+  })
+})
+
+describe('header paragraph borders', () => {
+  const HDR_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+  /** a header whose side borders are reset with w:val="nil", as a style-level reset writes them */
+  async function withNilBorderHeader() {
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rIdHdr"/>',
+      extraRels:
+        '<Relationship Id="rIdHdr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml:
+            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${HDR_NS}>` +
+            '<w:p><w:pPr><w:pBdr><w:top w:val="nil"/><w:left w:val="nil"/><w:right w:val="nil"/>' +
+            '<w:bottom w:val="single" w:sz="18" w:color="4472C4"/></w:pBdr></w:pPr>' +
+            '<w:r><w:t>Quarterly report</w:t></w:r></w:p></w:hdr>',
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+    })
+    return parseDocx(bytes)
+  }
+
+  it('does not read a nil side as a border', async () => {
+    const parsed = await withNilBorderHeader()
+    expect(parsed.headerParas?.[0]?.borders).toBe('b')
+  })
+
+  it('does not stamp rules the header never had when it is saved back', async () => {
+    const parsed = await withNilBorderHeader()
+    const blocks: SaveBlock[] = [{ kind: 'original', docxIndex: parsed.blocks[0].docxIndex! }]
+    const saved = await saveDocx(parsed, blocks, {
+      header: { text: '', paras: parsed.headerParas ?? [] },
+    })
+    const header = await (await JSZip.loadAsync(saved)).file('word/header1.xml')!.async('text')
+    const pBdr = /<w:pBdr>[\s\S]*?<\/w:pBdr>/.exec(header)?.[0] ?? ''
+    expect(pBdr).toContain('<w:bottom ')
+    for (const side of ['<w:top ', '<w:left ', '<w:right ']) {
+      expect(pBdr).not.toContain(side)
+    }
   })
 })
