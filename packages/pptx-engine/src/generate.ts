@@ -330,16 +330,17 @@ function patchRunProps(runXml: string, run: TextRun): string {
     }
     runXml = patchRunHlink(runXml, run)
   } else {
-    // No rPr: inject a minimal rPr after <a:r> (no latin/ea injected when the font is untouched — inheritance applies)
+    // No rPr: inject a minimal rPr after <a:r> (no font slots injected when the font is untouched,
+    // so inheritance applies)
     const attrs = buildRPrAttrs(run)
     const color = run.color
       ? `<a:solidFill><a:srgbClr val="${hex6(run.color)}"/></a:solidFill>`
       : ''
     const font =
       run.fontFamily && !run.fontImplicit && !run.latinFont && !run.eaFont
-        ? `<a:latin typeface="${escapeXmlAttr(run.fontFamily)}"/><a:ea typeface="${escapeXmlAttr(run.fontFamily)}"/>`
+        ? fontSlotsXml(escapeXmlAttr(run.fontFamily))
         : ''
-    const inner = color + font + hlinkXml(run) // schema order: fill before latin/ea, hlinkClick after
+    const inner = color + font + hlinkXml(run) // schema order: fill before the font slots, hlinkClick after
     const rpr = inner ? `<a:rPr${attrs}>${inner}</a:rPr>` : `<a:rPr${attrs}/>`
     runXml = runXml.replace(/(<a:r(?:\s[^>]*)?>)/, `$1${rpr}`)
   }
@@ -378,9 +379,78 @@ function patchRunHlink(runXml: string, run: TextRun): string {
   return runXml.replace(/<\/a:rPr>/, `${hlink}</a:rPr>`)
 }
 
-/** Patch or inject the run font: <a:latin>/<a:ea> typeface (ea written in sync for CJK, avoiding the theme ea font). */
-function patchRunFont(runXml: string, family: string): string {
-  const esc = escapeXmlAttr(family)
+/** The three script slots written together: with a:latin alone PowerPoint still renders CJK from
+ *  the theme ea font and Arabic/Hebrew/Indic from the theme cs font, so a font change appears to
+ *  do nothing to that text. Takes an already-escaped typeface. */
+function fontSlotsXml(esc: string): string {
+  return `<a:latin typeface="${esc}"/><a:ea typeface="${esc}"/><a:cs typeface="${esc}"/>`
+}
+
+/** The font slots, in CT_TextCharacterProperties order. */
+const FONT_SLOTS = ['a:latin', 'a:ea', 'a:cs']
+const IS_FONT_SLOT = new Set(FONT_SLOTS)
+/** The rPr children that follow the font slots, so the group is inserted ahead of the first one. */
+const AFTER_FONT_SLOTS = new Set(['a:sym', 'a:hlinkClick', 'a:hlinkMouseOver', 'a:rtl', 'a:extLst'])
+
+/**
+ * Point an element's own typeface attribute at a new value. Only the start tag's own attributes
+ * are considered, so a payload nested inside a paired element keeps whatever it declared, and the
+ * attribute name is read as a whole token so one merely ending in "typeface" is left alone.
+ */
+function setTypeface(el: string, esc: string): string {
+  const tag = /^<[^\s/>]+(?:"[^"]*"|'[^']*'|[^"'>])*>/.exec(el)?.[0]
+  if (!tag) return el
+  // sliced rather than grouped: an attribute pattern permissive enough for unquoted values also
+  // swallows the '/' of a self-closing tag, which then reappears in front of whatever is added
+  const name = /^<[^\s/>]+/.exec(tag)![0]
+  const close = tag.endsWith('/>') ? '/>' : '>'
+  let had = false
+  const attrs = tag
+    .slice(name.length, tag.length - close.length)
+    .replace(/\s([^\s=/>]+)\s*=\s*("[^"]*"|'[^']*')/g, (whole, attr: string) => {
+      if (attr !== 'typeface') return whole
+      had = true
+      return ` typeface="${esc}"`
+    })
+  // added here rather than letting a caller infer absence from an unchanged string: setting a slot
+  // to the typeface it already carries returns the element untouched, which is not the same as it
+  // having no typeface at all
+  return name + (had ? attrs : `${attrs} typeface="${esc}"`) + close + el.slice(tag.length)
+}
+
+/** CT_TextCharacterProperties children. Anything else means the scan below cannot be trusted. */
+const RPR_KNOWN_CHILDREN = new Set([
+  'a:ln',
+  'a:noFill',
+  'a:solidFill',
+  'a:gradFill',
+  'a:blipFill',
+  'a:pattFill',
+  'a:grpFill',
+  'a:effectLst',
+  'a:effectDag',
+  'a:highlight',
+  'a:uLnTx',
+  'a:uLn',
+  'a:uFillTx',
+  'a:uFill',
+  'a:latin',
+  'a:ea',
+  'a:cs',
+  'a:sym',
+  'a:hlinkClick',
+  'a:hlinkMouseOver',
+  'a:rtl',
+  'a:extLst',
+])
+
+/**
+ * The font patch as it stood before complex-script support, kept verbatim for any run this file
+ * cannot scan structurally. Markup compatibility branches, comments, CDATA and processing
+ * instructions can all make element-looking text appear where a child is not, so rather than
+ * guess, such a run gets exactly the previous behaviour and a:cs is left untouched.
+ */
+function patchRunFontUnscannable(runXml: string, esc: string): string {
   if (/<a:latin\b/.test(runXml)) {
     runXml = runXml.replace(/(<a:latin\b[^>]*?\btypeface=")[^"]*(")/, `$1${esc}$2`)
     if (/<a:ea\b/.test(runXml)) {
@@ -394,12 +464,83 @@ function patchRunFont(runXml: string, family: string): string {
     return runXml
   }
   const fonts = `<a:latin typeface="${esc}"/><a:ea typeface="${esc}"/>`
-  // Self-closing rPr → expand to a pair, then insert
   if (/<a:rPr\b[^>]*\/>/.test(runXml)) {
     return runXml.replace(/<a:rPr\b([^>]*?)\/>/, `<a:rPr$1>${fonts}</a:rPr>`)
   }
-  // Paired rPr → append at the end (latin/ea after ln/fill, per the CT_TextCharacterProperties order)
   return runXml.replace(/<\/a:rPr>/, `${fonts}</a:rPr>`)
+}
+
+/**
+ * Patch or inject the run font: <a:latin>/<a:ea>/<a:cs> typeface, kept in sync per fontSlotsXml.
+ * Works on the direct children of the run's own <a:rPr>, so a typeface nested inside a:ln, an
+ * a:extLst extension payload or any other subtree stays with whatever owns it.
+ */
+function patchRunFont(runXml: string, family: string): string {
+  const esc = escapeXmlAttr(family)
+  // Comments, CDATA and processing instructions can all carry element-looking text, so the scan
+  // below would read structure that is not there
+  if (/<!--|<!\[CDATA\[|<\?/.test(runXml)) return patchRunFontUnscannable(runXml, esc)
+  // topLevelChildren reads a name as [a-zA-Z][\w:]*, while XML allows a leading underscore, a
+  // non-ASCII character and an interior middle dot among others. A name outside what it reads
+  // would be taken short and the element mistaken for a different one, so refuse the run rather
+  // than widen a scanner five other callers share.
+  for (const [, name] of runXml.matchAll(/<\/?([^\s/>!?][^\s/>]*)/g)) {
+    if (!/^[a-zA-Z][\w:]*$/.test(name!)) return patchRunFontUnscannable(runXml, esc)
+  }
+  // The run's OWN properties, taken as a direct child rather than as the first a:rPr in the text:
+  // an extension payload may carry one of its own, and filling that one in would leave the real
+  // slots untouched.
+  const runOpen = /^<[^\s/>]+(?:"[^"]*"|'[^']*'|[^"'>])*?>/.exec(runXml)?.[0]
+  if (!runOpen) return patchRunFontUnscannable(runXml, esc)
+  const rPr = topLevelChildren(runXml, runOpen.length, runXml.length).find(
+    (c) => c.name === 'a:rPr',
+  )
+  // could not be located structurally, so hand it to the previous behaviour rather than
+  // silently doing nothing: a payload's own closing tag can truncate the slice this is given
+  if (!rPr) return patchRunFontUnscannable(runXml, esc)
+  const el = runXml.slice(rPr.start, rPr.end)
+  const rPrOpen = /^<a:rPr\b(?:"[^"]*"|'[^']*'|[^"'>])*?>/.exec(el)?.[0]
+  // Self-closing rPr → expand to a pair around the slots
+  if (!rPrOpen) {
+    const attrs = /^<a:rPr\b((?:"[^"]*"|'[^']*'|[^"'>])*?)\/>$/.exec(el)?.[1]
+    if (attrs === undefined) return patchRunFontUnscannable(runXml, esc)
+    return (
+      runXml.slice(0, rPr.start) +
+      `<a:rPr${attrs}>${fontSlotsXml(esc)}</a:rPr>` +
+      runXml.slice(rPr.end)
+    )
+  }
+  const innerStart = rPr.start + rPrOpen.length
+  // the closing tag's own start, since a valid one may carry whitespace before its '>'
+  const innerEnd = rPr.start + el.lastIndexOf('</')
+  if (innerEnd <= innerStart) return patchRunFontUnscannable(runXml, esc)
+  const children = topLevelChildren(runXml, innerStart, innerEnd)
+  // An unrecognised child is a markup-compatibility wrapper or something else that supplies the
+  // real children indirectly, whatever prefix it was bound to. Recognising the whole list is the
+  // only way to know the slots found here are the run's own.
+  if (children.some((c) => !RPR_KNOWN_CHILDREN.has(c.name))) {
+    return patchRunFontUnscannable(runXml, esc)
+  }
+  const slots = children.filter((c) => IS_FONT_SLOT.has(c.name))
+  // A repeated slot is not something to reason about: the group is rebuilt from one of them and
+  // the others would be dropped along with their attributes. The schema allows one of each.
+  if (new Set(slots.map((c) => c.name)).size !== slots.length) {
+    return patchRunFontUnscannable(runXml, esc)
+  }
+  // Rebuild the group whole so it comes out as latin, ea, cs however few of the three the run
+  // arrived with, keeping each existing element's other attributes (pitchFamily, charset, panose)
+  const block = FONT_SLOTS.map((tag) => {
+    const found = slots.find((s) => s.name === tag)
+    if (!found) return `<${tag} typeface="${esc}"/>`
+    return setTypeface(runXml.slice(found.start, found.end), esc)
+  }).join('')
+  // Every removal below sits at or after this point, so the index stays valid through them
+  const at = slots.length
+    ? slots[0]!.start
+    : (children.find((c) => AFTER_FONT_SLOTS.has(c.name))?.start ?? innerEnd)
+  let out = runXml
+  for (const c of [...slots].reverse()) out = out.slice(0, c.start) + out.slice(c.end)
+  return out.slice(0, at) + block + out.slice(at)
 }
 
 function patchRunColor(runXml: string, color: string): string {
@@ -428,7 +569,8 @@ function buildRPrAttrs(run: TextRun): string {
   if (run.fontSize != null && !run.fontSizeImplicit) s += ` sz="${Math.round(run.fontSize * 100)}"`
   if (run.bold) s += ' b="1"'
   if (run.italic) s += ' i="1"'
-  if (run.underline && !run.underlineImplicit) s += ` u="${escapeXmlAttr(run.underlineStyle ?? 'sng')}"`
+  if (run.underline && !run.underlineImplicit)
+    s += ` u="${escapeXmlAttr(run.underlineStyle ?? 'sng')}"`
   if (run.strike) s += ` strike="${escapeXmlAttr(run.strikeStyle ?? 'sngStrike')}"`
   if (run.letterSpacing) s += ` spc="${Math.round(run.letterSpacing * 100)}"`
   if (run.baseline) s += ` baseline="${Math.round(run.baseline * 1000)}"`
@@ -563,14 +705,14 @@ function generateRunXml(r: TextRun): string {
       ? `<a:solidFill><a:srgbClr val="${hex6(r.color)}"/></a:solidFill>`
       : ''
   // Original dual fonts/theme references restored first; no declaration (inherited) writes nothing;
-  // a user-changed font writes latin + ea together — with latin alone, CJK characters in PowerPoint still use the theme ea font
+  // a user-changed font writes all three slots, so a rebuilt run keeps the typeface the user picked
   const font =
     r.latinFont || r.eaFont || r.csFont
       ? (r.latinFont ? `<a:latin typeface="${escapeXmlAttr(r.latinFont)}"/>` : '') +
         (r.eaFont ? `<a:ea typeface="${escapeXmlAttr(r.eaFont)}"/>` : '') +
         (r.csFont ? `<a:cs typeface="${escapeXmlAttr(r.csFont)}"/>` : '')
       : r.fontFamily && !r.fontImplicit
-        ? `<a:latin typeface="${escapeXmlAttr(r.fontFamily)}"/><a:ea typeface="${escapeXmlAttr(r.fontFamily)}"/>`
+        ? fontSlotsXml(escapeXmlAttr(r.fontFamily))
         : ''
   // Run-level hyperlink: rId written back (allocated by ensureRunLinkRels for links set this session)
   const hlink = hlinkXml(r)

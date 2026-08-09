@@ -1950,9 +1950,12 @@ function applyFontPatch(paragraphs: Paragraph[], patch: ElementFontPatch): void 
     for (const r of p.runs) {
       if (patch.fontFamily !== undefined) {
         r.fontFamily = patch.fontFamily
-        // User explicitly changed the font: the original latin/ea keep-flags no longer apply, write the new font back
+        // User explicitly changed the font: the original latin/ea/cs keep-flags no longer
+        // apply, write the new font back. csFont has to go with them or a rebuilt run
+        // re-emits the old complex-script typeface and Arabic text never changes.
         delete r.latinFont
         delete r.eaFont
+        delete r.csFont
         delete r.fontImplicit
       }
       if (patch.fontSizePt !== undefined) {
