@@ -258,3 +258,71 @@ describe('tblStyleId table style reference', () => {
     expect(kept).toContain('<w:tblStyle w:val="TableGrid"/>')
   })
 })
+
+describe('cell paragraph properties survive a table rebuild', () => {
+  /** Word writes an RTL cell as w:bidi plus a LOGICAL w:jc: "left" means start, i.e. flush right. */
+  const RTL_TABLE =
+    '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:bidiVisual/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
+    '<w:tr>' +
+    '<w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="left"/><w:spacing w:after="80"/>' +
+    '<w:ind w:left="120"/><w:shd w:val="clear" w:color="auto" w:fill="DDEEFF"/>' +
+    '</w:pPr><w:r><w:t>الاسم</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:p><w:pPr><w:bidi/></w:pPr><w:r><w:t>القيمة</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+
+  const rebuild = async (tableXml: string) => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: tableXml }))
+    const model = doc.blocks.find((b) => b.table)?.table
+    expect(model).toBeDefined()
+    return generateTableModelXml(model!)
+  }
+
+  it('keeps w:bidi and writes the logical w:jc back', async () => {
+    const out = await rebuild(RTL_TABLE)
+    expect(out.match(/<w:bidi\/>/g)).toHaveLength(2)
+    // parsed as visual "right", so Word's logical value on the way out is "left"
+    expect(out.match(/<w:jc w:val="[^"]*"\/>/g)).toEqual(['<w:jc w:val="left"/>'])
+  })
+
+  it('leaves a bidi cell that declared no alignment without one', async () => {
+    const out = await rebuild(RTL_TABLE)
+    // the second cell had w:bidi and no w:jc; dropping w:bidi would flip it from the RTL
+    // default (flush right) to the LTR default (flush left)
+    const second = out.slice(out.lastIndexOf('<w:tc>'))
+    expect(second).toContain('<w:bidi/>')
+    expect(second).not.toContain('<w:jc ')
+  })
+
+  it('keeps spacing, indent and shading', async () => {
+    const out = await rebuild(RTL_TABLE)
+    expect(out).toContain('<w:spacing w:after="80"/>')
+    expect(out).toContain('<w:ind w:left="120"/>')
+    expect(out).toContain('<w:shd w:val="clear" w:color="auto" w:fill="DDEEFF"/>')
+  })
+
+  it('still falls back to the cell alignment for a paragraph that declared none', async () => {
+    // control: this case is unchanged from before, and passes with or without the fix
+    const out = await rebuild(
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>b</w:t></w:r></w:p>' +
+        '</w:tc></w:tr></w:tbl>',
+    )
+    expect(out.match(/<w:jc w:val="center"\/>/g)).toHaveLength(2)
+  })
+
+  it('keeps a direction-neutral cell alignment on a bidi paragraph', async () => {
+    // only left/right are swapped between logical and visual, so centre and justify are safe
+    // to take from the cell even when the paragraph is RTL
+    const out = await rebuild(
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
+        '<w:p><w:pPr><w:bidi/></w:pPr><w:r><w:t>عربي</w:t></w:r></w:p>' +
+        '</w:tc></w:tr></w:tbl>',
+    )
+    const second = out.slice(out.lastIndexOf('<w:p>'))
+    expect(second).toContain('<w:bidi/>')
+    expect(second).toContain('<w:jc w:val="center"/>')
+  })
+})

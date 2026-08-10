@@ -102,3 +102,25 @@ describe('pPr schema order (mergePPrFormat)', () => {
     assertSchemaOrder(mergePPrFormat('<w:pPr/>', format), 'w:pPr', PPR_CHILD_ORDER)
   })
 })
+
+describe('CT_PPr order through the interleave branch', () => {
+  // A raw pPr that already has children takes the merge path instead of the fresh-build one.
+  // That path walks the fresh children once with a monotonic index, so they have to reach it
+  // in schema order; formatPPrChildren emits by concern and leaves framePr and tabs until last.
+  const WITH_NUMPR = '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr>'
+
+  it.each([
+    ['tabs + align', { align: 'center' as const, tabStops: [{ pos: 720, val: 'left' as const }] }],
+    [
+      'framePr + tabs + bidi + align',
+      {
+        align: 'center' as const,
+        bidi: true,
+        tabStops: [{ pos: 1440, val: 'right' as const }],
+        dropCap: { type: 'drop' as const, lines: 3 },
+      },
+    ],
+  ])('%s keeps CT_PPr child order when merged into an existing pPr', (_label, format) => {
+    assertSchemaOrder(mergePPrFormat(WITH_NUMPR, format), 'w:pPr', PPR_CHILD_ORDER)
+  })
+})
