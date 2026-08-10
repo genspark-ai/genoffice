@@ -92,7 +92,6 @@ describe('isExternallyModified edge case handling', () => {
     expect(result).toBe(false) // falls back to hash, no change detected
   })
 
-
   it('handles hash read failure gracefully (allows save to proceed)', async () => {
     const result = await isExternallyModified(
       validState,
