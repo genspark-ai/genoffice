@@ -4,8 +4,12 @@ import { htmlLang } from '@genoffice/i18n'
 import { AppFrame } from './AppFrame'
 import { LocaleProvider } from './locale'
 import '@genoffice/ui/tokens.css'
+import '@genoffice/ui/screentip.css'
 import './home.css'
 import './tabbar.css'
+import { installScreenTips } from '@genoffice/ui'
+
+installScreenTips()
 
 // macOS shell window is created with vibrancy; a transparent body lets the
 // editor views' translucent regions (e.g. slides thumbnail pane) show it

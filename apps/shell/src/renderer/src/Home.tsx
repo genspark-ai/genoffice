@@ -18,6 +18,7 @@ import type {
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
+import { SettingsModal } from './SettingsModal'
 
 declare global {
   interface Window {
@@ -210,7 +211,7 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
         <span className="proj-panel-title">{t('projects')}</span>
         <button
           className="proj-add-btn"
-          title={t('newProject')}
+          data-tip={t('newProject')}
           onClick={() => setCreating(true)}
           aria-label={t('newProject')}
         >
@@ -394,55 +395,19 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
 
 // ── Account entry (bottom-left) ──────────────────────────
 // Currently the Genspark (gsk) login entry; to be upgraded to a signup/account system later.
-// Language switching also lives in this popup menu.
+// Clicking it opens the settings modal directly (SettingsModal.tsx), which hosts
+// login/logout plus preferences (language, theme, save location, update channel).
 
 const LOGIN_POLL_MS = 2500
 /** fallback deadline when the CLI does not report expires_in (device codes live ~300s) */
 const LOGIN_MAX_WAIT_MS = 300_000
-
-// sorted by ISO 639 language code — native-script labels have no natural
-// shared alphabet, so the code is the ordering key
-const LANG_OPTIONS = [
-  { value: 'ar', label: 'العربية' },
-  { value: 'de', label: 'Deutsch' },
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Español' },
-  { value: 'fr', label: 'Français' },
-  { value: 'he', label: 'עברית' },
-  { value: 'hi', label: 'हिन्दी' },
-  { value: 'id', label: 'Bahasa Indonesia' },
-  { value: 'it', label: 'Italiano' },
-  { value: 'ja', label: '日本語' },
-  { value: 'ko', label: '한국어' },
-  { value: 'ms', label: 'Bahasa Melayu' },
-  { value: 'nl', label: 'Nederlands' },
-  { value: 'pl', label: 'Polski' },
-  { value: 'pt', label: 'Português' },
-  { value: 'ru', label: 'Русский' },
-  { value: 'th', label: 'ไทย' },
-  { value: 'zh', label: '简体中文' },
-  { value: 'zh-TW', label: '繁體中文' },
-] as const
-
-const CHANNEL_OPTIONS = [
-  { value: 'stable', labelKey: 'channelStable' },
-  { value: 'beta', labelKey: 'channelBeta' },
-] as const
-
-const THEME_OPTIONS = [
-  { value: 'light' as const, labelKey: 'themeLight' as const },
-  { value: 'dark' as const, labelKey: 'themeDark' as const },
-  { value: 'system' as const, labelKey: 'themeSystem' as const },
-] as const
-
-type ThemeValue = (typeof THEME_OPTIONS)[number]['value']
 
 function AccountEntry({
   onStatusChange,
 }: {
   onStatusChange?: (status: AccountStatus | null) => void
 }) {
-  const { lang, setLang, t } = useI18n()
+  const { t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
 
   useEffect(() => {
@@ -458,38 +423,17 @@ function AccountEntry({
   const [authUrl, setAuthUrl] = useState<string | null>(null)
   const [urlCopied, setUrlCopied] = useState(false)
   const loginDeadline = useRef(0)
-  const [menuOpen, setMenuOpen] = useState(false)
-  // language flyout: opens on hover, fixed-position so it can escape the
-  // sidebar's scroll container (same trick as the project row menu)
-  const [langFly, setLangFly] = useState<{ left: number; bottom: number } | null>(null)
-  const langRowRef = useRef<HTMLDivElement>(null)
-  // grace period before the hover flyout closes: the pointer's diagonal path
-  // from the row to the options crosses ground outside both elements
-  const langCloseTimer = useRef<number | null>(null)
-  // update-channel flyout: same hover/click/outside-scroll pattern as the language flyout
-  const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
-  const [chanFly, setChanFly] = useState<{ left: number; bottom: number } | null>(null)
-  const chanRowRef = useRef<HTMLDivElement>(null)
-  const chanCloseTimer = useRef<number | null>(null)
-  // theme flyout: same pattern as language and channel flyouts
-  const [theme, setThemeState] = useState<ThemeValue>('system')
-  const [themeFly, setThemeFly] = useState<{ left: number; bottom: number } | null>(null)
-  const themeRowRef = useRef<HTMLDivElement>(null)
-  const themeCloseTimer = useRef<number | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
-  const [appVersion, setAppVersion] = useState('')
+  // bumped on logout so an in-flight status refresh (which can still
+  // report logged-in) is discarded instead of resurrecting the UI
+  const statusSeq = useRef(0)
 
-  // query login state + app version once on mount
+  // query login state once on mount
   useEffect(() => {
     let alive = true
     void window.aiOffice.accountStatus?.().then((s) => {
       if (alive) setStatus(s)
-    })
-    void window.aiOffice.getAppVersion?.().then((v) => {
-      if (alive && v) setAppVersion(v)
-    })
-    void window.aiOffice.getTheme?.().then((th) => {
-      if (alive) setThemeState(th)
     })
     return () => {
       alive = false
@@ -540,22 +484,6 @@ function AccountEntry({
     return () => clearInterval(timer)
   }, [waiting, loginNonce])
 
-  // close the menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return
-    const handler = (e: PointerEvent) => {
-      const target = e.target as Element | null
-      if (!target?.closest?.('.account-entry')) {
-        setMenuOpen(false)
-        setLangFly(null)
-        setChanFly(null)
-        setThemeFly(null)
-      }
-    }
-    window.addEventListener('pointerdown', handler)
-    return () => window.removeEventListener('pointerdown', handler)
-  }, [menuOpen])
-
   const loggedIn = status?.loggedIn ?? false
   const email = status?.email ?? ''
   const initial = email ? email[0].toUpperCase() : loggedIn ? 'G' : '?'
@@ -569,114 +497,14 @@ function AccountEntry({
       }[loginError]
     : null
 
-  const closeMenu = () => {
-    setMenuOpen(false)
-    setLangFly(null)
-    setChanFly(null)
-    setThemeFly(null)
+  const doLogout = () => {
+    setLoggingOut(true)
+    statusSeq.current++
+    void window.aiOffice.accountLogout().then(() => {
+      setLoggingOut(false)
+      setStatus({ loggedIn: false })
+    })
   }
-
-  const cancelLangFlyClose = () => {
-    if (langCloseTimer.current !== null) {
-      window.clearTimeout(langCloseTimer.current)
-      langCloseTimer.current = null
-    }
-  }
-
-  const openLangFly = () => {
-    cancelLangFlyClose()
-    const rect = langRowRef.current?.getBoundingClientRect()
-    if (rect) setLangFly({ left: rect.right - 2, bottom: window.innerHeight - rect.bottom })
-  }
-
-  const scheduleLangFlyClose = () => {
-    cancelLangFlyClose()
-    langCloseTimer.current = window.setTimeout(() => setLangFly(null), 200)
-  }
-
-  // the fixed-position flyout would detach from its row on scroll — close it
-  // (same rule as the project row menu); also drop any pending close timer
-  useEffect(() => {
-    if (!langFly) return
-    const close = (event: Event) => {
-      // the flyout scrolls its own options (max-height + overflow-y) — only
-      // outside scrolls detach it from its row
-      const target = event.target as Element | null
-      if (target instanceof Element && target.closest('.lang-flyout')) return
-      setLangFly(null)
-    }
-    window.addEventListener('scroll', close, true)
-    return () => {
-      window.removeEventListener('scroll', close, true)
-      cancelLangFlyClose()
-    }
-  }, [langFly])
-
-  const cancelChanFlyClose = () => {
-    if (chanCloseTimer.current !== null) {
-      window.clearTimeout(chanCloseTimer.current)
-      chanCloseTimer.current = null
-    }
-  }
-
-  const openChanFly = () => {
-    cancelChanFlyClose()
-    const rect = chanRowRef.current?.getBoundingClientRect()
-    if (rect) setChanFly({ left: rect.right - 2, bottom: window.innerHeight - rect.bottom })
-  }
-
-  const scheduleChanFlyClose = () => {
-    cancelChanFlyClose()
-    chanCloseTimer.current = window.setTimeout(() => setChanFly(null), 200)
-  }
-
-  // same scroll-close rule as the language flyout: the fixed-position flyout
-  // would otherwise detach from its row when the sidebar scrolls
-  useEffect(() => {
-    if (!chanFly) return
-    const close = (event: Event) => {
-      const target = event.target as Element | null
-      if (target instanceof Element && target.closest('.lang-flyout')) return
-      setChanFly(null)
-    }
-    window.addEventListener('scroll', close, true)
-    return () => {
-      window.removeEventListener('scroll', close, true)
-      cancelChanFlyClose()
-    }
-  }, [chanFly])
-
-  const cancelThemeFlyClose = () => {
-    if (themeCloseTimer.current !== null) {
-      window.clearTimeout(themeCloseTimer.current)
-      themeCloseTimer.current = null
-    }
-  }
-
-  const openThemeFly = () => {
-    cancelThemeFlyClose()
-    const rect = themeRowRef.current?.getBoundingClientRect()
-    if (rect) setThemeFly({ left: rect.right - 2, bottom: window.innerHeight - rect.bottom })
-  }
-
-  const scheduleThemeFlyClose = () => {
-    cancelThemeFlyClose()
-    themeCloseTimer.current = window.setTimeout(() => setThemeFly(null), 200)
-  }
-
-  useEffect(() => {
-    if (!themeFly) return
-    const close = (event: Event) => {
-      const target = event.target as Element | null
-      if (target instanceof Element && target.closest('.lang-flyout')) return
-      setThemeFly(null)
-    }
-    window.addEventListener('scroll', close, true)
-    return () => {
-      window.removeEventListener('scroll', close, true)
-      cancelThemeFlyClose()
-    }
-  }, [themeFly])
 
   const startLogin = () => {
     // clicking again while waiting = relaunch the login (main kills the stale CLI, so the new device code is the live one)
@@ -686,7 +514,6 @@ function AccountEntry({
     setUrlCopied(false)
     loginDeadline.current = Date.now() + LOGIN_MAX_WAIT_MS
     setLoginNonce((n) => n + 1)
-    closeMenu()
     void window.aiOffice.accountLogin().then((launched) => {
       if (!launched) {
         setWaiting(false)
@@ -706,354 +533,35 @@ function AccountEntry({
   }
 
   const handleClick = () => {
-    setMenuOpen((v) => {
-      if (!v) void window.aiOffice.getUpdateChannel().then(setChannel)
-      return !v
+    // refresh the login state / credit balance; drop the response
+    // when a logout happened while it was in flight
+    const seq = statusSeq.current
+    void window.aiOffice.accountStatus?.().then((s) => {
+      if (seq === statusSeq.current) setStatus(s)
     })
-    setLangFly(null)
-    setChanFly(null)
-    setThemeFly(null)
+    setSettingsOpen(true)
   }
 
   return (
     <div className="account-entry">
-      {menuOpen && (
-        <div className="account-menu" role="menu">
-          {loggedIn ? (
-            <div className="account-menu-info">
-              <span className="account-menu-email" title={email}>
-                {email || t('loggedIn')}
-              </span>
-            </div>
-          ) : (
-            <>
-              <button
-                className="account-menu-item"
-                role="menuitem"
-                onClick={startLogin}
-                title={waiting ? t('waitingLogin') : undefined}
-              >
-                {waiting ? t('waitingShort') : t('loginGenspark')}
-              </button>
-              {waiting && authUrl && (
-                <>
-                  <button
-                    className="account-menu-item login-rescue"
-                    role="menuitem"
-                    onClick={openLoginUrl}
-                  >
-                    {t('loginOpenManually')}
-                  </button>
-                  <button
-                    className="account-menu-item login-rescue"
-                    role="menuitem"
-                    onClick={copyLoginUrl}
-                  >
-                    {urlCopied ? t('loginCopied') : t('loginCopyUrl')}
-                  </button>
-                </>
-              )}
-            </>
-          )}
-          <div className="account-menu-divider" />
-          <div
-            className="lang-row-wrap"
-            ref={langRowRef}
-            onMouseEnter={openLangFly}
-            onMouseLeave={scheduleLangFlyClose}
-          >
-            <button
-              className="account-menu-item lang-row"
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={!!langFly}
-              onClick={openLangFly}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="8" cy="8" r="6.3" stroke="currentColor" strokeWidth="1.2" />
-                <ellipse cx="8" cy="8" rx="2.8" ry="6.3" stroke="currentColor" strokeWidth="1.1" />
-                <path d="M2 5.9h12M2 10.1h12" stroke="currentColor" strokeWidth="1.1" />
-              </svg>
-              <span className="lang-row-label">{t('language')}</span>
-              <span className="lang-row-current">
-                {LANG_OPTIONS.find((opt) => opt.value === lang)?.label}
-              </span>
-              <svg
-                className="lang-row-chevron"
-                width="11"
-                height="11"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4.5 2.5l4 3.5-4 3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              </svg>
-            </button>
-            {langFly && (
-              <div
-                className="lang-flyout"
-                role="menu"
-                style={{ left: langFly.left, bottom: langFly.bottom }}
-              >
-                {LANG_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    role="menuitemradio"
-                    aria-checked={lang === opt.value}
-                    className={`lang-menu-item${lang === opt.value ? ' active' : ''}`}
-                    onClick={() => {
-                      closeMenu()
-                      if (lang !== opt.value) setLang(opt.value)
-                    }}
-                  >
-                    {opt.label}
-                    {lang === opt.value && (
-                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                        <path
-                          d="M2.5 6.2l2.4 2.4 4.6-5"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          fill="none"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div
-            className="lang-row-wrap"
-            ref={themeRowRef}
-            onMouseEnter={openThemeFly}
-            onMouseLeave={scheduleThemeFlyClose}
-          >
-            <button
-              className="account-menu-item lang-row"
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={!!themeFly}
-              onClick={openThemeFly}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.2" />
-                <path
-                  d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <span className="lang-row-label">{t('theme')}</span>
-              <span className="lang-row-current">
-                {t(THEME_OPTIONS.find((opt) => opt.value === theme)?.labelKey ?? 'themeSystem')}
-              </span>
-              <svg
-                className="lang-row-chevron"
-                width="11"
-                height="11"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4.5 2.5l4 3.5-4 3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              </svg>
-            </button>
-            {themeFly && (
-              <div
-                className="lang-flyout"
-                role="menu"
-                style={{ left: themeFly.left, bottom: themeFly.bottom }}
-              >
-                {THEME_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    role="menuitemradio"
-                    aria-checked={theme === opt.value}
-                    className={`lang-menu-item${theme === opt.value ? ' active' : ''}`}
-                    onClick={() => {
-                      closeMenu()
-                      if (theme !== opt.value) {
-                        setThemeState(opt.value)
-                        void window.aiOffice.setTheme(opt.value)
-                        // apply theme attribute to DOM immediately
-                        if (opt.value === 'light' || opt.value === 'dark') {
-                          document.documentElement.setAttribute('data-theme', opt.value)
-                        } else {
-                          document.documentElement.removeAttribute('data-theme')
-                        }
-                      }
-                    }}
-                  >
-                    {t(opt.labelKey)}
-                    {theme === opt.value && (
-                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                        <path
-                          d="M2.5 6.2l2.4 2.4 4.6-5"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          fill="none"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div
-            className="lang-row-wrap"
-            ref={chanRowRef}
-            onMouseEnter={openChanFly}
-            onMouseLeave={scheduleChanFlyClose}
-          >
-            <button
-              className="account-menu-item lang-row"
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={!!chanFly}
-              onClick={openChanFly}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M4 3v6.5a3 3 0 0 0 3 3h5"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-                <circle cx="4" cy="3" r="1.6" stroke="currentColor" strokeWidth="1.2" />
-                <path
-                  d="M9.8 10l2.4 2.5-2.4 2.5"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </svg>
-              <span className="lang-row-label">{t('updateChannel')}</span>
-              <span className="lang-row-current">
-                {t(channel === 'beta' ? 'channelBeta' : 'channelStable')}
-              </span>
-              <svg
-                className="lang-row-chevron"
-                width="11"
-                height="11"
-                viewBox="0 0 12 12"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4.5 2.5l4 3.5-4 3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              </svg>
-            </button>
-            {chanFly && (
-              <div
-                className="lang-flyout"
-                role="menu"
-                style={{ left: chanFly.left, bottom: chanFly.bottom }}
-              >
-                {CHANNEL_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    role="menuitemradio"
-                    aria-checked={channel === opt.value}
-                    className={`lang-menu-item${channel === opt.value ? ' active' : ''}`}
-                    onClick={() => {
-                      closeMenu()
-                      if (channel !== opt.value) {
-                        setChannel(opt.value)
-                        void window.aiOffice.setUpdateChannel(opt.value)
-                      }
-                    }}
-                  >
-                    {t(opt.labelKey)}
-                    {channel === opt.value && (
-                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                        <path
-                          d="M2.5 6.2l2.4 2.4 4.6-5"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          fill="none"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {appVersion && (
-            <div className="account-menu-version">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="8" cy="8" r="6.3" stroke="currentColor" strokeWidth="1.2" />
-                <path
-                  d="M8 7.4v3.4"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-                <circle cx="8" cy="5.1" r="0.8" fill="currentColor" />
-              </svg>
-              <span className="version-row-label">{t('versionLabel')}</span>
-              <span className="version-row-value">{appVersion}</span>
-            </div>
-          )}
-          {loggedIn && (
-            <button
-              className="account-menu-item danger"
-              role="menuitem"
-              disabled={loggingOut}
-              onClick={() => {
-                setLoggingOut(true)
-                void window.aiOffice.accountLogout().then(() => {
-                  setLoggingOut(false)
-                  closeMenu()
-                  setStatus({ loggedIn: false })
-                })
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M6.2 2H3.7A1.7 1.7 0 0 0 2 3.7v8.6A1.7 1.7 0 0 0 3.7 14h2.5"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M10.7 4.9 13.8 8l-3.1 3.1M13.4 8H6.4"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <span>{loggingOut ? t('loggingOut') : t('logout')}</span>
-            </button>
-          )}
-        </div>
+      {settingsOpen && (
+        <SettingsModal
+          status={status}
+          loggingOut={loggingOut}
+          loginWaiting={waiting}
+          loginUrl={authUrl}
+          urlCopied={urlCopied}
+          onOpenLoginUrl={openLoginUrl}
+          onCopyLoginUrl={copyLoginUrl}
+          onClose={() => setSettingsOpen(false)}
+          onLogin={() => {
+            setSettingsOpen(false)
+            startLogin()
+          }}
+          onLogout={doLogout}
+        />
       )}
-      {!menuOpen && waiting && authUrl && (
+      {!settingsOpen && waiting && authUrl && (
         <div className="login-hint" role="status">
           <button className="login-hint-open" onClick={openLoginUrl}>
             {t('loginOpenManually')}
@@ -1066,15 +574,16 @@ function AccountEntry({
       <button
         className="account-btn"
         onClick={handleClick}
-        aria-expanded={menuOpen}
-        title={
+        aria-haspopup="dialog"
+        aria-expanded={settingsOpen}
+        data-tip={
           loggedIn
             ? email || t('loggedInGenspark')
             : waiting
               ? t('waitingLogin')
               : (errorText ?? t('loginGenspark'))
         }
-        aria-label={loggedIn ? t('account') : t('login')}
+        aria-label={t('settings')}
       >
         <span
           className={`account-avatar${loggedIn ? ' logged-in' : ''}${waiting ? ' waiting' : ''}`}
@@ -1104,22 +613,35 @@ function AccountEntry({
           )}
         </span>
         <span className="account-text">
-          {loggedIn ? (
-            <>
-              <span className="account-name">{email ? email.split('@')[0] : t('loggedIn')}</span>
-              <span className="account-sub" title={email}>
-                {email || 'Genspark'}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="account-name">{waiting ? t('waitingShort') : t('login')}</span>
-              <span className={`account-sub${!waiting && errorText ? ' error' : ''}`}>
-                {!waiting && errorText ? errorText : t('accountGenspark')}
-              </span>
-            </>
+          <span className="account-name">
+            {loggedIn
+              ? email
+                ? email.split('@')[0]
+                : t('loggedIn')
+              : waiting
+                ? t('waitingShort')
+                : t('login')}
+          </span>
+          {!loggedIn && !waiting && errorText && (
+            <span className="account-sub error">{errorText}</span>
           )}
         </span>
+        <svg
+          className="account-chevron"
+          width="14"
+          height="14"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M5 6.2 8 3.4l3 2.8M5 9.8l3 2.8 3-2.8"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
     </div>
   )
@@ -1261,7 +783,7 @@ function CloudProjectsView() {
         <li key={proj.projectId}>
           <button
             className="cloud-row"
-            title={t('cloudOpenInBrowser')}
+            data-tip={t('cloudOpenInBrowser')}
             onClick={() => openProject(proj.projectUrl)}
           >
             <FileBadge ext={CLOUD_KIND_EXT[proj.kind] ?? ''} size={22} />
@@ -1373,7 +895,7 @@ function CloudProjectsView() {
               <div className="cloud-actions">
                 <button
                   className={`cloud-refresh-btn${syncing ? ' syncing' : ''}`}
-                  title={t('cloudRefresh')}
+                  data-tip={t('cloudRefresh')}
                   aria-label={t('cloudRefresh')}
                   disabled={syncing}
                   onClick={() => startSync()}

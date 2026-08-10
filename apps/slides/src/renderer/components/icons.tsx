@@ -1039,17 +1039,29 @@ export function IconGear(props: IconProps) {
 }
 
 /** collapse the right sidebar: panel outline + arrow pushing into it */
-export function IconSidebarCollapse(props: IconProps) {
+/** Collapse glyph for RIGHT-docked panes (Format/Animation/Comments) — exact mirror of
+ *  IconSidebarCollapseLeft so both sides share the Sheets-parity look (16-canvas,
+ *  1.2/1.3 stroke), self-contained for the same pinned-stroke reason. */
+export function IconSidebarCollapse({ size = 24 }: IconProps) {
   return (
-    <Svg {...props}>
-      <rect x="4.49" y="5.65" width="15.02" height="12.71" rx="1.16" />
-      <path d="M 14.89 5.65 v 12.71" />
-      <path d="M 6.8 12 h 5.08 M 9.92 9.57 12.35 12 l -2.43 2.43" />
-    </Svg>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+      <path d="M10.5 2.5v11" />
+      <path d="M3.5 8h4.4M6.2 5.9 8.3 8l-2.1 2.1" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
   )
 }
 
-/** Mirror of IconSidebarCollapse for the LEFT-docked AI panel (right panes keep the original).
+/** Mirror of IconSidebarCollapse for the LEFT-docked AI panel.
  *  Sheets-parity glyph (16-canvas, 1.2/1.3 stroke), self-contained so the shared
  *  Svg wrapper's 24-canvas pinned stroke doesn't alter its weight. */
 export function IconSidebarCollapseLeft({ size = 24 }: IconProps) {

@@ -3,6 +3,7 @@ import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
 import { computeListMarkers, type ListItemRef } from './list-markers'
 import { isMetafileMime, metafileToDataUrl } from './metafile'
+import { isTiffMime, tiffToDataUrl } from './tiff'
 import { ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
 import { NOTE_PART_PATH, parseNotesXml } from './notes'
@@ -15,6 +16,8 @@ import type {
   Block,
   ChartDisplay,
   CommentInfo,
+  DiagramDisplay,
+  DiagramShape,
   DocDefaults,
   DocProtection,
   FieldDisplay,
@@ -685,12 +688,14 @@ async function buildBlock(
     // XE (index entry) fields are invisible markers; a paragraph whose only
     // fields are XE stays editable (extractRuns round-trips the markers).
     if (!onlyXeFields(detect)) {
+      const pStyle = /<w:pStyle w:val="([^"]+)"/.exec(xml)?.[1]
       return {
         ...base,
         type: 'passthrough',
         label: fieldLabel(xml),
         previewText: plainText(xml),
         fieldDisplay: fieldDisplayOf(xml),
+        ...(pStyle ? { styleId: pStyle } : {}),
       }
     }
   }
@@ -705,6 +710,7 @@ async function buildBlock(
       label: 'TOC entry',
       previewText: plainText(xml),
       fieldDisplay: fieldDisplayOf(xml),
+      styleId: /<w:pStyle w:val="([^"]+)"/.exec(xml)![1],
     }
   }
   // footnote / endnote references are editable: extractRuns turns them into
@@ -767,6 +773,35 @@ async function buildBlock(
         }
       }
     }
+    // Plain VML picture (v:imagedata without OLE): stamps, watermark pictures,
+    // Word-2003-era inline images. Render as a real image instead of an opaque
+    // "Embedded object" chip (which loses both the picture and any run text).
+    if (!detect.includes('<w:object') && detect.includes('<v:imagedata')) {
+      if (plainText(stripTextboxes(detect)).trim() !== '') {
+        // picture shares the paragraph with real text: keep the text editable
+        // with run-level images (the pict fragment round-trips verbatim)
+        await resolveBlipMedia(detect, ctx)
+        return buildTextParagraph(base, xml, ctx, true)
+      }
+      const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(detect)?.[1]
+      const image = rId ? await mediaDataUrl(ctx.zip, ctx.rels, rId) : null
+      if (image) {
+        return {
+          ...base,
+          type: 'image',
+          label: 'Image',
+          imageDataUrl: image,
+          ...vmlImageMeta(detect),
+        }
+      }
+    }
+    if (
+      !detect.includes('<w:object') &&
+      plainText(detect).trim() === '' &&
+      isInvisibleVmlPict(detect)
+    ) {
+      return { ...base, type: 'passthrough', label: 'Drawing object', invisibleMarker: true }
+    }
     return {
       ...base,
       type: 'passthrough',
@@ -778,27 +813,102 @@ async function buildBlock(
   if (detect.includes('<w:drawing')) {
     if (detect.includes('<c:chart') || detect.includes('r:dm=') || detect.includes('<dgm:')) {
       const isChart = detect.includes('<c:chart')
+      // chartex (cx 2014 extension: sunburst/boxWhisker/waterfall…): Word pairs
+      // the Choice with a pre-rendered picture fallback — exactly what other
+      // renderers show. Prefer it; the data-model degrade only covers
+      // fallback-less parts.
+      if (isChart && detect.includes('/drawing/2014/chartex"')) {
+        const fbImage = await extractImage(xml, ctx)
+        if (fbImage) {
+          return {
+            ...base,
+            type: 'image',
+            label: 'Image',
+            imageDataUrl: fbImage,
+            ...imageMeta(xml),
+          }
+        }
+      }
       const chartDisplay = isChart ? await extractChart(detect, ctx) : null
       const diagramText = isChart ? null : await extractDiagramText(detect, ctx)
+      const diagramDisplay = isChart ? null : await extractDiagramDrawing(detect, ctx)
+      // the diagram may share its paragraph with other anchored drawings
+      // (photos, gallery shapes): extract those too, each at its own anchor,
+      // instead of silently dropping everything but the diagram
+      const frags = topLevelDrawings(detect)
+      let siblingBoxes: TextboxDisplay[] = []
+      if (!isChart && frags.length > 1) {
+        if (diagramDisplay) {
+          const dmFrag = frags.find((f) => f.includes('r:dm='))
+          const meta = dmFrag ? drawingAnchorMeta(dmFrag) : {}
+          if (meta.anchored) {
+            diagramDisplay.offsetXEmu = meta.offsetXEmu
+            diagramDisplay.offsetYEmu = meta.offsetYEmu
+            diagramDisplay.floating = true
+          }
+        }
+        await resolveBlipMedia(detect, ctx)
+        siblingBoxes = extractTextboxes(detect, ctx, { shapes: true, pictures: true })
+      }
       return {
         ...base,
         type: 'passthrough',
         label: isChart ? 'Chart' : 'SmartArt',
         ...(chartDisplay ? { chartDisplay, previewText: chartDisplay.title ?? '' } : {}),
         ...(diagramText ? { previewText: diagramText } : {}),
+        ...(diagramDisplay ? { diagramDisplay } : {}),
+        ...(siblingBoxes.length > 0 ? { textboxes: siblingBoxes } : {}),
+      }
+    }
+    // drawing canvas (lockedCanvas): scaled child geometry + raw-size text
+    if (detect.includes('<lc:lockedCanvas')) {
+      await resolveBlipMedia(detect, ctx)
+      const canvas = extractLockedCanvas(detect, ctx)
+      if (canvas) {
+        const frags = topLevelDrawings(detect)
+        const meta = frags.length > 0 ? drawingAnchorMeta(frags[0]) : {}
+        if (meta.anchored) {
+          // horizontal anchor offset only: LO renders these canvases from the
+          // anchor paragraph's top, dropping the vertical offset
+          canvas.offsetXEmu = meta.offsetXEmu
+          if (meta.noWrap) canvas.floating = true
+        }
+        return {
+          ...base,
+          type: 'passthrough',
+          label: 'Drawing object',
+          diagramDisplay: canvas,
+          previewText: canvas.shapes.flatMap((s) => s.texts ?? []).join('\n'),
+        }
       }
     }
     const image = await extractImage(detect, ctx)
     if (image) {
-      // inline picture(s) sharing the paragraph with real text: an image block
-      // would silently drop that text, so keep the paragraph editable with
-      // run-level images. Anchored pictures keep the image-block treatment.
-      if (!detect.includes('<wp:anchor') && plainText(stripTextboxes(detect)).trim() !== '') {
-        await resolveBlipMedia(detect, ctx)
-        return buildTextParagraph(base, xml, ctx, true)
+      // shapes carrying textbox content alongside a blip (photo-framed quote
+      // boxes, image-filled shapes with captions): an image block would drop
+      // the text, so fall through to the textbox display below instead
+      const boxed = detect.includes('<w:txbxContent')
+        ? extractTextboxes(detect, ctx).some((t) =>
+            t.paras.some((p) => p.runs.some((r) => r.text.trim() !== '')),
+          )
+        : false
+      if (!boxed) {
+        // inline picture(s) sharing the paragraph with real text — or several
+        // inline pictures in one paragraph: an image block keeps only the first
+        // blip, so stay an editable paragraph with run-level images.
+        const multiPic = (detect.match(/<a:blip[ />]/g) ?? []).length > 1
+        if (
+          !detect.includes('<wp:anchor') &&
+          (multiPic || plainText(stripTextboxes(detect)).trim() !== '')
+        ) {
+          await resolveBlipMedia(detect, ctx)
+          return buildTextParagraph(base, xml, ctx, true)
+        }
+        return { ...base, type: 'image', label: 'Image', imageDataUrl: image, ...imageMeta(detect) }
       }
-      return { ...base, type: 'image', label: 'Image', imageDataUrl: image, ...imageMeta(detect) }
     }
+    // picture fills inside shapes (a:blipFill) resolve from pre-fetched media
+    if (detect.includes('<a:blipFill')) await resolveBlipMedia(detect, ctx)
     const textboxes = extractTextboxes(detect, ctx)
     const boxTexts = textboxes.flatMap((t) =>
       t.paras.map((p) => p.runs.map((r) => r.text).join('')),
@@ -1162,6 +1272,27 @@ function isInvisibleEmptyShape(xml: string): boolean {
   })
 }
 
+/**
+ * Legacy VML pict that draws nothing: only v:shapetype definitions (geometry
+ * templates, not drawn), shapes hidden via style visibility:hidden, or white
+ * strokeless placeholder rectangles (LO fixtures / converter watermark
+ * furniture). Word renders nothing there — an "Embedded object" chip would
+ * paint a box on an otherwise blank page.
+ */
+function isInvisibleVmlPict(xml: string): boolean {
+  if (!/<v:(?:shapetype|shape|rect|roundrect|oval|line|polyline)\b/.test(xml)) return false
+  if (xml.includes('<v:imagedata') || xml.includes('<w:txbxContent')) return false
+  const shapes = xml.match(/<v:(?:shape|rect|roundrect|oval|line|polyline)\b[^>]*>/g) ?? []
+  // no drawable instances at all (shapetype-only pict) also renders nothing
+  return shapes.every((tag) => {
+    const style = /style="([^"]*)"/.exec(tag)?.[1] ?? ''
+    if (/visibility:\s*hidden/.test(style)) return true
+    const fill = /fillcolor="([^"]+)"/.exec(tag)?.[1]?.trim().toLowerCase()
+    const unstroked = /\bstroked="(?:f|false|0)"/.test(tag)
+    return unstroked && (fill === 'white' || fill === '#ffffff' || fill === '#fff')
+  })
+}
+
 /** drop textbox content so "does the paragraph itself have text" checks work */
 function stripTextboxes(xml: string): string {
   return xml.includes('<w:txbxContent')
@@ -1371,8 +1502,87 @@ function gradStopRgb(gs: XNode, theme?: ThemeColors | null): number[] | null {
     if (lumMod !== null) rgb = rgb.map((c) => c * lumMod)
     const lumOff = pct('a:lumOff')
     if (lumOff !== null) rgb = rgb.map((c) => c + 255 * lumOff)
+    const shade = pct('a:shade')
+    if (shade !== null) rgb = rgb.map((c) => c * shade)
+    const tint = pct('a:tint')
+    if (tint !== null) rgb = rgb.map((c) => c * tint + 255 * (1 - tint))
   }
   return rgb
+}
+
+/** color-bearing node (a:solidFill / a:fillRef / a:lnRef …) → hex without '#' */
+function colorNodeHex(node: XNode | undefined, theme?: ThemeColors | null): string | undefined {
+  if (!node) return undefined
+  const rgb = gradStopRgb(node, theme)
+  if (!rgb) return undefined
+  return rgb
+    .map((c) =>
+      Math.round(Math.min(255, Math.max(0, c)))
+        .toString(16)
+        .padStart(2, '0')
+        .toUpperCase(),
+    )
+    .join('')
+}
+
+/** anchored-drawing placement of one top-level w:drawing fragment */
+interface DrawingAnchorMeta {
+  offsetXEmu?: number
+  offsetYEmu?: number
+  /** wrapNone (front) / behindDoc anchors leave the text flow entirely */
+  noWrap?: boolean
+  anchored?: boolean
+}
+
+/**
+ * Top-level `<w:drawing>` fragments of a paragraph, balanced (a textbox's
+ * txbxContent may nest further drawings, which stay inside their parent
+ * fragment). Used to attach each drawing's own anchor placement to the shapes
+ * it carries — a paragraph can anchor several drawings at distinct offsets.
+ */
+function topLevelDrawings(xml: string): string[] {
+  const out: string[] = []
+  let i = 0
+  for (;;) {
+    const start = xml.indexOf('<w:drawing>', i)
+    if (start === -1) break
+    let depth = 0
+    let j = start
+    for (;;) {
+      const open = xml.indexOf('<w:drawing>', j + 1)
+      const close = xml.indexOf('</w:drawing>', j + 1)
+      if (close === -1) return out // malformed; bail with what we have
+      if (open !== -1 && open < close) {
+        depth++
+        j = open
+      } else if (depth > 0) {
+        depth--
+        j = close
+      } else {
+        out.push(xml.slice(start, close + '</w:drawing>'.length))
+        i = close + '</w:drawing>'.length
+        break
+      }
+    }
+  }
+  return out
+}
+
+function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
+  const anchorTag = /<wp:anchor[^>]*>/.exec(frag)?.[0]
+  if (!anchorTag) return {}
+  const meta: DrawingAnchorMeta = { anchored: true }
+  const posOf = (dir: 'H' | 'V'): number | undefined => {
+    const m = new RegExp(`<wp:position${dir}[^>]*>\\s*<wp:posOffset>(-?\\d+)</wp:posOffset>`).exec(
+      frag,
+    )
+    const v = m ? parseInt(m[1], 10) : NaN
+    return Number.isFinite(v) ? v : undefined
+  }
+  meta.offsetXEmu = posOf('H')
+  meta.offsetYEmu = posOf('V')
+  if (frag.includes('<wp:wrapNone') || /behindDoc="(?:1|true)"/.test(anchorTag)) meta.noWrap = true
+  return meta
 }
 
 /**
@@ -1399,78 +1609,109 @@ function gradFillApproxHex(spPr: XNode, theme?: ThemeColors | null): string | un
     .join('')
 }
 
-function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
+interface ExtractTextboxOpts {
+  /** include textless preset shapes (stars, block arrows…) as display boxes */
+  shapes?: boolean
+  /** include picture-only drawings (pic:pic without a shape) as picture boxes */
+  pictures?: boolean
+}
+
+function extractTextboxes(
+  xml: string,
+  ctx: BuildContext,
+  opts?: ExtractTextboxOpts,
+): TextboxDisplay[] {
   // wrapSquare gate keeps converter-emitted decorative rules on the thin-rule path
   const hasLineShapes = xml.includes('<wp:wrapSquare') && LINE_PRSTS_RE.test(xml)
-  if (!xml.includes('<w:txbxContent') && !hasLineShapes) return []
-  let parsed: XNode[]
-  try {
-    parsed = xmlParser.parse(xml) as XNode[]
-  } catch {
+  const hasCanvasText = xml.includes('<a:txSp')
+  if (
+    !xml.includes('<w:txbxContent') &&
+    !hasLineShapes &&
+    !hasCanvasText &&
+    !(opts?.shapes || opts?.pictures)
+  ) {
     return []
   }
-  const shapes: XNode[] = []
-  collectNodes(parsed, 'wps:wsp', shapes)
-  for (const vmlName of ['v:shape', 'v:rect', 'v:roundrect']) {
-    collectNodes(parsed, vmlName, shapes)
-  }
+
+  const frags = topLevelDrawings(xml)
+  // a paragraph anchoring several drawings never stacks them: every anchored
+  // shape floats at its own offset (single wrapSquare boxes keep the flow
+  // placement the editor has always used)
+  const multiDrawing = frags.length > 1
+
   const out: TextboxDisplay[] = []
-  for (const shape of shapes) {
+
+  /** one wps:wsp (already parsed) → display box; null when it renders nothing */
+  const buildWpsBox = (shape: XNode): TextboxDisplay | null => {
     const contents: XNode[] = []
     collectNodes(childrenOf(shape), 'w:txbxContent', contents)
+    const spPr = findChild(shape, 'wps:spPr')
+    const prstOf = spPr ? attrsOf(findChild(spPr, 'a:prstGeom') ?? {})['prst'] : undefined
     if (contents.length === 0) {
-      if (hasLineShapes) {
-        const lineBox = lineBoxOf(shape)
-        if (lineBox) out.push(lineBox)
-      }
-      continue
+      if (hasLineShapes) return lineBoxOf(shape)
+      // textless preset shape (star/arrow/…): visible geometry, no text body.
+      // rect/line presets stay on their existing paths (thin rules, connectors)
+      if (!opts?.shapes || !prstOf || prstOf === 'rect' || LINE_PRSTS.has(prstOf)) return null
     }
     const box: TextboxDisplay = { paras: [] }
-    const shapeAttrs = attrsOf(shape)
-    if (nameOf(shape) !== 'wps:wsp') {
-      // VML shape: geometry from the style attribute, colors from fillcolor/strokecolor
-      const style = shapeAttrs['style'] ?? ''
-      const w = vmlStyleDimPx(style, 'width')
-      if (w) box.widthPx = w
-      const h = vmlStyleDimPx(style, 'height')
-      if (h) {
-        box.heightPx = h
-        box.minHeightPx = h
-      }
-      const fill = vmlColorHex(shapeAttrs['fillcolor'])
-      if (fill && shapeAttrs['filled'] !== 'f') box.fill = fill
-      const stroke = vmlColorHex(shapeAttrs['strokecolor'])
-      if (stroke && shapeAttrs['stroked'] !== 'f') box.borderColor = stroke
-      for (const content of contents) box.paras.push(...txbxContentParas(content, ctx))
-      if (contents.some(txbxHasStructuredContent)) box.readOnly = true
-      if (box.paras.some((p) => p.runs.length > 0)) out.push(box)
-      continue
-    }
-    const spPr = findChild(shape, 'wps:spPr')
     if (spPr) {
-      const fill = attrsOf(findChild(findChild(spPr, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})[
-        'val'
-      ]
-      if (fill) box.fill = fill
-      else {
-        const grad = gradFillApproxHex(spPr, ctx.themeColors)
-        if (grad) box.fill = grad
+      if (!findChild(spPr, 'a:noFill')) {
+        const fill =
+          colorNodeHex(findChild(spPr, 'a:solidFill'), ctx.themeColors) ??
+          gradFillApproxHex(spPr, ctx.themeColors)
+        if (fill) box.fill = fill
+        const blipFill = findChild(spPr, 'a:blipFill')
+        if (blipFill) {
+          const rId = attrsOf(findChild(blipFill, 'a:blip') ?? {})['r:embed']
+          const dataUrl = rId ? ctx.mediaByRid?.get(rId) : undefined
+          if (dataUrl) {
+            box.fillImageDataUrl = dataUrl
+            if (findChild(blipFill, 'a:tile')) box.fillTile = true
+          }
+        }
       }
       const ln = findChild(spPr, 'a:ln')
-      const border = ln
-        ? attrsOf(findChild(findChild(ln, 'a:solidFill') ?? {}, 'a:srgbClr') ?? {})['val']
-        : undefined
-      if (border) box.borderColor = border
-      const prstGeom = findChild(spPr, 'a:prstGeom')
-      const prst = prstGeom ? attrsOf(prstGeom)['prst'] : undefined
+      if (ln && !findChild(ln, 'a:noFill')) {
+        const border = colorNodeHex(findChild(ln, 'a:solidFill'), ctx.themeColors)
+        if (border) box.borderColor = border
+        const w = parseInt(attrsOf(ln)['w'] ?? '', 10)
+        if (Number.isFinite(w) && w > 0) {
+          box.borderWidthPx = Math.round((w / EMU_PER_PX) * 100) / 100
+        }
+        const dash = attrsOf(findChild(ln, 'a:prstDash') ?? {})['val']
+        if (dash) box.borderDash = /dot/i.test(dash) ? 'dotted' : 'dashed'
+      }
+      // shape-style references (wps:style): theme fill/line for shapes whose
+      // spPr declares no explicit color (Word gallery shapes)
+      const styleNode = findChild(shape, 'wps:style')
+      if (styleNode) {
+        if (!box.fill && !box.fillImageDataUrl && !findChild(spPr, 'a:noFill')) {
+          const ref = findChild(styleNode, 'a:fillRef')
+          if (parseInt(attrsOf(ref ?? {})['idx'] ?? '0', 10) > 0) {
+            const fill = colorNodeHex(ref, ctx.themeColors)
+            if (fill) box.fill = fill
+          }
+        }
+        if (!box.borderColor && !(ln && findChild(ln, 'a:noFill'))) {
+          const ref = findChild(styleNode, 'a:lnRef')
+          if (parseInt(attrsOf(ref ?? {})['idx'] ?? '0', 10) > 0) {
+            const border = colorNodeHex(ref, ctx.themeColors)
+            if (border) box.borderColor = border
+          }
+        }
+      }
+      const prst = prstOf
       if (prst && prst !== 'rect') box.prst = prst
-      const ext = findChild(findChild(spPr, 'a:xfrm') ?? {}, 'a:ext')
+      const xfrm = findChild(spPr, 'a:xfrm')
+      const rot = parseInt(attrsOf(xfrm ?? {})['rot'] ?? '', 10)
+      if (Number.isFinite(rot) && rot !== 0) box.rotDeg = Math.round(rot / 60000)
+      const ext = findChild(xfrm ?? {}, 'a:ext')
       const cx = ext ? parseInt(attrsOf(ext)['cx'] ?? '', 10) : NaN
       if (Number.isFinite(cx) && cx > 0) box.widthPx = Math.round(cx / EMU_PER_PX)
       // Word clips overflowing text unless the shape auto-fits its content;
       // carrying the fixed height keeps tall sparse boxes from exploding layout
-      const bodyPr = findChild(shape, 'wps:bodyPr')
-      const autoFit = bodyPr ? !!findChild(bodyPr, 'a:spAutoFit') : false
+      const bodyPrNode = findChild(shape, 'wps:bodyPr')
+      const autoFit = bodyPrNode ? !!findChild(bodyPrNode, 'a:spAutoFit') : false
       const cy = ext ? parseInt(attrsOf(ext)['cy'] ?? '', 10) : NaN
       if (!autoFit && Number.isFinite(cy) && cy > 0) {
         box.heightPx = Math.round(cy / EMU_PER_PX)
@@ -1493,7 +1734,150 @@ function extractTextboxes(xml: string, ctx: BuildContext): TextboxDisplay[] {
     }
     for (const content of contents) box.paras.push(...txbxContentParas(content, ctx))
     if (contents.some(txbxHasStructuredContent)) box.readOnly = true
-    if (box.paras.some((p) => p.runs.length > 0)) out.push(box)
+    if (contents.length === 0) {
+      // textless preset shape: keep it if the geometry has any visible ink
+      if (!box.fill && !box.borderColor && !box.fillImageDataUrl) return null
+      box.readOnly = true
+      return box
+    }
+    return box.paras.some((p) => p.runs.length > 0) ? box : null
+  }
+
+  const applyAnchor = (box: TextboxDisplay, meta: DrawingAnchorMeta): void => {
+    if (!meta.anchored) return
+    if (meta.offsetXEmu !== undefined) box.offsetXEmu = meta.offsetXEmu
+    if (meta.offsetYEmu !== undefined) box.offsetYEmu = meta.offsetYEmu
+    if (meta.noWrap || multiDrawing) box.floating = true
+  }
+
+  for (const frag of frags) {
+    let parsedFrag: XNode[]
+    try {
+      parsedFrag = xmlParser.parse(frag) as XNode[]
+    } catch {
+      continue
+    }
+    const meta = drawingAnchorMeta(frag)
+    const wspShapes: XNode[] = []
+    collectNodes(parsedFrag, 'wps:wsp', wspShapes)
+    for (const shape of wspShapes) {
+      const box = buildWpsBox(shape)
+      if (box) {
+        applyAnchor(box, meta)
+        out.push(box)
+      }
+    }
+    // picture-only drawing sharing a multi-drawing paragraph: a photo box
+    if (opts?.pictures && wspShapes.length === 0 && frag.includes('<pic:pic')) {
+      const rId =
+        /<a:blip[^>]*r:embed="([^"]+)"/.exec(frag)?.[1] ??
+        /<a:blip[^>]*r:link="([^"]+)"/.exec(frag)?.[1]
+      const dataUrl = rId ? ctx.mediaByRid?.get(rId) : undefined
+      const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(frag)
+      if (dataUrl && extent) {
+        const box: TextboxDisplay = {
+          paras: [],
+          readOnly: true,
+          fillImageDataUrl: dataUrl,
+          widthPx: Math.round(parseInt(extent[1], 10) / EMU_PER_PX),
+          heightPx: Math.round(parseInt(extent[2], 10) / EMU_PER_PX),
+          insetTopPx: 0,
+          insetRightPx: 0,
+          insetBottomPx: 0,
+          insetLeftPx: 0,
+        }
+        applyAnchor(box, meta)
+        out.push(box)
+      }
+    }
+  }
+
+  // legacy VML shapes (w:pict, outside w:drawing fragments)
+  let parsed: XNode[] | null = null
+  if (/<v:(?:shape|rect|roundrect)\b/.test(xml)) {
+    try {
+      parsed = xmlParser.parse(xml) as XNode[]
+    } catch {
+      parsed = null
+    }
+  }
+  if (parsed) {
+    const vmlShapes: XNode[] = []
+    for (const vmlName of ['v:shape', 'v:rect', 'v:roundrect']) {
+      collectNodes(parsed, vmlName, vmlShapes)
+    }
+    for (const shape of vmlShapes) {
+      const contents: XNode[] = []
+      collectNodes(childrenOf(shape), 'w:txbxContent', contents)
+      if (contents.length === 0) continue
+      const box: TextboxDisplay = { paras: [] }
+      const shapeAttrs = attrsOf(shape)
+      // VML shape: geometry from the style attribute, colors from fillcolor/strokecolor
+      const style = shapeAttrs['style'] ?? ''
+      const w = vmlStyleDimPx(style, 'width')
+      if (w) box.widthPx = w
+      const h = vmlStyleDimPx(style, 'height')
+      if (h) {
+        box.heightPx = h
+        box.minHeightPx = h
+      }
+      const fill = vmlColorHex(shapeAttrs['fillcolor'])
+      if (fill && shapeAttrs['filled'] !== 'f') box.fill = fill
+      const stroke = vmlColorHex(shapeAttrs['strokecolor'])
+      if (stroke && shapeAttrs['stroked'] !== 'f') box.borderColor = stroke
+      for (const content of contents) box.paras.push(...txbxContentParas(content, ctx))
+      if (contents.some(txbxHasStructuredContent)) box.readOnly = true
+      if (box.paras.some((p) => p.runs.length > 0)) out.push(box)
+    }
+  }
+
+  // lockedCanvas text shapes (a:txSp): DrawingML a:p/a:r/a:t text bodies inside
+  // a drawing canvas (logo lockups etc.) that neither the wps nor the VML path
+  // sees. Display-only, so all characters at least remain visible.
+  if (hasCanvasText) {
+    let parsedAll: XNode[]
+    try {
+      parsedAll = xmlParser.parse(xml) as XNode[]
+    } catch {
+      return out
+    }
+    const txSps: XNode[] = []
+    collectNodes(parsedAll, 'a:txSp', txSps)
+    for (const sp of txSps) {
+      const body = findChild(sp, 'a:txBody')
+      if (!body) continue
+      const paras: TextboxParaDisplay[] = []
+      for (const p of childrenOf(body)) {
+        if (nameOf(p) !== 'a:p') continue
+        const runs: Run[] = []
+        for (const r of childrenOf(p)) {
+          if (nameOf(r) !== 'a:r') continue
+          const t = findChild(r, 'a:t')
+          const text = t ? decodeEntities(textOf(t)) : ''
+          if (text === '') continue
+          const run: Run = { text }
+          const rPr = findChild(r, 'a:rPr')
+          if (rPr) {
+            const a = attrsOf(rPr)
+            const sz = parseInt(a['sz'] ?? '', 10)
+            // a:sz is in hundredths of a point
+            if (Number.isFinite(sz) && sz > 0) run.sizeHalfPoints = Math.round(sz / 50)
+            if (a['b'] === '1') run.bold = true
+            const latin = attrsOf(findChild(rPr, 'a:latin') ?? {})['typeface']
+            if (latin && !latin.startsWith('+')) run.font = latin
+          }
+          runs.push(run)
+        }
+        if (runs.length > 0) {
+          const algn = attrsOf(findChild(p, 'a:pPr') ?? {})['algn']
+          paras.push({
+            runs,
+            ...(algn === 'ctr' ? { align: 'center' as const } : {}),
+          })
+        }
+      }
+      if (paras.length > 0) out.push({ paras, readOnly: true })
+    }
   }
   return out
 }
@@ -1547,6 +1931,12 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
         format.lineRule = rule
         // lineSpacing in 'auto' sense is not applicable for atLeast/exact, keep undefined
       }
+    } else if (line === 0 && rule === 'atLeast') {
+      // w:line="0" atLeast: layout no-op (natural line height) BUT it opts the
+      // paragraph out of docGrid snapping (LO probe); keep the rule so the
+      // renderer can tell it apart from an undeclared (snapping) paragraph
+      format.lineRule = 'atLeast'
+      format.lineRawTwips = 0
     }
     // autospacing=1 means Word ignores the literal before/after and computes its own;
     // dropping the literal (→ style/docDefaults cascade) is closer than honoring it.
@@ -1575,6 +1965,12 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
   if (boolProp(pPr, 'w:pageBreakBefore')) format.pageBreakBefore = true
   if (boolProp(pPr, 'w:keepNext')) format.keepNext = true
   if (boolProp(pPr, 'w:keepLines')) format.keepLines = true
+  // snapToGrid: default ON; only store when explicitly set to OFF
+  const snapEl = findChild(pPr, 'w:snapToGrid')
+  if (snapEl) {
+    const v = attrsOf(snapEl)['w:val']
+    if (v === '0' || v === 'false') format.snapToGrid = false
+  }
   // widowControl: Word default is ON; only store when explicitly set to OFF
   const wcEl = findChild(pPr, 'w:widowControl')
   if (wcEl) {
@@ -1977,6 +2373,24 @@ function buildRun(
         if (cy > 0) image.heightPx = Math.round(cy / EMU_PER_PX)
       }
     }
+    // legacy VML picture (w:pict + v:imagedata, Word 2003 era / stamps): same
+    // run-level image treatment; the pict fragment round-trips verbatim on save
+    if (!image) {
+      const pict = findChild(rNode, 'w:pict')
+      if (pict) {
+        const pictXml = serializeXNode(pict)
+        const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(pictXml)?.[1]
+        const dataUrl = rId ? mediaByRid.get(rId) : undefined
+        if (dataUrl) {
+          image = { dataUrl, xml: pictXml }
+          const style = /<v:shape [^>]*style="([^"]*)"/.exec(pictXml)?.[1] ?? ''
+          const w = parseFloat(/(?:^|;)width:([\d.]+)pt/.exec(style)?.[1] ?? '')
+          const h = parseFloat(/(?:^|;)height:([\d.]+)pt/.exec(style)?.[1] ?? '')
+          if (w > 0) image.widthPx = Math.round((w / 72) * 96)
+          if (h > 0) image.heightPx = Math.round((h / 72) * 96)
+        }
+      }
+    }
   }
   if (text === '' && !image) return null
 
@@ -2003,6 +2417,7 @@ function buildRun(
     const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
     const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
     if (font) run.font = font
+    if (rf.eaSlotEmpty && font && font === rf.eastAsia) run.eaSlotEmpty = true
     const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) run.fontAscii = fontAscii
     if (rf.cs) run.csFont = rf.cs
@@ -2583,6 +2998,17 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
     const image: HfImage = { dataUrl }
     if (Number.isFinite(w) && w > 0) image.widthPx = Math.round((w / 72) * 96)
     if (Number.isFinite(h) && h > 0) image.heightPx = Math.round((h / 72) * 96)
+    // absolute-positioned shapes (picture watermarks): must not stack into the
+    // header strip nor count toward the header height estimate
+    if (/position:absolute/.test(style)) {
+      image.floating = true
+      if (/z-index:\s*-/.test(style)) image.behind = true
+      const posH = /mso-position-horizontal:(\w+)/.exec(style)?.[1]
+      const posV = /mso-position-vertical:(\w+)/.exec(style)?.[1]
+      if (posH === 'left' || posH === 'center' || posH === 'right') image.posH = posH
+      if (posV === 'top' || posV === 'center' || posV === 'bottom') image.posV = posV
+    }
+    if (/<v:imagedata[^>]*(?:gain|blacklevel)="/.test(frag)) image.washout = true
     out.push(image)
   }
   return out
@@ -2611,7 +3037,11 @@ function hfContentFromXml(
   // hasPageNumber is set by the same match that emits PAGE_MARK, so the two
   // can't drift (Word may split "PAGE" across several instrText runs).
   let hasPageNumber = false
-  let cleaned = xml.replace(
+  // mc:AlternateContent carries the same textbox twice (DrawingML Choice + VML
+  // Fallback); keeping both prints the content twice (e.g. duplicated "— PAGE —"
+  // page numbers), so only the Choice branch feeds text/paragraph extraction
+  let cleaned = xml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, '')
+  cleaned = cleaned.replace(
     /<w:fldChar[^>]*w:fldCharType="begin"[^>]*\/>[\s\S]*?<w:fldChar[^>]*w:fldCharType="end"[^>]*\/>/g,
     (span) => {
       const instr = (span.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? [])
@@ -3037,7 +3467,15 @@ type ImageMeta = Pick<
   | 'imageRotDeg'
   | 'imageFlipH'
   | 'imageFlipV'
+  | 'imageCrop'
+  | 'imageFillRect'
 >
+
+/** a:srcRect / a:fillRect attribute (1000ths of a percent; some writers emit decimals) → fraction */
+function rectFrac(tag: string, name: string): number {
+  const v = parseFloat(new RegExp(`\\b${name}="(-?[\\d.]+)"`).exec(tag)?.[1] ?? '')
+  return Number.isFinite(v) ? v / 100000 : 0
+}
 
 function imageMeta(xml: string): ImageMeta {
   const meta: ImageMeta = {}
@@ -3060,6 +3498,28 @@ function imageMeta(xml: string): ImageMeta {
     }
     if (/\bflipH="(?:1|true)"/.test(picXfrm)) meta.imageFlipH = true
     if (/\bflipV="(?:1|true)"/.test(picXfrm)) meta.imageFlipV = true
+  }
+  // source crop (a:srcRect) and fill placement (a:stretch/a:fillRect): applied
+  // by the renderer as an overflow-hidden window over a scaled/offset image
+  const srcRect = /<a:srcRect\s[^>]*\/>/.exec(xml)?.[0]
+  if (srcRect) {
+    const crop = {
+      l: rectFrac(srcRect, 'l'),
+      t: rectFrac(srcRect, 't'),
+      r: rectFrac(srcRect, 'r'),
+      b: rectFrac(srcRect, 'b'),
+    }
+    if (crop.l || crop.t || crop.r || crop.b) meta.imageCrop = crop
+  }
+  const fillRect = /<a:stretch>\s*<a:fillRect\s[^>]*\/>/.exec(xml)?.[0]
+  if (fillRect) {
+    const fr = {
+      l: rectFrac(fillRect, 'l'),
+      t: rectFrac(fillRect, 't'),
+      r: rectFrac(fillRect, 'r'),
+      b: rectFrac(fillRect, 'b'),
+    }
+    if (fr.l || fr.t || fr.r || fr.b) meta.imageFillRect = fr
   }
   const anchor = /<wp:anchor[^>]*>/.exec(xml)?.[0]
   if (anchor) {
@@ -3092,6 +3552,51 @@ function imageMeta(xml: string): ImageMeta {
     if (posHFrom === 'margin' && posVFrom === 'margin' && alignH && alignV) {
       meta.imagePosH = alignH as ImageMeta['imagePosH']
       meta.imagePosV = alignV as ImageMeta['imagePosV']
+    } else if ((posHFrom === 'margin' || posHFrom === 'page') && alignH && !alignV) {
+      // mixed positioning (H aligned, V by offset): keep the horizontal preset
+      // so no-wrap images at least center like Word/LO
+      meta.imagePosH = alignH as ImageMeta['imagePosH']
+    }
+  }
+  return meta
+}
+
+const EMU_PER_PT = 12700
+
+/**
+ * VML picture geometry (v:shape style) → the DrawingML ImageMeta model, so
+ * legacy stamps/watermark pictures reuse the floating-image render path.
+ * Only the high-frequency subset: width/height, absolute position offsets,
+ * behind-text z-index, and margin-relative centering.
+ */
+function vmlImageMeta(xml: string): ImageMeta {
+  const meta: ImageMeta = {}
+  const style = /<v:shape [^>]*style="([^"]*)"/.exec(xml)?.[1] ?? ''
+  const w = parseFloat(/(?:^|;)width:([\d.]+)pt/.exec(style)?.[1] ?? '')
+  const h = parseFloat(/(?:^|;)height:([\d.]+)pt/.exec(style)?.[1] ?? '')
+  if (w > 0) meta.imageWidthPx = Math.round((w / 72) * 96)
+  if (h > 0) meta.imageHeightPx = Math.round((h / 72) * 96)
+  const jc = /<w:jc w:val="([^"]+)"/.exec(xml)?.[1]
+  if (jc === 'center') meta.imageAlign = 'center'
+  else if (jc === 'right' || jc === 'end') meta.imageAlign = 'right'
+  if (/position:absolute/.test(style)) {
+    meta.imageWrap = /z-index:\s*-/.test(style) ? 'behind' : 'front'
+    const mx = parseFloat(/margin-left:(-?[\d.]+)pt/.exec(style)?.[1] ?? '')
+    const my = parseFloat(/margin-top:(-?[\d.]+)pt/.exec(style)?.[1] ?? '')
+    if (Number.isFinite(mx)) meta.imageOffsetXEmu = Math.round(mx * EMU_PER_PT)
+    if (Number.isFinite(my)) meta.imageOffsetYEmu = Math.round(my * EMU_PER_PT)
+    const posH = /mso-position-horizontal:(\w+)/.exec(style)?.[1]
+    const posV = /mso-position-vertical:(\w+)/.exec(style)?.[1]
+    const relH = /mso-position-horizontal-relative:(\w+)/.exec(style)?.[1]
+    const relV = /mso-position-vertical-relative:(\w+)/.exec(style)?.[1]
+    if (
+      (relH === 'margin' || relH === 'page') &&
+      (relV === 'margin' || relV === 'page') &&
+      (posH === 'left' || posH === 'center' || posH === 'right') &&
+      (posV === 'top' || posV === 'center' || posV === 'bottom')
+    ) {
+      meta.imagePosH = posH
+      meta.imagePosV = posV
     }
   }
   return meta
@@ -3111,6 +3616,7 @@ async function mediaDataUrl(
   const mime = IMAGE_MIME[path.split('.').pop()?.toLowerCase() ?? '']
   if (!mime) return null
   if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
+  if (isTiffMime(mime)) return tiffToDataUrl(await file.async('arraybuffer'))
   return `data:${mime};base64,${await file.async('base64')}`
 }
 
@@ -3149,11 +3655,15 @@ async function tableBlipMedia(
   return out
 }
 
-/** resolve a paragraph's blip rIds into ctx.mediaByRid so extractRuns (sync) can build image runs */
+/** resolve a paragraph's blip/VML-imagedata rIds into ctx.mediaByRid so extractRuns (sync) can build image runs */
 async function resolveBlipMedia(xml: string, ctx: BuildContext): Promise<void> {
   const media = ctx.mediaByRid
   if (!media) return
-  for (const m of xml.matchAll(/<a:blip[^>]*r:(?:embed|link)="([^"]+)"/g)) {
+  const refs = [
+    ...xml.matchAll(/<a:blip[^>]*r:(?:embed|link)="([^"]+)"/g),
+    ...xml.matchAll(/<v:imagedata[^>]*r:id="([^"]+)"/g),
+  ]
+  for (const m of refs) {
     const rId = m[1]
     if (media.has(rId)) continue
     const rel = ctx.rels.get(rId)
@@ -3187,6 +3697,7 @@ async function extractImage(xml: string, ctx: BuildContext): Promise<string | nu
   const mime = IMAGE_MIME[ext]
   if (!mime) return null
   if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
+  if (isTiffMime(mime)) return tiffToDataUrl(await file.async('arraybuffer'))
   const base64 = await file.async('base64')
   return `data:${mime};base64,${base64}`
 }
@@ -3204,18 +3715,334 @@ function relPartPath(ctx: BuildContext, rId: string | undefined): string | null 
 /**
  * SmartArt degrade: the node texts from the diagram data part (r:dm)
  * become the preview, so the reader still sees the labels the diagram holds.
+ * Texts are ordered by walking the diagram's parent-child connections
+ * (dgm:cxn srcOrd) — the file order of dgm:pt nodes is arbitrary, while
+ * renderers lay shapes out in tree order.
  */
 async function extractDiagramText(xml: string, ctx: BuildContext): Promise<string | null> {
   const path = relPartPath(ctx, /r:dm="([^"]+)"/.exec(xml)?.[1])
   const file = path ? ctx.zip.file(path) : null
   if (!file) return null
   const dataXml = await file.async('string')
-  const texts: string[] = []
-  for (const t of dataXml.match(/<a:t>[^<]*<\/a:t>/g) ?? []) {
-    const s = decodeEntities(t.slice(5, -6)).trim()
-    if (s) texts.push(s)
+  // node texts by modelId (pres/transition points carry no content text)
+  const ptTexts = new Map<string, string>()
+  for (const m of dataXml.matchAll(/<dgm:pt modelId="([^"]+)"([^>]*)>([\s\S]*?)<\/dgm:pt>/g)) {
+    if (/type="(?:pres|parTrans|sibTrans)"/.test(m[2])) continue
+    const s = (m[3].match(/<a:t>[^<]*<\/a:t>/g) ?? [])
+      .map((t) => decodeEntities(t.slice(5, -6)))
+      .join('')
+      .trim()
+    if (s) ptTexts.set(m[1], s)
   }
+  // parent-child edges: cxns without an explicit type (default parOf); typed
+  // cxns (presOf/presParOf...) are layout wiring, not the content tree
+  const children = new Map<string, Array<{ ord: number; id: string }>>()
+  const hasParent = new Set<string>()
+  for (const m of dataXml.matchAll(/<dgm:cxn [^>]*\/?>/g)) {
+    const tag = m[0]
+    if (/type="(?!parOf")/.test(tag)) continue
+    const src = /srcId="([^"]+)"/.exec(tag)?.[1]
+    const dst = /destId="([^"]+)"/.exec(tag)?.[1]
+    if (!src || !dst) continue
+    const ord = parseInt(/srcOrd="(\d+)"/.exec(tag)?.[1] ?? '0', 10)
+    if (!children.has(src)) children.set(src, [])
+    children.get(src)!.push({ ord, id: dst })
+    hasParent.add(dst)
+  }
+  const texts: string[] = []
+  const seen = new Set<string>()
+  const visit = (id: string) => {
+    if (seen.has(id)) return
+    seen.add(id)
+    const t = ptTexts.get(id)
+    if (t) texts.push(t)
+    for (const c of (children.get(id) ?? []).sort((a, b) => a.ord - b.ord)) visit(c.id)
+  }
+  for (const root of children.keys()) if (!hasParent.has(root)) visit(root)
+  // isolated points (no tree info) keep file order
+  for (const [id, t] of ptTexts) if (!seen.has(id)) texts.push(t)
   return texts.length > 0 ? texts.join('\n') : null
+}
+
+/**
+ * SmartArt visual degrade: Word saves the resolved layout in a companion
+ * diagrams/drawingN.xml (dsp:sp shapes with absolute geometry, fills incl.
+ * pictures, and text bodies). Rendering those shapes reproduces the diagram
+ * without a layout engine. Returns null when the part is absent (then only
+ * the text degrade shows).
+ */
+/**
+ * Drawing canvas (a:graphicData lockedCanvas): children carry absolute EMU
+ * geometry in the canvas child-coordinate space (grpSpPr chOff/chExt), mapped
+ * onto the drawing's wp:extent. Geometry scales through that mapping; text
+ * keeps its raw font size and overflows the scaled boxes (LO behavior — the
+ * canvas is usually authored far larger than the extent it is placed at).
+ */
+function extractLockedCanvas(xml: string, ctx: BuildContext): DiagramDisplay | null {
+  const ci = xml.indexOf('<lc:lockedCanvas')
+  if (ci === -1) return null
+  const end = xml.indexOf('</lc:lockedCanvas>', ci)
+  if (end === -1) return null
+  // display size: the nearest wp:extent before the canvas (its own inline/anchor)
+  const extM = [...xml.slice(0, ci).matchAll(/<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/g)].pop()
+  const extCx = extM ? parseInt(extM[1], 10) : NaN
+  const extCy = extM ? parseInt(extM[2], 10) : NaN
+  if (!Number.isFinite(extCx) || !Number.isFinite(extCy) || extCx <= 0 || extCy <= 0) return null
+  let parsed: XNode[]
+  try {
+    parsed = xmlParser.parse(xml.slice(ci, end + '</lc:lockedCanvas>'.length)) as XNode[]
+  } catch {
+    return null
+  }
+  const canvasNode = parsed.find((n) => nameOf(n) === 'lc:lockedCanvas')
+  if (!canvasNode) return null
+  const grpXfrm = findChild(findChild(canvasNode, 'a:grpSpPr') ?? {}, 'a:xfrm')
+  const emuAttr = (node: XNode | undefined, name: string, fallback: number): number => {
+    const v = parseInt(attrsOf(node ?? {})[name] ?? '', 10)
+    return Number.isFinite(v) ? v : fallback
+  }
+  const chOffX = emuAttr(findChild(grpXfrm ?? {}, 'a:chOff'), 'x', 0)
+  const chOffY = emuAttr(findChild(grpXfrm ?? {}, 'a:chOff'), 'y', 0)
+  const chExtCx = emuAttr(findChild(grpXfrm ?? {}, 'a:chExt'), 'cx', extCx)
+  const chExtCy = emuAttr(findChild(grpXfrm ?? {}, 'a:chExt'), 'cy', extCy)
+  const scaleX = chExtCx > 0 ? extCx / chExtCx : 1
+  const scaleY = chExtCy > 0 ? extCy / chExtCy : 1
+  const shapes: DiagramShape[] = []
+  for (const child of childrenOf(canvasNode)) {
+    const name = nameOf(child)
+    if (name !== 'a:sp' && name !== 'a:pic') continue
+    const spPr = findChild(child, 'a:spPr')
+    const xfrm = findChild(spPr ?? {}, 'a:xfrm')
+    const off = findChild(xfrm ?? {}, 'a:off')
+    const ext = findChild(xfrm ?? {}, 'a:ext')
+    if (!off || !ext) continue
+    const shape: DiagramShape = {
+      xPx: Math.round(((emuAttr(off, 'x', 0) - chOffX) * scaleX) / EMU_PER_PX),
+      yPx: Math.round(((emuAttr(off, 'y', 0) - chOffY) * scaleY) / EMU_PER_PX),
+      wPx: Math.round((emuAttr(ext, 'cx', 0) * scaleX) / EMU_PER_PX),
+      hPx: Math.round((emuAttr(ext, 'cy', 0) * scaleY) / EMU_PER_PX),
+    }
+    if (shape.wPx <= 0 || shape.hPx <= 0) continue
+    const rot = parseInt(attrsOf(xfrm!)['rot'] ?? '', 10)
+    if (Number.isFinite(rot) && rot !== 0) shape.rotDeg = Math.round(rot / 60000)
+    const prst = attrsOf(findChild(spPr ?? {}, 'a:prstGeom') ?? {})['prst']
+    if (prst && prst !== 'rect') shape.prst = prst
+    if (name === 'a:pic') {
+      const rId = attrsOf(findChild(findChild(child, 'a:blipFill') ?? {}, 'a:blip') ?? {})[
+        'r:embed'
+      ]
+      const dataUrl = rId ? ctx.mediaByRid?.get(rId) : undefined
+      if (dataUrl) shape.imageDataUrl = dataUrl
+    } else if (spPr && !findChild(spPr, 'a:noFill')) {
+      const fill =
+        colorNodeHex(findChild(spPr, 'a:solidFill'), ctx.themeColors) ??
+        gradFillApproxHex(spPr, ctx.themeColors)
+      if (fill) shape.fillHex = fill
+    }
+    const body = findChild(findChild(child, 'a:txSp') ?? {}, 'a:txBody')
+    if (body) {
+      const texts: string[] = []
+      let sizePt: number | undefined
+      let color: string | undefined
+      for (const p of findChildren(body, 'a:p')) {
+        const parts: string[] = []
+        for (const r of findChildren(p, 'a:r')) {
+          const t = findChild(r, 'a:t')
+          if (t) parts.push(decodeEntities(textOf(t)))
+          const rPr = findChild(r, 'a:rPr')
+          if (rPr && sizePt === undefined) {
+            const sz = parseInt(attrsOf(rPr)['sz'] ?? '', 10)
+            // raw canvas font size (hundredths of a point), deliberately unscaled
+            if (Number.isFinite(sz) && sz > 0) sizePt = Math.round(sz / 100)
+            const c = colorNodeHex(findChild(rPr, 'a:solidFill'), ctx.themeColors)
+            if (c) color = c
+          }
+        }
+        if (parts.join('').trim() !== '') texts.push(parts.join(''))
+      }
+      if (texts.length > 0) {
+        shape.texts = texts
+        if (sizePt) shape.fontSizePt = sizePt
+        if (color) shape.textColorHex = color
+      }
+    }
+    shapes.push(shape)
+  }
+  if (shapes.length === 0) return null
+  // LO parity for severely overflowing canvas text (the canvas is authored
+  // several times larger than its placed extent, so raw-size text dwarfs the
+  // scaled boxes): LO stacks the text shapes as columns, each next column
+  // starting about halfway down the previous column's text run. Reproducing
+  // that stacking keeps the glyph reading order identical to LO's render.
+  const textShapes = shapes.filter((s) => s.texts?.length && s.fontSizePt)
+  const colGeom = (s: DiagramShape): { lines: number; pitchPx: number } => {
+    const fontPx = (s.fontSizePt! * 96) / 72
+    const charsPerLine = Math.max(1, Math.floor(s.wPx / (fontPx * 0.72)))
+    const chars = (s.texts ?? []).join('').length
+    return { lines: Math.ceil(chars / charsPerLine), pitchPx: fontPx * 1.2 }
+  }
+  const overflowing = textShapes.filter((s) => {
+    const g = colGeom(s)
+    return g.lines * g.pitchPx > 2 * s.hPx
+  })
+  if (overflowing.length > 0) {
+    // the first overflowing column anchors at the canvas top (LO ignores the
+    // scaled box offset once the text no longer fits the box)
+    overflowing[0].yPx = 0
+    for (let i = 1; i < overflowing.length; i++) {
+      const prev = overflowing[i - 1]
+      const g = colGeom(prev)
+      overflowing[i].yPx = Math.round(prev.yPx + Math.ceil(g.lines / 2) * g.pitchPx - 23)
+    }
+    // single-letter-per-line columns explode into per-letter shapes ordered
+    // top-down: the exported PDF then emits glyphs in painter order like LO,
+    // and text extraction reads the interleaved columns identically
+    for (const s of overflowing) {
+      const g = colGeom(s)
+      const chars = [...(s.texts ?? []).join('')]
+      if (g.lines < chars.length) continue // wraps more than one char per line
+      const at = shapes.indexOf(s)
+      if (at === -1) continue
+      const letters: DiagramShape[] = chars.map((ch, i) => ({
+        xPx: s.xPx,
+        yPx: Math.round(s.yPx + i * g.pitchPx),
+        wPx: s.wPx,
+        hPx: Math.ceil(g.pitchPx),
+        texts: [ch],
+        ...(s.fontSizePt ? { fontSizePt: s.fontSizePt } : {}),
+        ...(s.textColorHex ? { textColorHex: s.textColorHex } : {}),
+      }))
+      shapes.splice(at, 1, ...letters)
+    }
+    shapes.sort((a, b) => a.yPx - b.yPx)
+  }
+  return {
+    widthPx: Math.round(extCx / EMU_PER_PX),
+    heightPx: Math.round(extCy / EMU_PER_PX),
+    shapes,
+    canvas: true,
+  }
+}
+
+async function extractDiagramDrawing(
+  xml: string,
+  ctx: BuildContext,
+): Promise<DiagramDisplay | null> {
+  const dmPath = relPartPath(ctx, /r:dm="([^"]+)"/.exec(xml)?.[1])
+  if (!dmPath) return null
+  const drawingPath = dmPath.replace(/data(\d*)\.xml$/, 'drawing$1.xml')
+  const file = drawingPath !== dmPath ? ctx.zip.file(drawingPath) : null
+  if (!file) return null
+  const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(xml)
+  const widthPx = extent ? Math.round(parseInt(extent[1], 10) / EMU_PER_PX) : 0
+  const heightPx = extent ? Math.round(parseInt(extent[2], 10) / EMU_PER_PX) : 0
+  if (!widthPx || !heightPx) return null
+  let parsed: XNode[]
+  try {
+    parsed = xmlParser.parse(await file.async('string')) as XNode[]
+  } catch {
+    return null
+  }
+  // picture fills resolve through the drawing part's own rels (../media/...)
+  const relsPath = drawingPath.replace(/([^/]+)$/, '_rels/$1.rels')
+  const rels = await parseRels(ctx.zip, relsPath)
+  const dir = drawingPath.replace(/[^/]+$/, '')
+  const mediaOf = async (rId: string): Promise<string | null> => {
+    const rel = rels.get(rId)
+    if (!rel || rel.targetMode === 'External') return null
+    const parts: string[] = []
+    for (const seg of (rel.target.startsWith('/') ? rel.target.slice(1) : dir + rel.target).split(
+      '/',
+    )) {
+      if (seg === '..') parts.pop()
+      else if (seg !== '.') parts.push(seg)
+    }
+    const path = parts.join('/')
+    const f = ctx.zip.file(path)
+    if (!f) return null
+    const mime = IMAGE_MIME[path.split('.').pop()?.toLowerCase() ?? '']
+    if (!mime) return null
+    if (isMetafileMime(mime)) return metafileToDataUrl(await f.async('arraybuffer'), mime)
+    return `data:${mime};base64,${await f.async('base64')}`
+  }
+  const sps: XNode[] = []
+  collectNodes(parsed, 'dsp:sp', sps)
+  const shapes: DiagramShape[] = []
+  for (const sp of sps) {
+    const spPr = findChild(sp, 'dsp:spPr')
+    if (!spPr) continue
+    const xfrm = findChild(spPr, 'a:xfrm')
+    const off = xfrm ? findChild(xfrm, 'a:off') : undefined
+    const ext = xfrm ? findChild(xfrm, 'a:ext') : undefined
+    if (!off || !ext) continue
+    const shape: DiagramShape = {
+      xPx: Math.round(parseInt(attrsOf(off)['x'] ?? '0', 10) / EMU_PER_PX),
+      yPx: Math.round(parseInt(attrsOf(off)['y'] ?? '0', 10) / EMU_PER_PX),
+      wPx: Math.round(parseInt(attrsOf(ext)['cx'] ?? '0', 10) / EMU_PER_PX),
+      hPx: Math.round(parseInt(attrsOf(ext)['cy'] ?? '0', 10) / EMU_PER_PX),
+    }
+    if (shape.wPx <= 0 || shape.hPx <= 0) continue
+    const rot = parseInt(attrsOf(xfrm!)['rot'] ?? '', 10)
+    if (Number.isFinite(rot) && rot !== 0) shape.rotDeg = Math.round(rot / 60000)
+    const prst = attrsOf(findChild(spPr, 'a:prstGeom') ?? {})['prst']
+    if (prst) shape.prst = prst
+    const blipFill = findChild(spPr, 'a:blipFill')
+    if (blipFill) {
+      const rId = attrsOf(findChild(blipFill, 'a:blip') ?? {})['r:embed']
+      const dataUrl = rId ? await mediaOf(rId) : null
+      if (dataUrl) {
+        shape.imageDataUrl = dataUrl
+        const fr = /<a:fillRect\s[^>]*\/>/.exec(serializeXNode(blipFill))?.[0]
+        if (fr) {
+          const rect = {
+            l: rectFrac(fr, 'l'),
+            t: rectFrac(fr, 't'),
+            r: rectFrac(fr, 'r'),
+            b: rectFrac(fr, 'b'),
+          }
+          if (rect.l || rect.t || rect.r || rect.b) shape.fillRect = rect
+        }
+      }
+    } else {
+      const solid = findChild(spPr, 'a:solidFill')
+      const srgb = solid ? attrsOf(findChild(solid, 'a:srgbClr') ?? {})['val'] : undefined
+      const scheme = solid ? attrsOf(findChild(solid, 'a:schemeClr') ?? {})['val'] : undefined
+      if (srgb) shape.fillHex = srgb
+      else if (scheme) {
+        const theme = ctx.themeColors as Record<string, string> | null | undefined
+        shape.fillHex = (theme && theme[scheme]) || '9AB5E4'
+      }
+    }
+    const body = findChild(sp, 'dsp:txBody')
+    if (body) {
+      const texts: string[] = []
+      let sizePt: number | undefined
+      let color: string | undefined
+      for (const p of findChildren(body, 'a:p')) {
+        const parts: string[] = []
+        for (const r of findChildren(p, 'a:r')) {
+          const t = findChild(r, 'a:t')
+          if (t) parts.push(decodeEntities(textOf(t)))
+          const rPr = findChild(r, 'a:rPr')
+          if (rPr && sizePt === undefined) {
+            const sz = parseInt(attrsOf(rPr)['sz'] ?? '', 10)
+            if (Number.isFinite(sz) && sz > 0) sizePt = Math.round(sz / 100)
+            const fill = findChild(rPr, 'a:solidFill')
+            const c = fill ? attrsOf(findChild(fill, 'a:srgbClr') ?? {})['val'] : undefined
+            if (c) color = c
+          }
+        }
+        if (parts.join('').trim() !== '') texts.push(parts.join(''))
+      }
+      if (texts.length > 0) {
+        shape.texts = texts
+        if (sizePt) shape.fontSizePt = sizePt
+        if (color) shape.textColorHex = color
+      }
+    }
+    shapes.push(shape)
+  }
+  return shapes.length > 0 ? { widthPx, heightPx, shapes } : null
 }
 
 /**
@@ -3262,7 +4089,10 @@ async function extractChart(xml: string, ctx: BuildContext): Promise<ChartDispla
   const partXml = await file.async('string')
   const display = parseChartPartXml(partXml, path)
   if (display) {
-    ctx.chartParts[path] = partXml
+    // chartex (cx:) parts are display-only degrades: the data-edit patcher
+    // speaks classic c: syntax, so keeping them out makes edits no-ops
+    // instead of corruption
+    if (!partXml.includes('<cx:chartSpace')) ctx.chartParts[path] = partXml
     const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(xml)
     const cx = extent ? parseInt(extent[1]!, 10) : NaN
     const cy = extent ? parseInt(extent[2]!, 10) : NaN
@@ -3317,7 +4147,10 @@ async function parseStyles(
     const eaLang = rPr ? attrsOf(findChild(rPr, 'w:lang') ?? {})['w:eastAsia'] : undefined
     if (!dd.eastAsiaFont && eaLang) {
       const eaDefault = EA_LANG_DEFAULT_FONT[eaLang.toLowerCase()]
-      if (eaDefault) dd.eastAsiaFont = eaDefault
+      if (eaDefault) {
+        dd.eastAsiaFont = eaDefault
+        if (ddRf.eaSlotEmpty) dd.eaSlotEmpty = true
+      }
     }
     if (rPr) {
       const onFlag = (tag: string) => {
@@ -3584,6 +4417,7 @@ function styleDisplayOf(
     if (fontAscii) display.fontAscii = fontAscii
     if (rf.cs) display.csFont = rf.cs
     if (font) display.font = font
+    if (rf.eaSlotEmpty && font && font === rf.eastAsia) display.eaSlotEmpty = true
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) display.charSpacingTwips = spc
   }

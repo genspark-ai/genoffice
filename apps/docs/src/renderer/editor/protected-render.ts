@@ -62,7 +62,9 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
       attrs,
       ...num,
       ['span', { class: 'doc-toc-title', contenteditable: 'false' }, field.left || '\u00a0'],
-      ['span', { class: 'doc-toc-dots' }],
+      // real dot glyphs (clipped to the free width), not a border decoration:
+      // Word/LO leader dots are text, and exported-PDF text comparison sees them
+      ['span', { class: 'doc-toc-dots', contenteditable: 'false' }, '.'.repeat(220)],
       ['span', { class: 'doc-toc-page', contenteditable: 'false' }, field.right ?? ''],
     ]
   }
@@ -170,6 +172,13 @@ export function renderChartSpec(chart: ChartDisplay): DomSpec {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
+/** round up to a 1/2/5×10ⁿ "nice" axis step */
+function niceStep(target: number): number {
+  const pow = 10 ** Math.floor(Math.log10(Math.max(target, 1e-9)))
+  const n = target / pow
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow
+}
+
 interface ChartGeom {
   width: number
   height: number
@@ -186,13 +195,18 @@ export const CHART_MAX_WIDTH_PX = 660
 export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void {
   const canvas = dom.querySelector<HTMLElement>('.doc-chart-canvas')
   if (!canvas || !chart?.series.length) return
+  // series-name legend inside the SVG: the data grid is an editing affordance
+  // (hidden unless the block is selected), so the printed chart must carry the
+  // legend itself, like Word/LibreOffice output
+  const legendNames = chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
+  const showLegend = chart.series.length > 1 || chart.series.some((s) => s.name)
   const geom: ChartGeom = {
     width: Math.min(chart.widthPx ?? 560, CHART_MAX_WIDTH_PX),
     height: chart.heightPx ?? 240,
     left: 46,
     right: 12,
     top: 12,
-    bottom: 26,
+    bottom: 26 + (showLegend ? 18 : 0),
   }
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('viewBox', `0 0 ${geom.width} ${geom.height}`)
@@ -202,6 +216,31 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
 
   if (chart.kind === 'pie') drawPie(svg, chart, geom)
   else drawAxes(svg, chart, geom)
+
+  if (showLegend) {
+    const slot = geom.width / legendNames.length
+    legendNames.forEach((name, i) => {
+      const cx = slot * i + slot / 2
+      svgEl(svg, 'rect', {
+        x: String(cx - Math.min(name.length * 3.2, slot / 2 - 14) - 12),
+        y: String(geom.height - 15),
+        width: '8',
+        height: '8',
+        fill: chartColor(i),
+      })
+      svgEl(
+        svg,
+        'text',
+        {
+          x: String(cx),
+          y: String(geom.height - 7),
+          class: 'doc-chart-axis-label',
+          'text-anchor': 'middle',
+        },
+        name,
+      )
+    })
+  }
 
   canvas.replaceChildren(svg)
 }
@@ -222,8 +261,14 @@ function svgEl(
 /** bar / line / area charts share the same axes and scale */
 function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
-  const max = Math.max(0, ...values)
-  const min = Math.min(0, ...values)
+  // "nice" axis bounds (1/2/5×10ⁿ step, integer-friendly labels like Word/LO)
+  const rawMax = Math.max(0, ...values)
+  const rawMin = Math.min(0, ...values)
+  const step = niceStep((rawMax - rawMin) / 5 || 1)
+  const min = Math.floor(rawMin / step) * step
+  // Word/LO leave headroom: the top tick sits strictly above the data maximum
+  let max = Math.ceil(rawMax / step) * step || step
+  if (rawMax > 0 && max <= rawMax + 1e-9) max += step
   const span = max - min || 1
   const plotW = geom.width - geom.left - geom.right
   const plotH = geom.height - geom.top - geom.bottom
@@ -232,9 +277,9 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   const slotW = plotW / cols
 
   // horizontal gridlines with value labels
-  const steps = 4
+  const steps = Math.max(1, Math.round(span / step))
   for (let i = 0; i <= steps; i++) {
-    const v = min + (span / steps) * i
+    const v = min + step * i
     const y = yOf(v)
     svgEl(svg, 'line', {
       x1: String(geom.left),
@@ -454,14 +499,34 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
       )
     : null
   const waStyle = box.wordArtId ? WORDART_CSS[box.wordArtId] : undefined
+  // picture fill (photo boxes / a:blipFill): tiles repeat at natural size,
+  // stretch fills cover the whole box. Document data, hence inline.
+  const fillImage = box.fillImageDataUrl
+    ? `background-image:url("${box.fillImageDataUrl}");` +
+      (box.fillTile
+        ? 'background-repeat:repeat'
+        : 'background-repeat:no-repeat;background-size:100% 100%')
+    : ''
+  const transforms = [box.rotDeg ? `rotate(${box.rotDeg}deg)` : '']
+  const floatPos = box.floating
+    ? `position:absolute;left:${((box.offsetXEmu ?? 0) / 9525).toFixed(1)}px;` +
+      `top:${((box.offsetYEmu ?? 0) / 9525).toFixed(1)}px`
+    : ''
   return [
     geomCss ?? '',
-    !geomCss && box.fill ? `background:#${box.fill}` : '',
+    !geomCss && box.fill ? `background-color:#${box.fill}` : '',
     !geomCss && box.borderColor ? `border-color:#${box.borderColor}` : '',
+    !geomCss && box.borderColor && box.borderWidthPx ? `border-width:${box.borderWidthPx}px` : '',
+    !geomCss && box.borderColor && box.borderDash ? `border-style:${box.borderDash}` : '',
+    fillImage,
+    floatPos,
     box.widthPx ? `width:${box.widthPx}px` : '',
     // Word clips fixed-height (noAutofit) boxes instead of growing them
     box.heightPx ? `height:${box.heightPx}px` : '',
     `padding:${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px`,
+    transforms.filter(Boolean).length > 0
+      ? `transform:${transforms.filter(Boolean).join(' ')}`
+      : '',
     waStyle?.color ? `-webkit-text-fill-color:${waStyle.color}` : '',
     waStyle?.stroke ? `-webkit-text-stroke:${waStyle.stroke}` : '',
     waStyle?.textShadow ? `text-shadow:${waStyle.textShadow}` : '',

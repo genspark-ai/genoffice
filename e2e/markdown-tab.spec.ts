@@ -157,7 +157,7 @@ test.describe('markdown editor', () => {
 
       await editor.click()
       await editorPage.keyboard.press('ControlOrMeta+a')
-      await editorPage.getByTitle(/^(加粗|Bold)$/).click()
+      await editorPage.getByLabel(/^(加粗|Bold)$/).click()
       await expect(editor.locator('strong')).toHaveText('Hello style')
 
       // quick-access row: save button writes the file, undo reverts the mark

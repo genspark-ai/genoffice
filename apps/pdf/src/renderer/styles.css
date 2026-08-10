@@ -19,6 +19,7 @@
   --pdf-statusbar-border: #e1e4e8;
   --pdf-statusbar-hover: rgb(0 0 0 / 8%);
   --pdf-swatch-ring: rgb(0 0 0 / 15%);
+  --pdf-scroll-thumb: rgb(0 0 0 / 25%);
 
   /* content-side constants: pages are paper, page overlays sit on paper —
    * these never follow the theme */
@@ -88,6 +89,7 @@
   --pdf-statusbar-border: #3a3a3a;
   --pdf-statusbar-hover: rgb(255 255 255 / 10%);
   --pdf-swatch-ring: rgb(255 255 255 / 30%);
+  --pdf-scroll-thumb: rgb(255 255 255 / 28%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -108,6 +110,7 @@
     --pdf-statusbar-border: #3a3a3a;
     --pdf-statusbar-hover: rgb(255 255 255 / 10%);
     --pdf-swatch-ring: rgb(255 255 255 / 30%);
+    --pdf-scroll-thumb: rgb(255 255 255 / 28%);
   }
 }
 
@@ -279,16 +282,33 @@ button {
   /* band metrics shared with the docs/slides ribbons (PowerPoint parity) */
   padding: 6px 12px;
   /* HARD-fixed height like docs/slides: the ribbon height stays constant, and a
-     narrow window scrolls the row inside the ribbon (invisible scrollbar) instead
-     of squeezing the band */
+     narrow window scrolls the row inside the ribbon instead of squeezing the
+     band */
   height: 80px;
-  overflow-x: auto;
+  /* `scroll`, not `auto`: styled scrollbars are classic (non-overlay), so
+     `scroll` keeps the 5px lane reserved even without overflow — the content
+     area never changes and crossing the overflow threshold cannot cause a
+     vertical layout jump (same reasoning as .ai-attachments). */
+  overflow-x: scroll;
   overflow-y: hidden;
-  scrollbar-width: none;
+  /* Slim visible scrollbar so mouse users can reach overflowed groups
+     (genspark-ai/genoffice#55). Its 5px lane is carved out of the bottom
+     padding, keeping the 80px band and the content area unchanged; Chromium
+     paints a thumb only while the row actually overflows. */
+  padding-bottom: 1px;
 }
 
 .ribbon-body::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.ribbon-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ribbon-body::-webkit-scrollbar-thumb {
+  border-radius: 2.5px;
+  background: var(--pdf-scroll-thumb);
 }
 
 .ribbon-group {
@@ -1958,11 +1978,20 @@ button {
   position: absolute;
   inset: 0;
   z-index: 2;
+  /* The layer spans the whole page, but only real link rectangles should take
+     pointer input; otherwise every page containing one link blocks text clicks. */
+  pointer-events: none;
 }
 
 .pdf-link {
   position: absolute;
   border-radius: 2px;
+  pointer-events: auto;
+}
+
+/* Text editing owns page clicks, including text covered by link annotations. */
+.pdf-editing-text .pdf-link {
+  pointer-events: none;
 }
 
 .pdf-link:hover {

@@ -100,7 +100,8 @@ export function NameManagerDialog({
                   <td>{row.scopeLabel}</td>
                   <td>
                     <button
-                      title={t('dlgNmDeleteName')}
+                      data-tip={t('dlgNmDeleteName')}
+                      aria-label={t('dlgNmDeleteName')}
                       onClick={(event) => {
                         event.stopPropagation()
                         run({ kind: 'remove', name: row.name, scopeSheetId: row.scopeSheetId })

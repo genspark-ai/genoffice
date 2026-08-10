@@ -51,7 +51,8 @@ export function PasteOptionsFloater({ mode, onSelect, onDismiss }: Props) {
       <button
         ref={btnRef}
         className="paste-floater-btn"
-        title={t('appPasteOptions')}
+        data-tip={t('appPasteOptions')}
+        aria-label={t('appPasteOptions')}
         // The thumbnail behind is clickable and draggable: don't select the page or start a drag
         draggable={false}
         onMouseDown={(e) => e.stopPropagation()}

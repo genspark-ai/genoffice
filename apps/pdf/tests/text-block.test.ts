@@ -155,6 +155,51 @@ describe('groupPageBlocks', () => {
     expect(blocks[0]!.lines).toHaveLength(2)
   })
 
+  it('splits adjacent labeled paragraphs at a paragraph-final short line', () => {
+    // Footer-box style: two labeled paragraphs, same leading and font size; the
+    // first ends in a line far shorter than the shared extent, so the next line
+    // starts a new paragraph even though leading alone cannot tell them apart
+    const blocks = groupPageBlocks(
+      page([
+        {
+          t: '\u6570\u636e\u6765\u6e90\uff1a\u5e74\u62a5\u53ca\u5b63\u5ea6\u4e1a\u7ee9\u516c\u544a\u62ab\u9732\u6587\u4ef6',
+          x: 50,
+          y: 700,
+          w: 400,
+          h: 10,
+        },
+        {
+          t: '\u516c\u5f00\u5e02\u573a\u884c\u60c5\u6570\u636e\u3002',
+          x: 50,
+          y: 681,
+          w: 90,
+          h: 10,
+        },
+        {
+          t: '\u514d\u8d23\u58f0\u660e\uff1a\u672c\u62a5\u544a\u4ec5\u4f9b\u7814\u7a76\u53c2\u8003\u4e0d\u6784\u6210\u6295\u8d44\u5efa\u8bae',
+          x: 50,
+          y: 662,
+          w: 400,
+          h: 10,
+        },
+      ]),
+    )
+    expect(blocks.map((b) => b.lines.length)).toEqual([2, 1])
+  })
+
+  it('keeps a ragged wrap that the next word explains (no paragraph-end split)', () => {
+    // Line 1 ends 60pt short, but the next line starts with a 10-char word
+    // (~72pt at 12pt): the wrap is forced, not a paragraph boundary
+    const blocks = groupPageBlocks(
+      page([
+        { t: 'ragged text before a', x: 50, y: 700, w: 160, h: 12 },
+        { t: 'wideworddd continues here', x: 50, y: 686, w: 220, h: 12 },
+        { t: 'and ends.', x: 50, y: 672, w: 70, h: 12 },
+      ]),
+    )
+    expect(blocks).toHaveLength(1)
+  })
+
   it('tolerates a first-line indent', () => {
     const blocks = groupPageBlocks(
       page([{ t: 'indented', x: 62, y: 700, w: 188, h: 12 }, bodyLine('flush left line', 686)]),
@@ -170,7 +215,9 @@ describe('groupPageBlocks', () => {
       w: 12,
       h: 12,
     }))
-    const blocks = groupPageBlocks(page([...glyphs, bodyLine('第二行第二行第二行', 686)]))
+    const blocks = groupPageBlocks(
+      page([...glyphs, { t: '\u7b2c\u4e8c\u884c\u7b2c\u4e8c\u884c', x: 50, y: 686, w: 72, h: 12 }]),
+    )
     expect(blocks).toHaveLength(1)
     expect(blocks[0]!.lines[0]!.text).toBe('一丁丂七丄丅')
   })

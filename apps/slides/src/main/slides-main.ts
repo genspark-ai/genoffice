@@ -27,12 +27,14 @@ import { dirname, join } from 'node:path'
 import { gskApiKey, gskSlideGenerate, setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
+  configuredDefaultSaveDir,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
+  toggleDevToolsItem,
 } from '@genoffice/electron-utils'
 import { getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
@@ -692,9 +694,9 @@ async function openAndBuild(
   }
 }
 
-/** Directory where AI-generated drafts are saved: <Documents>/GenOffice/ */
+/** Directory where AI-generated drafts are saved: the configurable default save folder (falls back to <Documents>/GenOffice) */
 function getDraftsDir(): string {
-  return join(app.getPath('documents'), 'GenOffice')
+  return configuredDefaultSaveDir(app)
 }
 
 /** Fallback draft filename: <untitled label>-YYYYMMDD-HHmmss.pptx */
@@ -1665,14 +1667,39 @@ export function registerSlidesIpc(): void {
     if (!session) return null
     const slide = session.opened.deck.slides[op.slideIndex]
     if (!slide) return null
+    // Any element with an a:xfrm can flip (picture/shape/text/group) — findEl's
+    // text/shape filter would silently drop pictures
     const targets = op.sourceIds
-      .map((id) => (op.groupId ? findGroupChild(slide, op.groupId, id)?.child : findEl(slide, id)))
-      .filter((el): el is NonNullable<typeof el> => !!el)
+      .map((id) =>
+        op.groupId
+          ? findGroupChild(slide, op.groupId, id)?.child
+          : slide.elements.find((x) => x.id === id),
+      )
+      .filter((el): el is NonNullable<typeof el> => !!el && !!el.transform)
     if (targets.length === 0) return null
     pushHistory(session)
     for (const el of targets) {
-      if (op.axis === 'h') el.transform.flipH = !el.transform.flipH
-      else el.transform.flipV = !el.transform.flipV
+      const t = el.transform
+      // Rotation pivots on the flip-adjusted box origin, so toggling a flip on a
+      // rotated element would move its visual center: origin + R(rot)·(flip-signed
+      // half-extent) must stay put — shift the offset by the orbit difference.
+      const orbit = () => {
+        const rad = (((t.rot ?? 0) / 60000) * Math.PI) / 180
+        const bx = t.flipH ? t.offset.cx : 0
+        const by = t.flipV ? t.offset.cy : 0
+        const vx = ((t.flipH ? -1 : 1) * t.offset.cx) / 2
+        const vy = ((t.flipV ? -1 : 1) * t.offset.cy) / 2
+        return {
+          x: bx + vx * Math.cos(rad) - vy * Math.sin(rad),
+          y: by + vx * Math.sin(rad) + vy * Math.cos(rad),
+        }
+      }
+      const before = orbit()
+      if (op.axis === 'h') t.flipH = !t.flipH
+      else t.flipV = !t.flipV
+      const after = orbit()
+      t.offset.x += Math.round(before.x - after.x)
+      t.offset.y += Math.round(before.y - after.y)
       el.dirtyTransform = true
     }
     updateConnectorsForMoved(
@@ -3472,7 +3499,7 @@ export function registerSlidesIpc(): void {
       defaultPath: defaultName,
       filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
     }
-    const r = await showSaveDialogWithMemory(dialog, parent, options)
+    const r = await showSaveDialogWithMemory(dialog, parent, options, getDraftsDir())
     if (r.canceled || !r.filePath) return { ok: false }
     try {
       await savePptxToFile(session.opened, r.filePath)
@@ -3532,7 +3559,7 @@ export function registerSlidesIpc(): void {
       defaultPath: defaultName,
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     }
-    const r = await showSaveDialogWithMemory(dialog, parent, options)
+    const r = await showSaveDialogWithMemory(dialog, parent, options, getDraftsDir())
     return r.canceled || !r.filePath ? null : r.filePath
   })
 
@@ -3641,23 +3668,48 @@ html, body { margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', sans
 .page.notes img { width: 100%; height: auto; border: 1px solid #bbb; }
 .page.notes .note { margin-top: 0.3in; font-size: 11pt; line-height: 1.5; white-space: pre-wrap; }
 </style></head><body>${body}</body></html>`
-      const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
+      const owner = BrowserWindow.fromWebContents(e.sender) ?? dialogParent()
+      const win = new BrowserWindow({
+        show: false,
+        ...(owner && !owner.isDestroyed() ? { parent: owner } : {}),
+        ...(process.platform === 'win32'
+          ? {
+              width: 900,
+              height: 700,
+              autoHideMenuBar: true,
+              closable: false,
+              skipTaskbar: true,
+            }
+          : {}),
+        webPreferences: { sandbox: true },
+      })
       try {
         await win.loadURL('data:text/html;base64,' + Buffer.from(html, 'utf8').toString('base64'))
         await win.webContents.executeJavaScript(
           'Promise.all([document.fonts.ready, ...Array.from(document.images).map((i) => i.decode().catch(() => {}))])',
           true,
         )
-        const ok = await new Promise<boolean>((resolve) => {
-          win.webContents.print({ silent: false, printBackground: true }, (success) =>
-            resolve(success),
+        // Chromium attaches the native Windows print dialog to the window being printed.
+        // If that owner is hidden, the dialog is hidden too and the layout buttons appear inert.
+        if (process.platform === 'win32') {
+          win.show()
+          win.focus()
+        }
+        const result = await new Promise<{ success: boolean; failureReason: string }>((resolve) => {
+          win.webContents.print(
+            { silent: false, printBackground: true },
+            (success, failureReason) => resolve({ success, failureReason }),
           )
         })
-        return { ok }
+        // Canceling is a normal completion, not a print failure to surface in the status bar.
+        if (!result.success && result.failureReason !== 'Print job canceled') {
+          return { ok: false, error: result.failureReason }
+        }
+        return { ok: true }
       } catch (err) {
         return { ok: false, error: String(err) }
       } finally {
-        win.destroy()
+        if (!win.isDestroyed()) win.destroy()
       }
     },
   )
@@ -3917,7 +3969,7 @@ export function buildSlidesMenu(): Menu {
           click: () => send('zoom-reset'),
         },
         { type: 'separator' },
-        { role: 'toggleDevTools', label: labels.toggleDevTools },
+        toggleDevToolsItem(labels),
       ],
     },
   ]

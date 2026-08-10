@@ -108,6 +108,44 @@ function formatAttachmentSize(bytes: number): string {
     : `${(bytes / 1024).toFixed(2)} KB`
 }
 
+/** Read-only echo of the attachments a user message consumed from the composer
+ *  (image previews when the file is still readable; otherwise the placeholder icon) */
+function SentAttachments({
+  atts,
+  previews,
+}: {
+  readonly atts: readonly AttachmentMeta[]
+  readonly previews: Record<string, string>
+}): React.JSX.Element {
+  return (
+    <div className="ai-msg-attachments">
+      {atts.map((a) =>
+        ATTACHMENT_IMAGE_EXTS.has(a.ext) ? (
+          <span key={a.path} className="ai-attachment-thumb" title={a.name}>
+            {previews[a.path] ? (
+              <img src={previews[a.path]} alt={a.name} />
+            ) : (
+              <span className="ai-attachment-thumb-pending" aria-hidden>
+                <img src={fileImageIcon} alt="" />
+              </span>
+            )}
+          </span>
+        ) : (
+          <span key={a.path} className="ai-attachment-card" title={a.name}>
+            <span className="ai-attachment-card-icon">
+              <AttachmentCardIcon ext={a.ext} />
+            </span>
+            <span className="ai-attachment-card-meta">
+              <span className="ai-attachment-card-name">{truncateCardName(a.name)}</span>
+              <span className="ai-attachment-card-size">{formatAttachmentSize(a.sizeBytes)}</span>
+            </span>
+          </span>
+        ),
+      )}
+    </div>
+  )
+}
+
 /** Resizable panel width: persisted, clamped to min/max, drives the .sheet-body grid column via --copilot-width */
 const PANEL_WIDTH_KEY = 'sheets-ai-panel-width'
 const PANEL_WIDTH_MIN = 280
@@ -144,6 +182,8 @@ export interface AiChatMessage {
   readonly loginRequired?: boolean | undefined
   /** Set when this message reflects an auto-applied plan; renders an inline [Undo] button. */
   readonly autoApplied?: { readonly opCount: number } | undefined
+  /** attachments consumed from the composer by this user message (read-only echo chips) */
+  readonly attachments?: readonly AttachmentMeta[] | undefined
 }
 
 export function AiChatPanel({
@@ -187,8 +227,9 @@ export function AiChatPanel({
   readonly preview: ChangePlan | null
   readonly aiBusy: boolean
   readonly onPromptChange: (prompt: string) => void
-  /** Send the composer text, or the given instruction when provided (used by the failed-run Retry) */
-  readonly onSend: (instruction?: string) => void
+  /** Send the composer text, or the given instruction when provided (used by the
+   *  failed-run Retry, which also resends the message's original attachments) */
+  readonly onSend: (instruction?: string, attachments?: readonly AttachmentMeta[]) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: () => void
@@ -207,7 +248,14 @@ export function AiChatPanel({
   /** image paths with a read already issued — one readAttachmentImage per attach, even while pending */
   const previewRequestedRef = useRef(new Set<string>())
   useEffect(() => {
-    const alive = new Set(attachments.map((a) => a.path))
+    // previews cover the composer plus every image echoed on a sent/history message
+    // (history chips re-read the file by its stored path; a deleted file keeps the placeholder)
+    const wanted = [
+      ...attachments,
+      ...chat.flatMap((m) => m.attachments ?? []),
+      ...historicChat.flatMap((m) => m.attachments ?? []),
+    ]
+    const alive = new Set(wanted.map((a) => a.path))
     // drop previews (and request markers) of removed attachments, so memory is reclaimed and a re-attach re-reads
     setAttachmentPreviews((prev) => {
       const stale = Object.keys(prev).filter((p) => !alive.has(p))
@@ -219,7 +267,7 @@ export function AiChatPanel({
     for (const p of previewRequestedRef.current) {
       if (!alive.has(p)) previewRequestedRef.current.delete(p)
     }
-    for (const a of attachments) {
+    for (const a of wanted) {
       if (!ATTACHMENT_IMAGE_EXTS.has(a.ext) || previewRequestedRef.current.has(a.path)) continue
       previewRequestedRef.current.add(a.path)
       void window.desktopApi.readAttachmentImage(a.path).then((r) => {
@@ -232,7 +280,7 @@ export function AiChatPanel({
         }
       })
     }
-  }, [attachments])
+  }, [attachments, chat, historicChat])
   /** paints the strip's scrollbar thumb while the user scrolls it (cleared 800ms after the last event) */
   const attachScrollFadeRef = useRef(0)
   const onAttachmentsScroll = (e: React.UIEvent<HTMLDivElement>): void => {
@@ -327,7 +375,12 @@ export function AiChatPanel({
   if (!isOpen) {
     return (
       <aside className="copilot collapsed">
-        <button className="expand-copilot" onClick={onExpand} title={t('aiOpenAssistant')}>
+        <button
+          className="expand-copilot"
+          onClick={onExpand}
+          data-tip={t('aiOpenAssistant')}
+          aria-label={t('aiOpenAssistant')}
+        >
           <GensparkMark size={22} />
         </button>
       </aside>
@@ -398,11 +451,21 @@ export function AiChatPanel({
         </span>
         <div className="ai-panel-header-actions">
           {(chat.length > 0 || historicChat.length > 0) && (
-            <button className="ai-header-btn" onClick={onNewChat} title={t('aiNewChat')}>
+            <button
+              className="ai-header-btn"
+              onClick={onNewChat}
+              data-tip={t('aiNewChat')}
+              aria-label={t('aiNewChat')}
+            >
               <IconNewChat size={15} />
             </button>
           )}
-          <button className="ai-header-btn" onClick={onCollapse} title={t('aiCollapsePanel')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('aiCollapsePanel')}
+            aria-label={t('aiCollapsePanel')}
+          >
             <IconCollapse size={15} />
           </button>
         </div>
@@ -414,6 +477,9 @@ export function AiChatPanel({
           <>
             {historicChat.map((entry, i) => (
               <div key={`h${i}`} className={`ai-msg ai-msg-${entry.role} ai-msg-historic`}>
+                {entry.role === 'user' && entry.attachments && entry.attachments.length > 0 && (
+                  <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
+                )}
                 {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
                 {entry.text && <Markdown text={entry.text} />}
               </div>
@@ -438,12 +504,18 @@ export function AiChatPanel({
           >
             {entry.role === 'user' ? (
               <>
+                {entry.attachments && entry.attachments.length > 0 && (
+                  <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
+                )}
                 {entry.text}
                 {entry.undelivered && (
                   <div className="ai-msg-undelivered">
                     {t('aiUndelivered')}
                     {!aiBusy && (
-                      <button className="ai-retry-btn" onClick={() => onSend(entry.text)}>
+                      <button
+                        className="ai-retry-btn"
+                        onClick={() => onSend(entry.text, entry.attachments ?? [])}
+                      >
                         {t('aiRetry')}
                       </button>
                     )}
@@ -469,7 +541,7 @@ export function AiChatPanel({
                     <span className="ai-auto-applied-text">
                       {t('aiAutoApplied', { count: entry.autoApplied.opCount })}
                     </span>
-                    <button className="ai-undo-btn" onClick={onUndo} title={t('aiUndoTitle')}>
+                    <button className="ai-undo-btn" onClick={onUndo} data-tip={t('aiUndoTitle')}>
                       {t('aiUndo')}
                     </button>
                   </div>
@@ -547,7 +619,7 @@ export function AiChatPanel({
                     <span
                       key={attachment.path}
                       className="ai-attachment-thumb"
-                      title={attachment.path}
+                      data-tip={attachment.path}
                     >
                       {attachmentPreviews[attachment.path] ? (
                         <img src={attachmentPreviews[attachment.path]} alt={attachment.name} />
@@ -559,7 +631,7 @@ export function AiChatPanel({
                       <button
                         className="ai-attachment-thumb-remove"
                         onClick={() => onRemoveAttachment(attachment.path)}
-                        title={t('aiRemoveAttachment')}
+                        data-tip={t('aiRemoveAttachment')}
                         aria-label={t('aiRemoveAttachment')}
                       >
                         <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
@@ -576,7 +648,7 @@ export function AiChatPanel({
                     <span
                       key={attachment.path}
                       className="ai-attachment-card"
-                      title={attachment.path}
+                      data-tip={attachment.path}
                     >
                       <span className="ai-attachment-card-icon">
                         <AttachmentCardIcon ext={attachment.ext} />
@@ -592,7 +664,7 @@ export function AiChatPanel({
                       <button
                         className="ai-attachment-thumb-remove"
                         onClick={() => onRemoveAttachment(attachment.path)}
-                        title={t('aiRemoveAttachment')}
+                        data-tip={t('aiRemoveAttachment')}
                         aria-label={t('aiRemoveAttachment')}
                       >
                         <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
@@ -627,7 +699,8 @@ export function AiChatPanel({
             <button
               className="ai-attach-btn"
               onClick={onPickAttachments}
-              title={t('aiAttachTitle')}
+              data-tip={t('aiAttachTitle')}
+              aria-label={t('aiAttachTitle')}
             >
               <img src={attachIcon} alt="" aria-hidden />
             </button>
@@ -802,14 +875,14 @@ function ToolChipList({ tools }: { tools: readonly AiToolChip[] }): React.JSX.El
                     <button
                       type="button"
                       className="ai-step-title clickable"
-                      title={tool.name}
+                      data-tip={tool.name}
                       aria-expanded={isOpen}
                       onClick={() => toggle(j)}
                     >
                       {tool.summary}
                     </button>
                   ) : (
-                    <span className="ai-step-title" title={tool.name}>
+                    <span className="ai-step-title" data-tip={tool.name}>
                       {tool.summary}
                     </span>
                   )}

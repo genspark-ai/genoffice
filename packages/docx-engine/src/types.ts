@@ -29,6 +29,9 @@ export interface Run {
   sizeHalfPoints?: number
   /** primary font family (w:rFonts, eastAsia ?? ascii ?? hAnsi) */
   font?: string
+  /** `font` is a backfill for an empty EA theme slot (<a:ea typeface=""/>), not a document choice
+   * (display keeps the Word-look face; line metrics follow the theme's Latin face like LO) */
+  eaSlotEmpty?: boolean
   /** Latin-slot font (w:rFonts ascii/hAnsi) when the run declares one; may equal `font`.
    * Kept separate so editing one script's font never flattens the other slot. */
   fontAscii?: string
@@ -216,6 +219,8 @@ export interface ParaFormat {
   keepLines?: boolean
   /** widow/orphan control (w:widowControl; Word default=true) */
   widowControl?: boolean
+  /** snap lines to the section docGrid (w:snapToGrid; default on) — false only when explicitly off */
+  snapToGrid?: boolean
   /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN; Word default=true); false when both are explicitly off */
   autoSpace?: boolean
   /** ignore space-after when followed by same-style para (w:contextualSpacing) */
@@ -366,8 +371,16 @@ export interface HfImage {
   dataUrl: string
   widthPx?: number
   heightPx?: number
-  /** wp:anchor floating (otherwise inline) */
+  /** wp:anchor floating / VML position:absolute (otherwise inline) */
   floating?: boolean
+  /** behind body text (negative VML z-index): picture watermarks */
+  behind?: boolean
+  /** VML mso-position-horizontal (margin/page relative) */
+  posH?: 'left' | 'center' | 'right'
+  /** VML mso-position-vertical (margin/page relative) */
+  posV?: 'top' | 'center' | 'bottom'
+  /** v:imagedata gain/blacklevel present (Word watermark washout preset) */
+  washout?: boolean
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
@@ -453,6 +466,43 @@ export interface ChartDisplay {
   /** display size (from wp:extent), editable via the corner resize handle */
   widthPx?: number
   heightPx?: number
+}
+
+/** One SmartArt shape from the precomputed diagram drawing part (dsp:sp), in px */
+export interface DiagramShape {
+  xPx: number
+  yPx: number
+  wPx: number
+  hPx: number
+  /** a:prstGeom preset (roundRect/ellipse/...); rendering approximates by radius */
+  prst?: string
+  /** solid fill (hex without '#') */
+  fillHex?: string
+  /** picture fill (a:blipFill) */
+  imageDataUrl?: string
+  /** a:stretch/a:fillRect fractions of the picture fill (negative = bleed) */
+  fillRect?: { l: number; t: number; r: number; b: number }
+  /** paragraph texts of the shape's txBody */
+  texts?: string[]
+  fontSizePt?: number
+  textColorHex?: string
+  /** rotation in degrees (a:xfrm rot / 60000) */
+  rotDeg?: number
+}
+
+/** SmartArt display-only degrade from diagrams/drawingN.xml (Word's resolved layout) */
+export interface DiagramDisplay {
+  widthPx: number
+  heightPx: number
+  shapes: DiagramShape[]
+  /** anchored-drawing offset of the diagram's own wp:anchor (EMU) */
+  offsetXEmu?: number
+  offsetYEmu?: number
+  /** wrapNone/behind/front anchor (or sharing a paragraph with other drawings): leaves the flow like Word */
+  floating?: boolean
+  /** drawing-canvas display (lockedCanvas): text renders at its raw font size
+   *  and overflows the scaled child geometry instead of clipping (LO behavior) */
+  canvas?: boolean
 }
 
 /** A new chart to embed at save time (becomes word/charts/chartN.xml + relationship). */
@@ -690,6 +740,10 @@ export interface Block {
   /** display size from wp:extent in CSS px (type === 'image') */
   imageWidthPx?: number
   imageHeightPx?: number
+  /** source crop (a:srcRect) as fractions of the source picture (display-only) */
+  imageCrop?: { l: number; t: number; r: number; b: number }
+  /** fill placement (a:stretch/a:fillRect) as fractions of the shape box; negative = bleed (display-only) */
+  imageFillRect?: { l: number; t: number; r: number; b: number }
   /** paragraph alignment of the image (w:jc) */
   imageAlign?: 'left' | 'center' | 'right'
   /** text wrapping of a floating image (wp:anchor); absent = inline (in line with text) */
@@ -736,6 +790,8 @@ export interface Block {
   formulaDisplay?: FormulaDisplay
   /** display/edit model of an embedded chart (set on chart-labeled blocks) */
   chartDisplay?: ChartDisplay
+  /** display-only SmartArt degrade from the precomputed diagram drawing part */
+  diagramDisplay?: DiagramDisplay
   /**
    * When this block was wrapped in a w:sdt (structured document tag), the
    * original sdtPr + shell bytes are stored here for save-time re-wrapping.
@@ -817,6 +873,25 @@ export interface TextboxDisplay {
    */
   readOnly?: boolean
   paras: TextboxParaDisplay[]
+  /** this box's own wp:anchor offset (EMU); with `floating`, the box positions
+   *  absolutely at the offset from the paragraph's flow origin */
+  offsetXEmu?: number
+  offsetYEmu?: number
+  /** wrapNone/behind/front anchors — or any anchored shape sharing its
+   *  paragraph with other drawings — leave the flow like Word (absolute
+   *  position, no flow height) instead of stacking as blocks */
+  floating?: boolean
+  /** rotation in degrees clockwise (a:xfrm rot / 60000) */
+  rotDeg?: number
+  /** border width in CSS px (a:ln w) */
+  borderWidthPx?: number
+  /** dashed/dotted border (a:prstDash) */
+  borderDash?: 'dashed' | 'dotted'
+  /** picture fill (a:blipFill in the shape properties, or a pic:pic photo
+   *  sharing a multi-drawing paragraph), as a data URL */
+  fillImageDataUrl?: string
+  /** tile the picture fill (a:tile) instead of stretching it */
+  fillTile?: boolean
 }
 
 /** Final body content decided by the editor at save time. */
@@ -868,6 +943,8 @@ export interface StyleDisplay {
   font?: string
   /** latin-slot font when it differs from the east-asian one (w:ascii/w:hAnsi) */
   fontAscii?: string
+  /** the EA face is a backfill for an empty theme slot (<a:ea typeface=""/>), not a document choice */
+  eaSlotEmpty?: boolean
   /** complex-script font (w:rFonts cs/cstheme) */
   csFont?: string
   /** character spacing (rPr w:spacing, twips, may be negative) */
@@ -955,6 +1032,8 @@ export interface DocDefaults {
   asciiFont?: string
   /** default Chinese font (rPrDefault w:rFonts w:eastAsia) — determines the CJK line-height factor */
   eastAsiaFont?: string
+  /** eastAsiaFont is a lang-based backfill for an empty theme slot, not a document choice */
+  eaSlotEmpty?: boolean
   /** bold/italic/color from rPrDefault (display-layer defaults, used by canvas CSS) */
   bold?: boolean
   italic?: boolean

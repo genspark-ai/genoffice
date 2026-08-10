@@ -319,6 +319,16 @@ out += sub('SIL Open Font License 1.1 — full text')
 out +=
   readFileSync(join(ROOT, 'apps/docs/src/renderer/fonts/LICENSE-OFL.txt'), 'utf8').trim() + '\n'
 
+out += hr('4. Unicode Character Database data')
+out += `
+apps/pdf/src/shared/radicals.ts contains a generated mapping derived from
+Unicode Character Database 17.0.0, EquivalentUnifiedIdeograph.txt
+(2025-08-01):
+https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
+
+`
+out += readFileSync(join(ROOT, 'LICENSE-UNICODE.txt'), 'utf8').trim() + '\n'
+
 const dest = join(ROOT, 'apps/shell/build/THIRD-PARTY-NOTICES.txt')
 mkdirSync(dirname(dest), { recursive: true })
 writeFileSync(dest, out)

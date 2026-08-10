@@ -50,7 +50,9 @@ export interface FontMetricsProvider {
 // ── Grapheme clusters ───────────────────────────────────────────────
 
 const SEGMENTER: Intl.Segmenter | null =
-  typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null
 
 /**
  * Split by grapheme cluster (combining marks / ZWJ emoji / flags / skin-tone
@@ -103,8 +105,13 @@ function charAdvanceEm(code: number): number {
   if (isWideChar(code)) return 1.0
   // emoji ranges (rough)
   if (code >= 0x1f000 || (code >= 0x2600 && code <= 0x27bf)) return 1.0
+  // Geometric shapes (◆ ○ ▪ ► …) and the CJK reference mark ※: EAW "Ambiguous" —
+  // this fallback runs when the resolved font lacks the glyph, and the browser then
+  // substitutes a CJK font where these draw full-width. Over-estimating only widens
+  // a gap; under-estimating makes bullet glyphs overlap the text they precede.
+  if ((code >= 0x25a0 && code <= 0x25ff) || code === 0x203b) return 1.0
   // narrow characters
-  if ('iIlj.,:;\'!|'.includes(String.fromCharCode(code))) return 0.28
+  if ("iIlj.,:;'!|".includes(String.fromCharCode(code))) return 0.28
   if (' ftr'.includes(String.fromCharCode(code))) return 0.32
   if ('mwMW'.includes(String.fromCharCode(code))) return 0.82
   // general Latin / digits

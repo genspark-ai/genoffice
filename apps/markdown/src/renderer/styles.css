@@ -1514,36 +1514,6 @@ body {
   box-shadow: 0 0 0 3px var(--md-focus-ring-blue);
 }
 
-/* Tooltip: dark pill under the button, 0.3s hover delay */
-.ai-msg-tool-btn::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  translate: -50% 0;
-  margin-top: 6px;
-  padding: 4px 8px;
-  background: var(--color-btn-primary);
-  color: var(--color-btn-primary-text);
-  font-size: 12px;
-  line-height: 1.5;
-  border-radius: 10px;
-  box-shadow: 0 4px 6px var(--md-shadow-soft);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease;
-  transition-delay: 0s;
-  z-index: 10;
-}
-
-.ai-msg-tool-btn:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transition-delay: 0.3s;
-}
-
 .ai-msg-tool-btn:active {
   filter: brightness(0.88);
   transform: scale(0.98);
@@ -1998,44 +1968,6 @@ body {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-}
-
-/* fast tooltip: dark pill under the button (icon-only buttons need a quick label) */
-.tm-btn[data-tip]::after,
-.md-gutter-btn[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  translate: -50% 0;
-  margin-top: 8px;
-  padding: 4px 8px;
-  background: var(--color-btn-primary);
-  color: var(--color-btn-primary-text);
-  font-size: 12px;
-  line-height: 1.4;
-  border-radius: 8px;
-  box-shadow: var(--md-tip-shadow);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease;
-  transition-delay: 0s;
-  z-index: 50;
-}
-
-.tm-btn[data-tip]:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transition-delay: 0.15s;
-}
-
-/* the gutter is passed on the way to other targets — show its hint a bit later */
-.md-gutter-btn[data-tip]:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transition-delay: 0.45s;
 }
 
 .tm-btn:hover {

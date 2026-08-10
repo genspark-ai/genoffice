@@ -1,10 +1,15 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateInfo } from 'electron-updater'
 import { createI18n, getUiLang, htmlLang } from '@genoffice/i18n'
 import type { UpdateChannel, UpdateUiState, UpdateUiStrings } from '../shared/update-api'
-import { closeUpdateWindow, pushUpdateState, showUpdateWindow } from './update-window'
+import {
+  closeUpdateWindow,
+  isUpdateWindowOpen,
+  pushUpdateState,
+  showUpdateWindow,
+} from './update-window'
 
 /**
  * Full-package auto-update over the generic provider (Azure CDN).
@@ -39,6 +44,8 @@ const tUpd = createI18n({
     updDownloading: '正在下载更新…',
     updFailed: '更新下载失败，请检查网络后重试。',
     updRetry: '重试',
+    updManual: '自动更新失败，请从下载页面获取最新版本并手动安装。',
+    updOpenDownload: '前往下载页面',
   },
   en: {
     updTitle: 'Software Update',
@@ -51,6 +58,9 @@ const tUpd = createI18n({
     updDownloading: 'Downloading update…',
     updFailed: 'Update download failed. Check your network and try again.',
     updRetry: 'Retry',
+    updManual:
+      'Automatic update failed. Please get the latest version from the download page and install it manually.',
+    updOpenDownload: 'Open Download Page',
   },
   ja: {
     updTitle: 'ソフトウェアアップデート',
@@ -63,6 +73,9 @@ const tUpd = createI18n({
     updDownloading: 'アップデートをダウンロード中…',
     updFailed: 'ダウンロードに失敗しました。ネットワークを確認して再試行してください。',
     updRetry: '再試行',
+    updManual:
+      '自動更新に失敗しました。ダウンロードページから最新バージョンを取得して手動でインストールしてください。',
+    updOpenDownload: 'ダウンロードページを開く',
   },
   ko: {
     updTitle: '소프트웨어 업데이트',
@@ -75,6 +88,9 @@ const tUpd = createI18n({
     updDownloading: '업데이트 다운로드 중…',
     updFailed: '업데이트 다운로드에 실패했습니다. 네트워크를 확인한 후 다시 시도하세요.',
     updRetry: '다시 시도',
+    updManual:
+      '자동 업데이트에 실패했습니다. 다운로드 페이지에서 최신 버전을 받아 직접 설치해 주세요.',
+    updOpenDownload: '다운로드 페이지 열기',
   },
   fr: {
     updTitle: 'Mise à jour logicielle',
@@ -87,6 +103,9 @@ const tUpd = createI18n({
     updDownloading: 'Téléchargement de la mise à jour…',
     updFailed: 'Échec du téléchargement. Vérifiez votre réseau et réessayez.',
     updRetry: 'Réessayer',
+    updManual:
+      'La mise à jour automatique a échoué. Téléchargez la dernière version depuis la page de téléchargement et installez-la manuellement.',
+    updOpenDownload: 'Ouvrir la page de téléchargement',
   },
   de: {
     updTitle: 'Softwareaktualisierung',
@@ -100,6 +119,9 @@ const tUpd = createI18n({
     updFailed:
       'Download fehlgeschlagen. Prüfen Sie Ihre Netzwerkverbindung und versuchen Sie es erneut.',
     updRetry: 'Erneut versuchen',
+    updManual:
+      'Automatisches Update fehlgeschlagen. Laden Sie die neueste Version von der Download-Seite herunter und installieren Sie sie manuell.',
+    updOpenDownload: 'Download-Seite öffnen',
   },
   es: {
     updTitle: 'Actualización de software',
@@ -112,6 +134,9 @@ const tUpd = createI18n({
     updDownloading: 'Descargando la actualización…',
     updFailed: 'Error al descargar. Compruebe su red e inténtelo de nuevo.',
     updRetry: 'Reintentar',
+    updManual:
+      'La actualización automática falló. Descargue la última versión desde la página de descargas e instálela manualmente.',
+    updOpenDownload: 'Abrir página de descargas',
   },
   th: {
     updTitle: 'อัปเดตซอฟต์แวร์',
@@ -123,6 +148,9 @@ const tUpd = createI18n({
     updDownloading: 'กำลังดาวน์โหลดอัปเดต…',
     updFailed: 'ดาวน์โหลดไม่สำเร็จ โปรดตรวจสอบเครือข่ายแล้วลองอีกครั้ง',
     updRetry: 'ลองอีกครั้ง',
+    updManual:
+      'การอัปเดตอัตโนมัติล้มเหลว โปรดดาวน์โหลดเวอร์ชันล่าสุดจากหน้าดาวน์โหลดแล้วติดตั้งด้วยตนเอง',
+    updOpenDownload: 'เปิดหน้าดาวน์โหลด',
   },
   id: {
     updTitle: 'Pembaruan Perangkat Lunak',
@@ -135,6 +163,9 @@ const tUpd = createI18n({
     updDownloading: 'Mengunduh pembaruan…',
     updFailed: 'Unduhan gagal. Periksa jaringan Anda dan coba lagi.',
     updRetry: 'Coba Lagi',
+    updManual:
+      'Pembaruan otomatis gagal. Silakan unduh versi terbaru dari halaman unduhan dan pasang secara manual.',
+    updOpenDownload: 'Buka Halaman Unduhan',
   },
   ru: {
     updTitle: 'Обновление программы',
@@ -147,6 +178,9 @@ const tUpd = createI18n({
     updDownloading: 'Загрузка обновления…',
     updFailed: 'Не удалось загрузить обновление. Проверьте сеть и повторите попытку.',
     updRetry: 'Повторить',
+    updManual:
+      'Автоматическое обновление не удалось. Скачайте последнюю версию со страницы загрузки и установите её вручную.',
+    updOpenDownload: 'Открыть страницу загрузки',
   },
   ar: {
     updTitle: 'تحديث البرنامج',
@@ -158,6 +192,8 @@ const tUpd = createI18n({
     updDownloading: 'جارٍ تنزيل التحديث…',
     updFailed: 'فشل تنزيل التحديث. تحقق من الشبكة وحاول مرة أخرى.',
     updRetry: 'إعادة المحاولة',
+    updManual: 'فشل التحديث التلقائي. يرجى تنزيل أحدث إصدار من صفحة التنزيل وتثبيته يدويًا.',
+    updOpenDownload: 'فتح صفحة التنزيل',
   },
   pt: {
     updTitle: 'Atualização de Software',
@@ -170,6 +206,9 @@ const tUpd = createI18n({
     updDownloading: 'Baixando a atualização…',
     updFailed: 'Falha no download. Verifique sua rede e tente novamente.',
     updRetry: 'Tentar novamente',
+    updManual:
+      'A atualização automática falhou. Baixe a versão mais recente na página de download e instale manualmente.',
+    updOpenDownload: 'Abrir página de download',
   },
   it: {
     updTitle: 'Aggiornamento software',
@@ -182,6 +221,9 @@ const tUpd = createI18n({
     updDownloading: "Download dell'aggiornamento…",
     updFailed: 'Download non riuscito. Controlla la rete e riprova.',
     updRetry: 'Riprova',
+    updManual:
+      "Aggiornamento automatico non riuscito. Scarica l'ultima versione dalla pagina di download e installala manualmente.",
+    updOpenDownload: 'Apri pagina di download',
   },
   pl: {
     updTitle: 'Aktualizacja oprogramowania',
@@ -194,6 +236,9 @@ const tUpd = createI18n({
     updDownloading: 'Pobieranie aktualizacji…',
     updFailed: 'Pobieranie nie powiodło się. Sprawdź sieć i spróbuj ponownie.',
     updRetry: 'Spróbuj ponownie',
+    updManual:
+      'Automatyczna aktualizacja nie powiodła się. Pobierz najnowszą wersję ze strony pobierania i zainstaluj ją ręcznie.',
+    updOpenDownload: 'Otwórz stronę pobierania',
   },
   nl: {
     updTitle: 'Software-update',
@@ -206,6 +251,9 @@ const tUpd = createI18n({
     updDownloading: 'Update wordt gedownload…',
     updFailed: 'Download mislukt. Controleer uw netwerk en probeer het opnieuw.',
     updRetry: 'Opnieuw proberen',
+    updManual:
+      'Automatische update mislukt. Download de nieuwste versie via de downloadpagina en installeer deze handmatig.',
+    updOpenDownload: 'Downloadpagina openen',
   },
   ms: {
     updTitle: 'Kemas Kini Perisian',
@@ -218,6 +266,9 @@ const tUpd = createI18n({
     updDownloading: 'Memuat turun kemas kini…',
     updFailed: 'Muat turun gagal. Semak rangkaian anda dan cuba lagi.',
     updRetry: 'Cuba Lagi',
+    updManual:
+      'Kemas kini automatik gagal. Sila muat turun versi terkini dari halaman muat turun dan pasang secara manual.',
+    updOpenDownload: 'Buka Halaman Muat Turun',
   },
   he: {
     updTitle: 'עדכון תוכנה',
@@ -229,6 +280,8 @@ const tUpd = createI18n({
     updDownloading: 'מוריד את העדכון…',
     updFailed: 'ההורדה נכשלה. בדוק את הרשת ונסה שוב.',
     updRetry: 'נסה שוב',
+    updManual: 'העדכון האוטומטי נכשל. הורד את הגרסה העדכנית מדף ההורדות והתקן אותה ידנית.',
+    updOpenDownload: 'פתח את דף ההורדות',
   },
   hi: {
     updTitle: 'सॉफ़्टवेयर अपडेट',
@@ -241,6 +294,9 @@ const tUpd = createI18n({
     updDownloading: 'अपडेट डाउनलोड हो रहा है…',
     updFailed: 'डाउनलोड विफल रहा। अपना नेटवर्क जाँचें और पुनः प्रयास करें।',
     updRetry: 'पुनः प्रयास करें',
+    updManual:
+      'स्वचालित अपडेट विफल रहा। कृपया डाउनलोड पृष्ठ से नवीनतम संस्करण प्राप्त करें और मैन्युअल रूप से इंस्टॉल करें।',
+    updOpenDownload: 'डाउनलोड पृष्ठ खोलें',
   },
   'zh-TW': {
     updTitle: '軟體更新',
@@ -252,11 +308,21 @@ const tUpd = createI18n({
     updDownloading: '正在下載更新…',
     updFailed: '更新下載失敗，請檢查網路後重試。',
     updRetry: '重試',
+    updManual: '自動更新失敗，請從下載頁面取得最新版本並手動安裝。',
+    updOpenDownload: '前往下載頁面',
   },
 })
 
 const FIRST_CHECK_DELAY_MS = 15_000
 const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+
+// After this many failed download/apply attempts for the same version the
+// dialog stops offering "retry" and guides the user to a manual download
+// instead. Covers permanently broken update paths — most importantly a
+// code-signing identity (Apple Team ID) change, which Squirrel.Mac rejects
+// on every retry while the error looks like a download failure to the user.
+const MANUAL_FALLBACK_AFTER = 2
+const DOWNLOAD_PAGE_URL = 'https://github.com/genspark-ai/genoffice/releases/latest'
 
 let started = false
 // version the user declined this session — don't nag again until next launch
@@ -287,6 +353,8 @@ function uiStrings(): UpdateUiStrings {
     downloading: tUpd(lang, 'updDownloading'),
     failed: tUpd(lang, 'updFailed'),
     retry: tUpd(lang, 'updRetry'),
+    manualDesc: tUpd(lang, 'updManual'),
+    openDownload: tUpd(lang, 'updOpenDownload'),
   }
 }
 
@@ -347,13 +415,27 @@ export function initAutoUpdater(
   autoUpdater.disableDifferentialDownload = true
 
   let latestSeenVersion: string | null = null
+  // consecutive failed attempts for latestSeenVersion; a download can fail
+  // through the downloadUpdate() rejection OR only through the 'error' event
+  // (macOS: Squirrel.Mac reports signature/apply failures natively), so both
+  // paths funnel into failDownload() and the in-flight flag dedupes them
+  let failedAttempts = 0
+  let downloadInFlight = false
+
+  const failDownload = (): void => {
+    if (!downloadInFlight) return
+    downloadInFlight = false
+    failedAttempts += 1
+    pushUpdateState({ phase: failedAttempts >= MANUAL_FALLBACK_AFTER ? 'manual' : 'error' })
+  }
 
   const actions = {
     onDownload: () => {
+      downloadInFlight = true
       pushUpdateState({ phase: 'downloading', percent: 0 })
       autoUpdater.downloadUpdate().catch((err) => {
         log('download failed:', err?.message ?? err)
-        pushUpdateState({ phase: 'error' })
+        failDownload()
       })
     },
     onInstall: () => {
@@ -365,18 +447,29 @@ export function initAutoUpdater(
       dismissedVersion = latestSeenVersion
       closeUpdateWindow()
     },
+    onOpenDownload: () => {
+      void shell.openExternal(DOWNLOAD_PAGE_URL)
+    },
   }
 
   autoUpdater.on('error', (err) => {
     // network failures during background checks are expected; only surface
     // when the user is watching a download
     log('error:', err?.message ?? err)
+    failDownload()
   })
 
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     if (info.version === dismissedVersion) return
+    const sameVersionRecheck = info.version === latestSeenVersion
+    if (!sameVersionRecheck) failedAttempts = 0
     latestSeenVersion = info.version
     log('update available:', info.version)
+    // a periodic recheck resolving to the version the open dialog already
+    // shows must not reset its phase to 'available' — that would wipe an
+    // in-progress download or a terminal 'manual' fallback back to the
+    // "Update Now" offer
+    if (sameVersionRecheck && isUpdateWindowOpen()) return
     showUpdateWindow(getWindow(), initialState(info.version), actions)
   })
 
@@ -386,6 +479,8 @@ export function initAutoUpdater(
 
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
     log('downloaded:', info.version)
+    downloadInFlight = false
+    failedAttempts = 0
     pushUpdateState({ phase: 'downloaded', percent: 100 })
   })
 
@@ -420,6 +515,9 @@ function initFakeUpdate(getWindow: () => BrowserWindow | null, version: string):
     onLater: () => {
       if (timer) clearInterval(timer)
       closeUpdateWindow()
+    },
+    onOpenDownload: () => {
+      log('[fake] open download page requested')
     },
   }
   setTimeout(() => showUpdateWindow(getWindow(), initialState(version), actions), 1500)

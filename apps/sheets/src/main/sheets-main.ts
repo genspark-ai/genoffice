@@ -36,6 +36,7 @@ import type {
 import { z } from 'zod'
 import {
   appMenuLabels,
+  configuredDefaultSaveDir,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
@@ -1076,7 +1077,14 @@ async function openFileDialog(event: IpcMainInvokeEvent, options: OpenDialogOpti
 }
 
 async function saveFileDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
-  return showSaveDialogWithMemory(dialog, dialogParent(event), options)
+  // before any pick is remembered, bare-name suggestions anchor in the
+  // configurable default save folder instead of Electron's Downloads pin
+  return showSaveDialogWithMemory(
+    dialog,
+    dialogParent(event),
+    options,
+    configuredDefaultSaveDir(app),
+  )
 }
 
 /** register a tab's webContents/client pair and wire up cleanup on teardown */
@@ -2619,7 +2627,7 @@ async function openWorkbookSession(
   csvImport?: boolean,
 ): Promise<WorkbookFile> {
   const [opened, digest] = await Promise.all([
-    client.open(path).then((result) => sidecarOpenResultSchema.parse(result)),
+    client.open(path, getUiLang()).then((result) => sidecarOpenResultSchema.parse(result)),
     sha256File(path),
   ])
   sessions.set(opened.sessionId, {

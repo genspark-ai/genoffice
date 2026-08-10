@@ -1996,13 +1996,27 @@ export function App() {
   }, [selectedNode, current, slides])
 
   // Contextual tabs: expose the element type to the Ribbon for single selection
-  const contextElementType = useMemo((): 'table' | 'chart' | 'picture' | null => {
-    if (!selectedNode) return null
-    if (selectedNode.type === 'table') return 'table'
-    if (selectedNode.type === 'chart') return 'chart'
-    if (selectedNode.type === 'picture') return 'picture'
+  const contextElementType = useMemo((): 'table' | 'chart' | 'picture' | 'shape' | null => {
+    if (selectedNode) {
+      if (selectedNode.type === 'table') return 'table'
+      if (selectedNode.type === 'chart') return 'chart'
+      if (selectedNode.type === 'picture') return 'picture'
+      // Shapes and groups share the picture-tools contextual tab (outline applies;
+      // picture-only tools disable)
+      if (selectedNode.type === 'shape' || selectedNode.type === 'group') return 'shape'
+      return null
+    }
+    // Multi-select of shapes/pictures/groups keeps the picture-tools tab (as 'shape':
+    // outline applies to the whole selection, single-picture tools like crop stay disabled)
+    if (selectedIds.length >= 2) {
+      const nodes = selectedIds.map((id) => findNodeCtx(id)?.node)
+      if (
+        nodes.every((n) => n && (n.type === 'shape' || n.type === 'picture' || n.type === 'group'))
+      )
+        return 'shape'
+    }
     return null
-  }, [selectedNode])
+  }, [selectedNode, selectedIds, findNodeCtx])
 
   /** Whether the selected picture supports background removal (audio/video poster frames / no data don't) */
   const contextPictureCanCutout = useMemo(() => {
@@ -2012,10 +2026,24 @@ export function App() {
   }, [selectedNode])
 
   const contextPictureStroke = useMemo(() => {
-    if (selectedNode?.type !== 'picture') return null
-    const s = (selectedNode as PictureRenderNode).stroke
+    // Multi-select shows the first shape/picture's current outline as the panel state
+    // (for a group, the first strokeable child stands in)
+    const strokeable = (n: RenderNode | undefined): PictureRenderNode | undefined => {
+      if (!n) return undefined
+      if (n.type === 'picture' || n.type === 'shape') return n as PictureRenderNode
+      if (n.type === 'group')
+        return (n as GroupRenderNode).children.find(
+          (c) => c.type === 'picture' || c.type === 'shape',
+        ) as PictureRenderNode | undefined
+      return undefined
+    }
+    let s: PictureRenderNode['stroke']
+    for (const id of selectedIds) {
+      s = strokeable(findNodeCtx(id)?.node)?.stroke
+      if (s) break
+    }
     return s ? { color: s.color, widthPt: s.widthPt, dashPreset: s.dashPreset } : null
-  }, [selectedNode])
+  }, [selectedIds, findNodeCtx])
 
   const contextChartStyle = useMemo(
     () =>
@@ -2452,7 +2480,27 @@ export function App() {
         contextPictureCanCutout={contextPictureCanCutout}
         contextPictureStroke={contextPictureStroke}
         onPictureStroke={(stroke) => {
-          if (selectedNode?.type === 'picture') void onStroke(selectedNode.sourceId, stroke)
+          // applies to every selected shape/picture; a selected group pierces one level
+          // down so its shape/picture members get the outline (PowerPoint semantics)
+          for (const id of selectedIds) {
+            const n = findNodeCtx(id)?.node
+            if (!n) continue
+            if (n.type === 'picture' || n.type === 'shape') {
+              void onStroke(id, stroke)
+            } else if (n.type === 'group') {
+              for (const c of (n as GroupRenderNode).children) {
+                if (c.type === 'picture' || c.type === 'shape')
+                  void window.slidesApi
+                    .editStroke({
+                      slideIndex: current,
+                      sourceId: c.sourceId,
+                      stroke,
+                      groupId: n.sourceId,
+                    })
+                    .then((r) => r && applySlide(current, r))
+              }
+            }
+          }
         }}
         onPictureCrop={startCrop}
         cropActive={cropTarget != null}
@@ -2501,7 +2549,12 @@ export function App() {
                 currentFilePath={path}
               />
             ) : (
-              <button className="ai-rail" onClick={toggleAi} title={t('appAiRailExpand')}>
+              <button
+                className="ai-rail"
+                onClick={toggleAi}
+                data-tip={t('appAiRailExpand')}
+                aria-label={t('appAiRailExpand')}
+              >
                 <GensparkMark size={22} />
               </button>
             )}
@@ -2523,7 +2576,7 @@ export function App() {
                   <div className="reading-view">
                     <div
                       className="reading-slide"
-                      title={t('appReadingSlideTitle')}
+                      data-tip={t('appReadingSlideTitle')}
                       onClick={() => setCurrent((c) => Math.min(c + 1, slides.length - 1))}
                     >
                       <SlideThumb slide={slide} images={images} width={readW} />
@@ -2557,7 +2610,7 @@ export function App() {
                   <div
                     key={i}
                     className={`sorter-item ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
-                    title={s.hidden ? t('appSorterHiddenTitle') : t('appSorterItemTitle')}
+                    data-tip={s.hidden ? t('appSorterHiddenTitle') : t('appSorterItemTitle')}
                     {...thumbDragProps(i, true)}
                     onClick={() => {
                       setCurrent(i)
@@ -2630,7 +2683,7 @@ export function App() {
                             <div
                               key={i}
                               className={`thumb ${i === current ? 'active' : ''} ${s.hidden ? 'thumb-hidden' : ''}${thumbDragCls(i)}`}
-                              title={s.hidden ? t('appThumbHiddenTitle') : undefined}
+                              data-tip={s.hidden ? t('appThumbHiddenTitle') : undefined}
                               {...thumbDragProps(i)}
                               onClick={() => {
                                 setCurrent(i)
@@ -2747,7 +2800,7 @@ export function App() {
                       <div className="stage-ai-bar">
                         <button
                           className={`stage-ai-btn${showAi ? ' active' : ''}`}
-                          title={t('aiOpenAssistant')}
+                          data-tip={t('aiOpenAssistant')}
                           onClick={toggleAi}
                         >
                           <GensparkMark size={14} />
@@ -2760,7 +2813,7 @@ export function App() {
                             <span className="stage-ai-divider" aria-hidden="true" />
                             <button
                               className="stage-ai-btn"
-                              title={t('aiBeautifyPrompt')}
+                              data-tip={t('aiBeautifyBtn')}
                               onClick={() =>
                                 pushAiPreset(
                                   t('aiBeautifyPrompt'),
@@ -2776,7 +2829,7 @@ export function App() {
                             </button>
                             <button
                               className="stage-ai-btn"
-                              title={t('aiFactCheckPrompt')}
+                              data-tip={t('aiFactCheckBtn')}
                               onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
                             >
                               <IconAiFactCheck size={14} />
@@ -2784,7 +2837,7 @@ export function App() {
                             </button>
                             <button
                               className="stage-ai-btn"
-                              title={t('aiImagePrompt')}
+                              data-tip={t('aiImageBtn')}
                               onClick={() => pushAiPreset(t('aiImagePrompt'))}
                             >
                               <IconAiImage size={14} />
@@ -2910,7 +2963,7 @@ export function App() {
                                       ? { left: `${g.pos * 100}%` }
                                       : { top: `${g.pos * 100}%` }
                                   }
-                                  title={t('appGuideDragTip')}
+                                  data-tip={t('appGuideDragTip')}
                                   onPointerDown={(e) => {
                                     e.preventDefault()
                                     e.currentTarget.setPointerCapture(e.pointerId)
@@ -3007,7 +3060,8 @@ export function App() {
                                 )}
                                 <button
                                   onClick={() => setMediaPlay(null)}
-                                  title={t('appMediaCloseTitle')}
+                                  data-tip={t('appMediaCloseTitle')}
+                                  aria-label={t('appMediaCloseTitle')}
                                   style={{
                                     position: 'absolute',
                                     top: 4,
@@ -3176,7 +3230,7 @@ export function App() {
               {hasDoc && (
                 <button
                   className={`status-notes-btn${showNotes ? ' on' : ''}`}
-                  title={showNotes ? t('appNotesHide') : t('appNotesShow')}
+                  data-tip={showNotes ? t('appNotesHide') : t('appNotesShow')}
                   onClick={() => setShowNotes((v) => !v)}
                 >
                   {t('appNotesLabel')}

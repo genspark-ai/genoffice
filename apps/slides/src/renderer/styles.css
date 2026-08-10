@@ -584,13 +584,30 @@ button {
      the row: scroll it inside the ribbon instead of stretching the document
      (matching the sheets ribbon). Dropdown panels are NOT clipped by this —
      .rb-drop escapes the scroll container via anchor positioning. */
-  overflow-x: auto;
+  /* `scroll`, not `auto`: styled scrollbars are classic (non-overlay), so
+     `scroll` keeps the 5px lane reserved even without overflow — the content
+     area never changes and crossing the overflow threshold cannot cause a
+     vertical layout jump (same reasoning as .ai-attachments). */
+  overflow-x: scroll;
   overflow-y: hidden;
-  scrollbar-width: none;
+  /* Slim visible scrollbar so mouse users can reach overflowed groups
+     (genspark-ai/genoffice#55). Its 5px lane is carved out of the bottom
+     padding, keeping the 80px band and the content area unchanged; Chromium
+     paints a thumb only while the row actually overflows. */
+  padding-bottom: 1px;
 }
 
 .ribbon-body::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.ribbon-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ribbon-body::-webkit-scrollbar-thumb {
+  border-radius: 2.5px;
+  background: var(--slides-scroll-thumb);
 }
 
 .ribbon-group {
@@ -2156,8 +2173,53 @@ body.vib .slide-list {
   height: 20px;
 }
 
-.ai-msg-tool-btn:hover {
+.ai-msg-tool-btn:hover:not(:disabled) {
   background: var(--color-bg-subtle);
+}
+
+.ai-msg-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Hairline before the roll-back action; hidden unless an icon action precedes it */
+.ai-rollback-sep {
+  display: none;
+  width: 1px;
+  height: 14px;
+  align-self: center;
+  background: var(--border);
+}
+
+.ai-msg-tool-btn ~ .ai-rollback-sep {
+  display: block;
+}
+
+/* Quiet roll-back in the message toolbar (after copy/regenerate): dim at rest, solid on hover */
+.ai-rollback-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 30px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ai-rollback-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.ai-rollback-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .ai-msg-tool-btn:focus-visible {
@@ -2170,35 +2232,6 @@ body.vib .slide-list {
   position: relative;
 }
 
-.ai-msg-tool-btn::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  translate: -50% 0;
-  margin-top: 6px;
-  padding: 4px 8px;
-  background: var(--color-btn-primary);
-  color: var(--color-btn-primary-text);
-  font-size: 12px;
-  line-height: 1.5;
-  border-radius: 10px;
-  box-shadow: var(--slides-shadow-tip);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  transition-delay: 0s;
-  z-index: 10;
-}
-
-.ai-msg-tool-btn:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transition-delay: 0.3s;
-}
-
 /* Global press feedback */
 .ai-msg-tool-btn:active {
   filter: brightness(0.88);
@@ -2209,81 +2242,6 @@ body.vib .slide-list {
   margin-top: 6px;
   color: var(--slides-ai-error);
   font-size: 13px;
-}
-
-.ai-versions {
-  border-top: 1px solid var(--border);
-  padding: 8px 14px 10px;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.ai-versions-title {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-}
-
-.ai-version-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  padding: 4px 8px;
-  margin: 0 -8px;
-  border-radius: 6px;
-}
-
-.ai-version-row:hover {
-  background: var(--hover);
-}
-
-.ai-version-label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  color: var(--text);
-  min-width: 0;
-}
-
-.ai-version-label > :last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ai-version-time {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-version-rollback {
-  flex-shrink: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.ai-version-rollback:hover:not(:disabled) {
-  background: var(--active-bg);
-}
-
-.ai-version-rollback:disabled {
-  color: var(--text-dim);
-  cursor: default;
-  opacity: 0.6;
 }
 
 .ai-composer {
@@ -2565,6 +2523,38 @@ body.vib .slide-list {
   margin-top: 4px;
   font-size: 11px;
   color: var(--color-text-tertiary);
+}
+
+/* attachments echoed on a sent user message (read-only: no remove button, smaller thumbs) */
+.ai-msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ai-msg-attachments .ai-attachment-thumb img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.ai-msg-attachments .ai-attachment-card {
+  width: auto;
+  max-width: 190px;
+  height: 44px;
+  background: var(--surface);
+}
+
+.ai-msg-attachments .ai-attachment-card-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--surface-subtle);
+}
+
+.ai-msg-attachments .ai-attachment-card-icon img {
+  width: 22px;
+  height: 22px;
 }
 
 .ai-attachment-chip {

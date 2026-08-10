@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
+import { platformShortcuts } from '@genoffice/i18n'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
 import { cssFontFamily } from '../line-metrics'
@@ -187,7 +188,7 @@ export function EditorContextMenu({
           <IconSparkle size={10} />
         </span>
       )}
-      {opts.key && <span className="ctx-key">{opts.key}</span>}
+      {opts.key && <span className="ctx-key">{platformShortcuts(opts.key)}</span>}
       {opts.submenuKey && <span className="ctx-arrow">›</span>}
     </button>
   )

@@ -13,6 +13,7 @@ import { basename, join } from 'node:path'
 import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import {
   appMenuLabels,
+  configuredDefaultSaveDir,
   contextMenuLabels,
   fetchRemoteImage,
   installContextMenu,
@@ -20,6 +21,7 @@ import {
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
+  toggleDevToolsItem,
   windowMenuTemplate,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
@@ -1944,14 +1946,14 @@ async function openDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions)
 }
 
 async function saveDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
-  return showSaveDialogWithMemory(dialog, dialogParent(event), options)
+  // before any pick is remembered, bare-name suggestions anchor in the
+  // configurable default save folder instead of Electron's Downloads pin
+  return showSaveDialogWithMemory(dialog, dialogParent(event), options, defaultSaveDir())
 }
 
-/** default folder where new files land on their first (silent) save; shared with the other editors via shell */
+/** default folder where new files land on their first (silent) save; shared with the other editors via shell. User-configurable (app-settings.json), falls back to <Documents>/GenOffice. */
 export function defaultSaveDir(): string {
-  const dir = join(app.getPath('documents'), 'GenOffice')
-  mkdirSync(dir, { recursive: true })
-  return dir
+  return configuredDefaultSaveDir(app)
 }
 
 /** first free path for fileName inside dir: name.ext, name-2.ext, name-3.ext… */
@@ -3420,7 +3422,7 @@ export function buildDocsMenu(): void {
         },
         { type: 'separator' },
         { role: 'togglefullscreen', label: tm('menuFullscreen') },
-        ...(isDev ? [{ role: 'toggleDevTools' as const }] : []),
+        ...(isDev ? [toggleDevToolsItem(appMenuLabels(getUiLang()))] : []),
       ],
     },
     {

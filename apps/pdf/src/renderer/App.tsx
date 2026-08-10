@@ -43,7 +43,13 @@ import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import { buildSearchIndex, searchInIndex } from './search'
 import type { SearchIndex, SearchMatch } from './search'
 import { groupPageBlocks, type TextBlock } from './text-block'
-import { joinBlockLines, measurePt, wrapText } from './text-wrap'
+import {
+  joinBlockLines,
+  mapLineRangeToBlock,
+  measurePt,
+  spliceBlockText,
+  wrapText,
+} from './text-wrap'
 import {
   colorRunsEqual,
   colorSegments,
@@ -52,6 +58,7 @@ import {
   runsToColors,
   spliceCharColors,
 } from './color-runs'
+import { platformShortcuts } from '@genoffice/i18n'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
 import { EDIT_FONTS } from '../shared/ipc'
@@ -66,6 +73,7 @@ import type {
   StampInput,
   TextEditFailure,
   TextEditInput,
+  TextEditValidation,
 } from '../shared/ipc'
 
 const EDIT_FONT_BY_ID = new Map<string, (typeof EDIT_FONTS)[number]>(
@@ -258,7 +266,7 @@ function MarkupOverlay({
               key={`${m.id}-${i}`}
               className={`pdf-markup pdf-markup-${m.type}${m.id === selectedId ? ' pdf-markup-selected' : ''}`}
               style={style}
-              title={selectTitle}
+              data-tip={selectTitle}
               onClick={(e) => onSelect(m.id, e.clientX, e.clientY)}
             />
           )
@@ -740,6 +748,9 @@ interface LocalTextEdit {
   /** Matched run's ink bounds from validation (PDF user space). The edit rect is a pdf.js
       layout box; glyph ink can poke out of it, so the preview covers this instead */
   cover?: [number, number, number, number]
+  /** The run's base ink (display-only, from the draft's probe): the pending preview
+      shows the document's real color when the edit doesn't change it */
+  baseInk?: string
 }
 
 /** Area a pending edit must blank: the edit rect grown to the validated ink bounds */
@@ -781,12 +792,26 @@ interface TextDraft {
   /** Selection-level colors, one hex per code unit of value; '' = base (color ?? original).
       undefined/all-'' = uniform draft (the pre-existing single-color behavior). */
   charColors?: string[]
+  /** Colors the document already draws the run with (async, from the open probe),
+      pre-seeded into charColors. A commit whose colors still equal these carries
+      no color *change* — they only ride along so a rebuild repaints them. */
+  seedColorRuns?: { start: number; end: number; color: string }[]
+  /** The run's base ink in the document (async, from the open probe). Display-only:
+      the editor/preview text shows the real color; never committed as a change. */
+  seedInk?: string
   /** EDIT_FONTS id; undefined = automatic rebuild font */
   font?: string
   /** Style toggles; true = on, undefined = off (resolved via font variants at save) */
   bold?: true
   italic?: true
   editId?: string
+  /** Further pending edits folded into this block draft (besides editId); the
+      commit replaces editId and removes these — they would overlap the block
+      edit at save otherwise */
+  foldedIds?: string[]
+  /** The value the editor opened with when pending edits were folded in: an
+      unmodified commit must keep those edits instead of converting them */
+  foldBase?: string
   /** Ink bounds of the run being edited (async, from a dry-run validate) */
   cover?: [number, number, number, number]
   /** Present for paragraph (block) edits: the geometry the commit reflows into.
@@ -797,6 +822,33 @@ interface TextDraft {
     widthPt: number
     lineHeight: number
     align: 'left' | 'center' | 'right'
+  }
+}
+
+/** Seed a fresh draft's colors from the open probe's report of what the document
+    already draws: the run's base ink (display-only) plus earlier saved selection
+    colors. Selection colors only while the draft is pristine — the runs are offsets
+    into oldText, and once typing starts they no longer align (the engine-side
+    rebuild still preserves the colors on save). */
+const seedDraftColors = (d: TextDraft, v: TextEditValidation): TextDraft => {
+  let next = d
+  // Near-white ink would vanish on the editor's white background; keep default ink
+  if (v.baseColor && !next.color && !next.seedInk) {
+    const [r, g, b] = v.baseColor
+    if ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 <= 0.85)
+      next = { ...next, seedInk: rgb255ToHex(v.baseColor) }
+  }
+  if (!v.colorRuns || v.colorRuns.length === 0) return next
+  if (next.charColors || next.seedColorRuns || next.value !== next.oldText) return next
+  const hexRuns = v.colorRuns.map((r) => ({
+    start: r.start,
+    end: r.end,
+    color: rgb255ToHex(r.color),
+  }))
+  return {
+    ...next,
+    charColors: runsToColors(next.oldText.length, hexRuns),
+    seedColorRuns: hexRuns,
   }
 }
 
@@ -891,7 +943,7 @@ function SignDropOverlay({
   return (
     <div
       className="pdf-sign-drop"
-      title={title}
+      data-tip={title}
       onPointerMove={(e) => {
         const box = e.currentTarget.getBoundingClientRect()
         setPt([e.clientX - box.left, e.clientY - box.top])
@@ -1004,6 +1056,9 @@ export default function App() {
   const [textEdits, setTextEdits] = useState<LocalTextEdit[]>([])
   const [editTextMode, setEditTextMode] = useState(false)
   const [textDraft, setTextDraft] = useState<TextDraft | null>(null)
+  /** Current draft for async callbacks (block-probe fallback runs after renders) */
+  const textDraftRef = useRef<TextDraft | null>(null)
+  textDraftRef.current = textDraft
   /** Hover affordance in edit-text mode: one box over the whole merged line */
   interface LineHover {
     origIdx: number
@@ -1109,8 +1164,13 @@ export default function App() {
         /* dropdown simply stays at "original font" */
       })
   }, [])
-  /** Select-all runs once per opened draft; refocusing after a style-bar click must keep the caret */
+  /** Initial caret/selection placement runs once per opened draft; refocusing after a
+      style-bar click must keep the caret */
   const draftSelectedRef = useRef(false)
+  /** Range to select in the next opened draft (WPS-style unified model: a click carries
+      its caret as a collapsed range, a drag carries the dragged characters); null = the
+      position is unknown — the caret goes to the end */
+  const draftPreselectRef = useRef<[number, number] | null>(null)
   /** The open draft's textarea: style-bar color clicks read its selection (kept across blur) */
   const draftTaRef = useRef<HTMLTextAreaElement | null>(null)
   /** Colored mirror behind the transparent-text textarea; scroll-synced to it */
@@ -1693,6 +1753,9 @@ export default function App() {
 
   /** Mouse released over selected text → show the markup bar centered above the selection box (below if it doesn't fit) */
   const handleMouseUp = () => {
+    // In edit-text mode a drag means "choose the characters to edit" (the click
+    // after mouseup opens the editor preselected), not the markup popup
+    if (editTextMode && !readOnly) return
     setTimeout(() => {
       const el = scrollRef.current
       const sel = window.getSelection()
@@ -1808,20 +1871,89 @@ export default function App() {
 
   // ── Text editing (content-stream replacement, applied by the main process at save) ──
 
+  /** Style-free line edit: the only kind that can fold into a paragraph draft
+      (style overrides are scoped to the edited line, a block commit is paragraph-wide) */
+  const isPlainLineEdit = (i: TextEditInput) =>
+    i.origin === undefined &&
+    i.newFontSize === undefined &&
+    i.newColor === undefined &&
+    i.newFont === undefined &&
+    !i.newBold &&
+    !i.newItalic &&
+    !(i.colorRuns && i.colorRuns.length > 0)
+
+  /** Pending line edits inside `block` folded into its paragraph text. Opening the
+      paragraph over them with the original text would hide the user's changes, and
+      committing would create a second edit over the same objects — skipped at save
+      as overlapping. null = nothing to fold or some pending edit inside the block
+      cannot fold (callers keep their previous behavior then). */
+  const foldBlockValue = (
+    origIdx: number,
+    block: TextBlock,
+    blockText: string,
+  ): { value: string; editId: string; foldedIds: string[] } | null => {
+    const inside = textEdits.filter((e) => {
+      if (e.input.pageIndex !== origIdx) return false
+      const r = e.input.rect
+      const cx = (r[0] + r[2]) / 2
+      const cy = (r[1] + r[3]) / 2
+      return (
+        cx >= block.rect[0] && cx <= block.rect[2] && cy >= block.rect[1] && cy <= block.rect[3]
+      )
+    })
+    if (inside.length === 0) return null
+    if (!inside.every((e) => isPlainLineEdit(e.input))) return null
+    // Non-space offset of each block line inside blockText, to disambiguate a
+    // repeated oldText toward the line the edit actually sits on
+    const offsets: number[] = []
+    let acc = 0
+    for (const l of block.lines) {
+      offsets.push(acc)
+      acc += l.text.replace(/\s+/g, '').length
+    }
+    const folded = spliceBlockText(
+      blockText,
+      inside.map((e) => {
+        const cy = (e.input.rect[1] + e.input.rect[3]) / 2
+        const li = block.lines.findIndex((l) => cy >= l.rect[1] && cy <= l.rect[3])
+        return { oldText: e.input.oldText, newText: e.input.newText, hint: offsets[li] ?? 0 }
+      }),
+    )
+    if (folded === null) return null
+    return { value: folded, editId: inside[0]!.id, foldedIds: inside.slice(1).map((e) => e.id) }
+  }
+
   /** Open the paragraph-sized editor over a clustered block: the whole block is the
-      edit unit and the commit reflows the text within the block width */
-  const startBlockEdit = (origIdx: number, block: TextBlock) => {
+      edit unit and the commit reflows the text within the block width. Pending plain
+      line edits inside the block fold into the draft (the commit then replaces them).
+      `fallbackSpan` is the text-layer span under the click: when the dry-run probe
+      reports the block cannot be located as one unit (clustering misfires on table
+      layouts — vertically stacked cells read as a "paragraph"), committing could only
+      ever fail with textEditNoMatch, so degrade to the line-level editor for that
+      span instead. */
+  const startBlockEdit = (
+    origIdx: number,
+    block: TextBlock,
+    fallbackSpan?: HTMLElement,
+    preselect?: [number, number],
+  ) => {
     const oldText = joinBlockLines(block.lines.map((l) => l.text))
     if (!oldText.trim()) return
     const rect: [number, number, number, number] = [...block.rect]
+    const fold = foldBlockValue(origIdx, block, oldText)
     setSelected(null)
     draftSelectedRef.current = false
+    // Preselect offsets are into oldText; folded pending edits shift them
+    draftPreselectRef.current = preselect && (fold?.value ?? oldText) === oldText ? preselect : null
     setTextDraft({
       origIdx,
       rect,
       oldText,
       fontSize: block.fontSize,
-      value: oldText,
+      value: fold?.value ?? oldText,
+      editId: fold?.editId,
+      foldedIds: fold && fold.foldedIds.length > 0 ? fold.foldedIds : undefined,
+      foldBase: fold?.value,
       block: {
         leftPt: block.rect[0],
         firstBaseline: block.lines[0]!.y,
@@ -1841,12 +1973,25 @@ export default function App() {
       void window.pdfApi
         .validateTextEdits({ path: filePath, edits: [probe] })
         .then(([v]) => {
-          if (!v?.bounds) return
-          setTextDraft((d) =>
-            d && !d.editId && d.origIdx === origIdx && d.rect === rect
-              ? { ...d, cover: v.bounds }
-              : d,
-          )
+          if (!v) return
+          if (v.reason) {
+            // Only swap editors while the draft is untouched — yanking typed text
+            // would be worse than the commit-time notice. rect identity pins the
+            // draft this probe belongs to (folded drafts carry an editId).
+            const d = textDraftRef.current
+            if (!d || d.origIdx !== origIdx || d.rect !== rect) return
+            if (d.value !== (d.foldBase ?? d.oldText)) return
+            setTextDraft(null)
+            if (fallbackSpan?.isConnected) openLineEdit(origIdx, fallbackSpan)
+            return
+          }
+          setTextDraft((d) => {
+            if (!d || d.origIdx !== origIdx || d.rect !== rect) return d
+            let next = d
+            if (v.bounds) next = { ...next, cover: v.bounds }
+            next = seedDraftColors(next, v)
+            return next
+          })
         })
         .catch(() => {
           /* cover falls back to the block rect */
@@ -1854,8 +1999,94 @@ export default function App() {
     }
   }
 
+  /** A drag over page text in edit mode (WPS-style) opens the editor with exactly the
+      dragged characters selected: typing replaces just them, a swatch colors just them.
+      Runs off the click that follows the drag's mouseup; returns true when consumed. */
+  const dragEditFromSelection = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>): boolean => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false
+    const range = sel.getRangeAt(0)
+    const layer = e.currentTarget.querySelector('.textLayer')
+    if (!layer) return false
+    const spanOf = (node: Node): HTMLElement | null => {
+      const el = node instanceof Element ? node : node.parentElement
+      const span = el?.closest('.textLayer span')
+      return span instanceof HTMLElement && layer.contains(span) ? span : null
+    }
+    const offsetIn = (span: HTMLElement, node: Node, off: number) =>
+      node === span ? (off === 0 ? 0 : (span.textContent ?? '').length) : off
+    const startSpan = spanOf(range.startContainer)
+    const endSpan = spanOf(range.endContainer)
+    if (!startSpan || !endSpan) return false
+    const gs = groupLineSpans(startSpan)
+    const ge = gs.spans.includes(endSpan) ? gs : groupLineSpans(endSpan)
+    const si = gs.spans.indexOf(startSpan)
+    const ei = ge.spans.indexOf(endSpan)
+    if (si < 0 || ei < 0 || !gs.text.trim()) return false
+    const rawS = gs.starts[si]! + offsetIn(startSpan, range.startContainer, range.startOffset)
+    const rawE = ge.starts[ei]! + offsetIn(endSpan, range.endContainer, range.endOffset)
+    // The block under the drag's start (same lookup as plain clicks)
+    const pageBox = e.currentTarget.getBoundingClientRect()
+    const sr = startSpan.getBoundingClientRect()
+    const [px, py] = viewToPdf(
+      pageGeom(origIdx),
+      (sr.left + sr.width / 2 - pageBox.left) / scale,
+      (sr.top + sr.height / 2 - pageBox.top) / scale,
+    )
+    const block = pageBlocks
+      .get(origIdx)
+      ?.find((b) => px >= b.rect[0] && px <= b.rect[2] && py >= b.rect[1] && py <= b.rect[3])
+    if (block && block.lines.length > 1) {
+      const blockText = joinBlockLines(block.lines.map((l) => l.text))
+      // Cross-line drags map each endpoint through its own visual line
+      const pre =
+        gs === ge
+          ? mapLineRangeToBlock(blockText, gs.text, Math.min(rawS, rawE), Math.max(rawS, rawE))
+          : (() => {
+              const a = mapLineRangeToBlock(blockText, gs.text, rawS, gs.text.length)
+              const b = mapLineRangeToBlock(blockText, ge.text, 0, rawE)
+              return a && b
+                ? ([Math.min(a[0], b[0]), Math.max(a[1], b[1])] as [number, number])
+                : null
+            })()
+      sel.removeAllRanges()
+      startBlockEdit(origIdx, block, startSpan, pre ?? undefined)
+      return true
+    }
+    const pre: [number, number] =
+      gs === ge ? [Math.min(rawS, rawE), Math.max(rawS, rawE)] : [rawS, gs.text.length]
+    sel.removeAllRanges()
+    openLineEdit(origIdx, startSpan, pre)
+    return true
+  }
+
+  /** Caret of a click on page text: the span under the point plus the click's
+      code-unit offset inside its visual line. Unified selection model: a click is a
+      zero-length drag, so it carries a collapsed preselect into the opened editor. */
+  const caretFromPoint = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const layer = e.currentTarget.querySelector('.textLayer')
+    const r = document.caretRangeFromPoint(e.clientX, e.clientY)
+    if (!layer || !r) return null
+    const el =
+      r.startContainer instanceof Element ? r.startContainer : r.startContainer.parentElement
+    const span = el?.closest('.textLayer span')
+    if (!(span instanceof HTMLElement) || !layer.contains(span)) return null
+    const group = groupLineSpans(span)
+    const i = group.spans.indexOf(span)
+    if (i < 0) return null
+    const off =
+      r.startContainer === span ? 0 : Math.min(r.startOffset, (span.textContent ?? '').length)
+    return { span, group, raw: group.starts[i]! + off }
+  }
+
   /** Click on a text-layer span in edit mode → open the floating editor over that run */
   const startTextEdit = (origIdx: number, e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!readOnly && dragEditFromSelection(origIdx, e)) {
+      e.stopPropagation()
+      return
+    }
+    const span = (e.target as HTMLElement).closest('.textLayer span')
+    const caret = caretFromPoint(e)
     // A plain click inside a multi-line clustered block edits the paragraph
     // (WPS-style); Alt+click keeps the line-level editor as the fallback for
     // clustering misfires. Single-line blocks stay on the line path.
@@ -1873,21 +2104,37 @@ export default function App() {
         )
         if (block && block.lines.length > 1) {
           e.stopPropagation()
-          startBlockEdit(origIdx, block)
+          const pre = caret
+            ? (mapLineRangeToBlock(
+                joinBlockLines(block.lines.map((l) => l.text)),
+                caret.group.text,
+                caret.raw,
+                caret.raw,
+              ) ?? undefined)
+            : undefined
+          startBlockEdit(origIdx, block, span instanceof HTMLElement ? span : undefined, pre)
           return
         }
       }
     }
-    const span = (e.target as HTMLElement).closest('.textLayer span')
-    if (!(span instanceof HTMLElement)) return
-    if (!(span.textContent ?? '').trim()) return
+    const anchor = caret?.span ?? (span instanceof HTMLElement ? span : null)
+    if (!anchor) return
+    if (!(anchor.textContent ?? '').trim()) return
+    e.stopPropagation()
+    openLineEdit(origIdx, anchor, caret ? [caret.raw, caret.raw] : undefined)
+  }
+
+  /** Open the line-level floating editor over the visual line containing `span`.
+      Reads live client rects, so it also serves the async block-probe fallback. */
+  const openLineEdit = (origIdx: number, span: HTMLElement, preselect?: [number, number]) => {
+    const pageEl = span.closest('.pdf-page')
+    if (!pageEl) return
     // Edit the whole visual line, not the clicked pdf.js run (CJK is often one span
     // per glyph); the save-side matcher aggregates the covered text objects anyway
     const lineGroup = groupLineSpans(span)
     const oldText = lineGroup.text
     if (!oldText.trim()) return
-    e.stopPropagation()
-    const pageBox = e.currentTarget.getBoundingClientRect()
+    const pageBox = pageEl.getBoundingClientRect()
     const sb = lineGroup.rect
     const geom = pageGeom(origIdx)
     const [ax, ay] = viewToPdf(
@@ -1911,6 +2158,7 @@ export default function App() {
       unionH > 0 ? Math.abs(by - ay) * (lineGroup.fontHeight / unionH) : Math.abs(by - ay)
     setSelected(null)
     draftSelectedRef.current = false
+    draftPreselectRef.current = preselect ?? null
     setTextDraft({ origIdx, rect, oldText, fontSize, value: oldText })
     // The span rect is a font-metric layout box; the run's glyph ink can poke out of it.
     // Fetch the engine's real ink bounds so the editor/preview cover hides the old run fully.
@@ -1925,12 +2173,26 @@ export default function App() {
       void window.pdfApi
         .validateTextEdits({ path: filePath, edits: [probe] })
         .then(([v]) => {
-          if (!v?.bounds) return
-          setTextDraft((d) =>
-            d && !d.editId && d.origIdx === origIdx && d.rect === rect
-              ? { ...d, cover: v.bounds }
-              : d,
-          )
+          if (!v) return
+          if (v.reason) {
+            // The engine cannot locate this line: close the untouched draft with the
+            // notice now instead of letting the user edit and fail at commit time.
+            // A draft the user already typed into stays open (yanking typed text
+            // would be worse) — the commit-time validation still reports it.
+            const d = textDraftRef.current
+            if (!d || d.editId || d.origIdx !== origIdx || d.rect !== rect) return
+            if (d.value !== d.oldText) return
+            setTextDraft(null)
+            showNotice(t('textEditNoMatch'))
+            return
+          }
+          setTextDraft((d) => {
+            if (!d || d.editId || d.origIdx !== origIdx || d.rect !== rect) return d
+            let next = d
+            if (v.bounds) next = { ...next, cover: v.bounds }
+            next = seedDraftColors(next, v)
+            return next
+          })
         })
         .catch(() => {
           /* cover falls back to the span rect */
@@ -2008,11 +2270,33 @@ export default function App() {
     const prevFont = existing?.input.newFont
     const prevBold = existing?.input.newBold ? true : undefined
     const prevItalic = existing?.input.newItalic ? true : undefined
-    const prevRuns = (existing?.input.colorRuns ?? []).map((r) => ({
-      start: r.start,
-      end: r.end,
-      color: rgb255ToHex(r.color),
-    }))
+    // Baseline for "did the colors change": the pending edit's committed runs
+    // (newText offsets, same space as hexRuns), or — for a fresh draft — the
+    // document's own colors the probe seeded (oldText offsets: compare in draft
+    // space, the wrap may shift words and move newText offsets without any
+    // color changing). Seeded colors alone are not a change — they only ride
+    // along so a rebuild repaints them.
+    const prevRuns = existing
+      ? (existing.input.colorRuns ?? []).map((r) => ({
+          start: r.start,
+          end: r.end,
+          color: rgb255ToHex(r.color),
+        }))
+      : (d.seedColorRuns ?? [])
+    const cmpRuns = existing ? hexRuns : draftColors ? colorsToRuns(draftColors) : []
+    // Folded paragraph draft committed untouched: keep the folded line edits as
+    // they are instead of converting them into a whole-paragraph rebuild
+    if (
+      d.foldBase !== undefined &&
+      d.value === d.foldBase &&
+      d.size === undefined &&
+      d.color === undefined &&
+      d.font === undefined &&
+      d.bold === undefined &&
+      d.italic === undefined &&
+      !draftColors
+    )
+      return null
     if (
       cmpValue === prevValue &&
       d.size === prevSize &&
@@ -2020,9 +2304,13 @@ export default function App() {
       d.font === prevFont &&
       d.bold === prevBold &&
       d.italic === prevItalic &&
-      colorRunsEqual(hexRuns, prevRuns)
+      colorRunsEqual(cmpRuns, prevRuns)
     )
       return null
+    const dropFolded = (list: LocalTextEdit[]) =>
+      d.foldedIds && d.foldedIds.length > 0
+        ? list.filter((e) => !d.foldedIds!.includes(e.id))
+        : list
     if (
       d.value === d.oldText &&
       d.size === undefined &&
@@ -2032,13 +2320,13 @@ export default function App() {
       d.italic === undefined &&
       hexRuns.length === 0
     ) {
-      // Reverted back to the original — the pending edit is moot
-      return edits.filter((e) => e.id !== d.editId)
+      // Reverted back to the original — the pending edit(s) are moot
+      return dropFolded(edits.filter((e) => e.id !== d.editId))
     }
     // A blank replacement would erase the run from the page. Edit mode doesn't offer
     // deletion, so a stray Enter in the emptied box means "never mind", not "wipe it"
     if (d.value.trim() === '') {
-      return d.editId ? edits.filter((e) => e.id !== d.editId) : null
+      return d.editId ? dropFolded(edits.filter((e) => e.id !== d.editId)) : null
     }
     const input: TextEditInput = {
       pageIndex: d.origIdx,
@@ -2059,8 +2347,12 @@ export default function App() {
       blockSource: d.block ? d.value : undefined,
     }
     return d.editId
-      ? edits.map((e) => (e.id === d.editId ? { ...e, input, cover: d.cover ?? e.cover } : e))
-      : [...edits, { id: newId(), input, cover: d.cover }]
+      ? dropFolded(edits).map((e) =>
+          e.id === d.editId
+            ? { ...e, input, cover: d.cover ?? e.cover, baseInk: d.seedInk ?? e.baseInk }
+            : e,
+        )
+      : [...edits, { id: newId(), input, cover: d.cover, baseInk: d.seedInk }]
   }
 
   /** Current pending text edits for async callbacks (validation results land after renders) */
@@ -3294,7 +3586,7 @@ export default function App() {
         <button
           className="rb-big"
           disabled={readOnly}
-          title={t('highlight')}
+          data-tip={t('highlight')}
           onClick={() => applyMarkup('highlight')}
         >
           <span className="rb-big-icon">
@@ -3305,7 +3597,7 @@ export default function App() {
         <button
           className="rb-big"
           disabled={readOnly}
-          title={t('underline')}
+          data-tip={t('underline')}
           onClick={() => applyMarkup('underline')}
         >
           <span className="rb-big-icon">
@@ -3316,7 +3608,7 @@ export default function App() {
         <button
           className="rb-big"
           disabled={readOnly}
-          title={t('strikeout')}
+          data-tip={t('strikeout')}
           onClick={() => applyMarkup('strikeout')}
         >
           <span className="rb-big-icon">
@@ -3343,11 +3635,21 @@ export default function App() {
             <span className="tb-page-total">{t('pageOf', { total: pageCount })}</span>
           </div>
           <div className="rb-row">
-            <button className="rb-icon" title={t('zoomOut')} onClick={zoomOut}>
+            <button
+              className="rb-icon"
+              data-tip={t('zoomOut')}
+              aria-label={t('zoomOut')}
+              onClick={zoomOut}
+            >
               −
             </button>
             <span className="tb-zoom">{Math.round(scale * 100)}%</span>
-            <button className="rb-icon" title={t('zoomIn')} onClick={zoomIn}>
+            <button
+              className="rb-icon"
+              data-tip={t('zoomIn')}
+              aria-label={t('zoomIn')}
+              onClick={zoomIn}
+            >
               +
             </button>
           </div>
@@ -3383,7 +3685,7 @@ export default function App() {
   const searchBtn = (
     <button
       className={`rb-big${searchOpen ? ' active' : ''}`}
-      title={`${t('search')} (⌘F)`}
+      data-tip={`${t('search')} (${platformShortcuts('⌘F')})`}
       onClick={() => (searchOpen ? closeSearch() : openSearch())}
     >
       <span className="rb-big-icon">
@@ -3397,7 +3699,7 @@ export default function App() {
     <button
       className={`rb-big${editTextMode ? ' active' : ''}`}
       disabled={readOnly}
-      title={t('editTextHint')}
+      data-tip={t('editTextHint')}
       onClick={() => {
         setTextDraft(null)
         setDrawTool(null)
@@ -3439,7 +3741,7 @@ export default function App() {
         {searchBtn}
         <button
           className={`rb-big${spread === 2 ? ' active' : ''}`}
-          title={spread === 2 ? t('singlePage') : t('twoPage')}
+          data-tip={spread === 2 ? t('singlePage') : t('twoPage')}
           onClick={() => setSpread((v) => (v === 1 ? 2 : 1))}
         >
           <span className="rb-big-icon">{spread === 2 ? <IconSinglePage /> : <IconSpread />}</span>
@@ -3447,7 +3749,7 @@ export default function App() {
         </button>
         <button
           className={`rb-big${nightMode ? ' active' : ''}`}
-          title={t('nightMode')}
+          data-tip={t('nightMode')}
           onClick={() => setNightMode((v) => !v)}
         >
           <span className="rb-big-icon">
@@ -3465,7 +3767,7 @@ export default function App() {
         <div className="ribbon-tabs">
           <button
             className="qa-btn"
-            title={`${t('save')} (⌘S)`}
+            data-tip={`${t('save')} (${platformShortcuts('⌘S')})`}
             aria-label={t('save')}
             disabled={!dirty || saveState === 'saving'}
             onClick={() => void save()}
@@ -3474,7 +3776,8 @@ export default function App() {
           </button>
           <button
             className="qa-btn"
-            title={`${t('undo')} (⌘Z)`}
+            data-tip={`${t('undo')} (${platformShortcuts('⌘Z')})`}
+            aria-label={`${t('undo')} (${platformShortcuts('⌘Z')})`}
             disabled={undoStack.length === 0}
             onClick={undo}
           >
@@ -3482,7 +3785,8 @@ export default function App() {
           </button>
           <button
             className="qa-btn"
-            title={`${t('redo')} (⇧⌘Z)`}
+            data-tip={`${t('redo')} (${platformShortcuts('⇧⌘Z')})`}
+            aria-label={`${t('redo')} (${platformShortcuts('⇧⌘Z')})`}
             disabled={redoStack.length === 0}
             onClick={redo}
           >
@@ -3499,7 +3803,7 @@ export default function App() {
             </button>
           ))}
           <span className="ribbon-tabs-spacer" />
-          <span className="ribbon-file" title={filePath}>
+          <span className="ribbon-file" data-tip={filePath}>
             {fileName}
           </span>
           {readOnly && <span className="tb-readonly">{t('roEncrypted')}</span>}
@@ -3512,7 +3816,7 @@ export default function App() {
             saveState !== 'error' && <span className="tb-save-pending">{t('unsaved')}</span>
           )}
           {saveState === 'error' && (
-            <span className="tb-save-error" title={saveError}>
+            <span className="tb-save-error" data-tip={saveError}>
               {t('saveFailed')}
             </span>
           )}
@@ -3526,7 +3830,7 @@ export default function App() {
                 <div className="ribbon-group-items">
                   <button
                     className={`rb-big ai-entry${aiCollapsed ? '' : ' active'}`}
-                    title={t('aiOpenAssistant')}
+                    data-tip={t('aiOpenAssistant')}
                     onClick={() => setAiCollapsed((v) => !v)}
                   >
                     <span className="rb-big-icon">
@@ -3536,7 +3840,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big ai-entry"
-                    title={t('aiQuickSummaryPrompt')}
+                    data-tip={t('aiSummarizeBtn')}
                     onClick={() => runAiPreset(t('aiQuickSummaryPrompt'))}
                   >
                     <span className="rb-big-icon">
@@ -3548,7 +3852,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big ai-entry"
-                    title={t('aiQuickKeyPointsPrompt')}
+                    data-tip={t('aiKeyPointsBtn')}
                     onClick={() => runAiPreset(t('aiQuickKeyPointsPrompt'))}
                   >
                     <span className="rb-big-icon">
@@ -3576,7 +3880,7 @@ export default function App() {
                 <div className="ribbon-group-items">
                   <button
                     className="rb-big"
-                    title={`${t('print')} (⌘P)`}
+                    data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
                     disabled={printing}
                     onClick={() => void printDoc()}
                   >
@@ -3587,7 +3891,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
-                    title={t('exportImagesAll')}
+                    data-tip={t('exportImagesAll')}
                     disabled={exporting}
                     onClick={() => void exportImages(true)}
                   >
@@ -3598,7 +3902,7 @@ export default function App() {
                   </button>
                   <button
                     className="rb-big"
-                    title={t('propsTitle')}
+                    data-tip={t('propsTitle')}
                     onClick={() => setPropsDlg(true)}
                   >
                     <span className="rb-big-icon">
@@ -3621,7 +3925,7 @@ export default function App() {
                       key={tool}
                       className={`rb-big${drawTool === tool ? ' active' : ''}`}
                       disabled={readOnly}
-                      title={t(key)}
+                      data-tip={t(key)}
                       onClick={() => {
                         setEditTextMode(false)
                         setTextDraft(null)
@@ -3639,7 +3943,7 @@ export default function App() {
                   <button
                     className={`rb-big${pendingSign ? ' active' : ''}`}
                     disabled={readOnly}
-                    title={t('signTitle')}
+                    data-tip={t('signTitle')}
                     onClick={() => {
                       setImagePick(null)
                       setEditImageMode(false)
@@ -3656,7 +3960,7 @@ export default function App() {
                     <button
                       className={`rb-big${colorOpen ? ' active' : ''}`}
                       disabled={readOnly}
-                      title={t('drawColor')}
+                      data-tip={t('drawColor')}
                       onClick={() => setColorOpen((v) => !v)}
                     >
                       <span className="rb-big-icon">
@@ -3678,14 +3982,15 @@ export default function App() {
                             key={c.name}
                             className={`rb-swatch${cssRgb(drawColor) === cssRgb(c.rgb) ? ' active' : ''}`}
                             style={{ background: cssRgb(c.rgb) }}
-                            title={c.name}
+                            data-tip={c.name}
+                            aria-label={c.name}
                             onClick={() => {
                               setDrawColor(c.rgb)
                               setColorOpen(false)
                             }}
                           />
                         ))}
-                        <label className="rb-color-more" title={t('drawColor')}>
+                        <label className="rb-color-more" data-tip={t('drawColor')}>
                           <input
                             type="color"
                             value={rgbToHex(drawColor)}
@@ -3708,7 +4013,7 @@ export default function App() {
                   <button
                     className={`rb-big${imagePick ? ' active' : ''}`}
                     disabled={readOnly}
-                    title={t('insertImageHint')}
+                    data-tip={t('insertImageHint')}
                     onClick={() => (imagePick ? setImagePick(null) : pickInsertImage())}
                   >
                     <span className="rb-big-icon">
@@ -3719,7 +4024,7 @@ export default function App() {
                   <button
                     className={`rb-big${editImageMode ? ' active' : ''}`}
                     disabled={readOnly}
-                    title={t('editImageHint')}
+                    data-tip={t('editImageHint')}
                     onClick={() => {
                       setEditTextMode(false)
                       setTextDraft(null)
@@ -3742,7 +4047,7 @@ export default function App() {
                   <button
                     className="rb-big"
                     disabled={readOnly}
-                    title={t('stampTitle')}
+                    data-tip={t('stampTitle')}
                     onClick={() => setStampDlg(true)}
                   >
                     <span className="rb-big-icon">
@@ -3837,7 +4142,8 @@ export default function App() {
           {aiCollapsed && (
             <button
               className="ai-rail"
-              title={t('aiOpenAssistant')}
+              data-tip={t('aiOpenAssistant')}
+              aria-label={t('aiOpenAssistant')}
               onClick={() => setAiCollapsed(false)}
             >
               <GensparkMark size={22} />
@@ -4062,6 +4368,8 @@ export default function App() {
                                 }
                                 if (te.input.newColor) {
                                   style.color = `rgb(${te.input.newColor.join(', ')})`
+                                } else if (te.baseInk) {
+                                  style.color = te.baseInk
                                 }
                                 if (te.input.newFont) {
                                   style.fontFamily = EDIT_FONT_BY_ID.get(te.input.newFont)?.css
@@ -4124,11 +4432,44 @@ export default function App() {
                                           : ''
                                       }`}
                                       style={style}
-                                      title={editTextMode ? t('editTextHint') : t('removeMarkup')}
+                                      data-tip={
+                                        editTextMode ? t('editTextHint') : t('removeMarkup')
+                                      }
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         if (editTextMode && !readOnly) {
                                           draftSelectedRef.current = false
+                                          // A plain line edit inside a multi-line clustered
+                                          // paragraph reopens the whole paragraph with the
+                                          // pending change folded in — re-clicking edited
+                                          // text must not demote paragraph editing to that
+                                          // single line
+                                          if (isPlainLineEdit(te.input)) {
+                                            const r = te.input.rect
+                                            const cx = (r[0] + r[2]) / 2
+                                            const cy = (r[1] + r[3]) / 2
+                                            const block = pageBlocks
+                                              .get(origIdx)
+                                              ?.find(
+                                                (b) =>
+                                                  b.lines.length > 1 &&
+                                                  cx >= b.rect[0] &&
+                                                  cx <= b.rect[2] &&
+                                                  cy >= b.rect[1] &&
+                                                  cy <= b.rect[3],
+                                              )
+                                            if (
+                                              block &&
+                                              foldBlockValue(
+                                                origIdx,
+                                                block,
+                                                joinBlockLines(block.lines.map((l) => l.text)),
+                                              )
+                                            ) {
+                                              startBlockEdit(origIdx, block)
+                                              return
+                                            }
+                                          }
                                           // Block edits reopen as one logical paragraph (the
                                           // stored newText is the wrapped form); leading is
                                           // unscaled back to the original font size
@@ -4149,6 +4490,43 @@ export default function App() {
                                             ? (te.input.blockSource ??
                                               joinBlockLines(te.input.newText.split('\n')))
                                             : te.input.newText
+                                          // Unified selection model: the reopened draft's
+                                          // caret goes where the preview was clicked. The
+                                          // preview shows wrapped newText; the click's
+                                          // offset in its textContent maps onto the
+                                          // draft's logical value like a line-in-block.
+                                          {
+                                            const host = e.currentTarget
+                                            const cr = document.caretRangeFromPoint(
+                                              e.clientX,
+                                              e.clientY,
+                                            )
+                                            let pre: [number, number] | null = null
+                                            if (cr && host.contains(cr.startContainer)) {
+                                              let off = 0
+                                              const walk = document.createTreeWalker(
+                                                host,
+                                                NodeFilter.SHOW_TEXT,
+                                              )
+                                              for (
+                                                let n = walk.nextNode();
+                                                n;
+                                                n = walk.nextNode()
+                                              ) {
+                                                if (n === cr.startContainer) {
+                                                  pre = mapLineRangeToBlock(
+                                                    value,
+                                                    host.textContent ?? '',
+                                                    off + cr.startOffset,
+                                                    off + cr.startOffset,
+                                                  )
+                                                  break
+                                                }
+                                                off += (n.textContent ?? '').length
+                                              }
+                                            }
+                                            draftPreselectRef.current = pre
+                                          }
                                           // Selection colors are stored against the
                                           // committed newText; carry them back onto the
                                           // draft's logical text
@@ -4180,6 +4558,7 @@ export default function App() {
                                             italic: te.input.newItalic ? true : undefined,
                                             editId: te.id,
                                             cover: te.cover,
+                                            seedInk: te.baseInk,
                                             block: blk,
                                           })
                                         } else {
@@ -4313,7 +4692,7 @@ export default function App() {
                                         {editFonts.length > 0 && (
                                           <select
                                             className="pdf-textedit-fontsel"
-                                            title={t('texteditFont')}
+                                            data-tip={t('texteditFont')}
                                             value={textDraft.font ?? ''}
                                             onChange={(e) =>
                                               setTextDraft((d) =>
@@ -4334,7 +4713,7 @@ export default function App() {
                                           type="number"
                                           min={4}
                                           max={200}
-                                          title={t('watermarkSize')}
+                                          data-tip={t('watermarkSize')}
                                           value={
                                             textDraft.size ??
                                             Math.round(textDraft.fontSize * 10) / 10
@@ -4348,7 +4727,7 @@ export default function App() {
                                         />
                                         <button
                                           className={`pdf-textedit-toggle${textDraft.bold ? ' active' : ''}`}
-                                          title={t('texteditBold')}
+                                          data-tip={t('texteditBold')}
                                           onClick={() =>
                                             setTextDraft((d) =>
                                               d ? { ...d, bold: d.bold ? undefined : true } : d,
@@ -4361,7 +4740,7 @@ export default function App() {
                                           className={`pdf-textedit-toggle pdf-textedit-toggle-i${
                                             textDraft.italic ? ' active' : ''
                                           }`}
-                                          title={t('texteditItalic')}
+                                          data-tip={t('texteditItalic')}
                                           onClick={() =>
                                             setTextDraft((d) =>
                                               d ? { ...d, italic: d.italic ? undefined : true } : d,
@@ -4377,13 +4756,14 @@ export default function App() {
                                               textDraft.color === rgbToHex(c.rgb) ? ' active' : ''
                                             }`}
                                             style={{ background: cssRgb(c.rgb) }}
-                                            title={t('drawColor')}
+                                            data-tip={t('drawColor')}
+                                            aria-label={t('drawColor')}
                                             onClick={() => applyDraftColor(rgbToHex(c.rgb), true)}
                                           />
                                         ))}
                                         <label
                                           className="pdf-textedit-more"
-                                          title={t('moreColors')}
+                                          data-tip={t('moreColors')}
                                         >
                                           <input
                                             type="color"
@@ -4403,13 +4783,18 @@ export default function App() {
                                           ...(blk && blk.align !== 'left'
                                             ? { textAlign: blk.align }
                                             : {}),
-                                          // Document-content color (the user's pick), not chrome
-                                          ...(textDraft.color ? { color: textDraft.color } : {}),
+                                          // Document-content color (user's pick, else the
+                                          // document's own ink), not chrome
+                                          ...(textDraft.color || textDraft.seedInk
+                                            ? { color: textDraft.color ?? textDraft.seedInk }
+                                            : {}),
                                           ...(draftColors
                                             ? {
                                                 color: 'transparent',
                                                 caretColor:
-                                                  textDraft.color ?? 'var(--pdf-textedit-ink)',
+                                                  textDraft.color ??
+                                                  textDraft.seedInk ??
+                                                  'var(--pdf-textedit-ink)',
                                               }
                                             : {}),
                                           ...(draftCss ? { fontFamily: draftCss } : {}),
@@ -4421,7 +4806,15 @@ export default function App() {
                                         onFocus={(e) => {
                                           if (!draftSelectedRef.current) {
                                             draftSelectedRef.current = true
-                                            e.currentTarget.select()
+                                            const pre = draftPreselectRef.current
+                                            draftPreselectRef.current = null
+                                            const len = e.currentTarget.value.length
+                                            if (pre)
+                                              e.currentTarget.setSelectionRange(
+                                                Math.min(pre[0], len),
+                                                Math.min(pre[1], len),
+                                              )
+                                            else e.currentTarget.setSelectionRange(len, len)
                                           }
                                         }}
                                         onChange={(e) => {
@@ -4467,7 +4860,10 @@ export default function App() {
                                             ...(blk && blk.align !== 'left'
                                               ? { textAlign: blk.align }
                                               : {}),
-                                            color: textDraft.color ?? 'var(--pdf-textedit-ink)',
+                                            color:
+                                              textDraft.color ??
+                                              textDraft.seedInk ??
+                                              'var(--pdf-textedit-ink)',
                                             ...(draftCss ? { fontFamily: draftCss } : {}),
                                             ...(textDraft.bold ? { fontWeight: 700 } : {}),
                                             ...(textDraft.italic ? { fontStyle: 'italic' } : {}),
@@ -4549,7 +4945,7 @@ export default function App() {
                                 className={`pdf-stamp-preview${selected?.kind === 'stamp' ? ' pdf-stamp-selected' : ''}`}
                                 src={`data:image/png;base64,${s.image}`}
                                 alt=""
-                                title={t('removeStamp')}
+                                data-tip={t('removeStamp')}
                                 style={{
                                   ...pdfRectToCss(geom, s.rect, scale),
                                   opacity: s.opacity ?? 1,
@@ -4658,7 +5054,8 @@ export default function App() {
                 </span>
                 <button
                   className="rb-icon"
-                  title={t('searchPrev')}
+                  data-tip={t('searchPrev')}
+                  aria-label={t('searchPrev')}
                   disabled={activeMatches.length === 0}
                   onClick={() => searchStep(-1)}
                 >
@@ -4666,7 +5063,8 @@ export default function App() {
                 </button>
                 <button
                   className="rb-icon"
-                  title={t('searchNext')}
+                  data-tip={t('searchNext')}
+                  aria-label={t('searchNext')}
                   disabled={activeMatches.length === 0}
                   onClick={() => searchStep(1)}
                 >
@@ -4685,21 +5083,22 @@ export default function App() {
               >
                 <button
                   type="button"
-                  title={t('highlight')}
+                  data-tip={t('highlight')}
+                  aria-label={t('highlight')}
                   onClick={() => applyMarkup('highlight')}
                 >
                   <span className="sel-swatch sel-swatch-hl" />
                 </button>
                 <button
                   type="button"
-                  title={t('underline')}
+                  data-tip={t('underline')}
                   onClick={() => applyMarkup('underline')}
                 >
                   <span className="sel-swatch sel-swatch-ul">U</span>
                 </button>
                 <button
                   type="button"
-                  title={t('strikeout')}
+                  data-tip={t('strikeout')}
                   onClick={() => applyMarkup('strikeout')}
                 >
                   <span className="sel-swatch sel-swatch-st">S</span>
@@ -4716,20 +5115,27 @@ export default function App() {
                   <>
                     <button
                       type="button"
-                      title={t('imageRotateCw')}
+                      data-tip={t('imageRotateCw')}
+                      aria-label={t('imageRotateCw')}
                       onClick={() => rotateSelected(1)}
                     >
                       <IconRotateCw />
                     </button>
                     <button
                       type="button"
-                      title={t('imageRotateCcw')}
+                      data-tip={t('imageRotateCcw')}
+                      aria-label={t('imageRotateCcw')}
                       onClick={() => rotateSelected(-1)}
                     >
                       <IconRotateCcw />
                     </button>
                     {selected.kind === 'pageImage' && (
-                      <button type="button" title={t('imageReplace')} onClick={startReplaceImage}>
+                      <button
+                        type="button"
+                        data-tip={t('imageReplace')}
+                        aria-label={t('imageReplace')}
+                        onClick={startReplaceImage}
+                      >
                         <IconSwapImage />
                       </button>
                     )}
@@ -4921,7 +5327,12 @@ export default function App() {
               </span>
             </div>
             <div className="status-right">
-              <button className="zoom-btn" title={t('zoomOut')} onClick={zoomOut}>
+              <button
+                className="zoom-btn"
+                data-tip={t('zoomOut')}
+                aria-label={t('zoomOut')}
+                onClick={zoomOut}
+              >
                 −
               </button>
               <input
@@ -4933,7 +5344,12 @@ export default function App() {
                 value={Math.round(scale * 100)}
                 onChange={(e) => applyScale(Number(e.target.value) / 100, null)}
               />
-              <button className="zoom-btn" title={t('zoomIn')} onClick={zoomIn}>
+              <button
+                className="zoom-btn"
+                data-tip={t('zoomIn')}
+                aria-label={t('zoomIn')}
+                onClick={zoomIn}
+              >
                 +
               </button>
               <span className="zoom-value">{Math.round(scale * 100)}%</span>

@@ -487,8 +487,12 @@ describe('block edits (paragraph rebuild)', () => {
         lineLeading: 18,
       },
     ])
+    // The object-preserving rebuild keeps the original objects side by side on the
+    // merged line; compare per-baseline text so extraction granularity doesn't matter
     const lines = await extractLines(out)
-    expect(lines.map((l) => l.str)).toEqual([
+    const byY = new Map()
+    for (const l of lines) byY.set(l.y, (byY.get(l.y) ?? '') + l.str)
+    expect([...byY.values()].map((s) => s.replace(/\s+/g, ' ').trim())).toEqual([
       'first line of text second line follows',
       'third line ends here',
     ])
@@ -811,5 +815,208 @@ describe('validateTextEdits', () => {
     // No bounds for an edit that does not match
     const [miss] = await validateTextEdits(f.bytes, [edit(f, 'Never was here', 'X')])
     expect(miss!.bounds).toBeUndefined()
+  })
+})
+
+describe('text-first rescue (multi-object lines)', () => {
+  /** Lines whose every word is its own PDF text object on a shared baseline — the
+      granularity Chrome/Word exports use. Word gaps are positional (no space chars
+      inside the objects), so the joined engine text carries no spaces. */
+  async function makeWordLines(
+    lines: { words: string[]; y: number }[],
+  ): Promise<{ bytes: Uint8Array; extents: { left: number; right: number }[] }> {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([595, 842])
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    const size = 14
+    const extents: { left: number; right: number }[] = []
+    for (const { words, y } of lines) {
+      let x = 50
+      let right = 50
+      for (const w of words) {
+        page.drawText(w, { x, y, size, font })
+        right = x + font.widthOfTextAtSize(w, size)
+        x = right + font.widthOfTextAtSize(' ', size)
+      }
+      extents.push({ left: 50, right })
+    }
+    return { bytes: await doc.save({ useObjectStreams: false }), extents }
+  }
+
+  const stripped = (s: string) => s.replace(/\s+/g, '')
+
+  it('rescues a whole-line edit whose rect clips the edge objects', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')) return
+    const words = ['Use', 'it', 'to', 'cover', 'your', 'entire', 'phone', 'bill']
+    const { bytes, extents } = await makeWordLines([{ words, y: 700 }])
+    const { left, right } = extents[0]!
+    // The rect starts inside 'Use' and ends inside 'bill': the primary path's
+    // ≥50%-containment filter drops both edge objects and the line never matched
+    const rect: [number, number, number, number] = [left + 18, 696, right - 14, 716]
+    const out = await applyAll(bytes, [
+      {
+        pageIndex: 0,
+        rect,
+        oldText: words.join(' '),
+        newText: 'Use it to pay your whole phone bill',
+        fontSize: 14,
+      },
+    ])
+    expect(stripped(await extractText(out))).toBe('Useittopayyourwholephonebill')
+  })
+
+  it('rescues a style-only recolor with a clipped rect (screenshot scenario)', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')) return
+    const { chainPdfium, loadPdfium, withDocument } = await import('../src/main/text-edit')
+    const words = ['Use', 'it', 'to', 'cover', 'your', 'phone', 'bill']
+    const { bytes, extents } = await makeWordLines([{ words, y: 700 }])
+    const { left, right } = extents[0]!
+    const oldText = words.join(' ')
+    const out = await applyAll(bytes, [
+      {
+        pageIndex: 0,
+        rect: [left + 18, 696, right - 12, 716],
+        oldText,
+        newText: oldText,
+        fontSize: 14,
+        newColor: [255, 0, 0],
+      },
+    ])
+    expect(stripped(await extractText(out))).toBe(stripped(oldText))
+    // Every text object on the page is repainted red
+    const m = await loadPdfium()
+    const colors = await chainPdfium(() =>
+      withDocument(m, out, async (doc) => {
+        const page = m._FPDF_LoadPage(doc, 0)
+        const colPtr = m._malloc(16)
+        const found: [number, number, number][] = []
+        try {
+          const count = m._FPDFPage_CountObjects(page)
+          for (let i = 0; i < count; i++) {
+            const obj = m._FPDFPage_GetObject(page, i)
+            if (m._FPDFPageObj_GetType(obj) !== 1) continue
+            m._FPDFPageObj_GetFillColor(obj, colPtr, colPtr + 4, colPtr + 8, colPtr + 12)
+            found.push([m.HEAPU8[colPtr]!, m.HEAPU8[colPtr + 4]!, m.HEAPU8[colPtr + 8]!])
+          }
+          return found
+        } finally {
+          m._free(colPtr)
+          m._FPDF_ClosePage(page)
+        }
+      }),
+    )
+    expect(colors.length).toBeGreaterThan(0)
+    for (const c of colors) expect(c).toEqual([255, 0, 0])
+  })
+
+  it('picks the occurrence nearest the rect when the same text repeats', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')) return
+    const words = ['Repeated', 'footer', 'line']
+    const { bytes, extents } = await makeWordLines([
+      { words, y: 700 },
+      { words, y: 680 },
+    ])
+    const { left, right } = extents[1]!
+    // Clipped rect around the LOWER copy; the padded candidate set still touches the
+    // upper copy, so the score must pick the right occurrence
+    const out = await applyAll(bytes, [
+      {
+        pageIndex: 0,
+        rect: [left + 20, 676, right - 8, 696],
+        oldText: words.join(' '),
+        newText: 'Repeated footer EDIT',
+        fontSize: 14,
+      },
+    ])
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const doc = await getDocument({ data: out.slice(), useSystemFonts: true }).promise
+    try {
+      const content = await (await doc.getPage(1)).getTextContent()
+      const byLine = new Map<number, string>()
+      for (const i of content.items) {
+        if (!('str' in i) || !i.str.trim()) continue
+        const y = Math.round(i.transform[5]!)
+        byLine.set(y, (byLine.get(y) ?? '') + i.str)
+      }
+      expect(stripped(byLine.get(700) ?? '')).toBe('Repeatedfooterline')
+      expect(stripped(byLine.get(680) ?? '')).toBe('RepeatedfooterEDIT')
+    } finally {
+      await doc.loadingTask.destroy()
+    }
+  })
+
+  it('rescues an edit ending mid-object, keeping the object tail verbatim', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')) return
+    // Three objects; the edit covers the first two and only 'Plus,' of the third —
+    // like a text-layer line group stopping before the rest of the engine's run
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([595, 842])
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    const parts = ['Use it to cover', 'your entire phone.', 'Plus, free shipping']
+    let x = 50
+    const starts: number[] = []
+    for (const p of parts) {
+      starts.push(x)
+      page.drawText(p, { x, y: 700, size: 14, font })
+      x += font.widthOfTextAtSize(`${p} `, 14)
+    }
+    const bytes = await doc.save({ useObjectStreams: false })
+    const rectRight = starts[2]! + font.widthOfTextAtSize('Plus,', 14) + 2
+    const out = await applyAll(bytes, [
+      {
+        pageIndex: 0,
+        rect: [45, 696, rectRight, 716],
+        oldText: 'Use it to cover your entire phone. Plus,',
+        newText: 'Use it to cover your entire phone. Anyway,',
+        fontSize: 14,
+      },
+    ])
+    expect(stripped(await extractText(out))).toBe('Useittocoveryourentirephone.Anyway,freeshipping')
+  })
+
+  it('fails closed for a paragraph rescue that would end mid-object', async () => {
+    // A block edit (origin/lineLeading set) may only rescue a WHOLE match: apply
+    // strips the layout overrides from fragment matches, which would rebuild the
+    // paragraph at the anchor and pull the edge object's tail into the block run
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([595, 842])
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    const parts = ['Use it to cover', 'your entire phone.', 'Plus, free shipping']
+    let x = 50
+    const starts: number[] = []
+    for (const p of parts) {
+      starts.push(x)
+      page.drawText(p, { x, y: 700, size: 14, font })
+      x += font.widthOfTextAtSize(`${p} `, 14)
+    }
+    const bytes = await doc.save({ useObjectStreams: false })
+    const rectRight = starts[2]! + font.widthOfTextAtSize('Plus,', 14) + 2
+    const results = await validateTextEdits(bytes, [
+      {
+        pageIndex: 0,
+        rect: [45, 696, rectRight, 716],
+        oldText: 'Use it to cover your entire phone. Plus,',
+        newText: 'Use it to cover\nyour entire phone. Anyway,',
+        fontSize: 14,
+        origin: [50, 700],
+        lineLeading: 17,
+      },
+    ])
+    expect(results[0]!.reason).toMatch(/could not be located/)
+  })
+
+  it('still reports unlocatable text instead of matching elsewhere', async () => {
+    const { bytes, extents } = await makeWordLines([{ words: ['Only', 'this', 'line'], y: 700 }])
+    const { left, right } = extents[0]!
+    const results = await validateTextEdits(bytes, [
+      {
+        pageIndex: 0,
+        rect: [left, 696, right, 716],
+        oldText: 'Entirely different words',
+        newText: 'X',
+        fontSize: 14,
+      },
+    ])
+    expect(results[0]!.reason).toMatch(/could not be located/)
   })
 })

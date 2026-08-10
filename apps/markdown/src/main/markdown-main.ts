@@ -15,6 +15,7 @@ import {
 } from 'electron'
 import type { WebContents } from 'electron'
 import {
+  configuredDefaultSaveDir,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
@@ -416,7 +417,7 @@ async function resolveSaveTarget(
       .slice(0, 80)
       .trim()
     if (base) {
-      const dir = app.getPath('documents')
+      const dir = configuredDefaultSaveDir(app)
       let target = join(dir, `${base}.md`)
       for (let n = 1; existsSync(target); n++) target = join(dir, `${base}-${n}.md`)
       return target
@@ -426,7 +427,7 @@ async function resolveSaveTarget(
     BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
   const defaultPath = current
     ? join(dirname(current), basename(current))
-    : join(app.getPath('documents'), `${tm('untitledFile')}.md`)
+    : join(configuredDefaultSaveDir(app), `${tm('untitledFile')}.md`)
   const picked = await showSaveDialogWithMemory(dialog, win, {
     title: tm('dlgSaveTitle'),
     defaultPath,
@@ -611,9 +612,9 @@ function registerMarkdownIpc(): void {
       try {
         const bytes = Buffer.from(request.base64, 'base64')
         if (request.mode === 'openInDocs') {
-          // silent convert next to the .md (untitled documents go to Documents)
+          // silent convert next to the .md (untitled documents go to the default save folder)
           const docPath = savePathByWc.get(e.sender.id)
-          const dir = docPath ? dirname(docPath) : app.getPath('documents')
+          const dir = docPath ? dirname(docPath) : configuredDefaultSaveDir(app)
           let target = join(dir, `${safeName}.docx`)
           for (let n = 1; existsSync(target); n++) target = join(dir, `${safeName}-${n}.docx`)
           await writeFile(target, bytes)
@@ -622,10 +623,15 @@ function registerMarkdownIpc(): void {
         }
         const win =
           BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-        const picked = await showSaveDialogWithMemory(dialog, win, {
-          defaultPath: `${safeName}.docx`,
-          filters: [{ name: 'Word', extensions: ['docx'] }],
-        })
+        const picked = await showSaveDialogWithMemory(
+          dialog,
+          win,
+          {
+            defaultPath: `${safeName}.docx`,
+            filters: [{ name: 'Word', extensions: ['docx'] }],
+          },
+          configuredDefaultSaveDir(app),
+        )
         if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
         await writeFile(picked.filePath, bytes)
         return { ok: true, path: picked.filePath }
@@ -648,10 +654,15 @@ function registerMarkdownIpc(): void {
           .trim() || tm('untitledFile')
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await showSaveDialogWithMemory(dialog, win, {
-        defaultPath: `${safeName}.pdf`,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
-      })
+      const picked = await showSaveDialogWithMemory(
+        dialog,
+        win,
+        {
+          defaultPath: `${safeName}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        },
+        configuredDefaultSaveDir(app),
+      )
       if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
       // sheets-style: render the print HTML in a hidden scripting-disabled window
       const workDir = await mkdtemp(join(tmpdir(), 'genoffice-md-pdf-'))

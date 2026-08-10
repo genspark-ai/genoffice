@@ -1,7 +1,9 @@
 import ReactDOM from 'react-dom/client'
 import { htmlLang, type Lang } from '@genoffice/i18n'
+import { installScreenTips } from '@genoffice/ui'
 
 import '@genoffice/ui/tokens.css'
+import '@genoffice/ui/screentip.css'
 import '@univerjs/preset-sheets-core/lib/index.css'
 
 import { App } from './App'
@@ -20,6 +22,8 @@ if (import.meta.hot) {
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root.')
+
+installScreenTips()
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')

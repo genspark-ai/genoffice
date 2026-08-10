@@ -90,12 +90,8 @@ import {
   IconPalette,
   IconPaste,
   IconPilcrow,
-  IconFlipH,
-  IconFlipV,
   IconRemoveBg,
   IconReplacePicture,
-  IconRotateLeft,
-  IconRotateRight,
   IconRowDelete,
   IconRowInsertAbove,
   IconRowInsertBelow,
@@ -802,9 +798,10 @@ function RibbonInner({
 
   /**
    * Replace the selected image's bytes (shared by Replace Picture / remove background / crop).
-   * Original images (docxIndex set) swap bytes in place via the imageReplace patch: the
-   * drawing XML survives, so wrap/position/docxIndex — and with them the Position gallery —
-   * keep working. Images not yet saved (genImage) just update their pending payload.
+   * The original image's patch-save only supports size/alignment/wrap; swapping bytes must go
+   * through the genImage new-image embed branch, so docxIndex is cleared (on save the old
+   * block is treated as deleted, the new image is written at the same position, and
+   * alignment/wrap are inherited from attributes).
    * Display size keeps the current width; height adapts to the new image's aspect ratio.
    */
   const applyPictureBytes = async (dataUrl: string) => {
@@ -818,7 +815,6 @@ function RibbonInner({
       const currentW = Number(attrs.imageWidthPx) || Math.min(natural.width, 620)
       const w = Math.max(1, Math.round(currentW))
       const h = Math.max(1, Math.round((currentW * natural.height) / natural.width))
-      const isOriginal = attrs.docxIndex !== null && attrs.docxIndex !== undefined
       editor
         .chain()
         .focus()
@@ -826,9 +822,8 @@ function RibbonInner({
           imageDataUrl: dataUrl,
           imageWidthPx: w,
           imageHeightPx: h,
-          ...(isOriginal
-            ? { imageReplace: { base64: m[2], mime: m[1] } }
-            : { genImage: { base64: m[2], mime: m[1], widthPx: w, heightPx: h } }),
+          genImage: { base64: m[2], mime: m[1], widthPx: w, heightPx: h },
+          docxIndex: null,
         })
         .run()
     } catch {
@@ -840,30 +835,6 @@ function RibbonInner({
     const picked = await window.desktop.pickImage()
     if (!picked) return
     await applyPictureBytes(`data:${picked.mime};base64,${picked.base64}`)
-  }
-
-  const rotatePicture = (deltaDeg: number) => {
-    if (!canEdit) return
-    const attrs = editor.getAttributes('docProtected')
-    if (attrs?.blockType !== 'image') return
-    const next = ((((Number(attrs.imageRotDeg) || 0) + deltaDeg) % 360) + 360) % 360
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', { imageRotDeg: next || null })
-      .run()
-  }
-
-  const flipPicture = (axis: 'h' | 'v') => {
-    if (!canEdit) return
-    const attrs = editor.getAttributes('docProtected')
-    if (attrs?.blockType !== 'image') return
-    const key = axis === 'h' ? 'imageFlipH' : 'imageFlipV'
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', { [key]: !attrs[key] })
-      .run()
   }
 
   /** Set the image display size proportionally (cm input; either side drives the other) */
@@ -1709,40 +1680,6 @@ function RibbonInner({
                     {icon}
                   </button>
                 ))}
-              </div>
-              <div className="table-tool-row">
-                <button
-                  className="table-tool-button"
-                  disabled={!canEdit}
-                  title={t('ribbonRotateRight')}
-                  onClick={() => rotatePicture(90)}
-                >
-                  <IconRotateRight />
-                </button>
-                <button
-                  className="table-tool-button"
-                  disabled={!canEdit}
-                  title={t('ribbonRotateLeft')}
-                  onClick={() => rotatePicture(-90)}
-                >
-                  <IconRotateLeft />
-                </button>
-                <button
-                  className={fs.imageFlipH ? 'table-tool-button active' : 'table-tool-button'}
-                  disabled={!canEdit}
-                  title={t('ribbonFlipH')}
-                  onClick={() => flipPicture('h')}
-                >
-                  <IconFlipH />
-                </button>
-                <button
-                  className={fs.imageFlipV ? 'table-tool-button active' : 'table-tool-button'}
-                  disabled={!canEdit}
-                  title={t('ribbonFlipV')}
-                  onClick={() => flipPicture('v')}
-                >
-                  <IconFlipV />
-                </button>
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
             </div>

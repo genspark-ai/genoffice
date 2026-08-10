@@ -374,7 +374,7 @@ export function SlideShowView({
             </div>
           )}
           {rehearseMode && rehearse && (
-            <div className="ss-rehearse" title={t('paneShowRehearseTip')}>
+            <div className="ss-rehearse" data-tip={t('paneShowRehearseTip')}>
               <span className="ss-rehearse-cur">⏱ {formatClock(rehearseCurMs)}</span>
               <span className="ss-rehearse-total">
                 {t('paneShowRehearseTotal', { time: formatClock(rehearseTotalMs) })}

@@ -312,6 +312,10 @@ interface Props {
  */
 export const CANVAS_BLEED = 160
 
+/** Default rotate-handle snapping: lock onto 45° multiples (Shift switches to 15° steps) */
+const ROTATION_SNAPS = [0, 45, 90, 135, 180, 225, 270, 315]
+const ROTATION_SNAP_TOLERANCE = 5
+
 /** Walk up the Konva parent chain to the owning node_<sourceId> Group (null for background/decoration/stage). */
 function nodeIdFromTarget(t: Konva.Node | null): string | null {
   while (t && t !== t.getStage()) {
@@ -542,13 +546,13 @@ export function SlideCanvas({
     }
   }, [drawMode, onDrawCancel])
 
-  // Hold Shift while rotating -> snap in 15° steps; release to restore free angle
+  // Hold Shift while rotating -> snap in 15° steps; release restores the default 45° snaps
   useEffect(() => {
-    const setSnaps = (on: boolean) => {
+    const setSnaps = (fine: boolean) => {
       const tr = trRef.current
       if (!tr) return
-      tr.rotationSnaps(on ? Array.from({ length: 24 }, (_, i) => i * 15) : [])
-      tr.rotationSnapTolerance(7.5)
+      tr.rotationSnaps(fine ? Array.from({ length: 24 }, (_, i) => i * 15) : ROTATION_SNAPS)
+      tr.rotationSnapTolerance(fine ? 7.5 : ROTATION_SNAP_TOLERANCE)
     }
     const down = (e: KeyboardEvent) => e.key === 'Shift' && setSnaps(true)
     const up = (e: KeyboardEvent) => e.key === 'Shift' && setSnaps(false)
@@ -1054,6 +1058,9 @@ export function SlideCanvas({
         <Transformer
           ref={trRef}
           rotateEnabled
+          // Rotating locks onto the 45° multiples when within a few degrees (PowerPoint-style snap)
+          rotationSnaps={ROTATION_SNAPS}
+          rotationSnapTolerance={ROTATION_SNAP_TOLERANCE}
           // Pictures default to proportional scaling (corner handles); shapes/text boxes scale freely
           keepRatio={
             selectedIds.length > 0 &&

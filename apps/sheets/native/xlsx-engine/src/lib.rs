@@ -417,6 +417,14 @@ impl WorkbookSessions {
     }
 
     pub fn open(&mut self, path: &Path) -> Result<WorkbookMetadata, SidecarError> {
+        self.open_with_locale(path, "zh")
+    }
+
+    pub fn open_with_locale(
+        &mut self,
+        path: &Path,
+        locale: &str,
+    ) -> Result<WorkbookMetadata, SidecarError> {
         let canonical_path = path.canonicalize()?;
         let file = File::open(&canonical_path)?;
         let mut archive = ZipArchive::new(file)?;
@@ -498,7 +506,8 @@ impl WorkbookSessions {
                 "Workbook contains no readable worksheets.".into(),
             ));
         }
-        let (styles, dxf_styles) = visuals::read_styles(&mut archive, &color_context)?;
+        let (styles, dxf_styles) =
+            visuals::read_styles(&mut archive, &color_context, locale)?;
         // Value-less cells are kept when their xf paints something visible
         // (fill/border) or differs from the default xf in number format,
         // font or alignment — formatting a user's future input inherits (#169).
@@ -3005,13 +3014,13 @@ mod tests {
 <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
 <borders count="1"><border/></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="58" applyNumberFormat="1"/><xf numFmtId="44" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/></cellXfs>
+<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="58" applyNumberFormat="1"/><xf numFmtId="44" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/><xf numFmtId="27" applyNumberFormat="1"/><xf numFmtId="30" applyNumberFormat="1"/></cellXfs>
 </styleSheet>"#,
             ),
             (
                 "xl/worksheets/sheet1.xml",
                 r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<sheetData><row r="1"><c r="A1" s="1"><v>46230</v></c></row></sheetData>
+<sheetData><row r="1"><c r="A1" s="1"><v>46230</v></c><c r="B1" s="4"><v>45651</v></c><c r="C1" s="5"><v>45343</v></c></row></sheetData>
 </worksheet>"#,
             ),
         ]);
@@ -3027,6 +3036,18 @@ mod tests {
             Some(r#"_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)"#),
         );
         assert_eq!(format(3), Some("yyyy/m/d"));
+
+        // Locale-reserved ids must follow the UI locale. In Portuguese (and
+        // other day-first locales), id 58 is a full date rather than the
+        // zh-CN month/day pattern that previously leaked into every workbook.
+        let mut portuguese_sessions = WorkbookSessions::new();
+        let portuguese = portuguese_sessions.open_with_locale(&path, "pt").unwrap();
+        let portuguese_format =
+            |index: usize| portuguese.styles[index].number_format.as_deref();
+        assert_eq!(portuguese_format(1), Some("d/m/yyyy"));
+        assert_eq!(portuguese_format(3), Some("yyyy/m/d"));
+        assert_eq!(portuguese_format(4), Some("d/m/yyyy"));
+        assert_eq!(portuguese_format(5), Some("d/m/yyyy"));
     }
 
     #[test]

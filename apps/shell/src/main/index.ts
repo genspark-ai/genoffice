@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import {
   copyFileSync,
   cpSync,
@@ -36,11 +36,13 @@ import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
+  DEFAULT_SAVE_DIR_KEY,
   appMenuLabels,
   contextMenuLabels,
   editMenuTemplate,
   installContextMenu,
   installNavigationGuard,
+  isUsableSaveDir,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
   windowMenuTemplate,
@@ -284,6 +286,10 @@ function currentTheme(): UiTheme {
 // invite link, which stays out of this repo and rotates server-side.
 const GENTEAM_URL = 'https://genoffice.ai/join'
 
+// Genspark credit-usage page opened from the account menu's credits row.
+// Kept main-side so the renderer never supplies the URL.
+const CREDIT_USAGE_URL = 'https://www.genspark.ai/credit-usage'
+
 const tMain = createI18n({
   zh: {
     menuFile: '文件',
@@ -335,6 +341,8 @@ const tMain = createI18n({
     pdfDocxFailedMsg: '导出为 Word 失败',
     pdfDocxNoCliMsg: '无法登录 Genspark：缺少必需组件（gsk），请重新安装应用。',
     pdfDocxBusyMsg: '正在转换中，请等待当前导出完成。',
+    dlgPickSaveDir: '选择默认保存位置',
+    errSaveDirUnusable: '所选文件夹不可写，无法用作默认保存位置',
   },
   en: {
     menuFile: 'File',
@@ -389,6 +397,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Cannot sign in to Genspark: a required component (gsk) is missing. Please reinstall the app.',
     pdfDocxBusyMsg: 'A Word export is already in progress. Please wait for it to finish.',
+    dlgPickSaveDir: 'Choose Default Save Location',
+    errSaveDirUnusable:
+      'The selected folder is not writable and cannot be used as the default save location',
   },
   ja: {
     menuFile: 'ファイル',
@@ -443,6 +454,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Genspark にサインインできません：必要なコンポーネント（gsk）が見つかりません。アプリを再インストールしてください。',
     pdfDocxBusyMsg: 'Word への書き出しが進行中です。完了までお待ちください。',
+    dlgPickSaveDir: '既定の保存先を選択',
+    errSaveDirUnusable:
+      '選択したフォルダーは書き込みできないため、既定の保存先として使用できません',
   },
   ko: {
     menuFile: '파일',
@@ -497,6 +511,8 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Genspark에 로그인할 수 없습니다. 필수 구성 요소(gsk)가 없습니다. 앱을 다시 설치해 주세요.',
     pdfDocxBusyMsg: 'Word 내보내기가 이미 진행 중입니다. 완료될 때까지 기다려 주세요.',
+    dlgPickSaveDir: '기본 저장 위치 선택',
+    errSaveDirUnusable: '선택한 폴더에 쓸 수 없어 기본 저장 위치로 사용할 수 없습니다',
   },
   fr: {
     menuFile: 'Fichier',
@@ -551,6 +567,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       "Connexion à Genspark impossible : un composant requis (gsk) est manquant. Veuillez réinstaller l'application.",
     pdfDocxBusyMsg: "Un export en Word est déjà en cours. Veuillez attendre qu'il se termine.",
+    dlgPickSaveDir: "Choisir l'emplacement d'enregistrement par défaut",
+    errSaveDirUnusable:
+      "Le dossier sélectionné n'est pas accessible en écriture et ne peut pas servir d'emplacement d'enregistrement par défaut",
   },
   de: {
     menuFile: 'Datei',
@@ -605,6 +624,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Anmeldung bei Genspark nicht möglich: Eine erforderliche Komponente (gsk) fehlt. Bitte installieren Sie die App neu.',
     pdfDocxBusyMsg: 'Ein Word-Export läuft bereits. Bitte warten Sie, bis er abgeschlossen ist.',
+    dlgPickSaveDir: 'Standard-Speicherort auswählen',
+    errSaveDirUnusable:
+      'Der ausgewählte Ordner ist nicht beschreibbar und kann nicht als Standard-Speicherort verwendet werden',
   },
   es: {
     menuFile: 'Archivo',
@@ -659,6 +681,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'No se puede iniciar sesión en Genspark: falta un componente necesario (gsk). Reinstale la aplicación.',
     pdfDocxBusyMsg: 'Ya hay una exportación a Word en curso. Espera a que termine.',
+    dlgPickSaveDir: 'Elegir ubicación de guardado predeterminada',
+    errSaveDirUnusable:
+      'La carpeta seleccionada no admite escritura y no puede usarse como ubicación de guardado predeterminada',
   },
   th: {
     menuFile: 'ไฟล์',
@@ -712,6 +737,8 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'ไม่สามารถลงชื่อเข้าใช้ Genspark ได้: ไม่พบคอมโพเนนต์ที่จำเป็น (gsk) โปรดติดตั้งแอปใหม่',
     pdfDocxBusyMsg: 'กำลังส่งออกเป็น Word อยู่ โปรดรอให้เสร็จสิ้นก่อน',
+    dlgPickSaveDir: 'เลือกตำแหน่งบันทึกเริ่มต้น',
+    errSaveDirUnusable: 'โฟลเดอร์ที่เลือกไม่สามารถเขียนได้ จึงใช้เป็นตำแหน่งบันทึกเริ่มต้นไม่ได้',
   },
   id: {
     menuFile: 'File',
@@ -766,6 +793,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Tidak dapat masuk ke Genspark: komponen yang diperlukan (gsk) tidak ditemukan. Silakan instal ulang aplikasi.',
     pdfDocxBusyMsg: 'Ekspor ke Word sedang berlangsung. Harap tunggu hingga selesai.',
+    dlgPickSaveDir: 'Pilih Lokasi Penyimpanan Default',
+    errSaveDirUnusable:
+      'Folder yang dipilih tidak dapat ditulis dan tidak bisa digunakan sebagai lokasi penyimpanan default',
   },
   ru: {
     menuFile: 'Файл',
@@ -820,6 +850,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Не удаётся войти в Genspark: отсутствует необходимый компонент (gsk). Переустановите приложение.',
     pdfDocxBusyMsg: 'Экспорт в Word уже выполняется. Дождитесь его завершения.',
+    dlgPickSaveDir: 'Выбрать папку сохранения по умолчанию',
+    errSaveDirUnusable:
+      'Выбранная папка недоступна для записи и не может использоваться как папка сохранения по умолчанию',
   },
   ar: {
     menuFile: 'ملف',
@@ -873,6 +906,8 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'تعذّر تسجيل الدخول إلى Genspark: المكوّن المطلوب (gsk) مفقود. يُرجى إعادة تثبيت التطبيق.',
     pdfDocxBusyMsg: 'يجري حاليًا تصدير إلى Word. يُرجى الانتظار حتى يكتمل.',
+    dlgPickSaveDir: 'اختيار موقع الحفظ الافتراضي',
+    errSaveDirUnusable: 'المجلد المحدد غير قابل للكتابة ولا يمكن استخدامه كموقع حفظ افتراضي',
   },
   pt: {
     menuFile: 'Arquivo',
@@ -927,6 +962,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Não é possível iniciar sessão no Genspark: falta um componente necessário (gsk). Reinstale o aplicativo.',
     pdfDocxBusyMsg: 'Já há uma exportação para Word em andamento. Aguarde a conclusão.',
+    dlgPickSaveDir: 'Escolher local de salvamento padrão',
+    errSaveDirUnusable:
+      'A pasta selecionada não permite gravação e não pode ser usada como local de salvamento padrão',
   },
   it: {
     menuFile: 'File',
@@ -981,6 +1019,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       "Impossibile accedere a Genspark: manca un componente necessario (gsk). Reinstallare l'app.",
     pdfDocxBusyMsg: "Un'esportazione in Word è già in corso. Attendi il completamento.",
+    dlgPickSaveDir: 'Scegli la posizione di salvataggio predefinita',
+    errSaveDirUnusable:
+      'La cartella selezionata non è scrivibile e non può essere usata come posizione di salvataggio predefinita',
   },
   pl: {
     menuFile: 'Plik',
@@ -1035,6 +1076,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Nie można zalogować się do Genspark: brakuje wymaganego komponentu (gsk). Zainstaluj aplikację ponownie.',
     pdfDocxBusyMsg: 'Eksport do formatu Word już trwa. Poczekaj na jego zakończenie.',
+    dlgPickSaveDir: 'Wybierz domyślną lokalizację zapisu',
+    errSaveDirUnusable:
+      'Wybrany folder nie pozwala na zapis i nie może być domyślną lokalizacją zapisu',
   },
   nl: {
     menuFile: 'Bestand',
@@ -1089,6 +1133,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Kan niet inloggen bij Genspark: een vereist onderdeel (gsk) ontbreekt. Installeer de app opnieuw.',
     pdfDocxBusyMsg: 'Er is al een Word-export bezig. Wacht tot deze is voltooid.',
+    dlgPickSaveDir: 'Standaard opslaglocatie kiezen',
+    errSaveDirUnusable:
+      'De geselecteerde map is niet beschrijfbaar en kan niet als standaard opslaglocatie worden gebruikt',
   },
   ms: {
     menuFile: 'Fail',
@@ -1143,6 +1190,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Tidak dapat log masuk ke Genspark: komponen yang diperlukan (gsk) tiada. Sila pasang semula aplikasi.',
     pdfDocxBusyMsg: 'Eksport ke Word sedang dijalankan. Sila tunggu sehingga selesai.',
+    dlgPickSaveDir: 'Pilih Lokasi Simpanan Lalai',
+    errSaveDirUnusable:
+      'Folder yang dipilih tidak boleh ditulis dan tidak dapat digunakan sebagai lokasi simpanan lalai',
   },
   he: {
     menuFile: 'קובץ',
@@ -1194,6 +1244,9 @@ const tMain = createI18n({
     pdfDocxFailedMsg: 'הייצוא כ-Word נכשל',
     pdfDocxNoCliMsg: 'לא ניתן להתחבר ל-Genspark: רכיב נדרש (gsk) חסר. נא להתקין מחדש את האפליקציה.',
     pdfDocxBusyMsg: 'ייצוא ל-Word כבר מתבצע. נא להמתין לסיומו.',
+    dlgPickSaveDir: 'בחירת מיקום שמירה כברירת מחדל',
+    errSaveDirUnusable:
+      'התיקייה שנבחרה אינה ניתנת לכתיבה ולא ניתן להשתמש בה כמיקום שמירה כברירת מחדל',
   },
   hi: {
     menuFile: 'फ़ाइल',
@@ -1248,6 +1301,9 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Genspark में साइन इन नहीं किया जा सकता: आवश्यक घटक (gsk) मौजूद नहीं है। कृपया ऐप को फिर से इंस्टॉल करें।',
     pdfDocxBusyMsg: 'Word के रूप में निर्यात पहले से चल रहा है। कृपया पूरा होने तक प्रतीक्षा करें।',
+    dlgPickSaveDir: 'डिफ़ॉल्ट सहेजने का स्थान चुनें',
+    errSaveDirUnusable:
+      'चयनित फ़ोल्डर में लिखा नहीं जा सकता, इसलिए इसे डिफ़ॉल्ट सहेजने के स्थान के रूप में उपयोग नहीं किया जा सकता',
   },
   'zh-TW': {
     menuFile: '檔案',
@@ -1299,6 +1355,8 @@ const tMain = createI18n({
     pdfDocxFailedMsg: '匯出為 Word 失敗',
     pdfDocxNoCliMsg: '無法登入 Genspark：缺少必要元件（gsk），請重新安裝應用程式。',
     pdfDocxBusyMsg: '正在轉換中，請等待目前的匯出完成。',
+    dlgPickSaveDir: '選擇預設儲存位置',
+    errSaveDirUnusable: '所選資料夾無法寫入，無法作為預設儲存位置',
   },
 })
 
@@ -1385,6 +1443,9 @@ function createShellWindow(): void {
     },
   })
   shellWindow = win
+  // dragging the window by the tab strip's blank (draggable) area produces no
+  // DOM event anywhere — will-move is the only signal to dismiss popovers
+  win.on('will-move', broadcastChromePressed)
 
   const manager = new TabManager(
     win,
@@ -1713,7 +1774,9 @@ function registerHomeIpc(): void {
     if (!loadGenofficeAuth()) return { loggedIn: false }
     await proxyBootstrap
     const info = await gskLoginInfo()
-    return info ? { loggedIn: true, email: info.email } : { loggedIn: true }
+    return info
+      ? { loggedIn: true, email: info.email, creditBalance: info.creditBalance }
+      : { loggedIn: true }
   })
 
   // login progress is streamed to the requesting renderer; the auth URL is
@@ -1948,8 +2011,34 @@ function registerHomeIpc(): void {
     for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
   })
 
+  // effective folder where new/untitled files land; the editor mains resolve
+  // the same setting themselves (configuredDefaultSaveDir via docs' defaultSaveDir)
+  ipcMain.handle(HOME_CHANNELS.getDefaultSaveDir, (): string => defaultSaveDir())
+
+  ipcMain.handle(HOME_CHANNELS.pickDefaultSaveDir, async (): Promise<string | null> => {
+    const result = await showOpenDialogWithMemory(dialog, shellWindow, {
+      title: tm('dlgPickSaveDir'),
+      defaultPath: defaultSaveDir(),
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const picked = result.filePaths[0]
+    if (result.canceled || !picked) return null
+    if (!isUsableSaveDir(picked)) {
+      showErrorDialog(shellWindow, tm('errSaveDirUnusable'), picked)
+      return null
+    }
+    writeAppSetting(APP_SETTINGS_PATH(), DEFAULT_SAVE_DIR_KEY, picked)
+    return picked
+  })
+
   ipcMain.handle(HOME_CHANNELS.openGenTeam, () => {
     shell.openExternal(GENTEAM_URL).catch(() => {
+      // no browser handler available; nothing actionable for the user here
+    })
+  })
+
+  ipcMain.handle(HOME_CHANNELS.openCreditUsage, () => {
+    shell.openExternal(CREDIT_USAGE_URL).catch(() => {
       // no browser handler available; nothing actionable for the user here
     })
   })
@@ -2011,7 +2100,14 @@ const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
   markdown: 'md',
 }
 
+// tab views see neither DOM events nor a focus change when the user clicks the
+// shell chrome — relay the press so open popovers in documents can dismiss
+function broadcastChromePressed(): void {
+  for (const wc of webContents.getAllWebContents()) wc.send('app:chrome-pressed')
+}
+
 function registerTabsIpc(): void {
+  ipcMain.on(TABS_CHANNELS.chromePressed, broadcastChromePressed)
   ipcMain.handle(TABS_CHANNELS.list, () => tabManager?.list() ?? [])
   ipcMain.handle(TABS_CHANNELS.activate, (_event, id: string) => tabManager?.activateTab(id))
   ipcMain.handle(TABS_CHANNELS.close, (_event, id: string) => tabManager?.closeTab(id))
@@ -2532,13 +2628,45 @@ registerTabsIpc()
 // sheets' project:resolveChat goes through the handler registered by docs-main; the sessionId reverse lookup hooks in here
 setSessionPathResolver(resolveSheetsSessionPath)
 
-app.whenReady().then(() => {
-  const hasLock = app.requestSingleInstanceLock(
-    pendingLaunchPath ? { launchPath: pendingLaunchPath } : {},
-  )
+/** Dev-only pid marker for the takeover below; scoped to userData like the lock itself. */
+const devPidFile = () => join(app.getPath('userData'), 'dev-instance.pid')
+
+app.whenReady().then(async () => {
+  const lockData = () => (pendingLaunchPath ? { launchPath: pendingLaunchPath } : {})
+  let hasLock = app.requestSingleInstanceLock(lockData())
+  if (!hasLock && !app.isPackaged) {
+    // Dev watch restart: electron-vite SIGTERMs the previous instance and spawns this
+    // one immediately. Chromium turns that SIGTERM into a graceful quit (Node's
+    // process.on('SIGTERM') never fires in the main process), and the quit can wedge
+    // in the close-confirmation flow — the zombie then keeps the single-instance lock,
+    // this instance quits, and electron-vite's on-close handler exits with it, killing
+    // the renderer dev server (blank shell window until a manual dev restart).
+    // The previous instance is doomed either way: kill it and take over the lock.
+    try {
+      const oldPid = Number(readFileSync(devPidFile(), 'utf-8').trim())
+      if (Number.isFinite(oldPid) && oldPid > 0 && oldPid !== process.pid) {
+        // pid-recycling guard: only kill if that pid is still an Electron process
+        const cmd = execSync(`ps -o command= -p ${oldPid}`).toString()
+        if (cmd.includes('Electron')) process.kill(oldPid, 'SIGKILL')
+      }
+    } catch {
+      // no previous instance recorded / already gone (ps exits non-zero)
+    }
+    for (let i = 0; i < 20 && !hasLock; i++) {
+      await new Promise((r) => setTimeout(r, 150))
+      hasLock = app.requestSingleInstanceLock(lockData())
+    }
+  }
   if (!hasLock) {
     app.quit()
     return
+  }
+  if (!app.isPackaged) {
+    try {
+      writeFileSync(devPidFile(), String(process.pid))
+    } catch {
+      // best-effort: without the marker the next restart just retries the lock
+    }
   }
 
   proxyBootstrap = installMainProcessProxy()

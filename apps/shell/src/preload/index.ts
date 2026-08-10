@@ -167,6 +167,14 @@ const homeApi: HomeApi = {
       throw new Error('Invalid theme.')
     await ipcRenderer.invoke(HOME_CHANNELS.setTheme, theme)
   },
+  async getDefaultSaveDir() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDefaultSaveDir)
+    return typeof result === 'string' ? result : ''
+  },
+  async pickDefaultSaveDir() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.pickDefaultSaveDir)
+    return typeof result === 'string' && result ? result : null
+  },
   onThemeChanged(handler) {
     const listener = (_event: Electron.IpcRendererEvent, theme: unknown) => {
       if (theme === 'light' || theme === 'dark' || theme === 'system') handler(theme)
@@ -176,6 +184,9 @@ const homeApi: HomeApi = {
   },
   async openGenTeam() {
     await ipcRenderer.invoke(HOME_CHANNELS.openGenTeam)
+  },
+  async openCreditUsage() {
+    await ipcRenderer.invoke(HOME_CHANNELS.openCreditUsage)
   },
   async cloudProjectsCached() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.cloudProjectsCached)
@@ -268,6 +279,9 @@ const tabsApi: TabsApi = {
     const listener = (_event: IpcRendererEvent, tabs: TabSummary[]) => handler(tabs)
     ipcRenderer.on(TABS_CHANNELS.changed, listener)
     return () => ipcRenderer.removeListener(TABS_CHANNELS.changed, listener)
+  },
+  notifyChromePressed() {
+    ipcRenderer.send(TABS_CHANNELS.chromePressed)
   },
 }
 

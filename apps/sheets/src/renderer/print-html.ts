@@ -376,7 +376,12 @@ function cellCss(style: PrintCellStyle | null, rawValue: unknown, gridlines: boo
   // a font name comes straight from styles.xml; anything outside the whitelist could
   // close the style attribute and inject markup into the exported page
   const family = style?.ff?.replace(/[^\p{L}\p{N} \-_.]/gu, '')
-  if (family) rules.push(`font-family:'${family}'`)
+  // fallbacks mirror the body stack: an uninstalled family (e.g. Aptos)
+  // must not drop to the browser's serif default in the exported page
+  if (family)
+    rules.push(
+      `font-family:'${family}',Calibri,'Helvetica Neue',Arial,${printCjkFonts(getLang())},sans-serif`,
+    )
   if (style?.cl?.rgb) rules.push(`color:${cssColor(style.cl.rgb)}`)
   if (style?.bg?.rgb) rules.push(`background:${cssColor(style.bg.rgb)}`)
   const align =

@@ -165,36 +165,8 @@ body.vib .home {
 }
 
 /* ---- bottom-left account entry (today = Genspark login, later = signup/account system) ---- */
-/* language switching lives in the account popup menu (.lang-row / .lang-flyout) */
-
-.lang-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  width: 100%;
-  height: 34px;
-  margin: 2px 0;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.lang-menu-item:hover {
-  background: var(--bg-hover);
-}
-
-.lang-menu-item.active {
-  color: var(--accent);
-  font-weight: 600;
-}
+/* clicking it opens the settings modal (settings.css) directly, which hosts
+   login/logout plus preferences (language / theme / save location / update channel) */
 
 .account-entry {
   position: relative;
@@ -259,6 +231,13 @@ body.vib .home {
   flex-direction: column;
   min-width: 0;
   line-height: 1.25;
+  flex: 1;
+}
+
+.account-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-muted);
 }
 
 .account-name {
@@ -314,168 +293,8 @@ body.vib .home {
   background: var(--bg-hover);
 }
 
-.login-hint .login-hint-open,
-.account-menu-item.login-rescue {
+.login-hint .login-hint-open {
   color: var(--accent);
-}
-
-/* popup panel metrics match the Genspark account dropdown;
-   stretched past the account entry (max width the sidebar can host un-clipped) */
-.account-menu {
-  position: absolute;
-  left: -8px;
-  bottom: calc(100% + 4px);
-  width: calc(100% + 16px);
-  padding: 16px 8px;
-  border: none;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  z-index: 30;
-}
-
-.account-menu-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 8px;
-}
-
-.account-menu-email {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-menu-divider {
-  height: 1px;
-  margin: 9px 0;
-  background: var(--border-subtle);
-}
-
-.account-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 34px;
-  margin: 2px 0;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.account-menu-item:hover {
-  background: var(--bg-hover);
-}
-
-.account-menu-item.danger {
-  color: #d93025;
-}
-
-.account-menu-item.danger svg {
-  flex-shrink: 0;
-}
-
-.account-menu-version {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 34px;
-  margin: 2px 0;
-  padding: 6px 8px;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--text-primary);
-  user-select: text;
-}
-
-.account-menu-version svg {
-  flex-shrink: 0;
-  color: var(--text-primary);
-}
-
-.version-row-label {
-  flex-shrink: 0;
-}
-
-.version-row-value {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.account-menu-item:disabled {
-  color: var(--text-muted);
-  cursor: default;
-}
-
-/* language row in the account menu (hover opens the flyout) */
-.account-menu-item.lang-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.lang-row svg {
-  flex-shrink: 0;
-  color: var(--text-primary);
-}
-
-.lang-row-label {
-  flex-shrink: 0;
-}
-
-.lang-row-current {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* wrapper spans the menu's full row width (takes over the item's negative margins)
-   and hosts the hover flyout */
-.lang-row-wrap {
-  width: 100%;
-  margin: 2px 0;
-}
-
-.lang-row-wrap .lang-row {
-  width: 100%;
-  margin: 0;
-}
-
-/* hover flyout with the language list; fixed-position (anchored from JS) so it
-   is not clipped by the sidebar scroll container */
-.lang-flyout {
-  position: fixed;
-  min-width: 160px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 8px;
-  border: none;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  z-index: 40;
 }
 
 /* ---- main content ---- */

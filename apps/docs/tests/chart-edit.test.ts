@@ -22,7 +22,7 @@ describe('embedded chart editing', () => {
     const chart = editor.view.dom.querySelector('.doc-protected-chart') as HTMLElement
     expect(chart).toBeTruthy()
     expect(chart.querySelector('.doc-chart-title')?.textContent).toBe('销售统计')
-    expect(chart.querySelectorAll('.doc-chart-svg rect').length).toBe(5) // 6 slots - 1 gap
+    expect(chart.querySelectorAll('.doc-chart-svg rect').length).toBe(7) // 6 slots - 1 gap + 2 legend swatches
     expect(chart.querySelectorAll('.doc-chart-cat').length).toBe(3)
     expect(chart.querySelectorAll('.doc-chart-val').length).toBe(5)
     expect(chart.querySelectorAll('.doc-chart-gap').length).toBe(1)

@@ -8,6 +8,7 @@ const {
   ymlVersion,
   semverNewer,
   assertPromotable,
+  releaseUploadDecision,
 } = require('../../../scripts/update-feed-utils.cjs')
 
 /** Promote-workflow guard: stable may only move forward (unless forced). */
@@ -39,5 +40,18 @@ describe('update-feed-utils', () => {
 
   it('lets --force roll back', () => {
     expect(assertPromotable('0.5.80', '0.5.82', true)).toEqual({ ok: true })
+  })
+
+  it('makes an exact-version CI rerun a no-op when explicitly allowed', () => {
+    expect(
+      releaseUploadDecision('0.5.82', '0.5.82', {
+        allowExisting: true,
+      }),
+    ).toEqual({ action: 'skip' })
+  })
+
+  it('still rejects equal and older uploads by default', () => {
+    expect(releaseUploadDecision('0.5.82', '0.5.82').action).toBe('reject')
+    expect(releaseUploadDecision('0.5.81', '0.5.82', { allowExisting: true }).action).toBe('reject')
   })
 })

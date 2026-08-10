@@ -56,7 +56,27 @@ const CLONE_PRUNE_BUDGET = 150_000
 /** window slack around a page (px): keeps neighbours whose floats/overflow bleed into the page */
 const CLONE_PRUNE_PAD = 2000
 
-/** pruned clone for one page window: blocks intersecting [from-pad, to+pad] verbatim, pruned runs as spacers (exported for tests) */
+/**
+ * Canvas block → clone HTML. Phantom table rows (page-gap / repeated-header
+ * widgets) are removed and rowspans restored to their source values
+ * (data-base-rowspan): the canvas grows rowspans to bridge the phantom rows,
+ * but the clone hides/drops them, so the grown spans would swallow real rows.
+ */
+function cloneBlockHtml(el: HTMLElement): string {
+  if (!el.querySelector('tr.page-gap, tr.page-repeat-header, [data-base-rowspan]')) {
+    return el.outerHTML
+  }
+  const tmp = el.cloneNode(true) as HTMLElement
+  for (const tr of Array.from(tmp.querySelectorAll('tr.page-gap, tr.page-repeat-header'))) {
+    tr.remove()
+  }
+  for (const td of Array.from(tmp.querySelectorAll('[data-base-rowspan]'))) {
+    td.setAttribute('rowspan', td.getAttribute('data-base-rowspan')!)
+  }
+  return tmp.outerHTML
+}
+
+/** pruned clone for one page window: blocks intersecting [from-pad, to+pad] verbatim, pruned runs as spacers */
 export function prunedCloneHtml(kids: CloneChild[], from: number, to: number): string {
   const lo = from - CLONE_PRUNE_PAD
   const hi = to + CLONE_PRUNE_PAD
@@ -80,9 +100,9 @@ export function prunedCloneHtml(kids: CloneChild[], from: number, to: number): s
       pruned = false
     }
     parts.push(c.html)
-    // zero markers advance the flow position too (a spacer may have been
-    // emitted before them); skipping them leaves `base` stale and the next
-    // spacer re-adds the distance already consumed, shifting content down
+    // zero-height markers anchor positions too: skipping them here made every
+    // following marker's spacer re-span the full distance from the last real
+    // block, inflating the clone flow (blank pages past the drift)
     lastKept = c
   }
   return parts.join('')
@@ -127,6 +147,7 @@ export function PaginationPreview({
   pageFootnotesOf,
   endnoteItems,
   sectionHfOverride,
+  clearPageGaps,
   onExportPdf,
   onClose,
 }: {
@@ -150,6 +171,14 @@ export function PaginationPreview({
   endnoteItems?: PageNoteItem[]
   /** Multi-section: unsaved per-section header/footer edit overrides (default variant) */
   sectionHfOverride?: (sectionIndex: number, kind: 'header' | 'footer') => HeaderFooter | null
+  /**
+   * Clears the canvas page-gap decorations before the snapshot measure. In-table
+   * gap/repeated-header widgets are extra <tr>s that consume rowspan slots, so a
+   * vMerge-heavy table measures with collapsed columns (exploding row heights)
+   * while they are present; the canvas rebuilds them on its next debounced
+   * remeasure after the snapshot.
+   */
+  clearPageGaps?: () => void
   onExportPdf: () => void
   onClose: () => void
 }) {
@@ -179,6 +208,7 @@ export function PaginationPreview({
   useEffect(() => {
     const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
     if (!pm) return
+    clearPageGaps?.()
     const factor = zoom / 100
     // switch the columned canvas to the single-flow measuring state (CSS columns off, width = column width), matching engine column-flow coordinates
     if (colFlow) pm.classList.add('measuring-columns')
@@ -270,7 +300,7 @@ export function PaginationPreview({
           const h = (rect.height - innerGap) / factor
           gapAccum += innerGap
           metas.push({
-            html: el.outerHTML,
+            html: cloneBlockHtml(el),
             vTop,
             vBottom: vTop + h,
             mt: parseFloat(cs.marginTop) || 0,
@@ -282,7 +312,7 @@ export function PaginationPreview({
         setHtml('')
       } else {
         setCloneKids(null)
-        setHtml(pm.innerHTML)
+        setHtml(Array.from(pm.children, (c) => cloneBlockHtml(c as HTMLElement)).join(''))
       }
     } finally {
       if (colFlow) pm.classList.remove('measuring-columns')
@@ -433,6 +463,7 @@ export function PaginationPreview({
                   '--header-dist': `${pageBox.headerDist}px`,
                   '--footer-dist': `${pageBox.footerDist}px`,
                   '--pv-mr': `${twipsToPx(s.marginRight)}px`,
+                  '--pv-ml': `${twipsToPx(s.marginLeft)}px`,
                   padding: `${mTop}px ${twipsToPx(s.marginRight)}px ${mBottom}px ${twipsToPx(s.marginLeft)}px`,
                   background: pageColor ? `#${pageColor}` : undefined,
                 } as React.CSSProperties
@@ -443,11 +474,39 @@ export function PaginationPreview({
                   {watermark}
                 </div>
               )}
+              {(parts.headerImages ?? [])
+                .filter((img) => img.floating)
+                .map((img, k) => (
+                  // picture watermark (absolute VML shape in the header): drawn once
+                  // per page behind the body (negative z-index; .pv-page isolates)
+                  <img
+                    key={`wm${k}`}
+                    className="pv-watermark-img"
+                    src={img.dataUrl}
+                    alt=""
+                    aria-hidden="true"
+                    style={{
+                      left:
+                        img.posH === 'center'
+                          ? '50%'
+                          : img.posH === 'right'
+                            ? undefined
+                            : twipsToPx(s.marginLeft),
+                      right: img.posH === 'right' ? twipsToPx(s.marginRight) : undefined,
+                      top: img.posV === 'center' ? '50%' : img.posV === 'bottom' ? undefined : mTop,
+                      bottom: img.posV === 'bottom' ? mBottom : undefined,
+                      transform: `translate(${img.posH === 'center' ? '-50%' : '0'}, ${img.posV === 'center' ? '-50%' : '0'})`,
+                      ...(img.widthPx ? { width: img.widthPx } : {}),
+                      ...(img.heightPx ? { height: img.heightPx } : {}),
+                      ...(img.washout ? { filter: 'brightness(1.6) contrast(0.35)' } : {}),
+                    }}
+                  />
+                ))}
               {parts.header && (
                 <HeaderFooterArea
                   kind="header"
                   value={parts.header}
-                  images={parts.headerImages}
+                  images={parts.headerImages?.filter((img) => !img.floating)}
                   readOnly
                   onCommit={() => {}}
                   pageNo={pageNoText}
@@ -687,7 +746,7 @@ export function PaginationPreview({
                 <HeaderFooterArea
                   kind="footer"
                   value={parts.footer}
-                  images={parts.footerImages}
+                  images={parts.footerImages?.filter((img) => !img.floating)}
                   readOnly
                   onCommit={() => {}}
                   pageNo={pageNoText}

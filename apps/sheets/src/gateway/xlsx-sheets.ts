@@ -396,7 +396,10 @@ export function addWorksheetOverride(contentTypesXml: string, partPath: string):
   return contentTypesXml.replace('</Types>', () => `${override}</Types>`)
 }
 
-export function removeWorksheetOverride(contentTypesXml: string, partPath: string): string {
+/// Removes the [Content_Types].xml Override for any part path (worksheets,
+/// drawings, charts, comments, tables). Parts covered by a Default extension
+/// mapping have no Override; the call is a no-op for them.
+export function removePartOverride(contentTypesXml: string, partPath: string): string {
   return contentTypesXml.replace(
     new RegExp(`<Override\\b[^>]*PartName="/${escapeRegExp(partPath)}"[^>]*/>\\s*`),
     '',
@@ -422,20 +425,93 @@ export function removeRelationshipById(relationshipsXml: string, relationshipId:
   )
 }
 
-/// Relationship types a worksheet may carry and still be deletable: the
-/// target either dies with the sheet (hyperlinks) or survives as a harmless
-/// orphan (printer settings). Drawings, charts, tables, comments, and pivots
-/// would leave dangling references, so their sheets fail closed.
-const REMOVABLE_RELATIONSHIP_TYPES = /\/(hyperlink|printerSettings)"/
+/// Relationship types whose targets never block a sheet removal: hyperlink
+/// targets are external (or workbook-internal anchors that die with the
+/// sheet's part), and printer settings survive as harmless orphans.
+const IGNORABLE_SHEET_RELATIONSHIP_TYPES = /\/(?:hyperlink|printerSettings)$/
 
-export function assertSheetRelsRemovable(relsXml: string, sheetName: string): void {
-  for (const match of relsXml.matchAll(/<Relationship\b[^>]*?\bType="([^"]+)"[^>]*?\/>/g)) {
-    if (!REMOVABLE_RELATIONSHIP_TYPES.test(`${match[1]}"`)) {
-      throw new SheetEditError(
-        `Sheet "${sheetName}" carries charts, images, tables, or comments — deleting it is not supported yet.`,
-      )
-    }
+/// Relationship types whose targets are owned by the sheet: drawings (with
+/// their images and charts), legacy VML, comments, threaded comments, form
+/// control properties, tables, and a sheet-background image are anchored on
+/// exactly one sheet, so they are cascade-deleted with it.
+const OWNED_SHEET_RELATIONSHIP_TYPES =
+  /\/(?:drawing|vmlDrawing|comments|threadedComment|ctrlProp|table|image)$/
+
+export interface ParsedRelationship {
+  readonly id: string | undefined
+  readonly type: string
+  readonly target: string
+  readonly external: boolean
+}
+
+export function parseRelationships(relsXml: string): ParsedRelationship[] {
+  const entries: ParsedRelationship[] = []
+  for (const match of relsXml.matchAll(/<Relationship\b[^>]*?\/>/g)) {
+    const element = match[0]
+    const type = readAttribute(element, 'Type')
+    const target = readAttribute(element, 'Target')
+    if (type === undefined || target === undefined) continue
+    entries.push({
+      id: readAttribute(element, 'Id'),
+      type: decodeAttribute(type),
+      target: decodeAttribute(target),
+      external: readAttribute(element, 'TargetMode') === 'External',
+    })
   }
+  return entries
+}
+
+/// Inverse of xlsx-drawing-add's relsPathFor; the package-level "_rels/.rels"
+/// maps to "".
+export function partPathForRels(relsPath: string): string {
+  return relsPath.replace(/(^|\/)_rels\/([^/]*)\.rels$/, '$1$2')
+}
+
+/// Returns the (unresolved) targets of a removed sheet's owned satellite
+/// parts, for the caller to cascade-delete. Relationships that never block a
+/// removal are skipped; anything else — pivot tables, slicers, OLE objects —
+/// fails closed rather than leave dangling references for Excel to repair.
+export function classifyRemovedSheetRels(relsXml: string, sheetName: string): string[] {
+  const owned: string[] = []
+  for (const entry of parseRelationships(relsXml)) {
+    if (entry.external || IGNORABLE_SHEET_RELATIONSHIP_TYPES.test(entry.type)) continue
+    if (OWNED_SHEET_RELATIONSHIP_TYPES.test(entry.type)) {
+      owned.push(entry.target)
+      continue
+    }
+    const kind = /\/pivotTable$/.test(entry.type)
+      ? 'a pivot table'
+      : `a part this build cannot delete safely (${entry.type})`
+    throw new SheetEditError(
+      `Sheet "${sheetName}" carries ${kind} — deleting it is not supported yet.`,
+    )
+  }
+  return owned
+}
+
+/// displayName of the table defined in a table part — the token surviving
+/// formulas would use in structured references (Table1[Amount]).
+export function tableDisplayName(tableXml: string): string | undefined {
+  const openTag = /<table\b[^>]*>/.exec(tableXml)?.[0]
+  if (!openTag) return undefined
+  const name = readAttribute(openTag, 'displayName') ?? readAttribute(openTag, 'name')
+  return name === undefined ? undefined : decodeAttribute(name)
+}
+
+/// True when a defined name that survives the removal mentions the token
+/// (a structured-reference prefix like "DecoTable["). Names scoped to a
+/// removed sheet die with it and never block.
+export function definedNamesUseToken(
+  workbookXml: string,
+  token: string,
+  removedLocalIds: ReadonlySet<number>,
+): boolean {
+  for (const match of workbookXml.matchAll(/<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g)) {
+    const localId = readAttribute(`<definedName${match[1] ?? ''}/>`, 'localSheetId')
+    if (localId !== undefined && removedLocalIds.has(Number(localId))) continue
+    if (decodeEntities(match[2] ?? '').includes(token)) return true
+  }
+  return false
 }
 
 /// DefinedNames scoped to a removed sheet are dropped with it, so their

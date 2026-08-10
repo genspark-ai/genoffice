@@ -215,6 +215,159 @@ const sheetsMyWorksheet = `<?xml version="1.0" encoding="UTF-8"?>
 
 const sheetsChart = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:barChart><c:ser><c:val><c:numRef><c:f>Data!$A$1:$A$2</c:f></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`
 
+/// Exercises sheet removal with owned satellite parts: "Deco" carries a
+/// drawing (image + chart with a color style), comments, legacy VML, and a
+/// table. Options add a second drawing on the surviving sheet sharing the
+/// image, a pivot-table relationship, a surviving structured reference into
+/// the table, or a defined name scoped to "Deco" that uses the table.
+export async function buildSatelliteSheetFixture(
+  options: {
+    sharedImage?: boolean
+    pivot?: boolean
+    tableRef?: boolean
+    scopedTableName?: boolean
+  } = {},
+): Promise<Buffer> {
+  const zip = new JSZip()
+  const keepFormula = options.tableRef ? '<c r="B1"><f>SUM(DecoTable[Amt])</f><v>3</v></c>' : ''
+  const keepDrawing = options.sharedImage ? '<drawing r:id="rId1"/>' : ''
+  // A name scoped to Deco (localSheetId 1) dies with the sheet, so its
+  // structured reference into DecoTable must not block the removal.
+  const definedNames = options.scopedTableName
+    ? '<definedNames><definedName name="DecoRef" localSheetId="1">SUM(DecoTable[Amt])</definedName></definedNames>'
+    : ''
+  zip.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  ${options.sharedImage ? '<Override PartName="/xl/drawings/drawing2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ''}
+  <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+  <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
+  <Override PartName="/xl/comments1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+  <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+</Types>`,
+  )
+  zip.file('_rels/.rels', packageRelationships)
+  zip.file(
+    'xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Keep" sheetId="1" r:id="rId1"/><sheet name="Deco" sheetId="2" r:id="rId2"/></sheets>
+  ${definedNames}
+</workbook>`,
+  )
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+  )
+  zip.file(
+    'xl/worksheets/sheet1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c>${keepFormula}</row></sheetData>
+  ${keepDrawing}
+</worksheet>`,
+  )
+  if (options.sharedImage) {
+    zip.file(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing2.xml"/>
+</Relationships>`,
+    )
+    zip.file(
+      'xl/drawings/drawing2.xml',
+      '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>',
+    )
+    zip.file(
+      'xl/drawings/_rels/drawing2.xml.rels',
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+</Relationships>`,
+    )
+  }
+  zip.file(
+    'xl/worksheets/sheet2.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData><row r="1"><c r="A1"><v>5</v></c></row><row r="2"><c r="A2"><v>7</v></c></row></sheetData>
+  <drawing r:id="rId1"/>
+  <legacyDrawing r:id="rId3"/>
+  <tableParts count="1"><tablePart r:id="rId4"/></tableParts>
+</worksheet>`,
+  )
+  zip.file(
+    'xl/worksheets/_rels/sheet2.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
+  ${options.pivot ? '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>' : ''}
+</Relationships>`,
+  )
+  zip.file(
+    'xl/drawings/drawing1.xml',
+    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>',
+  )
+  zip.file(
+    'xl/drawings/_rels/drawing1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
+</Relationships>`,
+  )
+  zip.file(
+    'xl/charts/chart1.xml',
+    '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:barChart><c:ser><c:val><c:numRef><c:f>Deco!$A$1:$A$2</c:f></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>',
+  )
+  zip.file(
+    'xl/charts/_rels/chart1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="colors1.xml"/>
+</Relationships>`,
+  )
+  zip.file(
+    'xl/charts/colors1.xml',
+    '<cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle"/>',
+  )
+  zip.file('xl/comments1.xml', kitchenSinkComments)
+  zip.file('xl/drawings/vmlDrawing1.vml', kitchenSinkVml)
+  zip.file(
+    'xl/tables/table1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="DecoTable" displayName="DecoTable" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Amt"/></tableColumns></table>`,
+  )
+  if (options.pivot) {
+    zip.file(
+      'xl/pivotTables/pivotTable1.xml',
+      '<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+    )
+  }
+  zip.file('xl/media/image1.png', kitchenSinkPng)
+  zip.file('xl/styles.xml', styles)
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
 /// Exercises preservation of exotic and binary parts: theme, doc properties,
 /// comments + VML, a table part, frozen panes, autoFilter, PNG media, and
 /// printer settings. Only sheet1.xml may change when a cell is edited.

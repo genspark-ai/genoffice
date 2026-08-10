@@ -43,16 +43,20 @@ import {
   addWorksheetRelationship,
   applySheetPlanToWorkbookXml,
   assertNoSheetScopedDefinedNames,
-  assertSheetRelsRemovable,
   buildWorksheetPartXml,
   chartReferencesSheet,
+  classifyRemovedSheetRels,
   definedNamesReferenceSheet,
+  definedNamesUseToken,
   maxRelationshipId,
   maxSheetIdInWorkbook,
+  parseRelationships,
   parseSheetElements,
+  partPathForRels,
   prepareClonedSheetRels,
+  removePartOverride,
   removeRelationshipById,
-  removeWorksheetOverride,
+  tableDisplayName,
   renameSheetReferencesInChart,
   renameSheetReferencesInDefinedNames,
   renameSheetReferencesInWorksheet,
@@ -1166,6 +1170,68 @@ async function applySheetPlanToPackage(
     (path) => path.startsWith('xl/charts/') && path.endsWith('.xml'),
   )
 
+  // Satellite parts owned by the removed sheets — drawings with their images
+  // and charts, legacy VML, comments, tables — die with the sheet. The
+  // closure walks each owned part's own relationships; unsupported sheet
+  // relationships (pivot tables, slicers) fail closed inside
+  // classifyRemovedSheetRels.
+  const removalRelsPaths = new Map<string, string>()
+  const ownedPartsByRemoval = new Map<string, ReadonlySet<string>>()
+  const removedOwnedParts = new Set<string>()
+  for (const removal of plan.removals) {
+    const removalPath = removalPaths.get(removal) ?? ''
+    const relsPath = relsPathFor(removalPath)
+    removalRelsPaths.set(removal, relsPath)
+    const owned = new Set<string>()
+    if (await pkg.has(relsPath)) {
+      const targets = classifyRemovedSheetRels(await pkg.readText(relsPath), removal)
+      const queue = targets.map((target) => resolveRelTarget(removalPath, target))
+      while (queue.length > 0) {
+        const part = queue.pop() as string
+        if (owned.has(part) || !(await pkg.has(part))) continue
+        owned.add(part)
+        const childRelsPath = relsPathFor(part)
+        if (!(await pkg.has(childRelsPath))) continue
+        owned.add(childRelsPath)
+        for (const entry of parseRelationships(await pkg.readText(childRelsPath))) {
+          if (!entry.external) queue.push(resolveRelTarget(part, entry.target))
+        }
+      }
+    }
+    ownedPartsByRemoval.set(removal, owned)
+    for (const part of owned) removedOwnedParts.add(part)
+  }
+
+  // A part in the closure may also be referenced from a part that survives —
+  // an image placed on two sheets shares one xl/media entry. Walk every
+  // surviving rels part and pull such targets (with their own subtrees) back
+  // out of the removal set.
+  const dyingRelsParts = new Set([
+    ...removalRelsPaths.values(),
+    ...[...removedOwnedParts].filter((part) => part.endsWith('.rels')),
+  ])
+  const keepQueue: string[] = []
+  for (const relsPath of packagePaths) {
+    if (!relsPath.endsWith('.rels') || dyingRelsParts.has(relsPath)) continue
+    const owner = partPathForRels(relsPath)
+    if (removedPathSet.has(owner)) continue
+    for (const entry of parseRelationships(await pkg.readText(relsPath))) {
+      if (entry.external) continue
+      const target = resolveRelTarget(owner, entry.target)
+      if (removedOwnedParts.has(target)) keepQueue.push(target)
+    }
+  }
+  while (keepQueue.length > 0) {
+    const part = keepQueue.pop() as string
+    if (!removedOwnedParts.delete(part)) continue
+    const childRelsPath = relsPathFor(part)
+    if (removedOwnedParts.delete(childRelsPath)) {
+      for (const entry of parseRelationships(await pkg.readText(childRelsPath))) {
+        if (!entry.external) keepQueue.push(resolveRelTarget(part, entry.target))
+      }
+    }
+  }
+
   // Removals fail closed while every reference to the sheet is still intact.
   const removedLocalIds = new Set(
     originalNames.flatMap((name, index) => (plan.removals.includes(name) ? [index] : [])),
@@ -1187,6 +1253,9 @@ async function applySheetPlanToPackage(
       }
     }
     for (const chartPath of chartPaths) {
+      // Charts dying with a removed sheet chart that sheet's own data; only
+      // surviving charts can hold a genuinely dangling reference.
+      if (removedOwnedParts.has(chartPath)) continue
       if (chartReferencesSheet(await pkg.readText(chartPath), removal)) {
         throw new SheetEditError(
           `A chart reads its data from "${removal}" — deleting it is not allowed.`,
@@ -1198,14 +1267,39 @@ async function applySheetPlanToPackage(
         `A workbook defined name references "${removal}" — deleting it is not allowed.`,
       )
     }
-    const removalPath = removalPaths.get(removal) ?? ''
-    const relsPath = removalPath.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels')
-    if (await pkg.has(relsPath)) {
-      assertSheetRelsRemovable(await pkg.readText(relsPath), removal)
-      pkg.remove(relsPath)
+    // Structured references (DecoTable[Amount]) into a removed table are not
+    // sheet-qualified, so the sheet-name checks above cannot catch them.
+    for (const part of ownedPartsByRemoval.get(removal) ?? []) {
+      if (!removedOwnedParts.has(part) || !/^xl\/tables\/[^/]+\.xml$/.test(part)) continue
+      const name = tableDisplayName(await pkg.readText(part))
+      if (name === undefined) continue
+      const needle = `${name}[`
+      for (const path of survivingWorksheetPaths) {
+        const referenced = (await pkg.canPatch(path))
+          ? (await pkg.readText(path)).includes(needle)
+          : await pkg.containsText(path, needle)
+        if (referenced) {
+          throw new SheetEditError(
+            `Another sheet's formulas use table "${name}" on "${removal}" — deleting it is not allowed.`,
+          )
+        }
+      }
+      // Defined names scoped to a removed sheet die with it (matching the
+      // sheet-name check above), so only surviving names can block.
+      if (definedNamesUseToken(workbookXml, needle, removedLocalIds)) {
+        throw new SheetEditError(
+          `A workbook defined name uses table "${name}" on "${removal}" — deleting it is not allowed.`,
+        )
+      }
     }
-    pkg.remove(removalPath)
   }
+
+  for (const removal of plan.removals) {
+    const relsPath = removalRelsPaths.get(removal) ?? ''
+    if (await pkg.has(relsPath)) pkg.remove(relsPath)
+    pkg.remove(removalPaths.get(removal) ?? '')
+  }
+  for (const part of removedOwnedParts) pkg.remove(part)
 
   // Renames rewrite every qualified reference in the surviving parts.
   for (const rename of plan.renames) {
@@ -1227,6 +1321,9 @@ async function applySheetPlanToPackage(
       }
     }
     for (const chartPath of chartPaths) {
+      // Charts cascade-deleted with a removed sheet are already gone from the
+      // package by this point — reading them would throw.
+      if (removedOwnedParts.has(chartPath)) continue
       const xml = await pkg.readText(chartPath)
       const renamed = renameSheetReferencesInChart(xml, rename.sheetName, rename.newName)
       if (renamed !== xml) {
@@ -1260,7 +1357,10 @@ async function applySheetPlanToPackage(
   const originalContentTypes = await pkg.readText(contentTypesPath)
   let contentTypesXml = originalContentTypes
   for (const removal of plan.removals) {
-    contentTypesXml = removeWorksheetOverride(contentTypesXml, removalPaths.get(removal) ?? '')
+    contentTypesXml = removePartOverride(contentTypesXml, removalPaths.get(removal) ?? '')
+  }
+  for (const part of removedOwnedParts) {
+    contentTypesXml = removePartOverride(contentTypesXml, part)
   }
   for (const addition of additions) {
     contentTypesXml = addWorksheetOverride(contentTypesXml, addition.path)

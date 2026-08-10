@@ -906,6 +906,26 @@ export function effectiveBottomPx(set: SectionSettings, footerPx: number): numbe
   return Math.max(twipsToPx(set.marginBottom), footerPx > 0 ? dist + footerPx : 0)
 }
 
+/**
+ * Uniform typed line grid (w:docGrid type lines/linesAndChars): the pitch in
+ * points when EVERY section declares the same typed pitch, else null. Mixed or
+ * untyped docs don't snap (matches LO only for the uniform case; per-section
+ * pitches would need per-block plumbing, and mixed-grid docs are rare).
+ * The value feeds .doc-page { --doc-grid-pitch } which line-height round(up)
+ * expressions consume.
+ */
+export function docGridPitchPt(sections: SectionInfo[]): number | null {
+  if (sections.length === 0) return null
+  let pitch: number | null = null
+  for (const s of sections) {
+    const g = s.settings.docGrid
+    if (!g || (g.type !== 'lines' && g.type !== 'linesAndChars') || !g.linePitch) return null
+    if (pitch === null) pitch = g.linePitch
+    else if (pitch !== g.linePitch) return null
+  }
+  return pitch === null ? null : pitch / 20
+}
+
 /** Equal-width column count of a section (w:cols w:num).
  *  equalWidth="0" (local layout columns in PDF-converted docs, varying widths) is not modeled; treated as 1 column */
 export function sectionColumns(s: SectionInfo): number {

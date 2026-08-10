@@ -28,7 +28,7 @@ function render(state: UpdateUiState): void {
   verNew.textContent = `v${state.version}`
   later.textContent = s.later
 
-  desc.classList.toggle('error', state.phase === 'error')
+  desc.classList.toggle('error', state.phase === 'error' || state.phase === 'manual')
 
   switch (state.phase) {
     case 'available':
@@ -59,11 +59,18 @@ function render(state: UpdateUiState): void {
       action.style.display = ''
       action.textContent = s.retry
       break
+    case 'manual':
+      desc.textContent = s.manualDesc
+      progress.style.display = 'none'
+      action.style.display = ''
+      action.textContent = s.openDownload
+      break
   }
 }
 
 action.addEventListener('click', () => {
   if (phase === 'downloaded') api.install()
+  else if (phase === 'manual') api.openDownload()
   else api.download()
 })
 later.addEventListener('click', () => api.later())

@@ -106,12 +106,13 @@ export function TimelinePanels({
             aria-label={t('dlgTimelineAria', { name: timeline.fieldName })}
           >
             <header>
-              <span className="slicer-title" title={timeline.pivotPath}>
+              <span className="slicer-title" data-tip={timeline.pivotPath}>
                 {timeline.fieldName}
               </span>
               <button
                 className="slicer-clear"
-                title={t('dlgTimelineClear')}
+                data-tip={t('dlgTimelineClear')}
+                aria-label={t('dlgTimelineClear')}
                 disabled={range === null}
                 onClick={() => onClear(timeline.id)}
               >
@@ -119,7 +120,8 @@ export function TimelinePanels({
               </button>
               <button
                 className="slicer-close"
-                title={t('dlgTimelineRemove')}
+                data-tip={t('dlgTimelineRemove')}
+                aria-label={t('dlgTimelineRemove')}
                 onClick={() => onRemove(timeline.id)}
               >
                 ×
@@ -134,7 +136,7 @@ export function TimelinePanels({
                   <button
                     key={key}
                     className={selected ? 'timeline-month selected' : 'timeline-month'}
-                    title={monthLabel(key)}
+                    data-tip={monthLabel(key)}
                     onClick={(event) => {
                       if (event.shiftKey && range !== null) {
                         onRange(timeline.id, Math.min(range.start, key), Math.max(range.end, key))

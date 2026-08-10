@@ -244,6 +244,9 @@ function layoutParagraph(
   scale: number,
   fontScale: number,
   lnSpcRed = 0,
+  /** First-line width reduction (px): a bullet glyph overflowing the hanging indent
+   *  pushes the first line's text start right, so it must wrap that much earlier. */
+  firstLineShrinkPx = 0,
 ): LaidLine[] {
   const tokens = applyBidi(tokenizeParagraph(p, scale, fontScale)).map((tok, logicalOrder) => ({
     ...tok,
@@ -317,14 +320,17 @@ function layoutParagraph(
       continue
     }
     const w = tokenWidth(tok, metrics)
-    if (wrap && cur.length && curW + w > availWidth && !tok.isSpace) {
+    // The first line loses firstLineShrinkPx to the overflowing bullet glyph; evaluated
+    // lazily because the soft wrap right below can end line 0 for this same token
+    const lineAvail = () => (lines.length === 0 ? availWidth - firstLineShrinkPx : availWidth)
+    if (wrap && cur.length && curW + w > lineAvail() && !tok.isSpace) {
       pushLine(cur)
       cur = []
       curW = 0
     }
     // Hard-break over-long words (a single token wider than the line)
-    if (wrap && !cur.length && w > availWidth && tok.text.length > 1 && !tok.isSpace) {
-      for (const seg of hardBreak(tok, availWidth, metrics)) {
+    if (wrap && !cur.length && w > lineAvail() && tok.text.length > 1 && !tok.isSpace) {
+      for (const seg of hardBreak(tok, lineAvail(), metrics)) {
         pushLine([seg])
       }
       continue
@@ -807,7 +813,34 @@ function layoutAll(
     // alignment when none is explicit; affects layout only, not written back to
     // TextLine.align (an editor commit would store it as an explicit value)
     const align = p.align ?? (paraBaseRtl(p) ? ('right' as const) : undefined)
-    const laid = layoutParagraph(p, avail, wrap, metrics, scale, fontScale, lnSpcRed)
+    // Bullet glyph style/advance (drawn on the first line only). PowerPoint reserves
+    // the glyph's advance like a tab stop: body text can never start before the glyph
+    // ends, even when the glyph is wider than the hanging indent (-indent).
+    let bulletSt: RunStyle | undefined
+    let bulletW = 0
+    if (hasBullet) {
+      const base = runStyle(p.runs[0]!, scale, fontScale)
+      // <a:buSzPct>: bullet glyph size as a percentage of the first run's size
+      bulletSt =
+        p.bullet?.sizePct != null
+          ? { ...base, fontSizePx: base.fontSizePx * (p.bullet.sizePct / 100) }
+          : base
+      bulletW = metrics.measure(bulletText, bulletSt)
+    }
+    const bulletX = Math.max(marLPx + indentPx, 0)
+    // Glyph wider than the hanging indent: the first line's text start shifts right by
+    // this much, so the first line must also wrap that much earlier
+    const bulletOverflowPx = hasBullet ? Math.max(bulletX + bulletW - textX, 0) : 0
+    const laid = layoutParagraph(
+      p,
+      avail,
+      wrap,
+      metrics,
+      scale,
+      fontScale,
+      lnSpcRed,
+      bulletOverflowPx,
+    )
     // Space before/after: spcPts is absolute pt; spcPct is a percentage of the paragraph's single line height (100 = one line)
     const singleH = laid[0]?.singleH ?? 0
     y +=
@@ -816,8 +849,10 @@ function layoutAll(
     laid.forEach((ln, li) => {
       const baseline = y + ln.ascent
       const lineWidth = ln.runs.reduce((acc, r) => acc + r.widthPx, 0)
-      // Without a bullet the first line adds indent (positive or negative); with a bullet the body always starts at marL
+      // Without a bullet the first line adds indent (positive or negative); with a bullet
+      // the body starts at marL, pushed right when the glyph overflows the hanging indent
       const firstShift = !hasBullet && li === 0 ? indentPx : 0
+      const bulletShift = li === 0 ? bulletOverflowPx : 0
       // justify: lines filled by wrapping (not paragraph-final, not hard breaks) spread
       // the remaining width into character spacing; the spread goes through
       // justifyExtraPx (a draw-only field) so letterSpacing round-trips stay clean
@@ -830,7 +865,7 @@ function layoutAll(
         ln.runs.length
       ) {
         const totalChars = ln.runs.reduce((acc, r) => acc + [...r.text].length, 0)
-        const extra = avail - firstShift - lineWidth
+        const extra = avail - firstShift - bulletShift - lineWidth
         if (totalChars > 1 && extra > 0) {
           const per = extra / (totalChars - 1)
           let consumed = 0
@@ -847,24 +882,19 @@ function layoutAll(
           })
         }
       }
-      const dx = textX + firstShift + alignOffset(align, avail, lineWidth)
+      // Center/right alignment counts the overflow push so the text stays inside the box
+      const off = alignOffset(align, avail, lineWidth + bulletShift)
+      const dx = textX + firstShift + bulletShift + off
       const runs = lineRuns.map((r) => ({
         ...r,
         x: r.x + dx,
         baselineY: baseline - (r.baselineShiftPx ?? 0),
       }))
       if (hasBullet && li === 0) {
-        const base = runStyle(p.runs[0]!, scale, fontScale)
-        // <a:buSzPct>: bullet glyph size as a percentage of the first run's size
-        const st =
-          p.bullet?.sizePct != null
-            ? { ...base, fontSizePx: base.fontSizePx * (p.bullet.sizePct / 100) }
-            : base
-        const bw = metrics.measure(bulletText, st)
-        const bx = Math.max(marLPx + indentPx, 0) + alignOffset(align, avail, lineWidth)
+        const st = bulletSt!
         runs.unshift({
           text: bulletText,
-          x: bx,
+          x: bulletX + off,
           baselineY: baseline,
           fontFamily: metrics.displayFamily?.(st, bulletText) ?? st.fontFamily,
           fontSizePx: st.fontSizePx,
@@ -872,7 +902,7 @@ function layoutAll(
           bold: st.bold,
           italic: false,
           underline: false,
-          widthPx: bw,
+          widthPx: bulletW,
           isBullet: true,
           ascentPx: metrics.metrics(st).ascent,
         })

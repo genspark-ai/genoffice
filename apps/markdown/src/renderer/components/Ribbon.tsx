@@ -129,7 +129,8 @@ function IconBtn({
     <button
       type="button"
       className={`rb-btn${active ? ' active' : ''}`}
-      title={title}
+      data-tip={title}
+      aria-label={title}
       disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
@@ -225,7 +226,8 @@ export function Ribbon({
         <button
           type="button"
           className="qa-btn"
-          title={t('save')}
+          data-tip={t('save')}
+          aria-label={t('save')}
           disabled={off || !dirty}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onSave}
@@ -235,7 +237,8 @@ export function Ribbon({
         <button
           type="button"
           className="qa-btn"
-          title={t('undo')}
+          data-tip={t('undo')}
+          aria-label={t('undo')}
           disabled={off || !state?.canUndo}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor?.chain().focus().undo().run()}
@@ -245,14 +248,15 @@ export function Ribbon({
         <button
           type="button"
           className="qa-btn"
-          title={t('redo')}
+          data-tip={t('redo')}
+          aria-label={t('redo')}
           disabled={off || !state?.canRedo}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor?.chain().focus().redo().run()}
         >
           <IconRedo size={16} />
         </button>
-        <label className={`autosave-toggle${autoSave ? ' on' : ''}`} title={t('autoSaveTip')}>
+        <label className={`autosave-toggle${autoSave ? ' on' : ''}`} data-tip={t('autoSaveTip')}>
           <span className="autosave-knob" />
           <span className="autosave-text">{t('autoSave')}</span>
           <input
@@ -269,7 +273,7 @@ export function Ribbon({
             <button
               type="button"
               className={`rb-big ai-entry${aiOpen ? ' active' : ''}`}
-              title={t('aiOpenAssistant')}
+              data-tip={t('aiOpenAssistant')}
               disabled={disabled}
               onMouseDown={(e) => e.preventDefault()}
               onClick={onToggleAi}
@@ -284,7 +288,7 @@ export function Ribbon({
                 key={kind}
                 type="button"
                 className="rb-big ai-entry"
-                title={t(prompt)}
+                data-tip={t(btn)}
                 disabled={off || state?.empty}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onAiPreset(t(prompt))}

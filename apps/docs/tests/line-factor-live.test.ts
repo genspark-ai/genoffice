@@ -33,7 +33,7 @@ const sizedParagraph = (text: string, sizeHalfPoints: number) =>
   }) as never
 
 describe('live line-height factor decorations', () => {
-  it('typing CJK into a paragraph created empty switches its factor to 1.3', () => {
+  it('typing CJK into a paragraph created empty switches its factor to the CJK var', () => {
     const editor = new Editor({
       element: document.createElement('div'),
       extensions: editorExtensions,
@@ -43,7 +43,7 @@ describe('live line-height factor decorations', () => {
     expect(factorOf(editor)).toBe('')
 
     editor.commands.insertContentAt(1, '中文正文')
-    expect(factorOf(editor)).toBe('1.3')
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-cjk,1.7)')
 
     editor.destroy()
   })
@@ -57,7 +57,7 @@ describe('live line-height factor decorations', () => {
         content: [{ type: 'docParagraph', content: [{ type: 'text', text: '中文' }] }],
       } as never,
     })
-    expect(factorOf(editor)).toBe('1.3')
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-cjk,1.7)')
 
     editor.commands.setTextSelection({ from: 1, to: 3 })
     editor.commands.insertContent('latin')

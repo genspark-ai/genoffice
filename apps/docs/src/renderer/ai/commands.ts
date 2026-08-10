@@ -598,6 +598,10 @@ function runSetHeadingLevel(
 }
 
 function runReplaceAllText(tr: Transaction, schema: Schema, cmd: ReplaceAllText): CommandResult {
+  // an empty needle would match at every offset without ever advancing the scan below
+  if (!cmd.containsText) {
+    return { command: 'replaceAllText', matched: 0, changed: 0, skippedProtected: 0 }
+  }
   const matchCase = cmd.matchCase !== false
   const needle = matchCase ? cmd.containsText : cmd.containsText.toLowerCase()
   const blocks = topLevelBlocks(tr.doc)

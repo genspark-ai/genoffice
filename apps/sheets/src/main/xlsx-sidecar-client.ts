@@ -32,8 +32,8 @@ export class XlsxSidecarClient {
 
   constructor(private readonly binaryPath: string) {}
 
-  async open(path: string): Promise<unknown> {
-    return this.request({ command: 'open', path })
+  async open(path: string, locale = 'zh'): Promise<unknown> {
+    return this.request({ command: 'open', path, locale })
   }
 
   async readRange(input: {
@@ -67,10 +67,7 @@ export class XlsxSidecarClient {
     return this.request({ command: 'read_media', ...input })
   }
 
-  async convertWorkbook(input: {
-    path: string
-    targetPath: string
-  }): Promise<unknown> {
+  async convertWorkbook(input: { path: string; targetPath: string }): Promise<unknown> {
     return this.request({ command: 'convert_workbook', ...input }, ARCHIVE_TIMEOUT_MS)
   }
 

@@ -1913,6 +1913,12 @@ export interface DesktopApi {
   getTheme(): Promise<UiTheme>
   /** theme switched from the shell home page */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /**
+   * the user pressed the shell chrome (tab strip) or started dragging the
+   * window — no DOM event or blur reaches this view, so the shell relays the
+   * press for dismissing open popovers
+   */
+  onChromePressed(handler: () => void): () => void
   selectWorkbook(): Promise<WorkbookFile | null>
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>

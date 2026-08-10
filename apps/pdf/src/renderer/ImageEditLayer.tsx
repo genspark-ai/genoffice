@@ -261,7 +261,7 @@ export function ImageEditLayer({
           key={e.id}
           className={`pdf-imgedit-del${sel ? ' pdf-imgedit-selected' : ''}`}
           style={css(e.input.oldRect)}
-          title={editHint}
+          data-tip={editHint}
           onClick={(ev) => {
             ev.stopPropagation()
             onSelectEdit(e.id, ev.clientX, ev.clientY)
@@ -291,7 +291,7 @@ export function ImageEditLayer({
           className={`pdf-imgedit-img${sel ? ' pdf-imgedit-selected' : ''}`}
           src={`data:image/png;base64,${src}`}
           style={ghostStyle(target, e.input.rect, turns)}
-          title={editHint}
+          data-tip={editHint}
           alt=""
           draggable={false}
           {...pointerProps(target, e.input.rect)}
@@ -305,7 +305,7 @@ export function ImageEditLayer({
           key={e.id}
           className={`pdf-imgedit-ghostbox${sel ? ' pdf-imgedit-selected' : ''}`}
           style={dragStyle(target, e.input.rect)}
-          title={editHint}
+          data-tip={editHint}
           {...pointerProps(target, e.input.rect)}
         />,
       )
@@ -341,7 +341,7 @@ export function ImageEditLayer({
         key={key}
         className={`pdf-imgedit-hit${key === selectedKey ? ' pdf-imgedit-selected' : ''}`}
         style={dragStyle(target, ref.rect)}
-        title={editHint}
+        data-tip={editHint}
         {...pointerProps(target, ref.rect)}
       />,
     )

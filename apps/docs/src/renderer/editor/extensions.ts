@@ -25,8 +25,12 @@ import {
 import {
   autospaceBoundaries,
   autospacePadBetween,
+  cssGridSpacingPt,
   cssLineHeight,
+  isCjkFontName,
+  lineHeightFactor,
   paraLineFactorCss,
+  textHasCjk,
 } from '../line-metrics'
 import { noteMarkText } from '../note-format'
 import { t } from '../i18n/locale'
@@ -34,6 +38,7 @@ import {
   ommlToMathML,
   patchMathTokens,
   type ChartDisplay,
+  type DiagramDisplay,
   type FieldDisplay,
   type FormulaDisplay,
   type NewChart,
@@ -114,6 +119,8 @@ const anchorAttrs = {
   lineRule: { default: null as string | null },
   /** Raw w:spacing w:line twips (used by atLeast/exact) */
   lineRawTwips: { default: null as number | null },
+  /** w:snapToGrid: false only when explicitly off (opts out of docGrid snapping) */
+  snapToGrid: { default: null as boolean | null },
   indentLeft: { default: null as number | null },
   indentRight: { default: null as number | null },
   indentFirstLine: { default: null as number | null },
@@ -159,6 +166,41 @@ function explicitStrutHalfPoints(node: { descendants?: PmNode['descendants'] }):
   return inherited ? null : max
 }
 
+/**
+ * Per-paragraph --doc-line-factor value: CJK runs with a declared font take that
+ * font's LO-metric factor (max over runs); undeclared CJK runs keep the
+ * document-level CJK var; non-CJK paragraphs keep the script-based guess.
+ */
+function paraLineFactor(node: {
+  textContent?: string
+  descendants?: PmNode['descendants']
+}): string {
+  const scriptVar = paraLineFactorCss(node.textContent ?? '')
+  if (!node.descendants || !textHasCjk(node.textContent ?? '')) return scriptVar
+  let declaredMax = 0
+  let undeclaredCjk = false
+  node.descendants((child) => {
+    if (!child.isText) return true
+    if (!textHasCjk(child.text ?? '')) return false
+    const mark = child.marks.find((m) => m.type.name === 'docTextStyle')
+    // empty-EA-theme-slot backfills keep the Word-look face but are not a
+    // document font choice: LO cascades such runs to the document's EA default,
+    // so they count as undeclared here (the doc-level var carries that factor).
+    // Latin-named faces likewise don't drive CJK line height — an ascii-only
+    // "Times New Roman" run still renders its CJK via the inherited EA font.
+    const family =
+      mark?.attrs.eaSlotEmpty === true
+        ? null
+        : ((mark?.attrs.font ?? mark?.attrs.fontAscii) as string | null | undefined)
+    if (family && isCjkFontName(family)) {
+      declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+    } else undeclaredCjk = true
+    return false
+  })
+  if (declaredMax <= 0) return scriptVar
+  return undeclaredCjk ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+}
+
 function blockAttrs(
   node: {
     attrs: Record<string, unknown>
@@ -180,6 +222,9 @@ function blockAttrs(
   }
   const classes: string[] = []
   if (node.attrs.aiChanged) classes.push('ai-changed')
+  // textless paragraph: table-cell CSS shrinks these to the Latin line height
+  // (an empty cell inheriting the CJK factor would out-grow the content cells)
+  if (!node.textContent) classes.push('doc-p-empty')
   if (node.attrs.pageBreakBefore) {
     classes.push('page-break-before')
     attrs['data-page-break-label'] = t('editorPageBreak')
@@ -194,9 +239,13 @@ function blockAttrs(
   }
   // the line-height factor follows paragraph content (approximating Word's max-of-inline-fonts
   // line height): CJK paragraphs get the CJK factor, pure-Western ones the document's
-  // font-aware Latin factor (doc-style-css sets --doc-line-factor-latin per body font)
+  // font-aware Latin factor (doc-style-css sets --doc-line-factor-latin per body font).
+  // Runs that DECLARE a font override the script guess with that font's factor
+  // (LO probe: line height follows the requested face's metrics even when CJK
+  // glyphs fall through to another font — EA "Times New Roman" lays at 1.15em);
+  // the paragraph takes the max over its CJK runs, like Word's tallest-run rule.
   if (node.textContent) {
-    styles.push(`--doc-line-factor:${paraLineFactorCss(node.textContent)}`)
+    styles.push(`--doc-line-factor:${paraLineFactor(node)}`)
     // Word's line strut follows run sizes; without this the paragraph inherits the
     // body size (often larger than table-cell runs) and every line box inflates.
     // Shrink-only: a large run already lifts its own line, and Word sizes each
@@ -206,10 +255,13 @@ function blockAttrs(
   }
   const lh = cssLineHeight(
     (node.attrs.lineRule as 'auto' | 'atLeast' | 'exact' | null) ?? undefined,
-    node.attrs.lineRawTwips ? Number(node.attrs.lineRawTwips) : undefined,
+    node.attrs.lineRawTwips != null ? Number(node.attrs.lineRawTwips) : undefined,
     node.attrs.lineSpacing ? Number(node.attrs.lineSpacing) : undefined,
   )
   if (lh) styles.push(`line-height:${lh}`)
+  // w:snapToGrid=0: opt this paragraph out of docGrid line snapping (the
+  // round(up) expressions read the pitch var, so a local ~0 disables them)
+  if (node.attrs.snapToGrid === false) styles.push('--doc-grid-pitch:0.0001px')
   // list items already indent via padding; a margin would double-shift them.
   // listGeometry: drive list geometry with w:ind (--li-left text indent, --li-hang the hanging
   // area i.e. the number-marker width); negative text-indent is expressed by the marker box, no longer emitted directly
@@ -229,9 +281,9 @@ function blockAttrs(
   }
   // explicit 0 must still emit (w:after="0" overrides the style/docDefaults margin)
   if (node.attrs.spaceBefore != null)
-    styles.push(`margin-top:${Number(node.attrs.spaceBefore) / 20}pt`)
+    styles.push(`margin-top:${cssGridSpacingPt(Number(node.attrs.spaceBefore) / 20)}`)
   if (node.attrs.spaceAfter != null)
-    styles.push(`margin-bottom:${Number(node.attrs.spaceAfter) / 20}pt`)
+    styles.push(`margin-bottom:${cssGridSpacingPt(Number(node.attrs.spaceAfter) / 20)}`)
   if (node.attrs.shadingFill) styles.push(`background-color:#${node.attrs.shadingFill}`)
   if (node.attrs.borders) {
     const borders = String(node.attrs.borders)
@@ -299,7 +351,9 @@ export const DocNoteRef = Node.create({
         class: 'doc-note-ref',
         title: node.attrs.kind === 'footnote' ? t('editorFootnote') : t('editorEndnote'),
       },
-      `[${noteMarkText(node.attrs.kind as 'footnote' | 'endnote', Number(node.attrs.num) || 1)}]`,
+      // brackets are editor chrome (CSS ::before/::after): Word prints a bare
+      // superscript number, and bracket glyphs must not leak into exported text
+      noteMarkText(node.attrs.kind as 'footnote' | 'endnote', Number(node.attrs.num) || 1),
     ]
   },
 })
@@ -704,7 +758,7 @@ function lineFactorDecos(doc: PmNode): DecorationSet {
     if (node.textContent) {
       let style = lineFactorCache.get(node)
       if (style === undefined) {
-        style = `--doc-line-factor:${paraLineFactorCss(node.textContent)}`
+        style = `--doc-line-factor:${paraLineFactor(node)}`
         const strut = explicitStrutHalfPoints(node)
         if (strut) style += `;--doc-strut:${strut / 2}pt;font-size:min(var(--doc-strut), 1em)`
         lineFactorCache.set(node, style)
@@ -1050,8 +1104,13 @@ export const DocTable = Node.create({
     if (node.attrs.bidiVisual) attrs.dir = 'rtl'
     const styles: string[] = []
     if (node.attrs.widthPct) styles.push(`width:${Number(node.attrs.widthPct)}%`)
-    // min() keeps legacy over-wide grids on the paper instead of the gray canvas
-    else if (node.attrs.widthPx) styles.push(`width:min(${Number(node.attrs.widthPx)}px,100%)`)
+    // Over-wide grids may spill into the right page margin like Word/LO (clamping
+    // them to the content box narrowed every column, wrapped cell text onto extra
+    // lines and inflated PDF-converted documents by pages), but never past the paper
+    else if (node.attrs.widthPx)
+      styles.push(
+        `width:min(${Number(node.attrs.widthPx)}px,calc(100% + var(--doc-margin-right,0px)))`,
+      )
     const pad = cellPadCss(node.attrs.cellMar as Record<string, number> | null)
     if (pad) styles.push(`--doc-cell-pad:${pad}`)
     styles.push(...tableBordersCss(node.attrs.borders as TableBordersAttr | null))
@@ -1376,6 +1435,8 @@ export const DocProtected = Node.create({
       docxIndex: { default: null as number | null },
       blockRevision: { default: null as Record<string, string> | null },
       blockType: { default: 'passthrough' },
+      /** w:pStyle of field/TOC paragraphs: doc style CSS (spacing/line-height) targets data-style */
+      styleId: { default: null as string | null },
       label: { default: '' },
       previewText: { default: '' },
       imageDataUrl: { default: null as string | null },
@@ -1383,6 +1444,10 @@ export const DocProtected = Node.create({
       /** display size in CSS px (blockType === 'image'), editable via drag handles */
       imageWidthPx: { default: null as number | null },
       imageHeightPx: { default: null as number | null },
+      /** source crop (a:srcRect) fractions, display-only */
+      imageCrop: { default: null as { l: number; t: number; r: number; b: number } | null },
+      /** fill placement (a:fillRect) fractions (negative = bleed), display-only */
+      imageFillRect: { default: null as { l: number; t: number; r: number; b: number } | null },
       /** paragraph alignment of the image (w:jc) */
       imageAlign: { default: null as string | null },
       imageWrap: { default: null as string | null },
@@ -1416,19 +1481,14 @@ export const DocProtected = Node.create({
       formulaDisplay: { default: null as FormulaDisplay | null },
       /** embedded chart data model; cached texts/numbers editable, structure protected */
       chartDisplay: { default: null as ChartDisplay | null },
+      /** display-only SmartArt degrade (precomputed diagram drawing shapes) */
+      diagramDisplay: { default: null as DiagramDisplay | null },
       /** self-contained OOXML fragment for editor-created content (new tables) */
       genXml: { default: null as string | null },
       /** new image awaiting embedding at save time */
       genImage: {
         default: null as { base64: string; mime: string; widthPx: number; heightPx: number } | null,
       },
-      /** picture rotation (deg clockwise, 0-359) and mirror flips (a:xfrm rot/flipH/flipV) */
-      imageRotDeg: { default: null as number | null },
-      imageFlipH: { default: false },
-      imageFlipV: { default: false },
-      /** replacement bytes for an original image (crop/background removal/replace):
-       *  the drawing XML — and with it docxIndex, wrap and position — survives */
-      imageReplace: { default: null as { base64: string; mime: string } | null },
       /** new chart awaiting embedding at save time (data snapshot; edits live in chartDisplay) */
       genChart: { default: null as NewChart | null },
     }
@@ -1517,6 +1577,72 @@ export const DocProtected = Node.create({
   },
 })
 
+/**
+ * SmartArt / drawing-canvas display: absolutely positioned shapes (picture
+ * fills, solid fills, centered texts) at the parse-resolved geometry. All
+ * colors are document data (theme-resolved at parse), hence inline. Canvas
+ * displays (lockedCanvas) keep raw-size text overflowing the scaled child
+ * boxes instead of clipping, like LO renders them.
+ */
+function diagramSpecOf(diagram: DiagramDisplay): DomSpec {
+  const shapeSpecs: DomSpec[] = diagram.shapes.map((s) => {
+    const radius =
+      s.prst === 'ellipse' || s.prst === 'circle'
+        ? '50%'
+        : s.prst === 'roundRect'
+          ? `${Math.round(Math.min(s.wPx, s.hPx) * 0.12)}px`
+          : '0'
+    const style = [
+      `left:${s.xPx}px`,
+      `top:${s.yPx}px`,
+      `width:${s.wPx}px`,
+      `height:${s.hPx}px`,
+      `border-radius:${radius}`,
+      s.fillHex ? `background:#${s.fillHex}` : '',
+      s.rotDeg ? `transform:rotate(${s.rotDeg}deg)` : '',
+      s.fontSizePt ? `font-size:${s.fontSizePt}pt` : '',
+      s.textColorHex ? `color:#${s.textColorHex}` : '',
+    ]
+      .filter(Boolean)
+      .join(';')
+    const kids: DomSpec[] = []
+    if (s.imageDataUrl) {
+      let imgStyle = 'position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover'
+      if (s.fillRect) {
+        const sw = s.wPx * (1 - s.fillRect.l - s.fillRect.r)
+        const sh = s.hPx * (1 - s.fillRect.t - s.fillRect.b)
+        imgStyle =
+          `position:absolute;left:${(s.fillRect.l * s.wPx).toFixed(1)}px;` +
+          `top:${(s.fillRect.t * s.hPx).toFixed(1)}px;` +
+          `width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;max-width:none`
+      }
+      kids.push(['img', { src: s.imageDataUrl, class: 'doc-diagram-img', style: imgStyle }])
+    }
+    if (s.texts?.length) {
+      kids.push(['span', { class: 'doc-diagram-text' }, s.texts.join('\n')])
+    }
+    return ['span', { class: 'doc-diagram-shape', style }, ...kids]
+  })
+  const spanStyle = [
+    `width:${diagram.widthPx}px`,
+    `height:${diagram.heightPx}px`,
+    diagram.floating
+      ? `position:absolute;left:${((diagram.offsetXEmu ?? 0) / EMU_PER_PX).toFixed(1)}px;` +
+        `top:${((diagram.offsetYEmu ?? 0) / EMU_PER_PX).toFixed(1)}px`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(';')
+  return [
+    'span',
+    {
+      class: `doc-diagram${diagram.canvas ? ' doc-diagram-canvas' : ''}`,
+      style: spanStyle,
+    },
+    ...shapeSpecs,
+  ]
+}
+
 /** shared DOM spec for protected blocks (renderHTML + node view) */
 function protectedDomSpec(node: PmNode): DomSpec {
   const {
@@ -1537,6 +1663,9 @@ function protectedDomSpec(node: PmNode): DomSpec {
     'data-idx': docxIndex === null ? '' : String(docxIndex),
     class: `doc-protected doc-protected-${blockType}`,
   }
+  // field/TOC paragraphs keep their paragraph style so document CSS
+  // (TOC1 spacing etc.) reaches the wrapper like any styled paragraph
+  if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
   if (node.attrs.invisibleMarker) {
     attrs.class += ' doc-protected-invisible'
     return ['div', attrs]
@@ -1555,16 +1684,26 @@ function protectedDomSpec(node: PmNode): DomSpec {
   }
   if (Array.isArray(textboxes) && textboxes.length > 0) {
     attrs.class += ' doc-protected-textboxes'
-    const offsetX = node.attrs.imageOffsetXEmu
-    const offsetY = node.attrs.imageOffsetYEmu
-    if (offsetX != null || offsetY != null) {
-      attrs.style =
-        `transform:translate(${Number(offsetX ?? 0) / EMU_PER_PX}px,` +
-        `${Number(offsetY ?? 0) / EMU_PER_PX}px)`
+    const boxes = textboxes as TextboxDisplay[]
+    const diagram = node.attrs.diagramDisplay as DiagramDisplay | null
+    // every box floats at its own anchor offset (wrapNone / multi-drawing
+    // paragraphs): the wrapper leaves the flow like Word instead of stacking
+    const allFloating = boxes.every((b) => b.floating) && (!diagram || diagram.floating)
+    if (allFloating) {
+      attrs.class += ' doc-protected-floating'
+    } else {
+      const offsetX = node.attrs.imageOffsetXEmu
+      const offsetY = node.attrs.imageOffsetYEmu
+      if (offsetX != null || offsetY != null) {
+        attrs.style =
+          `transform:translate(${Number(offsetX ?? 0) / EMU_PER_PX}px,` +
+          `${Number(offsetY ?? 0) / EMU_PER_PX}px)`
+      }
     }
-    const children: DomSpec[] = (textboxes as TextboxDisplay[]).map(renderTextboxSpec)
+    const children: DomSpec[] = boxes.map(renderTextboxSpec)
+    if (diagram?.shapes?.length) children.push(diagramSpecOf(diagram))
     // corner resize handle; multi-box nodes keep per-box autogrow semantics only
-    if ((textboxes as TextboxDisplay[]).length === 1) {
+    if (boxes.length === 1 && !diagram) {
       children.push(['span', { class: 'box-resize-handle', contenteditable: 'false' }])
     }
     return ['div', attrs, moveHandleSpec(t('editorMoveTextbox')), ...children]
@@ -1587,11 +1726,30 @@ function protectedDomSpec(node: PmNode): DomSpec {
     return ['div', attrs, ['span', { class: 'doc-sectbreak-label' }, String(label)]]
   }
   if (blockType === 'image' && imageDataUrl) {
-    const { imageWidthPx, imageHeightPx, imageAlign, imageWrap, imageRotDeg } = node.attrs
+    const { imageWidthPx, imageHeightPx, imageAlign, imageWrap, imageCrop, imageFillRect } =
+      node.attrs
     if (imageAlign === 'center' || imageAlign === 'right') {
       attrs['style'] = `text-align:${imageAlign}`
     }
     if (imageWrap) attrs.class += ` img-wrap-${String(imageWrap)}`
+    // no-wrap / behind-text floats: approximate the anchor position — margin
+    // alignment via text-align, numeric posOffset via a transform on the INNER
+    // wrap (the outer block's rect feeds pagination measurement, which must
+    // stay at the flow position; transforms leak into getBoundingClientRect)
+    let imgWrapTransform = ''
+    if (imageWrap === 'front' || imageWrap === 'behind') {
+      const posH = node.attrs.imagePosH
+      if ((posH === 'center' || posH === 'right') && !attrs['style']) {
+        attrs['style'] = `text-align:${String(posH)}`
+      }
+      const tx =
+        node.attrs.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) / EMU_PER_PX : 0
+      const ty =
+        node.attrs.imageOffsetYEmu != null ? Number(node.attrs.imageOffsetYEmu) / EMU_PER_PX : 0
+      if (tx !== 0 || ty !== 0) {
+        imgWrapTransform = `transform:translate(${tx.toFixed(1)}px,${ty.toFixed(1)}px)`
+      }
+    }
     const imgAttrs: Record<string, string> = {
       src: String(imageDataUrl),
       class: 'doc-protected-img',
@@ -1601,15 +1759,49 @@ function protectedDomSpec(node: PmNode): DomSpec {
         `width:${Number(imageWidthPx)}px;` +
         (imageHeightPx ? `height:${Number(imageHeightPx)}px` : 'height:auto')
     }
-    // DrawingML order: flip mirrors the source, rot turns the result
-    // (CSS applies right-to-left, so scale sits last)
-    const xf: string[] = []
-    if (imageRotDeg) xf.push(`rotate(${Number(imageRotDeg)}deg)`)
-    if (node.attrs.imageFlipH) xf.push('scaleX(-1)')
-    if (node.attrs.imageFlipV) xf.push('scaleY(-1)')
-    if (xf.length) {
+    // a:srcRect source crop / a:fillRect fill placement: an overflow-hidden
+    // window at the declared extent over a scaled and offset image
+    const rect = (imageCrop ?? imageFillRect) as {
+      l: number
+      t: number
+      r: number
+      b: number
+    } | null
+    if (rect && imageWidthPx && imageHeightPx) {
+      const W = Number(imageWidthPx)
+      const H = Number(imageHeightPx)
+      const span = (a: number, b: number) => Math.max(0.01, 1 - a - b)
+      let sw: number, sh: number, dx: number, dy: number
+      if (imageCrop) {
+        // crop: the window shows the (1-l-r)×(1-t-b) slice of the source
+        sw = W / span(rect.l, rect.r)
+        sh = H / span(rect.t, rect.b)
+        dx = -rect.l * sw
+        dy = -rect.t * sh
+      } else {
+        // fillRect: the image occupies the inset (negative = bleeding) sub-rect
+        sw = W * (1 - rect.l - rect.r)
+        sh = H * (1 - rect.t - rect.b)
+        dx = rect.l * W
+        dy = rect.t * H
+      }
       imgAttrs['style'] =
-        `${imgAttrs['style'] ? `${imgAttrs['style']};` : ''}transform:${xf.join(' ')}`
+        `position:absolute;left:${dx.toFixed(1)}px;top:${dy.toFixed(1)}px;` +
+        `width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;max-width:none`
+      return [
+        'div',
+        attrs,
+        moveHandleSpec(t('editorMoveImage')),
+        [
+          'span',
+          {
+            class: 'doc-img-wrap doc-img-crop',
+            style: `position:relative;display:inline-block;overflow:hidden;width:${W}px;height:${H}px${imgWrapTransform ? `;${imgWrapTransform}` : ''}`,
+          },
+          ['img', imgAttrs],
+          ['span', { class: 'img-resize-handle' }],
+        ],
+      ]
     }
     return [
       'div',
@@ -1617,7 +1809,10 @@ function protectedDomSpec(node: PmNode): DomSpec {
       moveHandleSpec(t('editorMoveImage')),
       [
         'span',
-        { class: 'doc-img-wrap' },
+        {
+          class: 'doc-img-wrap',
+          ...(imgWrapTransform ? { style: `display:inline-block;${imgWrapTransform}` } : {}),
+        },
         ['img', imgAttrs],
         ['span', { class: 'img-resize-handle' }],
       ],
@@ -1657,6 +1852,21 @@ function protectedDomSpec(node: PmNode): DomSpec {
       renderChartSpec(chartDisplay as ChartDisplay),
       ['span', { class: 'box-resize-handle', contenteditable: 'false' }],
     ]
+  }
+  // SmartArt with a precomputed drawing part: absolutely positioned shapes
+  // (picture fills, solid fills, centered texts) at Word's resolved geometry.
+  // All colors are document data (theme-resolved at parse), hence inline.
+  const diagram = node.attrs.diagramDisplay as DiagramDisplay | null
+  if (diagram?.shapes?.length) {
+    attrs.class += ' doc-protected-diagram'
+    if (diagram.floating) {
+      attrs.class += ' doc-protected-floating'
+    } else if (diagram.offsetXEmu != null || diagram.offsetYEmu != null) {
+      attrs.style =
+        `transform:translate(${Number(diagram.offsetXEmu ?? 0) / EMU_PER_PX}px,` +
+        `${Number(diagram.offsetYEmu ?? 0) / EMU_PER_PX}px)`
+    }
+    return ['div', attrs, moveHandleSpec(t('editorMoveImage')), diagramSpecOf(diagram)]
   }
   // Broken picture (missing rel/media): empty frame at the declared extent
   // with centered alt text. Frame/text colors stand in for document content
@@ -2350,11 +2560,9 @@ function imageResizePlugin(): Plugin {
           // CSS `zoom` scales client coordinates; divide it back out
           const zoomEl = document.querySelector('.doc-zoom') as HTMLElement | null
           const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
-          // Layout-box measurements: getBoundingClientRect would include the
-          // rotation/flip transform, swapping width/height for 90°-rotated images
-          const startW = img.offsetWidth
-          const ratio = img.offsetHeight / Math.max(1, img.offsetWidth)
-          const priorStyle = img.getAttribute('style')
+          const startRect = img.getBoundingClientRect()
+          const startW = startRect.width / zoom
+          const ratio = startRect.height / startRect.width
           const startX = event.clientX
 
           const widthAt = (e: MouseEvent) => Math.max(24, startW + (e.clientX - startX) / zoom)
@@ -2366,12 +2574,6 @@ function imageResizePlugin(): Plugin {
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
-            // A plain click on the handle must not rewrite the stored size
-            if (Math.abs(e.clientX - startX) < 2) {
-              if (priorStyle === null) img.removeAttribute('style')
-              else img.setAttribute('style', priorStyle)
-              return
-            }
             const w = Math.round(widthAt(e))
             const node = view.state.doc.nodeAt(pos)
             if (!node) return
@@ -2458,10 +2660,6 @@ function floatingObjectDragPlugin(): Plugin {
           const visual = wrapper.querySelector(
             isTextbox ? '.doc-textbox' : '.doc-protected-img',
           ) as HTMLElement | null
-          // Images may already carry a rotation/flip transform: the drag translate
-          // must compose with it (prepended = applied in screen space) and the
-          // original must come back on mouseup, or the orientation vanishes
-          const baseTransform = visual?.style.transform ?? ''
 
           // 3px threshold keeps plain clicks (select, first click of a
           // double-click-to-edit) from nudging the object
@@ -2471,16 +2669,13 @@ function floatingObjectDragPlugin(): Plugin {
             const dy = (e.clientY - startY) / zoom
             if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
             dragging = true
-            if (visual) {
-              visual.style.transform =
-                `translate(${dx}px, ${dy}px)` + (baseTransform ? ` ${baseTransform}` : '')
-            }
+            if (visual) visual.style.transform = `translate(${dx}px, ${dy}px)`
           }
 
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
-            if (visual) visual.style.transform = baseTransform
+            if (visual) visual.style.transform = ''
 
             const dx = (e.clientX - startX) / zoom
             const dy = (e.clientY - startY) / zoom

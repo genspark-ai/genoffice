@@ -207,6 +207,79 @@ export async function flipSelected(ctx: ActionCtx, axis: 'h' | 'v'): Promise<voi
   }
 }
 
+/**
+ * Rotate each selected element by ±90° around its own visual center (PowerPoint
+ * context-menu semantics), through the same transform-commit path as the rotate handle.
+ * The model/render convention pivots rotation on the box origin (flip-adjusted corner),
+ * so keeping the center fixed means moving the origin to its new orbit position — the
+ * same compensation the Konva Transformer bakes into x/y during a handle rotation.
+ * Connectors are skipped — their geometry is endpoint-based (no Transformer either).
+ */
+export async function rotateSelected(ctx: ActionCtx, deltaDeg: number): Promise<void> {
+  const items: Array<{
+    sourceId: string
+    box: { x: number; y: number; w: number; h: number; rotationDeg: number }
+    groupId?: string
+  }> = []
+  for (const id of ctx.selectedIds) {
+    const found = ctx.findNodeCtx(id)
+    if (!found) continue
+    const { node, groupId } = found
+    const isConnector =
+      (node.type === 'shape' || node.type === 'text') && !!(node as { line?: unknown }).line
+    if (isConnector) continue
+    const b = node.box
+    const deg = b.rotationDeg ?? 0
+    // Konva transform order is translate(origin) → rotate → scale(flip): the local center
+    // lands at origin + R(θ)·S·(w/2, h/2). Track where it goes under the old and new
+    // angles and shift the origin by the difference (the flip part of the origin cancels).
+    const vx = (b.flipH ? -1 : 1) * (b.w / 2)
+    const vy = (b.flipV ? -1 : 1) * (b.h / 2)
+    const orbit = (angleDeg: number) => {
+      const t = (angleDeg * Math.PI) / 180
+      return { x: vx * Math.cos(t) - vy * Math.sin(t), y: vx * Math.sin(t) + vy * Math.cos(t) }
+    }
+    const p0 = orbit(deg)
+    const p1 = orbit(deg + deltaDeg)
+    items.push({
+      sourceId: id,
+      box: {
+        x: b.x + p0.x - p1.x,
+        y: b.y + p0.y - p1.y,
+        w: b.w,
+        h: b.h,
+        rotationDeg: (((deg + deltaDeg) % 360) + 360) % 360,
+      },
+      ...(groupId ? { groupId } : {}),
+    })
+  }
+  if (!items.length) return
+  // Top-level elements batch into one IPC so a multi-rotate is a single undo step;
+  // in-group children keep the per-element path (the batch op has no group support)
+  if (items.every((it) => !it.groupId)) {
+    const updated = await window.slidesApi.batchEditTransform({
+      slideIndex: ctx.current,
+      fitWidthPx: FIT_WIDTH,
+      items: items.map((it) => ({
+        sourceId: it.sourceId,
+        xPx: it.box.x,
+        yPx: it.box.y,
+        wPx: it.box.w,
+        hPx: it.box.h,
+        rotationDeg: it.box.rotationDeg,
+      })),
+    })
+    if (updated) {
+      ctx.applySlide(ctx.current, updated)
+      ctx.setDirty(true)
+    }
+    return
+  }
+  for (const it of items) {
+    await ctx.onTransform(it.sourceId, it.box, undefined, it.groupId)
+  }
+}
+
 export async function eraseInk(ctx: ActionCtx, sourceIds: string[]): Promise<void> {
   for (const id of sourceIds) {
     const updated = await window.slidesApi.deleteElement({ slideIndex: ctx.current, sourceId: id })

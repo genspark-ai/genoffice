@@ -118,10 +118,16 @@ export interface HomeApi {
   getTheme(): Promise<UiTheme>
   /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
   setTheme(theme: UiTheme): Promise<void>
+  /** effective default save folder for new/untitled files (configured in userData/app-settings.json, falls back to <Documents>/GenOffice) */
+  getDefaultSaveDir(): Promise<string>
+  /** directory picker to change the default save folder; resolves to the new folder, or null when canceled or the pick was unusable */
+  pickDefaultSaveDir(): Promise<string | null>
   /** theme switched anywhere (broadcast from the main process) */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
   /** open the GenTeam community page in the default browser */
   openGenTeam(): Promise<void>
+  /** open the Genspark credit-usage page in the default browser */
+  openCreditUsage(): Promise<void>
   /** locally stored full cloud project list (instant; null when no store or logged out) */
   cloudProjectsCached(): Promise<CloudProjectsSnapshot | null>
   /** sync the full list from Genspark and return it (1 request when nothing changed); null when the sync failed */
@@ -158,6 +164,8 @@ export interface AccountStatus {
   /** gsk is installed and logged in */
   loggedIn: boolean
   email?: string
+  /** remaining Genspark credits (absent when the balance query failed) */
+  creditBalance?: number
 }
 
 /** login flow progress pushed from main (gsk login CLI output) */
@@ -246,7 +254,10 @@ export const HOME_CHANNELS = {
   setOnboardingSeen: 'home:set-onboarding-seen',
   getTheme: 'home:get-theme',
   setTheme: 'home:set-theme',
+  getDefaultSaveDir: 'home:get-default-save-dir',
+  pickDefaultSaveDir: 'home:pick-default-save-dir',
   openGenTeam: 'home:open-genteam',
+  openCreditUsage: 'home:open-credit-usage',
   cloudProjects: 'home:cloud-projects',
   cloudProjectsCached: 'home:cloud-projects-cached',
   openCloudProject: 'home:open-cloud-project',

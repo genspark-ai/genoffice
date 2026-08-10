@@ -91,4 +91,27 @@ describe('showSaveDialogWithMemory', () => {
     await showOpenDialogWithMemory(second, undefined, {})
     expect(second.showOpenDialog).toHaveBeenCalledWith({})
   })
+
+  it('anchors a bare file-name suggestion in the fallback dir when nothing is remembered', async () => {
+    const dialog = fakeDialog()
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'deck.pptx' }, '/default/save')
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith({
+      defaultPath: join('/default/save', 'deck.pptx'),
+    })
+  })
+
+  it('prefers the remembered directory over the fallback dir', async () => {
+    const dialog = fakeDialog({ showSaveDialog: pickedSave(join('/work', 'deck.pptx')) })
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'deck.pptx' })
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'b.pptx' }, '/default/save')
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith({
+      defaultPath: join('/work', 'b.pptx'),
+    })
+  })
+
+  it('keeps an explicit absolute defaultPath untouched even with a fallback dir', async () => {
+    const dialog = fakeDialog()
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: '/docs/tab.pdf' }, '/default')
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith({ defaultPath: '/docs/tab.pdf' })
+  })
 })

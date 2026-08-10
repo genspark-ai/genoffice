@@ -83,7 +83,7 @@ export function ScreenshotDialog({
               type="button"
               disabled={capturingId !== null}
               className={capturingId === source.id ? 'capturing' : ''}
-              title={source.name}
+              data-tip={source.name}
               onClick={() => capture(source.id)}
             >
               {source.thumbnail !== '' && <img src={source.thumbnail} alt="" draggable={false} />}

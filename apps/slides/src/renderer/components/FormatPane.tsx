@@ -197,7 +197,12 @@ export function FormatPane({
       <div className="ai-panel-header">
         <span className="ai-panel-title">{t('paneFormatTitle')}</span>
         <div className="ai-panel-header-actions">
-          <button className="ai-header-btn" onClick={onCollapse} title={t('paneFormatClose')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('paneFormatClose')}
+            aria-label={t('paneFormatClose')}
+          >
             <IconSidebarCollapse size={15} />
           </button>
         </div>
@@ -248,7 +253,7 @@ export function FormatPane({
                 <button
                   className="fp-btn"
                   disabled={!pictureCanCutout}
-                  title={pictureCanCutout ? t('paneFormatCutoutTip') : t('paneFormatCutoutNA')}
+                  data-tip={pictureCanCutout ? t('paneFormatCutoutTip') : t('paneFormatCutoutNA')}
                   onClick={() => onPictureCutout?.()}
                 >
                   {t('paneCutoutTitle')}
@@ -338,14 +343,14 @@ export function FormatPane({
                   className="fp-color"
                   value={gradFrom}
                   onChange={(e) => setGradFrom(e.target.value)}
-                  title={t('paneFormatGradientFrom')}
+                  data-tip={t('paneFormatGradientFrom')}
                 />
                 <input
                   type="color"
                   className="fp-color"
                   value={gradTo}
                   onChange={(e) => setGradTo(e.target.value)}
-                  title={t('paneFormatGradientTo')}
+                  data-tip={t('paneFormatGradientTo')}
                 />
                 {(
                   [
@@ -358,7 +363,8 @@ export function FormatPane({
                   <button
                     key={label}
                     className="fp-btn"
-                    title={radial ? t('paneFormatGradientRadial') : `${angleDeg}°`}
+                    data-tip={radial ? t('paneFormatGradientRadial') : `${angleDeg}°`}
+                    aria-label={radial ? t('paneFormatGradientRadial') : `${angleDeg}°`}
                     onClick={() =>
                       onFill(node.sourceId, {
                         gradient: {
@@ -388,7 +394,7 @@ export function FormatPane({
                   defaultValue={strokeColor}
                   onPointerDown={(e) => armColorInput(e.currentTarget)}
                   onChange={(e) => commitStroke(node.sourceId, { color: e.target.value })}
-                  title={t('paneFormatOutlineColor')}
+                  data-tip={t('paneFormatOutlineColor')}
                 />
                 <label className="fp-field" style={{ flex: 1 }}>
                   <span>{t('paneFormatPt')}</span>
@@ -478,7 +484,7 @@ export function FormatPane({
               <div className="fp-row">
                 <span
                   className="fp-link-target"
-                  title={link?.kind === 'url' ? link.url : undefined}
+                  data-tip={link?.kind === 'url' ? link.url : undefined}
                 >
                   {link
                     ? link.kind === 'url'

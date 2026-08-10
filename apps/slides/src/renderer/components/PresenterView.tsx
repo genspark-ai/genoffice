@@ -346,7 +346,7 @@ export function PresenterView({
         <button
           className="pv-top-btn pv-top-exit"
           onClick={() => exitRef.current()}
-          title={t('panePresenterEndTip')}
+          data-tip={t('panePresenterEndTip')}
         >
           ⊗ {t('panePresenterEndShow')}
         </button>
@@ -354,12 +354,12 @@ export function PresenterView({
           className="pv-top-btn"
           disabled={!hasAudience}
           onClick={() => void window.slidesApi.presenterSwap()}
-          title={hasAudience ? t('panePresenterSwapTip') : t('panePresenterNoSecond')}
+          data-tip={hasAudience ? t('panePresenterSwapTip') : t('panePresenterNoSecond')}
         >
           ⇄ {t('panePresenterSwap')}
         </button>
         {onUseSlideShow && (
-          <button className="pv-top-btn" onClick={useShow} title={t('panePresenterUseShowTip')}>
+          <button className="pv-top-btn" onClick={useShow} data-tip={t('panePresenterUseShowTip')}>
             ▤ {t('panePresenterUseShow')}
           </button>
         )}
@@ -369,13 +369,14 @@ export function PresenterView({
       <div className="pv-body">
         <div className="pv-left">
           <div className="pv-timer-row">
-            <span className="pv-timer" title={t('panePresenterElapsed')}>
+            <span className="pv-timer" data-tip={t('panePresenterElapsed')}>
               {fmtElapsed(elapsed)}
             </span>
             <button
               className="pv-mini-btn"
               onClick={() => setPaused((v) => !v)}
-              title={paused ? t('panePresenterResume') : t('panePresenterPause')}
+              data-tip={paused ? t('panePresenterResume') : t('panePresenterPause')}
+              aria-label={paused ? t('panePresenterResume') : t('panePresenterPause')}
             >
               {paused ? '▶' : '❚❚'}
             </button>
@@ -385,12 +386,13 @@ export function PresenterView({
                 setElapsed(0)
                 setPaused(false)
               }}
-              title={t('panePresenterRestart')}
+              data-tip={t('panePresenterRestart')}
+              aria-label={t('panePresenterRestart')}
             >
               ↻
             </button>
             <div className="pv-top-spacer" />
-            <span className="pv-clock" title={t('panePresenterClock')}>
+            <span className="pv-clock" data-tip={t('panePresenterClock')}>
               {clock}
             </span>
           </div>
@@ -414,7 +416,7 @@ export function PresenterView({
                   states={player.states}
                 />
                 <InkLayer strokes={strokes} laser={laser} width={fitW} height={fitH} />
-                {black && <div className="pv-black" title={t('panePresenterBlackOn')} />}
+                {black && <div className="pv-black" data-tip={t('panePresenterBlackOn')} />}
               </div>
             )}
           </div>
@@ -423,14 +425,16 @@ export function PresenterView({
               <button
                 className={`pv-tool-btn${tool === 'pen' ? ' pv-tool-on' : ''}`}
                 onClick={() => setTool((cur) => (cur === 'pen' ? 'none' : 'pen'))}
-                title={t('panePresenterPen')}
+                data-tip={t('panePresenterPen')}
+                aria-label={t('panePresenterPen')}
               >
                 ✎
               </button>
               <button
                 className={`pv-tool-btn${tool === 'laser' ? ' pv-tool-on' : ''}`}
                 onClick={() => setTool((cur) => (cur === 'laser' ? 'none' : 'laser'))}
-                title={t('panePresenterLaser')}
+                data-tip={t('panePresenterLaser')}
+                aria-label={t('panePresenterLaser')}
               >
                 ◉
               </button>
@@ -438,14 +442,16 @@ export function PresenterView({
                 className="pv-tool-btn"
                 disabled={strokes.length === 0}
                 onClick={clearInk}
-                title={t('panePresenterEraseInk')}
+                data-tip={t('panePresenterEraseInk')}
+                aria-label={t('panePresenterEraseInk')}
               >
                 ⌫
               </button>
               <button
                 className={`pv-tool-btn${black ? ' pv-tool-on' : ''}`}
                 onClick={() => setBlack((v) => !v)}
-                title={t('panePresenterBlackTip')}
+                data-tip={t('panePresenterBlackTip')}
+                aria-label={t('panePresenterBlackTip')}
               >
                 ▮
               </button>
@@ -455,7 +461,8 @@ export function PresenterView({
                 className="pv-round"
                 disabled={!ended && pos === 0}
                 onClick={prev}
-                title={t('panePresenterPrevTip')}
+                data-tip={t('panePresenterPrevTip')}
+                aria-label={t('panePresenterPrevTip')}
               >
                 ‹
               </button>
@@ -467,7 +474,12 @@ export function PresenterView({
                   <div style={{ width: `${Math.round(((pos + 1) / order.length) * 100)}%` }} />
                 </div>
               </div>
-              <button className="pv-round" onClick={next} title={t('panePresenterNextTip')}>
+              <button
+                className="pv-round"
+                onClick={next}
+                data-tip={t('panePresenterNextTip')}
+                aria-label={t('panePresenterNextTip')}
+              >
                 ›
               </button>
             </div>
@@ -491,14 +503,14 @@ export function PresenterView({
             <button
               className="pv-mini-btn"
               onClick={() => setNoteSize((s) => Math.min(28, s + 2))}
-              title={t('panePresenterNotesBigger')}
+              data-tip={t('panePresenterNotesBigger')}
             >
               A⁺
             </button>
             <button
               className="pv-mini-btn"
               onClick={() => setNoteSize((s) => Math.max(11, s - 2))}
-              title={t('panePresenterNotesSmaller')}
+              data-tip={t('panePresenterNotesSmaller')}
             >
               A⁻
             </button>
@@ -514,7 +526,7 @@ export function PresenterView({
               setEnded(false)
               goTo(i, false)
             }}
-            title={t('panePresenterFilmSlideN', { n: i + 1 })}
+            data-tip={t('panePresenterFilmSlideN', { n: i + 1 })}
           >
             <SlideThumb slide={slides[idx]!} images={images} width={150} />
           </div>

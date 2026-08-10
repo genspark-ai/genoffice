@@ -6,7 +6,11 @@ import { AudienceView } from './components/AudienceView'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
 import type { UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
+import '@genoffice/ui/screentip.css'
 import './styles.css'
+import { installScreenTips } from '@genoffice/ui'
+
+installScreenTips()
 
 // ?mode=audience: the presenter view's external-screen audience show window (created by the main process)
 const mode = new URLSearchParams(window.location.search).get('mode')

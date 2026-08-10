@@ -12,3 +12,14 @@ checkout.
 
 Bundled fonts and their licenses are documented in
 apps/docs/src/renderer/fonts/README.md.
+
+Unicode Character Database
+
+apps/pdf/src/shared/radicals.ts contains a generated mapping derived from
+Unicode Character Database 17.0.0, EquivalentUnifiedIdeograph.txt
+(2025-08-01):
+https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
+
+Copyright © 1991-2026 Unicode, Inc. This data is distributed under Unicode
+License v3. The complete copyright and permission notice is reproduced in
+LICENSE-UNICODE.txt.

@@ -159,6 +159,14 @@ export function TabBar() {
     return window.aiOfficeTabs.onChanged(setTabs)
   }, [])
 
+  // document tabs are sibling WebContentsViews: they see neither this press
+  // nor a focus change, so relay it for them to dismiss open popovers
+  useEffect(() => {
+    const notify = (): void => window.aiOfficeTabs.notifyChromePressed?.()
+    document.addEventListener('pointerdown', notify, true)
+    return () => document.removeEventListener('pointerdown', notify, true)
+  }, [])
+
   // if the dragged tab is closed mid-drag (e.g. Cmd+W) its element unmounts
   // and pointerup/pointercancel never fire — clear the drag state ourselves
   useEffect(() => {
@@ -311,6 +319,7 @@ export function TabBar() {
                 <button
                   className="tab-close"
                   title={t('closeTab')}
+                  aria-label={t('closeTab')}
                   onClick={(event) => {
                     event.stopPropagation()
                     void window.aiOfficeTabs.close(tab.id)
@@ -325,6 +334,7 @@ export function TabBar() {
         <button
           className="tab-new-btn"
           title={t('newTab')}
+          aria-label={t('newTab')}
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect()
             void window.aiOfficeTabs.showNewMenu(Math.round(rect.left), Math.round(rect.bottom))
@@ -345,6 +355,7 @@ export function TabBar() {
       <button
         className="tab-overflow-btn"
         title={t('tabList')}
+        aria-label={t('tabList')}
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect()
           void window.aiOfficeTabs.showMenu(Math.round(rect.left), Math.round(rect.bottom))

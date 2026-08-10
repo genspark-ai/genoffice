@@ -3,6 +3,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { DOMParser as PmDOMParser, type Mark as PmMark } from '@tiptap/pm/model'
+import { markdownPasteHtml } from './editor/markdown-paste'
 import {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
@@ -39,6 +40,7 @@ import {
   liveSections,
   nextLineAnchor,
   measureBlocks,
+  docGridPitchPt,
   type LineAnchor,
   pageNumbers,
   sliceWithLineSplit,
@@ -203,6 +205,24 @@ function cleanPastedHtml(html: string): string {
     .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/g, '')
     .replace(/<o:p>[\s\S]*?<\/o:p>/g, '')
     .replace(/<li([^>]*)>\s*<p[^>]*>([\s\S]*?)<\/p>\s*<\/li>/g, '<li$1>$2</li>')
+}
+
+/** All runs a footnote/endnote reference may live in: paragraph runs, plus table
+ *  cell paragraphs (incl. nested tables) — refs inside cells still print their
+ *  note at the page bottom like Word */
+function blockNoteScanRuns(b: Block): NonNullable<Block['runs']> {
+  const out: NonNullable<Block['runs']> = []
+  if (b.runs) out.push(...b.runs)
+  const walkTable = (table: NonNullable<Block['table']> | undefined): void => {
+    for (const row of table?.rows ?? []) {
+      for (const cell of row) {
+        for (const p of cell.richParas ?? []) out.push(...p.runs)
+        for (const nested of cell.nestedTables ?? []) walkTable(nested)
+      }
+    }
+  }
+  if (b.table) walkTable(b.table)
+  return out
 }
 
 /** Footnote area at the top of a page gap (previous page's bottom): absolutely positioned in the content area, double-click an entry to edit */
@@ -595,6 +615,45 @@ export function App() {
           }
           reader.readAsDataURL(imageFile)
           return true
+        }
+        // text/plain-only Markdown (code blocks, terminals, .md files, LLM
+        // output): convert and insert as formatted content instead of literal
+        // "## Heading" / "**bold**" characters
+        if (!html && text) {
+          const markdownHtml = markdownPasteHtml(text)
+          if (markdownHtml !== null) {
+            try {
+              // cleanPastedHtml unwraps <li><p>…</p></li> from loose lists —
+              // docListItem only allows inline content and would shatter them.
+              const dom = new window.DOMParser().parseFromString(
+                cleanPastedHtml(markdownHtml),
+                'text/html',
+              )
+              const parser = PmDOMParser.fromSchema(view.state.schema)
+              if (
+                selEmpty &&
+                $from.parent.isTextblock &&
+                $from.parent.content.size === 0 &&
+                $from.depth === 1
+              ) {
+                // same wholesale replace as block HTML onto an empty paragraph
+                const parsed = parser.parse(dom.body)
+                if (parsed.content.childCount > 0) {
+                  view.dispatch(
+                    view.state.tr.replaceWith($from.before(1), $from.after(1), parsed.content),
+                  )
+                  return true
+                }
+              } else {
+                view.dispatch(
+                  view.state.tr.replaceSelection(parser.parseSlice(dom.body)).scrollIntoView(),
+                )
+                return true
+              }
+            } catch {
+              /* fall back to default literal paste on parse failure */
+            }
+          }
         }
         return false
       },
@@ -1330,9 +1389,10 @@ export function App() {
   // page-bottom height (px) reserved for footnote references inside a block: same estimation model as the parity runner
   const footnoteExtraOf = useCallback(
     (b: Block): number => {
-      if (!b.runs || footnotes.length === 0) return 0
+      const runs = blockNoteScanRuns(b)
+      if (runs.length === 0 || footnotes.length === 0) return 0
       let extra = 0
-      for (const run of b.runs) {
+      for (const run of runs) {
         if (run.noteRef?.kind !== 'footnote') continue
         const sec =
           sections.find((s) => (b.docxIndex ?? 0) <= s.lastBlockIndex)?.settings ?? section
@@ -1345,6 +1405,9 @@ export function App() {
     },
     [footnotes, sections, section],
   )
+
+  // typed w:docGrid line pitch (pt) when every section shares one; null = no snapping
+  const gridPitchPt = useMemo(() => docGridPitchPt(sections), [sections])
 
   // single-section header/footer push-down: body top = max(marginTop, headerDist + header height)
   const singleHfPx = useMemo(() => {
@@ -1427,8 +1490,10 @@ export function App() {
       for (const b of blocks) {
         if (b.docxIndex === undefined) continue
         const pb = doc.parsed.blocks.find((bl) => bl.docxIndex === b.docxIndex)
-        if (!pb?.runs) continue
-        const ids = pb.runs.filter((r) => r.noteRef?.kind === 'footnote').map((r) => r.noteRef!.id)
+        if (!pb) continue
+        const ids = blockNoteScanRuns(pb)
+          .filter((r) => r.noteRef?.kind === 'footnote')
+          .map((r) => r.noteRef!.id)
         if (ids.length === 0) continue
         const page = pageAt(slices, b.top + 0.5) - 1
         const sec = sections.find((s) => b.docxIndex! <= s.lastBlockIndex)?.settings ?? section
@@ -2666,6 +2731,14 @@ export function App() {
       {doc && liveDocCjk != null && (
         <style>{`.doc-page { --doc-line-factor:${docLineFactor(doc.parsed, liveDocCjk)} }`}</style>
       )}
+      {doc && gridPitchPt != null && (
+        // typed w:docGrid: line-height round(up) expressions snap to this pitch
+        <style>{`.doc-page { --doc-grid-pitch:${gridPitchPt}pt }`}</style>
+      )}
+      {doc && section && (
+        // over-wide tables may spill into the right margin (Word/LO), capped at the paper edge
+        <style>{`.doc-page { --doc-margin-right:${twipsToPx(section.marginRight)}px }`}</style>
+      )}
       {/* Theme CSS comes from live state, so a Design ▸ Themes/Fonts/Colors pick shows
           on the page immediately instead of only in the saved file */}
       {doc && <style>{docThemeCss(themeFonts, themeColors, !!docBodyFont(doc.parsed))}</style>}
@@ -3118,6 +3191,9 @@ export function App() {
           pageFootnotesOf={pageFootnotesOf}
           endnoteItems={endnoteItems}
           sectionHfOverride={sectionHfOverride}
+          clearPageGaps={() => {
+            if (editor) setPageGaps(editor.view, [])
+          }}
           onExportPdf={() => void exportPdf()}
           onClose={() => setShowPagePreview(false)}
         />

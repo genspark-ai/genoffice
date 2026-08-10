@@ -2,7 +2,10 @@ import type { ParsedDocFull, StyleDisplay, ThemeColors, ThemeFonts } from '@geno
 import {
   cssDualFontFamily,
   cssFontFamily,
+  cssGridLineBase,
+  cssGridSpacingPt,
   cssLineHeight,
+  isCjkFontName,
   krLineFactor,
   lineHeightFactor,
   textHasCjk,
@@ -57,17 +60,32 @@ export function docHasCjk(parsed: ParsedDocFull): boolean {
  * line height). Recomputed live while editing via App's liveDocCjk.
  */
 export function docLineFactor(parsed: ParsedDocFull, hasCjk: boolean): number {
+  return hasCjk ? docCjkFactor(parsed) : lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')
+}
+
+/** CJK line-height factor of the document's East Asian face (feeds --doc-line-factor-cjk:
+ *  per-paragraph script overrides resolve CJK paragraphs through this var). */
+export function docCjkFactor(parsed: ParsedDocFull): number {
   // Normal's EA face wins over docDefaults (a Normal declaring e.g. Noto KR must
-  // not fall back to the SimSun 1.3 factor). font === fontAscii means only a
+  // not fall back to the SimSun factor). font === fontAscii means only a
   // Latin slot was declared (StyleDisplay.font is EA-first) — not an EA choice.
   const normal = defaultParaDisplay(parsed)
   const normalEa =
     normal?.font && (normal.font !== normal.fontAscii || isKoreanFontName(normal.font))
       ? normal.font
       : undefined
-  return hasCjk
-    ? lineHeightFactor(normalEa ?? parsed.docDefaults?.eastAsiaFont ?? 'SimSun')
-    : lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')
+  if (normalEa && !normal?.eaSlotEmpty) return lineHeightFactor(normalEa)
+  const dd = parsed.docDefaults
+  if (dd?.eastAsiaFont && !dd.eaSlotEmpty) return lineHeightFactor(dd.eastAsiaFont)
+  // An empty EA theme slot can still use a CJK-capable Latin theme face.
+  // Japanese templates commonly put Yu Mincho or Yu Gothic in the Latin
+  // slots, and LibreOffice lays undeclared CJK out with that face.
+  // A Latin theme face (Calibri…) can't render CJK, so the lang backfill wins.
+  const themeLatin = parsed.themeFonts?.minor
+  if ((normal?.eaSlotEmpty || dd?.eaSlotEmpty) && themeLatin && isCjkFontName(themeLatin)) {
+    return lineHeightFactor(themeLatin)
+  }
+  return lineHeightFactor(normalEa ?? dd?.eastAsiaFont ?? 'SimSun')
 }
 
 /** the w:default="1" paragraph style's display (Word's baseline for un-styled paragraphs) */
@@ -99,6 +117,9 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // at parse time + live decorations in LineFactorExtension).
     const factor = docLineFactor(parsed, docHasCjk(parsed))
     decls.push(`--doc-line-factor:${factor}`)
+    // CJK paragraphs resolve their per-paragraph factor through this var
+    // (paraLineFactorCss); value follows the document's East Asian face
+    decls.push(`--doc-line-factor-cjk:${docCjkFactor(parsed)}`)
     // Latin factor for per-paragraph overrides (blockAttrs): pure-Western paragraphs
     // follow the body font's real single-line metric instead of a flat 1.2
     decls.push(`--doc-line-factor-latin:${lineHeightFactor(docBodyFont(parsed) ?? 'Calibri')}`)
@@ -127,18 +148,20 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     const lh =
       cssLineHeight(normal?.lineRule, normal?.lineRawTwips, normal?.lineSpacing) ??
       cssLineHeight(dd?.lineRule, dd?.lineRawTwips, dd?.lineSpacing)
-    decls.push(`line-height:${lh ?? `calc(${factor} * 1)`}`)
+    // fallback references the var (not the resolved number) so per-paragraph
+    // script factors and docGrid snapping re-evaluate on each block
+    decls.push(`line-height:${lh ?? cssGridLineBase()}`)
     rules.push(`.doc-page { ${decls.join(';')} }`)
     // Word's fallback when neither Normal nor docDefaults declares w:spacing is 0
     // (the static stylesheet's 8pt guess inflated undeclared docs, table cells worst);
     // declared per block so --doc-line-factor set inline on a paragraph re-evaluates
     // the line-height var (it wouldn't through inheritance)
     const blockSel =
-      '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6'
+      '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6, .doc-page .doc-protected-field'
     const blockDecls = [
-      `margin-top:${((normal?.spaceBeforeTwips ?? dd?.spaceBeforeTwips ?? 0) / 20).toFixed(1)}pt`,
-      `margin-bottom:${((normal?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 0) / 20).toFixed(1)}pt`,
-      `line-height:${lh ?? `calc(${factor} * 1)`}`,
+      `margin-top:${cssGridSpacingPt((normal?.spaceBeforeTwips ?? dd?.spaceBeforeTwips ?? 0) / 20)}`,
+      `margin-bottom:${cssGridSpacingPt((normal?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 0) / 20)}`,
+      `line-height:${lh ?? cssGridLineBase()}`,
     ]
     rules.push(`${blockSel} { ${blockDecls.join(';')} }`)
     // Normal's first-line indent applies to plain body paragraphs (not lists —
@@ -177,9 +200,9 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       const ps = t.paraSpacing
       const decls: string[] = []
       if (ps.beforeTwips !== undefined && normal?.spaceBeforeTwips === undefined)
-        decls.push(`margin-top:${(ps.beforeTwips / 20).toFixed(1)}pt`)
+        decls.push(`margin-top:${cssGridSpacingPt(ps.beforeTwips / 20)}`)
       if (ps.afterTwips !== undefined && normal?.spaceAfterTwips === undefined)
-        decls.push(`margin-bottom:${(ps.afterTwips / 20).toFixed(1)}pt`)
+        decls.push(`margin-bottom:${cssGridSpacingPt(ps.afterTwips / 20)}`)
       const psLh = cssLineHeight(ps.lineRule, ps.lineRawTwips, ps.lineSpacing)
       const normalLh = cssLineHeight(normal?.lineRule, normal?.lineRawTwips, normal?.lineSpacing)
       if (psLh && !normalLh) decls.push(`line-height:${psLh}`)
@@ -211,6 +234,12 @@ export function docStyleCss(parsed: ParsedDocFull): string {
             : cssFontFamily(d.font)
         }`,
       )
+      // style-declared EA face re-anchors the CJK line factor for its paragraphs
+      // (runs without their own fonts resolve --doc-line-factor-cjk through this);
+      // an empty-theme-slot backfill is not a document choice and stays silent
+      if (!d.eaSlotEmpty && (d.font !== d.fontAscii || isCjkFontName(d.font))) {
+        decls.push(`--doc-line-factor-cjk:${lineHeightFactor(d.font)}`)
+      }
     } else if (d.fontAscii) {
       decls.push(`font-family:${cssFontFamily(d.fontAscii)}`)
     }
@@ -218,9 +247,9 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     const styleLh = cssLineHeight(d.lineRule, d.lineRawTwips, d.lineSpacing)
     if (styleLh) decls.push(`line-height:${styleLh}`)
     if (d.spaceBeforeTwips !== undefined)
-      decls.push(`margin-top:${(d.spaceBeforeTwips / 20).toFixed(1)}pt`)
+      decls.push(`margin-top:${cssGridSpacingPt(d.spaceBeforeTwips / 20)}`)
     if (d.spaceAfterTwips !== undefined)
-      decls.push(`margin-bottom:${(d.spaceAfterTwips / 20).toFixed(1)}pt`)
+      decls.push(`margin-bottom:${cssGridSpacingPt(d.spaceAfterTwips / 20)}`)
     if (d.indentRightTwips)
       decls.push(`margin-inline-end:${(d.indentRightTwips / 20).toFixed(1)}pt`)
     if (d.indentFirstLineTwips)

@@ -100,7 +100,8 @@ export function IconsDialog({
                 aria-checked={candidate === color}
                 className={candidate === color ? 'active' : ''}
                 style={{ background: candidate }}
-                title={candidate}
+                data-tip={candidate}
+                aria-label={candidate}
                 onClick={() => setColor(candidate)}
               />
             ))}
@@ -126,7 +127,8 @@ export function IconsDialog({
                 key={entry.name}
                 type="button"
                 disabled={busy}
-                title={entry.name}
+                data-tip={entry.name}
+                aria-label={entry.name}
                 onClick={() => pick(entry.icon, entry.name)}
               >
                 <entry.icon />

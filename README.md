@@ -1,9 +1,20 @@
 # GenOffice
 
-An AI-native office suite for macOS, Windows, and Linux: word processor,
-spreadsheet, presentations, PDF, and Markdown — six Electron apps sharing one
-engine layer, built around AI editing as a first-class workflow rather than a
-bolted-on chat box.
+**The world's first full-featured open-source AI Office suite.**
+
+[![License: Apache-2.0](https://img.shields.io/github/license/genspark-ai/genoffice)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/genspark-ai/genoffice)](https://github.com/genspark-ai/genoffice/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/genspark-ai/genoffice/total)](https://github.com/genspark-ai/genoffice/releases)
+[![GitHub stars](https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat)](https://github.com/genspark-ai/genoffice/stargazers)
+![Platforms: macOS | Windows | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
+
+GenOffice is a free, open-source alternative to Microsoft Office for macOS,
+Windows, and Linux, built around AI editing as a first-class workflow rather
+than a bolted-on chat box. It opens and saves the real Microsoft Office
+formats — Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`) — and edits
+PDF and Markdown too: a word processor, spreadsheet, presentation editor,
+PDF editor, and Markdown editor as six Electron apps sharing one engine
+layer.
 
 [![Meet GenOffice — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
@@ -12,10 +23,10 @@ bolted-on chat box.
 ## Features
 
 - **Real PDF editing** — retype text and edit images in the page itself, original fonts preserved.
-- **Byte-preserving `.docx` editing** — only what you touched changes; Word never notices.
+- **Microsoft Word–compatible, byte-preserving `.docx` editing** — only what you touched changes; Word never notices.
 - **Word-faithful pagination** — page breaks land where Word puts them.
-- **In-house spreadsheet engine** — Rust `.xlsx` sidecar, own charts, pivot tables, slicers.
-- **In-house `.pptx` engine** — masters, layouts, smart guides, non-destructive crop.
+- **Excel-compatible spreadsheets** — in-house engine with a Rust `.xlsx` sidecar, own charts, pivot tables, slicers.
+- **PowerPoint-compatible presentations** — in-house `.pptx` engine with masters, layouts, smart guides, non-destructive crop.
 - **Markdown to Word, fully local** — the same OOXML engine, no Pandoc, no cloud.
 - **AI that edits documents** — block-level edits with snapshots and diffs, document-aware agents.
 - **Agent tools built in** — web/image search, image generation, media analysis.
@@ -25,12 +36,14 @@ bolted-on chat box.
 
 ## Download
 
-| Platform                        | Requirements                                | Download                                                                                                                    |
-| ------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **macOS** (Apple Silicon)       | macOS 11+                                   | [GenOffice-0.6.13-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/GenOffice-0.6.13-arm64.dmg) |
-| **Windows** (x64)               | Windows 10+                                 | [GenOfficeSetup-v0.6.13.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/GenOfficeSetup-v0.6.13.exe) |
-| **Linux** — Debian / Ubuntu     | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer) | [genoffice_0.6.13_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/genoffice_0.6.13_amd64.deb) |
-| **Linux** — other distributions | x86_64, glibc 2.34+, FUSE 2                 | [GenOffice-0.6.13.AppImage](https://github.com/genspark-ai/genoffice/releases/download/v0.6.13/GenOffice-0.6.13.AppImage)   |
+| Platform                             | Requirements                                          | Download                                                                                                                         |
+| ------------------------------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [GenOffice-0.6.101-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.6.101/GenOffice-0.6.101-arm64.dmg)   |
+| **macOS** — Intel (x64)              | macOS 11+                                             | [GenOffice-0.6.101.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.6.101/GenOffice-0.6.101.dmg)               |
+| **Windows** (x64)                    | Windows 10+                                           | [GenOfficeSetup-v0.6.101.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.6.101/GenOfficeSetup-v0.6.101.exe)   |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer)           | [genoffice_0.6.101_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/v0.6.101/genoffice_0.6.101_amd64.deb)   |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | [genoffice-0.6.101.x86_64.rpm](https://github.com/genspark-ai/genoffice/releases/download/v0.6.101/genoffice-0.6.101.x86_64.rpm) |
+| **Linux** — other distributions      | x86_64, glibc 2.34+, FUSE 2                           | [GenOffice-0.6.101.AppImage](https://github.com/genspark-ai/genoffice/releases/download/v0.6.101/GenOffice-0.6.101.AppImage)     |
 
 All builds come from `main`; the macOS and Windows installers are signed.
 Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
@@ -41,7 +54,14 @@ The deb installs with apt — it pulls in the dependencies and adds GenOffice
 to the applications menu:
 
 ```bash
-sudo apt install ./genoffice_0.6.13_amd64.deb
+sudo apt install ./genoffice_0.6.101_amd64.deb
+```
+
+On Fedora / RHEL-family / openSUSE, install the rpm instead:
+
+```bash
+sudo dnf install ./genoffice-0.6.101.x86_64.rpm     # Fedora / RHEL family
+sudo zypper install ./genoffice-0.6.101.x86_64.rpm  # openSUSE
 ```
 
 The AppImage instead runs in place: install the FUSE 2 runtime
@@ -49,8 +69,8 @@ The AppImage instead runs in place: install the FUSE 2 runtime
 make the file executable, then run it:
 
 ```bash
-chmod +x GenOffice-0.6.13.AppImage
-./GenOffice-0.6.13.AppImage
+chmod +x GenOffice-0.6.101.AppImage
+./GenOffice-0.6.101.AppImage
 ```
 
 ## Apps
@@ -111,7 +131,7 @@ npm run dev          # all five editors + shell against Vite dev servers
 npm run dev:docs     # a single app (same pattern works per workspace)
 npm run dist:mac     # package macOS dmg (regenerates third-party notices)
 npm run dist:win     # package Windows nsis installer
-npm run dist:linux   # package Linux AppImage + deb
+npm run dist:linux   # package Linux AppImage + deb + rpm
 ```
 
 The sheets app additionally needs a Rust toolchain for its xlsx sidecar
@@ -136,6 +156,26 @@ save      ─► dirty blocks → OOXML fragments (referencing existing styles o
 The same philosophy holds in sheets and slides: the original file is the
 source of truth, edits are applied as narrow patches, and everything the
 editor didn't touch survives the round trip untouched.
+
+## FAQ
+
+**Is GenOffice free?**
+Yes. GenOffice is free and open-source under the Apache-2.0 license — no
+trial, no paid tier for the apps themselves.
+
+**Can GenOffice open Microsoft Word, Excel, and PowerPoint files?**
+Yes. GenOffice opens and saves native `.docx`, `.xlsx`, and `.pptx` files.
+Saving is byte-preserving: parts of the file you didn't touch are written
+back byte-for-byte, so documents keep working in Microsoft Office.
+
+**Does GenOffice work offline?**
+Document editing is fully local — files never leave your machine to be
+opened, edited, or saved. The AI features (agents, search, image tools) sign
+in to a Genspark account and need a network connection.
+
+**Can GenOffice edit PDF files?**
+Yes — real PDF text and image editing that rewrites the page content stream
+with the original fonts preserved, not cover-up annotations.
 
 ## Security
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { createI18n, format, htmlLang, isLang, LANGS, normalizeLang } from '../src/index'
+import {
+  createI18n,
+  format,
+  htmlLang,
+  isLang,
+  LANGS,
+  macShortcutsToWin,
+  normalizeLang,
+} from '../src/index'
 
 describe('normalizeLang', () => {
   it('maps zh variants to zh', () => {
@@ -96,6 +104,56 @@ describe('format', () => {
     expect(format('已选 {n} 项', { n: 3 })).toBe('已选 3 项')
     expect(format('{a} and {b}', { a: 'x' })).toBe('x and {b}')
     expect(format('no params')).toBe('no params')
+  })
+})
+
+describe('macShortcutsToWin', () => {
+  it('rewrites single-modifier chords', () => {
+    expect(macShortcutsToWin('剪切 (⌘X)')).toBe('剪切 (Ctrl+X)')
+    expect(macShortcutsToWin('Save (⌘S).')).toBe('Save (Ctrl+S).')
+    expect(macShortcutsToWin('⌘1')).toBe('Ctrl+1')
+  })
+
+  it('rewrites multi-modifier chords in Ctrl, Alt, Shift order', () => {
+    expect(macShortcutsToWin('⇧⌘G')).toBe('Ctrl+Shift+G')
+    expect(macShortcutsToWin('⌘⇧V')).toBe('Ctrl+Shift+V')
+    expect(macShortcutsToWin('⌥⌘I')).toBe('Ctrl+Alt+I')
+    expect(macShortcutsToWin('⌥⇧⌘Z')).toBe('Ctrl+Alt+Shift+Z')
+  })
+
+  it('dedupes command and control into one Ctrl', () => {
+    expect(macShortcutsToWin('⌃⌘F')).toBe('Ctrl+F')
+  })
+
+  it('handles function keys, arrows and named keys', () => {
+    expect(macShortcutsToWin('⇧F5')).toBe('Shift+F5')
+    expect(macShortcutsToWin('⌘⇧↑')).toBe('Ctrl+Shift+↑')
+    expect(macShortcutsToWin('⌘⇧⌫')).toBe('Ctrl+Shift+Backspace')
+    expect(macShortcutsToWin('⌫')).toBe('Backspace')
+    expect(macShortcutsToWin('⌦')).toBe('Delete')
+    expect(macShortcutsToWin('⏎')).toBe('Enter')
+    expect(macShortcutsToWin('↩')).toBe('Enter')
+    expect(macShortcutsToWin('␣')).toBe('Space')
+  })
+
+  it('keeps the Ctrl side of dual-platform listings', () => {
+    expect(macShortcutsToWin('⌘/Ctrl+Enter 发送')).toBe('Ctrl+Enter 发送')
+    expect(macShortcutsToWin('⌘/Strg+Eingabetaste')).toBe('Strg+Eingabetaste')
+  })
+
+  it('rewrites modifier+word combos and bare modifiers', () => {
+    expect(macShortcutsToWin('⌘+Click to follow')).toBe('Ctrl+Click to follow')
+    expect(macShortcutsToWin('按住 ⌘ 并单击')).toBe('按住 Ctrl 并单击')
+  })
+
+  it('keeps a chord embedded before non-Latin text intact', () => {
+    expect(macShortcutsToWin('⌘S로 저장')).toBe('Ctrl+S로 저장')
+  })
+
+  it('leaves strings without Mac symbols untouched', () => {
+    const plain = 'Ctrl+S saves the file'
+    expect(macShortcutsToWin(plain)).toBe(plain)
+    expect(macShortcutsToWin('文件')).toBe('文件')
   })
 })
 

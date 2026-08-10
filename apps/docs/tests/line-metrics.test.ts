@@ -116,18 +116,26 @@ describe('computeLineHeight', () => {
     expect(h).toBeCloseTo(naturalH, 2)
   })
 
-  it('docGrid lines mode: line height is not rounded (measured on real Word for Mac)', () => {
-    // Precise Word baseline (line-by-line from the 02/10 corpus PDFs): 12pt/1.15×
-    // lays out at 18pt/line, not a multiple of linePitch (15.6pt) — docGrid does not affect line height
+  it('docGrid lines mode: single/auto lines snap up to whole linePitch cells (LO probe)', () => {
+    // LO baseline (probe docx, 2026-08-10): natural 20px on a 15.6pt (20.8px)
+    // grid takes one cell; the auto multiple applies AFTER snapping
     const docGrid = { type: 'lines' as const, linePitch: 312 }
     const h = computeLineHeight(20, 'auto', 240, docGrid)
-    expect(h).toBeCloseTo(20, 2)
+    expect(h).toBeCloseTo(312 * (96 / 1440), 2)
   })
 
-  it('docGrid lines mode: large line heights are not rounded either', () => {
+  it('docGrid lines mode: taller lines take more whole cells', () => {
     const docGrid = { type: 'lines' as const, linePitch: 300 }
     const h = computeLineHeight(55, 'auto', 240, docGrid)
-    expect(h).toBeCloseTo(55, 2)
+    // 300tw = 20px cell; 55px needs 3 cells = 60px
+    expect(h).toBeCloseTo(60, 2)
+  })
+
+  it('docGrid lines mode: exact and atLeast never snap', () => {
+    const docGrid = { type: 'lines' as const, linePitch: 312 }
+    expect(computeLineHeight(20, 'exact', 260, docGrid)).toBeCloseTo(260 * (96 / 1440), 2)
+    expect(computeLineHeight(20, 'atLeast', 0, docGrid)).toBeCloseTo(20, 2)
+    expect(computeLineHeight(20, 'atLeast', 480, docGrid)).toBeCloseTo(480 * (96 / 1440), 2)
   })
 
   it('type=default does no grid rounding', () => {
@@ -150,9 +158,12 @@ describe('snapSpacingToGrid', () => {
     expect(px).toBeCloseTo(160 * TWIPS_TO_PX, 2)
   })
 
-  it('type=lines does not round either (real Word: 240tw space-after lays out at the raw 8pt)', () => {
-    const px = snapSpacingToGrid(160, { type: 'lines', linePitch: 312 })
-    expect(px).toBeCloseTo(160 * TWIPS_TO_PX, 2)
+  it('type=lines quantizes spacing DOWN to whole cells (LO probe: 6pt vanishes on a 15.6pt grid)', () => {
+    expect(snapSpacingToGrid(160, { type: 'lines', linePitch: 312 })).toBeCloseTo(0, 2)
+    expect(snapSpacingToGrid(480, { type: 'lines', linePitch: 312 })).toBeCloseTo(
+      312 * TWIPS_TO_PX,
+      2,
+    )
   })
 })
 
@@ -229,8 +240,9 @@ describe('computeLineMetrics', () => {
     )
   })
 
-  it('docGrid does not change line height: Chinese official doc linePitch=312 (A4 page, 12pt SimSun)', () => {
-    // Real-Word baseline: line height is identical with or without docGrid (no snapping)
+  it('docGrid snaps line heights: Chinese official doc linePitch=312 (A4 page, 12pt SimSun)', () => {
+    // LO baseline: 12pt SimSun natural (1.7em = 27.2px) exceeds one 20.8px cell,
+    // so each line takes two cells before the 1.3 auto multiple applies
     const docGrid = { type: 'lines' as const, linePitch: 312 }
     const input = {
       runs: [{ text: '中华人民共和国', sizeHalfPoints: 24 }], // 12pt
@@ -240,8 +252,13 @@ describe('computeLineMetrics', () => {
     }
     const withGrid = computeLineMetrics({ ...input, docGrid })
     const without = computeLineMetrics(input)
-    expect(withGrid.lineHeights).toEqual(without.lineHeights)
-    expect(withGrid.totalHeight).toBeCloseTo(without.totalHeight, 2)
+    const cell = 312 * (96 / 1440)
+    for (const [i, h] of withGrid.lineHeights.entries()) {
+      expect(h).toBeCloseTo(
+        Math.ceil(without.lineHeights[i] / (312 / 240) / cell - 0.001) * cell * (312 / 240),
+        2,
+      )
+    }
   })
 
   it('exact line-height mode: total height = lineCount × exactPx + spacing', () => {
@@ -319,11 +336,15 @@ describe('lineTexts', () => {
 
 describe('cssLineHeight', () => {
   it('auto multiple → calc(coefficient variable × multiple)', () => {
-    expect(cssLineHeight('auto', 276, 1.15)).toBe('calc(var(--doc-line-factor,1.2) * 1.15)')
+    expect(cssLineHeight('auto', 276, 1.15)).toBe(
+      'calc(round(up, calc(var(--doc-line-factor,1.2) * 1em), var(--doc-grid-pitch,0.0001px)) * 1.15)',
+    )
   })
 
   it('derives the multiple from auto twips when lineSpacing is absent', () => {
-    expect(cssLineHeight('auto', 360, undefined)).toBe('calc(var(--doc-line-factor,1.2) * 1.5)')
+    expect(cssLineHeight('auto', 360, undefined)).toBe(
+      'calc(round(up, calc(var(--doc-line-factor,1.2) * 1em), var(--doc-grid-pitch,0.0001px)) * 1.5)',
+    )
   })
 
   it('exact → fixed pt', () => {
@@ -488,31 +509,43 @@ describe('Korean line metrics', () => {
     expect(m.measure('한글날', style)).toBeCloseTo(48, 5)
   })
 
-  it('Korean font line factors: Batang-class 1.3, Malgun 1.73, Noto KR 1.3', () => {
-    expect(lineHeightFactor('Batang')).toBe(1.3)
-    expect(lineHeightFactor('바탕')).toBe(1.3)
-    expect(lineHeightFactor('Gulim')).toBe(1.3)
-    expect(lineHeightFactor('Dotum')).toBe(1.3)
-    expect(lineHeightFactor('NanumMyeongjo')).toBe(1.3)
-    expect(lineHeightFactor('Malgun Gothic')).toBe(1.73)
-    expect(lineHeightFactor('맑은 고딕')).toBe(1.73)
-    expect(lineHeightFactor('Noto Sans CJK KR')).toBe(1.3)
-    expect(lineHeightFactor('Noto Serif KR')).toBe(1.3)
-    expect(lineHeightFactor('Source Han Sans K')).toBe(1.3)
+  it('Korean font line factors: Batang-class 1.4583, Malgun 1.775 (LO probe)', () => {
+    expect(lineHeightFactor('Batang')).toBe(1.4583)
+    expect(lineHeightFactor('바탕')).toBe(1.4583)
+    expect(lineHeightFactor('Gulim')).toBe(1.4583)
+    expect(lineHeightFactor('Dotum')).toBe(1.4583)
+    expect(lineHeightFactor('NanumMyeongjo')).toBe(1.4583)
+    expect(lineHeightFactor('Malgun Gothic')).toBe(1.775)
+    expect(lineHeightFactor('맑은 고딕')).toBe(1.775)
+    expect(lineHeightFactor('Noto Sans CJK KR')).toBe(1.4583)
+    expect(lineHeightFactor('Noto Serif KR')).toBe(1.4583)
+    expect(lineHeightFactor('Source Han Sans K')).toBe(1.4583)
   })
 
-  it('Chinese/Japanese factors unchanged', () => {
-    expect(lineHeightFactor('SimSun')).toBe(1.3)
-    expect(lineHeightFactor('DengXian')).toBe(1.3)
-    expect(lineHeightFactor('等线')).toBe(1.3)
+  it('Chinese/Japanese factors follow the LO substitution probe', () => {
+    expect(lineHeightFactor('SimSun')).toBe(1.7)
+    expect(lineHeightFactor('宋体')).toBe(1.7)
+    expect(lineHeightFactor('DengXian')).toBe(1.775)
+    expect(lineHeightFactor('等线')).toBe(1.775)
+    expect(lineHeightFactor('仿宋_GB2312')).toBe(1.775)
+    expect(lineHeightFactor('黑体')).toBe(1.0)
+    expect(lineHeightFactor('楷体')).toBe(1.0)
+    expect(lineHeightFactor('楷体_GB2312')).toBe(1.775)
+    expect(lineHeightFactor('ＭＳ 明朝')).toBe(1.7)
+    expect(lineHeightFactor('MS Gothic')).toBe(1.7)
+    expect(lineHeightFactor('游明朝')).toBe(2.2667)
+    expect(lineHeightFactor('Meiryo')).toBe(1.775)
     expect(lineHeightFactor('PMingLiU')).toBe(1.0)
+    expect(lineHeightFactor('Microsoft JhengHei')).toBe(1.775)
     expect(lineHeightFactor('Calibri')).toBe(1.22)
+    expect(lineHeightFactor('Century Gothic')).toBe(1.2)
   })
 
-  it('SC-variant declares take the SimSun factor (their substitution target when missing)', () => {
-    expect(lineHeightFactor('Noto Sans CJK SC')).toBe(1.3)
-    expect(lineHeightFactor('Noto Serif SC')).toBe(1.3)
-    expect(lineHeightFactor('Source Han Sans CN')).toBe(1.3)
+  it('SC-variant declares take the PingFang-class factor (their substitution target when missing)', () => {
+    expect(lineHeightFactor('Noto Sans CJK SC')).toBe(1.775)
+    expect(lineHeightFactor('Noto Serif SC')).toBe(1.775)
+    expect(lineHeightFactor('Source Han Sans CN')).toBe(1.775)
+    expect(lineHeightFactor('Noto Sans SC')).toBe(1.8375)
   })
 
   it('textHasHangul separates Korean from other CJK', () => {
@@ -522,15 +555,15 @@ describe('Korean line metrics', () => {
   })
 
   it('paraLineFactorCss routes by script', () => {
-    expect(paraLineFactorCss('한국어')).toBe('var(--doc-line-factor-kr,1.3)')
-    expect(paraLineFactorCss('\u4e2d\u6587')).toBe('1.3')
+    expect(paraLineFactorCss('한국어')).toBe('var(--doc-line-factor-kr,1.4583)')
+    expect(paraLineFactorCss('\u4e2d\u6587')).toBe('var(--doc-line-factor-cjk,1.7)')
     expect(paraLineFactorCss('latin')).toBe('var(--doc-line-factor-latin,1.2)')
   })
 
   it('krLineFactor follows the EA face, defaulting to Batang-class', () => {
-    expect(krLineFactor('Batang')).toBe(1.3)
-    expect(krLineFactor('맑은 고딕')).toBe(1.73)
-    expect(krLineFactor(undefined)).toBe(1.3)
+    expect(krLineFactor('Batang')).toBe(1.4583)
+    expect(krLineFactor('맑은 고딕')).toBe(1.775)
+    expect(krLineFactor(undefined)).toBe(1.4583)
   })
 
   it('Korean ascii face in a dual-slot chain keeps only the literal family', () => {

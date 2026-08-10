@@ -856,7 +856,7 @@ function EditableShapeVisual({
               }
             : undefined
       }
-      title={
+      data-tip={
         textEditing
           ? undefined
           : allowText
@@ -886,7 +886,8 @@ function EditableShapeVisual({
       {!textEditing && (
         <button
           className="shape-delete-button"
-          title={t('appDeleteVisualTitle')}
+          data-tip={t('appDeleteVisualTitle')}
+          aria-label={t('appDeleteVisualTitle')}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation()
@@ -1242,7 +1243,8 @@ function ChartVisual({
       {canEdit && !isEditing && (
         <button
           className="chart-edit-button"
-          title={t('appEditChartTitle')}
+          data-tip={t('appEditChartTitle')}
+          aria-label={t('appEditChartTitle')}
           onClick={() => setIsEditing(true)}
         >
           ✎
@@ -1658,7 +1660,7 @@ function ChartEditor({
             <input
               className="chart-editor-range"
               placeholder={series.valuesRef ?? t('appValuesPlaceholder')}
-              title={t('appValuesRangeTitle', {
+              data-tip={t('appValuesRangeTitle', {
                 name: series.name || t('appSeriesN', { n: index + 1 }),
               })}
               value={ranges[String(index)]?.values ?? ''}
@@ -1676,7 +1678,7 @@ function ChartEditor({
             <input
               className="chart-editor-range"
               placeholder={series.categoriesRef ?? t('appLabelsPlaceholder')}
-              title={t('appCategoriesRangeTitle', {
+              data-tip={t('appCategoriesRangeTitle', {
                 name: series.name || t('appSeriesN', { n: index + 1 }),
               })}
               value={ranges[String(index)]?.categories ?? ''}

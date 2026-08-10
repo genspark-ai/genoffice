@@ -227,7 +227,7 @@ export function AnimPreviewOverlay({
   }, [player.playing, player.pending, player.advance, onDone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="anim-preview-overlay" onClick={onDone} title={t('paneAnimClickToEnd')}>
+    <div className="anim-preview-overlay" onClick={onDone} data-tip={t('paneAnimClickToEnd')}>
       <AnimatedSlideStage
         slide={slide}
         images={images}

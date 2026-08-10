@@ -119,7 +119,13 @@ export function EquationDialog({
             {PRESETS.map((preset) => {
               const rendered = mathmlOf(preset)
               return (
-                <button key={preset} type="button" title={preset} onClick={() => setLatex(preset)}>
+                <button
+                  key={preset}
+                  type="button"
+                  data-tip={preset}
+                  aria-label={preset}
+                  onClick={() => setLatex(preset)}
+                >
                   {rendered !== null && 'mathml' in rendered && (
                     <span dangerouslySetInnerHTML={{ __html: rendered.mathml }} />
                   )}

@@ -23,8 +23,11 @@ const lastUsedDirectoryByDialog = new WeakMap<Dialog, string>()
 function withRememberedDirectory<T extends OpenDialogOptions | SaveDialogOptions>(
   dialog: Dialog,
   options: T,
+  fallbackDir?: string,
 ): T {
-  const lastDir = lastUsedDirectoryByDialog.get(dialog)
+  // No pick confirmed yet this session: anchor in the caller's fallback (the
+  // configurable default save folder) instead of Electron's Downloads pin.
+  const lastDir = lastUsedDirectoryByDialog.get(dialog) ?? fallbackDir
   if (!lastDir) return options
   if (options.defaultPath === undefined) return { ...options, defaultPath: lastDir }
   // A bare file name is a Save As suggestion: anchor it in the remembered
@@ -39,8 +42,9 @@ export async function showOpenDialogWithMemory(
   dialog: Dialog,
   parent: BrowserWindow | null | undefined,
   options: OpenDialogOptions,
+  fallbackDir?: string,
 ): Promise<OpenDialogReturnValue> {
-  const withDir = withRememberedDirectory(dialog, options)
+  const withDir = withRememberedDirectory(dialog, options, fallbackDir)
   const result = parent
     ? await dialog.showOpenDialog(parent, withDir)
     : await dialog.showOpenDialog(withDir)
@@ -58,8 +62,9 @@ export async function showSaveDialogWithMemory(
   dialog: Dialog,
   parent: BrowserWindow | null | undefined,
   options: SaveDialogOptions,
+  fallbackDir?: string,
 ): Promise<SaveDialogReturnValue> {
-  const withDir = withRememberedDirectory(dialog, options)
+  const withDir = withRememberedDirectory(dialog, options, fallbackDir)
   const result = parent
     ? await dialog.showSaveDialog(parent, withDir)
     : await dialog.showSaveDialog(withDir)

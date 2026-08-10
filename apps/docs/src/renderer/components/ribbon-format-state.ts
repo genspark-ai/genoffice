@@ -29,8 +29,6 @@ export interface RibbonFormatState {
   imageAlign: string | null
   imageWidthPx: number | null
   imageHeightPx: number | null
-  imageFlipH: boolean
-  imageFlipV: boolean
   imageHasDocxIndex: boolean
   textboxSelected: boolean
   shapeFill: string | null
@@ -79,8 +77,6 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   imageAlign: null,
   imageWidthPx: null,
   imageHeightPx: null,
-  imageFlipH: false,
-  imageFlipV: false,
   imageHasDocxIndex: false,
   textboxSelected: false,
   shapeFill: null,
@@ -197,8 +193,6 @@ export function computeFormatState(
     imageAlign: str(protAttrs.imageAlign),
     imageWidthPx: num(protAttrs.imageWidthPx),
     imageHeightPx: num(protAttrs.imageHeightPx),
-    imageFlipH: !!protAttrs.imageFlipH,
-    imageFlipV: !!protAttrs.imageFlipV,
     imageHasDocxIndex: protAttrs.docxIndex != null,
     textboxSelected: Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0,
     shapeFill: Array.isArray(protAttrs.textboxes)

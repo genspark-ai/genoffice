@@ -4,7 +4,11 @@ import App from './App'
 import { LocaleProvider } from './i18n/locale'
 import type { UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
+import '@genoffice/ui/screentip.css'
 import './styles.css'
+import { installScreenTips } from '@genoffice/ui'
+
+installScreenTips()
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')

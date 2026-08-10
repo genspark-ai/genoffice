@@ -100,8 +100,15 @@ const KO_FONT_RE =
   /malgun|맑은|batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서|gulim|굴림|dotum|돋움|nanum|나눔|genoffice (sans|serif) kr|(noto|source han) (sans|serif)[^,]*\bk(r|orean)?\b/i
 
 /**
- * Per-font line-height factor (based on measured Windows font metrics).
- * PMingLiU/MingLiU: ~1.0em; SimSun and other Simplified fonts: ~1.3em; Western: 1.2em.
+ * Per-font single-spacing line-height factor, matched to the LibreOffice
+ * baseline on this platform (probe docx converted with soffice, one paragraph
+ * per family, line pitch ÷ font size measured from the PDF — 2026-08-10).
+ * LO lays lines out with the *substituted* macOS face's hhea metrics
+ * (including its line gap), which is why the CJK values are far above the
+ * Windows-font 1.3 that Word uses: SimSun maps to the Songti-class 1.7,
+ * missing GB faces to the PingFang-class 1.775, MS Mincho to the
+ * Hiragino-class 1.7, and Yu Mincho to 2.2667 because of its large line gap.
+ * SimHei, KaiTi, and PMingLiU use compact 1.0em macOS substitutes.
  */
 export function lineHeightFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
@@ -109,45 +116,59 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f.includes('pmingliu') || f.includes('mingliu') || f.includes('細明體')) {
     return 1.0
   }
-  // Korean faces: Word lays out East Asian auto line rule at winTotal × 1.3
-  // (probe-verified vs Word PDFs): Malgun 1.3301 × 1.3 ≈ 1.73, Batang/Gulim 1.0 × 1.3
-  if (KO_FONT_RE.test(f)) return /malgun|맑은/.test(f) ? 1.73 : 1.3
-  // Noto/Source Han SC declares substitute into the SimSun class when missing
-  // (bundled subsets count as missing), so they take the SimSun factor
-  if (/^(noto|source han) (sans|serif)( cjk)? ?(sc|cn)\b/.test(f)) return 1.3
-  // expanded Simplified Chinese fonts (SimSun/NSimSun/SimHei/FangSong/KaiTi/Microsoft YaHei)
+  // Korean faces (probe: Malgun 1.775, Batang/Gulim 1.4583)
+  if (KO_FONT_RE.test(f)) return /malgun|맑은/.test(f) ? 1.775 : 1.4583
+  // Japanese faces: MS (P)Mincho/Gothic substitute into the Hiragino class
+  // (1.7); Yu Mincho/Gothic carry a very large line gap (2.2667); Meiryo 1.775
+  if (/游|yu (gothic|mincho)|yugoth|yumin/.test(f)) return 2.2667
+  if (/meiryo|メイリオ/.test(f)) return 1.775
+  if (/mincho|明朝|ゴシック|ms (ui )?p?gothic|hiragino|osaka|kozuka|小塚|biz ud/.test(f)) return 1.7
+  // Noto/Source Han SC (matches the PingFang substitution class)
+  if (/^noto sans sc$/.test(f)) return 1.8375
+  if (/^(noto|source han) (sans|serif)( cjk)? ?(sc|cn)\b/.test(f)) return 1.775
+  // Songti class (installed Songti SC / STSong)
+  if (f.includes('simsun') || f.includes('nsimsun') || f.includes('宋体')) return 1.7
+  if (/(^|\s)(songti|stsong)\b/.test(f)) return 1.7
+  if (/zhongsong|xiaobiaosong|中宋|小标宋/.test(f)) return 1.775
+  // Compact macOS Heiti/Kaiti substitutes for SimHei and bare KaiTi names.
+  if (f.includes('黑体') || f.includes('simhei')) return 1.0
+  if ((f.includes('楷体') || f.includes('kaiti')) && !/gb2312|_gbk|gbk/.test(f)) return 1.0
+  // missing GB faces and other zh names substitute into the PingFang class
   if (
-    f.includes('simsun') ||
-    f.includes('nsimsun') ||
-    f.includes('宋体') ||
-    f.includes('黑体') ||
+    f.includes('仿宋') ||
     f.includes('fangsong') ||
+    f.includes('楷体') ||
     f.includes('kaiti') ||
+    f.includes('宋') || // Song-family display faces and related variants
     f.includes('microsoft yahei') ||
     f.includes('microsoftyahei') ||
+    f.includes('雅黑') ||
     f.includes('dengxian') ||
     f.includes('等线') ||
-    f.includes('simhei') ||
     f.includes('simfang') ||
     f.includes('simkai')
   ) {
-    return 1.3
+    return 1.775
   }
-  // Western single-line factors follow each font's hhea metrics (Word's single
-  // spacing): a 4% surplus per line cascades into whole-paragraph pagination
-  // drift, so the big Office faces get their real values.
+  // Traditional Chinese sans/kai faces use the PingFang TC class.
+  if (/jhenghei|正黑|標楷|biaukai|dfkai|kaiu/.test(f)) return 1.775
+  // Western single-line factors follow each font's hhea metrics (LO probe):
+  // a 4% surplus per line cascades into whole-paragraph pagination drift,
+  // so the big Office faces get their real values.
   if (f.includes('times') || f.includes('liberation serif')) return 1.15
-  if (f.includes('georgia')) return 1.14
+  if (f.includes('georgia')) return 1.1375
   if (f.includes('cambria') || f.includes('caladea')) return 1.17
-  if (
-    f === 'arial' ||
-    f.startsWith('arial ') ||
-    f.includes('helvetica') ||
-    f.includes('liberation sans')
-  )
-    return 1.15
+  if (f.includes('helvetica')) return 1.0
+  if (f === 'arial' || f.startsWith('arial ') || f.includes('liberation sans')) return 1.15
   if (f.includes('calibri') || f.includes('carlito')) return 1.22
-  // default (Lato, Segoe, unknown Western)
+  if (f.includes('tahoma')) return 1.2083
+  if (f.includes('verdana')) return 1.2167
+  if (f.includes('courier')) return 1.1333
+  if (f.includes('consolas')) return 1.1667
+  if (f.includes('century') && !f.includes('gothic')) return 1.15
+  if (f.includes('book antiqua')) return 1.1
+  if (f.includes('segoe')) return 1.15
+  // default (Lato, unknown Western)
   return 1.2
 }
 
@@ -210,31 +231,28 @@ export function computeLineHeight(
   lineRawTwips: number | undefined,
   docGrid: DocGrid | undefined,
 ): number {
-  let lineH: number
+  // typed line grid (LO probe 2026-08-10): single/auto lines snap UP to whole
+  // linePitch cells BEFORE the auto multiple applies; exact/atLeast never snap
+  const pitchPx =
+    docGrid && (docGrid.type === 'lines' || docGrid.type === 'linesAndChars') && docGrid.linePitch
+      ? docGrid.linePitch * TWIPS_TO_PX
+      : 0
+  const snapped = pitchPx > 0 ? Math.ceil(naturalLineH / pitchPx - 0.001) * pitchPx : naturalLineH
 
   if (lineRule === 'exact' && lineRawTwips !== undefined) {
     // fixed line height: use the specified value regardless of font size
-    lineH = lineRawTwips * TWIPS_TO_PX
-  } else if (lineRule === 'atLeast' && lineRawTwips !== undefined) {
-    // at least: max(font natural line height, specified value)
-    lineH = Math.max(naturalLineH, lineRawTwips * TWIPS_TO_PX)
-  } else if (lineRule === 'auto' && lineRawTwips !== undefined) {
-    // multiple: naturalLineH * (lineRawTwips / 240)
-    lineH = naturalLineH * (lineRawTwips / 240)
-  } else {
-    // default (no lineRule): single spacing
-    lineH = naturalLineH
+    return lineRawTwips * TWIPS_TO_PX
   }
-
-  // docGrid: real Word for Mac baseline (2026-07-27, line-by-line PDF measurement of
-  // corpora 02/10) shows line heights are NOT rounded to linePitch — 12pt with line
-  // spacing 276 (1.15×) lays out at 18pt/line, not the 15.6 or 31.2 grid multiples;
-  // space-after is also left unrounded. The earlier round-up was tuned to LibreOffice
-  // behavior and halved lines-per-page for docGrid documents (7 pages vs Word's 4).
-  // The docGrid param stays: other semantics like lines-per-page rulers may still need it.
-  void docGrid
-
-  return lineH
+  if (lineRule === 'atLeast' && lineRawTwips !== undefined) {
+    // at least: max(font natural line height, specified value), unsnapped
+    return Math.max(naturalLineH, lineRawTwips * TWIPS_TO_PX)
+  }
+  if (lineRule === 'auto' && lineRawTwips !== undefined) {
+    // multiple: snapped base × (lineRawTwips / 240)
+    return snapped * (lineRawTwips / 240)
+  }
+  // default (no lineRule): single spacing on the grid
+  return snapped
 }
 
 /**
@@ -494,14 +512,14 @@ export function textHasHangul(text: string): boolean {
 
 /** Per-paragraph --doc-line-factor value by script (approximates Word's max-of-inline-fonts line height) */
 export function paraLineFactorCss(text: string): string {
-  if (textHasHangul(text)) return 'var(--doc-line-factor-kr,1.3)'
-  if (textHasCjk(text)) return '1.3'
+  if (textHasHangul(text)) return 'var(--doc-line-factor-kr,1.4583)'
+  if (textHasCjk(text)) return 'var(--doc-line-factor-cjk,1.7)'
   return 'var(--doc-line-factor-latin,1.2)'
 }
 
 /** --doc-line-factor-kr source: the document's East Asian face when Korean, else the Batang-class default */
 export function krLineFactor(fontFamily: string | undefined): number {
-  return fontFamily && isKoreanFontName(fontFamily) ? lineHeightFactor(fontFamily) : 1.3
+  return fontFamily && isKoreanFontName(fontFamily) ? lineHeightFactor(fontFamily) : 1.4583
 }
 
 export function isKoreanFontName(fontFamily: string): boolean {
@@ -514,9 +532,33 @@ export function isKoreanFontName(fontFamily: string): boolean {
  * Line rules: auto = multiple × font natural line height; atLeast = max(natural, N); exact = N.
  * CSS expression: natural line height ≈ var(--doc-line-factor) (line-height factor
  * of the document's default Chinese font, injected by docStyleCss; default 1.2) × 1em.
- * The canvas previously used a uniform lineSpacing×1.2, which made Chinese documents
- * (factor 1.3) systematically too tight and dropped atLeast/exact entirely.
+ *
+ * docGrid (LO probe, 2026-08-10): in sections with a typed line grid
+ * (w:docGrid lines/linesAndChars) single/auto-multiple lines snap UP to a
+ * whole number of linePitch cells and the multiple applies AFTER snapping;
+ * exact and atLeast lines never snap; w:snapToGrid=0 opts a paragraph out.
+ * --doc-grid-pitch is set on .doc-page only for grid documents (a paragraph
+ * override resets it); without it round(up, X, ~0) degrades to X, so the same
+ * expression serves both grid and normal documents.
  */
+const GRID_PITCH = 'var(--doc-grid-pitch,0.0001px)'
+
+/** single-spacing natural line height, snapped up to the doc grid when one exists */
+export function cssGridLineBase(): string {
+  return `round(up, calc(var(--doc-line-factor,1.2) * 1em), ${GRID_PITCH})`
+}
+
+/**
+ * Paragraph space before/after (pt) as a CSS margin value. In typed-grid
+ * documents LO quantizes paragraph spacing DOWN to whole grid cells (probe +
+ * corpus 12063517: before/after 6pt vanish on a 15.6pt grid — boundary pitch
+ * stays 46.8 flat); without a grid round(down, X, ~0) degrades to X.
+ */
+export function cssGridSpacingPt(pt: number): string {
+  const v = `${pt.toFixed(1)}pt`
+  return pt > 0 ? `round(down, ${v}, ${GRID_PITCH})` : v
+}
+
 export function cssLineHeight(
   lineRule: 'auto' | 'atLeast' | 'exact' | undefined,
   lineRawTwips: number | undefined,
@@ -524,11 +566,13 @@ export function cssLineHeight(
 ): string | null {
   const FACTOR = 'var(--doc-line-factor,1.2)'
   if (lineRule === 'exact' && lineRawTwips) return `${(lineRawTwips / 20).toFixed(1)}pt`
-  if (lineRule === 'atLeast' && lineRawTwips) {
+  if (lineRule === 'atLeast' && lineRawTwips != null) {
+    // atLeast never snaps to the grid; line="0" atLeast degrades to plain natural height
+    if (lineRawTwips === 0) return `calc(${FACTOR} * 1em)`
     return `max(${(lineRawTwips / 20).toFixed(1)}pt, calc(${FACTOR} * 1em))`
   }
   const m = lineSpacing ?? (lineRule === 'auto' && lineRawTwips ? lineRawTwips / 240 : undefined)
-  if (m) return `calc(${FACTOR} * ${m})`
+  if (m) return m === 1 ? cssGridLineBase() : `calc(${cssGridLineBase()} * ${m})`
   return null
 }
 
@@ -536,9 +580,18 @@ export function cssLineHeight(
  * Space-before/space-after, aligned to the grid when docGrid exists.
  */
 export function snapSpacingToGrid(spacingTwips: number, docGrid: DocGrid | undefined): number {
-  // real Word baseline measurement: space-before/after are not rounded to the grid (corpus 10-cn: 240tw space-after lays out at ~8pt, the original value)
-  void docGrid
-  return spacingTwips * TWIPS_TO_PX
+  const px = spacingTwips * TWIPS_TO_PX
+  // typed line grid: LO quantizes paragraph spacing DOWN to whole grid cells
+  // (probe 2026-08-10: 6pt before/after vanish on a 15.6pt grid)
+  if (
+    docGrid &&
+    (docGrid.type === 'lines' || docGrid.type === 'linesAndChars') &&
+    docGrid.linePitch
+  ) {
+    const pitch = docGrid.linePitch * TWIPS_TO_PX
+    return Math.floor(px / pitch + 0.001) * pitch
+  }
+  return px
 }
 
 // ─── CJK detection ───────────────────────────────────────────────────────────
@@ -624,13 +677,25 @@ export function autospaceBoundaries(text: string): number[] {
 
 /**
  * CJK character line-height factor (by font family).
- * PMingLiU/MingLiU (compact Traditional) → 1.0: the font's lineHeight is already 1.0×, no extra boost.
- * Other fonts (SimSun/SimHei/Calibri etc.) → 1.3: CJK chars render via SimSun fallback with ~1.3em line height.
+ * Known CJK families take their LO-probe factor (lineHeightFactor); CJK text
+ * inside Latin-font runs falls through LO's font fallback (~1.3 on this
+ * platform), so the legacy 1.3 stays as the default.
  */
+/** Font name plausibly covering CJK glyphs (drives whether a declared face may
+ *  set the CJK line factor; Latin names cascade to the document's EA default). */
+export function isCjkFontName(fontFamily: string): boolean {
+  const f = fontFamily.toLowerCase()
+  return CJK_FONT_NAME_RE.test(f) || KO_FONT_RE.test(f.normalize('NFKC'))
+}
+
+const CJK_FONT_NAME_RE =
+  /宋|黑|楷|仿|明|雅黑|等线|simsun|simhei|simkai|simfang|kaiti|fangsong|songti|stsong|yahei|dengxian|mingliu|jhenghei|biaukai|dfkai|kaiu|mincho|ms (ui )?p?gothic|yu gothic|ゴシック|meiryo|メイリオ|hiragino|osaka|kozuka|游|(noto|source han) (sans|serif)( cjk)? ?(sc|cn|jp|tc|kr)\b/i
+
 function cjkLineHFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
   if (f.includes('pmingliu') || f.includes('mingliu')) return 1.0
   if (KO_FONT_RE.test(f)) return lineHeightFactor(fontFamily)
+  if (CJK_FONT_NAME_RE.test(f)) return lineHeightFactor(fontFamily)
   return 1.3
 }
 

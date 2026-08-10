@@ -234,6 +234,7 @@ import { installCellFilenameFunction } from './cell-function'
 import { installFormulaLexerFix } from './formula-lexer-fix'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
+import { installMultiRowAutofit } from './autofit-multi-row'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
 import { installRuleDetail } from './univer-rule-detail'
@@ -590,6 +591,16 @@ export function App(): React.JSX.Element {
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
+  /** Attachments consumed by earlier sends this session: sending clears the composer, but the
+      files skill must keep reading them mid-run and in follow-up turns. Deduped by path. */
+  const sentAttachmentsRef = useRef<readonly AttachmentMeta[]>([])
+  /** composer attachments plus everything already sent this session (deduped by path) */
+  const availableAttachments = (): AttachmentMeta[] => {
+    const seen = new Set<string>()
+    return [...sentAttachmentsRef.current, ...attachmentsRef.current].filter((a) =>
+      seen.has(a.path) ? false : (seen.add(a.path), true),
+    )
+  }
   /** Synchronous re-entrancy guard between runAgent trigger and loop.run
    * (loop.busy is still false while attachment images load asynchronously) */
   const runStartingRef = useRef(false)
@@ -720,6 +731,19 @@ export function App(): React.JSX.Element {
                 ...(t.name ? { name: t.name } : {}),
                 ...(t.output ? { output: t.output.slice(0, 2000) } : {}),
               })) ?? [],
+            // stored metadata only: no thumbnail read for history, the chips render name/size
+            ...(m.attachments && m.attachments.length > 0
+              ? {
+                  attachments: m.attachments
+                    .filter((a) => a.path)
+                    .map((a) => ({
+                      name: a.name,
+                      path: a.path ?? '',
+                      ext: a.ext ?? '',
+                      sizeBytes: a.sizeBytes ?? 0,
+                    })),
+                }
+              : {}),
           })),
         )
         // Restore model context: follow-ups after reopening the file continue the
@@ -741,6 +765,7 @@ export function App(): React.JSX.Element {
       input?: string
       output?: string
     }>,
+    attachments?: readonly AttachmentMeta[],
   ) => {
     const ids = chatRefIdsRef.current
     const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
@@ -753,6 +778,16 @@ export function App(): React.JSX.Element {
         text,
         ...(tools && tools.length > 0
           ? { tools: tools.map((t) => ({ ...t, name: t.name ?? '' })) }
+          : {}),
+        ...(attachments && attachments.length > 0
+          ? {
+              attachments: attachments.map((a) => ({
+                name: a.name,
+                path: a.path,
+                ext: a.ext,
+                sizeBytes: a.sizeBytes,
+              })),
+            }
           : {}),
       })
       .catch(() => {
@@ -796,7 +831,7 @@ export function App(): React.JSX.Element {
       systemSuffix: aiLangDirective,
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
-        createFilesSkill(() => attachmentsRef.current),
+        createFilesSkill(availableAttachments),
         createSearchSkill(),
       ]),
       // guide loading adds a tool round; the default 8 cuts off multi-step work
@@ -965,8 +1000,8 @@ export function App(): React.JSX.Element {
   /** Image attachments read as base64 and sent multimodal with this user message
    * (≤5MB each, max 20; same structure as docs/slides) */
   const MAX_IMAGES_PER_MESSAGE = 20
-  async function collectImageAttachments(): Promise<AgentImage[]> {
-    const imageAtts = attachmentsRef.current.filter((a) => ATTACHMENT_IMAGE_EXTS.has(a.ext))
+  async function collectImageAttachments(atts: readonly AttachmentMeta[]): Promise<AgentImage[]> {
+    const imageAtts = atts.filter((a) => ATTACHMENT_IMAGE_EXTS.has(a.ext))
     const images: AgentImage[] = []
     const failures: string[] = []
     for (const att of imageAtts.slice(0, MAX_IMAGES_PER_MESSAGE)) {
@@ -987,7 +1022,7 @@ export function App(): React.JSX.Element {
     return images
   }
 
-  function runAgent(instruction: string): void {
+  function runAgent(instruction: string, sentAttachments: readonly AttachmentMeta[]): void {
     const loop = agentLoopRef.current
     if (!instruction.trim() || !loop || loop.busy || runStartingRef.current) return
     runStartingRef.current = true
@@ -997,7 +1032,7 @@ export function App(): React.JSX.Element {
     setAiBusy(true)
     setMessage(t('appAiThinking'))
     appendChat({ role: 'assistant', text: '', tools: [], streaming: true })
-    void collectImageAttachments()
+    void collectImageAttachments(sentAttachments)
       .then((images) => {
         runStartingRef.current = false
         loop.run(instruction, images)
@@ -1048,6 +1083,7 @@ export function App(): React.JSX.Element {
     setAiBusy(false)
     setChat([])
     setHistoricChat([])
+    sentAttachmentsRef.current = []
     setPreview(null)
     lazyPreviewRef.current = null
     setMessage(t('appNewConversation'))
@@ -1231,6 +1267,8 @@ export function App(): React.JSX.Element {
     const sheetRenameFixDisposable = installSheetRenameFix()
     // Arrow keys stop at the sheet edge instead of wrapping to the far side.
     const selectionWrapGuardDisposable = installSelectionWrapGuard(runtime)
+    // Row-header double-click autofits every selected row, like Excel.
+    const multiRowAutofitDisposable = installMultiRowAutofit(runtime)
     // Empty-value formula results (IFERROR/IF/CHOOSE over blank refs)
     // display as 0 like Excel.
     const nullResultDisposable = installFormulaNullResultFix(runtime)
@@ -2045,6 +2083,7 @@ export function App(): React.JSX.Element {
       formulaLexerFixDisposable.dispose()
       sheetRenameFixDisposable.dispose()
       selectionWrapGuardDisposable.dispose()
+      multiRowAutofitDisposable.dispose()
       nullResultDisposable.dispose()
       copyMaterializeDisposable.dispose()
       ruleDetailDisposable()
@@ -2075,18 +2114,40 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
-  function handleSend(overrideInstruction?: string): void {
+  function handleSend(
+    overrideInstruction?: string,
+    overrideAttachments?: readonly AttachmentMeta[],
+  ): void {
     const instruction = (overrideInstruction ?? prompt).trim()
     if (!instruction || aiBusy) return
     runToolsRef.current = []
-    appendChat({ role: 'user', text: instruction, tools: [] })
-    persistChatMessage('user', instruction)
+    // The message consumes the composer attachments: they ride along (echoed on the
+    // bubble, images multimodal, files via the files skill) and the composer clears.
+    // Retry passes the failed message's original set instead.
+    const sentAtts = overrideAttachments ?? attachmentsRef.current
+    const agentConfigured = isAgentConfigured()
+    appendChat({
+      role: 'user',
+      text: instruction,
+      tools: [],
+      ...(sentAtts.length > 0 ? { attachments: sentAtts } : {}),
+    })
+    persistChatMessage('user', instruction, undefined, sentAtts)
     if (!overrideInstruction) setPrompt('')
+    // the deterministic path consumes the composer too — the bubble already echoes the set
+    if (!overrideAttachments && sentAtts.length > 0) {
+      const seen = new Set(sentAttachmentsRef.current.map((a) => a.path))
+      sentAttachmentsRef.current = [
+        ...sentAttachmentsRef.current,
+        ...sentAtts.filter((a) => !seen.has(a.path)),
+      ]
+      setAttachments([])
+    }
     // real LLM configured → let the agent read context and propose operations;
     // otherwise fall back to the local, deterministic regex planner
     // (kept for offline use and for the fixed micro-DSL it still supports).
-    if (isAgentConfigured()) {
-      runAgent(instruction)
+    if (agentConfigured) {
+      runAgent(instruction, sentAtts)
       return
     }
     const outcome = runDeterministicPlan(instruction)

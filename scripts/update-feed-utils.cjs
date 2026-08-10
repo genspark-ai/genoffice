@@ -29,4 +29,13 @@ function assertPromotable(candidate, currentStable, force) {
   }
 }
 
-module.exports = { ymlVersion, semverNewer, assertPromotable }
+function releaseUploadDecision(candidate, current, { force = false, allowExisting = false } = {}) {
+  if (candidate === current && allowExisting) return { action: 'skip' }
+  if (force || !current || semverNewer(candidate, current)) return { action: 'upload' }
+  return {
+    action: 'reject',
+    reason: `${candidate} is not newer than published ${current}; bump the release version or pass --force to roll back`,
+  }
+}
+
+module.exports = { ymlVersion, semverNewer, assertPromotable, releaseUploadDecision }

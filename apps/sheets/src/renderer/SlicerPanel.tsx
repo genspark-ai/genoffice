@@ -70,7 +70,9 @@ export function SlicerFieldPicker({
           ))}
         </div>
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
         </div>
       </div>
     </div>
@@ -98,26 +100,40 @@ export function SlicerPanels({
         const selected = new Set(slicer.selected)
         const filtered = selected.size < slicer.members.length
         return (
-          <section key={slicer.id} className="slicer-panel" aria-label={t('dlgSlicerAria', { name: slicer.fieldName })}>
+          <section
+            key={slicer.id}
+            className="slicer-panel"
+            aria-label={t('dlgSlicerAria', { name: slicer.fieldName })}
+          >
             <header>
-              <span className="slicer-title" title={slicer.pivotPath}>{slicer.fieldName}</span>
+              <span className="slicer-title" data-tip={slicer.pivotPath}>
+                {slicer.fieldName}
+              </span>
               <button
                 className="slicer-clear"
-                title={t('dlgSlicerClear')}
+                data-tip={t('dlgSlicerClear')}
+                aria-label={t('dlgSlicerClear')}
                 disabled={!filtered}
                 onClick={() => onSelectAll(slicer.id)}
-              >⧉</button>
+              >
+                ⧉
+              </button>
               <button
                 className="slicer-close"
-                title={t('dlgSlicerRemove')}
+                data-tip={t('dlgSlicerRemove')}
+                aria-label={t('dlgSlicerRemove')}
                 onClick={() => onRemove(slicer.id)}
-              >×</button>
+              >
+                ×
+              </button>
             </header>
             <div className="slicer-members">
               {slicer.members.map((entry) => (
                 <button
                   key={entry.member}
-                  className={selected.has(entry.member) ? 'slicer-member selected' : 'slicer-member'}
+                  className={
+                    selected.has(entry.member) ? 'slicer-member selected' : 'slicer-member'
+                  }
                   onClick={() => onToggle(slicer.id, entry.member)}
                 >
                   {entry.label}

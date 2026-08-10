@@ -3178,6 +3178,9 @@ th.cell-rev-del {
 
 .pv-page {
   position: relative;
+  /* own stacking context: behind-text layers (picture watermarks, z-index -1)
+     must stay above this page's background, not sink under it */
+  isolation: isolate;
   margin: 0 auto 24px;
   background: var(--docs-paper);
   box-shadow: var(--docs-page-shadow);
@@ -3193,10 +3196,24 @@ th.cell-rev-del {
   overflow: hidden;
 }
 
-/* clip at the paper edge, not the content box: over-wide tables bleed into the margin
-   like Word (keep overflow hidden — print pagination needs the box monolithic) */
+/* header picture watermark (absolute VML shape): drawn once per preview page,
+   behind the body text. Document content: renders identically in both themes. */
+.pv-watermark-img {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* clip at the paper edge, not the content box: over-wide tables bleed into the right
+   margin like Word (keep overflow hidden — print pagination needs the box monolithic).
+   Left side symmetrically: negative w:tblInd tables start inside the left margin, and
+   clipping at the content box culled their leading characters from the exported text.
+   The padding compensates the negative margin so the content position is unchanged —
+   only the clip edge moves out to the paper edge. */
 .pv-page > .pv-clip {
   margin-right: calc(-1 * var(--pv-mr, 0px));
+  margin-left: calc(-1 * var(--pv-ml, 0px));
+  padding-left: var(--pv-ml, 0px);
 }
 
 /* column flow: regions stack vertically; narrow clipped columns sit side by side within a region */
@@ -3466,6 +3483,20 @@ th.cell-rev-del {
 .doc-table th {
   position: relative;
   box-sizing: border-box;
+  /* the w:docGrid line grid applies to the body flow only — Word/LO never snap
+     table-cell lines to it (grid docs' scoring tables would inflate ~50%) */
+  --doc-grid-pitch: 0.0001px;
+}
+
+/* empty paragraph in a cell: LO sizes it near the Latin single line, so it must
+   not out-grow the row's content cells via the inherited CJK factor */
+.doc-table td .doc-p-empty,
+.doc-table th .doc-p-empty {
+  --doc-line-factor: var(--doc-line-factor-latin, 1.2);
+}
+
+.doc-table td,
+.doc-table th {
   /* undeclared borders render as none (Word's on-screen gridlines are non-printing
      view furniture, not part of the document); w:tblBorders drives --doc-b-* */
   border-top: var(--doc-b-h, none);
@@ -3662,6 +3693,22 @@ th.cell-rev-del {
   border-color: var(--border);
 }
 
+/* floating drawings (wrapNone/front/behind anchors, or several drawings
+   anchored in one paragraph): the wrapper marks the anchor paragraph's flow
+   position but takes no flow height — each box positions absolutely at its
+   own offset, overlapping body text exactly like Word */
+.doc-protected.doc-protected-floating {
+  position: relative;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+}
+
 .doc-protected.doc-protected-textboxes.ProseMirror-selectednode {
   border-color: var(--word-blue);
   outline: none;
@@ -3812,7 +3859,11 @@ th.cell-rev-del {
 .doc-protected-field {
   border-color: transparent;
   background: transparent;
-  padding: 2px 4px;
+  /* no vertical padding/margin: field paragraphs (TOC entries, filled text
+     fields) must occupy paragraph-height boxes or pagination drifts; document
+     CSS (docStyleCss blockSel + [data-style]) supplies the real spacing */
+  padding: 0 4px;
+  margin: 0;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
@@ -3826,8 +3877,10 @@ th.cell-rev-del {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  font-size: 11pt;
-  line-height: 1.7;
+  /* inherit the document's paragraph metrics: a hardcoded 11pt/1.7 line made
+     every TOC entry ~50% taller than Word/LO and drifted long TOCs a page+ */
+  font-size: inherit;
+  line-height: inherit;
   cursor: pointer;
 }
 
@@ -3856,9 +3909,11 @@ th.cell-rev-del {
 
 .doc-toc-dots {
   flex: 1;
-  border-bottom: 2px dotted var(--docs-paper-ink-mid);
-  transform: translateY(-3px);
   min-width: 24px;
+  overflow: hidden;
+  white-space: nowrap;
+  letter-spacing: 2px;
+  user-select: none;
 }
 
 .doc-field-pagebreak {
@@ -3878,8 +3933,8 @@ th.cell-rev-del {
 }
 
 .doc-field-text {
-  font-size: 11pt;
-  line-height: 1.7;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .doc-content-editing .doc-toc-title,
@@ -3993,6 +4048,18 @@ th.cell-rev-del {
   fill: var(--docs-paper-ink-faint);
 }
 
+/* data grid is an editing affordance: visible while the chart block is
+   selected or in text-edit mode; the printed/preview chart shows only the plot
+   (Word/LO behavior) */
+.doc-protected .doc-chart-data {
+  display: none;
+}
+
+.doc-protected.ProseMirror-selectednode .doc-chart-data,
+.doc-protected.doc-content-editing .doc-chart-data {
+  display: table;
+}
+
 .doc-chart-data {
   border-collapse: collapse;
   align-self: center;
@@ -4074,6 +4141,49 @@ th.cell-rev-del {
   white-space: pre-line;
 }
 
+/* SmartArt degrade: precomputed diagram shapes at absolute positions.
+   Shape/text colors are document data — inline per shape, never themed. */
+.doc-diagram {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.doc-diagram-shape {
+  position: absolute;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: pre-line;
+  line-height: 1.15;
+}
+
+.doc-diagram-text {
+  position: relative;
+  z-index: 1;
+  padding: 0 4px;
+}
+
+/* drawing canvas (lockedCanvas): text keeps its raw font size and overflows
+   the scaled child geometry downward instead of clipping (LO behavior) */
+.doc-diagram-canvas,
+.doc-diagram-canvas .doc-diagram-shape {
+  overflow: visible;
+}
+
+.doc-diagram-canvas .doc-diagram-shape {
+  align-items: flex-start;
+}
+
+.doc-diagram-canvas .doc-diagram-text {
+  word-break: break-all;
+  line-height: 1.2;
+}
+
 /* OLE embed degrade: the packaged preview picture + a friendly type caption */
 .doc-protected-ole .doc-ole-wrap {
   display: block;
@@ -4088,6 +4198,23 @@ th.cell-rev-del {
 .doc-protected-img {
   max-width: 100%;
   display: block;
+}
+
+/* SmartArt / drawing-canvas blocks: the shapes are the content — no chip box */
+.doc-protected-diagram {
+  border-color: transparent;
+  background: none;
+}
+
+.doc-protected-diagram:hover {
+  border-color: var(--border);
+}
+
+/* srcRect crop windows carry the declared extent inline; the float wrap's
+   60% clamp must not squeeze them (Word keeps the placed size and lets the
+   picture reach into the margin instead) */
+.doc-protected .doc-img-crop {
+  max-width: none;
 }
 
 /* image blocks: no chip chrome, selection border with resize handle */
@@ -5154,8 +5281,53 @@ body.docs-crop-active
   height: 20px;
 }
 
-.ai-msg-tool-btn:hover {
+.ai-msg-tool-btn:hover:not(:disabled) {
   background: var(--color-bg-subtle);
+}
+
+.ai-msg-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Hairline before the roll-back action; hidden unless an icon action precedes it */
+.ai-rollback-sep {
+  display: none;
+  width: 1px;
+  height: 14px;
+  align-self: center;
+  background: var(--border);
+}
+
+.ai-msg-tool-btn ~ .ai-rollback-sep {
+  display: block;
+}
+
+/* Quiet roll-back in the message toolbar (after copy/regenerate): dim at rest, solid on hover */
+.ai-rollback-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 30px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ai-rollback-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.ai-rollback-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .ai-msg-tool-btn:focus-visible {
@@ -5217,75 +5389,6 @@ body.docs-crop-active
 
 .ai-continue-btn:hover {
   filter: brightness(0.94);
-}
-
-.ai-versions {
-  border-top: 1px solid var(--border);
-  padding: 8px 14px 10px;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.ai-versions-title {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-}
-
-.ai-version-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  padding: 4px 8px;
-  margin: 0 -8px;
-  border-radius: 6px;
-}
-
-.ai-version-row:hover {
-  background: var(--hover);
-}
-
-.ai-version-label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  color: var(--text);
-  min-width: 0;
-}
-
-.ai-version-label > :last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ai-version-time {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-version-rollback {
-  flex-shrink: 0;
-  border: none;
-  background: none;
-  color: var(--word-blue);
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.ai-version-rollback:hover {
-  background: var(--active-bg);
 }
 
 .ai-msg-error {
@@ -5650,6 +5753,38 @@ body.docs-crop-active
   margin-top: 4px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* attachments echoed on a sent user message (read-only: no remove button, smaller thumbs) */
+.ai-msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ai-msg-attachments .ai-attachment-thumb img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.ai-msg-attachments .ai-attachment-card {
+  width: auto;
+  max-width: 190px;
+  height: 44px;
+  background: var(--surface);
+}
+
+.ai-msg-attachments .ai-attachment-card-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--surface-subtle);
+}
+
+.ai-msg-attachments .ai-attachment-card-icon img {
+  width: 22px;
+  height: 22px;
 }
 
 .ai-attachment-chip {
@@ -6024,6 +6159,19 @@ body.docs-crop-active
   white-space: pre-wrap;
 }
 
+/* The pagination-preview clone must lay out exactly like the editor canvas it
+   was measured on. ProseMirror's whitespace/ligature rules are part of that
+   layout: without them whitespace-only lines collapse in the clone, every
+   following page window drifts upward, and page-boundary content prints twice
+   (once clipped at a page bottom, once at the next page top). */
+.pv-content {
+  word-wrap: break-word;
+  white-space: break-spaces;
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0;
+}
+
 .ProseMirror:focus {
   outline: none;
 }
@@ -6221,6 +6369,34 @@ body.docs-crop-active
     display: none !important;
   }
 
+  /* editor-only affordance chips: Word/LibreOffice print the object (or nothing),
+     never a type label — the label text must not leak into exported PDFs */
+  .doc-protected-label {
+    display: none !important;
+  }
+
+  /* more editor-only markers whose text leaks into the exported text layer:
+     transparent ink still emits glyphs into the PDF, so they must not paint at
+     all. visibility (not display) keeps their layout box — pagination sliced
+     the canvas with these boxes in the flow. */
+  .doc-sectbreak-label {
+    visibility: hidden !important;
+  }
+
+  .doc-note-ref::before,
+  .doc-note-ref::after {
+    visibility: hidden !important;
+  }
+
+  /* content-control chrome: Word prints the content only, no box or alias tag */
+  .has-sdt {
+    border-color: transparent !important;
+  }
+
+  .has-sdt::before {
+    display: none !important;
+  }
+
   .app,
   .workspace,
   .editor-scroll {
@@ -6267,6 +6443,19 @@ body.docs-crop-active
 
   .img-resize-handle {
     display: none !important;
+  }
+
+  /* opacity:0 chrome still emits glyphs into the PDF text layer */
+  .doc-move-handle {
+    display: none !important;
+  }
+
+  /* selection highlight is UI state: the auto-selected first node must not
+     print a blue plate/border */
+  .doc-protected.ProseMirror-selectednode {
+    border-color: transparent !important;
+    outline: none !important;
+    background: none !important;
   }
 
   /* continuous-flow printing still delegates to Chromium auto-pagination; canvas page gaps don't take part */
@@ -6563,6 +6752,15 @@ body.docs-crop-active
 .doc-note-ref {
   color: var(--docs-paper-accent);
   cursor: default;
+}
+
+/* editor-only affordance brackets around the note number; hidden when printing */
+.doc-note-ref::before {
+  content: '[';
+}
+
+.doc-note-ref::after {
+  content: ']';
 }
 
 .doc-note-ref.ProseMirror-selectednode {

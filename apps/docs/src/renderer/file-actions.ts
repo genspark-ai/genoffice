@@ -723,6 +723,21 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
       if (last && last.w === w && last.h === h) last.to = i
       else groups.push({ w, h, from: i, to: i })
     })
+    // Chromium's printToPDF can non-deterministically paint later pages blank
+    // when one job carries hundreds of heavy pages (large table clones on
+    // 100+-page forms). Chunk long documents through the group-merge path so
+    // each print job stays small.
+    const PRINT_CHUNK = 40
+    if (pvPages.length > 60) {
+      const chunked: typeof groups = []
+      for (const g of groups) {
+        for (let s = g.from; s <= g.to; s += PRINT_CHUNK) {
+          chunked.push({ w: g.w, h: g.h, from: s, to: Math.min(s + PRINT_CHUNK - 1, g.to) })
+        }
+      }
+      groups.length = 0
+      groups.push(...chunked)
+    }
     if (groups.length > 1) {
       const parts: string[] = []
       try {

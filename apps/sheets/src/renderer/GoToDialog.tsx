@@ -58,7 +58,7 @@ export function GoToDialog({
                 <li key={entry.name}>
                   <button
                     type="button"
-                    title={t('dlgGoToNameHint', { ref: entry.ref })}
+                    data-tip={t('dlgGoToNameHint', { ref: entry.ref })}
                     onClick={() => setReference(entry.name)}
                     onDoubleClick={() => go(entry.name)}
                   >
@@ -69,13 +69,17 @@ export function GoToDialog({
               ))}
             </ul>
           )}
-          <p className="dialog-note">
-            {t('dlgGoToNote')}
-          </p>
-          {error && <p className="dialog-note dialog-error" role="alert">{error}</p>}
+          <p className="dialog-note">{t('dlgGoToNote')}</p>
+          {error && (
+            <p className="dialog-note dialog-error" role="alert">
+              {error}
+            </p>
+          )}
         </section>
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
           <button
             className="primary-action"
             disabled={reference.trim() === ''}

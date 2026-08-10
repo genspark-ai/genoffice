@@ -441,12 +441,18 @@ export function AiPanel({
                 setBusy(false)
                 setChat([])
               }}
-              title={t('aiNewChat')}
+              data-tip={t('aiNewChat')}
+              aria-label={t('aiNewChat')}
             >
               <IconNewChat />
             </button>
           )}
-          <button className="ai-header-btn" onClick={onCollapse} title={t('aiCollapsePanel')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('aiCollapsePanel')}
+            aria-label={t('aiCollapsePanel')}
+          >
             <IconCollapse />
           </button>
         </div>
@@ -586,7 +592,7 @@ export function AiPanel({
           </div>
           {snapshots.map((s, i) => (
             <div key={i} className="ai-version-row">
-              <span className="ai-version-label" title={s.label}>
+              <span className="ai-version-label" data-tip={s.label}>
                 <span className="ai-version-time">{s.time}</span>
                 {s.label}
               </span>
@@ -726,14 +732,14 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
                     <button
                       type="button"
                       className="ai-step-title clickable"
-                      title={tool.name}
+                      data-tip={tool.name}
                       aria-expanded={isOpen}
                       onClick={() => toggle(j)}
                     >
                       {tool.summary}
                     </button>
                   ) : (
-                    <span className="ai-step-title" title={tool.name}>
+                    <span className="ai-step-title" data-tip={tool.name}>
                       {tool.summary}
                     </span>
                   )}

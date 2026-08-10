@@ -1,7 +1,7 @@
 /// Localized replacements for Electron role menus, whose built-in labels are
 /// English-only and (for role:'windowMenu' on Windows/Linux) follow macOS
 /// conventions (Zoom, Ctrl+M minimize, Bring All to Front).
-import type { MenuItemConstructorOptions } from 'electron'
+import type { MenuItemConstructorOptions, WebContents } from 'electron'
 import { contextMenuLabels, type ContextMenuLabels } from './context-menu'
 
 export interface AppMenuLabels extends ContextMenuLabels {
@@ -399,6 +399,35 @@ export function editMenuTemplate(
   }
 }
 
+let lastDetachedDevToolsTarget: WebContents | undefined
+
+/** role:'toggleDevTools' docks DevTools into the window, where the shell's
+ * WebContentsView tabs are stacked above it and occlude it — open detached
+ * instead, keeping the role's accelerator and toggle semantics. */
+export function toggleDevToolsItem(labels: AppMenuLabels): MenuItemConstructorOptions {
+  return {
+    label: labels.toggleDevTools,
+    accelerator: process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I',
+    click: async () => {
+      const { webContents } = await import('electron')
+      const focused = webContents.getFocusedWebContents()
+      const previous =
+        lastDetachedDevToolsTarget && !lastDetachedDevToolsTarget.isDestroyed()
+          ? lastDetachedDevToolsTarget
+          : undefined
+      const wc = !focused || focused === previous?.devToolsWebContents ? previous : focused
+      if (!wc) return
+      if (wc.isDevToolsOpened()) {
+        wc.closeDevTools()
+        if (wc === lastDetachedDevToolsTarget) lastDetachedDevToolsTarget = undefined
+      } else {
+        wc.openDevTools({ mode: 'detach' })
+        lastDetachedDevToolsTarget = wc
+      }
+    },
+  }
+}
+
 /** role:'viewMenu' expands identically on every platform, so no branch. */
 export function viewMenuTemplate(labels: AppMenuLabels): MenuItemConstructorOptions {
   return {
@@ -406,7 +435,7 @@ export function viewMenuTemplate(labels: AppMenuLabels): MenuItemConstructorOpti
     submenu: [
       { role: 'reload', label: labels.reload },
       { role: 'forceReload', label: labels.forceReload },
-      { role: 'toggleDevTools', label: labels.toggleDevTools },
+      toggleDevToolsItem(labels),
       { type: 'separator' },
       { role: 'resetZoom', label: labels.actualSize },
       { role: 'zoomIn', label: labels.zoomIn },

@@ -28,11 +28,15 @@ export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
   const [vals, setVals] = useState<string[][]>(() => {
     const rows = init.categories.length || 1
     const sers = init.series.length ? init.series : [{ name: '', values: [] as number[] }]
-    return sers.map((s) => Array.from({ length: rows }, (_, i) => (s.values[i] != null ? String(s.values[i]) : '')))
+    return sers.map((s) =>
+      Array.from({ length: rows }, (_, i) => (s.values[i] != null ? String(s.values[i]) : '')),
+    )
   })
 
   const setVal = (si: number, ci: number, v: string) =>
-    setVals((prev) => prev.map((row, i) => (i === si ? row.map((x, j) => (j === ci ? v : x)) : row)))
+    setVals((prev) =>
+      prev.map((row, i) => (i === si ? row.map((x, j) => (j === ci ? v : x)) : row)),
+    )
 
   const addCategory = () => {
     setCats((c) => [...c, t('paneChartCategoryN', { n: c.length + 1 })])
@@ -76,10 +80,16 @@ export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
                 {names.map((name, si) => (
                   <th key={si}>
                     <div className="chart-data-ser-head">
-                      <input value={name} onChange={(e) => setNames((n) => n.map((x, i) => (i === si ? e.target.value : x)))} />
+                      <input
+                        value={name}
+                        onChange={(e) =>
+                          setNames((n) => n.map((x, i) => (i === si ? e.target.value : x)))
+                        }
+                      />
                       <button
                         className="chart-data-del"
-                        title={t('paneChartDelSeries')}
+                        data-tip={t('paneChartDelSeries')}
+                        aria-label={t('paneChartDelSeries')}
                         disabled={names.length <= 1}
                         onClick={() => removeSeries(si)}
                       >
@@ -89,7 +99,11 @@ export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
                   </th>
                 ))}
                 <th className="chart-data-addcol">
-                  <button className="chart-data-add" title={t('paneChartAddSeries')} onClick={addSeries}>
+                  <button
+                    className="chart-data-add"
+                    data-tip={t('paneChartAddSeries')}
+                    onClick={addSeries}
+                  >
                     {t('paneChartAddSeriesBtn')}
                   </button>
                 </th>
@@ -100,10 +114,16 @@ export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
                 <tr key={ci}>
                   <th>
                     <div className="chart-data-ser-head">
-                      <input value={cat} onChange={(e) => setCats((c) => c.map((x, i) => (i === ci ? e.target.value : x)))} />
+                      <input
+                        value={cat}
+                        onChange={(e) =>
+                          setCats((c) => c.map((x, i) => (i === ci ? e.target.value : x)))
+                        }
+                      />
                       <button
                         className="chart-data-del"
-                        title={t('paneChartDelCategory')}
+                        data-tip={t('paneChartDelCategory')}
+                        aria-label={t('paneChartDelCategory')}
                         disabled={cats.length <= 1}
                         onClick={() => removeCategory(ci)}
                       >
@@ -125,7 +145,11 @@ export function ChartDataDialog({ init, onConfirm, onClose }: Props) {
               ))}
               <tr>
                 <th className="chart-data-addcol">
-                  <button className="chart-data-add" title={t('paneChartAddCategory')} onClick={addCategory}>
+                  <button
+                    className="chart-data-add"
+                    data-tip={t('paneChartAddCategory')}
+                    onClick={addCategory}
+                  >
                     {t('paneChartAddCategoryBtn')}
                   </button>
                 </th>

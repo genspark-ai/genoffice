@@ -172,6 +172,68 @@
   --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
 }
 
+/* Cell-content font aliases (document data, theme-independent): without these,
+ * Office sans families the OS lacks silently fall back to Chromium's serif
+ * default on the grid canvas; local() keeps the real font first if installed. */
+@font-face {
+  font-family: Aptos;
+  src: local('Aptos'), local('Calibri'), local('Carlito'), local('Helvetica Neue'), local('Arial');
+}
+
+@font-face {
+  font-family: Aptos;
+  font-weight: bold;
+  src:
+    local('Aptos Bold'), local('Calibri Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'),
+    local('Arial Bold');
+}
+
+@font-face {
+  font-family: Aptos;
+  font-style: italic;
+  src:
+    local('Aptos Italic'), local('Calibri Italic'), local('Carlito Italic'),
+    local('Helvetica Neue Italic'), local('Arial Italic');
+}
+
+@font-face {
+  font-family: Aptos;
+  font-weight: bold;
+  font-style: italic;
+  src:
+    local('Aptos Bold Italic'), local('Calibri Bold Italic'), local('Carlito Bold Italic'),
+    local('Helvetica Neue Bold Italic'), local('Arial Bold Italic');
+}
+
+@font-face {
+  font-family: Calibri;
+  src: local('Calibri'), local('Carlito'), local('Helvetica Neue'), local('Arial');
+}
+
+@font-face {
+  font-family: Calibri;
+  font-weight: bold;
+  src:
+    local('Calibri Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'), local('Arial Bold');
+}
+
+@font-face {
+  font-family: Calibri;
+  font-style: italic;
+  src:
+    local('Calibri Italic'), local('Carlito Italic'), local('Helvetica Neue Italic'),
+    local('Arial Italic');
+}
+
+@font-face {
+  font-family: Calibri;
+  font-weight: bold;
+  font-style: italic;
+  src:
+    local('Calibri Bold Italic'), local('Carlito Bold Italic'), local('Helvetica Neue Bold Italic'),
+    local('Arial Bold Italic');
+}
+
 * {
   box-sizing: border-box;
 }
@@ -498,15 +560,31 @@ textarea:disabled {
   height: 80px;
   /* Groups must never shrink below content (they would paint over each
      other); anything past the window edge scrolls instead. */
-  overflow-x: auto;
+  /* `scroll`, not `auto`: styled scrollbars are classic (non-overlay), so
+     `scroll` keeps the 5px lane reserved even without overflow — the content
+     area never changes and crossing the overflow threshold cannot cause a
+     vertical layout jump (same reasoning as .ai-attachments). */
+  overflow-x: scroll;
   overflow-y: hidden;
-  scrollbar-width: none;
-  padding: 6px 12px;
+  /* Slim visible scrollbar so mouse users can reach overflowed groups
+     (genspark-ai/genoffice#55). Its 5px lane is carved out of the bottom
+     padding, keeping the 80px band and the content area unchanged; Chromium
+     paints a thumb only while the row actually overflows. */
+  padding: 6px 12px 1px;
   background: var(--surface);
 }
 
 .ribbon::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.ribbon::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ribbon::-webkit-scrollbar-thumb {
+  border-radius: 2.5px;
+  background: var(--sheets-scroll-thumb);
 }
 
 .ribbon-group {
@@ -1024,11 +1102,13 @@ textarea:disabled {
 }
 
 /* View tab's stacked show/hide checkboxes (the Show group). */
-/* Home Styles group: three stacked dropdown rows. */
+/* Home Styles group: three stacked dropdown rows. Muted via color, not
+ * opacity — opacity spans the subtree and would render the anchored
+ * .menu-select-drop popups translucent. */
 .styles-stack {
   display: grid;
   gap: 1px;
-  opacity: 0.55;
+  color: var(--text-secondary);
 }
 
 .styles-row {
@@ -1231,6 +1311,13 @@ textarea:disabled {
 .menu-select-drop button.on {
   background: var(--ribbon-hover);
   font-weight: 600;
+}
+
+/* group break above the enumerated system fonts */
+.menu-select-drop button.sep-above {
+  border-top: 1px solid var(--border-strong);
+  border-radius: 0 0 4px 4px;
+  margin-top: 4px;
 }
 
 /* Insert tab shape gallery: grouped preview grid inside the dropdown */
@@ -4183,6 +4270,38 @@ textarea:focus {
   margin-top: 4px;
   font-size: 11px;
   color: var(--color-text-tertiary);
+}
+
+/* attachments echoed on a sent user message (read-only: no remove button, smaller thumbs) */
+.ai-msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ai-msg-attachments .ai-attachment-thumb img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.ai-msg-attachments .ai-attachment-card {
+  width: auto;
+  max-width: 190px;
+  height: 44px;
+  background: var(--surface);
+}
+
+.ai-msg-attachments .ai-attachment-card-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--surface-subtle);
+}
+
+.ai-msg-attachments .ai-attachment-card-icon img {
+  width: 22px;
+  height: 22px;
 }
 
 .ai-attachment-chip {

@@ -68,6 +68,18 @@ const dominant = (pairs: [size: number, weight: number][]): number => {
   return best
 }
 
+/** Estimated width of a line's first wrap-unit: CJK breaks after any character
+    (one em, two with a kinsoku pull-down), Latin carries the whole word to the
+    next line. 0.6 em per Latin char errs high on purpose so a ragged wrap
+    before a wide word never reads as a paragraph end. */
+function firstTokenWidth(text: string, fs: number): number {
+  const t = text.trimStart()
+  if (!t) return 0
+  if (/^[\u2e80-\u9fff\uf900-\ufaff]/.test(t)) return fs * 2
+  const token = /^\S+/.exec(t)![0]
+  return token.length * fs * 0.6
+}
+
 const buildLine = (seg: Frag[]): BlockLine => {
   let text = ''
   let x1 = Infinity
@@ -175,6 +187,41 @@ export function groupPageBlocks(entry: PageEntry): TextBlock[] {
       best.leads.push(best.lines[best.lines.length - 1]!.y - ln.y)
       best.lines.push(ln)
     } else open.push({ lines: [ln], leads: [] })
+  }
+
+  // Split after paragraph-final short lines: adjacent paragraphs that share
+  // leading, font size and x-extent (labeled footer paragraphs, stacked body
+  // paragraphs, list items) are indistinguishable by leading alone. A real wrap
+  // leaves at most the next line's first wrap-unit unfilled, so an internal
+  // line falling shorter than that is a paragraph end, not a wrapped line.
+  // Left-set text only: centered/right-set lines are ragged on the right by design.
+  for (let i = open.length - 1; i >= 0; i--) {
+    const p = open[i]!
+    if (p.lines.length < 2) continue
+    let x1 = Infinity
+    let x2 = -Infinity
+    for (const l of p.lines) {
+      x1 = Math.min(x1, l.rect[0])
+      x2 = Math.max(x2, l.rect[2])
+    }
+    const fs = dominant(p.lines.map((l) => [l.fontSize, l.rect[2] - l.rect[0]]))
+    if (inferAlign(p.lines, x1, x2, fs) !== 'left') continue
+    const parts: Para[] = []
+    let cur: Para = { lines: [p.lines[0]!], leads: [] }
+    for (let j = 1; j < p.lines.length; j++) {
+      const prev = p.lines[j - 1]!
+      const ln = p.lines[j]!
+      const shortfall = x2 - prev.rect[2]
+      if (shortfall > firstTokenWidth(ln.text, ln.fontSize) + ln.fontSize * 1.5) {
+        parts.push(cur)
+        cur = { lines: [ln], leads: [] }
+      } else {
+        cur.leads.push(p.leads[j - 1]!)
+        cur.lines.push(ln)
+      }
+    }
+    parts.push(cur)
+    if (parts.length > 1) open.splice(i, 1, ...parts)
   }
 
   // Re-split where an internal gap is an outlier against the paragraph's own

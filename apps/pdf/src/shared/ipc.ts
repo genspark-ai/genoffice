@@ -158,6 +158,14 @@ export interface TextEditValidation {
       edit rect is a pdf.js layout box (font metrics); glyph ink can poke out of it, so the
       preview cover must use the engine's real bounds or remnants of the old run show through */
   bounds?: [number, number, number, number]
+  /** Fill colors the matched objects already draw with (earlier saved selection colors),
+      as [start,end) ranges into oldText. Present only when the match spans differently
+      colored objects. Editors seed their selection-color state from these so existing
+      colors show while editing and survive the rebuild. */
+  colorRuns?: { start: number; end: number; color: [number, number, number] }[]
+  /** Base fill color of the matched run (its first object in reading order), for
+      display while editing — a uniformly colored run has no colorRuns to seed from */
+  baseColor?: [number, number, number]
 }
 
 /** Curated fonts selectable for rebuilt text runs. Single-face .ttf on every platform we

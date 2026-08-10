@@ -8,11 +8,20 @@ export {
 export {
   appMenuLabels,
   editMenuTemplate,
+  toggleDevToolsItem,
   viewMenuTemplate,
   windowMenuTemplate,
   type AppMenuLabels,
 } from './app-menu'
 export { showOpenDialogWithMemory, showSaveDialogWithMemory } from './dialog-memory'
+export {
+  DEFAULT_SAVE_DIR_KEY,
+  configuredDefaultSaveDir,
+  isUsableSaveDir,
+  readDefaultSaveDirSetting,
+  resolveDefaultSaveDir,
+  type PathProvider,
+} from './default-save-dir'
 export { installNavigationGuard } from './navigation-guard'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {

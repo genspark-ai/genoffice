@@ -386,7 +386,8 @@ export default function App() {
           {!aiOpen && (
             <button
               className="ai-rail"
-              title={t('aiOpenAssistant')}
+              data-tip={t('aiOpenAssistant')}
+              aria-label={t('aiOpenAssistant')}
               onClick={() => setAiOpen(true)}
             >
               <GensparkMark size={22} />
@@ -402,19 +403,27 @@ export default function App() {
             />
           )}
         </div>
-        <div className="editor-scroll" ref={scrollRef}>
-          <div className="doc-page">
-            {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
-            <EditorContent editor={editor} />
+        <div className="app-content">
+          <div className="editor-scroll" ref={scrollRef}>
+            <div className="doc-page">
+              {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
+              <EditorContent editor={editor} />
+            </div>
           </div>
+          <footer className="status-bar">
+            <div className="status-left">
+              {fileName && <span className="status-item status-file">{fileName}</span>}
+            </div>
+            <div className="status-right">
+              {statusText && (
+                <span className={`status-save status-${saveState}`}>{statusText}</span>
+              )}
+            </div>
+          </footer>
         </div>
       </div>
       <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
       <TableMenu editor={editor} scrollRef={scrollRef} />
-      <div className="status-bar">
-        {fileName && <span className="status-file">{fileName}</span>}
-        {statusText && <span className={`status-save status-${saveState}`}>{statusText}</span>}
-      </div>
     </div>
   )
 }

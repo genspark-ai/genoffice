@@ -3,6 +3,7 @@
  * Items that are null render as separators.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { platformShortcuts } from '@genoffice/i18n'
 
 export interface CtxItem {
   label: string
@@ -76,7 +77,8 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
                   key={c}
                   className={`ctx-swatch ${c === 'none' ? 'ctx-swatch-none' : ''}`}
                   style={c === 'none' ? undefined : { background: c }}
-                  title={c}
+                  data-tip={c}
+                  aria-label={c}
                   onClick={() => {
                     onClose()
                     item.onSwatch?.(c)
@@ -98,7 +100,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
             }}
           >
             <span>{item.label}</span>
-            {item.hint && <span className="ctx-hint">{item.hint}</span>}
+            {item.hint && <span className="ctx-hint">{platformShortcuts(item.hint)}</span>}
           </button>
         ),
       )}

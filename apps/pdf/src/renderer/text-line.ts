@@ -12,6 +12,9 @@ export interface LineGroup {
   rect: { left: number; top: number; right: number; bottom: number }
   /** Line text left-to-right, a space synthesized at visible gaps between runs */
   text: string
+  /** Offset of each span's text inside `text` (accounts for synthesized spaces),
+      so a DOM selection endpoint maps to a `text` offset */
+  starts: number[]
   /** Width-weighted dominant span height (client px) — the line's effective font size,
       so one oversized glyph doesn't inflate the whole rebuilt line */
   fontHeight: number
@@ -27,7 +30,13 @@ const rotated = (el: HTMLElement) => {
 export function groupLineSpans(anchor: HTMLElement): LineGroup {
   const single = (): LineGroup => {
     const r = anchor.getBoundingClientRect()
-    return { spans: [anchor], rect: r, text: anchor.textContent ?? '', fontHeight: r.height }
+    return {
+      spans: [anchor],
+      rect: r,
+      text: anchor.textContent ?? '',
+      starts: [0],
+      fontHeight: r.height,
+    }
   }
   const layer = anchor.closest('.textLayer')
   if (!layer || rotated(anchor)) return single()
@@ -74,6 +83,7 @@ export function groupLineSpans(anchor: HTMLElement): LineGroup {
   const group = mine.slice(lo, hi + 1)
 
   let text = ''
+  const starts: number[] = []
   let left = Infinity
   let top = Infinity
   let right = -Infinity
@@ -84,6 +94,7 @@ export function groupLineSpans(anchor: HTMLElement): LineGroup {
     const t = c.el.textContent ?? ''
     if (prev && c.r.left - prev.r.right > ar.height * 0.15 && !/\s$/.test(text) && !/^\s/.test(t))
       text += ' '
+    starts.push(text.length)
     text += t
     prev = c
     left = Math.min(left, c.r.left)
@@ -100,5 +111,11 @@ export function groupLineSpans(anchor: HTMLElement): LineGroup {
       bestW = w
       fontHeight = h
     }
-  return { spans: group.map((c) => c.el), rect: { left, top, right, bottom }, text, fontHeight }
+  return {
+    spans: group.map((c) => c.el),
+    rect: { left, top, right, bottom },
+    text,
+    starts,
+    fontHeight,
+  }
 }

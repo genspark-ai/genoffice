@@ -11,11 +11,17 @@ use xlsx_sidecar::{CellRange, SidecarError, WorkbookSessions};
 
 const PROTOCOL_VERSION: u8 = 1;
 
+fn default_locale() -> String {
+    "zh".to_owned()
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 enum Command {
     Open {
         path: PathBuf,
+        #[serde(default = "default_locale")]
+        locale: String,
     },
     ReadRange {
         #[serde(rename = "sessionId")]
@@ -160,7 +166,9 @@ fn handle_line(
 
     let request_id = request.request_id;
     let result = match request.command {
-        Command::Open { path } => sessions.open(&path).and_then(to_json_value),
+        Command::Open { path, locale } => sessions
+            .open_with_locale(&path, &locale)
+            .and_then(to_json_value),
         Command::ReadRange {
             session_id,
             sheet_id,
