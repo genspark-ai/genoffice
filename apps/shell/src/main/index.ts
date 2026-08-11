@@ -2378,6 +2378,11 @@ async function savePdfAs(): Promise<void> {
   // Pause renderer autosave for the whole flow: the dialog blurs the window, and a
   // blur-triggered autosave would write the pending edits into the original file
   setPdfSaveAsInFlight(tab.webContents, true)
+
+  // FIX: IPC messages are asynchronous. We must wait a tick to ensure the renderer 
+  // receives the pause signal BEFORE the native macOS dialog blurs the window.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
   try {
     const picked = await showSaveDialogWithMemory(dialog, shellWindow, {
       defaultPath: tab.filePath,
