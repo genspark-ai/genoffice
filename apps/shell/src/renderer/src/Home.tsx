@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
 import iconDocx from './assets/file-docx.svg'
@@ -1003,7 +1003,14 @@ export function Home() {
   // Genspark web projects take over the content area (like a selected project)
   const [cloudMode, setCloudMode] = useState(false)
   const [filter, setFilter] = useState('all')
-  const [rowMenu, setRowMenu] = useState<string | null>(null)
+  const [rowMenu, setRowMenu] = useState<{
+    path: string
+    right: number
+    anchorTop: number
+    anchorBottom: number
+    openUpward: boolean
+  } | null>(null)
+  const rowMenuRef = useRef<HTMLDivElement>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
@@ -1129,7 +1136,7 @@ export function Home() {
     if (rowMenu === null && confirmDelete === null) return
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Element | null
-      if (rowMenu !== null && !target?.closest?.('.recent-actions')) setRowMenu(null)
+      if (rowMenu !== null && !target?.closest?.('.recent-actions, .row-menu')) setRowMenu(null)
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -1144,6 +1151,23 @@ export function Home() {
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [rowMenu, confirmDelete])
+
+  // Measure the rendered menu instead of relying on an action-count estimate.
+  // Some rows include project actions, so the actual height can differ enough
+  // that an estimate opens the menu on the wrong side of its trigger.
+  useLayoutEffect(() => {
+    if (rowMenu === null || rowMenuRef.current === null) return
+
+    const gap = 6
+    const menuHeight = rowMenuRef.current.getBoundingClientRect().height
+    const spaceBelow = window.innerHeight - rowMenu.anchorBottom - gap
+    const spaceAbove = rowMenu.anchorTop - gap
+    const openUpward = menuHeight > spaceBelow && spaceAbove > spaceBelow
+
+    if (openUpward !== rowMenu.openUpward) {
+      setRowMenu({ ...rowMenu, openUpward })
+    }
+  }, [rowMenu])
 
   // ── Project files state ────────────────────────────────
 
@@ -1482,8 +1506,23 @@ export function Home() {
             <button
               className="more-btn"
               aria-label={t('moreActions')}
-              aria-expanded={rowMenu === entry.path}
-              onClick={() => setRowMenu(rowMenu === entry.path ? null : entry.path)}
+              aria-expanded={rowMenu?.path === entry.path}
+              onClick={(event) => {
+                if (rowMenu?.path === entry.path) {
+                  setRowMenu(null)
+                  return
+                }
+                const rect = event.currentTarget.getBoundingClientRect()
+                setRowMenu({
+                  path: entry.path,
+                  right: Math.max(8, window.innerWidth - rect.right),
+                  anchorTop: rect.top,
+                  anchorBottom: rect.bottom,
+                  // Render downward first, then use the actual menu height to
+                  // flip only when opening upward provides more visible space.
+                  openUpward: false,
+                })
+              }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
                 <circle cx="3.2" cy="8" r="1.4" fill="currentColor" />
@@ -1491,8 +1530,20 @@ export function Home() {
                 <circle cx="12.8" cy="8" r="1.4" fill="currentColor" />
               </svg>
             </button>
-            {rowMenu === entry.path && (
-              <div className="row-menu" role="menu">
+            {rowMenu?.path === entry.path && (
+              <div
+                className="row-menu"
+                role="menu"
+                ref={rowMenuRef}
+                style={
+                  rowMenu.openUpward
+                    ? {
+                        right: rowMenu.right,
+                        bottom: Math.max(8, window.innerHeight - rowMenu.anchorTop + 6),
+                      }
+                    : { right: rowMenu.right, top: rowMenu.anchorBottom + 6 }
+                }
+              >
                 <button
                   role="menuitem"
                   onClick={() => {

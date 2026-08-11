@@ -766,11 +766,11 @@ body.vib .home {
 }
 
 .row-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
+  position: fixed;
+  z-index: 40;
   min-width: 160px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   padding: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
