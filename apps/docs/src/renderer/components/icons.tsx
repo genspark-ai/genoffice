@@ -337,6 +337,44 @@ export function IconCrop(props: IconProps) {
   )
 }
 
+export function IconRotateRight(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 12.4 6.2 a 4.6 4.6 0 1 0 0.6 3.3" />
+      <path d="M 12.7 3.2 v 3 h -3" />
+    </Svg>
+  )
+}
+
+export function IconRotateLeft(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 3.6 6.2 a 4.6 4.6 0 1 1 -0.6 3.3" />
+      <path d="M 3.3 3.2 v 3 h 3" />
+    </Svg>
+  )
+}
+
+export function IconFlipH(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 8 2.6 v 10.8" strokeDasharray="1.7 1.5" />
+      <path d="M 6 5.2 L 2.6 8 L 6 10.8 Z" />
+      <path d="M 10 5.2 L 13.4 8 L 10 10.8 Z" fill="currentColor" />
+    </Svg>
+  )
+}
+
+export function IconFlipV(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 2.6 8 h 10.8" strokeDasharray="1.7 1.5" />
+      <path d="M 5.2 6 L 8 2.6 L 10.8 6 Z" />
+      <path d="M 5.2 10 L 8 13.4 L 10.8 10 Z" fill="currentColor" />
+    </Svg>
+  )
+}
+
 export function IconReplacePicture(props: IconProps) {
   return (
     <Svg {...props}>

@@ -249,6 +249,7 @@ import {
   restoreSnapshot,
   settleStaleHistoryBatch,
   runtime,
+  scheduleHistoryNotify,
   sessions,
   takeSnapshot,
   windowRefs,
@@ -681,6 +682,7 @@ async function openAndBuild(
     redoStack: [],
     ...(recovered ? { metaDirty: true } : {}),
   })
+  scheduleHistoryNotify(sessions.get(wc.id)!)
   await pushRecent(path)
   slidesOpenedHook?.(wc, path)
   let slides = buildAllRenderSlides(opened, fitWidthPx)
@@ -1571,6 +1573,7 @@ export function registerSlidesIpc(): void {
   ipcMain.handle('slides:new-blank', async (e, fitWidthPx: number): Promise<OpenResult> => {
     const opened = await openPptx(await createBlankPptx())
     sessions.set(e.sender.id, { path: '', opened, fitWidthPx, undoStack: [], redoStack: [] })
+    scheduleHistoryNotify(sessions.get(e.sender.id)!)
     return {
       path: '',
       slides: buildAllRenderSlides(opened, fitWidthPx),
@@ -3435,6 +3438,7 @@ export function registerSlidesIpc(): void {
     if (session.undoStack.length === 0) return null
     session.redoStack.push(takeSnapshot(session))
     restoreSnapshot(session, session.undoStack.pop()!)
+    scheduleHistoryNotify(session)
     return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
@@ -3445,6 +3449,7 @@ export function registerSlidesIpc(): void {
     if (session.redoStack.length === 0) return null
     session.undoStack.push(takeSnapshot(session))
     restoreSnapshot(session, session.redoStack.pop()!)
+    scheduleHistoryNotify(session)
     return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 

@@ -254,6 +254,12 @@ const api: SlidesApi = {
     ipcRenderer.on('slides:close-save-request', listener)
     return () => ipcRenderer.removeListener('slides:close-save-request', listener)
   },
+  onHistoryChanged: (handler: (state: { canUndo: boolean; canRedo: boolean }) => void) => {
+    const listener = (_e: IpcRendererEvent, state: { canUndo: boolean; canRedo: boolean }) =>
+      handler(state)
+    ipcRenderer.on('slides:history-changed', listener)
+    return () => ipcRenderer.removeListener('slides:history-changed', listener)
+  },
   reportCloseSaveResult: (ok: boolean) => ipcRenderer.send('slides:close-save-result', ok === true),
   setAutoSavePref: (on: boolean) => ipcRenderer.send('slides:autosave-pref', on === true),
   isDirty: () => ipcRenderer.invoke('slides:is-dirty'),

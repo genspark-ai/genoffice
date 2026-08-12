@@ -7,6 +7,11 @@
  *   data-tip        — command name (required; the tip line)
  *   data-tip-kbd    — optional shortcut, rendered dimmed after the name
  *   data-tip-detail — optional one-line description under the name
+ *   data-tip-anchor — optional descendant selector; the tip is positioned
+ *                     relative to that element instead of the host (e.g. a
+ *                     wide row anchoring its tip to a trailing icon)
+ *   data-tip-place  — optional 'right' places the tip beside the anchor,
+ *                     vertically centered (default: below, centered)
  *
  * Timing follows the Windows/Office ScreenTip standard: 500ms initial delay,
  * fast (100ms) reshow while "warm" — a tip was visible less than 500ms ago —
@@ -85,20 +90,34 @@ function show(el: Element, doc: Document): void {
   t.detail.textContent = detail ?? ''
   t.detail.style.display = detail ? '' : 'none'
 
-  // measure hidden, then place below the control (above when it would clip)
+  // measure hidden, then place below the control (above when it would clip);
+  // data-tip-anchor re-anchors to a descendant, data-tip-place='right' puts
+  // the tip beside the anchor instead of under it
   t.el.style.visibility = 'hidden'
   t.el.style.left = '0px'
   t.el.style.top = '0px'
-  const rect = el.getBoundingClientRect()
+  const anchorSel = el.getAttribute('data-tip-anchor')
+  const rect = ((anchorSel && el.querySelector(anchorSel)) || el).getBoundingClientRect()
   const tipRect = t.el.getBoundingClientRect()
   const maxLeft = window.innerWidth - tipRect.width - EDGE_PAD_PX
-  const left = Math.max(
-    EDGE_PAD_PX,
-    Math.min(rect.left + rect.width / 2 - tipRect.width / 2, maxLeft),
-  )
-  let top = rect.bottom + OFFSET_PX
-  if (top + tipRect.height > window.innerHeight - EDGE_PAD_PX)
-    top = rect.top - tipRect.height - OFFSET_PX
+  let left: number
+  let top: number
+  if (el.getAttribute('data-tip-place') === 'right') {
+    left = rect.right + OFFSET_PX
+    if (left > maxLeft) left = Math.max(EDGE_PAD_PX, rect.left - tipRect.width - OFFSET_PX)
+    top = Math.max(
+      EDGE_PAD_PX,
+      Math.min(
+        rect.top + rect.height / 2 - tipRect.height / 2,
+        window.innerHeight - tipRect.height - EDGE_PAD_PX,
+      ),
+    )
+  } else {
+    left = Math.max(EDGE_PAD_PX, Math.min(rect.left + rect.width / 2 - tipRect.width / 2, maxLeft))
+    top = rect.bottom + OFFSET_PX
+    if (top + tipRect.height > window.innerHeight - EDGE_PAD_PX)
+      top = rect.top - tipRect.height - OFFSET_PX
+  }
   t.el.style.left = `${Math.round(left)}px`
   t.el.style.top = `${Math.round(top)}px`
   t.el.style.visibility = 'visible'

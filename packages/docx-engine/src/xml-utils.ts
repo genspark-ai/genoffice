@@ -120,3 +120,10 @@ export function escapeXmlText(text: string): string {
 export function escapeXmlAttr(text: string): string {
   return escapeXmlText(text).replace(/"/g, '&quot;')
 }
+
+/** Text contains complex-script characters (Arabic/Hebrew/Syriac/Thaana/NKo), i.e. the w:*Cs run properties apply */
+export function textHasComplexScript(text: string): boolean {
+  return /[\u0590-\u05FF\u0600-\u077F\u0780-\u07FF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(
+    text,
+  )
+}

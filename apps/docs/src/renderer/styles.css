@@ -57,7 +57,6 @@
   --docs-tstyle-row: #eef1f5;
   --docs-gap-cut: #b6c2d2;
   --docs-pv-canvas: #525659;
-  --docs-read-canvas: #f5f1e8;
   --docs-overlay: rgb(0 0 0 / 50%);
   --docs-page-shadow: 0 1px 3px rgb(0 0 0 / 28%), 0 4px 16px rgb(0 0 0 / 10%);
   --docs-gap-inset: inset 0 8px 8px -8px rgb(0 0 0 / 35%), inset 0 -3px 3px -3px rgb(0 0 0 / 18%);
@@ -187,7 +186,6 @@
   --docs-tstyle-row: #333;
   --docs-gap-cut: #56606c;
   --docs-pv-canvas: #1f1f1f;
-  --docs-read-canvas: #2a2622;
   --docs-overlay: rgb(0 0 0 / 55%);
   --docs-page-shadow: 0 1px 3px rgb(0 0 0 / 60%), 0 4px 16px rgb(0 0 0 / 40%);
   --docs-gap-inset: inset 0 8px 8px -8px rgb(0 0 0 / 65%), inset 0 -3px 3px -3px rgb(0 0 0 / 40%);
@@ -255,7 +253,6 @@
     --docs-tstyle-row: #333;
     --docs-gap-cut: #56606c;
     --docs-pv-canvas: #1f1f1f;
-    --docs-read-canvas: #2a2622;
     --docs-overlay: rgb(0 0 0 / 55%);
     --docs-page-shadow: 0 1px 3px rgb(0 0 0 / 60%), 0 4px 16px rgb(0 0 0 / 40%);
     --docs-gap-inset: inset 0 8px 8px -8px rgb(0 0 0 / 65%), inset 0 -3px 3px -3px rgb(0 0 0 / 40%);
@@ -1312,6 +1309,15 @@ button {
   font-family: system-ui;
 }
 
+.rb-menu-group-label {
+  padding: 8px 16px 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  cursor: default;
+}
+
 /* ---- Insert: table size picker ---- */
 
 /* Insert → Cover Page gallery */
@@ -1740,8 +1746,13 @@ button {
   color: var(--text-dim);
 }
 
-.layout-menu button:hover {
+.layout-menu button:not(:disabled):hover {
   background: var(--hover);
+}
+
+.layout-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .layout-menu button.active {
@@ -3279,24 +3290,24 @@ th.cell-rev-del {
 
 .doc-page h1 {
   font-size: 16pt;
-  color: var(--docs-paper-heading);
+  color: inherit;
 }
 
 .doc-page h2 {
   font-size: 13pt;
-  color: var(--docs-paper-heading);
+  color: inherit;
 }
 
 .doc-page h3 {
   font-size: 12pt;
-  color: var(--docs-paper-h3);
+  color: inherit;
 }
 
 .doc-page h4,
 .doc-page h5,
 .doc-page h6 {
   font-size: 11pt;
-  color: var(--docs-paper-heading);
+  color: inherit;
   font-style: italic;
 }
 
@@ -4311,6 +4322,12 @@ th.cell-rev-del {
   color: var(--danger);
   font-size: 12px;
   margin-bottom: 6px;
+}
+
+/* Custom page margins dialog: two labeled inputs per row */
+.margin-row label {
+  flex: 1;
+  margin-bottom: 4px;
 }
 
 .bookmark-list {
@@ -6361,8 +6378,7 @@ body.docs-crop-active
 
   .ribbon,
   .status-bar,
-  .ai-panel,
-  .ai-rail,
+  .ai-dock,
   .nav-pane,
   .ruler,
   .find-panel {
@@ -6545,8 +6561,7 @@ body.docs-crop-active
 /* ---- Read mode: chrome hidden, document only, Esc to exit ---- */
 
 .read-mode .ribbon,
-.read-mode .ai-panel,
-.read-mode .ai-rail,
+.read-mode .ai-dock,
 .read-mode .nav-pane,
 .read-mode .find-panel,
 .read-mode .comments-pane,
@@ -6555,7 +6570,7 @@ body.docs-crop-active
 }
 
 .read-mode .editor-scroll {
-  background: var(--docs-read-canvas);
+  background: var(--docs-pv-canvas);
   padding-top: 44px;
 }
 

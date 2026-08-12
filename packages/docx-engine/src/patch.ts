@@ -1580,6 +1580,9 @@ function retargetImageBlip(xml: string, rId: string): string {
   return (
     (xml.slice(0, blip.index) + tag + xml.slice(blip.index + blip[0].length))
       .replace(/<a:srcRect\b[^>]*\/>/, '')
+      // A non-default fill window would clip the swapped bytes the same way a
+      // crop would — reset it (the editor clears its imageFillRect in step)
+      .replace(/<a:fillRect\b[^>]+\/>/, '<a:fillRect/>')
       // The replacement is always raster and Word prefers a leftover Office-2016
       // <asvg:svgBlip> extension over the retargeted r:embed — drop the extension
       .replace(/<a:ext\b[^>]*>\s*<\w+:svgBlip\b[\s\S]*?<\/a:ext>/, '')

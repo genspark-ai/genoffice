@@ -94,6 +94,7 @@ export type { FormatCmd, SlidesViewMode } from './ribbon-shared'
 import type { FormatCmd } from './ribbon-shared'
 import { RibbonHomeTab } from './RibbonHomeTab'
 import { RibbonInsertTab } from './RibbonInsertTab'
+import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** shell tab mode: the tab strip above owns traffic lights / caption buttons */
@@ -110,7 +111,6 @@ type MainTab =
   | 'slideShow'
   | 'review'
   | 'view'
-type ContextTab = 'tableDesign' | 'chartDesign' | 'pictureFormat'
 
 // Mac has no "File" tab (file operations go through the native menu), Windows does
 const TABS: readonly MainTab[] = IS_MAC
@@ -723,6 +723,8 @@ function RbCheck({
 export function Ribbon({
   hasDoc,
   deckEmpty,
+  canUndo,
+  canRedo,
   dirty,
   editing,
   autoSave,
@@ -868,17 +870,10 @@ export function Ribbon({
   canDistribute,
 }: Props) {
   const { t } = useI18n()
-  // Contextual tabs: table → table design; chart → chart design (imported charts auto-convert
-  // on first edit); picture/shape → picture tools (shapes share the tab: outline applies,
-  // picture-only tools disable)
-  const contextTab: ContextTab | null =
-    contextElementType === 'table'
-      ? 'tableDesign'
-      : contextElementType === 'chart'
-        ? 'chartDesign'
-        : contextElementType === 'picture' || contextElementType === 'shape'
-          ? 'pictureFormat'
-          : null
+  // Text-bearing shapes keep picture-format commands available, but do not auto-activate
+  // that tab; ordinary shapes and multi-picture selections retain the existing behavior.
+  const contextTab = contextTabForElement(contextElementType ?? null)
+  const autoContextTab = autoContextTabForElement(contextElementType ?? null)
 
   const [tab, setTab] = useState<MainTab | ContextTab>('home')
   const [fileOpen, setFileOpen] = useState(false)
@@ -993,7 +988,8 @@ export function Ribbon({
       !chartDrop &&
       !arrangeOpen &&
       !slideShowOpen &&
-      !paraOpen
+      !paraOpen &&
+      !pictureBorderOpen
     )
       return
     const close = () => {
@@ -1008,6 +1004,7 @@ export function Ribbon({
       setArrangeOpen(false)
       setSlideShowOpen(false)
       setParaOpen(false)
+      setPictureBorderOpen(false)
       setCollapseOpen(null)
     }
     window.addEventListener('mousedown', close)
@@ -1024,6 +1021,7 @@ export function Ribbon({
     arrangeOpen,
     slideShowOpen,
     paraOpen,
+    pictureBorderOpen,
     collapseOpen,
   ])
 
@@ -1070,16 +1068,23 @@ export function Ribbon({
     return () => ro.disconnect()
   }, [tab, collapsedGroups])
 
-  // Contextual tab auto-switch: jump in when it appears, back to "Home" when it disappears
+  // Contextual tab auto-switch: jump in for dedicated object tools, but not text-bearing shapes.
+  // Track visibility separately so a manually opened picture-format tab still closes on deselect.
   const prevContextTab = useRef<ContextTab | null>(null)
+  const prevAutoContextTab = useRef<ContextTab | null>(null)
   useEffect(() => {
-    if (contextTab && contextTab !== prevContextTab.current) {
-      setTab(contextTab)
-    } else if (!contextTab && prevContextTab.current) {
-      setTab((cur) => (cur === prevContextTab.current ? 'home' : cur))
+    const previousContextTab = prevContextTab.current
+    const previousAutoContextTab = prevAutoContextTab.current
+    if (autoContextTab && autoContextTab !== previousAutoContextTab) {
+      setTab(autoContextTab)
+    } else if (!autoContextTab && previousAutoContextTab) {
+      setTab((cur) => (cur === previousAutoContextTab ? 'home' : cur))
+    } else if (!contextTab && previousContextTab) {
+      setTab((cur) => (cur === previousContextTab ? 'home' : cur))
     }
     prevContextTab.current = contextTab
-  }, [contextTab])
+    prevAutoContextTab.current = autoContextTab
+  }, [contextTab, autoContextTab])
 
   /** Insert tab dropdown big button (click toggles, content stopPropagation) */
   const dropBig = (
@@ -1431,7 +1436,7 @@ export function Ribbon({
           className="qa-btn"
           data-tip={t('ribbonUndo')}
           aria-label={t('ribbonUndo')}
-          disabled={!hasDoc}
+          disabled={!hasDoc || (!canUndo && !editing)}
           onMouseDown={(e) => {
             e.preventDefault()
             onUndo()
@@ -1446,7 +1451,7 @@ export function Ribbon({
           className="qa-btn"
           data-tip={t('ribbonRedo')}
           aria-label={t('ribbonRedo')}
-          disabled={!hasDoc}
+          disabled={!hasDoc || (!canRedo && !editing)}
           onMouseDown={(e) => {
             e.preventDefault()
             onRedo()

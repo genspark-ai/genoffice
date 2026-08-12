@@ -4,6 +4,7 @@ import { platformShortcuts } from '@genoffice/i18n'
 import { saveEditSelection } from '../TextEditOverlay'
 import { armColorInput } from '../color-input'
 import { displayFontFamily } from '../konva-adapter'
+import { useSystemFontFamilies } from '../system-fonts'
 import {
   GensparkMark,
   IconAiBeautify,
@@ -144,6 +145,9 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
   // Typed-ahead font query: only what the user actually typed filters the menu
   // (opening via the caret or focusing shows the full list)
   const [fontFilter, setFontFilter] = useState('')
+  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const matchesFontFilter = (f: string) =>
+    !fontFilter.trim() || f.toLowerCase().includes(fontFilter.trim().toLowerCase())
   const EMU_PER_PX = 9525
   const commitHangDraft = () => {
     const px = parseFloat(hangDraft.replace(',', '.'))
@@ -475,6 +479,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                     // Ribbon menus are mutually exclusive: close any open sibling
                     // popup (size/color/...) before opening the font list
                     closePanels(['font'])
+                    loadSystemFonts()
                     setFontOpen(true)
                   }}
                   onBlur={() => {
@@ -507,6 +512,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                     if (editing || hasTextSelection) {
                       closeSiblingPanels(e, closePanels, 'font')
                       setFontFilter('')
+                      if (!fontOpen) loadSystemFonts()
                       setFontOpen((v) => !v)
                     }
                   }}
@@ -519,15 +525,13 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                   className="rb-drop rb-menu rb-menu-scroll rb-font-menu"
                   onMouseDown={(e) => e.stopPropagation()}
                 >
-                  {(curFontFamily && !FONT_FAMILIES.includes(curFontFamily)
+                  {(curFontFamily &&
+                  !FONT_FAMILIES.includes(curFontFamily) &&
+                  !systemFontFamilies.includes(curFontFamily)
                     ? [curFontFamily, ...FONT_FAMILIES]
                     : FONT_FAMILIES
                   )
-                    .filter(
-                      (f) =>
-                        !fontFilter.trim() ||
-                        f.toLowerCase().includes(fontFilter.trim().toLowerCase()),
-                    )
+                    .filter(matchesFontFilter)
                     .map((f) => (
                       <button
                         key={f}
@@ -542,6 +546,25 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                         {f}
                       </button>
                     ))}
+                  {systemFontFamilies.some(matchesFontFilter) && (
+                    <>
+                      <div className="rb-menu-group-label">{t('ribbonFontsSystem')}</div>
+                      {systemFontFamilies.filter(matchesFontFilter).map((f) => (
+                        <button
+                          key={f}
+                          className={f === curFontFamily ? 'on' : ''}
+                          style={{ fontFamily: displayFontFamily(f) }}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            onFontFamily(f)
+                            setFontOpen(false)
+                          }}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>

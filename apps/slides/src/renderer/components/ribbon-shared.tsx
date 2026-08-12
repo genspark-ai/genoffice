@@ -274,6 +274,9 @@ export interface Props {
   hasDoc: boolean
   /** True when no slide has real content — the one-click AI actions grey out then */
   deckEmpty: boolean
+  /** Undo/redo stack occupancy (pushed from the main process): the QAT buttons grey out when empty */
+  canUndo: boolean
+  canRedo: boolean
   /** Open file name (shown on the right of the tab row; the title bar row was removed) */
   dirty: boolean
   editing: boolean
@@ -487,8 +490,8 @@ export interface Props {
   recording: boolean
   onToggleScreenRecord: () => void
   // ── Contextual tabs: table design / chart design / picture format ────────────────
-  /** Current single-selection element type (undefined = none/multi-select; 'table'|'chart'|'picture' shows the contextual tab) */
-  contextElementType?: 'table' | 'chart' | 'picture' | 'shape' | null
+  /** Current selection category used to expose and activate contextual tabs */
+  contextElementType?: 'table' | 'chart' | 'picture' | 'shape' | 'textShape' | null
   /** Currently selected element sourceId (for contextual tab operation callbacks) */
   contextElementId?: string
   /** Current page index (for contextual tab operations) */

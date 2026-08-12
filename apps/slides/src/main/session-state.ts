@@ -4,7 +4,7 @@
  * per-renderer sessions, snapshot undo/redo history, runtime paths, window
  * references, and RenderSlide rebuild helpers.
  */
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, webContents } from 'electron'
 import type { WebContents } from 'electron'
 import { join } from 'node:path'
 import { materializeSlide, type OpenedPptx, type Slide } from '@genoffice/pptx-engine'
@@ -58,6 +58,8 @@ export interface Session {
   transformPreview?: boolean
   /** The part currently edited in master view (exception to the fidelity rule: only that part is written back) */
   masterEdit?: { partPath: string; slide: Slide } | null
+  /** A history-state notification is already queued for this session (coalesces per task) */
+  historyNotifyScheduled?: boolean
 }
 export const sessions = new Map<number, Session>()
 
@@ -94,12 +96,35 @@ function cloneSnapshot(snap: HistorySnapshot): HistorySnapshot {
   }
 }
 
+/**
+ * Tell the renderer whether undo/redo have anything to apply (drives the QAT
+ * button gray states). Deferred with setImmediate so no-op handlers that push
+ * a snapshot and then pop it back in the same turn report the settled state,
+ * and multiple stack changes per turn coalesce into one message.
+ */
+export function scheduleHistoryNotify(session: Session): void {
+  if (session.historyNotifyScheduled) return
+  session.historyNotifyScheduled = true
+  setImmediate(() => {
+    session.historyNotifyScheduled = false
+    for (const [id, s] of sessions) {
+      if (s !== session) continue
+      webContents.fromId(id)?.send('slides:history-changed', {
+        canUndo: session.undoStack.length > 0,
+        canRedo: session.redoStack.length > 0,
+      })
+      return
+    }
+  })
+}
+
 /** Call before an edit operation: push onto the undo stack and clear the redo stack. */
 export function pushHistory(session: Session): void {
   session.undoStack.push(takeSnapshot(session))
   trimHistory(session.undoStack)
   session.redoStack = []
   session.htmlPages = null
+  scheduleHistoryNotify(session)
 }
 
 /** Begin a nestable transaction. Individual edit handlers keep their normal rollback behavior. */
@@ -131,6 +156,7 @@ export function endHistoryBatch(session: Session): HistorySnapshot | null {
   session.undoStack.splice(batch.undoStart)
   session.undoStack.push(batch.before)
   trimHistory(session.undoStack)
+  scheduleHistoryNotify(session)
   return batch.before
 }
 
@@ -145,6 +171,7 @@ export function carryHistoryForReplacement(
   replacement.redoStack = previous.redoStack
   replacement.historyBatch = previous.historyBatch
   replacement.aiSnapshots = previous.aiSnapshots
+  scheduleHistoryNotify(replacement)
 }
 
 const MAX_AI_SNAPSHOTS = 20

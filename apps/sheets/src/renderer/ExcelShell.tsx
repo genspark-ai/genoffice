@@ -157,6 +157,9 @@ interface ExcelShellProps {
   /// QAT redo (workbook history, same path as the app menu's ⇧⌘Z); undo
   /// shares the AI panel's onUndo above.
   readonly onRedo: () => void
+  /// Undo/redo stack occupancy: the QAT buttons grey out when there is nothing to apply.
+  readonly canUndo: boolean
+  readonly canRedo: boolean
   /// AutoSave toggle in the tab row (docs/slides parity).
   readonly autoSave: boolean
   readonly onAutoSaveChange: (on: boolean) => void
@@ -265,6 +268,8 @@ export function ExcelShell({
   canSave,
   onSave,
   onRedo,
+  canUndo,
+  canRedo,
   autoSave,
   onAutoSaveChange,
   selectedChart,
@@ -339,6 +344,7 @@ export function ExcelShell({
             className="qa-btn"
             data-tip={t('appUndo')}
             aria-label={t('appUndo')}
+            disabled={!canUndo}
             onClick={onUndo}
           >
             <UndoIcon />
@@ -348,6 +354,7 @@ export function ExcelShell({
             className="qa-btn"
             data-tip={t('appRedo')}
             aria-label={t('appRedo')}
+            disabled={!canRedo}
             onClick={onRedo}
           >
             <RedoIcon />

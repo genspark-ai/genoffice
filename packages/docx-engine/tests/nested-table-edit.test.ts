@@ -49,7 +49,7 @@ describe('nested table editing (surgical text patch + regeneration)', () => {
     expect(xml).toContain('InnerA')
     expect(xml).toContain('InnerB')
     // nested table is followed by an empty paragraph (OOXML: tc must end with w:p)
-    expect(/<\/w:tbl><w:p\/><\/w:tc>/.test(xml)).toBe(true)
+    expect(/<\/w:tbl><w:p(?:\/>|><\/w:p>)<\/w:tc>/.test(xml)).toBe(true)
     // reparsing still yields the nested structure
     const saved = await saveDocx(doc, [{ kind: 'xml', xml }])
     const reparsed = await parseDocx(saved)
@@ -60,7 +60,8 @@ describe('nested table editing (surgical text patch + regeneration)', () => {
   it('parses paragraph anchors for interleaved nested tables and regenerates in reading order', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: INTERLEAVED_TABLE_XML }))
     const cell = doc.blocks[0].table!.rows[0][0]
-    expect(cell.paras).toEqual(['Title1', 'Title2'])
+    // the trailing empty paragraph is kept: Word renders it as a visible line
+    expect(cell.paras).toEqual(['Title1', 'Title2', ''])
     expect(cell.nestedTableAnchors).toEqual([1, 2])
 
     const xml = generateTableModelXml(doc.blocks[0].table!)
@@ -68,7 +69,7 @@ describe('nested table editing (surgical text patch + regeneration)', () => {
     expect(order.every((idx) => idx >= 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
     // trailing nested table is still followed by an empty paragraph
-    expect(/<\/w:tbl><w:p\/><\/w:tc>/.test(xml)).toBe(true)
+    expect(/<\/w:tbl><w:p(?:\/>|><\/w:p>)<\/w:tc>/.test(xml)).toBe(true)
 
     // reparse of the regenerated table keeps the anchors
     const reparsed = await parseDocx(await saveDocx(doc, [{ kind: 'xml', xml }]))

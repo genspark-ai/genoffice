@@ -572,7 +572,19 @@ describe('Korean line metrics', () => {
     )
   })
 
-  it('hangul wraps per syllable like other CJK', () => {
+  it('hangul wraps at word boundaries like Word, not per syllable', () => {
+    const m = new HeuristicMetrics()
+    const lines = simulateLines(
+      [{ text: '가나다 라마바 사아자', sizeHalfPoints: 24 }],
+      16 * 6 + 3, // fits 6 syllables (96px) but not word+space+word (101px)
+      m,
+      12,
+      'Batang',
+    )
+    expect(lines.map((ln) => ln.text.trim())).toEqual(['가나다', '라마바', '사아자'])
+  })
+
+  it('an overlong hangul word still hard-breaks inside the word', () => {
     const m = new HeuristicMetrics()
     const lines = simulateLines(
       [{ text: '한글한글한글', sizeHalfPoints: 24 }],
@@ -581,7 +593,40 @@ describe('Korean line metrics', () => {
       12,
       'Batang',
     )
+    expect(lines.map((ln) => ln.text)).toEqual(['한글한글', '한글'])
+  })
+
+  it('hangul words keep the CJK line-height floor of the per-syllable model', () => {
+    const m = new HeuristicMetrics()
+    const lines = simulateLines([{ text: '한글 문서', sizeHalfPoints: 24 }], 500, m, 12, 'Calibri')
+    // Latin-font run: CJK fallback factor 1.3 beats Calibri's 1.22
+    expect(lines[0].naturalLineH).toBeCloseTo(16 * 1.3, 5)
+  })
+
+  it('Chinese keeps per-character wrapping even with spaces present', () => {
+    const m = new HeuristicMetrics()
+    const lines = simulateLines(
+      [{ text: '中中中 中中中中中', sizeHalfPoints: 24 }],
+      16 * 6 + 3,
+      m,
+      12,
+      'SimSun',
+    )
+    // char-level fill: the second word splits across the line boundary
     expect(lines.length).toBe(2)
+    expect(lines[0].text).toBe('中中中 中中')
+  })
+
+  it('Korean paragraphs pull mixed-in Han into the word buffer (keep-all)', () => {
+    const m = new HeuristicMetrics()
+    const lines = simulateLines(
+      [{ text: '한글漢字한글 다음', sizeHalfPoints: 24 }],
+      16 * 6 + 3, // fits 6 chars; the 7th ('다') would split a per-char line
+      m,
+      12,
+      'Batang',
+    )
+    expect(lines.map((ln) => ln.text.trim())).toEqual(['한글漢字한글', '다음'])
   })
 })
 
@@ -636,6 +681,16 @@ describe('cssFontFamily Arabic', () => {
     expect(cssFontFamily('Scheherazade New')).toContain("'Noto Naskh Arabic'")
   })
 
+  it('Traditional/Simplified Arabic map to the size-adjusted alias', () => {
+    expect(cssFontFamily('Traditional Arabic')).toBe(
+      "'Traditional Arabic','Noto Naskh Arabic TA','Geeza Pro','Al Bayan',serif",
+    )
+    expect(cssFontFamily('Simplified Arabic')).toContain("'Noto Naskh Arabic TA'")
+    // other naskh-class names keep the unscaled subset
+    expect(cssFontFamily('Amiri')).not.toContain("'Noto Naskh Arabic TA'")
+    expect(cssFontFamily('Arabic Typesetting')).not.toContain("'Noto Naskh Arabic TA'")
+  })
+
   it('kufi/sans-class names get the Sans Arabic chain', () => {
     expect(cssFontFamily('Noto Sans Arabic')).toBe("'Noto Sans Arabic','Geeza Pro',sans-serif")
     expect(cssFontFamily('Noto Kufi Arabic')).toBe(
@@ -673,10 +728,18 @@ describe('textHasComplexScript', () => {
 })
 
 describe('cssCsFontFamily', () => {
-  it('cs chain leads, base Latin chain follows with its generic tail', () => {
+  it('cs chain leads; base Latin chain slots in after the bundled Naskh subset (no Latin coverage) and before Geeza Pro', () => {
     expect(cssCsFontFamily('Arabic Typesetting', 'Calibri', 'Calibri')).toBe(
-      "'Arabic Typesetting','Noto Naskh Arabic','Geeza Pro','Al Bayan','Calibri','Carlito GO','Noto Sans CJK SC',sans-serif",
+      "'Arabic Typesetting','Noto Naskh Arabic','Calibri','Carlito GO','Noto Sans CJK SC','Geeza Pro','Al Bayan',sans-serif",
     )
+  })
+
+  it('Traditional Arabic cs run keeps the size-adjusted alias ahead of the Latin chain', () => {
+    const chain = cssCsFontFamily('Traditional Arabic', 'Times New Roman')
+    expect(chain.startsWith("'Traditional Arabic','Noto Naskh Arabic TA','Times New Roman'")).toBe(
+      true,
+    )
+    expect(chain.indexOf("'Times New Roman'")).toBeLessThan(chain.indexOf("'Geeza Pro'"))
   })
 
   it('keeps a dual-slot base after the cs chain', () => {
@@ -684,6 +747,13 @@ describe('cssCsFontFamily', () => {
     expect(chain.startsWith("'Amiri','Noto Naskh Arabic'")).toBe(true)
     expect(chain).toContain("'Times New Roman'")
     expect(chain).toContain("'SimSun'")
+    expect(chain.indexOf("'Times New Roman'")).toBeLessThan(chain.indexOf("'Geeza Pro'"))
+  })
+
+  it('non-Arabic cs font keeps head-then-base order', () => {
+    const chain = cssCsFontFamily('David', 'Calibri', 'Calibri')
+    expect(chain.startsWith("'David'")).toBe(true)
+    expect(chain).toContain("'Calibri'")
   })
 
   it('cs-only run falls back to the plain cs chain', () => {

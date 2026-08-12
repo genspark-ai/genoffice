@@ -58,6 +58,7 @@ const api: DesktopApi = {
     ipcRenderer.invoke('docs:save-new', defaultName, data),
   getRecentFiles: () => ipcRenderer.invoke('docs:recent'),
   pickImage: () => ipcRenderer.invoke('docs:pick-image'),
+  fontMetrics: (family: string) => ipcRenderer.invoke('docs:font-metrics', family),
   print: () => ipcRenderer.invoke('docs:print'),
   exportPdf: (
     defaultName: string,

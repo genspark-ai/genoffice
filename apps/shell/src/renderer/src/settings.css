@@ -1,4 +1,6 @@
-/* Settings modal (opened from the account menu): Zoom-style two-pane dialog.
+/* Settings modal (opened from the account menu): two-pane dialog matched to
+   GenMail's settings window (values read from its packaged CSS) — borderless
+   header/nav, label-left / control-right rows with hairline dividers.
    Chrome colors use semantic tokens only (see CLAUDE.md theming rules). */
 
 .set-overlay {
@@ -8,14 +10,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 5vh 24px;
   background: var(--color-bg-overlay);
+  backdrop-filter: blur(6px);
 }
 
 .set-dialog {
   display: flex;
   flex-direction: column;
-  width: min(720px, calc(100vw - 64px));
-  height: min(520px, calc(100vh - 64px));
+  width: min(960px, 100%);
+  height: min(720px, 90vh);
   border-radius: 14px;
   background: var(--surface);
   color: var(--text-primary);
@@ -24,29 +28,30 @@
 }
 
 .set-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 22px;
 }
 
 .set-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .set-close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 8px;
   background: none;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   cursor: pointer;
 }
 
@@ -63,9 +68,8 @@
 
 .set-nav {
   flex-shrink: 0;
-  width: 176px;
-  padding: 12px 10px;
-  border-right: 1px solid var(--border-subtle);
+  width: 232px;
+  padding: 8px 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -74,14 +78,15 @@
 .set-nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 14px;
+  font-weight: 400;
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
@@ -92,8 +97,8 @@
   color: var(--text-secondary);
 }
 
-.set-nav-item:hover {
-  background: var(--bg-hover);
+.set-nav-item:hover:not(.active) {
+  background: var(--bg-content);
 }
 
 .set-nav-item.active {
@@ -110,77 +115,131 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 24px;
+  padding: 8px 28px 24px;
   overflow-y: auto;
 }
 
 .set-pane-title {
-  margin: 0 0 16px;
-  font-size: 16px;
-  font-weight: 700;
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .set-field {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
+  min-height: 52px;
   padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.set-field:last-child {
+  border-bottom: none;
 }
 
 .set-field-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
 
 .set-field-label {
-  font-size: 13px;
-  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--text-primary);
 }
 
 .set-field-value {
-  margin-top: 3px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
+  text-align: right;
   user-select: text;
   word-break: break-all;
 }
 
-.set-select {
+/* GenMail-style select pill: the visible layer is just the current value +
+   chevron (width hugs the content); the real <select> sits on top invisibly
+   and only supplies the click target and the native popup. */
+.set-select-wrap {
+  position: relative;
   flex-shrink: 0;
-  min-width: 160px;
-  max-width: 220px;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface);
-  font: inherit;
-  font-size: 13px;
-  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
   cursor: pointer;
+}
+
+.set-select-wrap:hover,
+.set-select-wrap:focus-within {
+  background: var(--bg-hover);
+}
+
+.set-select-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.set-select-wrap::after {
+  content: '';
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  border-right: 1.5px solid var(--text-primary);
+  border-bottom: 1.5px solid var(--text-primary);
+  transform: rotate(45deg);
+}
+
+.set-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  font: inherit;
+  cursor: pointer;
+  /* the element is invisible, but the OS popup that opens on click reads its
+     computed color/background to render the option list */
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.set-select option {
+  color: var(--text-primary);
+  background: var(--surface);
 }
 
 .set-btn {
   flex-shrink: 0;
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 15px;
-  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-hover);
   font: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .set-btn:hover {
-  background: var(--bg-hover);
+  background: var(--bg-hover-strong);
 }
 
 .set-btn:disabled {
-  color: var(--text-muted);
+  opacity: 0.55;
   cursor: default;
 }
 
@@ -200,7 +259,7 @@
 
 .set-pane-footer {
   margin-top: auto;
-  padding-top: 16px;
+  padding-top: 20px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;

@@ -19,11 +19,13 @@ const INDEX: SearchIndex = [
 ]
 
 interface Widget {
+  id?: string
   subtype?: string
   fieldType?: string
   fieldName?: string
   fieldValue?: unknown
   buttonValue?: string
+  rect?: number[]
   readOnly?: boolean
   checkBox?: boolean
   radioButton?: boolean
@@ -35,7 +37,12 @@ function fakeDoc(pageTexts: string[], annotsByPage: Widget[][] = []): PDFDocumen
     numPages: pageTexts.length,
     getPage: async (n: number) => ({
       getTextContent: async () => ({ items: [{ str: pageTexts[n - 1], hasEOL: true }] }),
-      getAnnotations: async () => annotsByPage[n - 1] ?? [],
+      getAnnotations: async () =>
+        (annotsByPage[n - 1] ?? []).map((widget, index) =>
+          widget.subtype === 'Widget'
+            ? { id: `${n}-${index}`, rect: [0, 0, 100, 20], ...widget }
+            : widget,
+        ),
       cleanup: () => {},
     }),
   } as unknown as PDFDocumentProxy

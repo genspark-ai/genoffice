@@ -4,7 +4,13 @@ import { fontCoversText } from './font-cmap'
 import { findSystemFont, isTruetype } from './font-locate'
 import { identityCffCharset, subsetTtf } from './font-subset'
 import { pdfiumWasmPath } from './wasm-path'
-import type { TextEditFailure, TextEditInput, TextEditValidation } from '../shared/ipc'
+import type {
+  TextEditFailure,
+  TextEditInput,
+  TextEditValidation,
+  TextInsertFailure,
+  TextInsertInput,
+} from '../shared/ipc'
 import { foldRadicals } from '../shared/radicals'
 import { chainLayers } from '../shared/x-layers'
 
@@ -99,6 +105,15 @@ export interface Pdfium {
   _FPDFBitmap_GetWidth(bitmap: number): number
   _FPDFBitmap_GetHeight(bitmap: number): number
   _FPDFBitmap_GetStride(bitmap: number): number
+  // Annotation access (annot-delete.ts); EPDF_* are embedpdf extensions
+  _FPDFPage_GetAnnotCount(page: number): number
+  _FPDFPage_GetAnnot(page: number, index: number): number
+  _FPDFPage_CloseAnnot(annot: number): void
+  _FPDFPage_RemoveAnnot(page: number, index: number): number
+  _FPDFAnnot_GetSubtype(annot: number): number
+  _FPDFAnnot_GetRect(annot: number, rect: number): number
+  _EPDFPage_GetAnnotByObjectNumber(page: number, objNum: number): number
+  _EPDFPage_RemoveAnnotByObjectNumber(page: number, objNum: number): number
 }
 
 let pdfiumPromise: Promise<Pdfium> | null = null
@@ -1144,6 +1159,44 @@ interface KeepPlanObj {
 /** Signal to abandon the object-preserving build and fall back to a full redraw */
 class PreserveAbort extends Error {}
 
+/** Detect whitespace edits at the boundaries of the user's change. The keep-plan
+    alignment works on space-free folded units, so a space-only edit (deleting the
+    gap in "phon e") changes no unit at all: every object would land in the common
+    prefix/suffix, be kept verbatim, and be re-placed at its original spacing —
+    silently undoing the edit (space chars the objects carry would survive too).
+    Diff old/new with spaces kept; when the first (last) divergence sits on a space
+    unit, report how many non-space units before (after) it may still be kept — one
+    less than the full common run, so the glyph adjacent to the edited seam is
+    redrawn, which closes/opens the gap and drops any removed space chars.
+    Returns null when the texts are identical or no boundary touches whitespace. */
+export function wsEditClamp(
+  oldText: string,
+  newText: string,
+): { headNS: number | null; tailNS: number | null } | null {
+  const o = foldMap(oldText, true)
+  const n = foldMap(newText, true)
+  let pw = 0
+  const maxPw = Math.min(o.units.length, n.units.length)
+  while (pw < maxPw && o.units[pw] === n.units[pw]) pw++
+  if (pw === o.units.length && pw === n.units.length) return null
+  let sw = 0
+  const maxSw = maxPw - pw
+  while (sw < maxSw && o.units[o.units.length - 1 - sw] === n.units[n.units.length - 1 - sw]) sw++
+  const headWs = o.units[pw] === ' ' || n.units[pw] === ' '
+  const tailWs =
+    o.units[o.units.length - 1 - sw] === ' ' || n.units[n.units.length - 1 - sw] === ' '
+  if (!headWs && !tailWs) return null
+  const nonSpace = (units: string[], from: number, to: number) => {
+    let c = 0
+    for (let i = from; i < to; i++) if (units[i] !== ' ') c++
+    return c
+  }
+  return {
+    headNS: headWs ? nonSpace(o.units, 0, pw) - 1 : null,
+    tailNS: tailWs ? nonSpace(o.units, o.units.length - sw, o.units.length) - 1 : null,
+  }
+}
+
 /**
  * Which matched objects can survive the rebuild untouched. A full redraw flattens
  * mixed weights/faces into one located font — unrecoverable for Chrome-print docs
@@ -1160,6 +1213,7 @@ function buildKeepPlan(
   newText: string,
   charColors: (Rgb | null)[] | null,
   newColor: Rgb | undefined,
+  edit: Pick<TextEditInput, 'oldText' | 'newText'>,
 ): KeepPlanObj[] | null {
   const charsOf = new Map<number, number[]>(matches.map((t) => [t.obj, []]))
   const total = m._FPDFText_CountChars(textPage)
@@ -1201,10 +1255,28 @@ function buildKeepPlan(
     let p = 0
     const maxP = Math.min(tgt.units.length, engUnits.length)
     while (p < maxP && tgt.units[p] === engUnits[p]) p++
+    // Whitespace-only boundary edits change no fold unit, so p/s alone would keep
+    // (and re-place at original spacing) the very objects whose gap the user edited.
+    // Clamp the kept regions past the units adjacent to each whitespace-edited seam;
+    // fragment matches align the user's units into the container's fold first (off).
+    // The head clamp must land before the suffix scan: a space-only edit leaves the
+    // unit sequences identical, p covers everything, and s would be capped at 0.
+    const ws = wsEditClamp(edit.oldText, edit.newText)
+    const oldUnits = ws ? foldMap(edit.oldText).units : []
+    const off = !ws
+      ? -1
+      : engUnits.length === oldUnits.length
+        ? 0
+        : indexOfUnits(engUnits, oldUnits)
+    if (ws && off >= 0 && ws.headNS !== null) p = Math.min(p, Math.max(0, off + ws.headNS))
     let s = 0
     const maxS = maxP - p
     while (s < maxS && tgt.units[tgt.units.length - 1 - s] === engUnits[engUnits.length - 1 - s])
       s++
+    if (ws && off >= 0 && ws.tailNS !== null) {
+      const extra = engUnits.length - off - oldUnits.length
+      s = Math.min(s, Math.max(0, extra + ws.tailNS))
+    }
     const shift = engUnits.length - tgt.units.length
     const out: KeepPlanObj[] = []
     let a = 0
@@ -1301,7 +1373,7 @@ async function rebuildRun(
       Math.abs(matrix[1]!) < 1e-4 && Math.abs(matrix[2]!) < 1e-4 && matrix[0]! > 0 && matrix[3]! > 0
     const keeps =
       !styleOverride && axisAligned
-        ? buildKeepPlan(m, textPage, matches, newText, charColors, edit.newColor)
+        ? buildKeepPlan(m, textPage, matches, newText, charColors, edit.newColor, edit)
         : null
     // Subset the rebuild font to the non-kept text only: requiring coverage for
     // kept glyphs (e.g. Type3 PUA codepoints) would fail edits that never touch them
@@ -1604,6 +1676,11 @@ export interface TextEditsResult {
   skipped: TextEditFailure[]
 }
 
+export interface TextInsertsResult {
+  bytes: Uint8Array
+  skipped: TextInsertFailure[]
+}
+
 /** Rewrite page content streams per the edits and return the new document bytes plus
     the edits that no longer match the document (skipped, reported to the caller). */
 export function applyTextEdits(
@@ -1611,6 +1688,141 @@ export function applyTextEdits(
   edits: TextEditInput[],
 ): Promise<TextEditsResult> {
   return chainPdfium(() => applyTextEditsInner(bytes, edits))
+}
+
+/** Text-space axes that keep inserted glyphs upright after the page's final /Rotate. */
+export function textInsertAxes(rotate = 0): readonly [number, number, number, number] {
+  switch (((rotate % 360) + 360) % 360) {
+    case 90:
+      return [0, 1, -1, 0]
+    case 180:
+      return [-1, 0, 0, -1]
+    case 270:
+      return [0, -1, 1, 0]
+    default:
+      return [1, 0, 0, 1]
+  }
+}
+
+/** Insert new searchable text objects without matching/removing existing page content. */
+export function applyTextInserts(
+  bytes: Uint8Array,
+  inserts: TextInsertInput[],
+): Promise<TextInsertsResult> {
+  return chainPdfium(async () => {
+    const m = await loadPdfium()
+    const skipped: TextInsertFailure[] = []
+    return withDocument(m, bytes, async (doc) => {
+      const pageCount = m._FPDF_GetPageCount(doc)
+      let appliedTotal = 0
+      let embeddedCff = false
+      const byPage = new Map<number, { input: TextInsertInput; editIndex: number }[]>()
+      inserts.forEach((input, editIndex) => {
+        if (input.pageIndex < 0 || input.pageIndex >= pageCount) {
+          skipped.push({ editIndex, pageIndex: input.pageIndex, reason: 'page does not exist' })
+          return
+        }
+        byPage.set(input.pageIndex, [...(byPage.get(input.pageIndex) ?? []), { input, editIndex }])
+      })
+      for (const [pageIndex, pageInserts] of byPage) {
+        const page = m._FPDF_LoadPage(doc, pageIndex)
+        if (!page) throw new Error(`could not load page ${pageIndex + 1}`)
+        let applied = 0
+        try {
+          for (const { input, editIndex } of pageInserts) {
+            const text = input.text.trim()
+            if (!text) {
+              skipped.push({ editIndex, pageIndex, reason: 'empty inserted text' })
+              continue
+            }
+            const pseudoEdit: TextEditInput = {
+              pageIndex,
+              rect: [input.origin[0], input.origin[1], input.origin[0], input.origin[1]],
+              oldText: '',
+              newText: input.text,
+              fontSize: input.fontSize,
+              newFontSize: input.fontSize,
+              newColor: input.color,
+              newFont: input.font,
+              newBold: input.bold,
+              newItalic: input.italic,
+            }
+            const created: number[] = []
+            let font = 0
+            try {
+              const fontBytes = await rebuildFontBytes(m, 0, pseudoEdit, input.text)
+              const fontPtr = m._malloc(fontBytes.length)
+              m.HEAPU8.set(fontBytes, fontPtr)
+              font = m._FPDFText_LoadFont(
+                doc,
+                fontPtr,
+                fontBytes.length,
+                isTruetype(fontBytes) ? FPDF_FONT_TRUETYPE : FPDF_FONT_TYPE1,
+                1,
+              )
+              m._free(fontPtr)
+              if (!font) throw new Error('FPDFText_LoadFont failed')
+              const matrixPtr = m._malloc(24)
+              try {
+                const leading = input.lineLeading ?? input.fontSize * LINE_GAP
+                const [a, b, c, d] = textInsertAxes(input.rotate)
+                for (const [lineIndex, line] of input.text.split('\n').entries()) {
+                  if (!line) continue
+                  const obj = m._FPDFPageObj_CreateTextObj(doc, font, input.fontSize)
+                  const textPtr = utf16Ptr(m, line)
+                  const ok = m._FPDFText_SetText(obj, textPtr)
+                  m._free(textPtr)
+                  if (!ok) {
+                    m._FPDFPageObj_Destroy(obj)
+                    throw new Error('FPDFText_SetText failed on inserted object')
+                  }
+                  const offset = input.lineXOffsets?.[lineIndex] ?? 0
+                  const drop = lineIndex * leading
+                  m.HEAPF32.set(
+                    [
+                      a,
+                      b,
+                      c,
+                      d,
+                      input.origin[0] + a * offset - c * drop,
+                      input.origin[1] + b * offset - d * drop,
+                    ],
+                    matrixPtr >> 2,
+                  )
+                  m._FPDFPageObj_SetMatrix(obj, matrixPtr)
+                  m._FPDFPageObj_SetFillColor(
+                    obj,
+                    input.color[0],
+                    input.color[1],
+                    input.color[2],
+                    255,
+                  )
+                  created.push(obj)
+                }
+              } finally {
+                m._free(matrixPtr)
+              }
+              for (const obj of created) m._FPDFPage_InsertObject(page, obj)
+              embeddedCff = !isTruetype(fontBytes) || embeddedCff
+              applied++
+            } catch (err) {
+              for (const obj of created) m._FPDFPageObj_Destroy(obj)
+              skipped.push({ editIndex, pageIndex, reason: errMsg(err) })
+            }
+          }
+          if (applied > 0 && !m._FPDFPage_GenerateContent(page)) {
+            throw new Error(`could not regenerate page ${pageIndex + 1}`)
+          }
+          appliedTotal += applied
+        } finally {
+          m._FPDF_ClosePage(page)
+        }
+      }
+      if (appliedTotal === 0) return { bytes, skipped }
+      const saved = saveDoc(m, doc)
+      return { bytes: embeddedCff ? await relabelOpenTypeFontFiles(saved) : saved, skipped }
+    })
+  })
 }
 
 /** Dry-run matching for pending edits (no mutation). Lets the renderer reject a bad edit

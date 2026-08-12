@@ -499,19 +499,54 @@ export function tableDisplayName(tableXml: string): string | undefined {
 }
 
 /// True when a defined name that survives the removal mentions the token
-/// (a structured-reference prefix like "DecoTable["). Names scoped to a
+/// (a structured-reference prefix like "DecoTable["). Table names are
+/// case-insensitive in Excel, so the match is too. Names scoped to a
 /// removed sheet die with it and never block.
 export function definedNamesUseToken(
   workbookXml: string,
   token: string,
   removedLocalIds: ReadonlySet<number>,
 ): boolean {
+  const needle = token.toLowerCase()
   for (const match of workbookXml.matchAll(/<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g)) {
     const localId = readAttribute(`<definedName${match[1] ?? ''}/>`, 'localSheetId')
     if (localId !== undefined && removedLocalIds.has(Number(localId))) continue
-    if (decodeEntities(match[2] ?? '').includes(token)) return true
+    if (
+      decodeEntities(match[2] ?? '')
+        .toLowerCase()
+        .includes(needle)
+    )
+      return true
   }
   return false
+}
+
+/// True when a pivotCacheDefinition part reads its source rows from the
+/// sheet (cacheSource/worksheetSource@sheet). Sheet names compare
+/// case-insensitively, matching Excel.
+export function pivotCacheReadsFromSheet(cacheXml: string, sheetName: string): boolean {
+  const target = sheetName.toLowerCase()
+  for (const match of cacheXml.matchAll(/<worksheetSource\b[^>]*>/g)) {
+    const sheet = readAttribute(match[0], 'sheet')
+    if (sheet !== undefined && decodeAttribute(sheet).toLowerCase() === target) return true
+  }
+  return false
+}
+
+/// Rewrites worksheetSource@sheet in a pivotCacheDefinition part when the
+/// pivot's source sheet is renamed — the attribute holds the plain sheet
+/// name, so the formula-oriented rename helpers never see it.
+export function renameSheetInPivotCacheSource(
+  cacheXml: string,
+  oldName: string,
+  newName: string,
+): string {
+  const target = oldName.toLowerCase()
+  return cacheXml.replace(/<worksheetSource\b[^>]*>/g, (element) => {
+    const sheet = readAttribute(element, 'sheet')
+    if (sheet === undefined || decodeAttribute(sheet).toLowerCase() !== target) return element
+    return element.replace(/\ssheet="[^"]*"/, () => ` sheet="${escapeXmlAttribute(newName)}"`)
+  })
 }
 
 /// DefinedNames scoped to a removed sheet are dropped with it, so their

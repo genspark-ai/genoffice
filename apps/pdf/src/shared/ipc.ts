@@ -8,6 +8,7 @@ export const PDF_CHANNELS = {
   validateTextEdits: 'pdf:validate-text-edits',
   listEditFonts: 'pdf:list-edit-fonts',
   listPageImages: 'pdf:list-page-images',
+  listStaticFormFills: 'pdf:list-static-form-fills',
   pageImagePng: 'pdf:page-image-png',
   pagePreviewPng: 'pdf:page-preview-png',
   extractPages: 'pdf:extract-pages',
@@ -26,6 +27,8 @@ export const PDF_CHANNELS = {
   themeChanged: 'app:theme-changed',
 } as const
 
+export const VISUAL_SIGNATURE_CONTENT_PREFIX = 'GenOffice visual signature field: '
+
 export type UiTheme = 'light' | 'dark' | 'system'
 
 export type MarkupType = 'highlight' | 'underline' | 'strikeout'
@@ -39,12 +42,25 @@ export interface MarkupInput {
   quads: number[][]
 }
 
+/** Delete a markup annotation already saved in the file. Object number is only a lookup
+    hint; subtype + rect guard against (and recover from) object renumbering by a rewrite. */
+export interface AnnotDeleteInput {
+  pageIndex: number
+  /** PDF object number (pdf.js annotation id "123R" → 123) */
+  objNum: number
+  subtype: MarkupType
+  /** Annotation /Rect in PDF user space, for fallback matching */
+  rect: [number, number, number, number]
+}
+
 /** Drawing annotations (all coords in PDF user space, y up).
     One union member per kind; a union-literal kind would break TS narrowing. */
 interface DrawBase {
   pageIndex: number
   color: [number, number, number]
   width: number
+  /** AcroForm field explicitly associated with a visual Ink signature. */
+  formFieldName?: string
 }
 
 export type DrawingInput =
@@ -65,6 +81,8 @@ export type DrawingInput =
       image: string
       /** PDF user space [x1,y1,x2,y2] */
       rect: [number, number, number, number]
+      /** AcroForm field explicitly associated with a visual image signature. */
+      formFieldName?: string
     }
   | {
       kind: 'note'
@@ -148,6 +166,25 @@ export interface TextEditInput {
       Degrades silently to the base face when no variant covers the replacement. */
   newBold?: boolean
   newItalic?: boolean
+}
+
+/** A new searchable/selectable text object inserted into a page content stream. */
+export interface TextInsertInput {
+  pageIndex: number
+  /** First-line baseline origin in PDF user space. */
+  origin: [number, number]
+  /** Text to insert; '\n' creates stacked text objects. */
+  text: string
+  fontSize: number
+  color: [number, number, number]
+  font?: string
+  bold?: boolean
+  italic?: boolean
+  lineLeading?: number
+  lineXOffsets?: number[]
+  align?: 'left' | 'center' | 'right'
+  /** Final displayed page rotation; insertion matrix counter-rotates text into screen space. */
+  rotate?: number
 }
 
 /** Dry-run match result for one pending text edit */
@@ -236,12 +273,27 @@ export interface PageImageRef {
   aboveText: boolean
 }
 
+/** Editable metadata for a GenOffice static form fill embedded as a page image. */
+export interface StaticFormFillRecord {
+  id: string
+  kind: 'text' | 'check' | 'cross'
+  pageIndex: number
+  rect: [number, number, number, number]
+  text?: string
+  fontSize?: number
+  color?: string
+  align?: 'left' | 'center' | 'right'
+}
+
 /** Live-preview render request: a page region with some images removed */
 export interface PagePreviewRequest {
   path: string
   pageIndex: number
   /** Images to erase, addressed by their listed rects (PDF user space) */
   excludeRects: [number, number, number, number][]
+  /** Saved annotations to erase. Full identity data is required because object numbers
+      may be stale after a save rewrites the PDF. */
+  excludeAnnots?: AnnotDeleteInput[]
   /** Region to render, in display coords at scale 1 (after total rotation, y down) */
   clip: { x: number; y: number; width: number; height: number }
   /** Output bitmap width in px (height follows the clip aspect) */
@@ -275,13 +327,19 @@ export interface SavePdfRequest {
    */
   targetPath?: string
   markups: MarkupInput[]
+  /** Saved markup annotations to remove (applied before every other stage) */
+  annotDeletes?: AnnotDeleteInput[]
   drawings: DrawingInput[]
   formValues: FormValueInput[]
   stamps: StampInput[]
   /** Applied to the source bytes before all annotation work — these rewrite page content streams */
   textEdits?: TextEditInput[]
+  /** New searchable text objects, applied in the same content-stream stage as textEdits. */
+  textInserts?: TextInsertInput[]
   /** Content-stream image operations, applied right after textEdits (same pdfium stage) */
   imageEdits?: ImageEditInput[]
+  /** Complete resulting set; omitted means preserve existing embedded metadata. */
+  staticFormFills?: StaticFormFillRecord[]
   /** Page rotation deltas (original page index → multiple of 90 clockwise) */
   rotations?: { pageIndex: number; delta: number }[]
   /** Pages to delete (original page indices) */
@@ -298,8 +356,19 @@ export interface TextEditFailure {
   reason: string
 }
 
+export interface TextInsertFailure {
+  editIndex: number
+  pageIndex: number
+  reason: string
+}
+
 export type SavePdfResult =
-  | { ok: true; skippedTextEdits?: TextEditFailure[]; skippedImageEdits?: ImageEditFailure[] }
+  | {
+      ok: true
+      skippedTextEdits?: TextEditFailure[]
+      skippedTextInserts?: TextInsertFailure[]
+      skippedImageEdits?: ImageEditFailure[]
+    }
   | { ok: false; error: string }
 
 /** Dry-run matching for pending text edits against the file on disk (no mutation) */
@@ -381,11 +450,16 @@ export interface PdfApi {
   listEditFonts(): Promise<string[]>
   /** Enumerate the content-stream images of every page (for image edit mode) */
   listPageImages(path: string): Promise<PageImageRef[]>
+  /** Read GenOffice static-fill metadata stored inside the PDF. */
+  listStaticFormFills(path: string): Promise<StaticFormFillRecord[]>
   /** Render one existing image object to PNG (base64) for move/resize ghost previews; null if it can't be matched */
   pageImagePng(request: {
     path: string
     pageIndex: number
     rect: [number, number, number, number]
+    /** Upscale factor over the on-page size (default 1); use >1 when the pixels feed a
+        pixel edit (crop/flip/…) so the baked result keeps print-quality resolution */
+    scale?: number
   }): Promise<string | null>
   /** Live-preview render of a page region with the given images removed (base64 PNG);
       the renderer patches it over the raster so touched images vanish before save */

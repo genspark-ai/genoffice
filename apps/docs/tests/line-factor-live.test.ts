@@ -112,3 +112,19 @@ describe('live strut font-size decorations', () => {
     editor.destroy()
   })
 })
+
+describe('empty paragraph line size (emptyRunSize attr)', () => {
+  it('renders a run-less paragraph at its paragraph-mark size', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [{ type: 'docParagraph', attrs: { emptyRunSize: 2 } }],
+      } as never,
+    })
+    const p = editor.view.dom.querySelector('p') as HTMLElement
+    expect(p.style.fontSize).toBe('1pt')
+    editor.destroy()
+  })
+})

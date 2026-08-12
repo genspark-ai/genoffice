@@ -40,6 +40,7 @@ import { InkOverlay } from './InkOverlay'
 import { inkNodesOf, type InkPenSettings, type InkStroke, type InkTool } from './ink'
 import type { SlideThemePreset } from './themes'
 import { Ribbon, type FormatCmd, type SlidesViewMode } from './components/Ribbon'
+import { contextElementTypeForNode, type ContextElementType } from './components/context-tabs'
 import { SlideShowView } from './components/SlideShowView'
 import { PresenterView } from './components/PresenterView'
 import { CustomShowDialog } from './components/CustomShowDialog'
@@ -385,6 +386,7 @@ export function App() {
   const [collapsedSecs, setCollapsedSecs] = useState<Set<string>>(new Set())
   const [renamingSec, setRenamingSec] = useState<{ id: string; value: string } | null>(null)
   const stageWrapRef = useRef<HTMLDivElement | null>(null)
+  const [stageViewportSize, setStageViewportSize] = useState({ w: 0, h: 0 })
   // ── View tab: view mode + display toggles ─────────────────────────────
   const [viewMode, setViewMode] = useState<SlidesViewMode>('normal')
   const [masterItems, setMasterItems] = useState<MasterPartItem[] | null>(null)
@@ -483,20 +485,27 @@ export function App() {
     (s?: RenderSlide) => {
       if (!s) return 1
       const el = stageWrapRef.current
-      const availW =
-        (el?.clientWidth ?? window.innerWidth - (showThumbs ? thumbsW : 0) - (showAi ? 360 : 34)) -
-        56
+      const viewportW =
+        el?.clientWidth ||
+        stageViewportSize.w ||
+        window.innerWidth - (showThumbs ? thumbsW : 0) - (showAi ? 360 : 34)
+      const viewportH = el?.clientHeight || stageViewportSize.h || window.innerHeight - 150
+      const availW = viewportW - 56
       // -72: vertical padding is 48 (AI-bar headroom) + 32, minus the same 8px slack as width
-      const availH = (el?.clientHeight ?? window.innerHeight - 150) - 72
+      const availH = viewportH - 72
       return Math.min(availW / s.widthPx, availH / s.heightPx)
     },
-    [showThumbs, showAi, thumbsW],
+    [showThumbs, showAi, stageViewportSize.h, stageViewportSize.w, thumbsW],
   )
   /** Fit zoom for display: rawFit clamped to the 0.1–1.5 auto-fit range */
   const fitZoom = useCallback(
     (s?: RenderSlide) => Math.min(1.5, Math.max(0.1, rawFit(s))),
     [rawFit],
   )
+  // The Konva stage includes a transparent bleed around the slide for editing
+  // off-page objects. That bleed must not create scrollbars while the slide
+  // itself still fits; once the nominal slide overflows, normal panning resumes.
+  const stageFitsViewport = !slide || zoom <= rawFit(slide) + 0.001
   /** Fit-pending flag after open: consumed when the editor's first frame mounts (stage container measurable) */
   const needsFitRef = useRef(false)
   /** Last auto-fit value: if current zoom still equals it → treated as "fit mode", re-fit on size changes */
@@ -537,6 +546,10 @@ export function App() {
     const el = stageWrapRef.current
     if (!hasDoc || !el) return
     const ro = new ResizeObserver(() => {
+      const nextSize = { w: el.clientWidth, h: el.clientHeight }
+      setStageViewportSize((previous) =>
+        previous.w === nextSize.w && previous.h === nextSize.h ? previous : nextSize,
+      )
       const z = fitZoom(slideLiveRef.current)
       const lf = lastFitRef.current
       const inFitMode = lf != null && Math.abs(zoomLiveRef.current - lf) <= 0.001
@@ -640,6 +653,10 @@ export function App() {
       )
     })
   }, [save])
+
+  // Undo/redo stack occupancy pushed by the main process: the QAT buttons grey out when empty
+  const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
+  useEffect(() => window.slidesApi.onHistoryChanged?.(setHistState), [])
 
   // Auto-save (off by default): when on and a file path exists, silently write back every 30s + on blur.
   // Saving rebuilds element ids; skipped during text editing/mouse-down (dragging) to avoid interrupting the current operation.
@@ -1996,15 +2013,9 @@ export function App() {
   }, [selectedNode, current, slides])
 
   // Contextual tabs: expose the element type to the Ribbon for single selection
-  const contextElementType = useMemo((): 'table' | 'chart' | 'picture' | 'shape' | null => {
+  const contextElementType = useMemo((): ContextElementType => {
     if (selectedNode) {
-      if (selectedNode.type === 'table') return 'table'
-      if (selectedNode.type === 'chart') return 'chart'
-      if (selectedNode.type === 'picture') return 'picture'
-      // Shapes and groups share the picture-tools contextual tab (outline applies;
-      // picture-only tools disable)
-      if (selectedNode.type === 'shape' || selectedNode.type === 'group') return 'shape'
-      return null
+      return contextElementTypeForNode(selectedNode)
     }
     // Multi-select of shapes/pictures/groups keeps the picture-tools tab (as 'shape':
     // outline applies to the whole selection, single-picture tools like crop stay disabled)
@@ -2318,6 +2329,8 @@ export function App() {
       <Ribbon
         hasDoc={!!slide}
         deckEmpty={deckEmpty}
+        canUndo={histState.canUndo}
+        canRedo={histState.canRedo}
         dirty={dirty}
         editing={!!editing || !!editingCell}
         autoSave={autoSave}
@@ -2782,7 +2795,7 @@ export function App() {
                 )}
                 <div className="stage-col">
                   <div
-                    className={`stage-wrap${brushMode ? ' format-brush-mode' : ''}`}
+                    className={`stage-wrap${stageFitsViewport ? ' stage-fits-viewport' : ''}${brushMode ? ' format-brush-mode' : ''}`}
                     ref={stageWrapRef}
                   >
                     {/* transform: scale() doesn't grow layout, so the scroll range ignores the

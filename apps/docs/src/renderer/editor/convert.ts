@@ -92,6 +92,7 @@ function formatAttrs(format: ParaFormat | undefined): Record<string, unknown> {
     bidi: format?.bidi ?? false,
     autoSpace: format?.autoSpace ?? null,
     snapToGrid: format?.snapToGrid ?? null,
+    emptyRunSize: format?.emptyRunSizeHalfPoints ?? null,
   }
 }
 
@@ -219,6 +220,9 @@ function blockToPmNode(block: Block, rowCapTwips: number | null = null): PmNode 
           imageOffsetYEmu: block.imageOffsetYEmu ?? null,
           imagePosH: block.imagePosH ?? null,
           imagePosV: block.imagePosV ?? null,
+          imageRotDeg: block.imageRotDeg ?? null,
+          imageFlipH: block.imageFlipH ?? false,
+          imageFlipV: block.imageFlipV ?? false,
           table:
             block.table && rowCapTwips != null
               ? capTableRowHeights(block.table, rowCapTwips)
@@ -734,6 +738,7 @@ function runMarks(run: Run): PmMark[] {
     run.charSpacingTwips ||
     run.charScalePct ||
     run.highlight ||
+    run.shading ||
     run.vertAlign ||
     run.em ||
     run.styleId ||
@@ -752,6 +757,7 @@ function runMarks(run: Run): PmMark[] {
         charSpacingTwips: run.charSpacingTwips ?? null,
         charScaleEm: run.charScalePct ? charScaleEm(run.text, run.charScalePct) : null,
         highlight: run.highlight ?? null,
+        shading: run.shading ?? null,
         vertAlign: run.vertAlign ?? null,
         em: run.em ?? null,
         styleId: run.styleId ?? null,
@@ -945,10 +951,16 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
             chartDisplay.heightPx !== original.chartDisplay?.heightPx)
             ? { w: chartDisplay.widthPx, h: chartDisplay.heightPx }
             : null
-        if (imagePatch && original.originalXml) {
+        const imageReplace =
+          original.type === 'image'
+            ? (node.attrs?.imageReplace as { base64: string; mime: string } | null)
+            : null
+        if ((imagePatch || imageReplace) && original.originalXml) {
           changedCount++
-          let xml = patchImageParagraphXml(original.originalXml, imagePatch)
-          if (imagePatch.wrap !== undefined) {
+          let xml = imagePatch
+            ? patchImageParagraphXml(original.originalXml, imagePatch)
+            : original.originalXml
+          if (imagePatch?.wrap !== undefined) {
             const posOffset =
               imagePatch.posOffsetX !== undefined && imagePatch.posOffsetY !== undefined
                 ? { x: imagePatch.posOffsetX, y: imagePatch.posOffsetY }
@@ -958,10 +970,24 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
                 ? { h: imagePatch.posH, v: imagePatch.posV }
                 : undefined
             xml = applyImageWrap(xml, imagePatch.wrap, posOffset, marginAlign)
-          } else if (imagePatch.posOffsetX !== undefined || imagePatch.posOffsetY !== undefined) {
+          } else if (
+            imagePatch &&
+            (imagePatch.posOffsetX !== undefined || imagePatch.posOffsetY !== undefined)
+          ) {
             // posOffset changed without wrap change: patchImageParagraphXml already rewrote it
           }
-          pushBlock({ kind: 'xml', xml })
+          pushBlock({
+            kind: 'xml',
+            xml,
+            ...(imageReplace
+              ? {
+                  replaceImage: {
+                    base64: imageReplace.base64,
+                    mime: imageReplace.mime as NewImage['mime'],
+                  },
+                }
+              : {}),
+          })
         } else if (tableTexts && original.originalXml) {
           changedCount++
           pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
@@ -1079,6 +1105,9 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         if (align) image.align = align
         const wrap = node.attrs.imageWrap as ImageWrap | null
         if (wrap) image.wrap = wrap
+        if (node.attrs.imageRotDeg) image.rotDeg = Number(node.attrs.imageRotDeg)
+        if (node.attrs.imageFlipH) image.flipH = true
+        if (node.attrs.imageFlipV) image.flipV = true
         pushBlock({ kind: 'image', image })
       } else if (node.attrs?.genChart) {
         // in-place edits live in chartDisplay; the saved part reflects them
@@ -1196,6 +1225,9 @@ function imageFromProtectedAttrs(node: PmNode): NewImage | null {
   if (align) image.align = align
   const wrap = node.attrs?.imageWrap as ImageWrap | null
   if (wrap) image.wrap = wrap
+  if (node.attrs?.imageRotDeg) image.rotDeg = Number(node.attrs.imageRotDeg)
+  if (node.attrs?.imageFlipH) image.flipH = true
+  if (node.attrs?.imageFlipV) image.flipV = true
   return image
 }
 
@@ -1267,6 +1299,10 @@ interface ImageBlockPatch {
   /** margin-relative align pair (Word position-gallery presets); undefined = keep */
   posH?: 'left' | 'center' | 'right'
   posV?: 'top' | 'center' | 'bottom'
+  /** rotation (deg clockwise, 0 removes) / mirror flips; undefined = keep */
+  rotDeg?: number
+  flipH?: boolean
+  flipV?: boolean
 }
 
 /** size/align/wrap changes on an original image block; null when untouched */
@@ -1298,6 +1334,12 @@ function imagePatchOf(node: PmNode, original: Block): ImageBlockPatch | null {
   if (posOffsetY !== undefined && posOffsetY !== (original.imageOffsetYEmu ?? undefined)) {
     patch.posOffsetY = posOffsetY
   }
+  const rotDeg = node.attrs?.imageRotDeg != null ? Number(node.attrs.imageRotDeg) : 0
+  if (rotDeg !== (original.imageRotDeg ?? 0)) patch.rotDeg = rotDeg
+  const flipH = !!node.attrs?.imageFlipH
+  const flipV = !!node.attrs?.imageFlipV
+  if (flipH !== (original.imageFlipH ?? false)) patch.flipH = flipH
+  if (flipV !== (original.imageFlipV ?? false)) patch.flipV = flipV
   const posH = (node.attrs?.imagePosH as ImageBlockPatch['posH'] | null) ?? null
   const posV = (node.attrs?.imagePosV as ImageBlockPatch['posV'] | null) ?? null
   if (
@@ -1528,6 +1570,7 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
       /* ignore malformed */
     }
   }
+  if (node.attrs?.emptyRunSize) format.emptyRunSizeHalfPoints = Number(node.attrs.emptyRunSize)
   return Object.keys(format).length > 0 ? format : undefined
 }
 
@@ -1720,6 +1763,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         if (mark.attrs?.csFont) run.csFont = String(mark.attrs.csFont)
         if (mark.attrs?.charSpacingTwips) run.charSpacingTwips = Number(mark.attrs.charSpacingTwips)
         if (mark.attrs?.highlight) run.highlight = String(mark.attrs.highlight)
+        if (mark.attrs?.shading) run.shading = String(mark.attrs.shading)
         if (mark.attrs?.vertAlign === 'superscript' || mark.attrs?.vertAlign === 'subscript') {
           run.vertAlign = mark.attrs.vertAlign
         }
@@ -1777,6 +1821,7 @@ function runStyleKey(run: Run): string {
     run.font ?? null,
     run.fontAscii ?? null,
     run.highlight ?? null,
+    run.shading ?? null,
     run.vertAlign ?? null,
     run.link?.href ?? null,
     run.link?.rId ?? null,
@@ -1851,6 +1896,7 @@ function normalizedFormat(format: ParaFormat | undefined): unknown {
     format.tabStops ? JSON.stringify(format.tabStops) : null,
     format.dropCap ? JSON.stringify(format.dropCap) : null,
     format.autoSpace ?? null,
+    format.emptyRunSizeHalfPoints ?? null,
   ]
 }
 

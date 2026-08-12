@@ -17,6 +17,8 @@ interface Box {
 export interface LocalDrawing {
   id: string
   input: DrawingInput
+  /** Present when this drawing is the visual value placed into an AcroForm /Sig widget. */
+  formWidgetId?: string
 }
 
 /** 5-color palette (0-1 rgb), same visual language as the markup floating bar */

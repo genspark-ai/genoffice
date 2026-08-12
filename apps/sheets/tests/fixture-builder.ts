@@ -218,18 +218,26 @@ const sheetsChart = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/dr
 /// Exercises sheet removal with owned satellite parts: "Deco" carries a
 /// drawing (image + chart with a color style), comments, legacy VML, and a
 /// table. Options add a second drawing on the surviving sheet sharing the
-/// image, a pivot-table relationship, a surviving structured reference into
-/// the table, or a defined name scoped to "Deco" that uses the table.
+/// image, a pivot-table relationship, a pivot cache sourced from "Deco"
+/// (its pivot lives elsewhere), a surviving structured reference into the
+/// table (canonical or differently-cased), or a defined name scoped to
+/// "Deco" that uses the table.
 export async function buildSatelliteSheetFixture(
   options: {
     sharedImage?: boolean
     pivot?: boolean
+    pivotSourceCache?: boolean
     tableRef?: boolean
+    tableRefLower?: boolean
     scopedTableName?: boolean
   } = {},
 ): Promise<Buffer> {
   const zip = new JSZip()
-  const keepFormula = options.tableRef ? '<c r="B1"><f>SUM(DecoTable[Amt])</f><v>3</v></c>' : ''
+  const keepFormula = options.tableRef
+    ? '<c r="B1"><f>SUM(DecoTable[Amt])</f><v>3</v></c>'
+    : options.tableRefLower
+      ? '<c r="B1"><f>SUM(decotable[Amt])</f><v>3</v></c>'
+      : ''
   const keepDrawing = options.sharedImage ? '<drawing r:id="rId1"/>' : ''
   // A name scoped to Deco (localSheetId 1) dies with the sheet, so its
   // structured reference into DecoTable must not block the removal.
@@ -361,6 +369,16 @@ export async function buildSatelliteSheetFixture(
     zip.file(
       'xl/pivotTables/pivotTable1.xml',
       '<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+    )
+  }
+  if (options.pivotSourceCache) {
+    // The pivot itself lives on the surviving sheet (no pivotTable rel on
+    // "Deco"); only the cache part records the source-sheet link.
+    zip.file(
+      'xl/pivotCache/pivotCacheDefinition1.xml',
+      '<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<cacheSource type="worksheet"><worksheetSource ref="A1:A2" sheet="Deco"/></cacheSource>' +
+        '</pivotCacheDefinition>',
     )
   }
   zip.file('xl/media/image1.png', kitchenSinkPng)

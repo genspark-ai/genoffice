@@ -93,3 +93,23 @@ describe('explicit w:after="0"', () => {
     expect(out).toBe('<w:pPr><w:spacing w:after="0"/></w:pPr>')
   })
 })
+
+describe('empty-paragraph size write-back (pPr w:rPr)', () => {
+  it('inserts a fresh paragraph-mark rPr when the model carries a size', () => {
+    expect(mergePPrFormat('<w:pPr></w:pPr>', { emptyRunSizeHalfPoints: 2 })).toBe(
+      '<w:pPr><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>',
+    )
+  })
+
+  it('keeps the original paragraph-mark rPr bytes when the size is unchanged', () => {
+    const raw = '<w:pPr><w:rPr><w:rFonts w:ascii="Georgia"/><w:sz w:val="2"/></w:rPr></w:pPr>'
+    expect(mergePPrFormat(raw, { emptyRunSizeHalfPoints: 2 })).toBe(raw)
+  })
+
+  it('leaves the paragraph-mark rPr unmanaged when the model has no size', () => {
+    const raw = '<w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:pPr>'
+    expect(mergePPrFormat(raw, { align: 'center' })).toBe(
+      '<w:pPr><w:jc w:val="center"/><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:pPr>',
+    )
+  })
+})

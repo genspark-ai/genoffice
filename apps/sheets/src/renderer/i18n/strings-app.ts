@@ -208,6 +208,7 @@ export const appStrings = defineStrings({
     // AI session / status bar
     appReadyInitial: '就绪——可使用本地确定性 AI 命令。',
     appAiThinking: 'AI 思考中…',
+    appAiDone: 'AI 已完成',
     appAiTurnLimit: '（已达单次请求的工具调用轮数上限，以上是基于已读取信息的回答，可能不完整。）',
     appAiStopped: '（已停止）',
     appAiNoSummary: 'AI 已完成，没有生成总结。',
@@ -1410,6 +1411,7 @@ export const appStrings = defineStrings({
       'The structure is saved, but the second phase (PivotTables/tables/defined names) failed: {reason}',
     appReadyInitial: 'Ready for a local, deterministic AI command.',
     appAiThinking: 'AI is thinking…',
+    appAiDone: 'AI finished',
     appAiTurnLimit:
       '(Reached the tool-call turn limit for this request; the answer above is based on what was read so far and may be incomplete.)',
     appAiStopped: '(stopped)',
@@ -2639,6 +2641,7 @@ export const appStrings = defineStrings({
     // AI session / status bar
     appReadyInitial: '準備完了 — ローカルの決定論的 AI コマンドを使用できます。',
     appAiThinking: 'AI が考えています…',
+    appAiDone: 'AI が完了しました',
     appAiTurnLimit:
       '（1 回のリクエストのツール呼び出し上限に達したため、ここまでに読み取った情報に基づく回答です。不完全な場合があります。）',
     appAiStopped: '（停止しました）',
@@ -3910,6 +3913,7 @@ export const appStrings = defineStrings({
     // AI session / status bar
     appReadyInitial: '준비 완료 — 로컬 결정적 AI 명령을 사용할 수 있습니다.',
     appAiThinking: 'AI가 생각하는 중…',
+    appAiDone: 'AI가 완료되었습니다',
     appAiTurnLimit:
       '(요청당 도구 호출 한도에 도달하여, 지금까지 읽은 정보를 기반으로 한 답변입니다. 불완전할 수 있습니다.)',
     appAiStopped: '(중지됨)',
@@ -5177,6 +5181,7 @@ export const appStrings = defineStrings({
       'La structure est enregistrée, mais la deuxième phase (tableaux croisés dynamiques/tableaux/noms définis) a échoué : {reason}',
     appReadyInitial: 'Prêt pour une commande IA locale et déterministe.',
     appAiThinking: "L'IA réfléchit…",
+    appAiDone: "L'IA a terminé",
     appAiTurnLimit:
       "(Limite de tours d'appels d'outils atteinte pour cette requête ; la réponse ci-dessus se base sur ce qui a été lu et peut être incomplète.)",
     appAiStopped: '(arrêté)',
@@ -6454,6 +6459,7 @@ export const appStrings = defineStrings({
       'Die Struktur ist gespeichert, aber die zweite Phase (PivotTables/Tabellen/definierte Namen) ist fehlgeschlagen: {reason}',
     appReadyInitial: 'Bereit für einen lokalen, deterministischen KI-Befehl.',
     appAiThinking: 'KI denkt nach…',
+    appAiDone: 'KI ist fertig',
     appAiTurnLimit:
       '(Limit der Toolaufruf-Runden für diese Anfrage erreicht; die Antwort oben basiert auf dem bisher Gelesenen und ist möglicherweise unvollständig.)',
     appAiStopped: '(gestoppt)',
@@ -7725,6 +7731,7 @@ export const appStrings = defineStrings({
       'La estructura está guardada, pero la segunda fase (tablas dinámicas/tablas/nombres definidos) falló: {reason}',
     appReadyInitial: 'Listo para un comando de IA local y determinista.',
     appAiThinking: 'La IA está pensando…',
+    appAiDone: 'La IA ha terminado',
     appAiTurnLimit:
       '(Se alcanzó el límite de rondas de llamadas a herramientas para esta solicitud; la respuesta anterior se basa en lo leído hasta ahora y puede estar incompleta.)',
     appAiStopped: '(detenido)',
@@ -8970,6 +8977,7 @@ export const appStrings = defineStrings({
       'โครงสร้างถูกบันทึกแล้ว แต่ช่วงที่สอง (PivotTable/ตาราง/ชื่อที่กำหนด) ล้มเหลว: {reason}',
     appReadyInitial: 'พร้อมสำหรับคำสั่ง AI แบบระบุแน่นอนที่ทำงานในเครื่อง',
     appAiThinking: 'AI กำลังคิด…',
+    appAiDone: 'AI เสร็จสิ้นแล้ว',
     appAiTurnLimit:
       '(ถึงขีดจำกัดรอบการเรียกเครื่องมือของคำขอนี้แล้ว คำตอบข้างต้นอิงจากข้อมูลที่อ่านมา อาจไม่สมบูรณ์)',
     appAiStopped: '(หยุดแล้ว)',
@@ -10175,6 +10183,7 @@ export const appStrings = defineStrings({
       'Struktur sudah tersimpan, tetapi fase kedua (PivotTable/tabel/nama yang ditentukan) gagal: {reason}',
     appReadyInitial: 'Siap untuk perintah AI lokal yang deterministik.',
     appAiThinking: 'AI sedang berpikir…',
+    appAiDone: 'AI selesai',
     appAiTurnLimit:
       '(Batas putaran panggilan alat untuk permintaan ini tercapai; jawaban di atas berdasarkan yang sudah dibaca dan mungkin tidak lengkap.)',
     appAiStopped: '(dihentikan)',
@@ -11408,6 +11417,7 @@ export const appStrings = defineStrings({
       'Структура сохранена, но вторая фаза (сводные таблицы/таблицы/определённые имена) не удалась: {reason}',
     appReadyInitial: 'Готов к локальной детерминированной команде ИИ.',
     appAiThinking: 'ИИ думает…',
+    appAiDone: 'ИИ завершил работу',
     appAiTurnLimit:
       '(Достигнут лимит раундов вызова инструментов для этого запроса; ответ выше основан на прочитанном и может быть неполным.)',
     appAiStopped: '(остановлено)',
@@ -12644,6 +12654,7 @@ export const appStrings = defineStrings({
       'حُفظت البنية لكن المرحلة الثانية (الجداول المحورية/الجداول/الأسماء المعرفة) فشلت: {reason}',
     appReadyInitial: 'جاهز لأوامر الذكاء الاصطناعي المحلية الحتمية.',
     appAiThinking: 'الذكاء الاصطناعي يفكّر…',
+    appAiDone: 'انتهى الذكاء الاصطناعي',
     appAiTurnLimit:
       '(تم بلوغ الحد الأقصى لجولات استدعاء الأدوات في هذا الطلب؛ الإجابة أعلاه تستند إلى ما قُرئ وقد تكون غير مكتملة.)',
     appAiStopped: '(تم الإيقاف)',
@@ -13862,6 +13873,7 @@ export const appStrings = defineStrings({
       'A estrutura foi salva, mas a segunda fase (Tabelas Dinâmicas/tabelas/nomes definidos) falhou: {reason}',
     appReadyInitial: 'Pronto para um comando de IA local e determinístico.',
     appAiThinking: 'A IA está pensando…',
+    appAiDone: 'A IA terminou',
     appAiTurnLimit:
       '(Limite de chamadas de ferramentas atingido para esta solicitação; a resposta acima se baseia no que foi lido até agora e pode estar incompleta.)',
     appAiStopped: '(interrompido)',
@@ -15121,6 +15133,7 @@ export const appStrings = defineStrings({
       'La struttura è salvata, ma la seconda fase (tabelle pivot/tabelle/nomi definiti) non è riuscita: {reason}',
     appReadyInitial: 'Pronto per un comando IA locale e deterministico.',
     appAiThinking: "L'IA sta pensando…",
+    appAiDone: "L'IA ha terminato",
     appAiTurnLimit:
       '(Raggiunto il limite di chiamate agli strumenti per questa richiesta; la risposta sopra si basa su quanto letto finora e potrebbe essere incompleta.)',
     appAiStopped: '(interrotto)',
@@ -16378,6 +16391,7 @@ export const appStrings = defineStrings({
       'Struktura została zapisana, ale druga faza (tabele przestawne/tabele/zdefiniowane nazwy) nie powiodła się: {reason}',
     appReadyInitial: 'Gotowe na lokalne, deterministyczne polecenie AI.',
     appAiThinking: 'AI myśli…',
+    appAiDone: 'AI zakończyła pracę',
     appAiTurnLimit:
       '(Osiągnięto limit rund wywołań narzędzi dla tego żądania; powyższa odpowiedź opiera się na dotychczas odczytanych informacjach i może być niekompletna.)',
     appAiStopped: '(zatrzymano)',
@@ -17630,6 +17644,7 @@ export const appStrings = defineStrings({
       'De structuur is opgeslagen, maar de tweede fase (draaitabellen/tabellen/gedefinieerde namen) is mislukt: {reason}',
     appReadyInitial: 'Gereed voor een lokale, deterministische AI-opdracht.',
     appAiThinking: 'AI denkt na…',
+    appAiDone: 'AI is klaar',
     appAiTurnLimit:
       '(Limiet voor toolaanroepen voor deze aanvraag bereikt; het bovenstaande antwoord is gebaseerd op wat tot nu toe is gelezen en kan onvolledig zijn.)',
     appAiStopped: '(gestopt)',
@@ -18882,6 +18897,7 @@ export const appStrings = defineStrings({
       'Struktur telah disimpan, tetapi fasa kedua (Jadual Pangsi/jadual/nama tertakrif) gagal: {reason}',
     appReadyInitial: 'Sedia untuk perintah AI setempat yang berketentuan.',
     appAiThinking: 'AI sedang berfikir…',
+    appAiDone: 'AI selesai',
     appAiTurnLimit:
       '(Had pusingan panggilan alat untuk permintaan ini telah dicapai; jawapan di atas berdasarkan maklumat yang dibaca setakat ini dan mungkin tidak lengkap.)',
     appAiStopped: '(dihentikan)',
@@ -20093,6 +20109,7 @@ export const appStrings = defineStrings({
     appSaveSecondFailed: 'המבנה נשמר, אך השלב השני (טבלאות ציר/טבלאות/שמות מוגדרים) נכשל: {reason}',
     appReadyInitial: 'מוכן לפקודת AI מקומית ודטרמיניסטית.',
     appAiThinking: 'ה-AI חושב…',
+    appAiDone: 'ה-AI סיים',
     appAiTurnLimit:
       '(הושגה מגבלת סבבי קריאות הכלים לבקשה זו; התשובה שלמעלה מבוססת על מה שנקרא עד כה ועשויה להיות חלקית.)',
     appAiStopped: '(הופסק)',
@@ -21293,6 +21310,7 @@ export const appStrings = defineStrings({
       'संरचना सहेजी गई, लेकिन दूसरा चरण (पिवट टेबल/तालिकाएँ/परिभाषित नाम) विफल रहा: {reason}',
     appReadyInitial: 'स्थानीय, नियतात्मक AI कमांड के लिए तैयार।',
     appAiThinking: 'AI सोच रहा है…',
+    appAiDone: 'AI पूर्ण हुआ',
     appAiTurnLimit:
       '(इस अनुरोध के लिए टूल-कॉल की सीमा पूरी हो गई; ऊपर का उत्तर अब तक पढ़ी गई जानकारी पर आधारित है और अधूरा हो सकता है।)',
     appAiStopped: '(रोका गया)',
@@ -22491,6 +22509,7 @@ export const appStrings = defineStrings({
     appSaveSecondFailed: '結構已儲存，但第二段（樞紐分析表/表格/已定義名稱）失敗：{reason}',
     appReadyInitial: '就緒——可使用本機確定性 AI 命令。',
     appAiThinking: 'AI 思考中…',
+    appAiDone: 'AI 已完成',
     appAiTurnLimit: '（已達單次要求的工具呼叫輪數上限，以上是根據已讀取資訊的回答，可能不完整。）',
     appAiStopped: '（已停止）',
     appAiNoSummary: 'AI 已完成，沒有產生摘要。',

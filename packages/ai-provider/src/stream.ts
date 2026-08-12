@@ -1,4 +1,5 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
+import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiProviderConfig, AiProviderId } from './types'
@@ -272,16 +273,16 @@ async function anthropicTurn(
   }
   let response: Response
   try {
-    response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/messages`, {
+    response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/v1/messages`, {
       method: 'POST',
       signal: wd.signal,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': config.apiKey,
         'anthropic-version': '2023-06-01',
-        // Fetch in the Electron main process goes through Chromium's network stack, which adds
-        // browser-semantics headers; Anthropic rejects those with 403 "Request not allowed". This
-        // header is the official opt-in for direct access from browser/Electron environments.
+        // Renderer fetches and the net.fetch rescue path go through Chromium's network stack,
+        // which adds browser-semantics headers; Anthropic rejects those with 403 "Request not
+        // allowed". This header is the official opt-in for browser/Electron environments.
         'anthropic-dangerous-direct-browser-access': 'true',
         ...gensparkAttributionHeaders(baseUrl),
       },
@@ -506,7 +507,7 @@ async function geminiTurn(
     cb.onActivity?.()
   }
   const url = `${baseUrl.replace(/\/$/, '')}/models/${config.model}:streamGenerateContent?alt=sse`
-  const response = await fetch(url, {
+  const response = await aiFetch(url, {
     method: 'POST',
     signal: wd.signal,
     headers: {
@@ -719,7 +720,7 @@ async function openAiCompatibleTurn(
     wd.touch()
     cb.onActivity?.()
   }
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     signal: wd.signal,
     headers: {

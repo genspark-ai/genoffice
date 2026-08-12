@@ -89,6 +89,24 @@
   box-sizing: border-box;
 }
 
+/* UI CJK fonts per language, same table as the docs/slides chrome
+ * (documentElement.lang is set at bootstrap and on switch) */
+:root {
+  --ui-cjk: 'PingFang SC', 'Microsoft YaHei';
+}
+
+:root:lang(ja) {
+  --ui-cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+}
+
+:root:lang(ko) {
+  --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+}
+
+:root:lang(zh-TW) {
+  --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+}
+
 html,
 body,
 #root {
@@ -97,11 +115,24 @@ body,
 }
 
 body {
+  /* same UI stack as the docs/slides chrome ('Segoe UI' first + per-language
+     CJK token) so shared toolbar controls measure identically across apps */
   font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', sans-serif;
+    'Segoe UI',
+    -apple-system,
+    BlinkMacSystemFont,
+    var(--ui-cjk),
+    sans-serif;
   color: var(--text);
   background: var(--surface-subtle);
+  /* grayscale AA like the docs/sheets/slides/pdf chrome — macOS subpixel
+     rendering paints the same weight visibly heavier */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* buttons follow the chrome font instead of the UA default, like docs */
+button {
+  font-family: inherit;
 }
 
 .app {
@@ -312,6 +343,10 @@ body {
   align-items: center;
   gap: 2px;
   padding: 5px 10px 0;
+  /* docs/slides size this row with their menu tabs (13px semibold labels,
+     7/6 padding + 2.5px underline ⇒ 39px measured); markdown has no menu
+     tabs, so pin the row so the toolbar bottom edge lines up across tabs */
+  min-height: 39px;
   -webkit-app-region: drag;
 }
 
@@ -323,17 +358,26 @@ body {
 /* the toolbar row below the QAT row (old single-row ribbon) */
 .ribbon-body {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  flex-wrap: wrap;
+  /* stretch like the docs ribbon: groups fill the band and the tall AI
+     buttons top-align at the same size/position as docs */
+  align-items: stretch;
+  /* band metrics shared with the docs/slides/pdf ribbons; no row gap — groups
+     own their spacing (2px 4px padding) exactly like the docs/slides ribbons */
+  padding: 6px 12px;
+  /* HARD-fixed height like the other editors' ribbons, so switching shell tabs
+     never shifts the toolbar's bottom edge (no wrap-driven growth) */
+  height: 80px;
+  /* groups never shrink, so a narrow window scrolls the row inside the ribbon
+     instead of spilling controls out of reach (matching the docs ribbon). The
+     .rb-link-pop dropdown is position: fixed + anchor-positioned, so this
+     clip cannot cut it off */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 
-.rb-group {
-  display: flex;
-  align-items: center;
-  /* 3px inline gap, same as the docs/sheets inline tool rows */
-  gap: 3px;
+.ribbon-body::-webkit-scrollbar {
+  display: none;
 }
 
 .rb-sep {
@@ -341,7 +385,8 @@ body {
   flex-shrink: 0;
   align-self: stretch;
   background: var(--border);
-  margin: 6px;
+  /* 2px matches the groups' vertical padding — same inset as docs/slides */
+  margin: 2px 6px;
 }
 
 .rb-spacer {
@@ -422,22 +467,25 @@ body {
 
 .autosave-text {
   font-size: 11px;
-  color: var(--text-muted);
+  /* same ink as the docs/slides autosave label */
+  color: var(--text-dim);
   white-space: nowrap;
 }
 
-/* 28×30 inline box + suite-wide toolbar states (ink/hover/neutral selected
- * plate, no brand color) — same as the docs/sheets/slides/pdf toolbars */
+/* inline toolbar button + suite-wide states (ink/hover/neutral selected
+ * plate, no brand color) — same metrics as the docs/slides .rb-icon
+ * (28px min box, 30px tall, 3px radius, 15px letterform glyphs) */
 .rb-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  min-width: 28px;
   height: 30px;
-  /* kill the UA button padding — it squeezes the 20px svg flex item */
-  padding: 0;
+  padding: 0 4px;
+  white-space: nowrap;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
+  font-size: 15px;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
@@ -464,6 +512,8 @@ body {
   flex-direction: column;
   justify-content: center;
   padding: 2px 4px;
+  /* groups never shrink below content, same as the docs/slides ribbons */
+  flex-shrink: 0;
 }
 
 .ribbon-group-items {
@@ -495,6 +545,11 @@ body {
   align-items: center;
   justify-content: center;
   color: var(--text-primary);
+  /* same icon-row box as docs: full button width with horizontal bleed */
+  align-self: stretch;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin: 0 -4px;
 }
 
 .rb-big:disabled {
@@ -527,37 +582,41 @@ body {
 }
 
 /* typographic letterform glyphs (B/I/U/S): 15px/600 like the docs inline row */
-.rb-glyph {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1;
-}
-
 .rb-mono {
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 11.5px;
 }
 
+/* block-style picker: same box as the docs/slides font pickers (.rb-font-btn:
+ * 28px tall, 3px radius, 13px label, 7px inline padding, strong border) */
 .rb-style {
   height: 28px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--surface);
   color: var(--text-primary);
   font-size: 13px;
-  padding: 0 6px;
+  padding: 0 7px;
   min-width: 108px;
 }
 
+/* Anchor for the link popover, which is position: fixed so it escapes the
+   ribbon-body scroll clip while tracking its trigger (same pattern as the
+   docs ribbon dropdowns) */
 .rb-link-anchor {
   position: relative;
   display: inline-flex;
+  anchor-name: --rb-link-anchor;
+  anchor-scope: --rb-link-anchor;
 }
 
 .rb-link-pop {
-  position: absolute;
-  top: 32px;
-  left: 0;
+  position: fixed;
+  position-anchor: --rb-link-anchor;
+  top: calc(anchor(bottom) + 2px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
   z-index: 30;
   display: flex;
   gap: 6px;
@@ -1614,8 +1673,8 @@ body {
     box-shadow var(--transition-fast);
 }
 
-/* textarea: 15px / 21px fixed line-height, auto-grow band
- * (resting height matches the other AI panels, 25% taller than default) */
+/* textarea: 16px / 24px fixed line-height, same text spec as the slides
+ * composer; auto-grow band (resting height matches the other AI panels) */
 .ai-input-box textarea {
   display: block;
   width: 100%;
@@ -1624,10 +1683,9 @@ body {
   background: none;
   border-radius: var(--radius-16) var(--radius-16) 0 0;
   padding: 12px 14px 4px;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 16px;
   font-family: inherit;
-  line-height: 21px;
+  line-height: 24px;
   outline: none;
   color: var(--color-text-primary);
   min-height: 64px;

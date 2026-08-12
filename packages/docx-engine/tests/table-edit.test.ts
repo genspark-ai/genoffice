@@ -301,20 +301,20 @@ describe('cell paragraph properties survive a table rebuild', () => {
     expect(out).toContain('<w:shd w:val="clear" w:color="auto" w:fill="DDEEFF"/>')
   })
 
-  it('still falls back to the cell alignment for a paragraph that declared none', async () => {
-    // control: this case is unchanged from before, and passes with or without the fix
+  it("does not stamp another paragraph's alignment onto one that declared none", async () => {
+    // mixed jc: no cell-level alignment, and the jc-less paragraph must stay that way
     const out = await rebuild(
       '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
         '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
         '<w:p><w:r><w:t>b</w:t></w:r></w:p>' +
         '</w:tc></w:tr></w:tbl>',
     )
-    expect(out.match(/<w:jc w:val="center"\/>/g)).toHaveLength(2)
+    expect(out.match(/<w:jc w:val="center"\/>/g)).toHaveLength(1)
+    const second = out.slice(out.lastIndexOf('<w:p>'))
+    expect(second).not.toContain('<w:jc ')
   })
 
-  it('keeps a direction-neutral cell alignment on a bidi paragraph', async () => {
-    // only left/right are swapped between logical and visual, so centre and justify are safe
-    // to take from the cell even when the paragraph is RTL
+  it('keeps a bidi paragraph free of alignment it never declared', async () => {
     const out = await rebuild(
       '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
         '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
@@ -323,6 +323,33 @@ describe('cell paragraph properties survive a table rebuild', () => {
     )
     const second = out.slice(out.lastIndexOf('<w:p>'))
     expect(second).toContain('<w:bidi/>')
-    expect(second).toContain('<w:jc w:val="center"/>')
+    expect(second).not.toContain('<w:jc ')
+  })
+
+  it("writes every paragraph's jc back when they all agree (cell.align set)", async () => {
+    const out = await rebuild(
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>b</w:t></w:r></w:p>' +
+        '</w:tc></w:tr></w:tbl>',
+    )
+    expect(out.match(/<w:jc w:val="center"\/>/g)).toHaveLength(2)
+  })
+})
+
+describe('trailing empty cell paragraph size survives regeneration', () => {
+  it('writes the empty paragraph and its w:sz back', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc>' +
+          '<w:p><w:r><w:t>内容</w:t></w:r></w:p>' +
+          '<w:p><w:pPr><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>' +
+          '</w:tc></w:tr></w:tbl>',
+      }),
+    )
+    const out = generateTableModelXml(doc.blocks[0].table!)
+    expect(out.match(/<w:p[\s>]|<w:p\/>/g)).toHaveLength(2)
+    expect(out).toContain('<w:pPr><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>')
   })
 })

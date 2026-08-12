@@ -735,6 +735,26 @@ describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
     expect(slices[1].start).toBe(110)
   })
 
+  it('first table row never splits: pushed whole to the next page even with cutYs', () => {
+    // 80px block, then a table whose first row (100px, cuts 40/70) exceeds the 40px remainder
+    const rows: TableRowBox[] = [{ height: 100, cutYs: [40, 70] }, { height: 20 }]
+    const table = makeTableBlock(80, rows)
+    const slices = computeSectionedSlicesF2(
+      [block(0, 80), table],
+      [{ contentHeight: 120, forceBreak: false }],
+      200,
+    )
+    // no in-row cut at 120: the whole table starts page 2
+    expect(slices.map((s) => s.start)).toEqual([0, 80])
+  })
+
+  it('first row taller than an empty page still splits at cutYs', () => {
+    const rows: TableRowBox[] = [{ height: 300, cutYs: [100, 200] }]
+    const b = makeTableBlock(0, rows)
+    const slices = computeSectionedSlicesF2([b], [{ contentHeight: 120, forceBreak: false }], 300)
+    expect(slices.map((s) => s.start)).toEqual([0, 100, 200])
+  })
+
   it('cantSplit row ignores cutYs and stays atomic', () => {
     const rows: TableRowBox[] = [{ height: 50 }, { height: 200, cutYs: [60, 120], cantSplit: true }]
     const b = makeTableBlock(0, rows)

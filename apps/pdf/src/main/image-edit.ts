@@ -328,11 +328,18 @@ export function listPageImages(bytes: Uint8Array): Promise<PageImageRef[]> {
   })
 }
 
-/** Render one existing image object to PNG (base64) for the renderer's ghost preview */
+/** Longest raster side (px) an upscaled render may reach; keeps bitmap memory bounded */
+const RENDER_MAX_PX = 2400
+
+/** Render one existing image object to PNG (base64) for the renderer's ghost preview.
+    GetRenderedBitmap rasterizes at the object's on-page size (~1px per pt), so pixel
+    edits pass scale > 1: the object matrix is enlarged before rendering (in-memory
+    document only — nothing is written back) to keep the baked source sharp. */
 export function renderImagePng(
   bytes: Uint8Array,
   pageIndex: number,
   rect: Rect,
+  scale = 1,
 ): Promise<string | null> {
   return chainPdfium(async () => {
     const m = await loadPdfium()
@@ -342,6 +349,12 @@ export function renderImagePng(
       try {
         const target = matchImage(collectObjects(m, page), rect)
         if (!target) return null
+        const side = Math.max(
+          target.bounds[2] - target.bounds[0],
+          target.bounds[3] - target.bounds[1],
+        )
+        const k = Math.min(Math.max(1, scale), side > 0 ? RENDER_MAX_PX / side : 1)
+        if (k > 1) m._FPDFPageObj_Transform(target.obj, k, 0, 0, k, 0, 0)
         const bmp = m._FPDFImageObj_GetRenderedBitmap(doc, page, target.obj)
         if (!bmp) return null
         try {
@@ -379,7 +392,7 @@ export function renderPagePreviewPng(
   bytes: Uint8Array,
   request: Omit<PagePreviewRequest, 'path'>,
 ): Promise<string | null> {
-  const { pageIndex, excludeRects, clip, pxWidth, rotate } = request
+  const { pageIndex, excludeRects, excludeAnnots, clip, pxWidth, rotate } = request
   return chainPdfium(async () => {
     const m = await loadPdfium()
     return withDocument(m, bytes, async (doc) => {
@@ -391,6 +404,10 @@ export function renderPagePreviewPng(
           if (target && m._FPDFPage_RemoveObject(page, target.obj)) {
             m._FPDFPageObj_Destroy(target.obj)
           }
+        }
+        if (excludeAnnots && excludeAnnots.length > 0) {
+          const { removeMatchingAnnots } = await import('./annot-delete')
+          removeMatchingAnnots(m, page, excludeAnnots)
         }
         // Page size in display orientation (pdfium already applies /Rotate; the
         // unsaved delta passed as quarter turns swaps the axes again when odd)
@@ -411,6 +428,9 @@ export function renderPagePreviewPng(
         }
         try {
           m._FPDFBitmap_FillRect(bmp, 0, 0, w, h, 0xffffffff)
+          // With annots excluded the clip must keep drawing the surviving annotations
+          // (FPDF_ANNOT); image-only previews keep the historical annotation-free render
+          const flags = excludeAnnots && excludeAnnots.length > 0 ? 1 /* FPDF_ANNOT */ : 0
           m._FPDF_RenderPageBitmap(
             bmp,
             page,
@@ -419,7 +439,7 @@ export function renderPagePreviewPng(
             Math.round(dispW * k),
             Math.round(dispH * k),
             turns,
-            0,
+            flags,
           )
           const tight = Buffer.from(m.HEAPU8.subarray(bufPtr, bufPtr + w * h * 4))
           const png = nativeImage.createFromBitmap(tight, { width: w, height: h }).toPNG()

@@ -8,13 +8,12 @@ function renderTable(model: TableModel): HTMLElement {
   return dom as HTMLElement
 }
 
-/** innerText equivalent (<br> → \n); jsdom does not implement innerText */
+/** innerText equivalent (paragraph divs → one line each); jsdom does not implement innerText */
 function cellText(td: Element): string {
-  let out = ''
-  td.childNodes.forEach((n) => {
-    out += n.nodeName === 'BR' ? '\n' : (n.textContent ?? '')
-  })
-  return out
+  return Array.from(td.children)
+    .filter((c) => c.tagName === 'DIV')
+    .map((c) => c.textContent ?? '')
+    .join('\n')
 }
 
 const cell = (paras: string[], richParas?: TableModel['rows'][0][0]['richParas']) => ({
@@ -75,9 +74,12 @@ describe('renderTableSpec rich cell content', () => {
     expect(cellText(td)).toBe('x\ny')
   })
 
-  it('keeps the nbsp placeholder for cells whose richParas hold no text', () => {
+  it('renders one empty line box for cells whose richParas hold no text', () => {
     const td = renderTable({ rows: [[cell([''], [{ runs: [] }])]] }).querySelector('td')!
-    expect(td.textContent).toBe('\u00a0')
+    const paras = td.querySelectorAll(':scope > div')
+    expect(paras).toHaveLength(1)
+    expect(paras[0].classList.contains('doc-p-empty')).toBe(true)
+    expect(paras[0].querySelector('br')).not.toBeNull()
   })
 
   it('leads with the cs font chain for complex-script run text', () => {
@@ -126,5 +128,96 @@ describe('renderTableSpec rich cell content', () => {
     expect(tdStyle).toMatch(/color:\s*(#112233|rgb\(17,\s*34,\s*51\))/i)
     expect(tdStyle).toMatch(/font-weight:\s*600/)
     expect(td.querySelector('span')!.getAttribute('style')).toBeNull()
+  })
+})
+
+// jsdom's CSSOM drops min()/round() values on cssText assignment, so the
+// paragraph line-box styles are asserted on the raw spec
+type Spec = [string, Record<string, string>, ...unknown[]]
+const isSpec = (x: unknown): x is Spec => Array.isArray(x) && typeof x[0] === 'string'
+function findSpecs(spec: unknown, tag: string): Spec[] {
+  if (!isSpec(spec)) return []
+  const rest = spec.slice(2).flatMap((c) => findSpecs(c, tag))
+  return spec[0] === tag ? [spec, ...rest] : rest
+}
+const paraStyles = (model: TableModel): string[] =>
+  findSpecs(renderTableSpec(model), 'div').map((d) => d[1].style ?? '')
+
+const SINGLE_LH =
+  'line-height:round(up, calc(var(--doc-line-factor,1.2) * 1em), var(--doc-grid-pitch,0.0001px))'
+
+describe('renderTableSpec paragraph line box', () => {
+  it('gives each paragraph a run-size strut and its own single-spacing line height', () => {
+    const [style] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['tiny'],
+            [
+              {
+                runs: [
+                  { text: 'ti', sizeHalfPoints: 14 },
+                  { text: 'ny', sizeHalfPoints: 12 },
+                ],
+                lineRule: 'auto',
+                lineRawTwips: 240,
+              },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(style).toContain('--doc-strut:7pt')
+    expect(style).toContain('font-size:min(var(--doc-strut), 1em)')
+    expect(style).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
+    // explicit w:line=240 (single): re-evaluated at the paragraph's own strut size
+    expect(style).toContain(SINGLE_LH)
+  })
+
+  it('keeps the inherited strut when any run omits its size', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['ab'], [{ runs: [{ text: 'a', sizeHalfPoints: 14 }, { text: 'b' }] }])]],
+    })
+    expect(style).not.toContain('--doc-strut')
+    expect(style).toContain(SINGLE_LH)
+  })
+
+  it('restores exact line rule and explicit paragraph spacing', () => {
+    const [style] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['x'],
+            [
+              {
+                runs: [{ text: 'x' }],
+                lineRule: 'exact',
+                lineRawTwips: 200,
+                spaceBefore: 80,
+                spaceAfter: 20,
+              },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(style).toContain('line-height:10.0pt')
+    expect(style).toContain('margin-top:round(down, 4.0pt,')
+    expect(style).toContain('margin-bottom:round(down, 1.0pt,')
+  })
+
+  it('declared CJK run fonts drive the paragraph line factor', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['宋体字'], [{ runs: [{ text: '宋体字', font: 'SimSun' }] }])]],
+    })
+    expect(style).toContain('--doc-line-factor:1.7')
+  })
+
+  it('plain-paras cells get script-based line factors per paragraph', () => {
+    const styles = paraStyles({ rows: [[cell(['中文', 'latin'])]] })
+    expect(styles).toHaveLength(2)
+    expect(styles[0]).toContain('--doc-line-factor:var(--doc-line-factor-cjk,1.7)')
+    expect(styles[1]).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
+    expect(styles[1]).toContain(SINGLE_LH)
   })
 })

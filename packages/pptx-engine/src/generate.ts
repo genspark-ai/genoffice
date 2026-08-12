@@ -499,17 +499,19 @@ function patchRunFont(runXml: string, family: string): string {
   // silently doing nothing: a payload's own closing tag can truncate the slice this is given
   if (!rPr) return patchRunFontUnscannable(runXml, esc)
   const el = runXml.slice(rPr.start, rPr.end)
-  const rPrOpen = /^<a:rPr\b(?:"[^"]*"|'[^']*'|[^"'>])*?>/.exec(el)?.[0]
-  // Self-closing rPr → expand to a pair around the slots
-  if (!rPrOpen) {
-    const attrs = /^<a:rPr\b((?:"[^"]*"|'[^']*'|[^"'>])*?)\/>$/.exec(el)?.[1]
-    if (attrs === undefined) return patchRunFontUnscannable(runXml, esc)
+  // Self-closing rPr → expand to a pair around the slots. Checked before the open-tag match:
+  // that pattern's [^"'>] accepts '/', so it would swallow a self-closing tag whole and this
+  // branch could never run.
+  const selfAttrs = /^<a:rPr\b((?:"[^"]*"|'[^']*'|[^"'>])*?)\/>$/.exec(el)?.[1]
+  if (selfAttrs !== undefined) {
     return (
       runXml.slice(0, rPr.start) +
-      `<a:rPr${attrs}>${fontSlotsXml(esc)}</a:rPr>` +
+      `<a:rPr${selfAttrs}>${fontSlotsXml(esc)}</a:rPr>` +
       runXml.slice(rPr.end)
     )
   }
+  const rPrOpen = /^<a:rPr\b(?:"[^"]*"|'[^']*'|[^"'>])*?>/.exec(el)?.[0]
+  if (!rPrOpen) return patchRunFontUnscannable(runXml, esc)
   const innerStart = rPr.start + rPrOpen.length
   // the closing tag's own start, since a valid one may carry whitespace before its '>'
   const innerEnd = rPr.start + el.lastIndexOf('</')

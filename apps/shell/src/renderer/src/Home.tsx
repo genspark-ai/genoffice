@@ -120,6 +120,29 @@ const FILTERS: { key: string; label: StringKey }[] = [
   { key: 'md', label: 'filterMd' },
 ]
 
+/** Check glyph marking the selected sort option; invisible on the others so labels stay aligned */
+function SortCheck({ visible }: { visible: boolean }): ReactElement {
+  return (
+    <svg
+      className="cloud-sort-check"
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      style={visible ? undefined : { visibility: 'hidden' }}
+    >
+      <path
+        d="M3 8.5L6.5 12L13 4.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 // ── Project sidebar component ────────────────────────────
 
 interface ProjectPanelProps {
@@ -750,43 +773,19 @@ function CloudProjectsView() {
   if (sort === 'oldest') list = [...list].reverse()
   const visible = list.slice(0, revealed)
 
-  /** time-bucket header: this week → earlier this month → month → month + year */
-  const groupLabel = (ctimeMs: number): string => {
-    if (!ctimeMs) return ''
-    const now = Date.now()
-    if (now - ctimeMs < 7 * 86_400_000 && ctimeMs < now + 86_400_000) {
-      return t('cloudGroupThisWeek')
-    }
-    const d = new Date(ctimeMs)
-    const n = new Date()
-    if (d.getFullYear() === n.getFullYear()) {
-      if (d.getMonth() === n.getMonth()) return t('cloudGroupThisMonth')
-      return new Intl.DateTimeFormat(i18n.dateLocale, { month: 'long' }).format(d)
-    }
-    return new Intl.DateTimeFormat(i18n.dateLocale, { year: 'numeric', month: 'long' }).format(d)
-  }
-
   const renderRows = () => {
     const items: ReactElement[] = []
-    let prevLabel = ''
     for (const proj of visible) {
-      const label = groupLabel(proj.ctimeMs)
-      if (label && label !== prevLabel) {
-        prevLabel = label
-        items.push(
-          <li key={`group-${label}`} className="cloud-group-label" aria-hidden="true">
-            {label}
-          </li>,
-        )
-      }
       items.push(
         <li key={proj.projectId}>
           <button
             className="cloud-row"
             data-tip={t('cloudOpenInBrowser')}
+            data-tip-anchor=".cloud-row-external"
+            data-tip-place="right"
             onClick={() => openProject(proj.projectUrl)}
           >
-            <FileBadge ext={CLOUD_KIND_EXT[proj.kind] ?? ''} size={22} />
+            <FileBadge ext={CLOUD_KIND_EXT[proj.kind] ?? ''} size={24} />
             <span className="cloud-row-main">
               <span className="cloud-row-title">{proj.title || t('untitled')}</span>
               <svg
@@ -855,7 +854,58 @@ function CloudProjectsView() {
     }
     return (
       <div className="cloud-scroll">
-        <ul className="cloud-list">{renderRows()}</ul>
+        <div className="cloud-table">
+          <div className="cloud-columns">
+            <span className="col-name">{t('colName')}</span>
+            <div className="cloud-col-sort" ref={sortRef}>
+              <button
+                className="cloud-col-sort-btn"
+                aria-haspopup="menu"
+                aria-expanded={sortMenuOpen}
+                onClick={() => setSortMenuOpen((o) => !o)}
+              >
+                {t('colModified')}
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                  style={sort === 'oldest' ? { transform: 'rotate(180deg)' } : undefined}
+                >
+                  <path
+                    d="M8 3v10M4.5 9.5L8 13l3.5-3.5"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              {sortMenuOpen && (
+                <div className="cloud-sort-menu" role="menu">
+                  {(['recent', 'oldest'] as const).map((key) => (
+                    <button
+                      key={key}
+                      className={sort === key ? 'active' : ''}
+                      role="menuitemradio"
+                      aria-checked={sort === key}
+                      onClick={() => {
+                        setSort(key)
+                        setSortMenuOpen(false)
+                        setRevealed(CLOUD_REVEAL_STEP)
+                      }}
+                    >
+                      <SortCheck visible={sort === key} />
+                      {t(key === 'recent' ? 'cloudSortRecent' : 'cloudSortOldest')}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <ul className="cloud-list">{renderRows()}</ul>
+        </div>
         {list.length > revealed && (
           <div className="load-more">
             <button
@@ -870,82 +920,46 @@ function CloudProjectsView() {
     )
   }
 
-  const sortValueKey = sort === 'recent' ? 'cloudSortRecent' : 'cloudSortOldest'
   return (
     <main className="content">
       <section className="cloud-projects" aria-label={t('navCloud')}>
         <header className="cloud-hero">
           <div className="cloud-hero-top">
-            <h1 className="cloud-title">
-              {t('navCloud')}
-              <span className="cloud-chip">
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M4 12L12 4M6 3.5h6.5V10"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                {t('cloudOpenInBrowser')}
-              </span>
-            </h1>
-            {snapshot?.available && (
-              <div className="cloud-actions">
-                <button
-                  className={`cloud-refresh-btn${syncing ? ' syncing' : ''}`}
-                  data-tip={t('cloudRefresh')}
-                  aria-label={t('cloudRefresh')}
-                  disabled={syncing}
-                  onClick={() => startSync()}
-                >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M13.6 8a5.6 5.6 0 1 1-1.64-3.96M13.6 2.4v3.2h-3.2"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-                <div className="cloud-sort" ref={sortRef}>
-                  <button className="cloud-sort-btn" onClick={() => setSortMenuOpen((o) => !o)}>
-                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path
-                        d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    {t('cloudSortLabel', { v: t(sortValueKey) })}
-                  </button>
-                  {sortMenuOpen && (
-                    <div className="cloud-sort-menu" role="menu">
-                      {(['recent', 'oldest'] as const).map((key) => (
-                        <button
-                          key={key}
-                          className={sort === key ? 'active' : ''}
-                          onClick={() => {
-                            setSort(key)
-                            setSortMenuOpen(false)
-                            setRevealed(CLOUD_REVEAL_STEP)
-                          }}
-                        >
-                          {t(key === 'recent' ? 'cloudSortRecent' : 'cloudSortOldest')}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <h1 className="cloud-title">{t('navCloud')}</h1>
           </div>
           <p className="cloud-subtitle">{t('cloudSubtitle')}</p>
           {snapshot?.available && (
             <div className="cloud-controls">
+              <div className="cloud-seg" role="tablist" aria-label={t('filterAria')}>
+                {CLOUD_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    className={kind === f.key ? 'active' : ''}
+                    role="tab"
+                    aria-selected={kind === f.key}
+                    onClick={() => changeKind(f.key)}
+                  >
+                    {t(f.label)}
+                  </button>
+                ))}
+              </div>
+              <button
+                className={`cloud-refresh-btn${syncing ? ' syncing' : ''}`}
+                data-tip={t('cloudRefresh')}
+                aria-label={t('cloudRefresh')}
+                disabled={syncing}
+                onClick={() => startSync()}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M13.6 8a5.6 5.6 0 1 1-1.64-3.96M13.6 2.4v3.2h-3.2"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
               <div className="cloud-search">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <circle cx="7" cy="7" r="4.6" stroke="currentColor" strokeWidth="1.4" />
@@ -964,19 +978,6 @@ function CloudProjectsView() {
                     setRevealed(CLOUD_REVEAL_STEP)
                   }}
                 />
-              </div>
-              <div className="cloud-seg" role="tablist" aria-label={t('filterAria')}>
-                {CLOUD_FILTERS.map((f) => (
-                  <button
-                    key={f.key}
-                    className={kind === f.key ? 'active' : ''}
-                    role="tab"
-                    aria-selected={kind === f.key}
-                    onClick={() => changeKind(f.key)}
-                  >
-                    {t(f.label)}
-                  </button>
-                ))}
               </div>
             </div>
           )}
@@ -1003,6 +1004,10 @@ export function Home() {
   // Genspark web projects take over the content area (like a selected project)
   const [cloudMode, setCloudMode] = useState(false)
   const [filter, setFilter] = useState('all')
+  // modified-column sort (WPS-style header popover), shared by the global and project tables
+  const [fileSort, setFileSort] = useState<'recent' | 'oldest'>('recent')
+  const [fileSortMenuOpen, setFileSortMenuOpen] = useState(false)
+  const fileSortRef = useRef<HTMLDivElement>(null)
   const [rowMenu, setRowMenu] = useState<string | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)
@@ -1092,6 +1097,15 @@ export function Home() {
 
   const hasMore = entries.length < listTotal
 
+  useEffect(() => {
+    if (!fileSortMenuOpen) return
+    const handler = (e: PointerEvent) => {
+      if (!fileSortRef.current?.contains(e.target as Node)) setFileSortMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', handler)
+    return () => window.removeEventListener('pointerdown', handler)
+  }, [fileSortMenuOpen])
+
   const loadMore = () => {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
@@ -1107,6 +1121,12 @@ export function Home() {
   }
   const loadMoreRef = useRef(loadMore)
   loadMoreRef.current = loadMore
+
+  // oldest-first over a partially loaded list would miss the tail pages —
+  // keep pulling until the list is complete (backend caps recents at 100)
+  useEffect(() => {
+    if (fileSort === 'oldest' && hasMore) loadMoreRef.current()
+  }, [fileSort, hasMore, entries.length])
 
   // Load the next page once the bottom sentinel enters the viewport (240px early);
   // depending on entries.length rebuilds the observer after each page — observe fires an immediate
@@ -1235,6 +1255,55 @@ export function Home() {
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [bulkMoveMenu])
+
+  // WPS-style sortable "modified" column header, shared by both file tables
+  const renderModifiedHeader = () => (
+    <div className="cloud-col-sort" ref={fileSortRef}>
+      <button
+        className="cloud-col-sort-btn"
+        aria-haspopup="menu"
+        aria-expanded={fileSortMenuOpen}
+        onClick={() => setFileSortMenuOpen((o) => !o)}
+      >
+        {t('colModified')}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+          style={fileSort === 'oldest' ? { transform: 'rotate(180deg)' } : undefined}
+        >
+          <path
+            d="M8 3v10M4.5 9.5L8 13l3.5-3.5"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {fileSortMenuOpen && (
+        <div className="cloud-sort-menu" role="menu">
+          {(['recent', 'oldest'] as const).map((key) => (
+            <button
+              key={key}
+              className={fileSort === key ? 'active' : ''}
+              role="menuitemradio"
+              aria-checked={fileSort === key}
+              onClick={() => {
+                setFileSort(key)
+                setFileSortMenuOpen(false)
+              }}
+            >
+              <SortCheck visible={fileSort === key} />
+              {t(key === 'recent' ? 'cloudSortRecent' : 'cloudSortOldest')}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 
   // ── Plain view (no project selected): filtering runs in the main process; entries is the visible list ──
   const selectedPaths = entries.filter((e) => selected.has(e.path)).map((e) => e.path)
@@ -1723,13 +1792,16 @@ export function Home() {
                 </span>
                 <span className="col-name">{t('colName')}</span>
                 <span>{t('colLocation')}</span>
-                <span>{t('colModified')}</span>
+                {renderModifiedHeader()}
                 <span className="col-size">{t('colSize')}</span>
                 <span />
                 <span />
               </div>
               <ul className="recent-list">
-                {projectFileEntries.map((entry) => renderFileRow(entry, 'project'))}
+                {(fileSort === 'oldest'
+                  ? [...projectFileEntries].reverse()
+                  : projectFileEntries
+                ).map((entry) => renderFileRow(entry, 'project'))}
               </ul>
             </div>
           )}
@@ -1770,12 +1842,6 @@ export function Home() {
           aria-label={view === 'recent' ? t('secRecent') : t('secStarred')}
         >
           <div className="recents-toolbar">
-            <div className="recents-heading">
-              <span className="section-label">
-                {view === 'recent' ? t('secRecent') : t('secStarred')}
-              </span>
-              <span className="file-count">{t(fileCountKey(listTotal), { n: listTotal })}</span>
-            </div>
             {selectedPaths.length > 0 ? (
               <div className="selection-bar">
                 <span className="selection-count">
@@ -1807,6 +1873,12 @@ export function Home() {
                 ))}
               </div>
             )}
+            <div className="recents-heading">
+              <span className="section-label">
+                {view === 'recent' ? t('secRecent') : t('secStarred')}
+              </span>
+              <span className="file-count">{t(fileCountKey(listTotal), { n: listTotal })}</span>
+            </div>
           </div>
 
           {entries.length === 0 ? (
@@ -1851,13 +1923,15 @@ export function Home() {
                 </span>
                 <span className="col-name">{t('colName')}</span>
                 <span>{t('colLocation')}</span>
-                <span>{t('colModified')}</span>
+                {renderModifiedHeader()}
                 <span className="col-size">{t('colSize')}</span>
                 <span />
                 <span />
               </div>
               <ul className="recent-list">
-                {entries.map((entry) => renderFileRow(entry, 'global'))}
+                {(fileSort === 'oldest' ? [...entries].reverse() : entries).map((entry) =>
+                  renderFileRow(entry, 'global'),
+                )}
               </ul>
               {hasMore && (
                 <div ref={sentinelRef} className="load-more" aria-hidden="true">

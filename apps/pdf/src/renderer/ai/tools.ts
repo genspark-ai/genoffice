@@ -17,6 +17,7 @@ import type {
 import { groupPageBlocks } from '../text-block'
 import { joinBlockLines, measurePt, wrapText } from '../text-wrap'
 import { t } from '../i18n/locale'
+import { buildFormCatalog } from '../form-catalog'
 
 /** Text cap per read_pages fed back to the model (the payload is resent in full each turn, so volume must be limited) */
 const READ_CHUNK_CHARS = 24_000
@@ -1141,51 +1142,20 @@ async function deleteImageTool(
   }
 }
 
-interface RawWidget {
-  subtype?: string
-  fieldType?: string
-  fieldName?: string
-  fieldValue?: unknown
-  buttonValue?: string
-  readOnly?: boolean
-  checkBox?: boolean
-  radioButton?: boolean
-  options?: { exportValue?: unknown; displayValue?: unknown }[]
-}
-
 /** Whole-document form field inventory (radios aggregate exportValue lists by field name) */
 async function collectFields(
   doc: PDFDocumentProxy,
 ): Promise<Map<string, { kind: string; page: number; value: string; options: string[] }>> {
+  const catalog = await buildFormCatalog(doc)
   const fields = new Map<string, { kind: string; page: number; value: string; options: string[] }>()
-  for (let n = 1; n <= doc.numPages; n++) {
-    const page = await doc.getPage(n)
-    const annots = (await page.getAnnotations()) as RawWidget[]
-    for (const a of annots) {
-      if (a.subtype !== 'Widget' || !a.fieldName || a.readOnly) continue
-      const value = Array.isArray(a.fieldValue)
-        ? String(a.fieldValue[0] ?? '')
-        : String(a.fieldValue ?? '')
-      if (a.fieldType === 'Tx') {
-        fields.set(a.fieldName, { kind: 'text', page: n, value, options: [] })
-      } else if (a.fieldType === 'Btn' && a.checkBox) {
-        fields.set(a.fieldName, { kind: 'checkbox', page: n, value, options: [] })
-      } else if (a.fieldType === 'Btn' && a.radioButton) {
-        const cur = fields.get(a.fieldName) ?? { kind: 'radio', page: n, value, options: [] }
-        if (typeof a.buttonValue === 'string' && !cur.options.includes(a.buttonValue))
-          cur.options.push(a.buttonValue)
-        fields.set(a.fieldName, cur)
-      } else if (a.fieldType === 'Ch') {
-        fields.set(a.fieldName, {
-          kind: 'choice',
-          page: n,
-          value,
-          options: (a.options ?? [])
-            .map((o) => String(o.exportValue ?? o.displayValue ?? ''))
-            .filter(Boolean),
-        })
-      }
-    }
+  for (const field of catalog.fields.values()) {
+    if (field.readOnly || field.kind === 'signature') continue
+    fields.set(field.name, {
+      kind: field.kind,
+      page: field.pageIndex + 1,
+      value: field.kind === 'checkbox' ? String(field.checked) : field.value,
+      options: field.options,
+    })
   }
   return fields
 }

@@ -3,8 +3,10 @@ import type { ReactElement } from 'react'
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK } from './stamps'
 import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import type { TFunc } from './i18n/locale'
+import { ColorPalette } from './ColorPalette'
 
 const WM_COLORS = ['#d0342c', '#8a8a8a', '#2b66ff', '#217346']
+const WM_COLOR_PRESETS = WM_COLORS.map((value) => ({ value }))
 
 /** Watermark / header-footer config dialog; on confirm App generates stamps and marks unsaved changes */
 export function StampDialog({
@@ -22,15 +24,17 @@ export function StampDialog({
 
   const hfUsed =
     hf.pageNumber ||
-    [hf.headerLeft, hf.headerCenter, hf.headerRight, hf.footerLeft, hf.footerCenter, hf.footerRight].some((s) =>
-      s.trim(),
-    )
+    [
+      hf.headerLeft,
+      hf.headerCenter,
+      hf.headerRight,
+      hf.footerLeft,
+      hf.footerCenter,
+      hf.footerRight,
+    ].some((s) => s.trim())
   const canApply = wm.text.trim().length > 0 || hfUsed
 
-  const field = (
-    key: keyof HeaderFooterConfig,
-    label: string,
-  ): ReactElement => (
+  const field = (key: keyof HeaderFooterConfig, label: string): ReactElement => (
     <label className="pdf-field">
       <span>{label}</span>
       <input
@@ -46,10 +50,16 @@ export function StampDialog({
       <div className="pdf-modal pdf-modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="pdf-modal-title">{t('stampTitle')}</div>
         <div className="pdf-sign-tabs">
-          <button className={`pdf-sign-tab${tab === 'watermark' ? ' active' : ''}`} onClick={() => setTab('watermark')}>
+          <button
+            className={`pdf-sign-tab${tab === 'watermark' ? ' active' : ''}`}
+            onClick={() => setTab('watermark')}
+          >
             {t('watermark')}
           </button>
-          <button className={`pdf-sign-tab${tab === 'hf' ? ' active' : ''}`} onClick={() => setTab('hf')}>
+          <button
+            className={`pdf-sign-tab${tab === 'hf' ? ' active' : ''}`}
+            onClick={() => setTab('hf')}
+          >
             {t('headerFooter')}
           </button>
         </div>
@@ -99,24 +109,22 @@ export function StampDialog({
               />
               <em>{Math.round(wm.sizeRatio * 100)}%</em>
             </label>
-            <label className="pdf-field">
+            <div className="pdf-field">
               <span>{t('drawColor')}</span>
-              <span className="pdf-color-row">
-                {WM_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    className={`pdf-color-dot${wm.color === c ? ' active' : ''}`}
-                    style={{ background: c }}
-                    onClick={() => setWm({ ...wm, color: c })}
-                  />
-                ))}
-              </span>
-            </label>
+              <ColorPalette
+                value={wm.color}
+                presets={WM_COLOR_PRESETS}
+                moreColorsLabel={t('moreColors')}
+                onChange={(value) => setWm({ ...wm, color: value })}
+              />
+            </div>
             <div
               className="pdf-wm-preview"
               style={{ color: wm.color, opacity: Math.max(wm.opacity, 0.25) }}
             >
-              <span style={{ transform: `rotate(${-wm.angle}deg)` }}>{wm.text || t('watermarkPlaceholder')}</span>
+              <span style={{ transform: `rotate(${-wm.angle}deg)` }}>
+                {wm.text || t('watermarkPlaceholder')}
+              </span>
             </div>
           </>
         ) : (
@@ -145,7 +153,9 @@ export function StampDialog({
                   type="number"
                   min={1}
                   value={hf.startAt}
-                  onChange={(e) => setHf({ ...hf, startAt: Math.max(1, Number(e.target.value) || 1) })}
+                  onChange={(e) =>
+                    setHf({ ...hf, startAt: Math.max(1, Number(e.target.value) || 1) })
+                  }
                 />
               </label>
             )}

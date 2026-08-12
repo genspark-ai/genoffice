@@ -53,10 +53,12 @@ import {
   parseRelationships,
   parseSheetElements,
   partPathForRels,
+  pivotCacheReadsFromSheet,
   prepareClonedSheetRels,
   removePartOverride,
   removeRelationshipById,
   tableDisplayName,
+  renameSheetInPivotCacheSource,
   renameSheetReferencesInChart,
   renameSheetReferencesInDefinedNames,
   renameSheetReferencesInWorksheet,
@@ -1169,6 +1171,9 @@ async function applySheetPlanToPackage(
   const chartPaths = packagePaths.filter(
     (path) => path.startsWith('xl/charts/') && path.endsWith('.xml'),
   )
+  const pivotCacheDefinitionPaths = packagePaths.filter((path) =>
+    /^xl\/pivotCache\/pivotCacheDefinition[^/]*\.xml$/.test(path),
+  )
 
   // Satellite parts owned by the removed sheets — drawings with their images
   // and charts, legacy VML, comments, tables — die with the sheet. The
@@ -1267,16 +1272,30 @@ async function applySheetPlanToPackage(
         `A workbook defined name references "${removal}" — deleting it is not allowed.`,
       )
     }
+    // A pivot hosted on a surviving sheet may read its source rows from the
+    // removed sheet; only the pivotCacheDefinition records that link
+    // (cacheSource/worksheetSource@sheet), so the hosting-sheet pivotTable
+    // fail-close in classifyRemovedSheetRels cannot catch it.
+    for (const cachePath of pivotCacheDefinitionPaths) {
+      if (pivotCacheReadsFromSheet(await pkg.readText(cachePath), removal)) {
+        throw new SheetEditError(
+          `A pivot table reads its source data from "${removal}" — deleting it is not allowed.`,
+        )
+      }
+    }
     // Structured references (DecoTable[Amount]) into a removed table are not
     // sheet-qualified, so the sheet-name checks above cannot catch them.
+    // Excel treats table names as case-insensitive, so the scan must too;
+    // entries too large to patch fall back to the sidecar's exact-case scan.
     for (const part of ownedPartsByRemoval.get(removal) ?? []) {
       if (!removedOwnedParts.has(part) || !/^xl\/tables\/[^/]+\.xml$/.test(part)) continue
       const name = tableDisplayName(await pkg.readText(part))
       if (name === undefined) continue
       const needle = `${name}[`
+      const needleLower = needle.toLowerCase()
       for (const path of survivingWorksheetPaths) {
         const referenced = (await pkg.canPatch(path))
-          ? (await pkg.readText(path)).includes(needle)
+          ? (await pkg.readText(path)).toLowerCase().includes(needleLower)
           : await pkg.containsText(path, needle)
         if (referenced) {
           throw new SheetEditError(
@@ -1329,6 +1348,16 @@ async function applySheetPlanToPackage(
       if (renamed !== xml) {
         pkg.write(chartPath, renamed)
         touchedEntries.add(chartPath)
+      }
+    }
+    // Pivot caches sourced from the renamed sheet keep working only if their
+    // worksheetSource@sheet follows the rename.
+    for (const cachePath of pivotCacheDefinitionPaths) {
+      const xml = await pkg.readText(cachePath)
+      const renamed = renameSheetInPivotCacheSource(xml, rename.sheetName, rename.newName)
+      if (renamed !== xml) {
+        pkg.write(cachePath, renamed)
+        touchedEntries.add(cachePath)
       }
     }
     workbookXml = renameSheetReferencesInDefinedNames(workbookXml, rename.sheetName, rename.newName)

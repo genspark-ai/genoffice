@@ -1142,6 +1142,13 @@ body.vib .slide-list {
   align-items: flex-start;
 }
 
+/* SlideCanvas carries a transparent 160px Konva bleed for off-page objects.
+ * Ignore that implementation-only overflow while the nominal slide fits; at
+ * larger zoom levels the base overflow:auto rule restores canvas panning. */
+.stage-wrap.stage-fits-viewport {
+  overflow: hidden;
+}
+
 .stage-zoom-box {
   flex-shrink: 0;
   margin: auto;
@@ -3277,6 +3284,15 @@ body.vib .slide-list {
 .rb-size-menu button.on {
   background: var(--hover);
   font-weight: 600;
+}
+
+.rb-menu-group-label {
+  padding: 8px 12px 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  cursor: default;
 }
 
 .rb-color-underbar {

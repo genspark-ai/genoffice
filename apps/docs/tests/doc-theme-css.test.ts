@@ -15,10 +15,11 @@ describe('docThemeCss', () => {
     expect(css).toContain('.doc-page h1')
   })
 
-  it('emits the accent color for headings and the ribbon accent variable', () => {
+  it('exposes the ribbon accent without coloring headings that do not declare a color', () => {
     const css = docThemeCss(null, { accent1: '90C226' })
     expect(css).toContain('--theme-accent:#90C226')
-    expect(css).toContain('color:#90C226')
+    expect(css).not.toContain('color:#90C226')
+    expect(css).not.toContain('.doc-page h1')
   })
 
   it('is empty without a theme, so document CSS stays authoritative', () => {

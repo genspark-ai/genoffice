@@ -33,6 +33,8 @@
     "@genoffice/i18n": "*",
     "@genoffice/ui": "*",
     "@univerjs/core": "^0.25.1",
+    "@univerjs/data-validation": "^0.25.1",
+    "@univerjs/engine-render": "^0.25.1",
     "@univerjs/preset-sheets-conditional-formatting": "^0.25.1",
     "@univerjs/preset-sheets-core": "^0.25.1",
     "@univerjs/preset-sheets-data-validation": "^0.25.1",

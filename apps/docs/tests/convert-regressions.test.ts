@@ -243,3 +243,46 @@ describe('section row-height cap (declared trHeight taller than a page)', () => 
     expect(capTableRowHeights(model, 40000)).toBe(model)
   })
 })
+
+describe('run character shading (w:shd) mark mapping', () => {
+  it('round-trips run.shading through the docTextStyle mark alongside highlight', () => {
+    const inline = runsToInline([{ text: 'badge', shading: 'FFC000', highlight: 'yellow' }])
+    const mark = inline[0].marks?.find((m) => m.type === 'docTextStyle')
+    expect(mark?.attrs?.shading).toBe('FFC000')
+    expect(mark?.attrs?.highlight).toBe('yellow')
+    const runs = inlineToRuns(inline)
+    expect(runs[0].shading).toBe('FFC000')
+    expect(runs[0].highlight).toBe('yellow')
+  })
+})
+
+describe('empty paragraph line size attr', () => {
+  const block: Block = {
+    id: 'b0',
+    type: 'paragraph',
+    docxIndex: 0,
+    originalXml: '<w:p><w:pPr><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>',
+    runs: [],
+    format: { emptyRunSizeHalfPoints: 2 },
+  }
+
+  it('carries emptyRunSizeHalfPoints into PM attrs and does not dirty the block', () => {
+    const doc = blocksToPmDoc([block])
+    expect(doc.content?.[0].attrs?.emptyRunSize).toBe(2)
+    const plan = pmDocToSavePlan(doc, [block])
+    expect(plan.changedCount).toBe(0)
+    expect(plan.saveBlocks[0]).toEqual({ kind: 'original', docxIndex: 0 })
+  })
+
+  it('keeps the size in the regenerated format after an unrelated edit', () => {
+    const node = blocksToPmDoc([block]).content![0]
+    const doc: PmNode = {
+      type: 'doc',
+      content: [{ ...node, attrs: { ...node.attrs, align: 'center' } }],
+    }
+    const plan = pmDocToSavePlan(doc, [block])
+    const saved = plan.saveBlocks[0]
+    if (saved.kind !== 'generated') throw new Error(`expected generated, got ${saved.kind}`)
+    expect(saved.block.format?.emptyRunSizeHalfPoints).toBe(2)
+  })
+})

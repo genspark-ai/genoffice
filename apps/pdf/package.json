@@ -19,6 +19,7 @@
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
     "@genoffice/electron-utils": "*",
+    "@genoffice/font-metrics": "*",
     "@genoffice/i18n": "*",
     "@genoffice/ui": "*",
     "@types/react": "^19.2.14",

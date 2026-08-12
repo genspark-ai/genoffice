@@ -9,6 +9,9 @@ import type { UpdateUiState } from '../src/shared/update-api'
 
 const appState = { isPackaged: true }
 
+const openExternal = vi.hoisted(() => vi.fn())
+const readFileSyncMock = vi.hoisted(() => vi.fn<(...args: unknown[]) => string>())
+
 vi.mock('electron', () => ({
   app: {
     get isPackaged() {
@@ -16,6 +19,13 @@ vi.mock('electron', () => ({
     },
     getVersion: () => '0.1.0',
   },
+  shell: {
+    openExternal: (url: string) => openExternal(url),
+  },
+}))
+
+vi.mock('node:fs', () => ({
+  readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
 }))
 
 type Listener = (...args: unknown[]) => unknown
@@ -71,6 +81,7 @@ interface UpdateActions {
   onDownload: () => void
   onInstall: () => void
   onLater: () => void
+  onOpenDownload: () => void
 }
 
 const showUpdateWindow =
@@ -132,6 +143,11 @@ beforeEach(() => {
   showUpdateWindow.mockClear()
   pushUpdateState.mockClear()
   closeUpdateWindow.mockClear()
+  openExternal.mockClear()
+  readFileSyncMock.mockReset()
+  readFileSyncMock.mockImplementation(() => {
+    throw new Error('no app-update.yml')
+  })
   setPlatform('darwin')
 })
 
@@ -308,6 +324,104 @@ describe('initAutoUpdater', () => {
     applyUpdateChannel('beta')
     expect(updaterState.channel).toBeNull()
     expect(checkForUpdates).not.toHaveBeenCalled()
+  })
+})
+
+describe('manual download fallback', () => {
+  const macFiles = [
+    { url: 'GenOffice-0.2.0-arm64.zip' },
+    { url: 'GenOffice-0.2.0.zip' },
+    { url: 'GenOffice-0.2.0-arm64.dmg' },
+    { url: 'GenOffice-0.2.0.dmg' },
+  ]
+
+  function setArch(arch: string): () => void {
+    const original = Object.getOwnPropertyDescriptor(process, 'arch')!
+    Object.defineProperty(process, 'arch', { value: arch })
+    return () => Object.defineProperty(process, 'arch', original)
+  }
+
+  async function failTwiceIntoManual(files: { url: string }[]): Promise<UpdateActions> {
+    downloadUpdate.mockImplementation(() => Promise.reject(new Error('team id changed')))
+    const { initAutoUpdater } = await loadUpdater()
+    initAutoUpdater(() => null)
+    updaterState.listeners.get('update-available')!({ version: '0.2.0', files })
+    const actions = lastShownActions()
+    actions.onDownload()
+    await flushAsync()
+    expect(pushUpdateState).toHaveBeenCalledWith({ phase: 'error' })
+    actions.onDownload()
+    await flushAsync()
+    expect(pushUpdateState).toHaveBeenCalledWith({ phase: 'manual' })
+    return actions
+  }
+
+  it('opens the feed-derived installer matching channel base URL and arm64 arch', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('provider: generic\nurl: https://cdn.example.com/mac/\n')
+    const restoreArch = setArch('arm64')
+    try {
+      const actions = await failTwiceIntoManual(macFiles)
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith(
+        'https://cdn.example.com/mac/GenOffice-0.2.0-arm64.dmg',
+      )
+    } finally {
+      restoreArch()
+    }
+  })
+
+  it('picks the arch-less dmg for x64 installs', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('url: https://cdn.example.com/mac\n')
+    const restoreArch = setArch('x64')
+    try {
+      const actions = await failTwiceIntoManual(macFiles)
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith('https://cdn.example.com/mac/GenOffice-0.2.0.dmg')
+    } finally {
+      restoreArch()
+    }
+  })
+
+  it('rebuilds absolute metadata URLs against the trusted feed base', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('url: https://cdn.example.com/mac\n')
+    const restoreArch = setArch('arm64')
+    try {
+      const actions = await failTwiceIntoManual([
+        { url: 'https://attacker.example/GenOffice-0.2.0-arm64.zip' },
+        { url: 'https://attacker.example/GenOffice-0.2.0-arm64.dmg' },
+        { url: 'https://attacker.example/GenOffice-0.2.0.dmg' },
+      ])
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith(
+        'https://cdn.example.com/mac/GenOffice-0.2.0-arm64.dmg',
+      )
+    } finally {
+      restoreArch()
+    }
+  })
+
+  it('rejects a non-HTTPS baked feed URL', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('url: http://cdn.example.com/mac\n')
+    const actions = await failTwiceIntoManual(macFiles)
+    actions.onOpenDownload()
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://github.com/genspark-ai/genoffice/releases/latest',
+    )
+  })
+
+  it('falls back to the generic download page when the feed base cannot be read', async () => {
+    // readFileSyncMock throws by default (no app-update.yml)
+    const actions = await failTwiceIntoManual([
+      { url: 'https://attacker.example/GenOffice-0.2.0-arm64.dmg' },
+    ])
+    actions.onOpenDownload()
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://github.com/genspark-ai/genoffice/releases/latest',
+    )
   })
 })
 

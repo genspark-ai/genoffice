@@ -10,7 +10,7 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, net, shell } from 'electron'
 import {
   appMenuLabels,
   configuredDefaultSaveDir,
@@ -24,6 +24,7 @@ import {
   toggleDevToolsItem,
   windowMenuTemplate,
 } from '@genoffice/electron-utils'
+import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 import type {
@@ -40,6 +41,7 @@ import {
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
+  setRescueFetch,
   streamForProvider,
   type AiChatRequest,
   type AiSettings,
@@ -2834,9 +2836,17 @@ export function registerProjectIpc(): void {
 
 /** document/attachment/window IPC (everything except the AI proxy above) */
 export function registerDocsIpc(): void {
+  // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
+  setRescueFetch((url, init) => net.fetch(url, init))
+
   // shared with the other editor modules — last (identical) registration wins
   ipcMain.removeHandler('app:get-language')
   ipcMain.handle('app:get-language', () => getUiLang())
+
+  configureMetricsCache(userDataPath('font-metrics'))
+  ipcMain.handle('docs:font-metrics', (_event, family: string) =>
+    typeof family === 'string' ? familyVerticalMetrics(family) : null,
+  )
 
   ipcMain.handle('docs:open', async (event) => {
     const result = await openDialog(event, {

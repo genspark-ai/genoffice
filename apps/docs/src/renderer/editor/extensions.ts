@@ -31,6 +31,7 @@ import {
   lineHeightFactor,
   paraLineFactorCss,
   textHasCjk,
+  textHasHangul,
 } from '../line-metrics'
 import { noteMarkText } from '../note-format'
 import { t } from '../i18n/locale'
@@ -132,6 +133,8 @@ const anchorAttrs = {
   /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN); null = Word default on */
   autoSpace: { default: null as boolean | null },
   shadingFill: { default: null as string | null },
+  /** w:sz (half-points) of the paragraph mark / dropped empty runs; sizes the line of run-less paragraphs */
+  emptyRunSize: { default: null as number | null },
   /** subset of "tblr": which sides have a single-line border */
   borders: { default: null as string | null },
   /** custom tab stops JSON: Array<{pos:number,val:string,leader?:string}> */
@@ -245,6 +248,12 @@ function blockAttrs(
   // glyphs fall through to another font — EA "Times New Roman" lays at 1.15em);
   // the paragraph takes the max over its CJK runs, like Word's tallest-run rule.
   if (node.textContent) {
+    // Word breaks Korean at spaces (UAX#14 default would break between syllables);
+    // scoped to Hangul-bearing paragraphs so CJ text keeps per-char breaking.
+    // overflow-wrap keeps the sim's overlong-word hard-break fallback.
+    if (textHasHangul(node.textContent)) {
+      styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
+    }
     styles.push(`--doc-line-factor:${paraLineFactor(node)}`)
     // Word's line strut follows run sizes; without this the paragraph inherits the
     // body size (often larger than table-cell runs) and every line box inflates.
@@ -252,6 +261,9 @@ function blockAttrs(
     // line by the runs on it, so the strut must never exceed the inherited size
     const strut = explicitStrutHalfPoints(node)
     if (strut) styles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
+  } else if (node.attrs.emptyRunSize) {
+    // Word sizes an empty line by the paragraph mark / empty run, both directions
+    styles.push(`font-size:${Number(node.attrs.emptyRunSize) / 2}pt`)
   }
   const lh = cssLineHeight(
     (node.attrs.lineRule as 'auto' | 'atLeast' | 'exact' | null) ?? undefined,
@@ -1489,6 +1501,13 @@ export const DocProtected = Node.create({
       genImage: {
         default: null as { base64: string; mime: string; widthPx: number; heightPx: number } | null,
       },
+      /** picture rotation (deg clockwise, 0-359) and mirror flips (a:xfrm rot/flipH/flipV) */
+      imageRotDeg: { default: null as number | null },
+      imageFlipH: { default: false },
+      imageFlipV: { default: false },
+      /** replacement bytes for an original image (crop/background removal/replace):
+       *  the drawing XML — and with it docxIndex, wrap and position — survives */
+      imageReplace: { default: null as { base64: string; mime: string } | null },
       /** new chart awaiting embedding at save time (data snapshot; edits live in chartDisplay) */
       genChart: { default: null as NewChart | null },
     }
@@ -1726,8 +1745,15 @@ function protectedDomSpec(node: PmNode): DomSpec {
     return ['div', attrs, ['span', { class: 'doc-sectbreak-label' }, String(label)]]
   }
   if (blockType === 'image' && imageDataUrl) {
-    const { imageWidthPx, imageHeightPx, imageAlign, imageWrap, imageCrop, imageFillRect } =
-      node.attrs
+    const {
+      imageWidthPx,
+      imageHeightPx,
+      imageAlign,
+      imageWrap,
+      imageCrop,
+      imageFillRect,
+      imageRotDeg,
+    } = node.attrs
     if (imageAlign === 'center' || imageAlign === 'right') {
       attrs['style'] = `text-align:${imageAlign}`
     }
@@ -1759,6 +1785,12 @@ function protectedDomSpec(node: PmNode): DomSpec {
         `width:${Number(imageWidthPx)}px;` +
         (imageHeightPx ? `height:${Number(imageHeightPx)}px` : 'height:auto')
     }
+    // DrawingML order: flip mirrors the source, rot turns the result
+    // (CSS applies right-to-left, so scale sits last)
+    const xf: string[] = []
+    if (imageRotDeg) xf.push(`rotate(${Number(imageRotDeg)}deg)`)
+    if (node.attrs.imageFlipH) xf.push('scaleX(-1)')
+    if (node.attrs.imageFlipV) xf.push('scaleY(-1)')
     // a:srcRect source crop / a:fillRect fill placement: an overflow-hidden
     // window at the declared extent over a scaled and offset image
     const rect = (imageCrop ?? imageFillRect) as {
@@ -1788,6 +1820,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
       imgAttrs['style'] =
         `position:absolute;left:${dx.toFixed(1)}px;top:${dy.toFixed(1)}px;` +
         `width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;max-width:none`
+      // rot/flip turn the whole crop window, not the source inside it
+      const wrapXf = [
+        ...(imgWrapTransform ? [imgWrapTransform.slice('transform:'.length)] : []),
+        ...xf,
+      ]
       return [
         'div',
         attrs,
@@ -1796,12 +1833,16 @@ function protectedDomSpec(node: PmNode): DomSpec {
           'span',
           {
             class: 'doc-img-wrap doc-img-crop',
-            style: `position:relative;display:inline-block;overflow:hidden;width:${W}px;height:${H}px${imgWrapTransform ? `;${imgWrapTransform}` : ''}`,
+            style: `position:relative;display:inline-block;overflow:hidden;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}`,
           },
           ['img', imgAttrs],
           ['span', { class: 'img-resize-handle' }],
         ],
       ]
+    }
+    if (xf.length) {
+      imgAttrs['style'] =
+        `${imgAttrs['style'] ? `${imgAttrs['style']};` : ''}transform:${xf.join(' ')}`
     }
     return [
       'div',
@@ -2560,9 +2601,11 @@ function imageResizePlugin(): Plugin {
           // CSS `zoom` scales client coordinates; divide it back out
           const zoomEl = document.querySelector('.doc-zoom') as HTMLElement | null
           const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
-          const startRect = img.getBoundingClientRect()
-          const startW = startRect.width / zoom
-          const ratio = startRect.height / startRect.width
+          // Layout-box measurements: getBoundingClientRect would include the
+          // rotation/flip transform, swapping width/height for 90°-rotated images
+          const startW = img.offsetWidth
+          const ratio = img.offsetHeight / Math.max(1, img.offsetWidth)
+          const priorStyle = img.getAttribute('style')
           const startX = event.clientX
 
           const widthAt = (e: MouseEvent) => Math.max(24, startW + (e.clientX - startX) / zoom)
@@ -2574,6 +2617,12 @@ function imageResizePlugin(): Plugin {
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
+            // A plain click on the handle must not rewrite the stored size
+            if (Math.abs(e.clientX - startX) < 2) {
+              if (priorStyle === null) img.removeAttribute('style')
+              else img.setAttribute('style', priorStyle)
+              return
+            }
             const w = Math.round(widthAt(e))
             const node = view.state.doc.nodeAt(pos)
             if (!node) return
@@ -2656,10 +2705,16 @@ function floatingObjectDragPlugin(): Plugin {
           const startOffsetX = Number(node.attrs.imageOffsetXEmu ?? 0)
           const startOffsetY = Number(node.attrs.imageOffsetYEmu ?? 0)
 
-          // Visual feedback: apply CSS translate during drag
+          // Visual feedback: apply CSS translate during drag. Cropped pictures put
+          // rot/flip (and the front/behind offset) on the overflow-hidden crop
+          // wrapper — translate that, or the image slides inside the fixed window
           const visual = wrapper.querySelector(
-            isTextbox ? '.doc-textbox' : '.doc-protected-img',
+            isTextbox ? '.doc-textbox' : '.doc-img-crop, .doc-protected-img',
           ) as HTMLElement | null
+          // Images may already carry a rotation/flip transform: the drag translate
+          // must compose with it (prepended = applied in screen space) and the
+          // original must come back on mouseup, or the orientation vanishes
+          const baseTransform = visual?.style.transform ?? ''
 
           // 3px threshold keeps plain clicks (select, first click of a
           // double-click-to-edit) from nudging the object
@@ -2669,13 +2724,16 @@ function floatingObjectDragPlugin(): Plugin {
             const dy = (e.clientY - startY) / zoom
             if (!dragging && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
             dragging = true
-            if (visual) visual.style.transform = `translate(${dx}px, ${dy}px)`
+            if (visual) {
+              visual.style.transform =
+                `translate(${dx}px, ${dy}px)` + (baseTransform ? ` ${baseTransform}` : '')
+            }
           }
 
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
-            if (visual) visual.style.transform = ''
+            if (visual) visual.style.transform = baseTransform
 
             const dx = (e.clientX - startX) / zoom
             const dy = (e.clientY - startY) / zoom

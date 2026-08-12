@@ -35,10 +35,9 @@ export function docThemeCss(
     rules.push(`${headings} { font-family:${cssFontFamily(fonts.major)} }`)
   }
   if (colors?.accent1) {
-    // Heading color + the accent variable the ribbon's style presets already read
+    // Keep the live accent available to ribbon presets. Heading text itself must
+    // come from its DOCX style; a theme palette alone does not make headings blue.
     rules.push(`.doc-page { --theme-accent:#${colors.accent1} }`)
-    const headings = [1, 2, 3, 4].map((n) => `.doc-page h${n}`).join(', ')
-    rules.push(`${headings} { color:#${colors.accent1} }`)
   }
   return rules.join('\n')
 }

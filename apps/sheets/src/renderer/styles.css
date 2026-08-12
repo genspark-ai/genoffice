@@ -504,7 +504,8 @@ textarea:disabled {
 
 .autosave-text {
   font-size: 11px;
-  color: var(--text-muted);
+  /* same ink as the docs/slides autosave label */
+  color: var(--text-dim);
   white-space: nowrap;
 }
 
@@ -3387,7 +3388,7 @@ textarea:focus {
 }
 
 .ai-chat-empty {
-  margin-top: 32px;
+  margin-top: 36px;
   padding: 0 10px;
   text-align: center;
 }

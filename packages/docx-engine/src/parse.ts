@@ -58,6 +58,7 @@ import {
   findChildren,
   nameOf,
   serializeXNode,
+  textHasComplexScript,
   textOf,
   underlineProp,
   xmlParser,
@@ -1033,6 +1034,10 @@ function buildTextParagraph(
     rubyFragmentsOf(mathXml),
     withImages,
   )
+  if (runs.length === 0) {
+    const emptySz = emptyParaSizeHalfPoints(pNode, pPr)
+    if (emptySz) format = { ...(format ?? {}), emptyRunSizeHalfPoints: emptySz }
+  }
   const { bookmarks, hiddenBookmarks } = bookmarkNamesOf(stripTextboxes(xml))
   const { commentStarts, commentEnds } = crossParaCommentMarkers(stripTextboxes(xml))
 
@@ -2071,6 +2076,25 @@ function onlyXeFields(xml: string): boolean {
   })
 }
 
+/**
+ * w:sz governing a run-less paragraph's line height: the paragraph-mark rPr
+ * (pPr/w:rPr), else the last run's rPr — those runs are all empty and get
+ * dropped, but Word still sizes the empty line by them (1pt spacer lines).
+ */
+function emptyParaSizeHalfPoints(pNode: XNode, pPr: XNode | undefined): number | undefined {
+  let sz = pPr
+    ? attrsOf(findChild(findChild(pPr, 'w:rPr') ?? {}, 'w:sz') ?? {})['w:val']
+    : undefined
+  if (!sz) {
+    for (const r of findChildren(pNode, 'w:r')) {
+      const v = attrsOf(findChild(findChild(r, 'w:rPr') ?? {}, 'w:sz') ?? {})['w:val']
+      if (v) sz = v
+    }
+  }
+  const n = sz ? parseInt(sz, 10) : NaN
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
+
 function extractRuns(
   pNode: XNode,
   ctx: BuildContext,
@@ -2402,9 +2426,13 @@ function buildRun(
     run.rawRPr = serializeXNode(rPr)
     const rStyle = attrsOf(findChild(rPr, 'w:rStyle') ?? {})['w:val']
     if (rStyle && rStyle !== 'Hyperlink') run.styleId = rStyle
-    const bold = onOffOf(rPr, 'w:b')
+    // complex-script runs take bold/italic/size from the Cs twins only: w:b/w:i/w:sz
+    // do not apply to them, and a missing twin means regular (no fallback), per OOXML
+    const cs = onOffOf(rPr, 'w:rtl') ?? textHasComplexScript(text)
+    if (cs) run.cs = true
+    const bold = onOffOf(rPr, cs ? 'w:bCs' : 'w:b')
     if (bold !== undefined) run.bold = bold
-    const italic = onOffOf(rPr, 'w:i')
+    const italic = onOffOf(rPr, cs ? 'w:iCs' : 'w:i')
     if (italic !== undefined) run.italic = italic
     if (underlineProp(rPr)) run.underline = true
     else if (attrsOf(findChild(rPr, 'w:u') ?? {})['w:val'] === 'none') run.underline = false
@@ -2412,7 +2440,7 @@ function buildRun(
     if (strike !== undefined) run.strike = strike
     const color = colorFrom(rPr, theme)
     if (color) run.color = color
-    const sz = attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val']
+    const sz = attrsOf(findChild(rPr, cs ? 'w:szCs' : 'w:sz') ?? {})['w:val']
     if (sz) run.sizeHalfPoints = parseInt(sz, 10) || undefined
     const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
     const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
@@ -2427,6 +2455,8 @@ function buildRun(
     if (wScale > 0 && wScale !== 100) run.charScalePct = wScale
     const highlight = attrsOf(findChild(rPr, 'w:highlight') ?? {})['w:val']
     if (highlight && highlight !== 'none') run.highlight = highlight
+    const shdFill = attrsOf(findChild(rPr, 'w:shd') ?? {})['w:fill']
+    if (shdFill && shdFill !== 'auto') run.shading = shdFill
     const vertAlign = attrsOf(findChild(rPr, 'w:vertAlign') ?? {})['w:val']
     if (vertAlign === 'superscript' || vertAlign === 'subscript') run.vertAlign = vertAlign
     const em = attrsOf(findChild(rPr, 'w:em') ?? {})['w:val']
@@ -2504,6 +2534,8 @@ function sameStyle(a: Run, b: Run): boolean {
   return (
     (a.rawRPr ?? '') === (b.rawRPr ?? '') &&
     a.styleId === b.styleId &&
+    // same rPr can decode differently for cs vs non-cs text; merging would misapply the twins
+    !!a.cs === !!b.cs &&
     !!a.bold === !!b.bold &&
     !!a.italic === !!b.italic &&
     !!a.underline === !!b.underline &&
@@ -2888,6 +2920,7 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
   let sawBold = false
   let sawNonBold = false
   const runColors = new Set<string>()
+  const textParaJcs = new Set<string>()
   for (const block of childrenThroughSdt(tc, ['w:p', 'w:tbl'])) {
     if (nameOf(block) === 'w:tbl') {
       const model = extractTableModel(block, ctx)
@@ -2898,7 +2931,8 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
       continue
     }
     const p = block
-    cell.paras.push(textOf(p))
+    const paraText = textOf(p)
+    cell.paras.push(paraText)
     const pPr = findChild(p, 'w:pPr')
     const format = extractParaFormat(pPr ?? {})
     const cellStyleId = pPr ? attrsOf(findChild(pPr, 'w:pStyle') ?? {})['w:val'] : undefined
@@ -2910,17 +2944,15 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
           ilvl: cellRef.ilvl,
         }
       : undefined
+    const runs = extractRuns(p, ctx, [], [], true)
+    const emptySz = runs.length === 0 ? emptyParaSizeHalfPoints(p, pPr) : undefined
     richParas.push({
       ...format,
+      ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
       ...(list ? { list } : {}),
-      runs: extractRuns(p, ctx, [], [], true),
+      runs,
     })
-    if (!cell.align) {
-      const jc = attrsOf(findChild(findChild(p, 'w:pPr') ?? {}, 'w:jc') ?? {})['w:val']
-      if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') {
-        cell.align = jc
-      }
-    }
+    if (paraText !== '') textParaJcs.add(attrsOf(findChild(pPr ?? {}, 'w:jc') ?? {})['w:val'] ?? '')
     for (const r of findChildren(p, 'w:r')) {
       const rPr = findChild(r, 'w:rPr')
       if (rPr && boolProp(rPr, 'w:b')) sawBold = true
@@ -2928,15 +2960,15 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
       if (textOf(r) !== '') runColors.add((rPr && colorFrom(rPr, ctx.themeColors)) ?? 'none')
     }
   }
-  // drop trailing empty paragraphs so cells don't get artificially tall
-  while (cell.paras.length > 1 && cell.paras[cell.paras.length - 1] === '') {
-    cell.paras.pop()
-    richParas.pop()
+  // cell.align only when every text paragraph declares the same jc; a first-wins
+  // td-level text-align would leak onto the cell's jc-less paragraphs
+  if (textParaJcs.size === 1) {
+    const jc = textParaJcs.values().next().value
+    if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') cell.align = jc
   }
   cell.richParas = richParas
   if (nested.length > 0) {
     cell.nestedTables = nested
-    // clamp anchors that pointed past the trimmed tail
     cell.nestedTableAnchors = nestedAnchors.map((a) => Math.min(a, cell.paras.length))
   }
   if (sawBold && !sawNonBold) cell.bold = true

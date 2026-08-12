@@ -30,6 +30,7 @@ import {
   normalizeColor,
 } from './konva-adapter'
 import { ChartBody } from './ChartBody'
+import { needsTextFrameHitArea } from './text-hit-area'
 
 export interface NodeBodyProps {
   node: RenderNode
@@ -395,6 +396,10 @@ export const NodeBody = React.memo(function NodeBody({
 
   return (
     <>
+      {/* Text is drawn as individual glyph runs, so line spacing and insets otherwise
+          have no hit area. Cover every text-bearing shape (including round/custom
+          geometry) so clicks inside its text frame cannot reach a picture underneath. */}
+      {needsTextFrameHitArea(shape) && <Rect width={box.w} height={box.h} fill="transparent" />}
       {geom}
       {glyphs.map((g, i) => (
         <Text

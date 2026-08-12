@@ -200,6 +200,22 @@ describe('complex-script font follows the font change', () => {
     expect(out).not.toContain("typeface='Old'")
   })
 
+  it('expands a self-closing rPr to the full slot group, attributes kept', () => {
+    // the open-tag pattern's [^"'>] accepts '/', so an unguarded match would swallow a
+    // self-closing tag whole and route it to the latin/ea-only fallback
+    const out = refont('<a:r><a:rPr lang="ar-SA" b="1"/><a:t>مرحبا</a:t></a:r>')
+    // the run attribute writer may add its own attrs (e.g. i="0"); the declared ones survive
+    expect(out).toMatch(/<a:rPr[^>]*\blang="ar-SA"[^>]*\bb="1"[^>]*>/)
+    expect(slotOrder(out)).toEqual(['latin', 'ea', 'cs'])
+    expect(/<a:cs[^>]*typeface="([^"]*)"/.exec(out)?.[1]).toBe('Amiri')
+  })
+
+  it('expands a bare self-closing rPr as well', () => {
+    const out = refont('<a:r><a:rPr/><a:t>مرحبا</a:t></a:r>')
+    expect(slotOrder(out)).toEqual(['latin', 'ea', 'cs'])
+    expect(/<a:cs[^>]*typeface="([^"]*)"/.exec(out)?.[1]).toBe('Amiri')
+  })
+
   it('does not add a second slot group to a run using mc:AlternateContent', () => {
     // the branch children only exist once a consumer picks a branch, so injecting a direct
     // group alongside them would leave two a:latin after preprocessing

@@ -238,6 +238,7 @@ import { installMultiRowAutofit } from './autofit-multi-row'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
 import { installRuleDetail } from './univer-rule-detail'
+import { installPopulatedDataValidationArrow } from './data-validation-arrow'
 import { installFormulaNullResultFix } from './formula-null-result'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installRateFallback } from './rate-function'
@@ -325,6 +326,8 @@ export function App(): React.JSX.Element {
   const adapterRef = useRef(new InMemoryWorkbookAdapter(initialSnapshot))
   const univerRef = useRef<UniverRuntime | null>(null)
   const lazyWorkbookRef = useRef<LazyWorkbookState | null>(null)
+  /// Univer undo/redo stack occupancy (subscribed at mount): drives the QAT button gray states
+  const [univerHist, setUniverHist] = useState({ canUndo: false, canRedo: false })
   /// True while Univer's in-cell editor is open (AutoSave must not save-reload then).
   const editingCellRef = useRef(false)
   const visualDisposablesRef = useRef<{ dispose(): void }[]>([])
@@ -839,7 +842,9 @@ export function App(): React.JSX.Element {
       events: {
         onText: (text) => {
           if (text) runLastTextRef.current = text
-          setMessage(text || t('appAiThinking'))
+          // Status bar (and the ribbon-row status span) show a short state only;
+          // the full streamed prose lives in the chat panel.
+          setMessage(t('appAiThinking'))
           // When the model retries successfully and keeps streaming after a
           // mid-run failure (e.g. one apply error), clear the error flag —
           // otherwise the whole successful message stays rendered in red.
@@ -924,7 +929,7 @@ export function App(): React.JSX.Element {
           const finalText = turnLimit
             ? [prose, t('appAiTurnLimit')].filter(Boolean).join('\n\n')
             : prose || fallback
-          setMessage(finalText)
+          setMessage(cancelled ? t('appAiStopped') : t('appAiDone'))
           patchLastAssistant((entry) => ({
             ...entry,
             text: finalText,
@@ -1208,6 +1213,29 @@ export function App(): React.JSX.Element {
     const applyUniverDark = () => themeService.setDarkMode(isDarkTheme())
     const offThemeChanged = window.desktopApi?.onThemeChanged?.(applyUniverDark)
     prefersDark.addEventListener('change', applyUniverDark)
+    // Undo/redo stack occupancy: the QAT buttons grey out when there is nothing to apply
+    const undoRedoService = runtime.univer.__getInjector().get(IUndoRedoService)
+    const undoRedoSub = undoRedoService.undoRedoStatus$.subscribe(
+      ({ undos, redos }: { undos: number; redos: number }) =>
+        setUniverHist({ canUndo: undos > 0, canRedo: redos > 0 }),
+    )
+    // Programmatic installs (viewport streaming, file loads, merges, row
+    // heights, notes, CF/filter rules) run through the same undoable commands
+    // as user edits; they all raise journalSuppression, so drop their undo
+    // entries there too — a freshly opened workbook starts with an empty
+    // stack and undo can never strip loaded file content or layout.
+    const originalPushUndoRedo = undoRedoService.pushUndoRedo.bind(undoRedoService)
+    undoRedoService.pushUndoRedo = (item) => {
+      if (!journalSuppression.active) originalPushUndoRedo(item)
+    }
+    // IUndoRedoService is registered lazily, so the injector hands out a redi
+    // proxy that caches a bound copy of each method on first read — and the
+    // initial snapshot load above reads pushUndoRedo before this wrapper is
+    // assigned. The assignment lands on the real instance, but every caller
+    // resolves the service through the same proxy and keeps getting the stale
+    // cached original. Deleting the key clears that per-proxy cache so the
+    // next read re-binds to the wrapper.
+    Reflect.deleteProperty(undoRedoService, 'pushUndoRedo')
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
@@ -1275,6 +1303,8 @@ export function App(): React.JSX.Element {
     // Copy/cut load their selection into the lazy window first so streamed
     // workbooks don't serialize blanks for never-viewed rows.
     const copyMaterializeDisposable = installCopyMaterialize(runtime, lazyWorkbookRef, setMessage)
+    // List-validation arrows stay discoverable on values without cluttering empty template rows.
+    const dataValidationArrowDisposable = installPopulatedDataValidationArrow(runtime)
     // Univer's own UI (rule-management panels, dialogs) follows the app
     // language instead of hard-coded English.
     void applyUniverLocale(runtime, getLang())
@@ -2071,6 +2101,10 @@ export function App(): React.JSX.Element {
       unsubscribeMenu()
       unsubscribeCloseSave()
       offThemeChanged?.()
+      undoRedoSub.unsubscribe()
+      undoRedoService.pushUndoRedo = originalPushUndoRedo
+      // clear the proxy's cached bound wrapper (see the install site)
+      Reflect.deleteProperty(undoRedoService, 'pushUndoRedo')
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()
       filteredCopyDisposable.dispose()
@@ -2086,6 +2120,7 @@ export function App(): React.JSX.Element {
       multiRowAutofitDisposable.dispose()
       nullResultDisposable.dispose()
       copyMaterializeDisposable.dispose()
+      dataValidationArrowDisposable.dispose()
       ruleDetailDisposable()
       scrollDisposable.dispose()
       zoomDisposable.dispose()
@@ -2741,7 +2776,15 @@ export function App(): React.JSX.Element {
   }
 
   refreshSelectionFormatRef.current = () => {
-    const range = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveRange()
+    let range: ReturnType<ActiveWorkbook['getActiveRange']> | undefined
+    try {
+      range = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveRange()
+    } catch {
+      // Sheet changes briefly retain the previous sheet's selection. If that
+      // row or column is outside the new sheet, Univer rejects the stale
+      // range; the next selection event will refresh the ribbon normally.
+      return
+    }
     if (!range) {
       setSelectionFormat(null)
       setActiveCellA1('')
@@ -3171,6 +3214,8 @@ export function App(): React.JSX.Element {
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
         onUndo={handleUndo}
+        canUndo={lazyWorkbookRef.current ? univerHist.canUndo : adapterRef.current.canUndo}
+        canRedo={univerHist.canRedo}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}
         canSave={pendingEdits > 0}

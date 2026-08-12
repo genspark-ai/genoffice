@@ -643,7 +643,10 @@ function _placeTable(
       // in-row page break (Word default): without cantSplit and with safe cut points,
       // place segment by segment at the cut points. If the first segment doesn't fit,
       // turn the page first (equivalent to pushing the whole row)
-      let cuts = !row.cantSplit && row.cutYs ? [...row.cutYs] : []
+      // Word never splits the first/header row: push whole (over-page rows still split)
+      const keepWhole =
+        (ri === 0 || (row.isHeader && ri < headerRows)) && row.height <= contentH + 0.01
+      let cuts = !row.cantSplit && !keepWhole && row.cutYs ? [...row.cutYs] : []
       const placeSegments = (bounds: number[]) => {
         let prev = 0
         for (const cut of bounds) {

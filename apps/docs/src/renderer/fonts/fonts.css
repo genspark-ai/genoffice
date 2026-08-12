@@ -192,6 +192,18 @@
   font-weight: normal;
   font-style: normal;
 }
+/* Stand-in for Traditional/Simplified Arabic (compact Windows naskh faces):
+ * unscaled Noto Naskh substitution wraps ~10% earlier than Word (measured
+ * 11 lines vs 10 on regression sample 15), so pagination drifts. 90%
+ * (~1/1.10) is calibrated from that screenshot regression; canvas
+ * measureText resolves the same @font-face, so metrics follow automatically. */
+@font-face {
+  font-family: 'Noto Naskh Arabic TA';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 90%;
+  font-weight: normal;
+  font-style: normal;
+}
 
 /* macOS's PMingLiU stand-in (Songti TC) draws these fullwidth glyphs at
  * ~0.2-0.5em of ink inside the 1em advance — U+FF0F looks like a spaced

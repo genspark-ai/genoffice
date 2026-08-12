@@ -42,7 +42,12 @@ describe('table display model', () => {
 
     const header = table.rows[0]
     expect(header.map((c) => c.paras[0])).toEqual(['排名', '品牌', '份额'])
-    expect(header[0]).toMatchObject({ fill: '1F3864', color: 'FFFFFF', bold: true, align: 'center' })
+    expect(header[0]).toMatchObject({
+      fill: '1F3864',
+      color: 'FFFFFF',
+      bold: true,
+      align: 'center',
+    })
 
     const dataRow = table.rows[1]
     expect(dataRow[1].colSpan).toBe(2)
@@ -141,5 +146,37 @@ describe('table display model', () => {
     expect(table.borders?.top).toMatchObject({ style: 'single', szEighths: 16, color: '00FF00' })
     expect(table.borders?.insideH).toMatchObject({ style: 'dashed' })
     expect(table.cellMarTwips).toEqual({ left: 200, right: 200 })
+  })
+})
+
+describe('cell alignment aggregation and trailing empty paragraphs', () => {
+  it('sets cell.align only when every text paragraph declares the same jc', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>' +
+      // centered title + jc-less body: a td-level center would leak onto the body
+      '<w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>标题</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>要点</w:t></w:r></w:p></w:tc>' +
+      // all text paragraphs agree (the empty one does not vote)
+      '<w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>甲</w:t></w:r></w:p>' +
+      '<w:p/>' +
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>乙</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const [mixed, agreed] = doc.blocks[0].table!.rows[0]
+    expect(mixed.align).toBeUndefined()
+    expect(agreed.align).toBe('center')
+  })
+
+  it('keeps trailing empty cell paragraphs and their empty-run size', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>内容</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>' +
+      '</w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    expect(cell.paras).toEqual(['内容', ''])
+    expect(cell.richParas?.[1].emptyRunSizeHalfPoints).toBe(2)
+    expect(cell.richParas?.[1].runs).toEqual([])
   })
 })

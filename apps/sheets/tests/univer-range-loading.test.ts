@@ -93,4 +93,44 @@ describe('loadWorkbookSkeleton', () => {
       columnCount: 26,
     })
   })
+
+  it('preserves a file extent larger than the starter grid', () => {
+    const created: Array<{
+      sheets: Record<string, { rowCount: number; columnCount: number }>
+    }> = []
+    const runtime = {
+      univerAPI: {
+        getActiveWorkbook: () => null,
+        disposeUnit: () => undefined,
+        createWorkbook: (config: (typeof created)[number]) => created.push(config),
+      },
+    }
+    const file = {
+      sha256: 'large',
+      name: 'Large.xlsx',
+      visuals: [],
+      sheets: [
+        {
+          id: 'sheet-1',
+          name: 'Sheet1',
+          rowCount: 1004,
+          columnCount: 13,
+          hidden: false,
+          showGridLines: true,
+          tabColor: null,
+          defaultRowHeight: null,
+          defaultColumnWidth: null,
+          freeze: null,
+          columnWidths: [],
+        },
+      ],
+    }
+
+    loadWorkbookSkeleton(runtime as never, file as never)
+
+    expect(created[0]?.sheets['sheet-1']).toMatchObject({
+      rowCount: 1004,
+      columnCount: 26,
+    })
+  })
 })

@@ -4,6 +4,7 @@ import {
   geomDispSize,
   pdfRectToCss,
   pdfToView,
+  quadSetsMatch,
   quadToRect,
   selectionQuadsByPage,
   viewToPdf,
@@ -72,6 +73,37 @@ describe('pdfRectToCss', () => {
 describe('quadToRect', () => {
   it('returns the bounding rect of corners in any order', () => {
     expect(quadToRect([5, 9, 1, 2, 8, 3, 4, 7])).toEqual([1, 2, 8, 9])
+  })
+})
+
+describe('quadSetsMatch', () => {
+  const q1 = [100, 716, 200, 716, 100, 698, 200, 698]
+  const q2 = [100, 666, 200, 666, 100, 648, 200, 648]
+
+  it('matches identical quad sets', () => {
+    expect(quadSetsMatch([q1, q2], [q1, q2])).toBe(true)
+  })
+
+  it('is order-insensitive', () => {
+    expect(quadSetsMatch([q1, q2], [q2, q1])).toBe(true)
+  })
+
+  it('absorbs small coordinate drift (zoom rounding / float32 round-trip)', () => {
+    const drifted = q1.map((v) => v + 1.5)
+    expect(quadSetsMatch([q1], [drifted])).toBe(true)
+  })
+
+  it('rejects offsets beyond the tolerance', () => {
+    const shifted = q1.map((v, i) => (i % 2 === 1 ? v - 14 : v)) // one text line lower
+    expect(quadSetsMatch([q1], [shifted])).toBe(false)
+  })
+
+  it('rejects differing quad counts (subset selections add, not toggle)', () => {
+    expect(quadSetsMatch([q1], [q1, q2])).toBe(false)
+  })
+
+  it('does not reuse a quad for two matches', () => {
+    expect(quadSetsMatch([q1, q1], [q1, q2])).toBe(false)
   })
 })
 

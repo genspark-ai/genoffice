@@ -24,6 +24,9 @@ import type {
   AiStreamRequest,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
+import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
+
+export type { FaceVerticalMetrics }
 
 export type {
   AiChatRequest,
@@ -179,6 +182,8 @@ export interface DesktopApi {
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   getRecentFiles(): Promise<string[]>
   pickImage(): Promise<PickImageResult | null>
+  /** vertical metrics of an installed family (exact name match), null when missing */
+  fontMetrics(family: string): Promise<FaceVerticalMetrics | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
   /** system print dialog for the current window */

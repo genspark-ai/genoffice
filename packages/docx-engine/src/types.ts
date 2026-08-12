@@ -43,6 +43,10 @@ export interface Run {
   charScalePct?: number
   /** OOXML named highlight color (w:highlight), e.g. "yellow" */
   highlight?: string
+  /** character shading fill, hex without '#' (w:shd w:fill, non-auto); highlight wins when both are set */
+  shading?: string
+  /** bold/italic/size were read from the Cs twins (w:bCs/w:iCs/w:szCs): w:rtl run or complex-script text */
+  cs?: boolean
   /** superscript / subscript (w:vertAlign) */
   vertAlign?: 'superscript' | 'subscript'
   /** East Asian emphasis mark (w:em). Display only; saving is kept faithful by rawRPr */
@@ -239,6 +243,12 @@ export interface ParaFormat {
    * visual direction and writing back converts again.
    */
   bidi?: boolean
+  /**
+   * w:sz (half-points) governing a run-less paragraph's line height: the
+   * paragraph-mark rPr, else the last (dropped) empty run's rPr. Set only when
+   * the paragraph has no runs, so empty lines keep their Word height.
+   */
+  emptyRunSizeHalfPoints?: number
 }
 
 /**

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { app, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
@@ -322,7 +324,64 @@ const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 // code-signing identity (Apple Team ID) change, which Squirrel.Mac rejects
 // on every retry while the error looks like a download failure to the user.
 const MANUAL_FALLBACK_AFTER = 2
+// Last-resort manual link only: the GitHub Latest release tracks one channel
+// and signing track, so a stable/legacy-track user could land on the wrong
+// build. Preferred is the CDN installer derived from the user's own update
+// feed (see manualDownloadUrlFor), which matches channel, track, and arch.
 const DOWNLOAD_PAGE_URL = 'https://github.com/genspark-ai/genoffice/releases/latest'
+
+/// Trusted HTTPS base URL baked into resources/app-update.yml. Manual download
+/// links are always rebuilt from this base rather than trusting URLs supplied
+/// by remotely fetched update metadata.
+function updateFeedBaseUrl(): string | null {
+  try {
+    const yml = readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8')
+    const value = /^url:\s*['"]?([^'"\s]+)/m.exec(yml)?.[1]
+    if (!value) return null
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.username || url.password) return null
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/`
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+/// Picks the manual-install artifact for this platform/arch from the update
+/// feed's file list: macOS wants the dmg matching process.arch (the zip is
+/// Squirrel-only), Windows the NSIS exe, Linux the AppImage. Served feeds may
+/// carry either feed-relative names or absolute CDN URLs (mac-release-upload
+/// rewrites every url: entry to absolute), but only their basename is used.
+/// The final URL is always rebuilt against the trusted baked feed base.
+function manualDownloadUrlFor(info: UpdateInfo): string | null {
+  const basenames = (info.files ?? []).flatMap((file) => {
+    try {
+      const pathname = new URL(file.url, 'https://metadata.invalid/').pathname
+      const basename = pathname.slice(pathname.lastIndexOf('/') + 1)
+      return basename ? [decodeURIComponent(basename)] : []
+    } catch {
+      return []
+    }
+  })
+  const pick = (match: (basename: string) => boolean): string | null =>
+    basenames.find(match) ?? null
+  let chosen: string | null
+  if (process.platform === 'darwin') {
+    const arm =
+      pick((name) => name.endsWith('-arm64.dmg')) ?? pick((name) => name.endsWith('-universal.dmg'))
+    const x64 = pick((name) => name.endsWith('.dmg') && !/-(arm64|universal)\.dmg$/.test(name))
+    chosen = process.arch === 'arm64' ? (arm ?? x64) : (x64 ?? arm)
+  } else if (process.platform === 'win32') {
+    chosen = pick((name) => name.endsWith('.exe'))
+  } else {
+    chosen = pick((name) => name.endsWith('.AppImage'))
+  }
+  if (chosen === null) return null
+  const base = updateFeedBaseUrl()
+  return base === null ? null : new URL(encodeURIComponent(chosen), base).toString()
+}
 
 let started = false
 // version the user declined this session — don't nag again until next launch
@@ -415,6 +474,9 @@ export function initAutoUpdater(
   autoUpdater.disableDifferentialDownload = true
 
   let latestSeenVersion: string | null = null
+  // CDN installer link for latestSeenVersion (channel/track/arch-correct);
+  // null falls back to the generic download page
+  let manualDownloadUrl: string | null = null
   // consecutive failed attempts for latestSeenVersion; a download can fail
   // through the downloadUpdate() rejection OR only through the 'error' event
   // (macOS: Squirrel.Mac reports signature/apply failures natively), so both
@@ -448,7 +510,7 @@ export function initAutoUpdater(
       closeUpdateWindow()
     },
     onOpenDownload: () => {
-      void shell.openExternal(DOWNLOAD_PAGE_URL)
+      void shell.openExternal(manualDownloadUrl ?? DOWNLOAD_PAGE_URL)
     },
   }
 
@@ -464,6 +526,7 @@ export function initAutoUpdater(
     const sameVersionRecheck = info.version === latestSeenVersion
     if (!sameVersionRecheck) failedAttempts = 0
     latestSeenVersion = info.version
+    manualDownloadUrl = manualDownloadUrlFor(info)
     log('update available:', info.version)
     // a periodic recheck resolving to the version the open dialog already
     // shows must not reset its phase to 'available' — that would wipe an

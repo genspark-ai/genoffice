@@ -27,7 +27,7 @@ import type {
   TextEditValidation,
   ValidateTextEditsRequest,
 } from '../shared/ipc'
-import { extractPagesBytes, insertPdfBytes, savePdfToPath } from './save-pdf'
+import { extractPagesBytes, insertPdfBytes, readStaticFormFills, savePdfToPath } from './save-pdf'
 
 const tDlg = createI18n({
   zh: {
@@ -393,10 +393,15 @@ function registerPdfIpc(): void {
       return { ok: false, error: 'pdf: target path not granted to this view' }
     }
     try {
-      const { skippedTextEdits, skippedImageEdits } = await savePdfToPath(path, target, request)
+      const { skippedTextEdits, skippedTextInserts, skippedImageEdits } = await savePdfToPath(
+        path,
+        target,
+        request,
+      )
       return {
         ok: true,
         ...(skippedTextEdits.length > 0 ? { skippedTextEdits } : {}),
+        ...(skippedTextInserts.length > 0 ? { skippedTextInserts } : {}),
         ...(skippedImageEdits.length > 0 ? { skippedImageEdits } : {}),
       }
     } catch (err) {
@@ -413,13 +418,25 @@ function registerPdfIpc(): void {
     return listPageImages(new Uint8Array(await readFile(path)))
   })
 
+  ipcMain.handle(PDF_CHANNELS.listStaticFormFills, async (e, path: unknown) => {
+    if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+      throw new Error('pdf: path not granted to this view')
+    }
+    return readStaticFormFills(new Uint8Array(await readFile(path)))
+  })
+
   ipcMain.handle(
     PDF_CHANNELS.pageImagePng,
     async (
       e,
-      request: { path: string; pageIndex: number; rect: [number, number, number, number] },
+      request: {
+        path: string
+        pageIndex: number
+        rect: [number, number, number, number]
+        scale?: number
+      },
     ) => {
-      const { path, pageIndex, rect } = request ?? {}
+      const { path, pageIndex, rect, scale } = request ?? {}
       if (
         typeof path !== 'string' ||
         !allowedByWc.get(e.sender.id)?.has(path) ||
@@ -429,17 +446,23 @@ function registerPdfIpc(): void {
         throw new Error('pdf: path not granted to this view')
       }
       const { renderImagePng } = await import('./image-edit')
-      return renderImagePng(new Uint8Array(await readFile(path)), pageIndex, rect)
+      return renderImagePng(
+        new Uint8Array(await readFile(path)),
+        pageIndex,
+        rect,
+        typeof scale === 'number' && Number.isFinite(scale) ? scale : 1,
+      )
     },
   )
 
   ipcMain.handle(PDF_CHANNELS.pagePreviewPng, async (e, request: PagePreviewRequest) => {
-    const { path, pageIndex, excludeRects, clip, pxWidth, rotate } = request ?? {}
+    const { path, pageIndex, excludeRects, excludeAnnots, clip, pxWidth, rotate } = request ?? {}
     if (
       typeof path !== 'string' ||
       !allowedByWc.get(e.sender.id)?.has(path) ||
       typeof pageIndex !== 'number' ||
       !Array.isArray(excludeRects) ||
+      (excludeAnnots !== undefined && !Array.isArray(excludeAnnots)) ||
       typeof clip !== 'object' ||
       typeof pxWidth !== 'number' ||
       typeof rotate !== 'number'
@@ -450,6 +473,7 @@ function registerPdfIpc(): void {
     return renderPagePreviewPng(new Uint8Array(await readFile(path)), {
       pageIndex,
       excludeRects,
+      excludeAnnots,
       clip,
       pxWidth,
       rotate,

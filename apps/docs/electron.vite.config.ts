@@ -16,7 +16,9 @@ export default defineConfig({
   // must be bundled — externalizing them yields ERR_MODULE_NOT_FOUND under Node
   // (same setup as apps/slides).
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@genoffice/electron-utils'] })],
+    plugins: [
+      externalizeDepsPlugin({ exclude: ['@genoffice/electron-utils', '@genoffice/font-metrics'] }),
+    ],
     resolve: { alias: localAlias },
   },
   preload: {},

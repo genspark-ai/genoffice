@@ -378,9 +378,13 @@ export function cssFontFamily(font: string): string {
     )
   ) {
     const sans = /kufi|sans|dubai|segoe/i.test(nfkc)
+    // Traditional/Simplified Arabic are compact naskh faces; the size-adjusted
+    // alias (fonts.css) keeps advances near Word's, other Arabic names keep the
+    // unscaled subset
+    const compact = /\b(traditional|simplified) arabic\b/i.test(nfkc)
     const chainFor = sans
       ? ['Noto Sans Arabic', 'Geeza Pro']
-      : ['Noto Naskh Arabic', 'Geeza Pro', 'Al Bayan']
+      : [compact ? 'Noto Naskh Arabic TA' : 'Noto Naskh Arabic', 'Geeza Pro', 'Al Bayan']
     return `${chain(font, ...chainFor)},${sans ? 'sans-serif' : 'serif'}`
   }
   // Word substitutes a *missing* East Asian font with the locale's default face —
@@ -491,7 +495,23 @@ export function cssCsFontFamily(cs: string, ascii?: string, eastAsia?: string): 
   const head = cssFontFamily(cs)
     .split(',')
     .filter((f) => !/^(serif|sans-serif|monospace)$/.test(f))
-  return [...new Set([...head, ...base.split(',')])].join(',')
+  const baseFams = base.split(',')
+  const generic = /^(serif|sans-serif|monospace)$/
+  // Bundled Noto Arabic subsets have no Latin letters/parens; splice the run's
+  // Latin chain in right after them, before Geeza Pro whose Latin punctuation
+  // sits on the Arabic baseline. Arabic glyphs resolve in the subset first, so
+  // shaping is unaffected.
+  const notoIdx = head.findIndex((f) => /noto (naskh|sans) arabic/i.test(f))
+  const merged =
+    notoIdx >= 0
+      ? [
+          ...head.slice(0, notoIdx + 1),
+          ...baseFams.filter((f) => !generic.test(f)),
+          ...head.slice(notoIdx + 1),
+          ...baseFams.filter((f) => generic.test(f)),
+        ]
+      : [...head, ...baseFams]
+  return [...new Set(merged)].join(',')
 }
 
 /** Text contains CJK characters (decides the line-height factor: CJK lines measure ~1.3em per Chinese font metrics) */
@@ -728,6 +748,10 @@ export function simulateLines(
   if (availWidthPx <= 0)
     return [{ naturalLineH: defaultFontSize * 1.2, text: runs.map((r) => r.text).join('') }]
 
+  // Word breaks Korean at spaces (keep-all), including Han inside Korean
+  // paragraphs; the renderer applies the matching word-break:keep-all CSS
+  const keepAll = runs.some((r) => textHasHangul(r.text))
+
   // resulting line list (records each line's natural height and text)
   const lines: Array<{ naturalLineH: number; text: string }> = []
   let curLineW = 0
@@ -759,8 +783,11 @@ export function simulateLines(
       : Math.min(m.lineHeight, style.fontSizePx * Math.max(cjkFactor, 1.0))
 
     let buf = ''
+    let bufCjkH = 0 // CJK line-height floor of buffered chars (keep-all mode)
     const flushWord = () => {
       if (!buf) return
+      const wordH = Math.max(lineH, bufCjkH)
+      bufCjkH = 0
       const w = metrics.measure(buf, style)
       if (curLineW + w > availWidthPx && curLineW > 0) {
         pushLine(Math.max(curLineH, lineH))
@@ -773,8 +800,8 @@ export function simulateLines(
           const cw = metrics.measure(fragment + ch, style)
           if (fragment && cw > availWidthPx) {
             curText = fragment
-            pushLine(lineH)
-            curLineH = lineH
+            pushLine(wordH)
+            curLineH = wordH
             fragment = ch
           } else {
             fragment += ch
@@ -782,12 +809,12 @@ export function simulateLines(
         }
         if (fragment) {
           curLineW += metrics.measure(fragment, style)
-          curLineH = Math.max(curLineH, lineH)
+          curLineH = Math.max(curLineH, wordH)
           curText = fragment
         }
       } else {
         curLineW += w
-        curLineH = Math.max(curLineH, lineH)
+        curLineH = Math.max(curLineH, wordH)
         curText += buf
       }
       buf = ''
@@ -816,6 +843,14 @@ export function simulateLines(
         continue
       }
       if (isCjk(cp)) {
+        // CJK char line height: NaN = picked dynamically per font family (body path), a number = fixed factor (table cells)
+        const runCjkFactor = isNaN(cjkFactor) ? cjkLineHFactor(style.fontFamily) : cjkFactor
+        const cjkH = style.fontSizePx * runCjkFactor
+        if (keepAll) {
+          buf += ch
+          bufCjkH = Math.max(bufCjkH, cjkH)
+          continue
+        }
         flushWord()
         const cw = metrics.measure(ch, style)
         if (curLineW + cw > availWidthPx && curLineW > 0) {
@@ -824,9 +859,6 @@ export function simulateLines(
         }
         curLineW += cw
         curText += ch
-        // CJK char line height: NaN = picked dynamically per font family (body path), a number = fixed factor (table cells)
-        const runCjkFactor = isNaN(cjkFactor) ? cjkLineHFactor(style.fontFamily) : cjkFactor
-        const cjkH = style.fontSizePx * runCjkFactor
         curLineH = Math.max(curLineH, cjkH)
         continue
       }

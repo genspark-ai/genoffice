@@ -63,6 +63,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip: '新增节（在当前页前分节，便于组织长文档）',
     // Home: font
     ribbonGroupFont: '字体',
+    ribbonFontsSystem: '系统字体',
     ribbonGroupParagraph: '段落',
     ribbonCharSpacing: '字符间距',
     ribbonChangeCase: '更改大小写',
@@ -741,6 +742,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSection: 'Add Section',
     ribbonAddSectionTip: 'Add a section before the current slide to organize long decks',
     ribbonGroupFont: 'Font',
+    ribbonFontsSystem: 'System fonts',
     ribbonGroupParagraph: 'Paragraph',
     ribbonCharSpacing: 'Character Spacing',
     ribbonChangeCase: 'Change Case',
@@ -1421,6 +1423,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip: '現在のスライドの前にセクションを追加（長い資料の整理に便利）',
     // Home: font
     ribbonGroupFont: 'フォント',
+    ribbonFontsSystem: 'システムフォント',
     ribbonGroupParagraph: '段落',
     ribbonCharSpacing: '文字の間隔',
     ribbonChangeCase: '文字種の変換',
@@ -2122,6 +2125,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip: '현재 슬라이드 앞에 구역 추가(긴 문서 정리에 유용)',
     // Home: font
     ribbonGroupFont: '글꼴',
+    ribbonFontsSystem: '시스템 글꼴',
     ribbonGroupParagraph: '단락',
     ribbonCharSpacing: '문자 간격',
     ribbonChangeCase: '대/소문자 바꾸기',
@@ -2814,6 +2818,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Ajouter une section avant la diapositive actuelle pour organiser les longues présentations',
     ribbonGroupFont: 'Police',
+    ribbonFontsSystem: 'Polices système',
     ribbonGroupParagraph: 'Paragraphe',
     ribbonCharSpacing: 'Espacement des caractères',
     ribbonChangeCase: 'Modifier la casse',
@@ -3516,6 +3521,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Abschnitt vor der aktuellen Folie hinzufügen (zum Organisieren langer Präsentationen)',
     ribbonGroupFont: 'Schriftart',
+    ribbonFontsSystem: 'Systemschriftarten',
     ribbonGroupParagraph: 'Absatz',
     ribbonCharSpacing: 'Zeichenabstand',
     ribbonChangeCase: 'Groß-/Kleinschreibung',
@@ -4214,6 +4220,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Agregar una sección antes de la diapositiva actual para organizar presentaciones largas',
     ribbonGroupFont: 'Fuente',
+    ribbonFontsSystem: 'Fuentes del sistema',
     ribbonGroupParagraph: 'Párrafo',
     ribbonCharSpacing: 'Espaciado entre caracteres',
     ribbonChangeCase: 'Cambiar mayúsculas y minúsculas',
@@ -4913,6 +4920,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSection: 'เพิ่มส่วน',
     ribbonAddSectionTip: 'เพิ่มส่วนก่อนสไลด์ปัจจุบัน (ช่วยจัดระเบียบงานนำเสนอที่ยาว)',
     ribbonGroupFont: 'ฟอนต์',
+    ribbonFontsSystem: 'แบบอักษรของระบบ',
     ribbonGroupParagraph: 'ย่อหน้า',
     ribbonCharSpacing: 'ระยะห่างอักขระ',
     ribbonChangeCase: 'เปลี่ยนตัวพิมพ์',
@@ -5587,6 +5595,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Tambahkan bagian sebelum slide saat ini untuk mengatur presentasi yang panjang',
     ribbonGroupFont: 'Font',
+    ribbonFontsSystem: 'Font sistem',
     ribbonGroupParagraph: 'Paragraf',
     ribbonCharSpacing: 'Penspasian Karakter',
     ribbonChangeCase: 'Ubah Huruf Besar/Kecil',
@@ -6275,6 +6284,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Добавить раздел перед текущим слайдом (удобно для организации длинных презентаций)',
     ribbonGroupFont: 'Шрифт',
+    ribbonFontsSystem: 'Системные шрифты',
     ribbonGroupParagraph: 'Абзац',
     ribbonCharSpacing: 'Межзнаковый интервал',
     ribbonChangeCase: 'Изменить регистр',
@@ -6960,6 +6970,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSection: 'إضافة مقطع',
     ribbonAddSectionTip: 'إضافة مقطع قبل الشريحة الحالية لتنظيم العروض التقديمية الطويلة',
     ribbonGroupFont: 'خط',
+    ribbonFontsSystem: 'خطوط النظام',
     ribbonGroupParagraph: 'فقرة',
     ribbonCharSpacing: 'تباعد الأحرف',
     ribbonChangeCase: 'تغيير حالة الأحرف',
@@ -7634,6 +7645,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Adiciona uma seção antes do slide atual para organizar apresentações longas',
     ribbonGroupFont: 'Fonte',
+    ribbonFontsSystem: 'Fontes do sistema',
     ribbonGroupParagraph: 'Parágrafo',
     ribbonCharSpacing: 'Espaçamento de caracteres',
     ribbonChangeCase: 'Alterar maiúsculas e minúsculas',
@@ -8326,6 +8338,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Aggiunge una sezione prima della diapositiva corrente per organizzare presentazioni lunghe',
     ribbonGroupFont: 'Carattere',
+    ribbonFontsSystem: 'Caratteri di sistema',
     ribbonGroupParagraph: 'Paragrafo',
     ribbonCharSpacing: 'Spaziatura caratteri',
     ribbonChangeCase: 'Maiuscole/minuscole',
@@ -9024,6 +9037,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Dodaje sekcję przed bieżącym slajdem, aby ułatwić organizację długich prezentacji',
     ribbonGroupFont: 'Czcionka',
+    ribbonFontsSystem: 'Czcionki systemowe',
     ribbonGroupParagraph: 'Akapit',
     ribbonCharSpacing: 'Odstępy między znakami',
     ribbonChangeCase: 'Zmień wielkość liter',
@@ -9714,6 +9728,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Voegt een sectie toe vóór de huidige dia om lange presentaties te ordenen',
     ribbonGroupFont: 'Lettertype',
+    ribbonFontsSystem: 'Systeemlettertypen',
     ribbonGroupParagraph: 'Alinea',
     ribbonCharSpacing: 'Tekenafstand',
     ribbonChangeCase: 'Hoofdlettergebruik wijzigen',
@@ -10409,6 +10424,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'Menambah seksyen sebelum slaid semasa untuk mengatur persembahan yang panjang',
     ribbonGroupFont: 'Fon',
+    ribbonFontsSystem: 'Fon sistem',
     ribbonGroupParagraph: 'Paragraph',
     ribbonCharSpacing: 'Character Spacing',
     ribbonChangeCase: 'Change Case',
@@ -11099,6 +11115,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSection: 'הוספת מקטע',
     ribbonAddSectionTip: 'מוסיף מקטע לפני השקופית הנוכחית לארגון מצגות ארוכות',
     ribbonGroupFont: 'גופן',
+    ribbonFontsSystem: 'גופני מערכת',
     ribbonGroupParagraph: 'פסקה',
     ribbonCharSpacing: 'ריווח תווים',
     ribbonChangeCase: 'שינוי רישיות',
@@ -11766,6 +11783,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSectionTip:
       'लंबी प्रस्तुतियों को व्यवस्थित करने के लिए वर्तमान स्लाइड से पहले अनुभाग जोड़ता है',
     ribbonGroupFont: 'फ़ॉन्ट',
+    ribbonFontsSystem: 'सिस्टम फ़ॉन्ट',
     ribbonGroupParagraph: 'अनुच्छेद',
     ribbonCharSpacing: 'वर्ण रिक्ति',
     ribbonChangeCase: 'केस बदलें',
@@ -12447,6 +12465,7 @@ export const ribbonStrings = defineStrings({
     ribbonAddSection: '新增章節',
     ribbonAddSectionTip: '新增章節（在目前頁前分節，便於組織長簡報）',
     ribbonGroupFont: '字型',
+    ribbonFontsSystem: '系統字型',
     ribbonGroupParagraph: '段落',
     ribbonCharSpacing: '字元間距',
     ribbonChangeCase: '變更大小寫',

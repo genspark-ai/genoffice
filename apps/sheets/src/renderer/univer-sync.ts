@@ -10,6 +10,7 @@ import {
   BorderStyleTypes,
   CellValueType,
   CommandType,
+  DataValidationRenderMode,
   HorizontalAlign,
   ICommandService,
   IUndoRedoService,
@@ -19,6 +20,7 @@ import {
   type IRange,
   type IStyleData,
 } from '@univerjs/core'
+import { IRenderManagerService } from '@univerjs/engine-render'
 import { CFValueType, type IValueConfig } from '@univerjs/preset-sheets-conditional-formatting'
 
 import type {
@@ -2619,7 +2621,7 @@ function applyDataValidations(
 /// File rule → Univer IDataValidationRule. Transformations are bijective with
 /// the save-side mapping in xlsx-dv.ts: none↔any, list literal `"a,b"`↔`a,b`,
 /// reference/custom formulas gain a leading `=`; everything else verbatim.
-function toUniverDvRule(
+export function toUniverDvRule(
   rule: WorkbookRangeResult['dataValidations'][number],
   uid: string,
 ): Record<string, unknown> | null {
@@ -2666,7 +2668,14 @@ function toUniverDvRule(
     ...(rule.operator === undefined ? {} : { operator: rule.operator }),
     ...(formula1 === undefined ? {} : { formula1 }),
     ...(formula2 === undefined ? {} : { formula2 }),
-    ...(type === 'list' ? { showDropDown: !rule.suppressDropdown } : {}),
+    ...(type === 'list'
+      ? {
+          showDropDown: !rule.suppressDropdown,
+          // Text mode preserves the workbook's normal cell appearance. The
+          // app overlays only the small dropdown arrow on populated cells.
+          renderMode: DataValidationRenderMode.TEXT,
+        }
+      : {}),
     ...(rule.showInputMessage ? { showInputMessage: true } : {}),
     ...(rule.showErrorMessage ? { showErrorMessage: true } : {}),
     ...(errorStyle === undefined ? {} : { errorStyle }),
@@ -3043,6 +3052,21 @@ export function queueVisualInstall(
       lazyWorkbookRef.current !== state ||
       runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId() !== sheetId
     ) {
+      return
+    }
+    const workbookId = runtime.univerAPI.getActiveWorkbook()?.getId()
+    const render = workbookId
+      ? runtime.univer.__getInjector().get(IRenderManagerService).getRenderById(workbookId)
+      : null
+    const renderMounted = (() => {
+      try {
+        return Boolean(render?.mainComponent && render.engine.getCanvasElement().isConnected)
+      } catch {
+        return false
+      }
+    })()
+    if (!renderMounted) {
+      visualInstallTimerRef.current = setTimeout(install, 100)
       return
     }
     // Reinstalling mid-drag disposes the dragged node and kills its pointer

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
@@ -1386,6 +1394,31 @@ export function App() {
     return () => ro.disconnect()
   }, [doc, zoomFit, rawFitWidth])
 
+  // Read Mode opens at 1:1 — the same page size as the Page Preview — and the
+  // user's zoom / fit mode is restored on exit (wheel zoom still works inside).
+  // Layout effect: it must snapshot/restore before the ResizeObserver reacts to
+  // the .read-mode chrome toggling (RO callbacks fire at layout time, after
+  // layout effects but before passive effects), or zoomFit would rewrite
+  // lastFitRef first; zoomLiveRef is synced here for the same reason.
+  const preReadZoomRef = useRef<{
+    zoom: number
+    fit: { mode: 'width' | 'page'; value: number } | null
+  } | null>(null)
+  useLayoutEffect(() => {
+    if (readMode) {
+      preReadZoomRef.current = { zoom: zoomLiveRef.current, fit: lastFitRef.current }
+      lastFitRef.current = null
+      zoomLiveRef.current = 100
+      setZoom(100)
+    } else if (preReadZoomRef.current) {
+      const prev = preReadZoomRef.current
+      preReadZoomRef.current = null
+      lastFitRef.current = prev.fit
+      zoomLiveRef.current = prev.zoom
+      setZoom(prev.zoom)
+    }
+  }, [readMode])
+
   // page-bottom height (px) reserved for footnote references inside a block: same estimation model as the parity runner
   const footnoteExtraOf = useCallback(
     (b: Block): number => {
@@ -2650,6 +2683,18 @@ export function App() {
   }, [cancelNewComment])
 
   const hasDoc = !!doc
+  // Undo/redo availability: refreshed on every transaction so the QAT buttons grey out when empty
+  const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
+  useEffect(() => {
+    if (!editor) return
+    const refresh = () =>
+      setHistState({ canUndo: editor.can().undo(), canRedo: editor.can().redo() })
+    refresh()
+    editor.on('transaction', refresh)
+    return () => {
+      editor.off('transaction', refresh)
+    }
+  }, [editor])
   const quickActions = useMemo(
     () => (
       <>
@@ -2664,7 +2709,7 @@ export function App() {
         <button
           className="qa-btn"
           title={t('appUndo')}
-          disabled={!hasDoc}
+          disabled={!hasDoc || !histState.canUndo}
           onClick={() => editor?.chain().focus().undo().run()}
         >
           <IconUndo size={16} />
@@ -2672,7 +2717,7 @@ export function App() {
         <button
           className="qa-btn"
           title={t('appRedo')}
-          disabled={!hasDoc}
+          disabled={!hasDoc || !histState.canRedo}
           onClick={() => editor?.chain().focus().redo().run()}
         >
           <IconRedo size={16} />
@@ -2690,7 +2735,7 @@ export function App() {
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hasDoc, hasUnsavedChanges, autoSave, editor, save, lang],
+    [hasDoc, hasUnsavedChanges, autoSave, editor, save, lang, histState],
   )
 
   if (!editor) return null

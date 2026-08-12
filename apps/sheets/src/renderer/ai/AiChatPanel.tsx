@@ -151,12 +151,19 @@ const PANEL_WIDTH_KEY = 'sheets-ai-panel-width'
 const PANEL_WIDTH_MIN = 280
 
 function clampPanelWidth(w: number): number {
-  return Math.min(Math.max(w, PANEL_WIDTH_MIN), Math.min(720, Math.round(window.innerWidth * 0.6)))
+  // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
+  // shell lays it out), so never let the ceiling drop below the minimum
+  const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
+  return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
 }
 
 function loadPanelWidth(): number | null {
   const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
-  return Number.isFinite(saved) && saved > 0 ? clampPanelWidth(saved) : null
+  // static bounds only — clamping against the window here would bake a
+  // transiently small viewport into the restored preference
+  return Number.isFinite(saved) && saved > 0
+    ? Math.min(Math.max(saved, PANEL_WIDTH_MIN), 720)
+    : null
 }
 
 export interface AiToolChip {
@@ -295,23 +302,30 @@ export function AiChatPanel({
     if (aiBusy) busyStartRef.current = Date.now()
   }, [aiBusy])
 
+  // preferred = the user's chosen width (the only value persisted); the CSS var
+  // gets the clamped display width. Deriving the display width from the
+  // preference means a transiently small window never permanently shrinks the panel.
+  const preferredWidthRef = useRef<number | null>(null)
+
   // Restore the persisted panel width (the grid column tracks --copilot-width on .sheet-body)
   useEffect(() => {
     if (!isOpen) return
     const saved = loadPanelWidth()
     if (saved === null) return
+    preferredWidthRef.current = saved
     const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
-    area?.style.setProperty('--copilot-width', `${saved}px`)
+    area?.style.setProperty('--copilot-width', `${clampPanelWidth(saved)}px`)
   }, [isOpen])
 
-  // Re-clamp the panel width when the window shrinks (max is 60% of the window)
+  // Re-derive the display width on window resize (max is 60% of the window);
+  // growing the window back restores the preferred width
   useEffect(() => {
     if (!isOpen) return
     const onResize = (): void => {
       const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
-      const current = parseFloat(area?.style.getPropertyValue('--copilot-width') ?? '')
-      if (!area || !Number.isFinite(current)) return
-      area.style.setProperty('--copilot-width', `${clampPanelWidth(current)}px`)
+      const preferred = preferredWidthRef.current
+      if (!area || preferred === null) return
+      area.style.setProperty('--copilot-width', `${clampPanelWidth(preferred)}px`)
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -340,6 +354,7 @@ export function AiChatPanel({
     let width = 0
     const onMove = (ev: PointerEvent): void => {
       width = clampPanelWidth(ev.clientX)
+      preferredWidthRef.current = width
       area.style.setProperty('--copilot-width', `${width}px`)
     }
     let done = false

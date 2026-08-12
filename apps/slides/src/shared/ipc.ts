@@ -1301,6 +1301,8 @@ export interface SlidesApi {
   ) => Promise<{ ok: boolean; path?: string; error?: string; slides?: RenderSlide[] }>
   /** The close guard chose "Save": the main process asks the renderer to run the full save flow */
   onCloseSaveRequest: (handler: () => void) => () => void
+  /** Undo/redo stack occupancy pushed by the main process (drives the QAT button gray states) */
+  onHistoryChanged: (handler: (state: { canUndo: boolean; canRedo: boolean }) => void) => () => void
   reportCloseSaveResult: (ok: boolean) => void
   /** Mirror the autosave toggle state to the main process: files with it on save silently on close, no dialog */
   setAutoSavePref: (on: boolean) => void

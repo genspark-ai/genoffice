@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { pdfRectToCss, viewToPdf } from './annotations'
 import type { PageGeom } from './annotations'
-import type { ImageEditInput, PageImageRef } from '../shared/ipc'
+import type { ImageEditInput, PageImageRef, StaticFormFillRecord } from '../shared/ipc'
 
 type Rect = [number, number, number, number]
 
@@ -13,6 +13,12 @@ export interface LocalImageEdit {
   png?: string | null
   /** Z-band the existing image had before this op (labels the layer toggle) */
   origAbove?: boolean
+  /** Editable source metadata when this image is a static form fill. */
+  staticFill?: StaticFormFillRecord
+  /** Pre-transparency pixels of the op's current bytes: transparency presets re-bake
+      from this so they set an absolute level instead of compounding. Cleared by any
+      other pixel edit (flip/crop/cutout/replace/insert-rotate). */
+  opacityBase?: string
 }
 
 /** Existing images are addressed by their listed rect; stable across renders, not saves */

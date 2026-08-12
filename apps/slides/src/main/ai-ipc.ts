@@ -4,7 +4,7 @@
  * to avoid renderer CORS), search tools, and the slides-only ai:* channels
  * (image generation, media analysis, style templates).
  */
-import { app, ipcMain, shell } from 'electron'
+import { app, ipcMain, net, shell } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -12,6 +12,7 @@ import {
   AiTimeoutError,
   defaultAiSettings,
   resolveAiSettings,
+  setRescueFetch,
   streamForProvider,
   type AiSettings,
   type AiStreamChunk,
@@ -33,7 +34,7 @@ import {
 import { addPicture, replacePictureBytes } from '@genoffice/pptx-engine'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'
-import { pushHistory, rebuildSlide, sessions } from './session-state'
+import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './session-state'
 
 // ---- AI settings + streaming proxy (the main process does the networking to avoid renderer CORS; implementation shared via @genoffice/ai-provider) ----
 
@@ -56,6 +57,9 @@ function writeJson(path: string, value: unknown): void {
 const activeAiStreams = new Map<string, AbortController>()
 
 export function registerAiIpc(): void {
+  // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
+  setRescueFetch((url, init) => net.fetch(url, init))
+
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
@@ -268,6 +272,7 @@ export function registerSlidesOnlyAiIpc(): void {
         })
         if (!el) {
           session.undoStack.pop()
+          scheduleHistoryNotify(session)
           return null
         }
         session.fitWidthPx = op.fitWidthPx
@@ -305,6 +310,7 @@ export function registerSlidesOnlyAiIpc(): void {
         )
         if (!ok) {
           session.undoStack.pop()
+          scheduleHistoryNotify(session)
           return null
         }
         return rebuildSlide(session, op.slideIndex)

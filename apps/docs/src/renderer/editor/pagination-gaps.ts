@@ -169,8 +169,71 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)
-  if (prev && sameGaps(prev, next)) return
-  view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  if (!prev || !sameGaps(prev, next))
+    view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  // DOM-only rowspan bridging; observer paused so PM never re-parses the mutated
+  // cells (a reparse would wipe cell attrs that don't round-trip through DOM)
+  const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver
+  obs?.stop()
+  try {
+    syncPhantomRowspans(view.dom as HTMLElement)
+  } finally {
+    obs?.start()
+  }
+}
+
+/**
+ * Phantom table rows (page-gap rows, repeated-header clones) occupy grid row
+ * slots, so a vMerge cell spanning across them exhausts its rowspan early and
+ * every later cell in the row shifts one column left. Bridge: grow each
+ * crossing cell's rowspan by the phantom rows inside its span, keeping the
+ * source value in data-base-rowspan (clone/export paths drop phantom rows and
+ * restore from it). Idempotent; with no phantom rows left it restores all cells.
+ */
+export function syncPhantomRowspans(root: HTMLElement): void {
+  const isPhantom = (tr: HTMLTableRowElement) =>
+    tr.classList.contains('page-gap') || tr.classList.contains('page-repeat-header')
+  const grown = new Set<HTMLTableCellElement>()
+  for (const table of Array.from(root.querySelectorAll('table'))) {
+    const real: HTMLTableRowElement[] = []
+    /** phantom rows between real[i-1] and real[i] */
+    const phantomsBefore: number[] = []
+    let pending = 0
+    let hasPhantom = false
+    for (const tr of Array.from(table.rows)) {
+      if (isPhantom(tr)) {
+        pending++
+        hasPhantom = true
+        continue
+      }
+      phantomsBefore.push(pending)
+      pending = 0
+      real.push(tr)
+    }
+    if (!hasPhantom) continue
+    real.forEach((tr, start) => {
+      for (const td of Array.from(tr.cells)) {
+        const base = Number(td.getAttribute('data-base-rowspan')) || td.rowSpan
+        if (base <= 1) continue
+        // phantoms strictly inside the span [start, start+base): each boundary counts once
+        let extra = 0
+        for (let r = start + 1; r < Math.min(start + base, real.length); r++)
+          extra += phantomsBefore[r]
+        if (extra === 0) continue
+        if (td.getAttribute('data-base-rowspan') !== String(base))
+          td.setAttribute('data-base-rowspan', String(base))
+        if (td.rowSpan !== base + extra) td.rowSpan = base + extra
+        grown.add(td)
+      }
+    })
+  }
+  for (const td of Array.from(
+    root.querySelectorAll<HTMLTableCellElement>('td[data-base-rowspan], th[data-base-rowspan]'),
+  )) {
+    if (grown.has(td)) continue
+    td.rowSpan = Number(td.getAttribute('data-base-rowspan')) || 1
+    td.removeAttribute('data-base-rowspan')
+  }
 }
 
 function sameGaps(a: DecorationSet, b: DecorationSet): boolean {

@@ -9,7 +9,15 @@ import {
   cssCsFontFamily,
   cssDualFontFamily,
   cssFontFamily,
+  cssGridLineBase,
+  cssGridSpacingPt,
+  cssLineHeight,
+  isCjkFontName,
+  lineHeightFactor,
+  paraLineFactorCss,
+  textHasCjk,
   textHasComplexScript,
+  textHasHangul,
 } from '../line-metrics'
 import { shapeBackgroundCss } from './shape-svg'
 import { t } from '../i18n/locale'
@@ -19,6 +27,7 @@ import {
   type FormulaDisplay,
   type Run,
   type TableModel,
+  type TableParagraph,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
 
@@ -623,6 +632,69 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
   return ['div', boxAttrs, ...paras]
 }
 
+/** Max explicit run size (half-points) when every run declares one (blockAttrs' strut rule). */
+function runStrutHalfPoints(runs: Run[]): number | null {
+  let max: number | null = null
+  for (const run of runs) {
+    if (run.sizeHalfPoints == null) return null
+    max = Math.max(max ?? 0, run.sizeHalfPoints)
+  }
+  return max
+}
+
+/** Per-paragraph --doc-line-factor from runs (Run[] port of extensions' paraLineFactor). */
+function runsLineFactor(runs: Run[], text: string): string {
+  const scriptVar = paraLineFactorCss(text)
+  if (!textHasCjk(text)) return scriptVar
+  let declaredMax = 0
+  let undeclaredCjk = false
+  for (const run of runs) {
+    if (!textHasCjk(run.text)) continue
+    const family = run.eaSlotEmpty === true ? null : (run.font ?? run.fontAscii)
+    if (family && isCjkFontName(family)) {
+      declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+    } else undeclaredCjk = true
+  }
+  if (declaredMax <= 0) return scriptVar
+  return undeclaredCjk ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+}
+
+/**
+ * Cell paragraph block: run-size strut + line factor + explicit line spacing,
+ * mirroring the main renderer's blockAttrs. Without it the cell inherits
+ * .doc-page's line height as a computed px value (body font size), inflating
+ * every line whose runs are smaller. Block divs keep innerText's
+ * one-\n-per-paragraph semantics that cell edit write-back depends on.
+ */
+function cellParaSpec(
+  content: unknown[],
+  text: string,
+  runs: Run[] | null,
+  fmt?: TableParagraph,
+): DomSpec {
+  const styles: string[] = []
+  if (text) {
+    // Korean cells break at spaces like Word (same rule as the editor's blockAttrs)
+    if (textHasHangul(text)) styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
+    styles.push(`--doc-line-factor:${runs ? runsLineFactor(runs, text) : paraLineFactorCss(text)}`)
+    const strut = runs ? runStrutHalfPoints(runs) : null
+    if (strut) styles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
+  }
+  styles.push(
+    `line-height:${cssLineHeight(fmt?.lineRule, fmt?.lineRawTwips, fmt?.lineSpacing) ?? cssGridLineBase()}`,
+  )
+  if (fmt?.spaceBefore) styles.push(`margin-top:${cssGridSpacingPt(fmt.spaceBefore / 20)}`)
+  if (fmt?.spaceAfter) styles.push(`margin-bottom:${cssGridSpacingPt(fmt.spaceAfter / 20)}`)
+  // Word sizes an empty line by the paragraph mark / empty run (same as blockAttrs)
+  if (!text && fmt?.emptyRunSizeHalfPoints) {
+    styles.push(`font-size:${fmt.emptyRunSizeHalfPoints / 2}pt`)
+  }
+  const attrs: Record<string, string> = { style: styles.join(';') }
+  // empty paragraphs get the Latin factor (.doc-table .doc-p-empty) and a <br> line box
+  if (!text) attrs.class = 'doc-p-empty'
+  return content.length > 0 ? ['div', attrs, ...content] : ['div', attrs, ['br', {}]]
+}
+
 /** read-only <table> DOM spec from the display model (vMerge -> rowSpan) */
 export function renderTableSpec(model: TableModel): DomSpec {
   // grid positions per row (accounting for colSpan) so vertical merges line up
@@ -679,31 +751,26 @@ export function renderTableSpec(model: TableModel): DomSpec {
       if (style) tdAttrs.style = style
       if (cell.colSpan && cell.colSpan > 1) tdAttrs.colspan = String(cell.colSpan)
       if (rowSpan > 1) tdAttrs.rowspan = String(rowSpan)
-      // run-level styles preserved; <br> separators keep innerText \n-split
-      // semantics that nested-table edit write-back depends on
-      const paraBlocks: unknown[][] = cell.richParas?.length
-        ? cell.richParas.map((p) => [
-            ...runSpansWithPads(
-              p.runs.filter((run) => run.text !== ''),
-              p.autoSpace,
-            ),
-          ])
-        : cell.paras.map((p) => (p === '' ? [] : [...padSegments(p)]))
+      const paraBlocks: DomSpec[] = cell.richParas?.length
+        ? cell.richParas.map((p) => {
+            const runs = p.runs.filter((run) => run.text !== '')
+            return cellParaSpec(
+              runSpansWithPads(runs, p.autoSpace),
+              runs.map((r) => r.text).join(''),
+              runs,
+              p,
+            )
+          })
+        : cell.paras.map((p) => cellParaSpec(p === '' ? [] : [...padSegments(p)], p, null))
       // nested tables spliced in at their paragraph anchors (cells with them are never editable)
       const nested = cell.nestedTables ?? []
       const anchorOf = (i: number) =>
         Math.min(cell.nestedTableAnchors?.[i] ?? paraBlocks.length, paraBlocks.length)
       const content: unknown[] = []
       let ni = 0
-      let lastWasTable = false
       paraBlocks.forEach((blk, pi) => {
-        while (ni < nested.length && anchorOf(ni) <= pi) {
-          content.push(renderTableSpec(nested[ni++]))
-          lastWasTable = true
-        }
-        if (pi > 0 && !lastWasTable) content.push(['br', {}])
-        content.push(...blk)
-        lastWasTable = false
+        while (ni < nested.length && anchorOf(ni) <= pi) content.push(renderTableSpec(nested[ni++]))
+        content.push(blk)
       })
       while (ni < nested.length) content.push(renderTableSpec(nested[ni++]))
       if (content.length === 0) content.push('\u00a0')

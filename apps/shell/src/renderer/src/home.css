@@ -10,6 +10,8 @@
   --checkbox-bg: #ececec;
   --timeline-user-bg: #eef1f5;
   --timeline-user-text: #5a6170;
+  /* lift for the active segment in gray-track tab pills */
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 8%);
 
   /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
   --logo-invert: 0;
@@ -26,6 +28,7 @@
   --checkbox-bg: #333;
   --timeline-user-bg: #2a2a3a;
   --timeline-user-text: #b0b0c0;
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
   --logo-invert: 1;
 }
 
@@ -39,6 +42,7 @@
     --checkbox-bg: #333;
     --timeline-user-bg: #2a2a3a;
     --timeline-user-text: #b0b0c0;
+    --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
     --logo-invert: 1;
   }
 }
@@ -315,10 +319,10 @@ body.vib .home {
 }
 
 .section-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
 }
 
 .home-hero {
@@ -381,6 +385,9 @@ body.vib .home {
 .quick-text {
   flex: 1;
   min-width: 0;
+  /* cap at the card's content box: long ext lists ellipsize inside the padding
+     instead of stretching the wrapper and getting clipped at the card border */
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -449,14 +456,22 @@ body.vib .home {
 /* ---- recents ---- */
 
 .recents {
-  margin-top: 34px;
+  margin-top: 24px;
 }
 
+/* sticks to the top of the .content scrollport while the list scrolls under;
+   the gap below is padding (not margin) so the background paints over rows.
+   z-index stays under the sort dropdown (z-index: 5). */
 .recents-toolbar {
+  position: sticky;
+  /* offsets .content's 28px padding-top so the bar hugs the visible top edge */
+  top: -28px;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  padding: 10px 0 14px;
+  background: var(--bg-content);
 }
 
 /* "RECENT · N files" on one baseline */
@@ -464,43 +479,60 @@ body.vib .home {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  /* optical: geometrically the label is dead level with the tab text (glyph
+     boxes coincide), but naked bold text beside the gray pill track reads
+     high — compensate down */
+  transform: translateY(2px);
 }
 
+/* matches .section-label so "Recent · N files" reads as one label */
 .file-count {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-tertiary);
 }
 
 /* segmented control: gray track, active segment = white card */
-.filter-pills {
+/* segmented filter control: gray track, active segment = white card.
+   One shared 40px rail for the recents page and the Genspark Projects
+   toolbar (where it lines up with the 40px refresh button and search box). */
+.filter-pills,
+.cloud-seg {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  align-items: center;
+  height: 40px;
+  padding: 0 3px;
   border-radius: 10px;
   background: var(--checkbox-bg);
+  flex-shrink: 0;
 }
 
-.filter-pill {
-  padding: 5px 14px;
+.filter-pill,
+.cloud-seg button {
+  padding: 7px 15px;
   border: none;
   border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: 13px;
+  /* same size as the toolbar's heading text ("Recent · N files") so the two
+     sit on one optical line — a 13px/14px mix reads as misaligned */
+  font-size: 14px;
   color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.filter-pill:hover {
+.filter-pill:hover,
+.cloud-seg button:hover {
   color: var(--text);
 }
 
-.filter-pill.active {
+.filter-pill.active,
+.cloud-seg button.active {
   background: var(--surface);
   color: var(--text);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+  box-shadow: var(--shadow-pill);
 }
 
 .empty {
@@ -534,11 +566,14 @@ body.vib .home {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* keeps the toolbar the same height as the 40px filter pills it replaces */
+  min-height: 40px;
 }
 
+/* matches .selection-action's text (14px, body text color) */
 .selection-count {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 14px;
+  color: var(--text);
   margin-right: 4px;
 }
 
@@ -590,7 +625,7 @@ body.vib .home {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 /* header label starts at the icon column so it lines up with the file badges */
@@ -948,9 +983,8 @@ body.vib .home {
 .proj-panel-title {
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 .proj-add-btn {
@@ -1400,26 +1434,34 @@ body.vib .home {
 /* ── Cloud (Genspark web) projects ── */
 
 /* fixed header: the content column never scrolls; only .cloud-scroll does */
+/* whole page scrolls (same as the recents page) so the wheel works anywhere;
+   no bottom padding: the list runs flush to the window edge */
 .content:has(.cloud-projects) {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 26px 36px 24px;
-}
-
-.cloud-projects {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+  padding: 40px 36px 0;
 }
 
 .cloud-projects .proj-empty {
   flex: 1;
 }
 
+/* pinned while the page scrolls (wheel still works anywhere); the ::before
+   covers the seam left by the content's 40px top padding */
 .cloud-hero {
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-content);
+  padding-bottom: 12px;
+}
+
+.cloud-hero::before {
+  content: '';
+  position: absolute;
+  top: -40px;
+  left: -36px;
+  right: -36px;
+  height: 40px;
+  background: var(--bg-content);
 }
 
 .cloud-hero-top {
@@ -1434,52 +1476,16 @@ body.vib .home {
   align-items: center;
   gap: 12px;
   margin: 0;
-  font-size: 26px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text);
-}
-
-.cloud-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: #eef0f2;
-  border-radius: 999px;
-  padding: 5px 11px;
-  white-space: nowrap;
 }
 
 .cloud-subtitle {
   margin: 8px 0 0;
   font-size: 14px;
   color: var(--text-muted);
-}
-
-.cloud-sort {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.cloud-sort-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 10px;
-  padding: 8px 13px;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.cloud-sort-btn:hover {
-  background: var(--surface-subtle);
 }
 
 .cloud-sort-menu {
@@ -1496,7 +1502,9 @@ body.vib .home {
 }
 
 .cloud-sort-menu button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   text-align: left;
   border: none;
@@ -1506,6 +1514,10 @@ body.vib .home {
   border-radius: 7px;
   cursor: pointer;
   color: var(--text);
+}
+
+.cloud-sort-check {
+  flex-shrink: 0;
 }
 
 .cloud-sort-menu button:hover {
@@ -1520,12 +1532,14 @@ body.vib .home {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 18px;
+  margin-top: 26px;
 }
 
 .cloud-search {
+  /* sits at the toolbar's right edge, flush with the table below */
   flex: 1;
   max-width: 520px;
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1551,37 +1565,78 @@ body.vib .home {
   color: var(--text);
 }
 
-.cloud-seg {
-  display: flex;
-  background: #f0f1f3;
-  border-radius: 10px;
-  padding: 3px;
-  flex-shrink: 0;
+/* placeholder color follows the suite convention (AI input boxes):
+   tertiary text, not the browser's UA default */
+.cloud-search input::placeholder,
+.proj-rename-input::placeholder {
+  color: var(--text-tertiary);
 }
 
-.cloud-seg button {
-  border: none;
-  background: none;
-  padding: 7px 15px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-}
+/* .cloud-seg styles live with .filter-pills (shared segmented control). */
 
-.cloud-seg button.active {
-  background: var(--surface);
-  color: var(--text);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
-}
-
+/* the toolbar → table gap lives in the sticky hero's padding-bottom so the
+   pinned header paints over rows scrolling underneath */
 .cloud-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  margin-top: 4px;
+  margin-top: 0;
+}
+
+/* Genspark Projects list styled like the recent-files table: bordered
+   rounded container, column header, grid rows with hairline dividers */
+.cloud-table {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cloud-columns,
+.cloud-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.cloud-columns {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+/* header label starts at the icon column so it lines up with the file badges */
+.cloud-columns .col-name {
+  grid-column: 1 / 3;
+}
+
+/* WPS-style sortable column header: label + direction arrow, click opens
+   the sort popover (menu styles shared with .cloud-sort-menu) */
+.cloud-col-sort {
+  position: relative;
+  justify-self: start;
+}
+
+.cloud-col-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cloud-col-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .cloud-list {
@@ -1590,45 +1645,30 @@ body.vib .home {
   padding: 0;
 }
 
-.cloud-group-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 24px 12px 10px;
-}
-
-.cloud-list li:first-child.cloud-group-label {
-  padding-top: 14px;
-}
-
-.cloud-list li + li:not(.cloud-group-label) .cloud-row {
-  border-top: 1px solid #f1f2f4;
+.cloud-list li + li {
+  border-top: 1px solid var(--border-subtle);
 }
 
 .cloud-row {
-  display: flex;
-  align-items: center;
-  gap: 13px;
   width: 100%;
-  padding: 15px 12px;
+  /* matches the recent-file rows: 14px paddings + a 26px control column */
+  min-height: 54px;
+  padding-top: 14px;
+  padding-bottom: 14px;
   border: none;
   background: none;
   cursor: pointer;
   text-align: left;
   font: inherit;
   color: var(--text);
-  border-radius: 10px;
+}
+
+.cloud-list li:last-child .cloud-row {
+  border-radius: 0 0 12px 12px;
 }
 
 .cloud-row:hover {
   background: var(--surface-subtle);
-  border-color: transparent;
-}
-
-.cloud-row:hover + li .cloud-row {
-  border-top-color: transparent;
 }
 
 .cloud-row:focus-visible {
@@ -1649,15 +1689,15 @@ body.vib .home {
   flex: 0 1 auto;
   min-width: 0;
   font-size: 14px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .cloud-row-time {
-  flex-shrink: 0;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -1681,19 +1721,14 @@ body.vib .home {
   color: var(--text-muted);
 }
 
-.cloud-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
 .cloud-refresh-btn {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  /* sits in the toolbar next to the 40px filter tabs / search box */
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: 10px;

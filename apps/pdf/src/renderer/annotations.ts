@@ -76,6 +76,25 @@ export function quadToRect(q: number[]): [number, number, number, number] {
 }
 
 /**
+ * Quad-set equality within a tolerance, order-insensitive. Used for the Word-style
+ * markup toggle: the same text selected at a different zoom level produces slightly
+ * different coordinates, and QuadPoints saved to the file round-trip through float32.
+ */
+export function quadSetsMatch(a: number[][], b: number[][], tol = 2): boolean {
+  if (a.length !== b.length) return false
+  const used = new Array<boolean>(b.length).fill(false)
+  for (const qa of a) {
+    const i = b.findIndex(
+      (qb, j) =>
+        !used[j] && qb.length === qa.length && qa.every((v, k) => Math.abs(v - qb[k]!) <= tol),
+    )
+    if (i < 0) return false
+    used[i] = true
+  }
+  return true
+}
+
+/**
  * Current selection → PDF-coordinate quads grouped by visible page (y up; each quad
  * [x1,yMax,x2,yMax,x1,yMin,x2,yMin]). Returns null when the selection is empty.
  * geoms map 1:1 to .pdf-page elements and include rotation conversion.

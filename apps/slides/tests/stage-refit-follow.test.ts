@@ -184,6 +184,25 @@ async function bootApp(): Promise<HTMLElement> {
 }
 
 describe('stage fit-to-window follow', () => {
+  it('hides bleed-only scrollbars until the nominal slide overflows', async () => {
+    const wrap = await bootApp()
+    expect(wrap.classList.contains('stage-fits-viewport')).toBe(true)
+
+    // A zoom above the geometric fit needs normal canvas panning.
+    const plus = [...container!.querySelectorAll<HTMLButtonElement>('.zoom-btn')].at(-1)!
+    act(() => plus.click())
+    await flushZoomPreview()
+    expect(stageZoom(container!)).toBeCloseTo(1.1, 5)
+    expect(wrap.classList.contains('stage-fits-viewport')).toBe(false)
+
+    // Growing the viewport makes the unchanged manual zoom fit again. The
+    // ResizeObserver must refresh the class even though it does not change zoom.
+    stageSize = { w: 1500, h: 900 }
+    await act(async () => FakeResizeObserver.fire(wrap))
+    expect(stageZoom(container!)).toBeCloseTo(1.1, 5)
+    expect(wrap.classList.contains('stage-fits-viewport')).toBe(true)
+  })
+
   it('re-fits on container resize after a reading-view round trip', async () => {
     const wrap = await bootApp()
 
