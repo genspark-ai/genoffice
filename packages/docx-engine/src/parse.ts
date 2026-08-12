@@ -1858,7 +1858,7 @@ function extractTextboxes(
         for (const r of childrenOf(p)) {
           if (nameOf(r) !== 'a:r') continue
           const t = findChild(r, 'a:t')
-          const text = t ? decodeEntities(textOf(t)) : ''
+          const text = t ? decodeNumericCharRefs(textOf(t)) : ''
           if (text === '') continue
           const run: Run = { text }
           const rPr = findChild(r, 'a:rPr')
@@ -2056,7 +2056,9 @@ const SIMPLE_INLINE_FIELD_RE = /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILE
 /** HYPERLINK "url" (optional \o "tip"): the only field form folded into an editable link run;
  * any other switch (\l bookmark, \t frame...) keeps the protected-passthrough path */
 function convertibleHyperlink(instr: string): { href: string; tooltip?: string } | null {
-  const m = /^\s*HYPERLINK\s+"([^"\\]+)"\s*(?:\\o\s+"([^"]*)"\s*)?$/.exec(decodeEntities(instr))
+  const m = /^\s*HYPERLINK\s+"([^"\\]+)"\s*(?:\\o\s+"([^"]*)"\s*)?$/.exec(
+    decodeNumericCharRefs(instr),
+  )
   if (!m) return null
   return { href: m[1], ...(m[2] ? { tooltip: m[2] } : {}) }
 }
@@ -2285,7 +2287,7 @@ function rubyPartText(rubyNode: XNode, part: 'w:rubyBase' | 'w:rt'): string {
   for (const r of childrenOf(partNode)) {
     if (nameOf(r) !== 'w:r') continue
     for (const c of childrenOf(r)) {
-      if (nameOf(c) === 'w:t') text += decodeEntities(textOf(c))
+      if (nameOf(c) === 'w:t') text += decodeNumericCharRefs(textOf(c))
     }
   }
   return text
@@ -2367,7 +2369,7 @@ function buildRun(
   let text = ''
   for (const child of childrenOf(rNode)) {
     const name = nameOf(child)
-    if (name === 'w:t' || name === 'w:delText') text += decodeEntities(textOf(child))
+    if (name === 'w:t' || name === 'w:delText') text += decodeNumericCharRefs(textOf(child))
     else if (name === 'w:tab') text += '\t'
     // In-paragraph page breaks (w:br w:type="page") are encoded as \f and preserved; column/soft breaks become \n
     else if (name === 'w:br') text += attrsOf(child)['w:type'] === 'page' ? '\f' : '\n'
@@ -3355,20 +3357,31 @@ function mathTokens(xml: string): string[] {
   return tokens
 }
 
+/**
+ * Numeric character references only (`&#65;` / `&#xF0B7;`), which fast-xml-parser
+ * leaves alone. Text and attribute values read off the parse tree have already had
+ * the five named entities resolved, so they must NOT be run through the named-entity
+ * replacements again: a document whose visible text is literally `&lt;` is stored as
+ * `&amp;lt;`, and a second decode would turn it into `<`.
+ */
+function decodeNumericCharRefs(text: string): string {
+  return text.replace(
+    /&#(?:x([0-9a-f]+)|([0-9]+));/gi,
+    (entity, hex: string | undefined, decimal: string | undefined) => {
+      const codePoint = parseInt(hex ?? decimal ?? '', hex ? 16 : 10)
+      return Number.isFinite(codePoint) &&
+        codePoint >= 0 &&
+        codePoint <= 0x10ffff &&
+        !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+        ? String.fromCodePoint(codePoint)
+        : entity
+    },
+  )
+}
+
+/** Full decode, for raw XML slices that never passed through the parser. */
 function decodeEntities(text: string): string {
-  return text
-    .replace(
-      /&#(?:x([0-9a-f]+)|([0-9]+));/gi,
-      (entity, hex: string | undefined, decimal: string | undefined) => {
-        const codePoint = parseInt(hex ?? decimal ?? '', hex ? 16 : 10)
-        return Number.isFinite(codePoint) &&
-          codePoint >= 0 &&
-          codePoint <= 0x10ffff &&
-          !(codePoint >= 0xd800 && codePoint <= 0xdfff)
-          ? String.fromCodePoint(codePoint)
-          : entity
-      },
-    )
+  return decodeNumericCharRefs(text)
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -3880,7 +3893,7 @@ function extractLockedCanvas(xml: string, ctx: BuildContext): DiagramDisplay | n
         const parts: string[] = []
         for (const r of findChildren(p, 'a:r')) {
           const t = findChild(r, 'a:t')
-          if (t) parts.push(decodeEntities(textOf(t)))
+          if (t) parts.push(decodeNumericCharRefs(textOf(t)))
           const rPr = findChild(r, 'a:rPr')
           if (rPr && sizePt === undefined) {
             const sz = parseInt(attrsOf(rPr)['sz'] ?? '', 10)
@@ -4054,7 +4067,7 @@ async function extractDiagramDrawing(
         const parts: string[] = []
         for (const r of findChildren(p, 'a:r')) {
           const t = findChild(r, 'a:t')
-          if (t) parts.push(decodeEntities(textOf(t)))
+          if (t) parts.push(decodeNumericCharRefs(textOf(t)))
           const rPr = findChild(r, 'a:rPr')
           if (rPr && sizePt === undefined) {
             const sz = parseInt(attrsOf(rPr)['sz'] ?? '', 10)
@@ -4586,7 +4599,7 @@ function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
   const start = parseInt(attrsOf(findChild(lvlNode, 'w:start') ?? {})['w:val'] ?? '0', 10)
   const level: NumberingLevel = {
     numFmt: attrsOf(findChild(lvlNode, 'w:numFmt') ?? {})['w:val'] ?? 'decimal',
-    lvlText: decodeEntities(attrsOf(findChild(lvlNode, 'w:lvlText') ?? {})['w:val'] ?? ''),
+    lvlText: decodeNumericCharRefs(attrsOf(findChild(lvlNode, 'w:lvlText') ?? {})['w:val'] ?? ''),
     start: Number.isFinite(start) ? start : 0,
   }
   const lvlPPr = findChild(lvlNode, 'w:pPr')
