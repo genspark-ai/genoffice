@@ -2848,6 +2848,7 @@ export function App() {
               editor={editor}
               blocks={doc.parsed.blocks}
               settings={settings}
+              onSettingsChange={setSettings}
               docEmpty={wordCount === 0}
               numIdFallback={
                 doc.isBlank ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID } : null

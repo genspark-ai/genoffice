@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { useI18n } from './locale'
 import type { StringKey } from './locale'
 import type { AccountStatus, UiTheme } from '../../shared/home-api'
+import type { AiProviderConfig, AiProviderId, AiSettings } from '@genoffice/ai-provider'
+import { AI_PROVIDERS } from '@genoffice/ai-provider'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -149,6 +151,13 @@ export function SettingsModal({
   const [saveDir, setSaveDir] = useState('')
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
+  const [aiProvider, setAiProvider] = useState<AiProviderId>('genspark')
+  const [aiProviders, setAiProviders] = useState<Record<AiProviderId, AiProviderConfig>>(
+    () =>
+      Object.fromEntries(
+        AI_PROVIDERS.map((p) => [p.id, { apiKey: '', model: p.defaultModel, baseUrl: '' }]),
+      ) as Record<AiProviderId, AiProviderConfig>,
+  )
 
   useEffect(() => {
     let alive = true
@@ -163,6 +172,12 @@ export function SettingsModal({
     })
     void window.aiOffice.getAppVersion?.().then((v) => {
       if (alive && v) setAppVersion(v)
+    })
+    void window.aiOffice.getAiSettings?.().then((s) => {
+      if (alive) {
+        setAiProvider(s.provider)
+        setAiProviders(s.providers)
+      }
     })
     return () => {
       alive = false
@@ -338,6 +353,123 @@ export function SettingsModal({
                     </button>
                   }
                 />
+                <h4 className="set-pane-subtitle">{t('aiSettingsTitle')}</h4>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <label className="set-field-label" htmlFor="set-ai-provider">
+                      {t('aiSettingsProvider')}
+                    </label>
+                  </div>
+                  <span className="set-select-wrap">
+                    <span className="set-select-text" aria-hidden="true">
+                      {AI_PROVIDERS.find((p) => p.id === aiProvider)?.label ?? aiProvider}
+                    </span>
+                    <select
+                      id="set-ai-provider"
+                      className="set-select"
+                      value={aiProvider}
+                      onChange={(e) => setAiProvider(e.target.value as AiProviderId)}
+                    >
+                      {AI_PROVIDERS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </div>
+                {(() => {
+                  const meta = AI_PROVIDERS.find((p) => p.id === aiProvider)
+                  const config = aiProviders[aiProvider] ?? { apiKey: '', model: '', baseUrl: '' }
+                  const update = (patch: Partial<AiProviderConfig>) => {
+                    setAiProviders((prev) => ({
+                      ...prev,
+                      [aiProvider]: {
+                        ...(prev[aiProvider] ?? { apiKey: '', model: '', baseUrl: '' }),
+                        ...patch,
+                      },
+                    }))
+                  }
+                  const noKeyProvider = aiProvider === 'genspark' || aiProvider === 'opencode'
+                  const saveAi = () => {
+                    void window.aiOffice.setAiSettings?.({ provider: aiProvider, providers: aiProviders })
+                  }
+                  return (
+                    <>
+                      <div className="set-field">
+                        <div className="set-field-text">
+                          <label className="set-field-label" htmlFor="set-ai-model">
+                            {t('aiSettingsModel')}
+                          </label>
+                        </div>
+                        <input
+                          id="set-ai-model"
+                          className="set-input"
+                          value={config.model}
+                          onChange={(e) => update({ model: e.target.value })}
+                          placeholder={
+                            aiProvider === 'opencode'
+                              ? t('aiSettingsModelPlaceholder')
+                              : t('aiSettingsCustomModelPlaceholder')
+                          }
+                          spellCheck={false}
+                        />
+                      </div>
+                      {!noKeyProvider && (
+                        <div className="set-field">
+                          <div className="set-field-text">
+                            <label className="set-field-label" htmlFor="set-ai-key">
+                              {t('aiSettingsApiKey')}
+                            </label>
+                          </div>
+                          <input
+                            id="set-ai-key"
+                            className="set-input"
+                            type="password"
+                            value={config.apiKey}
+                            onChange={(e) => update({ apiKey: e.target.value })}
+                            placeholder={meta?.keyPlaceholder}
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                        </div>
+                      )}
+                      {meta?.needsBaseUrl && (
+                        <div className="set-field">
+                          <div className="set-field-text">
+                            <label className="set-field-label" htmlFor="set-ai-base-url">
+                              {t('aiSettingsBaseUrl')}
+                            </label>
+                          </div>
+                          <input
+                            id="set-ai-base-url"
+                            className="set-input"
+                            value={config.baseUrl ?? ''}
+                            onChange={(e) => update({ baseUrl: e.target.value })}
+                            placeholder={
+                              aiProvider === 'opencode'
+                                ? 'http://127.0.0.1:3456'
+                                : 'https://api.example.com/v1'
+                            }
+                            spellCheck={false}
+                          />
+                        </div>
+                      )}
+                      {noKeyProvider && (
+                        <p className="set-hint">
+                          {aiProvider === 'genspark'
+                            ? t('aiSettingsGensparkHint')
+                            : t('aiSettingsOpenCodeHint')}
+                        </p>
+                      )}
+                      <div className="set-pane-footer">
+                        <button className="set-btn primary" onClick={saveAi}>
+                          {t('aiSettingsSave')}
+                        </button>
+                      </div>
+                    </>
+                  )
+                })()}
               </>
             )}
             {section === 'about' && (

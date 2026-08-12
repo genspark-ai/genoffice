@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
+import { streamOpencode } from './opencode'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiProviderConfig, AiProviderId } from './types'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
@@ -906,6 +907,8 @@ export async function streamForProvider(
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')
       return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb)
+    case 'opencode':
+      return streamOpencode(config, system, messages, tools, maxTokens, cb)
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

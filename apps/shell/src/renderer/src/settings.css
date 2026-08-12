@@ -127,6 +127,15 @@
   line-height: 1.2;
 }
 
+.set-pane-subtitle {
+  margin: 22px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
 .set-field {
   display: flex;
   align-items: center;
@@ -215,6 +224,39 @@
 .set-select option {
   color: var(--text-primary);
   background: var(--surface);
+}
+
+.set-input {
+  width: min(320px, 60%);
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.set-input:hover {
+  border-color: var(--text-secondary);
+}
+
+.set-input:focus {
+  border-color: var(--color-btn-primary);
+}
+
+.set-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.set-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 .set-btn {

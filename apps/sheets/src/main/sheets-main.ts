@@ -2121,11 +2121,7 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return resolveAiSettings(stored, defaultAiSettings())
   })
 
   // Genspark account (gsk login state): the auth source for AI features; the
@@ -2158,13 +2154,18 @@ export function registerSheetsAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
-      return {
-        ok: false,
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
+    if (!config) {
+      if (provider === 'opencode') {
+        // opencode talks to a local server — no key, and the model is optional (server default)
+        config = { apiKey: '', model: '' }
+      } else {
+        return {
+          ok: false,
+          error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
+        }
       }
     }
-    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    if (!config.model && provider !== 'opencode') return { ok: false, error: tm('errNoModel') }
     try {
       return await chatForProvider(provider, config, request.system, request.user)
     } catch (err) {
@@ -2188,15 +2189,20 @@ export function registerSheetsAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config?.apiKey) {
-      send({
-        requestId,
-        type: 'error',
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
-      })
-      return
+    if (!config) {
+      if (provider === 'opencode') {
+        // opencode talks to a local server — no key, and the model is optional (server default)
+        config = { apiKey: '', model: '' }
+      } else {
+        send({
+          requestId,
+          type: 'error',
+          error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
+        })
+        return
+      }
     }
-    if (!config.model) {
+    if (!config.model && provider !== 'opencode') {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }

@@ -2486,10 +2486,7 @@ const activeAiStreams = new Map<string, AbortController>()
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return resolveAiSettings(stored, defaultAiSettings())
   })
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
@@ -2524,7 +2521,8 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    // opencode talks to a local server — no API key, and the model is optional (server default)
+    if (!config?.apiKey && provider !== 'opencode') {
       send({
         requestId,
         type: 'error',
@@ -2532,7 +2530,7 @@ export function registerAiIpc(): void {
       })
       return
     }
-    if (!config.model) {
+    if (!config.model && provider !== 'opencode') {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }
@@ -2630,13 +2628,13 @@ export function registerAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (!config?.apiKey && provider !== 'opencode') {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
       }
     }
-    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    if (!config.model && provider !== 'opencode') return { ok: false, error: tm('errNoModel') }
     try {
       return await chatForProvider(provider, config, system, user)
     } catch (err) {

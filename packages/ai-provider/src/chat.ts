@@ -1,5 +1,6 @@
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
+import { chatOpencode } from './opencode'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog, type StreamWatchdog } from './watchdog'
@@ -162,6 +163,8 @@ export async function chatForProvider(
             error: 'A custom provider requires a Base URL',
           })
         return chatOpenAiCompatible(wd, config.baseUrl, config, system, user)
+      case 'opencode':
+        return chatOpencode(config, system, user, wd.signal)
       default:
         return Promise.resolve({ ok: false as const, error: `Unknown provider: ${provider}` })
     }

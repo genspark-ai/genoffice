@@ -16,6 +16,7 @@ import type {
 import { HOME_CHANNELS, PROJECT_CHANNELS } from '../shared/home-api'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
+import type { AiSettings } from '@genoffice/ai-provider'
 
 const UI_LANGUAGES: readonly UiLanguage[] = [
   'zh',
@@ -204,6 +205,13 @@ const homeApi: HomeApi = {
   async openCloudProject(projectUrl) {
     if (typeof projectUrl !== 'string' || !projectUrl) throw new Error('Invalid project URL.')
     await ipcRenderer.invoke(HOME_CHANNELS.openCloudProject, projectUrl)
+  },
+  async getAiSettings() {
+    const result: unknown = await ipcRenderer.invoke('ai:get-settings')
+    return result as AiSettings
+  },
+  async setAiSettings(settings) {
+    await ipcRenderer.invoke('ai:set-settings', settings)
   },
 }
 

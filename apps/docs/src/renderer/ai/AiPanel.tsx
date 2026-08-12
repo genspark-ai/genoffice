@@ -29,7 +29,8 @@ import fileVideoIcon from '../assets/file-video.png'
 import fileVoiceIcon from '../assets/file-voice.png'
 import fileDocumentIcon from '../assets/file-document.png'
 import fileGeneralIcon from '../assets/file-general.png'
-import { IconNewChat, IconSidebarCollapse } from '../components/icons'
+import { IconNewChat, IconSidebarCollapse, IconGear } from '../components/icons'
+import { AiSettingsDialog } from './settings'
 
 interface ToolActivity {
   name: string
@@ -248,6 +249,8 @@ interface AiPanelProps {
   editor: Editor
   blocks: Block[]
   settings: AiSettings
+  /** persist a new provider/model configuration (also updates the live transport) */
+  onSettingsChange?: (next: AiSettings) => void
   /** the document has no text yet — the empty-state copy offers drafting instead of editing */
   docEmpty?: boolean
   /** fallback numbering ids for documents created from the blank template */
@@ -268,6 +271,7 @@ export function AiPanel({
   editor,
   blocks,
   settings,
+  onSettingsChange,
   docEmpty,
   numIdFallback,
   preset,
@@ -290,6 +294,8 @@ export function AiPanel({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
+  /** provider/model settings dialog open */
+  const [showSettings, setShowSettings] = useState(false)
   /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
   const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
   /** image paths with a read already issued — one readAttachmentImage per attach, even while pending */
@@ -378,6 +384,12 @@ export function AiPanel({
   editorRef.current = editor
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  /** persist edited provider/model settings and close the dialog */
+  const saveSettings = (next: AiSettings) => {
+    void window.desktop.setAiSettings(next)
+    onSettingsChange?.(next)
+    setShowSettings(false)
+  }
   const blocksRef = useRef(blocks)
   blocksRef.current = blocks
   const numIdFallbackRef = useRef(numIdFallback)
@@ -919,17 +931,18 @@ export function AiPanel({
   }
 
   return (
-    <aside
-      ref={asideRef}
-      style={{ width: '100%' }}
-      className={`ai-panel${dragOver ? ' ai-panel-dragover' : ''}${resizing ? ' ai-panel-resizing' : ''}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault()
-          e.stopPropagation()
-          setDragOver(true)
-        }
-      }}
+    <>
+      <aside
+        ref={asideRef}
+        style={{ width: '100%' }}
+        className={`ai-panel${dragOver ? ' ai-panel-dragover' : ''}${resizing ? ' ai-panel-resizing' : ''}`}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault()
+            e.stopPropagation()
+            setDragOver(true)
+          }
+        }}
       onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
       }}
@@ -953,6 +966,13 @@ export function AiPanel({
               <IconNewChat size={16} />
             </button>
           )}
+          <button
+            className="ai-header-btn"
+            onClick={() => setShowSettings(true)}
+            title={t('aiSettingsTitle')}
+          >
+            <IconGear size={16} />
+          </button>
           {onCollapse && (
             <button className="ai-header-btn" onClick={onCollapse} title={t('aiCollapseTitle')}>
               <IconSidebarCollapse size={15} />
@@ -1239,6 +1259,14 @@ export function AiPanel({
         />
       </div>
     </aside>
+    {showSettings && (
+      <AiSettingsDialog
+        settings={settings}
+        onSave={saveSettings}
+        onClose={() => setShowSettings(false)}
+      />
+    )}
+    </>
   )
 }
 

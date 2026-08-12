@@ -85,6 +85,14 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'API Key',
     needsBaseUrl: true,
   },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    models: [],
+    defaultModel: '',
+    keyPlaceholder: 'Not required - local opencode server',
+    needsBaseUrl: true,
+  },
 ]
 
 /**

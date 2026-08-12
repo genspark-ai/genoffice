@@ -21,6 +21,16 @@ export { setRescueFetch } from './fetch'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
 export {
+  OPENCODE_DEFAULT_BASE_URL,
+  OpencodeServerError,
+  chatOpencode,
+  disposeOpencodeServer,
+  ensureOpencodeServer,
+  opencodePromptText,
+  parseOpencodeModel,
+  streamOpencode,
+} from './opencode'
+export {
   AI_CHAT_RESPONSE_TIMEOUT_MS,
   AI_CONNECT_TIMEOUT_MS,
   AI_IDLE_TIMEOUT_MS,
