@@ -95,13 +95,29 @@ tokens (`packages/ui`), with a CI guard that keeps chrome colors on the token
 system. Document surfaces stay light in dark mode — Word-style dark chrome
 around white paper — so files render and export identically in both themes.
 
-**AI backend (Genspark).** The apps sign in to a Genspark account through a
-device-code flow; no model API key is entered or stored by the user. Model
-calls route through the Genspark proxy (Claude, GPT, and Gemini families).
-The same account also unlocks the Genspark ("gsk") tool endpoints the agents
-build on — web and image search, image generation and editing,
-image/audio/video analysis, and audio transcription — all reachable through
-`packages/ai-search` for anyone extending the agent layer.
+**AI 模型供应商。** 应用内 AI 面板与智能体所使用的大模型后端现已支持用户自选 —— 包括 Genspark（默认，需登录）、Claude、Gemini、DeepSeek、OpenAI、自定义 OpenAI 兼容接口，或本地 OpenCode 服务 —— 均在 **设置 → 通用 → AI** 中配置。详见 [AI 模型供应商](#ai-模型供应商)。
+
+## AI 模型供应商
+
+GenOffice 不再写死单一 AI 后端：**设置 → 通用 → AI**（shell 设置）可让你选择由哪家供应商为各个应用中的 AI 面板与智能体提供能力、挑选具体模型，并在需要密钥的供应商处粘贴自己的 API Key。相关设置按安装实例存储，绝不会写入文档内容。
+
+![](imgs/001.png)
+
+![](imgs/002.png)
+
+| 供应商 | API Key | Base URL | 说明 |
+| --- | --- | --- | --- |
+| Genspark | 无需 | — | 默认。登录 Genspark 账号即可；请求经由 Genspark 代理（Claude、GPT、Gemini 系列），并通过 `packages/ai-search` 解锁 gsk 工具接口（网页/图片搜索、图片生成、媒体分析、语音转写）。 |
+| Claude | 需要（`sk-ant-…`） | — | Anthropic API。 |
+| Gemini | 需要（`AIza…`） | — | Google Gemini API。 |
+| DeepSeek | 需要（`sk-…`） | — | DeepSeek API。 |
+| OpenAI | 需要（`sk-…`） | — | OpenAI API。 |
+| 自定义 | 需要 | 需要 | 任意 OpenAI 兼容接口 —— 指向你自己的网关。 |
+| OpenCode | 无需 | 需要 | 本地 `opencode serve` 进程。若未运行，GenOffice 会自动拉起（默认 `http://127.0.0.1:3456`）。智能体循环运行在 opencode 内部；每个会话都以 deny-all 权限创建，因此 opencode 自身的工具（bash、文件编辑等）永远无法触碰你的机器。 |
+
+**模型选择。** 每个供应商都内置一份精选模型列表 —— Genspark 提供 `claude-opus-4-7`、`claude-opus-4-8`、`claude-sonnet-4-6`、`claude-haiku-4-5`、`gpt-5.2`、`gemini-3.1-pro-preview`、`gemini-3-flash-preview` 等。**自定义** 与 **OpenCode** 供应商则接受自由输入的模型 id：OpenCode 可写成 `provider/model-id`（如 `anthropic/claude-opus-4-7`），或仅写 `model-id` 以使用服务端默认模型。
+
+供应商抽象与流式调用位于 `packages/ai-provider`；设置界面在 `apps/shell/src/renderer/src/SettingsModal.tsx`，设置通过 `apps/shell/src/main/app-settings.ts` 经 `getAiSettings` / `setAiSettings` IPC 持久化。
 
 ## Engine packages
 

@@ -3,6 +3,7 @@ out/
 dist/
 release/
 *.log
+.omo
 .DS_Store
 .refs/
 .env
