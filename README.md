@@ -101,9 +101,8 @@ around white paper — so files render and export identically in both themes.
 
 GenOffice 不再写死单一 AI 后端：**设置 → 通用 → AI**（shell 设置）可让你选择由哪家供应商为各个应用中的 AI 面板与智能体提供能力、挑选具体模型，并在需要密钥的供应商处粘贴自己的 API Key。相关设置按安装实例存储，绝不会写入文档内容。
 
-![](https://cdn.jsdelivr.net/gh/lj7788/genoffice-opencode@main/imgs/001.png)
-
-![](https://cdn.jsdelivr.net/gh/lj7788/genoffice-opencode@main/imgs/002.png)
+<img width="1006" height="764" alt="001" src="https://github.com/user-attachments/assets/50f2c105-0c8c-425c-a06f-4f8ee4e2e591" />
+<img width="998" height="756" alt="002" src="https://github.com/user-attachments/assets/eb534f87-aa0c-4c84-ab22-0021f2d409a0" />
 
 | 供应商 | API Key | Base URL | 说明 |
 | --- | --- | --- | --- |
