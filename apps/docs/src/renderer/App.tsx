@@ -2224,6 +2224,14 @@ export function App() {
         if (comments.some((c) => !c.done && ids.includes(c.id))) setShowComments(true)
       }
       if (!e.metaKey && !e.ctrlKey) return
+      // Word behavior: Ctrl/Cmd+Click follows a hyperlink. window.open routes
+      // through the main-process allowlist handler (http/https/aof-review only).
+      const link = (e.target as HTMLElement).closest('a.doc-link') as HTMLAnchorElement | null
+      if (link?.getAttribute('href')) {
+        e.preventDefault()
+        window.open(link.getAttribute('href') as string, '_blank')
+        return
+      }
       const line = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
       if (!line) return
       let target: Element | null = null
