@@ -2216,6 +2216,27 @@ export function App() {
   // Word: TOC entries jump on ⌘/Ctrl+click only; a plain click just places the
   // caret. Resolve the bookmark anchor against the original block XML, fall
   // back to matching the heading text.
+  // Word behavior: hyperlinks open on modifier+click. Capture phase on the
+  // document, because Chromium disables native link navigation inside
+  // contenteditable and ProseMirror may consume bubbling clicks. window.open
+  // routes through the window-open handler, whose safeExternalUrl allowlist
+  // (http/https/aof-review) decides what actually reaches the OS.
+  useEffect(() => {
+    const onLinkClick = (e: MouseEvent): void => {
+      if (!e.metaKey && !e.ctrlKey) return
+      const link = (e.target as HTMLElement).closest?.('a.doc-link') as HTMLAnchorElement | null
+      if (!link) return
+      const href = link.getAttribute('href')
+      if (!href) return
+      e.preventDefault()
+      e.stopPropagation()
+      console.info(`[doc-link] modifier+click -> ${href}`)
+      window.open(href, '_blank')
+    }
+    document.addEventListener('click', onLinkClick, true)
+    return () => document.removeEventListener('click', onLinkClick, true)
+  }, [])
+
   const onDocClick = useCallback(
     (e: ReactMouseEvent) => {
       const commentSpan = (e.target as HTMLElement).closest('.doc-comment') as HTMLElement | null
