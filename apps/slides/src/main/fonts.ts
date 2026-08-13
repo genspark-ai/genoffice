@@ -27,6 +27,18 @@ import {
 } from '@genoffice/pptx-render'
 import { classifyCjkScript } from '../shared/cjk-script'
 import { initShapedMetrics, shapedMeasure, shapedFamily } from './shaped-metrics'
+import carlitoRegular from '../renderer/fonts/Carlito-Regular.ttf?asset'
+import carlitoBold from '../renderer/fonts/Carlito-Bold.ttf?asset'
+import carlitoItalic from '../renderer/fonts/Carlito-Italic.ttf?asset'
+import carlitoBoldItalic from '../renderer/fonts/Carlito-BoldItalic.ttf?asset'
+
+/** Fonts shipped with the app (metric substitutes for fonts most decks assume, e.g. Calibri→Carlito). */
+const BUNDLED_FONTS: Record<string, string> = {
+  'Carlito-Regular': carlitoRegular,
+  'Carlito-Bold': carlitoBold,
+  'Carlito-Italic': carlitoItalic,
+  'Carlito-BoldItalic': carlitoBoldItalic,
+}
 
 function fontDirs(): string[] {
   switch (process.platform) {
@@ -73,6 +85,7 @@ const ALIASES: Record<string, string[]> = {
   helvetica: ['Arial'],
   'helvetica neue': ['Arial'],
   calibri: ['Carlito', 'Arial'],
+  'calibri light': ['Carlito', 'Arial'],
   // —— Japanese ——
   'yu gothic': [...YU_GOTHIC, ...HIRAGINO_SANS],
   游ゴシック: [...YU_GOTHIC, ...HIRAGINO_SANS],
@@ -316,6 +329,9 @@ class FontRegistry {
   private buildIndex(): void {
     if (this.indexed) return
     this.indexed = true
+    for (const [name, path] of Object.entries(BUNDLED_FONTS)) {
+      this.index.set(norm(name), path)
+    }
     for (const dir of fontDirs()) {
       let names: string[]
       try {
@@ -561,7 +577,19 @@ export function createSystemFontMetrics(): FontMetricsProvider {
       const inst = instantiateWeight(raw.font, style.bold)
       // Non-variable fonts (instantiateWeight returned as-is) need the safe-advance wrapper;
       // the variable-font path already accumulates per glyph and is inherently safe
-      entry = { font: inst === raw.font ? wrapSafeAdvance(raw.font) : inst, family: raw.family }
+      let font = inst === raw.font ? wrapSafeAdvance(raw.font) : inst
+      // Bundled Carlito ships Linux-style hhea metrics (1.0 em) while PowerPoint spaces
+      // Calibri by the OS/2 win metrics (1.22 em) — take line metrics from OS/2 win so
+      // substituted decks keep PowerPoint's line pitch.
+      if (raw.family.toLowerCase().startsWith('carlito')) {
+        const os2 = (
+          raw.font as { tables?: { os2?: { usWinAscent?: number; usWinDescent?: number } } }
+        ).tables?.os2
+        if (os2?.usWinAscent && os2.usWinDescent != null) {
+          font = { ...font, ascender: os2.usWinAscent, descender: -Math.abs(os2.usWinDescent) }
+        }
+      }
+      entry = { font, family: raw.family }
     }
     cache.set(key, entry)
     return entry

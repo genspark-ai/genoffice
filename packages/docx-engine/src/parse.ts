@@ -218,6 +218,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     'header',
     'default',
     theme.colors,
+    styles,
   )
   const footer = await readHeaderFooterPart(
     zip,
@@ -226,6 +227,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     'footer',
     'default',
     theme.colors,
+    styles,
   )
   const headerFirst = await readHeaderFooterPart(
     zip,
@@ -234,6 +236,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     'header',
     'first',
     theme.colors,
+    styles,
   )
   const footerFirst = await readHeaderFooterPart(
     zip,
@@ -242,6 +245,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     'footer',
     'first',
     theme.colors,
+    styles,
   )
   const headerEven = await readHeaderFooterPart(
     zip,
@@ -250,6 +254,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     'header',
     'even',
     theme.colors,
+    styles,
   )
   const footerEven = await readHeaderFooterPart(
     zip,
@@ -258,10 +263,11 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     'footer',
     'even',
     theme.colors,
+    styles,
   )
   const titlePg = /<w:titlePg\s*\/>/.test(documentXml)
   const evenAndOddHeaders = await parseEvenAndOddHeaders(zip)
-  const hfParts = await parseAllHfParts(zip, rels, theme.colors)
+  const hfParts = await parseAllHfParts(zip, rels, styles, theme.colors)
 
   // ink annotations (freehand strokes): our own anchored floating pictures, restored
   // into an editable overlay layer instead of being shown as image blocks
@@ -396,9 +402,10 @@ function parseSdtBlock(sdtXml: string): { shell: SdtShell; pXml: string } | null
   if (!contentOpen) return null
 
   const contentTagEnd = contentOpen.index + contentOpen[0].length
-  // find the matching </w:sdtContent>
-  const contentClose = sdtXml.indexOf('</w:sdtContent>', contentTagEnd)
-  if (contentClose === -1) return null
+  // find the matching </w:sdtContent> — last one, so nested content controls
+  // don't truncate the region (same boundary rule as splitSdtParts/sdtTableXml)
+  const contentClose = sdtXml.lastIndexOf('</w:sdtContent>')
+  if (contentClose < contentTagEnd) return null
 
   // extract the first w:p inside sdtContent
   const innerContent = sdtXml.slice(contentTagEnd, contentClose)
@@ -480,6 +487,10 @@ function splitSdtParts(sdtXml: string): SdtPart[] | null {
   let name = ''
   let m: RegExpExecArray | null
   while ((m = tagRe.exec(sdtXml)) !== null && m.index < innerEnd) {
+    // nested content controls are transparent containers (Word cover-page
+    // building blocks wrap each field in its own sdt): descend instead of
+    // treating the inner sdt as one opaque child
+    if (m[2] === 'w:sdt' || m[2] === 'w:sdtContent') continue
     if (m[1] === '/') {
       depth--
       if (depth === 0) children.push({ name, start, end: m.index + m[0].length })
@@ -626,8 +637,8 @@ async function buildBlock(
       }
       return innerBlock
     }
-    // No usable paragraph found → passthrough
-    return { ...base, type: 'passthrough', label: 'Content control', previewText: '' }
+    // No usable paragraph found → passthrough; keep the text visible at least
+    return { ...base, type: 'passthrough', label: 'Content control', previewText: plainText(xml) }
   }
   if (INVISIBLE_BODY_MARKERS.has(el.name)) {
     return { ...base, type: 'passthrough', label: el.name, invisibleMarker: true }
@@ -802,6 +813,25 @@ async function buildBlock(
       isInvisibleVmlPict(detect)
     ) {
       return { ...base, type: 'passthrough', label: 'Drawing object', invisibleMarker: true }
+    }
+    // VML horizontal rule (<hr> import: <v:rect o:hr="t">): Word draws a thin
+    // line at the declared height; a full-width chip both misrenders it and
+    // eats ~a line of page budget per rule
+    const hrRect = !detect.includes('<w:object')
+      ? /<v:rect\b[^>]*\bo:hr="t"[^>]*>/.exec(detect)?.[0]
+      : undefined
+    if (hrRect && plainText(detect).trim() === '') {
+      const fill = /fillcolor="#?([0-9A-Fa-f]{6})"/.exec(hrRect)?.[1]
+      const hPt = parseFloat(/height:([\d.]+)pt/.exec(hrRect)?.[1] ?? '')
+      return {
+        ...base,
+        type: 'passthrough',
+        label: 'Drawing object',
+        decorative: true,
+        ...(fill ? { ruleColorHex: fill.toUpperCase() } : {}),
+        // VML HR width:0 means "fill the available width" — ruleWidthPx stays unset
+        ...(hPt > 0 ? { ruleThicknessPx: Math.max(1, Math.round((hPt / 72) * 96)) } : {}),
+      }
     }
     return {
       ...base,
@@ -1913,6 +1943,33 @@ function autoSpaceOf(pPr: XNode): boolean | undefined {
   return undefined
 }
 
+/** pPr <w:tabs> → TabStop[] (shared by direct paragraph format and style display) */
+function tabStopsOf(pPr: XNode): import('./types').TabStop[] | undefined {
+  const tabsEl = findChild(pPr, 'w:tabs')
+  if (!tabsEl) return undefined
+  const stops: import('./types').TabStop[] = []
+  for (const tab of findChildren(tabsEl, 'w:tab')) {
+    const attrs = attrsOf(tab)
+    const pos = parseInt(attrs['w:pos'] ?? '', 10)
+    const val = attrs['w:val'] ?? 'left'
+    if (!Number.isFinite(pos)) continue
+    const validVals = ['left', 'center', 'right', 'decimal', 'bar', 'clear'] as const
+    const safeVal = validVals.includes(val as (typeof validVals)[number])
+      ? (val as (typeof validVals)[number])
+      : 'left'
+    const stop: import('./types').TabStop = { pos, val: safeVal }
+    const leader = attrs['w:leader']
+    if (leader && leader !== 'none') {
+      const validLeaders = ['dot', 'hyphen', 'underscore', 'heavy', 'middleDot'] as const
+      if (validLeaders.includes(leader as (typeof validLeaders)[number])) {
+        stop.leader = leader as (typeof validLeaders)[number]
+      }
+    }
+    stops.push(stop)
+  }
+  return stops.length > 0 ? stops : undefined
+}
+
 function extractParaFormat(pPr: XNode): ParaFormat | undefined {
   const format: ParaFormat = {}
   if (boolProp(pPr, 'w:bidi')) format.bidi = true
@@ -1991,47 +2048,38 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
     const fill = attrsOf(shd)['w:fill']
     if (fill && fill !== 'auto') format.shadingFill = fill
   }
-  const pBdr = findChild(pPr, 'w:pBdr')
-  if (pBdr) {
+  const pBdrs = findChildren(pPr, 'w:pBdr')
+  if (pBdrs.length > 0) {
     let borders = ''
+    const lines: NonNullable<ParaFormat['borderLines']> = {}
     for (const [side, ch] of [
       ['top', 't'],
       ['bottom', 'b'],
       ['left', 'l'],
       ['right', 'r'],
     ] as const) {
-      const el = findChild(pBdr, `w:${side}`)
+      // duplicated w:pBdr: later containers override earlier ones per side
+      let el: XNode | undefined
+      for (const pBdr of pBdrs) el = findChild(pBdr, `w:${side}`) ?? el
       // ST_Border spells "no border" both ways, and Word writes nil whenever a style-level
       // border is reset, so treating it as present stamps a rule the document never had
-      const val = el ? attrsOf(el)['w:val'] : undefined
-      if (el && val !== 'none' && val !== 'nil') borders += ch
+      const attrs = el ? attrsOf(el) : undefined
+      const val = attrs?.['w:val']
+      if (!el || val === 'none' || val === 'nil') continue
+      borders += ch
+      const line: import('./types').ParaBorderLine = {}
+      if (attrs?.['w:color'] && attrs['w:color'] !== 'auto') line.color = attrs['w:color']
+      const sz = parseInt(attrs?.['w:sz'] ?? '', 10)
+      if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
+      if (line.color !== undefined || line.szPt !== undefined) lines[ch] = line
     }
-    if (borders) format.borders = borders
-  }
-  const tabsEl = findChild(pPr, 'w:tabs')
-  if (tabsEl) {
-    const stops: import('./types').TabStop[] = []
-    for (const tab of findChildren(tabsEl, 'w:tab')) {
-      const attrs = attrsOf(tab)
-      const pos = parseInt(attrs['w:pos'] ?? '', 10)
-      const val = attrs['w:val'] ?? 'left'
-      if (!Number.isFinite(pos)) continue
-      const validVals = ['left', 'center', 'right', 'decimal', 'bar', 'clear'] as const
-      const safeVal = validVals.includes(val as (typeof validVals)[number])
-        ? (val as (typeof validVals)[number])
-        : 'left'
-      const stop: import('./types').TabStop = { pos, val: safeVal }
-      const leader = attrs['w:leader']
-      if (leader && leader !== 'none') {
-        const validLeaders = ['dot', 'hyphen', 'underscore', 'heavy', 'middleDot'] as const
-        if (validLeaders.includes(leader as (typeof validLeaders)[number])) {
-          stop.leader = leader as (typeof validLeaders)[number]
-        }
-      }
-      stops.push(stop)
+    if (borders) {
+      format.borders = borders
+      if (Object.keys(lines).length > 0) format.borderLines = lines
     }
-    if (stops.length > 0) format.tabStops = stops
   }
+  const stops = tabStopsOf(pPr)
+  if (stops) format.tabStops = stops
   // Drop cap: w:framePr w:dropCap="drop"|"margin"
   const framePr = findChild(pPr, 'w:framePr')
   if (framePr) {
@@ -2308,6 +2356,8 @@ const EMPTY_EA_THEME_FONT = 'DengXian'
 /** empty EA slot faces by settings.xml w:themeFontLang w:eastAsia (zh-CN / missing → DengXian) */
 const EMPTY_EA_SLOT_BY_LANG: Record<string, { major: string; minor: string }> = {
   ja: { major: 'Yu Gothic', minor: 'Yu Mincho' },
+  // Word probe + fontTable: ko-KR empty EA slot substitutes Malgun Gothic
+  ko: { major: 'Malgun Gothic', minor: 'Malgun Gothic' },
 }
 
 function emptyEaSlotFont(fonts: ThemeFonts, eaRef: string | undefined): string {
@@ -2370,7 +2420,7 @@ function buildRun(
   for (const child of childrenOf(rNode)) {
     const name = nameOf(child)
     if (name === 'w:t' || name === 'w:delText') text += decodeNumericCharRefs(textOf(child))
-    else if (name === 'w:tab') text += '\t'
+    else if (name === 'w:tab' || name === 'w:ptab') text += '\t'
     // In-paragraph page breaks (w:br w:type="page") are encoded as \f and preserved; column/soft breaks become \n
     else if (name === 'w:br') text += attrsOf(child)['w:type'] === 'page' ? '\f' : '\n'
     else if (name === 'w:cr') text += '\n'
@@ -2453,6 +2503,9 @@ function buildRun(
     if (rf.cs) run.csFont = rf.cs
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) run.charSpacingTwips = spc
+    // w:caps wins over w:smallCaps when both are on (Word)
+    if (onOffOf(rPr, 'w:caps')) run.caps = 'all'
+    else if (onOffOf(rPr, 'w:smallCaps')) run.caps = 'small'
     const wScale = parseInt(attrsOf(findChild(rPr, 'w:w') ?? {})['w:val'] ?? '', 10)
     if (wScale > 0 && wScale !== 100) run.charScalePct = wScale
     const highlight = attrsOf(findChild(rPr, 'w:highlight') ?? {})['w:val']
@@ -2593,9 +2646,10 @@ function extractTable(xml: string, ctx: BuildContext): TableModel | undefined {
 
 /** One w:tbl node → display model (shared by top-level tables and tables nested in cells) */
 /**
- * Per-column widths reconstructed from cell w:tcW (dxa) across all rows: the first
- * un-spanned cell seen per grid slot wins. Undefined unless every column got a value —
- * partial data would skew the ratio worse than the tblGrid fallback.
+ * Per-column widths reconstructed from cell w:tcW (dxa) across all rows: the widest
+ * un-spanned cell per grid slot wins (Word widens a column to fit later rows, never
+ * narrows it). Undefined unless every column got a value — partial data would skew
+ * the ratio worse than the tblGrid fallback.
  */
 function tcwColumnWidths(tbl: XNode): number[] | undefined {
   const cols: number[] = []
@@ -2611,7 +2665,7 @@ function tcwColumnWidths(tbl: XNode): number[] | undefined {
       // duplicated w:tcW: Word keeps the last occurrence (generators leave stale first values)
       const a = attrsOf(findChildren(tcPr ?? {}, 'w:tcW').at(-1) ?? {})
       const w = !a['w:type'] || a['w:type'] === 'dxa' ? Number(a['w:w']) || 0 : 0
-      if (span === 1 && w > 0 && !(cols[idx] > 0)) cols[idx] = w
+      if (span === 1 && w > 0) cols[idx] = Math.max(cols[idx] || 0, w)
       idx += span
     }
     colCount = Math.max(colCount, idx)
@@ -2633,23 +2687,29 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
       if (widths.every((w) => w > 0)) colWidthsTwips = widths
     }
   }
+  const tblPrNode = findChild(tbl, 'w:tblPr')
+  const fixedLayout = attrsOf(findChild(tblPrNode ?? {}, 'w:tblLayout') ?? {})['w:type'] === 'fixed'
   // Cell-level w:tcW is Word's actual layout input for auto tables; generators often
   // leave a stale evenly-split tblGrid behind. When the two disagree, tcW wins.
   const tcwWidths = tcwColumnWidths(tbl)
   if (tcwWidths) {
     const tcwTotal = tcwWidths.reduce((a, b) => a + b, 0)
     const tcwPct = tcwWidths.map((w) => (w / tcwTotal) * 100)
+    // Fixed layout sizes columns from tcW alone, so a matching ratio with a
+    // different absolute sum still means the grid is stale.
+    const gridTotal = (colWidthsTwips ?? []).reduce((a, b) => a + b, 0)
     const disagree =
       !colWidthsPct ||
       colWidthsPct.length !== tcwPct.length ||
-      colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2)
+      colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2) ||
+      (fixedLayout && Math.abs(gridTotal - tcwTotal) > tcwWidths.length)
     if (disagree) {
       colWidthsPct = tcwPct
       colWidthsTwips = tcwWidths
     }
   }
-  const tblPrNode = findChild(tbl, 'w:tblPr')
-  const tblW = attrsOf(findChild(tblPrNode ?? {}, 'w:tblW') ?? {})
+  const tblWNode = findChild(tblPrNode ?? {}, 'w:tblW')
+  const tblW = attrsOf(tblWNode ?? {})
   let widthPct: number | undefined
   if (tblW['w:type'] === 'pct') {
     const raw = String(tblW['w:w'] ?? '')
@@ -2658,7 +2718,7 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
     if (Number.isFinite(pct) && pct > 0 && pct <= 100) widthPct = pct
   }
   const cellMar = cellMarginsOf(findChild(tblPrNode ?? {}, 'w:tblCellMar'))
-  const tblBorders = borderLinesOf(findChild(tblPrNode ?? {}, 'w:tblBorders'), true)
+  const tblBorders = mergedBorderLinesOf(tblPrNode, 'w:tblBorders', true)
   const tblJc = attrsOf(findChild(tblPrNode ?? {}, 'w:jc') ?? {})['w:val']
   const tblAlign =
     tblJc === 'center' ? 'center' : tblJc === 'right' || tblJc === 'end' ? 'right' : undefined
@@ -2705,6 +2765,12 @@ function extractTableModel(tbl: XNode, ctx: BuildContext): TableModel | undefine
   const model: TableModel = { rows, colWidthsPct }
   if (colWidthsTwips) model.colWidthsTwips = colWidthsTwips
   if (widthPct) model.widthPct = widthPct
+  const tblWType = tblW['w:type']
+  const autoWidth =
+    !tblWNode ||
+    tblWType === 'auto' ||
+    ((!tblWType || tblWType === 'dxa') && !(Number(tblW['w:w']) > 0))
+  if (!fixedLayout && autoWidth && !widthPct) model.autoLayout = true
   if (effCellMar) model.cellMarTwips = effCellMar
   if (effBorders) model.borders = effBorders
   if (tblAlign) model.align = tblAlign
@@ -2856,6 +2922,31 @@ function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorde
   return Object.keys(borders).length > 0 ? borders : undefined
 }
 
+/** Duplicated border containers (two w:tcBorders in one tcPr etc.): Word merges per side, later wins */
+function mergedBorderLinesOf(
+  parent: XNode | undefined,
+  tag: string,
+  withInside: true,
+): TableBorders | undefined
+function mergedBorderLinesOf(
+  parent: XNode | undefined,
+  tag: string,
+  withInside: false,
+): CellBorders | undefined
+function mergedBorderLinesOf(
+  parent: XNode | undefined,
+  tag: string,
+  withInside: boolean,
+): TableBorders | undefined {
+  if (!parent) return undefined
+  let merged: TableBorders | undefined
+  for (const node of findChildren(parent, tag)) {
+    const b = borderLinesOf(node, withInside as true)
+    if (b) merged = { ...merged, ...b }
+  }
+  return merged
+}
+
 function cellMarginsOf(node: XNode | undefined): CellMargins | undefined {
   if (!node) return undefined
   const SIDES: Array<[string, keyof CellMargins]> = [
@@ -2899,7 +2990,7 @@ function extractCell(tc: XNode, ctx: BuildContext): TableCell {
     else if (dir === 'btLr' || dir === 'btLrV') cell.textDirection = 'btLr'
     const hMerge = findChild(tcPr, 'w:hMerge')
     if (hMerge) cell.hMerge = attrsOf(hMerge)['w:val'] === 'restart' ? 'restart' : 'continue'
-    const borders = borderLinesOf(findChild(tcPr, 'w:tcBorders'), false)
+    const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
     if (borders) cell.borders = borders
     for (const kind of ['ins', 'del'] as const) {
       const node = findChild(tcPr, kind === 'ins' ? 'w:cellIns' : 'w:cellDel')
@@ -3005,10 +3096,22 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
   const relsPath = partPath.replace(/([^/]+)$/, '_rels/$1.rels')
   const rels = await parseRels(zip, relsPath)
   const out: HfImage[] = []
-  for (const frag of partXml.match(/<w:drawing>[\s\S]*?<\/w:drawing>/g) ?? []) {
-    const rId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(frag)?.[1]
-    if (!rId) continue
-    const dataUrl = await mediaDataUrl(zip, rels, rId)
+  /** w:jc of the paragraph containing offset `at` (inline images follow it) */
+  const paraAlignAt = (at: number): HfImage['align'] => {
+    const pStart = Math.max(partXml.lastIndexOf('<w:p ', at), partXml.lastIndexOf('<w:p>', at))
+    if (pStart < 0) return undefined
+    const jc = /<w:jc w:val="(\w+)"/.exec(partXml.slice(pStart, at))?.[1]
+    return jc === 'left' || jc === 'center' || jc === 'right' ? jc : undefined
+  }
+  for (const m of partXml.matchAll(/<w:drawing>[\s\S]*?<\/w:drawing>/g)) {
+    const frag = m[0]
+    // mc:AlternateContent may hold several blips (mac Word: PDF Choice + PNG
+    // Fallback); use the first one whose media resolves
+    let dataUrl: string | null = null
+    for (const b of frag.matchAll(/<a:blip[^>]*r:embed="([^"]+)"/g)) {
+      dataUrl = await mediaDataUrl(zip, rels, b[1])
+      if (dataUrl) break
+    }
     if (!dataUrl) continue
     const image: HfImage = { dataUrl }
     const extent = /<wp:extent[^>]*\/?>/.exec(frag)?.[0] ?? ''
@@ -3017,9 +3120,14 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
     if (Number.isFinite(cx) && cx > 0) image.widthPx = Math.round(cx / EMU_PER_PX)
     if (Number.isFinite(cy) && cy > 0) image.heightPx = Math.round(cy / EMU_PER_PX)
     if (/<wp:anchor[\s>]/.test(frag)) image.floating = true
+    else {
+      const align = paraAlignAt(m.index!)
+      if (align) image.align = align
+    }
     out.push(image)
   }
-  for (const frag of partXml.match(/<w:pict>[\s\S]*?<\/w:pict>/g) ?? []) {
+  for (const m of partXml.matchAll(/<w:pict>[\s\S]*?<\/w:pict>/g)) {
+    const frag = m[0]
     if (frag.includes('<v:textpath')) continue
     const rId = /<v:imagedata[^>]*r:id="([^"]+)"/.exec(frag)?.[1]
     if (!rId) continue
@@ -3041,6 +3149,9 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
       const posV = /mso-position-vertical:(\w+)/.exec(style)?.[1]
       if (posH === 'left' || posH === 'center' || posH === 'right') image.posH = posH
       if (posV === 'top' || posV === 'center' || posV === 'bottom') image.posV = posV
+    } else {
+      const align = paraAlignAt(m.index!)
+      if (align) image.align = align
     }
     if (/<v:imagedata[^>]*(?:gain|blacklevel)="/.test(frag)) image.washout = true
     out.push(image)
@@ -3061,6 +3172,7 @@ function hfContentFromXml(
   xml: string,
   kind: 'header' | 'footer',
   theme?: ThemeColors | null,
+  styles?: Map<string, StyleInfo>,
 ): { text: string; hasPageNumber: boolean; watermark: string | null; paras: HfParagraph[] } {
   // Rewrite each field span (begin..end) for display. PAGE and NUMPAGES become
   // private-use markers (the renderer substitutes real numbers; a literal '#'
@@ -3120,7 +3232,7 @@ function hfContentFromXml(
     hasPageNumber,
     watermark: kind === 'header' ? readWatermarkText(xml) : null,
     // strip leftover field chars so the page marker parses as plain text
-    paras: hfParagraphs(cleaned.replace(/<w:fldChar[^>]*\/>/g, ''), theme),
+    paras: hfParagraphs(cleaned.replace(/<w:fldChar[^>]*\/>/g, ''), theme, styles),
   }
 }
 
@@ -3132,6 +3244,7 @@ async function readHeaderFooterPart(
   kind: 'header' | 'footer',
   hfType: 'default' | 'first' | 'even' = 'default',
   theme?: ThemeColors | null,
+  styles?: Map<string, StyleInfo>,
 ): Promise<{
   text: string
   hasPageNumber: boolean
@@ -3151,7 +3264,7 @@ async function readHeaderFooterPart(
   const file = zip.file(path)
   if (!file) return null
   const xml = await file.async('string')
-  const content = hfContentFromXml(xml, kind, theme)
+  const content = hfContentFromXml(xml, kind, theme, styles)
   const images = await hfImages(zip, path, xml)
   return images.length > 0 ? { ...content, images } : content
 }
@@ -3160,6 +3273,7 @@ async function readHeaderFooterPart(
 async function parseAllHfParts(
   zip: JSZip,
   rels: Map<string, RelInfo>,
+  styles: Map<string, StyleInfo> | undefined,
   theme?: ThemeColors | null,
 ): Promise<Record<string, HfPartInfo>> {
   const out: Record<string, HfPartInfo> = {}
@@ -3174,7 +3288,7 @@ async function parseAllHfParts(
     const file = zip.file(path)
     if (!file) continue
     const xml = await file.async('string')
-    const content = hfContentFromXml(xml, kind, theme)
+    const content = hfContentFromXml(xml, kind, theme, styles)
     const images = await hfImages(zip, path, xml)
     out[rId] = {
       text: content.text,
@@ -3187,7 +3301,11 @@ async function parseAllHfParts(
 }
 
 /** rich paragraphs of a header/footer part (watermark/drawing paragraphs skipped) */
-function hfParagraphs(partXml: string, theme?: ThemeColors | null): HfParagraph[] {
+function hfParagraphs(
+  partXml: string,
+  theme?: ThemeColors | null,
+  styles?: Map<string, StyleInfo>,
+): HfParagraph[] {
   let parsed: XNode[]
   try {
     parsed = xmlParser.parse(partXml) as XNode[]
@@ -3203,7 +3321,8 @@ function hfParagraphs(partXml: string, theme?: ThemeColors | null): HfParagraph[
     themeColors: theme,
   } as unknown as BuildContext
   const out: HfParagraph[] = []
-  for (const node of childrenOf(root)) {
+  // paragraphs may sit inside (nested) w:sdt content controls (OpenXML SDK footers)
+  for (const node of childrenThroughSdt(root, ['w:tbl', 'w:p'])) {
     const name = nameOf(node)
     if (name === 'w:tbl') {
       // layout tables (logo | title | date rows): one display paragraph per row
@@ -3221,7 +3340,36 @@ function hfParagraphs(partXml: string, theme?: ThemeColors | null): HfParagraph[
       continue
     }
     const pPr = findChild(pNode, 'w:pPr')
-    out.push({ ...(pPr ? extractParaFormat(pPr) : {}), runs })
+    const direct = pPr ? extractParaFormat(pPr) : undefined
+    // display-only style layer: Word's built-in Header/Footer styles carry the
+    // center/right tab stops (and sometimes w:jc); direct pPr wins per property
+    const styleId = pPr ? attrsOf(findChild(pPr, 'w:pStyle') ?? {})['w:val'] : undefined
+    const d = styleId ? styles?.get(styleId)?.display : undefined
+    // absolute position tabs (w:ptab): carry their own alignment, ignore stops.
+    // Indexed by overall tab order — regular w:tab occupies a slot as undefined,
+    // so mixed tab/ptab paragraphs keep their alignments on the right segment.
+    const ptabAligns: Array<'left' | 'center' | 'right' | undefined> = []
+    let sawPtab = false
+    const walkTabs = (n: XNode): void => {
+      for (const c of childrenOf(n)) {
+        const name = nameOf(c)
+        if (name === 'w:pPr') continue
+        if (name === 'w:tab') ptabAligns.push(undefined)
+        else if (name === 'w:ptab') {
+          sawPtab = true
+          const a = attrsOf(c)['w:alignment']
+          ptabAligns.push(a === 'center' ? 'center' : a === 'right' ? 'right' : 'left')
+        } else walkTabs(c)
+      }
+    }
+    walkTabs(pNode)
+    out.push({
+      ...(d?.align && d.align !== 'justify' ? { align: d.align } : {}),
+      ...(d?.tabStops ? { tabStops: d.tabStops } : {}),
+      ...direct,
+      ...(sawPtab ? { ptabAligns } : {}),
+      runs,
+    })
   }
   // trailing all-empty paragraphs are layout noise
   while (out.length > 0 && out[out.length - 1].runs.length === 0 && !out[out.length - 1].cells) {
@@ -3265,13 +3413,17 @@ function hfTableRowParagraphs(tbl: XNode, ctx: BuildContext): HfParagraph[] {
         const pPr = findChild(p, 'w:pPr')
         if (!align && pPr) align = extractParaFormat(pPr)?.align
       }
+      const fill = attrsOf(findChild(findChild(tc, 'w:tcPr') ?? {}, 'w:shd') ?? {})['w:fill']
       return {
         runs,
         ...(align ? { align } : {}),
+        ...(fill && fill !== 'auto' ? { fill } : {}),
         ...(total > 0 && widths[i] > 0 ? { widthPct: (widths[i] / total) * 100 } : {}),
       }
     })
-    if (cells.some((c) => c.runs.some((r) => r.text !== ''))) out.push({ runs: [], cells })
+    // shaded-only rows still render (banner bars with no text)
+    if (cells.some((c) => c.runs.some((r) => r.text !== '') || c.fill))
+      out.push({ runs: [], cells })
   }
   return out
 }
@@ -4098,8 +4250,13 @@ async function extractDiagramDrawing(
 async function oleDisplay(
   xml: string,
   ctx: BuildContext,
-): Promise<Pick<Block, 'imageDataUrl' | 'oleProgId'>> {
-  const out: Pick<Block, 'imageDataUrl' | 'oleProgId'> = {}
+): Promise<
+  Pick<Block, 'imageDataUrl' | 'oleProgId' | 'imageWidthPx' | 'imageHeightPx' | 'imageAlign'>
+> {
+  const out: Pick<
+    Block,
+    'imageDataUrl' | 'oleProgId' | 'imageWidthPx' | 'imageHeightPx' | 'imageAlign'
+  > = {}
   const progId = /<o:OLEObject[^>]*ProgID="([^"]+)"/.exec(xml)?.[1]
   if (progId) out.oleProgId = progId
   const path = relPartPath(ctx, /<v:imagedata[^>]*r:id="([^"]+)"/.exec(xml)?.[1])
@@ -4113,6 +4270,22 @@ async function oleDisplay(
       out.imageDataUrl = `data:${mime};base64,${await file.async('base64')}`
     }
   }
+  // Word draws the preview at the declared size — v:shape style (pt), falling
+  // back to w:object dxaOrig/dyaOrig (twips). Without it the metafile preview's
+  // intrinsic pixels (2x dpiScale) blow up to the full content width.
+  const style = /<v:shape [^>]*style="([^"]*)"/.exec(xml)?.[1] ?? ''
+  const wPt = parseFloat(/(?:^|;)width:([\d.]+)pt/.exec(style)?.[1] ?? '')
+  const hPt = parseFloat(/(?:^|;)height:([\d.]+)pt/.exec(style)?.[1] ?? '')
+  const objAttrs = /<w:object\b[^>]*>/.exec(xml)?.[0] ?? ''
+  const wTw = parseInt(/w:dxaOrig="(\d+)"/.exec(objAttrs)?.[1] ?? '', 10)
+  const hTw = parseInt(/w:dyaOrig="(\d+)"/.exec(objAttrs)?.[1] ?? '', 10)
+  const w = wPt > 0 ? (wPt / 72) * 96 : wTw > 0 ? wTw / 15 : 0
+  const h = hPt > 0 ? (hPt / 72) * 96 : hTw > 0 ? hTw / 15 : 0
+  if (w > 0) out.imageWidthPx = Math.round(w)
+  if (h > 0) out.imageHeightPx = Math.round(h)
+  const jc = /<w:jc w:val="([^"]+)"/.exec(xml)?.[1]
+  if (jc === 'center') out.imageAlign = 'center'
+  else if (jc === 'right' || jc === 'end') out.imageAlign = 'right'
   return out
 }
 
@@ -4149,8 +4322,9 @@ async function extractChart(xml: string, ctx: BuildContext): Promise<ChartDispla
 
 /** Word's substitution face when the East Asian font slot is empty, by w:lang w:eastAsia */
 const EA_LANG_DEFAULT_FONT: Record<string, string> = {
-  ko: 'Batang',
-  'ko-kr': 'Batang',
+  // Word probe + fontTable: ko-KR empty EA slot substitutes Malgun Gothic, not Batang
+  ko: 'Malgun Gothic',
+  'ko-kr': 'Malgun Gothic',
   ja: 'MS Mincho',
   'ja-jp': 'MS Mincho',
   'zh-cn': 'SimSun',
@@ -4188,7 +4362,7 @@ async function parseStyles(
     // docDefaults keeps the lang-based backfill below for the empty-slot case
     if (ddRf.eastAsia && !ddRf.eaSlotEmpty) dd.eastAsiaFont = ddRf.eastAsia
     // Empty EA slot + explicit w:lang w:eastAsia: Word substitutes the locale's
-    // default face (e.g. ko-KR theme with <a:ea typeface=""/> renders Batang)
+    // default face (e.g. ko-KR theme with <a:ea typeface=""/> renders Malgun Gothic)
     const eaLang = rPr ? attrsOf(findChild(rPr, 'w:lang') ?? {})['w:eastAsia'] : undefined
     if (!dd.eastAsiaFont && eaLang) {
       const eaDefault = EA_LANG_DEFAULT_FONT[eaLang.toLowerCase()]
@@ -4333,6 +4507,7 @@ async function parseStyles(
     'font',
     'fontAscii',
     'csFont',
+    'caps',
   ] as const
   for (const [fromId, toId] of linkedIds) {
     const a = styles.get(fromId)
@@ -4411,7 +4586,7 @@ function tableStyleDisplayOf(
     }
   }
   const styleTblPr = findChild(styleNode, 'w:tblPr')
-  const borders = borderLinesOf(findChild(styleTblPr ?? {}, 'w:tblBorders'), true)
+  const borders = mergedBorderLinesOf(styleTblPr, 'w:tblBorders', true)
   if (borders) display.borders = borders
   const cellMar = cellMarginsOf(findChild(styleTblPr ?? {}, 'w:tblCellMar'))
   if (cellMar) display.cellMarTwips = cellMar
@@ -4465,6 +4640,8 @@ function styleDisplayOf(
     if (rf.eaSlotEmpty && font && font === rf.eastAsia) display.eaSlotEmpty = true
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) display.charSpacingTwips = spc
+    if (onOffOf(rPr, 'w:caps')) display.caps = 'all'
+    else if (onOffOf(rPr, 'w:smallCaps')) display.caps = 'small'
   }
   const pPr = findChild(styleNode, 'w:pPr')
   if (pPr) {
@@ -4486,12 +4663,15 @@ function styleDisplayOf(
     }
     if (boolProp(pPr, 'w:keepNext')) display.keepNext = true
     if (boolProp(pPr, 'w:keepLines')) display.keepLines = true
+    if (boolProp(pPr, 'w:pageBreakBefore')) display.pageBreakBefore = true
     if (boolProp(pPr, 'w:contextualSpacing')) display.contextualSpacing = true
     const autoSpace = autoSpaceOf(pPr)
     if (autoSpace !== undefined) display.autoSpace = autoSpace
     const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
     if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
     else if (jc === 'both' || jc === 'distribute') display.align = 'justify'
+    const stops = tabStopsOf(pPr)
+    if (stops) display.tabStops = stops
     const ind = findChild(pPr, 'w:ind')
     if (ind) {
       const a = attrsOf(ind)

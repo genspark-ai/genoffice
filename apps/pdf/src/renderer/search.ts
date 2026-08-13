@@ -15,6 +15,8 @@ interface IndexedItem {
   h: number
   /** Rotated run (tilted baseline) — excluded from block grouping */
   rot?: boolean
+  /** pdf.js font id (e.g. 'g_d0_f7'); resolves to the run's font for edit previews */
+  font?: string
 }
 
 export interface PageEntry {
@@ -34,6 +36,7 @@ interface RawTextItem {
   width?: number
   height?: number
   hasEOL?: boolean
+  fontName?: string
 }
 
 /** Concatenate text per page + record each item's char range and PDF-space box (built once, cached per doc by caller) */
@@ -60,6 +63,7 @@ export async function buildSearchIndex(doc: PDFDocumentProxy): Promise<SearchInd
           w: it.width ?? 0,
           h,
           ...(rot ? { rot: true } : {}),
+          ...(typeof it.fontName === 'string' ? { font: it.fontName } : {}),
         })
         text += it.str
       }

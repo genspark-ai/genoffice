@@ -95,6 +95,12 @@ const api: SlidesApi = {
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
   },
+  onChromePressed: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('app:chrome-pressed', listener)
+    return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
+  },
+  setShowFullScreen: (on) => ipcRenderer.invoke('slides:show-fullscreen', on),
   openPptx: (fitWidthPx) => ipcRenderer.invoke('slides:open', fitWidthPx),
   openPptxPath: (path, fitWidthPx) => ipcRenderer.invoke('slides:open-path', path, fitWidthPx),
   consumePendingOpen: (fitWidthPx) => ipcRenderer.invoke('slides:consume-pending-open', fitWidthPx),

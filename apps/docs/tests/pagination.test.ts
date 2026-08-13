@@ -650,6 +650,18 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     expect(slices.length).toBe(2)
     expect(slices[1].start).toBe(100)
   })
+
+  it("keepNext on the document's last block places normally (POI headerPic: lone keepNext paragraph crashed)", () => {
+    const only = block(0, 100, { keepNext: true })
+    const slices = computeSectionedSlicesF2([only], geoms1, 100)
+    expect(slices.length).toBe(1)
+    expect(slices[0].end).toBe(100)
+
+    const a = block(0, 100)
+    const last = block(100, 100, { keepNext: true })
+    const two = computeSectionedSlicesF2([a, last], geoms1, 200)
+    expect(two[two.length - 1].end).toBe(200)
+  })
 })
 
 describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
@@ -893,19 +905,20 @@ describe('fillLineBoxes — keepNext-anchored tables', () => {
 })
 
 describe('measureBlocks — break-only paragraphs', () => {
-  it('a page-break-only paragraph does not create a blank page when only one line fits', () => {
-    const rectOf = (top: number, height: number) =>
-      ({
-        top,
-        height,
-        bottom: top + height,
-        left: 0,
-        right: 100,
-        width: 100,
-        x: 0,
-        y: top,
-        toJSON: () => ({}),
-      }) as DOMRect
+  const rectOf = (top: number, height: number) =>
+    ({
+      top,
+      height,
+      bottom: top + height,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect
+  // page height 200; the break paragraph's DOM height is two line boxes (br + trailingBreak) = 44px
+  const breakDoc = (fillerH: number) => {
     const pm = document.createElement('div')
     const addPara = (top: number, height: number, html: string) => {
       const el = document.createElement('p')
@@ -913,50 +926,34 @@ describe('measureBlocks — break-only paragraphs', () => {
       el.getBoundingClientRect = () => rectOf(top, height)
       pm.appendChild(el)
     }
-    // page height 200: 27px left after the filler; the break paragraph's DOM height is
-    // two line boxes (br + trailingBreak) = 44px
-    addPara(0, 173, 'filler text')
-    addPara(173, 44, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
-    addPara(217, 100, 'after the break')
-    const { blocks, totalHeight } = measureBlocks(pm, 0, 1)
+    addPara(0, fillerH, 'filler text')
+    addPara(fillerH, 44, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
+    addPara(fillerH + 44, 100, 'after the break')
+    return measureBlocks(pm, 0, 1)
+  }
+  const geoms = [{ contentHeight: 200, forceBreak: false }]
+
+  it('absorbs at the page bottom when the break line fits (no blank page)', () => {
+    const { blocks, totalHeight } = breakDoc(173) // 27px left
     expect(blocks[1].breakAfter).toBe(true)
-    expect(blocks[1].spaceAfterPx).toBe(44)
-    const geoms = [{ contentHeight: 200, forceBreak: false }]
+    expect(blocks[1].breakOnlyLineH).toBe(44)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
     // break paragraph overflows the bottom margin; page 2 starts at the following block
     expect(slices.map((s) => s.start)).toEqual([0, 217])
   })
 
-  it('overflows the bottom margin instead of blanking a page even when no space is left', () => {
-    const rectOf = (top: number, height: number) =>
-      ({
-        top,
-        height,
-        bottom: top + height,
-        left: 0,
-        right: 100,
-        width: 100,
-        x: 0,
-        y: top,
-        toJSON: () => ({}),
-      }) as DOMRect
-    const pm = document.createElement('div')
-    const addPara = (top: number, height: number, html: string) => {
-      const el = document.createElement('p')
-      el.innerHTML = html
-      el.getBoundingClientRect = () => rectOf(top, height)
-      pm.appendChild(el)
-    }
-    // page height 200: only 15px left, less than even the br line — the break paragraph
-    // still stays (whole block is trailing space) rather than pushing into a blank page;
-    // Word would blank here, but a fit-check turns page-fill drift into spurious blanks
-    addPara(0, 185, 'filler text')
-    addPara(185, 44, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
-    addPara(229, 100, 'after the break')
-    const { blocks, totalHeight } = measureBlocks(pm, 0, 1)
-    const geoms = [{ contentHeight: 200, forceBreak: false }]
+  it('opens a Word-style blank page when the previous paragraph exactly fills the page', () => {
+    const { blocks, totalHeight } = breakDoc(200)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
-    expect(slices.map((s) => s.start)).toEqual([0, 229])
+    // page 2 holds only the break paragraph (blank), which then pushes the rest to page 3
+    expect(slices.map((s) => s.start)).toEqual([0, 200, 244])
+    expect(slices[1]).toMatchObject({ start: 200, end: 244 })
+  })
+
+  it('still absorbs within the drift tolerance (half the block height)', () => {
+    const { blocks, totalHeight } = breakDoc(177) // 23px left, just above the 22px floor
+    const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
+    expect(slices.map((s) => s.start)).toEqual([0, 221])
   })
 })
 
@@ -1144,13 +1141,28 @@ describe('applyBlockMeta / trailing spacing overflow', () => {
       idx === 0
         ? { keepNext: true, widowControl: false }
         : idx === 1
-          ? { keepLines: true }
+          ? { keepLines: true, breakBefore: true }
           : undefined,
     )
     expect(blocks[0].keepNext).toBe(true)
     expect(blocks[0].widowControl).toBe(false)
     expect(blocks[1].keepLines).toBe(true)
+    expect(blocks[1].breakBefore).toBe(true)
     expect(blocks[2].keepNext).toBeUndefined()
+  })
+
+  it('breakBefore meta (style-level pageBreakBefore) forces a page break, first block excepted', () => {
+    const blocks: BlockBox[] = [
+      { top: 0, height: 100, docxIndex: 0 },
+      { top: 100, height: 100, docxIndex: 1 },
+    ]
+    // both paragraphs use a pageBreakBefore style; the document's first block must not open an empty page
+    applyBlockMeta(blocks, () => ({ breakBefore: true }))
+    const slices = computePageSlices(blocks, 800, 200)
+    expect(slices).toEqual([
+      { start: 0, end: 100, section: 0 },
+      { start: 100, end: 200, section: 0 },
+    ])
   })
 
   it('trailing spaceAfter overflow does not push to the next page (Word breaks by text only)', () => {

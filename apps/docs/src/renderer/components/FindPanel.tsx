@@ -236,7 +236,7 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
         />
         <button
           className={`find-opt ${matchCase ? 'on' : ''}`}
-          title={t('appMatchCase')}
+          data-tip={t('appMatchCase')}
           onClick={() => {
             setMatchCase(!matchCase)
             refresh(query, index, { matchCase: !matchCase })
@@ -246,7 +246,7 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
         </button>
         <button
           className={`find-opt ${wholeWord ? 'on' : ''}`}
-          title={t('appWholeWord')}
+          data-tip={t('appWholeWord')}
           onClick={() => {
             setWholeWord(!wholeWord)
             refresh(query, index, { wholeWord: !wholeWord })
@@ -263,7 +263,8 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
         </span>
         <button
           className="find-btn"
-          title={t('appPrevMatch')}
+          data-tip={t('appPrevMatch')}
+          aria-label={t('appPrevMatch')}
           onClick={() => step(-1)}
           disabled={matches.length === 0}
         >
@@ -271,13 +272,19 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
         </button>
         <button
           className="find-btn"
-          title={t('appNextMatch')}
+          data-tip={t('appNextMatch')}
+          aria-label={t('appNextMatch')}
           onClick={() => step(1)}
           disabled={matches.length === 0}
         >
           ›
         </button>
-        <button className="find-btn find-close" title={t('appCloseEsc')} onClick={close}>
+        <button
+          className="find-btn find-close"
+          data-tip={t('appCloseEsc')}
+          aria-label={t('appCloseEsc')}
+          onClick={close}
+        >
           ✕
         </button>
       </div>

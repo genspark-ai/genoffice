@@ -552,7 +552,7 @@ export function ReviewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={`${t('ribbonEditorTip')} — ${t('ribbonAiCreditNote')}`}
+            data-tip={`${t('ribbonEditorTip')} — ${t('ribbonAiCreditNote')}`}
             onClick={() => {
               if (confirmAiRewrite()) onAiPreset(t('ribbonEditorPrompt'))
             }}
@@ -576,7 +576,7 @@ export function ReviewTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={`${t('ribbonTranslateTip')} — ${t('ribbonAiCreditNote')}`}
+              data-tip={`${t('ribbonTranslateTip')} — ${t('ribbonAiCreditNote')}`}
               onClick={() => toggleDropdown(setDropdown, 'translate')}
             >
               <span className="rb-big-icon">
@@ -616,7 +616,7 @@ export function ReviewTab({
           <button
             className="rb-big"
             disabled={!hasDoc || !canComment || isProtected}
-            title={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
+            data-tip={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
             onClick={onNewComment}
           >
             <span className="rb-big-icon">
@@ -627,7 +627,7 @@ export function ReviewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonShowCommentsTip', { count: commentCount })}
+            data-tip={t('ribbonShowCommentsTip', { count: commentCount })}
             onClick={onShowComments}
           >
             <span className="rb-big-icon">
@@ -646,7 +646,7 @@ export function ReviewTab({
           <button
             className={`rb-big ${trackChanges ? 'active' : ''}`}
             disabled={!hasDoc || isProtected}
-            title={t('ribbonTrackChangesTip')}
+            data-tip={t('ribbonTrackChangesTip')}
             onClick={() => onTrackChanges(!trackChanges)}
           >
             <span className="rb-big-icon">
@@ -658,7 +658,7 @@ export function ReviewTab({
             <button
               className={`rb-big ${revisionDisplay !== 'all' ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonRevDisplayTip')}
+              data-tip={t('ribbonRevDisplayTip')}
               onClick={() => toggleDropdown(setDropdown, 'revDisplay')}
             >
               <span className="rb-big-icon">
@@ -694,7 +694,7 @@ export function ReviewTab({
             <button
               className="rb-big"
               disabled={!hasDoc || revisionCount === 0 || isProtected}
-              title={t('ribbonAcceptTip', { count: revisionCount })}
+              data-tip={t('ribbonAcceptTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'acceptRev')}
             >
               <span className="rb-big-icon">
@@ -728,7 +728,7 @@ export function ReviewTab({
             <button
               className="rb-big"
               disabled={!hasDoc || revisionCount === 0 || isProtected}
-              title={t('ribbonRejectTip', { count: revisionCount })}
+              data-tip={t('ribbonRejectTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'rejectRev')}
             >
               <span className="rb-big-icon">
@@ -761,7 +761,7 @@ export function ReviewTab({
           <button
             className="rb-big"
             disabled={!hasDoc || revisionCount === 0}
-            title={t('ribbonPrevChangeTip')}
+            data-tip={t('ribbonPrevChangeTip')}
             onClick={() => onGotoRevision(-1)}
           >
             <span className="rb-big-icon">
@@ -772,7 +772,7 @@ export function ReviewTab({
           <button
             className="rb-big"
             disabled={!hasDoc || revisionCount === 0}
-            title={t('ribbonNextChangeTip')}
+            data-tip={t('ribbonNextChangeTip')}
             onClick={() => onGotoRevision(1)}
           >
             <span className="rb-big-icon">
@@ -791,7 +791,7 @@ export function ReviewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonCompareTip')}
+            data-tip={t('ribbonCompareTip')}
             onClick={onCompare}
           >
             <span className="rb-big-icon">
@@ -810,7 +810,7 @@ export function ReviewTab({
           <button
             className={`rb-big ${isProtected ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={isProtected ? t('ribbonStopProtectionTip') : t('ribbonRestrictEditingTip')}
+            data-tip={isProtected ? t('ribbonStopProtectionTip') : t('ribbonRestrictEditingTip')}
             onClick={onToggleProtection}
           >
             <span className="rb-big-icon">
@@ -896,7 +896,7 @@ export function ViewTab({
           <button
             className={`rb-big ${viewMode === 'print' && !readMode ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonPrintLayoutTip')}
+            data-tip={t('ribbonPrintLayoutTip')}
             onClick={() => {
               onViewMode('print')
               onReadMode(false)
@@ -910,7 +910,7 @@ export function ViewTab({
           <button
             className={`rb-big ${viewMode === 'web' ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonWebLayoutTip')}
+            data-tip={t('ribbonWebLayoutTip')}
             onClick={() => onViewMode(viewMode === 'web' ? 'print' : 'web')}
           >
             <span className="rb-big-icon">
@@ -921,7 +921,7 @@ export function ViewTab({
           <button
             className={`rb-big ${viewMode === 'outline' ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonOutlineViewTip')}
+            data-tip={t('ribbonOutlineViewTip')}
             onClick={() => onViewMode(viewMode === 'outline' ? 'print' : 'outline')}
           >
             <span className="rb-big-icon">
@@ -932,7 +932,7 @@ export function ViewTab({
           <button
             className={`rb-big ${readMode ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonReadModeTip')}
+            data-tip={t('ribbonReadModeTip')}
             onClick={() => onReadMode(!readMode)}
           >
             <span className="rb-big-icon">
@@ -943,7 +943,7 @@ export function ViewTab({
           <button
             className="rb-big"
             disabled={!hasDoc || viewMode !== 'print' || readMode}
-            title={t('ribbonPagePreviewTip')}
+            data-tip={t('ribbonPagePreviewTip')}
             onClick={onPagePreview}
           >
             <span className="rb-big-icon">
@@ -961,7 +961,7 @@ export function ViewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonZoomOut')}
+            data-tip={t('ribbonZoomOut')}
             onClick={() => onZoom(Math.max(50, zoom - 10))}
           >
             <span className="rb-big-icon">
@@ -972,7 +972,7 @@ export function ViewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonZoomIn')}
+            data-tip={t('ribbonZoomIn')}
             onClick={() => onZoom(Math.min(200, zoom + 10))}
           >
             <span className="rb-big-icon">
@@ -983,7 +983,8 @@ export function ViewTab({
           <button
             className={`rb-big ${zoom === 100 ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonZoom100Tip')}
+            data-tip={t('ribbonZoom100Tip')}
+            aria-label={t('ribbonZoom100Tip')}
             onClick={() => onZoom(100)}
           >
             <span className="rb-big-icon">
@@ -994,7 +995,7 @@ export function ViewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonPageWidthTip')}
+            data-tip={t('ribbonPageWidthTip')}
             onClick={() => onZoomFit('width')}
           >
             <span className="rb-big-icon">
@@ -1005,7 +1006,7 @@ export function ViewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonWholePageTip')}
+            data-tip={t('ribbonWholePageTip')}
             onClick={() => onZoomFit('page')}
           >
             <span className="rb-big-icon">
@@ -1023,7 +1024,7 @@ export function ViewTab({
         <div className="ribbon-group-items">
           <button
             className={`rb-big ${showAi ? 'active' : ''}`}
-            title={t('ribbonAiPanelTip')}
+            data-tip={t('ribbonAiPanelTip')}
             onClick={onToggleAi}
           >
             <span className="rb-big-icon">
@@ -1033,7 +1034,7 @@ export function ViewTab({
           </button>
           <button
             className={`rb-big ${darkCanvas ? 'active' : ''}`}
-            title={t('ribbonDarkModeTip')}
+            data-tip={t('ribbonDarkModeTip')}
             onClick={() => onDarkCanvas(!darkCanvas)}
           >
             <span className="rb-big-icon">
@@ -1052,7 +1053,7 @@ export function ViewTab({
           <button
             className={`rb-big ${showRuler ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonRulerTip')}
+            data-tip={t('ribbonRulerTip')}
             onClick={() => onShowRuler(!showRuler)}
           >
             <span className="rb-big-icon">
@@ -1063,7 +1064,7 @@ export function ViewTab({
           <button
             className={`rb-big ${showGrid ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonGridlinesTip')}
+            data-tip={t('ribbonGridlinesTip')}
             onClick={() => onShowGrid(!showGrid)}
           >
             <span className="rb-big-icon">
@@ -1074,7 +1075,7 @@ export function ViewTab({
           <button
             className={`rb-big ${showNav ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonNavPaneTip')}
+            data-tip={t('ribbonNavPaneTip')}
             onClick={() => onShowNav(!showNav)}
           >
             <span className="rb-big-icon">
@@ -1092,7 +1093,7 @@ export function ViewTab({
         <div className="ribbon-group-items">
           <button
             className="rb-big"
-            title={t('ribbonNewTabTip')}
+            data-tip={t('ribbonNewTabTip')}
             onClick={() => void window.desktop.openNewTab(filePath)}
           >
             <span className="rb-big-icon">
@@ -1103,7 +1104,7 @@ export function ViewTab({
           <button
             className={`rb-big ${splitView ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonSplitTip')}
+            data-tip={t('ribbonSplitTip')}
             onClick={() => onSplitView(!splitView)}
           >
             <span className="rb-big-icon">
@@ -1114,7 +1115,7 @@ export function ViewTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              title={t('ribbonSwitchTabsTip')}
+              data-tip={t('ribbonSwitchTabsTip')}
               onClick={() => void toggleWinMenu()}
             >
               <span className="rb-big-icon">
@@ -1208,7 +1209,7 @@ export function DrawTab({
           <button
             className={`rb-big ${tool === 'select' ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonSelectTip')}
+            data-tip={t('ribbonSelectTip')}
             onClick={() => onTool('select')}
           >
             <span className="rb-big-icon">
@@ -1225,7 +1226,7 @@ export function DrawTab({
           <button
             className={`rb-big ${tool === 'pen' ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonPenTip')}
+            data-tip={t('ribbonPenTip')}
             onClick={() => onTool('pen')}
           >
             <span className="rb-big-icon" style={{ color: `#${pen.color}` }}>
@@ -1236,7 +1237,7 @@ export function DrawTab({
           <button
             className={`rb-big ${tool === 'highlighter' ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonHighlighterTip')}
+            data-tip={t('ribbonHighlighterTip')}
             onClick={() => onTool('highlighter')}
           >
             <span className="rb-big-icon" style={{ color: `#${highlighter.color}` }}>
@@ -1247,7 +1248,7 @@ export function DrawTab({
           <button
             className={`rb-big ${tool === 'eraser' ? 'active' : ''}`}
             disabled={!hasDoc}
-            title={t('ribbonEraserTip')}
+            data-tip={t('ribbonEraserTip')}
             onClick={() => onTool('eraser')}
           >
             <span className="rb-big-icon">
@@ -1267,7 +1268,8 @@ export function DrawTab({
                 key={hex}
                 className={`ink-swatch ${active.color === hex ? 'active' : ''}`}
                 style={{ background: `#${hex}` }}
-                title={`#${hex}`}
+                data-tip={`#${hex}`}
+                aria-label={`#${hex}`}
                 disabled={!hasDoc}
                 onClick={() => setActive({ ...active, color: hex })}
               />
@@ -1278,7 +1280,8 @@ export function DrawTab({
               <button
                 key={w}
                 className={`ink-width ${active.width === w ? 'active' : ''}`}
-                title={t('ribbonPixels', { w })}
+                data-tip={t('ribbonPixels', { w })}
+                aria-label={t('ribbonPixels', { w })}
                 disabled={!hasDoc}
                 onClick={() => setActive({ ...active, width: w })}
               >
@@ -1304,7 +1307,7 @@ export function DrawTab({
           <button
             className="rb-big"
             disabled={!hasDoc || annotationCount === 0}
-            title={t('ribbonClearAllTip')}
+            data-tip={t('ribbonClearAllTip')}
             onClick={onClearAll}
           >
             <span className="rb-big-icon">

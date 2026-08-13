@@ -17,6 +17,7 @@
 import { XMLParser } from 'fast-xml-parser'
 import { type Theme } from './theme'
 import { resolveColorNode } from './color'
+import type { Fill } from './types'
 
 const chartParser = new XMLParser({
   ignoreAttributes: false,
@@ -91,10 +92,25 @@ export interface ChartModel {
   dataLabelsPct?: boolean
   /** Chart title (concatenated rich text of c:chart/c:title) */
   title?: string
+  /** chartSpace-level <c:spPr> fill (whole-chart background, e.g. picture fill) */
+  bgFill?: Fill
+  /** Theme accent1..6 resolved to #RRGGBB (default series/wedge colors, PowerPoint varyColors order) */
+  themePalette?: string[]
+  /** chartSpace-level <c:txPr> default text size (pt); chart text without its own txPr uses this */
+  defaultTextPt?: number
+  /** 3D chart type (pie3D/bar3D/…): render layer draws a pseudo-3D look on the 2D pipeline */
+  pseudo3D?: boolean
+  /** c:view3D rotX (degrees) — controls the pie tilt / bar extrusion feel */
+  rotXDeg?: number
 }
 
 /** Parse one chartN.xml. Returns null for unrecognized plot types (caller falls back to a placeholder chip). */
-export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
+export function parseChartXml(
+  xml: string,
+  theme?: Theme,
+  /** DrawingML fill resolver (injected by parse.ts so chart-part blip rIds resolve correctly) */
+  resolveFill?: (spPr: unknown) => Fill | undefined,
+): ChartModel | null {
   let doc: any
   try {
     doc = chartParser.parse(xml)
@@ -106,10 +122,24 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
   if (!plotArea) return null
 
   // Cartesian types (bar/area/line) may coexist combined (e.g. column+line combo); pie/scatter/radar stand alone.
+  // 3D variants map onto the 2D pipelines (same data/palette/legend); the render layer adds a
+  // pseudo-3D look (elliptical pie with a rim, extruded bars) driven by pseudo3D + c:view3D rotX.
   const cartesian: Array<{ kind: 'bar' | 'area' | 'line'; plot: any }> = []
-  if (plotArea['c:barChart']) cartesian.push({ kind: 'bar', plot: plotArea['c:barChart'] })
-  if (plotArea['c:areaChart']) cartesian.push({ kind: 'area', plot: plotArea['c:areaChart'] })
-  if (plotArea['c:lineChart']) cartesian.push({ kind: 'line', plot: plotArea['c:lineChart'] })
+  const barPlot = plotArea['c:barChart'] ?? plotArea['c:bar3DChart']
+  const areaPlot = plotArea['c:areaChart'] ?? plotArea['c:area3DChart']
+  const linePlot = plotArea['c:lineChart'] ?? plotArea['c:line3DChart']
+  if (barPlot) cartesian.push({ kind: 'bar', plot: barPlot })
+  if (areaPlot) cartesian.push({ kind: 'area', plot: areaPlot })
+  if (linePlot) cartesian.push({ kind: 'line', plot: linePlot })
+
+  const piePlot = plotArea['c:pieChart'] ?? plotArea['c:pie3DChart'] ?? plotArea['c:doughnutChart']
+
+  const is3D = !!(
+    plotArea['c:bar3DChart'] ||
+    plotArea['c:area3DChart'] ||
+    plotArea['c:line3DChart'] ||
+    plotArea['c:pie3DChart']
+  )
 
   let kind: ChartKind
   let plot: any
@@ -117,9 +147,9 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
     // Primary type is the first (bar > area > line): axis/bar params read from it; other combo series carry plotKind
     kind = cartesian[0]!.kind
     plot = cartesian[0]!.plot
-  } else if (plotArea['c:pieChart'] || plotArea['c:doughnutChart']) {
+  } else if (piePlot) {
     kind = 'pie'
-    plot = plotArea['c:pieChart'] ?? plotArea['c:doughnutChart']
+    plot = piePlot
   } else if (plotArea['c:scatterChart']) {
     kind = 'scatter'
     plot = plotArea['c:scatterChart']
@@ -149,12 +179,19 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
 
   const series: ChartSeries[] = []
   let categories: string[] = []
-  const parsePlotSeries = (plotNode: any, plotKind: ChartKind, tagPlotKind: boolean, secondary = false) => {
+  const parsePlotSeries = (
+    plotNode: any,
+    plotKind: ChartKind,
+    tagPlotKind: boolean,
+    secondary = false,
+  ) => {
     const sersRaw = plotNode['c:ser']
     const sers: any[] = Array.isArray(sersRaw) ? sersRaw : sersRaw ? [sersRaw] : []
     for (const ser of sers) {
       // Scatter: y values in c:yVal, x values in c:xVal; other types use c:val
-      const s: ChartSeries = { values: readNumPoints(plotKind === 'scatter' ? ser['c:yVal'] : ser['c:val']) }
+      const s: ChartSeries = {
+        values: readNumPoints(plotKind === 'scatter' ? ser['c:yVal'] : ser['c:val']),
+      }
       if (tagPlotKind) s.plotKind = plotKind as 'line' | 'bar' | 'area'
       if (secondary) s.secondaryAxis = true
       if (plotKind === 'scatter') {
@@ -169,7 +206,8 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
       const markerSym = ser['c:marker']?.['c:symbol']?.['@_val']
       if (plotKind === 'line') s.marker = markerSym != null && markerSym !== 'none'
       // scatter/radar: default marker decided by style; only set for explicit symbol (none → false)
-      else if ((plotKind === 'scatter' || plotKind === 'radar') && markerSym != null) s.marker = markerSym !== 'none'
+      else if ((plotKind === 'scatter' || plotKind === 'radar') && markerSym != null)
+        s.marker = markerSym !== 'none'
       // Per-data-point colors (one color per pie slice)
       const dPts: any[] = ser['c:dPt'] ?? []
       if (dPts.length) {
@@ -200,6 +238,12 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
 
   const model: ChartModel = { kind, categories, series }
 
+  if (is3D) {
+    model.pseudo3D = true
+    const rotX = parseInt(chart['c:view3D']?.['c:rotX']?.['@_val'], 10)
+    if (Number.isFinite(rotX)) model.rotXDeg = rotX
+  }
+
   if (kind === 'bar') {
     const dir = plot['c:barDir']?.['@_val']
     model.barDir = dir === 'bar' ? 'bar' : 'col'
@@ -229,19 +273,52 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
   const legendPos = chart['c:legend']?.['c:legendPos']?.['@_val']
   if (chart['c:legend']) model.legendPos = (legendPos as ChartModel['legendPos']) ?? 'r'
 
-  const chartTitle = collectText(chart['c:title']?.['c:tx']?.['c:rich'])
+  // Whole-chart background (chartSpace-level spPr), e.g. picture fill
+  const bgFill = resolveFill?.(doc['c:chartSpace']?.['c:spPr'])
+  if (bgFill && bgFill.type !== 'none') model.bgFill = bgFill
+
+  // Theme accents: default series/wedge colors follow the file's theme, not a fixed palette
+  if (theme) {
+    const accents = ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6']
+      .map((k) => theme.colors?.[k])
+      .filter((c): c is string => !!c)
+    if (accents.length === 6) model.themePalette = accents
+  }
+  // chartSpace-level default text size (hundredths of a pt)
+  const txP = doc['c:chartSpace']?.['c:txPr']?.['a:p']
+  const defSz = parseInt((Array.isArray(txP) ? txP[0] : txP)?.['a:pPr']?.['a:defRPr']?.['@_sz'], 10)
+  if (Number.isFinite(defSz) && defSz > 0) model.defaultTextPt = defSz / 100
+
+  // Title text: rich text, or the cached cell-linked string (c:tx/c:strRef)
+  const chartTitle =
+    collectText(chart['c:title']?.['c:tx']?.['c:rich']) ||
+    readStrPoints(chart['c:title']?.['c:tx'])[0]
   if (chartTitle) model.title = chartTitle
+  // Auto title: a <c:title> with no c:tx at all (and autoTitleDeleted != 1) takes the sole series name
+  else if (
+    chart['c:title'] &&
+    !chart['c:title']?.['c:tx'] &&
+    chart['c:autoTitleDeleted']?.['@_val'] !== '1' &&
+    series.length === 1 &&
+    series[0]!.name
+  ) {
+    model.title = series[0]!.name
+  }
 
   // Data labels: plot-level or any series-level c:dLbls (delete=1 counts as none)
   const dLblsInfo = (owner: any): { on: boolean; pct: boolean } => {
     const d = owner?.['c:dLbls']
-    if (!d || typeof d !== 'object' || d['c:delete']?.['@_val'] === '1') return { on: false, pct: false }
+    if (!d || typeof d !== 'object' || d['c:delete']?.['@_val'] === '1')
+      return { on: false, pct: false }
     const showVal = d['c:showVal']?.['@_val'] === '1'
     const showPct = d['c:showPercent']?.['@_val'] === '1'
     return { on: showVal || showPct, pct: showPct && !showVal }
   }
   const dLblOwners: any[] = (cartesian.length > 1 ? cartesian.map((c) => c.plot) : [plot]).flatMap(
-    (p) => [p, ...((Array.isArray(p['c:ser']) ? p['c:ser'] : p['c:ser'] ? [p['c:ser']] : []) as any[])],
+    (p) => [
+      p,
+      ...((Array.isArray(p['c:ser']) ? p['c:ser'] : p['c:ser'] ? [p['c:ser']] : []) as any[]),
+    ],
   )
   const found = dLblOwners.map(dLblsInfo).find((r) => r.on)
   if (found) {
@@ -296,7 +373,11 @@ function readStrPoints(node: any): string[] {
   if (strCache) return readPoints(strCache).map((v) => v ?? '')
   const multi = node?.['c:multiLvlStrRef']?.['c:multiLvlStrCache']
   if (multi) {
-    const lvls: any[] = Array.isArray(multi['c:lvl']) ? multi['c:lvl'] : multi['c:lvl'] ? [multi['c:lvl']] : []
+    const lvls: any[] = Array.isArray(multi['c:lvl'])
+      ? multi['c:lvl']
+      : multi['c:lvl']
+        ? [multi['c:lvl']]
+        : []
     // The innermost (first lvl) holds the leaf categories
     if (lvls.length) return readPoints(lvls[0]).map((v) => v ?? '')
   }
@@ -336,7 +417,9 @@ function parseAxis(ax: any, theme?: Theme): ChartAxisStyle | undefined {
   if (scaling?.['c:min']?.['@_val'] != null) out.min = Number(scaling['c:min']['@_val'])
   if (scaling?.['c:max']?.['@_val'] != null) out.max = Number(scaling['c:max']['@_val'])
   if (scaling?.['c:orientation']?.['@_val'] === 'maxMin') out.reversed = true
-  const defRPr = ax['c:txPr']?.['a:p']?.[0]?.['a:pPr']?.['a:defRPr'] ?? ax['c:txPr']?.['a:p']?.['a:pPr']?.['a:defRPr']
+  const defRPr =
+    ax['c:txPr']?.['a:p']?.[0]?.['a:pPr']?.['a:defRPr'] ??
+    ax['c:txPr']?.['a:p']?.['a:pPr']?.['a:defRPr']
   if (defRPr) {
     const c = resolveColorNode(defRPr['a:solidFill'], theme)
     if (c) out.labelColor = c

@@ -213,6 +213,26 @@ describe('buildChartNode', () => {
     expect(node.swatches).toHaveLength(3)
   })
 
+  it('pseudo-3D pie with a single 360° slice still emits a filled face path', () => {
+    const pie: ChartModel = {
+      kind: 'pie',
+      pseudo3D: true,
+      categories: ['only', 'zero'],
+      series: [{ values: [5, 0] }],
+    }
+    const node = buildChartNode('r_5b', 'el5b', pie, box, vp, metrics)!
+    expect(node.wedges ?? []).toHaveLength(0)
+    const faces = node.paths!.filter((p) => p.stroke === '#ffffff')
+    expect(faces).toHaveLength(1)
+    // The full-circle face must be two half arcs, not one degenerate arc
+    expect(faces[0]!.d.match(/A /g)).toHaveLength(2)
+    expect(faces[0]!.d.startsWith('M ')).toBe(true)
+    // Endpoints of the two arcs differ (top of the ellipse vs its opposite point)
+    const nums = faces[0]!.d.match(/-?\d+(\.\d+)?/g)!.map(Number)
+    // d = M x0 y0 A rx ry 0 1 1 x1 y1 A rx ry 0 1 1 x0 y0 Z → y0 at index 1, y1 at index 8
+    expect(nums[1]).not.toBeCloseTo(nums[8]!, 3)
+  })
+
   it('doughnut hole uses holePct of outer radius', () => {
     const dough: ChartModel = {
       kind: 'pie',
@@ -225,7 +245,7 @@ describe('buildChartNode', () => {
     expect(w.innerR).toBeCloseTo(w.outerR / 2, 5)
   })
 
-  it('builds horizontal bar: bars extend along x axis, first category on top, larger values give longer bars', () => {
+  it('builds horizontal bar: bars extend along x axis, first category at bottom, larger values give longer bars', () => {
     const model: ChartModel = {
       kind: 'bar',
       barDir: 'bar',
@@ -237,8 +257,8 @@ describe('buildChartNode', () => {
     const node = buildChartNode('r_h', 'elh', model, box, vp, metrics)!
     expect(node.bars).toHaveLength(2)
     const [b1, b2] = node.bars
-    // The first category is on top
-    expect(b1!.y).toBeLessThan(b2!.y)
+    // PowerPoint default (minMax): the first category is at the bottom
+    expect(b1!.y).toBeGreaterThan(b2!.y)
     // The value-30 bar is longer than the value-10 bar (in the width direction)
     expect(b2!.w).toBeGreaterThan(b1!.w)
     // Bar height > 0 and within the box
@@ -248,7 +268,7 @@ describe('buildChartNode', () => {
     }
   })
 
-  it('horizontal bar reversed (orientation maxMin): first category at bottom', () => {
+  it('horizontal bar reversed (orientation maxMin): first category on top', () => {
     const model: ChartModel = {
       kind: 'bar',
       barDir: 'bar',
@@ -258,7 +278,7 @@ describe('buildChartNode', () => {
     }
     const node = buildChartNode('r_h2', 'elh2', model, box, vp, metrics)!
     const [b1, b2] = node.bars
-    expect(b1!.y).toBeGreaterThan(b2!.y)
+    expect(b1!.y).toBeLessThan(b2!.y)
   })
 
   it('builds scatter: positioned by two value axes, lineMarker draws points and lines by default', () => {
@@ -339,5 +359,24 @@ describe('buildChartNode', () => {
     expect(p.fill).toBe('#70AD47')
     // First and last points land on the same baseline y
     expect(p.points[1]).toBeCloseTo(p.points[p.points.length - 1]!, 5)
+  })
+})
+
+describe('chartSpace default text size reaches every label group', () => {
+  const ptToPxAt = (pt: number) => (pt * 96) / 72 // vp scale is 1280/12192000EMU ≈ 96dpi ⇒ px = pt×96/72×(scale)
+  it('category + value labels fall back to defaultTextPt, not 10pt', () => {
+    const model: ChartModel = {
+      kind: 'bar',
+      barDir: 'col',
+      grouping: 'clustered',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      defaultTextPt: 18,
+    }
+    const node = buildChartNode('r_1', 'el1', model, box, vp, metrics)!
+    const sizes = new Set(node.labels.map((l) => Math.round(l.fontSizePx)))
+    const scale = vp.scale
+    expect(sizes.has(Math.round(ptToPxAt(18) * scale))).toBe(true)
+    expect(sizes.has(Math.round(ptToPxAt(10) * scale))).toBe(false)
   })
 })

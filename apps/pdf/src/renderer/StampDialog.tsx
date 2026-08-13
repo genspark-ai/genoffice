@@ -5,7 +5,7 @@ import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import type { TFunc } from './i18n/locale'
 import { ColorPalette } from './ColorPalette'
 
-const WM_COLORS = ['#d0342c', '#8a8a8a', '#2b66ff', '#217346']
+const WM_COLORS = ['#000000', '#ffffff', '#d0342c', '#d4a017', '#2b66ff', '#217346']
 const WM_COLOR_PRESETS = WM_COLORS.map((value) => ({ value }))
 
 /** Watermark / header-footer config dialog; on confirm App generates stamps and marks unsaved changes */
@@ -116,13 +116,19 @@ export function StampDialog({
                 presets={WM_COLOR_PRESETS}
                 moreColorsLabel={t('moreColors')}
                 onChange={(value) => setWm({ ...wm, color: value })}
+                columns={WM_COLOR_PRESETS.length}
               />
             </div>
             <div
               className="pdf-wm-preview"
               style={{ color: wm.color, opacity: Math.max(wm.opacity, 0.25) }}
             >
-              <span style={{ transform: `rotate(${-wm.angle}deg)` }}>
+              <span
+                style={{
+                  transform: `rotate(${-wm.angle}deg)`,
+                  fontSize: Math.round(wm.sizeRatio * 236),
+                }}
+              >
                 {wm.text || t('watermarkPlaceholder')}
               </span>
             </div>

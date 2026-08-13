@@ -69,6 +69,9 @@ export interface FileActionContext {
   saveInFlightRef: { current: boolean }
   saveIncompleteRef: { current: boolean }
   pendingMixedExportRef: { current: boolean | string }
+  /** the print dialog auto-opened the pagination preview: closing the dialog closes it again */
+  printAutoOpenedPreviewRef: { current: boolean }
+  setShowPrintDialog: (show: boolean) => void
   setStatus: (status: string) => void
   setRecent: (paths: string[]) => void
   setShowAi: (show: boolean) => void
@@ -703,6 +706,22 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
   } finally {
     ctx.saveInFlightRef.current = false
   }
+}
+
+/**
+ * Print via the pagination preview so each printed sheet is exactly one editor page
+ * (WYSIWYG). Printing the continuous canvas instead would let Chromium auto-paginate:
+ * middle pages lose the per-page top/bottom margins and the breaks drift from the
+ * editor. Opens the Word-style print dialog (preview + range); the pagination
+ * preview is mounted (visually hidden behind the dialog) as its print source.
+ */
+export function printDoc(ctx: FileActionContext): void {
+  if (!ctx.doc) return
+  if (!document.querySelector('.pagination-preview')) {
+    ctx.printAutoOpenedPreviewRef.current = true
+    ctx.setShowPagePreview(true)
+  }
+  ctx.setShowPrintDialog(true)
 }
 
 export async function exportPdf(ctx: FileActionContext, outPath?: string): Promise<void> {

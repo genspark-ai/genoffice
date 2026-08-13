@@ -436,6 +436,8 @@ export const TextStyleMark = Mark.create({
       vertAlign: { default: null as 'superscript' | 'subscript' | null },
       // East Asian emphasis mark (w:em val); saving is kept faithful by rawRPr
       em: { default: null as string | null },
+      // w:caps ('all') / w:smallCaps ('small'); saving is kept faithful by rawRPr
+      caps: { default: null as 'all' | 'small' | null },
       styleId: { default: null as string | null },
       // raw rPr slice pass-through (not rendered; on save mergeRPrModel preserves unmodeled attributes)
       rawRPr: { default: null as string | null, rendered: false },
@@ -494,6 +496,8 @@ export const TextStyleMark = Mark.create({
       const pos = em === 'comma' || em === 'circle' ? 'over' : 'under'
       styles.push(`text-emphasis:${shape}`, `text-emphasis-position:${pos} right`)
     }
+    if (mark.attrs.caps === 'all') styles.push('text-transform:uppercase')
+    else if (mark.attrs.caps === 'small') styles.push('font-variant-caps:small-caps')
     const attrs: Record<string, string> = { 'data-doc-style': '1', style: styles.join(';') }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
     return ['span', attrs, 0]

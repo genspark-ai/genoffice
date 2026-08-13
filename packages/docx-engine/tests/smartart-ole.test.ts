@@ -60,6 +60,41 @@ describe('SmartArt / OLE visible degrade', () => {
     expect(block.label).toBe('Embedded object')
     expect(block.oleProgId).toBe('Excel.Sheet.12')
     expect(block.imageDataUrl).toMatch(/^data:image\/png;base64,/)
+    // declared v:shape size (32pt = 43px), not the preview's intrinsic pixels
+    expect(block.imageWidthPx).toBe(43)
+    expect(block.imageHeightPx).toBe(43)
+  })
+
+  it('OLE follows the paragraph w:jc like other inline objects', async () => {
+    const oleP = OLE_P.replace('<w:r>', '<w:pPr><w:jc w:val="center"/></w:pPr><w:r>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: oleP, withImage: true }))
+    expect(parsed.blocks[0].imageAlign).toBe('center')
+  })
+
+  it('OLE size falls back to w:object dxaOrig/dyaOrig (twips)', async () => {
+    const oleP = OLE_P.replace('<w:object>', '<w:object w:dxaOrig="1365" w:dyaOrig="765">').replace(
+      ' style="width:32pt;height:32pt"',
+      '',
+    )
+    const parsed = await parseDocx(await buildDocx({ bodyXml: oleP, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.imageWidthPx).toBe(91)
+    expect(block.imageHeightPx).toBe(51)
+  })
+
+  it('VML horizontal rule (v:rect o:hr) is a decorative line, not a chip', async () => {
+    const hrP =
+      '<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" ' +
+      'xmlns:o="urn:schemas-microsoft-com:office:office" id="_x0000_i1026" ' +
+      'style="width:0;height:1.5pt" o:hralign="center" o:hrstd="t" o:hr="t" ' +
+      'fillcolor="#aca899" stroked="f"/></w:pict></w:r></w:p>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: hrP }))
+    const block = parsed.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.decorative).toBe(true)
+    expect(block.ruleColorHex).toBe('ACA899')
+    expect(block.ruleThicknessPx).toBe(2)
+    expect(block.ruleWidthPx).toBeUndefined()
   })
 
   it('a missing diagram part degrades to the bare label, not an error', async () => {

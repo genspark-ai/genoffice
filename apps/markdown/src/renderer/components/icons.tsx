@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 
 export {
   IconBullets,
+  IconCaret,
   IconNumbered,
   IconIndentDec,
   IconIndentInc,

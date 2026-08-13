@@ -720,3 +720,104 @@ describe('vertical layout latin word rotation', () => {
     expect(rotated[0]!.x).toBeLessThanOrEqual(300)
   })
 })
+
+describe('text highlight propagation', () => {
+  it('run highlight lands on every glyph run split from it, others stay clean', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: 'marked text', fontSize: 18, highlight: '#FF0000' },
+              { text: ' plain', fontSize: 18 },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = layout.lines.flatMap((l) => l.runs)
+    const marked = runs.filter((r) => r.highlight)
+    expect(marked.length).toBeGreaterThan(0)
+    expect(marked.every((r) => r.highlight === '#FF0000')).toBe(true)
+    expect(marked.map((r) => r.text).join('')).toBe('marked text')
+    expect(
+      runs
+        .filter((r) => !r.highlight)
+        .map((r) => r.text)
+        .join(''),
+    ).toBe(' plain')
+  })
+})
+
+describe('table cell edge spacing (trimEdgeSpacing)', () => {
+  const paras = [
+    { runs: [{ text: 'first', fontSize: 12 }], spaceBefore: 10, spaceAfter: 10 },
+    { runs: [{ text: 'last', fontSize: 12 }], spaceBefore: 10, spaceAfter: 10 },
+  ]
+  it('drops the first space-before and last space-after only', () => {
+    const plain = layoutText({
+      body: body({ paragraphs: paras }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const trimmed = layoutText({
+      body: body({ paragraphs: paras }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+      trimEdgeSpacing: true,
+    })
+    // 10pt before-first + 10pt after-last dropped (pt → px at scale 1: ×96/72)
+    expect(plain.contentHeight - trimmed.contentHeight).toBeCloseTo((20 * 96) / 72, 1)
+    // inner spacing (after-first + before-last) is kept
+    expect(trimmed.lines[1]!.top - (trimmed.lines[0]!.top + trimmed.lines[0]!.height)).toBeCloseTo(
+      (20 * 96) / 72,
+      1,
+    )
+    // first line starts at the very top
+    expect(trimmed.lines[0]!.top).toBe(0)
+  })
+})
+
+describe('autofit ignores trailing blank paragraphs', () => {
+  it('keeps the stored scale when only trailing blanks overflow', () => {
+    // 3 content lines fit the box; 4 trailing blanks push contentHeight past it
+    const paragraphs = [
+      { runs: [{ text: 'one', fontSize: 18 }] },
+      { runs: [{ text: 'two', fontSize: 18 }] },
+      { runs: [{ text: 'three', fontSize: 18 }] },
+      { runs: [] },
+      { runs: [] },
+      { runs: [] },
+      { runs: [] },
+    ]
+    const layout = layoutText({
+      body: body({ paragraphs, autofit: 'shrink' }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.fontScale).toBe(1)
+  })
+  it('still shrinks when real content overflows', () => {
+    const paragraphs = Array.from({ length: 12 }, () => ({
+      runs: [{ text: 'line of text', fontSize: 18 }],
+    }))
+    const layout = layoutText({
+      body: body({ paragraphs, autofit: 'shrink' }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.fontScale).toBeLessThan(1)
+  })
+})

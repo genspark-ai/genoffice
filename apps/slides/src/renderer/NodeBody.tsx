@@ -28,6 +28,8 @@ import {
   shapeGlyphs,
   layoutGlyphs,
   normalizeColor,
+  boxPivotProps,
+  centerFillProps,
 } from './konva-adapter'
 import { ChartBody } from './ChartBody'
 import { needsTextFrameHitArea } from './text-hit-area'
@@ -143,69 +145,87 @@ export const NodeBody = React.memo(function NodeBody({
     const table = node as TableRenderNode
     return (
       <>
-        {table.cells.map((cell, i) => (
-          <React.Fragment key={i}>
-            <Rect
-              x={cell.x}
-              y={cell.y}
-              width={cell.w}
-              height={cell.h}
-              {...fillToKonva(cell.fill, cell.w, cell.h, images)}
-            />
-            {cell.borders?.t && (
-              <Line
-                points={[cell.x, cell.y, cell.x + cell.w, cell.y]}
-                {...strokeToKonva(cell.borders.t)}
-              />
-            )}
-            {cell.borders?.b && (
-              <Line
-                points={[cell.x, cell.y + cell.h, cell.x + cell.w, cell.y + cell.h]}
-                {...strokeToKonva(cell.borders.b)}
-              />
-            )}
-            {cell.borders?.l && (
-              <Line
-                points={[cell.x, cell.y, cell.x, cell.y + cell.h]}
-                {...strokeToKonva(cell.borders.l)}
-              />
-            )}
-            {cell.borders?.r && (
-              <Line
-                points={[cell.x + cell.w, cell.y, cell.x + cell.w, cell.y + cell.h]}
-                {...strokeToKonva(cell.borders.r)}
-              />
-            )}
-            {(hideCellText && cell.row === hideCellText.row && cell.col === hideCellText.col
+        {table.cells.map((cell, i) => {
+          const cellGlyphs =
+            hideCellText && cell.row === hideCellText.row && cell.col === hideCellText.col
               ? []
               : layoutGlyphs(cell.text)
-            ).map((g, j) => (
-              <Text
-                key={j}
-                x={cell.x + (cell.text?.insets.l ?? 0) + g.x}
-                y={cell.y + (cell.text?.insets.t ?? 0) + g.y}
-                text={g.text}
-                fontSize={g.fontSize}
-                fontFamily={g.fontFamily}
-                fontStyle={g.fontStyle}
-                textDecoration={g.textDecoration}
-                rotation={g.rotation ?? 0}
-                letterSpacing={g.letterSpacing ?? 0}
-                fill={g.fill}
-                direction={g.direction ?? 'inherit'}
-                {...(g.stroke
-                  ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
-                  : {})}
+          return (
+            <React.Fragment key={i}>
+              <Rect
+                x={cell.x}
+                y={cell.y}
+                width={cell.w}
+                height={cell.h}
+                {...fillToKonva(cell.fill, cell.w, cell.h, images)}
               />
-            ))}
-          </React.Fragment>
-        ))}
+              {cell.borders?.t && (
+                <Line
+                  points={[cell.x, cell.y, cell.x + cell.w, cell.y]}
+                  {...strokeToKonva(cell.borders.t)}
+                />
+              )}
+              {cell.borders?.b && (
+                <Line
+                  points={[cell.x, cell.y + cell.h, cell.x + cell.w, cell.y + cell.h]}
+                  {...strokeToKonva(cell.borders.b)}
+                />
+              )}
+              {cell.borders?.l && (
+                <Line
+                  points={[cell.x, cell.y, cell.x, cell.y + cell.h]}
+                  {...strokeToKonva(cell.borders.l)}
+                />
+              )}
+              {cell.borders?.r && (
+                <Line
+                  points={[cell.x + cell.w, cell.y, cell.x + cell.w, cell.y + cell.h]}
+                  {...strokeToKonva(cell.borders.r)}
+                />
+              )}
+              {/* Highlight backgrounds first, so a run's highlight never covers a neighbor's glyphs */}
+              {cellGlyphs.map(
+                (g, j) =>
+                  g.highlight && (
+                    <Rect
+                      key={`hl${j}`}
+                      x={cell.x + (cell.text?.insets.l ?? 0) + g.highlight.x}
+                      y={cell.y + (cell.text?.insets.t ?? 0) + g.highlight.y}
+                      width={g.highlight.w}
+                      height={g.highlight.h}
+                      fill={g.highlight.color}
+                      listening={false}
+                    />
+                  ),
+              )}
+              {cellGlyphs.map((g, j) => (
+                <Text
+                  key={j}
+                  x={cell.x + (cell.text?.insets.l ?? 0) + g.x}
+                  y={cell.y + (cell.text?.insets.t ?? 0) + g.y}
+                  text={g.text}
+                  fontSize={g.fontSize}
+                  fontFamily={g.fontFamily}
+                  fontStyle={g.fontStyle}
+                  textDecoration={g.textDecoration}
+                  rotation={g.rotation ?? 0}
+                  letterSpacing={g.letterSpacing ?? 0}
+                  fill={g.fill}
+                  direction={g.direction ?? 'inherit'}
+                  {...(g.stroke
+                    ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
+                    : {})}
+                />
+              ))}
+            </React.Fragment>
+          )
+        })}
       </>
     )
   }
 
   if (node.type === 'chart') {
-    return <ChartBody chart={node as ChartRenderNode} />
+    return <ChartBody chart={node as ChartRenderNode} images={images} />
   }
 
   if (node.type === 'placeholder-chip') {
@@ -374,7 +394,7 @@ export const NodeBody = React.memo(function NodeBody({
         y={box.h / 2}
         radiusX={box.w / 2}
         radiusY={box.h / 2}
-        {...fillProps}
+        {...centerFillProps(fillProps, box.w, box.h)}
         {...strokeProps}
         {...shadowProps}
       />
@@ -401,6 +421,21 @@ export const NodeBody = React.memo(function NodeBody({
           geometry) so clicks inside its text frame cannot reach a picture underneath. */}
       {needsTextFrameHitArea(shape) && <Rect width={box.w} height={box.h} fill="transparent" />}
       {geom}
+      {/* Text highlight backgrounds: all rects first so a run's highlight never covers a neighbor's glyphs */}
+      {glyphs.map(
+        (g, i) =>
+          g.highlight && (
+            <Rect
+              key={`hl${i}`}
+              x={(shape.text?.insets.l ?? 0) + g.highlight.x}
+              y={(shape.text?.insets.t ?? 0) + g.highlight.y}
+              width={g.highlight.w}
+              height={g.highlight.h}
+              fill={g.highlight.color}
+              listening={false}
+            />
+          ),
+      )}
       {glyphs.map((g, i) => (
         <Text
           key={i}
@@ -571,20 +606,12 @@ function MediaBadge({ kind, w, h }: { kind: 'video' | 'audio'; w: number; h: num
 
 /**
  * Statically positioned node: container (position/rotation/flip) + NodeBody.
- * Flip is corrected with an offset (x + w then scale -1) so it mirrors inside the original box
- * instead of outside it.
+ * Rotation and flip pivot on the box center (boxPivotProps), matching OOXML.
  */
 export const StaticNode = React.memo(function StaticNode({ node, images }: NodeBodyProps) {
   const { box } = node
   return (
-    <Group
-      x={box.x + (box.flipH ? box.w : 0)}
-      y={box.y + (box.flipV ? box.h : 0)}
-      rotation={box.rotationDeg}
-      scaleX={box.flipH ? -1 : 1}
-      scaleY={box.flipV ? -1 : 1}
-      listening={false}
-    >
+    <Group {...boxPivotProps(box)} listening={false}>
       <NodeBody node={node} images={images} />
     </Group>
   )

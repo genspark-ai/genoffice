@@ -179,6 +179,10 @@ function buildNode(
       }
       if (node.type === 'chart') {
         ;(node as import('./render-tree').ChartRenderNode).styleInfo = chartStyleInfo(chartEl.chart)
+        if (chartEl.chart.bgFill) {
+          const bg = resolveFill(chartEl.chart.bgFill, vp, media)
+          if (bg.kind !== 'none') (node as import('./render-tree').ChartRenderNode).bgFill = bg
+        }
       }
       return node
     }
@@ -462,6 +466,7 @@ function buildTable(
         boxHeightPx: rowPx[r] ?? 0,
         metrics,
         vp,
+        trimEdgeSpacing: true,
       })
       const needed = probe.contentHeight + probe.insets.t + probe.insets.b
       if (needed > (rowPx[r] ?? 0)) rowPx[r] = needed
@@ -509,6 +514,7 @@ function buildTable(
           boxHeightPx: h,
           metrics,
           vp,
+          trimEdgeSpacing: true,
         })
       }
       cells.push(out)
@@ -535,11 +541,15 @@ function chartStyleInfo(m: ChartElement['chart']): import('./render-tree').Chart
         ? 'comboBarLine'
         : m.grouping === 'stacked' || m.grouping === 'percentStacked'
           ? 'barStacked'
-          : 'bar'
+          : m.pseudo3D
+            ? 'bar3D'
+            : 'bar'
       : m.kind === 'pie'
         ? (m.holePct ?? 0) > 0
           ? 'doughnut'
-          : 'pie'
+          : m.pseudo3D
+            ? 'pie3D'
+            : 'pie'
         : m.kind
   return {
     kind,

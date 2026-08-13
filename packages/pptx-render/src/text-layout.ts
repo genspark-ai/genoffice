@@ -34,6 +34,8 @@ interface Token {
   color: string
   underline: boolean
   strike?: boolean
+  /** Text highlight color (<a:rPr><a:highlight>, drawn as a background behind the run) */
+  highlight?: string
   /** Raw super/subscript baseline % (for editor round-trips; blShift is the baked px) */
   blPct?: number
   /** Letter spacing (px/char, may be negative; <a:rPr spc>, counted in both width and rendering) */
@@ -76,6 +78,20 @@ function tokenWidth(tok: Token, metrics: FontMetricsProvider): number {
   return tok.ls ? w + tok.ls * [...tok.text].length : w
 }
 
+/**
+ * rPr cap="all"/"small" display transform. Length-preserving: code points whose uppercase
+ * expands (ß→SS) stay as-is so click-to-caret offsets keep mapping 1:1 to source text.
+ */
+function applyCap(text: string, cap: string | undefined): string {
+  if (cap !== 'all' && cap !== 'small') return text
+  let out = ''
+  for (const ch of text) {
+    const u = ch.toUpperCase()
+    out += [...u].length === 1 ? u : ch
+  }
+  return out
+}
+
 /** Splits a paragraph's runs into a breakable token stream (whitespace / single CJK chars / Latin words). */
 function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Token[] {
   const tokens: Token[] = []
@@ -95,6 +111,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
       ...(run.fontFamily ? { srcFont: run.fontFamily } : {}),
       ...(run.hyperlink ? { link: run.hyperlink } : {}),
       ...(run.strike ? { strike: true } : {}),
+      ...(run.highlight ? { highlight: run.highlight } : {}),
       ...(run.baseline ? { blPct: run.baseline } : {}),
       ...(blShift ? { blShift } : {}),
       ...(run.outline
@@ -120,7 +137,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
       buf = ''
     }
     // Per grapheme cluster: combining marks / ZWJ emoji always share a token with their base char, never split by wrapping
-    for (const ch of graphemes(run.text)) {
+    for (const ch of graphemes(applyCap(run.text, run.cap))) {
       const cp = ch.codePointAt(0) ?? 0
       if (ch === '\n' || ch === '\v') {
         flushWord()
@@ -392,6 +409,7 @@ function buildLine(
       italic: tok.style.italic,
       underline: tok.underline,
       ...(tok.strike ? { strike: true } : {}),
+      ...(tok.highlight ? { highlight: tok.highlight } : {}),
       widthPx: w,
       ...(tok.ls ? { letterSpacingPx: tok.ls } : {}),
       ...(tok.outline ? { outline: tok.outline } : {}),
@@ -444,6 +462,9 @@ export interface TextLayoutInput {
   boxHeightPx: number
   metrics: FontMetricsProvider
   vp: Viewport
+  /** Table cells: PowerPoint drops the first paragraph's space-before and the last
+      paragraph's space-after (rows stay at their minimum height regardless of them). */
+  trimEdgeSpacing?: boolean
 }
 
 /** Main entry: TextBody → RenderTextLayout (including autofit shrink stepping). */
@@ -472,7 +493,7 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
     )
 
   const build = (fontScale: number, lnSpcRed: number) =>
-    layoutAll(body, availWidth, wrap, metrics, vp.scale, fontScale, lnSpcRed)
+    layoutAll(body, availWidth, wrap, metrics, vp.scale, fontScale, lnSpcRed, input.trimEdgeSpacing)
 
   // PowerPoint's stored shrink ratio takes priority (files with shrunk text render
   // as-is; we don't scale back up per our own metrics). Only if content still
@@ -483,7 +504,18 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
   let fontScale = storedScale
   let lnSpcReduction = storedRed
   let result = build(fontScale, lnSpcReduction)
-  if (body.autofit === 'shrink' && result.contentHeight > availHeight) {
+  // PowerPoint's autofit ignores trailing blank paragraphs (files where the stored
+  // ratio only fits when they are excluded), so overflow is judged by the bottom of
+  // the last non-blank line — plus 3% slack for residual metric drift, since
+  // PowerPoint renders the authored scale as-is.
+  const fitBottom = (r: { lines: TextLine[]; contentHeight: number }): number => {
+    for (let i = r.lines.length - 1; i >= 0; i--) {
+      const ln = r.lines[i]!
+      if (ln.runs.some((run) => run.text.trim())) return ln.top + ln.height
+    }
+    return r.contentHeight
+  }
+  if (body.autofit === 'shrink' && fitBottom(result) > availHeight * 1.03) {
     for (const [fs, red] of SHRINK_STEPS) {
       if (fs >= storedScale - 1e-6) continue
       const effRed = Math.max(red, storedRed)
@@ -491,7 +523,7 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
       fontScale = fs
       lnSpcReduction = effRed
       result = r
-      if (r.contentHeight <= availHeight) break
+      if (fitBottom(r) <= availHeight) break
       // Still doesn't fit after all steps → stop at 25% (overflow allowed)
     }
   }
@@ -638,6 +670,7 @@ function layoutTextVertical(
         italic: tok.style.italic,
         underline: tok.underline,
         ...(tok.strike ? { strike: true } : {}),
+        ...(tok.highlight ? { highlight: tok.highlight } : {}),
         ...(tok.outline ? { outline: tok.outline } : {}),
         widthPx: metrics.measure(g, tok.style),
         ...(tok.blPct ? { baselinePct: tok.blPct } : {}),
@@ -670,6 +703,7 @@ function layoutTextVertical(
         italic: tok.style.italic,
         underline: tok.underline,
         ...(tok.strike ? { strike: true } : {}),
+        ...(tok.highlight ? { highlight: tok.highlight } : {}),
         ...(tok.outline ? { outline: tok.outline } : {}),
         widthPx: adv,
         rotate90: true,
@@ -790,11 +824,12 @@ function layoutAll(
   scale: number,
   fontScale: number,
   lnSpcRed: number,
+  trimEdgeSpacing?: boolean,
 ): { lines: TextLine[]; contentHeight: number } {
   const outLines: TextLine[] = []
   let y = 0
   let autoNum = 0 // buAutoNum sequential numbering (reset on a non-numbered paragraph)
-  for (const p of body.paragraphs) {
+  for (const [pIdx, p] of body.paragraphs.entries()) {
     // Indent and bullets (body lines start at marL; the bullet
     // draws at marL+indent, negative indent = hanging indent; without a bullet the
     // first line starts at marL+indent)
@@ -843,9 +878,10 @@ function layoutAll(
     )
     // Space before/after: spcPts is absolute pt; spcPct is a percentage of the paragraph's single line height (100 = one line)
     const singleH = laid[0]?.singleH ?? 0
-    y +=
-      ptToPx(p.spaceBefore ?? 0, scale) +
-      (p.spaceBeforePct ? singleH * (p.spaceBeforePct / 100) : 0)
+    if (!(trimEdgeSpacing && pIdx === 0))
+      y +=
+        ptToPx(p.spaceBefore ?? 0, scale) +
+        (p.spaceBeforePct ? singleH * (p.spaceBeforePct / 100) : 0)
     laid.forEach((ln, li) => {
       const baseline = y + ln.ascent
       const lineWidth = ln.runs.reduce((acc, r) => acc + r.widthPx, 0)
@@ -921,8 +957,9 @@ function layoutAll(
       })
       y += ln.height
     })
-    y +=
-      ptToPx(p.spaceAfter ?? 0, scale) + (p.spaceAfterPct ? singleH * (p.spaceAfterPct / 100) : 0)
+    if (!(trimEdgeSpacing && pIdx === body.paragraphs.length - 1))
+      y +=
+        ptToPx(p.spaceAfter ?? 0, scale) + (p.spaceAfterPct ? singleH * (p.spaceAfterPct / 100) : 0)
   }
   return { lines: outLines, contentHeight: y }
 }

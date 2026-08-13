@@ -34,6 +34,8 @@ export interface BlockBox {
   spaceBeforePx?: number
   /** space after (px), from line-metrics output */
   spaceAfterPx?: number
+  /** break-only paragraph (page-break field, no other content): measured block height, drives absorb-vs-blank-page placement */
+  breakOnlyLineH?: number
 
   // ── F2 pagination constraints ───────────────────────────────────────────
   /** keepLines: all lines of the paragraph must be on the same page */
@@ -396,6 +398,18 @@ export function computeSectionedSlicesF2(
     }
     pendingColBreak = false
 
+    // break-only paragraph: absorbed at the page bottom (overflowing the bottom margin)
+    // unless less than half its height remains — then it opens a Word-style deliberate
+    // blank page. The half-height tolerance far exceeds the ±few-px page-fill drift
+    // that a plain fit-check turned into spurious mid-document blanks.
+    if (block.breakOnlyLineH !== undefined) {
+      if (!fits(block.breakOnlyLineH * 0.5) && !pageBlank()) startPage(block.top, curSection)
+      place(block.height)
+      if (block.breakAfter) pendingBreak = true
+      if (block.colBreakAfter) pendingColBreak = true
+      continue
+    }
+
     // ── Tables: row-level page breaking ────────────────────────────────────
     if (block.tableRows && block.tableRows.length > 0) {
       _placeTable(
@@ -460,8 +474,8 @@ export function computeSectionedSlicesF2(
       continue
     }
 
-    // keepNext chain
-    if (block.keepNext && chainStart[bi] === bi) {
+    // keepNext chain (a keepNext on the document's last block has no anchor — plain placement)
+    if (block.keepNext && chainStart[bi] === bi && bi < blocks.length - 1) {
       // chain tail: the last keepNext=true block (excluding the anchor block)
       const chainEnd = (() => {
         let j = bi
@@ -1263,6 +1277,7 @@ export interface PageNoteItem {
       strike?: boolean
       color?: string
       sizeHalfPoints?: number
+      caps?: 'all' | 'small'
     }>
   >
 }
@@ -1295,12 +1310,9 @@ export function measureBlocks(
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
     const hasBreak = !!el.querySelector('.doc-field-pagebreak, .doc-page-br')
-    // break-only paragraph: count the whole block (br line + ProseMirror trailing-break
-    // phantom line) as trailing space so it never pushes to — and blanks — a page. Word's
-    // real rule is that the br/paragraph-mark line must fit or the paragraph pushes into a
-    // deliberate blank page, but our page fill drifts a few px per page in both directions,
-    // and a fit-check flips borderline pages into spurious mid-document blanks (worse than
-    // occasionally dropping an intentional one)
+    // break-only paragraph (br line + ProseMirror trailing-break phantom line): marked
+    // for dedicated placement — Word pushes it into a deliberate blank page when its
+    // line doesn't fit at the page bottom
     const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !el.querySelector('img')
     blocks.push({
       top,
@@ -1308,7 +1320,7 @@ export function measureBlocks(
       breakBefore: el.classList.contains('page-break-before') || undefined,
       breakAfter: hasBreak || undefined,
       el,
-      ...(breakOnly ? { spaceAfterPx: height } : {}),
+      ...(breakOnly ? { breakOnlyLineH: height } : {}),
       ...(idxAttr ? { docxIndex: parseInt(idxAttr, 10) } : {}),
     })
     gapAccum += innerGap
@@ -1532,6 +1544,8 @@ export function tableHeaderFlags(tableXml: string): boolean[] {
 export interface BlockMeta {
   keepNext?: boolean
   keepLines?: boolean
+  /** pageBreakBefore (direct or style-level): force a page break before the block */
+  breakBefore?: boolean
   /** false only when explicitly disabled (Word default on) */
   widowControl?: false
   /** table blocks: per-tr header/unsplittable flags (applied by fillLineBoxes when collecting rows) */
@@ -1550,6 +1564,7 @@ export function applyBlockMeta(blocks: BlockBox[], metaOf: BlockMetaOf): void {
     if (!meta) continue
     if (meta.keepNext) b.keepNext = true
     if (meta.keepLines) b.keepLines = true
+    if (meta.breakBefore) b.breakBefore = true
     if (meta.widowControl === false) b.widowControl = false
     if (meta.footnoteExtraPx) {
       // matches the parity model: footnote height enters the block-height bookkeeping to consume page capacity, and also the space-after

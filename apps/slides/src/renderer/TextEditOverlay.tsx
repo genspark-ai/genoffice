@@ -289,6 +289,8 @@ export function populateEditorDom(
             if (run.srcFontFamily) span.dataset.font = run.srcFontFamily
           }
           span.style.color = normalizeCss(run.color)
+          // Text highlight: display-only (extraction never reads it back; the patch path keeps <a:highlight>)
+          if (run.highlight) span.style.backgroundColor = normalizeCss(run.highlight)
           p.appendChild(span)
         }
         const fragment = document.createElement('span')

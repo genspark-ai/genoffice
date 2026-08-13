@@ -20,8 +20,10 @@ import { AnimatedSlideStage, useAnimPlayer } from './AnimatedSlide'
 import { useI18n } from '../i18n/locale'
 import { SlideThumb } from '../SlideThumb'
 import { InkLayer, type InkStroke } from './ShowInk'
+import { liftShowCurtain } from '../show-actions'
 
 /** Layout constants (aligned with styles.css) */
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 const SIDE_W = 340
 const TOP_H = 44
 const TIMER_H = 40
@@ -162,13 +164,51 @@ export function PresenterView({
 
   // System full screen: requested on entry; kept when switching to normal show (SlideShowView takes over seamlessly)
   const keepFsRef = useRef(false)
+  /** Children stay hidden (black root only) until the snap's resize settled — same
+   *  windowed-flash guard as SlideShowView's covered gate */
+  const [covered, setCovered] = useState(false)
   useEffect(() => {
-    void document.documentElement.requestFullscreen?.().catch(() => {})
+    // Same cover mechanics as SlideShowView: one main-side call bleeds the view over
+    // the tab strip and snaps the window (macOS simpleFullScreen, no Space animation);
+    // HTML fullscreen is only used off-macOS where it is instant.
+    let alive = true
+    const snapped = window.slidesApi.setShowFullScreen?.(true) ?? Promise.resolve()
+    void snapped
+      .catch(() => {})
+      .then(() => {
+        if (!IS_MAC) void document.documentElement.requestFullscreen?.().catch(() => {})
+        // Same settle condition as SlideShowView: viewport spans the whole
+        // screen in BOTH dimensions — no bleed-only or full-width-only
+        // intermediate passes. Deadline covers stale preloads that never snap.
+        const deadline = performance.now() + 500
+        const reveal = () => {
+          if (!alive) return
+          const w = window.innerWidth
+          const h = window.innerHeight
+          const settled = w >= screen.width && h >= screen.height
+          if (!settled && performance.now() < deadline) {
+            requestAnimationFrame(reveal)
+            return
+          }
+          setSize({ w, h })
+          setCovered(true)
+        }
+        requestAnimationFrame(reveal)
+      })
     return () => {
-      if (!keepFsRef.current && document.fullscreenElement)
-        void document.exitFullscreen().catch(() => {})
+      alive = false
+      if (!keepFsRef.current) {
+        if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+        void window.slidesApi.setShowFullScreen?.(false)
+      }
+      liftShowCurtain()
     }
   }, [])
+
+  // Curtain from startPresenterView: needed only until the presenter reveals
+  useEffect(() => {
+    if (covered) liftShowCurtain()
+  }, [covered])
 
   useEffect(() => {
     const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
@@ -341,7 +381,7 @@ export function PresenterView({
   }
 
   return (
-    <div className="presenter">
+    <div className={`presenter${covered ? '' : ' pv-uncovered'}`}>
       <div className="pv-top">
         <button
           className="pv-top-btn pv-top-exit"

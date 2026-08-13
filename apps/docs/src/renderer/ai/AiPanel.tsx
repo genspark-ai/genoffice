@@ -912,7 +912,12 @@ export function AiPanel({
   // collapsed: rail only — after all hooks, so the instance and its state survive
   if (!open) {
     return (
-      <button className="ai-rail" title={t('appExpandAiPanel')} onClick={onExpand}>
+      <button
+        className="ai-rail"
+        data-tip={t('appExpandAiPanel')}
+        aria-label={t('appExpandAiPanel')}
+        onClick={onExpand}
+      >
         <GensparkMark size={22} />
       </button>
     )
@@ -949,12 +954,22 @@ export function AiPanel({
         </span>
         <div className="ai-panel-header-actions">
           {chat.length > 0 && (
-            <button className="ai-header-btn" onClick={newChat} title={t('aiNewChatTitle')}>
+            <button
+              className="ai-header-btn"
+              onClick={newChat}
+              data-tip={t('aiNewChatTitle')}
+              aria-label={t('aiNewChatTitle')}
+            >
               <IconNewChat size={16} />
             </button>
           )}
           {onCollapse && (
-            <button className="ai-header-btn" onClick={onCollapse} title={t('aiCollapseTitle')}>
+            <button
+              className="ai-header-btn"
+              onClick={onCollapse}
+              data-tip={t('aiCollapseTitle')}
+              aria-label={t('aiCollapseTitle')}
+            >
               <IconSidebarCollapse size={15} />
             </button>
           )}
@@ -1144,7 +1159,7 @@ export function AiPanel({
               <div className="ai-attachments" onScroll={onAttachmentsScroll}>
                 {attachments.map((a) =>
                   ATTACHMENT_IMAGE_EXTS.has(a.ext) ? (
-                    <span key={a.path} className="ai-attachment-thumb" title={a.path}>
+                    <span key={a.path} className="ai-attachment-thumb" data-tip={a.path}>
                       {attachmentPreviews[a.path] ? (
                         <img src={attachmentPreviews[a.path]} alt={a.name} />
                       ) : (
@@ -1155,7 +1170,7 @@ export function AiPanel({
                       <button
                         className="ai-attachment-thumb-remove"
                         onClick={() => removeAttachment(a.path)}
-                        title={t('aiRemoveAttachmentTitle')}
+                        data-tip={t('aiRemoveAttachmentTitle')}
                         aria-label={t('aiRemoveAttachmentTitle')}
                       >
                         <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
@@ -1169,7 +1184,7 @@ export function AiPanel({
                       </button>
                     </span>
                   ) : (
-                    <span key={a.path} className="ai-attachment-card" title={a.path}>
+                    <span key={a.path} className="ai-attachment-card" data-tip={a.path}>
                       <span className="ai-attachment-card-icon">
                         <AttachmentCardIcon ext={a.ext} />
                       </span>
@@ -1182,7 +1197,7 @@ export function AiPanel({
                       <button
                         className="ai-attachment-thumb-remove"
                         onClick={() => removeAttachment(a.path)}
-                        title={t('aiRemoveAttachmentTitle')}
+                        data-tip={t('aiRemoveAttachmentTitle')}
                         aria-label={t('aiRemoveAttachmentTitle')}
                       >
                         <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
@@ -1222,14 +1237,15 @@ export function AiPanel({
               <button
                 className="ai-attach-btn"
                 onClick={pickAttachments}
-                title={t('aiAttachTitle')}
+                data-tip={t('aiAttachTitle')}
+                aria-label={t('aiAttachTitle')}
               >
                 <img src={attachIcon} alt="" aria-hidden />
               </button>
               <button
                 className={`ai-track-btn${trackChanges ? ' on' : ''}`}
                 onClick={toggleTrackChanges}
-                title={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
+                data-tip={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
               >
                 <span className="ai-track-dot" aria-hidden />
                 {t('aiTrackChanges')}
@@ -1374,14 +1390,14 @@ function ToolChipList({ tools }: { tools: ToolActivity[] }) {
                     <button
                       type="button"
                       className="ai-step-title clickable"
-                      title={tool.name}
+                      data-tip={tool.name}
                       aria-expanded={isOpen}
                       onClick={() => toggle(j)}
                     >
                       {tool.summary}
                     </button>
                   ) : (
-                    <span className="ai-step-title" title={tool.name}>
+                    <span className="ai-step-title" data-tip={tool.name}>
                       {tool.summary}
                     </span>
                   )}

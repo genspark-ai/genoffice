@@ -35,6 +35,7 @@ const worksheetMetadataSchema = z
           hidden: z.boolean(),
           outlineLevel: z.number().int().min(1).max(7).optional(),
           collapsed: z.boolean().optional(),
+          styleIndex: z.number().int().positive().optional(),
         })
         .strict(),
     ),
@@ -393,6 +394,7 @@ export const workbookRangeResultSchema = z
             hidden: z.boolean(),
             outlineLevel: z.number().int().min(1).max(7).optional(),
             collapsed: z.boolean().optional(),
+            styleIndex: z.number().int().positive().optional(),
           })
           .strict(),
       )

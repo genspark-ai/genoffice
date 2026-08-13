@@ -33,6 +33,8 @@ export interface LevelTextStyle {
   fontSize?: number
   bold?: boolean
   italic?: boolean
+  /** Character casing <a:defRPr cap>: 'all' | 'small' | 'none' */
+  cap?: string
   color?: string
   latinFont?: string
   eaFont?: string
@@ -205,6 +207,7 @@ function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined
     if (defRPr['@_sz']) out.fontSize = parseInt(String(defRPr['@_sz']), 10) / 100
     if (defRPr['@_b'] != null) out.bold = defRPr['@_b'] === '1' || defRPr['@_b'] === 'true'
     if (defRPr['@_i'] != null) out.italic = defRPr['@_i'] === '1' || defRPr['@_i'] === 'true'
+    if (defRPr['@_cap'] != null) out.cap = String(defRPr['@_cap'])
     const color = resolveColorNode(defRPr['a:solidFill'], theme)
     if (color) out.color = color
     const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme)
@@ -314,6 +317,7 @@ export function mergeTextStyleChain(
     if (out.fontSize == null && lvl.fontSize != null) out.fontSize = lvl.fontSize
     if (out.bold == null && lvl.bold != null) out.bold = lvl.bold
     if (out.italic == null && lvl.italic != null) out.italic = lvl.italic
+    if (out.cap == null && lvl.cap != null) out.cap = lvl.cap
     if (out.color == null && lvl.color != null) out.color = lvl.color
     if (out.latinFont == null && lvl.latinFont != null) out.latinFont = lvl.latinFont
     if (out.eaFont == null && lvl.eaFont != null) out.eaFont = lvl.eaFont

@@ -92,13 +92,15 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
       <Group label={t('ribbonGroupSlides')}>
         <div className="rb-drop-wrap">
           <button
-            className="rb-big"
+            className="rb-big rb-split"
             disabled={!hasDoc}
             onClick={onAddSlide}
             data-tip={t('ribbonNewSlideTip')}
           >
             <span className="rb-big-icon">
-              <IconNewSlide size={BIG} />
+              <span className="rb-split-main">
+                <IconNewSlide size={BIG} />
+              </span>
               <span
                 className={`rb-caret-hit${layoutOpen ? ' active' : ''}`}
                 data-tip={t('ribbonChooseLayoutNew')}

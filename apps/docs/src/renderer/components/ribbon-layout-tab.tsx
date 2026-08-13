@@ -189,7 +189,7 @@ export function LayoutTab({
   const ptInput = (attr: string, title: string) => {
     const twips = Number(paraAttrs[attr]) || 0
     return (
-      <label className="layout-num" title={title}>
+      <label className="layout-num" data-tip={title}>
         <span>{title}</span>
         <input
           type="number"
@@ -216,7 +216,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonMargins')}
+              data-tip={t('ribbonMargins')}
               onClick={() => toggleDropdown(setDropdown, 'margins')}
             >
               <span className="rb-big-icon">
@@ -285,7 +285,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonOrientation')}
+              data-tip={t('ribbonOrientation')}
               onClick={() => toggleDropdown(setDropdown, 'orient')}
             >
               <span className="rb-big-icon">
@@ -315,7 +315,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonPaperSize')}
+              data-tip={t('ribbonPaperSize')}
               onClick={() => toggleDropdown(setDropdown, 'paper')}
             >
               <span className="rb-big-icon">
@@ -346,7 +346,7 @@ export function LayoutTab({
             <button
               className={`rb-big ${section && section.columns > 1 ? 'active' : ''}`}
               disabled={!enabled}
-              title={t('ribbonColumns')}
+              data-tip={t('ribbonColumns')}
               onClick={() => toggleDropdown(setDropdown, 'columns')}
             >
               <span className="rb-big-icon">
@@ -380,7 +380,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonSectionBreakTip')}
+              data-tip={t('ribbonSectionBreakTip')}
               onClick={() => toggleDropdown(setDropdown, 'sectbreak')}
             >
               <span className="rb-big-icon">
@@ -462,7 +462,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!canPosition}
-              title={t('ribbonPosition')}
+              data-tip={t('ribbonPosition')}
               onClick={() => toggleDropdown(setDropdown, 'arrange-pos')}
             >
               <span className="rb-big-icon">
@@ -487,7 +487,8 @@ export function LayoutTab({
                         className={`pos-cell ph-${h} pv-${v}${
                           protAttrs?.imagePosH === h && protAttrs?.imagePosV === v ? ' active' : ''
                         }`}
-                        title={t('ribbonPosition')}
+                        data-tip={t('ribbonPosition')}
+                        aria-label={t('ribbonPosition')}
                         onClick={() => applyPositionPreset(h, v)}
                       >
                         <span className="pos-dot" />
@@ -502,7 +503,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!canWrap}
-              title={t('ribbonWrapText')}
+              data-tip={t('ribbonWrapText')}
               onClick={() => toggleDropdown(setDropdown, 'arrange-wrap')}
             >
               <span className="rb-big-icon">

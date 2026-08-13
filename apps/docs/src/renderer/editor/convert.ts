@@ -39,7 +39,7 @@ import {
   type TextboxParaPatch,
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
-import { textHasComplexScript } from '../line-metrics'
+import { maxWordWidthPx, textHasComplexScript } from '../line-metrics'
 import { inlineMathML } from './equation'
 import { isStraightLineKind } from './shape-svg'
 
@@ -62,7 +62,13 @@ export function blocksToPmDoc(blocks: Block[], sections?: SectionInfo[]): PmNode
   const content: PmNode[] = []
   for (const block of blocks) {
     if (block.hidden) continue
-    content.push(blockToPmNode(block, sectionRowCapTwips(sections, block.docxIndex)))
+    content.push(
+      blockToPmNode(
+        block,
+        sectionRowCapTwips(sections, block.docxIndex),
+        sectionWidthBudget(sections, block.docxIndex),
+      ),
+    )
   }
   if (content.length === 0) {
     content.push({
@@ -87,6 +93,7 @@ function formatAttrs(format: ParaFormat | undefined): Record<string, unknown> {
     pageBreakBefore: format?.pageBreakBefore ?? false,
     shadingFill: format?.shadingFill ?? null,
     borders: format?.borders ?? null,
+    borderLines: format?.borderLines ? JSON.stringify(format.borderLines) : null,
     tabStops: format?.tabStops ? JSON.stringify(format.tabStops) : null,
     dropCap: format?.dropCap ? JSON.stringify(format.dropCap) : null,
     bidi: format?.bidi ?? false,
@@ -107,6 +114,36 @@ function sectionRowCapTwips(
     sections[sections.length - 1]
   const cap = sec.settings.pageHeight - sec.settings.marginTop - sec.settings.marginBottom
   return cap > 0 ? cap : null
+}
+
+/** table width budget: Word fixed layout lets over-wide tables overflow the
+ * text column — left-aligned ones spill right up to the paper edge (avail =
+ * left page margin to the paper's right edge), centered ones spill both
+ * margins symmetrically (paper = full page width, the hard compression cap);
+ * fit = text column width, the target autofit growth is reclaimed back to */
+export interface TableWidthBudget {
+  avail: number
+  fit: number
+  paper: number
+}
+function sectionWidthBudget(
+  sections: SectionInfo[] | undefined,
+  docxIndex: number | null,
+): TableWidthBudget | null {
+  if (!sections?.length || docxIndex == null) return null
+  const sec =
+    sections.find((s) => docxIndex >= s.firstBlockIndex && docxIndex <= s.lastBlockIndex) ??
+    sections[sections.length - 1]
+  const paper = sec.settings.pageWidth
+  const avail = paper - sec.settings.marginLeft
+  if (avail <= 0) return null
+  const fit = avail - sec.settings.marginRight
+  return { avail, fit: fit > 0 ? fit : avail, paper }
+}
+
+/** centered tables spill both margins, so their growth bound is the paper width */
+function budgetAvail(model: TableModel, budget: TableWidthBudget): number {
+  return model.align === 'center' ? budget.paper : budget.avail
 }
 
 /** Cap declared row heights (incl. nested tables); returns the input model when nothing exceeds the cap */
@@ -131,7 +168,231 @@ export function capTableRowHeights(model: TableModel, capTwips: number): TableMo
   return changed ? { ...model, rows, rowHeightsTwips } : model
 }
 
-function blockToPmNode(block: Block, rowCapTwips: number | null = null): PmNode {
+const DEFAULT_CELL_MAR = 108
+/** render-side column floor (24px, see tableModelToPmNode) */
+const MIN_COL_TWIPS = 360
+
+function tableIndentTwips(model: TableModel): number {
+  return model.align !== 'center' && model.align !== 'right' && (model.indentTwips ?? 0) > 0
+    ? model.indentTwips!
+    : 0
+}
+
+/** nested tables are bounded by their cell's content width (grid slice minus
+ * side padding); without a usable grid the outer budget still bounds them */
+function mapNestedTables(
+  model: TableModel,
+  widths: number[] | undefined,
+  budget: number,
+  transform: (nt: TableModel, availTwips: number) => TableModel,
+): { rows: TableModel['rows']; changed: boolean } {
+  let changed = false
+  const rows = model.rows.map((row) => {
+    let column = 0
+    let cellChanged = false
+    const cells = row.map((cell) => {
+      const start = column
+      const span = cell.colSpan ?? 1
+      column += span
+      if (!cell.nestedTables?.length) return cell
+      const cols = widths?.slice(start, start + span) ?? []
+      const mar = cell.cellMarTwips ?? model.cellMarTwips
+      const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+      const cellWidth = cols.length === span ? cols.reduce((a, b) => a + b, 0) - pad : budget
+      if (cellWidth <= 0) return cell
+      const nested = cell.nestedTables.map((nt) => transform(nt, cellWidth))
+      if (nested.every((nt, i) => nt === cell.nestedTables![i])) return cell
+      cellChanged = true
+      return { ...cell, nestedTables: nested }
+    })
+    if (!cellChanged) return row
+    changed = true
+    return cells
+  })
+  return { rows, changed }
+}
+
+function withColWidths(
+  model: TableModel,
+  rows: TableModel['rows'],
+  widths: number[] | undefined,
+): TableModel {
+  if (!widths) return { ...model, rows }
+  const total = widths.reduce((a, b) => a + b, 0)
+  return {
+    ...model,
+    rows,
+    colWidthsTwips: widths,
+    ...(total > 0 ? { colWidthsPct: widths.map((w) => (w / total) * 100) } : {}),
+  }
+}
+
+/**
+ * Last-resort display clamp for grids wider than the hard cap (the paper width
+ * for top-level tables, the cell content width for nested ones — Word lets
+ * over-wide tables spill into the page margins, clipped at the paper, so
+ * merely exceeding the text column must not narrow columns and wrap their
+ * text onto extra lines). The cut comes proportionally out of the surplus
+ * over each column's min-content, so a garbage gridCol absorbs it while real
+ * columns keep their words unbroken. Fixed table layout grows past
+ * width/max-width to the sum of absolute column widths, so an unclamped
+ * garbage gridCol pushes content megapixels off page. Display-only like
+ * capTableRowHeights: untouched tables still save their original bytes, and
+ * structural rebuilds already regenerate the grid from these display widths
+ * (same as user column resizes, which are clamped too).
+ */
+export function clampTableColWidths(model: TableModel, capTwips: number): TableModel {
+  const budget = capTwips - tableIndentTwips(model)
+  let widths = model.colWidthsTwips
+  let widthsChanged = false
+  if (widths && budget > 0 && widths.reduce((a, b) => a + b, 0) > budget) {
+    const mins = minContentColTwips(model, widths.length).map((m, i) =>
+      Math.min(Math.max(m, MIN_COL_TWIPS), budget, widths![i]),
+    )
+    const overflow = widths.reduce((a, b) => a + b, 0) - budget
+    const surplus = widths.map((w, i) => w - mins[i])
+    const totalSurplus = surplus.reduce((a, b) => a + b, 0)
+    if (totalSurplus > 0) {
+      const take = Math.min(overflow, totalSurplus)
+      widths = widths.map((w, i) => w - Math.round((surplus[i] / totalSurplus) * take))
+    }
+    // min-contents alone can exceed the cap: compress proportionally
+    const sum = widths.reduce((a, b) => a + b, 0)
+    if (sum > budget) {
+      const scale = budget / sum
+      widths = widths.map((w) => Math.max(1, Math.round(w * scale)))
+    }
+    widthsChanged = true
+  }
+  const { rows, changed: rowsChanged } = mapNestedTables(model, widths, budget, clampTableColWidths)
+  if (!widthsChanged && !rowsChanged) return model
+  return withColWidths(model, rows, widthsChanged ? widths : undefined)
+}
+
+/** per grid column (twips): widest unbreakable word in single-span cells, plus side padding */
+function minContentColTwips(model: TableModel, colCount: number): number[] {
+  const mins = new Array<number>(colCount).fill(0)
+  for (const row of model.rows) {
+    let column = 0
+    for (const cell of row) {
+      const start = column
+      column += cell.colSpan ?? 1
+      if ((cell.colSpan ?? 1) !== 1 || start >= colCount) continue
+      // merged-away and vertical-text cells don't demand word width
+      if (cell.vMerge === 'continue' || cell.textDirection) continue
+      const wordPx = cellMaxWordPx(cell)
+      if (wordPx <= 0) continue
+      const mar = cell.cellMarTwips ?? model.cellMarTwips
+      const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+      mins[start] = Math.max(mins[start], Math.ceil(wordPx * 15) + pad)
+    }
+  }
+  return mins
+}
+
+function cellMaxWordPx(cell: TableCell): number {
+  const runs: Parameters<typeof maxWordWidthPx>[0] = []
+  if (cell.richParas?.length) {
+    for (const para of cell.richParas) {
+      if (runs.length) runs.push({ text: '\n' })
+      for (const r of para.runs) {
+        if (!r.text) continue
+        runs.push({
+          text: r.text,
+          ...(r.font ? { fontFamily: r.font } : {}),
+          ...(r.sizeHalfPoints ? { sizeHalfPoints: r.sizeHalfPoints } : {}),
+          ...(r.bold ? { bold: true } : {}),
+          ...(r.italic ? { italic: true } : {}),
+        })
+      }
+    }
+  } else {
+    for (const text of cell.paras) {
+      if (runs.length) runs.push({ text: '\n' })
+      if (text) runs.push({ text, ...(cell.bold ? { bold: true } : {}) })
+    }
+  }
+  return runs.length ? maxWordWidthPx(runs) : 0
+}
+
+/**
+ * Word autofit (tblW auto/absent, no fixed tblLayout): a column grows to its
+ * min-content — the widest unbreakable word — so narrow declared widths don't
+ * shatter words char by char (heuristic estimate, see maxWordWidthPx). Growth
+ * past the fit width (or the declared total, if that was already wider) is
+ * reclaimed proportionally from columns with surplus over their own
+ * min-content; any remainder spills and is bounded by clampTableColWidths.
+ * Display-only, like the clamp.
+ */
+export function expandAutofitColWidths(
+  model: TableModel,
+  availTwips: number,
+  fitTwips: number = availTwips,
+): TableModel {
+  const indent = tableIndentTwips(model)
+  const budget = availTwips - indent
+  let widths = model.colWidthsTwips
+  let widthsChanged = false
+  if (model.autoLayout && !model.widthPct && widths?.length && budget > 0) {
+    const mins = minContentColTwips(model, widths.length).map((m) => Math.min(m, budget))
+    if (mins.some((m, i) => m > widths![i])) {
+      const declared = widths.reduce((a, b) => a + b, 0)
+      const grown = widths.map((w, i) => Math.max(w, mins[i]))
+      const target = Math.max(Math.min(fitTwips, availTwips) - indent, declared)
+      const overflow = grown.reduce((a, b) => a + b, 0) - target
+      if (overflow > 0) {
+        const floors = grown.map((w, i) => Math.max(mins[i], Math.min(w, MIN_COL_TWIPS)))
+        const surplus = grown.map((w, i) => Math.max(0, w - floors[i]))
+        const totalSurplus = surplus.reduce((a, b) => a + b, 0)
+        if (totalSurplus > 0) {
+          const take = Math.min(overflow, totalSurplus)
+          for (let i = 0; i < grown.length; i++)
+            grown[i] -= Math.round((surplus[i] / totalSurplus) * take)
+        }
+        // min-contents alone can exceed the budget (one huge unbreakable
+        // token): compress proportionally like Word instead of handing the
+        // excess to clampTableColWidths, which zeroes trailing columns
+        const sum = grown.reduce((a, b) => a + b, 0)
+        if (sum > target) {
+          const scale = target / sum
+          for (let i = 0; i < grown.length; i++)
+            grown[i] = Math.max(1, Math.round(grown[i] * scale))
+        }
+      }
+      widths = grown
+      widthsChanged = true
+    }
+  }
+  const { rows, changed: rowsChanged } = mapNestedTables(
+    model,
+    widths,
+    budget,
+    expandAutofitColWidths,
+  )
+  if (!widthsChanged && !rowsChanged) return model
+  return withColWidths(model, rows, widthsChanged ? widths : undefined)
+}
+
+function displayTable(
+  table: TableModel | null,
+  rowCapTwips: number | null,
+  budget: TableWidthBudget | null,
+): TableModel | null {
+  if (!table) return null
+  let t = table
+  if (rowCapTwips != null) t = capTableRowHeights(t, rowCapTwips)
+  if (budget != null) {
+    t = expandAutofitColWidths(t, budgetAvail(t, budget), budget.fit)
+    t = clampTableColWidths(t, budget.paper)
+  }
+  return t
+}
+
+function blockToPmNode(
+  block: Block,
+  rowCapTwips: number | null = null,
+  budget: TableWidthBudget | null = null,
+): PmNode {
   switch (block.type) {
     case 'heading':
       return {
@@ -190,13 +451,18 @@ function blockToPmNode(block: Block, rowCapTwips: number | null = null): PmNode 
         },
         content: runsToInline(block.runs ?? []),
       }
-    case 'table':
+    case 'table': {
+      const table = block.table ?? { rows: [[{ paras: [''] }]] }
       return tableModelToPmNode(
-        block.table ?? { rows: [[{ paras: [''] }]] },
+        table,
         block.docxIndex,
         block.blockRevision ?? null,
         rowCapTwips,
+        budget ? budgetAvail(table, budget) : null,
+        budget?.fit ?? null,
+        budget?.paper ?? null,
       )
+    }
     default:
       // image / passthrough: protected whole-unit blocks
       return {
@@ -223,10 +489,7 @@ function blockToPmNode(block: Block, rowCapTwips: number | null = null): PmNode 
           imageRotDeg: block.imageRotDeg ?? null,
           imageFlipH: block.imageFlipH ?? false,
           imageFlipV: block.imageFlipV ?? false,
-          table:
-            block.table && rowCapTwips != null
-              ? capTableRowHeights(block.table, rowCapTwips)
-              : (block.table ?? null),
+          table: displayTable(block.table ?? null, rowCapTwips, budget),
           fieldDisplay: block.fieldDisplay ?? null,
           diagramDisplay: block.diagramDisplay ?? null,
           decorative: block.decorative ?? false,
@@ -289,8 +552,15 @@ export function tableModelToPmNode(
   docxIndex: number | null = null,
   blockRevision: Block['blockRevision'] | null = null,
   rowCapTwips: number | null = null,
+  availTwips: number | null = null,
+  fitTwips: number | null = null,
+  paperTwips: number | null = null,
 ): PmNode {
   if (rowCapTwips != null) model = capTableRowHeights(model, rowCapTwips)
+  if (availTwips != null) {
+    model = expandAutofitColWidths(model, availTwips, fitTwips ?? availTwips)
+    model = clampTableColWidths(model, paperTwips ?? availTwips)
+  }
   const positions = model.rows.map((row) => {
     let column = 0
     return row.map((cell) => {
@@ -741,6 +1011,7 @@ function runMarks(run: Run): PmMark[] {
     run.shading ||
     run.vertAlign ||
     run.em ||
+    run.caps ||
     run.styleId ||
     run.rawRPr
   ) {
@@ -760,6 +1031,7 @@ function runMarks(run: Run): PmMark[] {
         shading: run.shading ?? null,
         vertAlign: run.vertAlign ?? null,
         em: run.em ?? null,
+        caps: run.caps ?? null,
         styleId: run.styleId ?? null,
         rawRPr: run.rawRPr ?? null,
       },
@@ -801,10 +1073,17 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
   // them so deleting or regenerating a boundary member never unbalances the sdt.
   const sdtGroupOf = new Map<number, number>()
   const sdtGroupShells = new Map<number, SdtShell>()
+  // first/last original member per group: nested content controls leave wrapper
+  // fragments on MIDDLE members' closeXml, so "emits closeXml" alone no longer
+  // means "emits the group close" — only the boundary members do
+  const sdtGroupFirst = new Map<number, number>()
+  const sdtGroupLast = new Map<number, number>()
   for (const block of originalBlocks) {
     const shell = block.sdtShell
     if (block.hidden || block.docxIndex === null || shell?.group === undefined) continue
     sdtGroupOf.set(block.docxIndex, shell.group)
+    if (!sdtGroupFirst.has(shell.group)) sdtGroupFirst.set(shell.group, block.docxIndex)
+    sdtGroupLast.set(shell.group, block.docxIndex)
     const agg = sdtGroupShells.get(shell.group)
     if (!agg) sdtGroupShells.set(shell.group, { ...shell })
     else {
@@ -845,6 +1124,10 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
       open = !!shell.openXml && sb.xml.startsWith(shell.openXml)
       close = !!shell.closeXml && sb.xml.endsWith(shell.closeXml)
     }
+    // middle members may emit nested wrapper fragments; only the boundary
+    // members' bytes are the group open/close the rebalance below cares about
+    open = open && sdtGroupFirst.get(group) === idx
+    close = close && sdtGroupLast.get(group) === idx
     let emits = sdtGroupEmits.get(group)
     if (!emits) sdtGroupEmits.set(group, (emits = []))
     emits.push({ at, idx, open, close })
@@ -1187,12 +1470,64 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
       }
     } else if (sb.kind === 'generated') {
       const gShell = sb.block.sdtShell ?? { ...shell, openXml: '', closeXml: '' }
-      if (side === 'open') gShell.openXml = add
-      else gShell.closeXml = add
+      // concatenate: a nested wrapper fragment may already sit here, and the
+      // group open must precede it (the group close must follow it)
+      if (side === 'open') gShell.openXml = add + (gShell.openXml ?? '')
+      else gShell.closeXml = (gShell.closeXml ?? '') + add
       sb.block.sdtShell = gShell
     } else if (sb.kind === 'xml') {
       sb.xml = side === 'open' ? add + sb.xml : sb.xml + add
     }
+  }
+  // Nested content controls put inner wrapper fragments on MIDDLE members'
+  // closeXml (between-children bytes: "</inner sdt><next inner sdt>"). A
+  // deleted middle member must not take its fragment with it, or the group
+  // saves unbalanced sdt XML. Reattach the fragment to the nearest surviving
+  // member before it (else the first after), before the group-level open/close
+  // rebalance below so the outer close still lands last.
+  const appendXml = (at: number, frag: string, before: boolean, group: number) => {
+    const sb = saveBlocks[at]
+    if (sb.kind === 'original') {
+      const xml = originalByIndex.get(sb.docxIndex)?.originalXml
+      if (xml === undefined) return
+      saveBlocks[at] = {
+        kind: 'xml',
+        xml: before ? frag + xml : xml + frag,
+        docxIndex: sb.docxIndex,
+        ...(sb.revision ? { revision: sb.revision } : {}),
+      }
+    } else if (sb.kind === 'generated') {
+      const shell = sb.block.sdtShell ?? {
+        ...sdtGroupShells.get(group)!,
+        openXml: '',
+        closeXml: '',
+      }
+      if (before) shell.openXml = frag + (shell.openXml ?? '')
+      else shell.closeXml = (shell.closeXml ?? '') + frag
+      sb.block.sdtShell = shell
+    } else if (sb.kind === 'xml') {
+      sb.xml = before ? frag + sb.xml : sb.xml + frag
+    }
+  }
+  for (const [group, emits] of sdtGroupEmits) {
+    const members = [...sdtGroupOf.entries()]
+      .filter(([, g]) => g === group)
+      .map(([idx]) => idx)
+      .sort((a, b) => a - b)
+    const last = members[members.length - 1]
+    const sorted = [...emits].sort((a, b) => a.at - b.at)
+    // deleted leading members all prepend to the first survivor: collect their
+    // fragments in document order and prepend once, or they stack reversed
+    const prefixFrags: string[] = []
+    for (const idx of members) {
+      if (idx === last || usedIndexes.has(idx)) continue
+      const frag = originalByIndex.get(idx)?.sdtShell?.closeXml
+      if (!frag) continue
+      const prev = [...sorted].reverse().find((e) => e.idx < idx)
+      if (prev) appendXml(prev.at, frag, false, group)
+      else prefixFrags.push(frag)
+    }
+    if (prefixFrags.length > 0) appendXml(sorted[0].at, prefixFrags.join(''), true, group)
   }
   for (const [group, emits] of sdtGroupEmits) {
     const shell = sdtGroupShells.get(group)!
@@ -1554,6 +1889,16 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as boolean
   if (node.attrs?.shadingFill) format.shadingFill = String(node.attrs.shadingFill)
   if (node.attrs?.borders) format.borders = String(node.attrs.borders)
+  if (node.attrs?.borderLines) {
+    try {
+      const parsed = JSON.parse(String(node.attrs.borderLines))
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        format.borderLines = parsed
+      }
+    } catch {
+      /* ignore malformed */
+    }
+  }
   if (node.attrs?.tabStops) {
     try {
       const parsed = JSON.parse(String(node.attrs.tabStops))
@@ -1893,6 +2238,7 @@ function normalizedFormat(format: ParaFormat | undefined): unknown {
     format.pageBreakBefore ?? false,
     format.shadingFill ?? null,
     format.borders ?? null,
+    format.borderLines ? JSON.stringify(format.borderLines) : null,
     format.tabStops ? JSON.stringify(format.tabStops) : null,
     format.dropCap ? JSON.stringify(format.dropCap) : null,
     format.autoSpace ?? null,

@@ -112,6 +112,7 @@ export interface Pdfium {
   _FPDFPage_RemoveAnnot(page: number, index: number): number
   _FPDFAnnot_GetSubtype(annot: number): number
   _FPDFAnnot_GetRect(annot: number, rect: number): number
+  _FPDFAnnot_GetStringValue(annot: number, key: number, buffer: number, buflen: number): number
   _EPDFPage_GetAnnotByObjectNumber(page: number, objNum: number): number
   _EPDFPage_RemoveAnnotByObjectNumber(page: number, objNum: number): number
 }
@@ -598,8 +599,9 @@ function canReuseFont(
   if (matches.length !== 1) return false
   if (edit.newFontSize !== undefined || edit.newColor !== undefined || edit.newFont !== undefined)
     return false
-  // Selection-level colors split the line into several objects: always rebuild
-  if (edit.colorRuns && edit.colorRuns.length > 0) return false
+  // Selection-level styles split the line into several objects: always rebuild
+  const runs = editStyleRuns(edit)
+  if (runs && runs.length > 0) return false
   // Centered/right blocks reposition every line: SetText keeps the object's own
   // matrix, so a shorter replacement would stay at the old x instead of re-centering
   if (edit.lineXOffsets !== undefined) return false
@@ -746,9 +748,11 @@ function matchByText(objects: PageTextObj[], edit: TextEditInput): PlannedMatch 
     return {
       matches: set,
       newText:
-        edit.lineLeading !== undefined
-          ? mergeEngineCodepoints(setRaw, edit.oldText, edit.newText)
-          : spliceIntoEngine(setRaw, edit.oldText, edit.newText),
+        edit.newText === ''
+          ? ''
+          : edit.lineLeading !== undefined
+            ? mergeEngineCodepoints(setRaw, edit.oldText, edit.newText)
+            : spliceIntoEngine(setRaw, edit.oldText, edit.newText),
       whole: true,
     }
   }
@@ -778,10 +782,10 @@ function matchByText(objects: PageTextObj[], edit: TextEditInput): PlannedMatch 
  * is spliced against the engine's own text to keep unedited codepoints.
  */
 function matchEdit(objects: PageTextObj[], edit: TextEditInput): PlannedMatch | { reason: string } {
-  // A replacement with no printable characters would remove the matched run and insert
-  // nothing back (multi-line splitting skips blank lines) — erasing content is never
-  // what a text *edit* means, so refuse instead
-  if (edit.newText.trim() === '') return { reason: 'empty replacement text' }
+  // A replacement with no printable characters deletes the matched run: normalize
+  // whitespace-only forms to '' so the splice helpers (which treat '\n' structurally)
+  // never see them and the apply path removes the objects without drawing anything back
+  if (edit.newText.trim() === '' && edit.newText !== '') edit = { ...edit, newText: '' }
   const oldKey = norm(edit.oldText)
   const matches = objects.filter((o) => overlapRatio(o.bounds, edit.rect) >= 0.5)
   const candidates: PageTextObj[][] = [matches]
@@ -796,9 +800,11 @@ function matchEdit(objects: PageTextObj[], edit: TextEditInput): PlannedMatch | 
           // Paragraph rebuilds keep newText's line/space structure (engine text has
           // none at line seams); single-run edits keep the engine's raw text
           newText:
-            edit.lineLeading !== undefined
-              ? mergeEngineCodepoints(joined, edit.oldText, edit.newText)
-              : spliceIntoEngine(joined, edit.oldText, edit.newText),
+            edit.newText === ''
+              ? ''
+              : edit.lineLeading !== undefined
+                ? mergeEngineCodepoints(joined, edit.oldText, edit.newText)
+                : spliceIntoEngine(joined, edit.oldText, edit.newText),
           whole: true,
         }
       }
@@ -980,40 +986,83 @@ const LINE_GAP = 1.2
 
 type Rgb = readonly [number, number, number]
 
-/** Per-code-unit segment colors for the engine's planned text, aligned from the user's
+/** Selection-level style of one planned char; every field absent = inherit the
+    whole-edit override (newColor / newFont / newFontSize / newBold / newItalic),
+    which in turn inherits the original run. */
+export interface RunStyle {
+  color?: Rgb
+  font?: string
+  size?: number
+  bold?: boolean
+  italic?: boolean
+}
+
+/** Identity key for segmentation — style objects are compared by value, not reference
+    (overlaying preserved colors under user runs builds fresh objects per char) */
+const styleKeyOf = (s: RunStyle | null): string =>
+  s
+    ? [
+        s.color ? s.color.join(',') : '',
+        s.font ?? '',
+        s.size ?? '',
+        s.bold === undefined ? '' : s.bold ? 1 : 0,
+        s.italic === undefined ? '' : s.italic ? 1 : 0,
+      ].join('|')
+    : ''
+
+/** True when the style needs its own face or size — such chars can never ride on a
+    kept (merely translated) object; only pure fill overrides can. */
+const styledBeyondColor = (s: RunStyle | null): boolean =>
+  !!s &&
+  (s.font !== undefined || s.size !== undefined || s.bold !== undefined || s.italic !== undefined)
+
+/** The edit's selection-level runs: styleRuns, or legacy colorRuns from older senders */
+const editStyleRuns = (
+  edit: Pick<TextEditInput, 'colorRuns' | 'styleRuns'>,
+): NonNullable<TextEditInput['styleRuns']> | undefined => edit.styleRuns ?? edit.colorRuns
+
+/** Per-code-unit segment styles for the engine's planned text, aligned from the user's
     newText through the NFKC fold: the splice swaps unedited codepoints back to engine
     variants and a fragment match wraps container text around the replacement, so raw
     offsets do not transfer. null = no run styling applies (or unalignable — the caller
-    degrades to a uniform-color rebuild). */
-export function plannedCharColors(
-  edit: Pick<TextEditInput, 'newText' | 'colorRuns'>,
+    degrades to a uniform rebuild). */
+export function plannedCharStyles(
+  edit: Pick<TextEditInput, 'newText' | 'colorRuns' | 'styleRuns'>,
   plannedText: string,
-): (Rgb | null)[] | null {
-  const runs = edit.colorRuns
+): (RunStyle | null)[] | null {
+  const runs = editStyleRuns(edit)
   if (!runs || runs.length === 0) return null
   const user = foldMap(edit.newText)
   const planned = foldMap(plannedText)
   const off = indexOfUnits(planned.units, user.units)
   if (off < 0) return null
-  const colorAt = (i: number): Rgb | null => {
-    for (const r of runs) if (i >= r.start && i < r.end) return r.color
+  // One style object per run so same-run chars group by reference too
+  const styles = runs.map((r): RunStyle => ({
+    color: r.color,
+    font: r.font,
+    size: r.size,
+    bold: r.bold,
+    italic: r.italic,
+  }))
+  const styleAt = (i: number): RunStyle | null => {
+    for (const [ri, r] of runs.entries()) if (i >= r.start && i < r.end) return styles[ri]!
     return null
   }
-  const out: (Rgb | null)[] = new Array<Rgb | null>(plannedText.length).fill(null)
+  const out: (RunStyle | null)[] = new Array<RunStyle | null>(plannedText.length).fill(null)
   for (let u = 0; u < user.units.length; u++) {
-    const c = colorAt(user.idx[u]!)
-    if (!c) continue
+    const s = styleAt(user.idx[u]!)
+    if (!s) continue
     const p = u + off
-    for (let k = planned.idx[p]!; k < planned.end[p]!; k++) out[k] = c
+    for (let k = planned.idx[p]!; k < planned.end[p]!; k++) out[k] = s
   }
   // Whitespace carries no ink and no fold unit: attach it to the preceding char's
-  // segment so a colored word keeps its trailing space (the advance is identical)
+  // segment so a styled word keeps its trailing space
   for (let k = 1; k < out.length; k++) {
     if (out[k] === null && plannedText[k] !== '\n' && /\s/.test(plannedText[k]!)) {
       out[k] = out[k - 1]!
     }
   }
-  return out.some((c) => c !== null) ? out : null
+  return out.some((s) => s !== null) ? out : null
 }
 
 /** Per-code-unit fill colors of `targetText` inherited from the matched objects.
@@ -1081,59 +1130,76 @@ function matchCharColors(
   return any ? out : null
 }
 
-/** User selection colors overlaid on the run's own preserved colors; whitespace
-    joins the preceding char's segment (it carries no ink of its own). */
-function overlayColors(
-  base: (Rgb | null)[] | null,
-  over: (Rgb | null)[] | null,
+/** User selection styles overlaid on the run's own preserved colors (a styled range
+    without an explicit color keeps the preserved fill underneath); whitespace joins
+    the preceding char's segment (it carries no ink of its own). */
+function overlayStyles(
+  baseColors: (Rgb | null)[] | null,
+  over: (RunStyle | null)[] | null,
   text: string,
-): (Rgb | null)[] | null {
-  if (!base) return over
-  const out = [...base]
-  if (over) for (let k = 0; k < out.length; k++) if (over[k]) out[k] = over[k]!
+): (RunStyle | null)[] | null {
+  if (!baseColors && !over) return null
+  const out: (RunStyle | null)[] = new Array<RunStyle | null>(text.length).fill(null)
+  const colorOnly = new Map<Rgb, RunStyle>()
+  for (let k = 0; k < text.length; k++) {
+    const b = baseColors?.[k] ?? null
+    const o = over?.[k] ?? null
+    if (o) {
+      out[k] = o.color === undefined && b ? { ...o, color: b } : o
+    } else if (b) {
+      let s = colorOnly.get(b)
+      if (!s) colorOnly.set(b, (s = { color: b }))
+      out[k] = s
+    }
+  }
   for (let k = 1; k < out.length; k++) {
     if (out[k] === null && text[k] !== '\n' && /\s/.test(text[k]!)) out[k] = out[k - 1]!
   }
-  return out
+  return out.some((s) => s !== null) ? out : null
 }
 
 interface LineSeg {
   text: string
-  color: Rgb | null
-  /** Text-space x of the segment start, em units (multiply by the font size) */
-  xEm: number
+  style: RunStyle | null
+  /** Text-space x of the segment start in PDF pt (each preceding segment measured
+      with its own face and size) */
+  xPt: number
 }
 
-/** Split one rebuilt line at color boundaries, positioning each segment by the advance
-    of the text before it. `advanceEm` measures one codepoint in em units — from the
-    PDFium font that actually draws the text, not the raw font bytes: embedded subsets
-    routinely strip cmap/hmtx, which made a bytes-parsing measurement fail and silently
-    discard the selection colors. A char that still cannot be measured degrades to a
-    single uncolored segment — a uniform-color line beats guessed positions. */
+/** Split one rebuilt line at style boundaries, positioning each segment by the advance
+    of the text before it. `advancePt` measures one codepoint in text-space pt with the
+    face and size that will actually draw it — from the loaded PDFium font, not the raw
+    font bytes: embedded subsets routinely strip cmap/hmtx, which made a bytes-parsing
+    measurement fail and silently discard the selection styling. A char that still
+    cannot be measured degrades to a single base-style segment — a uniform line beats
+    guessed positions. */
 function segmentLine(
   line: string,
-  colors: (Rgb | null)[] | null,
-  advanceEm: (cp: number) => number | null,
+  styles: (RunStyle | null)[] | null,
+  advancePt: (cp: number, style: RunStyle | null) => number | null,
 ): LineSeg[] {
-  const whole: LineSeg[] = [{ text: line, color: null, xEm: 0 }]
-  if (!colors) return whole
-  // Group per codepoint (advances count surrogate pairs once) by per-code-unit color
-  const groups: { text: string; color: Rgb | null }[] = []
+  const whole: LineSeg[] = [{ text: line, style: null, xPt: 0 }]
+  if (!styles) return whole
+  // Group per codepoint (advances count surrogate pairs once) by per-code-unit style
+  const groups: { text: string; style: RunStyle | null; key: string }[] = []
   let cu = 0
   for (const ch of line) {
-    const c = colors[cu] ?? null
+    const s = styles[cu] ?? null
+    const key = styleKeyOf(s)
     const last = groups[groups.length - 1]
-    if (last && last.color === c) last.text += ch
-    else groups.push({ text: ch, color: c })
+    if (last && last.key === key) last.text += ch
+    else groups.push({ text: ch, style: s, key })
     cu += ch.length
   }
-  if (groups.length <= 1) return groups.length ? groups.map((g) => ({ ...g, xEm: 0 })) : whole
+  if (groups.length <= 1) {
+    return groups.length ? groups.map((g) => ({ text: g.text, style: g.style, xPt: 0 })) : whole
+  }
   const segs: LineSeg[] = []
   let x = 0
   for (const g of groups) {
-    segs.push({ text: g.text, color: g.color, xEm: x })
+    segs.push({ text: g.text, style: g.style, xPt: x })
     for (const ch of g.text) {
-      const a = advanceEm(ch.codePointAt(0)!)
+      const a = advancePt(ch.codePointAt(0)!, g.style)
       if (a === null) return whole
       x += a
     }
@@ -1182,9 +1248,16 @@ export function wsEditClamp(
   let sw = 0
   const maxSw = maxPw - pw
   while (sw < maxSw && o.units[o.units.length - 1 - sw] === n.units[n.units.length - 1 - sw]) sw++
-  const headWs = o.units[pw] === ' ' || n.units[pw] === ' '
+  // Boundary units come from the diverging window only. A pure insertion leaves one
+  // side's window empty (pw + sw covers it entirely); indexing that side would read
+  // a RETAINED unit — a space in the unchanged prefix/suffix then faked a
+  // "whitespace edit" and clamped the seam-adjacent glyph into the redraw, which
+  // fails outright when that glyph is undrawable (PUA icon runs).
+  const winUnit = (fm: { units: string[] }, i: number): string | undefined =>
+    pw < fm.units.length - sw ? fm.units[i] : undefined
+  const headWs = winUnit(o, pw) === ' ' || winUnit(n, pw) === ' '
   const tailWs =
-    o.units[o.units.length - 1 - sw] === ' ' || n.units[n.units.length - 1 - sw] === ' '
+    winUnit(o, o.units.length - 1 - sw) === ' ' || winUnit(n, n.units.length - 1 - sw) === ' '
   if (!headWs && !tailWs) return null
   const nonSpace = (units: string[], from: number, to: number) => {
     let c = 0
@@ -1211,7 +1284,7 @@ function buildKeepPlan(
   textPage: number,
   matches: PageTextObj[],
   newText: string,
-  charColors: (Rgb | null)[] | null,
+  charStyles: (RunStyle | null)[] | null,
   newColor: Rgb | undefined,
   edit: Pick<TextEditInput, 'oldText' | 'newText'>,
 ): KeepPlanObj[] | null {
@@ -1232,8 +1305,15 @@ function buildKeepPlan(
       const chars = charsOf.get(t.obj) ?? []
       let g: { origX: number; origY: number; advW: number } | null = null
       // The object's page chars must correspond 1:1 to its extracted codepoints,
-      // or advance/origin attribution would silently drift
-      if (chars.length > 0 && chars.length === [...t.text].length) {
+      // or advance/origin attribution would silently drift. pdfium appends a
+      // synthesized space to the extracted text when a layout gap follows the
+      // object (the page char list carries only the real chars), so the trimmed
+      // form is accepted too — critical for icon glyphs (PUA codepoints no
+      // installed font could redraw), which otherwise land in the redraw text
+      // and fail the whole edit on font coverage.
+      const cpLen = [...t.text].length
+      const trimmedCpLen = [...t.text.replace(/\s+$/, '')].length
+      if (chars.length > 0 && (chars.length === cpLen || chars.length === trimmedCpLen)) {
         let advW = 0
         for (const ci of chars) {
           if (!m._FPDFText_GetLooseCharBox(textPage, ci, rectPtr)) {
@@ -1291,12 +1371,19 @@ function buildKeepPlan(
         const startK = tgt.idx[ua]!
         const endK = tgt.end[(inPrefix ? b : b - shift) - 1]!
         if (startK >= prevEnd && endK > startK && !newText.slice(startK, endK).includes('\n')) {
-          // Fill override must be uniform across the object, or it needs a split
+          // Fill override must be uniform across the object, or it needs a split.
+          // Face/size overrides can never apply to a kept object at all — a range
+          // styled beyond color always redraws (color = undefined skips the keep).
           let color: Rgb | null | undefined = newColor ?? null
-          if (!newColor && charColors) {
-            color = charColors[startK] ?? null
-            for (let k = startK + 1; k < endK; k++) {
-              if ((charColors[k] ?? null) !== color) {
+          if (!newColor && charStyles) {
+            const colorKey = (k: number) => {
+              const c = (charStyles[k] ?? null)?.color
+              return c ? c.join(',') : ''
+            }
+            const first = charStyles[startK] ?? null
+            color = first?.color ?? null
+            for (let k = startK; k < endK; k++) {
+              if (styledBeyondColor(charStyles[k] ?? null) || colorKey(k) !== colorKey(startK)) {
                 color = undefined
                 break
               }
@@ -1358,22 +1445,27 @@ async function rebuildRun(
       : hasColor
         ? ([0, 4, 8, 12].map((off) => m.HEAPU8[colPtr + off]!) as [number, number, number, number])
         : [0, 0, 0, 255]
+    // Some producers (Chrome print) leave the object's fill alpha reading as 0 while
+    // the glyphs render opaque (the RGB part reads fine). Inheriting that raw 0 drew
+    // the rebuilt run fully transparent — visible text must never become invisible.
+    if (color[3] === 0) (color as [number, number, number, number])[3] = 255
 
     // Colors already in the matched run survive underneath the user's selection
-    // colors; an explicit whole-edit newColor means "repaint uniformly" and wins.
+    // styles; an explicit whole-edit newColor means "repaint uniformly" and wins.
     const keepColors = edit.newColor ? null : matchCharColors(m, matches, newText)
-    const charColors = overlayColors(keepColors, plannedCharColors(edit, newText), newText)
+    const charStyles = overlayStyles(keepColors, plannedCharStyles(edit, newText), newText)
 
-    // Object-preserving mode. Explicit face/size/style overrides mean "restyle
+    // Object-preserving mode. Whole-edit face/size/style overrides mean "restyle
     // everything" and take the full-redraw path; so does a rotated/skewed matrix
-    // (the cursor walk below only models horizontal text).
+    // (the cursor walk below only models horizontal text). Selection-level style
+    // runs are fine: buildKeepPlan redraws any object their ranges touch.
     const styleOverride =
       edit.newFontSize !== undefined || edit.newFont !== undefined || edit.newBold || edit.newItalic
     const axisAligned =
       Math.abs(matrix[1]!) < 1e-4 && Math.abs(matrix[2]!) < 1e-4 && matrix[0]! > 0 && matrix[3]! > 0
     const keeps =
       !styleOverride && axisAligned
-        ? buildKeepPlan(m, textPage, matches, newText, charColors, edit.newColor, edit)
+        ? buildKeepPlan(m, textPage, matches, newText, charStyles, edit.newColor, edit)
         : null
     // Subset the rebuild font to the non-kept text only: requiring coverage for
     // kept glyphs (e.g. Type3 PUA codepoints) would fail edits that never touch them
@@ -1390,12 +1482,12 @@ async function rebuildRun(
     }
 
     let font = 0
-    let usedTruetype = true
-    const loadRebuild = async (text: string) => {
-      const fontBytes = await rebuildFontBytes(m, anchor.font, edit, text.trim() ? text : 'x')
+    let anyCff = false
+    const loadFont = async (styleEdit: TextEditInput, text: string): Promise<number> => {
+      const fontBytes = await rebuildFontBytes(m, anchor.font, styleEdit, text.trim() ? text : 'x')
       const fontPtr = m._malloc(fontBytes.length)
       m.HEAPU8.set(fontBytes, fontPtr)
-      font = m._FPDFText_LoadFont(
+      const f = m._FPDFText_LoadFont(
         doc,
         fontPtr,
         fontBytes.length,
@@ -1403,15 +1495,63 @@ async function rebuildRun(
         1,
       )
       m._free(fontPtr)
-      if (!font) throw new Error('FPDFText_LoadFont failed')
-      usedTruetype = isTruetype(fontBytes)
+      if (!f) throw new Error('FPDFText_LoadFont failed')
+      anyCff = anyCff || !isTruetype(fontBytes)
+      return f
+    }
+    const loadRebuild = async (text: string) => {
+      font = await loadFont(edit, text)
     }
     await loadRebuild(keeps ? redrawOnly() : newText)
 
-    // Advance of one codepoint in em units, measured from the font object the new
-    // text objects draw with (same unicode→charcode mapping FPDFText_SetText uses)
-    const advanceEm = (cp: number): number | null =>
-      m._FPDFFont_GetGlyphWidth(font, cp, 1, widthPtr) ? m.HEAPF32[widthPtr >> 2]! : null
+    // Effective face/size of a segment style: explicit run fields over the whole-edit
+    // overrides (which rebuildFontBytes resolves against the original run)
+    const faceOf = (s: RunStyle | null) => ({
+      font: s?.font ?? edit.newFont,
+      bold: s?.bold ?? !!edit.newBold,
+      italic: s?.italic ?? !!edit.newItalic,
+    })
+    const faceKeyOf = (s: RunStyle | null) => {
+      const f = faceOf(s)
+      return `${f.font ?? ''}|${f.bold ? 1 : 0}|${f.italic ? 1 : 0}`
+    }
+    const baseFaceKey = faceKeyOf(null)
+    const sizeOf = (s: RunStyle | null) => (s?.size !== undefined && s.size > 0 ? s.size : fontSize)
+
+    // One extra font per distinct non-base face among the styled chars, subset to
+    // exactly the text that face draws (styled ranges are never kept, so the set is
+    // known up front and survives a PreserveAbort re-load of the base font)
+    const styleFonts = new Map<string, number>()
+    if (charStyles) {
+      const byFace = new Map<string, { style: RunStyle; text: string }>()
+      for (let k = 0; k < newText.length; k++) {
+        const s = charStyles[k] ?? null
+        if (!s) continue
+        const fk = faceKeyOf(s)
+        if (fk === baseFaceKey) continue
+        const e = byFace.get(fk)
+        if (e) e.text += newText[k]!
+        else byFace.set(fk, { style: s, text: newText[k]! })
+      }
+      for (const [fk, { style, text }] of byFace) {
+        const face = faceOf(style)
+        styleFonts.set(
+          fk,
+          await loadFont(
+            { ...edit, newFont: face.font, newBold: face.bold, newItalic: face.italic },
+            text,
+          ),
+        )
+      }
+    }
+    const fontFor = (s: RunStyle | null): number => styleFonts.get(faceKeyOf(s)) ?? font
+
+    // Advance of one codepoint in text-space pt, measured with the face and size that
+    // will draw it (same unicode→charcode mapping FPDFText_SetText uses)
+    const advancePt = (cp: number, s: RunStyle | null): number | null =>
+      m._FPDFFont_GetGlyphWidth(fontFor(s), cp, 1, widthPtr)
+        ? m.HEAPF32[widthPtr >> 2]! * sizeOf(s)
+        : null
 
     const lineHeight = edit.lineLeading ?? fontSize * LINE_GAP
     const [baseX, baseY] = edit.origin ?? [matrix[4]!, matrix[5]!]
@@ -1423,8 +1563,8 @@ async function rebuildRun(
     const segAnchors: number[] = []
     let lastKeptObj = 0
 
-    const makeSeg = (text: string, x: number, y: number, segColor: Rgb | null) => {
-      const newObj = m._FPDFPageObj_CreateTextObj(doc, font, fontSize)
+    const makeSeg = (text: string, x: number, y: number, style: RunStyle | null) => {
+      const newObj = m._FPDFPageObj_CreateTextObj(doc, fontFor(style), sizeOf(style))
       const textPtr = utf16Ptr(m, text)
       const ok = m._FPDFText_SetText(newObj, textPtr)
       m._free(textPtr)
@@ -1437,30 +1577,30 @@ async function rebuildRun(
       lineMatrix[5] = y
       m.HEAPF32.set(lineMatrix, matPtr >> 2)
       m._FPDFPageObj_SetMatrix(newObj, matPtr)
-      const c = segColor ? [segColor[0], segColor[1], segColor[2], 255] : color
+      const c = style?.color ? [style.color[0], style.color[1], style.color[2], 255] : color
       m._FPDFPageObj_SetFillColor(newObj, c[0]!, c[1]!, c[2]!, c[3]!)
       newObjs.push(newObj)
       segAnchors.push(lastKeptObj)
     }
 
-    // Full redraw: one text object per line (several when selection colors split
+    // Full redraw: one text object per line (several when selection styles split
     // it), stepping down one leading per line from the anchor baseline or origin
     const buildRedraw = () => {
       let lineStart = 0
       for (const [lineIdx, line] of newText.split('\n').entries()) {
-        const lineColors = charColors ? charColors.slice(lineStart, lineStart + line.length) : null
+        const lineStyles = charStyles ? charStyles.slice(lineStart, lineStart + line.length) : null
         lineStart += line.length + 1
         if (!line) continue
         const drop = lineIdx * lineHeight
-        for (const seg of segmentLine(line, lineColors, advanceEm)) {
+        for (const seg of segmentLine(line, lineStyles, advancePt)) {
           if (!seg.text) continue
           // Segment offset is a text-space advance: map it through the matrix's x axis
-          const segX = seg.xEm * fontSize
+          const segX = seg.xPt
           makeSeg(
             seg.text,
             baseX + (edit.lineXOffsets?.[lineIdx] ?? 0) + matrix[0]! * segX - matrix[2]! * drop,
             baseY + matrix[1]! * segX - matrix[3]! * drop,
-            seg.color,
+            seg.style,
           )
         }
       }
@@ -1476,11 +1616,11 @@ async function rebuildRun(
       let lineStart = 0
       // Advances/leadings are text-space (Tf) values; map through the matrix's
       // axis scales to walk in page space (scale 1 for origin edits)
-      const emToPage = fontSize * matrix[0]!
-      const advOf = (ch: string): number => {
-        const a = advanceEm(ch.codePointAt(0)!)
-        if (a !== null) return a * emToPage
-        if (/\s/.test(ch)) return emToPage * 0.28
+      const xScale = matrix[0]!
+      const advOf = (ch: string, s: RunStyle | null): number => {
+        const a = advancePt(ch.codePointAt(0)!, s)
+        if (a !== null) return a * xScale
+        if (/\s/.test(ch)) return sizeOf(s) * xScale * 0.28
         throw new PreserveAbort()
       }
       for (const [lineIdx, line] of newText.split('\n').entries()) {
@@ -1517,14 +1657,18 @@ async function rebuildRun(
           if (runEnd <= k) throw new PreserveAbort()
           const runText = newText.slice(k, runEnd)
           if (runText.trim()) {
-            const runColors = charColors ? charColors.slice(k, runEnd) : null
-            for (const seg of segmentLine(runText, runColors, advanceEm)) {
+            const runStyles = charStyles ? charStyles.slice(k, runEnd) : null
+            for (const seg of segmentLine(runText, runStyles, advancePt)) {
               if (!seg.text.trim()) continue
-              makeSeg(seg.text, cursor + seg.xEm * emToPage, baseline, seg.color)
+              makeSeg(seg.text, cursor + seg.xPt * xScale, baseline, seg.style)
             }
             prev = null
           }
-          for (const ch of runText) cursor += advOf(ch)
+          let cu = k
+          for (const ch of runText) {
+            cursor += advOf(ch, charStyles?.[cu] ?? null)
+            cu += ch.length
+          }
           k = runEnd
         }
         lineStart = lineEnd + 1
@@ -1606,7 +1750,7 @@ async function rebuildRun(
         }
       }
     }
-    return !usedTruetype
+    return anyCff
   } finally {
     for (const p of [matPtr, sizePtr, colPtr, widthPtr]) m._free(p)
   }
@@ -1914,6 +2058,29 @@ async function applyTextEditsInner(
         planned.sort((a, b) => b.matches[0]!.index - a.matches[0]!.index)
         let applied = 0
         for (const { edit, matches, newText, whole } of planned) {
+          // Pure move: translate the matched objects in page space and keep every
+          // glyph as it is — no font resolution, no rebuild. Only a whole match may
+          // move (a fragment's container carries surrounding text that must stay put).
+          if (edit.translate) {
+            if (!whole) {
+              skip(edit, 'the text block cannot be moved as one unit')
+              continue
+            }
+            const [dx, dy] = edit.translate
+            for (const t of matches) m._FPDFPageObj_Transform(t.obj, 1, 0, 0, 1, dx, dy)
+            applied++
+            continue
+          }
+          // Deletion: an empty (or whitespace-only) planned replacement removes the
+          // matched objects outright — no font resolution, nothing to rebuild
+          if (newText.trim() === '') {
+            for (const t of matches) {
+              m._FPDFPage_RemoveObject(page, t.obj)
+              m._FPDFPageObj_Destroy(t.obj)
+            }
+            applied++
+            continue
+          }
           // A fragment match rewrites its whole container run; the paragraph position
           // overrides would drag the container's surrounding text to the block corner
           const eff = whole
@@ -1991,6 +2158,11 @@ async function validateTextEditsInner(
           const res = matchEdit(objects, e)
           if ('reason' in res) {
             results[indexOf.get(e)!] = { reason: res.reason }
+            continue
+          }
+          // Same gate the apply path enforces: a move must own its objects outright
+          if (e.translate && !res.whole) {
+            results[indexOf.get(e)!] = { reason: 'the text block cannot be moved as one unit' }
             continue
           }
           // Fragment edits resolve to their whole container object; covering all of it

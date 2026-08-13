@@ -148,6 +148,27 @@ describe('parseDocx', () => {
   })
 })
 
+describe('style-level pageBreakBefore', () => {
+  it('parses pageBreakBefore into style display, inherited via basedOn, without touching paragraph format', async () => {
+    const bytes = await buildDocx({
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="ChapterTitle"><w:name w:val="Chapter Title"/>' +
+        '<w:pPr><w:pageBreakBefore/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="ChapterSub"><w:name w:val="Chapter Sub"/>' +
+        '<w:basedOn w:val="ChapterTitle"/></w:style>',
+      bodyXml:
+        '<w:p><w:pPr><w:pStyle w:val="ChapterTitle"/></w:pPr><w:r><w:t>ch</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.styles.get('ChapterTitle')?.display?.pageBreakBefore).toBe(true)
+    expect(doc.styles.get('ChapterSub')?.display?.pageBreakBefore).toBe(true)
+    expect(doc.styles.get('Normal')?.display?.pageBreakBefore).toBeUndefined()
+    // style-level value must not leak into paragraph format (would be saved as redundant pPr)
+    expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
+  })
+})
+
 describe('empty paragraph line size', () => {
   it('records the w:sz that governs a run-less paragraph', async () => {
     const bodyXml =

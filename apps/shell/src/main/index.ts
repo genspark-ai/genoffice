@@ -37,6 +37,7 @@ import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
 import {
   DEFAULT_SAVE_DIR_KEY,
+  GITHUB_REPO_URL,
   appMenuLabels,
   contextMenuLabels,
   editMenuTemplate,
@@ -48,6 +49,18 @@ import {
   windowMenuTemplate,
 } from '@genoffice/electron-utils'
 import { readAppSettings, writeAppSetting } from './app-settings'
+import {
+  LAST_RUN_VERSION_KEY,
+  STAR_PROMPT_KEY,
+  asStarPromptState,
+  isUpgradeLaunch,
+  shouldShowStarPrompt,
+  shouldShowUpgradeStarPrompt,
+  withDocOpen,
+  withFirstRun,
+  withResolved,
+  withShown,
+} from './star-prompt'
 import {
   clearCloudProjectsStore,
   cloudProjectExternalUrl,
@@ -120,6 +133,7 @@ import {
   setSlidesExtraFileMenuItems,
   setSlidesOpenedHook,
   setSlidesShellWindow,
+  setSlidesShowBleed,
   slidesFileRenamed,
 } from '../../../slides/src/main/slides-main'
 import {
@@ -128,6 +142,7 @@ import {
   pdfIsDirty,
   requestPdfClose,
   requestPdfSaveAs,
+  sendPdfPrintRequest,
   setPdfSaveAsInFlight,
 } from '../../../pdf/src/main/pdf-main'
 import {
@@ -136,6 +151,7 @@ import {
   requestMarkdownClose,
   requestMarkdownSave,
   sendMarkdownExportRequest,
+  sendMarkdownPrintRequest,
   setMarkdownDocxExportedHook,
   setMarkdownFileSavedHook,
 } from '../../../markdown/src/main/markdown-main'
@@ -144,6 +160,7 @@ import type {
   RecentEntry,
   RecentPage,
   RenameResult,
+  StarPromptShow,
   UiTheme,
 } from '../shared/home-api'
 import { HOME_CHANNELS } from '../shared/home-api'
@@ -227,6 +244,7 @@ configurePdfRuntime({
   preloadPath: join(PDF_OUT, 'preload', 'index.js'),
   rendererUrl: process.env.PDF_RENDERER_URL,
   rendererFile: join(PDF_OUT, 'renderer', 'index.html'),
+  openGeneratedPath: (path) => openDocumentPath(path),
 })
 configureMarkdownRuntime({
   preloadPath: join(MARKDOWN_OUT, 'preload', 'index.js'),
@@ -290,6 +308,56 @@ const GENTEAM_URL = 'https://genoffice.ai/join'
 // Kept main-side so the renderer never supplies the URL.
 const CREDIT_USAGE_URL = 'https://www.genspark.ai/credit-usage'
 
+// ---- "star us on GitHub" prompt (see star-prompt.ts for the rules) ----
+
+const readStarPrompt = () =>
+  asStarPromptState(readAppSettings(APP_SETTINGS_PATH())[STAR_PROMPT_KEY])
+const writeStarPrompt = (state: ReturnType<typeof readStarPrompt>) =>
+  writeAppSetting(APP_SETTINGS_PATH(), STAR_PROMPT_KEY, state)
+
+/** set at startup when this is the first launch after an upgrade; consumed by
+ * the first starPromptShouldShow query of the session */
+let upgradeStarPromptPending = false
+
+/** a granted show, cached for the session: repeated queries (React StrictMode
+ * double-effects, AppFrame remounts) must return the same answer instead of
+ * burning another lifetime show or flipping to a snoozed "false" */
+let starPromptSessionGrant: StarPromptShow | null = null
+
+/** every successful document open counts toward the prompt's value threshold */
+function recordStarPromptDocOpen(): void {
+  try {
+    const state = readStarPrompt()
+    const next = withDocOpen(state)
+    if (next !== state) writeStarPrompt(next)
+  } catch {
+    // settings write failures must never break opening a document
+  }
+}
+
+// Stargazer count for the settings About pane; fetched main-side (the
+// renderer CSP has no api.github.com) and cached per session — the exact
+// number is decoration, staleness is fine.
+let cachedGithubStars: number | null = null
+
+async function fetchGithubStars(): Promise<number | null> {
+  if (cachedGithubStars !== null) return cachedGithubStars
+  try {
+    const response = await fetch('https://api.github.com/repos/genspark-ai/genoffice', {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) return null
+    const body: unknown = await response.json()
+    const count = (body as { stargazers_count?: unknown }).stargazers_count
+    if (typeof count !== 'number' || !Number.isFinite(count)) return null
+    cachedGithubStars = count
+    return count
+  } catch {
+    return null
+  }
+}
+
 const tMain = createI18n({
   zh: {
     menuFile: '文件',
@@ -304,6 +372,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: '导出为 PDF…',
     menuOpenInDocs: '转换为 Docs 文档并打开',
+    menuPrint: '打印…',
     menuOpen: '打开…',
     menuSave: '保存',
     menuSaveAs: '另存为…',
@@ -357,6 +426,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Export as PDF…',
     menuOpenInDocs: 'Convert and Open in Docs',
+    menuPrint: 'Print…',
     menuOpen: 'Open…',
     menuSave: 'Save',
     menuSaveAs: 'Save As…',
@@ -414,6 +484,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'PDF として書き出す…',
     menuOpenInDocs: 'Docs 文書に変換して開く',
+    menuPrint: '印刷…',
     menuOpen: '開く…',
     menuSave: '保存',
     menuSaveAs: '名前を付けて保存…',
@@ -471,6 +542,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'PDF로 내보내기…',
     menuOpenInDocs: 'Docs 문서로 변환하여 열기',
+    menuPrint: '인쇄…',
     menuOpen: '열기…',
     menuSave: '저장',
     menuSaveAs: '다른 이름으로 저장…',
@@ -527,6 +599,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Exporter en PDF…',
     menuOpenInDocs: 'Convertir et ouvrir dans Docs',
+    menuPrint: 'Imprimer…',
     menuOpen: 'Ouvrir…',
     menuSave: 'Enregistrer',
     menuSaveAs: 'Enregistrer sous…',
@@ -584,6 +657,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Als PDF exportieren…',
     menuOpenInDocs: 'In Docs umwandeln und öffnen',
+    menuPrint: 'Drucken…',
     menuOpen: 'Öffnen…',
     menuSave: 'Speichern',
     menuSaveAs: 'Speichern unter…',
@@ -641,6 +715,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Exportar como PDF…',
     menuOpenInDocs: 'Convertir y abrir en Docs',
+    menuPrint: 'Imprimir…',
     menuOpen: 'Abrir…',
     menuSave: 'Guardar',
     menuSaveAs: 'Guardar como…',
@@ -698,6 +773,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'ส่งออกเป็น PDF…',
     menuOpenInDocs: 'แปลงและเปิดใน Docs',
+    menuPrint: 'พิมพ์…',
     menuOpen: 'เปิด…',
     menuSave: 'บันทึก',
     menuSaveAs: 'บันทึกเป็น…',
@@ -753,6 +829,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Ekspor sebagai PDF…',
     menuOpenInDocs: 'Konversi dan buka di Docs',
+    menuPrint: 'Cetak…',
     menuOpen: 'Buka…',
     menuSave: 'Simpan',
     menuSaveAs: 'Simpan Sebagai…',
@@ -810,6 +887,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Экспортировать в PDF…',
     menuOpenInDocs: 'Преобразовать и открыть в Docs',
+    menuPrint: 'Печать…',
     menuOpen: 'Открыть…',
     menuSave: 'Сохранить',
     menuSaveAs: 'Сохранить как…',
@@ -867,6 +945,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'تصدير بتنسيق PDF…',
     menuOpenInDocs: 'التحويل والفتح في Docs',
+    menuPrint: 'طباعة…',
     menuOpen: 'فتح…',
     menuSave: 'حفظ',
     menuSaveAs: 'حفظ باسم…',
@@ -922,6 +1001,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Exportar como PDF…',
     menuOpenInDocs: 'Converter e abrir no Docs',
+    menuPrint: 'Imprimir…',
     menuOpen: 'Abrir…',
     menuSave: 'Salvar',
     menuSaveAs: 'Salvar Como…',
@@ -979,6 +1059,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Esporta come PDF…',
     menuOpenInDocs: 'Converti e apri in Docs',
+    menuPrint: 'Stampa…',
     menuOpen: 'Apri…',
     menuSave: 'Salva',
     menuSaveAs: 'Salva con nome…',
@@ -1036,6 +1117,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Eksportuj jako PDF…',
     menuOpenInDocs: 'Konwertuj i otwórz w Docs',
+    menuPrint: 'Drukuj…',
     menuOpen: 'Otwórz…',
     menuSave: 'Zapisz',
     menuSaveAs: 'Zapisz jako…',
@@ -1093,6 +1175,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Exporteren als PDF…',
     menuOpenInDocs: 'Converteren en openen in Docs',
+    menuPrint: 'Afdrukken…',
     menuOpen: 'Openen…',
     menuSave: 'Opslaan',
     menuSaveAs: 'Opslaan als…',
@@ -1150,6 +1233,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'Eksport sebagai PDF…',
     menuOpenInDocs: 'Tukar dan buka dalam Docs',
+    menuPrint: 'Cetak…',
     menuOpen: 'Buka…',
     menuSave: 'Simpan',
     menuSaveAs: 'Simpan Sebagai…',
@@ -1207,6 +1291,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'ייצוא כ-PDF…',
     menuOpenInDocs: 'המרה ופתיחה ב-Docs',
+    menuPrint: 'הדפסה…',
     menuOpen: 'פתיחה…',
     menuSave: 'שמירה',
     menuSaveAs: 'שמירה בשם…',
@@ -1261,6 +1346,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: 'PDF के रूप में निर्यात…',
     menuOpenInDocs: 'Docs में बदलें और खोलें',
+    menuPrint: 'प्रिंट करें…',
     menuOpen: 'खोलें…',
     menuSave: 'सहेजें',
     menuSaveAs: 'इस रूप में सहेजें…',
@@ -1318,6 +1404,7 @@ const tMain = createI18n({
     menuNewMarkdown: 'AI Markdown',
     menuExportPdf: '匯出為 PDF…',
     menuOpenInDocs: '轉換為 Docs 文件並開啟',
+    menuPrint: '列印…',
     menuOpen: '開啟…',
     menuSave: '儲存',
     menuSaveAs: '另存新檔…',
@@ -1470,6 +1557,7 @@ function createShellWindow(): void {
   setDocsShellWindow(win)
   setSheetsShellWindow(win)
   setSlidesShellWindow(win)
+  setSlidesShowBleed((wc, on) => manager.setContentBleed(wc, on))
   setDocsShellHooks({
     openTab: (openPath, options) => manager.openDocsTab(openPath, options),
     listTabs: () =>
@@ -1632,6 +1720,12 @@ function notifyUnsupportedFile(filePath: string): void {
 
 /** the single router: extension decides which module owns the file; false = nothing opened */
 function openDocumentPath(filePath: string): boolean {
+  const opened = routeDocumentPath(filePath)
+  if (opened) recordStarPromptDocOpen()
+  return opened
+}
+
+function routeDocumentPath(filePath: string): boolean {
   if (!existsSync(filePath) || !tabManager) return false
   if (DOCX_RE.test(filePath)) {
     recordRecentFile(filePath)
@@ -1718,6 +1812,8 @@ function surfaceNewTabError(err: unknown): void {
 function newDocTab(): void {
   try {
     tabManager?.openDocsTab(undefined, { newBlank: true })
+    // creating a document is as much a value moment as opening one
+    recordStarPromptDocOpen()
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1726,6 +1822,7 @@ function newDocTab(): void {
 function newSlideTab(): void {
   try {
     tabManager?.openSlidesTab()
+    recordStarPromptDocOpen()
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1734,6 +1831,7 @@ function newSlideTab(): void {
 function newMarkdownTab(): void {
   try {
     tabManager?.openMarkdownTab()
+    recordStarPromptDocOpen()
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -2043,6 +2141,48 @@ function registerHomeIpc(): void {
     })
   })
 
+  ipcMain.handle(HOME_CHANNELS.openGitHubRepo, () => {
+    shell.openExternal(GITHUB_REPO_URL).catch(() => {
+      // no browser handler available; nothing actionable for the user here
+    })
+  })
+
+  ipcMain.handle(HOME_CHANNELS.githubStars, () => fetchGithubStars())
+
+  // returning true also counts as "shown": the renderer displays it
+  // unconditionally, so no separate mark-shown round-trip is needed
+  ipcMain.handle(HOME_CHANNELS.starPromptShouldShow, (): StarPromptShow => {
+    if (starPromptSessionGrant) return starPromptSessionGrant
+    const now = Date.now()
+    const state = readStarPrompt()
+    const docOpens = state.docOpens ?? 0
+    // dev preview of the card without waiting out the value thresholds
+    // (same pattern as GENOFFICE_FAKE_UPDATE); nothing is recorded
+    if (!app.isPackaged && process.env.GENOFFICE_FORCE_STAR_PROMPT) return { show: true, docOpens }
+    const grant = (): StarPromptShow => {
+      writeStarPrompt(withShown(state, now))
+      starPromptSessionGrant = { show: true, docOpens }
+      return starPromptSessionGrant
+    }
+    // first launch after an upgrade: skip the value gates once for a
+    // never-prompted user (they are a proven repeat user already)
+    if (upgradeStarPromptPending) {
+      upgradeStarPromptPending = false
+      if (shouldShowUpgradeStarPrompt(state)) return grant()
+    }
+    if (!shouldShowStarPrompt(state, now)) return { show: false, docOpens }
+    return grant()
+  })
+
+  ipcMain.handle(HOME_CHANNELS.starPromptAction, (_event, action: unknown) => {
+    if (action !== 'starred' && action !== 'later') return
+    // the card was reacted to — drop the session grant so a later query (new
+    // shell window on macOS) re-evaluates the real rules (snooze / resolved)
+    starPromptSessionGrant = null
+    // 'later' needs no write: the display was already counted by the query
+    if (action === 'starred') writeStarPrompt(withResolved(readStarPrompt()))
+  })
+
   const cloudProjectsStorePath = () => join(app.getPath('userData'), 'cloud-projects.json')
 
   ipcMain.handle(HOME_CHANNELS.cloudProjectsCached, () =>
@@ -2266,6 +2406,15 @@ function buildPdfMenu(): void {
         },
         { type: 'separator' },
         {
+          label: tm('menuPrint'),
+          accelerator: 'CmdOrCtrl+P',
+          click: () => {
+            const tab = tabManager?.activePdfTab()
+            if (tab) sendPdfPrintRequest(tab.webContents)
+          },
+        },
+        { type: 'separator' },
+        {
           label: tm('menuClose'),
           accelerator: 'CmdOrCtrl+W',
           click: () => tabManager?.closeActiveTab(),
@@ -2340,6 +2489,15 @@ function buildMarkdownMenu(): void {
           click: () => {
             const tab = tabManager?.activeMarkdownTab()
             if (tab) sendMarkdownExportRequest(tab.webContents, 'docs')
+          },
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuPrint'),
+          accelerator: 'CmdOrCtrl+P',
+          click: () => {
+            const tab = tabManager?.activeMarkdownTab()
+            if (tab) sendMarkdownPrintRequest(tab.webContents)
           },
         },
         { type: 'separator' },
@@ -2678,6 +2836,29 @@ app.whenReady().then(async () => {
   currentLang()
   // native menus/dialogs/scrollbars follow the persisted theme from first paint
   nativeTheme.themeSource = currentTheme()
+  // stamp the star-prompt install-age clock on the first launch carrying the feature,
+  // and detect upgrade launches (version changed since the previous run)
+  try {
+    const settings = readAppSettings(APP_SETTINGS_PATH())
+    const starState = readStarPrompt()
+    const stamped = withFirstRun(starState, Date.now())
+    if (stamped !== starState) writeStarPrompt(stamped)
+
+    const prevVersion =
+      typeof settings[LAST_RUN_VERSION_KEY] === 'string'
+        ? (settings[LAST_RUN_VERSION_KEY] as string)
+        : null
+    const currentVersion = app.getVersion()
+    upgradeStarPromptPending = isUpgradeLaunch(
+      prevVersion,
+      currentVersion,
+      settings.onboardingSeen === true,
+    )
+    if (prevVersion !== currentVersion)
+      writeAppSetting(APP_SETTINGS_PATH(), LAST_RUN_VERSION_KEY, currentVersion)
+  } catch {
+    // settings write failures must never block startup
+  }
   startSheetsCaptureServer()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()

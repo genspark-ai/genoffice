@@ -40,6 +40,7 @@ import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
 import { PaginationPreview } from './components/PaginationPreview'
+import { PrintDialog } from './components/PrintDialog'
 import {
   appendEndnotesBlock,
   assignSections,
@@ -76,6 +77,7 @@ import { hfHasVisibleContent, makeGapHfEl } from './editor/hf-dom'
 import {
   estimateFootnoteHeight,
   estimateHfHeight,
+  footnoteLineHeightPx,
   FOOTNOTE_SEPARATOR_H,
   textHasCjk,
 } from './line-metrics'
@@ -142,6 +144,7 @@ import {
   exportPdf as exportPdfImpl,
   loadFile as loadFileImpl,
   newFile as newFileImpl,
+  printDoc as printDocImpl,
   save as saveImpl,
   writeRecoveryCopy as writeRecoveryCopyImpl,
   type FileActionContext,
@@ -239,6 +242,7 @@ function makeGapNotesEl(
   leftPx: number,
   widthPx: number,
   heightPx: number,
+  lineHeightPx: number,
   onEdit: (id: string) => void,
 ): HTMLElement {
   const wrap = document.createElement('div')
@@ -246,12 +250,14 @@ function makeGapNotesEl(
   wrap.style.left = `${leftPx}px`
   wrap.style.width = `${widthPx}px`
   wrap.style.height = `${heightPx}px`
+  // same line height as estimateFootnoteHeight; min-height keeps rows at the
+  // reserved size while letting long entries overflow instead of clipping
+  wrap.style.lineHeight = `${lineHeightPx}px`
   for (const it of items) {
     const row = document.createElement('div')
     row.className = 'page-gap-note'
     row.title = t('appDblclickEditFootnote')
-    // entries get fixed heights from the estimates: rendering matches the engine's reservation bookkeeping exactly, no more overflow
-    row.style.height = `${it.height}px`
+    row.style.minHeight = `${it.height}px`
     const sup = document.createElement('sup')
     sup.textContent = String(it.no)
     row.append(sup)
@@ -267,6 +273,8 @@ function makeGapNotesEl(
           if (deco.length > 0) span.style.textDecoration = deco.join(' ')
           if (run.color) span.style.color = `#${run.color}`
           if (run.sizeHalfPoints) span.style.fontSize = `${run.sizeHalfPoints / 2}pt`
+          if (run.caps === 'all') span.style.textTransform = 'uppercase'
+          else if (run.caps === 'small') span.style.fontVariantCaps = 'small-caps'
           row.append(span)
         }
       })
@@ -423,19 +431,23 @@ export function App() {
   const hfImagesOf = (kind: 'header' | 'footer') => {
     const parsed = doc?.parsed
     if (!parsed) return undefined
-    const view = kind === 'header' ? headerAreaView : footerAreaView
-    if (view === 'first') {
-      return (kind === 'header' ? parsed.headerFirst : parsed.footerFirst)?.images
-    }
-    if (view === 'even') {
-      return (kind === 'header' ? parsed.headerEven : parsed.footerEven)?.images
-    }
-    if (multiHf) {
-      const rId = effRefsAll[hfSectionClamped]?.[kind]?.default
-      const fromPart = rId ? parsed.hfParts?.[rId]?.images : undefined
-      if (fromPart?.length) return fromPart
-    }
-    return (kind === 'header' ? parsed.headerImages : parsed.footerImages) ?? undefined
+    const raw = (() => {
+      const view = kind === 'header' ? headerAreaView : footerAreaView
+      if (view === 'first') {
+        return (kind === 'header' ? parsed.headerFirst : parsed.footerFirst)?.images
+      }
+      if (view === 'even') {
+        return (kind === 'header' ? parsed.headerEven : parsed.footerEven)?.images
+      }
+      if (multiHf) {
+        const rId = effRefsAll[hfSectionClamped]?.[kind]?.default
+        const fromPart = rId ? parsed.hfParts?.[rId]?.images : undefined
+        if (fromPart?.length) return fromPart
+      }
+      return (kind === 'header' ? parsed.headerImages : parsed.footerImages) ?? undefined
+    })()
+    // floating shapes (watermarks) must not stack into the strip (mirrors PaginationPreview)
+    return raw?.filter((img) => !img.floating)
   }
 
   const commitHf = (kind: 'header' | 'footer', next: HeaderFooter) => {
@@ -804,6 +816,10 @@ export function App() {
 
   // Mixed-paper menu export: after the preview mounts and renders, the merge export resumes automatically
   const pendingMixedExportRef = useRef<boolean | string>(false)
+  // Print dialog (Word-style preview + range); the pagination preview is its print source
+  const [showPrintDialog, setShowPrintDialog] = useState(false)
+  // the dialog auto-opened the pagination preview: close it again with the dialog
+  const printAutoOpenedPreviewRef = useRef(false)
 
   /** App state bundle for the extracted file actions (file-actions.ts); refreshed every render. */
   const fileCtxRef = useRef<FileActionContext>(null as unknown as FileActionContext)
@@ -814,6 +830,8 @@ export function App() {
     saveInFlightRef,
     saveIncompleteRef,
     pendingMixedExportRef,
+    printAutoOpenedPreviewRef,
+    setShowPrintDialog,
     setStatus,
     setRecent,
     setShowAi,
@@ -1231,6 +1249,7 @@ export function App() {
     (outPath?: string) => exportPdfImpl(fileCtxRef.current, outPath),
     [],
   )
+  const printDoc = useCallback(() => printDocImpl(fileCtxRef.current), [])
 
   // for real-device verification: trigger export directly via CDP (same as __pageDebug)
   useEffect(() => {
@@ -1246,6 +1265,14 @@ export function App() {
     }, 1200)
     return () => window.clearTimeout(timer)
   }, [showPagePreview, exportPdf])
+
+  const closePrintDialog = useCallback(() => {
+    setShowPrintDialog(false)
+    if (printAutoOpenedPreviewRef.current) {
+      printAutoOpenedPreviewRef.current = false
+      setShowPagePreview(false)
+    }
+  }, [])
 
   // ---- References: footnotes / endnotes ----
 
@@ -1501,12 +1528,14 @@ export function App() {
       const styleDisplay = b.styleId ? doc?.parsed.styles.get(b.styleId)?.display : undefined
       const keepNext = b.format?.keepNext ?? styleDisplay?.keepNext
       const keepLines = b.format?.keepLines ?? styleDisplay?.keepLines
+      const breakBefore = b.format?.pageBreakBefore ?? styleDisplay?.pageBreakBefore
       const widowOff = b.format?.widowControl === false
       const fnExtra = footnoteExtraOf(b)
-      if (!keepNext && !keepLines && !widowOff && fnExtra === 0) return undefined
+      if (!keepNext && !keepLines && !breakBefore && !widowOff && fnExtra === 0) return undefined
       return {
         ...(keepNext ? { keepNext: true } : {}),
         ...(keepLines ? { keepLines: true } : {}),
+        ...(breakBefore ? { breakBefore: true } : {}),
         ...(widowOff ? { widowControl: false as const } : {}),
         ...(fnExtra > 0 ? { footnoteExtraPx: fnExtra } : {}),
       }
@@ -1668,6 +1697,7 @@ export function App() {
     const contentH = twipsToPx(section.pageHeight) - effTopSingle - effBottomSingle
     let slices: PageSlice[] = []
     let timer: number | null = null
+    let suppressSig = ''
     const pmEl = () => document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
     const locate = () => {
       const pm = pmEl()
@@ -1797,6 +1827,8 @@ export function App() {
           const firsts = sectionFirstPages(slices)
           const effRefs = secList ? effectiveHfRefs(secList) : null
           const parsed = doc.parsed
+          // floating shapes (watermarks) must not stack into the strip (mirrors PaginationPreview)
+          const stripImgs = (imgs?: HfImage[] | null) => imgs?.filter((img) => !img.floating)
           const pageHfOf = (
             pageIdx: number,
             kind: 'header' | 'footer',
@@ -1805,17 +1837,17 @@ export function App() {
             if (!secList || secList.length <= 1) {
               if (titlePg && pageIdx === 0) {
                 return kind === 'header'
-                  ? { value: hfVariants.headerFirst, images: parsed.headerFirst?.images }
-                  : { value: hfVariants.footerFirst, images: parsed.footerFirst?.images }
+                  ? { value: hfVariants.headerFirst, images: stripImgs(parsed.headerFirst?.images) }
+                  : { value: hfVariants.footerFirst, images: stripImgs(parsed.footerFirst?.images) }
               }
               if (evenOddHf && pageNo % 2 === 0) {
                 return kind === 'header'
-                  ? { value: hfVariants.headerEven, images: parsed.headerEven?.images }
-                  : { value: hfVariants.footerEven, images: parsed.footerEven?.images }
+                  ? { value: hfVariants.headerEven, images: stripImgs(parsed.headerEven?.images) }
+                  : { value: hfVariants.footerEven, images: stripImgs(parsed.footerEven?.images) }
               }
               return kind === 'header'
-                ? { value: header, images: parsed.headerImages ?? undefined }
-                : { value: footer, images: parsed.footerImages ?? undefined }
+                ? { value: header, images: stripImgs(parsed.headerImages) }
+                : { value: footer, images: stripImgs(parsed.footerImages) }
             }
             const pageSlice = slices[pageIdx]
             const sec = secList[Math.min(pageSlice.section, secList.length - 1)]
@@ -1830,7 +1862,7 @@ export function App() {
             const rId = refs[kind][variant]
             return {
               value: ov ?? hfFromPart(rId ? parsed.hfParts?.[rId] : null),
-              images: rId ? parsed.hfParts?.[rId]?.images : undefined,
+              images: stripImgs(rId ? parsed.hfParts?.[rId]?.images : undefined),
             }
           }
           const pageNoTextOf = (pageIdx: number) =>
@@ -1875,7 +1907,7 @@ export function App() {
               })
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
-              el.style.width = `${Math.min(box.width, canvasPaperW) - 120}px`
+              el.style.width = `${Math.min(box.contentWidth, canvasPaperW)}px`
               hfEls.push(el)
             }
             if (hfHasVisibleContent(gapHeader.value, gapHeader.images)) {
@@ -1889,7 +1921,7 @@ export function App() {
               })
               el.style.bottom = 'auto'
               el.style.top = `calc(100% - ${Math.max(0, metrics.marginTop - box.headerDist)}px)`
-              el.style.width = `${Math.min(box.width, canvasPaperW) - 120}px`
+              el.style.width = `${Math.min(box.contentWidth, canvasPaperW)}px`
               hfEls.push(el)
             }
             const hfProps =
@@ -1912,8 +1944,13 @@ export function App() {
               const contentW = twipsToPx(
                 prevSec.pageWidth - prevSec.marginLeft - prevSec.marginRight,
               )
-              notes = makeGapNotesEl(items, twipsToPx(prevSec.marginLeft), contentW, fnH, (id) =>
-                editNote('footnote', id),
+              notes = makeGapNotesEl(
+                items,
+                twipsToPx(prevSec.marginLeft),
+                contentW,
+                fnH,
+                footnoteLineHeightPx(prevSec.docGrid),
+                (id) => editNote('footnote', id),
               )
               notesKey = `${Math.round(fnH)}:${items.map((n) => `${n.no}${n.text}`).join('|')}`
               notesMetrics = { ...metrics, marginBottom: metrics.marginBottom + fnH }
@@ -1924,6 +1961,9 @@ export function App() {
               gaps.push({
                 el: blocks[i].el!,
                 metrics: notesMetrics,
+                ...(blocks[i].breakBefore || (i > 0 && blocks[i - 1].breakAfter)
+                  ? { suppressLeadMt: true }
+                  : {}),
                 ...(notes ? { notes, notesKey } : {}),
                 ...hfProps,
               })
@@ -2028,8 +2068,9 @@ export function App() {
                     kind: 'cell',
                     metrics: {
                       ...metrics,
-                      marginLeft: metrics.marginLeft + (r.left - pmRect.left) / factor,
-                      marginRight: metrics.marginRight + (pmRect.right - r.right) / factor,
+                      // rect offsets from the paper edge already include the page margins
+                      marginLeft: (r.left - pmRect.left) / factor,
+                      marginRight: (pmRect.right - r.right) / factor,
                     },
                     ...hfProps,
                   })
@@ -2043,14 +2084,14 @@ export function App() {
             const anchor = lineStartAnchor(b.el, slice.start - b.top, factor)
             const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
             if (pos == null) return
-            // fold the block's horizontal indent relative to the content area into negative margins so the gap spans the full paper width
+            // fold the block's offset from the paper edge (page margin + indent) into negative margins so the gap spans exactly the paper width
             const elRect = b.el.getBoundingClientRect()
             gaps.push({
               pos,
               metrics: {
                 ...notesMetrics,
-                marginLeft: metrics.marginLeft + (elRect.left - pmRect.left) / factor,
-                marginRight: metrics.marginRight + (pmRect.right - elRect.right) / factor,
+                marginLeft: (elRect.left - pmRect.left) / factor,
+                marginRight: (pmRect.right - elRect.right) / factor,
               },
               ...(notes ? { notes, notesKey } : {}),
               ...hfProps,
@@ -2087,6 +2128,12 @@ export function App() {
         const tSet0 = performance.now()
         setPageGaps(editor.view, gaps)
         tSetGaps = performance.now() - tSet0
+        // suppression collapses the DOM after this pass sliced; one follow-up remeasure re-syncs (sig goes stable, no loop)
+        const sig = gaps.reduce((s, g, n) => (g.suppressLeadMt ? `${s},${n}` : s), '')
+        if (sig !== suppressSig) {
+          suppressSig = sig
+          onUpdate()
+        }
         // the last page paints as a full sheet like the ones above it:
         // extend the canvas to that page's paper bottom, measured from the last gap
         const gapEls = pm.querySelectorAll('.page-gap')
@@ -2485,6 +2532,9 @@ export function App() {
         case 'export-pdf':
           void exportPdf()
           break
+        case 'print':
+          if (doc) void printDoc()
+          break
       }
     })
   }, [
@@ -2495,6 +2545,7 @@ export function App() {
     openRecent,
     save,
     exportPdf,
+    printDoc,
     zoomFit,
     openStats,
     startNewComment,
@@ -2700,7 +2751,8 @@ export function App() {
       <>
         <button
           className="qa-btn"
-          title={t('appSaveShortcutTip')}
+          data-tip={t('appSaveShortcutTip')}
+          aria-label={t('appSaveShortcutTip')}
           disabled={!hasDoc || !hasUnsavedChanges}
           onClick={() => void save(false)}
         >
@@ -2708,7 +2760,8 @@ export function App() {
         </button>
         <button
           className="qa-btn"
-          title={t('appUndo')}
+          data-tip={t('appUndo')}
+          aria-label={t('appUndo')}
           disabled={!hasDoc || !histState.canUndo}
           onClick={() => editor?.chain().focus().undo().run()}
         >
@@ -2716,13 +2769,14 @@ export function App() {
         </button>
         <button
           className="qa-btn"
-          title={t('appRedo')}
+          data-tip={t('appRedo')}
+          aria-label={t('appRedo')}
           disabled={!hasDoc || !histState.canRedo}
           onClick={() => editor?.chain().focus().redo().run()}
         >
           <IconRedo size={16} />
         </button>
-        <label className={`autosave-toggle ${autoSave ? 'on' : ''}`} title={t('appAutoSaveTip')}>
+        <label className={`autosave-toggle ${autoSave ? 'on' : ''}`} data-tip={t('appAutoSaveTip')}>
           <span className="autosave-knob" />
           <span className="autosave-text">{t('appAutoSave')}</span>
           <input
@@ -2781,8 +2835,8 @@ export function App() {
         <style>{`.doc-page { --doc-grid-pitch:${gridPitchPt}pt }`}</style>
       )}
       {doc && section && (
-        // over-wide tables may spill into the right margin (Word/LO), capped at the paper edge
-        <style>{`.doc-page { --doc-margin-right:${twipsToPx(section.marginRight)}px }`}</style>
+        // over-wide tables may spill into the margins (Word/LO), capped at the paper edge
+        <style>{`.doc-page { --doc-margin-left:${twipsToPx(section.marginLeft)}px; --doc-margin-right:${twipsToPx(section.marginRight)}px }`}</style>
       )}
       {/* Theme CSS comes from live state, so a Design ▸ Themes/Fonts/Colors pick shows
           on the page immediately instead of only in the saved file */}
@@ -2910,7 +2964,7 @@ export function App() {
                           (revealed on header hover until enabled) */}
                           <button
                             className={`hf-first-toggle${titlePg ? ' on' : ''}`}
-                            title={t('ribbonDiffFirstPageTip')}
+                            data-tip={t('ribbonDiffFirstPageTip')}
                             onClick={() => toggleTitlePg(!titlePg)}
                           >
                             {titlePg ? '✓ ' : ''}
@@ -2968,14 +3022,16 @@ export function App() {
                                 <span className="page-note-text">{n.text}</span>
                                 <button
                                   className="page-note-btn"
-                                  title={t('appEditFootnote')}
+                                  data-tip={t('appEditFootnote')}
+                                  aria-label={t('appEditFootnote')}
                                   onClick={() => editNote('footnote', n.id)}
                                 >
                                   ✎
                                 </button>
                                 <button
                                   className="page-note-btn"
-                                  title={t('appDeleteFootnote')}
+                                  data-tip={t('appDeleteFootnote')}
+                                  aria-label={t('appDeleteFootnote')}
                                   onClick={() => deleteNote('footnote', n.id)}
                                 >
                                   ×
@@ -2994,14 +3050,16 @@ export function App() {
                               <span className="page-note-text">{n.text}</span>
                               <button
                                 className="page-note-btn"
-                                title={t('appEditEndnote')}
+                                data-tip={t('appEditEndnote')}
+                                aria-label={t('appEditEndnote')}
                                 onClick={() => editNote('endnote', n.id)}
                               >
                                 ✎
                               </button>
                               <button
                                 className="page-note-btn"
-                                title={t('appDeleteEndnote')}
+                                data-tip={t('appDeleteEndnote')}
+                                aria-label={t('appDeleteEndnote')}
                                 onClick={() => deleteNote('endnote', n.id)}
                               >
                                 ×
@@ -3049,7 +3107,8 @@ export function App() {
                     <span>{t('appSplitPaneLabel')}</span>
                     <button
                       className="split-pane-close"
-                      title={t('appRemoveSplit')}
+                      data-tip={t('appRemoveSplit')}
+                      aria-label={t('appRemoveSplit')}
                       onClick={() => setSplitView(false)}
                     >
                       ×
@@ -3104,7 +3163,7 @@ export function App() {
                   </span>
                   <button
                     className="status-item status-wordcount"
-                    title={t('appWordCountTitle')}
+                    data-tip={t('appWordCountTitle')}
                     onClick={openStats}
                   >
                     {t('appWordCountN', { n: wordCount })}
@@ -3241,8 +3300,11 @@ export function App() {
           }}
           onExportPdf={() => void exportPdf()}
           onClose={() => setShowPagePreview(false)}
+          suppressEscape={showPrintDialog}
         />
       )}
+
+      {doc && showPrintDialog && <PrintDialog onClose={closePrintDialog} setStatus={setStatus} />}
 
       {stats && (
         <div

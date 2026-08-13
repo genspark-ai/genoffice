@@ -204,6 +204,23 @@
   font-weight: normal;
   font-style: normal;
 }
+/* Documents declaring Noto Naskh/Sans Arabic by name resolve to the bundled
+ * subsets, which run ~13% wider than Word's rendering of those faces; kept
+ * separate from the 90% TA alias (different calibration source). */
+@font-face {
+  font-family: 'Noto Naskh Arabic W';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 87%;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Noto Sans Arabic W';
+  src: url('./NotoSansArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 87%;
+  font-weight: normal;
+  font-style: normal;
+}
 
 /* macOS's PMingLiU stand-in (Songti TC) draws these fullwidth glyphs at
  * ~0.2-0.5em of ink inside the 1em advance — U+FF0F looks like a spaced
@@ -224,6 +241,122 @@
 @font-face {
   font-family: 'GenOffice Songti SC';
   src: local('STSongti-SC-Regular'), local('Songti SC Regular');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* East Asian system faces used as chain fallbacks (Hiragino Sans/Mincho,
+ * MS Mincho/Gothic, AppleMyungjo, Batang, Heiti TC, (P)MingLiU) draw Cyrillic
+ * and Greek as JIS fullwidth glyphs (Т measures 1em), exploding advances in
+ * Russian/Mongolian text that falls through a CJK chain. These local() aliases
+ * expose only the CJK ranges; other scripts continue down the chain to
+ * proportional faces. Registered weight-normal (bold synthesized, like
+ * 'GenOffice Songti SC') except Hiragino, which has real W6 faces. */
+@font-face {
+  font-family: 'GenOffice Hiragino Sans';
+  src: local('Hiragino Sans'), local('HiraginoSans-W3'), local('MS Gothic');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Hiragino Sans';
+  src: local('HiraginoSans-W6'), local('Hiragino Sans W6');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Hiragino Mincho';
+  src: local('Hiragino Mincho ProN'), local('HiraMinProN-W3');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Hiragino Mincho';
+  src: local('HiraMinProN-W6'), local('Hiragino Mincho ProN W6');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice MS Mincho';
+  src: local('MS Mincho'), local('MS PMincho');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Batang';
+  src: local('Batang'), local('BatangChe');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Myungjo';
+  src: local('AppleMyungjo');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Heiti TC';
+  src: local('Heiti TC'), local('Heiti TC Light'), local('STHeitiTC-Light');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice MingLiU';
+  src: local('PMingLiU'), local('MingLiU');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Ethiopic faces (Nyala/Ebrima/Abyssinica) are missing on macOS and fall back
+ * to Kefa, 1.35-1.4x wider than Word's Nyala. Only routed when an Ethiopic
+ * face is declared, so no unicode-range needed; on Windows the declared name
+ * itself resolves ahead of this alias. */
+@font-face {
+  font-family: 'GenOffice Ethiopic';
+  /* Chromium local() matches PostScript/full names, not family names */
+  src: local('Kefa-Regular'), local('Kefa Regular'), local('Kefa');
+  /* verified on regression sample 39: line breaks match Word at 72%; the
+     residual page-4 spill is line-height, not width */
+  size-adjust: 72%;
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Caladea has no box-drawing glyphs, so U+2500 separator rules fall to the CJK
+ * subset at 1em fullwidth and an 80-char rule overflows the column (Word draws
+ * it ~0.65em on a single line). Menlo/Consolas keep them ~0.6em. */
+@font-face {
+  font-family: 'GenOffice Box Drawing';
+  /* Chromium local() matches PostScript/full names, not family names */
+  src: local('Menlo-Regular'), local('Menlo Regular'), local('Menlo'), local('Consolas');
+  unicode-range: U+2500-257F;
   font-weight: normal;
   font-style: normal;
 }

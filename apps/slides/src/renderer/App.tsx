@@ -30,6 +30,7 @@ import type {
 } from '../shared/ipc'
 import { SlideCanvas, selectionChromeColor } from './SlideCanvas'
 import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
+import { createWheelPager } from './wheel-page-flip'
 import type { DrawRect } from './draw-shape'
 import { SlideThumb } from './SlideThumb'
 import { MasterView } from './MasterView'
@@ -42,8 +43,10 @@ import type { SlideThemePreset } from './themes'
 import { Ribbon, type FormatCmd, type SlidesViewMode } from './components/Ribbon'
 import { contextElementTypeForNode, type ContextElementType } from './components/context-tabs'
 import { SlideShowView } from './components/SlideShowView'
+import { IconNotes, IconPlayBoxed } from './components/icons'
 import { PresenterView } from './components/PresenterView'
 import { CustomShowDialog } from './components/CustomShowDialog'
+import { PrintDialog } from './components/PrintDialog'
 import { FindReplaceDialog } from './components/FindReplaceDialog'
 import { formatClock, type CustomShow } from './slideshow-utils'
 import { ContextMenu } from './components/ContextMenu'
@@ -75,7 +78,9 @@ import type {
   LinkDialogState,
   SlideShowState,
 } from './action-context'
-import { FIT_WIDTH, PX_PER_INCH } from './app-constants'
+import { FIT_WIDTH } from './app-constants'
+import { StageRuler } from './components/StageRuler'
+import { formatRulerValue, type RulerUnit } from './ruler-ticks'
 import * as fileActions from './file-actions'
 import * as clipboardActions from './clipboard-actions'
 import * as insertActions from './insert-actions'
@@ -90,6 +95,20 @@ import { handleGlobalKeydown } from './keyboard-actions'
 import { buildCtxItems } from './context-menu-items'
 
 const _IS_MAC = navigator.platform.toLowerCase().includes('mac')
+
+/** Effects the canvas can play as a one-shot click preview; 'random' resolves to one of these */
+const PREVIEWABLE_TRANSITIONS: TransitionKind[] = [
+  'morph',
+  'fade',
+  'push',
+  'wipe',
+  'split',
+  'circle',
+  'cover',
+  'pull',
+  'dissolve',
+  'zoom',
+]
 
 /** Resizable thumbnail sidebar: drag the right edge; width persisted, clamped to a sane range */
 const THUMBS_W_KEY = 'ai-slides-thumbs-width'
@@ -135,46 +154,6 @@ function outlineOf(s: RenderSlide): { title: string; lines: string[] } {
     .sort((a, b) => a.y - b.y)
     .map((t) => t.text)
   return { title: title.text, lines }
-}
-
-/** Ruler (inch ticks): placed inside .stage-scale so it scales with the canvas, naturally aligned with the slide. */
-function Ruler({
-  length,
-  vertical,
-  onAddGuide,
-}: {
-  length: number
-  vertical?: boolean
-  /** Click the ruler to add a guide (pos = 0..1); a simplified take on PowerPoint's drag-a-guide-from-the-ruler */
-  onAddGuide?: (pos: number) => void
-}) {
-  const marks: number[] = []
-  for (let i = 0; i * PX_PER_INCH <= length - 12; i++) marks.push(i)
-  return (
-    <div
-      className={`ruler ${vertical ? 'ruler-v' : 'ruler-h'}${onAddGuide ? ' ruler-clickable' : ''}`}
-      style={vertical ? { height: length } : { width: length }}
-      onClick={
-        onAddGuide
-          ? (e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              const p = vertical ? (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width
-              onAddGuide(Math.min(1, Math.max(0, p)))
-            }
-          : undefined
-      }
-    >
-      {marks.map((i) => (
-        <span
-          key={i}
-          className="ruler-tick"
-          style={vertical ? { top: i * PX_PER_INCH } : { left: i * PX_PER_INCH }}
-        >
-          {i}
-        </span>
-      ))}
-    </div>
-  )
 }
 
 /** Collect fonts/sizes (pt) of all text runs in a node (including group children, table cells) for ribbon display.
@@ -287,6 +266,7 @@ export function App() {
   /** unscaled layout size of .stage-scale — its transform-scaled visual size is
    * scaleBox * zoom, which the wrapper zoom-box adopts so scrolling can reach it all */
   const stageScaleRef = useRef<HTMLDivElement | null>(null)
+  const stageRelRef = useRef<HTMLDivElement | null>(null)
   const zoomBoxRef = useRef<HTMLDivElement | null>(null)
   const [scaleBox, setScaleBox] = useState<{ w: number; h: number } | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -409,13 +389,42 @@ export function App() {
     { axis: 'v', pos: 0.5 },
     { axis: 'h', pos: 0.5 },
   ])
-  const [showNotes, setShowNotes] = useState(false)
+  // PowerPoint model: the notes pane is SHOWN by default as a thin one-line bar
+  // (type in place); the Notes buttons hide/show it entirely; drag its top edge
+  // to any height, all the way down to hide.
+  const [showNotes, setShowNotes] = useState(true)
   const [notesText, setNotesText] = useState('')
   /** Unsaved notes draft (flushed before page switch/save) */
   const notesDraftRef = useRef<{ index: number; text: string } | null>(null)
-  /** Notes pane height (px): default 118, drag-resizable */
-  const [notesHeight, setNotesHeight] = useState(118)
+  /** Notes pane height (px): default = the thin one-line bar, drag-resizable */
+  const [notesHeight, setNotesHeight] = useState(30)
   const notesDragRef = useRef<{ startY: number; startH: number } | null>(null)
+  /** Splitter drag shared by the pane's top handle (startH = current height) and
+   * the invisible pull-zone when hidden (startH = 0): below 20px = hidden
+   * (restoring the pre-drag height for the Notes button), else live-resize. */
+  const startNotesDrag = useCallback((e: React.MouseEvent, startH: number) => {
+    e.preventDefault()
+    notesDragRef.current = { startY: e.clientY, startH }
+    const onMove = (ev: MouseEvent) => {
+      const d = notesDragRef.current
+      if (!d) return
+      const raw = d.startH - (ev.clientY - d.startY)
+      if (raw < 20) {
+        setShowNotes(false)
+        if (d.startH >= 30) setNotesHeight(Math.max(30, Math.min(480, d.startH)))
+      } else {
+        setShowNotes(true)
+        setNotesHeight(Math.max(30, Math.min(480, raw)))
+      }
+    }
+    const onUp = () => {
+      notesDragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
   // ── Review tab: comments ────────────────────────────────────────────────
   const [comments, setComments] = useState<SlideComment[]>([])
   const [showComments, setShowComments] = useState(false)
@@ -518,6 +527,31 @@ export function App() {
   useEffect(() => {
     slideLiveRef.current = slide
   }, [slide])
+  // Live rawFit for the zoom-gesture code (previewZoom is dependency-free)
+  const rawFitRef = useRef(rawFit)
+  useEffect(() => {
+    rawFitRef.current = rawFit
+  }, [rawFit])
+
+  /** While the slide fits the viewport, the centered position is the only valid one —
+   * overflow is hidden, so the user cannot correct a stray scroll offset, and the
+   * Konva bleed keeps scrollHeight above clientHeight so the browser never clamps
+   * it back to 0 on its own. A zoom gesture's anchoring math can leave such an
+   * offset behind (large Ctrl+wheel steps on Windows made the slide sit clipped
+   * under the ribbon); zero it whenever the target zoom is at/below fit. */
+  const resetFitScroll = useCallback((z: number) => {
+    if (z > rawFitRef.current(slideLiveRef.current) + 0.001) return
+    const wrap = stageWrapRef.current
+    if (wrap && (wrap.scrollLeft !== 0 || wrap.scrollTop !== 0)) {
+      wrap.scrollLeft = 0
+      wrap.scrollTop = 0
+    }
+  }, [])
+
+  // Non-gesture zoom paths (zoom-to-fit button, open-time fit, resize re-fit) land here
+  useLayoutEffect(() => {
+    if (stageFitsViewport) resetFitScroll(zoom)
+  }, [stageFitsViewport, zoom, resetFitScroll])
 
   useLayoutEffect(() => {
     if (!slide || !needsFitRef.current) return
@@ -528,7 +562,7 @@ export function App() {
   }, [slide, fitZoom])
 
   // measure the stage content's unscaled layout size (offsetWidth ignores the
-  // transform); ruler/slide-size changes are the only things that alter it
+  // transform); slide-size changes are the only thing that alters it
   useLayoutEffect(() => {
     const el = stageScaleRef.current
     if (!el) {
@@ -536,7 +570,52 @@ export function App() {
       return
     }
     setScaleBox({ w: el.offsetWidth, h: el.offsetHeight })
-  }, [slide?.widthPx, slide?.heightPx, showRuler])
+  }, [slide?.widthPx, slide?.heightPx])
+
+  // ── Stage rulers (PowerPoint-style fixed chrome outside the zoomed canvas) ──
+  /** ruler unit follows the UI language: imperial for English, metric elsewhere */
+  const rulerUnit: RulerUnit = lang === 'en' ? 'in' : 'cm'
+  /** where slide coordinate 0 falls, in px relative to the stage viewport
+   * (= ruler-local px, since each ruler strip is flush with .stage-wrap) */
+  const [rulerOrigin, setRulerOrigin] = useState<{ x: number; y: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!showRuler) return
+    const wrap = stageWrapRef.current
+    const rel = stageRelRef.current
+    if (!wrap || !rel) return
+    let raf = 0
+    const measure = () => {
+      raf = 0
+      const w = wrap.getBoundingClientRect()
+      const r = rel.getBoundingClientRect()
+      const next = { x: r.left - w.left, y: r.top - w.top }
+      setRulerOrigin((prev) =>
+        prev && Math.abs(prev.x - next.x) < 0.5 && Math.abs(prev.y - next.y) < 0.5 ? prev : next,
+      )
+    }
+    const queue = () => {
+      if (!raf) raf = requestAnimationFrame(measure)
+    }
+    measure()
+    wrap.addEventListener('scroll', queue, { passive: true })
+    return () => {
+      wrap.removeEventListener('scroll', queue)
+      if (raf) cancelAnimationFrame(raf)
+    }
+    // stageViewportSize covers window/pane resizes; scaleBox covers slide-size changes
+  }, [showRuler, zoom, stageViewportSize, scaleBox, viewMode, hasDoc])
+  /** live guide being pulled off a ruler (slide fraction along its axis) */
+  const [guidePreview, setGuidePreview] = useState<{ axis: 'v' | 'h'; pos: number } | null>(null)
+  /** coordinate readout bubble during any guide drag (fixed viewport coords) */
+  const [guideBubble, setGuideBubble] = useState<{ x: number; y: number; text: string } | null>(
+    null,
+  )
+  /** pointer → slide fraction on the guide's cross axis ('h' guide ↔ y, 'v' guide ↔ x), unclamped */
+  const guideFracAt = useCallback((axis: 'v' | 'h', client: { x: number; y: number }) => {
+    const rect = stageRelRef.current?.getBoundingClientRect()
+    if (!rect) return 0
+    return axis === 'v' ? (client.x - rect.left) / rect.width : (client.y - rect.top) / rect.height
+  }, [])
 
   // On container size changes (window/sidebar/thumbnail toggles): follow with a
   // re-fit while in fit mode, and clamp any manual zoom back down to fit whenever
@@ -545,17 +624,30 @@ export function App() {
   useEffect(() => {
     const el = stageWrapRef.current
     if (!hasDoc || !el) return
+    // Border-box size at the previous callback. Zooming past fit makes classic
+    // scrollbars appear, which shrinks the observed content box without touching
+    // the border box; treating that as "container got smaller" snapped every
+    // zoom-in above fit straight back to fit. Only a border-box change is a real
+    // window/pane resize allowed to clamp a manual zoom.
+    let outerBox: { w: number; h: number } | null = null
     const ro = new ResizeObserver(() => {
       const nextSize = { w: el.clientWidth, h: el.clientHeight }
       setStageViewportSize((previous) =>
         previous.w === nextSize.w && previous.h === nextSize.h ? previous : nextSize,
       )
+      const prevOuter = outerBox
+      outerBox = { w: el.offsetWidth, h: el.offsetHeight }
       const z = fitZoom(slideLiveRef.current)
       const lf = lastFitRef.current
       const inFitMode = lf != null && Math.abs(zoomLiveRef.current - lf) <= 0.001
-      // The overflow test uses the uncapped ratio: on large windows a manual
-      // zoom above the 1.5 fit cap can still fit and must not be wiped
-      if (!inFitMode && zoomLiveRef.current <= rawFit(slideLiveRef.current) + 0.001) return
+      if (!inFitMode) {
+        // The overflow test uses the uncapped ratio: on large windows a manual
+        // zoom above the 1.5 fit cap can still fit and must not be wiped
+        if (zoomLiveRef.current <= rawFit(slideLiveRef.current) + 0.001) return
+        const outerResized =
+          prevOuter != null && (outerBox.w !== prevOuter.w || outerBox.h !== prevOuter.h)
+        if (!outerResized) return
+      }
       lastFitRef.current = z
       setZoom(z)
     })
@@ -701,11 +793,6 @@ export function App() {
   const exportPdf = useCallback(() => fileActions.exportPdf(ctxRef.current), [])
 
   const [printDlgOpen, setPrintDlgOpen] = useState(false)
-  const printSlides = useCallback(
-    (layout: 'full' | 'handout2' | 'handout3' | 'handout6' | 'notes') =>
-      fileActions.printSlides(ctxRef.current, layout),
-    [],
-  )
 
   /** Whether focus is in a text input (input/textarea/contentEditable) — these cases use native undo/delete */
   const inTextField = () => {
@@ -815,6 +902,9 @@ export function App() {
             const r = scaleEl.getBoundingClientRect()
             wrap.scrollLeft += px * g.pending - (ax - r.left)
             wrap.scrollTop += py * g.pending - (ay - r.top)
+            // At/below fit the anchoring must not win over centering: the bleed's
+            // scroll range would keep the offset alive after overflow turns hidden
+            resetFitScroll(g.pending)
           }
           // Selection chrome counter-scales per frame so it holds a constant on-screen size
           window.dispatchEvent(new CustomEvent(ZOOM_PREVIEW_EVENT, { detail: g.pending }))
@@ -824,11 +914,14 @@ export function App() {
       g.timer = window.setTimeout(() => {
         if (g.pending == null) return
         setZoom(g.pending)
+        // The commit may not change `zoom` (gesture ended where it started), so the
+        // layout-effect reset would not re-run; clear any residue here as well
+        resetFitScroll(g.pending)
         g.pending = null
         g.anchor = null
       }, 150)
     },
-    [],
+    [resetFitScroll],
   )
   useEffect(() => {
     const g = zoomGestureRef.current
@@ -840,18 +933,30 @@ export function App() {
 
   // Trackpad pinch zoom: Chromium synthesizes pinch gestures as ctrlKey+wheel events;
   // Ctrl/⌘ + wheel zoom also supported. Needs passive:false to preventDefault.
+  // Plain wheel/trackpad scroll turns pages (PowerPoint/WPS behavior) — but only
+  // while the slide fits the viewport; zoomed-in overflow keeps native panning.
   useEffect(() => {
     const el = stageWrapRef.current
     if (!el) return
+    const pager = createWheelPager()
     const onWheel = (ev: WheelEvent) => {
-      if (!ev.ctrlKey && !ev.metaKey) return
-      ev.preventDefault()
-      const factor = Math.exp(-ev.deltaY * 0.01)
-      previewZoom((z) => z * factor, { x: ev.clientX, y: ev.clientY })
+      if (ev.ctrlKey || ev.metaKey) {
+        ev.preventDefault()
+        const factor = Math.exp(-ev.deltaY * 0.01)
+        previewZoom((z) => z * factor, { x: ev.clientX, y: ev.clientY })
+        return
+      }
+      // Never flip out from under a live text edit — the overlay's commit
+      // must not depend on an unmount blur (same guard as autosave/⌘S)
+      if (editingActiveRef.current) return
+      const fits = zoomLiveRef.current <= rawFitRef.current(slideLiveRef.current) + 0.001
+      if (!fits) return
+      const flip = pager.feed(ev.deltaY, ev.timeStamp)
+      if (flip) setCurrent((c) => Math.min(Math.max(c + flip, 0), slides.length - 1))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [hasDoc, viewMode, previewZoom])
+  }, [hasDoc, viewMode, previewZoom, slides.length])
 
   const newBlank = useCallback(async () => {
     const r = await window.slidesApi.newBlank(FIT_WIDTH)
@@ -1129,6 +1234,19 @@ export function App() {
     [],
   )
 
+  // ── Transitions tab: one-shot canvas preview when an effect is clicked (PPT-style) ──
+  const [transPreviewKind, setTransPreviewKind] = useState<TransitionKind | null>(null)
+  const previewTransitionOnCanvas = useCallback((kind: TransitionKind) => {
+    const concrete =
+      kind === 'random'
+        ? PREVIEWABLE_TRANSITIONS[Math.floor(Math.random() * PREVIEWABLE_TRANSITIONS.length)]!
+        : kind
+    if (concrete === 'none') return
+    // drop the class for one frame so re-clicking the same effect restarts its animation
+    setTransPreviewKind(null)
+    requestAnimationFrame(() => setTransPreviewKind(concrete))
+  }, [])
+
   // ── Animations tab: current page's animation list (refreshed after page switch/edit/undo; re-fetched whenever the slide identity changes) ──
   useEffect(() => {
     if (!hasDoc) {
@@ -1326,8 +1444,10 @@ export function App() {
     [],
   )
 
+  // Loaded on every slide switch (not just while the pane is open): the
+  // collapsed add-notes bar shows the current slide's first note line
   useEffect(() => {
-    if (!hasDoc || !showNotes) return
+    if (!hasDoc) return
     let cancelled = false
     void flushNotes()
       .then(() => window.slidesApi.getNotes(current))
@@ -1337,7 +1457,7 @@ export function App() {
     return () => {
       cancelled = true
     }
-  }, [hasDoc, showNotes, current, path, annotationsNonce, flushNotes])
+  }, [hasDoc, current, path, annotationsNonce, flushNotes])
 
   const onNotesChange = useCallback(
     (text: string) => {
@@ -1667,6 +1787,7 @@ export function App() {
       for (const n of nodes) {
         if (n.type === 'picture' && n.dataUrl) urls.add(n.dataUrl)
         if ((n.type === 'shape' || n.type === 'text') && n.fill) addFillUrl(n.fill)
+        if (n.type === 'chart') addFillUrl((n as { bgFill?: RenderFill }).bgFill)
         if (n.type === 'group' && Array.isArray(n.children)) walk(n.children)
         if (n.type === 'table' && Array.isArray(n.cells)) {
           for (const c of n.cells) if (c.fill) addFillUrl(c.fill)
@@ -2426,7 +2547,10 @@ export function App() {
         onFontSize={onFontSize}
         onInsertTable={(rows, cols) => void insertTable(rows, cols)}
         transition={transition}
-        onTransition={(kind, all) => void applyTransition(kind, all)}
+        onTransition={(kind, all) => {
+          void applyTransition(kind, all)
+          if (!all) previewTransitionOnCanvas(kind)
+        }}
         selectedAnimEffect={selectedAnimEffect}
         timingAnim={timingIdx >= 0 ? animations[timingIdx]! : null}
         onApplyAnimation={applyAnimation}
@@ -2794,103 +2918,147 @@ export function App() {
                   )
                 )}
                 <div className="stage-col">
-                  <div
-                    className={`stage-wrap${stageFitsViewport ? ' stage-fits-viewport' : ''}${brushMode ? ' format-brush-mode' : ''}`}
-                    ref={stageWrapRef}
-                  >
-                    {/* transform: scale() doesn't grow layout, so the scroll range ignores the
+                  {showRuler && (
+                    <div className="ruler-row">
+                      <div className="ruler-corner" />
+                      <StageRuler
+                        unit={rulerUnit}
+                        zoom={zoom}
+                        slideLen={slide.widthPx}
+                        origin={rulerOrigin?.x ?? 0}
+                        wrapRef={stageWrapRef}
+                        onGuidePreview={(client) => {
+                          const pos = Math.min(1, Math.max(0, guideFracAt('h', client)))
+                          setGuidePreview({ axis: 'h', pos })
+                          setGuideBubble({
+                            x: client.x,
+                            y: client.y,
+                            text: formatRulerValue(pos, slide.heightPx, rulerUnit),
+                          })
+                        }}
+                        onGuideCommit={(client) => {
+                          setGuidePreview(null)
+                          setGuideBubble(null)
+                          // released back over the chrome (outside the slide) = cancel
+                          const raw = guideFracAt('h', client)
+                          if (raw < -0.02 || raw > 1.02) return
+                          setGuides((g) => [
+                            ...g,
+                            { axis: 'h', pos: Math.min(1, Math.max(0, raw)) },
+                          ])
+                          setShowGuides(true)
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="ruler-track">
+                    {showRuler && (
+                      <StageRuler
+                        vertical
+                        unit={rulerUnit}
+                        zoom={zoom}
+                        slideLen={slide.heightPx}
+                        origin={rulerOrigin?.y ?? 0}
+                        wrapRef={stageWrapRef}
+                        onGuidePreview={(client) => {
+                          const pos = Math.min(1, Math.max(0, guideFracAt('v', client)))
+                          setGuidePreview({ axis: 'v', pos })
+                          setGuideBubble({
+                            x: client.x,
+                            y: client.y,
+                            text: formatRulerValue(pos, slide.widthPx, rulerUnit),
+                          })
+                        }}
+                        onGuideCommit={(client) => {
+                          setGuidePreview(null)
+                          setGuideBubble(null)
+                          // released back over the chrome (outside the slide) = cancel
+                          const raw = guideFracAt('v', client)
+                          if (raw < -0.02 || raw > 1.02) return
+                          setGuides((g) => [
+                            ...g,
+                            { axis: 'v', pos: Math.min(1, Math.max(0, raw)) },
+                          ])
+                          setShowGuides(true)
+                        }}
+                      />
+                    )}
+                    <div
+                      className={`stage-wrap${stageFitsViewport ? ' stage-fits-viewport' : ''}${brushMode ? ' format-brush-mode' : ''}`}
+                      ref={stageWrapRef}
+                    >
+                      {/* transform: scale() doesn't grow layout, so the scroll range ignores the
                     zoomed size and the left/top overflow becomes unreachable; the zoom-box
                     is sized to the scaled dimensions to give the scroller the real extent */}
-                    <div
-                      ref={zoomBoxRef}
-                      className="stage-zoom-box"
-                      style={
-                        scaleBox
-                          ? { width: scaleBox.w * zoom, height: scaleBox.h * zoom }
-                          : undefined
-                      }
-                    >
-                      <div className="stage-ai-bar">
-                        <button
-                          className={`stage-ai-btn${showAi ? ' active' : ''}`}
-                          data-tip={t('aiOpenAssistant')}
-                          onClick={toggleAi}
-                        >
-                          <GensparkMark size={14} />
-                          <span>Genspark AI</span>
-                        </button>
-                        {/* Same one-click presets as the Home tab; hidden instead of
-                        disabled while the deck has no real content */}
-                        {!deckEmpty && (
-                          <>
-                            <span className="stage-ai-divider" aria-hidden="true" />
-                            <button
-                              className="stage-ai-btn"
-                              data-tip={t('aiBeautifyBtn')}
-                              onClick={() =>
-                                pushAiPreset(
-                                  t('aiBeautifyPrompt'),
-                                  true,
-                                  undefined,
-                                  undefined,
-                                  true,
-                                )
-                              }
-                            >
-                              <IconAiBeautify size={14} />
-                              <span>{t('aiBeautifyBtn')}</span>
-                            </button>
-                            <button
-                              className="stage-ai-btn"
-                              data-tip={t('aiFactCheckBtn')}
-                              onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
-                            >
-                              <IconAiFactCheck size={14} />
-                              <span>{t('aiFactCheckBtn')}</span>
-                            </button>
-                            <button
-                              className="stage-ai-btn"
-                              data-tip={t('aiImageBtn')}
-                              onClick={() => pushAiPreset(t('aiImagePrompt'))}
-                            >
-                              <IconAiImage size={14} />
-                              <span>{t('aiImageBtn')}</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
                       <div
-                        ref={stageScaleRef}
-                        className="stage-scale"
-                        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+                        ref={zoomBoxRef}
+                        className="stage-zoom-box"
+                        style={
+                          scaleBox
+                            ? { width: scaleBox.w * zoom, height: scaleBox.h * zoom }
+                            : undefined
+                        }
                       >
-                        {showRuler && (
-                          <div className="ruler-row">
-                            <div className="ruler-corner" />
-                            <Ruler
-                              length={slide.widthPx}
-                              onAddGuide={
-                                showGuides
-                                  ? (p) => setGuides((g) => [...g, { axis: 'v', pos: p }])
-                                  : undefined
-                              }
-                            />
-                          </div>
-                        )}
-                        <div className="ruler-body">
-                          {showRuler && (
-                            <Ruler
-                              length={slide.heightPx}
-                              vertical
-                              onAddGuide={
-                                showGuides
-                                  ? (p) => setGuides((g) => [...g, { axis: 'h', pos: p }])
-                                  : undefined
-                              }
-                            />
+                        <div className="stage-ai-bar">
+                          <button
+                            className={`stage-ai-btn${showAi ? ' active' : ''}`}
+                            data-tip={t('aiOpenAssistant')}
+                            onClick={toggleAi}
+                          >
+                            <GensparkMark size={14} />
+                            <span>Genspark AI</span>
+                          </button>
+                          {/* Same one-click presets as the Home tab; hidden instead of
+                        disabled while the deck has no real content */}
+                          {!deckEmpty && (
+                            <>
+                              <span className="stage-ai-divider" aria-hidden="true" />
+                              <button
+                                className="stage-ai-btn"
+                                data-tip={t('aiBeautifyBtn')}
+                                onClick={() =>
+                                  pushAiPreset(
+                                    t('aiBeautifyPrompt'),
+                                    true,
+                                    undefined,
+                                    undefined,
+                                    true,
+                                  )
+                                }
+                              >
+                                <IconAiBeautify size={14} />
+                                <span>{t('aiBeautifyBtn')}</span>
+                              </button>
+                              <button
+                                className="stage-ai-btn"
+                                data-tip={t('aiFactCheckBtn')}
+                                onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
+                              >
+                                <IconAiFactCheck size={14} />
+                                <span>{t('aiFactCheckBtn')}</span>
+                              </button>
+                              <button
+                                className="stage-ai-btn"
+                                data-tip={t('aiImageBtn')}
+                                onClick={() => pushAiPreset(t('aiImagePrompt'))}
+                              >
+                                <IconAiImage size={14} />
+                                <span>{t('aiImageBtn')}</span>
+                              </button>
+                            </>
                           )}
+                        </div>
+                        <div
+                          ref={stageScaleRef}
+                          className="stage-scale"
+                          style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+                        >
                           <div
-                            className="stage-rel"
+                            ref={stageRelRef}
+                            className={`stage-rel${transPreviewKind ? ` tp-${transPreviewKind}` : ''}`}
+                            onAnimationEnd={(e) => {
+                              if (e.target === e.currentTarget) setTransPreviewKind(null)
+                            }}
                             style={{
                               position: 'relative',
                               width: slide.widthPx,
@@ -2983,19 +3151,32 @@ export function App() {
                                     const host = e.currentTarget.parentElement!
                                     const rect = host.getBoundingClientRect()
                                     const move = (ev: PointerEvent) => {
-                                      const p =
-                                        g.axis === 'v'
-                                          ? (ev.clientX - rect.left) / rect.width
-                                          : (ev.clientY - rect.top) / rect.height
-                                      setGuides((list) =>
-                                        list.map((x, i) =>
-                                          i === gi ? { ...x, pos: Math.min(1, Math.max(0, p)) } : x,
+                                      const p = Math.min(
+                                        1,
+                                        Math.max(
+                                          0,
+                                          g.axis === 'v'
+                                            ? (ev.clientX - rect.left) / rect.width
+                                            : (ev.clientY - rect.top) / rect.height,
                                         ),
                                       )
+                                      setGuides((list) =>
+                                        list.map((x, i) => (i === gi ? { ...x, pos: p } : x)),
+                                      )
+                                      setGuideBubble({
+                                        x: ev.clientX,
+                                        y: ev.clientY,
+                                        text: formatRulerValue(
+                                          p,
+                                          g.axis === 'v' ? slide.widthPx : slide.heightPx,
+                                          rulerUnit,
+                                        ),
+                                      })
                                     }
                                     const up = (ev: PointerEvent) => {
                                       window.removeEventListener('pointermove', move)
                                       window.removeEventListener('pointerup', up)
+                                      setGuideBubble(null)
                                       // Dragging off the canvas = delete the guide
                                       const outside =
                                         ev.clientX < rect.left - 24 ||
@@ -3013,6 +3194,16 @@ export function App() {
                                   }
                                 />
                               ))}
+                            {guidePreview && (
+                              <div
+                                className={`guide-line guide-${guidePreview.axis}`}
+                                style={
+                                  guidePreview.axis === 'v'
+                                    ? { left: `${guidePreview.pos * 100}%` }
+                                    : { top: `${guidePreview.pos * 100}%` }
+                                }
+                              />
+                            )}
                             {editing && editNode && (
                               <TextEditOverlay
                                 node={editNode}
@@ -3140,35 +3331,37 @@ export function App() {
                       </div>
                     </div>
                   </div>
+                  {guideBubble && (
+                    <div
+                      className="ruler-bubble"
+                      style={{ left: guideBubble.x + 14, top: guideBubble.y + 16 }}
+                    >
+                      {guideBubble.text}
+                    </div>
+                  )}
+                  {/* Notes pane, PowerPoint-style: shown by default as a thin
+                      one-line bar you type into directly; drag the top edge to
+                      any height (dragging to the very bottom hides it); the
+                      ribbon/status 备注 buttons hide/show it entirely. When
+                      hidden, an invisible strip along the bottom edge stays
+                      grabbable to pull the pane back out, like PPT's splitter. */}
+                  {!showNotes && (
+                    <div className="notes-pull-zone" onMouseDown={(e) => startNotesDrag(e, 0)} />
+                  )}
                   {showNotes && (
-                    <div className="notes-pane" style={{ height: notesHeight }}>
+                    <div
+                      className={`notes-pane${notesHeight < 60 ? ' notes-thin' : ''}`}
+                      style={{ height: notesHeight }}
+                    >
                       <div
                         className="notes-resize-handle"
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          notesDragRef.current = { startY: e.clientY, startH: notesHeight }
-                          const onMove = (ev: MouseEvent) => {
-                            const d = notesDragRef.current
-                            if (!d) return
-                            const newH = Math.max(
-                              60,
-                              Math.min(480, d.startH - (ev.clientY - d.startY)),
-                            )
-                            setNotesHeight(newH)
-                          }
-                          const onUp = () => {
-                            notesDragRef.current = null
-                            window.removeEventListener('mousemove', onMove)
-                            window.removeEventListener('mouseup', onUp)
-                          }
-                          window.addEventListener('mousemove', onMove)
-                          window.addEventListener('mouseup', onUp)
-                        }}
+                        onMouseDown={(e) => startNotesDrag(e, notesHeight)}
                       />
-                      <div className="notes-label">{t('appNotesLabel')}</div>
                       <textarea
                         value={notesText}
-                        placeholder={t('appNotesPlaceholder')}
+                        placeholder={
+                          notesHeight < 60 ? t('appNotesClickToAdd') : t('appNotesPlaceholder')
+                        }
                         onChange={(e) => onNotesChange(e.target.value)}
                         onBlur={() => void flushNotes()}
                       />
@@ -3246,7 +3439,18 @@ export function App() {
                   data-tip={showNotes ? t('appNotesHide') : t('appNotesShow')}
                   onClick={() => setShowNotes((v) => !v)}
                 >
-                  {t('appNotesLabel')}
+                  <IconNotes size={18} />
+                  <span>{t('appNotesLabel')}</span>
+                </button>
+              )}
+              {hasDoc && (
+                <button
+                  className="status-play-btn"
+                  data-tip={t('ribbonFromCurrentTip')}
+                  aria-label={t('ribbonFromCurrentTip')}
+                  onClick={() => startSlideShow(false)}
+                >
+                  <IconPlayBoxed size={18} />
                 </button>
               )}
               <ZoomControls zoom={zoom} onPreview={previewZoom} />
@@ -3338,35 +3542,13 @@ export function App() {
       )}
 
       {printDlgOpen && (
-        <div className="modal-backdrop" onClick={() => setPrintDlgOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{t('appPrintTitle')}</h2>
-            <div className="print-layouts">
-              {(
-                [
-                  ['full', t('appPrintLayoutFull')],
-                  ['handout2', t('appPrintLayoutHandout2')],
-                  ['handout3', t('appPrintLayoutHandout3')],
-                  ['handout6', t('appPrintLayoutHandout6')],
-                  ['notes', t('appPrintLayoutNotes')],
-                ] as const
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => {
-                    setPrintDlgOpen(false)
-                    void printSlides(k)
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="modal-actions">
-              <button onClick={() => setPrintDlgOpen(false)}>{t('appSettingsCancel')}</button>
-            </div>
-          </div>
-        </div>
+        <PrintDialog
+          slides={slides}
+          images={images}
+          current={current}
+          onClose={() => setPrintDlgOpen(false)}
+          setStatus={setStatus}
+        />
       )}
 
       {findOpen && (

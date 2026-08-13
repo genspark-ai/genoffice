@@ -47,6 +47,8 @@ export type RenderFill =
       stops: Array<{ pos: number; color: string }>
       angleDeg: number
       radial?: boolean
+      /** Radial focus center as width/height fractions (from <a:fillToRect>; default 0.5/0.5) */
+      center?: { x: number; y: number }
     }
   | { kind: 'image'; dataUrl?: string; mode: 'stretch' | 'tile' }
 
@@ -93,6 +95,8 @@ export interface GlyphRun {
   underline: boolean
   /** Strikethrough (<a:rPr strike>) */
   strike?: boolean
+  /** Text highlight color (<a:rPr><a:highlight>, drawn as a background behind the run) */
+  highlight?: string
   /** Raw super/subscript baseline % (positive = superscript; for editor round-trips, the shift is baked into baselineY) */
   baselinePct?: number
   /** Run width (px, including metrics and letter spacing) */
@@ -288,10 +292,12 @@ export interface ChartLabel {
 export interface ChartStyleInfo {
   kind:
     | 'bar'
+    | 'bar3D'
     | 'barStacked'
     | 'line'
     | 'area'
     | 'pie'
+    | 'pie3D'
     | 'doughnut'
     | 'scatter'
     | 'radar'
@@ -311,6 +317,8 @@ export interface ChartRenderNode extends RenderNodeBase {
   /** Inserted by this app (cNvPr descr="aislides-chart"): chart editing enabled; passthrough charts lack this flag */
   appCreated?: boolean
   styleInfo?: ChartStyleInfo
+  /** Whole-chart background (chartSpace spPr, e.g. picture fill) drawn under all primitives */
+  bgFill?: RenderFill
   /** Gridlines / axis lines */
   gridLines: Array<{
     x1: number
@@ -345,6 +353,8 @@ export interface ChartRenderNode extends RenderNodeBase {
   markers: Array<{ x: number; y: number; r: number; color: string }>
   /** Legend swatches */
   swatches: Array<{ x: number; y: number; w: number; h: number; color: string }>
+  /** Freeform filled paths (SVG data), painter's order — pseudo-3D pie rims / bar extrusion faces */
+  paths?: Array<{ d: string; fill: string; stroke?: string; dy?: number }>
   /** Pie/doughnut wedges (angles: 12 o'clock = -90°, clockwise, Konva Arc semantics) */
   wedges?: Array<{
     cx: number

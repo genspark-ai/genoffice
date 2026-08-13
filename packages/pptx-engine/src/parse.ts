@@ -104,6 +104,13 @@ export interface ParseContext {
   layoutBg?: string
   /** Full master XML (read-only, background inheritance fallback) */
   masterBg?: string
+  /** Layout/master part image rels (blip rIds in inherited backgrounds live in those parts) */
+  layoutMediaRels?: Map<string, string>
+  masterMediaRels?: Map<string, string>
+  /** Chart rId → that chart part's own image rels (for chart background picture fills) */
+  chartMediaRels?: Map<string, Map<string, string>>
+  /** Diagram data rId → the drawing part's own image rels (SmartArt picture fills) */
+  diagramMediaRels?: Map<string, Map<string, string>>
   /** ppt/tableStyles.xml source (table style definitions, read-only) */
   tableStyles?: string
 }
@@ -140,10 +147,15 @@ export function parseSlide(input: SlideParseInput): Slide {
   })
 
   // Background: the slide's own <p:bg> wins, otherwise inherit layout→master (read-only).
+  // Inherited backgrounds resolve blip rIds against their own part's rels, not the slide's.
   const background =
     parseBackground(slideXml, ctx) ??
-    (ctx.layoutBg ? parseBackground(ctx.layoutBg, ctx) : undefined) ??
-    (ctx.masterBg ? parseBackground(ctx.masterBg, ctx) : undefined)
+    (ctx.layoutBg
+      ? parseBackground(ctx.layoutBg, { ...ctx, mediaRels: ctx.layoutMediaRels ?? ctx.mediaRels })
+      : undefined) ??
+    (ctx.masterBg
+      ? parseBackground(ctx.masterBg, { ...ctx, mediaRels: ctx.masterMediaRels ?? ctx.mediaRels })
+      : undefined)
 
   return {
     path,
@@ -174,10 +186,22 @@ function parseBackground(xml: string, ctx: ParseContext): Fill | undefined {
     // bgPr directly contains solidFill/gradFill/blipFill/pattFill
     return parseFill(bgPr, ctx)
   }
-  // <p:bgRef>: references the theme fillStyleLst + a color (simplified: take its color as solid)
+  // <p:bgRef idx>: theme fill template (1..3 → fillStyleLst, 1001..1003 → bgFillStyleLst)
+  // instantiated with the referenced color as phClr; color-only fallback when unresolvable.
   const bgRef = bg?.['p:bgRef']
   if (bgRef) {
     const color = resolveColorNode(bgRef, ctx)
+    const idx = parseInt(String(bgRef['@_idx'] ?? ''), 10)
+    const tpl =
+      idx >= 1001
+        ? ctx.theme?.bgFillStyles?.[idx - 1001]
+        : idx >= 1
+          ? ctx.theme?.fillStyles?.[idx - 1]
+          : undefined
+    if (tpl) {
+      const fill = parseFill(tpl, { ...ctx, phClr: color })
+      if (fill) return fill
+    }
     if (color) return { type: 'solid', color }
   }
   return undefined
@@ -747,7 +771,11 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
   if (uri.includes('/chart')) {
     const rid = data?.['c:chart']?.['@_r:id']
     const chartXml = rid ? ctx.chartXmls?.get(rid) : undefined
-    const model = chartXml ? parseChartXml(chartXml, ctx.theme) : null
+    // Fill resolver bound to the chart part's own rels (blip rIds live there, not on the slide)
+    const chartFillCtx: ParseContext = { ...ctx, mediaRels: ctx.chartMediaRels?.get(String(rid)) }
+    const model = chartXml
+      ? parseChartXml(chartXml, ctx.theme, (spPr) => parseFill(spPr, chartFillCtx))
+      : null
     if (model) {
       const cNvPr = node['p:nvGraphicFramePr']?.['p:cNvPr']
       const descr: string | undefined = cNvPr?.['@_descr'] || undefined
@@ -780,7 +808,12 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
     const dm = data?.['dgm:relIds']?.['@_r:dm']
     const drawingXml = dm ? ctx.diagramDrawings?.get(String(dm)) : undefined
     if (drawingXml) {
-      const shapes = parseDiagramDrawing(drawingXml, ctx)
+      // Picture-fill rIds inside the drawing resolve against the drawing part's own rels
+      const drawingRels = dm ? ctx.diagramMediaRels?.get(String(dm)) : undefined
+      const shapes = parseDiagramDrawing(
+        drawingXml,
+        drawingRels ? { ...ctx, mediaRels: drawingRels } : ctx,
+      )
       if (shapes.length) el.previewShapes = shapes
     }
   }
@@ -816,6 +849,37 @@ function parseDiagramDrawing(drawingXml: string, ctx: ParseContext): SlideElemen
   for (const sp of sps) {
     // The preview layer has no byte fidelity (never written back); the anchor is a placeholder
     const anchor: ByteAnchor = { spIndex: -1, originalXml: '', range: [0, 0] }
+    // dsp:txXfrm gives the text its own frame; split text off the shape so both
+    // render with their proper transforms (text rotation is shape rot + txXfrm rot)
+    const txXfrm = sp['p:txXfrm']
+    const txBody = sp['p:txBody']
+    if (txXfrm && typeof txXfrm === 'object' && txBody) {
+      const shapeOnly = { ...sp }
+      delete shapeOnly['p:txBody']
+      const shapeEl = parseSpShape(shapeOnly, anchor, ctx)
+      if (shapeEl.type !== 'passthrough') out.push(shapeEl)
+      const spRot = parseInt(sp['p:spPr']?.['a:xfrm']?.['@_rot'] ?? '0', 10) || 0
+      const txRot = parseInt(txXfrm['@_rot'] ?? '0', 10) || 0
+      const textXfrm = { ...txXfrm, '@_rot': String(spRot + txRot) }
+      // Keep fontRef for the text color only. Copying the whole p:style still
+      // applies effectRef — empty a:effectLst does not block the !shadow && !glow
+      // fallback — so the split text frame would redraw the shape's shadow/glow.
+      const fontRef = sp['p:style']?.['a:fontRef']
+      const textSp = {
+        'p:nvSpPr': sp['p:nvSpPr'],
+        'p:spPr': {
+          'a:xfrm': textXfrm,
+          'a:prstGeom': { '@_prst': 'rect' },
+          'a:noFill': {},
+          'a:ln': { 'a:noFill': {} },
+        },
+        ...(fontRef ? { 'p:style': { 'a:fontRef': fontRef } } : {}),
+        'p:txBody': txBody,
+      }
+      const textEl = parseSpShape(textSp, anchor, ctx)
+      if (textEl.type !== 'passthrough') out.push(textEl)
+      continue
+    }
     const el = parseSpShape(sp, anchor, ctx)
     if (el.type !== 'passthrough') out.push(el)
   }
@@ -1051,12 +1115,25 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
   const ang = grad['a:lin']?.['@_ang']
   const angle = ang != null ? parseInt(ang, 10) || 0 : undefined
   const pathType = grad['a:path']?.['@_path']
+  const ftr = grad['a:path']?.['a:fillToRect']
+  // Omitted fillToRect attributes default to 0 (whole tile rect), not to a centered inset
+  const frac = (v: unknown) => (v != null ? (parseInt(String(v), 10) || 0) / 100000 : 0)
   return {
     type: 'gradient',
     stops,
     ...(angle != null ? { angle } : {}),
     ...(pathType === 'circle' || pathType === 'rect' || pathType === 'shape'
       ? { path: pathType }
+      : {}),
+    ...(ftr
+      ? {
+          fillTo: {
+            l: frac(ftr['@_l']),
+            t: frac(ftr['@_t']),
+            r: frac(ftr['@_r']),
+            b: frac(ftr['@_b']),
+          },
+        }
       : {}),
   }
 }
@@ -1271,6 +1348,9 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   // The patch path uses this to avoid baking theme colors into srgbClr (theme switches must stay linked)
   const colorFollowsTheme = color != null && !(fill && fill['a:srgbClr'])
   const colorInherited = color != null && !fill
+  // Text highlight <a:highlight> (PowerPoint draws it as a background behind the run)
+  const highlightNode = rPr['a:highlight']
+  const highlight = highlightNode ? resolveColorNode(highlightNode, ctx) : undefined
   // Font: run explicit (incl. +mj/+mn theme refs) → inherited default → theme font
   const latin = resolveFontRef(rPr['a:latin']?.['@_typeface'], ctx.theme) ?? dflt?.latinFont
   const ea = resolveFontRef(rPr['a:ea']?.['@_typeface'], ctx.theme) ?? dflt?.eaFont
@@ -1303,6 +1383,10 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     text,
     bold: bAttr != null ? bAttr === '1' || bAttr === 'true' : !!dflt?.bold,
     italic: iAttr != null ? iAttr === '1' || iAttr === 'true' : !!dflt?.italic,
+    ...(() => {
+      const cap = rPr['@_cap'] != null ? String(rPr['@_cap']) : dflt?.cap
+      return cap && cap !== 'none' ? { cap } : {}
+    })(),
     underline: (uAttr !== undefined && uAttr !== 'none') || linkUnderline,
     ...(uAttr !== undefined && uAttr !== 'none' ? { underlineStyle: String(uAttr) } : {}),
     ...(linkUnderline ? { underlineImplicit: true } : {}),
@@ -1319,6 +1403,7 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     color,
     ...(colorFollowsTheme ? { colorFollowsTheme } : {}),
     ...(colorInherited ? { colorInherited } : {}),
+    ...(highlight ? { highlight } : {}),
     ...(outline ? { outline } : {}),
     ...(hlink?.['@_r:id']
       ? {
@@ -1342,6 +1427,8 @@ export interface DecorationOptions {
   hfTypes?: Set<string>
   /** Actual value of the slide-number field <a:fld type="slidenum"> (replaces the cached text) */
   slideNum?: number
+  /** Skip non-placeholder shapes (showMasterSp="0"), keeping only the hf placeholders */
+  hideShapes?: boolean
 }
 
 /**
@@ -1371,7 +1458,7 @@ export function parseDecorations(
     const ph = (el as { placeholder?: string }).placeholder
     if (ph !== undefined) {
       if (!opts.hfTypes?.has(ph)) return
-    } else if (/<p:ph[\s/>]/.test(fragXml)) {
+    } else if (/<p:ph[\s/>]/.test(fragXml) || opts.hideShapes) {
       // Untyped <p:ph idx="…"/> (body family) or picture/table placeholders: content carriers, skip
       return
     }

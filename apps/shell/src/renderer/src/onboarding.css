@@ -21,6 +21,10 @@
   --onb-bg-panel: #f0f7ff;
   --onb-border-default: #eaeaea;
   --onb-border-strong: #d0d3d8;
+  /* outline-CTA seat (shared by the GenTeam join and GitHub star buttons) */
+  --onb-cta-bg: #fff;
+  --onb-cta-hover-text: #fff;
+  --onb-cta-shadow: 0 1px 3px rgba(15, 127, 255, 0.18);
   --onb-transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
 
   position: fixed;
@@ -156,6 +160,51 @@
 /* slide 3's credits disclaimer reads as a footnote */
 .onb-body-dim {
   color: var(--onb-text-tertiary);
+}
+
+/* slide 3's star ask: same panel treatment as the offer, but low-key — a
+ * one-line hint plus an outline CTA that opens the GitHub repo */
+.onb-star {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--onb-bg-panel);
+}
+
+.onb-star-hint {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: -0.154px;
+  line-height: 1.5;
+  color: var(--onb-text-secondary);
+}
+
+.onb-star-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.154px;
+  color: var(--onb-brand);
+  background: var(--onb-cta-bg);
+  border: 1.5px solid var(--onb-brand);
+  border-radius: 12px;
+  box-shadow: var(--onb-cta-shadow);
+  cursor: pointer;
+  transition: all var(--onb-transition);
+}
+
+.onb-star-btn:hover {
+  color: var(--onb-cta-hover-text);
+  background: var(--onb-brand);
 }
 
 /* slide 2's offer: quiet gray lead-in, then the amount in large brand-blue
@@ -309,6 +358,7 @@
 .onb-back:focus,
 .onb-skip:focus,
 .onb-join:focus,
+.onb-star-btn:focus,
 .onb-dot:focus {
   outline: none;
 }
@@ -317,6 +367,7 @@
 .onb-back:focus-visible,
 .onb-skip:focus-visible,
 .onb-join:focus-visible,
+.onb-star-btn:focus-visible,
 .onb-dot:focus-visible {
   outline: 2px solid var(--onb-brand);
   outline-offset: 2px;
@@ -344,7 +395,8 @@
     0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-[data-theme='dark'] .onb-join {
+[data-theme='dark'] .onb-join,
+[data-theme='dark'] .onb-star-btn {
   background: #2a2a2a;
 }
 
@@ -367,7 +419,8 @@
       0 24px 64px rgba(0, 0, 0, 0.5),
       0 2px 8px rgba(0, 0, 0, 0.3);
   }
-  :root:not([data-theme='light']):not([data-theme='dark']) .onb-join {
+  :root:not([data-theme='light']):not([data-theme='dark']) .onb-join,
+  :root:not([data-theme='light']):not([data-theme='dark']) .onb-star-btn {
     background: #2a2a2a;
   }
 }

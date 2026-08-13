@@ -203,7 +203,7 @@ export const appStrings = defineStrings({
     appSaveHeldStranded:
       '透视表/表格与新建工作表 + 行列变更没法一次保存——先保存一次结构，再添加透视表/表格。',
     appSaveSecondCanceled: '第二段保存被取消——结构已保存，透视表/表格/命名区域还未写入。',
-    appSavedTwoPhase: 'Saved {name}（分两段：先结构变更，再透视表/表格/命名区域）。',
+    appSavedTwoPhase: '已保存（分两段：先结构变更，再透视表/表格/命名区域）。',
     appSaveSecondFailed: '结构已保存，但第二段（透视表/表格/命名区域）失败：{reason}',
     // AI session / status bar
     appReadyInitial: '就绪——可使用本地确定性 AI 命令。',
@@ -428,7 +428,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: '无法读取工作表顺序——请重试。',
     appSavingEdits: '正在保存 {count} 处编辑…',
     appSaveCanceled: '保存已取消。',
-    appSaved: '已保存 {name}：重写了 {total} 个包条目中的 {touched} 个，其余逐字节保留。',
+    appSaved: '已保存：重写了 {total} 个包条目中的 {touched} 个，其余逐字节保留。',
     appSaveFailed: '无法保存工作簿。',
     appCfRuleUnsaveable: '这种条件格式规则无法保存到 xlsx——请换用其他规则类型。',
     appSaveErrX14Dv: '这个工作表带有扩展(x14)数据验证，暂不支持编辑它的验证规则。',
@@ -1406,7 +1406,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'The second save phase was canceled — the structure is saved; PivotTables/tables/defined names are not written yet.',
     appSavedTwoPhase:
-      'Saved {name} (two phases: structural changes first, then PivotTables/tables/defined names).',
+      'Saved (two phases: structural changes first, then PivotTables/tables/defined names).',
     appSaveSecondFailed:
       'The structure is saved, but the second phase (PivotTables/tables/defined names) failed: {reason}',
     appReadyInitial: 'Ready for a local, deterministic AI command.',
@@ -1643,7 +1643,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Saving {count} edit(s)…',
     appSaveCanceled: 'Save canceled.',
     appSaved:
-      'Saved {name}: rewrote {touched} of {total} package entries, the rest preserved byte-identical.',
+      'Saved: rewrote {touched} of {total} package entries, the rest preserved byte-identical.',
     appSaveFailed: 'Unable to save the workbook.',
     appCfRuleUnsaveable:
       'This conditional formatting rule cannot be saved to xlsx — switch to another rule type.',
@@ -2635,7 +2635,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       '2 段階目の保存がキャンセルされました。構造は保存済みですが、ピボットテーブル/テーブル/名前付き範囲はまだ書き込まれていません。',
     appSavedTwoPhase:
-      '{name} を保存しました（2 段階：先に構造の変更、次にピボットテーブル/テーブル/名前付き範囲）。',
+      '保存しました（2 段階：先に構造の変更、次にピボットテーブル/テーブル/名前付き範囲）。',
     appSaveSecondFailed:
       '構造は保存されましたが、2 段階目（ピボットテーブル/テーブル/名前付き範囲）に失敗しました：{reason}',
     // AI session / status bar
@@ -2904,7 +2904,7 @@ export const appStrings = defineStrings({
     appSavingEdits: '{count} 件の編集を保存中…',
     appSaveCanceled: '保存をキャンセルしました。',
     appSaved:
-      '{name} を保存しました：{total} 個のパッケージエントリのうち {touched} 個を書き換え、残りはバイト単位でそのまま保持しました。',
+      '保存しました：{total} 個のパッケージエントリのうち {touched} 個を書き換え、残りはバイト単位でそのまま保持しました。',
     appSaveFailed: 'ブックを保存できません。',
     appCfRuleUnsaveable:
       'この条件付き書式ルールは xlsx に保存できません — 別のルールの種類をお使いください。',
@@ -3906,8 +3906,7 @@ export const appStrings = defineStrings({
       '피벗 테이블/표는 새 시트 및 행/열 변경과 한 번에 저장할 수 없습니다. 먼저 구조를 저장한 후 피벗 테이블/표를 추가하십시오.',
     appSaveSecondCanceled:
       '두 번째 저장 단계가 취소되었습니다. 구조는 저장되었지만 피벗 테이블/표/이름 범위는 아직 기록되지 않았습니다.',
-    appSavedTwoPhase:
-      '{name}을(를) 저장했습니다(2단계: 먼저 구조 변경, 그다음 피벗 테이블/표/이름 범위).',
+    appSavedTwoPhase: '저장했습니다(2단계: 먼저 구조 변경, 그다음 피벗 테이블/표/이름 범위).',
     appSaveSecondFailed:
       '구조는 저장되었지만 두 번째 단계(피벗 테이블/표/이름 범위)가 실패했습니다: {reason}',
     // AI session / status bar
@@ -4157,7 +4156,7 @@ export const appStrings = defineStrings({
     appSavingEdits: '편집 {count}개를 저장하는 중…',
     appSaveCanceled: '저장을 취소했습니다.',
     appSaved:
-      '{name}을(를) 저장했습니다: 패키지 항목 {total}개 중 {touched}개를 다시 썼으며, 나머지는 바이트 그대로 유지했습니다.',
+      '저장했습니다: 패키지 항목 {total}개 중 {touched}개를 다시 썼으며, 나머지는 바이트 그대로 유지했습니다.',
     appSaveFailed: '통합 문서를 저장할 수 없습니다.',
     appCfRuleUnsaveable:
       '이 조건부 서식 규칙은 xlsx로 저장할 수 없습니다 — 다른 규칙 유형을 사용하십시오.',
@@ -5176,7 +5175,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       "La deuxième phase d'enregistrement a été annulée — la structure est enregistrée ; les tableaux croisés dynamiques/tableaux/noms définis ne sont pas encore écrits.",
     appSavedTwoPhase:
-      "{name} enregistré (en deux phases : d'abord les modifications structurelles, puis les tableaux croisés dynamiques/tableaux/noms définis).",
+      "Enregistré (en deux phases : d'abord les modifications structurelles, puis les tableaux croisés dynamiques/tableaux/noms définis).",
     appSaveSecondFailed:
       'La structure est enregistrée, mais la deuxième phase (tableaux croisés dynamiques/tableaux/noms définis) a échoué : {reason}',
     appReadyInitial: 'Prêt pour une commande IA locale et déterministe.',
@@ -5448,7 +5447,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Enregistrement de {count} modification(s)…',
     appSaveCanceled: 'Enregistrement annulé.',
     appSaved:
-      "{name} enregistré : {touched} entrées de package réécrites sur {total}, le reste préservé à l'identique.",
+      "Enregistré : {touched} entrées de package réécrites sur {total}, le reste préservé à l'identique.",
     appSaveFailed: "Impossible d'enregistrer le classeur.",
     appCfRuleUnsaveable:
       'Cette règle de mise en forme conditionnelle ne peut pas être enregistrée en xlsx — utilisez un autre type de règle.',
@@ -6454,7 +6453,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'Die zweite Speicherphase wurde abgebrochen — die Struktur ist gespeichert; PivotTables/Tabellen/definierte Namen sind noch nicht geschrieben.',
     appSavedTwoPhase:
-      '{name} gespeichert (in zwei Phasen: zuerst Strukturänderungen, dann PivotTables/Tabellen/definierte Namen).',
+      'Gespeichert (in zwei Phasen: zuerst Strukturänderungen, dann PivotTables/Tabellen/definierte Namen).',
     appSaveSecondFailed:
       'Die Struktur ist gespeichert, aber die zweite Phase (PivotTables/Tabellen/definierte Namen) ist fehlgeschlagen: {reason}',
     appReadyInitial: 'Bereit für einen lokalen, deterministischen KI-Befehl.',
@@ -6723,7 +6722,7 @@ export const appStrings = defineStrings({
     appSavingEdits: '{count} Bearbeitung(en) werden gespeichert…',
     appSaveCanceled: 'Speichern abgebrochen.',
     appSaved:
-      '{name} gespeichert: {touched} von {total} Paketeinträgen neu geschrieben, der Rest byteidentisch erhalten.',
+      'Gespeichert: {touched} von {total} Paketeinträgen neu geschrieben, der Rest byteidentisch erhalten.',
     appSaveFailed: 'Die Arbeitsmappe kann nicht gespeichert werden.',
     appCfRuleUnsaveable:
       'Diese Regel für bedingte Formatierung kann nicht in xlsx gespeichert werden — verwenden Sie einen anderen Regeltyp.',
@@ -7726,7 +7725,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'La segunda fase de guardado se canceló — la estructura está guardada; las tablas dinámicas/tablas/nombres definidos aún no se escribieron.',
     appSavedTwoPhase:
-      'Se guardó {name} (en dos fases: primero los cambios estructurales y luego las tablas dinámicas/tablas/nombres definidos).',
+      'Guardado (en dos fases: primero los cambios estructurales y luego las tablas dinámicas/tablas/nombres definidos).',
     appSaveSecondFailed:
       'La estructura está guardada, pero la segunda fase (tablas dinámicas/tablas/nombres definidos) falló: {reason}',
     appReadyInitial: 'Listo para un comando de IA local y determinista.',
@@ -7990,7 +7989,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Guardando {count} edición(es)…',
     appSaveCanceled: 'Guardado cancelado.',
     appSaved:
-      'Se guardó {name}: se reescribieron {touched} de {total} entradas del paquete; el resto se conservó byte a byte.',
+      'Guardado: se reescribieron {touched} de {total} entradas del paquete; el resto se conservó byte a byte.',
     appSaveFailed: 'No se puede guardar el libro.',
     appCfRuleUnsaveable:
       'Esta regla de formato condicional no se puede guardar en xlsx — use otro tipo de regla.',
@@ -8972,7 +8971,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'การบันทึกช่วงที่สองถูกยกเลิก — โครงสร้างถูกบันทึกแล้ว แต่ PivotTable/ตาราง/ชื่อที่กำหนดยังไม่ถูกเขียน',
     appSavedTwoPhase:
-      'บันทึก {name} แล้ว (สองช่วง: เปลี่ยนโครงสร้างก่อน แล้วจึง PivotTable/ตาราง/ชื่อที่กำหนด)',
+      'บันทึกแล้ว (สองช่วง: เปลี่ยนโครงสร้างก่อน แล้วจึง PivotTable/ตาราง/ชื่อที่กำหนด)',
     appSaveSecondFailed:
       'โครงสร้างถูกบันทึกแล้ว แต่ช่วงที่สอง (PivotTable/ตาราง/ชื่อที่กำหนด) ล้มเหลว: {reason}',
     appReadyInitial: 'พร้อมสำหรับคำสั่ง AI แบบระบุแน่นอนที่ทำงานในเครื่อง',
@@ -9203,7 +9202,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'กำลังบันทึกการแก้ไข {count} รายการ…',
     appSaveCanceled: 'ยกเลิกการบันทึกแล้ว',
     appSaved:
-      'บันทึก {name} แล้ว: เขียนใหม่ {touched} จาก {total} รายการในแพ็กเกจ ส่วนที่เหลือคงเดิมทุกไบต์',
+      'บันทึกแล้ว: เขียนใหม่ {touched} จาก {total} รายการในแพ็กเกจ ส่วนที่เหลือคงเดิมทุกไบต์',
     appSaveFailed: 'บันทึกเวิร์กบุ๊กไม่ได้',
     appCfRuleUnsaveable:
       'กฎการจัดรูปแบบตามเงื่อนไขนี้ไม่สามารถบันทึกเป็น xlsx ได้ — โปรดใช้กฎประเภทอื่น',
@@ -10178,7 +10177,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'Fase penyimpanan kedua dibatalkan — struktur sudah tersimpan; PivotTable/tabel/nama yang ditentukan belum ditulis.',
     appSavedTwoPhase:
-      '{name} disimpan (dua fase: perubahan struktur dahulu, lalu PivotTable/tabel/nama yang ditentukan).',
+      'Disimpan (dua fase: perubahan struktur dahulu, lalu PivotTable/tabel/nama yang ditentukan).',
     appSaveSecondFailed:
       'Struktur sudah tersimpan, tetapi fase kedua (PivotTable/tabel/nama yang ditentukan) gagal: {reason}',
     appReadyInitial: 'Siap untuk perintah AI lokal yang deterministik.',
@@ -10421,7 +10420,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Menyimpan {count} pengeditan…',
     appSaveCanceled: 'Penyimpanan dibatalkan.',
     appSaved:
-      '{name} disimpan: menulis ulang {touched} dari {total} entri paket, sisanya dipertahankan identik per byte.',
+      'Disimpan: menulis ulang {touched} dari {total} entri paket, sisanya dipertahankan identik per byte.',
     appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
     appCfRuleUnsaveable:
       'Aturan pemformatan bersyarat ini tidak dapat disimpan ke xlsx — gunakan jenis aturan lain.',
@@ -11412,7 +11411,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'Вторая фаза сохранения отменена — структура сохранена; сводные таблицы/таблицы/определённые имена ещё не записаны.',
     appSavedTwoPhase:
-      '{name} сохранён (в две фазы: сначала структурные изменения, затем сводные таблицы/таблицы/определённые имена).',
+      'Сохранено (в две фазы: сначала структурные изменения, затем сводные таблицы/таблицы/определённые имена).',
     appSaveSecondFailed:
       'Структура сохранена, но вторая фаза (сводные таблицы/таблицы/определённые имена) не удалась: {reason}',
     appReadyInitial: 'Готов к локальной детерминированной команде ИИ.',
@@ -11665,7 +11664,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Сохранение изменений: {count}…',
     appSaveCanceled: 'Сохранение отменено.',
     appSaved:
-      '{name} сохранён: перезаписано {touched} из {total} элементов пакета, остальные сохранены байт в байт.',
+      'Сохранено: перезаписано {touched} из {total} элементов пакета, остальные сохранены байт в байт.',
     appSaveFailed: 'Не удаётся сохранить книгу.',
     appCfRuleUnsaveable:
       'Это правило условного форматирования нельзя сохранить в xlsx — выберите другой тип правила.',
@@ -12649,7 +12648,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'أُلغيت مرحلة الحفظ الثانية — حُفظت البنية؛ لم تُكتب الجداول المحورية/الجداول/الأسماء المعرفة بعد.',
     appSavedTwoPhase:
-      'تم حفظ {name} (على مرحلتين: التغييرات الهيكلية أولاً، ثم الجداول المحورية/الجداول/الأسماء المعرفة).',
+      'تم الحفظ (على مرحلتين: التغييرات الهيكلية أولاً، ثم الجداول المحورية/الجداول/الأسماء المعرفة).',
     appSaveSecondFailed:
       'حُفظت البنية لكن المرحلة الثانية (الجداول المحورية/الجداول/الأسماء المعرفة) فشلت: {reason}',
     appReadyInitial: 'جاهز لأوامر الذكاء الاصطناعي المحلية الحتمية.',
@@ -12880,7 +12879,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'جارٍ حفظ {count} من التعديلات…',
     appSaveCanceled: 'أُلغي الحفظ.',
     appSaved:
-      'حُفظ {name}: أُعيدت كتابة {touched} من أصل {total} من إدخالات الحزمة، وبقي الباقي كما هو بايتًا ببايت.',
+      'تم الحفظ: أُعيدت كتابة {touched} من أصل {total} من إدخالات الحزمة، وبقي الباقي كما هو بايتًا ببايت.',
     appSaveFailed: 'يتعذر حفظ المصنف.',
     appCfRuleUnsaveable: 'لا يمكن حفظ قاعدة التنسيق الشرطي هذه في xlsx — استخدم نوع قاعدة آخر.',
     appSaveErrX14Dv:
@@ -13868,7 +13867,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'A segunda fase de salvamento foi cancelada — a estrutura foi salva; Tabelas Dinâmicas/tabelas/nomes definidos ainda não foram gravados.',
     appSavedTwoPhase:
-      '{name} salvo (duas fases: primeiro as alterações estruturais, depois Tabelas Dinâmicas/tabelas/nomes definidos).',
+      'Salvo (duas fases: primeiro as alterações estruturais, depois Tabelas Dinâmicas/tabelas/nomes definidos).',
     appSaveSecondFailed:
       'A estrutura foi salva, mas a segunda fase (Tabelas Dinâmicas/tabelas/nomes definidos) falhou: {reason}',
     appReadyInitial: 'Pronto para um comando de IA local e determinístico.',
@@ -14128,7 +14127,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Salvando {count} edição(ões)…',
     appSaveCanceled: 'Salvamento cancelado.',
     appSaved:
-      '{name} salvo: {touched} de {total} entradas do pacote regravadas, o restante preservado byte a byte.',
+      'Salvo: {touched} de {total} entradas do pacote regravadas, o restante preservado byte a byte.',
     appSaveFailed: 'Não foi possível salvar a pasta de trabalho.',
     appCfRuleUnsaveable:
       'Esta regra de formatação condicional não pode ser salva em xlsx — use outro tipo de regra.',
@@ -15128,7 +15127,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'La seconda fase di salvataggio è stata annullata — la struttura è salvata; tabelle pivot/tabelle/nomi definiti non sono ancora stati scritti.',
     appSavedTwoPhase:
-      '{name} salvato (due fasi: prima le modifiche strutturali, poi tabelle pivot/tabelle/nomi definiti).',
+      'Salvato (due fasi: prima le modifiche strutturali, poi tabelle pivot/tabelle/nomi definiti).',
     appSaveSecondFailed:
       'La struttura è salvata, ma la seconda fase (tabelle pivot/tabelle/nomi definiti) non è riuscita: {reason}',
     appReadyInitial: 'Pronto per un comando IA locale e deterministico.',
@@ -15384,7 +15383,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Salvataggio di {count} modifica/e…',
     appSaveCanceled: 'Salvataggio annullato.',
     appSaved:
-      '{name} salvato: riscritte {touched} voci del pacchetto su {total}, il resto preservato byte per byte.',
+      'Salvato: riscritte {touched} voci del pacchetto su {total}, il resto preservato byte per byte.',
     appSaveFailed: 'Impossibile salvare la cartella di lavoro.',
     appCfRuleUnsaveable:
       'Questa regola di formattazione condizionale non può essere salvata in xlsx — usa un altro tipo di regola.',
@@ -16386,7 +16385,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'Druga faza zapisu została anulowana — struktura jest zapisana; tabele przestawne/tabele/zdefiniowane nazwy nie zostały jeszcze zapisane.',
     appSavedTwoPhase:
-      'Zapisano {name} (dwie fazy: najpierw zmiany strukturalne, potem tabele przestawne/tabele/zdefiniowane nazwy).',
+      'Zapisano (dwie fazy: najpierw zmiany strukturalne, potem tabele przestawne/tabele/zdefiniowane nazwy).',
     appSaveSecondFailed:
       'Struktura została zapisana, ale druga faza (tabele przestawne/tabele/zdefiniowane nazwy) nie powiodła się: {reason}',
     appReadyInitial: 'Gotowe na lokalne, deterministyczne polecenie AI.',
@@ -16641,7 +16640,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Zapisywanie {count} zmian(y)…',
     appSaveCanceled: 'Anulowano zapisywanie.',
     appSaved:
-      'Zapisano {name}: przepisano {touched} z {total} wpisów pakietu, resztę zachowano bajt po bajcie.',
+      'Zapisano: przepisano {touched} z {total} wpisów pakietu, resztę zachowano bajt po bajcie.',
     appSaveFailed: 'Nie można zapisać skoroszytu.',
     appCfRuleUnsaveable:
       'Tej reguły formatowania warunkowego nie można zapisać w xlsx — użyj innego typu reguły.',
@@ -17639,7 +17638,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'De tweede opslagfase is geannuleerd — de structuur is opgeslagen; draaitabellen/tabellen/gedefinieerde namen zijn nog niet geschreven.',
     appSavedTwoPhase:
-      '{name} opgeslagen (twee fasen: eerst structuurwijzigingen, daarna draaitabellen/tabellen/gedefinieerde namen).',
+      'Opgeslagen (twee fasen: eerst structuurwijzigingen, daarna draaitabellen/tabellen/gedefinieerde namen).',
     appSaveSecondFailed:
       'De structuur is opgeslagen, maar de tweede fase (draaitabellen/tabellen/gedefinieerde namen) is mislukt: {reason}',
     appReadyInitial: 'Gereed voor een lokale, deterministische AI-opdracht.',
@@ -17902,7 +17901,7 @@ export const appStrings = defineStrings({
     appSavingEdits: '{count} bewerking(en) opslaan…',
     appSaveCanceled: 'Opslaan geannuleerd.',
     appSaved:
-      '{name} opgeslagen: {touched} van {total} pakketitems herschreven, de rest byte-voor-byte behouden.',
+      'Opgeslagen: {touched} van {total} pakketitems herschreven, de rest byte-voor-byte behouden.',
     appSaveFailed: 'Kan de werkmap niet opslaan.',
     appCfRuleUnsaveable:
       'Deze regel voor voorwaardelijke opmaak kan niet in xlsx worden opgeslagen — gebruik een ander regeltype.',
@@ -18892,7 +18891,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'Fasa simpanan kedua dibatalkan — struktur telah disimpan; Jadual Pangsi/jadual/nama tertakrif belum ditulis.',
     appSavedTwoPhase:
-      '{name} disimpan (dua fasa: perubahan struktur dahulu, kemudian Jadual Pangsi/jadual/nama tertakrif).',
+      'Disimpan (dua fasa: perubahan struktur dahulu, kemudian Jadual Pangsi/jadual/nama tertakrif).',
     appSaveSecondFailed:
       'Struktur telah disimpan, tetapi fasa kedua (Jadual Pangsi/jadual/nama tertakrif) gagal: {reason}',
     appReadyInitial: 'Sedia untuk perintah AI setempat yang berketentuan.',
@@ -19134,7 +19133,7 @@ export const appStrings = defineStrings({
     appSavingEdits: 'Menyimpan {count} suntingan…',
     appSaveCanceled: 'Penyimpanan dibatalkan.',
     appSaved:
-      '{name} disimpan: {touched} daripada {total} entri pakej ditulis semula, selebihnya dikekalkan bait demi bait.',
+      'Disimpan: {touched} daripada {total} entri pakej ditulis semula, selebihnya dikekalkan bait demi bait.',
     appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
     appCfRuleUnsaveable:
       'Peraturan pemformatan bersyarat ini tidak boleh disimpan ke xlsx — gunakan jenis peraturan lain.',
@@ -20104,8 +20103,7 @@ export const appStrings = defineStrings({
       'לא ניתן לשמור טבלאות ציר/טבלאות יחד עם גיליונות חדשים ושינויי שורות/עמודות — שמור תחילה את המבנה, ואז הוסף את טבלאות הציר/הטבלאות.',
     appSaveSecondCanceled:
       'שלב השמירה השני בוטל — המבנה נשמר; טבלאות ציר/טבלאות/שמות מוגדרים טרם נכתבו.',
-    appSavedTwoPhase:
-      '{name} נשמר (שני שלבים: תחילה שינויי מבנה, ואז טבלאות ציר/טבלאות/שמות מוגדרים).',
+    appSavedTwoPhase: 'נשמר (שני שלבים: תחילה שינויי מבנה, ואז טבלאות ציר/טבלאות/שמות מוגדרים).',
     appSaveSecondFailed: 'המבנה נשמר, אך השלב השני (טבלאות ציר/טבלאות/שמות מוגדרים) נכשל: {reason}',
     appReadyInitial: 'מוכן לפקודת AI מקומית ודטרמיניסטית.',
     appAiThinking: 'ה-AI חושב…',
@@ -20328,8 +20326,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'לא ניתן לקרוא את סדר הגיליונות — נסה שוב.',
     appSavingEdits: 'שומר {count} עריכות…',
     appSaveCanceled: 'השמירה בוטלה.',
-    appSaved:
-      '{name} נשמר: {touched} מתוך {total} רשומות חבילה נכתבו מחדש, השאר נשמרו בייט אחר בייט.',
+    appSaved: 'נשמר: {touched} מתוך {total} רשומות חבילה נכתבו מחדש, השאר נשמרו בייט אחר בייט.',
     appSaveFailed: 'לא ניתן לשמור את חוברת העבודה.',
     appCfRuleUnsaveable: 'לא ניתן לשמור כלל עיצוב מותנה זה בקובץ xlsx — השתמשו בסוג כלל אחר.',
     appSaveErrX14Dv:
@@ -21305,7 +21302,7 @@ export const appStrings = defineStrings({
     appSaveSecondCanceled:
       'दूसरा सहेजन चरण रद्द किया गया — संरचना सहेजी गई; पिवट टेबल/तालिकाएँ/परिभाषित नाम अभी नहीं लिखे गए।',
     appSavedTwoPhase:
-      '{name} सहेजा गया (दो चरण: पहले संरचनात्मक परिवर्तन, फिर पिवट टेबल/तालिकाएँ/परिभाषित नाम)।',
+      'सहेजा गया (दो चरण: पहले संरचनात्मक परिवर्तन, फिर पिवट टेबल/तालिकाएँ/परिभाषित नाम)।',
     appSaveSecondFailed:
       'संरचना सहेजी गई, लेकिन दूसरा चरण (पिवट टेबल/तालिकाएँ/परिभाषित नाम) विफल रहा: {reason}',
     appReadyInitial: 'स्थानीय, नियतात्मक AI कमांड के लिए तैयार।',
@@ -21549,7 +21546,7 @@ export const appStrings = defineStrings({
     appSavingEdits: '{count} संपादन सहेजे जा रहे हैं…',
     appSaveCanceled: 'सहेजना रद्द किया गया।',
     appSaved:
-      '{name} सहेजा गया: {total} पैकेज प्रविष्टियों में से {touched} फिर से लिखी गईं, शेष बाइट-दर-बाइट संरक्षित।',
+      'सहेजा गया: {total} पैकेज प्रविष्टियों में से {touched} फिर से लिखी गईं, शेष बाइट-दर-बाइट संरक्षित।',
     appSaveFailed: 'कार्यपुस्तिका सहेजी नहीं जा सकी।',
     appCfRuleUnsaveable:
       'यह सशर्त स्वरूपण नियम xlsx में सहेजा नहीं जा सकता — कृपया दूसरा नियम प्रकार चुनें।',
@@ -22505,7 +22502,7 @@ export const appStrings = defineStrings({
     appSaveHeldStranded:
       '樞紐分析表/表格與新增工作表 + 列欄變更沒辦法一次儲存——先儲存一次結構，再新增樞紐分析表/表格。',
     appSaveSecondCanceled: '第二段儲存被取消——結構已儲存，樞紐分析表/表格/已定義名稱尚未寫入。',
-    appSavedTwoPhase: '已儲存 {name}（分兩段：先結構變更，再樞紐分析表/表格/已定義名稱）。',
+    appSavedTwoPhase: '已儲存（分兩段：先結構變更，再樞紐分析表/表格/已定義名稱）。',
     appSaveSecondFailed: '結構已儲存，但第二段（樞紐分析表/表格/已定義名稱）失敗：{reason}',
     appReadyInitial: '就緒——可使用本機確定性 AI 命令。',
     appAiThinking: 'AI 思考中…',
@@ -22720,7 +22717,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: '無法讀取工作表順序——請重試。',
     appSavingEdits: '正在儲存 {count} 處編輯…',
     appSaveCanceled: '儲存已取消。',
-    appSaved: '已儲存 {name}：重寫了 {total} 個封裝項目中的 {touched} 個，其餘逐位元組保留。',
+    appSaved: '已儲存：重寫了 {total} 個封裝項目中的 {touched} 個，其餘逐位元組保留。',
     appSaveFailed: '無法儲存活頁簿。',
     appCfRuleUnsaveable: '這種設定格式化的條件規則無法儲存到 xlsx——請改用其他規則類型。',
     appSaveErrX14Dv: '這個工作表帶有擴充(x14)資料驗證，暫不支援編輯它的驗證規則。',

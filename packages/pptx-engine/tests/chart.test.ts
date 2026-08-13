@@ -361,3 +361,101 @@ describe('buildChartSpaceXml style options (generate → parse round-trip)', () 
     expect(m.dataLabelsPct).toBe(true)
   })
 })
+
+describe('chart theme palette and default text size', () => {
+  const PIE_V = `<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea>
+    <c:pieChart><c:varyColors val="1"/><c:ser><c:idx val="0"/><c:order val="0"/>
+      <c:cat><c:strRef><c:strCache><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strCache></c:strRef></c:cat>
+      <c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>3</c:v></c:pt><c:pt idx="1"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val>
+    </c:ser></c:pieChart></c:plotArea></c:chart>
+    <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1800"/></a:pPr></a:p></c:txPr>
+  </c:chartSpace>`
+  const theme = {
+    colors: {
+      accent1: '#4F81BD',
+      accent2: '#C0504D',
+      accent3: '#9BBB59',
+      accent4: '#8064A2',
+      accent5: '#4BACC6',
+      accent6: '#F79646',
+    },
+    clrMap: {},
+  } as unknown as import('../src/theme').Theme
+
+  it('exposes theme accents as the default palette', () => {
+    const m = parseChartXml(PIE_V, theme)!
+    expect(m.themePalette).toEqual([
+      '#4F81BD',
+      '#C0504D',
+      '#9BBB59',
+      '#8064A2',
+      '#4BACC6',
+      '#F79646',
+    ])
+  })
+
+  it('reads the chartSpace-level default text size', () => {
+    const m = parseChartXml(PIE_V, theme)!
+    expect(m.defaultTextPt).toBe(18)
+  })
+
+  it('leaves both unset without theme/txPr', () => {
+    const m = parseChartXml(PIE_V.replace(/<c:txPr>[\s\S]*<\/c:txPr>/, ''))!
+    expect(m.themePalette).toBeUndefined()
+    expect(m.defaultTextPt).toBeUndefined()
+  })
+})
+
+describe('3D chart variants flatten to their 2D projection', () => {
+  it('pie3DChart parses as pie with data', () => {
+    const m = parseChartXml(`<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea>
+      <c:pie3DChart><c:varyColors val="1"/><c:ser><c:idx val="0"/><c:order val="0"/>
+        <c:cat><c:strRef><c:strCache><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strCache></c:strRef></c:cat>
+        <c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>7</c:v></c:pt><c:pt idx="1"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val>
+      </c:ser></c:pie3DChart></c:plotArea></c:chart></c:chartSpace>`)!
+    expect(m.kind).toBe('pie')
+    expect(m.holePct).toBe(0)
+    expect(m.series[0]!.values).toEqual([7, 3])
+    expect(m.categories).toEqual(['A', 'B'])
+  })
+
+  it('bar3DChart parses as bar (standard grouping renders clustered)', () => {
+    const m = parseChartXml(`<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea>
+      <c:bar3DChart><c:barDir val="col"/><c:grouping val="standard"/>
+        <c:ser><c:idx val="0"/><c:order val="0"/>
+          <c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:val>
+        </c:ser></c:bar3DChart></c:plotArea></c:chart></c:chartSpace>`)!
+    expect(m.kind).toBe('bar')
+    expect(m.barDir).toBe('col')
+    expect(m.grouping).toBe('standard')
+    expect(m.series[0]!.values).toEqual([1, 2])
+  })
+})
+
+describe('buildChartSpaceXml 3D kinds (generate → parse round-trip)', () => {
+  const data = {
+    categories: ['A', 'B', 'C'],
+    series: [{ name: 'S1', values: [3, 1, 2] }],
+    offset: { x: 0, y: 0, cx: 100, cy: 100 },
+  }
+  it('pie3D writes c:pie3DChart + c:view3D and parses back as pseudo-3D pie', () => {
+    const xml = buildChartSpaceXml({ kind: 'pie3D', ...data })
+    expect(xml).toContain('<c:pie3DChart>')
+    expect(xml).toContain('<c:view3D><c:rotX val="30"/>')
+    const m = parseChartXml(xml)!
+    expect(m.kind).toBe('pie')
+    expect(m.pseudo3D).toBe(true)
+    expect(m.rotXDeg).toBe(30)
+    expect(m.series[0]!.values).toEqual([3, 1, 2])
+  })
+  it('bar3D writes c:bar3DChart with three axes + c:view3D and parses back as pseudo-3D bar', () => {
+    const xml = buildChartSpaceXml({ kind: 'bar3D', ...data })
+    expect(xml).toContain('<c:bar3DChart>')
+    expect(xml).toContain('<c:serAx>')
+    expect(xml).toContain('<c:view3D><c:rotX val="15"/>')
+    const m = parseChartXml(xml)!
+    expect(m.kind).toBe('bar')
+    expect(m.barDir).toBe('col')
+    expect(m.pseudo3D).toBe(true)
+  })
+})

@@ -121,6 +121,9 @@ pub struct ColumnWidth {
     pub outline_level: Option<u8>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collapsed: bool,
+    /// <col style=>: the default xf for cells in this span that carry no own style.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style_index: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -141,6 +144,10 @@ pub struct RowProperty {
     pub outline_level: Option<u8>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collapsed: bool,
+    /// <row s= customFormat="1">: the default xf for cells in this row that
+    /// carry no own style. Rows beat columns, cells beat rows (OOXML order).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_index: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -1024,6 +1031,10 @@ fn read_sheet_dimensions(
     let mut buffer = Vec::new();
     let mut maximum_row = 0;
     let mut maximum_column = 0;
+    // Implicit-address fallbacks, mirroring the cell-stream parser.
+    let mut current_row = 0usize;
+    let mut first_row = true;
+    let mut next_column = 0usize;
     let mut dimensions = None;
     let mut column_widths = Vec::new();
     let mut default_row_height = None;
@@ -1109,8 +1120,17 @@ fn read_sheet_dimensions(
                     .filter(|value| *value > 0);
                 let collapsed = attribute_value(&reader, &element, b"collapsed")?
                     .is_some_and(|value| value == "1" || value == "true");
+                // xf 0 is the workbook default; carrying it would only bloat the metadata.
+                let style_index = attribute_value(&reader, &element, b"style")?
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .filter(|value| *value > 0);
                 if let (Some(minimum), Some(maximum)) = (minimum, maximum) {
-                    if width.is_some() || hidden || outline_level.is_some() || collapsed {
+                    if width.is_some()
+                        || hidden
+                        || outline_level.is_some()
+                        || collapsed
+                        || style_index.is_some()
+                    {
                         column_widths.push(ColumnWidth {
                             start_column: minimum.saturating_sub(1),
                             end_column: maximum.saturating_sub(1),
@@ -1118,6 +1138,7 @@ fn read_sheet_dimensions(
                             hidden,
                             outline_level,
                             collapsed,
+                            style_index,
                         });
                     }
                 }
@@ -1139,13 +1160,27 @@ fn read_sheet_dimensions(
                 });
             }
             Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"row" =>
+            {
+                current_row = attribute_value(&reader, &element, b"r")?
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .filter(|value| *value > 0)
+                    .map(|value| value - 1)
+                    .unwrap_or(if first_row { 0 } else { current_row + 1 });
+                first_row = false;
+                next_column = 0;
+                maximum_row = maximum_row.max(current_row);
+            }
+            Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"c" =>
             {
-                if let Some(address) = attribute_value(&reader, &element, b"r")? {
-                    let (row, column) = parse_address(&address)?;
-                    maximum_row = maximum_row.max(row);
-                    maximum_column = maximum_column.max(column);
-                }
+                let (row, column) = match attribute_value(&reader, &element, b"r")? {
+                    Some(address) => parse_address(&address)?,
+                    None => (current_row, next_column),
+                };
+                next_column = column + 1;
+                maximum_row = maximum_row.max(row);
+                maximum_column = maximum_column.max(column);
             }
             Event::Eof => {
                 let (row_count, column_count) =
@@ -1311,6 +1346,12 @@ fn index_worksheet(
     let mut reader = Reader::from_reader(BufReader::new(entry));
     let mut buffer = Vec::new();
     let mut cell_builder: Option<CellBuilder> = None;
+    // <row r=> and <c r=> are both optional: a missing row is one below its
+    // predecessor, a missing cell one right of its predecessor (54288.xlsx
+    // omits r on all but each row's first cell).
+    let mut current_row = 0usize;
+    let mut first_row = true;
+    let mut next_column = 0usize;
     let mut in_formula = false;
     let mut in_value = false;
     let mut in_text = false;
@@ -1341,7 +1382,14 @@ fn index_worksheet(
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"row" =>
             {
-                if let Some(property) = row_property(&reader, &element)? {
+                current_row = attribute_value(&reader, &element, b"r")?
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .filter(|value| *value > 0)
+                    .map(|value| value - 1)
+                    .unwrap_or(if first_row { 0 } else { current_row + 1 });
+                first_row = false;
+                next_column = 0;
+                if let Some(property) = row_property(&reader, &element, current_row)? {
                     let row_chunk = property.row / CHUNK_ROW_COUNT;
                     if row_chunk != chunk_index {
                         flush_chunk(
@@ -1359,12 +1407,18 @@ fn index_worksheet(
                 }
             }
             Event::Start(element) if element.local_name().as_ref() == b"c" => {
-                cell_builder = CellBuilder::from_element(&reader, &element)?;
+                let builder =
+                    CellBuilder::from_element(&reader, &element, current_row, next_column)?;
+                next_column = builder.column + 1;
+                cell_builder = Some(builder);
             }
             Event::Empty(element) if element.local_name().as_ref() == b"c" => {
                 // Self-closing cells carry no value but may carry a style
                 // (borders, fills); keep them like any other cell.
-                if let Some(builder) = CellBuilder::from_element(&reader, &element)? {
+                {
+                    let builder =
+                        CellBuilder::from_element(&reader, &element, current_row, next_column)?;
+                    next_column = builder.column + 1;
                     latest_row = latest_row.max(builder.row);
                     let cell_chunk = builder.row / CHUNK_ROW_COUNT;
                     if cell_chunk != chunk_index {
@@ -2168,13 +2222,8 @@ fn parse_area_reference(reference: &str) -> Option<MergedRange> {
 fn row_property<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,
+    row: usize,
 ) -> Result<Option<RowProperty>, SidecarError> {
-    let Some(row) = attribute_value(reader, element, b"r")?
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-    else {
-        return Ok(None);
-    };
     // ht is reported with or without customHeight="1". Excel records the
     // laid-out height of every non-default row — auto-fit results included —
     // so honoring it reproduces Excel's layout regardless of which fonts the
@@ -2192,15 +2241,28 @@ fn row_property<R: std::io::BufRead>(
         .filter(|value| *value > 0);
     let collapsed = attribute_value(reader, element, b"collapsed")?
         .is_some_and(|value| value == "1" || value == "true");
-    if height.is_none() && !hidden && outline_level.is_none() && !collapsed {
+    // <row s=> only styles the row when customFormat is set (spec: without it
+    // the attribute is leftover noise Excel ignores). xf 0 is the default.
+    let style_index = attribute_value(reader, element, b"s")?
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .filter(|_| {
+            matches!(
+                attribute_value(reader, element, b"customFormat").ok().flatten().as_deref(),
+                Some("1") | Some("true")
+            )
+        });
+    if height.is_none() && !hidden && outline_level.is_none() && !collapsed && style_index.is_none()
+    {
         return Ok(None);
     }
     Ok(Some(RowProperty {
-        row: row - 1,
+        row,
         height,
         hidden,
         outline_level,
         collapsed,
+        style_index,
     }))
 }
 
@@ -2274,12 +2336,15 @@ impl CellBuilder {
     fn from_element<R: std::io::BufRead>(
         reader: &Reader<R>,
         element: &BytesStart<'_>,
-    ) -> Result<Option<Self>, SidecarError> {
-        let Some(address) = attribute_value(reader, element, b"r")? else {
-            return Ok(None);
+        fallback_row: usize,
+        fallback_column: usize,
+    ) -> Result<Self, SidecarError> {
+        // <c r=> is optional: an unaddressed cell sits one right of its predecessor.
+        let (row, column) = match attribute_value(reader, element, b"r")? {
+            Some(address) => parse_address(&address)?,
+            None => (fallback_row, fallback_column),
         };
-        let (row, column) = parse_address(&address)?;
-        Ok(Some(Self {
+        Ok(Self {
             row,
             column,
             style_index: attribute_value(reader, element, b"s")?
@@ -2291,7 +2356,7 @@ impl CellBuilder {
             inline_text: String::new(),
             inline_runs: Vec::new(),
             current_run: None,
-        }))
+        })
     }
 
     fn finish(
@@ -2987,6 +3052,147 @@ mod tests {
             ]
         );
         assert_eq!(result.merges.len(), 1);
+    }
+
+    /// <row r=> and <c r=> are both optional (54288.xlsx omits r on all but
+    /// each row's first cell); implicit addresses continue from the
+    /// predecessor. Dimension inference must count them too.
+    #[test]
+    fn assigns_implicit_addresses_without_r() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                // No <dimension>: the extent must be inferred from implicit
+                // addresses as well. Row 3 anchors at C3 then continues
+                // implicitly (D3, E3); the second row has no r (row 4) and
+                // starts at column A.
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="3" spans="3:5"><c r="C3"><v>1</v></c><c><v>2</v></c><c><v>3</v></c></row>
+<row><c><v>9</v></c></row>
+</sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(metadata.sheets[0].row_count, 4);
+        assert_eq!(metadata.sheets[0].column_count, 5);
+        let sheet_id = metadata.sheets[0].id.clone();
+        let range = CellRange {
+            start_row: 0,
+            end_row: 3,
+            start_column: 0,
+            end_column: 4,
+        };
+        let result = loop {
+            let result = sessions
+                .read_range(&metadata.session_id, &sheet_id, &range)
+                .unwrap();
+            if result.indexing_complete {
+                break result;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let mut cells: Vec<(usize, usize, f64)> = result
+            .cells
+            .iter()
+            .filter_map(|cell| match cell.value {
+                Some(CellValue::Number(number)) => Some((cell.row, cell.column, number)),
+                _ => None,
+            })
+            .collect();
+        cells.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(
+            cells,
+            vec![(2, 2, 1.0), (2, 3, 2.0), (2, 4, 3.0), (3, 0, 9.0)]
+        );
+    }
+
+    /// <row s= customFormat="1"> and <col style=> carry the default xf for
+    /// cells without one of their own; both used to be dropped entirely.
+    #[test]
+    fn reports_row_and_column_default_styles() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF000080"/></patternFill></fill></fills>
+<cellStyleXfs count="1"><xf/></cellStyleXfs>
+<cellXfs count="3"><xf numFmtId="0" fillId="0"/><xf fillId="2" applyFill="1"/><xf fillId="2" applyFill="1"/></cellXfs>
+</styleSheet>"#,
+            ),
+            (
+                // Row 1 styles via customFormat; row 2's s without customFormat
+                // is noise Excel ignores. The style-only <col> used to be
+                // dropped with it.
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<cols><col min="2" max="3" style="2"/><col min="5" max="5" width="12" customWidth="1"/></cols>
+<sheetData>
+<row r="1" s="1" customFormat="1"><c r="A1"><v>1</v></c></row>
+<row r="2" s="1"><c r="A2"><v>2</v></c></row>
+</sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let widths = &metadata.sheets[0].column_widths;
+        let styled = widths
+            .iter()
+            .find(|width| width.style_index.is_some())
+            .expect("style-only <col> must be kept");
+        assert_eq!(
+            (styled.start_column, styled.end_column, styled.style_index),
+            (1, 2, Some(2))
+        );
+        assert!(widths
+            .iter()
+            .any(|width| width.width == Some(12.0) && width.style_index.is_none()));
+        let sheet_id = metadata.sheets[0].id.clone();
+        let range = CellRange {
+            start_row: 0,
+            end_row: 1,
+            start_column: 0,
+            end_column: 0,
+        };
+        let result = loop {
+            let result = sessions
+                .read_range(&metadata.session_id, &sheet_id, &range)
+                .unwrap();
+            if result.indexing_complete {
+                break result;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let style_of = |row: usize| {
+            result
+                .rows
+                .iter()
+                .find(|property| property.row == row)
+                .and_then(|property| property.style_index)
+        };
+        assert_eq!(style_of(0), Some(1));
+        assert_eq!(style_of(1), None);
     }
 
     /// zh Excel/WPS date cells reference locale-reserved builtin numFmtIds

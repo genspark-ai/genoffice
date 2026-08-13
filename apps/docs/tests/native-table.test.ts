@@ -93,6 +93,7 @@ describe('native editable tables', () => {
           shading: null,
           vertAlign: null,
           em: null,
+          caps: null,
           styleId: null,
           rawRPr:
             '<w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="Calibri"/><w:b/><w:color w:val="1F4E78"/></w:rPr>',
@@ -230,6 +231,27 @@ describe('native editable tables', () => {
     expect(spec[1].style).toContain('width:min(1200px,calc(100% + var(--doc-margin-right,0px)))')
     const cols = spec[2].slice(2) as Array<[string, Record<string, string>]>
     expect(cols.map((col) => col[1].style)).toEqual(['width:50.00%', 'width:50.00%'])
+    editor.destroy()
+  })
+
+  it('takes a positive table indent out of the right-margin spill allowance', async () => {
+    const { editor } = await openTable()
+    const table = editor.state.doc.firstChild!
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        widthPx: 1200,
+        indentTwips: 1450,
+      }),
+    )
+    const spec = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(spec[1].style).toContain(
+      'width:min(1200px,calc(100% + var(--doc-margin-right,0px) - 96.7px))',
+    )
+    expect(spec[1].style).toContain('margin-left:96.7px')
     editor.destroy()
   })
 

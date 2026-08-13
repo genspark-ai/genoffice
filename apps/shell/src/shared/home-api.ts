@@ -128,12 +128,32 @@ export interface HomeApi {
   openGenTeam(): Promise<void>
   /** open the Genspark credit-usage page in the default browser */
   openCreditUsage(): Promise<void>
+  /** open the public GitHub repository in the default browser */
+  openGitHubRepo(): Promise<void>
+  /** current stargazer count of the public repo (null while offline / rate-limited) */
+  githubStars(): Promise<number | null>
+  /** whether the one-time "star us" prompt should show now (show:true also counts as shown);
+   * docOpens personalizes the card copy ("you've opened N documents") */
+  starPromptShouldShow(): Promise<StarPromptShow>
+  /** user reacted to the star prompt; 'starred' resolves it permanently */
+  starPromptAction(action: StarPromptAction): Promise<void>
   /** locally stored full cloud project list (instant; null when no store or logged out) */
   cloudProjectsCached(): Promise<CloudProjectsSnapshot | null>
   /** sync the full list from Genspark and return it (1 request when nothing changed); null when the sync failed */
   cloudProjectsSync(): Promise<CloudProjectsSnapshot | null>
   /** open a cloud project (relative '/agents?id=...' URL) in the default browser */
   openCloudProject(projectUrl: string): Promise<void>
+}
+
+/** 'starred' = went to GitHub or said "already starred" (never prompt again);
+ * 'later' = dismissed this time (already counted as shown by the query) */
+export type StarPromptAction = 'starred' | 'later'
+
+/** answer to starPromptShouldShow */
+export interface StarPromptShow {
+  show: boolean
+  /** lifetime documents opened — drives the personalized card title */
+  docOpens: number
 }
 
 export type CloudProjectKind = 'docs' | 'sheets' | 'slides'
@@ -258,6 +278,10 @@ export const HOME_CHANNELS = {
   pickDefaultSaveDir: 'home:pick-default-save-dir',
   openGenTeam: 'home:open-genteam',
   openCreditUsage: 'home:open-credit-usage',
+  openGitHubRepo: 'home:open-github-repo',
+  githubStars: 'home:github-stars',
+  starPromptShouldShow: 'home:star-prompt-should-show',
+  starPromptAction: 'home:star-prompt-action',
   cloudProjects: 'home:cloud-projects',
   cloudProjectsCached: 'home:cloud-projects-cached',
   openCloudProject: 'home:open-cloud-project',

@@ -58,6 +58,10 @@ export class TabManager {
   private nextId = 1
   /** tab whose page entered HTML fullscreen (e.g. slides slideshow) — its view covers the tab strip */
   private htmlFullScreenId: string | null = null
+  /** webContents ids whose view must cover the tab strip without HTML fullscreen
+   *  (slides show: the window snaps via simpleFullScreen and asks for the bleed
+   *  over IPC, since requestFullscreen would animate the native transition) */
+  private readonly bleedWcIds = new Set<number>()
   /** tabs mid unsaved-changes prompt, so a second close click doesn't stack dialogs */
   private readonly closingIds = new Set<string>()
 
@@ -88,7 +92,18 @@ export class TabManager {
     if (this.htmlFullScreenId !== null && this.htmlFullScreenId === this.activeId) {
       return { x: 0, y: 0, width, height }
     }
+    const active = this.tabs.find((t) => t.id === this.activeId)
+    if (active?.view && this.bleedWcIds.has(active.view.webContents.id)) {
+      return { x: 0, y: 0, width, height }
+    }
     return { x: 0, y: TAB_STRIP_HEIGHT, width, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
+  }
+
+  /** Grow/restore a tab view over the tab strip on request (slides show fullscreen) */
+  setContentBleed(wc: WebContents, on: boolean): void {
+    if (on) this.bleedWcIds.add(wc.id)
+    else this.bleedWcIds.delete(wc.id)
+    this.layout()
   }
 
   /**

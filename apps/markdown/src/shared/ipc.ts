@@ -17,6 +17,7 @@ export const MARKDOWN_CHANNELS = {
   exportRequest: 'markdown:export-request',
   exportDocx: 'markdown:export-docx',
   exportPdf: 'markdown:export-pdf',
+  printRequest: 'markdown:print-request',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
   getTheme: 'app:get-theme',
@@ -122,6 +123,8 @@ export interface MarkdownApi {
   readImage(src: string): Promise<ImageData | null>
   /** Shell menu export → renderer serializes and calls exportDocx/exportPdf */
   onExportRequest(handler: (format: ExportFormat) => void): () => void
+  /** Shell menu Print → renderer builds the print HTML and opens the system print dialog */
+  onPrintRequest(handler: () => void): () => void
   exportDocx(request: ExportDocxRequest): Promise<ExportResult>
   exportPdf(request: ExportPdfRequest): Promise<ExportResult>
   getLanguage(): Promise<Lang>

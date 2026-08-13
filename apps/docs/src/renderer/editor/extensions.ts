@@ -25,13 +25,19 @@ import {
 import {
   autospaceBoundaries,
   autospacePadBetween,
+  cjkDeclaredLineFactor,
+  cssDualFontFamily,
+  cssFontFamily,
   cssGridSpacingPt,
   cssLineHeight,
   isCjkFontName,
   lineHeightFactor,
   paraLineFactorCss,
+  SIMSUN_GAP_CHAR_RE,
+  simsunGapLineFactor,
   textHasCjk,
   textHasHangul,
+  cssSimsunGapLineExpr,
 } from '../line-metrics'
 import { noteMarkText } from '../note-format'
 import { t } from '../i18n/locale'
@@ -51,6 +57,7 @@ import {
 import { bulletMarkerScale, computeListMarkerInfos, type ListItemRef } from './numbering'
 import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
+import { paraBorderCss } from './hf-dom'
 import { PaginationGapsExtension } from './pagination-gaps'
 import { TrackChangesExtension } from './revisions'
 import { inlineToRuns, runsToInline, textboxParaSignature, type PmNode as PmJson } from './convert'
@@ -137,6 +144,8 @@ const anchorAttrs = {
   emptyRunSize: { default: null as number | null },
   /** subset of "tblr": which sides have a single-line border */
   borders: { default: null as string | null },
+  /** JSON per-side {color?,szPt?} for `borders` (w:pBdr declared look) */
+  borderLines: { default: null as string | null },
   /** custom tab stops JSON: Array<{pos:number,val:string,leader?:string}> */
   tabStops: { default: null as string | null },
   /** drop cap: JSON {type:'drop'|'margin',lines:number} */
@@ -170,6 +179,55 @@ function explicitStrutHalfPoints(node: { descendants?: PmNode['descendants'] }):
 }
 
 /**
+ * Latin paragraphs: runs declaring a font override the doc-level factor with that
+ * face's metric (Word sizes lines by run fonts, not the docDefaults face — a
+ * Cambria-themed doc whose runs all say Calibri lays out at 1.22, not 1.17);
+ * runs inheriting the body face keep the doc var via max().
+ */
+function latinParaFactor(node: { descendants?: PmNode['descendants'] }, scriptVar: string): string {
+  if (!node.descendants) return scriptVar
+  let declaredMax = 0
+  let undeclared = false
+  node.descendants((child) => {
+    if (!child.isText) return true
+    const attrs = child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs
+    const family = (attrs?.fontAscii ?? (attrs?.eaSlotEmpty === true ? null : attrs?.font)) as
+      string | null | undefined
+    if (family) declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+    else undeclared = true
+    return false
+  })
+  if (declaredMax <= 0) return scriptVar
+  return undeclared ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+}
+
+/** Paragraph font-family follows the runs when every text run declares one:
+ *  Chromium's line box is the union of the strut (paragraph font) and run boxes,
+ *  so a paragraph face with a taller ascent than the runs' inflates every line
+ *  past the computed line-height. No run inherits the face, so only the strut
+ *  (and list markers without their own font) changes. */
+function paraDeclaredFontFamily(node: { descendants?: PmNode['descendants'] }): string | null {
+  if (!node.descendants) return null
+  let first: string | null = null
+  let inherited = false
+  node.descendants((child) => {
+    if (inherited) return false
+    if (!child.isText) return true
+    const attrs = child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs
+    const ea = attrs?.font ? String(attrs.font) : null
+    const ascii = attrs?.fontAscii ? String(attrs.fontAscii) : null
+    if (!ea && !ascii) {
+      inherited = true
+      return false
+    }
+    // same chain the run's span renders, so the strut face equals the run face
+    first ??= ea && ascii ? cssDualFontFamily(ascii, ea) : cssFontFamily((ea ?? ascii)!)
+    return false
+  })
+  return inherited ? null : first
+}
+
+/**
  * Per-paragraph --doc-line-factor value: CJK runs with a declared font take that
  * font's LO-metric factor (max over runs); undeclared CJK runs keep the
  * document-level CJK var; non-CJK paragraphs keep the script-based guess.
@@ -179,7 +237,8 @@ function paraLineFactor(node: {
   descendants?: PmNode['descendants']
 }): string {
   const scriptVar = paraLineFactorCss(node.textContent ?? '')
-  if (!node.descendants || !textHasCjk(node.textContent ?? '')) return scriptVar
+  if (!node.descendants) return scriptVar
+  if (!textHasCjk(node.textContent ?? '')) return latinParaFactor(node, scriptVar)
   let declaredMax = 0
   let undeclaredCjk = false
   node.descendants((child) => {
@@ -196,7 +255,7 @@ function paraLineFactor(node: {
         ? null
         : ((mark?.attrs.font ?? mark?.attrs.fontAscii) as string | null | undefined)
     if (family && isCjkFontName(family)) {
-      declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+      declaredMax = Math.max(declaredMax, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
     } else undeclaredCjk = true
     return false
   })
@@ -255,6 +314,8 @@ function blockAttrs(
       styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
     }
     styles.push(`--doc-line-factor:${paraLineFactor(node)}`)
+    const fam = paraDeclaredFontFamily(node)
+    if (fam) styles.push(`font-family:${fam}`)
     // Word's line strut follows run sizes; without this the paragraph inherits the
     // body size (often larger than table-cell runs) and every line box inflates.
     // Shrink-only: a large run already lifts its own line, and Word sizes each
@@ -299,11 +360,19 @@ function blockAttrs(
   if (node.attrs.shadingFill) styles.push(`background-color:#${node.attrs.shadingFill}`)
   if (node.attrs.borders) {
     const borders = String(node.attrs.borders)
-    const line = '1px solid #444'
-    if (borders.includes('t')) styles.push(`border-top:${line}`)
-    if (borders.includes('b')) styles.push(`border-bottom:${line}`)
-    if (borders.includes('l')) styles.push(`border-left:${line}`)
-    if (borders.includes('r')) styles.push(`border-right:${line}`)
+    let borderLines: Partial<Record<string, { color?: string; szPt?: number }>> = {}
+    if (node.attrs.borderLines) {
+      try {
+        borderLines = JSON.parse(String(node.attrs.borderLines))
+      } catch {
+        /* malformed attr: fall back to legacy line */
+      }
+    }
+    const line = (side: string) => paraBorderCss(borderLines[side])
+    if (borders.includes('t')) styles.push(`border-top:${line('t')}`)
+    if (borders.includes('b')) styles.push(`border-bottom:${line('b')}`)
+    if (borders.includes('l')) styles.push(`border-left:${line('l')}`)
+    if (borders.includes('r')) styles.push(`border-right:${line('r')}`)
     styles.push('padding:1px 4px')
   }
   if (node.attrs.tabStops) {
@@ -363,8 +432,7 @@ export const DocNoteRef = Node.create({
         class: 'doc-note-ref',
         title: node.attrs.kind === 'footnote' ? t('editorFootnote') : t('editorEndnote'),
       },
-      // brackets are editor chrome (CSS ::before/::after): Word prints a bare
-      // superscript number, and bracket glyphs must not leak into exported text
+      // bare superscript number, matching Word; hover/selection accents live in CSS
       noteMarkText(node.attrs.kind as 'footnote' | 'endnote', Number(node.attrs.num) || 1),
     ]
   },
@@ -740,6 +808,37 @@ const autospacePadDom = () => {
 
 const autospaceOffsetsCache = new WeakMap<PmNode, number[]>()
 
+const simsunGapCache = new WeakMap<PmNode, Array<{ from: number; to: number }>>()
+
+/** ranges (relative to the block's content start) of ・/〜 in SimSun-substituted runs */
+function simsunGapRanges(node: PmNode): Array<{ from: number; to: number }> {
+  let ranges = simsunGapCache.get(node)
+  if (ranges === undefined) {
+    const found: Array<{ from: number; to: number }> = []
+    let offset = 0
+    node.forEach((child) => {
+      if (child.isText && child.text && SIMSUN_GAP_CHAR_RE.test(child.text)) {
+        const mark = child.marks.find((m) => m.type.name === 'docTextStyle')
+        const family =
+          mark?.attrs.eaSlotEmpty === true
+            ? null
+            : ((mark?.attrs.font ?? mark?.attrs.fontAscii) as string | null | undefined)
+        if (family && simsunGapLineFactor(family) !== null) {
+          for (let i = 0; i < child.text.length; i++) {
+            if (SIMSUN_GAP_CHAR_RE.test(child.text[i])) {
+              found.push({ from: offset + i, to: offset + i + 1 })
+            }
+          }
+        }
+      }
+      offset += child.nodeSize
+    })
+    ranges = found
+    simsunGapCache.set(node, ranges)
+  }
+  return ranges
+}
+
 /** offsets (relative to the block's content start) of CJK-Latin pad boundaries */
 function autospaceOffsets(node: PmNode): number[] {
   let offsets = autospaceOffsetsCache.get(node)
@@ -771,6 +870,8 @@ function lineFactorDecos(doc: PmNode): DecorationSet {
       let style = lineFactorCache.get(node)
       if (style === undefined) {
         style = `--doc-line-factor:${paraLineFactor(node)}`
+        const fam = paraDeclaredFontFamily(node)
+        if (fam) style += `;font-family:${fam}`
         const strut = explicitStrutHalfPoints(node)
         if (strut) style += `;--doc-strut:${strut / 2}pt;font-size:min(var(--doc-strut), 1em)`
         lineFactorCache.set(node, style)
@@ -779,6 +880,23 @@ function lineFactorDecos(doc: PmNode): DecorationSet {
       if (node.attrs.autoSpace !== false) {
         for (const off of autospaceOffsets(node)) {
           decos.push(Decoration.widget(pos + 1 + off, autospacePadDom, { key: 'doc-autospace' }))
+        }
+      }
+      // ・/〜 in SimSun-substituted runs: Word lifts the whole line to 1.7143 ×
+      // size (probe 2026-08-13); a taller inline strut reproduces the row lift.
+      // exact lineRule pins the line, so no lift there.
+      if (node.attrs.lineRule !== 'exact') {
+        const ranges = simsunGapRanges(node)
+        if (ranges.length > 0) {
+          const m =
+            Number(node.attrs.lineSpacing) ||
+            (node.attrs.lineRule === 'auto' && node.attrs.lineRawTwips
+              ? Number(node.attrs.lineRawTwips) / 240
+              : 1)
+          const gapStyle = `line-height:${cssSimsunGapLineExpr(m)}`
+          for (const r of ranges) {
+            decos.push(Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { style: gapStyle }))
+          }
         }
       }
     }
@@ -1115,19 +1233,37 @@ export const DocTable = Node.create({
     if (node.attrs.tblStyleId) attrs['data-tbl-style'] = String(node.attrs.tblStyleId)
     if (node.attrs.bidiVisual) attrs.dir = 'rtl'
     const styles: string[] = []
+    let centerMargin: string | null = null
     if (node.attrs.widthPct) styles.push(`width:${Number(node.attrs.widthPct)}%`)
-    // Over-wide grids may spill into the right page margin like Word/LO (clamping
+    // Over-wide grids may spill into the page margins like Word/LO (clamping
     // them to the content box narrowed every column, wrapped cell text onto extra
-    // lines and inflated PDF-converted documents by pages), but never past the paper
-    else if (node.attrs.widthPx)
-      styles.push(
-        `width:min(${Number(node.attrs.widthPx)}px,calc(100% + var(--doc-margin-right,0px)))`,
-      )
+    // lines and inflated PDF-converted documents by pages), but never past the paper:
+    // centered tables spill both margins symmetrically (negative-margin centering —
+    // auto margins resolve to 0 on overflow and would push the spill right only),
+    // left-aligned ones spill right; indent comes out of the spill allowance
+    else if (node.attrs.widthPx) {
+      const widthPx = Number(node.attrs.widthPx)
+      if (node.attrs.tblAlign === 'center') {
+        const paper =
+          'calc(100% + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
+        styles.push(`width:min(${widthPx}px,${paper})`)
+        centerMargin = `margin-left:calc((100% - min(${widthPx}px,${paper}))/2)`
+      } else {
+        const indented = node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips) > 0
+        const indentPx = indented ? Number(node.attrs.indentTwips) / 15 : 0
+        const spill = indentPx
+          ? `calc(100% + var(--doc-margin-right,0px) - ${indentPx.toFixed(1)}px)`
+          : 'calc(100% + var(--doc-margin-right,0px))'
+        styles.push(`width:min(${widthPx}px,${spill})`)
+      }
+    }
     const pad = cellPadCss(node.attrs.cellMar as Record<string, number> | null)
     if (pad) styles.push(`--doc-cell-pad:${pad}`)
     styles.push(...tableBordersCss(node.attrs.borders as TableBordersAttr | null))
-    if (node.attrs.tblAlign === 'center') styles.push('margin-left:auto', 'margin-right:auto')
-    else if (node.attrs.tblAlign === 'right') styles.push('margin-left:auto')
+    if (node.attrs.tblAlign === 'center') {
+      if (centerMargin) styles.push(centerMargin)
+      else styles.push('margin-left:auto', 'margin-right:auto')
+    } else if (node.attrs.tblAlign === 'right') styles.push('margin-left:auto')
     else if (node.attrs.indentTwips) {
       styles.push(`margin-left:${(Number(node.attrs.indentTwips) / 15).toFixed(1)}px`)
     }
@@ -1243,7 +1379,11 @@ export const DocNestedTable = Node.create({
   renderHTML({ node }) {
     const model = node.attrs.model as TableModel | null
     if (!model?.rows?.length) return ['div', { class: 'doc-nested-table' }]
-    return ['div', { class: 'doc-nested-table', contenteditable: 'false' }, renderTableSpec(model)]
+    return [
+      'div',
+      { class: 'doc-nested-table', contenteditable: 'false' },
+      renderTableSpec(model, true),
+    ]
   },
   // in-place cell editing: contenteditable island; on blur the text is committed back to the model attribute
   // (saving goes through the outer table's nested-text surgical patch; cells that themselves contain nested tables stay non-editable)
@@ -1284,7 +1424,7 @@ export const DocNestedTable = Node.create({
         dom.innerHTML = ''
         const model = currentNode.attrs.model as TableModel | null
         if (model?.rows?.length) {
-          const rendered = DOMSerializer.renderSpec(document, renderTableSpec(model) as never)
+          const rendered = DOMSerializer.renderSpec(document, renderTableSpec(model, true) as never)
           dom.appendChild(rendered.dom)
         }
         applyEditable()
@@ -1927,20 +2067,28 @@ function protectedDomSpec(node: PmNode): DomSpec {
       ['span', { class: 'doc-broken-img-frame', style }, String(previewText || label || '')],
     ]
   }
-  // OLE embed with a packaged preview picture: show the picture with a
-  // friendly type caption instead of a bare "Embedded object" label
+  // OLE embed with a packaged preview picture: Word draws just the preview at
+  // its declared size (Icon previews carry their own caption inside the
+  // metafile) — the friendly type name moves to a hover tooltip
   const oleCaption = label === 'Embedded object' ? oleTypeLabel(node.attrs.oleProgId) : null
   if (imageDataUrl && blockType === 'passthrough') {
     attrs.class += ' doc-protected-ole'
+    attrs.title = oleCaption ?? String(label)
+    const { imageWidthPx, imageHeightPx, imageAlign } = node.attrs
+    if (imageAlign === 'center' || imageAlign === 'right') {
+      attrs.style = `text-align:${imageAlign}`
+    }
+    let imgStyle = ''
+    if (imageWidthPx) imgStyle += `width:${Number(imageWidthPx)}px;`
+    if (imageHeightPx) imgStyle += `height:${Number(imageHeightPx)}px;`
     return [
       'div',
       attrs,
       [
         'span',
         { class: 'doc-ole-wrap' },
-        ['img', { src: String(imageDataUrl), class: 'doc-ole-img' }],
+        ['img', { src: String(imageDataUrl), class: 'doc-ole-img', style: imgStyle }],
       ],
-      ['span', { class: 'doc-protected-label' }, oleCaption ?? String(label)],
     ]
   }
   const children: unknown[] = [

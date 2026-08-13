@@ -35,6 +35,11 @@ const api: MarkdownApi = {
     ipcRenderer.on(MARKDOWN_CHANNELS.exportRequest, listener)
     return () => ipcRenderer.removeListener(MARKDOWN_CHANNELS.exportRequest, listener)
   },
+  onPrintRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(MARKDOWN_CHANNELS.printRequest, listener)
+    return () => ipcRenderer.removeListener(MARKDOWN_CHANNELS.printRequest, listener)
+  },
   exportDocx: (request) => ipcRenderer.invoke(MARKDOWN_CHANNELS.exportDocx, request),
   exportPdf: (request) => ipcRenderer.invoke(MARKDOWN_CHANNELS.exportPdf, request),
   getLanguage: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.getLanguage),

@@ -188,6 +188,26 @@ const homeApi: HomeApi = {
   async openCreditUsage() {
     await ipcRenderer.invoke(HOME_CHANNELS.openCreditUsage)
   },
+  async openGitHubRepo() {
+    await ipcRenderer.invoke(HOME_CHANNELS.openGitHubRepo)
+  },
+  async githubStars() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.githubStars)
+    return typeof result === 'number' && Number.isFinite(result) ? result : null
+  },
+  async starPromptShouldShow() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.starPromptShouldShow)
+    const raw = (result ?? {}) as { show?: unknown; docOpens?: unknown }
+    return {
+      show: raw.show === true,
+      docOpens:
+        typeof raw.docOpens === 'number' && Number.isFinite(raw.docOpens) ? raw.docOpens : 0,
+    }
+  },
+  async starPromptAction(action) {
+    if (action !== 'starred' && action !== 'later') throw new Error('Invalid star prompt action.')
+    await ipcRenderer.invoke(HOME_CHANNELS.starPromptAction, action)
+  },
   async cloudProjectsCached() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.cloudProjectsCached)
     return asCloudProjectsSnapshot(result)

@@ -2587,6 +2587,10 @@ textarea:focus {
 
 .dialog-grid select,
 .dialog-grid input:not([type='checkbox']):not([type='radio']) {
+  /* Fill the grid cell; intrinsic input width would otherwise force
+     narrow columns (e.g. the 3-column header/footer dialog) to overflow. */
+  width: 100%;
+  min-width: 0;
   height: 26px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-small);

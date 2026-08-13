@@ -1,15 +1,16 @@
 import { existsSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { userInfo } from 'node:os'
+import { join } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import {
+  configuredDefaultSaveDir,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
   showOpenDialogWithMemory,
-  showSaveDialogWithMemory,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { gskGenerateImage, hasGskAuth } from '@genoffice/ai-search'
@@ -19,21 +20,65 @@ import type {
   ExportImagesResult,
   ExtractPagesRequest,
   ExtractPagesResult,
+  InsertBlankPageRequest,
+  InsertBlankPageResult,
   InsertPdfRequest,
   InsertPdfResult,
+  MergePagesRequest,
+  MergePagesResult,
+  MergePdfRequest,
+  MergePdfResult,
   PagePreviewRequest,
+  ReplacePagesRequest,
+  ReplacePagesResult,
+  SetPageSizeRequest,
+  SetPageSizeResult,
+  SplitPagesRequest,
+  SplitPagesResult,
+  SplitPdfRequest,
+  SplitPdfResult,
   SavePdfRequest,
   SavePdfResult,
+  CropPagesRequest,
+  CropPagesResult,
   TextEditValidation,
   ValidateTextEditsRequest,
 } from '../shared/ipc'
-import { extractPagesBytes, insertPdfBytes, readStaticFormFills, savePdfToPath } from './save-pdf'
+import type { SavedSignature } from '../shared/ipc'
+import {
+  cropPagesBytes,
+  extractPagesBytes,
+  insertBlankPageBytes,
+  insertPdfBytes,
+  mergePagesBytes,
+  mergePdfBytes,
+  readStaticFormFills,
+  replacePagesBytes,
+  savePdfToPath,
+  setPageSizeBytes,
+  splitPagesBytes,
+  splitPdfBytes,
+} from './save-pdf'
+import {
+  addSignature,
+  isSignatureData,
+  loadSignatures,
+  removeSignature,
+  saveSignatures,
+} from './signature-store'
+import { uniqueGeneratedPdfPath } from './generated-output'
 
 const tDlg = createI18n({
   zh: {
     dlgExportImages: '导出图片到文件夹',
     dlgExtract: '抽取页面为 PDF',
-    dlgInsert: '选择要插入的 PDF',
+    dlgInsert: '选择要导入的 PDF',
+    dlgSplit: '拆分 PDF 到文件夹',
+    dlgMerge: '选择要合并的 PDF',
+    dlgMergeSave: '合并 PDF 保存为',
+    dlgMergePages: '合并页面保存为',
+    dlgReplace: '选择用于替换的 PDF',
+    dlgSplitPages: '拆分页面保存为',
     filterPdf: 'PDF 文档',
     closeUnsavedMsg: '此 PDF 有未保存的更改。',
     closeUnsavedDetail: '关闭前是否保存？',
@@ -44,7 +89,13 @@ const tDlg = createI18n({
   en: {
     dlgExportImages: 'Export Images to Folder',
     dlgExtract: 'Extract Pages as PDF',
-    dlgInsert: 'Choose a PDF to Insert',
+    dlgInsert: 'Choose a PDF to Import',
+    dlgSplit: 'Split PDF into Folder',
+    dlgMerge: 'Choose PDFs to Merge',
+    dlgMergeSave: 'Save Merged PDF As',
+    dlgMergePages: 'Save Merged Pages As',
+    dlgReplace: 'Choose a Replacement PDF',
+    dlgSplitPages: 'Save Split Pages As',
     filterPdf: 'PDF Documents',
     closeUnsavedMsg: 'This PDF has unsaved changes.',
     closeUnsavedDetail: 'Do you want to save them before closing?',
@@ -55,7 +106,13 @@ const tDlg = createI18n({
   ja: {
     dlgExportImages: '画像をフォルダに書き出す',
     dlgExtract: 'ページを PDF として抽出',
-    dlgInsert: '挿入する PDF を選択',
+    dlgInsert: 'インポートする PDF を選択',
+    dlgSplit: 'PDF をフォルダに分割',
+    dlgMerge: '結合する PDF を選択',
+    dlgMergeSave: '結合した PDF の保存先',
+    dlgMergePages: '結合したページの保存先',
+    dlgReplace: '差し替え用の PDF を選択',
+    dlgSplitPages: '分割したページの保存先',
     filterPdf: 'PDF ドキュメント',
     closeUnsavedMsg: 'この PDF に未保存の変更があります。',
     closeUnsavedDetail: '閉じる前に保存しますか？',
@@ -66,7 +123,13 @@ const tDlg = createI18n({
   ko: {
     dlgExportImages: '이미지를 폴더로 내보내기',
     dlgExtract: '페이지를 PDF로 추출',
-    dlgInsert: '삽입할 PDF 선택',
+    dlgInsert: '가져올 PDF 선택',
+    dlgSplit: 'PDF를 폴더로 분할',
+    dlgMerge: '병합할 PDF 선택',
+    dlgMergeSave: '병합된 PDF 저장',
+    dlgMergePages: '합쳐진 페이지 저장',
+    dlgReplace: '교체할 PDF 선택',
+    dlgSplitPages: '분할된 페이지 저장',
     filterPdf: 'PDF 문서',
     closeUnsavedMsg: '이 PDF에 저장하지 않은 변경 사항이 있습니다.',
     closeUnsavedDetail: '닫기 전에 저장하시겠습니까?',
@@ -77,7 +140,13 @@ const tDlg = createI18n({
   fr: {
     dlgExportImages: 'Exporter les images vers un dossier',
     dlgExtract: 'Extraire les pages en PDF',
-    dlgInsert: 'Choisir un PDF à insérer',
+    dlgInsert: 'Choisir un PDF à importer',
+    dlgSplit: 'Diviser le PDF dans un dossier',
+    dlgMerge: 'Choisir les PDF à fusionner',
+    dlgMergeSave: 'Enregistrer le PDF fusionné sous',
+    dlgMergePages: 'Enregistrer les pages fusionnées sous',
+    dlgReplace: 'Choisir un PDF de remplacement',
+    dlgSplitPages: 'Enregistrer les pages divisées sous',
     filterPdf: 'Documents PDF',
     closeUnsavedMsg: 'Ce PDF contient des modifications non enregistrées.',
     closeUnsavedDetail: 'Voulez-vous les enregistrer avant de fermer ?',
@@ -88,7 +157,13 @@ const tDlg = createI18n({
   de: {
     dlgExportImages: 'Bilder in Ordner exportieren',
     dlgExtract: 'Seiten als PDF extrahieren',
-    dlgInsert: 'Einzufügendes PDF wählen',
+    dlgInsert: 'Zu importierendes PDF wählen',
+    dlgSplit: 'PDF in Ordner aufteilen',
+    dlgMerge: 'Zu vereinende PDFs wählen',
+    dlgMergeSave: 'Zusammengeführtes PDF speichern unter',
+    dlgMergePages: 'Zusammengefasste Seiten speichern unter',
+    dlgReplace: 'Ersatz-PDF wählen',
+    dlgSplitPages: 'Geteilte Seiten speichern unter',
     filterPdf: 'PDF-Dokumente',
     closeUnsavedMsg: 'Dieses PDF enthält ungespeicherte Änderungen.',
     closeUnsavedDetail: 'Vor dem Schließen speichern?',
@@ -99,7 +174,13 @@ const tDlg = createI18n({
   es: {
     dlgExportImages: 'Exportar imágenes a una carpeta',
     dlgExtract: 'Extraer páginas como PDF',
-    dlgInsert: 'Elegir un PDF para insertar',
+    dlgInsert: 'Elegir un PDF para importar',
+    dlgSplit: 'Dividir PDF en una carpeta',
+    dlgMerge: 'Elegir PDF para combinar',
+    dlgMergeSave: 'Guardar PDF combinado como',
+    dlgMergePages: 'Guardar páginas combinadas como',
+    dlgReplace: 'Elegir un PDF de reemplazo',
+    dlgSplitPages: 'Guardar páginas divididas como',
     filterPdf: 'Documentos PDF',
     closeUnsavedMsg: 'Este PDF tiene cambios sin guardar.',
     closeUnsavedDetail: '¿Quieres guardarlos antes de cerrar?',
@@ -110,7 +191,13 @@ const tDlg = createI18n({
   th: {
     dlgExportImages: 'ส่งออกรูปภาพไปยังโฟลเดอร์',
     dlgExtract: 'แยกหน้าเป็น PDF',
-    dlgInsert: 'เลือก PDF ที่จะแทรก',
+    dlgInsert: 'เลือก PDF ที่จะนำเข้า',
+    dlgSplit: 'แยก PDF ไปยังโฟลเดอร์',
+    dlgMerge: 'เลือก PDF ที่จะรวม',
+    dlgMergeSave: 'บันทึก PDF ที่รวมแล้วเป็น',
+    dlgMergePages: 'บันทึกหน้าที่รวมแล้วเป็น',
+    dlgReplace: 'เลือก PDF สำหรับแทนที่',
+    dlgSplitPages: 'บันทึกหน้าที่แยกแล้วเป็น',
     filterPdf: 'เอกสาร PDF',
     closeUnsavedMsg: 'PDF นี้มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก',
     closeUnsavedDetail: 'ต้องการบันทึกก่อนปิดหรือไม่?',
@@ -121,7 +208,13 @@ const tDlg = createI18n({
   id: {
     dlgExportImages: 'Ekspor gambar ke folder',
     dlgExtract: 'Ekstrak halaman sebagai PDF',
-    dlgInsert: 'Pilih PDF untuk disisipkan',
+    dlgInsert: 'Pilih PDF untuk diimpor',
+    dlgSplit: 'Pisahkan PDF ke folder',
+    dlgMerge: 'Pilih PDF untuk digabung',
+    dlgMergeSave: 'Simpan PDF gabungan sebagai',
+    dlgMergePages: 'Simpan halaman gabungan sebagai',
+    dlgReplace: 'Pilih PDF pengganti',
+    dlgSplitPages: 'Simpan halaman terpisah sebagai',
     filterPdf: 'Dokumen PDF',
     closeUnsavedMsg: 'PDF ini memiliki perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Simpan sebelum menutup?',
@@ -132,7 +225,13 @@ const tDlg = createI18n({
   ru: {
     dlgExportImages: 'Экспорт изображений в папку',
     dlgExtract: 'Извлечь страницы в PDF',
-    dlgInsert: 'Выберите PDF для вставки',
+    dlgInsert: 'Выберите PDF для импорта',
+    dlgSplit: 'Разделить PDF в папку',
+    dlgMerge: 'Выберите PDF для объединения',
+    dlgMergeSave: 'Сохранить объединённый PDF как',
+    dlgMergePages: 'Сохранить объединённые страницы как',
+    dlgReplace: 'Выберите PDF для замены',
+    dlgSplitPages: 'Сохранить разделённые страницы как',
     filterPdf: 'Документы PDF',
     closeUnsavedMsg: 'В этом PDF есть несохранённые изменения.',
     closeUnsavedDetail: 'Сохранить их перед закрытием?',
@@ -143,7 +242,13 @@ const tDlg = createI18n({
   ar: {
     dlgExportImages: 'تصدير الصور إلى مجلد',
     dlgExtract: 'استخراج الصفحات كملف PDF',
-    dlgInsert: 'اختر PDF للإدراج',
+    dlgInsert: 'اختر PDF للاستيراد',
+    dlgSplit: 'تقسيم PDF إلى مجلد',
+    dlgMerge: 'اختر ملفات PDF للدمج',
+    dlgMergeSave: 'حفظ PDF المدمج باسم',
+    dlgMergePages: 'حفظ الصفحات المدمجة باسم',
+    dlgReplace: 'اختر PDF بديلاً',
+    dlgSplitPages: 'حفظ الصفحات المقسّمة باسم',
     filterPdf: 'مستندات PDF',
     closeUnsavedMsg: 'يحتوي هذا الـ PDF على تغييرات غير محفوظة.',
     closeUnsavedDetail: 'هل تريد حفظها قبل الإغلاق؟',
@@ -154,7 +259,13 @@ const tDlg = createI18n({
   pt: {
     dlgExportImages: 'Exportar imagens para pasta',
     dlgExtract: 'Extrair páginas como PDF',
-    dlgInsert: 'Escolher um PDF para inserir',
+    dlgInsert: 'Escolher um PDF para importar',
+    dlgSplit: 'Dividir PDF em uma pasta',
+    dlgMerge: 'Escolher PDFs para mesclar',
+    dlgMergeSave: 'Salvar PDF mesclado como',
+    dlgMergePages: 'Salvar páginas combinadas como',
+    dlgReplace: 'Escolher um PDF de substituição',
+    dlgSplitPages: 'Salvar páginas divididas como',
     filterPdf: 'Documentos PDF',
     closeUnsavedMsg: 'Este PDF tem alterações não salvas.',
     closeUnsavedDetail: 'Deseja salvá-las antes de fechar?',
@@ -165,7 +276,13 @@ const tDlg = createI18n({
   it: {
     dlgExportImages: 'Esporta immagini in una cartella',
     dlgExtract: 'Estrai pagine come PDF',
-    dlgInsert: 'Scegli un PDF da inserire',
+    dlgInsert: 'Scegli un PDF da importare',
+    dlgSplit: 'Dividi il PDF in una cartella',
+    dlgMerge: 'Scegli i PDF da unire',
+    dlgMergeSave: 'Salva il PDF unito come',
+    dlgMergePages: 'Salva le pagine combinate come',
+    dlgReplace: 'Scegli un PDF sostitutivo',
+    dlgSplitPages: 'Salva le pagine divise come',
     filterPdf: 'Documenti PDF',
     closeUnsavedMsg: 'Questo PDF contiene modifiche non salvate.',
     closeUnsavedDetail: 'Vuoi salvarle prima di chiudere?',
@@ -176,7 +293,13 @@ const tDlg = createI18n({
   pl: {
     dlgExportImages: 'Eksportuj obrazy do folderu',
     dlgExtract: 'Wyodrębnij strony jako PDF',
-    dlgInsert: 'Wybierz PDF do wstawienia',
+    dlgInsert: 'Wybierz PDF do zaimportowania',
+    dlgSplit: 'Podziel PDF do folderu',
+    dlgMerge: 'Wybierz pliki PDF do scalenia',
+    dlgMergeSave: 'Zapisz scalony PDF jako',
+    dlgMergePages: 'Zapisz scalone strony jako',
+    dlgReplace: 'Wybierz PDF zastępczy',
+    dlgSplitPages: 'Zapisz podzielone strony jako',
     filterPdf: 'Dokumenty PDF',
     closeUnsavedMsg: 'Ten PDF ma niezapisane zmiany.',
     closeUnsavedDetail: 'Czy zapisać je przed zamknięciem?',
@@ -187,7 +310,13 @@ const tDlg = createI18n({
   nl: {
     dlgExportImages: 'Afbeeldingen naar map exporteren',
     dlgExtract: "Pagina's extraheren als PDF",
-    dlgInsert: 'Kies een PDF om in te voegen',
+    dlgInsert: 'Kies een PDF om te importeren',
+    dlgSplit: 'PDF splitsen naar map',
+    dlgMerge: "Kies PDF's om samen te voegen",
+    dlgMergeSave: 'Samengevoegde PDF opslaan als',
+    dlgMergePages: "Gecombineerde pagina's opslaan als",
+    dlgReplace: 'Kies een vervangende PDF',
+    dlgSplitPages: "Gesplitste pagina's opslaan als",
     filterPdf: 'PDF-documenten',
     closeUnsavedMsg: 'Deze PDF bevat niet-opgeslagen wijzigingen.',
     closeUnsavedDetail: 'Wilt u ze opslaan voordat u sluit?',
@@ -198,7 +327,13 @@ const tDlg = createI18n({
   ms: {
     dlgExportImages: 'Eksport imej ke folder',
     dlgExtract: 'Ekstrak halaman sebagai PDF',
-    dlgInsert: 'Pilih PDF untuk disisipkan',
+    dlgInsert: 'Pilih PDF untuk diimport',
+    dlgSplit: 'Pisahkan PDF ke folder',
+    dlgMerge: 'Pilih PDF untuk digabungkan',
+    dlgMergeSave: 'Simpan PDF gabungan sebagai',
+    dlgMergePages: 'Simpan halaman gabungan sebagai',
+    dlgReplace: 'Pilih PDF pengganti',
+    dlgSplitPages: 'Simpan halaman dipisah sebagai',
     filterPdf: 'Dokumen PDF',
     closeUnsavedMsg: 'PDF ini mempunyai perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Simpan sebelum menutup?',
@@ -209,7 +344,13 @@ const tDlg = createI18n({
   he: {
     dlgExportImages: 'ייצוא תמונות לתיקייה',
     dlgExtract: 'חילוץ עמודים כ-PDF',
-    dlgInsert: 'בחרו PDF להוספה',
+    dlgInsert: 'בחרו PDF לייבוא',
+    dlgSplit: 'פיצול PDF לתיקייה',
+    dlgMerge: 'בחרו קובצי PDF למיזוג',
+    dlgMergeSave: 'שמירת ה-PDF הממוזג בשם',
+    dlgMergePages: 'שמירת העמודים המאוחדים בשם',
+    dlgReplace: 'בחרו PDF חלופי',
+    dlgSplitPages: 'שמירת העמודים המפוצלים בשם',
     filterPdf: 'מסמכי PDF',
     closeUnsavedMsg: 'ב-PDF הזה יש שינויים שלא נשמרו.',
     closeUnsavedDetail: 'האם לשמור אותם לפני הסגירה?',
@@ -220,7 +361,13 @@ const tDlg = createI18n({
   hi: {
     dlgExportImages: 'चित्र फ़ोल्डर में निर्यात करें',
     dlgExtract: 'पृष्ठों को PDF के रूप में निकालें',
-    dlgInsert: 'सम्मिलित करने के लिए PDF चुनें',
+    dlgInsert: 'आयात करने के लिए PDF चुनें',
+    dlgSplit: 'PDF को फ़ोल्डर में विभाजित करें',
+    dlgMerge: 'मर्ज करने के लिए PDF चुनें',
+    dlgMergeSave: 'मर्ज किया गया PDF इस रूप में सहेजें',
+    dlgMergePages: 'संयोजित पृष्ठ इस रूप में सहेजें',
+    dlgReplace: 'प्रतिस्थापन के लिए PDF चुनें',
+    dlgSplitPages: 'विभाजित पृष्ठ इस रूप में सहेजें',
     filterPdf: 'PDF दस्तावेज़',
     closeUnsavedMsg: 'इस PDF में सहेजे नहीं गए परिवर्तन हैं।',
     closeUnsavedDetail: 'क्या बंद करने से पहले उन्हें सहेजना चाहते हैं?',
@@ -231,7 +378,13 @@ const tDlg = createI18n({
   'zh-TW': {
     dlgExportImages: '匯出圖片到資料夾',
     dlgExtract: '擷取頁面為 PDF',
-    dlgInsert: '選擇要插入的 PDF',
+    dlgInsert: '選擇要匯入的 PDF',
+    dlgSplit: '拆分 PDF 到資料夾',
+    dlgMerge: '選擇要合併的 PDF',
+    dlgMergeSave: '合併 PDF 儲存為',
+    dlgMergePages: '合併頁面儲存為',
+    dlgReplace: '選擇用於取代的 PDF',
+    dlgSplitPages: '拆分頁面儲存為',
     filterPdf: 'PDF 文件',
     closeUnsavedMsg: '此 PDF 有未儲存的變更。',
     closeUnsavedDetail: '關閉前是否儲存？',
@@ -244,6 +397,12 @@ type DlgKey =
   | 'dlgExportImages'
   | 'dlgExtract'
   | 'dlgInsert'
+  | 'dlgSplit'
+  | 'dlgMerge'
+  | 'dlgMergeSave'
+  | 'dlgMergePages'
+  | 'dlgReplace'
+  | 'dlgSplitPages'
   | 'filterPdf'
   | 'closeUnsavedMsg'
   | 'closeUnsavedDetail'
@@ -256,12 +415,27 @@ interface RuntimePaths {
   preloadPath: string
   rendererUrl?: string
   rendererFile?: string
+  /** Shell router used to open generated PDFs in a new GenOffice tab. */
+  openGeneratedPath?: (path: string) => boolean
 }
 
 let runtime: RuntimePaths = { preloadPath: '' }
 
 export function configurePdfRuntime(paths: RuntimePaths): void {
   runtime = paths
+}
+
+function openGeneratedPdf(path: string): void {
+  try {
+    if (runtime.openGeneratedPath?.(path)) return
+  } catch (err) {
+    // The file is already safely persisted; a tab-opening failure must not
+    // report the merge itself as failed.
+    console.warn('[pdf] Failed to open generated PDF:', err)
+  }
+  // Standalone PDF mode has no shell tab router. If routing is unavailable or
+  // rejects the path, reveal the persisted output so success is never silent.
+  shell.showItemInFolder(path)
 }
 
 /** Open path per view, queued at tab creation; the renderer consumes it after mount
@@ -331,6 +505,11 @@ export function flushPdfSave(contents: WebContents): Promise<boolean> {
   return requestRendererSave(contents)
 }
 
+/** Menu Print: ask the renderer to run its print flow (save, rasterize, system dialog) */
+export function sendPdfPrintRequest(contents: WebContents): void {
+  if (!contents.isDestroyed()) contents.send(PDF_CHANNELS.printRequest)
+}
+
 /**
  * Marks the whole Save As flow (dialog included) for the renderer, which pauses
  * autosave meanwhile: opening the save dialog blurs the window, and a
@@ -366,6 +545,21 @@ export function requestPdfSaveAs(contents: WebContents, targetPath: string): Pro
   })
 }
 
+/** Saved signatures live in userData, shared by all documents and windows */
+const signaturesPath = () => join(app.getPath('userData'), 'pdf-signatures.json')
+
+/** Serialize signature file read-modify-writes: several pdf views share one file */
+let signatureQueue: Promise<unknown> = Promise.resolve()
+function withSignatures(
+  op: (list: SavedSignature[]) => Promise<SavedSignature[]>,
+): Promise<SavedSignature[]> {
+  const next = signatureQueue
+    .catch(() => undefined)
+    .then(async () => op(await loadSignatures(signaturesPath())))
+  signatureQueue = next
+  return next
+}
+
 let ipcRegistered = false
 
 function registerPdfIpc(): void {
@@ -373,6 +567,14 @@ function registerPdfIpc(): void {
   ipcRegistered = true
 
   ipcMain.handle(PDF_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
+
+  ipcMain.handle(PDF_CHANNELS.getUsername, () => {
+    try {
+      return userInfo().username
+    } catch {
+      return ''
+    }
+  })
 
   ipcMain.handle(PDF_CHANNELS.readFile, async (e, path: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
@@ -513,18 +715,15 @@ function registerPdfIpc(): void {
       ) {
         return { ok: false, error: 'pdf: path not granted to this view' }
       }
-      const win =
-        BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await showSaveDialogWithMemory(dialog, win, {
-        title: tm('dlgExtract'),
-        defaultPath: join(dirname(path), String(suggestedName || 'pages.pdf')),
-        filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
-      })
-      if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
       try {
         const bytes = await extractPagesBytes(new Uint8Array(await readFile(path)), pages)
-        await writeFile(picked.filePath, bytes)
-        return { ok: true, savedPath: picked.filePath }
+        const targetPath = uniqueGeneratedPdfPath(
+          configuredDefaultSaveDir(app),
+          String(suggestedName || 'pages.pdf'),
+        )
+        await writeFile(targetPath, bytes)
+        openGeneratedPdf(targetPath)
+        return { ok: true, savedPath: targetPath }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -564,6 +763,235 @@ function registerPdfIpc(): void {
   )
 
   ipcMain.handle(
+    PDF_CHANNELS.insertBlankPage,
+    async (e, request: InsertBlankPageRequest): Promise<InsertBlankPageResult> => {
+      const { path, afterPageIndex } = request ?? {}
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      try {
+        const bytes = await insertBlankPageBytes(
+          new Uint8Array(await readFile(path)),
+          typeof afterPageIndex === 'number' ? afterPageIndex : -1,
+        )
+        const tmp = `${path}.gensave-${process.pid}.tmp`
+        await writeFile(tmp, bytes)
+        await rename(tmp, path)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.splitPdf,
+    async (e, request: SplitPdfRequest): Promise<SplitPdfResult> => {
+      const { path, chunkSize, baseName } = request ?? {}
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      const win =
+        BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
+      const picked = await showOpenDialogWithMemory(dialog, win, {
+        title: tm('dlgSplit'),
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      const dir = picked.filePaths[0]
+      if (picked.canceled || !dir) return { ok: true, canceled: true }
+      try {
+        const parts = await splitPdfBytes(
+          new Uint8Array(await readFile(path)),
+          typeof chunkSize === 'number' ? chunkSize : 1,
+        )
+        const safeBase = String(baseName || 'split').replace(/[/\\:*?"<>|]/g, '_')
+        for (const [i, bytes] of parts.entries()) {
+          await writeFile(join(dir, `${safeBase}-${i + 1}.pdf`), bytes)
+        }
+        // Many output files — don't open tabs; reveal them so success is never silent
+        shell.showItemInFolder(join(dir, `${safeBase}-1.pdf`))
+        return { ok: true, savedDir: dir, count: parts.length }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.mergePdf,
+    async (e, request: MergePdfRequest): Promise<MergePdfResult> => {
+      const { path, suggestedName } = request ?? {}
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      const win =
+        BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
+      const picked = await showOpenDialogWithMemory(dialog, win, {
+        title: tm('dlgMerge'),
+        filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
+        properties: ['openFile', 'multiSelections'],
+      })
+      if (picked.canceled || picked.filePaths.length === 0) return { ok: true, canceled: true }
+      try {
+        const others = await Promise.all(
+          picked.filePaths.map(async (p) => new Uint8Array(await readFile(p))),
+        )
+        const { merged, appended } = await mergePdfBytes(
+          new Uint8Array(await readFile(path)),
+          others,
+        )
+        const targetPath = uniqueGeneratedPdfPath(
+          configuredDefaultSaveDir(app),
+          String(suggestedName || 'merged.pdf'),
+        )
+        await writeFile(targetPath, merged)
+        openGeneratedPdf(targetPath)
+        return { ok: true, savedPath: targetPath, appendedCount: appended }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.mergePages,
+    async (e, request: MergePagesRequest): Promise<MergePagesResult> => {
+      const { path, perSheet, direction, separator, suggestedName } = request ?? {}
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      if (!Number.isInteger(perSheet) || perSheet < 2 || perSheet > 16) {
+        return { ok: false, error: 'pdf: pages-per-sheet must be 2-16' }
+      }
+      try {
+        const bytes = await mergePagesBytes(new Uint8Array(await readFile(path)), {
+          perSheet,
+          direction: direction === 'horizontal' ? 'horizontal' : 'vertical',
+          separator: separator === true,
+        })
+        const targetPath = uniqueGeneratedPdfPath(
+          configuredDefaultSaveDir(app),
+          String(suggestedName || 'merged-pages.pdf'),
+        )
+        await writeFile(targetPath, bytes)
+        openGeneratedPdf(targetPath)
+        return { ok: true, savedPath: targetPath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.replacePages,
+    async (e, request: ReplacePagesRequest): Promise<ReplacePagesResult> => {
+      const { path, pages } = request ?? {}
+      if (
+        typeof path !== 'string' ||
+        !allowedByWc.get(e.sender.id)?.has(path) ||
+        !Array.isArray(pages) ||
+        pages.length === 0
+      ) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      const win =
+        BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
+      const picked = await showOpenDialogWithMemory(dialog, win, {
+        title: tm('dlgReplace'),
+        filters: [{ name: tm('filterPdf'), extensions: ['pdf'] }],
+        properties: ['openFile'],
+      })
+      const other = picked.filePaths[0]
+      if (picked.canceled || !other) return { ok: true, canceled: true }
+      try {
+        const { merged, removed, inserted } = await replacePagesBytes(
+          new Uint8Array(await readFile(path)),
+          new Uint8Array(await readFile(other)),
+          pages,
+        )
+        const tmp = `${path}.gensave-${process.pid}.tmp`
+        await writeFile(tmp, merged)
+        await rename(tmp, path)
+        return { ok: true, removed, inserted }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.setPageSize,
+    async (e, request: SetPageSizeRequest): Promise<SetPageSizeResult> => {
+      const { path, width, height } = request ?? {}
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      if (!(Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0)) {
+        return { ok: false, error: 'pdf: invalid page size' }
+      }
+      try {
+        const bytes = await setPageSizeBytes(new Uint8Array(await readFile(path)), width, height)
+        const tmp = `${path}.gensave-${process.pid}.tmp`
+        await writeFile(tmp, bytes)
+        await rename(tmp, path)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.splitPages,
+    async (e, request: SplitPagesRequest): Promise<SplitPagesResult> => {
+      const { path, perPage, suggestedName } = request ?? {}
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      if (perPage !== 2 && perPage !== 4 && perPage !== 9) {
+        return { ok: false, error: 'pdf: unsupported split grid' }
+      }
+      try {
+        const bytes = await splitPagesBytes(new Uint8Array(await readFile(path)), perPage)
+        const targetPath = uniqueGeneratedPdfPath(
+          configuredDefaultSaveDir(app),
+          String(suggestedName || 'split-pages.pdf'),
+        )
+        await writeFile(targetPath, bytes)
+        openGeneratedPdf(targetPath)
+        return { ok: true, savedPath: targetPath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    PDF_CHANNELS.cropPages,
+    async (e, request: CropPagesRequest): Promise<CropPagesResult> => {
+      const { path, pages, rect } = request ?? {}
+      if (
+        typeof path !== 'string' ||
+        !allowedByWc.get(e.sender.id)?.has(path) ||
+        !Array.isArray(pages) ||
+        pages.length === 0 ||
+        !rect
+      ) {
+        return { ok: false, error: 'pdf: path not granted to this view' }
+      }
+      try {
+        const bytes = await cropPagesBytes(new Uint8Array(await readFile(path)), pages, rect)
+        const tmp = `${path}.gensave-${process.pid}.tmp`
+        await writeFile(tmp, bytes)
+        await rename(tmp, path)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
     PDF_CHANNELS.exportImages,
     async (e, request: ExportImagesRequest): Promise<ExportImagesResult> => {
       const { images, pageNumbers, baseName } = request ?? {}
@@ -583,6 +1011,8 @@ function registerPdfIpc(): void {
           const no = pageNumbers?.[i] ?? i + 1
           await writeFile(join(dir, `${safeBase}-p${no}.png`), Buffer.from(b64, 'base64'))
         }
+        // Reveal the exported images so success is never silent
+        shell.showItemInFolder(join(dir, `${safeBase}-p${pageNumbers?.[0] ?? 1}.png`))
         return { ok: true, savedDir: dir, count: images.length }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -611,6 +1041,26 @@ function registerPdfIpc(): void {
         return { error: err instanceof Error ? err.message : String(err) }
       }
     },
+  )
+
+  ipcMain.handle(PDF_CHANNELS.listSignatures, () => withSignatures(async (list) => list))
+
+  ipcMain.handle(PDF_CHANNELS.addSignature, (_e, data: unknown) =>
+    withSignatures(async (list) => {
+      if (!isSignatureData(data)) return list
+      const next = addSignature(list, data)
+      await saveSignatures(signaturesPath(), next)
+      return next
+    }),
+  )
+
+  ipcMain.handle(PDF_CHANNELS.removeSignature, (_e, id: unknown) =>
+    withSignatures(async (list) => {
+      if (typeof id !== 'string') return list
+      const next = removeSignature(list, id)
+      if (next.length !== list.length) await saveSignatures(signaturesPath(), next)
+      return next
+    }),
   )
 
   ipcMain.on(PDF_CHANNELS.dirtyChanged, (e, dirty: unknown) => {

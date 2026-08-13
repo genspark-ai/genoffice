@@ -233,7 +233,6 @@ export async function handleSave(
     if (!splitSave) {
       ctx.openLazyWorkbook(result.file)
       const saved = t('appSaved', {
-        name: result.file.name,
         touched: result.touchedEntries.length,
         total: result.file.entryCount,
       })
@@ -275,7 +274,7 @@ export async function handleSave(
         return
       }
       ctx.openLazyWorkbook(second.file)
-      const saved = t('appSavedTwoPhase', { name: second.file.name })
+      const saved = t('appSavedTwoPhase')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
     } catch (error: unknown) {

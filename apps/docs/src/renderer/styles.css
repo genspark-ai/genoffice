@@ -2226,10 +2226,11 @@ th.cell-rev-del {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  width: calc(var(--page-w, 816px) - 120px);
-  text-align: center;
-  font-size: 9pt;
-  color: var(--docs-paper-ink-soft);
+  /* Word: header/footer strip spans the text column; paragraphs default to
+     left-aligned black text at the body size (alignment comes from w:jc) */
+  width: var(--section-content-w, calc(var(--page-w, 816px) - 120px));
+  font-size: 10.5pt;
+  color: var(--docs-paper-ink);
   overflow: hidden;
   z-index: 1;
   cursor: default;
@@ -2238,6 +2239,26 @@ th.cell-rev-del {
 .page-hf-para {
   white-space: pre-wrap;
   min-height: 1.3em;
+}
+
+/* tabbed header/footer paragraph (left\tcenter\tright): segments after each
+   tab are pinned at their stop offsets from the text-column left edge */
+.page-hf-tabbed {
+  position: relative;
+  white-space: nowrap;
+}
+
+.page-hf-tabseg {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.page-hf-tabseg-center {
+  transform: translateX(-50%);
+}
+
+.page-hf-tabseg-right {
+  transform: translateX(-100%);
 }
 
 /* header/footer layout-table row: cells as width-proportioned columns (display-only) */
@@ -2990,12 +3011,14 @@ th.cell-rev-del {
   box-shadow: var(--docs-gap-inset);
 }
 
-/* inline gap for mid-paragraph page breaks: inserted at the broken line inside the paragraph, takes its own line, excluded from text selection/cursor */
+/* inline gap for mid-paragraph page breaks: inserted at the broken line inside the paragraph, takes its own line, excluded from text selection/cursor.
+   Opaque paper background so the paragraph's own shading can't cross the band (the ::before canvas band paints on top of it). */
 .page-gap-inline {
   display: inline-block;
   vertical-align: top;
   pointer-events: none;
   text-indent: 0;
+  background: var(--page-bg, var(--docs-paper));
 }
 
 /* in-cell gap (single-column in-row table cut): opaque paper background so the cell's
@@ -3042,11 +3065,15 @@ th.cell-rev-del {
    the estimated height differs from actual rendering by pixels, so overflow into the bottom-margin area is allowed (no clipping) */
 .page-gap-notes {
   position: absolute;
-  top: 0;
+  /* small offset keeps the separator off the last line's descenders when the break lands mid-paragraph */
+  top: 5px;
   overflow: visible;
   box-sizing: border-box;
   pointer-events: auto;
   font-size: 10pt;
+  /* font + line-height mirror the estimateFootnoteHeight model (line-height set
+     inline in px, docGrid-snapped) so reserved and rendered heights agree */
+  font-family: Calibri, Carlito, 'Carlito GO', sans-serif;
   line-height: 1.3;
   color: var(--docs-paper-ink-dim);
   text-indent: 0;
@@ -3061,9 +3088,10 @@ th.cell-rev-del {
   margin-bottom: 4px;
 }
 
+/* rows are min-height (App.tsx): a long entry grows past its reserved height
+   and spills into the bottom margin instead of being clipped mid-line */
 .page-gap-note {
   cursor: default;
-  overflow: hidden;
 }
 
 .pv-footnote {
@@ -3127,6 +3155,12 @@ th.cell-rev-del {
 
 .page-gap + .page-break-before::before {
   display: none;
+}
+
+/* Word drops space-before on the lead block of a page forced by an explicit break;
+   !important beats the inline spacing style, unscoped so pv clones and direct print match */
+.page-break-lead {
+  margin-top: 0 !important;
 }
 
 /* pagination preview: read-only overlay, one fixed-size box per page, content clone clipped via negative margin */
@@ -3485,7 +3519,11 @@ th.cell-rev-del {
   /* fallback when there are no absolute grid widths; tables with w:tblGrid are overridden by inline width.
      font size/line spacing inherit the document defaults (.doc-page, i.e. the Normal style) */
   width: 100%;
-  max-width: 100%;
+  /* paper-width cap: over-wide tables may spill into the page margins like Word
+     (inline widths in extensions.ts/protected-render.ts grant up to this much) */
+  max-width: calc(
+    100% + var(--doc-margin-left, var(--doc-margin-right, 0px)) + var(--doc-margin-right, 0px)
+  );
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -3927,6 +3965,18 @@ th.cell-rev-del {
   user-select: none;
 }
 
+/* tiptap injects `.ProseMirror [contenteditable="false"] { white-space: normal }`
+ * (0-2-0), beating the single-class rules above; mirror it to keep TOC lines
+ * from wrapping their leader dots into extra lines. */
+.ProseMirror [contenteditable='false'] .doc-toc-dots,
+.ProseMirror [contenteditable='false'].doc-toc-dots {
+  white-space: nowrap;
+}
+.ProseMirror [contenteditable='false'] .doc-toc-num,
+.ProseMirror [contenteditable='false'].doc-toc-num {
+  white-space: pre;
+}
+
 .doc-field-pagebreak {
   display: flex;
   align-items: center;
@@ -4195,15 +4245,31 @@ th.cell-rev-del {
   line-height: 1.2;
 }
 
-/* OLE embed degrade: the packaged preview picture + a friendly type caption */
+/* OLE embed degrade: the packaged preview picture at its declared size —
+   Word draws no box or caption (the type name lives in the hover tooltip).
+   The block stays display:block so consecutive objects stack like w:p and
+   the paragraph's w:jc (text-align) can place the inline preview. */
+.doc-protected-ole {
+  border-color: transparent;
+  background: none;
+  padding: 0;
+  margin: 0;
+}
+
+.doc-protected-ole:hover {
+  border-color: var(--border-strong);
+}
+
+/* wrap inline-block + img block (like image blocks): the paragraph's
+   text-align places the shrink-wrapped preview without a baseline gap */
 .doc-protected-ole .doc-ole-wrap {
-  display: block;
+  display: inline-block;
+  max-width: 100%;
 }
 
 .doc-protected-ole .doc-ole-img {
   display: block;
   max-width: 100%;
-  margin-bottom: 4px;
 }
 
 .doc-protected-img {
@@ -5357,35 +5423,6 @@ body.docs-crop-active
   position: relative;
 }
 
-.ai-msg-tool-btn::after {
-  content: attr(data-tip);
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  translate: -50% 0;
-  margin-top: 6px;
-  padding: 4px 8px;
-  background: var(--docs-tooltip-bg);
-  color: var(--docs-tooltip-ink);
-  font-size: 12px;
-  line-height: 1.5;
-  border-radius: 10px;
-  box-shadow: var(--docs-shadow-tooltip);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  transition-delay: 0s;
-  z-index: 10;
-}
-
-.ai-msg-tool-btn:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transition-delay: 0.3s;
-}
-
 /* Global press feedback */
 .ai-msg-tool-btn:active {
   filter: brightness(0.88);
@@ -6130,6 +6167,163 @@ body.docs-crop-active
   border-color: var(--word-blue);
 }
 
+/* ---- print dialog (Word-style: page preview + range options) ---- */
+
+.modal.print-dialog {
+  width: min(880px, calc(100vw - 64px));
+}
+
+.print-dialog-body {
+  display: flex;
+  gap: 18px;
+  height: min(600px, calc(100vh - 220px));
+}
+
+/* while the dialog is open the pagination preview is only its (hidden) print source */
+@media screen {
+  .app:has(.modal.print-dialog) .pagination-preview {
+    visibility: hidden;
+  }
+}
+
+.print-preview-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--hover);
+  overflow: hidden;
+}
+
+.print-preview-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* the cloned .pv-page keeps its own paper background/shadow; only the flow margin goes */
+.print-preview-page .pv-page {
+  margin: 0;
+}
+
+.print-preview-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.print-preview-nav button {
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.print-preview-nav button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.print-preview-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.print-preview-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.print-options {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.print-options fieldset {
+  margin: 0;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.print-options legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.print-options .print-radio {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 7px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.print-options .print-radio input {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.print-options .print-range-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+}
+
+.print-options .print-range-input:focus {
+  border-color: var(--accent);
+}
+
+.print-options .print-range-input:disabled {
+  opacity: 0.55;
+}
+
+.print-options .print-range-input.invalid {
+  border-color: var(--danger);
+}
+
+.print-page-count {
+  margin-top: auto;
+  padding: 2px 2px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 /* provider tabs in AI settings */
 
 .provider-tabs {
@@ -6399,18 +6593,22 @@ body.docs-crop-active
     visibility: hidden !important;
   }
 
-  .doc-note-ref::before,
-  .doc-note-ref::after {
-    visibility: hidden !important;
-  }
-
   /* content-control chrome: Word prints the content only, no box or alias tag */
   .has-sdt {
     border-color: transparent !important;
+    background: none !important;
   }
 
   .has-sdt::before {
     display: none !important;
+  }
+
+  /* degraded blocks (passthrough chips): no dashed box or chip fill in print.
+     Geometry (padding/margin) must stay — pagination sliced the canvas with
+     these boxes in the flow. */
+  .doc-protected {
+    border-color: transparent !important;
+    background: none !important;
   }
 
   .app,
@@ -6764,21 +6962,18 @@ body.docs-crop-active
 
 /* ---- References → Footnotes/Endnotes: reference marker + page-bottom notes area ---- */
 
+/* bare superscript number inheriting body ink (Word parity: brackets/color would leak into
+   exports and change line widths); accent is a hover/selection-only affordance */
 .doc-note-ref {
-  color: var(--docs-paper-accent);
   cursor: default;
 }
 
-/* editor-only affordance brackets around the note number; hidden when printing */
-.doc-note-ref::before {
-  content: '[';
-}
-
-.doc-note-ref::after {
-  content: ']';
+.doc-note-ref:hover {
+  color: var(--docs-paper-accent);
 }
 
 .doc-note-ref.ProseMirror-selectednode {
+  color: var(--docs-paper-accent);
   outline: 2px solid var(--word-blue);
   border-radius: 2px;
 }
@@ -7140,9 +7335,10 @@ ruby.doc-ruby.ProseMirror-selectednode {
   justify-content: center;
 }
 
+/* 6px so the active swatch's outline (2px + 1px offset) keeps clear air */
 .ink-swatches {
   display: flex;
-  gap: 3px;
+  gap: 6px;
 }
 
 .ink-swatch {

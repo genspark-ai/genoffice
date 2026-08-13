@@ -6,7 +6,7 @@
  */
 import JSZip from 'jszip'
 import { PackageArchive, relsPathFor, resolveTarget } from './zip'
-import { parseTheme, type Theme } from './theme'
+import { parseClrMap, parseTheme, type Theme } from './theme'
 import { parseSlide, parseDecorations, sliceGroupChildXmls, type ParseContext } from './parse'
 import { parsePlaceholderMap, parseMasterTextStyles } from './placeholder'
 import {
@@ -268,28 +268,36 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
 
   const chain = archive.resolveSlideChain(slidePath)
   const ctx: ParseContext = {}
-  if (chain.themePath) {
-    const themeXml = archive.readText(chain.themePath)
-    if (themeXml) ctx.theme = parseTheme(themeXml)
-  }
   // Placeholder geometry + text style inheritance + background inheritance: layout first, master fallback (read-only)
   const layoutXml = (chain.layoutPath ? archive.readText(chain.layoutPath) : undefined) ?? undefined
+  const masterXml = (chain.masterPath ? archive.readText(chain.masterPath) : undefined) ?? undefined
+  if (chain.themePath) {
+    const themeXml = archive.readText(chain.themePath)
+    if (themeXml) {
+      ctx.theme = parseTheme(themeXml)
+      // Dark masters remap schemeClr names (bg1→dk1 …); must be in place before any color resolution below
+      ctx.theme.clrMap = parseClrMap(masterXml, layoutXml, slideXml)
+    }
+  }
   if (layoutXml) {
     ctx.layoutPlaceholders = parsePlaceholderMap(layoutXml, ctx.theme)
     ctx.layoutBg = layoutXml
+    if (chain.layoutPath) ctx.layoutMediaRels = partMediaRels(archive, chain.layoutPath)
   }
-  const masterXml = (chain.masterPath ? archive.readText(chain.masterPath) : undefined) ?? undefined
   if (masterXml) {
     ctx.masterPlaceholders = parsePlaceholderMap(masterXml, ctx.theme)
     ctx.masterTextStyles = parseMasterTextStyles(masterXml, ctx.theme)
     ctx.masterBg = masterXml
+    if (chain.masterPath) ctx.masterMediaRels = partMediaRels(archive, chain.masterPath)
   }
   // Media rId → zip path; chart rId → chart part content
   const rels = archive.readRels(slidePath)
   const mediaRels = new Map<string, string>()
   const chartXmls = new Map<string, string>()
+  const chartMediaRels = new Map<string, Map<string, string>>()
   const avRels = new Map<string, { target: string; external?: boolean }>()
   const diagramDrawings = new Map<string, string>()
+  const diagramMediaRels = new Map<string, Map<string, string>>()
   const hlinkRels = new Map<string, string>()
   let slideOrder: string[] | undefined
   for (const rel of rels.values()) {
@@ -303,8 +311,12 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
     } else if (rel.type.endsWith('/image')) {
       mediaRels.set(rel.id, resolveTarget(slidePath, rel.target))
     } else if (rel.type.endsWith('/chart')) {
-      const xml = archive.readText(resolveTarget(slidePath, rel.target))
-      if (xml) chartXmls.set(rel.id, xml)
+      const target = resolveTarget(slidePath, rel.target)
+      const xml = archive.readText(target)
+      if (xml) {
+        chartXmls.set(rel.id, xml)
+        chartMediaRels.set(rel.id, partMediaRels(archive, target))
+      }
     } else if (/\/(?:video|audio|media)$/.test(rel.type)) {
       // Audio/video (r:link of a:videoFile/a:audioFile; embedded or external)
       const external = rel.targetMode === 'External'
@@ -323,18 +335,22 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
       if (relId) {
         const drawRel = rels.get(relId) ?? archive.readRels(dataPath).get(relId)
         const basePath = rels.get(relId) ? slidePath : dataPath
-        const drawingXml = drawRel
-          ? archive.readText(resolveTarget(basePath, drawRel.target))
-          : undefined
-        if (drawingXml) diagramDrawings.set(rel.id, drawingXml)
+        const drawingPath = drawRel ? resolveTarget(basePath, drawRel.target) : undefined
+        const drawingXml = drawingPath ? archive.readText(drawingPath) : undefined
+        if (drawingXml && drawingPath) {
+          diagramDrawings.set(rel.id, drawingXml)
+          diagramMediaRels.set(rel.id, partMediaRels(archive, drawingPath))
+        }
       }
     }
   }
   ctx.mediaRels = mediaRels
   ctx.chartXmls = chartXmls
+  if (chartMediaRels.size) ctx.chartMediaRels = chartMediaRels
   if (hlinkRels.size) ctx.hlinkRels = hlinkRels
   if (avRels.size) ctx.avRels = avRels
   if (diagramDrawings.size) ctx.diagramDrawings = diagramDrawings
+  if (diagramMediaRels.size) ctx.diagramMediaRels = diagramMediaRels
   // Table style definitions (embedded custom styles; built-in styles handled by table-style as fallback)
   ctx.tableStyles = archive.readText('ppt/tableStyles.xml') ?? undefined
 
@@ -435,32 +451,48 @@ function buildDecorations(
   const hasPh = (xml: string | undefined, type: string) =>
     !!xml && new RegExp(`<p:ph\\b[^>]*type="${type}"`).test(xml)
 
+  // Slide-level showMasterSp="0" ("hide background graphics") hides both master and layout
+  // decoration shapes; layout-level only stops the master's from showing through. Footer
+  // placeholders are not background graphics and keep following the <p:hf> toggles.
+  const slideHidesInherited = /<p:sld\b[^>]*showMasterSp="(?:0|false)"/.test(slideXml)
   const masterShown =
-    !/<p:sld\b[^>]*showMasterSp="(?:0|false)"/.test(slideXml) &&
+    !slideHidesInherited &&
     !(layoutXml && /<p:sldLayout\b[^>]*showMasterSp="(?:0|false)"/.test(layoutXml))
 
-  if (masterShown && masterXml && parts.masterPath) {
+  if (masterXml && parts.masterPath) {
     const hfTypes = new Set([...enabled].filter((k) => !slidePh.has(k) && !hasPh(layoutXml, k)))
-    const ctx: ParseContext = {
-      theme: parts.theme,
-      mediaRels: partMediaRels(archive, parts.masterPath),
+    if (masterShown || hfTypes.size) {
+      const ctx: ParseContext = {
+        theme: parts.theme,
+        mediaRels: partMediaRels(archive, parts.masterPath),
+      }
+      out.push(
+        ...parseDecorations(masterXml, ctx, {
+          hfTypes,
+          hideShapes: !masterShown,
+          ...(slideNum != null ? { slideNum } : {}),
+        }),
+      )
     }
-    out.push(
-      ...parseDecorations(masterXml, ctx, { hfTypes, ...(slideNum != null ? { slideNum } : {}) }),
-    )
   }
   if (layoutXml && parts.layoutPath) {
     const hfTypes = new Set([...enabled].filter((k) => !slidePh.has(k)))
-    // Layout footer placeholders often omit xfrm/font size, inheriting from the master
-    const ctx: ParseContext = {
-      theme: parts.theme,
-      mediaRels: partMediaRels(archive, parts.layoutPath),
-      masterPlaceholders: parts.masterPlaceholders,
-      masterTextStyles: parts.masterTextStyles,
+    if (!slideHidesInherited || hfTypes.size) {
+      // Layout footer placeholders often omit xfrm/font size, inheriting from the master
+      const ctx: ParseContext = {
+        theme: parts.theme,
+        mediaRels: partMediaRels(archive, parts.layoutPath),
+        masterPlaceholders: parts.masterPlaceholders,
+        masterTextStyles: parts.masterTextStyles,
+      }
+      out.push(
+        ...parseDecorations(layoutXml, ctx, {
+          hfTypes,
+          hideShapes: slideHidesInherited,
+          ...(slideNum != null ? { slideNum } : {}),
+        }),
+      )
     }
-    out.push(
-      ...parseDecorations(layoutXml, ctx, { hfTypes, ...(slideNum != null ? { slideNum } : {}) }),
-    )
   }
   return out
 }
@@ -1772,11 +1804,15 @@ export function editChartElement(
             ? 'barPercentStacked'
             : existing.grouping === 'stacked'
               ? 'barStacked'
-              : 'bar'
+              : existing.pseudo3D // 3-D column survives data/style-only rebuilds (stacked 3-D degrades to 2-D stacked)
+                ? 'bar3D'
+                : 'bar'
           : existing.kind === 'pie'
             ? (existing.holePct ?? 0) > 0
               ? 'doughnut'
-              : 'pie'
+              : existing.pseudo3D
+                ? 'pie3D'
+                : 'pie'
             : (existing.kind as NewChartKind)
   const kind: NewChartKind = patch.kind ?? derivedKind
   // Horizontal bar direction is preserved through rebuilds; an explicit type change resets it unless the patch asks for barDir 'bar' (the gallery's horizontal-bar entry)

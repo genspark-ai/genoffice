@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PageEntry } from '../src/renderer/search'
-import { groupPageBlocks } from '../src/renderer/text-block'
+import { groupPageBlocks, reflowOverflows } from '../src/renderer/text-block'
 
 interface Frag {
   t: string
@@ -362,5 +362,45 @@ describe('groupPageBlocks', () => {
     )
     expect(blocks).toHaveLength(1)
     expect(blocks[0]!.fontSize).toBe(12)
+  })
+})
+
+describe('reflowOverflows', () => {
+  // Two-line block: baselines 700 and 686 (leading 14, font 12), bottom edge at
+  // 686 - 12*0.2 = 683.6 — matches how buildLine derives block rects
+  const blk = { leftPt: 50, firstBaseline: 700, widthPt: 200, bottomPt: 683.6 }
+  const self: [number, number, number, number] = [50, 683.6, 250, 712]
+  const below = { rect: [50, 655.6, 250, 684] as [number, number, number, number] }
+
+  it('accepts a reflow that keeps or shrinks the original line count', () => {
+    expect(reflowOverflows(blk, 2, 14, 12, [below], self)).toBe(false)
+    expect(reflowOverflows(blk, 1, 14, 12, [below], self)).toBe(false)
+  })
+
+  it('rejects an extra line when another block sits below', () => {
+    expect(reflowOverflows(blk, 3, 14, 12, [below], self)).toBe(true)
+  })
+
+  it('allows an extra line over empty space', () => {
+    const farBelow = { rect: [50, 500, 250, 530] as [number, number, number, number] }
+    expect(reflowOverflows(blk, 3, 14, 12, [farBelow], self)).toBe(false)
+  })
+
+  it('ignores the edited block itself when scanning the overflow band', () => {
+    expect(reflowOverflows(blk, 3, 14, 12, [{ rect: self }], self)).toBe(false)
+  })
+
+  it('fails closed when the page geometry is unknown', () => {
+    expect(reflowOverflows(blk, 3, 14, 12, undefined, self)).toBe(true)
+  })
+
+  it('rejects a font-size increase that pushes the last line onto content below', () => {
+    // Same 2 lines but size 18 → leading 21: last baseline 679 < bottom 683.6
+    expect(reflowOverflows(blk, 2, 21, 18, [below], self)).toBe(true)
+  })
+
+  it('does not read a side-by-side column as occupied space', () => {
+    const rightColumn = { rect: [300, 600, 500, 712] as [number, number, number, number] }
+    expect(reflowOverflows(blk, 3, 14, 12, [rightColumn], self)).toBe(false)
   })
 })

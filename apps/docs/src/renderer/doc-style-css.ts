@@ -1,8 +1,16 @@
-import type { ParsedDocFull, StyleDisplay, ThemeColors, ThemeFonts } from '@genoffice/docx-engine'
 import {
+  readSections,
+  type ParsedDocFull,
+  type StyleDisplay,
+  type ThemeColors,
+  type ThemeFonts,
+} from '@genoffice/docx-engine'
+import {
+  cjkDeclaredLineFactor,
   cssDualFontFamily,
   cssFontFamily,
   cssGridLineBase,
+  cssGridLineExpr,
   cssGridSpacingPt,
   cssLineHeight,
   isCjkFontName,
@@ -11,6 +19,7 @@ import {
   textHasCjk,
   isKoreanFontName,
 } from './line-metrics'
+import { docGridPitchPt } from './pagination'
 
 /**
  * CSS for the document theme (Design ▸ Themes / Fonts / Colors). Kept separate from
@@ -65,6 +74,9 @@ export function docLineFactor(parsed: ParsedDocFull, hasCjk: boolean): number {
 /** CJK line-height factor of the document's East Asian face (feeds --doc-line-factor-cjk:
  *  per-paragraph script overrides resolve CJK paragraphs through this var). */
 export function docCjkFactor(parsed: ParsedDocFull): number {
+  // cjkDeclaredLineFactor first: missing Noto/Source Han variants take the
+  // Word-probed substitution factor, same truth as per-paragraph overrides
+  const factor = (f: string) => cjkDeclaredLineFactor(f) ?? lineHeightFactor(f)
   // Normal's EA face wins over docDefaults (a Normal declaring e.g. Noto KR must
   // not fall back to the SimSun factor). font === fontAscii means only a
   // Latin slot was declared (StyleDisplay.font is EA-first) — not an EA choice.
@@ -73,18 +85,18 @@ export function docCjkFactor(parsed: ParsedDocFull): number {
     normal?.font && (normal.font !== normal.fontAscii || isKoreanFontName(normal.font))
       ? normal.font
       : undefined
-  if (normalEa && !normal?.eaSlotEmpty) return lineHeightFactor(normalEa)
+  if (normalEa && !normal?.eaSlotEmpty) return factor(normalEa)
   const dd = parsed.docDefaults
-  if (dd?.eastAsiaFont && !dd.eaSlotEmpty) return lineHeightFactor(dd.eastAsiaFont)
+  if (dd?.eastAsiaFont && !dd.eaSlotEmpty) return factor(dd.eastAsiaFont)
   // An empty EA theme slot can still use a CJK-capable Latin theme face.
   // Japanese templates commonly put Yu Mincho or Yu Gothic in the Latin
   // slots, and LibreOffice lays undeclared CJK out with that face.
   // A Latin theme face (Calibri…) can't render CJK, so the lang backfill wins.
   const themeLatin = parsed.themeFonts?.minor
   if ((normal?.eaSlotEmpty || dd?.eaSlotEmpty) && themeLatin && isCjkFontName(themeLatin)) {
-    return lineHeightFactor(themeLatin)
+    return factor(themeLatin)
   }
-  return lineHeightFactor(normalEa ?? dd?.eastAsiaFont ?? 'SimSun')
+  return factor(normalEa ?? dd?.eastAsiaFont ?? 'SimSun')
 }
 
 /** the w:default="1" paragraph style's display (Word's baseline for un-styled paragraphs) */
@@ -105,6 +117,14 @@ export function docBodyFont(parsed: ParsedDocFull): string | undefined {
 
 export function docStyleCss(parsed: ParsedDocFull): string {
   const rules: string[] = []
+  // typed line grid: auto/multiple line heights resolve --doc-line-grid to a
+  // grid-snapped length instead of the unitless factor (cssGridLineBase).
+  // Declared on every element so per-paragraph --doc-line-factor /
+  // --doc-grid-pitch overrides re-substitute; same uniform-grid condition as
+  // App.tsx's .doc-page --doc-grid-pitch injection.
+  if (docGridPitchPt(readSections(parsed)) != null) {
+    rules.push(`.doc-page, .doc-page * { --doc-line-grid:${cssGridLineExpr()} }`)
+  }
   const dd = parsed.docDefaults
   // Word applies the w:default="1" paragraph style (Normal) to every paragraph
   // without a w:pStyle, so its display merges into the document baseline here
@@ -243,6 +263,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       decls.push(`font-family:${cssFontFamily(d.fontAscii)}`)
     }
     if (d.charSpacingTwips) decls.push(`letter-spacing:${d.charSpacingTwips / 20}pt`)
+    if (d.caps === 'all') decls.push('text-transform:uppercase')
+    else if (d.caps === 'small') decls.push('font-variant-caps:small-caps')
     const styleLh = cssLineHeight(d.lineRule, d.lineRawTwips, d.lineSpacing)
     if (styleLh) decls.push(`line-height:${styleLh}`)
     if (d.spaceBeforeTwips !== undefined)
@@ -273,8 +295,10 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // between them (ListParagraph/ListBullet carry this — Word lists are tight)
     if (d.contextualSpacing) {
       const s = `[data-style="${CSS.escape(info.styleId)}"]`
-      rules.push(`.doc-page ${s}:has(+ ${s}) { margin-bottom:0 }`)
-      rules.push(`.doc-page ${s} + ${s} { margin-top:0 }`)
+      // !important so blockAttrs' inline margins (direct w:spacing) can't win:
+      // Word swallows adjacent same-style spacing regardless of its source
+      rules.push(`.doc-page ${s}:has(+ ${s}) { margin-bottom:0 !important }`)
+      rules.push(`.doc-page ${s} + ${s} { margin-top:0 !important }`)
     }
   }
   return rules.join('\n')

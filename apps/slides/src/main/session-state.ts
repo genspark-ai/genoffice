@@ -233,6 +233,17 @@ export function setSlidesShellWindow(win: BrowserWindow | null): void {
   windowRefs.shellWindow = win
 }
 
+/** Shell-registered hook (aggregate/tab mode only): cover the tab strip with a tab's
+ *  view during a slideshow without going through HTML fullscreen. Standalone slides
+ *  windows have no tab strip and leave this null. */
+export const showChrome = {
+  setBleed: null as ((wc: WebContents, on: boolean) => void) | null,
+}
+
+export function setSlidesShowBleed(cb: (wc: WebContents, on: boolean) => void): void {
+  showChrome.setBleed = cb
+}
+
 export function setActiveSlidesWebContents(wc: WebContents | null): void {
   windowRefs.activeWebContents = wc
 }

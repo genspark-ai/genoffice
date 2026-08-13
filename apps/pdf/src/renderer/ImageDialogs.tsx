@@ -9,7 +9,7 @@
  * pixels plus the kept-region fractions so App can shrink the page footprint to match.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react'
 import { removeBackground, sampleBackgroundColors, type PixelImage, type RGB } from './cutout'
 import type { CropFractions } from './image-bake'
 import type { StringKey, TFunc } from './i18n/locale'
@@ -262,6 +262,8 @@ export function CropDialog({
   image,
   onApply,
   onCancel,
+  title,
+  extraFooter,
 }: {
   t: TFunc
   /** Source pixels (base64 PNG, no data: prefix) */
@@ -269,6 +271,10 @@ export function CropDialog({
   /** Apply: cropped PNG (base64) + kept-region fractions (for the footprint shrink) */
   onApply: (png: string, crop: CropFractions) => void
   onCancel: () => void
+  /** Dialog title; defaults to the image-crop label */
+  title?: string
+  /** Extra controls rendered between the hint and the action buttons (e.g. a scope checkbox) */
+  extraFooter?: ReactNode
 }): ReactElement {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<StringKey | null>(null)
@@ -448,7 +454,7 @@ export function CropDialog({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="pdf-modal-title">{t('imageCrop')}</div>
+        <div className="pdf-modal-title">{title ?? t('imageCrop')}</div>
         <div
           style={{
             ...CHECKERBOARD,
@@ -553,6 +559,7 @@ export function CropDialog({
         <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 8 }}>
           {t('imageCropHint')}
         </div>
+        {extraFooter}
         <div className="pdf-modal-actions">
           <button className="pdf-modal-btn" onClick={onCancel}>
             {t('cancel')}

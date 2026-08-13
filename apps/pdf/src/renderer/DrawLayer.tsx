@@ -21,6 +21,19 @@ export interface LocalDrawing {
   formWidgetId?: string
 }
 
+/** A note pin to render for a comment already saved in the file */
+export interface SavedNotePin {
+  /** Thread key ('S<objNum>') passed back through onNoteOpen */
+  key: string
+  /** PDF user space (y up), top-left of the pin */
+  at: [number, number]
+  color: [number, number, number] | null
+  contents: string
+}
+
+/** Default pin color for saved notes without /C (document data, not themed chrome) */
+export const NOTE_FALLBACK_COLOR: [number, number, number] = [1, 0.78, 0.13]
+
 /** 5-color palette (0-1 rgb), same visual language as the markup floating bar */
 export const DRAW_COLORS: { name: string; rgb: [number, number, number] }[] = [
   { name: 'red', rgb: [0.86, 0.22, 0.18] },
@@ -148,13 +161,17 @@ export function DrawLayer({
   pageWidth,
   pageHeight,
   drawings,
+  savedNotes,
+  activeNoteKey,
   tool,
   color,
   strokeWidth,
   selectedId,
   selectTitle,
+  noteOpenTitle,
   onCommit,
   onNoteAt,
+  onNoteOpen,
   onSelect,
   onMove,
   onResize,
@@ -164,13 +181,20 @@ export function DrawLayer({
   pageWidth: number
   pageHeight: number
   drawings: LocalDrawing[]
+  /** Pins for note comments saved in the file (roots of their threads) */
+  savedNotes: SavedNotePin[]
+  /** Thread key whose popover is open — its pin gets the selected outline */
+  activeNoteKey: string | null
   tool: DrawTool | null
   color: [number, number, number]
   strokeWidth: number
   selectedId: string | null
   selectTitle: string
+  noteOpenTitle: string
   onCommit: (input: DrawingInput) => void
   onNoteAt: (at: [number, number]) => void
+  /** Open the comment-thread popover for a pin ('S<objNum>' saved / 'P<id>' pending) */
+  onNoteOpen: (key: string, x: number, y: number) => void
   onSelect: (id: string, x: number, y: number) => void
   /** Move a shape by a PDF-space delta; omit to disable dragging (read-only) */
   onMove?: (id: string, dx: number, dy: number) => void
@@ -424,34 +448,48 @@ export function DrawLayer({
           })()}
         {live && drawingShape(live, geom, scale)}
       </svg>
-      {drawings
-        .filter((d) => d.input.kind === 'note')
-        .map((d) => {
-          const note = d.input as Extract<DrawingInput, { kind: 'note' }>
-          const [vx, vy] = toView(geom, scale, note.at[0], note.at[1])
-          return (
-            <button
-              key={d.id}
-              className={`pdf-note-pin${d.id === selectedId ? ' pdf-note-pin-selected' : ''}`}
-              style={{ left: vx, top: vy - 20, background: cssRgb(note.color) }}
-              data-tip={`${note.contents}\n\n${selectTitle}`}
-              aria-label={`${note.contents}\n\n${selectTitle}`}
-              onClick={(e) => onSelect(d.id, e.clientX, e.clientY)}
-            >
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="#fff"
-                strokeWidth="1.6"
-                aria-hidden
-              >
-                <path d="M2.5 3.5h11v8h-6l-3 2.5V11.5h-2z" strokeLinejoin="round" />
-              </svg>
-            </button>
+      {[
+        ...savedNotes.map((n) => ({
+          key: n.key,
+          at: n.at,
+          color: n.color ?? NOTE_FALLBACK_COLOR,
+          contents: n.contents,
+        })),
+        ...drawings
+          .filter(
+            // Pending replies live inside their parent's popover, not as own pins
+            (d) => d.input.kind === 'note' && !d.input.replyToSaved && !d.input.replyToLocalId,
           )
-        })}
+          .map((d) => {
+            const note = d.input as Extract<DrawingInput, { kind: 'note' }>
+            return { key: `P${d.id}`, at: note.at, color: note.color, contents: note.contents }
+          }),
+      ].map((pin) => {
+        const [vx, vy] = toView(geom, scale, pin.at[0], pin.at[1])
+        const tip = `${pin.contents}\n\n${noteOpenTitle}`
+        return (
+          <button
+            key={pin.key}
+            className={`pdf-note-pin${pin.key === activeNoteKey ? ' pdf-note-pin-selected' : ''}`}
+            style={{ left: vx, top: vy - 20, background: cssRgb(pin.color) }}
+            data-tip={tip}
+            aria-label={tip}
+            onClick={(e) => onNoteOpen(pin.key, e.clientX, e.clientY)}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="1.6"
+              aria-hidden
+            >
+              <path d="M2.5 3.5h11v8h-6l-3 2.5V11.5h-2z" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )
+      })}
     </>
   )
 }

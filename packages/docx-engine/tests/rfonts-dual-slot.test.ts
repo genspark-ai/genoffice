@@ -193,6 +193,26 @@ describe('eastAsia theme slot', () => {
     expect(doc.blocks[0].runs![1].font).toBe('Yu Mincho')
   })
 
+  it('themeFontLang ko resolves empty slots to Malgun Gothic', async () => {
+    const settingsPart = {
+      path: 'word/settings.xml',
+      xml:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:themeFontLang w:val="en-US" w:eastAsia="ko-KR"/></w:settings>',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+    }
+    const para =
+      `<w:p><w:r><w:rPr>${HEADING_RFONTS}</w:rPr><w:t>제목</w:t></w:r>` +
+      '<w:r><w:rPr><w:rFonts w:eastAsiaTheme="minorEastAsia"/></w:rPr><w:t>본문</w:t></w:r></w:p>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: para, extraParts: [themePart(''), settingsPart] }),
+    )
+    expect(doc.themeFonts?.eaLang).toBe('ko-KR')
+    expect(doc.blocks[0].runs![0].font).toBe('Malgun Gothic')
+    expect(doc.blocks[0].runs![1].font).toBe('Malgun Gothic')
+  })
+
   it('an empty theme slot on a style rPr also resolves to DengXian', async () => {
     const styles =
       '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/>' +

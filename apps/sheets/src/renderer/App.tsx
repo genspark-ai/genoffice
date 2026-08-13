@@ -1193,6 +1193,9 @@ export function App(): React.JSX.Element {
             zoomSlider: false,
           },
           statusBarStatistic: true,
+          // OOXML resolves style defaults as cell over row over column; the
+          // render skeleton defaults to column-wins unless this flag is set.
+          sheets: { isRowStylePrecedeColumnStyle: true },
         }),
         UniverSheetsDrawingPreset(),
         UniverSheetsConditionalFormattingPreset(),

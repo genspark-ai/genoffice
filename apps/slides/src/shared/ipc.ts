@@ -761,12 +761,14 @@ export interface AddChartOp {
   /** 'barH' = horizontal bar (mapped to kind 'bar' + barDir 'bar' in the main process) */
   kind:
     | 'bar'
+    | 'bar3D'
     | 'barStacked'
     | 'barPercentStacked'
     | 'barH'
     | 'line'
     | 'area'
     | 'pie'
+    | 'pie3D'
     | 'doughnut'
     | 'scatter'
     | 'radar'
@@ -877,12 +879,14 @@ export interface EditChartOp {
   /** Change chart type (rebuilds the chart part); undefined = unchanged; 'barH' = horizontal bar */
   kind?:
     | 'bar'
+    | 'bar3D'
     | 'barStacked'
     | 'barPercentStacked'
     | 'barH'
     | 'line'
     | 'area'
     | 'pie'
+    | 'pie3D'
     | 'doughnut'
     | 'scatter'
     | 'radar'
@@ -953,6 +957,10 @@ export interface PrintSlidesOp {
   layout?: 'full' | 'handout2' | 'handout3' | 'handout6' | 'notes'
   /** Per-page notes text for the notes layout (same order as pngsBase64) */
   notes?: string[]
+  /** Paper orientation for handout/notes pages (full pages always follow the slide ratio) */
+  orientation?: 'portrait' | 'landscape'
+  /** Border around full-page slides */
+  frame?: boolean
 }
 
 /** Show sync state from presenter view -> audience window (absolute state mirror; audience seek is idempotent) */
@@ -1012,6 +1020,12 @@ export interface SlidesApi {
   getTheme: () => Promise<UiTheme>
   /** theme switched from the shell home page */
   onThemeChanged: (handler: (theme: UiTheme) => void) => () => void
+  /** press on the shell chrome (tab strip is a sibling WebContentsView whose
+   *  clicks produce no DOM event here) — dismiss open popovers */
+  onChromePressed: (handler: () => void) => () => void
+  /** snap the host window in/out of instant fullscreen for the slideshow
+   *  (macOS simpleFullScreen — skips the animated Space transition) */
+  setShowFullScreen: (on: boolean) => Promise<void>
   openPptx: (fitWidthPx: number) => Promise<OpenResult | null>
   openPptxPath: (path: string, fitWidthPx: number) => Promise<OpenResult | null>
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>

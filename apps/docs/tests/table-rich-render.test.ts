@@ -143,8 +143,7 @@ function findSpecs(spec: unknown, tag: string): Spec[] {
 const paraStyles = (model: TableModel): string[] =>
   findSpecs(renderTableSpec(model), 'div').map((d) => d[1].style ?? '')
 
-const SINGLE_LH =
-  'line-height:round(up, calc(var(--doc-line-factor,1.2) * 1em), var(--doc-grid-pitch,0.0001px))'
+const SINGLE_LH = 'line-height:var(--doc-line-grid,var(--doc-line-factor,1.2))'
 
 describe('renderTableSpec paragraph line box', () => {
   it('gives each paragraph a run-size strut and its own single-spacing line height', () => {
@@ -202,15 +201,54 @@ describe('renderTableSpec paragraph line box', () => {
       ],
     })
     expect(style).toContain('line-height:10.0pt')
-    expect(style).toContain('margin-top:round(down, 4.0pt,')
-    expect(style).toContain('margin-bottom:round(down, 1.0pt,')
+    expect(style).toContain('margin-top:4.0pt')
+    expect(style).toContain('margin-bottom:1.0pt')
+  })
+
+  it('fully declared Latin run fonts drive the factor and the strut face', () => {
+    const [style] = paraStyles({
+      rows: [
+        [cell(['latin'], [{ runs: [{ text: 'latin', font: 'Calibri', fontAscii: 'Calibri' }] }])],
+      ],
+    })
+    expect(style).toContain('--doc-line-factor:1.22')
+    expect(style).toMatch(/font-family:'Calibri'/)
+  })
+
+  it('mixed declared/inherited Latin runs take max() and keep the inherited face', () => {
+    const [style] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['ab'],
+            [{ runs: [{ text: 'a', font: 'Calibri', fontAscii: 'Calibri' }, { text: 'b' }] }],
+          ),
+        ],
+      ],
+    })
+    expect(style).toContain('--doc-line-factor:max(var(--doc-line-factor-latin,1.2), 1.22)')
+    expect(style).not.toContain('font-family')
+  })
+
+  it('eaSlotEmpty backfill is not a Latin font declaration', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['x'], [{ runs: [{ text: 'x', font: 'SimSun', eaSlotEmpty: true }] }])]],
+    })
+    expect(style).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
   })
 
   it('declared CJK run fonts drive the paragraph line factor', () => {
     const [style] = paraStyles({
       rows: [[cell(['宋体字'], [{ runs: [{ text: '宋体字', font: 'SimSun' }] }])]],
     })
-    expect(style).toContain('--doc-line-factor:1.7')
+    expect(style).toContain('--doc-line-factor:1.3029')
+  })
+
+  it('JP-variant Noto run fonts take the JA substitution factor', () => {
+    const [style] = paraStyles({
+      rows: [[cell(['日本語'], [{ runs: [{ text: '日本語', font: 'Noto Sans CJK JP' }] }])]],
+    })
+    expect(style).toContain('--doc-line-factor:1.3029')
   })
 
   it('plain-paras cells get script-based line factors per paragraph', () => {

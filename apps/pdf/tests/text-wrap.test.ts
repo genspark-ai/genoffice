@@ -170,6 +170,37 @@ describe('spliceBlockText', () => {
       ]),
     ).toBe('headtail next123text rest')
   })
+
+  it('reports where each newText landed via outRanges (input-edit order)', () => {
+    const out: [number, number][] = []
+    const folded = spliceBlockText(
+      'abcdefghij',
+      [
+        { oldText: 'hi', newText: '8_9' },
+        { oldText: 'bc', newText: '2_3' },
+      ],
+      out,
+    )
+    expect(folded).toBe('a2_3defg8_9j')
+    // outRanges follows the input order even though the splice emits by position
+    expect(out).toEqual([
+      [8, 11],
+      [1, 4],
+    ])
+    expect(folded!.slice(...out[0]!)).toBe('8_9')
+    expect(folded!.slice(...out[1]!)).toBe('2_3')
+  })
+
+  it('outRanges covers the radical-folded newText the splice inserted', () => {
+    const out: [number, number][] = []
+    const folded = spliceBlockText(
+      '\u81ea\u5efa\u5b89',
+      [{ oldText: '\u2f83', newText: '\u2f83X' }],
+      out,
+    )
+    expect(folded).toBe('\u81eaX\u5efa\u5b89')
+    expect(folded!.slice(...out[0]!)).toBe('\u81eaX')
+  })
 })
 
 describe('mapLineRangeToBlock', () => {

@@ -3,6 +3,7 @@ export { installScreenTips } from './screentip'
 export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'
+export { isSymbolFontFamily } from './symbol-fonts'
 export {
   WORDART_PRESETS,
   wordArtSolidColor,

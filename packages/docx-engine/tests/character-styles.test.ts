@@ -171,7 +171,7 @@ describe('linkedStyle (w:link) and docDefaults backfill', () => {
     // theme EA typeface empty → w:eastAsiaTheme resolves to nothing → lang decides
     const rFonts = '<w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia"/>'
     const ko = await withDefaults(`${rFonts}<w:lang w:val="en-US" w:eastAsia="ko-KR"/>`)
-    expect(ko.docDefaults?.eastAsiaFont).toBe('Batang')
+    expect(ko.docDefaults?.eastAsiaFont).toBe('Malgun Gothic')
     const ja = await withDefaults(`${rFonts}<w:lang w:eastAsia="ja-JP"/>`)
     expect(ja.docDefaults?.eastAsiaFont).toBe('MS Mincho')
     const zh = await withDefaults(`${rFonts}<w:lang w:eastAsia="zh-CN"/>`)

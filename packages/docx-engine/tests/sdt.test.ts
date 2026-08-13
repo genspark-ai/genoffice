@@ -255,3 +255,51 @@ describe('multi-paragraph SDT (TOC)', () => {
     expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
   })
 })
+
+describe('nested SDT (Word cover-page building blocks)', () => {
+  // outer docPartObj sdt wrapping several inner field sdts + plain paragraphs
+  const NESTED_SDT =
+    '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Cover Pages"/></w:docPartObj></w:sdtPr><w:sdtContent>' +
+    '<w:sdt><w:sdtPr><w:alias w:val="Title"/><w:text/></w:sdtPr><w:sdtContent>' +
+    '<w:p><w:r><w:t>Resume Title</w:t></w:r></w:p>' +
+    '</w:sdtContent></w:sdt>' +
+    '<w:p><w:r><w:t>plain between</w:t></w:r></w:p>' +
+    '<w:sdt><w:sdtPr><w:alias w:val="Company"/><w:text/></w:sdtPr><w:sdtContent>' +
+    '<w:p><w:r><w:t>ACME Corp</w:t></w:r></w:p>' +
+    '</w:sdtContent></w:sdt>' +
+    '</w:sdtContent></w:sdt>'
+
+  it('descends nested content controls: every inner paragraph becomes a block', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: NESTED_SDT }))
+    const visible = doc.blocks.filter((b) => !b.hidden)
+    // regression: only "Resume Title" survived; "plain between" and "ACME Corp" were dropped
+    expect(visible.map((b) => b.runs?.map((r) => r.text).join('') ?? b.previewText)).toEqual([
+      'Resume Title',
+      'plain between',
+      'ACME Corp',
+    ])
+  })
+
+  it('untouched nested sdt saves byte-identical', async () => {
+    const bytes = await buildDocx({ bodyXml: NESTED_SDT })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((b) => !b.hidden)
+        .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
+    )
+    expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
+  })
+
+  it('sdtContent without any paragraph keeps its text as previewText', async () => {
+    const RUN_ONLY_SDT =
+      '<w:sdt><w:sdtPr><w:alias w:val="Odd"/></w:sdtPr><w:sdtContent>' +
+      '<w:r><w:t>bare run text</w:t></w:r>' +
+      '</w:sdtContent></w:sdt>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: RUN_ONLY_SDT }))
+    const visible = doc.blocks.filter((b) => !b.hidden)
+    expect(visible[0].type).toBe('passthrough')
+    expect(visible[0].previewText).toContain('bare run text')
+  })
+})

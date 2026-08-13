@@ -27,6 +27,8 @@
   --md-shimmer-hi: #d9d9d9;
   --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 18%);
   --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 10%);
+  /* same paper shadow as the pdf app's --pdf-shadow-page */
+  --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
 }
 
 [data-theme='dark'] {
@@ -54,6 +56,7 @@
   --md-shimmer-hi: #d0d0d0;
   --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 50%);
   --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 35%);
+  --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -82,6 +85,7 @@
     --md-shimmer-hi: #d0d0d0;
     --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 50%);
     --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 35%);
+    --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
   }
 }
 
@@ -153,6 +157,8 @@ button {
 .editor-scroll {
   flex: 1;
   overflow-y: auto;
+  /* same canvas backdrop as the slides workspace; the doc page stays white */
+  background: var(--canvas);
 }
 
 .doc-page {
@@ -161,7 +167,7 @@ button {
   margin: 0 auto;
   padding: 40px 72px 120px;
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--border-subtle);
+  box-shadow: var(--md-page-shadow);
 }
 
 .status-bar {
@@ -589,6 +595,11 @@ button {
 
 /* block-style picker: same box as the docs/slides font pickers (.rb-font-btn:
  * 28px tall, 3px radius, 13px label, 7px inline padding, strong border) */
+.rb-style-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .rb-style {
   height: 28px;
   border: 1px solid var(--color-border-strong);
@@ -596,8 +607,21 @@ button {
   background: var(--surface);
   color: var(--text-primary);
   font-size: 13px;
-  padding: 0 7px;
+  /* native chevron replaced by .rb-style-caret so it can sit off the edge */
+  appearance: none;
+  padding: 0 26px 0 7px;
   min-width: 108px;
+  outline: none;
+}
+
+.rb-style-caret {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--text-dim);
+  pointer-events: none;
 }
 
 /* Anchor for the link popover, which is position: fixed so it escapes the
@@ -634,6 +658,7 @@ button {
   border-radius: 5px;
   padding: 0 8px;
   font-size: 12.5px;
+  outline: none;
 }
 
 .rb-link-pop button {
@@ -645,6 +670,11 @@ button {
   font-size: 12.5px;
   padding: 0 10px;
   cursor: pointer;
+}
+
+.rb-link-pop button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ---- slash menu ---- */
@@ -717,12 +747,26 @@ button {
 
 .doc-editor ul[data-type='taskList'] li > label {
   flex: 0 0 auto;
-  margin-top: 0.35em;
+  display: flex;
+  align-items: center;
+  /* match the first line box (16px x 1.75) so the checkbox centers on it */
+  height: 1.75em;
+  margin-top: 0.15em;
   user-select: none;
+}
+
+.doc-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
+  margin: 0;
 }
 
 .doc-editor ul[data-type='taskList'] li > div {
   flex: 1;
+}
+
+/* the task text lives in li > div > p, so the generic `li > p` list
+ * override misses it and it keeps the full 0.6em paragraph margin */
+.doc-editor ul[data-type='taskList'] li > div > p {
+  margin: 0.15em 0;
 }
 
 .doc-editor ul[data-type='taskList'] li[data-checked='true'] > div {
@@ -1983,6 +2027,7 @@ button {
   color: var(--text-secondary);
   font-size: 11.5px;
   padding: 0 4px;
+  outline: none;
 }
 
 .md-codeblock-copy {
@@ -1994,6 +2039,7 @@ button {
   font-size: 11.5px;
   padding: 0 8px;
   cursor: pointer;
+  outline: none;
 }
 
 .md-codeblock-copy:hover {

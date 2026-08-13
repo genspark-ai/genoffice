@@ -9,7 +9,7 @@
  */
 import type { PackageArchive } from './zip'
 import { resolveTarget } from './zip'
-import { parseTheme } from './theme'
+import { parseClrMap, parseTheme } from './theme'
 import { parseSlide, parseDecorations, type ParseContext } from './parse'
 import { parsePlaceholderMap, parseMasterTextStyles } from './placeholder'
 import type { Slide } from './types'
@@ -98,12 +98,15 @@ export function parseMasterPart(archive: PackageArchive, partPath: string): Slid
   ctx.tableStyles = archive.readText('ppt/tableStyles.xml') ?? undefined
 
   const masterXml = !isMaster && masterPath ? archive.readText(masterPath) : undefined
+  if (ctx.theme)
+    ctx.theme.clrMap = isMaster ? parseClrMap(xml) : parseClrMap(masterXml ?? undefined, xml)
   if (isMaster) {
     ctx.masterTextStyles = parseMasterTextStyles(xml, ctx.theme)
   } else if (masterXml) {
     ctx.masterPlaceholders = parsePlaceholderMap(masterXml, ctx.theme)
     ctx.masterTextStyles = parseMasterTextStyles(masterXml, ctx.theme)
     ctx.masterBg = masterXml
+    if (masterPath) ctx.masterMediaRels = partMedia(archive, masterPath)
   }
 
   const slide = parseSlide({ path: partPath, slideXml: xml, masterPath, ctx })

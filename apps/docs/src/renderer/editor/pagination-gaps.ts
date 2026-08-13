@@ -103,6 +103,9 @@ export type PageGapSpec = {
    *  (the slicing engine already reserved their height on the new page) */
   repeatHeaderEls?: HTMLElement[]
   repeatHeaderKey?: string
+  /** page forced by an explicit break (w:br page / pageBreakBefore): Word drops the
+   *  lead block's space-before, so a node decoration zeroes its margin-top */
+  suppressLeadMt?: boolean
 } & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
@@ -117,8 +120,17 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
     if ('el' in gap) {
       kind = 'block'
       try {
-        const inside = view.posAtDOM(gap.el, 0)
-        pos = view.state.doc.resolve(inside).before(1)
+        const $inside = view.state.doc.resolve(view.posAtDOM(gap.el, 0))
+        pos = $inside.before(1)
+        if (gap.suppressLeadMt)
+          decos.push(
+            Decoration.node(
+              pos,
+              $inside.after(1),
+              { class: 'page-break-lead' },
+              { key: `page-lead-${ordinal}` },
+            ),
+          )
       } catch {
         continue
       }

@@ -384,3 +384,29 @@ describe('complex-script font follows the font change', () => {
     expect(out).not.toContain('<a:cs')
   })
 })
+
+describe('text highlight <a:highlight>', () => {
+  const HL =
+    '<a:r><a:rPr lang="en-US"><a:highlight><a:srgbClr val="FF0000"/></a:highlight></a:rPr>' +
+    '<a:t>marked</a:t></a:r>'
+
+  it('parses the run highlight color', () => {
+    const { el } = parseEl(HL)
+    expect(el.text!.paragraphs[0]!.runs[0]!.highlight).toBe('#FF0000')
+  })
+
+  it('text-only edit keeps the highlight bytes', () => {
+    const { el } = parseEl(HL)
+    el.text!.paragraphs[0]!.runs[0]!.text = 'edited'
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain('<a:highlight><a:srgbClr val="FF0000"/></a:highlight>')
+    expect(out).toContain('edited')
+  })
+
+  it('a structural rebuild rewrites the highlight', () => {
+    const { el } = parseEl(HL)
+    el.text!.paragraphs[0]!.runs.push({ text: ' added' }) // forces the rebuild path
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain('<a:highlight><a:srgbClr val="FF0000"/></a:highlight>')
+  })
+})

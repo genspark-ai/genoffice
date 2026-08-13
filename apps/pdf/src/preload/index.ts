@@ -16,11 +16,23 @@ const api: PdfApi = {
   pagePreviewPng: (request) => ipcRenderer.invoke(PDF_CHANNELS.pagePreviewPng, request),
   extractPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.extractPages, request),
   insertPdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.insertPdf, request),
+  insertBlankPage: (request) => ipcRenderer.invoke(PDF_CHANNELS.insertBlankPage, request),
+  splitPdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.splitPdf, request),
+  mergePdf: (request) => ipcRenderer.invoke(PDF_CHANNELS.mergePdf, request),
+  mergePages: (request) => ipcRenderer.invoke(PDF_CHANNELS.mergePages, request),
+  replacePages: (request) => ipcRenderer.invoke(PDF_CHANNELS.replacePages, request),
+  setPageSize: (request) => ipcRenderer.invoke(PDF_CHANNELS.setPageSize, request),
+  splitPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.splitPages, request),
+  cropPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.cropPages, request),
   exportImages: (request) => ipcRenderer.invoke(PDF_CHANNELS.exportImages, request),
   imageSearch: (query, maxResults) =>
     ipcRenderer.invoke(AI_CHANNELS.imageSearch, query, maxResults),
   fetchImage: (url) => ipcRenderer.invoke(AI_CHANNELS.fetchImage, url),
   generateImage: (op) => ipcRenderer.invoke(PDF_CHANNELS.generateImage, op),
+  listSavedSignatures: () => ipcRenderer.invoke(PDF_CHANNELS.listSignatures),
+  addSavedSignature: (data) => ipcRenderer.invoke(PDF_CHANNELS.addSignature, data),
+  removeSavedSignature: (id) => ipcRenderer.invoke(PDF_CHANNELS.removeSignature, id),
+  getUsername: () => ipcRenderer.invoke(PDF_CHANNELS.getUsername),
   setDirty: (dirty) => ipcRenderer.send(PDF_CHANNELS.dirtyChanged, dirty),
   onCloseSaveRequest: (handler) => {
     const listener = () => handler()
@@ -38,6 +50,11 @@ const api: PdfApi = {
     const listener = (_e: Electron.IpcRendererEvent, inFlight: boolean) => handler(inFlight)
     ipcRenderer.on(PDF_CHANNELS.saveAsFlow, listener)
     return () => ipcRenderer.removeListener(PDF_CHANNELS.saveAsFlow, listener)
+  },
+  onPrintRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(PDF_CHANNELS.printRequest, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.printRequest, listener)
   },
   getLanguage: () => ipcRenderer.invoke(PDF_CHANNELS.getLanguage),
   onLanguageChanged: (handler) => {

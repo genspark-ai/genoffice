@@ -16,7 +16,7 @@ import {
   type SaveBlock,
 } from '../src/index'
 import { patchParagraphTexts } from '../src/text-patch'
-import { escapeXmlText } from '../src/xml-utils'
+import { escapeXmlText, textHasComplexScript } from '../src/xml-utils'
 import { buildDocx } from './helpers/build-docx'
 
 const P = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
@@ -87,6 +87,17 @@ describe('escapeXmlText', () => {
   it('strips control characters that are illegal in XML 1.0 but keeps tab/newline', () => {
     expect(escapeXmlText('a\u0000b\u000Bc\td\ne')).toBe('abc\td\ne')
     expect(escapeXmlText('<a & b>')).toBe('&lt;a &amp; b&gt;')
+  })
+})
+
+describe('textHasComplexScript', () => {
+  it('classifies Arabic, Tamil, Devanagari and Thai as cs; Latin/CJK as not', () => {
+    expect(textHasComplexScript('مرحبا')).toBe(true)
+    expect(textHasComplexScript('தமிழ்')).toBe(true)
+    expect(textHasComplexScript('हिन्दी')).toBe(true)
+    expect(textHasComplexScript('ไทย')).toBe(true)
+    expect(textHasComplexScript('hello')).toBe(false)
+    expect(textHasComplexScript('中文한글かな')).toBe(false)
   })
 })
 

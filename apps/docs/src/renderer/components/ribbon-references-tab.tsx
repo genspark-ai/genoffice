@@ -462,7 +462,7 @@ export function ReferencesTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonTocTip')}
+            data-tip={t('ribbonTocTip')}
             onClick={insertToc}
           >
             <span className="rb-big-icon">
@@ -473,7 +473,7 @@ export function ReferencesTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonTocUpdateTip')}
+            data-tip={t('ribbonTocUpdateTip')}
             onClick={() => updateTocField(editor, blocks, headingPages)}
           >
             <span className="rb-big-icon">
@@ -492,7 +492,7 @@ export function ReferencesTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonFootnoteTip')}
+            data-tip={t('ribbonFootnoteTip')}
             onClick={() => onInsertNote('footnote')}
           >
             <span className="rb-big-icon">
@@ -503,7 +503,7 @@ export function ReferencesTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonEndnoteTip')}
+            data-tip={t('ribbonEndnoteTip')}
             onClick={() => onInsertNote('endnote')}
           >
             <span className="rb-big-icon">
@@ -523,7 +523,7 @@ export function ReferencesTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonCitationTip')}
+              data-tip={t('ribbonCitationTip')}
               onClick={() => toggleDropdown(setDropdown, 'citation')}
             >
               <span className="rb-big-icon">
@@ -535,7 +535,7 @@ export function ReferencesTab({
             {dropdown === 'citation' && (
               <div className="layout-menu">
                 {sources.map((s) => (
-                  <button key={s.tag} title={s.title} onClick={() => insertCitation(s)}>
+                  <button key={s.tag} data-tip={s.title} onClick={() => insertCitation(s)}>
                     {citationText(s)} {s.title.slice(0, 12)}
                   </button>
                 ))}
@@ -553,7 +553,7 @@ export function ReferencesTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonBibliographyTip')}
+            data-tip={t('ribbonBibliographyTip')}
             onClick={insertBibliography}
           >
             <span className="rb-big-icon">
@@ -564,7 +564,7 @@ export function ReferencesTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonCaptionTip')}
+            data-tip={t('ribbonCaptionTip')}
             onClick={() => setCaptionOpen(true)}
           >
             <span className="rb-big-icon">
@@ -576,7 +576,7 @@ export function ReferencesTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonIndexTip')}
+              data-tip={t('ribbonIndexTip')}
               onClick={() => toggleDropdown(setDropdown, 'index')}
             >
               <span className="rb-big-icon">

@@ -39,6 +39,8 @@ export interface Run {
   csFont?: string
   /** Character spacing (w:spacing, twips, may be negative). Display only; saving is kept faithful by rawRPr */
   charSpacingTwips?: number
+  /** w:caps ('all') / w:smallCaps ('small') display transform. Display only; saving is kept faithful by rawRPr */
+  caps?: 'all' | 'small'
   /** Horizontal character scale percent (w:w). Display only (approximated as spacing); saving is kept faithful by rawRPr */
   charScalePct?: number
   /** OOXML named highlight color (w:highlight), e.g. "yellow" */
@@ -189,6 +191,14 @@ export interface TabStop {
   leader?: 'none' | 'dot' | 'hyphen' | 'underscore' | 'heavy' | 'middleDot'
 }
 
+/** Declared look of one w:pBdr side. */
+export interface ParaBorderLine {
+  /** hex without '#' (w:color); undefined = auto */
+  color?: string
+  /** line width in pt (w:sz eighth-points / 8) */
+  szPt?: number
+}
+
 /** Paragraph-level formatting that survives regeneration (subset of w:pPr). */
 export interface ParaFormat {
   /** w:jc */
@@ -233,6 +243,8 @@ export interface ParaFormat {
   shadingFill?: string
   /** paragraph borders, subset of "tblr" e.g. "b" or "tblr" (w:pBdr, single lines) */
   borders?: string
+  /** per-side color/width of `borders` (w:color / w:sz); side absent = auto color, default width */
+  borderLines?: Partial<Record<'t' | 'b' | 'l' | 'r', ParaBorderLine>>
   /** custom tab stops from w:tabs (non-empty overrides default 0.5in grid) */
   tabStops?: TabStop[]
   /** first-line drop cap (w:framePr w:dropCap="drop|margin") */
@@ -314,6 +326,8 @@ export interface SectionInfo {
 
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
+  /** w:ptab alignments indexed by overall tab order (regular w:tab slots are undefined); margin-relative, ignores tab stops */
+  ptabAligns?: Array<'left' | 'center' | 'right' | undefined>
   runs: Run[]
   /** layout-table row: one entry per cell, rendered as columns. Display-only —
    *  saving keeps the part's original w:tbl bytes and never serializes cells. */
@@ -326,6 +340,8 @@ export interface HfTableCell {
   align?: ParaAlign
   /** column width as % of the row (w:tcW, falling back to tblGrid) */
   widthPct?: number
+  /** cell shading fill (w:tcPr w:shd w:fill hex, non-auto) */
+  fill?: string
 }
 
 /** one w:lvl of a numbering definition */
@@ -391,6 +407,8 @@ export interface HfImage {
   posV?: 'top' | 'center' | 'bottom'
   /** v:imagedata gain/blacklevel present (Word watermark washout preset) */
   washout?: boolean
+  /** w:jc of the containing paragraph (inline images follow paragraph alignment) */
+  align?: 'left' | 'center' | 'right'
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
@@ -413,6 +431,8 @@ export interface NoteRun {
   /** hex without '#' */
   color?: string
   sizeHalfPoints?: number
+  /** w:caps ('all') / w:smallCaps ('small') display transform */
+  caps?: 'all' | 'small'
 }
 
 /** One footnote or endnote (display/edit model; separators are preserved separately). */
@@ -605,6 +625,8 @@ export interface TableModel {
   colWidthsTwips?: number[]
   /** table width as a percentage of the body width (w:tblW type="pct"); absolute widths are ignored when set */
   widthPct?: number
+  /** autofit layout (w:tblW auto/absent/zero, no fixed w:tblLayout): display may widen columns to min-content */
+  autoLayout?: boolean
   /** table-level default cell margins (w:tblCellMar) */
   cellMarTwips?: CellMargins
   /** table-level borders (w:tblBorders); undefined = not declared (default gridlines apply) */
@@ -959,6 +981,10 @@ export interface StyleDisplay {
   csFont?: string
   /** character spacing (rPr w:spacing, twips, may be negative) */
   charSpacingTwips?: number
+  /** style-level pPr w:tabs (Word's built-in Header/Footer styles carry the center/right stops) */
+  tabStops?: TabStop[]
+  /** w:caps ('all') / w:smallCaps ('small') display transform */
+  caps?: 'all' | 'small'
   /** multiple of single line spacing (w:spacing w:line, lineRule auto) */
   lineSpacing?: number
   /** F1: lineRule for accurate height calculation */
@@ -975,6 +1001,8 @@ export interface StyleDisplay {
   keepNext?: boolean
   /** keepLines from style definition */
   keepLines?: boolean
+  /** pageBreakBefore from style definition */
+  pageBreakBefore?: boolean
   /** F1: contextualSpacing from style definition */
   contextualSpacing?: boolean
   /** paragraph alignment from the style (w:pPr w:jc) */

@@ -150,6 +150,7 @@ export function PaginationPreview({
   clearPageGaps,
   onExportPdf,
   onClose,
+  suppressEscape,
 }: {
   /** Canvas geometry (final section): for the measurement origin / clone width */
   section: SectionSettings
@@ -181,6 +182,8 @@ export function PaginationPreview({
   clearPageGaps?: () => void
   onExportPdf: () => void
   onClose: () => void
+  /** While true (e.g. the print dialog is stacked on top), Escape must not close the preview */
+  suppressEscape?: boolean
 }) {
   const { t } = useI18n()
   const [slices, setSlices] = useState<PageSlice[]>([])
@@ -322,6 +325,10 @@ export function PaginationPreview({
   }, [])
 
   useEffect(() => {
+    // stopPropagation cannot shield this window-level listener from the print
+    // dialog's own Escape handler (same target, same phase), so the dialog
+    // suppresses it via prop while it is stacked on top
+    if (suppressEscape) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
@@ -330,7 +337,7 @@ export function PaginationPreview({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
+  }, [onClose, suppressEscape])
 
   const multiSection = secs.length > 1
   const effRefs = useMemo(() => effectiveHfRefs(secs), [secs])
@@ -421,7 +428,7 @@ export function PaginationPreview({
         <span className="pv-title">{t('appPaginationPreview')}</span>
         <span className="pv-count">{t('appTotalPagesN', { n: slices.length })}</span>
         <span className="pv-hint">{t('appPvHint')}</span>
-        <button className="pv-close" title={t('appPvExportTip')} onClick={onExportPdf}>
+        <button className="pv-close" data-tip={t('appPvExportTip')} onClick={onExportPdf}>
           {t('appExportPdf')}
         </button>
         <button className="pv-close" onClick={onClose}>
@@ -460,6 +467,7 @@ export function PaginationPreview({
                   '--pv-page-h': `${pageH}px`,
                   '--page-w': `${pageW}px`,
                   '--page-h': `${pageH}px`,
+                  '--section-content-w': `${secContentW}px`,
                   '--header-dist': `${pageBox.headerDist}px`,
                   '--footer-dist': `${pageBox.footerDist}px`,
                   '--pv-mr': `${twipsToPx(s.marginRight)}px`,
@@ -680,6 +688,9 @@ export function PaginationPreview({
                                     fontSize: run.sizeHalfPoints
                                       ? `${run.sizeHalfPoints / 2}pt`
                                       : undefined,
+                                    textTransform: run.caps === 'all' ? 'uppercase' : undefined,
+                                    fontVariantCaps:
+                                      run.caps === 'small' ? 'small-caps' : undefined,
                                   }}
                                 >
                                   {run.text}
@@ -729,6 +740,9 @@ export function PaginationPreview({
                                       fontSize: run.sizeHalfPoints
                                         ? `${run.sizeHalfPoints / 2}pt`
                                         : undefined,
+                                      textTransform: run.caps === 'all' ? 'uppercase' : undefined,
+                                      fontVariantCaps:
+                                        run.caps === 'small' ? 'small-caps' : undefined,
                                     }}
                                   >
                                     {run.text}

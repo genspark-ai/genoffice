@@ -23,6 +23,7 @@ import {
   switchRehearsePage,
   type RehearseTiming,
 } from '../slideshow-utils'
+import { liftShowCurtain } from '../show-actions'
 
 const ANIMATED = [
   'fade',
@@ -35,6 +36,8 @@ const ANIMATED = [
   'dissolve',
   'zoom',
 ] as const
+
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 export function SlideShowView({
   slides,
@@ -72,6 +75,9 @@ export function SlideShowView({
     nonce: 0,
   })
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
+  /** False until the window covers the screen: the black root paints alone first so
+   *  the window snap / tab-strip bleed relayouts stay invisible (no windowed flash) */
+  const [covered, setCovered] = useState(false)
   /** Per-page transition effects (prefetched once when the show starts, zero IPC on page turns) */
   const transRef = useRef<TransitionKind[]>([])
   /** Per-page animation lists (also prefetched once) */
@@ -164,7 +170,39 @@ export function SlideShowView({
     // keeps fullscreen) never get a fullscreenchange, so seed from current state
     let entered = !!document.fullscreenElement
     let exitTimer = 0
-    void document.documentElement.requestFullscreen?.().catch(() => {})
+    let alive = true
+    // The IPC covers the screen in one main-side call (tab-strip bleed + macOS
+    // simpleFullScreen snap — no Space animation), all hidden behind this
+    // component's black root; the slide is revealed only once the viewport really
+    // reached screen size (500ms cap for stale preloads / unfullscreenable windows),
+    // so it never lays out at the pre-snap size and re-jumps. On macOS HTML
+    // fullscreen is skipped — it would only re-trigger the animated native
+    // fullscreen. Stale preloads lack the API and keep the old animated behavior.
+    const snapped = window.slidesApi.setShowFullScreen?.(true) ?? Promise.resolve()
+    void snapped
+      .catch(() => {})
+      .then(() => {
+        if (!IS_MAC) void document.documentElement.requestFullscreen?.().catch(() => {})
+        // Covered = the viewport spans the WHOLE screen, width and height (the
+        // bleed-only intermediate differs in height, a full-width window in
+        // height too — no partial state passes both). window.screen tracks the
+        // display the window is on, so narrower secondary displays settle at
+        // their own size. Deadline covers stale preloads that never snap.
+        const deadline = performance.now() + 500
+        const reveal = () => {
+          if (!alive) return
+          const w = window.innerWidth
+          const h = window.innerHeight
+          const settled = w >= screen.width && h >= screen.height
+          if (!settled && performance.now() < deadline) {
+            requestAnimationFrame(reveal)
+            return
+          }
+          setSize({ w, h })
+          setCovered(true)
+        }
+        requestAnimationFrame(reveal)
+      })
     const onFsChange = () => {
       if (document.fullscreenElement) {
         entered = true
@@ -182,11 +220,20 @@ export function SlideShowView({
     }
     document.addEventListener('fullscreenchange', onFsChange)
     return () => {
+      alive = false
       window.clearTimeout(exitTimer)
       document.removeEventListener('fullscreenchange', onFsChange)
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+      void window.slidesApi.setShowFullScreen?.(false)
+      liftShowCurtain()
     }
   }, [])
+
+  // The click-time curtain (dropped in show-actions before this component mounted)
+  // is only needed until the show reveals — its own black root covers from there on
+  useEffect(() => {
+    if (covered) liftShowCurtain()
+  }, [covered])
 
   useEffect(() => {
     const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
@@ -330,7 +377,7 @@ export function SlideShowView({
         prev()
       }}
     >
-      {ended ? (
+      {!covered ? null : ended ? (
         <div className="ss-end">{t('paneShowEndedClick')}</div>
       ) : (
         <>

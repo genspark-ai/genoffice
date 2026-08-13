@@ -97,10 +97,14 @@ function dragHandlePlugin(editor: Editor): Plugin {
         if (!(dom instanceof HTMLElement)) return hideHandle()
         const blockRect = dom.getBoundingClientRect()
         const containerRect = container.getBoundingClientRect()
+        // DOMRect values are viewport pixels, while absolute offsets inside a
+        // CSS-zoomed page are layout pixels. Convert the deltas back so the
+        // gutter is scaled exactly once with the rest of the page.
+        const scale = container.offsetWidth ? containerRect.width / container.offsetWidth : 1
         hoverPos = pos
         handle.style.display = 'flex'
-        handle.style.top = `${blockRect.top - containerRect.top + container.scrollTop + 2}px`
-        handle.style.left = `${Math.max(0, blockRect.left - containerRect.left - 52)}px`
+        handle.style.top = `${(blockRect.top - containerRect.top) / scale + container.scrollTop + 2}px`
+        handle.style.left = `${Math.max(0, (blockRect.left - containerRect.left) / scale - 52)}px`
       }
 
       // hoverPos was computed on a past mousemove — validate before selecting

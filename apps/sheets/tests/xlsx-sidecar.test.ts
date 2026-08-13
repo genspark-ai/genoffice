@@ -304,6 +304,7 @@ describe('XLSX Rust sidecar', () => {
                     hidden: z.boolean(),
                     outlineLevel: z.number().optional(),
                     collapsed: z.boolean().optional(),
+                    styleIndex: z.number().optional(),
                   }),
                 ),
                 freeze: z
@@ -353,6 +354,7 @@ describe('XLSX Rust sidecar', () => {
         { startColumn: 1, endColumn: 1, width: 0, hidden: true },
         { startColumn: 2, endColumn: 2, width: 24, hidden: false },
         { startColumn: 3, endColumn: 3, hidden: false, outlineLevel: 2, collapsed: true },
+        { startColumn: 4, endColumn: 5, hidden: false, styleIndex: 2 },
       ])
       expect(opened.sheets[0]).toMatchObject({
         hidden: false,
@@ -422,7 +424,7 @@ describe('XLSX Rust sidecar', () => {
       expect(result.indexingComplete).toBe(true)
       expect(result.merges).toEqual([{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }])
       expect(result.rows).toEqual([
-        { row: 0, height: 30, hidden: false },
+        { row: 0, height: 30, hidden: false, styleIndex: 2 },
         { row: 1, hidden: true },
         { row: 2, hidden: false, outlineLevel: 1 },
       ])
@@ -619,9 +621,10 @@ async function buildStructureFixture(): Promise<Buffer> {
         <col min="2" max="2" width="0" hidden="1" customWidth="1"/>
         <col min="3" max="3" width="24" customWidth="1"/>
         <col min="4" max="4" outlineLevel="2" collapsed="1"/>
+        <col min="5" max="6" style="2"/>
       </cols>
       <sheetData>
-        <row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="1"><is><t>Merged</t></is></c></row>
+        <row r="1" ht="30" customHeight="1" s="2" customFormat="1"><c r="A1" t="inlineStr" s="1"><is><t>Merged</t></is></c></row>
         <row r="2" hidden="1"><c r="A2"><v>5</v></c></row>
         <row r="3" outlineLevel="1"><c r="A3" s="2"><v>7</v></c><c r="B3" t="s"><v>0</v></c></row>
         <row r="4"><c r="A4" t="inlineStr"><is><t>Link</t></is></c><c r="B4" t="e"><v>#VALUE!</v></c><c r="C4" t="inlineStr"><is><r><rPr><b/></rPr><t>In</t></r><r><t>line</t></r></is></c><c r="D4"><v>not-a-number</v></c></row>

@@ -91,6 +91,137 @@ describe('rich header / footer', () => {
     )
   })
 
+  it('paragraphs inside nested w:sdt keep their alignment (POI Bug60341: OpenXML SDK footer)', async () => {
+    const FOOTER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:sdt><w:sdtContent><w:sdt><w:sdtContent>' +
+      '<w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="right"/></w:pPr>' +
+      '<w:r><w:t xml:space="preserve">Page </w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText>PAGE</w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>2</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '</w:p>' +
+      '</w:sdtContent></w:sdt></w:sdtContent></w:sdt></w:ftr>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId62" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/footer1.xml',
+          xml: FOOTER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml',
+        },
+      ],
+      sectPrExtra: '<w:footerReference w:type="default" r:id="rId62"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.footerParas).toHaveLength(1)
+    expect(parsed.footerParas![0].align).toBe('right')
+    expect(parsed.footerParas![0].runs.map((r) => r.text).join('')).toBe(`Page ${PAGE_MARK}`)
+  })
+
+  it('Header style w:tabs and w:jc reach the paragraphs; direct pPr wins (POI ThreeColHead)', async () => {
+    const HEADER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:pPr><w:pStyle w:val="Header"/></w:pPr>' +
+      '<w:r><w:t xml:space="preserve">Left\tMid\tRight</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Header"/><w:jc w:val="right"/></w:pPr>' +
+      '<w:r><w:t>direct wins</w:t></w:r></w:p>' +
+      '</w:hdr>'
+    const STYLES =
+      '<w:style w:type="paragraph" w:styleId="Header"><w:name w:val="header"/>' +
+      '<w:pPr><w:tabs><w:tab w:val="center" w:pos="4513"/><w:tab w:val="right" w:pos="9026"/></w:tabs>' +
+      '<w:jc w:val="left"/></w:pPr></w:style>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraStylesXml: STYLES,
+      extraRels:
+        '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: HEADER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId61"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.headerParas![0].tabStops).toEqual([
+      { pos: 4513, val: 'center' },
+      { pos: 9026, val: 'right' },
+    ])
+    expect(parsed.headerParas![0].align).toBe('left')
+    expect(parsed.headerParas![1].align).toBe('right')
+    expect(parsed.headerParas![1].tabStops).toEqual([
+      { pos: 4513, val: 'center' },
+      { pos: 9026, val: 'right' },
+    ])
+  })
+
+  it('w:ptab absolute tabs surface as \\t runs with their alignments (POI ThreeColHead)', async () => {
+    const HEADER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:pPr><w:pStyle w:val="Header"/></w:pPr>' +
+      '<w:r><w:t>First header column!</w:t></w:r>' +
+      '<w:r><w:ptab w:relativeTo="margin" w:alignment="center" w:leader="none"/></w:r>' +
+      '<w:r><w:t>Mid header</w:t></w:r>' +
+      '<w:r><w:ptab w:relativeTo="margin" w:alignment="right" w:leader="none"/></w:r>' +
+      '<w:r><w:t>Right header!</w:t></w:r>' +
+      '</w:p></w:hdr>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: HEADER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId61"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    const para = parsed.headerParas![0]
+    expect(para.runs.map((r) => r.text).join('')).toBe(
+      'First header column!\tMid header\tRight header!',
+    )
+    expect(para.ptabAligns).toEqual(['center', 'right'])
+  })
+
+  it('mixed w:tab / w:ptab keeps ptab alignments on the right tab index', async () => {
+    const HEADER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:r><w:t>a</w:t></w:r>' +
+      '<w:r><w:tab/><w:t>b</w:t></w:r>' +
+      '<w:r><w:ptab w:relativeTo="margin" w:alignment="right" w:leader="none"/></w:r>' +
+      '<w:r><w:t>c</w:t></w:r>' +
+      '</w:p></w:hdr>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: HEADER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId61"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.headerParas![0].ptabAligns).toEqual([undefined, 'right'])
+  })
+
   it('literal # before a PAGE field stays literal; the field parses to PAGE_MARK', async () => {
     // regression: the footer "[Course #] | Page <PAGE field>" used to render the
     // page number inside "[Course #]" because '#' doubled as the field marker
@@ -169,7 +300,7 @@ describe('surgical header rewrite (real Word headers carry tables/logos)', () =>
   const HEADER_TBL =
     '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
     '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
-    '<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>' +
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/><w:shd w:val="clear" w:fill="1F3864"/></w:tcPr>' +
     '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>ACME 公司</w:t></w:r></w:p></w:tc>' +
     '<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>' +
     '<w:p><w:r><w:t>Logo 占位</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
@@ -248,6 +379,8 @@ describe('surgical header rewrite (real Word headers carry tables/logos)', () =>
     expect(row.cells![0].runs[0]).toMatchObject({ text: 'ACME 公司', bold: true })
     expect(row.cells![1].runs[0]).toMatchObject({ text: 'Logo 占位' })
     expect(row.cells!.map((c) => Math.round(c.widthPct!))).toEqual([50, 50])
+    expect(row.cells![0].fill).toBe('1F3864')
+    expect(row.cells![1].fill).toBeUndefined()
     expect(paras[1].runs[0].text).toBe('公司内部资料')
     // legacy plain text separates cell texts instead of gluing them
     expect(parsed.headerText).toBe('ACME 公司 Logo 占位 公司内部资料')
@@ -337,6 +470,7 @@ describe('header paragraph borders', () => {
   it('does not read a nil side as a border', async () => {
     const parsed = await withNilBorderHeader()
     expect(parsed.headerParas?.[0]?.borders).toBe('b')
+    expect(parsed.headerParas?.[0]?.borderLines).toEqual({ b: { color: '4472C4', szPt: 2.25 } })
   })
 
   it('does not stamp rules the header never had when it is saved back', async () => {

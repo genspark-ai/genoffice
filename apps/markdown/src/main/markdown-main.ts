@@ -324,6 +324,11 @@ export function sendMarkdownExportRequest(contents: WebContents, format: ExportF
   if (!contents.isDestroyed()) contents.send(MARKDOWN_CHANNELS.exportRequest, format)
 }
 
+/** Shell menu Print: ask the renderer to build the print HTML and open the system dialog */
+export function sendMarkdownPrintRequest(contents: WebContents): void {
+  if (!contents.isDestroyed()) contents.send(MARKDOWN_CHANNELS.printRequest)
+}
+
 export function markdownIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
 }

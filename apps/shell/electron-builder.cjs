@@ -284,7 +284,12 @@ const config = {
     maintainer: 'Mainfunc, Inc. <team@genspark.ai>',
     vendor: 'Mainfunc, Inc. <team@genspark.ai>',
     category: 'Office',
-    icon: 'build/icon.png',
+    // Icon SET directory, not the single 1024px png: electron-builder does
+    // not resize a lone png, so deb/rpm would install only
+    // hicolor/1024x1024/apps/genoffice.png — a size absent from the hicolor
+    // theme index, leaving GNOME/KDE launchers on the generic fallback icon
+    // (genspark-ai/genoffice#90). The set ships every standard raster size.
+    icon: 'build/icons',
     // mac and win name the binary from productName; linux instead derives it
     // from package.json "name", and "@genoffice/shell" sanitizes to the
     // invalid "@genofficeshell". Setting it explicitly also makes the

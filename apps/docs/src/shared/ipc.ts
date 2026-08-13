@@ -186,8 +186,8 @@ export interface DesktopApi {
   fontMetrics(family: string): Promise<FaceVerticalMetrics | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
-  /** system print dialog for the current window */
-  print(): Promise<void>
+  /** system print dialog for the current window; ok=false without error = canceled */
+  print(): Promise<{ ok: boolean; error?: string }>
   /** render the document to PDF and ask where to save; size in twips.
    *  outPath is only honored when a previous export dialog chose that exact path */
   exportPdf(

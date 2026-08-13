@@ -39,6 +39,134 @@ describe('page-number substitution (PAGE_MARK)', () => {
     const el = makeGapHfEl({ kind: 'footer', value, pageNo: 6, pageTotal: 8 })
     expect(el.textContent).toBe('Confidential 6')
   })
+
+  it('paragraph w:jc lands on the element; no align means none (left via CSS, like Word)', () => {
+    const value: HeaderFooter = {
+      text: 'ab',
+      pageNumber: false,
+      paras: [{ align: 'right', runs: [{ text: 'a' }] }, { runs: [{ text: 'b' }] }],
+    }
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const paras = el.querySelectorAll<HTMLElement>('.page-hf-para')
+    expect(paras[0].style.textAlign).toBe('right')
+    expect(paras[1].style.textAlign).toBe('')
+  })
+
+  it('tabbed paragraph splits into positioned segments at its stops (three-column header)', () => {
+    const value: HeaderFooter = {
+      text: 'Left\tMid\tRight',
+      pageNumber: false,
+      paras: [
+        {
+          runs: [{ text: 'Left\tMid\t' }, { text: 'Right', bold: true }],
+          tabStops: [
+            { pos: 4513, val: 'center' },
+            { pos: 9026, val: 'right' },
+          ],
+        },
+      ],
+    }
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const para = el.querySelector<HTMLElement>('.page-hf-para')!
+    expect(para.classList.contains('page-hf-tabbed')).toBe(true)
+    const segs = [...para.querySelectorAll<HTMLElement>('.page-hf-tabseg')]
+    expect(segs).toHaveLength(2)
+    expect(segs[0].textContent).toBe('Mid')
+    expect(segs[0].classList.contains('page-hf-tabseg-center')).toBe(true)
+    expect(segs[0].style.left).toBe(`${4513 / 15}px`)
+    expect(segs[1].textContent).toBe('Right')
+    expect(segs[1].classList.contains('page-hf-tabseg-right')).toBe(true)
+    expect(segs[1].style.left).toBe(`${9026 / 15}px`)
+    expect(segs[1].querySelector('span')?.style.fontWeight).toBe('600')
+    // lead text stays inline
+    expect(para.childNodes[0].textContent).toBe('Left')
+  })
+
+  it('ptab alignments win over stops and place at margin-relative percents', () => {
+    const value: HeaderFooter = {
+      text: 'L\tM\tR',
+      pageNumber: false,
+      paras: [
+        {
+          runs: [{ text: 'L\tM\tR' }],
+          ptabAligns: ['center', 'right'],
+          tabStops: [{ pos: 1000, val: 'left' }],
+        },
+      ],
+    }
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const segs = [...el.querySelectorAll<HTMLElement>('.page-hf-tabseg')]
+    expect(segs.map((s) => s.style.left)).toEqual(['50%', '100%'])
+    expect(segs.map((s) => s.className)).toEqual([
+      'page-hf-tabseg page-hf-tabseg-center',
+      'page-hf-tabseg page-hf-tabseg-right',
+    ])
+  })
+
+  it('tabbed paragraph keeps its shading and borders (mirrors the plain path)', () => {
+    const value: HeaderFooter = {
+      text: 'L\tR',
+      pageNumber: false,
+      paras: [
+        {
+          runs: [{ text: 'L\tR' }],
+          shadingFill: 'EEEEEE',
+          borders: 'b',
+          borderLines: { b: { color: 'FF0000', szPt: 1 } },
+        },
+      ],
+    }
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const para = el.querySelector<HTMLElement>('.page-hf-para.page-hf-tabbed')!
+    expect(para.style.backgroundColor).not.toBe('')
+    expect(para.style.borderBottom).toContain('rgb(255, 0, 0)')
+  })
+
+  it('oversized runs after a tab set the paragraph min-height (absolute segments add no flow height)', () => {
+    const value: HeaderFooter = {
+      text: '\tBig Title',
+      pageNumber: false,
+      paras: [{ runs: [{ text: '\tBig Title', sizeHalfPoints: 48 }] }],
+    }
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const para = el.querySelector<HTMLElement>('.page-hf-tabbed')!
+    expect(para.style.minHeight).toBe(`${24 * 1.3}pt`)
+  })
+
+  it('tabs without stops fall back to the implicit center/right header stops', () => {
+    const value: HeaderFooter = {
+      text: 'a\tb\tc',
+      pageNumber: false,
+      paras: [{ runs: [{ text: 'a\tb\tc' }] }],
+    }
+    const el = makeGapHfEl({ kind: 'footer', value, pageNo: 1, pageTotal: 1 })
+    const segs = [...el.querySelectorAll<HTMLElement>('.page-hf-tabseg')]
+    expect(segs.map((s) => s.style.left)).toEqual(['50%', '100%'])
+    expect(segs.map((s) => s.textContent)).toEqual(['b', 'c'])
+  })
+
+  it('PAGE marks inside tab segments still substitute', () => {
+    const value: HeaderFooter = {
+      text: `Title\tPage ${PAGE_MARK} of ${TOTAL_PAGES_MARK}`,
+      pageNumber: true,
+      paras: [{ runs: [{ text: `Title\tPage ${PAGE_MARK} of ${TOTAL_PAGES_MARK}` }] }],
+    }
+    const el = makeGapHfEl({ kind: 'footer', value, pageNo: 3, pageTotal: 14 })
+    expect(el.querySelector('.page-hf-tabseg')?.textContent).toBe('Page 3 of 14')
+  })
+
+  it('image strip follows the containing paragraph alignment (POI headerPic: jc=right)', () => {
+    const value: HeaderFooter = { text: '', pageNumber: false, paras: [{ runs: [] }] }
+    const el = makeGapHfEl({
+      kind: 'header',
+      value,
+      images: [{ dataUrl: 'data:image/png;base64,', widthPx: 10, heightPx: 10, align: 'right' }],
+      pageNo: 1,
+      pageTotal: 1,
+    })
+    const wrap = el.querySelector<HTMLElement>('.page-hf-images')
+    expect(wrap?.style.justifyContent).toBe('flex-end')
+  })
 })
 
 describe('restingHfAreaVariant (canvas area variant when no chip is picked)', () => {

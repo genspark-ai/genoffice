@@ -99,6 +99,39 @@ describe('applyTextInserts', () => {
   })
 })
 
+describe('applyTextEdits translate (block move)', () => {
+  it('moves a whole run by translating its objects without rewriting them', async () => {
+    const f = await makeFixture('Move me somewhere else')
+    const probe = edit(f, 'Move me somewhere else', 'Move me somewhere else')
+    const [before] = await validateTextEdits(f.bytes, [probe])
+    expect(before!.reason).toBeNull()
+    const out = await applyAll(f.bytes, [{ ...probe, translate: [30, -40] }])
+    expect(await extractText(out)).toBe('Move me somewhere else')
+    const shifted: TextEditInput = {
+      ...probe,
+      rect: [f.rect[0] + 30, f.rect[1] - 40, f.rect[2] + 30, f.rect[3] - 40],
+    }
+    const [after] = await validateTextEdits(out, [shifted])
+    expect(after!.reason).toBeNull()
+    for (const [i, delta] of [30, -40, 30, -40].entries()) {
+      expect(Math.abs(after!.bounds![i]! - (before!.bounds![i]! + delta))).toBeLessThan(1)
+    }
+    // Nothing was rebuilt: no font program was embedded by the move
+    expect(out.length).toBeLessThan(f.bytes.length + 2048)
+  })
+
+  it('refuses to move a fragment of a larger run', async () => {
+    const f = await makeFixture('Alpha beta gamma')
+    const move: TextEditInput = { ...edit(f, 'beta', 'beta'), translate: [10, 10] }
+    const [v] = await validateTextEdits(f.bytes, [move])
+    expect(v!.reason).toMatch(/moved as one unit/)
+    const result = await applyTextEdits(f.bytes, [move])
+    expect(result.skipped).toHaveLength(1)
+    expect(result.skipped[0]!.reason).toMatch(/moved as one unit/)
+    expect(await extractText(result.bytes)).toBe('Alpha beta gamma')
+  })
+})
+
 describe('applyTextEdits', () => {
   it('replaces text in place when the font already covers it', async () => {
     const f = await makeFixture('Total revenue was 1500 dollars')
@@ -106,6 +139,46 @@ describe('applyTextEdits', () => {
       edit(f, 'Total revenue was 1500 dollars', 'Total revenue was 5100 dollars'),
     ])
     expect(await extractText(out)).toBe('Total revenue was 5100 dollars')
+  })
+
+  it('never inherits a zero fill alpha into the rebuilt run', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')) return
+    // Some producers (Chrome print) leave pdfium's fill-alpha reading at 0 for text
+    // that renders opaque; drawing with opacity 0 reproduces the same read
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([595, 842])
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    page.drawText('Alpha zero run', { x: 50, y: 700, size: 14, font, opacity: 0 })
+    const w = font.widthOfTextAtSize('Alpha zero run', 14)
+    const bytes = await doc.save({ useObjectStreams: false })
+    const rect: [number, number, number, number] = [45, 694, 50 + w + 5, 718]
+    // the CJK glyph in the new text forces the rebuild path (outside the WinAnsi reuse gate)
+    const out = await applyAll(bytes, [
+      { pageIndex: 0, rect, oldText: 'Alpha zero run', newText: 'Alpha 应 run', fontSize: 14 },
+    ])
+    const { chainPdfium, loadPdfium, withDocument } = await import('../src/main/text-edit')
+    const m = await loadPdfium()
+    const alphas = await chainPdfium(() =>
+      withDocument(m, out, async (d) => {
+        const p = m._FPDF_LoadPage(d, 0)
+        const colPtr = m._malloc(16)
+        const found: number[] = []
+        const count = m._FPDFPage_CountObjects(p)
+        for (let i = 0; i < count; i++) {
+          const obj = m._FPDFPage_GetObject(p, i)
+          if (m._FPDFPageObj_GetType(obj) !== 1) continue
+          if (m._FPDFPageObj_GetFillColor(obj, colPtr, colPtr + 4, colPtr + 8, colPtr + 12)) {
+            found.push(m.HEAPU8[colPtr + 12]!)
+          }
+        }
+        m._free(colPtr)
+        m._FPDF_ClosePage(p)
+        return found
+      }),
+    )
+    // The rebuilt objects must be opaque — an inherited alpha 0 drew invisible text
+    expect(alphas.length).toBeGreaterThan(0)
+    for (const a of alphas) expect(a).toBe(255)
   })
 
   it('rebuilds the run with an embedded subset font for chars outside the original', async () => {
@@ -337,13 +410,24 @@ describe('applyTextEdits', () => {
     }
   })
 
-  it('skips blank replacements instead of erasing the run', async () => {
-    const f = await makeFixture('Do not erase me')
-    const result = await applyTextEdits(f.bytes, [edit(f, 'Do not erase me', '\n \n')])
-    expect(result.skipped).toHaveLength(1)
-    expect(result.skipped[0]!.reason).toMatch(/empty replacement/)
-    // Nothing applied → the input bytes come back untouched
-    expect(result.bytes).toBe(f.bytes)
+  it('erases the run when the replacement is empty', async () => {
+    const f = await makeFixture('Erase me entirely')
+    const out = await applyAll(f.bytes, [edit(f, 'Erase me entirely', '')])
+    expect(await extractText(out)).toBe('')
+  })
+
+  it('treats whitespace-only replacements as deletion too', async () => {
+    const f = await makeFixture('Erase me entirely')
+    const out = await applyAll(f.bytes, [edit(f, 'Erase me entirely', '\n \n')])
+    expect(await extractText(out)).toBe('')
+  })
+
+  it('deletes a fragment while keeping the surrounding run text', async () => {
+    const f = await makeFixture('Keep this remove that')
+    const out = await applyAll(f.bytes, [edit(f, 'remove that', '')])
+    const text = await extractText(out)
+    expect(text).toContain('Keep this')
+    expect(text).not.toContain('remove that')
   })
 
   it('skips edits whose text no longer matches and reports them', async () => {
@@ -624,19 +708,29 @@ describe('selection color runs', () => {
     )
   }
 
-  it('plannedCharColors aligns user runs onto engine-spliced text', async () => {
-    const { plannedCharColors } = await import('../src/main/text-edit')
+  it('plannedCharStyles aligns user runs onto engine-spliced text', async () => {
+    const { plannedCharStyles } = await import('../src/main/text-edit')
     const red: [number, number, number] = [255, 0, 0]
-    // Fragment case: the planned text wraps container text around the replacement
-    const out = plannedCharColors(
+    // Fragment case: the planned text wraps container text around the replacement;
+    // legacy colorRuns input is accepted as color-only style runs
+    const out = plannedCharStyles(
       { newText: 'THESE words', colorRuns: [{ start: 0, end: 5, color: red }] },
       'Highlight THESE words',
     )
     expect(out).not.toBeNull()
-    // 'THESE' (10-14) colored; its trailing space inherits, the prefix space does not
+    // 'THESE' (10-14) styled; its trailing space inherits, the prefix space does not
     expect(out!.map((c) => (c ? 1 : 0)).join('')).toBe('000000000011111100000')
+    expect(out![10]!.color).toEqual(red)
+    // styleRuns carry face/size/flags through the same alignment
+    const styled = plannedCharStyles(
+      { newText: 'THESE words', styleRuns: [{ start: 0, end: 5, bold: true, size: 20 }] },
+      'Highlight THESE words',
+    )
+    expect(styled).not.toBeNull()
+    expect(styled![10]).toMatchObject({ bold: true, size: 20 })
+    expect(styled![0]).toBeNull()
     // No runs → null (uniform rebuild)
-    expect(plannedCharColors({ newText: 'x', colorRuns: [] }, 'x')).toBeNull()
+    expect(plannedCharStyles({ newText: 'x', colorRuns: [] }, 'x')).toBeNull()
   })
 
   it('splits a recolored selection into per-color objects at measured offsets', async () => {
@@ -827,6 +921,135 @@ describe('selection color runs', () => {
       [0, 166, 80],
       [0, 166, 80],
     ])
+  })
+})
+
+describe('selection style runs', () => {
+  /** Text objects of page 1 with their font size and base font name */
+  async function inspectStyled(
+    bytes: Uint8Array,
+  ): Promise<{ text: string; size: number; fontName: string; x: number; y: number }[]> {
+    const { chainPdfium, loadPdfium, withDocument } = await import('../src/main/text-edit')
+    const m = await loadPdfium()
+    return chainPdfium(() =>
+      withDocument(m, bytes, async (doc) => {
+        const page = m._FPDF_LoadPage(doc, 0)
+        const textPage = m._FPDFText_LoadPage(page)
+        const matPtr = m._malloc(24)
+        const sizePtr = m._malloc(4)
+        const out: { text: string; size: number; fontName: string; x: number; y: number }[] = []
+        try {
+          const count = m._FPDFPage_CountObjects(page)
+          for (let i = 0; i < count; i++) {
+            const obj = m._FPDFPage_GetObject(page, i)
+            if (m._FPDFPageObj_GetType(obj) !== 1) continue
+            const len = m._FPDFTextObj_GetText(obj, textPage, 0, 0)
+            let text = ''
+            if (len > 2) {
+              const buf = m._malloc(len)
+              m._FPDFTextObj_GetText(obj, textPage, buf, len)
+              text = Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le')
+              m._free(buf)
+            }
+            m._FPDFPageObj_GetMatrix(obj, matPtr)
+            const mat = Array.from(m.HEAPF32.subarray(matPtr >> 2, (matPtr >> 2) + 6))
+            m._FPDFTextObj_GetFontSize(obj, sizePtr)
+            const font = m._FPDFTextObj_GetFont(obj)
+            let fontName = ''
+            const nameLen = m._FPDFFont_GetBaseFontName(font, 0, 0)
+            if (nameLen > 1) {
+              const buf = m._malloc(nameLen)
+              m._FPDFFont_GetBaseFontName(font, buf, nameLen)
+              fontName = Buffer.from(m.HEAPU8.subarray(buf, buf + nameLen - 1)).toString()
+              m._free(buf)
+            }
+            out.push({ text, size: m.HEAPF32[sizePtr >> 2]!, fontName, x: mat[4]!, y: mat[5]! })
+          }
+          return out
+        } finally {
+          m._free(matPtr)
+          m._free(sizePtr)
+          m._FPDFText_ClosePage(textPage)
+          m._FPDF_ClosePage(page)
+        }
+      }),
+    )
+  }
+
+  it('draws a bolded selection with the style variant of the chosen face', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Bold.ttf')) return
+    const f = await makeFixture('Make this bold now')
+    const out = await applyAll(f.bytes, [
+      {
+        ...edit(f, 'Make this bold now', 'Make this bold now'),
+        newFont: 'arial',
+        styleRuns: [{ start: 5, end: 9, bold: true }],
+      },
+    ])
+    expect(await extractText(out)).toBe('Make this bold now')
+    const objs = (await inspectStyled(out)).filter((o) => o.text.trim() !== '')
+    expect(objs.map((o) => o.text)).toEqual(['Make ', 'this ', 'bold now'])
+    // Same baseline, strictly advancing x
+    expect(objs[1]!.x).toBeGreaterThan(objs[0]!.x)
+    expect(objs[2]!.x).toBeGreaterThan(objs[1]!.x)
+    expect(objs[1]!.y).toBe(objs[0]!.y)
+    // The styled segment draws with the bold variant, the rest with the base face
+    expect(objs[1]!.fontName).toMatch(/bold/i)
+    expect(objs[0]!.fontName).not.toMatch(/bold/i)
+    expect(objs[2]!.fontName).toBe(objs[0]!.fontName)
+  })
+
+  it('draws a resized selection at its own font size with advances to match', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')) return
+    const f = await makeFixture('Small BIG small')
+    const out = await applyAll(f.bytes, [
+      {
+        ...edit(f, 'Small BIG small', 'Small BIG small'),
+        styleRuns: [{ start: 6, end: 9, size: 22 }],
+      },
+    ])
+    expect(await extractText(out)).toBe('Small BIG small')
+    const objs = (await inspectStyled(out)).filter((o) => o.text.trim() !== '')
+    expect(objs.map((o) => o.text)).toEqual(['Small ', 'BIG ', 'small'])
+    expect(objs.map((o) => Math.round(o.size))).toEqual([14, 22, 14])
+    expect(objs[2]!.x).toBeGreaterThan(objs[1]!.x)
+  })
+
+  it('combines a selection font, flags and color in one run', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf')) return
+    const f = await makeFixture('Style these words fully')
+    const out = await applyAll(f.bytes, [
+      {
+        ...edit(f, 'Style these words fully', 'Style these words fully'),
+        styleRuns: [
+          { start: 6, end: 17, font: 'times', bold: true, italic: true, color: [211, 47, 47] },
+        ],
+      },
+    ])
+    expect(await extractText(out)).toBe('Style these words fully')
+    const objs = (await inspectStyled(out)).filter((o) => o.text.trim() !== '')
+    expect(objs.map((o) => o.text)).toEqual(['Style ', 'these words ', 'fully'])
+    expect(objs[1]!.fontName).toMatch(/times/i)
+    expect(objs[1]!.fontName).toMatch(/bold/i)
+    expect(objs[1]!.fontName).toMatch(/italic/i)
+  })
+
+  it('restyles a stretch without disturbing the surrounding text', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Bold.ttf')) return
+    const f = await makeFixture('Keep head styled tail')
+    const out = await applyAll(f.bytes, [
+      {
+        ...edit(f, 'Keep head styled tail', 'Keep head styled tail'),
+        styleRuns: [{ start: 10, end: 16, font: 'arial', bold: true }],
+      },
+    ])
+    expect(await extractText(out)).toBe('Keep head styled tail')
+    const objs = (await inspectStyled(out)).filter((o) => o.text.trim() !== '')
+    // 'styled' is redrawn bold; head and tail survive (as kept or rebuilt objects)
+    const styled = objs.find((o) => o.text.trim() === 'styled')
+    expect(styled).toBeDefined()
+    expect(styled!.fontName).toMatch(/bold/i)
+    expect(objs.map((o) => o.text).join('')).toBe('Keep head styled tail')
   })
 })
 
@@ -1081,6 +1304,13 @@ describe('whitespace edits (space deletion/insertion between runs)', () => {
     expect(wsEditClamp('same text ', 'same text ')).toBeNull()
     // Reflow: a '\n' replacing a space folds to the same unit — no clamp
     expect(wsEditClamp('alpha beta', 'alpha\nbeta')).toBeNull()
+    // Pure insertion of a non-space next to a retained space edits no whitespace:
+    // the old-side diff window is empty and the retained space must not clamp the
+    // seam glyph into the redraw (fatal when it is an undrawable PUA icon glyph)
+    expect(wsEditClamp('a b', 'a Xb')).toBeNull()
+    expect(wsEditClamp('Note \uf105 Grey', 'Note\nX\uf105 Grey')).toBeNull()
+    // Inserting an actual space still clamps (the new-side window carries it)
+    expect(wsEditClamp('a Xb', 'a X b')).not.toBeNull()
   })
 
   it('keeps suffix objects when a leading space is deleted (headNS -1 stays safe)', async () => {
@@ -1210,11 +1440,12 @@ describe('whitespace edits (space deletion/insertion between runs)', () => {
       const items = content.items
         .filter((i): i is { str: string; transform: number[] } => 'str' in i && !!i.str.trim())
         .map((i) => ({ str: i.str, x: i.transform[4]! }))
-      // pdf.js synthesizes a space at every visual gap when merging items: the
-      // prefix must read 'cover phone' with no gap inside 'phone' and still be
-      // anchored at the original line start
+      // 'phone' must be contiguous (one item, no gap where the deleted space sat)
+      // and the untouched prefix stays anchored at the original line start. The
+      // unchanged words are kept as original objects now, so pdf.js may split
+      // items at the object seams — assert on the join, not one item's string.
+      expect(items.map((i) => i.str).join(' ')).toContain('phone')
       const prefix = items.find((i) => i.str.includes('cover'))!
-      expect(prefix.str).toContain('cover phone')
       expect(prefix.x).toBeCloseTo(xs[0]!, 1)
       // 'bill' moves left by about the deleted space width (rebuild-font advances
       // for the redrawn middle allow some tolerance, but the gap must be gone)

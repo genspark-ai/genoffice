@@ -207,3 +207,23 @@ describe('ensureTableStyleXml', () => {
     expect(def?.insideH?.fill).toEqual({ type: 'solid', color: '#D9D9D9' })
   })
 })
+
+describe('custom table style outer borders (tcBdr left/right/top/bottom)', () => {
+  const XML = `<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{X}">
+    <a:tblStyle styleId="{X}" styleName="T"><a:wholeTbl><a:tcStyle><a:tcBdr>
+      <a:left><a:ln w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:ln></a:left>
+      <a:right><a:ln w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:ln></a:right>
+      <a:top><a:ln w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:ln></a:top>
+      <a:bottom><a:ln w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:ln></a:bottom>
+      <a:insideH><a:ln w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:ln></a:insideH>
+      <a:insideV><a:ln w="9525"><a:solidFill><a:srgbClr val="9E9E9E"/></a:solidFill></a:ln></a:insideV>
+    </a:tcBdr></a:tcStyle></a:wholeTbl></a:tblStyle></a:tblStyleLst>`
+  it('reads the whole-table outer edges alongside inside lines', () => {
+    const def = resolveTableStyle('{X}', XML, undefined)!
+    for (const k of ['l', 'r', 't', 'b'] as const) {
+      expect(def.outer?.[k]?.fill).toEqual({ type: 'solid', color: '#9E9E9E' })
+      expect(def.outer?.[k]?.width).toBe(9525)
+    }
+    expect(def.insideH?.fill).toEqual({ type: 'solid', color: '#9E9E9E' })
+  })
+})

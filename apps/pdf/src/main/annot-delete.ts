@@ -1,12 +1,13 @@
 import { chainPdfium, loadPdfium, saveDoc, withDocument } from './text-edit'
 import type { Pdfium } from './text-edit'
-import type { AnnotDeleteInput, MarkupType } from '../shared/ipc'
+import type { AnnotDeleteInput } from '../shared/ipc'
 
 /** pdfium FPDF_ANNOT_* subtype codes (fpdf_annot.h; same values pdf.js reports) */
-const SUBTYPE_CODE: Record<MarkupType, number> = {
+const SUBTYPE_CODE: Record<AnnotDeleteInput['subtype'], number> = {
   highlight: 9,
   underline: 10,
   strikeout: 12,
+  note: 1, // FPDF_ANNOT_TEXT (sticky-note comments)
 }
 
 /** Match tolerance for the rect fallback (float32 round-trips only; rects travel unchanged) */
@@ -42,29 +43,65 @@ const rectsClose = (
   return Math.max(...na.map((v, i) => Math.abs(v - nb[i]!))) <= RECT_TOL
 }
 
+/** /Contents of an annotation ('' when absent) */
+function annotContents(m: Pdfium, annot: number): string {
+  const keyBytes = Buffer.from('Contents\0', 'ascii')
+  const key = m._malloc(keyBytes.length)
+  m.HEAPU8.set(keyBytes, key)
+  try {
+    const len = m._FPDFAnnot_GetStringValue(annot, key, 0, 0)
+    if (len <= 2) return ''
+    const buf = m._malloc(len)
+    try {
+      m._FPDFAnnot_GetStringValue(annot, key, buf, len)
+      return Buffer.from(m.HEAPU8.buffer, buf, len - 2).toString('utf16le')
+    } finally {
+      m._free(buf)
+    }
+  } finally {
+    m._free(key)
+  }
+}
+
+/** Top-left anchors within tolerance — the only note identity that survives pdf.js
+    resizing AP-less Text annot rects to its default icon size */
+const cornersClose = (
+  a: readonly [number, number, number, number],
+  b: readonly [number, number, number, number],
+): boolean =>
+  Math.abs(Math.min(a[0], a[2]) - Math.min(b[0], b[2])) <= RECT_TOL &&
+  Math.abs(Math.max(a[1], a[3]) - Math.max(b[1], b[3])) <= RECT_TOL
+
+/** All identity fields of `d` match this annotation. Contents (when given) matters:
+    the comments of a note thread all share the root's rect, so rect alone would
+    address the wrong thread member. */
+function annotMatches(m: Pdfium, annot: number, d: AnnotDeleteInput): boolean {
+  if (m._FPDFAnnot_GetSubtype(annot) !== SUBTYPE_CODE[d.subtype]) return false
+  const rect = annotRect(m, annot)
+  if (!rect) return false
+  if (d.subtype === 'note' ? !cornersClose(rect, d.rect) : !rectsClose(rect, d.rect)) return false
+  return d.contents === undefined || annotContents(m, annot) === d.contents
+}
+
 /** Remove by object number only when all stable identity fields still match. A full
     rewrite may reassign the number to another annotation, including one of the same subtype. */
 function removeByObjNum(m: Pdfium, page: number, d: AnnotDeleteInput): boolean {
   const annot = m._EPDFPage_GetAnnotByObjectNumber(page, d.objNum)
   if (!annot) return false
-  const subtypeOk = m._FPDFAnnot_GetSubtype(annot) === SUBTYPE_CODE[d.subtype]
-  const rect = subtypeOk ? annotRect(m, annot) : null
+  const ok = annotMatches(m, annot, d)
   m._FPDFPage_CloseAnnot(annot)
-  return (
-    !!rect && rectsClose(rect, d.rect) && !!m._EPDFPage_RemoveAnnotByObjectNumber(page, d.objNum)
-  )
+  return ok && !!m._EPDFPage_RemoveAnnotByObjectNumber(page, d.objNum)
 }
 
-/** Fallback: scan the page for an annotation with the same subtype and rect */
+/** Fallback: scan the page for an annotation with the same identity fields */
 function removeByMatch(m: Pdfium, page: number, d: AnnotDeleteInput): boolean {
   const count = m._FPDFPage_GetAnnotCount(page)
   for (let i = 0; i < count; i++) {
     const annot = m._FPDFPage_GetAnnot(page, i)
     if (!annot) continue
-    const subtypeOk = m._FPDFAnnot_GetSubtype(annot) === SUBTYPE_CODE[d.subtype]
-    const rect = subtypeOk ? annotRect(m, annot) : null
+    const ok = annotMatches(m, annot, d)
     m._FPDFPage_CloseAnnot(annot)
-    if (rect && rectsClose(rect, d.rect)) return !!m._FPDFPage_RemoveAnnot(page, i)
+    if (ok) return !!m._FPDFPage_RemoveAnnot(page, i)
   }
   return false
 }

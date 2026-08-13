@@ -12,6 +12,13 @@ import { installScreenTips } from '@genoffice/ui'
 
 installScreenTips()
 
+// Canvas fillText never triggers @font-face downloads, so the bundled document fonts
+// (Carlito ↔ Calibri) must be loaded explicitly or Konva silently draws the fallback face.
+for (const variant of ['', 'bold ', 'italic ', 'italic bold ']) {
+  document.fonts?.load?.(`${variant}16px Carlito`).catch(() => {})
+  document.fonts?.load?.(`${variant}16px 'Carlito GO'`).catch(() => {})
+}
+
 // ?mode=audience: the presenter view's external-screen audience show window (created by the main process)
 const mode = new URLSearchParams(window.location.search).get('mode')
 

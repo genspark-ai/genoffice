@@ -6,6 +6,7 @@ import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import {
   autospaceBoundaries,
   autospacePadBetween,
+  cjkDeclaredLineFactor,
   cssCsFontFamily,
   cssDualFontFamily,
   cssFontFamily,
@@ -578,6 +579,8 @@ export function runSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
         }`
       : '',
     run.sizeHalfPoints ? `font-size:${run.sizeHalfPoints / 2}pt` : '',
+    run.caps === 'all' ? 'text-transform:uppercase' : '',
+    run.caps === 'small' ? 'font-variant-caps:small-caps' : '',
     // explicit autoSpaceDE/DN off also disables the browser's native gap (same as the editor path)
     autoSpace === false ? 'text-autospace:no-autospace' : '',
   ]
@@ -642,17 +645,42 @@ function runStrutHalfPoints(runs: Run[]): number | null {
   return max
 }
 
+/** Run[] port of extensions' latinParaFactor (declared run fonts override the doc factor). */
+function latinRunsFactor(runs: Run[], scriptVar: string): string {
+  let declaredMax = 0
+  let undeclared = false
+  for (const run of runs) {
+    const family = run.fontAscii ?? (run.eaSlotEmpty === true ? null : run.font)
+    if (family) declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+    else undeclared = true
+  }
+  if (declaredMax <= 0) return scriptVar
+  return undeclared ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+}
+
+/** Run[] port of extensions' paraDeclaredFontFamily (strut face follows the runs). */
+function runsDeclaredFontFamily(runs: Run[]): string | null {
+  let first: string | null = null
+  for (const run of runs) {
+    const ea = run.font || null
+    const ascii = run.fontAscii || null
+    if (!ea && !ascii) return null
+    first ??= ea && ascii ? cssDualFontFamily(ascii, ea) : cssFontFamily((ea ?? ascii)!)
+  }
+  return first
+}
+
 /** Per-paragraph --doc-line-factor from runs (Run[] port of extensions' paraLineFactor). */
 function runsLineFactor(runs: Run[], text: string): string {
   const scriptVar = paraLineFactorCss(text)
-  if (!textHasCjk(text)) return scriptVar
+  if (!textHasCjk(text)) return latinRunsFactor(runs, scriptVar)
   let declaredMax = 0
   let undeclaredCjk = false
   for (const run of runs) {
     if (!textHasCjk(run.text)) continue
     const family = run.eaSlotEmpty === true ? null : (run.font ?? run.fontAscii)
     if (family && isCjkFontName(family)) {
-      declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+      declaredMax = Math.max(declaredMax, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
     } else undeclaredCjk = true
   }
   if (declaredMax <= 0) return scriptVar
@@ -677,6 +705,8 @@ function cellParaSpec(
     // Korean cells break at spaces like Word (same rule as the editor's blockAttrs)
     if (textHasHangul(text)) styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
     styles.push(`--doc-line-factor:${runs ? runsLineFactor(runs, text) : paraLineFactorCss(text)}`)
+    const fam = runs ? runsDeclaredFontFamily(runs) : null
+    if (fam) styles.push(`font-family:${fam}`)
     const strut = runs ? runStrutHalfPoints(runs) : null
     if (strut) styles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
   }
@@ -695,8 +725,9 @@ function cellParaSpec(
   return content.length > 0 ? ['div', attrs, ...content] : ['div', attrs, ['br', {}]]
 }
 
-/** read-only <table> DOM spec from the display model (vMerge -> rowSpan) */
-export function renderTableSpec(model: TableModel): DomSpec {
+/** read-only <table> DOM spec from the display model (vMerge -> rowSpan);
+ *  nested = rendered inside a cell, capped at the cell instead of spilling into page margins */
+export function renderTableSpec(model: TableModel, nested = false): DomSpec {
   // grid positions per row (accounting for colSpan) so vertical merges line up
   const positions: number[][] = model.rows.map((row) => {
     let col = 0
@@ -769,10 +800,11 @@ export function renderTableSpec(model: TableModel): DomSpec {
       const content: unknown[] = []
       let ni = 0
       paraBlocks.forEach((blk, pi) => {
-        while (ni < nested.length && anchorOf(ni) <= pi) content.push(renderTableSpec(nested[ni++]))
+        while (ni < nested.length && anchorOf(ni) <= pi)
+          content.push(renderTableSpec(nested[ni++], true))
         content.push(blk)
       })
-      while (ni < nested.length) content.push(renderTableSpec(nested[ni++]))
+      while (ni < nested.length) content.push(renderTableSpec(nested[ni++], true))
       if (content.length === 0) content.push('\u00a0')
       const clip = cellClipTwips(model, ri, cell, rowSpan)
       if (clip !== null) {
@@ -812,13 +844,39 @@ export function renderTableSpec(model: TableModel): DomSpec {
   const tableAttrs: Record<string, string> = { class: 'doc-table' }
   if (model.bidiVisual) tableAttrs.dir = 'rtl'
   const tableStyles: string[] = []
+  let centerMargin: string | null = null
   if (model.widthPct) tableStyles.push(`width:${model.widthPct}%`)
-  else if (colPx) tableStyles.push(`width:${colPx.reduce((sum, w) => sum + w, 0)}px`)
+  else if (colPx) {
+    // nested tables are capped by their cell; top-level ones spill into the page
+    // margins like Word (centered: both sides via negative-margin centering,
+    // left-aligned: right up to the paper edge — see DocTable.renderHTML);
+    // indent shifts the table right, so it comes out of the budget
+    const widthPx = colPx.reduce((sum, w) => sum + w, 0)
+    if (!nested && model.align === 'center') {
+      const paper =
+        'calc(100% + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
+      tableStyles.push(`width:min(${widthPx}px,${paper})`)
+      centerMargin = `margin-left:calc((100% - min(${widthPx}px,${paper}))/2)`
+    } else {
+      const indented =
+        model.align !== 'center' && model.align !== 'right' && (model.indentTwips ?? 0) > 0
+      const indentPx = indented ? model.indentTwips! / 15 : 0
+      const base = nested ? '100%' : 'calc(100% + var(--doc-margin-right,0px))'
+      const avail = indentPx
+        ? nested
+          ? `calc(100% - ${indentPx.toFixed(1)}px)`
+          : `calc(100% + var(--doc-margin-right,0px) - ${indentPx.toFixed(1)}px)`
+        : base
+      tableStyles.push(`width:min(${widthPx}px,${avail})`)
+    }
+  }
   const pad = cellPadCss(model.cellMarTwips ?? null)
   if (pad) tableStyles.push(`--doc-cell-pad:${pad}`)
   tableStyles.push(...tableBordersCss((model.borders as TableBordersAttr | undefined) ?? null))
-  if (model.align === 'center') tableStyles.push('margin-left:auto', 'margin-right:auto')
-  else if (model.align === 'right') tableStyles.push('margin-left:auto')
+  if (model.align === 'center') {
+    if (centerMargin) tableStyles.push(centerMargin)
+    else tableStyles.push('margin-left:auto', 'margin-right:auto')
+  } else if (model.align === 'right') tableStyles.push('margin-left:auto')
   else if (model.indentTwips)
     tableStyles.push(`margin-left:${(model.indentTwips / 15).toFixed(1)}px`)
   if (tableStyles.length > 0) tableAttrs.style = tableStyles.join(';')

@@ -3,7 +3,10 @@ import {
   colorRunsEqual,
   colorSegments,
   colorsToRuns,
+  decodeStyle,
+  encodeStyle,
   mapCharColors,
+  patchStyle,
   runsToColors,
   spliceCharColors,
 } from '../src/renderer/color-runs'
@@ -104,5 +107,42 @@ describe('colorSegments', () => {
       { text: 'bb', color: '' },
       { text: 'c', color: B },
     ])
+  })
+})
+
+describe('style keys', () => {
+  it("round-trips every field and canonicalizes the empty style to ''", () => {
+    expect(encodeStyle({})).toBe('')
+    expect(decodeStyle('')).toEqual({})
+    const full = { color: R, font: 'arial', size: 12.5, bold: true, italic: false }
+    expect(decodeStyle(encodeStyle(full))).toEqual(full)
+    // Explicit off is distinct from inherit
+    expect(encodeStyle({ bold: false })).not.toBe(encodeStyle({}))
+    expect(decodeStyle(encodeStyle({ bold: false }))).toEqual({ bold: false })
+  })
+
+  it('distinct styles never collide and identical styles always do', () => {
+    expect(encodeStyle({ color: R })).not.toBe(encodeStyle({ font: R }))
+    expect(encodeStyle({ color: R, bold: true })).toBe(encodeStyle({ bold: true, color: R }))
+  })
+
+  it('patchStyle merges fields and clears with null', () => {
+    const key = encodeStyle({ color: R, bold: true })
+    expect(decodeStyle(patchStyle(key, { italic: true }))).toEqual({
+      color: R,
+      bold: true,
+      italic: true,
+    })
+    expect(decodeStyle(patchStyle(key, { bold: null }))).toEqual({ color: R })
+    expect(patchStyle(encodeStyle({ bold: true }), { bold: null })).toBe('')
+    // Untouched patch keeps the key intact
+    expect(patchStyle(key, {})).toBe(key)
+  })
+
+  it('style keys flow through the generic run helpers unchanged', () => {
+    const bold = encodeStyle({ bold: true })
+    const out = spliceCharColors('abc', ['', bold, ''], 'abXc')
+    expect(out).toEqual(['', bold, bold, ''])
+    expect(colorsToRuns(out)).toEqual([{ start: 1, end: 3, color: bold }])
   })
 })

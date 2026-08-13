@@ -560,7 +560,9 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         typeof columnWidth.hidden !== 'boolean' ||
         (columnWidth.outlineLevel !== undefined &&
           (!isNonnegativeInteger(columnWidth.outlineLevel) || columnWidth.outlineLevel > 7)) ||
-        (columnWidth.collapsed !== undefined && typeof columnWidth.collapsed !== 'boolean')
+        (columnWidth.collapsed !== undefined && typeof columnWidth.collapsed !== 'boolean') ||
+        (columnWidth.styleIndex !== undefined &&
+          (!isNonnegativeInteger(columnWidth.styleIndex) || columnWidth.styleIndex === 0))
       ) {
         throw new Error('Invalid worksheet column width.')
       }
@@ -573,6 +575,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
           ? {}
           : { outlineLevel: columnWidth.outlineLevel }),
         ...(columnWidth.collapsed === undefined ? {} : { collapsed: columnWidth.collapsed }),
+        ...(columnWidth.styleIndex === undefined ? {} : { styleIndex: columnWidth.styleIndex }),
       }
     })
     return {
@@ -804,7 +807,9 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
       typeof row.hidden !== 'boolean' ||
       (row.outlineLevel !== undefined &&
         (!isNonnegativeInteger(row.outlineLevel) || row.outlineLevel > 7)) ||
-      (row.collapsed !== undefined && typeof row.collapsed !== 'boolean')
+      (row.collapsed !== undefined && typeof row.collapsed !== 'boolean') ||
+      (row.styleIndex !== undefined &&
+        (!isNonnegativeInteger(row.styleIndex) || row.styleIndex === 0))
     ) {
       throw new Error('Invalid workbook row response.')
     }
@@ -814,6 +819,7 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
       ...(row.height === undefined ? {} : { height: row.height }),
       ...(row.outlineLevel === undefined ? {} : { outlineLevel: row.outlineLevel }),
       ...(row.collapsed === undefined ? {} : { collapsed: row.collapsed }),
+      ...(row.styleIndex === undefined ? {} : { styleIndex: row.styleIndex }),
     }
   })
   const merges = input.merges.map((merge) => {

@@ -3103,9 +3103,18 @@ export function registerDocsIpc(): void {
     },
   )
 
-  ipcMain.handle('docs:print', (event) => {
-    // print the calling tab's own content; zero margins — the docx page padding provides them
-    event.sender.print({ margins: { marginType: 'none' } })
+  ipcMain.handle('docs:print', async (event) => {
+    // print the calling tab's own content; zero margins — the docx page padding provides them.
+    // Resolves when the system dialog is dismissed; the print dialog stays open on cancel
+    // (ok=false without error) and surfaces real failures.
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      event.sender.print({ margins: { marginType: 'none' } }, (success, failureReason) => {
+        resolve({
+          ok: success,
+          ...(failureReason && !/cancel/i.test(failureReason) ? { error: failureReason } : {}),
+        })
+      })
+    })
   })
 
   ipcMain.handle(
@@ -3367,7 +3376,9 @@ export function buildDocsMenu(): void {
         {
           label: tm('menuPrint'),
           accelerator: 'CmdOrCtrl+P',
-          click: () => activeDocsWebContents()?.print({}),
+          // routed through the renderer: it opens the pagination preview first so each
+          // printed sheet is exactly one editor page (WYSIWYG), then invokes docs:print
+          click: () => sendCommand('print'),
         },
       ],
     },

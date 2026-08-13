@@ -7,8 +7,19 @@ import type { ActionCtx } from './action-context'
 import type { CustomShow } from './slideshow-utils'
 import { t } from './i18n/locale'
 
+/** Instant black curtain under the upcoming show (body::after overlay): painted on the
+ *  very next frame after the click, it hides the React mount + window-snap latency.
+ *  SlideShowView lifts it once the show is revealed (and on unmount, for early exits). */
+export function dropShowCurtain(): void {
+  document.body.classList.add('show-curtain')
+}
+export function liftShowCurtain(): void {
+  document.body.classList.remove('show-curtain')
+}
+
 export function startSlideShow(ctx: ActionCtx, fromStart: boolean): void {
   if (ctx.slides.length === 0 || ctx.slideShow || ctx.presenter) return
+  dropShowCurtain()
   ctx.setEditing(null)
   ctx.setCtxMenu(null)
   // From start: jump to the first unhidden slide (if all hidden, still start at slide 1)
@@ -41,6 +52,7 @@ export function playCustomShow(ctx: ActionCtx, show: CustomShow): void {
     ctx.setStatus(t('appStatusCustomShowEmpty'))
     return
   }
+  dropShowCurtain()
   ctx.setEditing(null)
   ctx.setCtxMenu(null)
   ctx.setCustomShowDlgOpen(false)
@@ -50,6 +62,7 @@ export function playCustomShow(ctx: ActionCtx, show: CustomShow): void {
 /** Rehearsal timing: show from the start and record each slide's dwell time */
 export function startRehearseShow(ctx: ActionCtx): void {
   if (ctx.slides.length === 0 || ctx.slideShow || ctx.presenter) return
+  dropShowCurtain()
   ctx.setEditing(null)
   ctx.setCtxMenu(null)
   const first = ctx.slides.findIndex((s) => !s.hidden)
@@ -78,6 +91,7 @@ export async function saveRehearseTimings(ctx: ActionCtx): Promise<void> {
 /** Presenter view (single-window version, entry aligned with the show) */
 export function startPresenterView(ctx: ActionCtx, fromStart: boolean): void {
   if (ctx.slides.length === 0 || ctx.slideShow || ctx.presenter) return
+  dropShowCurtain()
   ctx.setEditing(null)
   ctx.setCtxMenu(null)
   const first = ctx.slides.findIndex((s) => !s.hidden)

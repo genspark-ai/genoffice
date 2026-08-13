@@ -13,14 +13,27 @@ export const PDF_CHANNELS = {
   pagePreviewPng: 'pdf:page-preview-png',
   extractPages: 'pdf:extract-pages',
   insertPdf: 'pdf:insert-pdf',
+  insertBlankPage: 'pdf:insert-blank-page',
+  splitPdf: 'pdf:split-pdf',
+  mergePdf: 'pdf:merge-pdf',
+  mergePages: 'pdf:merge-pages',
+  replacePages: 'pdf:replace-pages',
+  setPageSize: 'pdf:set-page-size',
+  splitPages: 'pdf:split-pages',
+  cropPages: 'pdf:crop-pages',
   exportImages: 'pdf:export-images',
   generateImage: 'pdf:generate-image',
+  listSignatures: 'pdf:list-signatures',
+  addSignature: 'pdf:add-signature',
+  removeSignature: 'pdf:remove-signature',
+  getUsername: 'pdf:get-username',
   dirtyChanged: 'pdf:dirty-changed',
   closeSaveRequest: 'pdf:close-save-request',
   closeSaveResult: 'pdf:close-save-result',
   saveAsRequest: 'pdf:save-as-request',
   saveAsResult: 'pdf:save-as-result',
   saveAsFlow: 'pdf:save-as-flow',
+  printRequest: 'pdf:print-request',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
   getTheme: 'app:get-theme',
@@ -28,6 +41,31 @@ export const PDF_CHANNELS = {
 } as const
 
 export const VISUAL_SIGNATURE_CONTENT_PREFIX = 'GenOffice visual signature field: '
+
+/** Signature strokes: pad pixel coords, scaled proportionally and y-flipped when placed on the page */
+export interface SignatureStrokes {
+  paths: number[][]
+  width: number
+  height: number
+}
+
+/** Confirmed signature awaiting placement: hand strokes (Ink) or a bitmap (Stamp) */
+export type SignatureData =
+  | ({ kind: 'strokes' } & SignatureStrokes)
+  | {
+      kind: 'image'
+      /** base64 PNG, without the data: prefix */
+      image: string
+      width: number
+      height: number
+    }
+
+/** A reusable signature persisted in userData (shared across documents, WPS-style) */
+export interface SavedSignature {
+  id: string
+  createdAt: number
+  data: SignatureData
+}
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -42,15 +80,28 @@ export interface MarkupInput {
   quads: number[][]
 }
 
-/** Delete a markup annotation already saved in the file. Object number is only a lookup
-    hint; subtype + rect guard against (and recover from) object renumbering by a rewrite. */
+/** Delete an annotation already saved in the file. Object number is only a lookup
+    hint; subtype + rect guard against (and recover from) object renumbering by a rewrite.
+    'note' targets Text (comment) annotations. */
 export interface AnnotDeleteInput {
   pageIndex: number
   /** PDF object number (pdf.js annotation id "123R" → 123) */
   objNum: number
-  subtype: MarkupType
+  subtype: MarkupType | 'note'
   /** Annotation /Rect in PDF user space, for fallback matching */
   rect: [number, number, number, number]
+  /** /Contents to match. Required identity for notes: every comment of a thread shares
+      the root's rect, so rect alone would delete the wrong member. */
+  contents?: string
+}
+
+/** Reply target: a note (Text) annotation saved in the file. The object number is only a
+    lookup hint — pdfium stages that run before pdf-lib may renumber objects — so the
+    parent is confirmed by rect + contents at write time. */
+export interface NoteReplyTarget {
+  objNum: number
+  rect: [number, number, number, number]
+  contents: string
 }
 
 /** Drawing annotations (all coords in PDF user space, y up).
@@ -90,6 +141,16 @@ export type DrawingInput =
       color: [number, number, number]
       at: [number, number]
       contents: string
+      /** Annotation author (/T); omitted → 'GenOffice' */
+      author?: string
+      /** Creation time (ms since epoch) → /CreationDate and /M; omitted → save time */
+      createdMs?: number
+      /** Key for parenting replies inside the same request (parents sort before children) */
+      localId?: string
+      /** This note replies to a note saved in the file */
+      replyToSaved?: NoteReplyTarget
+      /** This note replies to another note in this request, by its localId */
+      replyToLocalId?: string
     }
 
 /**
@@ -135,8 +196,24 @@ export interface TextEditInput {
   newColor?: [number, number, number]
   /** Selection-level fill colors: [start,end) code-unit ranges into newText, ascending
       and non-overlapping. Chars outside every range keep newColor ?? the original run's
-      color. The engine splits each rebuilt line into one text object per color. */
+      color. The engine splits each rebuilt line into one text object per color.
+      Legacy input form — new senders use styleRuns; still accepted by the engine. */
   colorRuns?: { start: number; end: number; color: [number, number, number] }[]
+  /** Selection-level style overrides: [start,end) code-unit ranges into newText,
+      ascending and non-overlapping. Each present field overrides the whole-edit value
+      (newColor / newFont / newFontSize / newBold / newItalic) for the covered range;
+      absent fields inherit it. The engine splits each rebuilt line into one text
+      object per distinct style, drawing each with its own font face and size.
+      Generalizes colorRuns. */
+  styleRuns?: {
+    start: number
+    end: number
+    color?: [number, number, number]
+    font?: string
+    size?: number
+    bold?: boolean
+    italic?: boolean
+  }[]
   /** User-chosen rebuild font (EDIT_FONTS id); absent = keep the original font (embedded
       subset when it covers the replacement, else the same-named installed font, else
       fallback). An explicit id is honored only when the face's cmap covers the whole
@@ -166,6 +243,12 @@ export interface TextEditInput {
       Degrades silently to the base face when no variant covers the replacement. */
   newBold?: boolean
   newItalic?: boolean
+  /** Move the matched run as-is: every matched text object is translated by this
+      PDF-user-space delta instead of being rewritten (fonts/kerning/colors survive
+      untouched). Requires the match to cover the objects exactly (whole) — moving a
+      fragment would drag the surrounding text along, so such edits are skipped.
+      newText must be textually equivalent to oldText; nothing is rebuilt. */
+  translate?: [number, number]
 }
 
 /** A new searchable/selectable text object inserted into a page content stream. */
@@ -377,7 +460,7 @@ export interface ValidateTextEditsRequest {
   edits: TextEditInput[]
 }
 
-/** Extract pages into a new PDF: main process shows a save dialog; cancel returns canceled */
+/** Extract pages into a new PDF written to the GenOffice save dir and opened in a new tab */
 export interface ExtractPagesRequest {
   path: string
   /** Original page indices */
@@ -385,8 +468,7 @@ export interface ExtractPagesRequest {
   suggestedName: string
 }
 
-export type ExtractPagesResult =
-  { ok: true; savedPath: string } | { ok: true; canceled: true } | { ok: false; error: string }
+export type ExtractPagesResult = { ok: true; savedPath: string } | { ok: false; error: string }
 
 /** Insert (merge) another PDF after a page of the current file: main process shows a picker and writes back immediately */
 export interface InsertPdfRequest {
@@ -397,6 +479,96 @@ export interface InsertPdfRequest {
 
 export type InsertPdfResult =
   { ok: true; insertedCount: number } | { ok: true; canceled: true } | { ok: false; error: string }
+
+/** Insert a blank page (sized like the neighboring page) and write back immediately — no dialog */
+export interface InsertBlankPageRequest {
+  path: string
+  /** Insert after this original page index; -1 means front of the document */
+  afterPageIndex: number
+}
+
+export type InsertBlankPageResult = { ok: true } | { ok: false; error: string }
+
+/** Split the file into chunks of chunkSize pages: main shows a folder picker and writes one PDF per chunk */
+export interface SplitPdfRequest {
+  path: string
+  chunkSize: number
+  /** Base for output file names: <baseName>-1.pdf, <baseName>-2.pdf, … */
+  baseName: string
+}
+
+export type SplitPdfResult =
+  | { ok: true; savedDir: string; count: number }
+  | { ok: true; canceled: true }
+  | { ok: false; error: string }
+
+/** Merge the current file with other PDFs into a new file: main shows a multi-file picker then a save dialog */
+export interface MergePdfRequest {
+  path: string
+  suggestedName: string
+}
+
+export type MergePdfResult =
+  | { ok: true; savedPath: string; appendedCount: number }
+  | { ok: true; canceled: true }
+  | { ok: false; error: string }
+
+/** N-up imposition (WPS "merge pages"): every perSheet pages onto one sheet, saved as a new file */
+export interface MergePagesRequest {
+  path: string
+  /** Pages per sheet, 2-16 */
+  perSheet: number
+  /** Fill order: horizontal = left→right then down, vertical = top→bottom then right */
+  direction: 'horizontal' | 'vertical'
+  /** Draw hairline separators on the internal cell boundaries */
+  separator: boolean
+  suggestedName: string
+}
+
+export type MergePagesResult =
+  { ok: true; savedPath: string } | { ok: true; canceled: true } | { ok: false; error: string }
+
+/** Replace pages with all pages of another PDF (main shows a picker), written back in place */
+export interface ReplacePagesRequest {
+  path: string
+  /** Original page indices to replace */
+  pages: number[]
+}
+
+export type ReplacePagesResult =
+  | { ok: true; removed: number; inserted: number }
+  | { ok: true; canceled: true }
+  | { ok: false; error: string }
+
+/** Resize all pages to a target paper size (points), content scaled to fit; written back in place */
+export interface SetPageSizeRequest {
+  path: string
+  width: number
+  height: number
+}
+
+export type SetPageSizeResult = { ok: true } | { ok: false; error: string }
+
+/** Split every page into a grid of pages (inverse of merge pages), written to the
+ * GenOffice save dir and opened in a new tab */
+export interface SplitPagesRequest {
+  path: string
+  perPage: 2 | 4 | 9
+  suggestedName: string
+}
+
+export type SplitPagesResult = { ok: true; savedPath: string } | { ok: false; error: string }
+
+/** Shrink the CropBox of the given pages to a fractional rect of the displayed page; in place */
+export interface CropPagesRequest {
+  path: string
+  /** Original page indices */
+  pages: number[]
+  /** Fractions of the displayed page (after /Rotate), y down from the top */
+  rect: { l: number; t: number; r: number; b: number }
+}
+
+export type CropPagesResult = { ok: true } | { ok: false; error: string }
 
 /** Export pages as PNG: renderer rasterizes the bitmaps, main process shows a dialog and writes to disk */
 export interface ExportImagesRequest {
@@ -466,6 +638,14 @@ export interface PdfApi {
   pagePreviewPng(request: PagePreviewRequest): Promise<string | null>
   extractPages(request: ExtractPagesRequest): Promise<ExtractPagesResult>
   insertPdf(request: InsertPdfRequest): Promise<InsertPdfResult>
+  insertBlankPage(request: InsertBlankPageRequest): Promise<InsertBlankPageResult>
+  splitPdf(request: SplitPdfRequest): Promise<SplitPdfResult>
+  mergePdf(request: MergePdfRequest): Promise<MergePdfResult>
+  mergePages(request: MergePagesRequest): Promise<MergePagesResult>
+  replacePages(request: ReplacePagesRequest): Promise<ReplacePagesResult>
+  setPageSize(request: SetPageSizeRequest): Promise<SetPageSizeResult>
+  splitPages(request: SplitPagesRequest): Promise<SplitPagesResult>
+  cropPages(request: CropPagesRequest): Promise<CropPagesResult>
   exportImages(request: ExportImagesRequest): Promise<ExportImagesResult>
   /** Web image search for AI tools (app-wide ai:image-search handler) */
   imageSearch(query: string, maxResults?: number): Promise<ImageSearchResponse>
@@ -476,6 +656,14 @@ export interface PdfApi {
     url?: string
     error?: string
   }>
+  /** Saved signatures reusable across documents (persisted in userData), newest first */
+  listSavedSignatures(): Promise<SavedSignature[]>
+  /** Persist a signature for reuse; returns the updated list (capped, deduplicated) */
+  addSavedSignature(data: SignatureData): Promise<SavedSignature[]>
+  /** Delete one saved signature by id; returns the updated list */
+  removeSavedSignature(id: string): Promise<SavedSignature[]>
+  /** OS account name, used as the default author of new note comments; '' when unavailable */
+  getUsername(): Promise<string>
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void
   /** Main process picked "Save" in the close prompt → renderer saves and replies via sendCloseSaveResult */
@@ -486,6 +674,8 @@ export interface PdfApi {
   sendSaveAsResult(ok: boolean): void
   /** True while the shell's Save As flow (dialog included) is open — the renderer pauses autosave, since the dialog's window blur would otherwise trigger a save into the original */
   onSaveAsFlow(handler: (inFlight: boolean) => void): () => void
+  /** Shell menu Print → renderer runs its print flow (save, rasterize, system dialog) */
+  onPrintRequest(handler: () => void): () => void
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>

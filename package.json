@@ -40,6 +40,10 @@
   "dependencies": {
     "ws": "^8.21.1"
   },
+  "overrides": {
+    "nanoid@3": "^3.3.17",
+    "nanoid@5": "^5.1.16"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",

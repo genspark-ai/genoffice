@@ -1,7 +1,14 @@
 /**
  * 3.1/3.2 Konva canvas — renders one RenderSlide + selection/transform + text-edit triggering.
  */
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   Stage,
   Layer,
@@ -24,7 +31,7 @@ import type {
   PictureRenderNode,
   GroupRenderNode,
 } from '@genoffice/pptx-render'
-import { fillToKonva, isEditableText } from './konva-adapter'
+import { boxPivotProps, fillToKonva, isEditableText } from './konva-adapter'
 import {
   computeSnap,
   computeSpacingSnap,
@@ -312,6 +319,21 @@ interface Props {
  */
 export const CANVAS_BLEED = 160
 
+/* Screenshot-automation hook (fidelity-compare): window.__genofficeHidePhPrompts = true +
+ * dispatching 'genoffice:hide-ph-prompts' hides empty-placeholder hints on the edit canvas. */
+const hidePhPromptsListeners = new Set<() => void>()
+window.addEventListener('genoffice:hide-ph-prompts', () => {
+  for (const l of hidePhPromptsListeners) l()
+})
+const subscribeHidePhPrompts = (cb: () => void) => {
+  hidePhPromptsListeners.add(cb)
+  return () => {
+    hidePhPromptsListeners.delete(cb)
+  }
+}
+const getHidePhPrompts = () =>
+  !!(window as { __genofficeHidePhPrompts?: boolean }).__genofficeHidePhPrompts
+
 /** Default rotate-handle snapping: lock onto 45° multiples (Shift switches to 15° steps) */
 const ROTATION_SNAPS = [0, 45, 90, 135, 180, 225, 270, 315]
 const ROTATION_SNAP_TOLERANCE = 5
@@ -433,6 +455,21 @@ export function SlideCanvas({
     const t = window.setTimeout(() => setSettledZoom(zoom), 150)
     return () => window.clearTimeout(t)
   }, [zoom, settledZoom])
+
+  // Bundled @font-face fonts (Carlito) may finish loading after the first draw; canvas
+  // text drawn with a fallback face must be redrawn once the real font is available.
+  useEffect(() => {
+    let live = true
+    document.fonts?.ready
+      ?.then(() => {
+        if (!live) return
+        for (const l of stageRef.current?.getLayers() ?? []) l.batchDraw()
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   // Re-rasterize on settled zoom changes. The slide dep covers layers (re)created between
   // zoom changes; the resolution media query covers devicePixelRatio changes (window dragged
@@ -843,8 +880,10 @@ export function SlideCanvas({
             return (
               <Rect
                 key={`sz_${id}`}
-                x={n.box.x - 2}
-                y={n.box.y - 2}
+                x={n.box.x + n.box.w / 2}
+                y={n.box.y + n.box.h / 2}
+                offsetX={n.box.w / 2 + 2}
+                offsetY={n.box.h / 2 + 2}
                 width={n.box.w + 4}
                 height={n.box.h + 4}
                 rotation={n.box.rotationDeg}
@@ -1016,8 +1055,10 @@ export function SlideCanvas({
           return [
             <Rect
               key={`cxn_sel_${id}`}
-              x={b.x - 3}
-              y={b.y - 3}
+              x={b.x + b.w / 2}
+              y={b.y + b.h / 2}
+              offsetX={b.w / 2 + 3}
+              offsetY={b.h / 2 + 3}
               width={b.w + 6}
               height={b.h + 6}
               rotation={b.rotationDeg}
@@ -1356,12 +1397,18 @@ function NodeView({
   selHairline,
 }: NodeProps) {
   const { t } = useI18n()
+  // screenshot automation (fidelity-compare) hides the hint to match print output; the
+  // event-backed store re-renders even when no slide switch follows (single-slide decks)
+  const hidePhPrompts = useSyncExternalStore(subscribeHidePhPrompts, getHidePhPrompts)
   const { box } = node
   const groupRef = useRef<Konva.Group>(null)
   /** Most recently rendered model width/height (preview responses update it; during a gesture, scale is always relative to it) */
   const boxRef = useRef({ w: box.w, h: box.h })
   const transformingRef = useRef(false)
   const lastPreviewRef = useRef(0)
+  /** Node position captured on every transform event: boxPivotProps derives Konva x/y from
+   * box.w/h, so a live-preview re-render would otherwise teleport the node mid-gesture. */
+  const gesturePosRef = useRef<{ x: number; y: number } | null>(null)
 
   // The Transformer's frame/scale basis defaults to getClientRect() (content bounding box). When text
   // overflows the shape box (autofit off and content too tall), overflowing glyphs inflate the bounding
@@ -1392,12 +1439,15 @@ function NodeView({
 
   // Resize-preview response arrived (children already rendered at the new box): rebase the gesture's
   // temporary scale onto the new box so visual size (box × scale) stays continuous — frame follows the hand, content doesn't stretch or flicker.
+  // Position must be restored too: the controlled x/y (box center per boxPivotProps) depend on
+  // box.w/h, so the re-render would otherwise re-pin the node to the stale model x/y.
   useLayoutEffect(() => {
     const g = groupRef.current
     const prev = boxRef.current
     if (g && transformingRef.current && (prev.w !== box.w || prev.h !== box.h)) {
       if (box.w > 0) g.scaleX(g.scaleX() * (prev.w / box.w))
       if (box.h > 0) g.scaleY(g.scaleY() * (prev.h / box.h))
+      if (gesturePosRef.current) g.position(gesturePosRef.current)
     }
     boxRef.current = { w: box.w, h: box.h }
   })
@@ -1408,17 +1458,13 @@ function NodeView({
   // Chips are select-only; tables/charts support p:xfrm patch persistence, so they can be dragged/resized.
   // Full-page backgrounds stay in place: a drag on them rubber-bands (Stage-level marquee) instead of moving them.
   const draggable = node.type !== 'placeholder-chip' && !node.background
-  // Flip mirrors within the original box: add width offset to x then scale -1 (subtracted back when the drag reports)
-  const flipOffX = box.flipH ? box.w : 0
-  const flipOffY = box.flipV ? box.h : 0
+  // Rotation/flip pivot on the box center (boxPivotProps): the Konva position IS the box
+  // center, so model x/y = position − half size — including mid-gesture, since the offset
+  // point stays the drawn box's center under any scale.
 
   const common = {
     id: `node_${node.sourceId}`,
-    x: box.x + flipOffX,
-    y: box.y + flipOffY,
-    rotation: box.rotationDeg,
-    scaleX: box.flipH ? -1 : 1,
-    scaleY: box.flipV ? -1 : 1,
+    ...boxPivotProps(box),
     draggable,
     // A slight hand slip on click-select (3~5px is common on trackpads) shouldn't trigger a drag: Konva's
     // default 3px threshold is too sensitive, and once it becomes a drag, onDragMove snapping amplifies it into a visible 6px+ jump that commits to the model.
@@ -1441,7 +1487,7 @@ function NodeView({
       const t = e.target
       // Snap threshold semantics are "6 screen px": convert back by the canvas CSS zoom (same as dragDistance)
       const thr = 6 / Math.max(zoom, 0.1)
-      const raw = { x: t.x() - flipOffX, y: t.y() - flipOffY }
+      const raw = { x: t.x() - box.w / 2, y: t.y() - box.h / 2 }
       // Multi-select drag: snap the selection bounding box as a whole. All selected
       // nodes fire their own dragmove under the Transformer's proxy drag, but each computes the same snap
       // delta from the same model bounding box + its own fixed offset -> relative positions stay unchanged.
@@ -1478,18 +1524,18 @@ function NodeView({
           indicators.push(...sp.indicators.filter((i) => i.axis === 'y'))
         }
       }
-      if (fx != null) t.x(raw.x + (fx - bb.x) + flipOffX)
-      if (fy != null) t.y(raw.y + (fy - bb.y) + flipOffY)
+      if (fx != null) t.x(raw.x + (fx - bb.x) + box.w / 2)
+      if (fy != null) t.y(raw.y + (fy - bb.y) + box.h / 2)
       onDragGuides(snap.guides, indicators)
     },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
       onDragGuides([])
-      const dropX = e.target.x() - flipOffX
-      const dropY = e.target.y() - flipOffY
+      const dropX = e.target.x() - box.w / 2
+      const dropY = e.target.y() - box.h / 2
       // Option+drag = duplicate at the drop point;
       // original snaps back (model unchanged, the Konva node position must be manually restored); multi-select/in-group gestures not supported yet
       if (e.evt?.altKey && onDuplicateTo && !multiDrag && !insideGroupId) {
-        e.target.position({ x: box.x + flipOffX, y: box.y + flipOffY })
+        e.target.position({ x: box.x + box.w / 2, y: box.y + box.h / 2 })
         onDuplicateTo(node.sourceId, dropX - box.x, dropY - box.y)
         return
       }
@@ -1509,8 +1555,12 @@ function NodeView({
     onTransformStart: () => {
       transformingRef.current = true
       lastPreviewRef.current = 0
+      gesturePosRef.current = null
     },
     onTransform: (e: Konva.KonvaEventObject<Event>) => {
+      // Track the live position first: the preview re-render below re-applies controlled
+      // x/y, and the rebase effect restores this value to keep the gesture continuous
+      gesturePosRef.current = { x: e.target.x(), y: e.target.y() }
       // Live preview during drag: re-lay out text at the new box size (font size unchanged).
       // Commit width/height only (x/y are managed by the Konva gesture and land in the model with the final commit on release).
       // Offset conversion for flipped elements relies on a one-shot back-calculation at gesture end; preview stays disabled for them.
@@ -1536,14 +1586,17 @@ function NodeView({
     },
     onTransformEnd: (e: Konva.KonvaEventObject<Event>) => {
       transformingRef.current = false
+      gesturePosRef.current = null
       const t = e.target
       const sx = Math.abs(t.scaleX())
       const sy = Math.abs(t.scaleY())
       onTransform(
         node.sourceId,
         {
-          x: t.x() - flipOffX * sx,
-          y: t.y() - flipOffY * sy,
+          // The offset point stays the drawn box's center at any scale, so the model's
+          // unrotated top-left is always position − half of the NEW size
+          x: t.x() - (box.w * sx) / 2,
+          y: t.y() - (box.h * sy) / 2,
           w: box.w * sx,
           h: box.h * sy,
           rotationDeg: t.rotation(),
@@ -1563,14 +1616,7 @@ function NodeView({
     // ext/chExt scaling is already baked into child geometry (including text layout), so it no longer affects overlay alignment.
     const plain = !box.rotationDeg && !box.flipH && !box.flipV
     return (
-      <Group
-        id={`node_${node.sourceId}`}
-        x={box.x + flipOffX}
-        y={box.y + flipOffY}
-        rotation={box.rotationDeg}
-        scaleX={box.flipH ? -1 : 1}
-        scaleY={box.flipV ? -1 : 1}
-      >
+      <Group id={`node_${node.sourceId}`} {...boxPivotProps(box)}>
         {/* In-group boundary indicator (dashed frame while editing a group) */}
         <Rect
           width={box.w}
@@ -1647,6 +1693,7 @@ function NodeView({
   const isMedia = node.type === 'picture' && !!(node as PictureRenderNode).media && !!onPlayMedia
   // Empty placeholder: canvas draws a gray click hint (edit canvas only, not in thumbnails/export)
   const phPrompt = (() => {
+    if (hidePhPrompts) return null
     if (node.type !== 'shape' && node.type !== 'text') return null
     const sh = node as ShapeRenderNode
     const kind = sh.placeholder

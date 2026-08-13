@@ -557,11 +557,23 @@ export function IconOrientation(props: IconProps) {
   )
 }
 
+/* landscape slide with a diagonal resize arrow — PowerPoint's Slide Size glyph */
 export function IconPageSize(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="6.23" y="4.49" width="11.55" height="15.02" rx="0.92" />
-      <path d="M 9.11 12 h 5.78 M 12 9.11 v 5.78 M 10.5 10.5 9.11 9.11 m 5.78 0 -1.39 1.39 m 0 3 1.39 1.39 m -5.78 0 1.39 -1.39" />
+      <rect x="4.1" y="6.25" width="15.8" height="11.5" rx="0.92" />
+      <path d="M 8.8 8.8 L 15.2 15.2 M 11.4 8.8 h -2.6 v 2.6 M 12.6 15.2 h 2.6 v -2.6" />
+    </Svg>
+  )
+}
+
+/* stacked slides with a check on the front one — applied across the deck */
+export function IconApplyAll(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="9.1" y="5.25" width="10.2" height="7" rx="0.92" />
+      <rect x="4.7" y="9.15" width="12.2" height="9.6" rx="0.92" fill="var(--surface, #fff)" />
+      <path d="M 8 14.15 l 2.3 2.3 l 4.6 -4.6" />
     </Svg>
   )
 }
@@ -850,11 +862,17 @@ export function IconPageWidth(props: IconProps) {
   )
 }
 
-export function IconWholePage(props: IconProps) {
+/** View tab fit-to-window, mirroring Fluent's zoom-fit: a small content rect
+ *  framed by four edge chevrons. Deliberately arrow-free — inward/outward
+ *  arrows read as fullscreen, and the original page-with-plus as "new page". */
+export function IconFitWindow(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="6.23" y="4.49" width="11.55" height="15.02" rx="0.92" />
-      <path d="M 9.11 12 h 5.78 M 12 9.11 v 5.78" />
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1.5" />
+      <path d="M5.2 9.3 3.4 12l1.8 2.7" />
+      <path d="M18.8 9.3 20.6 12l-1.8 2.7" />
+      <path d="M9.3 5.2 12 3.4l2.7 1.8" />
+      <path d="M9.3 18.8 12 20.6l2.7-1.8" />
     </Svg>
   )
 }
@@ -1280,6 +1298,29 @@ export function IconPlayCurrent(props: IconProps) {
       <rect x="4.49" y="5.65" width="15.02" height="10.4" rx="0.92" />
       <path d="M 10.27 8.3 v 5.08 l 4.39 -2.54 z" fill="currentColor" stroke="none" />
       <path d="M 12 16.04 v 2.31 M 9.11 18.35 h 5.78" />
+    </Svg>
+  )
+}
+
+/** Status-bar play: solid triangle in a rounded square. The frame is nearly
+ *  the full viewBox — the monitor-and-stand ribbon glyph reads too small at
+ *  status-bar sizes */
+export function IconPlayBoxed(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4.2" y="4.2" width="15.6" height="15.6" rx="2" />
+      <path d="M 9.9 8.3 v 7.4 l 6.2 -3.7 z" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/** Status-bar notes toggle: a note page with text lines (near-full viewBox,
+ *  same rationale as IconPlayBoxed at status-bar sizes) */
+export function IconNotes(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4.2" y="4.2" width="15.6" height="15.6" rx="2" />
+      <path d="M8 9.3h8M8 12.3h8M8 15.3h5" />
     </Svg>
   )
 }

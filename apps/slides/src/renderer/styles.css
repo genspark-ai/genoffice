@@ -1,3 +1,57 @@
+/* Bundled metric substitutes for fonts most decks assume but macOS/Linux lack:
+ * Carlito ↔ Calibri (document content rendering — the canvas font chains in
+ * konva-adapter.ts list Carlito right after Calibri). The files' internal family
+ * name is "Carlito GO" (docs' Vietnamese-diacritics rebuild), which is what the
+ * main-process metrics report as the draw family — declare both names. */
+@font-face {
+  font-family: 'Carlito';
+  src: url('./fonts/Carlito-Regular.ttf');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('./fonts/Carlito-Bold.ttf');
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('./fonts/Carlito-Italic.ttf');
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('./fonts/Carlito-BoldItalic.ttf');
+  font-weight: bold;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('./fonts/Carlito-Regular.ttf');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('./fonts/Carlito-Bold.ttf');
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('./fonts/Carlito-Italic.ttf');
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Carlito GO';
+  src: url('./fonts/Carlito-BoldItalic.ttf');
+  font-weight: bold;
+  font-style: italic;
+}
+
 /* Per-app accent (powerpoint-orange family) + slides-only tokens.
  * Chrome tokens (surface/text/border/…, AI panel --color-*) come from
  * @genoffice/ui/tokens.css; nothing here may shadow those names. */
@@ -11,6 +65,8 @@
   --slides-rail-bg: #ececec;
   --slides-statusbar-border: #e1e4e8;
   --slides-statusbar-hover: rgb(0 0 0 / 8%);
+  /* same relative darkening as the ribbon's --active-bg selected gray on white */
+  --slides-statusbar-active: rgb(0 0 0 / 8%);
   --slides-ctl-border: #8a8886;
   --slides-text-disabled: #b0b0b0;
   --slides-hover-wash: rgb(16 110 190 / 10%);
@@ -141,6 +197,7 @@
   --slides-rail-bg: #252525;
   --slides-statusbar-border: #3a3a3a;
   --slides-statusbar-hover: rgb(255 255 255 / 10%);
+  --slides-statusbar-active: rgb(255 255 255 / 12%);
   --slides-ctl-border: #777;
   --slides-text-disabled: #666;
   --slides-hover-wash: rgb(90 160 232 / 15%);
@@ -187,6 +244,7 @@
     --slides-rail-bg: #252525;
     --slides-statusbar-border: #3a3a3a;
     --slides-statusbar-hover: rgb(255 255 255 / 10%);
+    --slides-statusbar-active: rgb(255 255 255 / 12%);
     --slides-ctl-border: #777;
     --slides-text-disabled: #666;
     --slides-hover-wash: rgb(90 160 232 / 15%);
@@ -386,6 +444,12 @@ button {
 .ribbon-tabs .file-tab-wrap,
 .ribbon-tabs .autosave-toggle,
 .ribbon-tabs .qa-btn {
+  -webkit-app-region: no-drag;
+}
+
+/* While a ribbon popup is open the row must deliver mousedown (drag regions
+   swallow it), so outside-press dismissal can see presses on the blank band */
+.ribbon-tabs.ribbon-tabs-nodrag {
   -webkit-app-region: no-drag;
 }
 
@@ -799,6 +863,31 @@ button {
   padding: 0 4px;
 }
 
+/* PowerPoint-style combined slides group: big new-slide button + stacked
+   small labeled rows (layout / add section). The column stretches to the big
+   button's height; 4px top tracks .rb-big's icon row, and the 1px bottom
+   (rather than the geometric 3px) offsets the row's centered line box so the
+   add-section text bottom-aligns with the new-slide label (measured) */
+.rb-slides-col {
+  align-items: stretch;
+  align-self: stretch;
+  justify-content: space-between;
+  gap: 0;
+  padding: 4px 0 1px;
+}
+/* these rows pair with a big button, so their glyphs use the 20px inline-row
+   size (not the 14px .rb-small default); 1.8 × 20/24 paints the standard
+   1.5px stroke at 20px */
+.rb-slides-col .rb-small svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+}
+.rb-slides-col .rb-small .rb-caret {
+  width: 10px;
+  height: 10px;
+}
+
 .rb-small {
   display: flex;
   align-items: center;
@@ -841,9 +930,16 @@ button {
   cursor: default;
 }
 
-/* Checkbox rows (View tab's Show group) */
-.rb-check-col {
-  align-items: stretch;
+/* Checkbox rows (View tab's Show group): one column-flow grid so the second
+   column's rows sit level with the first's (notes ↔ ruler, thumbnail pane ↔
+   gridlines) instead of each column centering independently */
+.rb-check-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, auto);
+  align-content: center;
+  column-gap: 2px;
+  row-gap: 4px;
 }
 
 .rb-check {
@@ -1339,11 +1435,17 @@ body.vib .slide-list {
 
 /* Status-bar quick toggle button for notes */
 .status-notes-btn {
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
   background: none;
   color: inherit;
   font-size: 11px;
-  padding: 1px 6px;
+  /* 20px tall in the 24px status bar: the active/hover block keeps 2px of
+   * air above and below instead of touching the bar edges */
+  height: 20px;
+  padding: 0 5px;
   border-radius: 3px;
   cursor: pointer;
   margin-right: 8px;
@@ -1353,13 +1455,31 @@ body.vib .slide-list {
 }
 
 .status-notes-btn:hover {
-  background: var(--hover);
+  background: var(--slides-statusbar-hover);
 }
 
+/* Active = neutral pressed gray, not accent (PPT's Notes button stays plain);
+ * translucent wash so the shade matches the ribbon's selected gray on the
+ * darker statusbar background */
 .status-notes-btn.on {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--slides-statusbar-active);
+}
+
+/* Start-show-from-current-slide (PowerPoint keeps this next to the zoom slider) */
+.status-play-btn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  color: inherit;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.status-play-btn:hover {
+  background: var(--hover);
 }
 
 /* ================= AI panel (Copilot-style pane, isomorphic to docs) ================= */
@@ -3920,9 +4040,15 @@ body.vib .slide-list {
   box-shadow: var(--slides-shadow-popup);
 }
 
+/* the pen tray sits flush against the ink settings in the same group */
+.pen-tray + .ink-settings {
+  margin-left: 8px;
+}
+
+/* 6px so the active swatch's outline (2px + 1px offset) keeps clear air */
 .ink-swatches {
   display: flex;
-  gap: 3px;
+  gap: 6px;
 }
 
 .ink-swatch {
@@ -4062,8 +4188,10 @@ body.vib .slide-list {
 .notes-pane {
   flex-shrink: 0;
   height: 118px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  /* stage gray, not card white: the bar reads as part of the work area;
+   * the divider needs --border-strong to stay visible on that gray */
+  background: var(--canvas);
+  border-top: 1px solid var(--border-strong);
   display: flex;
   flex-direction: column;
   padding: 0 14px 10px;
@@ -4074,20 +4202,7 @@ body.vib .slide-list {
   flex-shrink: 0;
   cursor: ns-resize;
   background: transparent;
-  border-top: 1px solid var(--border);
   margin: 0 -14px 4px;
-  transition: background 0.1s;
-}
-
-.notes-resize-handle:hover {
-  background: var(--slides-hover-wash);
-}
-
-.notes-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-  user-select: none;
 }
 
 .notes-pane textarea {
@@ -4103,12 +4218,162 @@ body.vib .slide-list {
   background: transparent;
 }
 
-/* Ruler: inside .stage-scale, scales with zoom and stays aligned with the slide */
-.ruler-row {
-  display: flex;
+.notes-pane textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
-.ruler-body {
+/* Hidden pane: an invisible strip stays along the bottom edge so the splitter
+ * remains grabbable — drag up to pull the notes pane back out (PPT behavior) */
+.notes-pull-zone {
+  flex-shrink: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+/* Thin state (PowerPoint-style): dragged down to a one-line bar that stays
+ * directly editable — click and type in place, or drag the handle back up.
+ * The handle overlays the top edge (absolute) so the textarea gets the full
+ * bar height and its line-height centers the single line vertically. */
+.notes-pane.notes-thin {
+  position: relative;
+  padding-bottom: 0;
+}
+
+.notes-pane.notes-thin .notes-resize-handle {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+
+.notes-pane.notes-thin textarea {
+  overflow-y: hidden;
+  line-height: 30px;
+}
+
+/* ── Transitions tab: one-shot canvas preview played when an effect is clicked.
+   push/cover enter from top/left only — down/right transforms extend the
+   scroll area and can flash scrollbars / retrigger the fit logic. ── */
+.stage-rel[class*=' tp-'] {
+  pointer-events: none;
+}
+
+.tp-morph {
+  animation: tp-morph 400ms ease-out;
+}
+@keyframes tp-morph {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.tp-fade {
+  animation: tp-fade 500ms ease-out;
+}
+@keyframes tp-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.tp-push {
+  animation: tp-push 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes tp-push {
+  from {
+    transform: translateY(-100%);
+  }
+}
+
+.tp-wipe {
+  animation: tp-wipe 500ms ease-out;
+}
+@keyframes tp-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-split {
+  animation: tp-split 500ms ease-out;
+}
+@keyframes tp-split {
+  from {
+    clip-path: inset(0 50%);
+  }
+  to {
+    clip-path: inset(0 0);
+  }
+}
+
+.tp-circle {
+  animation: tp-circle 550ms ease-out;
+}
+@keyframes tp-circle {
+  from {
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    clip-path: circle(75% at 50% 50%);
+  }
+}
+
+.tp-cover {
+  animation: tp-cover 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes tp-cover {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.tp-pull {
+  animation: tp-pull 500ms ease-out;
+}
+@keyframes tp-pull {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-dissolve {
+  animation: tp-dissolve 600ms steps(9);
+}
+@keyframes tp-dissolve {
+  from {
+    opacity: 0;
+  }
+}
+
+.tp-zoom {
+  animation: tp-zoom 450ms cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+@keyframes tp-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+/* Ruler: inside .stage-scale, scales with zoom and stays aligned with the slide */
+/* Stage rulers are fixed chrome OUTSIDE the zoomed canvas (PowerPoint-style):
+ * constant type size at any zoom, 0 at the slide center, ticks across the
+ * whole work area. Press-drag on a strip pulls out a guide. */
+.ruler-row {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.ruler-track {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
 }
 
@@ -4117,63 +4382,101 @@ body.vib .slide-list {
   height: 20px;
   flex-shrink: 0;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-right: none;
-  border-bottom: none;
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .ruler {
   position: relative;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
   overflow: hidden;
   user-select: none;
+  touch-action: none;
 }
 
+/* Guides pull out PARALLEL to their ruler (Photoshop/Keynote convention):
+ * drag down from the top strip → horizontal guide, right from the left
+ * strip → vertical guide; cursors point along the pull direction */
 .ruler-h {
+  flex: 1;
   height: 20px;
-  border-bottom: none;
-  /* A small tick every 1/2 inch */
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--border-strong) 0 1px,
-    transparent 1px 48px
-  );
-  background-position: 0 bottom;
-  background-size: 100% 6px;
-  background-repeat: repeat-x;
+  border-bottom: 1px solid var(--border-strong);
+  cursor: row-resize;
 }
 
 .ruler-v {
   width: 20px;
   flex-shrink: 0;
-  border-right: none;
-  border-top: none;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    var(--border-strong) 0 1px,
-    transparent 1px 48px
-  );
-  background-position: right 0;
-  background-size: 6px 100%;
-  background-repeat: repeat-y;
+  border-right: 1px solid var(--border-strong);
+  cursor: col-resize;
 }
 
-.ruler-tick {
+.ruler-num {
   position: absolute;
   font-size: 9px;
   color: var(--text-dim);
   line-height: 1;
 }
 
+.ruler-h .ruler-num {
+  top: 5px;
+  transform: translateX(-50%);
+}
+
+.ruler-v .ruler-num {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ruler-tick {
+  position: absolute;
+  background: var(--border-strong);
+}
+
 .ruler-h .ruler-tick {
-  top: 3px;
-  transform: translateX(2px);
+  bottom: 0;
+  width: 1px;
+  height: 5px;
 }
 
 .ruler-v .ruler-tick {
-  left: 3px;
-  transform: translateY(2px);
+  right: 0;
+  height: 1px;
+  width: 5px;
+}
+
+/* Pointer-position hairline while dragging on the stage */
+.ruler-indicator {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  background: var(--accent);
+}
+
+.ruler-h .ruler-indicator {
+  inset: 0 auto 0 0;
+  width: 1px;
+}
+
+.ruler-v .ruler-indicator {
+  inset: 0 0 auto;
+  height: 1px;
+}
+
+/* Coordinate readout while dragging a guide (distance from slide center) */
+.ruler-bubble {
+  position: fixed;
+  z-index: 1000;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: var(--slides-shadow-popup);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* Grid line / guide overlay (doesn't intercept the mouse) */
@@ -4593,6 +4896,17 @@ body.vib .slide-list {
 
 /* ── Slide show (full-screen black playback) ──────────────────────── */
 
+/* Click-time curtain: dropped synchronously when a show is requested so the very
+   next frame is already black; the mount + window snap happen behind it. Sits
+   just under .slideshow, which takes over once revealed. */
+body.show-curtain::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 399;
+  background: var(--slides-show-black);
+}
+
 .slideshow {
   position: fixed;
   inset: 0;
@@ -4943,6 +5257,12 @@ body.vib .slide-list {
   display: flex;
   flex-direction: column;
   user-select: none;
+}
+
+/* Until the fullscreen snap settles only the black root shows — the windowed
+   layout still computes, but never paints (same guard as the show's covered gate) */
+.presenter.pv-uncovered > * {
+  visibility: hidden;
 }
 
 .presenter .pv-top {
@@ -6575,21 +6895,43 @@ body.vib .slide-list {
     crosshair !important;
 }
 
-/* ── Split button (new slide + layout dropdown) ─────────────────────── */
-/* one-piece dropdown-capable big button (New Slide): looks identical to the
- * Layout button — icon + inline caret — where the caret glyph is a small
- * secondary hit area opening the layout gallery */
+/* ── Split button (main action + caret dropdown) ─────────────────────── */
+/* Two hit zones tiling one big button (PowerPoint split button, measured
+ * from PPT: non-hovered half light, hovered half a step darker, the halves
+ * seamlessly forming one rounded block) — the zones replace the icon-row
+ * wash instead of floating inside it */
+.rb-split .rb-big-icon {
+  gap: 0;
+  padding: 0;
+}
+/* 3px vertical padding lives in the zones (not the row) so the pill height
+   matches the plain buttons' icon-row wash exactly */
+.rb-split .rb-split-main {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 3px 4px 3px 6px;
+  border-radius: 4px 0 0 4px;
+}
 .rb-caret-hit {
   display: inline-flex;
   align-items: center;
-  padding: 3px 2px;
-  margin-left: 1px;
-  border-radius: 3px;
+  align-self: stretch;
+  padding: 3px 5px 3px 2px;
+  border-radius: 0 4px 4px 0;
 }
-
-/* The caret is only a hit area — hover/open always highlight the whole
- * icon block as one unit (PowerPoint reads the button as one piece) */
-.rb-big:has(.rb-caret-hit.active) .rb-big-icon {
+/* the two zones paint the hover themselves, edge to edge */
+.rb-split:hover:not(:disabled) .rb-big-icon {
+  background: none;
+}
+.rb-split:hover:not(:disabled) .rb-split-main,
+.rb-split:hover:not(:disabled) .rb-caret-hit {
+  background: var(--hover);
+}
+/* the half under the pointer (or with its dropdown open) darkens a step */
+.rb-split:not(:disabled) .rb-split-main:hover,
+.rb-split:not(:disabled) .rb-caret-hit:hover,
+.rb-split .rb-caret-hit.active {
   background: var(--active-bg);
 }
 
@@ -6881,27 +7223,101 @@ body.vib .slide-list {
   }
 }
 
-/* Print layout selection */
-.print-layouts {
+/* Print dialog (PowerPoint-style: preview pane + options column) */
+.modal.print-dialog {
+  width: min(880px, calc(100vw - 64px));
+}
+.print-dialog-body {
+  display: flex;
+  gap: 18px;
+  height: min(560px, calc(100vh - 220px));
+}
+.print-preview-pane {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--hover);
+  overflow: hidden;
+}
+.print-preview-pane iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.print-preview-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.print-options {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 12px 0;
+  gap: 12px;
 }
-.print-layouts button {
-  padding: 8px 12px;
-  text-align: left;
+.print-options fieldset {
+  margin: 0;
+  padding: 8px 10px 6px;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface);
+  border-radius: 8px;
+}
+.print-options legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.print-options .print-radio {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 7px;
+  font-size: 13px;
+  color: var(--text);
   cursor: pointer;
 }
-.print-layouts button:hover {
-  background: var(--hover);
+.print-options .print-radio input {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin: 0;
+  accent-color: var(--accent);
 }
-
-.ruler-clickable {
-  cursor: crosshair;
+.print-options .print-radio:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+.print-options .print-range-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+}
+.print-options .print-range-input:focus {
+  border-color: var(--accent);
+}
+.print-options .print-range-input.invalid {
+  border-color: var(--danger);
+}
+.print-page-count {
+  margin-top: auto;
+  padding: 2px 2px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: right;
 }
 
 /* Sliding AI dock: one persistent wrapper animates between the panel width and

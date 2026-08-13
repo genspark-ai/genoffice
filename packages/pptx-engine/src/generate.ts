@@ -706,6 +706,10 @@ function generateRunXml(r: TextRun): string {
     r.color && !r.colorInherited
       ? `<a:solidFill><a:srgbClr val="${hex6(r.color)}"/></a:solidFill>`
       : ''
+  // Text highlight (CT_TextCharacterProperties order: after the fill group, before the font slots)
+  const highlight = r.highlight
+    ? `<a:highlight><a:srgbClr val="${hex6(r.highlight)}"/></a:highlight>`
+    : ''
   // Original dual fonts/theme references restored first; no declaration (inherited) writes nothing;
   // a user-changed font writes all three slots, so a rebuilt run keeps the typeface the user picked
   const font =
@@ -718,7 +722,7 @@ function generateRunXml(r: TextRun): string {
         : ''
   // Run-level hyperlink: rId written back (allocated by ensureRunLinkRels for links set this session)
   const hlink = hlinkXml(r)
-  const rprInner = ln + color + font + hlink
+  const rprInner = ln + color + highlight + font + hlink
   const rPr = rprInner
     ? `<a:rPr${attrs}>${rprInner}</a:rPr>`
     : attrs

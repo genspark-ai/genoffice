@@ -17,6 +17,7 @@ const RAW =
 // what extractParaFormat yields for RAW
 const MODEL: ParaFormat = {
   borders: 'tb',
+  borderLines: { t: { color: 'FF0000', szPt: 1.5 }, b: { color: 'FF0000', szPt: 1.5 } },
   shadingFill: 'EEEEEE',
   spaceBefore: 240,
   spaceAfter: 120,
@@ -63,6 +64,24 @@ describe('mergePPrFormat keeps unedited groups byte-identical', () => {
     const doc = await parseDocx(bytes)
     expect(doc.blocks[0].format?.borders).toBe('b')
     expect(mergePPrFormat(raw, doc.blocks[0].format)).toBe(raw)
+  })
+
+  it('changing only a border color rebuilds pBdr with the declared color/sz', () => {
+    const out = mergePPrFormat(RAW, {
+      ...MODEL,
+      borderLines: { t: { color: '00FF00', szPt: 1.5 }, b: { color: 'FF0000', szPt: 1.5 } },
+    })
+    expect(out).toContain('<w:top w:val="single" w:sz="12" w:space="1" w:color="00FF00"/>')
+    expect(out).toContain('<w:bottom w:val="single" w:sz="12" w:space="1" w:color="FF0000"/>')
+    expect(out).not.toContain('dashed')
+  })
+
+  it('rebuilding pBdr from a bare model writes declared color/sz', () => {
+    const out = mergePPrFormat('<w:pPr></w:pPr>', {
+      borders: 'b',
+      borderLines: { b: { color: '4472C4', szPt: 2.25 } },
+    })
+    expect(out).toContain('<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/>')
   })
 
   it('changing indent rebuilds w:ind and drops the char-unit variants', () => {

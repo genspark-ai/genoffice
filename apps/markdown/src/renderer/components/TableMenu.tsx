@@ -18,6 +18,8 @@ interface Props {
   editor: Editor | null
   /** scroll container of the editor canvas, for repositioning on scroll */
   scrollRef: React.RefObject<HTMLElement | null>
+  /** Reposition the viewport-anchored menu after document zoom changes. */
+  zoom: number
 }
 
 function Btn({
@@ -53,7 +55,7 @@ function Btn({
  * column insert & delete, header-row toggle, delete table (no merge — GFM
  * tables cannot serialize spans).
  */
-export function TableMenu({ editor, scrollRef }: Props) {
+export function TableMenu({ editor, scrollRef, zoom }: Props) {
   const { t } = useI18n()
   const [rect, setRect] = useState<{ top: number; left: number } | null>(null)
 
@@ -91,7 +93,7 @@ export function TableMenu({ editor, scrollRef }: Props) {
       scroller?.removeEventListener('scroll', reposition)
       window.removeEventListener('resize', reposition)
     }
-  }, [editor, inTable, scrollRef])
+  }, [editor, inTable, scrollRef, zoom])
 
   if (!editor || !inTable || !rect) return null
   const run = (fn: (c: ReturnType<Editor['chain']>) => ReturnType<Editor['chain']>) =>

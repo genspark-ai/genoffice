@@ -940,13 +940,18 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   const out: PPrChild[] = []
   if (format.pageBreakBefore) out.push({ name: 'w:pageBreakBefore', xml: '<w:pageBreakBefore/>' })
   if (format.borders) {
-    const line = (side: string) => `<w:${side} w:val="single" w:sz="4" w:space="1" w:color="auto"/>`
+    const line = (side: string, ch: 't' | 'b' | 'l' | 'r') => {
+      const declared = format.borderLines?.[ch]
+      const sz = declared?.szPt ? Math.max(1, Math.round(declared.szPt * 8)) : 4
+      const color = declared?.color ? escapeXmlAttr(declared.color) : 'auto'
+      return `<w:${side} w:val="single" w:sz="${sz}" w:space="1" w:color="${color}"/>`
+    }
     const sides: string[] = []
     // schema order inside pBdr: top, left, bottom, right
-    if (format.borders.includes('t')) sides.push(line('top'))
-    if (format.borders.includes('l')) sides.push(line('left'))
-    if (format.borders.includes('b')) sides.push(line('bottom'))
-    if (format.borders.includes('r')) sides.push(line('right'))
+    if (format.borders.includes('t')) sides.push(line('top', 't'))
+    if (format.borders.includes('l')) sides.push(line('left', 'l'))
+    if (format.borders.includes('b')) sides.push(line('bottom', 'b'))
+    if (format.borders.includes('r')) sides.push(line('right', 'r'))
     if (sides.length > 0) out.push({ name: 'w:pBdr', xml: `<w:pBdr>${sides.join('')}</w:pBdr>` })
   }
   if (format.shadingFill) {
@@ -1105,6 +1110,7 @@ function rawIndUnchanged(raw: string | undefined, f: ParaFormat): boolean {
 
 function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   let rawBorders = ''
+  const rawLines: NonNullable<ParaFormat['borderLines']> = {}
   if (raw) {
     const inner = raw.replace(/^<w:pBdr[^>]*>/, '').replace(/<\/w:pBdr>$/, '')
     const kids = splitXmlChildren(inner)
@@ -1118,11 +1124,26 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
       // mirror extractParaFormat: nil is a reset, not a border, or the raw/model
       // comparison never matches and the pBdr always gets rebuilt from the model
       const val = el ? rawAttr(el.xml, 'w:val') : undefined
-      if (el && val !== 'none' && val !== 'nil') rawBorders += ch
+      if (!el || val === 'none' || val === 'nil') continue
+      rawBorders += ch
+      const color = rawAttr(el.xml, 'w:color')
+      const sz = parseInt(rawAttr(el.xml, 'w:sz') ?? '', 10)
+      const line: NonNullable<ParaFormat['borderLines']>[typeof ch] = {}
+      if (color && color !== 'auto') line.color = color
+      if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
+      if (line.color !== undefined || line.szPt !== undefined) rawLines[ch] = line
     }
   }
   const norm = (s: string | undefined) => (s ? [...new Set(s)].sort().join('') : '')
-  return norm(rawBorders) === norm(f.borders)
+  if (norm(rawBorders) !== norm(f.borders)) return false
+  const normLines = (lines: ParaFormat['borderLines']) =>
+    JSON.stringify(
+      (['t', 'b', 'l', 'r'] as const).map((ch) => [
+        lines?.[ch]?.color ?? null,
+        lines?.[ch]?.szPt ?? null,
+      ]),
+    )
+  return normLines(rawLines) === normLines(f.borderLines)
 }
 
 function rawTabsUnchanged(raw: string | undefined, stops: TabStop[]): boolean {

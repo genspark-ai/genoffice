@@ -1,0 +1,118 @@
+/* "Star us on GitHub" invitation card: non-modal, bottom-right over home.
+ * Chrome-colored via semantic tokens (light/dark follow the UI theme). */
+
+.star-prompt {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  width: 320px;
+  padding: 16px 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal-strong);
+  animation: star-prompt-in 0.25s ease-out;
+}
+
+@keyframes star-prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.star-prompt-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.star-prompt-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.star-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.star-prompt-icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.star-prompt-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.star-prompt-body {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.star-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.star-prompt-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--color-btn-primary-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.star-prompt-go:hover {
+  background: var(--accent-hover);
+}
+
+.star-prompt-go svg {
+  width: 14px;
+  height: 14px;
+}
+
+.star-prompt-done {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.star-prompt-done:hover {
+  background: var(--hover);
+  color: var(--text);
+}

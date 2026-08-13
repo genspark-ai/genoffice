@@ -300,13 +300,18 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
           (maximum, visual) => Math.max(maximum, visual.anchor.toColumn + 1),
           0,
         )
+        const columnCount = Math.max(
+          MINIMUM_SHEET_COLUMN_COUNT,
+          sheet.columnCount,
+          visualColumnCount,
+        )
         return [
           sheet.id,
           {
             id: sheet.id,
             name: sheet.name,
             rowCount: Math.max(MINIMUM_SHEET_ROW_COUNT, sheet.rowCount, visualRowCount),
-            columnCount: Math.max(MINIMUM_SHEET_COLUMN_COUNT, sheet.columnCount, visualColumnCount),
+            columnCount,
             hidden: sheet.hidden ? BooleanNumber.TRUE : BooleanNumber.FALSE,
             showGridlines: sheet.showGridLines ? BooleanNumber.TRUE : BooleanNumber.FALSE,
             ...(sheet.tabColor === null ? {} : { tabColor: sheet.tabColor }),
@@ -326,7 +331,7 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
                     startColumn: sheet.freeze.frozenColumns,
                   },
                 }),
-            columnData: createColumnData(sheet),
+            columnData: createColumnData(sheet, file.styles, columnCount),
             cellData: {},
           },
         ]
@@ -670,19 +675,31 @@ function applyWorkbookNotesInner(
 
 function createColumnData(
   sheet: WorkbookFile['sheets'][number],
-): Record<number, { w?: number; hd?: BooleanNumber }> {
-  const data: Record<number, { w?: number; hd?: BooleanNumber }> = {}
+  styles: WorkbookFile['styles'],
+  // The snapshot grid is padded past the used range (MINIMUM_SHEET_COLUMN_COUNT);
+  // a workbook-wide <col min="1" max="16384"> must keep painting the padding.
+  columnCount: number,
+): Record<number, { w?: number; hd?: BooleanNumber; s?: IStyleData }> {
+  const data: Record<number, { w?: number; hd?: BooleanNumber; s?: IStyleData }> = {}
   for (const columnWidth of sheet.columnWidths) {
-    const endColumn = Math.min(columnWidth.endColumn, sheet.columnCount - 1)
+    const endColumn = Math.min(columnWidth.endColumn, columnCount - 1)
     // Outline-only <col> entries carry no width; leave the default width.
     const width = columnWidth.width
     const pixelWidth = width === undefined ? undefined : characterWidthToPixels(width)
+    // <col style=>: the default style for cells without one of their own.
+    // Cell beats row beats column (OOXML order) — row-over-column needs the
+    // isRowStylePrecedeColumnStyle preset flag set in App.tsx.
+    const style = columnWidth.styleIndex === undefined ? undefined : styles[columnWidth.styleIndex]
     for (let column = columnWidth.startColumn; column <= endColumn; column += 1) {
+      // Merge overlapping <col> spans: a later width-only span must not erase
+      // an earlier span's style (and vice versa).
       data[column] = {
+        ...data[column],
         ...(pixelWidth !== undefined && ((width ?? 0) > 0 || !columnWidth.hidden)
           ? { w: pixelWidth }
           : {}),
         ...(columnWidth.hidden ? { hd: BooleanNumber.TRUE } : {}),
+        ...(style ? { s: toUniverStyle(style) } : {}),
       }
     }
   }
@@ -1610,9 +1627,16 @@ function applyRowProperties(
           })
         }
       }
-      const key = `${row.row}:${row.height ?? ''}:${row.hidden}`
+      const key = `${row.row}:${row.height ?? ''}:${row.hidden}:${row.styleIndex ?? ''}`
       if (applied.has(key)) continue
       applied.add(key)
+      if (row.styleIndex !== undefined) {
+        // <row s= customFormat>: the default style for cells in the row that
+        // carry none of their own. Model-level write; the patch that follows
+        // each chunk repaints the range.
+        const style = state.file.styles[row.styleIndex]
+        if (style) worksheet.getSheet().setRowStyle(row.row, toUniverStyle(style))
+      }
       if (row.height !== undefined) {
         // The engine reports ht for every row that carries one, not just
         // customHeight="1" rows: Excel stores its laid-out height (auto-fit

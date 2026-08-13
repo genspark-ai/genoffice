@@ -1,14 +1,73 @@
-/** Selection-level text-edit colors, renderer side: a draft keeps one color per code
-    unit of its value ('' = the draft's base color); commits turn that into the compact
-    [start,end) ranges TextEditInput.colorRuns carries. Mapping between text forms
-    (draft value ↔ wrapped/committed newText ↔ reopened blockSource) aligns on
-    non-whitespace chars — wrapping and line joining only rearrange whitespace. */
+/** Selection-level text-edit styles, renderer side: a draft keeps one encoded style
+    key per code unit of its value ('' = the draft's base style); commits turn that
+    into the compact [start,end) ranges TextEditInput.styleRuns carries. The run
+    helpers below treat keys as opaque strings — equality is all they need — so they
+    serve plain colors and full styles alike. Mapping between text forms (draft value
+    ↔ wrapped/committed newText ↔ reopened blockSource) aligns on non-whitespace
+    chars — wrapping and line joining only rearrange whitespace. */
 
 export interface ColorRun {
   start: number
   end: number
-  /** CSS hex like '#d32f2f' */
+  /** Encoded style key (see encodeStyle); historically a bare CSS hex like '#d32f2f' */
   color: string
+}
+
+/** Selection-level style overrides of one char; every field absent = inherit the
+    draft-level value (which in turn inherits the document's original run). */
+export interface CharStyle {
+  /** CSS hex like '#d32f2f' */
+  color?: string
+  /** EDIT_FONTS id */
+  font?: string
+  /** Font size in PDF pt */
+  size?: number
+  /** Explicit on/off; absent = inherit the draft toggle */
+  bold?: boolean
+  italic?: boolean
+}
+
+/** Canonical key: '' = base; else 'color|font|size|bold|italic' with '' fields
+    inheriting and bold/italic '1'/'0' explicit on/off. A bare-color style encodes
+    with trailing '|'s so distinct styles never collide. */
+export function encodeStyle(s: CharStyle): string {
+  const tri = (v: boolean | undefined) => (v === undefined ? '' : v ? '1' : '0')
+  const key = [
+    s.color ?? '',
+    s.font ?? '',
+    s.size !== undefined ? String(s.size) : '',
+    tri(s.bold),
+    tri(s.italic),
+  ].join('|')
+  return key === '||||' ? '' : key
+}
+
+export function decodeStyle(key: string): CharStyle {
+  if (!key) return {}
+  const [color = '', font = '', size = '', bold = '', italic = ''] = key.split('|')
+  const out: CharStyle = {}
+  if (color) out.color = color
+  if (font) out.font = font
+  if (size) out.size = Number(size)
+  if (bold) out.bold = bold === '1'
+  if (italic) out.italic = italic === '1'
+  return out
+}
+
+/** Merge a partial style into an encoded key: undefined fields keep their value,
+    null clears the field back to inherit. */
+export function patchStyle(
+  key: string,
+  patch: { [K in keyof CharStyle]?: CharStyle[K] | null },
+): string {
+  const s = decodeStyle(key)
+  for (const k of ['color', 'font', 'size', 'bold', 'italic'] as const) {
+    const v = patch[k]
+    if (v === undefined) continue
+    if (v === null) delete s[k]
+    else (s as Record<string, unknown>)[k] = v
+  }
+  return encodeStyle(s)
 }
 
 /** Carry per-char colors across a textarea value change: the edit is localized to the

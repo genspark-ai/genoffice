@@ -31,6 +31,7 @@ import {
   IconNavPane,
   IconOutlineView,
   IconPageColor,
+  IconApplyAll,
   IconPageSize,
   IconPlayCurrent,
   IconPlayFromStart,
@@ -45,7 +46,7 @@ import {
   IconSetupShow,
   IconSparkle,
   IconUndo,
-  IconWholePage,
+  IconFitWindow,
   IconZoom100,
   IconZoomIn,
   IconZoomOut,
@@ -471,7 +472,11 @@ const CHART_STYLE_PRESETS: ChartStylePreset[] = [
 function chartPresetActive(info: ChartStyleInfo | null | undefined, p: ChartStylePreset): boolean {
   if (!info) return false
   const s = p.style
-  const barKind = info.kind === 'bar' || info.kind === 'barStacked' || info.kind === 'comboBarLine'
+  const barKind =
+    info.kind === 'bar' ||
+    info.kind === 'bar3D' ||
+    info.kind === 'barStacked' ||
+    info.kind === 'comboBarLine'
   return (
     info.legendPos === s.legendPos &&
     info.dataLabels === s.dataLabels &&
@@ -506,7 +511,7 @@ function ChartStyleThumb({
   const family =
     kind === 'line' || kind === 'area' || kind === 'scatter' || kind === 'radar'
       ? 'line'
-      : kind === 'pie' || kind === 'doughnut'
+      : kind === 'pie' || kind === 'pie3D' || kind === 'doughnut'
         ? 'pie'
         : 'bar'
   if (style.gridlines && family !== 'pie') {
@@ -676,7 +681,6 @@ function DisabledBig({ icon, label }: { icon: ReactNode; label: string }) {
 /** per-tab priority for responsive collapse: when the ribbon
  * body overflows, these groups (in order) fold into a single dropdown button */
 const COLLAPSE_ORDER: Record<string, string[]> = {
-  home: ['slides'],
   animations: ['motionPaths', 'animation'],
 }
 
@@ -975,23 +979,31 @@ export function Ribbon({
     if (!keep.includes('slideShow')) setSlideShowOpen(false)
   }, [])
 
+  // Any ribbon popup open? Drives outside-press dismissal AND suspends the
+  // ribbon-tabs window drag region (drag regions swallow mousedown, so a
+  // press there could never dismiss otherwise)
+  const anyPanelOpen =
+    tableOpen ||
+    colorOpen ||
+    translateOpen ||
+    insertDrop != null ||
+    fontOpen ||
+    sizeOpen ||
+    layoutOpen ||
+    chartDrop != null ||
+    arrangeOpen ||
+    slideShowOpen ||
+    paraOpen ||
+    pictureBorderOpen ||
+    layoutPickOpen ||
+    slideSizeOpen ||
+    transparencyOpen ||
+    lineSpacingOpen ||
+    collapseOpen != null
+
   // Clicking elsewhere collapses the table picker (the font color palette uses onMouseDown without stealing focus, collapsing naturally when the edit commits)
   useEffect(() => {
-    if (
-      !tableOpen &&
-      !colorOpen &&
-      !translateOpen &&
-      !insertDrop &&
-      !fontOpen &&
-      !sizeOpen &&
-      !layoutOpen &&
-      !chartDrop &&
-      !arrangeOpen &&
-      !slideShowOpen &&
-      !paraOpen &&
-      !pictureBorderOpen
-    )
-      return
+    if (!anyPanelOpen) return
     const close = () => {
       setTableOpen(false)
       setColorOpen(false)
@@ -1005,32 +1017,33 @@ export function Ribbon({
       setSlideShowOpen(false)
       setParaOpen(false)
       setPictureBorderOpen(false)
+      setLayoutPickOpen(false)
+      setSlideSizeOpen(false)
+      setTransparencyOpen(false)
+      setLineSpacingOpen(false)
       setCollapseOpen(null)
     }
     window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [
-    tableOpen,
-    colorOpen,
-    translateOpen,
-    insertDrop,
-    fontOpen,
-    sizeOpen,
-    layoutOpen,
-    chartDrop,
-    arrangeOpen,
-    slideShowOpen,
-    paraOpen,
-    pictureBorderOpen,
-    collapseOpen,
-  ])
+    // shell tab strip is a sibling WebContentsView: its presses reach us only
+    // via the app:chrome-pressed relay; blur covers app/window switching
+    window.addEventListener('blur', close)
+    const offChrome = window.slidesApi?.onChromePressed?.(close)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('blur', close)
+      offChrome?.()
+    }
+  }, [anyPanelOpen])
 
-  // ── Responsive collapse: when the ribbon body overflows,
-  // whole groups fold into a single dropdown button (flyout = original controls).
-  // Groups collapse in COLLAPSE_ORDER; they expand back when their measured
-  // inline width fits again.
+  // ── Responsive collapse (PowerPoint model): the collapsed set is a pure
+  // function of the current width, never of resize history — pick the fewest
+  // COLLAPSE_ORDER groups whose folding lets the full inline layout fit.
+  // Expanded/collapsed widths are cached per group so the required width is
+  // computable in every state (before the first fold the collapsed width is
+  // an estimate, corrected by measurement as soon as the group first folds).
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const inlineWidthsRef = useRef(new Map<string, number>())
+  const collapsedWidthsRef = useRef(new Map<string, number>())
   useLayoutEffect(() => {
     setCollapsedGroups([])
     setCollapseOpen(null)
@@ -1039,32 +1052,55 @@ export function Ribbon({
     const el = bodyRef.current
     if (!el) return
     const order = COLLAPSE_ORDER[tab] ?? []
+    if (!order.length) return
     const evaluate = () => {
-      const slack = el.clientWidth - el.scrollWidth
-      if (slack < 0) {
-        setCollapsedGroups((cur) => {
-          const next = order.find((g) => !cur.includes(g))
-          if (!next) return cur
-          const groupEl = el.querySelector<HTMLElement>(`[data-rbgroup="${next}"]`)
-          if (groupEl) inlineWidthsRef.current.set(next, groupEl.offsetWidth)
-          return [...cur, next]
-        })
-      } else {
-        setCollapsedGroups((cur) => {
-          if (!cur.length) return cur
-          const last = cur[cur.length - 1]!
-          const collapsedW =
-            el.querySelector<HTMLElement>(`[data-rbgroup="${last}"]`)?.offsetWidth ?? 60
-          const needed = (inlineWidthsRef.current.get(last) ?? 240) - collapsedW
-          // 16px hysteresis so a borderline width doesn't oscillate
-          if (slack > needed + 16) return cur.slice(0, -1)
-          return cur
-        })
+      const kids = Array.from(el.children) as HTMLElement[]
+      if (!kids.length) return
+      const first = kids[0]!
+      const last = kids[kids.length - 1]!
+      let fullWidth = last.offsetLeft + last.offsetWidth - first.offsetLeft
+      // refresh width caches and normalize the measured extent to "all expanded"
+      const saving = (g: string) =>
+        Math.max(
+          0,
+          (inlineWidthsRef.current.get(g) ?? 240) - (collapsedWidthsRef.current.get(g) ?? 68),
+        )
+      for (const g of order) {
+        const groupEl = el.querySelector<HTMLElement>(`[data-rbgroup="${g}"]`)
+        if (!groupEl) continue
+        if (collapsedGroups.includes(g)) {
+          collapsedWidthsRef.current.set(g, groupEl.offsetWidth)
+          fullWidth += saving(g)
+        } else {
+          inlineWidthsRef.current.set(g, groupEl.offsetWidth)
+        }
       }
+      // fewest folded groups whose savings make the layout fit `avail`
+      const fitCount = (avail: number) => {
+        let need = fullWidth
+        let k = 0
+        while (k < order.length && need > avail) {
+          need -= saving(order[k]!)
+          k++
+        }
+        return k
+      }
+      const mustCollapse = fitCount(el.clientWidth)
+      // integer offset* measurements make the normalized width jitter by a
+      // couple of px — demand a little real slack before unfolding so a
+      // borderline width can't oscillate
+      const next =
+        mustCollapse >= collapsedGroups.length
+          ? mustCollapse
+          : Math.min(Math.max(fitCount(el.clientWidth - 8), mustCollapse), collapsedGroups.length)
+      if (next !== collapsedGroups.length) setCollapsedGroups(order.slice(0, next))
     }
     evaluate()
     const ro = new ResizeObserver(evaluate)
     ro.observe(el)
+    // group contents can change width without the body resizing (font loads,
+    // locale, contextual controls) — watch every group as well
+    el.querySelectorAll<HTMLElement>('.ribbon-group').forEach((g) => ro.observe(g))
     return () => ro.disconnect()
   }, [tab, collapsedGroups])
 
@@ -1348,7 +1384,9 @@ export function Ribbon({
   return (
     <div className="ribbon">
       <div
-        className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}`}
+        className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}${
+          anyPanelOpen ? ' ribbon-tabs-nodrag' : ''
+        }`}
       >
         {!IS_MAC && (
           <div className="file-tab-wrap">
@@ -1740,7 +1778,7 @@ export function Ribbon({
                 data-tip={t('ribbonBgApplyAllTip', { color: bgColor })}
               >
                 <span className="rb-big-icon">
-                  <IconPageSize size={BIG} />
+                  <IconApplyAll size={BIG} />
                 </span>
                 <span>{t('ribbonApplyToAll')}</span>
               </button>
@@ -1817,7 +1855,7 @@ export function Ribbon({
                 data-tip={t('ribbonTransApplyAllTip')}
               >
                 <span className="rb-big-icon">
-                  <IconPageSize size={BIG} />
+                  <IconApplyAll size={BIG} />
                 </span>
                 <span>{t('ribbonApplyToAll')}</span>
               </button>
@@ -2267,7 +2305,7 @@ export function Ribbon({
             </Group>
             <div className="ribbon-sep" />
             <Group label={t('ribbonGroupShow')}>
-              <div className="rb-col rb-check-col">
+              <div className="rb-check-grid">
                 <RbCheck
                   label={t('ribbonRuler')}
                   on={showRuler}
@@ -2289,8 +2327,6 @@ export function Ribbon({
                   title={t('ribbonGuidesTip')}
                   onClick={onToggleGuides}
                 />
-              </div>
-              <div className="rb-col rb-check-col">
                 <RbCheck
                   label={t('ribbonNotes')}
                   on={showNotes}
@@ -2337,7 +2373,7 @@ export function Ribbon({
                 data-tip={t('ribbonFitWindowTip')}
               >
                 <span className="rb-big-icon">
-                  <IconWholePage size={BIG} />
+                  <IconFitWindow size={BIG} />
                 </span>
                 <span>{t('ribbonFitWindow')}</span>
               </button>

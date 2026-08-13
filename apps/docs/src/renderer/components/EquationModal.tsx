@@ -182,7 +182,7 @@ export function EquationGallery({
           <button
             key={eq.nameKey}
             className="equation-gallery-item"
-            title={t(eq.nameKey)}
+            data-tip={t(eq.nameKey)}
             onClick={() => {
               insertEquationFromLatex(editor, eq.latex)
               onPick()
