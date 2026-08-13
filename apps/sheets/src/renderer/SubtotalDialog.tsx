@@ -36,49 +36,59 @@ export function SubtotalDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <header>{t('dlgSubtotalTitle')}</header>
-        {fields.length === 0
-          ? <p className="dialog-note">{t('dlgSubtotalNoFields')}</p>
-          : (
-              <div className="dialog-grid">
-                <label>
-                  {t('dlgSubtotalGroupBy')}
-                  <select
-                    value={groupCol}
-                    onChange={(event) => setGroupCol(Number(event.target.value))}
-                  >
-                    {fields.map((field) => (
-                      <option key={field.colIndex} value={field.colIndex}>{field.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {t('dlgSubtotalFunction')}
-                  <select
-                    value={agg}
-                    onChange={(event) => setAgg(event.target.value as SubtotalConfig['agg'])}
-                  >
-                    <option value="sum">{t('dlgPivotAggSum')}</option>
-                    <option value="count">{t('dlgPivotAggCount')}</option>
-                    <option value="average">{t('dlgPivotAggAverage')}</option>
-                  </select>
-                </label>
-                <label>
-                  {t('dlgSubtotalAddTo')}
-                  <select
-                    value={valueCol}
-                    onChange={(event) => setValueCol(Number(event.target.value))}
-                  >
-                    {fields.map((field) => (
-                      <option key={field.colIndex} value={field.colIndex}>{field.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="dialog-note">{t('dlgSubtotalNote')}</p>
-              </div>
-            )}
-        {error && <p className="dialog-note" role="alert">{error}</p>}
+        {fields.length === 0 ? (
+          <p className="dialog-note">{t('dlgSubtotalNoFields')}</p>
+        ) : (
+          <div className="dialog-grid">
+            <label>
+              {t('dlgSubtotalGroupBy')}
+              <select
+                value={groupCol}
+                onChange={(event) => setGroupCol(Number(event.target.value))}
+              >
+                {fields.map((field) => (
+                  <option key={field.colIndex} value={field.colIndex}>
+                    {field.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t('dlgSubtotalFunction')}
+              <select
+                value={agg}
+                onChange={(event) => setAgg(event.target.value as SubtotalConfig['agg'])}
+              >
+                <option value="sum">{t('dlgPivotAggSum')}</option>
+                <option value="count">{t('dlgPivotAggCount')}</option>
+                <option value="average">{t('dlgPivotAggAverage')}</option>
+              </select>
+            </label>
+            <label>
+              {t('dlgSubtotalAddTo')}
+              <select
+                value={valueCol}
+                onChange={(event) => setValueCol(Number(event.target.value))}
+              >
+                {fields.map((field) => (
+                  <option key={field.colIndex} value={field.colIndex}>
+                    {field.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="dialog-note">{t('dlgSubtotalNote')}</p>
+          </div>
+        )}
+        {error && (
+          <p className="dialog-note" role="alert">
+            {error}
+          </p>
+        )}
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
           {fields.length > 0 && (
             <button
               className="primary-action"

@@ -13,11 +13,13 @@ describe('applyPrivacyPolicy', () => {
       },
     ])
 
-    expect(context).toEqual([{
-      name: 'contact',
-      policy: 'redact',
-      values: ['[EMAIL]', '[PHONE]'],
-    }])
+    expect(context).toEqual([
+      {
+        name: 'contact',
+        policy: 'redact',
+        values: ['[EMAIL]', '[PHONE]'],
+      },
+    ])
   })
 
   it('uploads only counts for statistics-only columns', () => {
@@ -25,10 +27,12 @@ describe('applyPrivacyPolicy', () => {
       { name: 'salary', policy: 'statistics-only', values: [100, null, 200] },
     ])
 
-    expect(context).toEqual([{
-      name: 'salary',
-      policy: 'statistics-only',
-      statistics: { count: 3, nonEmptyCount: 2 },
-    }])
+    expect(context).toEqual([
+      {
+        name: 'salary',
+        policy: 'statistics-only',
+        statistics: { count: 3, nonEmptyCount: 2 },
+      },
+    ])
   })
 })

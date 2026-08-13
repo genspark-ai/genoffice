@@ -78,6 +78,33 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'lmstudio',
+    label: 'LM Studio',
+    models: [],
+    defaultModel: '',
+    keyPlaceholder: 'lm-studio (local)',
+    needsBaseUrl: true,
+    baseUrlDefault: 'http://localhost:1234/v1',
+  },
+  {
+    id: 'opencode-zen',
+    label: 'OpenCode Zen',
+    models: [],
+    defaultModel: '',
+    keyPlaceholder: 'API Key',
+    needsBaseUrl: true,
+    baseUrlDefault: 'https://zen.opencode.ai/v1',
+  },
+  {
+    id: 'opencode-go',
+    label: 'OpenCode Go',
+    models: [],
+    defaultModel: '',
+    keyPlaceholder: 'API Key',
+    needsBaseUrl: true,
+    baseUrlDefault: 'https://go.opencode.ai/v1',
+  },
+  {
     id: 'custom',
     label: 'Custom',
     models: [],
@@ -101,7 +128,7 @@ export function defaultAiSettings(
     providers[meta.id] = {
       apiKey: defaultApiKeys?.[meta.id] ?? '',
       model: meta.defaultModel,
-      baseUrl: meta.needsBaseUrl ? '' : undefined,
+      baseUrl: meta.needsBaseUrl ? (meta.baseUrlDefault ?? '') : undefined,
     }
   }
   return { provider: 'genspark', providers }

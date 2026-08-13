@@ -16,8 +16,19 @@ When the data is a regular "header + homogeneous record rows" shape, prefer a Ta
 
 ```json
 [
- {"op":"set_range","sheetId":"s1","range":"A1:C1","values":[["Product","Quantity","Amount"]]},
- {"op":"add_table","sheetId":"s1","range":"A1:C20","name":"SalesDetail","style":"TableStyleMedium2"}
+  {
+    "op": "set_range",
+    "sheetId": "s1",
+    "range": "A1:C1",
+    "values": [["Product", "Quantity", "Amount"]]
+  },
+  {
+    "op": "add_table",
+    "sheetId": "s1",
+    "range": "A1:C20",
+    "name": "SalesDetail",
+    "style": "TableStyleMedium2"
+  }
 ]
 ```
 
@@ -37,7 +48,7 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### add_table_row — insert data rows
 
 ```json
-{"op":"add_table_row","sheetId":"s1","tableName":"SalesDetail","row":3,"count":2}
+{ "op": "add_table_row", "sheetId": "s1", "tableName": "SalesDetail", "row": 3, "count": 2 }
 ```
 
 - `row` (optional, 1-based, relative to the data area): insert position; omitted = append at the end.
@@ -47,7 +58,7 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### delete_table_row — delete data rows
 
 ```json
-{"op":"delete_table_row","sheetId":"s1","tableName":"SalesDetail","row":2,"count":1}
+{ "op": "delete_table_row", "sheetId": "s1", "tableName": "SalesDetail", "row": 2, "count": 1 }
 ```
 
 - `row` (required, 1-based): first row to delete (relative to the data area, excluding the header).
@@ -57,7 +68,14 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### add_table_column — insert columns
 
 ```json
-{"op":"add_table_column","sheetId":"s1","tableName":"SalesDetail","column":3,"columnName":"Notes","count":1}
+{
+  "op": "add_table_column",
+  "sheetId": "s1",
+  "tableName": "SalesDetail",
+  "column": 3,
+  "columnName": "Notes",
+  "count": 1
+}
 ```
 
 - `column` (optional, 1-based): insert position; omitted = append at the far right.
@@ -67,7 +85,13 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### delete_table_column — delete columns
 
 ```json
-{"op":"delete_table_column","sheetId":"s1","tableName":"SalesDetail","column":4,"count":1}
+{
+  "op": "delete_table_column",
+  "sheetId": "s1",
+  "tableName": "SalesDetail",
+  "column": 4,
+  "count": 1
+}
 ```
 
 - `column` (required, 1-based): first column to delete (relative to the table's left edge).
@@ -86,10 +110,23 @@ When the data is irregular (subtotal rows, merged multi-column headers), don't c
 
 ```json
 [
- {"op":"format_range","sheetId":"s1","range":"A1:D1","format":{"bold":true,"fillColor":"#4472C4","fontColor":"#FFFFFF"}},
- {"op":"add_conditional_format","sheetId":"s1","range":"A2:D100",
-  "rule":{"kind":"formula","formula":"=MOD(ROW(),2)=0","format":{"fillColor":"#F2F7FF"}}},
- {"op":"set_filter","sheetId":"s1","range":"A1:D100"}
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A1:D1",
+    "format": { "bold": true, "fillColor": "#4472C4", "fontColor": "#FFFFFF" }
+  },
+  {
+    "op": "add_conditional_format",
+    "sheetId": "s1",
+    "range": "A2:D100",
+    "rule": {
+      "kind": "formula",
+      "formula": "=MOD(ROW(),2)=0",
+      "format": { "fillColor": "#F2F7FF" }
+    }
+  },
+  { "op": "set_filter", "sheetId": "s1", "range": "A1:D100" }
 ]
 ```
 

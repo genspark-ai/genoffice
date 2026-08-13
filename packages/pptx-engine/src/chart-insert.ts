@@ -53,10 +53,8 @@ export interface NewChartOptions extends ChartStyleOptions {
   pointColors?: Array<Array<string | undefined> | undefined>
 }
 
-const CHART_CONTENT_TYPE =
-  'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
-const CHART_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+const CHART_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
+const CHART_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 const C_NS = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -66,7 +64,9 @@ const colLetter = (i: number) => String.fromCharCode(66 + i) // B, C, D…
 function strCacheXml(values: string[], f: string): string {
   return (
     `<c:strRef><c:f>${escapeXmlText(f)}</c:f><c:strCache><c:ptCount val="${values.length}"/>` +
-    values.map((v, i) => (v === '' ? '' : `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`)).join('') +
+    values
+      .map((v, i) => (v === '' ? '' : `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`))
+      .join('') +
     '</c:strCache></c:strRef>'
   )
 }
@@ -76,7 +76,9 @@ function numCacheXml(values: (number | null | undefined)[], f: string): string {
     `<c:numRef><c:f>${escapeXmlText(f)}</c:f><c:numCache><c:formatCode>General</c:formatCode>` +
     `<c:ptCount val="${values.length}"/>` +
     values
-      .map((v, i) => (v == null || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`))
+      .map((v, i) =>
+        v == null || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`,
+      )
       .join('') +
     '</c:numCache></c:numRef>'
   )
@@ -104,7 +106,8 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
   const grid = opts.gridlines ? '<c:majorGridlines/>' : ''
   const catTitle = opts.catAxisTitle ? axTitleXml(opts.catAxisTitle, false) : ''
   const valTitle = opts.valAxisTitle ? axTitleXml(opts.valAxisTitle, true) : ''
-  const gapWidth = opts.gapWidthPct != null ? `<c:gapWidth val="${Math.round(opts.gapWidthPct)}"/>` : ''
+  const gapWidth =
+    opts.gapWidthPct != null ? `<c:gapWidth val="${Math.round(opts.gapWidthPct)}"/>` : ''
   // Empty names stay empty: no <c:tx> for an unnamed series, no <c:cat> when every category name is empty
   const txXml = (name: string, i: number) =>
     name === '' ? '' : `<c:tx>${strCacheXml([name], `Sheet1!$${colLetter(i)}$1`)}</c:tx>`
@@ -205,7 +208,8 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       `<c:delete val="0"/><c:axPos val="l"/>${grid}${valTitle}<c:crossAx val="111111111"/></c:valAx>`
   } else {
     // Horizontal bar chart (barDir=bar): category axis on the left, value axis at the bottom (matches how PowerPoint writes it)
-    const isBarKind = opts.kind === 'bar' || opts.kind === 'barStacked' || opts.kind === 'barPercentStacked'
+    const isBarKind =
+      opts.kind === 'bar' || opts.kind === 'barStacked' || opts.kind === 'barPercentStacked'
     const horizontal = isBarKind && opts.barDir === 'bar'
     const axes =
       `<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
@@ -223,7 +227,11 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       inner = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}${dLbls}${axIds}</c:areaChart>`
     } else {
       const grouping =
-        opts.kind === 'barPercentStacked' ? 'percentStacked' : opts.kind === 'barStacked' ? 'stacked' : 'clustered'
+        opts.kind === 'barPercentStacked'
+          ? 'percentStacked'
+          : opts.kind === 'barStacked'
+            ? 'stacked'
+            : 'clustered'
       const overlap = grouping === 'clustered' ? '' : '<c:overlap val="100"/>'
       inner =
         `<c:barChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>` +
@@ -292,7 +300,10 @@ export function addChart(
   for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
   const rid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${rid}" Type="${CHART_REL_TYPE}" Target="../charts/chart${maxNum + 1}.xml"/>`
-  archive.entries.set(relsPath, Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'))
+  archive.entries.set(
+    relsPath,
+    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+  )
 
   // 4) graphicFrame fragment + append reparse
   const id = nextCNvPrId(slide)

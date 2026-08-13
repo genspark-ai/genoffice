@@ -2,7 +2,14 @@
  * IPC interface type definitions (shared by the renderer and main processes).
  * No Electron dependency; importable from the renderer.
  */
-import type { ChatAttachment, ChatMessage, ChatMeta, ProjectSummary, TimelineEntry, ToolActivity } from './types.js'
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ChatMeta,
+  ProjectSummary,
+  TimelineEntry,
+  ToolActivity,
+} from './types.js'
 
 export type { ChatAttachment, ChatMessage, ChatMeta, ProjectSummary, TimelineEntry, ToolActivity }
 

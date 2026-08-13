@@ -29,7 +29,9 @@ describe('dirtyTransform xfrm patch', () => {
   it('text dirty + transform dirty compose on the same element', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const slide = opened.deck.slides.find((s) =>
-      s.elements.some((e: any) => (e.type === 'text' || e.type === 'shape') && e.text?.paragraphs?.length),
+      s.elements.some(
+        (e: any) => (e.type === 'text' || e.type === 'shape') && e.text?.paragraphs?.length,
+      ),
     )!
     const el: any = slide.elements.find(
       (e: any) => (e.type === 'text' || e.type === 'shape') && e.text?.paragraphs?.length,
@@ -45,7 +47,10 @@ describe('dirtyTransform xfrm patch', () => {
       (e) => e.anchor.spIndex === el.anchor.spIndex,
     )!
     expect(el2.transform.offset).toEqual(OFF)
-    const text = el2.text.paragraphs.flatMap((p: any) => p.runs).map((r: any) => r.text).join('')
+    const text = el2.text.paragraphs
+      .flatMap((p: any) => p.runs)
+      .map((r: any) => r.text)
+      .join('')
     expect(text).toBe('combined patch')
   })
 

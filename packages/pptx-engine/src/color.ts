@@ -10,7 +10,11 @@ import { asXmlNode, type XmlNode } from './xml-utils'
  * Resolve a color node + modifiers: srgbClr/schemeClr/sysClr, supporting alpha
  * (→#RRGGBBAA) and lumMod/lumOff (tint/shade, common for theme colors).
  */
-export function resolveColorNode(node: unknown, theme: Theme | undefined, phClr?: string): string | undefined {
+export function resolveColorNode(
+  node: unknown,
+  theme: Theme | undefined,
+  phClr?: string,
+): string | undefined {
   if (!node) return undefined
   const n = asXmlNode(node)
   let base: string | undefined
@@ -70,10 +74,18 @@ export function applyColorMods(hex: string, mods: XmlNode | undefined): string {
     b = b * tint + 255 * (1 - tint)
   }
   const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)))
-  let out = '#' + [clamp(r), clamp(g), clamp(b)].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()
+  let out =
+    '#' +
+    [clamp(r), clamp(g), clamp(b)]
+      .map((v) => v.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
   const alpha = pct('a:alpha')
   if (alpha != null && alpha < 1) {
-    out += Math.round(alpha * 255).toString(16).padStart(2, '0').toUpperCase()
+    out += Math.round(alpha * 255)
+      .toString(16)
+      .padStart(2, '0')
+      .toUpperCase()
   }
   return out
 }

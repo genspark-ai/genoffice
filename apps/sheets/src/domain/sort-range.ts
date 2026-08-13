@@ -71,9 +71,8 @@ export function computeSortChanges(
     .map((row, index) => ({ row, index }))
     .sort((a, b) => {
       const cmp = compareScalars(a.row.key, b.row.key)
-      const oriented = a.row.key === null || b.row.key === null || cmp === 0
-        ? cmp
-        : spec.ascending ? cmp : -cmp
+      const oriented =
+        a.row.key === null || b.row.key === null || cmp === 0 ? cmp : spec.ascending ? cmp : -cmp
       return oriented !== 0 ? oriented : a.index - b.index
     })
     .map((entry) => entry.row)

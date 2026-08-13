@@ -72,6 +72,29 @@ import { findDocxPath } from '../shared/open-file'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { initDocsAutoUpdater } from './updater'
+import {
+  isGoogleSignedIn,
+  resolveGoogleCredentials,
+  runGoogleAuthFlow,
+  signOutGoogle,
+} from './google-auth'
+import {
+  addPermission,
+  copyFile as copyDriveFile,
+  createGoogleDocFromDocx,
+  exportGoogleDoc,
+  getGoogleFileMeta,
+  listFolders,
+  listGoogleDocs,
+  listPermissions,
+  moveFile,
+  removePermission,
+  renameFile,
+  setAnyoneAccess,
+  updateGoogleDocFromDocx,
+  updatePermission,
+} from './google-drive'
+import { readGoogleSettings, writeGoogleSettings } from './google-settings'
 
 /**
  * Docs main-process logic as an embeddable module: no top-level side effects.
@@ -2487,8 +2510,6 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
     return settings
   })
 
@@ -3234,6 +3255,265 @@ export function registerDocsIpc(): void {
     win.show()
     win.focus()
   })
+
+  registerGoogleIpc()
+}
+
+// ---- Google Docs integration ----
+
+function googleErr(err: unknown): { ok: false; error: string } {
+  return { ok: false, error: err instanceof Error ? err.message : String(err) }
+}
+
+function registerGoogleIpc(): void {
+  ipcMain.handle('google:auth-status', async () => {
+    const creds = await resolveGoogleCredentials()
+    return { configured: !!creds, signedIn: creds ? await isGoogleSignedIn() : false }
+  })
+
+  ipcMain.handle('google:sign-in', () => runGoogleAuthFlow())
+
+  ipcMain.handle('google:sign-out', () => signOutGoogle())
+
+  ipcMain.handle('google:list-docs', async () => {
+    try {
+      const result = await listGoogleDocs()
+      return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle('google:import-doc', async (event, fileId: string) => {
+    try {
+      const meta = await getGoogleFileMeta(fileId)
+      const exported = await exportGoogleDoc(fileId)
+      if (!exported.ok) return { ok: false, error: exported.error }
+      const dir = join(app.getPath('userData'), 'google-import')
+      await mkdir(dir, { recursive: true })
+      // Use the Drive doc's real name for the on-disk filename (and thus the
+      // title shown in the editor/header) instead of the opaque fileId; keep
+      // a Date.now() suffix so re-imports don't collide with a stale copy.
+      const safeName =
+        (meta.ok ? meta.data.name : fileId)
+          .replace(/[/\\?%*:|"<>]/g, '-')
+          .trim()
+          .slice(0, 150) || fileId
+      const filePath = join(dir, `${safeName}-${Date.now()}.docx`)
+      await atomicWriteFile(filePath, Buffer.from(exported.data))
+      const opened = await loadDocx(filePath, event.sender.id)
+      if (!opened) return { ok: false, error: 'failed to open imported document' }
+      return {
+        ok: true,
+        data: {
+          ...opened,
+          googleFileId: fileId,
+          googleWebViewLink: meta.ok ? meta.data.webViewLink : null,
+        },
+      }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle('google:get-file-meta', async (_event, fileId: string) => {
+    try {
+      const result = await getGoogleFileMeta(fileId)
+      return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle('google:create-doc', async (_event, name: string, data: ArrayBuffer) => {
+    try {
+      const bytes = new Uint8Array(data)
+      const settings = await readGoogleSettings()
+      const folderId = settings.defaultFolderId ?? undefined
+      let result = await createGoogleDocFromDocx(name, bytes, folderId)
+      if (!result.ok && folderId && result.status === 404) {
+        // stale default (folder deleted/unshared since it was set): clear it
+        // and retry once at My Drive root rather than dead-ending the send.
+        await writeGoogleSettings({ defaultFolderId: null, defaultFolderName: null })
+        result = await createGoogleDocFromDocx(name, bytes)
+        if (result.ok) {
+          return {
+            ok: true,
+            data: { ...result.data, folderCleared: true as const },
+          }
+        }
+      }
+      if (!result.ok) return { ok: false, error: result.error }
+      return {
+        ok: true,
+        data: { ...result.data, folderName: settings.defaultFolderName ?? undefined },
+      }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle('google:get-settings', async () => {
+    try {
+      return { ok: true, data: await readGoogleSettings() }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle(
+    'google:set-settings',
+    async (
+      _event,
+      settings: { defaultFolderId: string | null; defaultFolderName: string | null },
+    ) => {
+      try {
+        await writeGoogleSettings({
+          defaultFolderId: settings?.defaultFolderId ?? null,
+          defaultFolderName: settings?.defaultFolderName ?? null,
+        })
+        return { ok: true, data: null }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle('google:list-folders', async (_event, parentId?: string) => {
+    try {
+      const result = await listFolders(parentId)
+      return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle('google:move-file', async (_event, fileId: string, folderId: string) => {
+    try {
+      const result = await moveFile(fileId, folderId)
+      return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle(
+    'google:copy-file',
+    async (_event, fileId: string, name: string, folderId?: string) => {
+      try {
+        const result = await copyDriveFile(fileId, name, folderId)
+        return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle('google:rename-file', async (_event, fileId: string, name: string) => {
+    try {
+      const result = await renameFile(fileId, name)
+      return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle(
+    'google:update-doc',
+    async (_event, fileId: string, data: ArrayBuffer, fallbackName: string) => {
+      try {
+        const bytes = new Uint8Array(data)
+        const result = await updateGoogleDocFromDocx(fileId, bytes)
+        if (result.ok) return { ok: true, data: result.data }
+        // drive.file scope only grants write access to files this app created
+        // via files.create (or that were handed to it through the official
+        // Picker). A doc opened through our own Import list was never granted
+        // that access, so PATCH 403s here — fall back to creating a fresh copy
+        // rather than surfacing a dead-end error.
+        if (result.status === 403) {
+          const created = await createGoogleDocFromDocx(fallbackName, bytes)
+          return created.ok
+            ? { ok: true, data: { ...created.data, createdNew: true } }
+            : { ok: false, error: created.error }
+        }
+        return { ok: false, error: result.error }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle('google:list-permissions', async (_event, fileId: string) => {
+    try {
+      const result = await listPermissions(fileId)
+      return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    } catch (err) {
+      return googleErr(err)
+    }
+  })
+
+  ipcMain.handle(
+    'google:add-permission',
+    async (
+      _event,
+      fileId: string,
+      emailAddress: string,
+      role: 'reader' | 'commenter' | 'writer',
+    ) => {
+      try {
+        const result = await addPermission(fileId, emailAddress, role)
+        return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'google:update-permission',
+    async (
+      _event,
+      fileId: string,
+      permissionId: string,
+      role: 'reader' | 'commenter' | 'writer',
+    ) => {
+      try {
+        const result = await updatePermission(fileId, permissionId, role)
+        return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'google:remove-permission',
+    async (_event, fileId: string, permissionId: string) => {
+      try {
+        const result = await removePermission(fileId, permissionId)
+        return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'google:set-anyone-access',
+    async (_event, fileId: string, role: 'reader' | 'writer' | null) => {
+      try {
+        const result = await setAnyoneAccess(fileId, role)
+        return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+      } catch (err) {
+        return googleErr(err)
+      }
+    },
+  )
+
+  ipcMain.handle('google:open-external', (_event, url: string) => {
+    const parsed = safeExternalUrl(url)
+    if (parsed) void shell.openExternal(parsed)
+  })
 }
 
 /** hooks injected by the shell in tab mode; standalone mode leaves these unset
@@ -3516,7 +3796,11 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
     title: 'GenOffice Docs',
     // Word-like custom title bar (document name centered, quick-access buttons)
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const }
+      ? {
+          titleBarStyle: 'hidden' as const,
+          // traffic lights live in the slim .gdh-titlebar strip above the header logo
+          trafficLightPosition: { x: 14, y: 7 },
+        }
       : {
           titleBarStyle: 'hidden' as const,
           titleBarOverlay: { color: '#ffffff', symbolColor: '#444444', height: 40 },

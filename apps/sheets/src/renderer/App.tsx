@@ -1125,6 +1125,16 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void window.desktopApi.getAiSettings().then(setAiSettingsState)
+    void window.desktopApi.getTheme?.()?.then?.((theme) => {
+      if (theme !== 'system') document.documentElement.setAttribute('data-theme', theme)
+    })
+  }, [])
+
+  useEffect(() => {
+    const unsub = window.desktopApi.onThemeChanged?.((theme) => {
+      if (theme !== 'system') document.documentElement.setAttribute('data-theme', theme)
+    })
+    return unsub
   }, [])
 
   useEffect(() => {

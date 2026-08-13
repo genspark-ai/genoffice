@@ -1,10 +1,7 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import {
-  applyCellEditsToXlsx,
-  assertOnlyTouchedEntriesChanged,
-} from '../src/gateway/xlsx-gateway'
+import { applyCellEditsToXlsx, assertOnlyTouchedEntriesChanged } from '../src/gateway/xlsx-gateway'
 import { applyFilterState, FilterEditError } from '../src/gateway/xlsx-filter'
 import { buildStructureFixture } from './fixture-builder'
 
@@ -31,9 +28,9 @@ describe('applyFilterState', () => {
       visibilityRange: AREA,
     })
     expect(xml).toContain(
-      '<autoFilter ref="A1:D10"><filterColumn colId="0">'
-      + '<filters blank="1"><filter val="1"/><filter val="4"/></filters>'
-      + '</filterColumn></autoFilter>',
+      '<autoFilter ref="A1:D10"><filterColumn colId="0">' +
+        '<filters blank="1"><filter val="1"/><filter val="4"/></filters>' +
+        '</filterColumn></autoFilter>',
     )
     // Row 3 (index 2) stays hidden, row 4 (index 3) has no element yet and is
     // created hidden, row 5 keeps its height and gets unhidden semantics.
@@ -82,34 +79,38 @@ describe('applyFilterState', () => {
       sheetName: 'Data',
       filter: {
         range: AREA,
-        columns: [{
-          colId: 2,
-          customs: {
-            and: true,
-            filters: [
-              { val: 5, operator: 'greaterThan' },
-              { val: '*end', operator: 'equal' },
-            ],
+        columns: [
+          {
+            colId: 2,
+            customs: {
+              and: true,
+              filters: [
+                { val: 5, operator: 'greaterThan' },
+                { val: '*end', operator: 'equal' },
+              ],
+            },
           },
-        }],
+        ],
       },
       hiddenRows: [],
       visibilityRange: AREA,
     })
     expect(xml).toContain(
-      '<filterColumn colId="2"><customFilters and="1">'
-      + '<customFilter operator="greaterThan" val="5"/><customFilter val="*end"/>'
-      + '</customFilters></filterColumn>',
+      '<filterColumn colId="2"><customFilters and="1">' +
+        '<customFilter operator="greaterThan" val="5"/><customFilter val="*end"/>' +
+        '</customFilters></filterColumn>',
     )
-    expect(() => applyFilterState(worksheet, {
-      sheetName: 'Data',
-      filter: {
-        range: AREA,
-        columns: [{ colId: 0, customs: { filters: [{ val: 1, operator: 'aboveAverage' }] } }],
-      },
-      hiddenRows: [],
-      visibilityRange: AREA,
-    })).toThrow(FilterEditError)
+    expect(() =>
+      applyFilterState(worksheet, {
+        sheetName: 'Data',
+        filter: {
+          range: AREA,
+          columns: [{ colId: 0, customs: { filters: [{ val: 1, operator: 'aboveAverage' }] } }],
+        },
+        hiddenRows: [],
+        visibilityRange: AREA,
+      }),
+    ).toThrow(FilterEditError)
   })
 
   it('escapes filter values', () => {
@@ -134,15 +135,17 @@ describe('filter save integration', () => {
       [],
       [],
       undefined,
-      [{
-        sheetName: 'Data',
-        filter: {
-          range: { startRow: 0, endRow: 9, startColumn: 0, endColumn: 3 },
-          columns: [{ colId: 0, values: ['1', '10'] }],
+      [
+        {
+          sheetName: 'Data',
+          filter: {
+            range: { startRow: 0, endRow: 9, startColumn: 0, endColumn: 3 },
+            columns: [{ colId: 0, values: ['1', '10'] }],
+          },
+          hiddenRows: [1, 3],
+          visibilityRange: { startRow: 0, endRow: 9, startColumn: 0, endColumn: 3 },
         },
-        hiddenRows: [1, 3],
-        visibilityRange: { startRow: 0, endRow: 9, startColumn: 0, endColumn: 3 },
-      }],
+      ],
     )
     expect(() => assertOnlyTouchedEntriesChanged(mutation)).not.toThrow()
     expect(mutation.touchedEntries).toContain('xl/worksheets/sheet1.xml')

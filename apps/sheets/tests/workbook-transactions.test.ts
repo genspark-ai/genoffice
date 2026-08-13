@@ -14,15 +14,20 @@ function createAdapter(): InMemoryWorkbookAdapter {
 function createChartAdapter(): InMemoryWorkbookAdapter {
   const snapshot: WorkbookSnapshot = {
     revision: 0,
-    sheets: [{
-      id: 'sheet-1',
-      name: 'Sheet1',
-      cells: {
-        A1: { value: 'Region' }, B1: { value: 'Revenue' },
-        A2: { value: 'North' }, B2: { value: 128000 },
-        A3: { value: 'South' }, B3: { value: 96000 },
+    sheets: [
+      {
+        id: 'sheet-1',
+        name: 'Sheet1',
+        cells: {
+          A1: { value: 'Region' },
+          B1: { value: 'Revenue' },
+          A2: { value: 'North' },
+          B2: { value: 128000 },
+          A3: { value: 'South' },
+          B3: { value: 96000 },
+        },
       },
-    }],
+    ],
   }
   return new InMemoryWorkbookAdapter(snapshot)
 }
@@ -102,12 +107,17 @@ describe('InMemoryWorkbookAdapter', () => {
       transactionId: 'tx-range',
       baseRevision: 0,
       summary: 'Fill B2:C3',
-      operations: [{
-        op: 'set_range',
-        sheetId: 'sheet-1',
-        start: 'B2',
-        values: [[1, 2], ['x', '=SUM(B2:C2)']],
-      }],
+      operations: [
+        {
+          op: 'set_range',
+          sheetId: 'sheet-1',
+          start: 'B2',
+          values: [
+            [1, 2],
+            ['x', '=SUM(B2:C2)'],
+          ],
+        },
+      ],
     })
 
     expect(plan.cellChanges.map((c) => c.address)).toEqual(['B2', 'C2', 'B3', 'C3'])
@@ -139,7 +149,13 @@ describe('InMemoryWorkbookAdapter', () => {
   it('shifts cells down on insert_rows and restores them through undo', () => {
     const adapter = new InMemoryWorkbookAdapter({
       revision: 0,
-      sheets: [{ id: 'sheet-1', name: 'Sheet1', cells: { A1: { value: 'header' }, A2: { value: 'data' } } }],
+      sheets: [
+        {
+          id: 'sheet-1',
+          name: 'Sheet1',
+          cells: { A1: { value: 'header' }, A2: { value: 'data' } },
+        },
+      ],
     })
     const plan = adapter.plan({
       dslVersion: 1,
@@ -164,11 +180,13 @@ describe('InMemoryWorkbookAdapter', () => {
   it('drops deleted rows and shifts the rest up', () => {
     const adapter = new InMemoryWorkbookAdapter({
       revision: 0,
-      sheets: [{
-        id: 'sheet-1',
-        name: 'Sheet1',
-        cells: { A1: { value: 'r1' }, A2: { value: 'r2' }, A3: { value: 'r3' } },
-      }],
+      sheets: [
+        {
+          id: 'sheet-1',
+          name: 'Sheet1',
+          cells: { A1: { value: 'r1' }, A2: { value: 'r2' }, A3: { value: 'r3' } },
+        },
+      ],
     })
     const plan = adapter.plan({
       dslVersion: 1,
@@ -187,7 +205,9 @@ describe('InMemoryWorkbookAdapter', () => {
   it('shifts columns on insert_cols and delete_cols', () => {
     const adapter = new InMemoryWorkbookAdapter({
       revision: 0,
-      sheets: [{ id: 'sheet-1', name: 'Sheet1', cells: { A1: { value: 'a' }, B1: { value: 'b' } } }],
+      sheets: [
+        { id: 'sheet-1', name: 'Sheet1', cells: { A1: { value: 'a' }, B1: { value: 'b' } } },
+      ],
     })
     const inserted = adapter.plan({
       dslVersion: 1,
@@ -226,28 +246,32 @@ describe('InMemoryWorkbookAdapter', () => {
     expect(sheets).toHaveLength(2)
     expect(sheets[1]).toEqual({ id: 'sheet-2', name: 'Summary', cells: {} })
 
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-sheet-2',
-      baseRevision: 1,
-      summary: 'Duplicate name',
-      operations: [{ op: 'add_sheet', name: 'Sheet1' }],
-    })).toThrow(WorkbookConflictError)
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-sheet-2',
+        baseRevision: 1,
+        summary: 'Duplicate name',
+        operations: [{ op: 'add_sheet', name: 'Sheet1' }],
+      }),
+    ).toThrow(WorkbookConflictError)
   })
 
   it('rewrites formula references when rows shift and flags #REF! deletions', () => {
     const adapter = new InMemoryWorkbookAdapter({
       revision: 0,
-      sheets: [{
-        id: 'sheet-1',
-        name: 'Sheet1',
-        cells: {
-          B2: { value: 10 },
-          B3: { value: 20 },
-          B4: { value: null, formula: '=SUM(B2:B3)' },
-          C4: { value: null, formula: '=B2*2' },
+      sheets: [
+        {
+          id: 'sheet-1',
+          name: 'Sheet1',
+          cells: {
+            B2: { value: 10 },
+            B3: { value: 20 },
+            B4: { value: null, formula: '=SUM(B2:B3)' },
+            C4: { value: null, formula: '=B2*2' },
+          },
         },
-      }],
+      ],
     })
     const inserted = adapter.plan({
       dslVersion: 1,
@@ -284,12 +308,14 @@ describe('InMemoryWorkbookAdapter', () => {
       transactionId: 'tx-fmt-1',
       baseRevision: 0,
       summary: 'Bold the header',
-      operations: [{
-        op: 'format_range',
-        sheetId: 'sheet-1',
-        range: 'A1:B1',
-        format: { bold: true, fillColor: '#FFF2CC' },
-      }],
+      operations: [
+        {
+          op: 'format_range',
+          sheetId: 'sheet-1',
+          range: 'A1:B1',
+          format: { bold: true, fillColor: '#FFF2CC' },
+        },
+      ],
     })
     expect(plan.formatChanges[0]?.label).toBe('A1:B1: bold, fill #FFF2CC')
     expect(plan.cellChanges).toEqual([])
@@ -303,73 +329,101 @@ describe('InMemoryWorkbookAdapter', () => {
       transactionId: 'tx-fmt-2',
       baseRevision: 1,
       summary: 'Remove the fill',
-      operations: [{
-        op: 'format_range',
-        sheetId: 'sheet-1',
-        range: 'A1:B1',
-        format: { fillColor: null },
-      }],
+      operations: [
+        {
+          op: 'format_range',
+          sheetId: 'sheet-1',
+          range: 'A1:B1',
+          format: { fillColor: null },
+        },
+      ],
     })
     adapter.apply(cleared)
     expect(adapter.getSnapshot().sheets[0]?.styles?.A1).toEqual({ bold: true })
 
     adapter.undo()
-    expect(adapter.getSnapshot().sheets[0]?.styles?.A1).toEqual({ bold: true, fillColor: '#FFF2CC' })
+    expect(adapter.getSnapshot().sheets[0]?.styles?.A1).toEqual({
+      bold: true,
+      fillColor: '#FFF2CC',
+    })
   })
 
   it('re-keys styles when rows shift and rejects an empty format patch', () => {
     const adapter = createAdapter()
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-fmt-3',
-      baseRevision: 0,
-      summary: 'Style A1',
-      operations: [{ op: 'format_range', sheetId: 'sheet-1', range: 'A1', format: { bold: true } }],
-    }))
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-fmt-4',
-      baseRevision: 1,
-      summary: 'Insert a row on top',
-      operations: [{ op: 'insert_rows', sheetId: 'sheet-1', row: 1, count: 1 }],
-    }))
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-fmt-3',
+        baseRevision: 0,
+        summary: 'Style A1',
+        operations: [
+          { op: 'format_range', sheetId: 'sheet-1', range: 'A1', format: { bold: true } },
+        ],
+      }),
+    )
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-fmt-4',
+        baseRevision: 1,
+        summary: 'Insert a row on top',
+        operations: [{ op: 'insert_rows', sheetId: 'sheet-1', row: 1, count: 1 }],
+      }),
+    )
     const sheet = adapter.getSnapshot().sheets[0]
     expect(sheet?.styles?.A2).toEqual({ bold: true })
     expect(sheet?.styles?.A1).toBeUndefined()
 
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-fmt-5',
-      baseRevision: 2,
-      summary: 'Empty patch',
-      operations: [{ op: 'format_range', sheetId: 'sheet-1', range: 'A1', format: {} }],
-    })).toThrow()
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-fmt-5',
+        baseRevision: 2,
+        summary: 'Empty patch',
+        operations: [{ op: 'format_range', sheetId: 'sheet-1', range: 'A1', format: {} }],
+      }),
+    ).toThrow()
   })
 
   it('sorts a range into per-cell changes with CAS protection', () => {
     const adapter = new InMemoryWorkbookAdapter({
       revision: 0,
-      sheets: [{
-        id: 'sheet-1',
-        name: 'Sheet1',
-        cells: {
-          A1: { value: 'Name' }, B1: { value: 'Score' },
-          A2: { value: 'Cara' }, B2: { value: 70 },
-          A3: { value: 'Ann' }, B3: { value: 90 },
+      sheets: [
+        {
+          id: 'sheet-1',
+          name: 'Sheet1',
+          cells: {
+            A1: { value: 'Name' },
+            B1: { value: 'Score' },
+            A2: { value: 'Cara' },
+            B2: { value: 70 },
+            A3: { value: 'Ann' },
+            B3: { value: 90 },
+          },
         },
-      }],
+      ],
     })
     const plan = adapter.plan({
       dslVersion: 1,
       transactionId: 'tx-sort',
       baseRevision: 0,
       summary: 'Sort by score desc',
-      operations: [{
-        op: 'sort_range', sheetId: 'sheet-1', range: 'A1:B3', byColumn: 'B', order: 'desc', hasHeader: true,
-      }],
+      operations: [
+        {
+          op: 'sort_range',
+          sheetId: 'sheet-1',
+          range: 'A1:B3',
+          byColumn: 'B',
+          order: 'desc',
+          hasHeader: true,
+        },
+      ],
     })
     expect(plan.cellChanges.map((c) => [c.address, c.after.value])).toEqual([
-      ['A2', 'Ann'], ['B2', 90], ['A3', 'Cara'], ['B3', 70],
+      ['A2', 'Ann'],
+      ['B2', 90],
+      ['A3', 'Cara'],
+      ['B3', 70],
     ])
     adapter.apply(plan)
     expect(adapter.getSnapshot().sheets[0]?.cells.A2?.value).toBe('Ann')
@@ -377,29 +431,33 @@ describe('InMemoryWorkbookAdapter', () => {
 
   it('tracks merges, row heights, and column widths and re-keys them on shifts', () => {
     const adapter = createAdapter()
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-layout',
-      baseRevision: 0,
-      summary: 'Merge title, size header',
-      operations: [
-        { op: 'merge_cells', sheetId: 'sheet-1', range: 'A1:C1' },
-        { op: 'set_row_height', sheetId: 'sheet-1', row: 1, heightPoints: 24 },
-        { op: 'set_col_width', sheetId: 'sheet-1', column: 'B', count: 2, widthPx: 120 },
-      ],
-    }))
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-layout',
+        baseRevision: 0,
+        summary: 'Merge title, size header',
+        operations: [
+          { op: 'merge_cells', sheetId: 'sheet-1', range: 'A1:C1' },
+          { op: 'set_row_height', sheetId: 'sheet-1', row: 1, heightPoints: 24 },
+          { op: 'set_col_width', sheetId: 'sheet-1', column: 'B', count: 2, widthPx: 120 },
+        ],
+      }),
+    )
     let sheet = adapter.getSnapshot().sheets[0]
     expect(sheet?.merges).toEqual(['A1:C1'])
     expect(sheet?.rowHeights).toEqual({ '1': 24 })
     expect(sheet?.colWidths).toEqual({ B: 120, C: 120 })
 
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-layout-shift',
-      baseRevision: 1,
-      summary: 'Insert a row on top',
-      operations: [{ op: 'insert_rows', sheetId: 'sheet-1', row: 1, count: 1 }],
-    }))
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-layout-shift',
+        baseRevision: 1,
+        summary: 'Insert a row on top',
+        operations: [{ op: 'insert_rows', sheetId: 'sheet-1', row: 1, count: 1 }],
+      }),
+    )
     sheet = adapter.getSnapshot().sheets[0]
     expect(sheet?.merges).toEqual(['A2:C2'])
     expect(sheet?.rowHeights).toEqual({ '2': 24 })
@@ -414,28 +472,34 @@ describe('InMemoryWorkbookAdapter', () => {
 
   it('rejects overlapping merges and unmerges intersecting ranges', () => {
     const adapter = createAdapter()
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-merge-1',
-      baseRevision: 0,
-      summary: 'Merge A1:B2',
-      operations: [{ op: 'merge_cells', sheetId: 'sheet-1', range: 'A1:B2' }],
-    }))
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-merge-2',
-      baseRevision: 1,
-      summary: 'Overlapping merge',
-      operations: [{ op: 'merge_cells', sheetId: 'sheet-1', range: 'B2:C3' }],
-    })).toThrow(WorkbookConflictError)
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-merge-1',
+        baseRevision: 0,
+        summary: 'Merge A1:B2',
+        operations: [{ op: 'merge_cells', sheetId: 'sheet-1', range: 'A1:B2' }],
+      }),
+    )
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-merge-2',
+        baseRevision: 1,
+        summary: 'Overlapping merge',
+        operations: [{ op: 'merge_cells', sheetId: 'sheet-1', range: 'B2:C3' }],
+      }),
+    ).toThrow(WorkbookConflictError)
 
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-merge-3',
-      baseRevision: 1,
-      summary: 'Unmerge',
-      operations: [{ op: 'unmerge_cells', sheetId: 'sheet-1', range: 'A1:A1' }],
-    }))
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-merge-3',
+        baseRevision: 1,
+        summary: 'Unmerge',
+        operations: [{ op: 'unmerge_cells', sheetId: 'sheet-1', range: 'A1:A1' }],
+      }),
+    )
     expect(adapter.getSnapshot().sheets[0]?.merges).toBeUndefined()
   })
 
@@ -459,13 +523,15 @@ describe('InMemoryWorkbookAdapter', () => {
     adapter.apply(plan)
     expect(adapter.getSnapshot().sheets.map((sheet) => sheet.id)).toEqual(['sheet-2'])
 
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-del-last',
-      baseRevision: 1,
-      summary: 'Delete the last sheet',
-      operations: [{ op: 'delete_sheet', sheetId: 'sheet-2' }],
-    })).toThrow(WorkbookConflictError)
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-del-last',
+        baseRevision: 1,
+        summary: 'Delete the last sheet',
+        operations: [{ op: 'delete_sheet', sheetId: 'sheet-2' }],
+      }),
+    ).toThrow(WorkbookConflictError)
   })
 
   it('edits a demo chart by visual id and rejects unknown or empty chart edits', () => {
@@ -475,7 +541,9 @@ describe('InMemoryWorkbookAdapter', () => {
       transactionId: 'tx-chart-add',
       baseRevision: 0,
       summary: 'Add a chart',
-      operations: [{ op: 'add_chart', sheetId: 'sheet-1', chartType: 'column', dataRange: 'A1:B3' }],
+      operations: [
+        { op: 'add_chart', sheetId: 'sheet-1', chartType: 'column', dataRange: 'A1:B3' },
+      ],
     })
     adapter.apply(addPlan)
     const visualId = adapter.getSnapshot().sheets[0]?.visuals?.[0]?.id ?? ''
@@ -484,10 +552,16 @@ describe('InMemoryWorkbookAdapter', () => {
       transactionId: 'tx-chart-edit',
       baseRevision: 1,
       summary: 'Edit the chart',
-      operations: [{
-        op: 'edit_chart', chartPath: visualId, title: 'Sales',
-        chartType: 'pie', legend: 'bottom', dataLabels: 'category-percent',
-      }],
+      operations: [
+        {
+          op: 'edit_chart',
+          chartPath: visualId,
+          title: 'Sales',
+          chartType: 'pie',
+          legend: 'bottom',
+          dataLabels: 'category-percent',
+        },
+      ],
     })
     adapter.apply(editPlan)
     const chart = adapter.getSnapshot().sheets[0]?.visuals?.[0]?.chart
@@ -496,49 +570,63 @@ describe('InMemoryWorkbookAdapter', () => {
     expect(chart?.legend).toBe('bottom')
     expect(chart?.dataLabels).toBe('category-percent')
 
-    expect(() => adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-chart-unknown',
-      baseRevision: 2,
-      summary: 'Edit a missing chart',
-      operations: [{ op: 'edit_chart', chartPath: 'demo-chart-sheet-1-99', title: 'Sales' }],
-    }))).toThrow(/Unknown chart/)
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-chart-empty',
-      baseRevision: 2,
-      summary: 'Empty edit',
-      operations: [{ op: 'edit_chart', chartPath: 'xl/charts/chart1.xml' }],
-    })).toThrow(/at least one/)
+    expect(() =>
+      adapter.apply(
+        adapter.plan({
+          dslVersion: 1,
+          transactionId: 'tx-chart-unknown',
+          baseRevision: 2,
+          summary: 'Edit a missing chart',
+          operations: [{ op: 'edit_chart', chartPath: 'demo-chart-sheet-1-99', title: 'Sales' }],
+        }),
+      ),
+    ).toThrow(/Unknown chart/)
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-empty',
+        baseRevision: 2,
+        summary: 'Empty edit',
+        operations: [{ op: 'edit_chart', chartPath: 'xl/charts/chart1.xml' }],
+      }),
+    ).toThrow(/at least one/)
   })
 
   it('deletes a demo visual by id and rejects unknown ids', () => {
     const adapter = createChartAdapter()
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-add-for-delete',
-      baseRevision: 0,
-      summary: 'Add a chart',
-      operations: [{ op: 'add_chart', sheetId: 'sheet-1', chartType: 'pie', dataRange: 'A1:B3' }],
-    }))
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-add-for-delete',
+        baseRevision: 0,
+        summary: 'Add a chart',
+        operations: [{ op: 'add_chart', sheetId: 'sheet-1', chartType: 'pie', dataRange: 'A1:B3' }],
+      }),
+    )
     // the value-label default is bar/column only — pie keeps its legend
     expect(adapter.getSnapshot().sheets[0]?.visuals?.[0]?.chart.dataLabels).toBeUndefined()
     const visualId = adapter.getSnapshot().sheets[0]?.visuals?.[0]?.id ?? ''
-    adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-delete-visual',
-      baseRevision: 1,
-      summary: 'Delete the chart',
-      operations: [{ op: 'delete_visual', visualId }],
-    }))
+    adapter.apply(
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-delete-visual',
+        baseRevision: 1,
+        summary: 'Delete the chart',
+        operations: [{ op: 'delete_visual', visualId }],
+      }),
+    )
     expect(adapter.getSnapshot().sheets[0]?.visuals ?? []).toHaveLength(0)
-    expect(() => adapter.apply(adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-delete-missing',
-      baseRevision: 2,
-      summary: 'Delete a missing visual',
-      operations: [{ op: 'delete_visual', visualId: 'demo-chart-nope' }],
-    }))).toThrow(/Unknown visual/)
+    expect(() =>
+      adapter.apply(
+        adapter.plan({
+          dslVersion: 1,
+          transactionId: 'tx-delete-missing',
+          baseRevision: 2,
+          summary: 'Delete a missing visual',
+          operations: [{ op: 'delete_visual', visualId: 'demo-chart-nope' }],
+        }),
+      ),
+    ).toThrow(/Unknown visual/)
   })
 
   it('inserts a chart into the demo workbook and removes it through undo', () => {
@@ -548,12 +636,19 @@ describe('InMemoryWorkbookAdapter', () => {
       transactionId: 'tx-add-chart',
       baseRevision: 0,
       summary: 'Add a chart',
-      operations: [{
-        op: 'add_chart', sheetId: 'sheet-1', chartType: 'column',
-        dataRange: 'A1:B3', title: 'Regional Revenue',
-      }],
+      operations: [
+        {
+          op: 'add_chart',
+          sheetId: 'sheet-1',
+          chartType: 'column',
+          dataRange: 'A1:B3',
+          title: 'Regional Revenue',
+        },
+      ],
     })
-    expect(plan.structuralChanges[0]?.label).toBe('Insert column chart from A1:B3 "Regional Revenue"')
+    expect(plan.structuralChanges[0]?.label).toBe(
+      'Insert column chart from A1:B3 "Regional Revenue"',
+    )
     // plan is a dry run — nothing lands until apply
     expect(adapter.getSnapshot().sheets[0]?.visuals).toBeUndefined()
 
@@ -582,45 +677,55 @@ describe('InMemoryWorkbookAdapter', () => {
 
   it('rejects add_chart without a numeric column or over 2000 cells', () => {
     const adapter = createChartAdapter()
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-chart-text',
-      baseRevision: 0,
-      summary: 'Chart over text',
-      operations: [{ op: 'add_chart', sheetId: 'sheet-1', chartType: 'pie', dataRange: 'A1:A3' }],
-    })).toThrow(/numeric column/)
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-chart-huge',
-      baseRevision: 0,
-      summary: 'Chart over everything',
-      operations: [{ op: 'add_chart', sheetId: 'sheet-1', chartType: 'line', dataRange: 'A1:Z100' }],
-    })).toThrow(/2000 cells/)
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-text',
+        baseRevision: 0,
+        summary: 'Chart over text',
+        operations: [{ op: 'add_chart', sheetId: 'sheet-1', chartType: 'pie', dataRange: 'A1:A3' }],
+      }),
+    ).toThrow(/numeric column/)
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-chart-huge',
+        baseRevision: 0,
+        summary: 'Chart over everything',
+        operations: [
+          { op: 'add_chart', sheetId: 'sheet-1', chartType: 'line', dataRange: 'A1:Z100' },
+        ],
+      }),
+    ).toThrow(/2000 cells/)
   })
 
   it('rejects a batch mixing structural and cell-content operations', () => {
     const adapter = createAdapter()
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-mixed',
-      baseRevision: 0,
-      summary: 'Insert then write',
-      operations: [
-        { op: 'insert_rows', sheetId: 'sheet-1', row: 1, count: 1 },
-        { op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'x' },
-      ],
-    })).toThrow()
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-mixed',
+        baseRevision: 0,
+        summary: 'Insert then write',
+        operations: [
+          { op: 'insert_rows', sheetId: 'sheet-1', row: 1, count: 1 },
+          { op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'x' },
+        ],
+      }),
+    ).toThrow()
   })
 
   it('rejects invalid DSL before it reaches workbook state', () => {
     const adapter = createAdapter()
-    expect(() => adapter.plan({
-      dslVersion: 1,
-      transactionId: 'tx-1',
-      baseRevision: 0,
-      summary: 'Out of bounds',
-      operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: '../../A1', value: 1 }],
-    })).toThrow()
+    expect(() =>
+      adapter.plan({
+        dslVersion: 1,
+        transactionId: 'tx-1',
+        baseRevision: 0,
+        summary: 'Out of bounds',
+        operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: '../../A1', value: 1 }],
+      }),
+    ).toThrow()
     expect(adapter.getSnapshot()).toEqual(createAdapter().getSnapshot())
   })
 })

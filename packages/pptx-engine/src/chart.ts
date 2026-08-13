@@ -149,12 +149,19 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
 
   const series: ChartSeries[] = []
   let categories: string[] = []
-  const parsePlotSeries = (plotNode: any, plotKind: ChartKind, tagPlotKind: boolean, secondary = false) => {
+  const parsePlotSeries = (
+    plotNode: any,
+    plotKind: ChartKind,
+    tagPlotKind: boolean,
+    secondary = false,
+  ) => {
     const sersRaw = plotNode['c:ser']
     const sers: any[] = Array.isArray(sersRaw) ? sersRaw : sersRaw ? [sersRaw] : []
     for (const ser of sers) {
       // Scatter: y values in c:yVal, x values in c:xVal; other types use c:val
-      const s: ChartSeries = { values: readNumPoints(plotKind === 'scatter' ? ser['c:yVal'] : ser['c:val']) }
+      const s: ChartSeries = {
+        values: readNumPoints(plotKind === 'scatter' ? ser['c:yVal'] : ser['c:val']),
+      }
       if (tagPlotKind) s.plotKind = plotKind as 'line' | 'bar' | 'area'
       if (secondary) s.secondaryAxis = true
       if (plotKind === 'scatter') {
@@ -169,7 +176,8 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
       const markerSym = ser['c:marker']?.['c:symbol']?.['@_val']
       if (plotKind === 'line') s.marker = markerSym != null && markerSym !== 'none'
       // scatter/radar: default marker decided by style; only set for explicit symbol (none → false)
-      else if ((plotKind === 'scatter' || plotKind === 'radar') && markerSym != null) s.marker = markerSym !== 'none'
+      else if ((plotKind === 'scatter' || plotKind === 'radar') && markerSym != null)
+        s.marker = markerSym !== 'none'
       // Per-data-point colors (one color per pie slice)
       const dPts: any[] = ser['c:dPt'] ?? []
       if (dPts.length) {
@@ -235,13 +243,17 @@ export function parseChartXml(xml: string, theme?: Theme): ChartModel | null {
   // Data labels: plot-level or any series-level c:dLbls (delete=1 counts as none)
   const dLblsInfo = (owner: any): { on: boolean; pct: boolean } => {
     const d = owner?.['c:dLbls']
-    if (!d || typeof d !== 'object' || d['c:delete']?.['@_val'] === '1') return { on: false, pct: false }
+    if (!d || typeof d !== 'object' || d['c:delete']?.['@_val'] === '1')
+      return { on: false, pct: false }
     const showVal = d['c:showVal']?.['@_val'] === '1'
     const showPct = d['c:showPercent']?.['@_val'] === '1'
     return { on: showVal || showPct, pct: showPct && !showVal }
   }
   const dLblOwners: any[] = (cartesian.length > 1 ? cartesian.map((c) => c.plot) : [plot]).flatMap(
-    (p) => [p, ...((Array.isArray(p['c:ser']) ? p['c:ser'] : p['c:ser'] ? [p['c:ser']] : []) as any[])],
+    (p) => [
+      p,
+      ...((Array.isArray(p['c:ser']) ? p['c:ser'] : p['c:ser'] ? [p['c:ser']] : []) as any[]),
+    ],
   )
   const found = dLblOwners.map(dLblsInfo).find((r) => r.on)
   if (found) {
@@ -296,7 +308,11 @@ function readStrPoints(node: any): string[] {
   if (strCache) return readPoints(strCache).map((v) => v ?? '')
   const multi = node?.['c:multiLvlStrRef']?.['c:multiLvlStrCache']
   if (multi) {
-    const lvls: any[] = Array.isArray(multi['c:lvl']) ? multi['c:lvl'] : multi['c:lvl'] ? [multi['c:lvl']] : []
+    const lvls: any[] = Array.isArray(multi['c:lvl'])
+      ? multi['c:lvl']
+      : multi['c:lvl']
+        ? [multi['c:lvl']]
+        : []
     // The innermost (first lvl) holds the leaf categories
     if (lvls.length) return readPoints(lvls[0]).map((v) => v ?? '')
   }
@@ -336,7 +352,9 @@ function parseAxis(ax: any, theme?: Theme): ChartAxisStyle | undefined {
   if (scaling?.['c:min']?.['@_val'] != null) out.min = Number(scaling['c:min']['@_val'])
   if (scaling?.['c:max']?.['@_val'] != null) out.max = Number(scaling['c:max']['@_val'])
   if (scaling?.['c:orientation']?.['@_val'] === 'maxMin') out.reversed = true
-  const defRPr = ax['c:txPr']?.['a:p']?.[0]?.['a:pPr']?.['a:defRPr'] ?? ax['c:txPr']?.['a:p']?.['a:pPr']?.['a:defRPr']
+  const defRPr =
+    ax['c:txPr']?.['a:p']?.[0]?.['a:pPr']?.['a:defRPr'] ??
+    ax['c:txPr']?.['a:p']?.['a:pPr']?.['a:defRPr']
   if (defRPr) {
     const c = resolveColorNode(defRPr['a:solidFill'], theme)
     if (c) out.labelColor = c

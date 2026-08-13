@@ -35,7 +35,11 @@ describe('slides files skill', () => {
       text: 'hello'.repeat(10),
     })
     const skill = createFilesSkill(() => [ATT])
-    const result = await skill.executeTool({ id: 't1', name: 'read_attachment', input: { index: 0 } })
+    const result = await skill.executeTool({
+      id: 't1',
+      name: 'read_attachment',
+      input: { index: 0 },
+    })
     expect(readAttachment).toHaveBeenCalledWith('/tmp/notes.md', 0, 24_000)
     expect(result.isError).toBeFalsy()
     expect(result.mutated).toBeFalsy()

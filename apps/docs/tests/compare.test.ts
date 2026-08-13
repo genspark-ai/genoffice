@@ -21,7 +21,10 @@ describe('compareParagraphs', () => {
   })
 
   it('merges adjacent remove+add into changed', () => {
-    const entries = compareParagraphs(['title', 'old content', 'ending'], ['title', 'new content', 'ending'])
+    const entries = compareParagraphs(
+      ['title', 'old content', 'ending'],
+      ['title', 'new content', 'ending'],
+    )
     expect(entries.map((e) => e.kind)).toEqual(['same', 'changed', 'same'])
     expect(entries[1]).toMatchObject({ left: 'old content', right: 'new content' })
   })

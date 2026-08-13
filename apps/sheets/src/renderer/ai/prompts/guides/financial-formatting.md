@@ -10,8 +10,15 @@ Applies to balance sheets, income statements, cash flow statements, P&L statemen
 - Numbers **right-aligned**, consistent decimal places within a column; note thousand/million units in the header ("Amount (thousands)").
 
 ```json
-{"op":"format_range","sheetId":"s1","range":"B5:F20",
- "format":{"numberFormat":"[$$-409]#,##0;[Red]([$$-409]#,##0);\"-\"","horizontalAlign":"right"}}
+{
+  "op": "format_range",
+  "sheetId": "s1",
+  "range": "B5:F20",
+  "format": {
+    "numberFormat": "[$$-409]#,##0;[Red]([$$-409]#,##0);\"-\"",
+    "horizontalAlign": "right"
+  }
+}
 ```
 
 ## Hierarchy visualization
@@ -30,9 +37,24 @@ Bold + light gray fill `#F2F2F2`, separated with a thin top border + double bott
 
 ```json
 [
- {"op":"format_range","sheetId":"s1","range":"A20:F20","format":{"bold":true,"fillColor":"#F2F2F2"}},
- {"op":"format_range","sheetId":"s1","range":"A20:F20","format":{"border":{"type":"top","color":"#000000"}}},
- {"op":"format_range","sheetId":"s1","range":"A20:F20","format":{"border":{"type":"bottom","color":"#000000"}}}
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A20:F20",
+    "format": { "bold": true, "fillColor": "#F2F2F2" }
+  },
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A20:F20",
+    "format": { "border": { "type": "top", "color": "#000000" } }
+  },
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A20:F20",
+    "format": { "border": { "type": "bottom", "color": "#000000" } }
+  }
 ]
 ```
 
@@ -43,10 +65,20 @@ Bold + light gray fill `#F2F2F2`, separated with a thin top border + double bott
 
 ```json
 [
- {"op":"merge_cells","sheetId":"s1","range":"A1:F1"},
- {"op":"set_cell","sheetId":"s1","address":"A1","value":"Balance Sheet"},
- {"op":"format_range","sheetId":"s1","range":"A1:F1","format":{"bold":true,"horizontalAlign":"center"}},
- {"op":"format_range","sheetId":"s1","range":"B2:F2","format":{"bold":true,"horizontalAlign":"center"}}
+  { "op": "merge_cells", "sheetId": "s1", "range": "A1:F1" },
+  { "op": "set_cell", "sheetId": "s1", "address": "A1", "value": "Balance Sheet" },
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A1:F1",
+    "format": { "bold": true, "horizontalAlign": "center" }
+  },
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "B2:F2",
+    "format": { "bold": true, "horizontalAlign": "center" }
+  }
 ]
 ```
 
@@ -59,7 +91,12 @@ Bold + light gray fill `#F2F2F2`, separated with a thin top border + double bott
 - Thin grid separators: `#D9D9D9` (border inner lines)
 
 ```json
-{"op":"format_range","sheetId":"s1","range":"A2:F2","format":{"fillColor":"#1F3864","fontColor":"#FFFFFF","bold":true}}
+{
+  "op": "format_range",
+  "sheetId": "s1",
+  "range": "A2:F2",
+  "format": { "fillColor": "#1F3864", "fontColor": "#FFFFFF", "bold": true }
+}
 ```
 
 ## Financial model input coloring (when building models)
@@ -79,9 +116,24 @@ Financial data must cite sources (see the `data-attribution` guide): italic smal
 
 ```json
 [
- {"op":"set_cell","sheetId":"s1","address":"A22","value":"Source: SEC 10-K Filing, FY2024"},
- {"op":"format_range","sheetId":"s1","range":"A22","format":{"italic":true,"fontColor":"#666666"}},
- {"op":"set_hyperlink","sheetId":"s1","address":"A22","target":"https://sec.gov/Archives/edgar/..."}
+  {
+    "op": "set_cell",
+    "sheetId": "s1",
+    "address": "A22",
+    "value": "Source: SEC 10-K Filing, FY2024"
+  },
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A22",
+    "format": { "italic": true, "fontColor": "#666666" }
+  },
+  {
+    "op": "set_hyperlink",
+    "sheetId": "s1",
+    "address": "A22",
+    "target": "https://sec.gov/Archives/edgar/..."
+  }
 ]
 ```
 

@@ -18,39 +18,57 @@ import type { SheetPivotAddition } from '../src/gateway/xlsx-gateway'
 /// re-parses the whole package, so a malformed pivot part fails the convert
 /// (or drops the parts). Runs only where soffice is installed.
 
-const SOFFICE = ['/opt/homebrew/bin/soffice', '/usr/local/bin/soffice', '/usr/bin/soffice']
-  .find((path) => existsSync(path))
+const SOFFICE = ['/opt/homebrew/bin/soffice', '/usr/local/bin/soffice', '/usr/bin/soffice'].find(
+  (path) => existsSync(path),
+)
 
 async function buildPivotSourceWorkbook(): Promise<Buffer> {
   const zip = new JSZip()
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`)
-  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8"?>
+</Types>`,
+  )
+  zip.file(
+    '_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`)
-  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8"?>
+</Relationships>`,
+  )
+  zip.file(
+    'xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`)
-  zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+</workbook>`,
+  )
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`)
-  zip.file('xl/styles.xml', `<?xml version="1.0" encoding="UTF-8"?>
+</Relationships>`,
+  )
+  zip.file(
+    'xl/styles.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <fonts count="1"><font/></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders>
   <cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf/></cellXfs>
-</styleSheet>`)
+</styleSheet>`,
+  )
   // Source data A1:C4 (inline strings) plus the baked pivot grid at F1:G5.
-  zip.file('xl/worksheets/sheet1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/worksheets/sheet1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>
     <row r="1">
@@ -82,7 +100,8 @@ async function buildPivotSourceWorkbook(): Promise<Buffer> {
       <c r="G4"><v>180</v></c>
     </row>
   </sheetData>
-</worksheet>`)
+</worksheet>`,
+  )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
@@ -102,22 +121,40 @@ describe.skipIf(!SOFFICE)('pivot LibreOffice round-trip', () => {
     }
     const plan = await planCellEditsToXlsx(
       await createBufferEntrySource(sourceBuffer),
-      [], [], [], undefined, [], [], [], [], [], null, [], [], [], [], [pivot],
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      [],
+      [],
+      [],
+      [],
+      [pivot],
     )
     const mutation = await assembleWithJsZip(sourceBuffer, plan)
 
     const workDir = await mkdtemp(join(tmpdir(), 'pivot-rt-'))
     const savedPath = join(workDir, 'pivot.xlsx')
     await writeFile(savedPath, mutation.buffer)
-    execFileSync(SOFFICE as string, [
-      '--headless', '--convert-to', 'xlsx', '--outdir', join(workDir, 'out'), savedPath,
-    ], { timeout: 120_000 })
+    execFileSync(
+      SOFFICE as string,
+      ['--headless', '--convert-to', 'xlsx', '--outdir', join(workDir, 'out'), savedPath],
+      { timeout: 120_000 },
+    )
     const outputs = await readdir(join(workDir, 'out'))
     expect(outputs).toContain('pivot.xlsx')
 
     // LibreOffice keeps (rewrites) the pivot parts when it understood them.
     const converted = await JSZip.loadAsync(
-      await import('node:fs/promises').then((fs) => fs.readFile(join(workDir, 'out', 'pivot.xlsx'))),
+      await import('node:fs/promises').then((fs) =>
+        fs.readFile(join(workDir, 'out', 'pivot.xlsx')),
+      ),
     )
     const paths = Object.keys(converted.files)
     expect(paths.some((path) => /pivotTable/i.test(path))).toBe(true)

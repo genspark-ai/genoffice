@@ -55,13 +55,16 @@ describe('containsUnresolvedNames', () => {
 
 describe('computeFormulaClosure', () => {
   it('collects formulas plus referenced precedents across sheets', () => {
-    const result = computeFormulaClosure([
-      sheet('sheet-1', 'Data', [
-        { row: 0, column: 3, formula: 'SUM(A1:A3)' },
-        { row: 1, column: 3, formula: "'Other'!B2*2" },
-      ]),
-      sheet('sheet-2', 'Other', []),
-    ], 1000)
+    const result = computeFormulaClosure(
+      [
+        sheet('sheet-1', 'Data', [
+          { row: 0, column: 3, formula: 'SUM(A1:A3)' },
+          { row: 1, column: 3, formula: "'Other'!B2*2" },
+        ]),
+        sheet('sheet-2', 'Other', []),
+      ],
+      1000,
+    )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.formulaCount).toBe(2)
@@ -124,7 +127,11 @@ describe('closureFetchRanges', () => {
 
 describe('shiftPinnedCells', () => {
   it('moves keys through inserts and drops removed positions', () => {
-    const pinned = new Map([['5:2', 'a'], ['10:2', 'b'], ['3:0', 'c']])
+    const pinned = new Map([
+      ['5:2', 'a'],
+      ['10:2', 'b'],
+      ['3:0', 'c'],
+    ])
     const inserted = shiftPinnedCells(pinned, { kind: 'insert-rows', index: 4, count: 2 })
     expect([...inserted.keys()].sort()).toEqual(['12:2', '3:0', '7:2'])
     const removed = shiftPinnedCells(pinned, { kind: 'remove-rows', index: 5, count: 1 })

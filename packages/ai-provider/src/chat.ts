@@ -119,6 +119,9 @@ async function chatOpenAiCompatible(
 const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
   deepseek: 'https://api.deepseek.com/v1',
   openai: 'https://api.openai.com/v1',
+  lmstudio: 'http://localhost:1234/v1',
+  'opencode-zen': 'https://zen.opencode.ai/v1',
+  'opencode-go': 'https://go.opencode.ai/v1',
 }
 
 /** route a one-shot (non-streaming, non-tool-calling) chat call by provider id */
@@ -148,6 +151,9 @@ export async function chatForProvider(
         return chatGemini(wd, config, system, user)
       case 'deepseek':
       case 'openai':
+      case 'lmstudio':
+      case 'opencode-zen':
+      case 'opencode-go':
         return chatOpenAiCompatible(
           wd,
           OPENAI_COMPATIBLE_BASE_URLS[provider]!,

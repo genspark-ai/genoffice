@@ -28,7 +28,10 @@ describe('add/delete element', () => {
     const el2: any = slide2.elements[slide2.elements.length - 1]
     expect(el2.type).toBe('text')
     expect(el2.transform.offset).toEqual(OFF)
-    const text = el2.text.paragraphs.flatMap((p: any) => p.runs).map((r: any) => r.text).join('')
+    const text = el2.text.paragraphs
+      .flatMap((p: any) => p.runs)
+      .map((r: any) => r.text)
+      .join('')
     expect(text).toBe('Newly inserted textbox')
     expect(el2.text.paragraphs[0].runs[0].bold).toBe(true)
   })

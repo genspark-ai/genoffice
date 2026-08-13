@@ -20,9 +20,23 @@ async function planWith(
   buffer?: Buffer,
   structuralOps: Parameters<typeof planCellEditsToXlsx>[2] = [],
 ) {
-  const source = await createBufferEntrySource(buffer ?? await buildEditFixture())
+  const source = await createBufferEntrySource(buffer ?? (await buildEditFixture()))
   return planCellEditsToXlsx(
-    source, [], structuralOps, [], undefined, [], [], [], [], [], null, [], [], [], tables,
+    source,
+    [],
+    structuralOps,
+    [],
+    undefined,
+    [],
+    [],
+    [],
+    [],
+    [],
+    null,
+    [],
+    [],
+    [],
+    tables,
   )
 }
 
@@ -43,7 +57,9 @@ describe('table additions', () => {
     const worksheet = plan.replaced.get('xl/worksheets/sheet1.xml')
     expect(worksheet).toContain('<tableParts count="1"><tablePart r:id="rId1"/></tableParts>')
     // The fixture worksheet has no xmlns:r — the table hookup must add it.
-    expect(worksheet).toContain('xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"')
+    expect(worksheet).toContain(
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"',
+    )
 
     const sheetRels = plan.added.get('xl/worksheets/_rels/sheet1.xml.rels')
     expect(sheetRels).toContain('relationships/table')
@@ -55,12 +71,14 @@ describe('table additions', () => {
   })
 
   it('honors style and banding options and escapes names', async () => {
-    const plan = await planWith([tableAddition({
-      name: 'Sales_Q3',
-      style: 'TableStyleLight9',
-      bandedRows: false,
-      columnNames: ['A<B', 'C"D'],
-    })])
+    const plan = await planWith([
+      tableAddition({
+        name: 'Sales_Q3',
+        style: 'TableStyleLight9',
+        bandedRows: false,
+        columnNames: ['A<B', 'C"D'],
+      }),
+    ])
     const tableXml = plan.added.get('xl/tables/table1.xml')
     expect(tableXml).toContain('name="Sales_Q3" displayName="Sales_Q3"')
     expect(tableXml).toContain('name="TableStyleLight9"')
@@ -87,57 +105,73 @@ describe('table additions', () => {
   })
 
   it('rejects overlapping tables in the same save', async () => {
-    await expect(planWith([
-      tableAddition(),
-      tableAddition({
-        name: 'Clash',
-        area: { startRow: 2, startColumn: 1, endRow: 5, endColumn: 3 },
-        columnNames: ['X', 'Y', 'Z'],
-      }),
-    ])).rejects.toThrow(/overlaps an existing table/)
+    await expect(
+      planWith([
+        tableAddition(),
+        tableAddition({
+          name: 'Clash',
+          area: { startRow: 2, startColumn: 1, endRow: 5, endColumn: 3 },
+          columnNames: ['X', 'Y', 'Z'],
+        }),
+      ]),
+    ).rejects.toThrow(/overlaps an existing table/)
   })
 
   it('rejects duplicate and defined-name-colliding table names', async () => {
-    await expect(planWith([
-      tableAddition(),
-      tableAddition({
-        name: 'users',
-        area: { startRow: 0, startColumn: 3, endRow: 3, endColumn: 3 },
-        columnNames: ['X'],
-      }),
-    ])).rejects.toThrow(/already taken/)
+    await expect(
+      planWith([
+        tableAddition(),
+        tableAddition({
+          name: 'users',
+          area: { startRow: 0, startColumn: 3, endRow: 3, endColumn: 3 },
+          columnNames: ['X'],
+        }),
+      ]),
+    ).rejects.toThrow(/already taken/)
     // The edit fixture defines the workbook name "Total".
-    await expect(planWith([tableAddition({ name: 'Total' })]))
-      .rejects.toThrow(/collides with a defined name/)
+    await expect(planWith([tableAddition({ name: 'Total' })])).rejects.toThrow(
+      /collides with a defined name/,
+    )
   })
 
   it('rejects bad column names and header-only areas', async () => {
-    await expect(planWith([tableAddition({ columnNames: ['Country', ' '] })]))
-      .rejects.toThrow(/blank column name/)
-    await expect(planWith([tableAddition({ columnNames: ['Same', 'same'] })]))
-      .rejects.toThrow(/duplicate column name/)
-    await expect(planWith([tableAddition({ columnNames: ['Only'] })]))
-      .rejects.toThrow(/spans 2 columns/)
-    await expect(planWith([tableAddition({
-      area: { startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 },
-    })])).rejects.toThrow(/at least one data row/)
+    await expect(planWith([tableAddition({ columnNames: ['Country', ' '] })])).rejects.toThrow(
+      /blank column name/,
+    )
+    await expect(planWith([tableAddition({ columnNames: ['Same', 'same'] })])).rejects.toThrow(
+      /duplicate column name/,
+    )
+    await expect(planWith([tableAddition({ columnNames: ['Only'] })])).rejects.toThrow(
+      /spans 2 columns/,
+    )
+    await expect(
+      planWith([
+        tableAddition({
+          area: { startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 },
+        }),
+      ]),
+    ).rejects.toThrow(/at least one data row/)
   })
 
   it('rejects a table over merged cells', async () => {
-    await expect(planWith(
-      [tableAddition({
-        area: { startRow: 3, startColumn: 0, endRow: 6, endColumn: 1 },
-        columnNames: ['X', 'Y'],
-      })],
-      await buildStructureFixture(),
-    )).rejects.toThrow(/overlaps merged cells/)
+    await expect(
+      planWith(
+        [
+          tableAddition({
+            area: { startRow: 3, startColumn: 0, endRow: 6, endColumn: 1 },
+            columnNames: ['X', 'Y'],
+          }),
+        ],
+        await buildStructureFixture(),
+      ),
+    ).rejects.toThrow(/overlaps merged cells/)
   })
 
   it('fails closed when the same save shifts rows on the table sheet', async () => {
-    await expect(planWith(
-      [tableAddition()],
-      undefined,
-      [{ sheetName: 'Data', ops: [{ kind: 'insert-rows', index: 0, count: 1 }] }],
-    )).rejects.toThrow(/save the table first/)
+    await expect(
+      planWith([tableAddition()], undefined, [
+        { sheetName: 'Data', ops: [{ kind: 'insert-rows', index: 0, count: 1 }] },
+      ]),
+    ).rejects.toThrow(/save the table first/)
   })
 })

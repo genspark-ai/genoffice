@@ -21,12 +21,16 @@ import { recomputePivotData } from '../src/domain/pivot-engine'
 ///   - Sheet "Data" with source data at A1:C4 (header + 3 rows)
 ///   - A pivot table pointing at that source, output at F1:G5
 ///   - The pivot parts correctly linked via rels
-async function buildPivotFixture(opts: {
-  extraCellAtRow?: number  // if set, put non-empty content at G<extraCellAtRow>
-} = {}): Promise<Buffer> {
+async function buildPivotFixture(
+  opts: {
+    extraCellAtRow?: number // if set, put non-empty content at G<extraCellAtRow>
+  } = {},
+): Promise<Buffer> {
   const zip = new JSZip()
 
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
@@ -36,37 +40,53 @@ async function buildPivotFixture(opts: {
   <Override PartName="/xl/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
   <Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`)
+</Types>`,
+  )
 
-  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    '_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`)
+</Relationships>`,
+  )
 
-  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`)
+</workbook>`,
+  )
 
-  zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`)
+</Relationships>`,
+  )
 
-  zip.file('xl/styles.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/styles.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <fonts count="1"><font/></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders>
   <cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf/></cellXfs>
-</styleSheet>`)
+</styleSheet>`,
+  )
 
-  const extraCell = opts.extraCellAtRow !== undefined
-    ? `    <row r="${opts.extraCellAtRow}"><c r="G${opts.extraCellAtRow}"><v>999</v></c></row>\n`
-    : ''
+  const extraCell =
+    opts.extraCellAtRow !== undefined
+      ? `    <row r="${opts.extraCellAtRow}"><c r="G${opts.extraCellAtRow}"><v>999</v></c></row>\n`
+      : ''
 
   // Source: A1:C4 (header row 1, data rows 2-4)
   // Current pivot output: F1:G5 (header + 3 data rows + grand total)
-  zip.file('xl/worksheets/sheet1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/worksheets/sheet1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>
     <row r="1">
@@ -98,10 +118,13 @@ async function buildPivotFixture(opts: {
       <c r="G4"><v>200</v></c>
     </row>
 ${extraCell}  </sheetData>
-</worksheet>`)
+</worksheet>`,
+  )
 
   // Pivot table: current output F1:G4 (header + 2 items + grand total = 4 rows)
-  zip.file('xl/pivotTables/pivotTable1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/pivotTables/pivotTable1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   name="PivotData" cacheId="1">
   <location ref="F1:G4" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/>
@@ -116,16 +139,22 @@ ${extraCell}  </sheetData>
   <rowItems count="3"><i><x/></i><i><x v="1"/></i><i t="grand"><x/></i></rowItems>
   <colItems count="1"><i/></colItems>
   <dataFields count="1"><dataField name="Sum of Amount" fld="2" baseField="0" baseItem="0"/></dataFields>
-</pivotTableDefinition>`)
+</pivotTableDefinition>`,
+  )
 
   // The pivot table rels: links back to the cache definition
-  zip.file('xl/pivotTables/_rels/pivotTable1.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/pivotTables/_rels/pivotTable1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" Target="../pivotCache/pivotCacheDefinition1.xml"/>
-</Relationships>`)
+</Relationships>`,
+  )
 
   // Pivot cache definition
-  zip.file('xl/pivotCache/pivotCacheDefinition1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/pivotCache/pivotCacheDefinition1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1" recordCount="3">
   <cacheSource type="worksheet">
     <worksheetSource ref="A1:C4" sheet="Data"/>
@@ -137,41 +166,60 @@ ${extraCell}  </sheetData>
     <cacheField name="Product" numFmtId="0"><sharedItems/></cacheField>
     <cacheField name="Amount" numFmtId="0"><sharedItems/></cacheField>
   </cacheFields>
-</pivotCacheDefinition>`)
+</pivotCacheDefinition>`,
+  )
 
   // Cache rels: links to records
-  zip.file('xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/>
-</Relationships>`)
+</Relationships>`,
+  )
 
   // Pivot cache records
-  zip.file('xl/pivotCache/pivotCacheRecords1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/pivotCache/pivotCacheRecords1.xml',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" count="3">
   <r><x v="0"/><m/><n v="100"/></r>
   <r><x v="1"/><m/><n v="50"/></r>
   <r><x v="0"/><m/><n v="50"/></r>
-</pivotCacheRecords>`)
+</pivotCacheRecords>`,
+  )
 
   // Sheet rels: pivot table relationship
-  zip.file('xl/worksheets/_rels/sheet1.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+  zip.file(
+    'xl/worksheets/_rels/sheet1.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
-</Relationships>`)
+</Relationships>`,
+  )
 
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
-async function planWithRefreshUpdate(
-  buf: Buffer,
-  updates: PivotRefreshUpdate[],
-) {
+async function planWithRefreshUpdate(buf: Buffer, updates: PivotRefreshUpdate[]) {
   const source = await createBufferEntrySource(buf)
   // Need at least one of: edits, pivotCacheRefreshPaths, pivotRefreshUpdates
   return planCellEditsToXlsx(
     source,
     /* edits */ [],
-    [], [], undefined, [], [], [], [], [], null, [], [], [], [],
+    [],
+    [],
+    undefined,
+    [],
+    [],
+    [],
+    [],
+    [],
+    null,
+    [],
+    [],
+    [],
+    [],
     /* pivotAdditions */ [],
     /* pivotCacheRefreshPaths */ ['xl/pivotCache/pivotCacheDefinition1.xml'],
     updates,
@@ -184,7 +232,7 @@ describe('applyPivotLayoutExpansions', () => {
     const update: PivotRefreshUpdate = {
       cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       worksheetPath: 'xl/worksheets/sheet1.xml',
-      newOutputRef: 'F1:G4',  // same as current
+      newOutputRef: 'F1:G4', // same as current
     }
     const plan = await planWithRefreshUpdate(buf, [update])
     // PivotTable xml should NOT be in replaced (no change)
@@ -213,7 +261,7 @@ describe('applyPivotLayoutExpansions', () => {
     const update: PivotRefreshUpdate = {
       cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       worksheetPath: 'xl/worksheets/sheet1.xml',
-      newOutputRef: 'F1:G6',  // 2 new rows
+      newOutputRef: 'F1:G6', // 2 new rows
     }
     const plan = await planWithRefreshUpdate(buf, [update])
     expect(plan.replaced.get('xl/pivotTables/pivotTable1.xml')).toContain('ref="F1:G6"')
@@ -225,12 +273,10 @@ describe('applyPivotLayoutExpansions', () => {
     const update: PivotRefreshUpdate = {
       cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       worksheetPath: 'xl/worksheets/sheet1.xml',
-      newOutputRef: 'F1:G5',  // G5 is occupied
+      newOutputRef: 'F1:G5', // G5 is occupied
     }
-    await expect(planWithRefreshUpdate(buf, [update]))
-      .rejects.toThrow(PivotExpandError)
-    await expect(planWithRefreshUpdate(buf, [update]))
-      .rejects.toThrow(/conflict/)
+    await expect(planWithRefreshUpdate(buf, [update])).rejects.toThrow(PivotExpandError)
+    await expect(planWithRefreshUpdate(buf, [update])).rejects.toThrow(/conflict/)
   })
 
   it('does not fail when conflict is outside the new area', async () => {
@@ -239,7 +285,7 @@ describe('applyPivotLayoutExpansions', () => {
     const update: PivotRefreshUpdate = {
       cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       worksheetPath: 'xl/worksheets/sheet1.xml',
-      newOutputRef: 'F1:G5',  // G6 is outside — should pass
+      newOutputRef: 'F1:G5', // G6 is outside — should pass
     }
     const plan = await planWithRefreshUpdate(buf, [update])
     expect(plan.replaced.get('xl/pivotTables/pivotTable1.xml')).toContain('ref="F1:G5"')
@@ -262,10 +308,9 @@ describe('applyPivotLayoutExpansions', () => {
     const update: PivotRefreshUpdate = {
       cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
       worksheetPath: 'xl/worksheets/sheet1.xml',
-      newOutputRef: 'F2:G5',  // start row changed from 1 to 2
+      newOutputRef: 'F2:G5', // start row changed from 1 to 2
     }
-    await expect(planWithRefreshUpdate(buf, [update]))
-      .rejects.toThrow(PivotExpandError)
+    await expect(planWithRefreshUpdate(buf, [update])).rejects.toThrow(PivotExpandError)
   })
 
   it('silently skips when cache path is not found in rels', async () => {
@@ -284,31 +329,35 @@ describe('applyPivotLayoutExpansions', () => {
 describe('pivot layout edits (relayout)', () => {
   it('shrinks the location ref when the edited layout got smaller', async () => {
     const buf = await buildPivotFixture()
-    const plan = await planWithRefreshUpdate(buf, [{
-      cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
-      worksheetPath: 'xl/worksheets/sheet1.xml',
-      newOutputRef: 'F1:G3',
-    }])
+    const plan = await planWithRefreshUpdate(buf, [
+      {
+        cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+        worksheetPath: 'xl/worksheets/sheet1.xml',
+        newOutputRef: 'F1:G3',
+      },
+    ])
     expect(plan.replaced.get('xl/pivotTables/pivotTable1.xml')).toContain('ref="F1:G3"')
   })
 
   it('rewrites definition, cache, and records keeping name/cacheId/rel ids', async () => {
     const buf = await buildPivotFixture()
-    const plan = await planWithRefreshUpdate(buf, [{
-      cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
-      sheetName: 'Data',
-      newOutputRef: 'F1:G4',
-      relayout: {
-        sourceSheetName: 'Data',
-        sourceArea: { startRow: 0, startColumn: 0, endRow: 3, endColumn: 2 },
-        location: { startRow: 0, startColumn: 5, endRow: 3, endColumn: 6 },
-        name: 'PivotEdit',  // renderer placeholder — the file name must win
-        fieldNames: ['Region', 'Product', 'Amount'],
-        rowFieldIndices: [1],  // rows switch from Region to Product
-        rowItems: ['A', 'B'],
-        values: [{ fieldIndex: 2, agg: 'sum' }],
+    const plan = await planWithRefreshUpdate(buf, [
+      {
+        cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+        sheetName: 'Data',
+        newOutputRef: 'F1:G4',
+        relayout: {
+          sourceSheetName: 'Data',
+          sourceArea: { startRow: 0, startColumn: 0, endRow: 3, endColumn: 2 },
+          location: { startRow: 0, startColumn: 5, endRow: 3, endColumn: 6 },
+          name: 'PivotEdit', // renderer placeholder — the file name must win
+          fieldNames: ['Region', 'Product', 'Amount'],
+          rowFieldIndices: [1], // rows switch from Region to Product
+          rowItems: ['A', 'B'],
+          values: [{ fieldIndex: 2, agg: 'sum' }],
+        },
       },
-    }])
+    ])
     const table = plan.replaced.get('xl/pivotTables/pivotTable1.xml')!
     expect(table).toContain('name="PivotData"')
     expect(table).toContain('cacheId="1"')
@@ -340,20 +389,24 @@ describe('pivot layout edits (relayout)', () => {
     const tableXml = await zip.file('xl/pivotTables/pivotTable1.xml')!.async('string')
     zip.file('xl/pivotTables/pivotTable1.xml', tableXml.replace('cacheId="1"', ''))
     const broken = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
-    await expect(planWithRefreshUpdate(broken, [{
-      cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
-      sheetName: 'Data',
-      newOutputRef: 'F1:G4',
-      relayout: {
-        sourceSheetName: 'Data',
-        sourceArea: { startRow: 0, startColumn: 0, endRow: 3, endColumn: 2 },
-        location: { startRow: 0, startColumn: 5, endRow: 3, endColumn: 6 },
-        name: 'PivotEdit',
-        fieldNames: ['Region', 'Product', 'Amount'],
-        rowFieldIndices: [1],
-        rowItems: ['A', 'B'],
-        values: [{ fieldIndex: 2, agg: 'sum' }],
-      },
-    }])).rejects.toThrow(PivotExpandError)
+    await expect(
+      planWithRefreshUpdate(broken, [
+        {
+          cachePath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+          sheetName: 'Data',
+          newOutputRef: 'F1:G4',
+          relayout: {
+            sourceSheetName: 'Data',
+            sourceArea: { startRow: 0, startColumn: 0, endRow: 3, endColumn: 2 },
+            location: { startRow: 0, startColumn: 5, endRow: 3, endColumn: 6 },
+            name: 'PivotEdit',
+            fieldNames: ['Region', 'Product', 'Amount'],
+            rowFieldIndices: [1],
+            rowItems: ['A', 'B'],
+            values: [{ fieldIndex: 2, agg: 'sum' }],
+          },
+        },
+      ]),
+    ).rejects.toThrow(PivotExpandError)
   })
 })

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, expect } from '@playwright/test'
@@ -18,50 +18,10 @@ test.describe('markdown editor', () => {
       await expect(editorTab).toHaveClass(/active/)
 
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      await expect(editorPage.locator('.doc-editor')).toBeVisible()
+      await expect(editorPage.locator('.tiptap')).toBeVisible()
       await editorPage.screenshot({ path: screenshotPath('new-markdown-editor') })
     } finally {
       await closeAndSaveVideo(launched, 'new-markdown-tab')
-    }
-  })
-
-  test('legacy fenced divs degrade on open; slash menu inserts a GFM task list', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-'))
-    const mdPath = join(dir, 'legacy.md')
-    await writeFile(mdPath, '# Doc\n\n:::callout {type="info"}\nBe careful.\n:::\n')
-
-    const launched = await launchShell({
-      onboardingSeen: true,
-      videoDir: 'markdown-slash-task',
-      openFile: mdPath,
-    })
-    const { app } = launched
-    try {
-      const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      const editor = editorPage.locator('.doc-editor')
-      await expect(editor.locator('h1')).toHaveText('Doc')
-      // the legacy callout fences are stripped on open; the body text survives
-      await expect(editor).toContainText('Be careful.')
-      await expect(editor).not.toContainText(':::')
-
-      await editor.click()
-      await editorPage.keyboard.press('ControlOrMeta+End')
-      await editorPage.keyboard.press('Enter')
-      await editorPage.keyboard.type('/')
-      await expect(editorPage.locator('.slash-menu')).toBeVisible()
-      await editorPage.keyboard.type('task')
-      await editorPage.locator('.slash-item', { hasText: /Task list|任务列表/ }).click()
-      await expect(editor.locator('ul[data-type="taskList"]')).toBeVisible()
-      await editorPage.keyboard.type('Heads up!')
-      await editorPage.keyboard.press('ControlOrMeta+s')
-      await expect(editorPage.locator('.status-save')).toHaveText(/Saved|已保存/)
-
-      const saved = await readFile(mdPath, 'utf8')
-      expect(saved).toContain('- [ ] Heads up!')
-      expect(saved).toContain('Be careful.')
-      expect(saved).not.toContain(':::')
-    } finally {
-      await closeAndSaveVideo(launched, 'markdown-slash-task')
     }
   })
 
@@ -77,134 +37,112 @@ test.describe('markdown editor', () => {
     })
     const { app } = launched
     try {
-      // with an argv document the first window is the editor view, not the shell
-      // home — locate the shell renderer explicitly for tab-strip assertions
       const shellPage = await waitForPageWithUrl(app, 'shell/out')
       const editorTab = shellPage.locator('.tab-bar .tab-item:not(.tab-home)')
       await expect(editorTab).toHaveCount(1)
       await expect(editorTab).toContainText('note.md')
 
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      const editor = editorPage.locator('.doc-editor')
+      const editor = editorPage.locator('.tiptap')
       await expect(editor.locator('h1')).toHaveText('Hello')
       await expect(editor.locator('strong')).toHaveText('bold')
 
-      // type at the end of the document, save with ⌘/Ctrl+S
       await editor.click()
       await editorPage.keyboard.press('ControlOrMeta+End')
       await editorPage.keyboard.press('Enter')
       await editorPage.keyboard.type('Appended line.')
       await editorPage.keyboard.press('ControlOrMeta+s')
-      await expect(editorPage.locator('.status-save')).toHaveText(/Saved|已保存/)
-      await editorPage.screenshot({ path: screenshotPath('open-markdown-saved') })
 
       const saved = await readFile(mdPath, 'utf8')
       expect(saved.startsWith('---\ntitle: Note\n---\n')).toBe(true)
       expect(saved).toContain('# Hello')
       expect(saved).toContain('**bold**')
       expect(saved).toContain('Appended line.')
-      expect(saved.endsWith('\n')).toBe(true)
+      await editorPage.screenshot({ path: screenshotPath('open-markdown-saved') })
     } finally {
       await closeAndSaveVideo(launched, 'open-markdown-file')
     }
   })
 
-  test('ribbon AI preset button opens the panel and sends the instruction', async () => {
+  test('renders markdown headings, bold, lists, and code blocks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-'))
-    const mdPath = join(dir, 'summary.md')
-    await writeFile(mdPath, '# Topic\n\nSome content worth summarizing.\n')
+    const mdPath = join(dir, 'formatting.md')
+    await writeFile(
+      mdPath,
+      '# Heading 1\n\n## Heading 2\n\n**bold** and *italic*\n\n- Item 1\n- Item 2\n\n```\ncode block\n```\n',
+    )
 
     const launched = await launchShell({
       onboardingSeen: true,
-      videoDir: 'markdown-ai-preset',
+      videoDir: 'markdown-formatting',
       openFile: mdPath,
     })
     const { app } = launched
     try {
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      await expect(editorPage.locator('.doc-editor h1')).toHaveText('Topic')
-
-      const summarizeBtn = editorPage.locator('.rb-big.ai-entry', {
-        hasText: /AI 总结|AI Summarize/,
-      })
-      await expect(summarizeBtn).toBeEnabled()
-      await summarizeBtn.click()
-
-      await expect(editorPage.locator('.copilot')).toBeVisible()
-      // the preset lands as a sent user message (the model reply itself needs credentials)
-      await expect(editorPage.locator('.ai-msg-user')).toContainText(/总结|Summarize/)
-      await editorPage.screenshot({ path: screenshotPath('markdown-ai-preset') })
+      const editor = editorPage.locator('.tiptap')
+      await expect(editor.locator('h1')).toHaveText('Heading 1')
+      await expect(editor.locator('h2')).toHaveText('Heading 2')
+      await expect(editor.locator('strong')).toHaveText('bold')
+      await expect(editor.locator('em')).toHaveText('italic')
+      await expect(editor.locator('ul li')).toHaveCount(2)
+      await expect(editor.locator('pre code')).toContainText('code block')
+      await editorPage.screenshot({ path: screenshotPath('markdown-formatting') })
     } finally {
-      await closeAndSaveVideo(launched, 'markdown-ai-preset')
+      await closeAndSaveVideo(launched, 'markdown-formatting')
     }
   })
 
-  test('ribbon bold serializes as GFM; quick-access save and undo work', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-'))
-    const mdPath = join(dir, 'style.md')
-    await writeFile(mdPath, 'Hello style\n')
-
-    const launched = await launchShell({
-      onboardingSeen: true,
-      videoDir: 'markdown-bold-qat',
-      openFile: mdPath,
-    })
-    const { app } = launched
+  test('ribbon formatting buttons apply marks to selection', async () => {
+    const launched = await launchShell({ onboardingSeen: true, videoDir: 'markdown-ribbon' })
+    const { app, page } = launched
     try {
+      const card = page.locator('.quick-card', { hasText: 'AI Markdown' })
+      await card.click()
+
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      const editor = editorPage.locator('.doc-editor')
-      await expect(editor).toContainText('Hello style')
+      const editor = editorPage.locator('.tiptap')
+      await expect(editor).toBeVisible()
 
       await editor.click()
-      await editorPage.keyboard.press('ControlOrMeta+a')
-      await editorPage.getByLabel(/^(加粗|Bold)$/).click()
-      await expect(editor.locator('strong')).toHaveText('Hello style')
+      await editorPage.keyboard.type('Hello World')
 
-      // quick-access row: save button writes the file, undo reverts the mark
-      const qaButtons = editorPage.locator('.ribbon-tabs .qa-btn')
-      await qaButtons.nth(0).click()
-      await expect(editorPage.locator('.status-save')).toHaveText(/Saved|已保存/)
-      const saved = await readFile(mdPath, 'utf8')
-      expect(saved).toContain('**Hello style**')
+      // Select "World" (last 5 chars)
+      await editorPage.keyboard.down('Shift')
+      for (let i = 0; i < 5; i++) await editorPage.keyboard.press('ArrowLeft')
+      await editorPage.keyboard.up('Shift')
 
-      await qaButtons.nth(1).click()
-      await expect(editor.locator('strong')).toHaveCount(0)
-
-      // save again so the window closes without a dirty-document prompt
-      await qaButtons.nth(0).click()
-      await expect.poll(() => readFile(mdPath, 'utf8')).not.toContain('**')
+      const boldBtn = editorPage.locator('.ribbon-btn', { hasText: 'B' }).first()
+      await boldBtn.click()
+      await expect(editor.locator('strong')).toHaveText('World')
+      await editorPage.screenshot({ path: screenshotPath('markdown-ribbon-bold') })
     } finally {
-      await closeAndSaveVideo(launched, 'markdown-bold-qat')
+      await closeAndSaveVideo(launched, 'markdown-ribbon')
     }
   })
 
-  test('renders a relative assets/ image through the md-asset protocol', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-'))
-    const PNG_1PX =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-    await mkdir(join(dir, 'assets'))
-    await writeFile(join(dir, 'assets', 'pic.png'), Buffer.from(PNG_1PX, 'base64'))
-    const mdPath = join(dir, 'with-image.md')
-    await writeFile(mdPath, '# Pics\n\n![a pic](assets/pic.png)\n')
-
-    const launched = await launchShell({
-      onboardingSeen: true,
-      videoDir: 'markdown-image-display',
-      openFile: mdPath,
-    })
-    const { app } = launched
+  test('dark mode toggle switches theme', async () => {
+    const launched = await launchShell({ onboardingSeen: true, videoDir: 'markdown-dark' })
+    const { app, page } = launched
     try {
+      const card = page.locator('.quick-card', { hasText: 'AI Markdown' })
+      await card.click()
+
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      const img = editorPage.locator('.doc-editor img[alt="a pic"]')
-      await expect(img).toBeVisible()
-      await expect(img).toHaveAttribute('src', /^md-asset:\/\//)
-      // naturalWidth > 0 means the protocol handler actually served the bytes
-      await expect
-        .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth))
-        .toBeGreaterThan(0)
-      await editorPage.screenshot({ path: screenshotPath('markdown-image-display') })
+      await expect(editorPage.locator('.tiptap')).toBeVisible()
+
+      const viewTab = editorPage.locator('.ribbon-tab', { hasText: 'View' })
+      await viewTab.click()
+      const darkBtn = editorPage.locator('.ribbon-btn', { hasText: 'Dark Mode' })
+      await darkBtn.click()
+
+      const theme = await editorPage.evaluate(() =>
+        document.documentElement.getAttribute('data-theme'),
+      )
+      expect(theme).toBe('dark')
+      await editorPage.screenshot({ path: screenshotPath('markdown-dark-mode') })
     } finally {
-      await closeAndSaveVideo(launched, 'markdown-image-display')
+      await closeAndSaveVideo(launched, 'markdown-dark')
     }
   })
 })

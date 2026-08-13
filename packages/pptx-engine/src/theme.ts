@@ -85,7 +85,20 @@ export function parseTheme(themeXml: string): Theme {
   const elements = asXmlNode(themeEl['a:themeElements'])
   const clrScheme = asXmlNode(elements['a:clrScheme'])
   const colors: Record<string, string> = {}
-  for (const key of ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink']) {
+  for (const key of [
+    'dk1',
+    'lt1',
+    'dk2',
+    'lt2',
+    'accent1',
+    'accent2',
+    'accent3',
+    'accent4',
+    'accent5',
+    'accent6',
+    'hlink',
+    'folHlink',
+  ]) {
     const c = readColorNode(clrScheme['a:' + key])
     if (c) colors[key] = c
   }
@@ -122,7 +135,10 @@ export function parseTheme(themeXml: string): Theme {
  * Theme font reference ("+mj-lt" / "+mn-ea" etc.) → final font name.
  * Values not starting with "+" are returned as-is; returns undefined when the theme has no match.
  */
-export function resolveFontRef(typeface: string | undefined, theme: Theme | undefined): string | undefined {
+export function resolveFontRef(
+  typeface: string | undefined,
+  theme: Theme | undefined,
+): string | undefined {
   if (!typeface) return undefined
   if (!typeface.startsWith('+')) return typeface
   switch (typeface) {
@@ -144,7 +160,11 @@ export function resolveFontRef(typeface: string | undefined, theme: Theme | unde
 }
 
 /** schemeClr name (e.g. 'tx1','bg1','accent1','phClr') → final #RRGGBB. */
-export function resolveSchemeColor(name: string, theme: Theme | undefined, phClr?: string): string | undefined {
+export function resolveSchemeColor(
+  name: string,
+  theme: Theme | undefined,
+  phClr?: string,
+): string | undefined {
   if (name === 'phClr') return phClr
   // Standard mapping: tx1→dk1, bg1→lt1, tx2→dk2, bg2→lt2
   const map: Record<string, string> = { tx1: 'dk1', bg1: 'lt1', tx2: 'dk2', bg2: 'lt2' }

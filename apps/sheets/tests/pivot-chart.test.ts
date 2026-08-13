@@ -8,28 +8,30 @@ import { buildEditFixture } from './fixture-builder'
 
 /// Minimal pivot definition: single row field (Region: East/West/South) + Sum of Sales,
 /// output area E1:F5 (1 header row + 3 data rows + grand-total row).
-const SINGLE_ROW_PIVOT_XML = '<pivotTableDefinition name="PivotTable1" cacheId="1">'
-  + '<location ref="E1:F5" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/>'
-  + '<pivotFields count="2">'
-  + '<pivotField axis="axisRow" showAll="0"><items count="4">'
-  + '<item x="0"/><item x="1"/><item x="2"/><item t="default"/></items></pivotField>'
-  + '<pivotField dataField="1" showAll="0"/>'
-  + '</pivotFields>'
-  + '<rowFields count="1"><field x="0"/></rowFields>'
-  + '<rowItems count="4"><i><x/></i><i><x v="1"/></i><i><x v="2"/></i>'
-  + '<i t="grand"><x/></i></rowItems>'
-  + '<colItems count="1"><i/></colItems>'
-  + '<dataFields count="1"><dataField name="Sum of Sales" fld="1"/></dataFields>'
-  + '</pivotTableDefinition>'
+const SINGLE_ROW_PIVOT_XML =
+  '<pivotTableDefinition name="PivotTable1" cacheId="1">' +
+  '<location ref="E1:F5" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/>' +
+  '<pivotFields count="2">' +
+  '<pivotField axis="axisRow" showAll="0"><items count="4">' +
+  '<item x="0"/><item x="1"/><item x="2"/><item t="default"/></items></pivotField>' +
+  '<pivotField dataField="1" showAll="0"/>' +
+  '</pivotFields>' +
+  '<rowFields count="1"><field x="0"/></rowFields>' +
+  '<rowItems count="4"><i><x/></i><i><x v="1"/></i><i><x v="2"/></i>' +
+  '<i t="grand"><x/></i></rowItems>' +
+  '<colItems count="1"><i/></colItems>' +
+  '<dataFields count="1"><dataField name="Sum of Sales" fld="1"/></dataFields>' +
+  '</pivotTableDefinition>'
 
-const SINGLE_ROW_CACHE_XML = '<pivotCacheDefinition>'
-  + '<cacheSource type="worksheet"><worksheetSource ref="A1:B7" sheet="Data"/></cacheSource>'
-  + '<cacheFields count="2">'
-  + '<cacheField name="Region"><sharedItems count="3">'
-  + '<s v="East"/><s v="West"/><s v="South"/></sharedItems></cacheField>'
-  + '<cacheField name="Sales"><sharedItems containsString="0" containsNumber="1"/></cacheField>'
-  + '</cacheFields>'
-  + '</pivotCacheDefinition>'
+const SINGLE_ROW_CACHE_XML =
+  '<pivotCacheDefinition>' +
+  '<cacheSource type="worksheet"><worksheetSource ref="A1:B7" sheet="Data"/></cacheSource>' +
+  '<cacheFields count="2">' +
+  '<cacheField name="Region"><sharedItems count="3">' +
+  '<s v="East"/><s v="West"/><s v="South"/></sharedItems></cacheField>' +
+  '<cacheField name="Sales"><sharedItems containsString="0" containsNumber="1"/></cacheField>' +
+  '</cacheFields>' +
+  '</pivotCacheDefinition>'
 
 /// E1:F5 as a zero-based range.
 const SINGLE_ROW_BOUNDS = { startRow: 0, startColumn: 4, endRow: 4, endColumn: 5 }
@@ -71,8 +73,14 @@ describe('pivot chart data assembly', () => {
         { name: 'Sales', sharedItems: [] },
       ],
       fieldItems: [
-        [{ x: 0, hidden: false }, { x: 1, hidden: false }],
-        [{ x: 0, hidden: false }, { x: 1, hidden: false }],
+        [
+          { x: 0, hidden: false },
+          { x: 1, hidden: false },
+        ],
+        [
+          { x: 0, hidden: false },
+          { x: 1, hidden: false },
+        ],
         [],
       ],
       rowFields: [0],
@@ -127,7 +135,14 @@ describe('pivot chart data assembly', () => {
         { name: 'Sales', sharedItems: [] },
         { name: 'Qty', sharedItems: [] },
       ],
-      fieldItems: [[{ x: 0, hidden: false }, { x: 1, hidden: false }], [], []],
+      fieldItems: [
+        [
+          { x: 0, hidden: false },
+          { x: 1, hidden: false },
+        ],
+        [],
+        [],
+      ],
       rowFields: [0],
       colFields: [-2],
       rowLines: [
@@ -180,7 +195,10 @@ describe('pivot chart data assembly', () => {
         { name: 'Sales', sharedItems: [] },
       ],
       fieldItems: [
-        [{ x: 0, hidden: false }, { x: 1, hidden: false }],
+        [
+          { x: 0, hidden: false },
+          { x: 1, hidden: false },
+        ],
         [{ x: 0, hidden: false }],
         [],
       ],
@@ -252,7 +270,18 @@ describe('pivot chart persistence through visual additions', () => {
     }
     const source = await createBufferEntrySource(await buildEditFixture())
     const plan = await planCellEditsToXlsx(
-      source, [], [], [], undefined, [], [], [], [], [], null, [addition],
+      source,
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      [addition],
     )
 
     // The fixture already ships xl/charts/chart1.xml, so the new chart gets chart2.

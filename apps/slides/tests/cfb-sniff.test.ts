@@ -10,12 +10,21 @@ describe('cfbKind', () => {
   })
 
   it('CFB without EncryptedPackage stream -> legacy .ppt', () => {
-    const buf = Buffer.concat([CFB, Buffer.alloc(512), Buffer.from('PowerPoint Document', 'utf16le')])
+    const buf = Buffer.concat([
+      CFB,
+      Buffer.alloc(512),
+      Buffer.from('PowerPoint Document', 'utf16le'),
+    ])
     expect(cfbKind(buf)).toBe('legacy')
   })
 
   it('CFB containing EncryptedPackage stream name (UTF-16LE) -> encrypted OOXML', () => {
-    const buf = Buffer.concat([CFB, Buffer.alloc(64), Buffer.from('EncryptedPackage', 'utf16le'), Buffer.alloc(64)])
+    const buf = Buffer.concat([
+      CFB,
+      Buffer.alloc(64),
+      Buffer.from('EncryptedPackage', 'utf16le'),
+      Buffer.alloc(64),
+    ])
     expect(cfbKind(buf)).toBe('encrypted')
   })
 

@@ -70,8 +70,12 @@ describe('shape animations (<p:timing>)', () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const slide = opened.deck.slides[0]!
     const spid = elementSpid(slide.elements[0]!)!
-    setSlideAnimations(slide, [{ spid, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 }])
-    setSlideAnimations(slide, [{ spid, effect: 'zoom', trigger: 'onClick', durationMs: 700, delayMs: 0 }])
+    setSlideAnimations(slide, [
+      { spid, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 },
+    ])
+    setSlideAnimations(slide, [
+      { spid, effect: 'zoom', trigger: 'onClick', durationMs: 700, delayMs: 0 },
+    ])
     expect(slide.bodySuffix.match(/<p:timing>/g)!.length).toBe(1)
     expect(getSlideAnimations(slide)).toEqual([
       { spid, effect: 'zoom', trigger: 'onClick', durationMs: 700, delayMs: 0 },
@@ -88,7 +92,9 @@ describe('shape animations (<p:timing>)', () => {
     const slide = opened.deck.slides[0]!
     const spid = elementSpid(slide.elements[0]!)!
     setSlideTransition(slide, 'fade')
-    setSlideAnimations(slide, [{ spid, effect: 'wipe', trigger: 'onClick', durationMs: 500, delayMs: 0 }])
+    setSlideAnimations(slide, [
+      { spid, effect: 'wipe', trigger: 'onClick', durationMs: 500, delayMs: 0 },
+    ])
     const reopened = await openPptx(await savePptx(opened))
     const suffix = reopened.deck.slides[0]!.bodySuffix
     expect(suffix.indexOf('<p:transition')).toBeGreaterThanOrEqual(0)
@@ -98,10 +104,13 @@ describe('shape animations (<p:timing>)', () => {
 
   it('reads foreign presets with best-effort fallback', () => {
     // Unmodeled presetIDs (e.g. entr box 4) degrade to a similar effect of the same class
-    const xml = buildTimingXml([{ spid: 7, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 }])
-      .replace('presetID="10"', 'presetID="4"')
+    const xml = buildTimingXml([
+      { spid: 7, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 },
+    ]).replace('presetID="10"', 'presetID="4"')
     const anims = readSlideTimingXml(`</p:cSld>${xml}</p:sld>`)
-    expect(anims).toEqual([{ spid: 7, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 }])
+    expect(anims).toEqual([
+      { spid: 7, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 },
+    ])
   })
 })
 
@@ -146,10 +155,19 @@ describe('extended effects + motion paths', () => {
 
   it('writes motion paths as p:animMotion with a relative path and E terminator', () => {
     const xml = buildTimingXml([
-      { spid: 5, effect: 'motionPath', trigger: 'onClick', durationMs: 2000, delayMs: 0, motionPath: 'M 0 0 L 0.3 0' },
+      {
+        spid: 5,
+        effect: 'motionPath',
+        trigger: 'onClick',
+        durationMs: 2000,
+        delayMs: 0,
+        motionPath: 'M 0 0 L 0.3 0',
+      },
     ])
     expect(xml).toContain('presetID="0" presetClass="path"')
-    expect(xml).toContain('<p:animMotion origin="layout" path="M 0 0 L 0.3 0 E" pathEditMode="relative">')
+    expect(xml).toContain(
+      '<p:animMotion origin="layout" path="M 0 0 L 0.3 0 E" pathEditMode="relative">',
+    )
     expect(xml).toContain('<p:attrName>ppt_x</p:attrName><p:attrName>ppt_y</p:attrName>')
   })
 
@@ -161,8 +179,22 @@ describe('extended effects + motion paths', () => {
       'M 0 0 C 0.069 0 0.125 0.056 0.125 0.125 C 0.125 0.194 0.069 0.25 0 0.25 ' +
       'C -0.069 0.25 -0.125 0.194 -0.125 0.125 C -0.125 0.056 -0.069 0 0 0 Z'
     const anims: SlideAnimation[] = [
-      { spid: spids[0]!, effect: 'motionPath', trigger: 'onClick', durationMs: 2000, delayMs: 0, motionPath: 'M 0 0 L 0.25 0.25' },
-      { spid: spids[1]!, effect: 'motionPath', trigger: 'withPrev', durationMs: 3000, delayMs: 100, motionPath: circle },
+      {
+        spid: spids[0]!,
+        effect: 'motionPath',
+        trigger: 'onClick',
+        durationMs: 2000,
+        delayMs: 0,
+        motionPath: 'M 0 0 L 0.25 0.25',
+      },
+      {
+        spid: spids[1]!,
+        effect: 'motionPath',
+        trigger: 'withPrev',
+        durationMs: 3000,
+        delayMs: 100,
+        motionPath: circle,
+      },
       // Mixing new and old: existing effects are unaffected
       { spid: spids[0]!, effect: 'fadeOut', trigger: 'onClick', durationMs: 500, delayMs: 0 },
     ]
@@ -173,7 +205,9 @@ describe('extended effects + motion paths', () => {
   })
 
   it('falls back to the default path when motionPath is missing (legacy data safety)', () => {
-    const xml = buildTimingXml([{ spid: 9, effect: 'motionPath', trigger: 'onClick', durationMs: 2000, delayMs: 0 }])
+    const xml = buildTimingXml([
+      { spid: 9, effect: 'motionPath', trigger: 'onClick', durationMs: 2000, delayMs: 0 },
+    ])
     expect(xml).toContain('path="M 0 0 L 0.25 0 E"')
     const back = readSlideTimingXml(`</p:cSld>${xml}</p:sld>`)
     expect(back[0]!.motionPath).toBe('M 0 0 L 0.25 0')

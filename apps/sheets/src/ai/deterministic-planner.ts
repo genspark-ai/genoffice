@@ -25,12 +25,14 @@ export function planPrompt(
       transactionId,
       baseRevision: options.revision,
       summary: `Set ${address.toUpperCase()}`,
-      operations: [{
-        op: 'set_cell',
-        sheetId: options.sheetId,
-        address: address.toUpperCase(),
-        value: parseScalar(rawValue),
-      }],
+      operations: [
+        {
+          op: 'set_cell',
+          sheetId: options.sheetId,
+          address: address.toUpperCase(),
+          value: parseScalar(rawValue),
+        },
+      ],
     }
   }
 
@@ -46,12 +48,14 @@ export function planPrompt(
       transactionId,
       baseRevision: options.revision,
       summary: `Set formula in ${address.toUpperCase()}`,
-      operations: [{
-        op: 'set_formula',
-        sheetId: options.sheetId,
-        address: address.toUpperCase(),
-        formula: `=${formula}`,
-      }],
+      operations: [
+        {
+          op: 'set_formula',
+          sheetId: options.sheetId,
+          address: address.toUpperCase(),
+          formula: `=${formula}`,
+        },
+      ],
     }
   }
 
@@ -62,11 +66,13 @@ export function planPrompt(
       transactionId,
       baseRevision: options.revision,
       summary: 'Rename current sheet',
-      operations: [{
-        op: 'rename_sheet',
-        sheetId: options.sheetId,
-        name: renameMatch[1].trim(),
-      }],
+      operations: [
+        {
+          op: 'rename_sheet',
+          sheetId: options.sheetId,
+          name: renameMatch[1].trim(),
+        },
+      ],
     }
   }
 

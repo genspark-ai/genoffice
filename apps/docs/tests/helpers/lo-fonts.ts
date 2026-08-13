@@ -76,7 +76,14 @@ function resolve(style: RunStyle): OpentypeFontLike | undefined {
   if (prefix) return loadFont(prefix, style.bold, style.italic) ?? undefined
   const dfont = DFONT_MAP.find(([re]) => re.test(style.fontFamily))?.[1]
   if (dfont) {
-    const file = style.bold && style.italic ? dfont.bi : style.bold ? dfont.b : style.italic ? dfont.i : dfont.r
+    const file =
+      style.bold && style.italic
+        ? dfont.bi
+        : style.bold
+          ? dfont.b
+          : style.italic
+            ? dfont.i
+            : dfont.r
     return loadFontFile(join(WORD_DFONTS_DIR, file)) ?? undefined
   }
   return undefined // Unknown font family (incl. CJK family names) → heuristics

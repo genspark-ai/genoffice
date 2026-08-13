@@ -103,8 +103,7 @@ function sourceEntryXml(source: SourceInfo): string {
  */
 export function buildSourcesXml(sources: SourceInfo[], originalXml: string | null = null): string {
   const originals = new Map<string, { xml: string; parsed: SourceInfo }>()
-  let rootOpen =
-    `<b:Sources SelectedStyle="\\APASixthEditionOfficeOnline.xsl" StyleName="APA" Version="6" xmlns:b="${SOURCES_NS}" xmlns="${SOURCES_NS}">`
+  let rootOpen = `<b:Sources SelectedStyle="\\APASixthEditionOfficeOnline.xsl" StyleName="APA" Version="6" xmlns:b="${SOURCES_NS}" xmlns="${SOURCES_NS}">`
   if (originalXml) {
     const open = /<b:Sources(?:\s[^>]*)?>/.exec(originalXml)?.[0]
     if (open) rootOpen = open
@@ -114,8 +113,12 @@ export function buildSourcesXml(sources: SourceInfo[], originalXml: string | nul
     }
   }
   const unchanged = (a: SourceInfo, b: SourceInfo) =>
-    a.type === b.type && a.author === b.author && a.title === b.title && a.year === b.year &&
-    (a.publisher ?? '') === (b.publisher ?? '') && (a.url ?? '') === (b.url ?? '')
+    a.type === b.type &&
+    a.author === b.author &&
+    a.title === b.title &&
+    a.year === b.year &&
+    (a.publisher ?? '') === (b.publisher ?? '') &&
+    (a.url ?? '') === (b.url ?? '')
   const body = sources
     .map((s) => {
       const orig = originals.get(s.tag)

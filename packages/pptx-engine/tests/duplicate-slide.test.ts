@@ -34,7 +34,9 @@ describe('duplicateSlide', () => {
   it('carries the source page pending edits into the copy', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const src = opened.deck.slides[0]!
-    const el: any = src.elements.find((e: any) => (e.type === 'text' || e.type === 'shape') && e.text)
+    const el: any = src.elements.find(
+      (e: any) => (e.type === 'text' || e.type === 'shape') && e.text,
+    )
     el.text.paragraphs = [{ runs: [{ text: 'edited before copying' }] }]
     el.dirty = true
 
@@ -85,8 +87,7 @@ describe('insertBlankSlide', () => {
     const src = opened.deck.slides[0]!
     const blank = insertBlankSlide(opened, 0)!
     const layoutOf = (p: string) =>
-      [...opened.archive.readRels(p).values()].find((r) => r.type.endsWith('/slideLayout'))
-        ?.target
+      [...opened.archive.readRels(p).values()].find((r) => r.type.endsWith('/slideLayout'))?.target
     expect(layoutOf(blank.path)).toBeTruthy()
     expect(layoutOf(blank.path)).toBe(layoutOf(src.path))
   })

@@ -69,9 +69,11 @@ function dataLineLabel(
     const field = axisFields[level]
     const member = line.members[level]
     if (field === undefined || member === null || member === undefined) continue
-    parts.push(field === -2
-      ? definition.dataFields[member]?.name ?? ''
-      : memberCaption(definition, field, member))
+    parts.push(
+      field === -2
+        ? (definition.dataFields[member]?.name ?? '')
+        : memberCaption(definition, field, member),
+    )
   }
   return parts.filter((part) => part !== '').join(' - ')
 }
@@ -102,12 +104,14 @@ export function buildPivotChartData(
 ): PivotChartData {
   // Layout indices of data rows/columns (subtotal/grand-total/blank lines are
   // all excluded).
-  const allDataRows = definition.rowLines
-    .flatMap((line, index) => (line.t === 'data' ? [index] : []))
-  const allDataCols = definition.colLines
-    .flatMap((line, index) => (line.t === 'data' ? [index] : []))
-  const truncated = allDataRows.length > MAX_PIVOT_CHART_ROWS
-    || allDataCols.length > MAX_PIVOT_CHART_SERIES
+  const allDataRows = definition.rowLines.flatMap((line, index) =>
+    line.t === 'data' ? [index] : [],
+  )
+  const allDataCols = definition.colLines.flatMap((line, index) =>
+    line.t === 'data' ? [index] : [],
+  )
+  const truncated =
+    allDataRows.length > MAX_PIVOT_CHART_ROWS || allDataCols.length > MAX_PIVOT_CHART_SERIES
   const dataRows = allDataRows.slice(0, MAX_PIVOT_CHART_ROWS)
   const dataCols = allDataCols.slice(0, MAX_PIVOT_CHART_SERIES)
 
@@ -120,8 +124,8 @@ export function buildPivotChartData(
   // multi-level layouts with interleaved subtotal rows fall back to literal data.
   const rowsContiguous = dataRows.every((rowIndex, i) => rowIndex === dataRows[0]! + i)
   const firstOutRow = bounds.startRow + definition.firstDataRow + (dataRows[0] ?? 0)
-  const lastOutRow = bounds.startRow + definition.firstDataRow
-    + (dataRows[dataRows.length - 1] ?? 0)
+  const lastOutRow =
+    bounds.startRow + definition.firstDataRow + (dataRows[dataRows.length - 1] ?? 0)
 
   const categories = dataRows.map((rowIndex) => {
     const label = dataLineLabel(definition, definition.rowFields, definition.rowLines[rowIndex]!)
@@ -129,20 +133,24 @@ export function buildPivotChartData(
   })
   // Categories references are only written with a single label column:
   // multi-level row labels spread across columns and cannot be expressed as one.
-  const categoriesRef = rowsContiguous && definition.firstDataCol === 1
-    ? columnRef(sheetName, bounds.startColumn, firstOutRow, lastOutRow)
-    : undefined
+  const categoriesRef =
+    rowsContiguous && definition.firstDataCol === 1
+      ? columnRef(sheetName, bounds.startColumn, firstOutRow, lastOutRow)
+      : undefined
 
   const series: PivotChartSeries[] = dataCols.map((colIndex, seriesIndex) => {
     const line = definition.colLines[colIndex]!
     const label = dataLineLabel(definition, definition.colFields, line)
-    const name = label !== ''
-      ? label
-      : definition.dataFields[line.dataField]?.name ?? `Series ${seriesIndex + 1}`
+    const name =
+      label !== ''
+        ? label
+        : (definition.dataFields[line.dataField]?.name ?? `Series ${seriesIndex + 1}`)
     const outColumn = bounds.startColumn + definition.firstDataCol + colIndex
-    const values = dataRows.map((rowIndex) => toNumber(
-      outputValues[definition.firstDataRow + rowIndex]?.[definition.firstDataCol + colIndex],
-    ))
+    const values = dataRows.map((rowIndex) =>
+      toNumber(
+        outputValues[definition.firstDataRow + rowIndex]?.[definition.firstDataCol + colIndex],
+      ),
+    )
     return {
       name,
       categories,
@@ -154,8 +162,6 @@ export function buildPivotChartData(
     }
   })
 
-  const title = definition.dataFields.length === 1
-    ? definition.dataFields[0]!.name
-    : 'PivotChart'
+  const title = definition.dataFields.length === 1 ? definition.dataFields[0]!.name : 'PivotChart'
   return { title, series, truncated }
 }

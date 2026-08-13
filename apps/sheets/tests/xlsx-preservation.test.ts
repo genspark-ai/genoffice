@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  applyPlanToXlsx,
-  inventoryXlsx,
-  readBasicWorkbook,
-} from '../src/gateway/xlsx-gateway'
+import { applyPlanToXlsx, inventoryXlsx, readBasicWorkbook } from '../src/gateway/xlsx-gateway'
 import type { ChangePlan } from '../src/domain/workbook.types'
 import { buildCompatibilityFixture } from './fixture-builder'
 
@@ -12,14 +8,16 @@ describe('XLSX preservation gateway', () => {
   it('imports worksheet values for the desktop editor', async () => {
     const imported = await readBasicWorkbook(await buildCompatibilityFixture())
 
-    expect(imported.snapshot.sheets).toEqual([{
-      id: 'sheet-1',
-      name: 'Sheet1',
-      cells: {
-        A1: { value: 'Old' },
-        B1: { value: 10 },
+    expect(imported.snapshot.sheets).toEqual([
+      {
+        id: 'sheet-1',
+        name: 'Sheet1',
+        cells: {
+          A1: { value: 'Old' },
+          B1: { value: 10 },
+        },
       },
-    }])
+    ])
     expect(imported.sheetNamesById).toEqual({ 'sheet-1': 'Sheet1' })
   })
 
@@ -41,12 +39,14 @@ describe('XLSX preservation gateway', () => {
     const formulaPlan: ChangePlan = {
       ...createPlan(),
       transactionId: 'formula-1',
-      cellChanges: [{
-        sheetId: 'sheet-1',
-        address: 'B2',
-        before: { value: null },
-        after: { value: null, formula: '=SUM(B1:B1)' },
-      }],
+      cellChanges: [
+        {
+          sheetId: 'sheet-1',
+          address: 'B2',
+          before: { value: null },
+          after: { value: null, formula: '=SUM(B1:B1)' },
+        },
+      ],
     }
     const mutation = await applyPlanToXlsx(source, formulaPlan, { 'sheet-1': 'Sheet1' })
     const entries = await inventoryXlsx(mutation.buffer)
@@ -67,12 +67,14 @@ describe('XLSX preservation gateway', () => {
     const source = await buildCompatibilityFixture()
     const stalePlan: ChangePlan = {
       ...createPlan(),
-      cellChanges: [{
-        sheetId: 'sheet-1',
-        address: 'A1',
-        before: { value: 'Unexpected' },
-        after: { value: 'New' },
-      }],
+      cellChanges: [
+        {
+          sheetId: 'sheet-1',
+          address: 'A1',
+          before: { value: 'Unexpected' },
+          after: { value: 'New' },
+        },
+      ],
     }
     await expect(applyPlanToXlsx(source, stalePlan, { 'sheet-1': 'Sheet1' })).rejects.toThrow(
       'no longer has the expected content',
@@ -84,12 +86,14 @@ function createPlan(): ChangePlan {
   return {
     transactionId: 'tx-1',
     baseRevision: 0,
-    cellChanges: [{
-      sheetId: 'sheet-1',
-      address: 'A1',
-      before: { value: 'Old' },
-      after: { value: 'New' },
-    }],
+    cellChanges: [
+      {
+        sheetId: 'sheet-1',
+        address: 'A1',
+        before: { value: 'Old' },
+        after: { value: 'New' },
+      },
+    ],
     sheetRenames: [],
     structuralChanges: [],
     formatChanges: [],

@@ -45,9 +45,7 @@ describe('buildCoverNodes', () => {
   it('maps styling onto paragraph attrs and text marks', () => {
     const preset = COVER_PRESETS.find((p) => p.id === 'banded')!
     const nodes = buildCoverNodes(preset)
-    const band = nodes.find(
-      (n) => n.content?.some((c) => c.text === '文档标题'),
-    )!
+    const band = nodes.find((n) => n.content?.some((c) => c.text === '文档标题'))!
     expect(band.attrs?.shadingFill).toBeTruthy()
     expect(band.attrs?.align).toBe('center')
     const marks = band.content![0].marks!

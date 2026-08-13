@@ -76,7 +76,7 @@ export interface HomeApi {
   newSheet(opts?: { projectId?: string }): Promise<void>
   /** open a slides tab at its start screen (open-a-pptx) */
   newSlide(opts?: { projectId?: string }): Promise<void>
-  /** open a blank markdown editor tab */
+  /** open a markdown tab */
   newMarkdown(opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>

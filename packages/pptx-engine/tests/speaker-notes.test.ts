@@ -30,7 +30,9 @@ describe('speaker notes', () => {
   it('getSlideNotes reads back immediately after setSlideNotes', async () => {
     const opened = await openPptx(await createBlankPptx())
     expect(setSlideNotes(opened, 0, 'first line\nsecond line')).toBe(true)
-    expect(getSlideNotes(opened.archive, opened.deck.slides[0]!.path)).toBe('first line\nsecond line')
+    expect(getSlideNotes(opened.archive, opened.deck.slides[0]!.path)).toBe(
+      'first line\nsecond line',
+    )
   })
 
   it('save → reopen persists notes (notesSlide part auto-created)', async () => {
@@ -112,7 +114,9 @@ describe('speaker notes', () => {
     }
 
     // Slide 0 notes were written correctly
-    expect(getSlideNotes(reopened.archive, reopened.deck.slides[0]!.path)).toBe('only slide 0 changed')
+    expect(getSlideNotes(reopened.archive, reopened.deck.slides[0]!.path)).toBe(
+      'only slide 0 changed',
+    )
   })
 
   it('multiple slides: per-slide notes do not interfere', async () => {

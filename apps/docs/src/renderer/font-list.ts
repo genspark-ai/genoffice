@@ -19,6 +19,40 @@ const LATIN = [
   'Courier New',
   'Impact',
 ]
+
+// Bundled Google Fonts (fonts/google-fonts.css, latin subset woff2) — a
+// "Google Fonts" group under the Word-standard set above. font-list.ts has
+// no grouping primitive (fontFamiliesFor returns one flat array per script),
+// so this is a plain array appended after LATIN and the toolbar renders it
+// merged into the same list, same as every other entry.
+const GOOGLE_FONTS = [
+  'Roboto',
+  'Open Sans',
+  'Lato',
+  'Montserrat',
+  'Inter',
+  'Work Sans',
+  'Poppins',
+  'Oswald',
+  'Raleway',
+  'Nunito',
+  'Merriweather',
+  'Playfair Display',
+  'Lora',
+  'Source Serif 4',
+  'Source Sans 3',
+  'PT Serif',
+  'PT Sans',
+  'Libre Franklin',
+  'EB Garamond',
+  'Noto Serif',
+  'Rubik',
+  'Karla',
+  'DM Sans',
+  'Space Grotesk',
+  'Bebas Neue',
+  'Archivo',
+]
 // GB/T 9704 official-document fonts included so government documents can be
 // authored from scratch (values are free-typed either way; the combobox accepts any name)
 const SIMPLIFIED_CHINESE = [
@@ -59,15 +93,50 @@ export function isEastAsianFontName(name: string): boolean {
 export function fontFamiliesFor(lang: Lang): readonly string[] {
   switch (lang) {
     case 'zh':
-      return [...SIMPLIFIED_CHINESE, ...LATIN, ...JAPANESE, ...KOREAN, ...TRADITIONAL_CHINESE]
+      return [
+        ...SIMPLIFIED_CHINESE,
+        ...LATIN,
+        ...GOOGLE_FONTS,
+        ...JAPANESE,
+        ...KOREAN,
+        ...TRADITIONAL_CHINESE,
+      ]
     case 'zh-TW':
-      return [...TRADITIONAL_CHINESE, ...LATIN, ...SIMPLIFIED_CHINESE, ...JAPANESE, ...KOREAN]
+      return [
+        ...TRADITIONAL_CHINESE,
+        ...LATIN,
+        ...GOOGLE_FONTS,
+        ...SIMPLIFIED_CHINESE,
+        ...JAPANESE,
+        ...KOREAN,
+      ]
     case 'ja':
-      return [...JAPANESE, ...LATIN, ...SIMPLIFIED_CHINESE, ...KOREAN, ...TRADITIONAL_CHINESE]
+      return [
+        ...JAPANESE,
+        ...LATIN,
+        ...GOOGLE_FONTS,
+        ...SIMPLIFIED_CHINESE,
+        ...KOREAN,
+        ...TRADITIONAL_CHINESE,
+      ]
     case 'ko':
-      return [...KOREAN, ...LATIN, ...JAPANESE, ...SIMPLIFIED_CHINESE, ...TRADITIONAL_CHINESE]
+      return [
+        ...KOREAN,
+        ...LATIN,
+        ...GOOGLE_FONTS,
+        ...JAPANESE,
+        ...SIMPLIFIED_CHINESE,
+        ...TRADITIONAL_CHINESE,
+      ]
     default:
-      return [...LATIN, ...JAPANESE, ...SIMPLIFIED_CHINESE, ...KOREAN, ...TRADITIONAL_CHINESE]
+      return [
+        ...LATIN,
+        ...GOOGLE_FONTS,
+        ...JAPANESE,
+        ...SIMPLIFIED_CHINESE,
+        ...KOREAN,
+        ...TRADITIONAL_CHINESE,
+      ]
   }
 }
 
@@ -77,7 +146,7 @@ export function fontFamiliesFor(lang: Lang): readonly string[] {
  * zh-TW → PMingLiU). English and every other language return undefined —
  * like en-US Word, whose theme leaves the East Asian slot empty and lets
  * per-script substitution kick in only when CJK text actually appears.
- * Latin default stays Calibri for every language.
+ * Latin default is Work Sans for every language (see blank.ts stylesXml).
  */
 export function defaultEastAsiaFontFor(lang: Lang): string | undefined {
   switch (lang) {

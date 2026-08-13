@@ -97,8 +97,12 @@ describe('image posOffset (free-position drag)', () => {
       posOffsetX: 1828800,
       posOffsetY: 914400,
     })
-    expect(out).toContain('<wp:positionH relativeFrom="column"><wp:posOffset>1828800</wp:posOffset></wp:positionH>')
-    expect(out).toContain('<wp:positionV relativeFrom="paragraph"><wp:posOffset>914400</wp:posOffset></wp:positionV>')
+    expect(out).toContain(
+      '<wp:positionH relativeFrom="column"><wp:posOffset>1828800</wp:posOffset></wp:positionH>',
+    )
+    expect(out).toContain(
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>914400</wp:posOffset></wp:positionV>',
+    )
     // Original structure untouched
     expect(out).toContain('relativeHeight="251658240"')
   })
@@ -113,8 +117,12 @@ describe('image posOffset (free-position drag)', () => {
 
   it('applyImageWrap with posOffset uses numeric posOffset instead of align', () => {
     const out = applyImageWrap(IMAGE_PARAGRAPH_XML, 'square-left', { x: 914400, y: 457200 })
-    expect(out).toContain('<wp:positionH relativeFrom="column"><wp:posOffset>914400</wp:posOffset></wp:positionH>')
-    expect(out).toContain('<wp:positionV relativeFrom="paragraph"><wp:posOffset>457200</wp:posOffset></wp:positionV>')
+    expect(out).toContain(
+      '<wp:positionH relativeFrom="column"><wp:posOffset>914400</wp:posOffset></wp:positionH>',
+    )
+    expect(out).toContain(
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>457200</wp:posOffset></wp:positionV>',
+    )
     expect(out).not.toContain('<wp:align>')
   })
 
@@ -122,7 +130,9 @@ describe('image posOffset (free-position drag)', () => {
     const out = applyImageWrap(IMAGE_PARAGRAPH_XML, 'square-left')
     expect(out).toContain('<wp:align>left</wp:align>')
     // V position uses posOffset(0) when no numeric offset provided (existing behavior)
-    expect(out).toContain('<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>')
+    expect(out).toContain(
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>',
+    )
     // H position uses named align, not posOffset
     expect(out).not.toContain('<wp:positionH relativeFrom="column"><wp:posOffset>')
   })

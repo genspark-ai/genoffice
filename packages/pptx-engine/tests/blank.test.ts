@@ -27,8 +27,7 @@ describe('createBlankPptx', () => {
 
     const reopened = await openPptx(await savePptx(opened))
     expect(reopened.deck.slides.length).toBe(2)
-    const texts = reopened.deck.slides[0]!.elements
-      .flatMap((e: any) => e.text?.paragraphs ?? [])
+    const texts = reopened.deck.slides[0]!.elements.flatMap((e: any) => e.text?.paragraphs ?? [])
       .flatMap((p: any) => p.runs)
       .map((r: any) => r.text)
       .join('')

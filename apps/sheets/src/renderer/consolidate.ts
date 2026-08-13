@@ -31,11 +31,12 @@ export function parseConsolidateReference(
   const match = REFERENCE_PATTERN.exec(text.trim())
   if (!match) return null
   const qualifier = match[1]
-  const sheetName = qualifier === undefined
-    ? null
-    : qualifier.startsWith("'")
-      ? qualifier.slice(1, -1).replaceAll("''", "'")
-      : qualifier
+  const sheetName =
+    qualifier === undefined
+      ? null
+      : qualifier.startsWith("'")
+        ? qualifier.slice(1, -1).replaceAll("''", "'")
+        : qualifier
   try {
     return { sheetName, range: parseRange(match[2]?.toUpperCase().replaceAll('$', '') ?? '') }
   } catch {
@@ -130,7 +131,10 @@ export function buildLabelMatrix(
     const line: OutputCell[] = [{ v: label }]
     for (let column = 0; column < valueColumns; column += 1) {
       const parts = areas
-        .map((area, areaIndex) => ({ area, hasLabel: areaLabels[areaIndex]?.includes(label) ?? false }))
+        .map((area, areaIndex) => ({
+          area,
+          hasLabel: areaLabels[areaIndex]?.includes(label) ?? false,
+        }))
         .filter(({ area, hasLabel }) => hasLabel && column + 1 < area.columns)
         .map(({ area }) => ({
           labelRange: columnRangeRef(area, 0, true),
@@ -142,11 +146,12 @@ export function buildLabelMatrix(
       }
       const sumIfs = parts.map((part) => `SUMIF(${part.labelRange},${criteria},${part.valueRange})`)
       const countIfs = parts.map((part) => `COUNTIF(${part.labelRange},${criteria})`)
-      const formula = fn === 'sum'
-        ? sumIfs.join('+')
-        : fn === 'count'
-          ? countIfs.join('+')
-          : `(${sumIfs.join('+')})/(${countIfs.join('+')})`
+      const formula =
+        fn === 'sum'
+          ? sumIfs.join('+')
+          : fn === 'count'
+            ? countIfs.join('+')
+            : `(${sumIfs.join('+')})/(${countIfs.join('+')})`
       line.push({ f: `=${formula}` })
     }
     matrix.push(line)
@@ -160,10 +165,12 @@ export function targetOverlapsSource(
   activeSheetName: string,
   target: { row: number; column: number; rows: number; columns: number },
 ): boolean {
-  return areas.some((area) =>
-    area.sheetName === activeSheetName &&
-    target.row < area.startRow + area.rows &&
-    area.startRow < target.row + target.rows &&
-    target.column < area.startColumn + area.columns &&
-    area.startColumn < target.column + target.columns)
+  return areas.some(
+    (area) =>
+      area.sheetName === activeSheetName &&
+      target.row < area.startRow + area.rows &&
+      area.startRow < target.row + target.rows &&
+      target.column < area.startColumn + area.columns &&
+      area.startColumn < target.column + target.columns,
+  )
 }

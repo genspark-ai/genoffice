@@ -27,6 +27,51 @@ export type UiTheme = 'light' | 'dark' | 'system'
 
 export type SaveMode = 'save' | 'saveAs'
 
+export type MarkdownMenuCommand =
+  | 'new'
+  | 'open'
+  | 'open-path'
+  | 'save'
+  | 'save-as'
+  | 'undo'
+  | 'redo'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-100'
+  | 'toggle-ai'
+  | 'toggle-dark'
+  | 'bold'
+  | 'italic'
+  | 'strike'
+  | 'code'
+  | 'underline'
+  | 'heading-1'
+  | 'heading-2'
+  | 'heading-3'
+  | 'bullet-list'
+  | 'ordered-list'
+  | 'task-list'
+  | 'blockquote'
+  | 'code-block'
+  | 'horizontal-rule'
+  | 'insert-link'
+  | 'insert-image'
+  | 'insert-table'
+  | 'align-left'
+  | 'align-center'
+  | 'align-right'
+  | 'align-justify'
+  | 'find'
+  | 'print'
+  | 'export-pdf'
+  | 'word-count'
+
+export interface OpenFileResult {
+  path: string
+  name: string
+  data: string
+}
+
 export interface SaveMarkdownRequest {
   /** full document text (frontmatter included) */
   text: string

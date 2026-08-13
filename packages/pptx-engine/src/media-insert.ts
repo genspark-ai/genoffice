@@ -101,7 +101,10 @@ function ensureDefaultContentType(opened: OpenedPptx, ext: string, mime: string)
   const ct = opened.archive.readText(ctPath)
   if (ct && !new RegExp(`<Default Extension="${ext}"`).test(ct)) {
     const dflt = `<Default Extension="${ext}" ContentType="${mime}"/>`
-    opened.archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${dflt}</Types>`), 'utf8'))
+    opened.archive.entries.set(
+      ctPath,
+      Buffer.from(ct.replace('</Types>', `${dflt}</Types>`), 'utf8'),
+    )
   }
 }
 

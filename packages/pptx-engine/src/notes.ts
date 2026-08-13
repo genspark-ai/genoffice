@@ -25,7 +25,8 @@ const SLIDE_REL = `${REL_BASE}/slide`
 const THEME_REL = `${REL_BASE}/theme`
 
 const NOTES_SLIDE_CT = 'application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml'
-const NOTES_MASTER_CT = 'application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml'
+const NOTES_MASTER_CT =
+  'application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml'
 
 function setEntry(archive: PackageArchive, path: string, xml: string): void {
   archive.entries.set(path, Buffer.from(xml, 'utf8'))
@@ -82,16 +83,15 @@ export function getSlideNotes(archive: PackageArchive, slidePath: string): strin
 /** text (\n-separated) → notes txBody. */
 function buildNotesTxBody(text: string): string {
   const lines = text.split('\n')
-  const paras =
-    lines.every((l) => l === '')
-      ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
-      : lines
-          .map((line) =>
-            line === ''
-              ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
-              : `<a:p><a:r><a:rPr lang="zh-CN" dirty="0"/><a:t>${escapeXmlText(line)}</a:t></a:r></a:p>`,
-          )
-          .join('')
+  const paras = lines.every((l) => l === '')
+    ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
+    : lines
+        .map((line) =>
+          line === ''
+            ? '<a:p><a:endParaRPr lang="zh-CN"/></a:p>'
+            : `<a:p><a:r><a:rPr lang="zh-CN" dirty="0"/><a:t>${escapeXmlText(line)}</a:t></a:r></a:p>`,
+        )
+        .join('')
   return `<p:txBody><a:bodyPr/><a:lstStyle/>${paras}</p:txBody>`
 }
 
@@ -127,14 +127,21 @@ export function setSlideNotes(opened: OpenedPptx, slideIndex: number, text: stri
 }
 
 /** Add an Override to [Content_Types].xml (skipped if already present). */
-function addContentTypeOverride(archive: PackageArchive, partPath: string, contentType: string): void {
+function addContentTypeOverride(
+  archive: PackageArchive,
+  partPath: string,
+  contentType: string,
+): void {
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
   if (!ct || ct.includes(`PartName="/${partPath}"`)) return
   setEntry(
     archive,
     ctPath,
-    ct.replace('</Types>', `<Override PartName="/${partPath}" ContentType="${contentType}"/></Types>`),
+    ct.replace(
+      '</Types>',
+      `<Override PartName="/${partPath}" ContentType="${contentType}"/></Types>`,
+    ),
   )
 }
 
@@ -187,7 +194,12 @@ function ensureNotesMaster(archive: PackageArchive): string | null {
   const presPath = 'ppt/presentation.xml'
   const pres = archive.readText(presPath)
   if (pres && !pres.includes('<p:notesMasterIdLst>')) {
-    const rid = appendRelationship(archive, presPath, NOTES_MASTER_REL, 'notesMasters/notesMaster1.xml')
+    const rid = appendRelationship(
+      archive,
+      presPath,
+      NOTES_MASTER_REL,
+      'notesMasters/notesMaster1.xml',
+    )
     const lst = `<p:notesMasterIdLst><p:notesMasterId r:id="${rid}"/></p:notesMasterIdLst>`
     const next = pres.includes('</p:sldMasterIdLst>')
       ? pres.replace('</p:sldMasterIdLst>', `</p:sldMasterIdLst>${lst}`)
@@ -226,7 +238,9 @@ function createNotesSlide(opened: OpenedPptx, slidePath: string): string | null 
   addContentTypeOverride(archive, notesPath, NOTES_SLIDE_CT)
 
   // notesSlide rels: notesMaster + owning slide
-  const master = [...archive.entries.keys()].find((p) => /^ppt\/notesMasters\/notesMaster\d+\.xml$/.test(p))!
+  const master = [...archive.entries.keys()].find((p) =>
+    /^ppt\/notesMasters\/notesMaster\d+\.xml$/.test(p),
+  )!
   appendRelationship(archive, notesPath, NOTES_MASTER_REL, `../${master.slice(4)}`)
   appendRelationship(archive, notesPath, SLIDE_REL, `../${slidePath.slice(4)}`)
 

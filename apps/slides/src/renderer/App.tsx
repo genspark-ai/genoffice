@@ -896,6 +896,15 @@ export function App() {
 
   useEffect(() => {
     void window.slidesApi.getAiSettings().then(setAiSettings)
+    void window.slidesApi.getTheme().then((theme) => {
+      if (theme !== 'system') document.documentElement.setAttribute('data-theme', theme)
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.slidesApi.onThemeChanged((theme) => {
+      if (theme !== 'system') document.documentElement.setAttribute('data-theme', theme)
+    })
   }, [])
 
   // Recent files for the start screen

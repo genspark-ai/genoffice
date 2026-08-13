@@ -49,7 +49,7 @@ test.describe('theme pipeline', () => {
     try {
       const shellPage = await findShellPage(app)
       const editorPage = await waitForPageWithUrl(app, 'markdown/out')
-      await expect(editorPage.locator('.doc-editor')).toBeVisible()
+      await expect(editorPage.locator('.tiptap')).toBeVisible()
       expect(await themeAttr(shellPage)).toBeNull()
       expect(await themeAttr(editorPage)).toBeNull()
 

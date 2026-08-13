@@ -71,7 +71,7 @@ test.describe('theme visual adoption', () => {
     try {
       const shellPage = await findShellPage(launched.app)
       const editorPage = await waitForPageWithUrl(launched.app, 'markdown/out')
-      await expect(editorPage.locator('.doc-editor')).toBeVisible()
+      await expect(editorPage.locator('.tiptap')).toBeVisible()
 
       const lightBg = await bodyBg(editorPage)
       expect(luminance(lightBg)).toBeGreaterThan(180)
@@ -80,7 +80,7 @@ test.describe('theme visual adoption', () => {
       await expect.poll(async () => luminance(await bodyBg(editorPage))).toBeLessThan(80)
       // editor text is readable in dark
       const textColor = await editorPage
-        .locator('.doc-editor')
+        .locator('.tiptap')
         .evaluate((el) => getComputedStyle(el).color)
       expect(luminance(textColor)).toBeGreaterThan(180)
       await editorPage.screenshot({ path: screenshotPath('theme-markdown-dark') })

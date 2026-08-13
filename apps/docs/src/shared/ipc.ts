@@ -90,6 +90,45 @@ export interface AttachmentImageResult {
   error?: string
 }
 
+// ---- Google Docs integration ----
+
+export interface GoogleAuthStatus {
+  /** false when no client id/secret could be resolved (env/Keychain/config file) */
+  configured: boolean
+  signedIn: boolean
+}
+
+export interface GoogleDocSummary {
+  id: string
+  name: string
+  modifiedTime: string
+  webViewLink: string
+  iconLink?: string
+}
+
+export type GoogleRole = 'reader' | 'commenter' | 'writer'
+
+export interface GooglePermissionSummary {
+  id: string
+  type: 'user' | 'anyone' | 'group' | 'domain'
+  role: GoogleRole | 'owner'
+  emailAddress?: string
+  displayName?: string
+}
+
+export type GoogleApiResult<T> = { ok: true; data: T } | { ok: false; error: string }
+
+export interface GoogleFolderSummary {
+  id: string
+  name: string
+}
+
+export interface GoogleSettings {
+  /** null = send new docs to My Drive root */
+  defaultFolderId: string | null
+  defaultFolderName: string | null
+}
+
 /** an open docs tab, for View → Switch Tab */
 export interface DocsTabInfo {
   id: string
@@ -134,8 +173,6 @@ export type MenuCommand =
   | 'export-pdf'
   | 'word-count'
 
-export type UiTheme = 'light' | 'dark' | 'system'
-
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -145,10 +182,10 @@ export interface DesktopApi {
       lang: 'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar',
     ) => void,
   ): () => void
-  /** current UI theme preference (persisted by the shell in app-settings.json) */
-  getTheme(): Promise<UiTheme>
-  /** theme switched from the shell home page */
-  onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /** current theme setting from the shell */
+  getTheme(): Promise<'light' | 'dark' | 'system'>
+  /** theme changed from the shell home page */
+  onThemeChanged(handler: (theme: string) => void): () => void
   openDocx(): Promise<OpenFileResult | null>
   openDocxPath(path: string): Promise<OpenFileResult | null>
   /** mark the renderer ready and consume a file passed by Finder/Explorer at launch */
@@ -270,6 +307,93 @@ export interface DesktopApi {
   /** Close guard chose "Save": main process asks the renderer to run the full save flow */
   onCloseSaveRequest(handler: () => void): () => void
   reportCloseSaveResult(ok: boolean): void
-  /** keep the native View menu's checkbox items in sync with renderer state */
+  /** Report view menu state to the shell (for menu checkbox state updates) */
   reportViewMenuState(state: { aiSidebar: boolean; darkCanvas: boolean }): void
+
+  // ---- Google Docs integration ----
+
+  /** configured = a client id/secret was resolved; signedIn = a refresh token is stored */
+  googleAuthStatus(): Promise<GoogleAuthStatus>
+  /** opens the system browser for the loopback+PKCE consent flow */
+  googleSignIn(): Promise<{ ok: boolean; error?: string; unconfigured?: boolean }>
+  googleSignOut(): Promise<void>
+  /** the user's Google Docs, newest-modified first, for the import picker */
+  googleListDocs(): Promise<GoogleApiResult<GoogleDocSummary[]>>
+  /** exports the Google Doc to .docx and opens it through the normal open pipeline */
+  googleImportDoc(
+    fileId: string,
+  ): Promise<
+    GoogleApiResult<OpenFileResult & { googleFileId: string; googleWebViewLink: string | null }>
+  >
+  /** webViewLink + name lookup for a fileId already known this session */
+  googleGetFileMeta(
+    fileId: string,
+  ): Promise<GoogleApiResult<{ id: string; name: string; webViewLink: string }>>
+  /** uploads .docx bytes as a new native Google Doc; lands in the default
+   *  destination folder when one is set (see googleGetSettings) */
+  googleCreateDoc(
+    name: string,
+    data: ArrayBuffer,
+  ): Promise<
+    GoogleApiResult<{
+      id: string
+      webViewLink: string
+      /** name of the default folder it was created in, if any */
+      folderName?: string
+      /** true when the stored default folder was stale (404) and got cleared */
+      folderCleared?: boolean
+    }>
+  >
+  /** replaces the content of an existing Google Doc (previously sent/imported).
+   *  `fallbackName` is used if the app never got write access to `fileId` (e.g.
+   *  the doc was imported via the picker, not created by this app under
+   *  drive.file scope) — in that case a new Google Doc is created instead, and
+   *  `createdNew: true` is returned so the caller can re-point googleFileId. */
+  googleUpdateDoc(
+    fileId: string,
+    data: ArrayBuffer,
+    fallbackName: string,
+  ): Promise<GoogleApiResult<{ id: string; webViewLink: string; createdNew?: boolean }>>
+  googleListPermissions(fileId: string): Promise<GoogleApiResult<GooglePermissionSummary[]>>
+  googleAddPermission(
+    fileId: string,
+    emailAddress: string,
+    role: GoogleRole,
+  ): Promise<GoogleApiResult<GooglePermissionSummary>>
+  googleUpdatePermission(
+    fileId: string,
+    permissionId: string,
+    role: GoogleRole,
+  ): Promise<GoogleApiResult<GooglePermissionSummary>>
+  googleRemovePermission(fileId: string, permissionId: string): Promise<GoogleApiResult<null>>
+  /** general access ("anyone with the link"); role=null revokes it */
+  googleSetAnyoneAccess(
+    fileId: string,
+    role: 'reader' | 'writer' | null,
+  ): Promise<GoogleApiResult<null>>
+  googleOpenExternal(url: string): void
+
+  /** default destination folder for "Send to Google Docs" */
+  googleGetSettings(): Promise<GoogleApiResult<GoogleSettings>>
+  googleSetSettings(settings: GoogleSettings): Promise<GoogleApiResult<null>>
+  /** folders under parentId (omit/undefined = My Drive root), for the folder picker */
+  googleListFolders(parentId?: string): Promise<GoogleApiResult<GoogleFolderSummary[]>>
+  /** move an existing Drive file to a different folder */
+  googleMoveFile(
+    fileId: string,
+    folderId: string,
+  ): Promise<GoogleApiResult<{ id: string; parents: string[] }>>
+  /** duplicate an existing Drive file (Make a copy); folderId places the copy
+   *  directly in a Drive folder instead of wherever the source file lives */
+  googleCopyFile(
+    fileId: string,
+    name: string,
+    folderId?: string,
+  ): Promise<GoogleApiResult<{ id: string; name: string; webViewLink: string }>>
+  /** rename an existing Drive file (GDocsHeader title commit, once the doc is
+   *  linked to Google and app-writable) */
+  googleRenameFile(
+    fileId: string,
+    name: string,
+  ): Promise<GoogleApiResult<{ id: string; name: string }>>
 }

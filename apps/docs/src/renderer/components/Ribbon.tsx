@@ -106,7 +106,7 @@ import {
   IconSplitCells,
   IconTableDelete,
 } from './icons'
-interface RibbonProps {
+export interface RibbonProps {
   /** Quick-access area on the tab row's left (save/undo-redo/autosave), matching the WPS/Office QAT */
   quickActions?: React.ReactNode
   /** Right side of the tab row (file name, etc.) */
@@ -574,7 +574,7 @@ const CHAR_STYLE_PRESETS: Array<{
 /** Theme accent used by the preset character styles when the doc theme has none */
 const DEFAULT_PRESET_ACCENT = '4472C4'
 
-function findNumIdOfKind(blocks: Block[], kind: 'bullet' | 'ordered'): string | null {
+export function findNumIdOfKind(blocks: Block[], kind: 'bullet' | 'ordered'): string | null {
   for (const b of blocks) {
     if (b.type === 'listItem' && b.list?.kind === kind) return b.list.numId
   }
@@ -2203,7 +2203,7 @@ function RibbonInner({
                   <span>{t('aiTidyBtn')}</span>
                 </button>
               </div>
-              <div className="ribbon-group-label">Genspark AI</div>
+              <div className="ribbon-group-label">Artisans Doc Editor</div>
             </div>
 
             <div className="ribbon-sep" />

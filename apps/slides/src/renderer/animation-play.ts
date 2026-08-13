@@ -193,7 +193,10 @@ export function samplePathPoints(path: string): Array<{ x: number; y: number }> 
 }
 
 /** Point on the path at progress q (0..1), by arc length. */
-export function pointAtPath(pts: Array<{ x: number; y: number }>, q: number): { x: number; y: number } {
+export function pointAtPath(
+  pts: Array<{ x: number; y: number }>,
+  q: number,
+): { x: number; y: number } {
   if (pts.length === 1) return pts[0]!
   const lens: number[] = [0]
   for (let i = 1; i < pts.length; i++) {
@@ -225,7 +228,13 @@ function cachedPathPoints(path: string): Array<{ x: number; y: number }> {
 }
 
 /** Write the state of a single animation at progress p (0..1) into st; p=1 means finished. */
-function applyEffect(st: NodeAnimState, item: AnimationItem, p: number, canvasW: number, canvasH: number): void {
+function applyEffect(
+  st: NodeAnimState,
+  item: AnimationItem,
+  p: number,
+  canvasW: number,
+  canvasH: number,
+): void {
   const q = easeOut(Math.min(1, Math.max(0, p)))
   switch (item.effect) {
     case 'appear':
@@ -356,7 +365,8 @@ export function computeNodeStates(
       let p: number | null
       if (si < played) p = 1
       else if (si === played && activeMs != null) {
-        p = activeMs <= t.startMs ? null : Math.min(1, (activeMs - t.startMs) / (t.endMs - t.startMs))
+        p =
+          activeMs <= t.startMs ? null : Math.min(1, (activeMs - t.startMs) / (t.endMs - t.startMs))
       } else p = null
       if (p == null) continue
       // Playing/finished: reset to normal first, then apply this effect (later animations on the same node override earlier ones)

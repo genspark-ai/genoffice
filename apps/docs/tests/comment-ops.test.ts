@@ -74,7 +74,9 @@ describe('addCommentToSelection', () => {
   })
 
   it('merges with an existing overlapping comment', () => {
-    const editor = createEditor([para(text('ab'), text('cd', [{ type: 'comment', attrs: { ids: '1' } }]))])
+    const editor = createEditor([
+      para(text('ab'), text('cd', [{ type: 'comment', attrs: { ids: '1' } }])),
+    ])
     select(editor, 1, 5) // covers ab + cd
     addCommentToSelection(editor, '2')
     expect(commentIdsPerNode(editor)).toEqual(['2', '1 2'])
@@ -91,7 +93,9 @@ describe('addCommentToSelection', () => {
 
 describe('removeCommentFromDoc', () => {
   it('removes the mark when the id was the last one', () => {
-    const editor = createEditor([para(text('x'), text('marked', [{ type: 'comment', attrs: { ids: '1' } }]))])
+    const editor = createEditor([
+      para(text('x'), text('marked', [{ type: 'comment', attrs: { ids: '1' } }])),
+    ])
     removeCommentFromDoc(editor, '1')
     expect(commentIdsPerNode(editor)).toEqual([null])
     editor.destroy()

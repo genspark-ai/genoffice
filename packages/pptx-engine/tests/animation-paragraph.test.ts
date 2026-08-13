@@ -95,7 +95,13 @@ describe('paragraph builds (pgRg + build="p")', () => {
   })
 
   it('falls back to full rebuild when paragraph shape changes bldP form', () => {
-    const whole: SlideAnimation = { spid: 4, effect: 'fade', trigger: 'onClick', durationMs: 500, delayMs: 0 }
+    const whole: SlideAnimation = {
+      spid: 4,
+      effect: 'fade',
+      trigger: 'onClick',
+      durationMs: 500,
+      delayMs: 0,
+    }
     const wholeBody = `</p:cSld>${buildTimingXml([whole])}</p:sld>`
     // Appending a paragraph animation to a whole-shape spid → needs a switch to build="p"; falls back
     expect(patchSlideTimingIncrementalXml(wholeBody, [whole, para(4, 0)])).toBeNull()

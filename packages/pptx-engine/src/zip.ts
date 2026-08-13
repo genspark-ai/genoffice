@@ -124,7 +124,11 @@ export class PackageArchive {
   }
 
   /** Resolve a slide's layout / master part paths (via the rels chain). */
-  resolveSlideChain(slidePath: string): { layoutPath?: string; masterPath?: string; themePath?: string } {
+  resolveSlideChain(slidePath: string): {
+    layoutPath?: string
+    masterPath?: string
+    themePath?: string
+  } {
     const slideRels = this.readRels(slidePath)
     let layoutPath: string | undefined
     for (const rel of slideRels.values()) {

@@ -46,7 +46,9 @@ describe('docProps/core.xml on save', () => {
     )
     expect(core).toContain('<cp:revision>4</cp:revision>')
     expect(core).toContain('<dc:title>测试文档</dc:title>')
-    expect(core).toContain('<dcterms:created xsi:type="dcterms:W3CDTF">2020-01-01T00:00:00Z</dcterms:created>')
+    expect(core).toContain(
+      '<dcterms:created xsi:type="dcterms:W3CDTF">2020-01-01T00:00:00Z</dcterms:created>',
+    )
   })
 
   it('an unedited save still returns the original bytes untouched', async () => {

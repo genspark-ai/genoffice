@@ -17,14 +17,11 @@ import { materializeSlide, patchedElementXml, type OpenedPptx } from './index'
 
 const HYPERLINK_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
-const SLIDE_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
+const SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
 const SLDJUMP_ACTION = 'ppaction://hlinksldjump'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-export type LinkTarget =
-  | { kind: 'url'; url: string }
-  | { kind: 'slide'; slideIndex: number }
+export type LinkTarget = { kind: 'url'; url: string } | { kind: 'slide'; slideIndex: number }
 
 const EMPTY_RELS =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
@@ -45,7 +42,10 @@ function appendRel(
   const rid = `rId${maxRid + 1}`
   const mode = external ? ' TargetMode="External"' : ''
   const relXml = `<Relationship Id="${rid}" Type="${type}" Target="${escapeXmlAttr(target)}"${mode}/>`
-  archive.entries.set(relsPath, Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'))
+  archive.entries.set(
+    relsPath,
+    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+  )
   return rid
 }
 
@@ -128,7 +128,9 @@ export function encodeRunLink(target: LinkTarget): string {
 export function ensureRunLinkRels(
   opened: OpenedPptx,
   slideIndex: number,
-  paragraphs: Array<{ runs: Array<{ hyperlink?: string; hyperlinkRId?: string; hyperlinkAction?: string }> }>,
+  paragraphs: Array<{
+    runs: Array<{ hyperlink?: string; hyperlinkRId?: string; hyperlinkAction?: string }>
+  }>,
 ): boolean {
   const slide = opened.deck.slides[slideIndex]
   if (!slide) return false
@@ -144,7 +146,13 @@ export function ensureRunLinkRels(
       } else {
         const dst = opened.deck.slides[target.slideIndex]
         if (!dst) continue
-        run.hyperlinkRId = appendRel(opened, slide, SLIDE_REL_TYPE, dst.path.split('/').pop()!, false)
+        run.hyperlinkRId = appendRel(
+          opened,
+          slide,
+          SLIDE_REL_TYPE,
+          dst.path.split('/').pop()!,
+          false,
+        )
         run.hyperlinkAction = SLDJUMP_ACTION
       }
       changed = true
@@ -164,7 +172,8 @@ export function getRunLinks(
 ): Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> {
   const slide = opened.deck.slides[slideIndex]
   if (!slide) return []
-  const out: Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> = []
+  const out: Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> =
+    []
   const rels = opened.archive.readRels(slide.path)
   const resolve = (rid: string): LinkTarget | null => {
     const rel = rels.get(rid)

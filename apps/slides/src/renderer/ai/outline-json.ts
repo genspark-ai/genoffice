@@ -13,7 +13,10 @@ export type OutlineJson = {
 /** Strip markdown fences and slice the object between the first and last braces. */
 export function extractJsonObject(text: string): string {
   let s = String(text ?? '').trim()
-  s = s.replace(/^```[a-zA-Z]*\s*/, '').replace(/```\s*$/, '').trim()
+  s = s
+    .replace(/^```[a-zA-Z]*\s*/, '')
+    .replace(/```\s*$/, '')
+    .trim()
   const st = s.indexOf('{')
   const en = s.lastIndexOf('}')
   if (st >= 0 && en > st) s = s.slice(st, en + 1)
@@ -67,9 +70,21 @@ export function escapeBrokenStringLiterals(json: string): string {
       i++
       continue
     }
-    if (c === '\n') { out += '\\n'; i++; continue }
-    if (c === '\r') { out += '\\r'; i++; continue }
-    if (c === '\t') { out += '\\t'; i++; continue }
+    if (c === '\n') {
+      out += '\\n'
+      i++
+      continue
+    }
+    if (c === '\r') {
+      out += '\\r'
+      i++
+      continue
+    }
+    if (c === '\t') {
+      out += '\\t'
+      i++
+      continue
+    }
     out += c
     i++
   }

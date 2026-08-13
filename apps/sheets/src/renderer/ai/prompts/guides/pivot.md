@@ -19,13 +19,24 @@
 - The output region is protected after saving (not directly editable) — don't stack set_cell on top of it.
 
 ```json
-{"op":"add_pivot","sheetId":"s1","sourceRange":"A1:D500","targetCell":"F1",
- "rowFields":["Region","Product"],"values":[{"field":"Sales","agg":"sum"},{"field":"Sales","agg":"sum","showDataAs":"percentOfTotal"}],"name":"RegionProductSummary"}
+{
+  "op": "add_pivot",
+  "sheetId": "s1",
+  "sourceRange": "A1:D500",
+  "targetCell": "F1",
+  "rowFields": ["Region", "Product"],
+  "values": [
+    { "field": "Sales", "agg": "sum" },
+    { "field": "Sales", "agg": "sum", "showDataAs": "percentOfTotal" }
+  ],
+  "name": "RegionProductSummary"
+}
 ```
 
 ## Refreshing existing pivot tables (refresh_pivot)
 
 `{op:"refresh_pivot", sheetId}` — recomputes the data areas of all pivot tables on the sheet and writes them back. Use it after the source data has changed to bring pivot results up to date.
+
 - When **new categories** appear in the source data, the layout grows automatically: new members are appended at the end of their level (with new subtotal rows for multi-level layouts) and the output region expands — but the area the growth occupies must be empty, otherwise it errors and asks you to clear it first.
 - Cases that still fail with explicit errors: renamed headers / moved data sources, calculated fields, grouped fields, value filters, and growth of compact (non-tabular) layouts. Other edge cases are in the data guide's "Pivot tables" section.
 
@@ -37,9 +48,19 @@ Compute the summary grid directly with `SUMIFS`/`COUNTIFS`/`AVERAGEIFS`:
 
 ```json
 [
- {"op":"set_range","sheetId":"s2","range":"A1:B1","values":[["Region","Sales"]]},
- {"op":"set_range","sheetId":"s2","range":"A2:A5","values":[["East"],["South"],["North"],["West"]]},
- {"op":"set_formula","sheetId":"s2","address":"B2","formula":"=SUMIFS(Sheet1!$C:$C,Sheet1!$A:$A,A2)"}
+  { "op": "set_range", "sheetId": "s2", "range": "A1:B1", "values": [["Region", "Sales"]] },
+  {
+    "op": "set_range",
+    "sheetId": "s2",
+    "range": "A2:A5",
+    "values": [["East"], ["South"], ["North"], ["West"]]
+  },
+  {
+    "op": "set_formula",
+    "sheetId": "s2",
+    "address": "B2",
+    "formula": "=SUMIFS(Sheet1!$C:$C,Sheet1!$A:$A,A2)"
+  }
 ]
 ```
 

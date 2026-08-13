@@ -3,14 +3,30 @@ import { describe, expect, it } from 'vitest'
 import { shiftFormulaRefs } from '../src/domain/formula-shift'
 import type { StructuralOperation } from '../src/domain/workbook-dsl'
 
-const insertRows = (row: number, count = 1): StructuralOperation =>
-  ({ op: 'insert_rows', sheetId: 's1', row, count })
-const deleteRows = (row: number, count = 1): StructuralOperation =>
-  ({ op: 'delete_rows', sheetId: 's1', row, count })
-const insertCols = (column: string, count = 1): StructuralOperation =>
-  ({ op: 'insert_cols', sheetId: 's1', column, count })
-const deleteCols = (column: string, count = 1): StructuralOperation =>
-  ({ op: 'delete_cols', sheetId: 's1', column, count })
+const insertRows = (row: number, count = 1): StructuralOperation => ({
+  op: 'insert_rows',
+  sheetId: 's1',
+  row,
+  count,
+})
+const deleteRows = (row: number, count = 1): StructuralOperation => ({
+  op: 'delete_rows',
+  sheetId: 's1',
+  row,
+  count,
+})
+const insertCols = (column: string, count = 1): StructuralOperation => ({
+  op: 'insert_cols',
+  sheetId: 's1',
+  column,
+  count,
+})
+const deleteCols = (column: string, count = 1): StructuralOperation => ({
+  op: 'delete_cols',
+  sheetId: 's1',
+  column,
+  count,
+})
 
 function shift(formula: string, op: StructuralOperation, sameSheet = true, opSheetName = 'Sheet1') {
   return shiftFormulaRefs(formula, op, sameSheet, opSheetName)
@@ -83,8 +99,9 @@ describe('shiftFormulaRefs: what must NOT be rewritten', () => {
 
 describe('shiftFormulaRefs: sheet prefixes', () => {
   it('rewrites prefixed refs that target the op sheet', () => {
-    expect(shift("=Sheet1!B5+'Sheet1'!C5", insertRows(3), false).formula)
-      .toBe("=Sheet1!B6+'Sheet1'!C6")
+    expect(shift("=Sheet1!B5+'Sheet1'!C5", insertRows(3), false).formula).toBe(
+      "=Sheet1!B6+'Sheet1'!C6",
+    )
   })
 
   it('leaves prefixed refs to other sheets alone', () => {

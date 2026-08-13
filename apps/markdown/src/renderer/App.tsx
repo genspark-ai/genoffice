@@ -1,429 +1,404 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { EditorContent, useEditor } from '@tiptap/react'
-import type { Editor } from '@tiptap/core'
-import { useI18n } from './i18n/locale'
-import {
-  buildFrontmatterRaw,
-  frontmatterInner,
-  parseDocText,
-  serializeDocText,
-  stripLegacyFencedDivs,
-  type DocEnvelope,
-} from './markdown/docText'
-import { buildExtensions } from './editor/extensions'
-import { buildSlashItems } from './editor/slashCommand'
-import type { SlashController, SlashMenuState } from './editor/slashCommand'
-import { setImageBaseDir } from './editor/localImage'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import type { AnyExtension } from '@tiptap/core'
+import { markdownExtensions } from './editor/extensions'
+import { markdownToProseMirror, prosemirrorToMarkdown } from './markdown-io'
 import { Ribbon } from './components/Ribbon'
-import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
-import { TableMenu } from './components/TableMenu'
-import { FrontmatterPanel } from './components/FrontmatterPanel'
-import { AiPanel, GensparkMark, type AiPreset, type MarkdownAiDeps } from './ai/AiPanel'
-import { DOCX_MAX_IMAGE_PX, exportDocxBytes } from './export/docxExport'
-import { buildPrintHtml } from './export/printHtml'
-import { resolveImageSrc } from './editor/localImage'
-import type { ExportFormat, SaveMode } from '../shared/ipc'
+import { LocaleProvider, useI18n } from './i18n/locale'
+import type { MarkdownMenuCommand, OpenFileResult } from '../shared/ipc'
 
-type LoadStatus = 'loading' | 'ready' | 'error'
-type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
-
-const EMPTY_ENVELOPE: DocEnvelope = {
-  frontmatter: '',
-  body: '',
-  eol: '\n',
-  trailingNewline: true,
-  bom: false,
-}
-
-function dirOf(path: string): string {
-  const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return i > 0 ? path.slice(0, i) : path
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
-}
-
-/** Measure a document image via the DOM (the editor already displays it) */
-function measureImage(displaySrc: string): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolvePromise) => {
-    const img = new Image()
-    img.onload = () => resolvePromise({ width: img.naturalWidth, height: img.naturalHeight })
-    img.onerror = () => resolvePromise(null)
-    img.src = displaySrc
-  })
-}
-
-/** File name for an AI-generated untitled document: first heading, else first words */
-export function deriveAutoFileName(editor: Editor): string {
-  const doc = editor.state.doc
-  for (let i = 0; i < doc.childCount; i++) {
-    const node = doc.child(i)
-    const text = node.textContent.replace(/\s+/g, ' ').trim()
-    if (!text) continue
-    if (node.type.name === 'heading') return text.slice(0, 60)
-    return text.split(' ').slice(0, 8).join(' ').slice(0, 60)
-  }
-  return ''
-}
-
-export default function App() {
+function EditorApp() {
   const { t } = useI18n()
-  const [status, setStatus] = useState<LoadStatus>('loading')
   const [filePath, setFilePath] = useState<string | null>(null)
+  const [fileName, setFileName] = useState(t('untitled'))
   const [dirty, setDirty] = useState(false)
-  const [saveState, setSaveState] = useState<SaveState>('idle')
-  const [slashState, setSlashState] = useState<SlashMenuState | null>(null)
-  const [fmOpen, setFmOpen] = useState(false)
-  const [fmText, setFmText] = useState('')
-  const [aiOpen, setAiOpen] = useState(true)
-  const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
-  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('mdapp.autoSave') === '1')
-
-  const statusRef = useRef<LoadStatus>('loading')
+  const [zoom, setZoom] = useState(100)
+  const [showAi, setShowAi] = useState(false)
+  const [ribbonTab, setRibbonTab] = useState<'home' | 'insert' | 'view'>('home')
+  const [wordCount, setWordCount] = useState({ words: 0, chars: 0 })
+  const frontmatterRef = useRef<Record<string, unknown> | null>(null)
   const dirtyRef = useRef(false)
-  const savingRef = useRef(false)
-  const envelopeRef = useRef<DocEnvelope>(EMPTY_ENVELOPE)
-  const editorRef = useRef<Editor | null>(null)
-  const filePathRef = useRef<string | null>(null)
-  const slashMenuRef = useRef<SlashMenuHandle>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const wordCountRef = useRef(wordCount)
+  const wordCountTimerRef = useRef<number | undefined>(undefined)
 
-  const markDirty = useCallback(() => {
-    if (statusRef.current !== 'ready' || dirtyRef.current) return
-    dirtyRef.current = true
-    setDirty(true)
-    setSaveState('idle')
-    window.markdownApi.setDirty(true)
-  }, [])
+  useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
 
-  const insertImage = useCallback(() => {
-    void (async () => {
-      const relPath = await window.markdownApi.pickImage()
-      const current = editorRef.current
-      if (relPath && current) current.chain().focus().setImage({ src: relPath }).run()
-    })()
-  }, [])
-
-  const extensions = useMemo(() => {
-    const controller: SlashController = {
-      onOpen: setSlashState,
-      onUpdate: setSlashState,
-      onKeyDown: (event) => slashMenuRef.current?.handleKey(event) ?? false,
-      onClose: () => setSlashState(null),
-    }
-    return buildExtensions({
-      slashController: controller,
-      slashItems: () =>
-        buildSlashItems({ insertImage: filePathRef.current ? insertImage : undefined }),
-    })
-  }, [insertImage])
+  useEffect(() => {
+    wordCountRef.current = wordCount
+  }, [wordCount])
 
   const editor = useEditor({
-    extensions,
-    content: '',
-    autofocus: true,
-    editorProps: { attributes: { class: 'doc-editor' } },
-    // uiOnly transactions (toggle fold state) never reach the file — not dirty
-    onUpdate: ({ transaction }) => {
-      if (!transaction.getMeta('uiOnly')) markDirty()
+    // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+    extensions: markdownExtensions as AnyExtension[],
+    content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    editorProps: {
+      attributes: { class: 'tiptap', spellcheck: 'true' },
+    },
+    onUpdate: () => {
+      setDirty(true)
+      debouncedWordCount()
     },
   })
-  editorRef.current = editor
-  filePathRef.current = filePath
 
-  useEffect(() => {
-    setImageBaseDir(filePath ? dirOf(filePath) : null)
-  }, [filePath])
+  // ── Word count (debounced) ──────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!editor) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const path = await window.markdownApi.consumePending()
-        if (cancelled) return
-        if (path) {
-          const raw = await window.markdownApi.readFile(path)
-          if (cancelled) return
-          const envelope = parseDocText(raw)
-          envelopeRef.current = envelope
-          setImageBaseDir(dirOf(path))
-          // the initial load must not be undoable — Cmd+Z right after opening
-          // would otherwise blank the document (and Cmd+S overwrite the file)
-          editor
-            .chain()
-            .setMeta('addToHistory', false)
-            .setContent(stripLegacyFencedDivs(envelope.body), { contentType: 'markdown' })
-            .run()
-          setFilePath(path)
-          const inner = frontmatterInner(envelope.frontmatter)
-          setFmText(inner)
-          if (inner) setFmOpen(true)
-        } else {
-          envelopeRef.current = { ...EMPTY_ENVELOPE }
-        }
-        statusRef.current = 'ready'
-        setStatus('ready')
-      } catch (err) {
-        console.error('[markdown] load failed:', err)
-        if (!cancelled) {
-          statusRef.current = 'error'
-          setStatus('error')
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
+  const debouncedWordCount = useCallback(() => {
+    clearTimeout(wordCountTimerRef.current)
+    wordCountTimerRef.current = window.setTimeout(() => {
+      if (!editor) return
+      const text = editor.getText()
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0
+      const chars = text.length
+      setWordCount({ words, chars })
+    }, 300)
   }, [editor])
 
-  const onFrontmatterChange = useCallback(
-    (inner: string) => {
-      setFmText(inner)
-      envelopeRef.current.frontmatter = buildFrontmatterRaw(inner)
-      markDirty()
+  // ── Theme ───────────────────────────────────────────────────────────────
+
+  const [themeExplicit, setThemeExplicit] = useState<'light' | 'dark' | null>(null)
+
+  // Read initial theme from shell
+  useEffect(() => {
+    void window.markdownApi.getTheme().then((theme: string) => {
+      if (theme === 'dark' || theme === 'light') {
+        setThemeExplicit(theme as 'light' | 'dark')
+      }
+    })
+  }, [])
+
+  // Listen for theme changes from shell
+  useEffect(() => {
+    return window.markdownApi.onThemeChanged((theme: string) => {
+      if (theme === 'dark' || theme === 'light') {
+        setThemeExplicit(theme as 'light' | 'dark')
+      } else {
+        setThemeExplicit(null)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (themeExplicit) {
+      document.documentElement.setAttribute('data-theme', themeExplicit)
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
+  }, [themeExplicit])
+
+  // ── File I/O ────────────────────────────────────────────────────────────
+
+  const loadFile = useCallback(
+    async (result: OpenFileResult) => {
+      if (!editor) return
+      const text = result.data
+      // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+      const json = markdownToProseMirror(text, markdownExtensions)
+      const fmNode = json.content?.find((n) => n.type === 'frontmatter')
+      frontmatterRef.current = (fmNode?.attrs?.data as Record<string, unknown>) ?? null
+      editor.commands.setContent(json)
+      setFilePath(result.path)
+      setFileName(result.name)
+      setDirty(false)
+      debouncedWordCount()
     },
-    [markDirty],
+    [editor, debouncedWordCount],
   )
 
-  /** Serialize and write to disk; false when canceled/failed (caller keeps the tab open) */
-  const doSave = useCallback(async (mode: SaveMode, suggestedName?: string): Promise<boolean> => {
-    const current = editorRef.current
-    if (!current || statusRef.current !== 'ready' || savingRef.current) return false
-    savingRef.current = true
-    setSaveState('saving')
-    try {
-      // edits landing while the write is in flight (AI streaming, fast typing)
-      // must keep the document dirty — compare doc identity after the await
-      const docAtSave = current.state.doc
-      const fmAtSave = envelopeRef.current.frontmatter
-      const body = current.getMarkdown()
-      const text = serializeDocText(envelopeRef.current, body)
-      const result = await window.markdownApi.save({ text, mode, suggestedName })
-      if (result.ok && 'path' in result) {
-        setFilePath(result.path)
-        const unchanged =
-          editorRef.current?.state.doc === docAtSave && envelopeRef.current.frontmatter === fmAtSave
-        if (unchanged) {
-          dirtyRef.current = false
-          setDirty(false)
-          window.markdownApi.setDirty(false)
-          setSaveState('saved')
+  const saveFile = useCallback(
+    async (saveAs = false): Promise<boolean> => {
+      if (!editor) return false
+      const json = editor.getJSON()
+      if (frontmatterRef.current && Object.keys(frontmatterRef.current).length > 0) {
+        const fmNode = json.content?.find((n) => n.type === 'frontmatter')
+        if (fmNode) {
+          fmNode.attrs = { ...fmNode.attrs, data: frontmatterRef.current }
         } else {
-          // the main process cleared its dirty flag on write — re-assert it
-          dirtyRef.current = true
-          setDirty(true)
-          window.markdownApi.setDirty(true)
-          setSaveState('idle')
+          json.content = [
+            { type: 'frontmatter', attrs: { data: frontmatterRef.current } },
+            ...(json.content ?? []),
+          ]
+        }
+      }
+      const markdown = prosemirrorToMarkdown(json)
+      const result = saveAs
+        ? await window.markdownApi.saveAs(markdown)
+        : await window.markdownApi.save(markdown, filePath)
+      if (result.ok) {
+        setDirty(false)
+        if (result.path) {
+          setFilePath(result.path)
+          const parts = result.path.split('/')
+          setFileName(parts[parts.length - 1])
         }
         return true
       }
-      setSaveState(result.ok ? 'idle' : 'failed')
       return false
-    } catch (err) {
-      console.error('[markdown] save failed:', err)
-      setSaveState('failed')
-      return false
-    } finally {
-      savingRef.current = false
-    }
-  }, [])
+    },
+    [editor, filePath],
+  )
 
-  const runExport = useCallback(async (format: ExportFormat) => {
-    const current = editorRef.current
-    if (!current || statusRef.current !== 'ready') return
-    const suggestedName =
-      (filePathRef.current
-        ? filePathRef.current.replace(/^.*[/\\]/, '').replace(/\.(md|markdown)$/i, '')
-        : deriveAutoFileName(current)) || 'Untitled'
-    try {
-      if (format === 'pdf') {
-        const html = buildPrintHtml(current.view.dom, suggestedName)
-        const result = await window.markdownApi.exportPdf({ html, suggestedName })
-        if (!result.ok) console.error('[markdown] pdf export failed:', result.error)
-        return
-      }
-      const loadImage = async (src: string) => {
-        const data = await window.markdownApi.readImage(src)
-        if (!data) return null
-        const dims = await measureImage(resolveImageSrc(src))
-        let width = dims?.width || 400
-        let height = dims?.height || 300
-        if (width > DOCX_MAX_IMAGE_PX) {
-          height = Math.round((height * DOCX_MAX_IMAGE_PX) / width)
-          width = DOCX_MAX_IMAGE_PX
-        }
-        return { base64: data.base64, mime: data.mime, widthPx: width, heightPx: height }
-      }
-      const bytes = await exportDocxBytes(current.getJSON(), loadImage)
-      const result = await window.markdownApi.exportDocx({
-        base64: bytesToBase64(bytes),
-        suggestedName,
-        mode: format === 'docs' ? 'openInDocs' : 'dialog',
-      })
-      if (!result.ok) console.error('[markdown] docx export failed:', result.error)
-    } catch (err) {
-      console.error('[markdown] export failed:', err)
-    }
-  }, [])
+  // ── Boot: consume pending open ──────────────────────────────────────────
 
   useEffect(() => {
-    const offExport = window.markdownApi.onExportRequest((format) => void runExport(format))
-    return offExport
-  }, [runExport])
+    void (async () => {
+      const pending = await window.markdownApi.consumePendingOpen()
+      if (pending) await loadFile(pending)
+    })()
+  }, [loadFile])
+
+  // ── Close guard (uses ref to avoid re-registration on every dirty change)
+
+  const saveFileRef = useRef(saveFile)
+  useEffect(() => {
+    saveFileRef.current = saveFile
+  }, [saveFile])
 
   useEffect(() => {
-    const offSave = window.markdownApi.onSaveRequest(
-      (mode) => void doSave(mode).then((ok) => window.markdownApi.sendSaveRequestAck(ok)),
-    )
-    const offClose = window.markdownApi.onCloseSaveRequest(() => {
-      void doSave('save').then((ok) => window.markdownApi.sendCloseSaveResult(ok))
+    const unsubCheck = window.markdownApi.onCloseCheck(() => {
+      window.markdownApi.reportCloseCheckResult({ dirty: dirtyRef.current })
     })
-    const offRenamed = window.markdownApi.onFileRenamed((newPath) => setFilePath(newPath))
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        void doSave(event.shiftKey ? 'saveAs' : 'save')
+    const unsubSave = window.markdownApi.onCloseSaveRequest(async () => {
+      const ok = await saveFileRef.current()
+      window.markdownApi.reportCloseSaveResult(ok)
+    })
+    return () => {
+      unsubCheck()
+      unsubSave()
+    }
+  }, [])
+
+  // ── Dirty tracking ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    window.markdownApi.onDirtyChanged(dirty)
+  }, [dirty])
+
+  // ── Teardown ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    return window.markdownApi.onTeardown(() => {
+      editor?.destroy()
+    })
+  }, [editor])
+
+  // ── Menu commands ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    return window.markdownApi.onMenuCommand((command: MarkdownMenuCommand) => {
+      if (!editor) return
+      switch (command) {
+        // File
+        case 'new':
+          editor.commands.clearContent()
+          setFilePath(null)
+          setFileName(t('untitled'))
+          setDirty(false)
+          frontmatterRef.current = null
+          break
+        case 'open':
+          void (async () => {
+            const result = await window.markdownApi.open()
+            if (result) await loadFile(result)
+          })()
+          break
+        case 'open-path':
+          break
+        case 'save':
+          void saveFile(false)
+          break
+        case 'save-as':
+          void saveFile(true)
+          break
+        // Edit
+        case 'undo':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.undo()
+          break
+        case 'redo':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.redo()
+          break
+        case 'find':
+          break
+        case 'word-count': {
+          const wc = wordCountRef.current
+          alert(`${wc.words} words, ${wc.chars} characters`)
+          break
+        }
+        // View
+        case 'zoom-in':
+          setZoom((z) => Math.min(200, z + 10))
+          break
+        case 'zoom-out':
+          setZoom((z) => Math.max(50, z - 10))
+          break
+        case 'zoom-100':
+          setZoom(100)
+          break
+        case 'toggle-ai':
+          setShowAi((v) => !v)
+          break
+        case 'toggle-dark':
+          setThemeExplicit((v) => (v === 'dark' ? 'light' : 'dark'))
+          break
+        // Format
+        case 'bold':
+          editor.chain().focus().toggleMark('bold').run()
+          break
+        case 'italic':
+          editor.chain().focus().toggleMark('italic').run()
+          break
+        case 'strike':
+          editor.chain().focus().toggleMark('strike').run()
+          break
+        case 'code':
+          editor.chain().focus().toggleMark('code').run()
+          break
+        case 'underline':
+          editor.chain().focus().toggleMark('underline').run()
+          break
+        case 'heading-1':
+          editor.chain().focus().toggleNode('heading', 'paragraph', { level: 1 }).run()
+          break
+        case 'heading-2':
+          editor.chain().focus().toggleNode('heading', 'paragraph', { level: 2 }).run()
+          break
+        case 'heading-3':
+          editor.chain().focus().toggleNode('heading', 'paragraph', { level: 3 }).run()
+          break
+        case 'bullet-list':
+          editor.chain().focus().toggleList('bulletList', 'listItem').run()
+          break
+        case 'ordered-list':
+          editor.chain().focus().toggleList('orderedList', 'listItem').run()
+          break
+        case 'task-list':
+          editor.chain().focus().toggleList('taskList', 'taskItem').run()
+          break
+        case 'blockquote':
+          editor.chain().focus().toggleNode('blockquote', 'paragraph').run()
+          break
+        case 'code-block':
+          editor.chain().focus().toggleNode('codeBlock', 'paragraph').run()
+          break
+        case 'horizontal-rule':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.setHorizontalRule()
+          break
+        case 'insert-table':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+          break
+        case 'insert-link': {
+          const url = window.prompt('Enter URL:')
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          if (url) editor.commands.setLink({ href: url })
+          break
+        }
+        case 'insert-image': {
+          const url = window.prompt('Enter image URL:')
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          if (url) editor.commands.setImage({ src: url })
+          break
+        }
+        case 'align-left':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.setTextAlign('left')
+          break
+        case 'align-center':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.setTextAlign('center')
+          break
+        case 'align-right':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.setTextAlign('right')
+          break
+        case 'align-justify':
+          // @ts-expect-error TipTap duplicate module issue in npm workspace monorepo
+          editor.commands.setTextAlign('justify')
+          break
+        case 'print':
+          window.markdownApi.print()
+          break
+        case 'export-pdf':
+          window.markdownApi.exportPdf()
+          break
+      }
+    })
+  }, [editor, loadFile, saveFile, t])
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        void saveFile(e.shiftKey)
       }
     }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      offSave()
-      offClose()
-      offRenamed()
-      window.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [doSave])
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [saveFile])
+
+  // ── Title ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    localStorage.setItem('mdapp.autoSave', autoSave ? '1' : '0')
-  }, [autoSave])
+    document.title = `${dirty ? '* ' : ''}${fileName} — GenOffice Markdown`
+  }, [fileName, dirty])
 
-  // autosave: every 30s and on window blur, silently persist pending changes
-  // (same policy as the docs app; untitled documents are skipped — the first
-  // save must go through the explicit save path that names the file)
-  useEffect(() => {
-    if (!autoSave || !filePath) return
-    const tick = () => {
-      if (!dirtyRef.current) return
-      if (editorRef.current?.view.composing) return // don't interrupt IME input
-      void doSave('save')
-    }
-    const id = window.setInterval(tick, 30_000)
-    window.addEventListener('blur', tick)
-    return () => {
-      window.clearInterval(id)
-      window.removeEventListener('blur', tick)
-    }
-  }, [autoSave, filePath, doSave])
-
-  const aiDeps: MarkdownAiDeps = {
-    getEditor: () => editorRef.current,
-    getSnapshot: () => editorRef.current?.getMarkdown() ?? '',
-    restoreSnapshot: (markdown) => {
-      const current = editorRef.current
-      if (!current) return
-      current.commands.setContent(markdown, { contentType: 'markdown' })
-      markDirty()
-    },
-    onRunDone: (mutated) => {
-      // AI wrote into a never-saved document → name it from the content and save silently
-      if (!mutated || filePathRef.current || !editorRef.current) return
-      const name = deriveAutoFileName(editorRef.current)
-      if (name) void doSave('save', name)
-    },
-  }
-
-  const fileName = filePath ? filePath.replace(/^.*[/\\]/, '') : null
-  const statusText =
-    saveState === 'saving'
-      ? t('saving')
-      : saveState === 'failed'
-        ? t('saveFailed')
-        : dirty
-          ? t('unsaved')
-          : saveState === 'saved'
-            ? t('savedOk')
-            : ''
-
-  if (status === 'error') {
-    return (
-      <div className="app">
-        <div className="center-note">{t('loadError')}</div>
-      </div>
-    )
-  }
+  if (!editor) return null
 
   return (
     <div className="app">
       <Ribbon
         editor={editor}
-        disabled={status !== 'ready'}
-        dirty={dirty}
-        onSave={() => void doSave('save')}
-        autoSave={autoSave}
-        onToggleAutoSave={setAutoSave}
-        imageEnabled={Boolean(filePath)}
-        onInsertImage={insertImage}
-        frontmatterOpen={fmOpen}
-        onToggleFrontmatter={() => setFmOpen((v) => !v)}
-        aiOpen={aiOpen}
-        onToggleAi={() => setAiOpen((v) => !v)}
-        onAiPreset={(text) => {
-          setAiOpen(true)
-          setAiPreset((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }))
-        }}
+        activeTab={ribbonTab}
+        onTabChange={setRibbonTab}
+        zoom={zoom}
+        onToggleDark={() => setThemeExplicit((v) => (v === 'dark' ? 'light' : 'dark'))}
       />
-      {status === 'loading' && <div className="center-note">{t('loading')}</div>}
-      <div className="app-main" style={status === 'ready' ? undefined : { display: 'none' }}>
-        <div className={`ai-dock${aiOpen ? '' : ' collapsed'}`}>
-          {!aiOpen && (
-            <button
-              className="ai-rail"
-              data-tip={t('aiOpenAssistant')}
-              aria-label={t('aiOpenAssistant')}
-              onClick={() => setAiOpen(true)}
+      <div className="app-main">
+        <div className="editor-container">
+          <div className="editor-scroll">
+            <div
+              className="editor-page"
+              style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
             >
-              <GensparkMark size={22} />
-            </button>
-          )}
-          {/* mounted only after the file is loaded so chat history resolves against the real path */}
-          {status === 'ready' && (
-            <AiPanel
-              deps={aiDeps}
-              filePath={filePath}
-              preset={aiPreset}
-              onCollapse={() => setAiOpen(false)}
-            />
-          )}
-        </div>
-        <div className="app-content">
-          <div className="editor-scroll" ref={scrollRef}>
-            <div className="doc-page">
-              {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
               <EditorContent editor={editor} />
             </div>
           </div>
-          <footer className="status-bar">
-            <div className="status-left">
-              {fileName && <span className="status-item status-file">{fileName}</span>}
-            </div>
-            <div className="status-right">
-              {statusText && (
-                <span className={`status-save status-${saveState}`}>{statusText}</span>
-              )}
-            </div>
-          </footer>
         </div>
+        {showAi && (
+          <div className="ai-panel">
+            <div className="ai-panel-header">
+              <span>AI Assistant</span>
+              <button className="ribbon-btn" onClick={() => setShowAi(false)}>
+                ×
+              </button>
+            </div>
+            <div className="ai-panel-messages">
+              <p style={{ color: 'var(--text-secondary)', fontSize: 13, padding: 12 }}>
+                AI features coming soon.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
-      <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
-      <TableMenu editor={editor} scrollRef={scrollRef} />
+      <div className="status-bar">
+        <span>{wordCount.words} words</span>
+        <span>{wordCount.chars} characters</span>
+        {filePath && <span style={{ marginLeft: 'auto' }}>{filePath}</span>}
+      </div>
     </div>
+  )
+}
+
+export function App() {
+  return (
+    <LocaleProvider>
+      <EditorApp />
+    </LocaleProvider>
   )
 }

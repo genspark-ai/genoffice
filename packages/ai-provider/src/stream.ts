@@ -841,6 +841,9 @@ async function openAiCompatibleTurn(
 const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
   deepseek: 'https://api.deepseek.com/v1',
   openai: 'https://api.openai.com/v1',
+  lmstudio: 'http://localhost:1234/v1',
+  'opencode-zen': 'https://zen.opencode.ai/v1',
+  'opencode-go': 'https://go.opencode.ai/v1',
 }
 
 /** route a streaming, tool-calling-capable turn by provider id */
@@ -894,6 +897,9 @@ export async function streamForProvider(
       return streamGemini(config, system, messages, tools, maxTokens, cb)
     case 'deepseek':
     case 'openai':
+    case 'lmstudio':
+    case 'opencode-zen':
+    case 'opencode-go':
       return streamOpenAiCompatible(
         OPENAI_COMPATIBLE_BASE_URLS[provider]!,
         config,

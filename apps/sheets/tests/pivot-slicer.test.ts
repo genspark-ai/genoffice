@@ -5,28 +5,30 @@ import { parsePivotDefinition } from '../src/gateway/xlsx-pivot'
 
 /// Minimal definition: single row field (Region: East/West/South) + Sum of Sales (same as the
 /// pivot-filters tests but without <filters>): the slicer drives hidden items directly.
-const PIVOT_XML = '<pivotTableDefinition name="PivotTable1" cacheId="1">'
-  + '<location ref="E1:F5" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/>'
-  + '<pivotFields count="2">'
-  + '<pivotField axis="axisRow" showAll="0"><items count="4">'
-  + '<item x="0"/><item x="1"/><item x="2"/><item t="default"/></items></pivotField>'
-  + '<pivotField dataField="1" showAll="0"/>'
-  + '</pivotFields>'
-  + '<rowFields count="1"><field x="0"/></rowFields>'
-  + '<rowItems count="4"><i><x/></i><i><x v="1"/></i><i><x v="2"/></i>'
-  + '<i t="grand"><x/></i></rowItems>'
-  + '<colItems count="1"><i/></colItems>'
-  + '<dataFields count="1"><dataField name="Sum of Sales" fld="1"/></dataFields>'
-  + '</pivotTableDefinition>'
+const PIVOT_XML =
+  '<pivotTableDefinition name="PivotTable1" cacheId="1">' +
+  '<location ref="E1:F5" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/>' +
+  '<pivotFields count="2">' +
+  '<pivotField axis="axisRow" showAll="0"><items count="4">' +
+  '<item x="0"/><item x="1"/><item x="2"/><item t="default"/></items></pivotField>' +
+  '<pivotField dataField="1" showAll="0"/>' +
+  '</pivotFields>' +
+  '<rowFields count="1"><field x="0"/></rowFields>' +
+  '<rowItems count="4"><i><x/></i><i><x v="1"/></i><i><x v="2"/></i>' +
+  '<i t="grand"><x/></i></rowItems>' +
+  '<colItems count="1"><i/></colItems>' +
+  '<dataFields count="1"><dataField name="Sum of Sales" fld="1"/></dataFields>' +
+  '</pivotTableDefinition>'
 
-const CACHE_XML = '<pivotCacheDefinition>'
-  + '<cacheSource type="worksheet"><worksheetSource ref="A1:B7" sheet="Data"/></cacheSource>'
-  + '<cacheFields count="2">'
-  + '<cacheField name="Region"><sharedItems count="3">'
-  + '<s v="East"/><s v="West"/><s v="South"/></sharedItems></cacheField>'
-  + '<cacheField name="Sales"><sharedItems containsString="0" containsNumber="1"/></cacheField>'
-  + '</cacheFields>'
-  + '</pivotCacheDefinition>'
+const CACHE_XML =
+  '<pivotCacheDefinition>' +
+  '<cacheSource type="worksheet"><worksheetSource ref="A1:B7" sheet="Data"/></cacheSource>' +
+  '<cacheFields count="2">' +
+  '<cacheField name="Region"><sharedItems count="3">' +
+  '<s v="East"/><s v="West"/><s v="South"/></sharedItems></cacheField>' +
+  '<cacheField name="Sales"><sharedItems containsString="0" containsNumber="1"/></cacheField>' +
+  '</cacheFields>' +
+  '</pivotCacheDefinition>'
 
 const SOURCE = [
   ['Region', 'Sales'],
@@ -74,9 +76,7 @@ describe('pivot slicer selection', () => {
   it('rejects non-axis fields and unknown members (fail-closed)', () => {
     const definition = parsePivotDefinition(PIVOT_XML, CACHE_XML)
     // Field 1 (Sales) is a value field; it sits on no row/column/report-filter axis.
-    expect(() => applyPivotSlicer(definition, SOURCE, 1, [0]))
-      .toThrow(PivotRefreshError)
-    expect(() => applyPivotSlicer(definition, SOURCE, 0, [99]))
-      .toThrow(PivotRefreshError)
+    expect(() => applyPivotSlicer(definition, SOURCE, 1, [0])).toThrow(PivotRefreshError)
+    expect(() => applyPivotSlicer(definition, SOURCE, 0, [99])).toThrow(PivotRefreshError)
   })
 })

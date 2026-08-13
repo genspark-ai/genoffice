@@ -44,10 +44,7 @@ describe('toSelectionFormat', () => {
   })
 
   it('echoes alignment names and the OOXML rotation value', () => {
-    const format = toSelectionFormat(
-      { ht: 4, vt: 1, tr: { a: -45 } },
-      '',
-    )
+    const format = toSelectionFormat({ ht: 4, vt: 1, tr: { a: -45 } }, '')
     expect(format.horizontalAlignment).toBe('justify')
     expect(format.verticalAlignment).toBe('top')
     expect(format.textRotation).toBe(135)

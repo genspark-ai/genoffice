@@ -32,18 +32,51 @@ export function complexScriptOf(text: string): Script | null {
 }
 
 /** Per-platform script -> (font file, CSS family name, coverage-check sample char). The family name must be resolvable by Chromium by name. */
-const FONT_TABLE: Record<string, Array<{ script: Script; file: string; family: string; sample: string }>> = {
+const FONT_TABLE: Record<
+  string,
+  Array<{ script: Script; file: string; family: string; sample: string }>
+> = {
   darwin: [
-    { script: 'arabic', file: '/System/Library/Fonts/GeezaPro.ttc', family: 'Geeza Pro', sample: 'ا' },
-    { script: 'hebrew', file: '/System/Library/Fonts/Supplemental/Tahoma.ttf', family: 'Tahoma', sample: 'א' },
-    { script: 'thai', file: '/System/Library/Fonts/Supplemental/Thonburi.ttc', family: 'Thonburi', sample: 'ก' },
-    { script: 'devanagari', file: '/System/Library/Fonts/Supplemental/DevanagariMT.ttc', family: 'Devanagari MT', sample: 'क' },
+    {
+      script: 'arabic',
+      file: '/System/Library/Fonts/GeezaPro.ttc',
+      family: 'Geeza Pro',
+      sample: 'ا',
+    },
+    {
+      script: 'hebrew',
+      file: '/System/Library/Fonts/Supplemental/Tahoma.ttf',
+      family: 'Tahoma',
+      sample: 'א',
+    },
+    {
+      script: 'thai',
+      file: '/System/Library/Fonts/Supplemental/Thonburi.ttc',
+      family: 'Thonburi',
+      sample: 'ก',
+    },
+    {
+      script: 'devanagari',
+      file: '/System/Library/Fonts/Supplemental/DevanagariMT.ttc',
+      family: 'Devanagari MT',
+      sample: 'क',
+    },
   ],
   win32: [
     { script: 'arabic', file: 'C:\\Windows\\Fonts\\tahoma.ttf', family: 'Tahoma', sample: 'ا' },
     { script: 'hebrew', file: 'C:\\Windows\\Fonts\\tahoma.ttf', family: 'Tahoma', sample: 'א' },
-    { script: 'thai', file: 'C:\\Windows\\Fonts\\leelawui.ttf', family: 'Leelawadee UI', sample: 'ก' },
-    { script: 'devanagari', file: 'C:\\Windows\\Fonts\\Nirmala.ttf', family: 'Nirmala UI', sample: 'क' },
+    {
+      script: 'thai',
+      file: 'C:\\Windows\\Fonts\\leelawui.ttf',
+      family: 'Leelawadee UI',
+      sample: 'ก',
+    },
+    {
+      script: 'devanagari',
+      file: 'C:\\Windows\\Fonts\\Nirmala.ttf',
+      family: 'Nirmala UI',
+      sample: 'क',
+    },
   ],
 }
 
@@ -98,7 +131,9 @@ export function initShapedMetrics(): void {
       const wasmBinary = readFileSync(hbWasmPath)
       // Types come from the package's d.ts (0-arg + narrowed Module surface); it is really an
       // Emscripten factory: accepts wasmBinary and exposes HEAP views
-      const factory = createHarfBuzz as unknown as (arg?: Record<string, unknown>) => Promise<unknown>
+      const factory = createHarfBuzz as unknown as (
+        arg?: Record<string, unknown>,
+      ) => Promise<unknown>
       const mod = (await factory({ wasmBinary })) as HbModule
       const ex = mod.wasmExports
       for (const entry of FONT_TABLE[process.platform] ?? []) {
@@ -156,7 +191,12 @@ function shapeUnits(font: LoadedFont, text: string, checkCoverage = false): numb
 }
 
 /** Width (px) of complex-script text: prefer the renderer's measured cache; on miss, record it and return the HarfBuzz estimate; null if not applicable. */
-export function shapedMeasure(text: string, fontSizePx: number, bold = false, italic = false): number | null {
+export function shapedMeasure(
+  text: string,
+  fontSizePx: number,
+  bold = false,
+  italic = false,
+): number | null {
   const script = complexScriptOf(text)
   if (!script) return null
   const font = fonts.get(script)
@@ -190,7 +230,13 @@ export async function refineComplexWidths(wc: {
   gtPending.clear()
   const payload = items.map((key) => {
     const [flags = '', family = '', ...rest] = key.split('|')
-    return { key, family, text: rest.join('|'), bold: flags.includes('b'), italic: flags.includes('i') }
+    return {
+      key,
+      family,
+      text: rest.join('|'),
+      bold: flags.includes('b'),
+      italic: flags.includes('i'),
+    }
   })
   try {
     const widths = (await wc.executeJavaScript(`(() => {

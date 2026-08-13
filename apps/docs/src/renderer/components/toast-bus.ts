@@ -2,9 +2,17 @@
  * component exports: React Fast Refresh replaces mixed-export modules wholesale,
  * which strands callers (file-actions) on a stale emitter during dev HMR. */
 
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 export interface ToastData {
   text: string
   kind: 'success' | 'error'
+  action?: ToastAction
+  /** optional second action, shown after `action` (e.g. "Move to…") */
+  secondAction?: ToastAction
 }
 
 let emit: ((toast: ToastData) => void) | null = null
@@ -14,6 +22,11 @@ export function setToastEmitter(fn: ((toast: ToastData) => void) | null): void {
   emit = fn
 }
 
-export function showToast(text: string, kind: 'success' | 'error' = 'success'): void {
-  emit?.({ text, kind })
+export function showToast(
+  text: string,
+  kind: 'success' | 'error' = 'success',
+  action?: ToastAction,
+  secondAction?: ToastAction,
+): void {
+  emit?.({ text, kind, action, secondAction })
 }

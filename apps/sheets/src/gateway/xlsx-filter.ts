@@ -15,10 +15,15 @@ export interface FilterColumnState {
   readonly colId: number
   readonly values?: readonly string[] | undefined
   readonly blank?: boolean | undefined
-  readonly customs?: {
-    readonly and?: boolean | undefined
-    readonly filters: readonly { readonly val: string | number; readonly operator?: string | undefined }[]
-  } | undefined
+  readonly customs?:
+    | {
+        readonly and?: boolean | undefined
+        readonly filters: readonly {
+          readonly val: string | number
+          readonly operator?: string | undefined
+        }[]
+      }
+    | undefined
 }
 
 export interface SheetFilterState {
@@ -32,17 +37,25 @@ export interface SheetFilterState {
 }
 
 const CUSTOM_OPERATORS = new Set([
-  'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual',
+  'equal',
+  'notEqual',
+  'greaterThan',
+  'greaterThanOrEqual',
+  'lessThan',
+  'lessThanOrEqual',
 ])
 
 export function applyFilterState(worksheetXml: string, state: SheetFilterState): string {
   const element = state.filter === null ? '' : serializeAutoFilter(state.filter)
-  const existing = /<autoFilter\b[^>]*\/>|<autoFilter\b[^>]*>[\s\S]*?<\/autoFilter>/
-    .exec(worksheetXml)
+  const existing = /<autoFilter\b[^>]*\/>|<autoFilter\b[^>]*>[\s\S]*?<\/autoFilter>/.exec(
+    worksheetXml,
+  )
   let xml = worksheetXml
   if (existing) {
-    xml = worksheetXml.slice(0, existing.index) + element
-      + worksheetXml.slice(existing.index + existing[0].length)
+    xml =
+      worksheetXml.slice(0, existing.index) +
+      element +
+      worksheetXml.slice(existing.index + existing[0].length)
   } else if (element !== '') {
     xml = insertAfterSheetData(worksheetXml, element)
   }
@@ -80,9 +93,10 @@ function serializeFilterColumn(column: FilterColumnState): string {
     const and = column.customs.and ? ' and="1"' : ''
     const filters = column.customs.filters
       .map((custom) => {
-        const operator = custom.operator === undefined || custom.operator === 'equal'
-          ? ''
-          : ` operator="${custom.operator}"`
+        const operator =
+          custom.operator === undefined || custom.operator === 'equal'
+            ? ''
+            : ` operator="${custom.operator}"`
         return `<customFilter${operator} val="${escapeXmlAttribute(String(custom.val))}"/>`
       })
       .join('')
@@ -133,8 +147,9 @@ function applyRowVisibility(
     },
   )
   const missing = [...hiddenRows]
-    .filter((rowIndex) => !seen.has(rowIndex)
-      && rowIndex >= firstDataRow && rowIndex <= range.endRow)
+    .filter(
+      (rowIndex) => !seen.has(rowIndex) && rowIndex >= firstDataRow && rowIndex <= range.endRow,
+    )
     .sort((left, right) => left - right)
   for (const rowIndex of missing) {
     xml = insertEmptyHiddenRow(xml, rowIndex + 1)
@@ -162,8 +177,10 @@ function insertEmptyHiddenRow(worksheetXml: string, rowNumber: number): string {
 }
 
 function toRef(range: CellArea): string {
-  return `${columnToLetters(range.startColumn)}${range.startRow + 1}`
-    + `:${columnToLetters(range.endColumn)}${range.endRow + 1}`
+  return (
+    `${columnToLetters(range.startColumn)}${range.startRow + 1}` +
+    `:${columnToLetters(range.endColumn)}${range.endRow + 1}`
+  )
 }
 
 function columnToLetters(column: number): string {

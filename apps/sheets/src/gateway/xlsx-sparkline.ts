@@ -26,10 +26,7 @@ const DEFAULT_SERIES_ARGB = 'FF376092'
 const NEGATIVE_ARGB = 'FFD00000'
 
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function toArgb(color: string | undefined): string {
@@ -43,13 +40,18 @@ function toArgb(color: string | undefined): string {
 function buildGroupXml(group: SparklineGroupAdd): string {
   const typeAttribute = group.type === 'line' ? '' : ` type="${group.type}"`
   const sparklines = group.cells
-    .map((cell) => `<x14:sparkline><xm:f>${escapeXml(cell.sourceRef)}</xm:f>`
-      + `<xm:sqref>${cell.cell}</xm:sqref></x14:sparkline>`)
+    .map(
+      (cell) =>
+        `<x14:sparkline><xm:f>${escapeXml(cell.sourceRef)}</xm:f>` +
+        `<xm:sqref>${cell.cell}</xm:sqref></x14:sparkline>`,
+    )
     .join('')
-  return `<x14:sparklineGroup displayEmptyCellsAs="gap"${typeAttribute}>`
-    + `<x14:colorSeries rgb="${toArgb(group.color)}"/>`
-    + `<x14:colorNegative rgb="${NEGATIVE_ARGB}"/>`
-    + `<x14:sparklines>${sparklines}</x14:sparklines></x14:sparklineGroup>`
+  return (
+    `<x14:sparklineGroup displayEmptyCellsAs="gap"${typeAttribute}>` +
+    `<x14:colorSeries rgb="${toArgb(group.color)}"/>` +
+    `<x14:colorNegative rgb="${NEGATIVE_ARGB}"/>` +
+    `<x14:sparklines>${sparklines}</x14:sparklines></x14:sparklineGroup>`
+  )
 }
 
 function wrapGroups(groupsXml: string): string {
@@ -57,20 +59,22 @@ function wrapGroups(groupsXml: string): string {
 }
 
 function insertGroups(worksheetXml: string, groupsXml: string): string {
-  const extOpen = /<ext\b[^>]*\buri="\{05C60535-1F16-4FD2-B633-F4F36F0B64E0\}"[^>]*>/i
-    .exec(worksheetXml)
+  const extOpen = /<ext\b[^>]*\buri="\{05C60535-1F16-4FD2-B633-F4F36F0B64E0\}"[^>]*>/i.exec(
+    worksheetXml,
+  )
   if (extOpen && !extOpen[0].endsWith('/>')) {
     const closeAt = worksheetXml.indexOf('</ext>', extOpen.index)
     if (closeAt === -1) throw new SparklineAddError('The sparkline ext element is malformed.')
     const block = worksheetXml.slice(extOpen.index, closeAt)
     const groupsClose = block.lastIndexOf('</x14:sparklineGroups>')
-    const patched = groupsClose === -1
-      ? block + wrapGroups(groupsXml)
-      : block.slice(0, groupsClose) + groupsXml + block.slice(groupsClose)
+    const patched =
+      groupsClose === -1
+        ? block + wrapGroups(groupsXml)
+        : block.slice(0, groupsClose) + groupsXml + block.slice(groupsClose)
     return worksheetXml.slice(0, extOpen.index) + patched + worksheetXml.slice(closeAt)
   }
-  const ext = `<ext uri="${SPARKLINE_EXT_URI}" xmlns:x14="${X14_NS}">`
-    + `${wrapGroups(groupsXml)}</ext>`
+  const ext =
+    `<ext uri="${SPARKLINE_EXT_URI}" xmlns:x14="${X14_NS}">` + `${wrapGroups(groupsXml)}</ext>`
   // Only the worksheet-level extLst (past sheetData) qualifies — cells may
   // carry their own extLst.
   const extLstClose = worksheetXml.lastIndexOf('</extLst>')
@@ -79,9 +83,11 @@ function insertGroups(worksheetXml: string, groupsXml: string): string {
   }
   const worksheetClose = worksheetXml.lastIndexOf('</worksheet>')
   if (worksheetClose === -1) throw new SparklineAddError('Worksheet has no closing element.')
-  return worksheetXml.slice(0, worksheetClose)
-    + `<extLst>${ext}</extLst>`
-    + worksheetXml.slice(worksheetClose)
+  return (
+    worksheetXml.slice(0, worksheetClose) +
+    `<extLst>${ext}</extLst>` +
+    worksheetXml.slice(worksheetClose)
+  )
 }
 
 /// Appends one x14:sparklineGroup per addition. Fails closed when a host

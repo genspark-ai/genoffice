@@ -319,6 +319,10 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint 演示文稿',
     filterMarkdown: 'Markdown 文档',
     filterPdf: 'PDF 文档',
+    docOpenMsg: '打开 .doc 文件',
+    docOpenDetail: '此文件将以纯文本形式打开，格式将不会保留。另存为 .docx 可获得完整编辑支持。',
+    docOpenBtnOpen: '继续打开',
+    docOpenFailedMsg: '打开 .doc 文件失败',
     errBadArgs: '参数无效',
     errBadName: '文件名不合法',
     errMissing: '文件不存在',
@@ -372,6 +376,11 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint Presentations',
     filterMarkdown: 'Markdown Documents',
     filterPdf: 'PDF Documents',
+    docOpenMsg: 'Open .doc file',
+    docOpenDetail:
+      'This file will be opened as plain text. Formatting will not be preserved. Save as .docx for full editing support.',
+    docOpenBtnOpen: 'Open',
+    docOpenFailedMsg: 'Failed to open .doc file',
     errBadArgs: 'Invalid arguments',
     errBadName: 'Invalid file name',
     errMissing: 'File not found',
@@ -429,6 +438,11 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint プレゼンテーション',
     filterMarkdown: 'Markdown ドキュメント',
     filterPdf: 'PDF ドキュメント',
+    docOpenMsg: '.doc ファイルを開く',
+    docOpenDetail:
+      'このファイルはプレーンテキストとして開かれます。書式は保持されません。完全な編集サポートには .docx として保存してください。',
+    docOpenBtnOpen: '開く',
+    docOpenFailedMsg: '.doc ファイルを開けませんでした',
     errBadArgs: '引数が無効です',
     errBadName: 'ファイル名が無効です',
     errMissing: 'ファイルが見つかりません',
@@ -486,6 +500,11 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint 프레젠테이션',
     filterMarkdown: 'Markdown 문서',
     filterPdf: 'PDF 문서',
+    docOpenMsg: '.doc 파일 열기',
+    docOpenDetail:
+      '이 파일은 일반 텍스트로 열립니다. 서식은 유지되지 않습니다. 전체 편집 지원을 위해 .docx로 저장하세요.',
+    docOpenBtnOpen: '열기',
+    docOpenFailedMsg: '.doc 파일을 열지 못했습니다',
     errBadArgs: '잘못된 인수입니다',
     errBadName: '파일 이름이 잘못되었습니다',
     errMissing: '파일을 찾을 수 없습니다',
@@ -542,6 +561,11 @@ const tMain = createI18n({
     filterPpt: 'Présentations PowerPoint',
     filterMarkdown: 'Documents Markdown',
     filterPdf: 'Documents PDF',
+    docOpenMsg: 'Ouvrir le fichier .doc',
+    docOpenDetail:
+      'Ce fichier sera ouvert en texte brut. La mise en forme ne sera pas conservée. Enregistrez en .docx pour un support complet.',
+    docOpenBtnOpen: 'Ouvrir',
+    docOpenFailedMsg: "Impossible d'ouvrir le fichier .doc",
     errBadArgs: 'Arguments non valides',
     errBadName: 'Nom de fichier non valide',
     errMissing: 'Fichier introuvable',
@@ -599,6 +623,11 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint-Präsentationen',
     filterMarkdown: 'Markdown-Dokumente',
     filterPdf: 'PDF-Dokumente',
+    docOpenMsg: '.doc-Datei öffnen',
+    docOpenDetail:
+      'Diese Datei wird als reiner Text geöffnet. Formatierungen gehen verloren. Speichern Sie als .docx für vollständige Bearbeitung.',
+    docOpenBtnOpen: 'Öffnen',
+    docOpenFailedMsg: '.doc-Datei konnte nicht geöffnet werden',
     errBadArgs: 'Ungültige Argumente',
     errBadName: 'Ungültiger Dateiname',
     errMissing: 'Datei nicht gefunden',
@@ -656,6 +685,11 @@ const tMain = createI18n({
     filterPpt: 'Presentaciones de PowerPoint',
     filterMarkdown: 'Documentos Markdown',
     filterPdf: 'Documentos PDF',
+    docOpenMsg: 'Abrir arquivo .doc',
+    docOpenDetail:
+      'Este arquivo será aberto como texto simples. A formatação não será preservada. Salve como .docx para suporte completo.',
+    docOpenBtnOpen: 'Abrir',
+    docOpenFailedMsg: 'Falha ao abrir arquivo .doc',
     errBadArgs: 'Argumentos no válidos',
     errBadName: 'Nombre de archivo no válido',
     errMissing: 'Archivo no encontrado',
@@ -713,6 +747,11 @@ const tMain = createI18n({
     filterPpt: 'งานนำเสนอ PowerPoint',
     filterMarkdown: 'เอกสาร Markdown',
     filterPdf: 'เอกสาร PDF',
+    docOpenMsg: 'เปิดไฟล์ .doc',
+    docOpenDetail:
+      'ไฟล์นี้จะเปิดเป็นข้อความธรรมดา การจัดรูปแบบจะไม่ถูกเก็บรักษา บันทึกเป็น .docx สำหรับการแก้ไขเต็มรูปแบบ',
+    docOpenBtnOpen: 'เปิด',
+    docOpenFailedMsg: 'ไม่สามารถเปิดไฟล์ .doc ได้',
     errBadArgs: 'อาร์กิวเมนต์ไม่ถูกต้อง',
     errBadName: 'ชื่อไฟล์ไม่ถูกต้อง',
     errMissing: 'ไม่พบไฟล์',
@@ -768,6 +807,11 @@ const tMain = createI18n({
     filterPpt: 'Presentasi PowerPoint',
     filterMarkdown: 'Dokumen Markdown',
     filterPdf: 'Dokumen PDF',
+    docOpenMsg: 'Buka fail .doc',
+    docOpenDetail:
+      'Fail ini akan dibuka sebagai teks biasa. Pemformatan tidak akan dikekalkan. Simpan sebagai .docx untuk sokongan penuh.',
+    docOpenBtnOpen: 'Buka',
+    docOpenFailedMsg: 'Gagal membuka fail .doc',
     errBadArgs: 'Argumen tidak valid',
     errBadName: 'Nama file tidak valid',
     errMissing: 'File tidak ditemukan',
@@ -825,6 +869,11 @@ const tMain = createI18n({
     filterPpt: 'Презентации PowerPoint',
     filterMarkdown: 'Документы Markdown',
     filterPdf: 'Документы PDF',
+    docOpenMsg: 'Открыть файл .doc',
+    docOpenDetail:
+      'Файл откроется как обычный текст. Форматирование не сохранится. Сохраните как .docx для полной поддержки.',
+    docOpenBtnOpen: 'Открыть',
+    docOpenFailedMsg: 'Не удалось открыть файл .doc',
     errBadArgs: 'Недопустимые аргументы',
     errBadName: 'Недопустимое имя файла',
     errMissing: 'Файл не найден',
@@ -882,6 +931,11 @@ const tMain = createI18n({
     filterPpt: 'عروض PowerPoint التقديمية',
     filterMarkdown: 'مستندات Markdown',
     filterPdf: 'مستندات PDF',
+    docOpenMsg: 'فتح ملف .doc',
+    docOpenDetail:
+      'سيتم فتح هذا الملف كنص عادي. لن يتم الحفاظ على التنسيق. احفظ كـ .docx للحصول على دعم كامل.',
+    docOpenBtnOpen: 'فتح',
+    docOpenFailedMsg: 'فشل في فتح ملف .doc',
     errBadArgs: 'وسيطات غير صالحة',
     errBadName: 'اسم ملف غير صالح',
     errMissing: 'الملف غير موجود',
@@ -937,6 +991,11 @@ const tMain = createI18n({
     filterPpt: 'Apresentações do PowerPoint',
     filterMarkdown: 'Documentos Markdown',
     filterPdf: 'Documentos PDF',
+    docOpenMsg: 'Abrir arquivo .doc',
+    docOpenDetail:
+      'Este arquivo será aberto como texto simples. A formatação não será preservada. Salve como .docx para suporte completo.',
+    docOpenBtnOpen: 'Abrir',
+    docOpenFailedMsg: 'Falha ao abrir arquivo .doc',
     errBadArgs: 'Argumentos inválidos',
     errBadName: 'Nome de arquivo inválido',
     errMissing: 'Arquivo não encontrado',
@@ -994,6 +1053,11 @@ const tMain = createI18n({
     filterPpt: 'Presentazioni PowerPoint',
     filterMarkdown: 'Documenti Markdown',
     filterPdf: 'Documenti PDF',
+    docOpenMsg: 'Apri file .doc',
+    docOpenDetail:
+      'Questo file verrà aperto come testo semplice. La formattazione non verrà mantenuta. Salva come .docx per il supporto completo.',
+    docOpenBtnOpen: 'Apri',
+    docOpenFailedMsg: 'Impossibile aprire il file .doc',
     errBadArgs: 'Argomenti non validi',
     errBadName: 'Nome file non valido',
     errMissing: 'File non trovato',
@@ -1051,6 +1115,11 @@ const tMain = createI18n({
     filterPpt: 'Prezentacje programu PowerPoint',
     filterMarkdown: 'Dokumenty Markdown',
     filterPdf: 'Dokumenty PDF',
+    docOpenMsg: 'Otwórz plik .doc',
+    docOpenDetail:
+      'Ten plik zostanie otwarty jako zwykły tekst. Formatowanie nie zostanie zachowane. Zapisz jako .docx, aby uzyskać pełne wsparcie.',
+    docOpenBtnOpen: 'Otwórz',
+    docOpenFailedMsg: 'Nie udało się otworzyć pliku .doc',
     errBadArgs: 'Nieprawidłowe argumenty',
     errBadName: 'Nieprawidłowa nazwa pliku',
     errMissing: 'Nie znaleziono pliku',
@@ -1108,6 +1177,11 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint-presentaties',
     filterMarkdown: 'Markdown-documenten',
     filterPdf: 'PDF-documenten',
+    docOpenMsg: '.doc-bestand openen',
+    docOpenDetail:
+      'Dit bestand wordt geopend als platte tekst. Opmaak wordt niet behouden. Opslaan als .docx voor volledige ondersteuning.',
+    docOpenBtnOpen: 'Openen',
+    docOpenFailedMsg: 'Kan .doc-bestand niet openen',
     errBadArgs: 'Ongeldige argumenten',
     errBadName: 'Ongeldige bestandsnaam',
     errMissing: 'Bestand niet gevonden',
@@ -1165,6 +1239,11 @@ const tMain = createI18n({
     filterPpt: 'Persembahan PowerPoint',
     filterMarkdown: 'Dokumen Markdown',
     filterPdf: 'Dokumen PDF',
+    docOpenMsg: 'Buka fail .doc',
+    docOpenDetail:
+      'Fail ini akan dibuka sebagai teks biasa. Pemformatan tidak akan dikekalkan. Simpan sebagai .docx untuk sokongan penuh.',
+    docOpenBtnOpen: 'Buka',
+    docOpenFailedMsg: 'Gagal membuka fail .doc',
     errBadArgs: 'Argumen tidak sah',
     errBadName: 'Nama fail tidak sah',
     errMissing: 'Fail tidak ditemui',
@@ -1222,6 +1301,10 @@ const tMain = createI18n({
     filterPpt: 'מצגות PowerPoint',
     filterMarkdown: 'מסמכי Markdown',
     filterPdf: 'מסמכי PDF',
+    docOpenMsg: 'פתח קובץ .doc',
+    docOpenDetail: 'קובץ זה ייפטקסט רגיל. העיצוב לא יישמר. שמור כ-.docx לעריכה מלאה.',
+    docOpenBtnOpen: 'פתח',
+    docOpenFailedMsg: 'נכשל בפתיחת קובץ .doc',
     errBadArgs: 'ארגומנטים לא חוקיים',
     errBadName: 'שם קובץ לא חוקי',
     errMissing: 'הקובץ לא נמצא',
@@ -1276,6 +1359,11 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint प्रस्तुतियाँ',
     filterMarkdown: 'Markdown दस्तावेज़',
     filterPdf: 'PDF दस्तावेज़',
+    docOpenMsg: '.doc फ़ाइल खोलें',
+    docOpenDetail:
+      'यह फ़ाइल सादे टेक्स्ट के रूप में खुलेगी। फ़ॉर्मेटिंग संरक्षित नहीं होगी। पूर्ण संपादन समर्थन के लिए .docx के रूप में सहेजें।',
+    docOpenBtnOpen: 'खोलें',
+    docOpenFailedMsg: '.doc फ़ाइल खोलने में विफल',
     errBadArgs: 'अमान्य आर्ग्युमेंट',
     errBadName: 'अमान्य फ़ाइल नाम',
     errMissing: 'फ़ाइल नहीं मिली',
@@ -1333,6 +1421,10 @@ const tMain = createI18n({
     filterPpt: 'PowerPoint 簡報',
     filterMarkdown: 'Markdown 文件',
     filterPdf: 'PDF 文件',
+    docOpenMsg: '開啟 .doc 檔案',
+    docOpenDetail: '此檔案將以純文字形式開啟，格式將不會保留。另存為 .docx 可獲得完整編輯支援。',
+    docOpenBtnOpen: '繼續開啟',
+    docOpenFailedMsg: '開啟 .doc 檔案失敗',
     errBadArgs: '參數無效',
     errBadName: '檔案名稱不合法',
     errMissing: '檔案不存在',
@@ -1574,13 +1666,14 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 const DOCX_RE = /\.docx$/i
+const DOC_RE = /\.doc$/i
 const XLSX_RE = /\.(xlsx|xls|csv)$/i
 const PPTX_RE = /\.pptx$/i
 const PDF_RE = /\.pdf$/i
 const MD_RE = /\.(md|markdown)$/i
 
 /** document formats we recognize but don't open — surfaced as a dialog, not silently dropped */
-const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|numbers)$/i
+const UNSUPPORTED_DOC_RE = /\.(rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|numbers)$/i
 
 /**
  * Single source of truth for the open-dialog filter. Includes the
@@ -1605,6 +1698,7 @@ function supportedFileIn(argv: string[]): string | null {
     argv.find(
       (arg) =>
         (DOCX_RE.test(arg) ||
+          DOC_RE.test(arg) ||
           XLSX_RE.test(arg) ||
           PPTX_RE.test(arg) ||
           PDF_RE.test(arg) ||
@@ -1677,6 +1771,10 @@ function openDocumentPath(filePath: string): boolean {
     else tabManager.openMarkdownTab(filePath)
     return true
   }
+  if (DOC_RE.test(filePath)) {
+    void openDocFile(filePath)
+    return true
+  }
   notifyUnsupportedFile(filePath)
   return false
 }
@@ -1736,6 +1834,45 @@ function newMarkdownTab(): void {
     tabManager?.openMarkdownTab()
   } catch (err) {
     surfaceNewTabError(err)
+  }
+}
+
+/**
+ * Open a legacy .doc file: show a warning dialog, then extract text and
+ * open in the docs editor. The user can save as .docx for full formatting.
+ */
+async function openDocFile(filePath: string): Promise<void> {
+  const win = shellWindow
+  if (!win) return
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'info',
+    message: tm('docOpenMsg'),
+    detail: tm('docOpenDetail'),
+    buttons: [tm('docOpenBtnOpen'), tm('btnCancel')],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (response === 1) return
+  try {
+    const WordExtractor = (await import('word-extractor')).default
+    const extractor = new WordExtractor()
+    const doc = await extractor.extract(filePath)
+    const text = doc.getBody() ?? ''
+    const tmpDir = join(app.getPath('temp'), 'genoffice-doc')
+    const { mkdirSync, writeFileSync: writeFileAtomic } = await import('node:fs')
+    mkdirSync(tmpDir, { recursive: true })
+    const tmpFile = join(tmpDir, basename(filePath, extname(filePath)) + '.txt')
+    writeFileAtomic(tmpFile, text, 'utf-8')
+    recordRecentFile(filePath)
+    tabManager?.openDocsTab(tmpFile)
+  } catch (err) {
+    console.error('[shell] .doc conversion failed:', err)
+    void dialog.showMessageBox(win, {
+      type: 'error',
+      message: tm('docOpenFailedMsg'),
+      detail: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 

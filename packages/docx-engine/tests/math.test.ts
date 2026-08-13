@@ -182,9 +182,13 @@ describe('ommlToLatex', () => {
 
   it('returns null for structures outside the subset', () => {
     expect(
-      ommlToLatex('<m:oMath><m:sPre><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:e><m:r><m:t>X</m:t></m:r></m:e></m:sPre></m:oMath>'),
+      ommlToLatex(
+        '<m:oMath><m:sPre><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:e><m:r><m:t>X</m:t></m:r></m:e></m:sPre></m:oMath>',
+      ),
     ).toBeNull()
-    expect(ommlToLatex(`<m:oMath>${latexToOmml('a')}</m:oMath><m:oMath>${latexToOmml('b')}</m:oMath>`)).toBeNull()
+    expect(
+      ommlToLatex(`<m:oMath>${latexToOmml('a')}</m:oMath><m:oMath>${latexToOmml('b')}</m:oMath>`),
+    ).toBeNull()
   })
 
   it('escapes parser-special characters', () => {
@@ -242,7 +246,9 @@ describe('formula parse + save integration', () => {
   })
 
   it('an inserted equation paragraph survives save and reparse', async () => {
-    const parsed = await parseDocx(await buildDocx({ bodyXml: '<w:p><w:r><w:t>hi</w:t></w:r></w:p>' }))
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>hi</w:t></w:r></w:p>' }),
+    )
     const omml = latexToOmml('a^2 + b^2 = c^2')
     const bytes = await saveDocx(parsed, [
       { kind: 'original', docxIndex: parsed.blocks[0].docxIndex! },

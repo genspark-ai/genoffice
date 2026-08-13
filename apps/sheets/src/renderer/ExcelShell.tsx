@@ -310,6 +310,21 @@ export function ExcelShell({
         event.preventDefault()
         onCommand('toggle-show-formulas')
       }
+      // Workaround for Univer shortcut conflict: when the cell grid is
+      // focused and no cell is being edited, route Delete/Backspace to
+      // clear-selection-content instead of letting Univer's competing
+      // shortcuts resolve inconsistently (some cells cleared, some not).
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        const el = document.activeElement
+        const inEditor =
+          el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement ||
+          (el instanceof HTMLElement && el.isContentEditable)
+        if (!inEditor) {
+          event.preventDefault()
+          onCommand('clear-contents')
+        }
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

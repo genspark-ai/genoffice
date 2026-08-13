@@ -7,11 +7,7 @@
 
 import { columnIndex, columnLabel } from '../domain/cell-address'
 import type { MutablePackage } from './xlsx-drawing-add'
-import {
-  buildCacheDefinitionXml,
-  buildPivotTableXml,
-  type PivotAddition,
-} from './xlsx-pivot-add'
+import { buildCacheDefinitionXml, buildPivotTableXml, type PivotAddition } from './xlsx-pivot-add'
 
 export class PivotExpandError extends Error {}
 
@@ -41,8 +37,8 @@ export interface PivotRefreshUpdate {
 // ─── Reference helpers ──────────────────────────────────────────────────────
 
 interface CellRef {
-  col: number  // 0-based column index
-  row: number  // 0-based row index
+  col: number // 0-based column index
+  row: number // 0-based row index
 }
 
 interface AreaRef {
@@ -63,8 +59,10 @@ function parseAreaRef(ref: string): AreaRef {
 }
 
 function areaRefToString(area: AreaRef): string {
-  return `${columnLabel(area.start.col)}${area.start.row + 1}`
-    + `:${columnLabel(area.end.col)}${area.end.row + 1}`
+  return (
+    `${columnLabel(area.start.col)}${area.start.row + 1}` +
+    `:${columnLabel(area.end.col)}${area.end.row + 1}`
+  )
 }
 
 // ─── Package helpers ─────────────────────────────────────────────────────────
@@ -81,8 +79,9 @@ async function findPivotTablePathForCache(
     if (!tableRelsPattern.test(relsPath)) continue
     const relsXml = await pkg.readText(relsPath)
     // Each pivot table rels file has exactly one pivotCacheDefinition relationship
-    const targetMatch = /Target="([^"]+)"[^>]*Type="[^"]*pivotCacheDefinition[^"]*"/.exec(relsXml)
-      ?? /Type="[^"]*pivotCacheDefinition[^"]*"[^>]*Target="([^"]+)"/.exec(relsXml)
+    const targetMatch =
+      /Target="([^"]+)"[^>]*Type="[^"]*pivotCacheDefinition[^"]*"/.exec(relsXml) ??
+      /Type="[^"]*pivotCacheDefinition[^"]*"[^>]*Target="([^"]+)"/.exec(relsXml)
     if (!targetMatch?.[1]) continue
     // Resolve the target relative to the rels file's directory
     // rels path: xl/pivotTables/_rels/pivotTable1.xml.rels
@@ -131,7 +130,7 @@ function worksheetHasContentInArea(worksheetXml: string, area: AreaRef): boolean
   for (const rowMatch of worksheetXml.matchAll(rowPattern)) {
     const rAttr = /\br="(\d+)"/.exec(rowMatch[1] ?? '')
     if (!rAttr) continue
-    const rowIdx = Number(rAttr[1]) - 1  // 0-based
+    const rowIdx = Number(rAttr[1]) - 1 // 0-based
     if (rowIdx < start.row || rowIdx > end.row) continue
     // Check each cell in this row
     const cellPattern = /<c\b([^>]*)(?:\/>|>[\s\S]*?<\/c>)/g
@@ -160,8 +159,12 @@ function subtractAreas(outer: AreaRef, inner: AreaRef): AreaRef[] {
   // Only handles the case where inner is fully inside outer (which it always
   // is here: old ⊆ new).
   const result: AreaRef[] = []
-  if (inner.start.col > outer.start.col || inner.end.col < outer.end.col
-    || inner.start.row > outer.start.row || inner.end.row < outer.end.row) {
+  if (
+    inner.start.col > outer.start.col ||
+    inner.end.col < outer.end.col ||
+    inner.start.row > outer.start.row ||
+    inner.end.row < outer.end.row
+  ) {
     // Generic subtraction: rows below old area
     if (inner.end.row < outer.end.row) {
       result.push({
@@ -213,10 +216,11 @@ export async function applyPivotLayoutExpansions(
 
     const oldArea = parseAreaRef(currentRef)
     const newArea = parseAreaRef(update.newOutputRef)
-    const sameArea = oldArea.start.col === newArea.start.col
-      && oldArea.start.row === newArea.start.row
-      && oldArea.end.col === newArea.end.col
-      && oldArea.end.row === newArea.end.row
+    const sameArea =
+      oldArea.start.col === newArea.start.col &&
+      oldArea.start.row === newArea.start.row &&
+      oldArea.end.col === newArea.end.col &&
+      oldArea.end.row === newArea.end.row
 
     // Same size and no layout edit: no-op.
     if (sameArea && update.relayout === undefined) continue
@@ -242,8 +246,8 @@ export async function applyPivotLayoutExpansions(
         if (worksheetHasContentInArea(worksheetXml, added)) {
           const addedRef = areaRefToString(added)
           throw new PivotExpandError(
-            `Pivot expansion into ${addedRef} conflicts with existing worksheet content. `
-            + 'Clear the area first or move the pivot.',
+            `Pivot expansion into ${addedRef} conflicts with existing worksheet content. ` +
+              'Clear the area first or move the pivot.',
           )
         }
       }
@@ -300,18 +304,19 @@ async function applyPivotRelayout(
   const cacheRelsPath = update.cachePath.replace(/\/([^/]+)$/, '/_rels/$1.rels')
   if (await pkg.has(cacheRelsPath)) {
     const relsXml = await pkg.readText(cacheRelsPath)
-    const target = /Target="([^"]+)"[^>]*Type="[^"]*pivotCacheRecords[^"]*"/.exec(relsXml)?.[1]
-      ?? /Type="[^"]*pivotCacheRecords[^"]*"[^>]*Target="([^"]+)"/.exec(relsXml)?.[1]
+    const target =
+      /Target="([^"]+)"[^>]*Type="[^"]*pivotCacheRecords[^"]*"/.exec(relsXml)?.[1] ??
+      /Type="[^"]*pivotCacheRecords[^"]*"[^>]*Target="([^"]+)"/.exec(relsXml)?.[1]
     if (target) {
-      const recordsPath = resolveRelativePath(
-        update.cachePath.replace(/\/[^/]+$/, ''),
-        target,
+      const recordsPath = resolveRelativePath(update.cachePath.replace(/\/[^/]+$/, ''), target)
+      pkg.write(
+        recordsPath,
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+          '<pivotCacheRecords ' +
+          'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+          'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
+          'count="0"/>',
       )
-      pkg.write(recordsPath, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-        + '<pivotCacheRecords '
-        + 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-        + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
-        + 'count="0"/>')
       touchedEntries.add(recordsPath)
     }
   }

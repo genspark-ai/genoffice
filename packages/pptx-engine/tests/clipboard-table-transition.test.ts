@@ -155,9 +155,9 @@ describe('editTableCellText', () => {
     const slide = r.slide
     const tblId = r.elementId
 
-    expect(editTableCellText(slide, tblId, 0, 1, [{ runs: [{ text: 'Header B', bold: true }] }])).toBe(
-      true,
-    )
+    expect(
+      editTableCellText(slide, tblId, 0, 1, [{ runs: [{ text: 'Header B', bold: true }] }]),
+    ).toBe(true)
     expect(editTableCellText(slide, tblId, 1, 0, [{ runs: [{ text: 'data' }] }])).toBe(true)
     // Out of range rejected
     expect(editTableCellText(slide, tblId, 5, 0, [{ runs: [{ text: 'x' }] }])).toBe(false)

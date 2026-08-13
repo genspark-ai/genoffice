@@ -4,9 +4,7 @@ import { applyFlashFillTemplate, inferFlashFillTemplate } from '../src/domain/fl
 
 describe('inferFlashFillTemplate', () => {
   it('learns a join with literal glue from one example', () => {
-    const template = inferFlashFillTemplate([
-      { source: ['John', 'Sales'], output: 'John·Sales' },
-    ])
+    const template = inferFlashFillTemplate([{ source: ['John', 'Sales'], output: 'John·Sales' }])
     expect(template).not.toBeNull()
     expect(applyFlashFillTemplate(template!, ['Mary', 'Marketing'])).toBe('Mary·Marketing')
   })
@@ -29,16 +27,16 @@ describe('inferFlashFillTemplate', () => {
   })
 
   it('rejects examples that contradict each other', () => {
-    expect(inferFlashFillTemplate([
-      { source: ['a1', 'b1'], output: 'a1-b1' },
-      { source: ['a2', 'b2'], output: 'b2/a2' },
-    ])).toBeNull()
+    expect(
+      inferFlashFillTemplate([
+        { source: ['a1', 'b1'], output: 'a1-b1' },
+        { source: ['a2', 'b2'], output: 'b2/a2' },
+      ]),
+    ).toBeNull()
   })
 
   it('rejects outputs with no recognizable field', () => {
-    expect(inferFlashFillTemplate([
-      { source: ['abc', 'def'], output: 'xyz' },
-    ])).toBeNull()
+    expect(inferFlashFillTemplate([{ source: ['abc', 'def'], output: 'xyz' }])).toBeNull()
   })
 
   it('trims source whitespace when matching and applying', () => {

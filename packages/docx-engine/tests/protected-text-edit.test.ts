@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  parseDocx,
-  patchFieldParagraphXml,
-  patchMathTokens,
-} from '../src/index'
+import { parseDocx, patchFieldParagraphXml, patchMathTokens } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const TOC_ENTRY =

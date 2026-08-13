@@ -207,13 +207,13 @@ const config = {
       mimeType: 'application/pdf',
     },
     {
-      ext: 'md',
-      name: 'Markdown Document',
+      ext: 'doc',
+      name: 'Word 97-2003 Document',
       role: 'Editor',
-      mimeType: 'text/markdown',
+      mimeType: 'application/msword',
     },
     {
-      ext: 'markdown',
+      ext: 'md',
       name: 'Markdown Document',
       role: 'Editor',
       mimeType: 'text/markdown',

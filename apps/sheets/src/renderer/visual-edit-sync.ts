@@ -15,12 +15,7 @@ import {
 } from '../domain/chart-visual'
 import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
 import type { WorkbookVisualObject } from '../shared/desktop-api'
-import {
-  recordChartEdit,
-  recordVisualEdit,
-  removeVisualAdd,
-  updateVisualAdd,
-} from './edit-journal'
+import { recordChartEdit, recordVisualEdit, removeVisualAdd, updateVisualAdd } from './edit-journal'
 import { t } from './i18n/locale'
 import {
   captureVisualJournal,

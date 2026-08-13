@@ -15,7 +15,6 @@ import type {
   DesktopApi,
   ScreenCaptureResult,
   ScreenSourcesResult,
-  UiTheme,
   WorkbookCellStyle,
   WorkbookConditionalRule,
   WorkbookFile,
@@ -47,9 +46,10 @@ const desktopApi: DesktopApi = {
     ipcRenderer.on('app:language-changed', listener)
     return () => ipcRenderer.removeListener('app:language-changed', listener)
   },
-  getTheme: () => ipcRenderer.invoke('app:get-theme'),
+  getTheme: () => ipcRenderer.invoke('home:get-theme'),
   onThemeChanged(handler) {
-    const listener = (_event: Electron.IpcRendererEvent, theme: UiTheme) => handler(theme)
+    const listener = (_event: Electron.IpcRendererEvent, theme: 'light' | 'dark' | 'system') =>
+      handler(theme)
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
   },
@@ -1090,8 +1090,7 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
         typeof state.protected !== 'boolean',
     ) ||
     !isDefinedNamesState(input.definedNamesState) ||
-    (input.mode !== 'save-as' &&
-      input.edits.length === 0 &&
+    (input.edits.length === 0 &&
       input.structuralOps.length === 0 &&
       input.chartEdits.length === 0 &&
       input.visualEdits.length === 0 &&

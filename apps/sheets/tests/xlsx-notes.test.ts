@@ -7,17 +7,32 @@ import { buildEditFixture } from './fixture-builder'
 async function planNotes(noteStates: SheetNoteState[]) {
   const source = await createBufferEntrySource(await buildEditFixture())
   return planCellEditsToXlsx(
-    source, [], [], [], undefined, [], [], [], [], [], null, [], [], noteStates,
+    source,
+    [],
+    [],
+    [],
+    undefined,
+    [],
+    [],
+    [],
+    [],
+    [],
+    null,
+    [],
+    [],
+    noteStates,
   )
 }
 
-const NOTES: SheetNoteState[] = [{
-  sheetName: 'Data',
-  notes: [
-    { row: 0, column: 1, author: 'Reviewer', text: 'Tax inclusive <confirm>' },
-    { row: 4, column: 0, author: '', text: 'second note' },
-  ],
-}]
+const NOTES: SheetNoteState[] = [
+  {
+    sheetName: 'Data',
+    notes: [
+      { row: 0, column: 1, author: 'Reviewer', text: 'Tax inclusive <confirm>' },
+      { row: 4, column: 0, author: '', text: 'second note' },
+    ],
+  },
+]
 
 describe('note snapshots', () => {
   it('creates the comments part with authors, refs, and escaped text', async () => {
@@ -33,8 +48,9 @@ describe('note snapshots', () => {
 
   it('creates the VML drawing with one Note shape per comment', async () => {
     const plan = await planNotes(NOTES)
-    const vml = [...plan.added.entries()]
-      .find(([path]) => /xl\/drawings\/vmlDrawing\d+\.vml/.test(path))
+    const vml = [...plan.added.entries()].find(([path]) =>
+      /xl\/drawings\/vmlDrawing\d+\.vml/.test(path),
+    )
     expect(vml).toBeDefined()
     expect(vml![1].match(/ObjectType="Note"/g)).toHaveLength(2)
     expect(vml![1]).toContain('<x:Row>0</x:Row><x:Column>1</x:Column>')
@@ -43,8 +59,9 @@ describe('note snapshots', () => {
 
   it('registers rels, content types, and the legacyDrawing element', async () => {
     const plan = await planNotes(NOTES)
-    const rels = plan.replaced.get('xl/worksheets/_rels/sheet1.xml.rels')
-      ?? plan.added.get('xl/worksheets/_rels/sheet1.xml.rels')
+    const rels =
+      plan.replaced.get('xl/worksheets/_rels/sheet1.xml.rels') ??
+      plan.added.get('xl/worksheets/_rels/sheet1.xml.rels')
     expect(rels).toContain('relationships/comments')
     expect(rels).toContain('relationships/vmlDrawing')
     const contentTypes = plan.replaced.get('[Content_Types].xml')

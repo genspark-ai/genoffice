@@ -83,6 +83,9 @@
   --docs-toast-error-bg: rgb(196 49 75 / 95%);
   --docs-toast-ink: #fff;
   --docs-toast-ok: #34c759;
+  --docs-toast-action-bg: rgb(255 255 255 / 16%);
+  --docs-toast-action-bg-hover: rgb(255 255 255 / 26%);
+  --docs-shadow-menu: 0 1px 2px rgb(0 0 0 / 10%), 0 2px 10px rgb(0 0 0 / 6%);
 
   /* content-side constants: everything painted on the white paper (including
    * the AI change highlight) keeps its light value in both themes */
@@ -5479,7 +5482,7 @@ body.docs-crop-active
 .ai-composer-top {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 5px;
   margin-bottom: 7px;
 }
@@ -6134,7 +6137,7 @@ body.docs-crop-active
 
 .provider-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-bottom: 16px;
 }
@@ -7400,7 +7403,7 @@ tr > .page-gap-cut {
 .table-style-gallery {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   max-width: 420px;
 }
 
@@ -7649,6 +7652,24 @@ tr > .page-gap-cut {
   color: var(--docs-toast-ok);
 }
 
+.app-toast-action {
+  pointer-events: auto;
+  margin-left: 4px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--docs-toast-action-bg);
+  color: var(--docs-toast-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+}
+
+.app-toast-action:hover {
+  background: var(--docs-toast-action-bg-hover);
+}
+
 /* body row (AI dock + content column) — the status bar spans only the content
    column so the dock runs the full height of the window */
 .app-main {
@@ -7715,4 +7736,1233 @@ tr > .page-gap-cut {
 /* Gallery variant keeps .shape-palette's anchored-card chrome but stacks grouped grids */
 .shape-palette.rb-shape-gallery {
   display: block;
+}
+
+/* ================= Google-Docs-style header (GDocsHeader) ================= */
+/* Own font stack + spacing scale, namespaced under .gdh- so it never bleeds
+   into (or gets bled into by) the legacy .ribbon rules above. */
+
+.gdh-root {
+  flex-shrink: 0;
+  background: var(--chrome-bg);
+  color: var(--text);
+  user-select: none;
+  font-family:
+    'Google Sans',
+    Roboto,
+    -apple-system,
+    BlinkMacSystemFont,
+    var(--ui-cjk),
+    sans-serif;
+  border-bottom: 1px solid var(--border);
+}
+
+/* slim strip above the logo: holds the mac traffic lights and is the primary
+   frameless-window drag area */
+.gdh-titlebar {
+  height: 28px;
+  -webkit-app-region: drag;
+}
+
+.gdh-toprow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 84px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  -webkit-app-region: drag;
+}
+
+/* everything interactive inside the drag rows must opt back out */
+.gdh-toprow button,
+.gdh-toprow input,
+.gdh-toprow [role='menubar'],
+.gdh-toprow .gdh-title-menu,
+.gdh-toprow .gdh-toprow-right {
+  -webkit-app-region: no-drag;
+}
+
+.gdh-logo {
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.gdh-title-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.gdh-title-row {
+  display: flex;
+  align-items: center;
+  height: 24px;
+}
+
+.gdh-title-display,
+.gdh-title-input {
+  font-size: 25px;
+  font-weight: 400;
+  font-family:
+    'Google Sans',
+    Roboto,
+    -apple-system,
+    BlinkMacSystemFont,
+    var(--ui-cjk),
+    sans-serif;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 8px;
+  margin-left: -8px;
+  background: none;
+  max-width: 420px;
+  height: 24px;
+  line-height: 24px;
+  box-sizing: border-box;
+}
+
+.gdh-title-display {
+  cursor: text;
+  text-align: left;
+}
+
+.gdh-title-display:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.gdh-title-input {
+  border-color: var(--color-brand-secondary);
+  outline: none;
+}
+
+.gdh-menubar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 30px;
+  margin-left: -7px;
+  margin-top: 2px;
+}
+
+.gdh-menu-wrap {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.gdh-menu-top {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 15px;
+  color: var(--text-secondary);
+  padding: 6px 7px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.gdh-menu-top:hover,
+.gdh-menu-top.open {
+  background: var(--hover);
+}
+
+.gdh-menu-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  min-width: 220px;
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 6px 0;
+  margin-top: 2px;
+}
+
+.gdh-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+}
+
+.gdh-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.gdh-menu-item:disabled {
+  color: #909499;
+  cursor: default;
+}
+
+.gdh-menu-check {
+  width: 16px;
+  flex-shrink: 0;
+  color: #1a73e8;
+  font-size: 12px;
+}
+
+.gdh-menu-label {
+  flex: 1 1 auto;
+}
+
+.gdh-menu-shortcut {
+  color: #80868b;
+  font-size: 11px;
+  margin-left: 24px;
+}
+
+.gdh-menu-arrow {
+  color: #80868b;
+  margin-left: 12px;
+}
+
+.gdh-menu-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border, #e1dfdd);
+}
+
+.gdh-submenu {
+  position: absolute;
+  top: -6px;
+  left: 100%;
+  z-index: 41;
+  min-width: 200px;
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 6px 0;
+}
+
+.gdh-toprow-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.gdh-icon-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gdh-icon-btn:hover {
+  background: var(--hover);
+}
+
+/* Tooltip: dark pill under the button, 0.3s hover delay — native title=
+   attributes on these icon-only buttons are unreliable in Electron, so we
+   render our own, matching the .ai-msg-tool-btn pattern used elsewhere. */
+.gdh-icon-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% 0;
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: #232425;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgb(0 0 0 / 10%);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease;
+  transition-delay: 0s;
+  z-index: 10;
+}
+
+.gdh-icon-btn:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0.3s;
+}
+
+.gdh-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+}
+
+/* current Google Docs Share control: a light-blue split-pill, label segment +
+   attached caret segment separated by a hairline */
+.gdh-share-split {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  border-radius: 20px;
+  background: #c2e7ff;
+  color: #001d35;
+  margin-left: 6px;
+  overflow: hidden;
+}
+
+.gdh-share-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  font-family:
+    'Google Sans',
+    Roboto,
+    -apple-system,
+    BlinkMacSystemFont,
+    var(--ui-cjk),
+    sans-serif;
+  padding: 0 12px;
+  border-radius: 20px 0 0 20px;
+  cursor: pointer;
+}
+
+.gdh-share-btn:hover:not(:disabled) {
+  background: #b3d7f2;
+}
+
+.gdh-share-caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: none;
+  border-left: 1px solid rgba(0, 29, 53, 0.18);
+  background: none;
+  color: inherit;
+  border-radius: 0 20px 20px 0;
+  cursor: pointer;
+}
+
+.gdh-share-caret:hover:not(:disabled) {
+  background: #b3d7f2;
+}
+
+.gdh-share-split:has(button:disabled) {
+  background: #e3e3e3;
+  color: #909499;
+}
+
+.gdh-share-btn:disabled,
+.gdh-share-caret:disabled {
+  cursor: default;
+}
+
+/* ---- toolbar row (pill) ---- */
+
+.gdh-toolbar {
+  padding: 8px 16px 8px;
+  display: flex;
+}
+
+/* Google's toolbar at the same window width renders ~1.35x our old scale;
+   these bumps (pill 52, buttons 38/22px glyphs, 15px text) match that. */
+
+.gdh-toolbar-pill {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #edf2fa;
+  border-radius: 32px;
+  padding: 0 18px;
+  min-height: 64px;
+  flex: 1;
+  justify-content: center;
+  max-width: 100%;
+  box-sizing: border-box;
+  /* dropdown panels (font/style/color/align/spacing/zoom) are absolutely
+     positioned children that pop out below this row — overflow-x: auto here
+     would force overflow-y to clip too (CSS auto/hidden pairing), hiding
+     every open dropdown. Rows too wide for the window wrap instead. */
+  flex-wrap: nowrap;
+  row-gap: 2px;
+}
+
+/* When groups collapse into the ⋮ More menu, left-align the remaining
+   controls (matches Google Docs' own collapsed layout) instead of
+   re-centering a partial row. */
+.gdh-toolbar-pill--left {
+  justify-content: flex-start;
+}
+
+.gdh-tb-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.gdh-tb-menu-more {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: 8px;
+}
+
+.gdh-tb-more-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+
+.gdh-tb-more-row + .gdh-tb-more-row {
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.gdh-tb-btn svg {
+  width: 28px;
+  height: 28px;
+}
+
+.gdh-tb-sep {
+  width: 1px;
+  height: 20px;
+  background: #c4c7c5;
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.gdh-tb-btn {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: #3c4043;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  position: relative;
+}
+
+.gdh-tb-btn:hover:not(:disabled) {
+  background: rgba(60, 64, 67, 0.08);
+}
+
+.gdh-tb-btn.active {
+  background: #d3e3fd;
+  color: #0b57d0;
+}
+
+.gdh-tb-btn:disabled {
+  color: #b0b3b6;
+  cursor: default;
+}
+
+.gdh-tb-a {
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 10px;
+}
+
+.gdh-tb-colorbar {
+  position: absolute;
+  bottom: 3px;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  border-radius: 1px;
+}
+
+.gdh-tb-dd {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.gdh-tb-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: #3c4043;
+  font-size: 18px;
+  padding: 0 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 78px;
+  max-width: 165px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.gdh-tb-select:hover:not(:disabled) {
+  background: rgba(60, 64, 67, 0.08);
+}
+
+.gdh-tb-select:disabled {
+  color: #b0b3b6;
+  cursor: default;
+}
+
+.gdh-tb-styles .gdh-tb-select {
+  min-width: 132px;
+  max-width: 132px;
+}
+
+.gdh-tb-font .gdh-tb-select {
+  min-width: 118px;
+  max-width: 118px;
+  font-style: italic;
+}
+
+.gdh-tb-fontsize {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.gdh-tb-step {
+  width: 20px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #3c4043;
+  font-size: 18px;
+}
+
+.gdh-tb-step:hover:not(:disabled) {
+  background: rgba(60, 64, 67, 0.08);
+}
+
+.gdh-tb-step:disabled {
+  color: #b0b3b6;
+}
+
+.gdh-tb-fontsize-val {
+  width: 28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 18px;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.gdh-tb-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  margin-top: 4px;
+  min-width: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 6px 0;
+}
+
+.gdh-tb-menu button {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 6px 14px;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.gdh-tb-menu button:hover {
+  background: var(--hover);
+}
+
+.gdh-tb-menu button.active {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.gdh-tb-menu-font button {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gdh-tb-menu-zoom {
+  min-width: 130px;
+}
+
+.gdh-tb-menu-icons button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gdh-color-grid {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  margin-top: 4px;
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: var(--docs-shadow-menu);
+  padding: 8px;
+  width: 200px;
+}
+
+.gdh-color-reset {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.gdh-color-reset:hover {
+  background: var(--hover);
+}
+
+.gdh-color-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.gdh-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---- Google Docs import picker + share popover ---- */
+
+.gdh-google-modal {
+  width: 480px;
+  max-width: 90vw;
+}
+
+.gdh-copy-folder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 12px;
+  font-size: 13px;
+}
+
+.gdh-copy-folder-label {
+  color: #5f6368;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gdh-google-status {
+  color: #5f6368;
+  font-size: 13px;
+  margin: 4px 0 12px;
+}
+
+.gdh-google-error {
+  color: #c5221f;
+  font-size: 13px;
+  margin: 4px 0 12px;
+}
+
+.gdh-google-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.gdh-google-search {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.gdh-google-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.gdh-google-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 6px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.gdh-google-list-item:hover:not(:disabled) {
+  background: #f1f3f4;
+}
+
+.gdh-google-list-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.gdh-google-doc-icon,
+.gdh-google-doc-icon-placeholder {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.gdh-google-doc-icon-placeholder {
+  border-radius: 3px;
+  background: #4285f4;
+}
+
+.gdh-google-doc-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gdh-google-doc-time {
+  color: #5f6368;
+  font-size: 11px;
+  flex: none;
+}
+
+.gdh-google-doc-loading {
+  color: #1a73e8;
+  font-size: 11px;
+  flex: none;
+}
+
+.gdh-folder-breadcrumb {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.gdh-folder-crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gdh-folder-crumb-sep {
+  color: #5f6368;
+  margin: 0 2px;
+}
+
+.gdh-folder-crumb {
+  border: none;
+  background: none;
+  color: #1a73e8;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.gdh-folder-crumb:hover:not(:disabled) {
+  background: #f1f3f4;
+}
+
+.gdh-folder-crumb:disabled {
+  color: var(--text);
+  font-weight: 500;
+  cursor: default;
+}
+
+.gdh-folder-list {
+  min-height: 60px;
+}
+
+.gdh-folder-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 3px;
+  background: #ffca28;
+}
+
+.gdh-folder-actions {
+  justify-content: space-between;
+}
+
+.gdh-folder-actions-left {
+  display: flex;
+}
+
+/* ---- Share dialog — reskinned to match current (Aug 2026) Google Docs ---- */
+
+.gdh-share-backdrop {
+  background: rgba(32, 33, 36, 0.5);
+}
+
+.gdh-share-card {
+  width: 512px;
+  max-width: 90vw;
+  padding: 24px;
+  border: none;
+  border-radius: 28px;
+  box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.15);
+  position: relative;
+  font-family:
+    'Google Sans',
+    Roboto,
+    -apple-system,
+    BlinkMacSystemFont,
+    var(--ui-cjk),
+    sans-serif;
+}
+
+.gdh-share-card h2 {
+  font-size: 26px;
+  font-weight: 400;
+  color: #1f1f1f;
+  line-height: 32px;
+  margin: 0 40px 28px 0;
+  padding: 0;
+}
+
+.gdh-share-help {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.gdh-share-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 0;
+}
+
+.gdh-share-invite-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.gdh-share-invite-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.gdh-share-invite-field .gdh-google-search {
+  margin-bottom: 0;
+  width: 100%;
+  height: 56px;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #1f1f1f;
+  background: var(--surface);
+}
+
+.gdh-share-invite-field .gdh-google-search:focus {
+  border: 2px solid #0b57d0;
+  padding: 15px;
+  outline: none;
+}
+
+/* idle: sits centered in the box like a normal placeholder. focused, or once
+   the field has a value, it floats up small and overlaps the top border with
+   a white gutter — the real Google Docs floating-label behavior, driven
+   purely by :placeholder-shown so it works without JS state. */
+.gdh-share-invite-label {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: var(--text-secondary);
+  background: transparent;
+  padding: 0;
+  pointer-events: none;
+  transition:
+    top 0.1s ease,
+    font-size 0.1s ease;
+}
+
+.gdh-share-invite-field .gdh-google-search:focus ~ .gdh-share-invite-label,
+.gdh-share-invite-field .gdh-google-search:not(:placeholder-shown) ~ .gdh-share-invite-label {
+  top: 0;
+  font-size: 12px;
+  background: var(--surface);
+  padding: 0 4px;
+  margin-left: -4px;
+}
+
+.gdh-share-invite-field .gdh-google-search:focus ~ .gdh-share-invite-label {
+  color: #0b57d0;
+}
+
+.gdh-share-role-select {
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--surface);
+}
+
+.gdh-share-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+  margin-bottom: 10px;
+}
+
+.gdh-share-section-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1f1f1f;
+}
+
+.gdh-share-section-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.gdh-share-section-actions button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gdh-share-people {
+  display: flex;
+  flex-direction: column;
+  max-height: 224px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.gdh-share-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  box-sizing: border-box;
+}
+
+.gdh-share-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.gdh-share-person-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.gdh-share-person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: #1f1f1f;
+}
+
+.gdh-share-person-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.gdh-share-role-fixed {
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding-right: 8px;
+  margin-left: auto;
+}
+
+.gdh-share-role-dd {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.gdh-share-role-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-family: inherit;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gdh-share-role-btn:hover {
+  background: var(--hover);
+}
+
+.gdh-share-role-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  z-index: 50;
+  margin-top: 4px;
+  min-width: 180px;
+}
+
+.gdh-share-role-menu button {
+  font-family: inherit;
+}
+
+.gdh-share-remove-row {
+  color: #c5221f !important;
+}
+
+.gdh-share-general {
+  padding-top: 16px;
+  margin-bottom: 0;
+}
+
+.gdh-share-general-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1f1f1f;
+  margin-bottom: 8px;
+}
+
+.gdh-share-general-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 56px;
+  box-sizing: border-box;
+}
+
+.gdh-share-general-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e6f4ea;
+  color: #1e8e3e;
+}
+
+.gdh-share-general-icon.restricted {
+  background: #f1f3f4;
+  color: var(--text-secondary);
+}
+
+.gdh-share-general-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gdh-share-general-dd {
+  position: relative;
+  align-self: flex-start;
+}
+
+.gdh-share-general-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #1f1f1f;
+  padding: 4px 4px 4px 0;
+  cursor: pointer;
+}
+
+.gdh-share-general-select:hover {
+  background: var(--hover);
+  border-radius: 4px;
+}
+
+.gdh-share-general-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  margin-top: 4px;
+  min-width: 220px;
+}
+
+.gdh-share-general-menu button {
+  font-family: inherit;
+}
+
+.gdh-share-general-sub {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.gdh-share-footer {
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  padding-top: 0;
+}
+
+.gdh-share-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gdh-share-copylink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1px solid #747775;
+  border-radius: 999px;
+  background: none;
+  color: #0b57d0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.gdh-share-copylink:hover {
+  background: rgba(11, 87, 208, 0.05);
+}
+
+.gdh-share-done {
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 24px;
+  border: none;
+  border-radius: 999px;
+  background: #0b57d0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.gdh-share-done:hover {
+  background: #0a4dbf;
+}
+
+@media print {
+  .gdh-root {
+    display: none;
+  }
 }

@@ -91,9 +91,7 @@ describe('paragraph-patch save fidelity', () => {
       }
     }
     const saved = await saveDocx(doc, finalBlocks)
-    const newDocXml = new TextDecoder().decode(
-      (await entryBytes(saved)).get('word/document.xml')!,
-    )
+    const newDocXml = new TextDecoder().decode((await entryBytes(saved)).get('word/document.xml')!)
     expect(newDocXml).toContain('<w:pStyle w:val="Heading2"/>')
     expect(newDocXml).toContain('<w:pStyle w:val="ListParagraph"/>')
     expect(newDocXml).toContain('<w:numId w:val="1"/>')

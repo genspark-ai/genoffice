@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { isConnectorPreset, connectorPoints, presetPolygon, presetPath, isPillPreset } from '../src/preset-geometry'
+import {
+  isConnectorPreset,
+  connectorPoints,
+  presetPolygon,
+  presetPath,
+  isPillPreset,
+} from '../src/preset-geometry'
 
 describe('connectorPoints', () => {
   it('straight connector runs corner to corner; flip mirrors direction', () => {
@@ -14,7 +20,9 @@ describe('connectorPoints', () => {
   })
 
   it('bentConnector2 has one elbow', () => {
-    expect(connectorPoints('bentConnector2', 200, 100, false, false)).toEqual([0, 0, 200, 0, 200, 100])
+    expect(connectorPoints('bentConnector2', 200, 100, false, false)).toEqual([
+      0, 0, 200, 0, 200, 100,
+    ])
   })
 
   it('isConnectorPreset recognizes connector presets only', () => {
@@ -59,7 +67,16 @@ describe('presetPolygon', () => {
   })
 
   it('chevron / homePlate / hexagon / star5 stay within bounds', () => {
-    for (const p of ['chevron', 'homePlate', 'hexagon', 'star5', 'parallelogram', 'trapezoid', 'octagon', 'plus']) {
+    for (const p of [
+      'chevron',
+      'homePlate',
+      'hexagon',
+      'star5',
+      'parallelogram',
+      'trapezoid',
+      'octagon',
+      'plus',
+    ]) {
       const pts = presetPolygon(p, 120, 90)
       expect(pts, p).toBeTruthy()
       inBounds(pts!, 120, 90)
@@ -79,7 +96,9 @@ describe('presetPolygon', () => {
   })
 
   it('snip1Rect cuts top-right corner by adj fraction of short side', () => {
-    expect(presetPolygon('snip1Rect', 200, 100, { adj: 20000 })).toEqual([0, 0, 180, 0, 200, 20, 200, 100, 0, 100])
+    expect(presetPolygon('snip1Rect', 200, 100, { adj: 20000 })).toEqual([
+      0, 0, 180, 0, 200, 20, 200, 100, 0, 100,
+    ])
   })
 
   it('notchedRightArrow has tail notch at mid height', () => {
@@ -92,11 +111,31 @@ describe('presetPolygon', () => {
 
   it('new polygon presets stay in bounds and are non-trivial', () => {
     for (const p of [
-      'snip2SameRect', 'snip2DiagRect', 'halfFrame', 'corner', 'diagStripe', 'lightningBolt',
-      'flowChartPreparation', 'flowChartManualInput', 'flowChartManualOperation',
-      'flowChartOffpageConnector', 'flowChartExtract', 'flowChartMerge', 'flowChartCollate',
-      'gear6', 'funnel', 'quadArrow', 'bentArrow', 'irregularSeal1', 'irregularSeal2',
-      'star7', 'star10', 'star12', 'star16', 'star24', 'star32',
+      'snip2SameRect',
+      'snip2DiagRect',
+      'halfFrame',
+      'corner',
+      'diagStripe',
+      'lightningBolt',
+      'flowChartPreparation',
+      'flowChartManualInput',
+      'flowChartManualOperation',
+      'flowChartOffpageConnector',
+      'flowChartExtract',
+      'flowChartMerge',
+      'flowChartCollate',
+      'gear6',
+      'funnel',
+      'quadArrow',
+      'bentArrow',
+      'irregularSeal1',
+      'irregularSeal2',
+      'star7',
+      'star10',
+      'star12',
+      'star16',
+      'star24',
+      'star32',
     ]) {
       const pts = presetPolygon(p, 120, 90)
       expect(pts, p).toBeTruthy()
@@ -118,7 +157,11 @@ describe('presetPolygon', () => {
 })
 
 describe('presetPath', () => {
-  const nums = (d: string) => d.split(' ').filter((t) => Number.isFinite(Number(t))).map(Number)
+  const nums = (d: string) =>
+    d
+      .split(' ')
+      .filter((t) => Number.isFinite(Number(t)))
+      .map(Number)
   const inBox = (d: string, w: number, h: number, slack = 0.01) => {
     const v = nums(d)
     for (let i = 0; i < v.length; i += 2) {
@@ -159,7 +202,14 @@ describe('presetPath', () => {
   })
 
   it('cube/can/bevel/foldedCorner carry decorative strokePath', () => {
-    for (const p of ['cube', 'can', 'bevel', 'foldedCorner', 'smileyFace', 'flowChartPredefinedProcess']) {
+    for (const p of [
+      'cube',
+      'can',
+      'bevel',
+      'foldedCorner',
+      'smileyFace',
+      'flowChartPredefinedProcess',
+    ]) {
       const r = presetPath(p, 120, 90)!
       expect(r.path, p).toMatch(/^M /)
       expect(r.strokePath, p).toMatch(/^M /)
@@ -169,12 +219,39 @@ describe('presetPath', () => {
 
   it('curved/blob presets stay near box', () => {
     for (const p of [
-      'heart', 'moon', 'sun', 'cloud', 'teardrop', 'plaque', 'noSmoking', 'ribbon', 'ribbon2',
-      'wave', 'doubleWave', 'uturnArrow', 'curvedRightArrow', 'stripedRightArrow', 'chord', 'blockArc',
-      'frame', 'round1Rect', 'round2SameRect', 'round2DiagRect', 'snipRoundRect',
-      'flowChartDocument', 'flowChartMultidocument', 'flowChartConnector', 'flowChartOr',
-      'flowChartSummingJunction', 'flowChartSort', 'flowChartDelay', 'flowChartDisplay',
-      'flowChartPunchedTape', 'flowChartMagneticDisk', 'flowChartMagneticDrum', 'flowChartInternalStorage',
+      'heart',
+      'moon',
+      'sun',
+      'cloud',
+      'teardrop',
+      'plaque',
+      'noSmoking',
+      'ribbon',
+      'ribbon2',
+      'wave',
+      'doubleWave',
+      'uturnArrow',
+      'curvedRightArrow',
+      'stripedRightArrow',
+      'chord',
+      'blockArc',
+      'frame',
+      'round1Rect',
+      'round2SameRect',
+      'round2DiagRect',
+      'snipRoundRect',
+      'flowChartDocument',
+      'flowChartMultidocument',
+      'flowChartConnector',
+      'flowChartOr',
+      'flowChartSummingJunction',
+      'flowChartSort',
+      'flowChartDelay',
+      'flowChartDisplay',
+      'flowChartPunchedTape',
+      'flowChartMagneticDisk',
+      'flowChartMagneticDrum',
+      'flowChartInternalStorage',
     ]) {
       const r = presetPath(p, 120, 90)
       expect(r, p).toBeTruthy()

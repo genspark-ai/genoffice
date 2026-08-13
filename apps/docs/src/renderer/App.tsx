@@ -84,6 +84,7 @@ import { cachedByDoc } from './doc-cache'
 import { useShallowStable, useStableCallbacks } from './use-stable'
 import { FindPanel } from './components/FindPanel'
 import { Ribbon } from './components/Ribbon'
+import { GDocsHeader } from './components/GDocsHeader'
 import { computeFormatState } from './components/ribbon-format-state'
 import { IconRedo, IconSave, IconUndo } from './components/icons'
 import { ToastHost } from './components/toast'
@@ -139,6 +140,7 @@ import {
   type PendingNumbering,
 } from './doc-state'
 import {
+  buildDocBytes,
   exportPdf as exportPdfImpl,
   loadFile as loadFileImpl,
   newFile as newFileImpl,
@@ -146,6 +148,11 @@ import {
   writeRecoveryCopy as writeRecoveryCopyImpl,
   type FileActionContext,
 } from './file-actions'
+import { GoogleCopyModal } from './components/GoogleCopyModal'
+import { GoogleFolderPicker } from './components/GoogleFolderPicker'
+import { GoogleImportModal } from './components/GoogleImportModal'
+import { GoogleSharePopover } from './components/GoogleSharePopover'
+import { showToast } from './components/toast-bus'
 import {
   allocateListNumId as allocateListNumIdImpl,
   continueNumbering as continueNumberingImpl,
@@ -303,10 +310,38 @@ const DEFAULT_SETTINGS: AiSettings = {
   ) as AiSettings['providers'],
 }
 
+/** Default chrome is the Google-Docs-style header (GDocsHeader); pass
+ *  ?header=ribbon to fall back to the legacy Office-style Ribbon. */
+const useLegacyRibbon = new URLSearchParams(window.location.search).get('header') === 'ribbon'
+
 export function App() {
   // subscribe to language switches for re-render; strings all go through module-level t, so memoized callbacks never capture stale closures
   const { lang } = useI18n()
   const [doc, setDoc] = useState<DocState | null>(null)
+  // Google Docs link for the current document: set after an import or a "Send
+  // to Google Docs"; a plain local open/new document has neither and Share
+  // shows the "save to Google Docs first" state.
+  const [googleFileId, setGoogleFileId] = useState<string | null>(null)
+  const [googleWebViewLink, setGoogleWebViewLink] = useState<string | null>(null)
+  /** drive.file only grants this app write access to files IT created (via
+   *  files.create/copy). A doc opened through Import was never granted that
+   *  access — false until a Send/Copy creates an app-owned file, so
+   *  Share/Move/Copy can gate on it instead of 403ing against Drive. */
+  const [googleWritable, setGoogleWritable] = useState(false)
+  /** last title committed via the header's editable title — overrides
+   *  doc.fileName as the default name for the next Send/Copy. Reset whenever
+   *  a new/opened file replaces it. */
+  const [googleTitleOverride, setGoogleTitleOverride] = useState<string | null>(null)
+  const [showGoogleImport, setShowGoogleImport] = useState(false)
+  const [showGoogleShare, setShowGoogleShare] = useState(false)
+  const [showGoogleCopy, setShowGoogleCopy] = useState(false)
+  const [googleFolderPickerMode, setGoogleFolderPickerMode] = useState<
+    'set-default' | 'move' | null
+  >(null)
+  /** fileId the folder picker moves when in 'move' mode — the current doc's
+   *  googleFileId by default, or a freshly-copied file's id from "Make a
+   *  copy…"'s "Move to…" toast action. */
+  const [moveGoogleFileId, setMoveGoogleFileId] = useState<string | null>(null)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
   const bootPendingRef = useRef<Promise<[OpenFileResult | null, boolean]> | null>(null)
   const bootHandledRef = useRef(false)
@@ -689,7 +724,20 @@ export function App() {
   useEffect(() => {
     void window.desktop.getRecentFiles().then(setRecent)
     void window.desktop.getAiSettings().then(setSettings)
+    void window.desktop.getTheme().then((theme) => {
+      if (theme !== 'system') setDarkCanvas(theme === 'dark')
+    })
   }, [])
+
+  useEffect(() => {
+    return window.desktop.onThemeChanged((theme) => {
+      if (theme !== 'system') setDarkCanvas(theme === 'dark')
+    })
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkCanvas ? 'dark' : 'light')
+  }, [darkCanvas])
 
   useEffect(() => {
     localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
@@ -912,10 +960,13 @@ export function App() {
     setCompareResult,
   }
 
-  const loadFile = useCallback(
-    (result: OpenFileResult | null) => loadFileImpl(fileCtxRef.current, result),
-    [],
-  )
+  const loadFile = useCallback((result: OpenFileResult | null) => {
+    setGoogleFileId(null)
+    setGoogleWebViewLink(null)
+    setGoogleWritable(false)
+    setGoogleTitleOverride(null)
+    return loadFileImpl(fileCtxRef.current, result)
+  }, [])
 
   // file renamed externally (renamed in the shell Home list) → sync the save path and title-bar file name (content unchanged)
   useEffect(
@@ -973,7 +1024,13 @@ export function App() {
   }, [loadFile])
 
   /** new document from the built-in blank template (AI can then generate into it) */
-  const newFile = useCallback(() => newFileImpl(fileCtxRef.current), [])
+  const newFile = useCallback(() => {
+    setGoogleFileId(null)
+    setGoogleWebViewLink(null)
+    setGoogleWritable(false)
+    setGoogleTitleOverride(null)
+    return newFileImpl(fileCtxRef.current)
+  }, [])
 
   const openRecent = useCallback(
     async (path: string) => {
@@ -985,6 +1042,125 @@ export function App() {
   const save = useCallback(
     (saveAs: boolean, auto = false) => saveImpl(fileCtxRef.current, saveAs, auto),
     [],
+  )
+
+  /** File ▸ Import from Google Docs… — export the picked doc to .docx and open
+   *  it through the normal open pipeline; keeps googleFileId for round-trip Send. */
+  const importFromGoogle = useCallback(
+    async (fileId: string) => {
+      const result = await window.desktop.googleImportDoc(fileId)
+      if (!result.ok) throw new Error(result.error)
+      await loadFile(result.data)
+      setGoogleFileId(result.data.googleFileId)
+      setGoogleWebViewLink(result.data.googleWebViewLink)
+    },
+    [loadFile],
+  )
+
+  /** File ▸ Send to Google Docs / header Share: serialize via the same
+   *  buildDocBytes the save pipeline uses, then create or update the Google Doc. */
+  const sendToGoogle = useCallback(async (): Promise<{
+    fileId: string
+    webViewLink: string
+    createdNew: boolean
+    folderName?: string
+    folderCleared?: boolean
+  }> => {
+    const bytes = await buildDocBytes(fileCtxRef.current)
+    if (!bytes) throw new Error('nothing to send')
+    const buffer = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer
+    const name = googleTitleOverride ?? (doc?.fileName ?? 'Untitled').replace(/\.docx$/i, '')
+    const result = googleFileId
+      ? await window.desktop.googleUpdateDoc(googleFileId, buffer, name)
+      : await window.desktop.googleCreateDoc(name, buffer)
+    if (!result.ok) throw new Error(result.error)
+    setGoogleFileId(result.data.id)
+    setGoogleWebViewLink(result.data.webViewLink)
+    setGoogleWritable(true)
+    return {
+      fileId: result.data.id,
+      webViewLink: result.data.webViewLink,
+      createdNew: 'createdNew' in result.data && result.data.createdNew === true,
+      folderName: 'folderName' in result.data ? result.data.folderName : undefined,
+      folderCleared: 'folderCleared' in result.data ? result.data.folderCleared : undefined,
+    }
+  }, [doc?.fileName, googleFileId, googleTitleOverride])
+
+  const sendingToGoogleRef = useRef(false)
+  const [sendingToGoogle, setSendingToGoogle] = useState(false)
+
+  const sendToGoogleWithToast = useCallback(async () => {
+    // Guard against a double-click firing two create-doc requests before
+    // googleFileId (which switches subsequent sends to update) has committed.
+    if (sendingToGoogleRef.current) return
+    sendingToGoogleRef.current = true
+    setSendingToGoogle(true)
+    try {
+      const { fileId, webViewLink, createdNew, folderName, folderCleared } = await sendToGoogle()
+      const base = createdNew
+        ? 'Created a new Google Doc (no write access to the original)'
+        : 'Sent to Google Docs'
+      const text = folderName ? `${base} — created in /${folderName}` : base
+      showToast(
+        text,
+        'success',
+        {
+          label: 'Open in Google Docs',
+          onClick: () => window.desktop.googleOpenExternal(webViewLink),
+        },
+        {
+          label: 'Move to…',
+          onClick: () => {
+            setMoveGoogleFileId(fileId)
+            setGoogleFolderPickerMode('move')
+          },
+        },
+      )
+      if (folderCleared) {
+        showToast(
+          'Default Drive folder was deleted — cleared and sent to My Drive instead',
+          'error',
+        )
+      }
+    } catch (err) {
+      showToast(`Send to Google Docs failed: ${String(err)}`, 'error')
+    } finally {
+      sendingToGoogleRef.current = false
+      setSendingToGoogle(false)
+    }
+  }, [sendToGoogle])
+
+  /** File ▸ Make a copy… — duplicate the linked Google Doc via files.copy. */
+  const makeGoogleCopy = useCallback(
+    async (name: string, folderId?: string) => {
+      if (!googleFileId) throw new Error('document is not linked to Google Docs')
+      const result = await window.desktop.googleCopyFile(googleFileId, name, folderId)
+      if (!result.ok) throw new Error(result.error)
+      // Google Docs drops you straight into the new copy after naming it —
+      // import it and switch the editor over. The copy is app-created (via
+      // files.copy), so it's writable even though importFromGoogle defaults to false.
+      await importFromGoogle(result.data.id)
+      setGoogleWritable(true)
+      showToast(
+        `Now editing "${name}"`,
+        'success',
+        {
+          label: 'Open in Google Docs',
+          onClick: () => window.desktop.googleOpenExternal(result.data.webViewLink),
+        },
+        {
+          label: 'Move to…',
+          onClick: () => {
+            setMoveGoogleFileId(result.data.id)
+            setGoogleFolderPickerMode('move')
+          },
+        },
+      )
+    },
+    [googleFileId, importFromGoogle],
   )
 
   // inserting a section break needs one save for the new section to take effect; the
@@ -2795,49 +2971,166 @@ export function App() {
         <style>{`.editor-scroll .doc-page { column-count: ${colFlow.cols}; column-gap: ${colFlow.gapPx}px; column-fill: balance; }
 .editor-scroll .doc-page.measuring-columns { column-count: auto; width: ${colFlow.colWidthPx + twipsToPx(canvasSection?.marginLeft ?? section?.marginLeft ?? 0) + twipsToPx(canvasSection?.marginRight ?? section?.marginRight ?? 0)}px; }`}</style>
       )}
-      <Ribbon
-        quickActions={quickActions}
-        editor={editor}
-        formatState={formatState}
-        hasDoc={!!doc}
-        blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
-        styles={ribbonStyles}
-        docDefaults={doc?.parsed.docDefaults}
-        showAi={showAi}
-        section={sections[activeSection]?.settings ?? section}
-        activeSection={sections.length > 1 ? activeSection : null}
-        pageColor={pageColor}
-        watermark={watermark}
-        themeFonts={themeFonts}
-        themeColors={themeColors}
-        inkTool={inkTool}
-        inkPen={inkPen}
-        inkHighlighter={inkHighlighter}
-        inkCount={inkAnnotations.length}
-        sources={sources}
-        zoom={Math.round(zoom)}
-        darkCanvas={darkCanvas}
-        tabRequest={ribbonTabRequest}
-        header={header}
-        footer={footer}
-        titlePg={titlePg}
-        evenOddHf={evenOddHf}
-        showMarks={showMarks}
-        showRuler={showRuler}
-        showNav={showNav}
-        commentCount={comments.length}
-        canComment={!editor.state.selection.empty}
-        trackChanges={trackChanges}
-        revisionDisplay={revisionDisplay}
-        revisionCount={revisionCount}
-        isProtected={isProtected}
-        filePath={doc?.filePath ?? null}
-        viewMode={viewMode}
-        readMode={readMode}
-        showGrid={showGrid}
-        splitView={splitView}
-        {...ribbonActions}
-      />
+      {(() => {
+        const sharedRibbonProps = {
+          quickActions,
+          editor,
+          formatState,
+          hasDoc: !!doc,
+          blocks: doc?.parsed.blocks ?? EMPTY_BLOCKS,
+          styles: ribbonStyles,
+          docDefaults: doc?.parsed.docDefaults,
+          showAi,
+          section: sections[activeSection]?.settings ?? section,
+          activeSection: sections.length > 1 ? activeSection : null,
+          pageColor,
+          watermark,
+          themeFonts,
+          themeColors,
+          inkTool,
+          inkPen,
+          inkHighlighter,
+          inkCount: inkAnnotations.length,
+          sources,
+          zoom: Math.round(zoom),
+          darkCanvas,
+          tabRequest: ribbonTabRequest,
+          header,
+          footer,
+          titlePg,
+          evenOddHf,
+          showMarks,
+          showRuler,
+          showNav,
+          commentCount: comments.length,
+          canComment: !editor.state.selection.empty,
+          trackChanges,
+          revisionDisplay,
+          revisionCount,
+          isProtected,
+          filePath: doc?.filePath ?? null,
+          viewMode,
+          readMode,
+          showGrid,
+          splitView,
+          ...ribbonActions,
+        }
+        // Default chrome is the Google-Docs-style header; ?header=ribbon keeps
+        // the legacy Office-style Ribbon mounted for comparison/rollback —
+        // Ribbon.tsx stays in the tree either way, just not always rendered.
+        if (useLegacyRibbon) return <Ribbon {...sharedRibbonProps} />
+        return (
+          <GDocsHeader
+            {...sharedRibbonProps}
+            onNewFile={newFile}
+            onFind={() => setShowFind(true)}
+            onFontDialog={() => setShowFontDialog(true)}
+            onWordCount={openStats}
+            onExportPdf={() => void exportPdf()}
+            onLink={() => setShowLinkModal(true)}
+            onEquation={() => setShowEquationModal(true)}
+            onInsertTable={() => {
+              if (editor && doc) insertTableAt(editor, 3, 3)
+            }}
+            onInsertImage={() => {
+              if (editor && doc) void insertImageViaDialog(editor)
+            }}
+            onInsertPageBreak={() => {
+              if (editor && doc) insertPageBreakAt(editor)
+            }}
+            googleFileId={googleFileId}
+            googleWritable={googleWritable}
+            displayTitle={
+              googleTitleOverride ?? doc?.fileName?.replace(/\.docx$/i, '') ?? 'Untitled'
+            }
+            onTitleCommit={(title) => setGoogleTitleOverride(title)}
+            onImportFromGoogle={() => setShowGoogleImport(true)}
+            onSendToGoogle={() => void sendToGoogleWithToast()}
+            sendingToGoogle={sendingToGoogle}
+            onOpenGoogleShare={() => setShowGoogleShare(true)}
+            onOpenGoogleFolderSettings={() => setGoogleFolderPickerMode('set-default')}
+            onMakeGoogleCopy={() => {
+              if (!googleWritable) {
+                showToast('Send to Google Docs first', 'error')
+                return
+              }
+              setShowGoogleCopy(true)
+            }}
+            onMoveGoogleFile={() => {
+              if (!googleWritable) {
+                showToast('Send to Google Docs first', 'error')
+                return
+              }
+              setMoveGoogleFileId(googleFileId)
+              setGoogleFolderPickerMode('move')
+            }}
+          />
+        )
+      })()}
+
+      {showGoogleImport && (
+        <GoogleImportModal onClose={() => setShowGoogleImport(false)} onImport={importFromGoogle} />
+      )}
+      {showGoogleCopy && (
+        <GoogleCopyModal
+          docTitle={
+            googleTitleOverride ?? doc?.fileName?.replace(/\.docx$/i, '') ?? 'Untitled document'
+          }
+          onClose={() => setShowGoogleCopy(false)}
+          onMakeCopy={makeGoogleCopy}
+        />
+      )}
+      {showGoogleShare && (
+        <GoogleSharePopover
+          fileId={googleWritable ? googleFileId : null}
+          webViewLink={googleWebViewLink}
+          docName={
+            googleTitleOverride ?? doc?.fileName?.replace(/\.docx$/i, '') ?? 'Untitled document'
+          }
+          onClose={() => setShowGoogleShare(false)}
+          onSaveToGoogleFirst={async () => {
+            await sendToGoogle()
+          }}
+          onMoveToFolder={() => {
+            setMoveGoogleFileId(googleFileId)
+            setGoogleFolderPickerMode('move')
+          }}
+        />
+      )}
+      {googleFolderPickerMode === 'set-default' && (
+        <GoogleFolderPicker
+          mode="set-default"
+          onClose={() => setGoogleFolderPickerMode(null)}
+          onPick={async (folder) => {
+            const result = await window.desktop.googleSetSettings({
+              defaultFolderId: folder?.id ?? null,
+              defaultFolderName: folder?.name ?? null,
+            })
+            if (!result.ok) throw new Error(result.error)
+            showToast(folder ? `Default folder set to /${folder.name}` : 'Default folder cleared')
+          }}
+          onClearDefault={async () => {
+            const result = await window.desktop.googleSetSettings({
+              defaultFolderId: null,
+              defaultFolderName: null,
+            })
+            if (!result.ok) throw new Error(result.error)
+            showToast('Default folder cleared')
+          }}
+        />
+      )}
+      {googleFolderPickerMode === 'move' && moveGoogleFileId && (
+        <GoogleFolderPicker
+          mode="move"
+          onClose={() => setGoogleFolderPickerMode(null)}
+          onPick={async (folder) => {
+            const targetId = folder?.id ?? 'root'
+            const result = await window.desktop.googleMoveFile(moveGoogleFileId, targetId)
+            if (!result.ok) throw new Error(result.error)
+            showToast(folder ? `Moved to /${folder.name}` : 'Moved to My Drive')
+          }}
+        />
+      )}
 
       <div className="app-main">
         {doc && (

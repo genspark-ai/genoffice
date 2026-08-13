@@ -100,7 +100,10 @@ export function elementSpid(el: SlideElement): number | null {
 // ── Write: SlideAnimation[] → <p:timing> ───────────────────────────────
 
 /** presetID/presetClass/presetSubtype (used by PowerPoint's animation pane to show effect names). */
-const PRESET: Record<AnimEffectKind, { id: number; cls: 'entr' | 'emph' | 'exit' | 'path'; sub: number }> = {
+const PRESET: Record<
+  AnimEffectKind,
+  { id: number; cls: 'entr' | 'emph' | 'exit' | 'path'; sub: number }
+> = {
   appear: { id: 1, cls: 'entr', sub: 0 },
   fade: { id: 10, cls: 'entr', sub: 0 },
   flyIn: { id: 2, cls: 'entr', sub: 4 }, // from bottom
@@ -213,7 +216,14 @@ function keyframeAnimXml(
 }
 
 /** ppt_x/ppt_y translation animation (for fly in/out). */
-function moveAnimXml(gen: IdGen, tgt: string, dur: number, attr: 'ppt_x' | 'ppt_y', from: string, to: string): string {
+function moveAnimXml(
+  gen: IdGen,
+  tgt: string,
+  dur: number,
+  attr: 'ppt_x' | 'ppt_y',
+  from: string,
+  to: string,
+): string {
   return keyframeAnimXml(gen, tgt, dur, attr, [
     [0, from],
     [100000, to],
@@ -553,7 +563,8 @@ function rebuildTimingPreservingXml(timing: string, anims: SlideAnimation[]): st
     if (childOpen < 0) return null
     const childClose = findBalancedClose(timing, childOpen, 'p:childTnLst')
     if (childClose < 0) return null
-    newTiming = timing.slice(0, childOpen + '<p:childTnLst>'.length) + groupXml + timing.slice(childClose)
+    newTiming =
+      timing.slice(0, childOpen + '<p:childTnLst>'.length) + groupXml + timing.slice(childClose)
   } else {
     // Original timing has no main sequence (only trigger/media nodes): insert a brand-new <p:seq> at the end of the tmRoot childTnLst
     const rootM = /<p:cTn\b[^>]*\bnodeType="tmRoot"[^>]*>/.exec(timing)
@@ -584,7 +595,11 @@ export function patchSlideTimingXml(bodySuffix: string, anims: SlideAnimation[])
   if (timingM) {
     const rebuilt = rebuildTimingPreservingXml(timingM[0], anims)
     if (rebuilt != null)
-      return bodySuffix.slice(0, timingM.index) + rebuilt + bodySuffix.slice(timingM.index + timingM[0].length)
+      return (
+        bodySuffix.slice(0, timingM.index) +
+        rebuilt +
+        bodySuffix.slice(timingM.index + timingM[0].length)
+      )
   }
   const stripped = bodySuffix.replace(TIMING_RE, '')
   if (anims.length === 0) return stripped
@@ -772,7 +787,8 @@ function appendBldPs(timing: string, items: Placed[]): string {
   }
   // spids already having build="p": write only one paragraph bldP per shape
   const paraSeen = new Set<string>()
-  for (const m of timing.matchAll(/<p:bldP\b[^>]*\bspid="(\d+)"[^>]*\bbuild="p"/g)) paraSeen.add(m[1]!)
+  for (const m of timing.matchAll(/<p:bldP\b[^>]*\bspid="(\d+)"[^>]*\bbuild="p"/g))
+    paraSeen.add(m[1]!)
   const parts: string[] = []
   for (const p of items) {
     if (p.a.paragraph != null) {
@@ -827,7 +843,8 @@ export function patchSlideTimingIncrementalXml(
     // Mixing whole-shape and paragraph animations on one shape changes the bldP form
     // (plain ↔ build="p"); defer to a full rebuild
     const kindBySpid = new Map<number, number>()
-    for (const a of anims) kindBySpid.set(a.spid, (kindBySpid.get(a.spid) ?? 0) | (a.paragraph == null ? 1 : 2))
+    for (const a of anims)
+      kindBySpid.set(a.spid, (kindBySpid.get(a.spid) ?? 0) | (a.paragraph == null ? 1 : 2))
     if (added.some((a) => kindBySpid.get(a.spid) === 3)) return null
     const seqM = /<p:cTn\b[^>]*\bnodeType="mainSeq"[^>]*>/.exec(timing)
     if (!seqM) return null
@@ -842,7 +859,10 @@ export function patchSlideTimingIncrementalXml(
     const groups = placeAnims(added, grpBase)
     const groupsXml = groups.map((g) => groupParXml(gen, g)).join('')
     let newTiming = timing.slice(0, childClose) + groupsXml + timing.slice(childClose)
-    newTiming = appendBldPs(newTiming, groups.flatMap((g) => g.items))
+    newTiming = appendBldPs(
+      newTiming,
+      groups.flatMap((g) => g.items),
+    )
     return splice(newTiming)
   }
 
@@ -864,7 +884,9 @@ export function patchSlideTimingIncrementalXml(
     // Keep the original cTn's grpId (bldP is keyed on it); recompute from the list only when missing
     const origGrpId = /\bgrpId="(\d+)"/.exec(timing.slice(span.start, span.end))?.[1]
     const grpId =
-      origGrpId != null ? Number(origGrpId) : anims.slice(0, i).filter((x) => x.spid === a.spid).length
+      origGrpId != null
+        ? Number(origGrpId)
+        : anims.slice(0, i).filter((x) => x.spid === a.spid).length
     const par = effectParXml(gen, { a, startMs: absStarts(anims)[i]!, grpId })
     return splice(timing.slice(0, span.start) + par + timing.slice(span.end))
   }

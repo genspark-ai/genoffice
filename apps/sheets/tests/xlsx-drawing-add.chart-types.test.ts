@@ -5,11 +5,13 @@ import { buildChartXml, type ChartAdd } from '../src/gateway/xlsx-drawing-add'
 const chart = (chartType: ChartAdd['chartType'], categories: readonly string[]): ChartAdd => ({
   chartType,
   title: 'Test Chart',
-  series: [{
-    name: 'Series 1',
-    categories,
-    values: [10, 20, 30],
-  }],
+  series: [
+    {
+      name: 'Series 1',
+      categories,
+      values: [10, 20, 30],
+    },
+  ],
 })
 
 describe('buildChartXml chart types', () => {
@@ -29,8 +31,10 @@ describe('buildChartXml chart types', () => {
 
   it('scatter falls back to ordinal X values when categories are not numeric', () => {
     const xml = buildChartXml(chart('scatter', ['a', 'b', 'c']))
-    expect(xml).toContain('<c:xVal><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>0</c:v></c:pt>'
-      + '<c:pt idx="1"><c:v>1</c:v></c:pt><c:pt idx="2"><c:v>2</c:v></c:pt></c:numLit></c:xVal>')
+    expect(xml).toContain(
+      '<c:xVal><c:numLit><c:ptCount val="3"/><c:pt idx="0"><c:v>0</c:v></c:pt>' +
+        '<c:pt idx="1"><c:v>1</c:v></c:pt><c:pt idx="2"><c:v>2</c:v></c:pt></c:numLit></c:xVal>',
+    )
   })
 
   it('combo plots the last series as a line on a secondary right axis', () => {

@@ -18,7 +18,9 @@ export interface SafeContextColumn {
   }
 }
 
-export function applyPrivacyPolicy(columns: readonly ContextColumn[]): readonly SafeContextColumn[] {
+export function applyPrivacyPolicy(
+  columns: readonly ContextColumn[],
+): readonly SafeContextColumn[] {
   const safeColumns: SafeContextColumn[] = []
   for (const column of columns) {
     if (column.policy === 'deny') continue

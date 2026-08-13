@@ -15,12 +15,14 @@ async function main(): Promise<void> {
   const plan: ChangePlan = {
     transactionId: 'benchmark',
     baseRevision: 0,
-    cellChanges: [{
-      sheetId: 'sheet-1',
-      address: 'A1',
-      before: { value: 1 },
-      after: { value: 2 },
-    }],
+    cellChanges: [
+      {
+        sheetId: 'sheet-1',
+        address: 'A1',
+        before: { value: 1 },
+        after: { value: 2 },
+      },
+    ],
     sheetRenames: [],
     structuralChanges: [],
     formatChanges: [],

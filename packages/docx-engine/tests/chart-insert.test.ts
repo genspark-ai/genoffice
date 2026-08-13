@@ -136,9 +136,11 @@ describe('chart embedded workbook', () => {
       ['Q1', 'Q2'],
       [{ name: '华东', values: [100, 200] }],
     )
-    const patched = await patchChartWorkbookXlsxBase64(original, ['A', 'B'], [
-      { name: '华东', values: [999, 888] },
-    ])
+    const patched = await patchChartWorkbookXlsxBase64(
+      original,
+      ['A', 'B'],
+      [{ name: '华东', values: [999, 888] }],
+    )
     expect(patched).toBeTruthy()
     const binaryStr = atob(patched!)
     const bytes = new Uint8Array(binaryStr.length)

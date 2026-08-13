@@ -36,10 +36,8 @@ export interface TableAddition {
   readonly bandedRows: boolean
 }
 
-const TABLE_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
-const TABLE_CONTENT_TYPE =
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
+const TABLE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
+const TABLE_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
 const DEFAULT_TABLE_STYLE = 'TableStyleMedium2'
 
 export async function applyTableAdditions(
@@ -54,9 +52,7 @@ export async function applyTableAdditions(
     validateAddition(addition)
     const lowerName = addition.name.toLowerCase()
     if (reserved.has(lowerName)) {
-      throw new TableAddError(
-        `Table name "${addition.name}" is already taken in this workbook.`,
-      )
+      throw new TableAddError(`Table name "${addition.name}" is already taken in this workbook.`)
     }
     reserved.add(lowerName)
     await assertNameNotDefined(pkg, addition.name)
@@ -103,9 +99,7 @@ function validateAddition(addition: TableAddition): void {
       throw new TableAddError(`Table "${addition.name}" has a blank column name.`)
     }
     if (seen.has(normalized)) {
-      throw new TableAddError(
-        `Table "${addition.name}" has duplicate column name "${name}".`,
-      )
+      throw new TableAddError(`Table "${addition.name}" has duplicate column name "${name}".`)
     }
     seen.add(normalized)
   }
@@ -143,9 +137,7 @@ async function assertNameNotDefined(pkg: MutablePackage, name: string): Promise<
   const workbookXml = await pkg.readText('xl/workbook.xml')
   for (const match of workbookXml.matchAll(/<definedName\b[^>]*\bname="([^"]+)"/g)) {
     if (match[1]?.toLowerCase() === name.toLowerCase()) {
-      throw new TableAddError(
-        `Table name "${name}" collides with a defined name in the workbook.`,
-      )
+      throw new TableAddError(`Table name "${name}" collides with a defined name in the workbook.`)
     }
   }
 }
@@ -153,10 +145,7 @@ async function assertNameNotDefined(pkg: MutablePackage, name: string): Promise<
 /// The new table must not overlap any table already on the same worksheet.
 /// Additions earlier in this save already appended their relationships, so
 /// the rels scan covers unsaved tables too.
-async function assertNoTableOverlap(
-  pkg: MutablePackage,
-  addition: TableAddition,
-): Promise<void> {
+async function assertNoTableOverlap(pkg: MutablePackage, addition: TableAddition): Promise<void> {
   const relsPath = relsPathFor(addition.worksheetPath)
   if (!(await pkg.has(relsPath))) return
   const relsXml = await pkg.readText(relsPath)
@@ -169,9 +158,7 @@ async function assertNoTableOverlap(
     if (!(await pkg.has(tablePath))) continue
     const ref = /<table\b[^>]*\bref="([^"]+)"/.exec(await pkg.readText(tablePath))?.[1]
     if (ref && areasOverlap(addition.area, parseRef(ref))) {
-      throw new TableAddError(
-        `Table "${addition.name}" overlaps an existing table (${ref}).`,
-      )
+      throw new TableAddError(`Table "${addition.name}" overlaps an existing table (${ref}).`)
     }
   }
 }
@@ -208,18 +195,22 @@ function buildTableXml(id: number, addition: TableAddition): string {
   const ref = areaToRef(addition.area)
   const name = escapeAttribute(addition.name)
   const columns = addition.columnNames
-    .map((columnName, index) =>
-      `<tableColumn id="${index + 1}" name="${escapeAttribute(columnName)}"/>`)
+    .map(
+      (columnName, index) =>
+        `<tableColumn id="${index + 1}" name="${escapeAttribute(columnName)}"/>`,
+    )
     .join('')
   const style = escapeAttribute(addition.style ?? DEFAULT_TABLE_STYLE)
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    + '<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-    + `id="${id}" name="${name}" displayName="${name}" ref="${ref}" totalsRowShown="0">`
-    + `<autoFilter ref="${ref}"/>`
-    + `<tableColumns count="${addition.columnNames.length}">${columns}</tableColumns>`
-    + `<tableStyleInfo name="${style}" showFirstColumn="0" showLastColumn="0" `
-    + `showRowStripes="${addition.bandedRows ? 1 : 0}" showColumnStripes="0"/>`
-    + '</table>'
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+    '<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    `id="${id}" name="${name}" displayName="${name}" ref="${ref}" totalsRowShown="0">` +
+    `<autoFilter ref="${ref}"/>` +
+    `<tableColumns count="${addition.columnNames.length}">${columns}</tableColumns>` +
+    `<tableStyleInfo name="${style}" showFirstColumn="0" showLastColumn="0" ` +
+    `showRowStripes="${addition.bandedRows ? 1 : 0}" showColumnStripes="0"/>` +
+    '</table>'
+  )
 }
 
 /// Appends (or extends) the worksheet's <tableParts> element. Schema order
@@ -256,8 +247,10 @@ function ensureRelationshipNamespace(worksheetXml: string): string {
 }
 
 function areaToRef(area: TableArea): string {
-  return `${columnLabel(area.startColumn)}${area.startRow + 1}`
-    + `:${columnLabel(area.endColumn)}${area.endRow + 1}`
+  return (
+    `${columnLabel(area.startColumn)}${area.startRow + 1}` +
+    `:${columnLabel(area.endColumn)}${area.endRow + 1}`
+  )
 }
 
 function parseRef(ref: string): TableArea {
@@ -279,8 +272,12 @@ function labelToIndex(label: string): number {
 }
 
 function areasOverlap(a: TableArea, b: TableArea): boolean {
-  return a.startRow <= b.endRow && b.startRow <= a.endRow
-    && a.startColumn <= b.endColumn && b.startColumn <= a.endColumn
+  return (
+    a.startRow <= b.endRow &&
+    b.startRow <= a.endRow &&
+    a.startColumn <= b.endColumn &&
+    b.startColumn <= a.endColumn
+  )
 }
 
 function escapeAttribute(input: string): string {

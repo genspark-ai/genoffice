@@ -8,8 +8,7 @@ import type { MutablePackage } from './xlsx-drawing-add'
 
 export class VisualEditError extends Error {}
 
-const ANCHOR_PATTERN =
-  /<xdr:(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[\s\S]*?<\/xdr:\1>/g
+const ANCHOR_PATTERN = /<xdr:(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[\s\S]*?<\/xdr:\1>/g
 
 export async function applyVisualEdits(
   pkg: MutablePackage,
@@ -66,8 +65,9 @@ async function cascadeChartRemovals(
     if (remainingDrawingXml.includes(`r:id="${relId}"`)) {
       throw new VisualEditError('Another anchor still references the deleted chart.')
     }
-    const relMatch = new RegExp(`<Relationship\\b[^>]*\\bId="${escapeRegExp(relId)}"[^>]*/>`)
-      .exec(relsXml)
+    const relMatch = new RegExp(`<Relationship\\b[^>]*\\bId="${escapeRegExp(relId)}"[^>]*/>`).exec(
+      relsXml,
+    )
     if (!relMatch) {
       throw new VisualEditError('The deleted chart has no drawing relationship.')
     }
@@ -108,11 +108,7 @@ function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function applyOneEdit(
-  xml: string,
-  edit: WorkbookVisualEdit,
-  removedChartRelIds: string[],
-): string {
+function applyOneEdit(xml: string, edit: WorkbookVisualEdit, removedChartRelIds: string[]): string {
   const anchors = [...xml.matchAll(ANCHOR_PATTERN)]
   const match = anchors[edit.drawingIndex]
   if (!match) {
@@ -141,19 +137,21 @@ function applyOneEdit(
   if (kind === 'absoluteAnchor') {
     throw new VisualEditError('This visual uses an absolute anchor — moving it is not supported.')
   }
-  const from = `<xdr:from><xdr:col>${anchor.fromColumn}</xdr:col>`
-    + `<xdr:colOff>${anchor.fromColumnOffset}</xdr:colOff>`
-    + `<xdr:row>${anchor.fromRow}</xdr:row>`
-    + `<xdr:rowOff>${anchor.fromRowOffset}</xdr:rowOff></xdr:from>`
+  const from =
+    `<xdr:from><xdr:col>${anchor.fromColumn}</xdr:col>` +
+    `<xdr:colOff>${anchor.fromColumnOffset}</xdr:colOff>` +
+    `<xdr:row>${anchor.fromRow}</xdr:row>` +
+    `<xdr:rowOff>${anchor.fromRowOffset}</xdr:rowOff></xdr:from>`
   let patched = anchorXml.replace(/<xdr:from>[\s\S]*?<\/xdr:from>/, () => from)
   if (patched === anchorXml && !anchorXml.includes('<xdr:from>')) {
     throw new VisualEditError('Drawing anchor has no from marker — moving it is not supported.')
   }
   if (kind === 'twoCellAnchor') {
-    const to = `<xdr:to><xdr:col>${anchor.toColumn}</xdr:col>`
-      + `<xdr:colOff>${anchor.toColumnOffset}</xdr:colOff>`
-      + `<xdr:row>${anchor.toRow}</xdr:row>`
-      + `<xdr:rowOff>${anchor.toRowOffset}</xdr:rowOff></xdr:to>`
+    const to =
+      `<xdr:to><xdr:col>${anchor.toColumn}</xdr:col>` +
+      `<xdr:colOff>${anchor.toColumnOffset}</xdr:colOff>` +
+      `<xdr:row>${anchor.toRow}</xdr:row>` +
+      `<xdr:rowOff>${anchor.toRowOffset}</xdr:rowOff></xdr:to>`
     // An unchanged edge replaces to an identical string, so presence must be
     // checked directly (an NW resize touches only the from marker).
     const withTo = patched.replace(/<xdr:to>[\s\S]*?<\/xdr:to>/, () => to)

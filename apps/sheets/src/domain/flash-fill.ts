@@ -4,9 +4,7 @@
 /// examples cannot be explained by concatenation, we return null instead of
 /// guessing.
 
-export type FlashFillToken =
-  | { kind: 'literal'; text: string }
-  | { kind: 'field'; index: number }
+export type FlashFillToken = { kind: 'literal'; text: string } | { kind: 'field'; index: number }
 
 export type FlashFillTemplate = FlashFillToken[]
 
@@ -63,6 +61,6 @@ export function applyFlashFillTemplate(
   source: readonly string[],
 ): string {
   return template
-    .map((token) => token.kind === 'literal' ? token.text : (source[token.index] ?? '').trim())
+    .map((token) => (token.kind === 'literal' ? token.text : (source[token.index] ?? '').trim()))
     .join('')
 }

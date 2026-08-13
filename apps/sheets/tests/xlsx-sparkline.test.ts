@@ -28,15 +28,19 @@ function group(overrides: Partial<Omit<SheetSparklineAddition, 'sheetName'>> = {
 
 describe('applySparklineAdditions', () => {
   it('creates extLst, the x14 ext, and a full group', () => {
-    const xml = applySparklineAdditions(bareWorksheet, [group({
-      type: 'column',
-      cells: [
-        { cell: 'D2', sourceRef: 'Sheet1!A2:F2' },
-        { cell: 'D3', sourceRef: 'Sheet1!A3:F3' },
-      ],
-    })])
-    expect(xml).toContain(`<extLst><ext uri="${X14_URI}"`
-      + ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">')
+    const xml = applySparklineAdditions(bareWorksheet, [
+      group({
+        type: 'column',
+        cells: [
+          { cell: 'D2', sourceRef: 'Sheet1!A2:F2' },
+          { cell: 'D3', sourceRef: 'Sheet1!A3:F3' },
+        ],
+      }),
+    ])
+    expect(xml).toContain(
+      `<extLst><ext uri="${X14_URI}"` +
+        ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">',
+    )
     expect(xml).toContain(
       '<x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">',
     )
@@ -60,10 +64,12 @@ describe('applySparklineAdditions', () => {
   })
 
   it('writes stacked groups with their type and escapes source refs', () => {
-    const xml = applySparklineAdditions(bareWorksheet, [group({
-      type: 'stacked',
-      cells: [{ cell: 'B1', sourceRef: "'P&L'!A1:F1" }],
-    })])
+    const xml = applySparklineAdditions(bareWorksheet, [
+      group({
+        type: 'stacked',
+        cells: [{ cell: 'B1', sourceRef: "'P&L'!A1:F1" }],
+      }),
+    ])
     expect(xml).toContain('type="stacked"')
     expect(xml).toContain("<xm:f>'P&amp;L'!A1:F1</xm:f>")
   })
@@ -82,13 +88,13 @@ describe('applySparklineAdditions', () => {
   it('appends new groups inside an existing x14 sparkline ext', () => {
     const existing = bareWorksheet.replace(
       '</worksheet>',
-      `<extLst><ext uri="${X14_URI}"`
-      + ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">'
-      + '<x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">'
-      + '<x14:sparklineGroup displayEmptyCellsAs="gap"><x14:sparklines>'
-      + '<x14:sparkline><xm:f>Sheet1!A1:F1</xm:f><xm:sqref>C1</xm:sqref></x14:sparkline>'
-      + '</x14:sparklines></x14:sparklineGroup>'
-      + '</x14:sparklineGroups></ext></extLst></worksheet>',
+      `<extLst><ext uri="${X14_URI}"` +
+        ' xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">' +
+        '<x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">' +
+        '<x14:sparklineGroup displayEmptyCellsAs="gap"><x14:sparklines>' +
+        '<x14:sparkline><xm:f>Sheet1!A1:F1</xm:f><xm:sqref>C1</xm:sqref></x14:sparkline>' +
+        '</x14:sparklines></x14:sparklineGroup>' +
+        '</x14:sparklineGroups></ext></extLst></worksheet>',
     )
     const xml = applySparklineAdditions(existing, [group()])
     expect((xml.match(/<ext /g) ?? []).length).toBe(1)
@@ -100,19 +106,22 @@ describe('applySparklineAdditions', () => {
 
   it('fails closed when the host cell already has a sparkline', () => {
     const existing = applySparklineAdditions(bareWorksheet, [group()])
-    expect(() => applySparklineAdditions(existing, [group()]))
-      .toThrow(SparklineAddError)
-    expect(() => applySparklineAdditions(existing, [group()]))
-      .toThrow(/D2 already has a sparkline/)
+    expect(() => applySparklineAdditions(existing, [group()])).toThrow(SparklineAddError)
+    expect(() => applySparklineAdditions(existing, [group()])).toThrow(/D2 already has a sparkline/)
     // D20 must not collide with D2.
-    expect(() => applySparklineAdditions(existing, [group({
-      cells: [{ cell: 'D20', sourceRef: 'Sheet1!A20:F20' }],
-    })])).not.toThrow()
+    expect(() =>
+      applySparklineAdditions(existing, [
+        group({
+          cells: [{ cell: 'D20', sourceRef: 'Sheet1!A20:F20' }],
+        }),
+      ]),
+    ).not.toThrow()
   })
 
   it('rejects duplicate host cells within one save', () => {
-    expect(() => applySparklineAdditions(bareWorksheet, [group(), group({ type: 'column' })]))
-      .toThrow(/D2 already has a sparkline/)
+    expect(() =>
+      applySparklineAdditions(bareWorksheet, [group(), group({ type: 'column' })]),
+    ).toThrow(/D2 already has a sparkline/)
   })
 })
 
@@ -121,10 +130,31 @@ describe('sparkline save integration', () => {
     const buffer = await buildEditFixture()
     const source = await createBufferEntrySource(buffer)
     const plan = await planCellEditsToXlsx(
-      source, [], [], [], undefined, [], [], [], [], [], null, [], [], [], [], [], [], [], [],
+      source,
+      [],
+      [],
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
       [
         { sheetName: 'Data', ...group() },
-        { sheetName: 'Data', ...group({ type: 'column', cells: [{ cell: 'E5', sourceRef: 'Data!A5:C5' }] }) },
+        {
+          sheetName: 'Data',
+          ...group({ type: 'column', cells: [{ cell: 'E5', sourceRef: 'Data!A5:C5' }] }),
+        },
       ],
     )
     const mutation = await assembleWithJsZip(buffer, plan)

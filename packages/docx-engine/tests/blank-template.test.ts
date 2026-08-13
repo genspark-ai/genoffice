@@ -26,7 +26,16 @@ describe('blank document template (new-document / AI generation base)', () => {
 
     const generated: SaveBlock[] = [
       { kind: 'generated', block: { type: 'heading', level: 1, runs: [{ text: '生成的标题' }] } },
-      { kind: 'generated', block: { type: 'paragraph', runs: [{ text: '正文段落,', bold: false }, { text: '重点', bold: true }] } },
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          runs: [
+            { text: '正文段落,', bold: false },
+            { text: '重点', bold: true },
+          ],
+        },
+      },
       {
         kind: 'generated',
         block: {

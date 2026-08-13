@@ -82,13 +82,18 @@ describe('updateVisualAdd', () => {
         dataLabelPosition: 'outside-end',
         dataLabelFormat: '0.0%',
         axisTitles: { category: 'Month', value: null },
-        series: [{
-          name: 'S1',
-          categories: ['a', 'b'],
-          values: [1, 2],
-          color: '#4472C4',
-          pointColors: [{ index: 0, color: '#ED7D31' }, { index: 1, color: '#70AD47' }],
-        }],
+        series: [
+          {
+            name: 'S1',
+            categories: ['a', 'b'],
+            values: [1, 2],
+            color: '#4472C4',
+            pointColors: [
+              { index: 0, color: '#ED7D31' },
+              { index: 1, color: '#70AD47' },
+            ],
+          },
+        ],
       },
     })
     const chart = toSaveVisualAdds(journal)[0]?.chart
@@ -123,12 +128,14 @@ describe('recordVisualEdit', () => {
     expect(recordVisualEdit(journal, fileImage(), { anchor: moved })).toBe(true)
     expect(recordVisualEdit(journal, fileImage(), { remove: true })).toBe(true)
     expect(journalSize(journal)).toBe(1)
-    expect(toSaveVisualEdits(journal)).toEqual([{
-      drawingPath: 'xl/drawings/drawing1.xml',
-      drawingIndex: 3,
-      remove: true,
-      anchor: moved,
-    }])
+    expect(toSaveVisualEdits(journal)).toEqual([
+      {
+        drawingPath: 'xl/drawings/drawing1.xml',
+        drawingIndex: 3,
+        remove: true,
+        anchor: moved,
+      },
+    ])
   })
 
   it('refuses visuals without a drawing locator', () => {

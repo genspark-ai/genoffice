@@ -137,6 +137,44 @@
 }
 
 /*
+ * gdh (Google-Docs-style header/toolbar/share-dialog) chrome font stack.
+ * 'Google Sans' isn't installed on non-Google machines, so without bundling
+ * it the whole gdh-* UI silently fell back to system sans and never matched
+ * Google Docs' real look. Files are the same 'Google Sans Text' latin woff2s
+ * docs.google.com itself serves via fonts.googleapis.com (personal-use
+ * build). Roboto is the Apache-2.0 fallback Google Fonts serves for the same
+ * family stack.
+ */
+@font-face {
+  font-family: 'Google Sans';
+  src: url('./GoogleSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Google Sans';
+  src: url('./GoogleSans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Roboto';
+  src: url('./Roboto-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Roboto';
+  src: url('./Roboto-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
  * CJK fallback (Noto Sans/Serif CJK SC, SIL OFL): environments with no Chinese
  * fonts at all (e.g. stripped-down Windows/Linux packages) no longer show tofu
  * boxes. GB2312 subset (7445 common characters + CJK punctuation/fullwidth
