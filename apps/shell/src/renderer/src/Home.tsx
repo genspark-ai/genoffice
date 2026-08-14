@@ -1698,9 +1698,9 @@ export function Home({ homeActive = true }: { homeActive?: boolean }) {
 
     return (
       <main className="content">
-        <section className="quick-start" aria-label={t('secQuickStart')}>
-          <div className="section-head">
-            <span className="section-label">{t('secQuickStart')}</span>
+        <section className="quick-start" aria-label={proj.isDefault ? t('defaultProject') : proj.name}>
+          <div className="home-hero">
+            <h1 className="hero-title">{proj.isDefault ? t('defaultProject') : proj.name}</h1>
           </div>
           {renderQuickCards()}
         </section>

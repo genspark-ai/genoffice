@@ -1441,7 +1441,7 @@ body.vib .home {
 /* whole page scrolls (same as the recents page) so the wheel works anywhere;
    no bottom padding: the list runs flush to the window edge */
 .content:has(.cloud-projects) {
-  padding: 40px 36px 0;
+  padding: 80px 36px 0;
 }
 
 .cloud-projects .proj-empty {
@@ -1461,10 +1461,10 @@ body.vib .home {
 .cloud-hero::before {
   content: '';
   position: absolute;
-  top: -40px;
+  top: -80px;
   left: -36px;
   right: -36px;
-  height: 40px;
+  height: 80px;
   background: var(--bg-content);
 }
 
