@@ -217,7 +217,7 @@ export function TabBar() {
   }, [activeId])
 
   return (
-    <div className="tab-bar">
+    <div className="tab-bar" style={{ top: '40px' }}>
       <div className="tab-bar-drag-spacer" />
       <div className={dragVisual ? 'tab-strip dragging' : 'tab-strip'} ref={stripRef}>
         {tabs.map((tab, index) => {

@@ -1521,7 +1521,7 @@ function createShellWindow(): void {
     // thumbnail pane) through to the desktop
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, vibrancy: 'sidebar' as const }
-      : { frame: false, autoHideMenuBar: true }),
+      : { frame: false, titleBarStyle: 'hidden' as const, autoHideMenuBar: true }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -1994,7 +1994,40 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.revealPath, (_event, path: unknown) => {
-    if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
+    if (typeof path === 'string') shell.showItemInFolder(path)
+  })
+
+  ipcMain.handle('window:show-app-menu', (_event, menuName: string, x: number, y: number) => {
+    const appMenu = Menu.getApplicationMenu()
+    if (!appMenu) return
+    const isMac = process.platform === 'darwin'
+    const offset = isMac ? 1 : 0
+    let index = 0
+    if (menuName === 'file') index = 0
+    else if (menuName === 'edit') index = 1
+    else if (menuName === 'window') index = 2
+    else if (menuName === 'help') index = 3
+    const item = appMenu.items[index + offset]
+    if (item?.submenu) {
+      item.submenu.popup({ x: Math.round(x), y: Math.round(y) })
+    }
+  })
+
+  ipcMain.handle(HOME_CHANNELS.windowMinimize, () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) win.minimize()
+  })
+
+  ipcMain.handle(HOME_CHANNELS.windowMaximize, () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+
+  ipcMain.handle(HOME_CHANNELS.windowClose, () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) win.close()
   })
 
   ipcMain.handle(

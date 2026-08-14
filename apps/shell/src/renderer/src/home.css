@@ -91,7 +91,7 @@ body.vib .home {
 
 .home {
   display: flex;
-  height: calc(100vh - 40px);
+  height: calc(100vh - 80px);
 }
 
 .sidebar {
