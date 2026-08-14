@@ -271,6 +271,27 @@
   background: rgba(0, 0, 0, 0.08);
 }
 
+.menu-btn {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tabstrip-text);
+  cursor: pointer;
+  width: auto;
+  padding: 0 12px;
+}
+
+.menu-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .app-frame-content {
   padding-top: 40px;
 }
@@ -294,6 +315,10 @@
 
 [data-theme='dark'] .tab-close:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme='dark'] .tab-new-btn:hover,
