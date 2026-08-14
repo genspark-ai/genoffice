@@ -46,7 +46,7 @@ export function AppFrame({ initialOnboardingSeen }: AppFrameProps) {
   return (
     <div className="app-frame">
       <TopBar />
-      <TabBar />
+      <TabBar collapsed={!homeActive} />
       {/* docs/sheets tabs render as WebContentsView children of this window, positioned
        * by the main process to cover this area — only Home paints its own content here. */}
       <div className="app-frame-content" style={{ visibility: 'visible' }}>

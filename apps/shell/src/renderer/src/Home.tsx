@@ -1946,7 +1946,7 @@ export function Home({ homeActive = true }: { homeActive?: boolean }) {
 
   return (
     <div className="home">
-      <aside className="sidebar">
+      <aside className={`sidebar${!homeActive ? ' collapsed' : ''}`}>
 
         <nav className="sidebar-nav">
           <button

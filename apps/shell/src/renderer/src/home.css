@@ -102,6 +102,34 @@ body.vib .home {
   padding: 18px 12px 16px;
   border-right: 1px solid var(--border);
   overflow-y: auto;
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: 52px;
+  padding-left: 8px;
+  padding-right: 8px;
+  overflow-x: hidden;
+}
+
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-count,
+.sidebar.collapsed .nav-external,
+.sidebar.collapsed .sidebar-divider,
+.sidebar.collapsed .proj-panel,
+.sidebar.collapsed .account-text,
+.sidebar.collapsed .account-chevron {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 8px;
+}
+
+.sidebar.collapsed .account-btn {
+  justify-content: center;
+  padding: 7px 4px;
 }
 
 .sidebar-logo {
