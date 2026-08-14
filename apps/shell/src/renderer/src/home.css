@@ -310,7 +310,7 @@ body.vib .home {
 .content {
   flex: 1;
   min-width: 0;
-  padding: 28px 36px 40px;
+  padding: 68px 36px 40px;
   overflow-y: auto;
   background: var(--bg-content);
 }

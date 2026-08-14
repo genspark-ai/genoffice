@@ -989,7 +989,7 @@ function CloudProjectsView() {
 
 // ── Main component ──────────────────────────────────────
 
-export function Home() {
+export function Home({ homeActive = true }: { homeActive?: boolean }) {
   const i18n = useI18n()
   const { t, lang } = i18n
   // ── Paged list state (rows loaded for the current view + filter) ──
@@ -2049,13 +2049,15 @@ export function Home() {
         <AccountEntry onStatusChange={handleAccountStatus} />
       </aside>
 
-      {selectedProjectId ? (
-        renderProjectContent()
-      ) : cloudMode ? (
-        <CloudProjectsView />
-      ) : (
-        renderGlobalContent()
-      )}
+      <div style={{ flex: 1, visibility: homeActive ? 'visible' : 'hidden', display: 'flex', minWidth: 0 }}>
+        {selectedProjectId ? (
+          renderProjectContent()
+        ) : cloudMode ? (
+          <CloudProjectsView />
+        ) : (
+          renderGlobalContent()
+        )}
+      </div>
 
       {confirmDelete && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
