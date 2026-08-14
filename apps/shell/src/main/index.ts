@@ -1521,7 +1521,7 @@ function createShellWindow(): void {
     // thumbnail pane) through to the desktop
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, vibrancy: 'sidebar' as const }
-      : {}),
+      : { frame: false, autoHideMenuBar: true }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
