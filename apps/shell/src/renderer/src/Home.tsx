@@ -426,8 +426,10 @@ const LOGIN_MAX_WAIT_MS = 300_000
 
 function AccountEntry({
   onStatusChange,
+  homeActive,
 }: {
   onStatusChange?: (status: AccountStatus | null) => void
+  homeActive?: boolean
 }) {
   const { t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
@@ -562,6 +564,7 @@ function AccountEntry({
       if (seq === statusSeq.current) setStatus(s)
     })
     setSettingsOpen(true)
+    if (homeActive === false) void window.aiOfficeTabs.activate('home')
   }
 
   return (
@@ -1955,6 +1958,7 @@ export function Home({ homeActive = true }: { homeActive?: boolean }) {
               changeView('recent')
               setSelectedProjectId(null)
               setCloudMode(false)
+              if (!homeActive) void window.aiOfficeTabs.activate('home')
             }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1975,6 +1979,7 @@ export function Home({ homeActive = true }: { homeActive?: boolean }) {
               changeView('starred')
               setSelectedProjectId(null)
               setCloudMode(false)
+              if (!homeActive) void window.aiOfficeTabs.activate('home')
             }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1996,6 +2001,7 @@ export function Home({ homeActive = true }: { homeActive?: boolean }) {
                 setSelectedProjectId(null)
                 setSelected(new Set())
                 setRowMenu(null)
+                if (!homeActive) void window.aiOfficeTabs.activate('home')
               }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2040,13 +2046,14 @@ export function Home({ homeActive = true }: { homeActive?: boolean }) {
                 // shared between the plain view and project views)
                 setSelected(new Set())
                 setRowMenu(null)
+                if (!homeActive) void window.aiOfficeTabs.activate('home')
               }}
               onRefresh={refresh}
             />
           </>
         )}
 
-        <AccountEntry onStatusChange={handleAccountStatus} />
+        <AccountEntry onStatusChange={handleAccountStatus} homeActive={homeActive} />
       </aside>
 
       <div style={{ flex: 1, visibility: homeActive ? 'visible' : 'hidden', display: 'flex', minWidth: 0 }}>
