@@ -96,7 +96,7 @@ export class TabManager {
     if (active?.view && this.bleedWcIds.has(active.view.webContents.id)) {
       return { x: 0, y: 0, width, height }
     }
-    return { x: 0, y: TAB_STRIP_HEIGHT, width, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
+    return { x: 232, y: TAB_STRIP_HEIGHT, width: width - 232, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
   }
 
   /** Grow/restore a tab view over the tab strip on request (slides show fullscreen) */

@@ -49,7 +49,7 @@ export function AppFrame({ initialOnboardingSeen }: AppFrameProps) {
       <TabBar />
       {/* docs/sheets tabs render as WebContentsView children of this window, positioned
        * by the main process to cover this area — only Home paints its own content here. */}
-      <div className="app-frame-content" style={{ visibility: homeActive ? 'visible' : 'hidden' }}>
+      <div className="app-frame-content" style={{ visibility: 'visible' }}>
         <Home />
       </div>
       {/* editor WebContentsViews paint above ALL shell DOM, so the overlay only
