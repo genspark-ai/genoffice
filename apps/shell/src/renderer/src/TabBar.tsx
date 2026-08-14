@@ -218,7 +218,6 @@ export function TabBar() {
 
   return (
     <div className="tab-bar" style={{ top: '40px', left: '232px' }}>
-      <div className="tab-bar-drag-spacer" />
       <div className={dragVisual ? 'tab-strip dragging' : 'tab-strip'} ref={stripRef}>
         {tabs.map((tab, index) => {
           // live transforms: the grabbed tab tracks the pointer; tabs between
