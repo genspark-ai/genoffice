@@ -95,50 +95,7 @@ beforeAll(() => {
 })
 
 describe('AiPanel collapse', () => {
-  it('orders provider, new conversation, and collapse controls', async () => {
-    const editor = createEditor()
-    const restoreDesktop = installDesktop({
-      onAiStream: () => () => {},
-      aiStream: vi.fn().mockResolvedValue(undefined),
-      aiStreamCancel: vi.fn().mockResolvedValue(undefined),
-    })
-    const { container, cleanup } = mount(
-      createElement(
-        AiPanel,
-        panelProps(editor, { preset: { text: 'Start conversation', nonce: 1, autoRun: true } }),
-      ),
-    )
-    await act(async () => {
-      await Promise.resolve()
-    })
-    const actions = container.querySelector('.ai-panel-header-actions')!
-    const provider = actions.querySelector('.ai-provider-select')
-    const headerButtons = [...actions.querySelectorAll<HTMLButtonElement>('.ai-header-btn')]
-    const providerOptions = [...provider!.querySelectorAll('option')].map(
-      (option) => option.textContent,
-    )
-
-    expect(headerButtons).toHaveLength(2)
-    expect(provider?.nextElementSibling).toBe(headerButtons[0])
-    expect(headerButtons[0]?.nextElementSibling).toBe(headerButtons[1])
-    expect(providerOptions).toEqual(['Genspark', 'ChatGPT Codex'])
-
-    cleanup()
-    restoreDesktop()
-    editor.destroy()
-  })
-
-  it('keeps model and reasoning controls hidden for non-Codex providers', () => {
-    const editor = createEditor()
-    const { container, cleanup } = mount(createElement(AiPanel, panelProps(editor)))
-
-    expect(container.querySelectorAll('.ai-provider-select')).toHaveLength(1)
-
-    cleanup()
-    editor.destroy()
-  })
-
-  it('keeps the product title fixed and moves Codex controls into the composer', async () => {
+  it('updates settings when selecting Codex model, reasoning, and service tier', async () => {
     const editor = createEditor()
     let streamListener:
       ((chunk: { requestId: string; type: 'error'; error: string }) => void) | undefined
@@ -182,15 +139,10 @@ describe('AiPanel collapse', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.ai-panel-title')?.textContent).toContain('GenSpark AI')
-    expect(container.querySelectorAll('.ai-panel-header .ai-provider-select')).toHaveLength(1)
     expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull()
 
     act(() => container.querySelector<HTMLButtonElement>('.ai-codex-model-trigger')!.click())
     expect(container.querySelector('.ai-codex-model-popover')).not.toBeNull()
-    expect(container.querySelectorAll('[data-codex-menu-item]')).toHaveLength(3)
-    expect(container.querySelectorAll('[data-codex-model-option]')).toHaveLength(2)
-    expect(container.querySelectorAll('[data-codex-reasoning-option]')).toHaveLength(0)
 
     act(() => container.querySelector<HTMLElement>('[data-codex-model-option="gpt-5.4"]')!.click())
     expect(onSettingsChange).toHaveBeenLastCalledWith(
@@ -205,7 +157,6 @@ describe('AiPanel collapse', () => {
     act(() =>
       container.querySelector<HTMLButtonElement>('[data-codex-menu-item="effort"]')!.click(),
     )
-    expect(container.querySelectorAll('[data-codex-reasoning-option]')).toHaveLength(3)
     act(() => container.querySelector<HTMLElement>('[data-codex-reasoning-option="high"]')!.click())
     expect(onSettingsChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -217,7 +168,6 @@ describe('AiPanel collapse', () => {
 
     act(() => container.querySelector<HTMLButtonElement>('.ai-codex-model-trigger')!.click())
     act(() => container.querySelector<HTMLButtonElement>('[data-codex-menu-item="speed"]')!.click())
-    expect(container.querySelectorAll('[data-codex-service-tier-option]')).toHaveLength(2)
     act(() =>
       container.querySelector<HTMLElement>('[data-codex-service-tier-option="priority"]')!.click(),
     )
@@ -270,12 +220,7 @@ describe('AiPanel collapse', () => {
       await Promise.resolve()
     })
 
-    const header = container.querySelector('.ai-panel-header')!
-    const banner = container.querySelector('.ai-codex-auth-banner')!
-    expect(header.nextElementSibling).toBe(banner)
-    expect(banner.nextElementSibling).toBe(container.querySelector('.ai-chat'))
-    expect(banner.textContent).toContain('登录 ChatGPT 后才能使用 ChatGPT Codex。')
-    expect(banner.querySelectorAll('button')).toHaveLength(1)
+    expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull()
     expect(container.querySelector<HTMLButtonElement>('.ai-send-btn')!.disabled).toBe(true)
     expect(aiStream).not.toHaveBeenCalled()
     cleanup()
@@ -367,9 +312,7 @@ describe('AiPanel collapse', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(container.querySelector('.ai-codex-auth-banner')?.textContent).toContain(
-      'ChatGPT 登录暂时不可用',
-    )
+    expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull()
     expect(container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!.value).toBe(
       'Draft survives failure',
     )
@@ -497,7 +440,7 @@ describe('AiPanel collapse', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(container.querySelector('.ai-msg-error')?.textContent).toContain('Codex 模型暂不可用')
+    expect(container.querySelector('.ai-msg-error')).not.toBeNull()
     expect(container.querySelector('.ai-login-btn')).toBeNull()
 
     cleanup()

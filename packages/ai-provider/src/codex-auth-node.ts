@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { constants as fsConstants } from 'node:fs'
 import { chmod, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
@@ -97,11 +98,27 @@ async function writeCredentialFile(path: string, credentials: CodexCredentials):
 
 async function readCredentialFile(path: string): Promise<CodexCredentials | undefined> {
   let raw: string
-  try {
-    raw = await readFile(path, 'utf8')
-  } catch (error) {
-    if (fileNotFound(error)) return undefined
-    throw credentialFileError()
+  if (process.platform === 'win32') {
+    try {
+      raw = await readFile(path, 'utf8')
+    } catch (error) {
+      if (fileNotFound(error)) return undefined
+      throw credentialFileError()
+    }
+  } else {
+    try {
+      const handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+      try {
+        const stats = await handle.stat()
+        if (!stats.isFile() || (stats.mode & 0o077) !== 0) throw credentialFileError()
+        raw = await handle.readFile('utf8')
+      } finally {
+        await handle.close()
+      }
+    } catch (error) {
+      if (fileNotFound(error)) return undefined
+      throw credentialFileError()
+    }
   }
   try {
     const parsed: unknown = JSON.parse(raw)

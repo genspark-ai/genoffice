@@ -1,4 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -69,9 +79,38 @@ describe('codexCredentialStore', () => {
     await expect(store.get()).resolves.toEqual(credentials)
   })
 
+  it.skipIf(process.platform === 'win32')(
+    'rejects group/world-readable credential files without deleting them',
+    async () => {
+      const store = codexCredentialStore()
+      const path = join(authDir, 'codex-auth.json')
+      await store.set(credentials)
+      chmodSync(path, 0o644)
+
+      await expect(store.get()).rejects.toThrow('ChatGPT sign-in credentials unavailable')
+      expect(existsSync(path)).toBe(true)
+    },
+  )
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects symlinked credential files without deleting either path',
+    async () => {
+      const store = codexCredentialStore()
+      const path = join(authDir, 'codex-auth.json')
+      const fixturePath = join(authDir, 'codex-auth-fixture.json')
+      await store.set(credentials)
+      renameSync(path, fixturePath)
+      symlinkSync(fixturePath, path)
+
+      await expect(store.get()).rejects.toThrow('ChatGPT sign-in credentials unavailable')
+      expect(existsSync(path)).toBe(true)
+      expect(existsSync(fixturePath)).toBe(true)
+    },
+  )
+
   it('treats malformed JSON as signed out', async () => {
     const path = join(authDir, 'codex-auth.json')
-    writeFileSync(path, '{broken')
+    writeFileSync(path, '{broken', { mode: 0o600 })
 
     await expect(codexCredentialStore().get()).resolves.toBeUndefined()
     expect(existsSync(path)).toBe(false)

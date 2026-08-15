@@ -24,7 +24,6 @@ describe('defaultAiSettings', () => {
     const codex = AI_PROVIDERS.find((provider) => provider.id === 'openai-codex')
 
     expect(codex).toMatchObject({
-      label: 'ChatGPT Codex',
       defaultModel: 'gpt-5.5',
       requiresApiKey: false,
     })

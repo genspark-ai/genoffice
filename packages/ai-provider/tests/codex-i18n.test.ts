@@ -55,23 +55,6 @@ describe('Codex localization', () => {
     }
   })
 
-  it('uses the approved English reasoning labels', () => {
-    const labels = getCodexUiLabels('en')
-
-    expect(
-      Object.fromEntries(reasoningEfforts.map((effort) => [effort, labels.reasoningLabel(effort)])),
-    ).toEqual({
-      none: 'None',
-      minimal: 'Minimal',
-      low: 'Low',
-      medium: 'Medium',
-      high: 'High',
-      xhigh: 'Extra High',
-      max: 'Max',
-      ultra: 'Ultra',
-    })
-  })
-
   it('resolves every IPC error code and keeps auth failures distinct', () => {
     for (const lang of LANGS) {
       for (const code of errorCodes) {

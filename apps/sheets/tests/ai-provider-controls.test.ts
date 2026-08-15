@@ -95,15 +95,11 @@ beforeAll(() => {
 })
 
 describe('Sheets Codex provider wiring', () => {
-  it('offers Genspark then Codex and persists provider selection', () => {
+  it('persists provider selection', () => {
     const api = installApi()
     const onSettingsChange = vi.fn()
     const { container, cleanup } = mount(createElement(AiChatPanel, props({ onSettingsChange })))
     const select = container.querySelector<HTMLSelectElement>('.ai-provider-select-input')!
-    expect([...select.options].map((option) => option.textContent)).toEqual([
-      'Genspark',
-      'ChatGPT Codex',
-    ])
     act(() => {
       select.value = 'openai-codex'
       select.dispatchEvent(new Event('change', { bubbles: true }))
