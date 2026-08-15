@@ -9,6 +9,7 @@ import {
   buildDocumentContext,
   insertBlocksAfter,
   isBlankDocument,
+  isTrackedDeleted,
   parseHtmlFragment,
   replaceBlockRange,
   serializeRangeToHtml,
@@ -229,6 +230,34 @@ const fail = (summary: string, output: string): ToolExecution => ({
   summary,
 })
 
+/**
+ * A model that saw gateway-flattened tool results can regurgitate them as the
+ * html argument (raw {"index":…} block dumps, literal </tool_response> tags);
+ * reject those so protocol artifacts never land in the document as text.
+ */
+function toolEchoError(html: string): string | null {
+  if (/<\/?tool_response>/i.test(html)) {
+    return 'html contains a literal <tool_response> tag — that is tool-protocol output, not document content; retry with the actual restricted-HTML fragment'
+  }
+  // the context/read dump shape is screened anywhere in the payload (fenced or
+  // prose-wrapped dumps included) — it is never legitimate document content
+  if (/"index"\s*:\s*\d+\s*,\s*"type"\s*:\s*"/.test(html)) {
+    return 'html contains a raw JSON block dump, not an HTML fragment; retry with restricted HTML (e.g. <p>…</p>)'
+  }
+  // unwrap only a fully fenced payload; an embedded fence inside otherwise
+  // valid HTML must not shadow the real content
+  let candidate = html.trim()
+  const fence = /^```[a-z]*\s*([\s\S]*?)```\s*$/i.exec(candidate)
+  if (fence) candidate = fence[1].trim()
+  if (!/^[[{]/.test(candidate)) return null
+  try {
+    JSON.parse(candidate)
+    return 'html is raw JSON, not an HTML fragment; retry with restricted HTML (e.g. <p>…</p>)'
+  } catch {
+    return null // brace-led plain text is legitimate content
+  }
+}
+
 /** Doc as last seen by the AI pipeline (context build / read / own write); a differing doc means the user edited in between. */
 const docBaseline = new WeakMap<Editor, ProseMirrorNode>()
 
@@ -442,8 +471,18 @@ function executeSyncTool(
           : offset > 0
             ? `\n(end of range: ${html.length} characters in total)`
             : ''
+      let empty = '(range is empty)'
+      if (!slice) {
+        let deletedBlocks = 0
+        for (let i = range.start; i <= range.end; i++) {
+          if (isTrackedDeleted(editor.state.doc.child(i))) deletedBlocks++
+        }
+        if (deletedBlocks > 0) {
+          empty = `(the ${deletedBlocks} block(s) in this range are pending tracked deletions — that text is already deleted and hidden from reads; do not delete or rewrite it again)`
+        }
+      }
       return {
-        output: slice ? slice + note : '(range is empty)',
+        output: slice ? slice + note : empty,
         mutated: false,
         summary: t('aiSumReadBlocksRange', { start: range.start, end: range.end }),
       }
@@ -451,6 +490,8 @@ function executeSyncTool(
 
     case 'insert_content': {
       const html = String(call.input.html ?? '')
+      const echo = toolEchoError(html)
+      if (echo) return fail(t('aiSumInsertContent'), echo)
       let nodes: ReturnType<typeof parseHtmlFragment>
       try {
         nodes = parseHtmlFragment(html, numIds)
@@ -486,9 +527,12 @@ function executeSyncTool(
     case 'replace_blocks': {
       const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
       if (!range) return fail(t('aiSumReplaceContent'), rangeError(editor))
+      const html = String(call.input.html ?? '')
+      const echo = toolEchoError(html)
+      if (echo) return fail(t('aiSumReplaceContent'), echo)
       let nodes: ReturnType<typeof parseHtmlFragment>
       try {
-        nodes = parseHtmlFragment(String(call.input.html ?? ''), numIds)
+        nodes = parseHtmlFragment(html, numIds)
       } catch (e) {
         return fail(t('aiSumReplaceContent'), e instanceof Error ? e.message : String(e))
       }
@@ -663,8 +707,14 @@ function executeSyncTool(
       if (!outcome.ok)
         return fail(t('aiSumApplyCommands'), outcome.error ?? 'command execution failed')
       const changed = outcome.results.reduce((sum, r) => sum + r.changed, 0)
+      const skippedDeleted = outcome.results.reduce((sum, r) => sum + (r.skippedDeleted ?? 0), 0)
+      // explicit model-facing note so it stops retrying deletions of already-deleted text
+      const deletedNote =
+        skippedDeleted > 0
+          ? `\nNote: ${skippedDeleted} matched target(s) were skipped because that text is a pending tracked deletion (already struck through). It is not current content — do not try to delete or replace it again; the user accepts/rejects revisions in the Review tab.`
+          : ''
       return {
-        output: outcome.summary,
+        output: outcome.summary + deletedNote,
         mutated: changed > 0,
         summary: outcome.summary,
       }

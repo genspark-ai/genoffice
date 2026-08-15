@@ -26,6 +26,10 @@ export type NewChartKind =
   | 'radar'
   /** Combo chart: first N-1 series as clustered columns, last series as a line (on the right secondary value axis) */
   | 'comboBarLine'
+  /** 3-D pie (c:pie3DChart + c:view3D; this app renders the pseudo-3D projection, PowerPoint renders true 3-D) */
+  | 'pie3D'
+  /** 3-D clustered column (c:bar3DChart + c:view3D) */
+  | 'bar3D'
 
 /** Chart element/style toggles (unset = current defaults: legend at bottom, no gridlines, no data labels). */
 export interface ChartStyleOptions {
@@ -53,10 +57,8 @@ export interface NewChartOptions extends ChartStyleOptions {
   pointColors?: Array<Array<string | undefined> | undefined>
 }
 
-const CHART_CONTENT_TYPE =
-  'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
-const CHART_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+const CHART_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
+const CHART_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 const C_NS = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -66,7 +68,9 @@ const colLetter = (i: number) => String.fromCharCode(66 + i) // B, C, D…
 function strCacheXml(values: string[], f: string): string {
   return (
     `<c:strRef><c:f>${escapeXmlText(f)}</c:f><c:strCache><c:ptCount val="${values.length}"/>` +
-    values.map((v, i) => (v === '' ? '' : `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`)).join('') +
+    values
+      .map((v, i) => (v === '' ? '' : `<c:pt idx="${i}"><c:v>${escapeXmlText(v)}</c:v></c:pt>`))
+      .join('') +
     '</c:strCache></c:strRef>'
   )
 }
@@ -76,7 +80,9 @@ function numCacheXml(values: (number | null | undefined)[], f: string): string {
     `<c:numRef><c:f>${escapeXmlText(f)}</c:f><c:numCache><c:formatCode>General</c:formatCode>` +
     `<c:ptCount val="${values.length}"/>` +
     values
-      .map((v, i) => (v == null || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`))
+      .map((v, i) =>
+        v == null || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`,
+      )
       .join('') +
     '</c:numCache></c:numRef>'
   )
@@ -104,7 +110,8 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
   const grid = opts.gridlines ? '<c:majorGridlines/>' : ''
   const catTitle = opts.catAxisTitle ? axTitleXml(opts.catAxisTitle, false) : ''
   const valTitle = opts.valAxisTitle ? axTitleXml(opts.valAxisTitle, true) : ''
-  const gapWidth = opts.gapWidthPct != null ? `<c:gapWidth val="${Math.round(opts.gapWidthPct)}"/>` : ''
+  const gapWidth =
+    opts.gapWidthPct != null ? `<c:gapWidth val="${Math.round(opts.gapWidthPct)}"/>` : ''
   // Empty names stay empty: no <c:tx> for an unnamed series, no <c:cat> when every category name is empty
   const txXml = (name: string, i: number) =>
     name === '' ? '' : `<c:tx>${strCacheXml([name], `Sheet1!$${colLetter(i)}$1`)}</c:tx>`
@@ -172,6 +179,21 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
         : '')
   } else if (opts.kind === 'pie') {
     plot = `<c:pieChart><c:varyColors val="1"/>${sers}${dLbls}<c:firstSliceAng val="0"/></c:pieChart>`
+  } else if (opts.kind === 'pie3D') {
+    plot = `<c:pie3DChart><c:varyColors val="1"/>${sers}${dLbls}</c:pie3DChart>`
+  } else if (opts.kind === 'bar3D') {
+    // bar3D takes three axes (category / value / series); the series axis is required by the schema
+    const horizontal = opts.barDir === 'bar'
+    plot =
+      `<c:bar3DChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/><c:grouping val="clustered"/><c:varyColors val="0"/>` +
+      `${sers}${dLbls}${gapWidth}<c:shape val="box"/>` +
+      '<c:axId val="111111111"/><c:axId val="222222222"/><c:axId val="333333333"/></c:bar3DChart>' +
+      '<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${horizontal ? 'l' : 'b'}"/>${catTitle}<c:crossAx val="222222222"/></c:catAx>` +
+      '<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      `<c:delete val="0"/><c:axPos val="${horizontal ? 'b' : 'l'}"/>${grid}${valTitle}<c:crossAx val="111111111"/></c:valAx>` +
+      '<c:serAx><c:axId val="333333333"/><c:scaling><c:orientation val="minMax"/></c:scaling>' +
+      '<c:delete val="0"/><c:axPos val="b"/><c:crossAx val="222222222"/></c:serAx>'
   } else if (opts.kind === 'doughnut') {
     plot =
       `<c:doughnutChart><c:varyColors val="1"/>${sers}${dLbls}` +
@@ -205,7 +227,8 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       `<c:delete val="0"/><c:axPos val="l"/>${grid}${valTitle}<c:crossAx val="111111111"/></c:valAx>`
   } else {
     // Horizontal bar chart (barDir=bar): category axis on the left, value axis at the bottom (matches how PowerPoint writes it)
-    const isBarKind = opts.kind === 'bar' || opts.kind === 'barStacked' || opts.kind === 'barPercentStacked'
+    const isBarKind =
+      opts.kind === 'bar' || opts.kind === 'barStacked' || opts.kind === 'barPercentStacked'
     const horizontal = isBarKind && opts.barDir === 'bar'
     const axes =
       `<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling>` +
@@ -223,7 +246,11 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       inner = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}${dLbls}${axIds}</c:areaChart>`
     } else {
       const grouping =
-        opts.kind === 'barPercentStacked' ? 'percentStacked' : opts.kind === 'barStacked' ? 'stacked' : 'clustered'
+        opts.kind === 'barPercentStacked'
+          ? 'percentStacked'
+          : opts.kind === 'barStacked'
+            ? 'stacked'
+            : 'clustered'
       const overlap = grouping === 'clustered' ? '' : '<c:overlap val="100"/>'
       inner =
         `<c:barChart><c:barDir val="${horizontal ? 'bar' : 'col'}"/><c:grouping val="${grouping}"/><c:varyColors val="0"/>` +
@@ -238,6 +265,15 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
       '<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>'
     : '<c:autoTitleDeleted val="1"/>'
 
+  // 3-D view settings (schema position: after the title block, before plotArea);
+  // rotX/rotY follow PowerPoint's defaults for each type
+  const view3D =
+    opts.kind === 'pie3D'
+      ? '<c:view3D><c:rotX val="30"/><c:rotY val="0"/><c:rAngAx val="0"/><c:perspective val="30"/></c:view3D>'
+      : opts.kind === 'bar3D'
+        ? '<c:view3D><c:rotX val="15"/><c:rotY val="20"/><c:rAngAx val="1"/><c:perspective val="30"/></c:view3D>'
+        : ''
+
   const legendPos = opts.legendPos ?? 'b'
   const legend =
     legendPos === 'none'
@@ -246,7 +282,7 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     `<c:chartSpace xmlns:c="${C_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">` +
-    `<c:chart>${title}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
+    `<c:chart>${title}${view3D}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
     legend +
     '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
     '</c:chartSpace>'
@@ -292,7 +328,10 @@ export function addChart(
   for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
   const rid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${rid}" Type="${CHART_REL_TYPE}" Target="../charts/chart${maxNum + 1}.xml"/>`
-  archive.entries.set(relsPath, Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'))
+  archive.entries.set(
+    relsPath,
+    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+  )
 
   // 4) graphicFrame fragment + append reparse
   const id = nextCNvPrId(slide)

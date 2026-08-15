@@ -53,7 +53,16 @@ interface Props {
   onCollapse: () => void
 }
 
-export function AnimationPane({ slideIndex, items, selected, onSelect, onMove, onDelete, onPreview, onCollapse }: Props) {
+export function AnimationPane({
+  slideIndex,
+  items,
+  selected,
+  onSelect,
+  onMove,
+  onDelete,
+  onPreview,
+  onCollapse,
+}: Props) {
   const { t } = useI18n()
   // Step numbering: onClick increments; withPrev/afterPrev share the previous entry's number (0 = auto-play)
   const stepNos: number[] = []
@@ -68,10 +77,21 @@ export function AnimationPane({ slideIndex, items, selected, onSelect, onMove, o
       <div className="ai-panel-header">
         <span className="ai-panel-title">{t('paneAnimTitle', { n: slideIndex + 1 })}</span>
         <div className="ai-panel-header-actions">
-          <button className="ai-header-btn" disabled={items.length === 0} onClick={onPreview} title={t('paneAnimPreview')}>
+          <button
+            className="ai-header-btn"
+            disabled={items.length === 0}
+            onClick={onPreview}
+            data-tip={t('paneAnimPreview')}
+            aria-label={t('paneAnimPreview')}
+          >
             ▶
           </button>
-          <button className="ai-header-btn" onClick={onCollapse} title={t('paneAnimCollapse')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('paneAnimCollapse')}
+            aria-label={t('paneAnimCollapse')}
+          >
             <IconSidebarCollapse size={15} />
           </button>
         </div>
@@ -89,10 +109,10 @@ export function AnimationPane({ slideIndex, items, selected, onSelect, onMove, o
             key={i}
             className={`anim-row anim-${animClassOf(it.effect)} ${selected === i ? 'selected' : ''}`}
             onClick={() => onSelect(selected === i ? -1 : i)}
-            title={`${t(TRIGGER_KEY[it.trigger])} · ${t('paneAnimSeconds', { sec: (it.durationMs / 1000).toFixed(2) })}${it.delayMs ? ` · ${t('paneAnimDelaySeconds', { sec: (it.delayMs / 1000).toFixed(2) })}` : ''}`}
+            data-tip={`${t(TRIGGER_KEY[it.trigger])} · ${t('paneAnimSeconds', { sec: (it.durationMs / 1000).toFixed(2) })}${it.delayMs ? ` · ${t('paneAnimDelaySeconds', { sec: (it.delayMs / 1000).toFixed(2) })}` : ''}`}
           >
             <span className="anim-row-no">{stepNos[i] || ''}</span>
-            <span className="anim-row-trigger" title={t(TRIGGER_KEY[it.trigger])}>
+            <span className="anim-row-trigger" data-tip={t(TRIGGER_KEY[it.trigger])}>
               {TRIGGER_GLYPH[it.trigger]}
             </span>
             <span className="anim-row-main">
@@ -103,13 +123,27 @@ export function AnimationPane({ slideIndex, items, selected, onSelect, onMove, o
               </span>
             </span>
             <span className="anim-row-actions" onClick={(e) => e.stopPropagation()}>
-              <button disabled={i === 0} title={t('paneMoveUp')} onClick={() => onMove(i, -1)}>
+              <button
+                disabled={i === 0}
+                data-tip={t('paneMoveUp')}
+                aria-label={t('paneMoveUp')}
+                onClick={() => onMove(i, -1)}
+              >
                 ▲
               </button>
-              <button disabled={i === items.length - 1} title={t('paneMoveDown')} onClick={() => onMove(i, 1)}>
+              <button
+                disabled={i === items.length - 1}
+                data-tip={t('paneMoveDown')}
+                aria-label={t('paneMoveDown')}
+                onClick={() => onMove(i, 1)}
+              >
                 ▼
               </button>
-              <button title={t('paneAnimDelete')} onClick={() => onDelete(i)}>
+              <button
+                data-tip={t('paneAnimDelete')}
+                aria-label={t('paneAnimDelete')}
+                onClick={() => onDelete(i)}
+              >
                 ✕
               </button>
             </span>

@@ -20,6 +20,44 @@ const PALETTE = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47
 
 const LABEL_FONT = 'Arial'
 
+/** Series/wedge default colors: the file theme's accent1..6 when available, else the fixed approximation. */
+function chartPalette(model: ChartModel): string[] {
+  return model.themePalette?.length ? model.themePalette : PALETTE
+}
+
+/** Chart body text size (pt): chartSpace-level c:txPr default, else 10pt. */
+function chartTextPt(model: ChartModel): number {
+  return model.defaultTextPt ?? 10
+}
+
+/** Multiply an #RRGGBB color's channels (pseudo-3D face shading); non-hex passes through. */
+function shade(color: string, f: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(color)
+  if (!m) return color
+  const ch = (i: number) =>
+    Math.min(255, Math.round(parseInt(m[1]!.slice(i, i + 2), 16) * f))
+      .toString(16)
+      .padStart(2, '0')
+  return `#${ch(0)}${ch(2)}${ch(4)}`
+}
+
+/** Pseudo-3D extrusion faces for one bar (top + right, painter-ready before the front rect). */
+function barFaces(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  d: number,
+  color: string,
+): Array<{ d: string; fill: string }> {
+  const top = `M ${x} ${y} L ${x + w} ${y} L ${x + w + d} ${y - d} L ${x + d} ${y - d} Z`
+  const side = `M ${x + w} ${y} L ${x + w + d} ${y - d} L ${x + w + d} ${y + h - d} L ${x + w} ${y + h} Z`
+  return [
+    { d: top, fill: shade(color, 1.18) },
+    { d: side, fill: shade(color, 0.78) },
+  ]
+}
+
 export function buildChartNode(
   id: string,
   sourceId: string,
@@ -28,9 +66,14 @@ export function buildChartNode(
   vp: Viewport,
   metrics: FontMetricsProvider,
 ): ChartRenderNode | null {
-  if (!model.title) return buildChartNodeInner(id, sourceId, model, box, vp, metrics)
-  // With a title: the content area yields a top row; shift everything down and draw the title centered on top
-  const titleSizePx = ptToPx(12, vp.scale)
+  if (!model.title) {
+    const node = buildChartNodeInner(id, sourceId, model, box, vp, metrics)
+    if (node) extrudeBars(node, model)
+    return node
+  }
+  // With a title: the content area yields a top row; shift everything down and draw the title
+  // centered on top. PowerPoint sizes the auto title at 1.2× the chart's default text.
+  const titleSizePx = ptToPx(chartTextPt(model) * 1.2, vp.scale)
   const titleH = titleSizePx * 1.7
   const node = buildChartNodeInner(
     id,
@@ -42,6 +85,7 @@ export function buildChartNode(
   )
   if (!node) return null
   shiftChartNode(node, titleH)
+  extrudeBars(node, model)
   node.box = box
   const tw = metrics.measure(model.title, {
     fontFamily: LABEL_FONT,
@@ -58,6 +102,17 @@ export function buildChartNode(
     bold: true,
   })
   return node
+}
+
+/** Pseudo-3D bars: extrusion faces (top + right) behind every bar rect. */
+function extrudeBars(node: ChartRenderNode, model: ChartModel): void {
+  if (!model.pseudo3D || !node.bars.length) return
+  const faces: NonNullable<ChartRenderNode['paths']> = []
+  for (const b of node.bars) {
+    const d = Math.min(Math.max(Math.min(b.w, b.h) * 0.35, 3), 14)
+    faces.push(...barFaces(b.x, b.y, b.w, b.h, d, b.color))
+  }
+  node.paths = [...faces, ...(node.paths ?? [])]
 }
 
 /** Shifts all chart draw primitives vertically (moving the content area down after the title claims space). */
@@ -77,6 +132,7 @@ function shiftChartNode(node: ChartRenderNode, dy: number): void {
   for (const m of node.markers) m.y += dy
   for (const s of node.swatches) s.y += dy
   for (const w of node.wedges ?? []) w.cy += dy
+  for (const p of node.paths ?? []) p.dy = (p.dy ?? 0) + dy
 }
 
 function buildChartNodeInner(
@@ -131,10 +187,10 @@ function buildChartNodeInner(
     swatches: [],
   }
 
-  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? 10, vp.scale)
+  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? '#666666'
   const catLabelSizePx = ptToPx(
-    model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? 10,
+    model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
     vp.scale,
   )
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
@@ -146,7 +202,8 @@ function buildChartNodeInner(
   })
   const measure = (text: string, sizePx: number) => metrics.measure(text, style(sizePx))
 
-  const seriesColor = (i: number) => model.series[i]?.color ?? PALETTE[i % PALETTE.length]!
+  const palette = chartPalette(model)
+  const seriesColor = (i: number) => model.series[i]?.color ?? palette[i % palette.length]!
 
   // ── Value range + nice ticks (primary/secondary axes independent) ──
   if (!priVals.length) return null
@@ -208,7 +265,7 @@ function buildChartNodeInner(
   const axisTitleW = model.valAxis?.title ? labelSizePx * 2.2 : 0
   // Secondary axis (right): tick label width + optional axis-title placeholder
   const secLabelSizePx = ptToPx(
-    model.valAxis2?.labelSizePt ?? model.valAxis?.labelSizePt ?? 10,
+    model.valAxis2?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
     vp.scale,
   )
   const secTickLabels = sec ? sec.ticks.map((t) => fmtNum(t)) : []
@@ -536,7 +593,7 @@ function buildPieNode(
     wedges: [],
   }
 
-  const labelSizePx = ptToPx(10, vp.scale)
+  const labelSizePx = ptToPx(chartTextPt(model), vp.scale)
   const style: RunStyle = {
     fontFamily: LABEL_FONT,
     fontSizePx: labelSizePx,
@@ -544,7 +601,8 @@ function buildPieNode(
     italic: false,
   }
   const measure = (text: string) => metrics.measure(text, style)
-  const sliceColor = (i: number) => ser.pointColors?.[i] ?? PALETTE[i % PALETTE.length]!
+  const palette = chartPalette(model)
+  const sliceColor = (i: number) => ser.pointColors?.[i] ?? palette[i % palette.length]!
   const pad = Math.max(6, Math.min(box.w, box.h) * 0.03)
 
   // Legend space (without a legend, the whole box goes to the pie)
@@ -579,20 +637,82 @@ function buildPieNode(
   const cy = plotY + plotH / 2
   const innerR = (outerR * Math.min(Math.max(model.holePct ?? 0, 0), 90)) / 100
 
+  // Pseudo-3D pie: the tilted disc projects to an ellipse (ry = sin(rotX) · rx) with a darker
+  // side rim of depth below the front-facing arcs; wedges become elliptical sector paths.
+  const p3d = !!model.pseudo3D && innerR === 0
+  const kY = p3d
+    ? Math.min(Math.max(Math.sin(((model.rotXDeg ?? 30) * Math.PI) / 180), 0.35), 0.9)
+    : 1
+  const rx = p3d ? Math.max(Math.min(plotW / 2, plotH / 2 / (kY + 0.3)), 5) : outerR
+  const ry = rx * kY
+  const depth = p3d ? ry * 0.3 : 0
+  const ptAt = (deg: number) => {
+    const t = (deg * Math.PI) / 180
+    return { x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry }
+  }
+  if (p3d) {
+    node.paths = node.paths ?? []
+    // Rim: the front half is the parametric range [0°, 180°) (screen lower half)
+    let a = -90 + (model.firstSliceAngDeg ?? 0)
+    vals.forEach((v, i) => {
+      if (v <= 0) return
+      const sweep = (v / total) * 360
+      // normalize wedge interval into [-180, 180) then clamp to the front range [0, 180]
+      for (const off of [-360, 0, 360]) {
+        const b1 = Math.max(a + off, 0)
+        const b2 = Math.min(a + off + sweep, 180)
+        if (b2 <= b1) continue
+        const p1 = ptAt(b1)
+        const p2 = ptAt(b2)
+        const large = b2 - b1 > 180 ? 1 : 0
+        node.paths!.push({
+          d:
+            `M ${p1.x} ${p1.y} A ${rx} ${ry} 0 ${large} 1 ${p2.x} ${p2.y} ` +
+            `L ${p2.x} ${p2.y + depth} A ${rx} ${ry} 0 ${large} 0 ${p1.x} ${p1.y + depth} Z`,
+          fill: shade(sliceColor(i), 0.72),
+        })
+      }
+      a += sweep
+    })
+  }
+
   // Wedges: start at 12 o'clock (Konva rotation 0 = 3 o'clock, hence -90°), clockwise
   let angle = -90 + (model.firstSliceAngDeg ?? 0)
   vals.forEach((v, i) => {
     if (v <= 0) return
     const sweep = (v / total) * 360
-    node.wedges!.push({
-      cx,
-      cy,
-      outerR,
-      innerR,
-      startDeg: angle,
-      sweepDeg: sweep,
-      color: sliceColor(i),
-    })
+    if (p3d) {
+      const p1 = ptAt(angle)
+      if (sweep >= 359.999) {
+        // Full circle: an SVG arc with coincident endpoints renders nothing, so use two half arcs
+        const pm = ptAt(angle + 180)
+        node.paths!.push({
+          d:
+            `M ${p1.x} ${p1.y} A ${rx} ${ry} 0 1 1 ${pm.x} ${pm.y} ` +
+            `A ${rx} ${ry} 0 1 1 ${p1.x} ${p1.y} Z`,
+          fill: sliceColor(i),
+          stroke: '#ffffff',
+        })
+      } else {
+        const p2 = ptAt(angle + sweep)
+        const large = sweep > 180 ? 1 : 0
+        node.paths!.push({
+          d: `M ${cx} ${cy} L ${p1.x} ${p1.y} A ${rx} ${ry} 0 ${large} 1 ${p2.x} ${p2.y} Z`,
+          fill: sliceColor(i),
+          stroke: '#ffffff',
+        })
+      }
+    } else {
+      node.wedges!.push({
+        cx,
+        cy,
+        outerR,
+        innerR,
+        startDeg: angle,
+        sweepDeg: sweep,
+        color: sliceColor(i),
+      })
+    }
     if (model.dataLabels) {
       // At the wedge midline radius: doughnut uses the ring-band midpoint, pie uses 2/3 radius
       const midRad = ((angle + sweep / 2) * Math.PI) / 180
@@ -600,8 +720,8 @@ function buildPieNode(
       const text = model.dataLabelsPct ? `${Math.round((v / total) * 100)}%` : fmtNum(v)
       node.labels.push({
         text,
-        x: cx + Math.cos(midRad) * r - measure(text) / 2,
-        y: cy + Math.sin(midRad) * r - labelSizePx * 0.55,
+        x: cx + Math.cos(midRad) * (p3d ? rx * 0.66 : r) - measure(text) / 2,
+        y: cy + Math.sin(midRad) * (p3d ? ry * 0.66 : r) - labelSizePx * 0.55,
         fontSizePx: labelSizePx * 0.9,
         color: '#FFFFFF',
       })
@@ -674,10 +794,10 @@ function buildHBarNode(
   const stacked = grouping === 'stacked' || grouping === 'percentStacked'
   const node = emptyChartNode(id, sourceId, box)
 
-  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? 10, vp.scale)
+  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? '#666666'
   const catLabelSizePx = ptToPx(
-    model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? 10,
+    model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
     vp.scale,
   )
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
@@ -688,7 +808,8 @@ function buildHBarNode(
     italic: false,
   })
   const measure = (text: string, sizePx: number) => metrics.measure(text, style(sizePx))
-  const seriesColor = (i: number) => model.series[i]?.color ?? PALETTE[i % PALETTE.length]!
+  const palette = chartPalette(model)
+  const seriesColor = (i: number) => model.series[i]?.color ?? palette[i % palette.length]!
 
   const allVals = model.series.flatMap((s) => s.values.filter((v): v is number => v != null))
   if (!allVals.length) return null
@@ -785,11 +906,12 @@ function buildHBarNode(
     widthPx: axisW,
   })
 
-  // Category labels (y axis, left). By default the first category is on top; c:orientation maxMin reverses
+  // Category labels (y axis, left). PowerPoint default (minMax) puts the first category at the
+  // BOTTOM for horizontal bars; c:orientation maxMin flips the first one to the top
   const n = Math.max(model.categories.length, 1)
   const slotH = plot.h / n
   const rowY = (i: number) => {
-    const pos = model.catAxis?.reversed ? n - 1 - i : i
+    const pos = model.catAxis?.reversed ? i : n - 1 - i
     return plot.y + pos * slotH
   }
   model.categories.forEach((cat, i) => {
@@ -880,7 +1002,7 @@ function buildScatterNode(
   metrics: FontMetricsProvider,
 ): ChartRenderNode | null {
   const node = emptyChartNode(id, sourceId, box)
-  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? 10, vp.scale)
+  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? '#666666'
   const style = (sizePx: number): RunStyle => ({
     fontFamily: LABEL_FONT,
@@ -889,7 +1011,8 @@ function buildScatterNode(
     italic: false,
   })
   const measure = (text: string, sizePx: number) => metrics.measure(text, style(sizePx))
-  const seriesColor = (i: number) => model.series[i]?.color ?? PALETTE[i % PALETTE.length]!
+  const palette = chartPalette(model)
+  const seriesColor = (i: number) => model.series[i]?.color ?? palette[i % palette.length]!
 
   // Point sets: x defaults to indices 1..n
   const points = model.series.map((s) =>
@@ -1057,7 +1180,7 @@ function buildRadarNode(
   if (!allVals.length) return null
   const node = emptyChartNode(id, sourceId, box)
 
-  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? 10, vp.scale)
+  const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? '#666666'
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
   const style = (sizePx: number): RunStyle => ({
@@ -1067,7 +1190,8 @@ function buildRadarNode(
     italic: false,
   })
   const measure = (text: string, sizePx: number) => metrics.measure(text, style(sizePx))
-  const seriesColor = (i: number) => model.series[i]?.color ?? PALETTE[i % PALETTE.length]!
+  const palette = chartPalette(model)
+  const seriesColor = (i: number) => model.series[i]?.color ?? palette[i % palette.length]!
 
   const { min, max, ticks } = ppTicks(
     model.valAxis?.min ?? Math.min(...allVals, 0),

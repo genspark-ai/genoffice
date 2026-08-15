@@ -29,6 +29,7 @@ const BUILTIN = new Set(builtinModules)
  */
 const SRC_GLOBS = [
   'apps/docs/src',
+  'apps/markdown/src',
   'apps/pdf/src',
   'apps/sheets/src',
   'apps/shell/src',
@@ -123,15 +124,30 @@ function importedNames() {
   return names
 }
 
+const WORKSPACE_MODULES = SRC_GLOBS.map((g) => join(ROOT, g.replace(/\/src$/, ''), 'node_modules'))
+
+/** installed package names, unscoped first so existing resolutions keep winning */
+function topLevelPackages() {
+  const dirs = (at) => readdirSync(at, { withFileTypes: true }).filter((e) => e.isDirectory())
+  const top = dirs(join(ROOT, 'node_modules')).map((e) => e.name)
+  const scoped = top.filter((n) => n.startsWith('@'))
+  return [
+    ...top.filter((n) => !n.startsWith('@')),
+    ...scoped.flatMap((s) => dirs(join(ROOT, 'node_modules', s)).map((e) => `${s}/${e.name}`)),
+  ]
+}
+
 /** npm hoists, so the root copy is the usual answer; fall back to a nested one */
 function pkgDir(name) {
   const root = join(ROOT, 'node_modules', name)
   if (existsSync(join(root, 'package.json'))) return root
-  const scopes = readdirSync(join(ROOT, 'node_modules'), { withFileTypes: true })
-  for (const e of scopes) {
-    if (!e.isDirectory()) continue
-    const nested = join(ROOT, 'node_modules', e.name, 'node_modules', name)
+  for (const owner of topLevelPackages()) {
+    const nested = join(ROOT, 'node_modules', owner, 'node_modules', name)
     if (existsSync(join(nested, 'package.json'))) return nested
+  }
+  for (const modules of WORKSPACE_MODULES) {
+    const own = join(modules, name)
+    if (existsSync(join(own, 'package.json'))) return own
   }
   return null
 }
@@ -302,6 +318,16 @@ for (const [name, spdx, copyright] of FONTS) out += sub(`${name} — ${spdx}`) +
 out += sub('SIL Open Font License 1.1 — full text')
 out +=
   readFileSync(join(ROOT, 'apps/docs/src/renderer/fonts/LICENSE-OFL.txt'), 'utf8').trim() + '\n'
+
+out += hr('4. Unicode Character Database data')
+out += `
+apps/pdf/src/shared/radicals.ts contains a generated mapping derived from
+Unicode Character Database 17.0.0, EquivalentUnifiedIdeograph.txt
+(2025-08-01):
+https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
+
+`
+out += readFileSync(join(ROOT, 'LICENSE-UNICODE.txt'), 'utf8').trim() + '\n'
 
 const dest = join(ROOT, 'apps/shell/build/THIRD-PARTY-NOTICES.txt')
 mkdirSync(dirname(dest), { recursive: true })

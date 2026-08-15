@@ -1,4 +1,4 @@
-export type TabKind = 'home' | 'docs' | 'sheets' | 'slides' | 'pdf'
+export type TabKind = 'home' | 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown'
 
 /** one open tab in the top tab strip; Home is always id 'home' and not closable */
 export interface TabSummary {
@@ -29,6 +29,12 @@ export interface TabsApi {
   reorder(id: string, toIndex: number): Promise<void>
   /** subscribe to tab list changes (open/close/activate/title updates); returns unsubscribe */
   onChanged(handler: (tabs: TabSummary[]) => void): () => void
+  /**
+   * fire-and-forget: a pointerdown landed on the shell chrome (tab strip).
+   * Document tabs are sibling WebContentsViews that see neither the event nor
+   * a focus change, so the shell relays it for them to dismiss popovers.
+   */
+  notifyChromePressed(): void
 }
 
 export const TABS_CHANNELS = {
@@ -39,4 +45,5 @@ export const TABS_CHANNELS = {
   showNewMenu: 'tabs:show-new-menu',
   reorder: 'tabs:reorder',
   changed: 'tabs:changed',
+  chromePressed: 'tabs:chrome-pressed',
 } as const

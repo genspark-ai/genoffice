@@ -1,3 +1,5 @@
+import type { UpdateChannel } from './update-api'
+
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
 export type UiLanguage =
   | 'zh'
@@ -19,6 +21,9 @@ export type UiLanguage =
   | 'he'
   | 'hi'
   | 'zh-TW'
+
+/** UI theme preference */
+export type UiTheme = 'light' | 'dark' | 'system'
 
 /** a recent file entry shown on the home screen; type derives from the extension */
 export interface RecentEntry {
@@ -71,6 +76,8 @@ export interface HomeApi {
   newSheet(opts?: { projectId?: string }): Promise<void>
   /** open a slides tab at its start screen (open-a-pptx) */
   newSlide(opts?: { projectId?: string }): Promise<void>
+  /** open a blank markdown editor tab */
+  newMarkdown(opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
@@ -87,6 +94,10 @@ export interface HomeApi {
   getLanguage(): Promise<UiLanguage>
   /** switch + persist the UI language; main rebuilds its menus to match */
   setLanguage(lang: UiLanguage): Promise<void>
+  /** current update channel (persisted in userData/app-settings.json; default 'stable') */
+  getUpdateChannel(): Promise<UpdateChannel>
+  /** switch + persist the update channel; triggers an immediate update check */
+  setUpdateChannel(channel: UpdateChannel): Promise<void>
   /** Genspark account status (gsk login state; to be upgraded to a signup/account system later) */
   accountStatus(): Promise<AccountStatus>
   /** start Genspark login (opens the browser; accountStatus flips to logged-in on completion); returns whether the launch succeeded */
@@ -103,14 +114,78 @@ export interface HomeApi {
   onboardingSeen(): Promise<boolean>
   /** mark the first-run onboarding as done so it never shows again */
   setOnboardingSeen(): Promise<void>
+  /** current UI theme preference (persisted in userData/app-settings.json) */
+  getTheme(): Promise<UiTheme>
+  /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
+  setTheme(theme: UiTheme): Promise<void>
+  /** effective default save folder for new/untitled files (configured in userData/app-settings.json, falls back to <Documents>/GenOffice) */
+  getDefaultSaveDir(): Promise<string>
+  /** directory picker to change the default save folder; resolves to the new folder, or null when canceled or the pick was unusable */
+  pickDefaultSaveDir(): Promise<string | null>
+  /** theme switched anywhere (broadcast from the main process) */
+  onThemeChanged(handler: (theme: UiTheme) => void): () => void
   /** open the GenTeam community page in the default browser */
   openGenTeam(): Promise<void>
+  /** open the Genspark credit-usage page in the default browser */
+  openCreditUsage(): Promise<void>
+  /** open the public GitHub repository in the default browser */
+  openGitHubRepo(): Promise<void>
+  /** current stargazer count of the public repo (null while offline / rate-limited) */
+  githubStars(): Promise<number | null>
+  /** whether the one-time "star us" prompt should show now (show:true also counts as shown);
+   * docOpens personalizes the card copy ("you've opened N documents") */
+  starPromptShouldShow(): Promise<StarPromptShow>
+  /** user reacted to the star prompt; 'starred' resolves it permanently */
+  starPromptAction(action: StarPromptAction): Promise<void>
+  /** locally stored full cloud project list (instant; null when no store or logged out) */
+  cloudProjectsCached(): Promise<CloudProjectsSnapshot | null>
+  /** sync the full list from Genspark and return it (1 request when nothing changed); null when the sync failed */
+  cloudProjectsSync(): Promise<CloudProjectsSnapshot | null>
+  /** open a cloud project (relative '/agents?id=...' URL) in the default browser */
+  openCloudProject(projectUrl: string): Promise<void>
+}
+
+/** 'starred' = went to GitHub or said "already starred" (never prompt again);
+ * 'later' = dismissed this time (already counted as shown by the query) */
+export type StarPromptAction = 'starred' | 'later'
+
+/** answer to starPromptShouldShow */
+export interface StarPromptShow {
+  show: boolean
+  /** lifetime documents opened — drives the personalized card title */
+  docOpens: number
+}
+
+export type CloudProjectKind = 'docs' | 'sheets' | 'slides'
+
+/** a Genspark web project shown in the home cloud section */
+export interface CloudProjectEntry {
+  projectId: string
+  title: string
+  /** module kind derived from the API project type ('docs_agent' → 'docs') */
+  kind: CloudProjectKind | 'other'
+  /** creation time, ms since epoch (0 when unparsable) */
+  ctimeMs: number
+  /** relative genspark.ai URL ('/agents?id=...') */
+  projectUrl: string
+}
+
+/** full local copy of the cloud project list; filtering/paging are client-side */
+export interface CloudProjectsSnapshot {
+  /** false when gsk is unavailable (CLI missing or not logged in) */
+  available: boolean
+  /** all projects, newest first */
+  projects: CloudProjectEntry[]
+  /** ms epoch of the last successful sync (0 when never synced) */
+  syncedAt: number
 }
 
 export interface AccountStatus {
   /** gsk is installed and logged in */
   loggedIn: boolean
   email?: string
+  /** remaining Genspark credits (absent when the balance query failed) */
+  creditBalance?: number
 }
 
 /** login flow progress pushed from main (gsk login CLI output) */
@@ -178,6 +253,7 @@ export const HOME_CHANNELS = {
   newDoc: 'home:new-doc',
   newSheet: 'home:new-sheet',
   newSlide: 'home:new-slide',
+  newMarkdown: 'home:new-markdown',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',
@@ -186,6 +262,8 @@ export const HOME_CHANNELS = {
   openTrash: 'home:open-trash',
   getLanguage: 'home:get-language',
   setLanguage: 'home:set-language',
+  getUpdateChannel: 'home:get-update-channel',
+  setUpdateChannel: 'home:set-update-channel',
   accountStatus: 'home:account-status',
   accountLogin: 'home:account-login',
   accountLoginEvent: 'home:account-login-event',
@@ -194,7 +272,19 @@ export const HOME_CHANNELS = {
   getAppVersion: 'home:get-app-version',
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',
+  getTheme: 'home:get-theme',
+  setTheme: 'home:set-theme',
+  getDefaultSaveDir: 'home:get-default-save-dir',
+  pickDefaultSaveDir: 'home:pick-default-save-dir',
   openGenTeam: 'home:open-genteam',
+  openCreditUsage: 'home:open-credit-usage',
+  openGitHubRepo: 'home:open-github-repo',
+  githubStars: 'home:github-stars',
+  starPromptShouldShow: 'home:star-prompt-should-show',
+  starPromptAction: 'home:star-prompt-action',
+  cloudProjects: 'home:cloud-projects',
+  cloudProjectsCached: 'home:cloud-projects-cached',
+  openCloudProject: 'home:open-cloud-project',
 } as const
 
 export const PROJECT_CHANNELS = {

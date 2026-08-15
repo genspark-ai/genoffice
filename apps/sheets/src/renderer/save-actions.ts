@@ -21,6 +21,7 @@ import {
   toSaveVisualEdits,
 } from './edit-journal'
 import { t } from './i18n/locale'
+import { showToast } from './toast-bus'
 import {
   collectCfStates,
   collectDefinedNamesState,
@@ -46,6 +47,7 @@ export interface SaveContext {
 export async function handleSave(
   ctx: SaveContext,
   mode: 'save' | 'save-as' | 'recovery',
+  quiet = false,
 ): Promise<void> {
   const state = ctx.lazyWorkbookRef.current
   if (!state) {
@@ -65,7 +67,9 @@ export async function handleSave(
   try {
     filterStates = collectFilterStates(ctx.univerRef.current, state)
   } catch (error: unknown) {
-    ctx.setMessage(error instanceof Error ? error.message : t('appFilterSnapshotFailed'))
+    const failed = error instanceof Error ? error.message : t('appFilterSnapshotFailed')
+    ctx.setMessage(failed)
+    if (mode !== 'recovery' && !quiet) showToast(failed, 'error')
     return
   }
   const cfStates = collectCfStates(ctx.univerRef.current, state)
@@ -119,7 +123,10 @@ export async function handleSave(
       ...heldTables.map((table) => table.sheetId),
     ].some((sheetId) => addedSheetIds.has(sheetId))
     if (strandedHeld) {
-      if (mode !== 'recovery') ctx.setMessage(t('appSaveHeldStranded'))
+      if (mode !== 'recovery') {
+        ctx.setMessage(t('appSaveHeldStranded'))
+        if (!quiet) showToast(t('appSaveHeldStranded'), 'error')
+      }
       return
     }
   }
@@ -141,7 +148,7 @@ export async function handleSave(
     visualEdits.length +
     tableAdditions.length +
     pivotAdditions.length
-  if (total === 0) {
+  if (total === 0 && mode !== 'save-as') {
     if (mode !== 'recovery') ctx.setMessage(t('appNoEditsToSave'))
     return
   }
@@ -155,7 +162,10 @@ export async function handleSave(
           ?.getSheets()
           .map((sheet) => sheet.getSheetId()) ?? [])
   if (sheetOps.length > 0 && sheetOrder.length === 0) {
-    if (mode !== 'recovery') ctx.setMessage(t('appSheetOrderReadFailed'))
+    if (mode !== 'recovery') {
+      ctx.setMessage(t('appSheetOrderReadFailed'))
+      if (!quiet) showToast(t('appSheetOrderReadFailed'), 'error')
+    }
     return
   }
   const payload = {
@@ -222,13 +232,12 @@ export async function handleSave(
     }
     if (!splitSave) {
       ctx.openLazyWorkbook(result.file)
-      ctx.setMessage(
-        t('appSaved', {
-          name: result.file.name,
-          touched: result.touchedEntries.length,
-          total: result.file.entryCount,
-        }),
-      )
+      const saved = t('appSaved', {
+        touched: result.touchedEntries.length,
+        total: result.file.entryCount,
+      })
+      ctx.setMessage(saved)
+      if (!quiet) showToast(saved)
       return
     }
     try {
@@ -265,24 +274,50 @@ export async function handleSave(
         return
       }
       ctx.openLazyWorkbook(second.file)
-      ctx.setMessage(t('appSavedTwoPhase', { name: second.file.name }))
+      const saved = t('appSavedTwoPhase')
+      ctx.setMessage(saved)
+      if (!quiet) showToast(saved)
     } catch (error: unknown) {
       if (ctx.lazyWorkbookRef.current !== state) return
       ctx.openLazyWorkbook(result.file)
-      ctx.setMessage(
-        t('appSaveSecondFailed', {
-          reason: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      const failed = t('appSaveSecondFailed', {
+        reason: error instanceof Error ? error.message : String(error),
+      })
+      ctx.setMessage(failed)
+      if (!quiet) showToast(failed, 'error')
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : ''
-    // Structural-shift guard (charts/tables anchored to the rows being shifted):
-    // say it in plain language instead of the raw gateway error with part names
-    if (message.includes('cannot shift here')) {
-      ctx.setMessage(t('appStructuralShiftBlocked'))
-      return
-    }
-    ctx.setMessage(message || t('appSaveFailed'))
+    const failed = localizeSaveError(message) ?? (message || t('appSaveFailed'))
+    ctx.setMessage(failed)
+    if (!quiet) showToast(failed, 'error')
   }
+}
+
+/// Gateway save errors users can trigger through normal editing, keyed by a
+/// stable substring; unmatched messages surface verbatim (English) as before.
+const SAVE_ERROR_PATTERNS = [
+  ['cannot shift here', 'appStructuralShiftBlocked'],
+  ['extended (x14) data validation', 'appSaveErrX14Dv'],
+  ['Multi-select list rules', 'appSaveErrMultiSelectList'],
+  ['extended conditional formatting (x14)', 'appSaveErrX14Cf'],
+  ['data-bar extension format (x14)', 'appSaveErrX14Cf'],
+  ['A new pivot cannot be saved together with sheet management', 'appSaveErrPivotWithSheetOps'],
+  ['A new pivot cannot be saved together with row/column', 'appSaveErrPivotWithRowCol'],
+  ['A new table cannot be saved together with row/column', 'appSaveErrTableWithRowCol'],
+  ['Defined-name edits cannot be saved together', 'appSaveErrNamesWithStructural'],
+  ['The workbook changed on disk', 'appSaveErrChangedOnDisk'],
+  ['style edits cannot be saved', 'appSaveErrStylesheetLimited'],
+  ['Saving would change the workbook package structure', 'appSaveErrPackageGuard'],
+  ['charts support', 'appSaveErrChartUnsupported'],
+  ['Converting a', 'appSaveErrChartUnsupported'],
+  ['Replacing series on a', 'appSaveErrChartUnsupported'],
+  ['overlaps the moved rows', 'appSaveErrMoveOverlap'],
+  ['Moving the header row of table', 'appSaveErrMoveOverlap'],
+  ['Moving the totals row of table', 'appSaveErrMoveOverlap'],
+] as const
+
+export function localizeSaveError(message: string): string | null {
+  const hit = SAVE_ERROR_PATTERNS.find(([pattern]) => message.includes(pattern))
+  return hit ? t(hit[1]) : null
 }

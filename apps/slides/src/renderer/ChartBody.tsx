@@ -4,13 +4,28 @@
  * top-left, the outer Group handles positioning.
  */
 import React from 'react'
-import { Rect, Text, Line, Circle, Arc } from 'react-konva'
+import { Rect, Text, Line, Circle, Arc, Path } from 'react-konva'
 import type { ChartRenderNode } from '@genoffice/pptx-render'
-import { smoothTension } from './konva-adapter'
+import { fillToKonva, smoothTension } from './konva-adapter'
 
-export function ChartBody({ chart }: { chart: ChartRenderNode }) {
+export function ChartBody({
+  chart,
+  images,
+}: {
+  chart: ChartRenderNode
+  images?: Map<string, HTMLImageElement>
+}) {
   return (
     <>
+      {chart.bgFill && (
+        <Rect
+          x={0}
+          y={0}
+          width={chart.box.w}
+          height={chart.box.h}
+          {...fillToKonva(chart.bgFill, chart.box.w, chart.box.h, images)}
+        />
+      )}
       {(chart.wedges ?? []).map((wd, i) => (
         <Arc
           key={`w${i}`}
@@ -40,6 +55,15 @@ export function ChartBody({ chart }: { chart: ChartRenderNode }) {
           points={[a.x1, a.y1, a.x2, a.y2]}
           stroke={a.color}
           strokeWidth={a.widthPx}
+        />
+      ))}
+      {(chart.paths ?? []).map((p, i) => (
+        <Path
+          key={`pp${i}`}
+          data={p.d}
+          y={p.dy ?? 0}
+          fill={p.fill}
+          {...(p.stroke ? { stroke: p.stroke, strokeWidth: 1 } : {})}
         />
       ))}
       {chart.bars.map((b, i) => (

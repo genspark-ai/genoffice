@@ -150,7 +150,7 @@ export function ChartFormatPane({
     <div className="chart-format-pane">
       <header>
         <span>{t('appFormatHeader', { target: elementLabel(t, element, chart) })}</span>
-        <button title={t('appClose')} onClick={onClose}>
+        <button data-tip={t('appClose')} aria-label={t('appClose')} onClick={onClose}>
           ✕
         </button>
       </header>
@@ -513,21 +513,24 @@ export function SelectDataDialog({
                     />
                     <span>
                       <button
-                        title={t('appMoveUp')}
+                        data-tip={t('appMoveUp')}
+                        aria-label={t('appMoveUp')}
                         disabled={index === 0}
                         onClick={() => moveRow(index, -1)}
                       >
                         ↑
                       </button>
                       <button
-                        title={t('appMoveDown')}
+                        data-tip={t('appMoveDown')}
+                        aria-label={t('appMoveDown')}
                         disabled={index === rows.length - 1}
                         onClick={() => moveRow(index, 1)}
                       >
                         ↓
                       </button>
                       <button
-                        title={t('appRemoveSeries')}
+                        data-tip={t('appRemoveSeries')}
+                        aria-label={t('appRemoveSeries')}
                         onClick={() =>
                           setRows((previous) => previous.filter((_, at) => at !== index))
                         }

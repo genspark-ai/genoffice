@@ -34,10 +34,11 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^41.0.3",
+    "electron": "^43.3.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "jsdom": "^28.0.0",
+    "marked": "^17.0.6",
     "opentype.js": "^2.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -49,7 +50,7 @@
   "build": {
     "appId": "com.genoffice.docs",
     "productName": "GenOffice Docs",
-    "electronVersion": "41.7.1",
+    "electronVersion": "43.3.0",
     "artifactName": "AIDocx-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
@@ -90,7 +91,9 @@
   },
   "dependencies": {
     "@genoffice/electron-utils": "*",
+    "@genoffice/font-metrics": "*",
     "electron-updater": "^6.8.9",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "@genoffice/pptx-render": "*"
   }
 }

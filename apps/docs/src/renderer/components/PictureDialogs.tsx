@@ -185,7 +185,12 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: CutoutProps) {
         >
           {error ? (
             <span
-              style={{ color: '#c33', background: '#fff', padding: '4px 10px', borderRadius: 4 }}
+              style={{
+                color: 'var(--danger)',
+                background: 'var(--surface)',
+                padding: '4px 10px',
+                borderRadius: 4,
+              }}
             >
               {t(error)}
             </span>
@@ -199,7 +204,9 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: CutoutProps) {
               }}
             />
           )}
-          {!loaded && !error && <span style={{ color: '#888' }}>{t('ribbonLoading')}</span>}
+          {!loaded && !error && (
+            <span style={{ color: 'var(--text-muted)' }}>{t('ribbonLoading')}</span>
+          )}
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
           <span style={{ whiteSpace: 'nowrap' }}>{t('ribbonCutoutTolerance')}</span>
@@ -215,7 +222,7 @@ export function CutoutDialog({ dataUrl, onApply, onCancel }: CutoutProps) {
           />
           <span style={{ width: 32, textAlign: 'right' }}>{tolerance}</span>
         </label>
-        <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
           {t('ribbonCutoutHint', { pct: removedPct })}
         </div>
         <div className="modal-actions">
@@ -458,7 +465,12 @@ export function CropDialog({ dataUrl, onApply, onCancel }: CropProps) {
         >
           {error ? (
             <span
-              style={{ color: '#c33', background: '#fff', padding: '4px 10px', borderRadius: 4 }}
+              style={{
+                color: 'var(--danger)',
+                background: 'var(--surface)',
+                padding: '4px 10px',
+                borderRadius: 4,
+              }}
             >
               {t(error)}
             </span>
@@ -536,10 +548,12 @@ export function CropDialog({ dataUrl, onApply, onCancel }: CropProps) {
               </div>
             </div>
           ) : (
-            <span style={{ color: '#888' }}>{t('ribbonLoading')}</span>
+            <span style={{ color: 'var(--text-muted)' }}>{t('ribbonLoading')}</span>
           )}
         </div>
-        <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>{t('ribbonCropHint')}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+          {t('ribbonCropHint')}
+        </div>
         <div className="modal-actions">
           <button onClick={onCancel}>{t('ribbonCancel')}</button>
           <button className="primary" onClick={apply} disabled={!loaded || !!error}>

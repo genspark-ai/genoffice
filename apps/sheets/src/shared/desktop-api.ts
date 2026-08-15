@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { ADDABLE_SHAPE_TYPES } from './shape-types'
 import type {
   AiChatRequest,
   AiChatResponse,
@@ -34,6 +35,7 @@ const worksheetMetadataSchema = z
           hidden: z.boolean(),
           outlineLevel: z.number().int().min(1).max(7).optional(),
           collapsed: z.boolean().optional(),
+          styleIndex: z.number().int().positive().optional(),
         })
         .strict(),
     ),
@@ -392,6 +394,7 @@ export const workbookRangeResultSchema = z
             hidden: z.boolean(),
             outlineLevel: z.number().int().min(1).max(7).optional(),
             collapsed: z.boolean().optional(),
+            styleIndex: z.number().int().positive().optional(),
           })
           .strict(),
       )
@@ -633,6 +636,19 @@ export const workbookStructuralOpSchema = z.union([
       count: z.number().int().positive().max(10_000),
     })
     .strict(),
+  z
+    .object({
+      sheetId: z.string().min(1),
+      kind: z.literal('move-rows'),
+      index: z.number().int().nonnegative().max(1_048_575),
+      count: z.number().int().positive().max(10_000),
+      /// Pre-move insertion row; must lie outside the moved block.
+      before: z.number().int().nonnegative().max(1_048_576),
+    })
+    .strict()
+    .refine((op) => op.before < op.index || op.before > op.index + op.count, {
+      message: 'A row move target must lie outside the moved block.',
+    }),
   z
     .object({
       sheetId: z.string().min(1),
@@ -1095,17 +1111,7 @@ export const workbookVisualAddSchema = z
       .optional(),
     shape: z
       .object({
-        shapeType: z.enum([
-          'rect',
-          'roundRect',
-          'ellipse',
-          'triangle',
-          'diamond',
-          'rightArrow',
-          'leftArrow',
-          'pentagon',
-          'hexagon',
-        ]),
+        shapeType: z.enum(ADDABLE_SHAPE_TYPES),
         fillColor: z
           .string()
           .regex(/^#[0-9a-fA-F]{6}$/)
@@ -1437,6 +1443,9 @@ export const workbookSaveRequestSchema = z
   .strict()
   .refine(
     (request) =>
+      // Explicit Save As is a valid request even with nothing to apply: it
+      // writes the unchanged workbook to a new path.
+      request.mode === 'save-as' ||
       request.edits.length > 0 ||
       request.structuralOps.length > 0 ||
       request.chartEdits.length > 0 ||
@@ -1493,6 +1502,42 @@ export const localImageResultSchema = z
     mediaType: z.enum(['image/png', 'image/jpeg', 'image/gif']),
     /// ~20MB decoded, mirroring the picker-based insert limit.
     base64: z.string().min(1).max(28_000_000),
+  })
+  .strict()
+
+/// Insert → Screenshot: enumerate capturable windows/screens for the picker
+/// grid, then grab the chosen source at full resolution. 'denied' means the
+/// OS blocks capture (macOS Screen Recording permission) — the picker shows
+/// guidance instead of an empty grid.
+export const screenSourcesResultSchema = z
+  .object({
+    status: z.enum(['ok', 'denied']),
+    sources: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string(),
+          kind: z.enum(['screen', 'window']),
+          /// Small preview as a data URL; empty when the OS returned none.
+          thumbnail: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+
+export const screenCaptureRequestSchema = z
+  .object({
+    id: z.string().min(1).max(256),
+  })
+  .strict()
+
+export const screenCaptureResultSchema = z
+  .object({
+    mediaType: z.literal('image/png'),
+    base64: z.string().min(1).max(28_000_000),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
   })
   .strict()
 
@@ -1666,6 +1711,9 @@ export type WorkbookPivotRequest = z.infer<typeof workbookPivotRequestSchema>
 export type WorkbookPivotDefinition = z.infer<typeof workbookPivotDefinitionSchema>
 export type LocalImageRequest = z.infer<typeof localImageRequestSchema>
 export type LocalImageResult = z.infer<typeof localImageResultSchema>
+export type ScreenSourcesResult = z.infer<typeof screenSourcesResultSchema>
+export type ScreenCaptureRequest = z.infer<typeof screenCaptureRequestSchema>
+export type ScreenCaptureResult = z.infer<typeof screenCaptureResultSchema>
 export type WorkbookVisualObject = z.infer<typeof visualObjectSchema>
 export type WorkbookVisualAdd = z.infer<typeof workbookVisualAddSchema>
 export type WorkbookTableAdd = z.infer<typeof workbookTableAddSchema>
@@ -1852,6 +1900,8 @@ export interface AttachmentImageResult {
   error?: string
 }
 
+export type UiTheme = 'light' | 'dark' | 'system'
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -1861,6 +1911,16 @@ export interface DesktopApi {
       lang: 'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar',
     ) => void,
   ): () => void
+  /** current UI theme preference (persisted by the shell in app-settings.json) */
+  getTheme(): Promise<UiTheme>
+  /** theme switched from the shell home page */
+  onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /**
+   * the user pressed the shell chrome (tab strip) or started dragging the
+   * window — no DOM event or blur reaches this view, so the shell relays the
+   * press for dismissing open popovers
+   */
+  onChromePressed(handler: () => void): () => void
   selectWorkbook(): Promise<WorkbookFile | null>
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
@@ -1868,6 +1928,9 @@ export interface DesktopApi {
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
   readLocalImage(request: LocalImageRequest): Promise<LocalImageResult>
+  captureScreenSources(): Promise<ScreenSourcesResult>
+  /// null when the source vanished between listing and capture.
+  captureScreenSource(request: ScreenCaptureRequest): Promise<ScreenCaptureResult | null>
   saveWorkbookEdits(request: WorkbookSaveRequest): Promise<WorkbookSaveResult>
   /// Crash-recovery copy of the pending edits, written under userData.
   /// Best-effort: never prompts, never touches the opened file.
@@ -1894,6 +1957,9 @@ export interface DesktopApi {
   /// Returns true once when this tab was opened via "New Spreadsheet" from the
   /// shell home.
   consumeNewBlankWorkbook(): Promise<boolean>
+  /// Is a shell-queued workbook path still waiting to be opened? (The shell's
+  /// 'open' nudge loop can time out on slow cold starts; the renderer pulls.)
+  hasQueuedWorkbook(): Promise<boolean>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>

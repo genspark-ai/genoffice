@@ -272,6 +272,32 @@ export function buildCtxItems(ctx: ActionCtx): Array<CtxItem | null> {
       onClick: () => void arrangeActions.reorderSelected(ctx, ctxMenu.targetId, 'backward'),
     },
     null,
+    // Rotate/flip group (PowerPoint parity) for shapes, pictures and groups; connectors
+    // are endpoint-based and keep their existing menu
+    ...(node &&
+    (node.type === 'shape' || node.type === 'picture' || node.type === 'group') &&
+    !(node as { line?: unknown }).line
+      ? [
+          {
+            label: t('appCtxRotateLeft90'),
+            onClick: () => void arrangeActions.rotateSelected(ctx, -90),
+          } as CtxItem,
+          {
+            label: t('appCtxRotateRight90'),
+            onClick: () => void arrangeActions.rotateSelected(ctx, 90),
+          } as CtxItem,
+          null,
+          {
+            label: t('appCtxFlipH'),
+            onClick: () => void arrangeActions.flipSelected(ctx, 'h'),
+          } as CtxItem,
+          {
+            label: t('appCtxFlipV'),
+            onClick: () => void arrangeActions.flipSelected(ctx, 'v'),
+          } as CtxItem,
+          null,
+        ]
+      : []),
     ...(node && isEditableText(node)
       ? [{ label: t('appCtxEditText'), onClick: () => ctx.startEdit(ctxMenu.targetId) } as CtxItem]
       : []),

@@ -1,7 +1,8 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import type { Command } from '@tiptap/pm/state'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import {
   addColumnAfter,
   addColumnBefore,
@@ -24,9 +25,11 @@ import type {
   SectionSettings,
   SourceInfo,
   StyleInfo,
+  TextboxDisplay,
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
+import { isSymbolFontFamily } from '@genoffice/ui'
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
 import { stepParagraphIndent } from '../editor/indent'
@@ -35,7 +38,9 @@ import type { InkTool } from '../editor/ink'
 import type { RibbonFormatState } from './ribbon-format-state'
 import { setSelectedColumnWidth } from '../editor/table-sizing'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor } from '../font-list'
+import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
+import { useSystemFontFamilies } from '../system-fonts'
+import { cssFontFamily } from '../line-metrics'
 import {
   DesignTab,
   DrawTab,
@@ -87,8 +92,12 @@ import {
   IconPalette,
   IconPaste,
   IconPilcrow,
+  IconFlipH,
+  IconFlipV,
   IconRemoveBg,
   IconReplacePicture,
+  IconRotateLeft,
+  IconRotateRight,
   IconRowDelete,
   IconRowInsertAbove,
   IconRowInsertBelow,
@@ -116,8 +125,6 @@ interface RibbonProps {
   styles?: Map<string, StyleInfo>
   /** document-wide text defaults from styles.xml */
   docDefaults?: DocDefaults
-  /** Open the styles pane */
-  onStylesPanel?: () => void
   /** Open the paragraph dialog (line-spacing rule / exact value entry lives there) */
   onParagraphDialog?: () => void
   onOpen: () => void
@@ -137,6 +144,7 @@ interface RibbonProps {
   onWatermark: (text: string | null) => void
   themeFonts: ThemeFonts | null
   onThemeFonts: (fonts: ThemeFonts) => void
+  themeColors: ThemeColors | null
   onThemeColors: (colors: ThemeColors) => void
   /** Draw → pen / highlighter / eraser */
   inkTool: InkTool
@@ -240,7 +248,12 @@ const TABS = (
 ) as readonly string[]
 const TABLE_TABS = ['tableDesign', 'tableLayout'] as const
 const IMAGE_TABS = ['pictureFormat'] as const
-type RibbonTab = (typeof TABS)[number] | (typeof TABLE_TABS)[number] | (typeof IMAGE_TABS)[number]
+const SHAPE_TABS = ['shapeFormat'] as const
+type RibbonTab =
+  | (typeof TABS)[number]
+  | (typeof TABLE_TABS)[number]
+  | (typeof IMAGE_TABS)[number]
+  | (typeof SHAPE_TABS)[number]
 
 // tab values double as internal-state / external tabRequest keys; translated for display via these string keys
 const TAB_LABEL_KEYS: Record<string, StringKey> = {
@@ -256,6 +269,7 @@ const TAB_LABEL_KEYS: Record<string, StringKey> = {
   tableDesign: 'ribbonTabTableDesign',
   tableLayout: 'ribbonTabTableLayout',
   pictureFormat: 'ribbonTabPictureFormat',
+  shapeFormat: 'ribbonTabShapeFormat',
 }
 
 /** CSS px per cm at 96dpi (size inputs display in centimeters) */
@@ -272,7 +286,15 @@ const NOOP_CHAIN = new Proxy(
   { get: (_t, prop) => (prop === 'run' ? () => false : () => NOOP_CHAIN) },
 ) as ChainedCommands
 
-const FONT_SIZES = [9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 36, 48, 72]
+// Word's preset size list (also drives the grow/shrink font step buttons)
+const FONT_SIZES = [
+  5, 5.5, 6.5, 7.5, 8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72,
+]
+
+// A+/A- clicks closer together than this coalesce into one trailing apply;
+// must sit above burst-click spacing (~100-200ms) yet stay short enough that
+// the deferred re-layout still feels attached to the click.
+const FONT_STEP_COALESCE_MS = 300
 
 const THEME_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorWhite', hex: 'FFFFFF' },
@@ -364,6 +386,80 @@ const COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorPurple', hex: '7030A0' },
 ]
 
+/** Theme + standard color palette for shape fill/outline (Shape Format tab) */
+function ShapeColorPalette({
+  current,
+  noneLabel,
+  onPick,
+}: {
+  current: string | null
+  noneLabel: string
+  onPick: (hex: string | null) => void
+}) {
+  const { t } = useI18n()
+  return (
+    <div className="color-palette color-palette-word">
+      <button
+        className={`color-automatic ${!current ? 'selected' : ''}`}
+        onClick={() => onPick(null)}
+      >
+        {noneLabel}
+      </button>
+      <div className="color-section-title">{t('ribbonThemeColorsSection')}</div>
+      <div className="color-theme-base">
+        {THEME_COLORS.map((c) => (
+          <button
+            key={c.hex}
+            className={`color-swatch color-swatch-large ${current === c.hex ? 'selected' : ''}`}
+            data-tip={t(c.nameKey)}
+            aria-label={t(c.nameKey)}
+            style={{ background: `#${c.hex}` }}
+            onClick={() => onPick(c.hex)}
+          />
+        ))}
+      </div>
+      <div className="color-theme-shades">
+        {THEME_COLOR_SHADES.flatMap((row, rowIndex) =>
+          row.map((hex, columnIndex) => (
+            <button
+              key={`${rowIndex}-${columnIndex}-${hex}`}
+              className={`color-swatch color-swatch-large ${current === hex ? 'selected' : ''}`}
+              data-tip={t('ribbonThemeColorShadeTip', { r: rowIndex + 1, c: columnIndex + 1 })}
+              aria-label={t('ribbonThemeColorShadeTip', { r: rowIndex + 1, c: columnIndex + 1 })}
+              style={{ background: `#${hex}` }}
+              onClick={() => onPick(hex)}
+            />
+          )),
+        )}
+      </div>
+      <div className="color-section-title color-standard-title">{t('ribbonStandardColors')}</div>
+      <div className="color-standard-row">
+        {COLORS.map((c) => (
+          <button
+            key={c.hex}
+            className={`color-swatch color-swatch-large ${current === c.hex ? 'selected' : ''}`}
+            data-tip={t(c.nameKey)}
+            aria-label={t(c.nameKey)}
+            style={{ background: `#${c.hex}` }}
+            onClick={() => onPick(c.hex)}
+          />
+        ))}
+      </div>
+      <label className="color-more">
+        <span className="color-more-icon">
+          <IconPalette size={16} />
+        </span>
+        {t('ribbonMoreColors')}
+        <input
+          type="color"
+          value={`#${current ?? '4472C4'}`}
+          onChange={(e) => onPick(e.target.value.slice(1).toUpperCase())}
+        />
+      </label>
+    </div>
+  )
+}
+
 /** Word text highlight colors (OOXML named values) */
 const HIGHLIGHTS = [
   'yellow',
@@ -449,9 +545,6 @@ function previewLevelText(levels: CustomNumberingLevel[], ilvl: number): string 
   )
 }
 
-/** Max character styles shown inline; the rest fold into the "More styles" dropdown */
-const MAX_INLINE_CHAR_STYLES = 2
-
 const STYLE_GALLERY = [
   { key: 'p', labelKey: 'ribbonStyleNormal', className: 'style-normal' },
   { key: 'h1', labelKey: 'ribbonStyleHeading1', className: 'style-h1' },
@@ -459,20 +552,31 @@ const STYLE_GALLERY = [
   { key: 'h3', labelKey: 'ribbonStyleHeading3', className: 'style-h3' },
 ] as const satisfies ReadonlyArray<{ key: string; labelKey: StringKey; className: string }>
 
-/** Fallback character styles shown when the document has no character styles */
-const CHAR_STYLE_PRESETS: Array<{ styleId: string; labelKey: StringKey; display: CSSProperties }> =
-  [
-    {
-      styleId: '__preset_emphasis',
-      labelKey: 'ribbonStyleEmphasis',
-      display: { fontStyle: 'italic', color: 'var(--theme-accent, #4472C4)' },
-    },
-    {
-      styleId: '__preset_strong',
-      labelKey: 'ribbonStyleIntenseEmphasis',
-      display: { fontWeight: 'bold', color: 'var(--theme-accent, #4472C4)' },
-    },
-  ]
+/** Fallback character styles shown when the document has no character styles.
+ * Emphasis = italic + accent color, Intense Emphasis = bold + accent color;
+ * applied via the plain italic/bold marks plus docTextStyle color. */
+const CHAR_STYLE_PRESETS: Array<{
+  styleId: string
+  labelKey: StringKey
+  mark: 'italic' | 'bold'
+  display: (accentHex: string) => CSSProperties
+}> = [
+  {
+    styleId: '__preset_emphasis',
+    labelKey: 'ribbonStyleEmphasis',
+    mark: 'italic',
+    display: (accentHex) => ({ fontStyle: 'italic', color: `#${accentHex}` }),
+  },
+  {
+    styleId: '__preset_strong',
+    labelKey: 'ribbonStyleIntenseEmphasis',
+    mark: 'bold',
+    display: (accentHex) => ({ fontWeight: 'bold', color: `#${accentHex}` }),
+  },
+]
+
+/** Theme accent used by the preset character styles when the doc theme has none */
+const DEFAULT_PRESET_ACCENT = '4472C4'
 
 function findNumIdOfKind(blocks: Block[], kind: 'bullet' | 'ordered'): string | null {
   for (const b of blocks) {
@@ -490,7 +594,6 @@ function RibbonInner({
   blocks,
   allocateNumId,
   createListDef,
-  onStylesPanel,
   onParagraphDialog,
   styles,
   docDefaults,
@@ -509,6 +612,7 @@ function RibbonInner({
   onWatermark,
   themeFonts,
   onThemeFonts,
+  themeColors,
   onThemeColors,
   inkTool,
   onInkTool,
@@ -580,6 +684,15 @@ function RibbonInner({
   const [penHighlight, setPenHighlight] = useState('yellow')
   const [painter, setPainter] = useState<PainterState | null>(null)
   const ribbonRef = useRef<HTMLDivElement>(null)
+  const fontStepRef = useRef<{
+    pending: number | null
+    applied: number | null
+    timer: number | null
+    // editor snapshot the deferred apply validates against (stale-apply guard)
+    anchor: number
+    head: number
+    doc: PMNode | null
+  }>({ pending: null, applied: null, timer: null, anchor: -1, head: -1, doc: null })
   const lastRegularTab = useRef<(typeof TABS)[number]>('home')
   const wasInTable = useRef(false)
   const wasInImage = useRef(false)
@@ -653,12 +766,50 @@ function RibbonInner({
     }
   }, [inImage])
 
+  // ---- Shape Format (contextual tab when a floating box is selected, same mechanism) ----
+  const inShape = !sub && fs.textboxSelected
+  const shapeIsLine = !!fs.shapePrst?.startsWith('line')
+  const wasInShape = useRef(false)
+
+  useEffect(() => {
+    if (inShape && !wasInShape.current) {
+      wasInShape.current = true
+      setDropdown(null)
+      setTab('shapeFormat')
+    } else if (!inShape && wasInShape.current) {
+      wasInShape.current = false
+      setDropdown(null)
+      setTab((current) => (current === 'shapeFormat' ? lastRegularTab.current : current))
+    }
+  }, [inShape])
+
+  /** apply fill/outline to the selected floating box (first box of the node) */
+  const setShapeStyle = (patch: { fill?: string | null; borderColor?: string | null }) => {
+    if (!canEdit) return
+    const attrs = editor.getAttributes('docProtected')
+    const boxes = attrs?.textboxes as TextboxDisplay[] | null
+    if (!Array.isArray(boxes) || boxes.length === 0) return
+    const box = { ...boxes[0] }
+    if ('fill' in patch) {
+      if (patch.fill) box.fill = patch.fill
+      else delete box.fill
+    }
+    if ('borderColor' in patch) {
+      if (patch.borderColor) box.borderColor = patch.borderColor
+      else delete box.borderColor
+    }
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { textboxes: [box, ...boxes.slice(1)] })
+      .run()
+  }
+
   /**
    * Replace the selected image's bytes (shared by Replace Picture / remove background / crop).
-   * The original image's patch-save only supports size/alignment/wrap; swapping bytes must go
-   * through the genImage new-image embed branch, so docxIndex is cleared (on save the old
-   * block is treated as deleted, the new image is written at the same position, and
-   * alignment/wrap are inherited from attributes).
+   * Original images (docxIndex set) swap bytes in place via the imageReplace patch: the
+   * drawing XML survives, so wrap/position/docxIndex — and with them the Position gallery —
+   * keep working. Images not yet saved (genImage) just update their pending payload.
    * Display size keeps the current width; height adapts to the new image's aspect ratio.
    */
   const applyPictureBytes = async (dataUrl: string) => {
@@ -672,6 +823,7 @@ function RibbonInner({
       const currentW = Number(attrs.imageWidthPx) || Math.min(natural.width, 620)
       const w = Math.max(1, Math.round(currentW))
       const h = Math.max(1, Math.round((currentW * natural.height) / natural.width))
+      const isOriginal = attrs.docxIndex !== null && attrs.docxIndex !== undefined
       editor
         .chain()
         .focus()
@@ -679,8 +831,14 @@ function RibbonInner({
           imageDataUrl: dataUrl,
           imageWidthPx: w,
           imageHeightPx: h,
-          genImage: { base64: m[2], mime: m[1], widthPx: w, heightPx: h },
-          docxIndex: null,
+          // The new bytes are the full picture (crop/cutout bake destructively) and
+          // the replace pipeline strips a:srcRect on save — drop a Word-authored
+          // crop/fill window or it would keep clipping the new image until reload
+          imageCrop: null,
+          imageFillRect: null,
+          ...(isOriginal
+            ? { imageReplace: { base64: m[2], mime: m[1] } }
+            : { genImage: { base64: m[2], mime: m[1], widthPx: w, heightPx: h } }),
         })
         .run()
     } catch {
@@ -692,6 +850,30 @@ function RibbonInner({
     const picked = await window.desktop.pickImage()
     if (!picked) return
     await applyPictureBytes(`data:${picked.mime};base64,${picked.base64}`)
+  }
+
+  const rotatePicture = (deltaDeg: number) => {
+    if (!canEdit) return
+    const attrs = editor.getAttributes('docProtected')
+    if (attrs?.blockType !== 'image') return
+    const next = ((((Number(attrs.imageRotDeg) || 0) + deltaDeg) % 360) + 360) % 360
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { imageRotDeg: next || null })
+      .run()
+  }
+
+  const flipPicture = (axis: 'h' | 'v') => {
+    if (!canEdit) return
+    const attrs = editor.getAttributes('docProtected')
+    if (attrs?.blockType !== 'image') return
+    const key = axis === 'h' ? 'imageFlipH' : 'imageFlipV'
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { [key]: !attrs[key] })
+      .run()
   }
 
   /** Set the image display size proportionally (cm input; either side drives the other) */
@@ -832,80 +1014,7 @@ function RibbonInner({
         }
 
   const activeCharStyleId = fs.charStyleId
-  const activeStyleKey =
-    fs.headingLevel !== null
-      ? `h${fs.headingLevel}`
-      : activeCharStyleId
-        ? `char:${activeCharStyleId}`
-        : 'p'
-  const currentSize = fs.fontSizePt
-  const currentFont = fs.fontFamily
-  // The "(Body)" entry means "no explicit run font — inherit the document's body
-  // font", so it has to name that font rather than a fixed one: docDefaults is what
-  // actually renders, the theme's minor font is what "+Body" resolves to.
-  const bodyFontName = docDefaults?.asciiFont?.trim() || themeFonts?.minor?.trim() || 'Calibri'
-  // unset align follows the paragraph direction: start is left in LTR, right in RTL
-  const activeAlign = fs.align ?? (fs.bidi ? 'right' : 'left')
-  const activeSpacing = fs.lineSpacing
-
-  /** merge new attrs into the docTextStyle mark, preserving the rest.
-   * Only the patch is passed: setMark merges per existing mark and with the caret's
-   * stored mark. Rebuilding from getAttributes read-back dropped the previous call's
-   * value on a collapsed cursor (stored-mark changes don't re-render). */
-  const setTextStyle = (patch: Record<string, unknown>) => {
-    chain().setMark('docTextStyle', patch).run()
-    setDropdown(null)
-  }
-
-  /** apply paragraph-level attrs to every block type in the selection */
-  const setParaAttr = (attrs: Record<string, unknown>) => {
-    if (sub) {
-      // textbox paragraphs only support alignment; other keys are ignored
-      chain().updateAttributes('docParagraph', attrs).run()
-      setDropdown(null)
-      return
-    }
-    let c = chain()
-      .updateAttributes('docParagraph', attrs)
-      .updateAttributes('docHeading', attrs)
-      .updateAttributes('docListItem', attrs)
-    // alignment also applies to selected images (w:jc on the image paragraph)
-    if ('align' in attrs) {
-      c = c.updateAttributes('docProtected', { imageAlign: attrs.align ?? null })
-    }
-    c.run()
-    setDropdown(null)
-  }
-
-  const applyStyle = (key: string) => {
-    if (key.startsWith('char:')) {
-      const styleId = key.slice(5)
-      // Toggle: if already active, remove the mark; else set it
-      if (activeCharStyleId === styleId) {
-        chain().unsetMark('docTextStyle').run()
-      } else {
-        // Apply preset visual attrs for the two built-in presets, otherwise just styleId
-        if (styleId === '__preset_emphasis') {
-          chain()
-            .setMark('docTextStyle', { styleId: null, color: null, bold: null, italic: true })
-            .run()
-        } else if (styleId === '__preset_strong') {
-          chain()
-            .setMark('docTextStyle', { styleId: null, color: null, bold: true, italic: null })
-            .run()
-        } else {
-          chain().setMark('docTextStyle', { styleId }).run()
-        }
-      }
-      return
-    }
-    if (sub) return // textboxes have no heading styles
-    if (key === 'p') chain().setNode('docParagraph').run()
-    else
-      chain()
-        .setNode('docHeading', { level: Number(key.slice(1)) })
-        .run()
-  }
+  const presetAccent = themeColors?.accent1?.trim().toUpperCase() || DEFAULT_PRESET_ACCENT
 
   /**
    * Character styles shown in the gallery.
@@ -936,9 +1045,202 @@ function RibbonInner({
       return CHAR_STYLE_PRESETS.map((p) => ({
         key: `char:${p.styleId}`,
         label: t(p.labelKey),
-        previewStyle: p.display as CSSProperties,
+        previewStyle: p.display(presetAccent),
       }))
     })()
+
+  // Presets carry no styleId (they apply plain italic/bold + accent color), so
+  // detect their active state from the format state instead of charStyleId.
+  const usingPresetFallback = charStyleItems[0]?.key === `char:${CHAR_STYLE_PRESETS[0].styleId}`
+  const presetActive = (mark: 'italic' | 'bold'): boolean =>
+    usingPresetFallback &&
+    !activeCharStyleId &&
+    (mark === 'italic' ? fs.italic : fs.bold) &&
+    (fs.textColor ?? '').toUpperCase() === presetAccent
+  const activeStyleKey =
+    fs.headingLevel !== null
+      ? `h${fs.headingLevel}`
+      : activeCharStyleId
+        ? `char:${activeCharStyleId}`
+        : presetActive('bold')
+          ? 'char:__preset_strong'
+          : presetActive('italic')
+            ? 'char:__preset_emphasis'
+            : 'p'
+
+  // Style gallery overflow: the inline row clips (the ribbon row cannot grow),
+  // so a "more styles" expander must appear whenever cards are cut off.
+  const styleGalleryRef = useRef<HTMLDivElement | null>(null)
+  const [styleGalleryOverflow, setStyleGalleryOverflow] = useState(false)
+  useLayoutEffect(() => {
+    const el = styleGalleryRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const check = () => setStyleGalleryOverflow(el.scrollWidth - el.clientWidth > 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+    // scrollWidth changes don't fire the observer: re-check when the card set can change
+  }, [tab, charStyleItems.length, lang])
+
+  const currentSize = fs.fontSizePt
+  const currentFont = fs.fontFamily
+  // The "(Body)" entry means "no explicit run font — inherit the document's body
+  // font", so it has to name that font rather than a fixed one: docDefaults is what
+  // actually renders, the theme's minor font is what "+Body" resolves to.
+  const bodyFontName = docDefaults?.asciiFont?.trim() || themeFonts?.minor?.trim() || 'Calibri'
+  // computed unconditionally (not inside the dropdown render): cheap, and the
+  // render-isolation test uses fontFamiliesFor calls as its render probe
+  const fontFamilies = fontFamiliesFor(lang)
+  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  // unset align follows the paragraph direction: start is left in LTR, right in RTL
+  const activeAlign = fs.align ?? (fs.bidi ? 'right' : 'left')
+  const activeSpacing = fs.lineSpacing
+
+  /** merge new attrs into the docTextStyle mark, preserving the rest.
+   * Only the patch is passed: setMark merges per existing mark and with the caret's
+   * stored mark. Rebuilding from getAttributes read-back dropped the previous call's
+   * value on a collapsed cursor (stored-mark changes don't re-render). */
+  const setTextStyle = (patch: Record<string, unknown>) => {
+    chain().setMark('docTextStyle', patch).run()
+    setDropdown(null)
+  }
+
+  /** font picks target only their script's rFonts slot (Word never flattens the other one) */
+  const setFont = (name: string | null) => {
+    if (!name) setTextStyle({ font: null, fontAscii: null })
+    else if (isEastAsianFontName(name)) setTextStyle({ font: name })
+    else setTextStyle({ fontAscii: name })
+  }
+
+  /** apply paragraph-level attrs to every block type in the selection */
+  const setParaAttr = (attrs: Record<string, unknown>) => {
+    if (sub) {
+      // textbox paragraphs only support alignment; other keys are ignored
+      chain().updateAttributes('docParagraph', attrs).run()
+      setDropdown(null)
+      return
+    }
+    let c = chain()
+      .updateAttributes('docParagraph', attrs)
+      .updateAttributes('docHeading', attrs)
+      .updateAttributes('docListItem', attrs)
+    // alignment also applies to selected images (w:jc on the image paragraph)
+    if ('align' in attrs) {
+      c = c.updateAttributes('docProtected', { imageAlign: attrs.align ?? null })
+    }
+    c.run()
+    setDropdown(null)
+  }
+
+  const applyStyle = (key: string) => {
+    if (key.startsWith('char:')) {
+      const styleId = key.slice(5)
+      const preset = CHAR_STYLE_PRESETS.find((p) => p.styleId === styleId)
+      if (preset) {
+        // Presets are plain italic/bold marks + accent color; toggle off when already active
+        if (activeStyleKey === key) {
+          chain().unsetMark(preset.mark).setMark('docTextStyle', { color: null }).run()
+        } else {
+          // switching presets must drop the other's mark, otherwise both stay
+          // active and the gallery highlight sticks on the wrong card
+          let c = chain()
+          for (const p of CHAR_STYLE_PRESETS) if (p !== preset) c = c.unsetMark(p.mark)
+          c.setMark(preset.mark).setMark('docTextStyle', { color: presetAccent }).run()
+        }
+        return
+      }
+      // Toggle: if already active, remove the mark; else set it
+      if (activeCharStyleId === styleId) {
+        chain().unsetMark('docTextStyle').run()
+      } else {
+        chain().setMark('docTextStyle', { styleId }).run()
+      }
+      return
+    }
+    if (sub) return // textboxes have no heading styles
+    let c = chain()
+    if (key === 'p') c = c.setNode('docParagraph')
+    else c = c.setNode('docHeading', { level: Number(key.slice(1)) })
+    // Word-like: applying a paragraph style sheds the runs' direct font/size/color.
+    // Those render as inline span styles and would otherwise mask the style's look
+    // entirely (the click would seem to do nothing on documents whose body runs
+    // carry explicit rPr, common in CJK templates).
+    c.command(({ tr }) => {
+      const { from, to } = tr.selection
+      let start = from
+      let end = to
+      tr.doc.nodesBetween(from, to, (node, pos) => {
+        if (node.isTextblock) {
+          start = Math.min(start, pos + 1)
+          end = Math.max(end, pos + node.nodeSize - 1)
+        }
+      })
+      const type = editor.schema.marks.docTextStyle
+      const jobs: Array<{ from: number; to: number; attrs: Record<string, unknown> | null }> = []
+      tr.doc.nodesBetween(start, end, (node, pos) => {
+        if (!node.isText) return
+        const m = node.marks.find((mm) => mm.type === type)
+        if (!m) return
+        if (
+          m.attrs.color == null &&
+          m.attrs.sizeHalfPoints == null &&
+          m.attrs.font == null &&
+          m.attrs.fontAscii == null
+        )
+          return
+        const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null, fontAscii: null }
+        const keep = Object.values(attrs).some((v) => v !== null)
+        jobs.push({
+          from: Math.max(pos, start),
+          to: Math.min(pos + node.nodeSize, end),
+          attrs: keep ? attrs : null,
+        })
+      })
+      for (const job of jobs) {
+        tr.removeMark(job.from, job.to, type)
+        if (job.attrs) tr.addMark(job.from, job.to, type.create(job.attrs))
+      }
+      return true
+    }).run()
+  }
+
+  /** Style cards, shared by the inline gallery and its overflow menu */
+  const renderStyleCards = (inMenu: boolean) => {
+    const apply = (key: string) => {
+      applyStyle(key)
+      if (inMenu) setDropdown(null)
+    }
+    return (
+      <>
+        {STYLE_GALLERY.map((s) => (
+          <button
+            key={s.key}
+            className={`style-card ${activeStyleKey === s.key ? 'active' : ''}`}
+            disabled={!canEdit || !!sub}
+            onClick={() => apply(s.key)}
+          >
+            <span className={`style-card-preview ${s.className}`}>{t('ribbonStylePreview')}</span>
+            <span className="style-card-label">{t(s.labelKey)}</span>
+          </button>
+        ))}
+        {charStyleItems.map((s) => (
+          <button
+            key={s.key}
+            className={`style-card style-card-char ${activeStyleKey === s.key ? 'active' : ''}`}
+            disabled={!canEdit}
+            data-tip={s.label}
+            onClick={() => apply(s.key)}
+          >
+            <span className="style-card-preview" style={s.previewStyle}>
+              Aa
+            </span>
+            <span className="style-card-label">{s.label}</span>
+          </button>
+        ))}
+      </>
+    )
+  }
 
   const toggleList = (kind: 'bullet' | 'ordered') => {
     if (sub) return // textboxes have no list numbering
@@ -969,18 +1271,59 @@ function RibbonInner({
   }
 
   const stepFontSize = (dir: 1 | -1) => {
-    const idx = FONT_SIZES.findIndex((s) => s >= currentSize)
-    let next: number
-    if (dir === 1)
-      next =
-        FONT_SIZES[
+    const step = (base: number): number => {
+      const idx = FONT_SIZES.findIndex((s) => s >= base)
+      if (dir === 1)
+        return FONT_SIZES[
           Math.min(
-            idx === -1 ? FONT_SIZES.length : idx + (FONT_SIZES[idx] === currentSize ? 1 : 0),
+            idx === -1 ? FONT_SIZES.length : idx + (FONT_SIZES[idx] === base ? 1 : 0),
             FONT_SIZES.length - 1,
           )
         ]
-    else next = FONT_SIZES[Math.max(idx === -1 ? FONT_SIZES.length - 1 : idx - 1, 0)]
-    setTextStyle({ sizeHalfPoints: Math.round(next * 2) })
+      return FONT_SIZES[Math.max(idx === -1 ? FONT_SIZES.length - 1 : idx - 1, 0)]
+    }
+    // Every applied size change re-paginates the whole document synchronously —
+    // ~700ms per click on table-heavy documents — so clicking A+/A- in a burst
+    // froze the UI for seconds. Apply the first click immediately (a single
+    // click keeps instant feedback); clicks landing inside the coalesce window
+    // only advance the pending size, and one trailing apply lays out the final
+    // size. `pending` also covers fs.fontSizePt lagging the last apply within
+    // the window.
+    const st = fontStepRef.current
+    const next = step(st.pending ?? currentSize)
+    st.pending = next
+    if (st.timer === null) {
+      st.applied = next
+      setTextStyle({ sizeHalfPoints: Math.round(next * 2) })
+    } else {
+      window.clearTimeout(st.timer)
+    }
+    // Snapshot after the (possible) leading apply: the deferred apply is only
+    // valid while nothing else has touched the editor. A selection move, an
+    // undo, or a size set another way each shows up as a selection or document
+    // change and must invalidate the pending step instead of being overwritten.
+    const target = ed
+    st.anchor = target.state.selection.anchor
+    st.head = target.state.selection.head
+    st.doc = target.state.doc
+    st.timer = window.setTimeout(() => {
+      st.timer = null
+      const pending = st.pending
+      st.pending = null
+      if (pending === null || pending === st.applied || !canEdit) return
+      if (
+        target.state.selection.anchor !== st.anchor ||
+        target.state.selection.head !== st.head ||
+        target.state.doc !== st.doc
+      )
+        return
+      st.applied = pending
+      // deliberately no focus(): a deferred apply must never pull focus back
+      target
+        .chain()
+        .setMark('docTextStyle', { sizeHalfPoints: Math.round(pending * 2) })
+        .run()
+    }, FONT_STEP_COALESCE_MS)
   }
 
   const toggleVertAlign = (kind: 'superscript' | 'subscript') => {
@@ -1099,7 +1442,8 @@ function RibbonInner({
     <button
       className={`rb-icon ${active ? 'active' : ''}`}
       disabled={!canEdit}
-      title={title}
+      data-tip={title}
+      aria-label={title}
       onClick={() => chain().toggleMark(name).run()}
     >
       {label}
@@ -1192,12 +1536,95 @@ function RibbonInner({
               {t(TAB_LABEL_KEYS[imageTab])}
             </button>
           ))}
+        {inShape &&
+          SHAPE_TABS.map((shapeTab) => (
+            <button
+              key={shapeTab}
+              className={`ribbon-tab ${tab === shapeTab ? 'active' : ''}`}
+              onClick={() => {
+                setTab(shapeTab)
+                setDropdown(null)
+              }}
+            >
+              {t(TAB_LABEL_KEYS[shapeTab])}
+            </button>
+          ))}
         <span className="ribbon-tabs-spacer" />
         {trailingActions}
       </div>
 
       <div className="ribbon-body">
-        {tab === 'pictureFormat' && inImage ? (
+        {tab === 'shapeFormat' && inShape ? (
+          <div className="table-ribbon-body">
+            <div className="ribbon-group">
+              <div className="ribbon-group-items">
+                {!shapeIsLine && (
+                  <div className="rb-split-wrap">
+                    <button
+                      className="rb-big"
+                      disabled={!canEdit}
+                      data-tip={t('ribbonShapeFillTip')}
+                      onClick={() => setDropdown((v) => (v === 'shapeFill' ? null : 'shapeFill'))}
+                    >
+                      <span className="rb-big-icon">
+                        <IconShading />
+                        <span
+                          className="rb-color-bar"
+                          style={{ background: fs.shapeFill ? `#${fs.shapeFill}` : 'transparent' }}
+                        />
+                      </span>
+                      <span>{t('ribbonShapeFill')}</span>
+                    </button>
+                    {dropdown === 'shapeFill' && (
+                      <ShapeColorPalette
+                        current={fs.shapeFill}
+                        noneLabel={t('ribbonNoFill')}
+                        onPick={(hex) => {
+                          setShapeStyle({ fill: hex })
+                          setDropdown(null)
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="rb-split-wrap">
+                  <button
+                    className="rb-big"
+                    disabled={!canEdit}
+                    data-tip={t('ribbonShapeOutlineTip')}
+                    onClick={() =>
+                      setDropdown((v) => (v === 'shapeOutline' ? null : 'shapeOutline'))
+                    }
+                  >
+                    <span className="rb-big-icon">
+                      <IconBorderAll />
+                      <span
+                        className="rb-color-bar"
+                        style={{
+                          background: fs.shapeBorderColor
+                            ? `#${fs.shapeBorderColor}`
+                            : 'transparent',
+                        }}
+                      />
+                    </span>
+                    <span>{t('ribbonShapeOutline')}</span>
+                  </button>
+                  {dropdown === 'shapeOutline' && (
+                    <ShapeColorPalette
+                      current={fs.shapeBorderColor}
+                      noneLabel={t('ribbonNoOutline')}
+                      onPick={(hex) => {
+                        setShapeStyle({ borderColor: hex })
+                        setDropdown(null)
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="ribbon-group-label">{t('ribbonGroupShapeStyles')}</div>
+            </div>
+          </div>
+        ) : tab === 'pictureFormat' && inImage ? (
           <div className="table-ribbon-body">
             {/* ---- Adjust: remove background / crop / replace picture ---- */}
             <div className="ribbon-group">
@@ -1205,7 +1632,7 @@ function RibbonInner({
                 <button
                   className="rb-big"
                   disabled={!canEdit}
-                  title={t('ribbonRemoveBgTip')}
+                  data-tip={t('ribbonRemoveBgTip')}
                   onClick={() => setPictureDialog('cutout')}
                 >
                   <span className="rb-big-icon">
@@ -1216,7 +1643,7 @@ function RibbonInner({
                 <button
                   className="rb-big"
                   disabled={!canEdit}
-                  title={t('ribbonCropTip')}
+                  data-tip={t('ribbonCropTip')}
                   onClick={() => setPictureDialog('crop')}
                 >
                   <span className="rb-big-icon">
@@ -1227,7 +1654,7 @@ function RibbonInner({
                 <button
                   className="rb-big"
                   disabled={!canEdit}
-                  title={t('ribbonReplacePictureTip')}
+                  data-tip={t('ribbonReplacePictureTip')}
                   onClick={() => void replacePicture()}
                 >
                   <span className="rb-big-icon">
@@ -1245,7 +1672,7 @@ function RibbonInner({
                 <select
                   className="rb-select"
                   disabled={!canEdit}
-                  title={t('ribbonWrapText')}
+                  data-tip={t('ribbonWrapText')}
                   value={fs.imageWrap ?? ''}
                   onChange={(e) => {
                     if (!canEdit) return
@@ -1279,7 +1706,8 @@ function RibbonInner({
                         : 'table-tool-button'
                     }
                     disabled={!canEdit}
-                    title={label}
+                    data-tip={label}
+                    aria-label={label}
                     onClick={() => {
                       if (!canEdit) return
                       editor
@@ -1294,6 +1722,44 @@ function RibbonInner({
                     {icon}
                   </button>
                 ))}
+              </div>
+              <div className="table-tool-row">
+                <button
+                  className="table-tool-button"
+                  disabled={!canEdit}
+                  data-tip={t('ribbonRotateRight')}
+                  aria-label={t('ribbonRotateRight')}
+                  onClick={() => rotatePicture(90)}
+                >
+                  <IconRotateRight />
+                </button>
+                <button
+                  className="table-tool-button"
+                  disabled={!canEdit}
+                  data-tip={t('ribbonRotateLeft')}
+                  aria-label={t('ribbonRotateLeft')}
+                  onClick={() => rotatePicture(-90)}
+                >
+                  <IconRotateLeft />
+                </button>
+                <button
+                  className={fs.imageFlipH ? 'table-tool-button active' : 'table-tool-button'}
+                  disabled={!canEdit}
+                  data-tip={t('ribbonFlipH')}
+                  aria-label={t('ribbonFlipH')}
+                  onClick={() => flipPicture('h')}
+                >
+                  <IconFlipH />
+                </button>
+                <button
+                  className={fs.imageFlipV ? 'table-tool-button active' : 'table-tool-button'}
+                  disabled={!canEdit}
+                  data-tip={t('ribbonFlipV')}
+                  aria-label={t('ribbonFlipV')}
+                  onClick={() => flipPicture('v')}
+                >
+                  <IconFlipV />
+                </button>
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
             </div>
@@ -1366,7 +1832,7 @@ function RibbonInner({
                 </label>
               </div>
               <div className="table-tool-row">
-                <button title={t('ribbonResetSizeTip')} onClick={() => void resetPictureSize()}>
+                <button data-tip={t('ribbonResetSizeTip')} onClick={() => void resetPictureSize()}>
                   {t('ribbonResetSize')}
                 </button>
               </div>
@@ -1379,7 +1845,7 @@ function RibbonInner({
               <div className="table-style-gallery">
                 <button
                   className="table-style-card"
-                  title={t('ribbonRemoveTableStyleTip')}
+                  data-tip={t('ribbonRemoveTableStyleTip')}
                   onClick={() => chain().updateAttributes('docTable', { tblStyleId: null }).run()}
                 >
                   <span className="table-style-card-grid plain" />
@@ -1392,7 +1858,7 @@ function RibbonInner({
                     <button
                       key={info.styleId}
                       className="table-style-card"
-                      title={t('ribbonApplyTableStyleTip', { name: info.name })}
+                      data-tip={t('ribbonApplyTableStyleTip', { name: info.name })}
                       onClick={() =>
                         chain().updateAttributes('docTable', { tblStyleId: info.styleId }).run()
                       }
@@ -1421,7 +1887,8 @@ function RibbonInner({
                   <button
                     key={hex}
                     className="table-style-swatch"
-                    title={t('ribbonCellShadingTip', { hex })}
+                    data-tip={t('ribbonCellShadingTip', { hex })}
+                    aria-label={t('ribbonCellShadingTip', { hex })}
                     style={{ background: `#${hex}` }}
                     onClick={() => runTableCommand(setCellAttr('fill', hex))}
                   />
@@ -1438,25 +1905,28 @@ function RibbonInner({
             <div className="ribbon-sep" />
             <div className="table-tool-group">
               <div className="table-tool-grid table-tool-grid-four">
-                <button title={t('ribbonAllBordersTip')} onClick={() => applyCellBorders('all')}>
+                <button data-tip={t('ribbonAllBordersTip')} onClick={() => applyCellBorders('all')}>
                   <IconBorderAll />
                   {t('ribbonAllBorders')}
                 </button>
                 <button
-                  title={t('ribbonOuterBordersTip')}
+                  data-tip={t('ribbonOuterBordersTip')}
                   onClick={() => applyCellBorders('outer')}
                 >
                   <IconBorderOuter />
                   {t('ribbonOuterBorders')}
                 </button>
                 <button
-                  title={t('ribbonInnerBordersTip')}
+                  data-tip={t('ribbonInnerBordersTip')}
                   onClick={() => applyCellBorders('inner')}
                 >
                   <IconBorderInner />
                   {t('ribbonInnerBorders')}
                 </button>
-                <button title={t('ribbonClearBordersTip')} onClick={() => applyCellBorders('none')}>
+                <button
+                  data-tip={t('ribbonClearBordersTip')}
+                  onClick={() => applyCellBorders('none')}
+                >
                   <IconBorderNone />
                   {t('ribbonNoBorders')}
                 </button>
@@ -1464,12 +1934,12 @@ function RibbonInner({
               <div className="table-tool-row table-border-opts">
                 <input
                   type="color"
-                  title={t('ribbonBorderColor')}
+                  data-tip={t('ribbonBorderColor')}
                   value={`#${borderColor}`}
                   onChange={(e) => setBorderColor(e.target.value.slice(1).toUpperCase())}
                 />
                 <select
-                  title={t('ribbonBorderWidth')}
+                  data-tip={t('ribbonBorderWidth')}
                   value={borderSz}
                   onChange={(e) => setBorderSz(Number(e.target.value))}
                 >
@@ -1647,7 +2117,7 @@ function RibbonInner({
               <div className="ribbon-group-items">
                 <button
                   className={`rb-big ai-entry ${showAi ? 'active' : ''}`}
-                  title={t('aiOpenAssistant')}
+                  data-tip={t('aiOpenAssistant')}
                   onClick={onToggleAi}
                 >
                   <span className="rb-big-icon">
@@ -1658,7 +2128,7 @@ function RibbonInner({
                 <button
                   className="rb-big ai-entry"
                   disabled={docEmpty}
-                  title={t('aiSummarizePrompt')}
+                  data-tip={t('aiSummarizeBtn')}
                   onClick={() => onAiPreset(t('aiSummarizePrompt'))}
                 >
                   <span className="rb-big-icon">
@@ -1671,8 +2141,17 @@ function RibbonInner({
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       >
-                        <rect x="4.5" y="3.5" width="15" height="17" rx="2" />
-                        <path d="M8 8.5h8M8 12h8M8 15.5h4.5" strokeLinecap="round" />
+                        <path
+                          d="M13.875 21H12H6.5C5.39543 21 4.5 20.1046 4.5 19V5C4.5 3.89543 5.39543 3 6.5 3H17.5C18.6046 3 19.5 3.89543 19.5 5V9V12V13"
+                          strokeLinecap="round"
+                        />
+                        <path d="M8.00001 7H16" strokeLinecap="round" />
+                        <path d="M8.00007 10.2032H14.0001" strokeLinecap="round" />
+                        <path d="M8.00007 13.4062H12.0001" strokeLinecap="round" />
+                        <path
+                          d="M17 14L17.2579 14.697C17.5961 15.611 17.7652 16.068 18.0986 16.4014C18.432 16.7348 18.889 16.9039 19.803 17.2421L20.5 17.5L19.803 17.7579C18.889 18.0961 18.432 18.2652 18.0986 18.5986C17.7652 18.932 17.5961 19.389 17.2579 20.303L17 21L16.7421 20.303C16.4039 19.389 16.2348 18.932 15.9014 18.5986C15.568 18.2652 15.111 18.0961 14.197 17.7579L13.5 17.5L14.197 17.2421C15.111 16.9039 15.568 16.7348 15.9014 16.4014C16.2348 16.068 16.4039 15.611 16.7421 14.697L17 14Z"
+                          strokeLinejoin="round"
+                        />
                       </svg>
                     </span>
                   </span>
@@ -1681,7 +2160,7 @@ function RibbonInner({
                 <button
                   className="rb-big ai-entry"
                   disabled={docEmpty}
-                  title={t('aiPolishPrompt')}
+                  data-tip={t('aiPolishBtn')}
                   onClick={() => onAiPreset(t('aiPolishPrompt'))}
                 >
                   <span className="rb-big-icon">
@@ -1695,19 +2174,47 @@ function RibbonInner({
                         strokeLinejoin="round"
                       >
                         <path
-                          d="M5 19l9.5-9.5a2.1 2.1 0 0 1 3 3L8 22l-4 1 1-4Z"
+                          d="M5.00012 20.7481L8.80319 20.7482L21.7482 7.80317L17.945 4L5 16.945L5.00012 20.7481Z"
                           strokeLinejoin="round"
-                          transform="translate(1.5 -3.5)"
                         />
+                        <path d="M15.1406 6.80469L18.9438 10.6079" />
                         <path
-                          d="M5 5.5 5.6 7.4 7.5 8 5.6 8.6 5 10.5 4.4 8.6 2.5 8l1.9-.6L5 5.5Z"
-                          fill="currentColor"
-                          stroke="none"
+                          d="M8 3L8.22106 3.59745C8.51094 4.38087 8.65589 4.77259 8.94166 5.05833C9.22743 5.34409 9.61914 5.48903 10.4026 5.77893L11 6L10.4026 6.22107C9.61914 6.51097 9.22743 6.65592 8.94166 6.94167C8.65589 7.22741 8.51094 7.61913 8.22106 8.40255L8 9L7.77894 8.40255C7.48906 7.61913 7.34411 7.22741 7.05834 6.94167C6.77257 6.65592 6.38086 6.51097 5.59743 6.22107L5 6L5.59743 5.77893C6.38086 5.48903 6.77257 5.34409 7.05834 5.05833C7.34411 4.77259 7.48906 4.38087 7.77894 3.59745L8 3Z"
+                          strokeLinejoin="round"
                         />
                       </svg>
                     </span>
                   </span>
                   <span>{t('aiPolishBtn')}</span>
+                </button>
+                <button
+                  className="rb-big ai-entry"
+                  disabled={docEmpty}
+                  data-tip={t('aiTidyBtn')}
+                  onClick={() => onAiPreset(t('aiTidyPrompt'))}
+                >
+                  <span className="rb-big-icon">
+                    <span className="ai-feature-icon" aria-hidden="true">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 5H20" strokeLinecap="round" />
+                        <path d="M4 9H16" strokeLinecap="round" />
+                        <path d="M4 13H11" strokeLinecap="round" />
+                        <path d="M4 17H10" strokeLinecap="round" />
+                        <path
+                          d="M17 14L17.2579 14.697C17.5961 15.611 17.7652 16.068 18.0986 16.4014C18.432 16.7348 18.889 16.9039 19.803 17.2421L20.5 17.5L19.803 17.7579C18.889 18.0961 18.432 18.2652 18.0986 18.5986C17.7652 18.932 17.5961 19.389 17.2579 20.303L17 21L16.7421 20.303C16.4039 19.389 16.2348 18.932 15.9014 18.5986C15.568 18.2652 15.111 18.0961 14.197 17.7579L13.5 17.5L14.197 17.2421C15.111 16.9039 15.568 16.7348 15.9014 16.4014C16.2348 16.068 16.4039 15.611 16.7421 14.697L17 14Z"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </span>
+                  <span>{t('aiTidyBtn')}</span>
                 </button>
               </div>
               <div className="ribbon-group-label">Genspark AI</div>
@@ -1732,7 +2239,8 @@ function RibbonInner({
                   <button
                     className="rb-small"
                     disabled={!canEdit}
-                    title={t('ribbonCutTip')}
+                    data-tip={t('ribbonCutTip')}
+                    aria-label={t('ribbonCutTip')}
                     onClick={() => void clipboard('cut')}
                   >
                     <IconCut />
@@ -1740,7 +2248,8 @@ function RibbonInner({
                   <button
                     className="rb-small"
                     disabled={!hasDoc}
-                    title={t('ribbonCopyTip')}
+                    data-tip={t('ribbonCopyTip')}
+                    aria-label={t('ribbonCopyTip')}
                     onClick={() => void clipboard('copy')}
                   >
                     <IconCopy />
@@ -1748,7 +2257,8 @@ function RibbonInner({
                   <button
                     className={`rb-small ${painter ? 'active' : ''}`}
                     disabled={!canEdit || !!sub}
-                    title={painter ? t('ribbonPainterActiveTip') : t('ribbonPainterTip')}
+                    data-tip={painter ? t('ribbonPainterActiveTip') : t('ribbonPainterTip')}
+                    aria-label={painter ? t('ribbonPainterActiveTip') : t('ribbonPainterTip')}
                     onClick={togglePainter}
                   >
                     <IconFormatPainter />
@@ -1764,67 +2274,135 @@ function RibbonInner({
             <div className="ribbon-group">
               <div className="ribbon-group-items rb-font-group">
                 <div className="rb-row">
-                  {/* Editable comboboxes (input+datalist): real documents use fonts and sizes
-                      outside any fixed list (GB/T 9704 fonts, half sizes like 13.5pt) */}
-                  <input
-                    className="rb-select rb-font-family"
-                    list="rb-font-family-options"
-                    disabled={!canEdit}
-                    key={`f:${currentFont}:${hasDoc}`}
-                    defaultValue={currentFont}
-                    placeholder={t('ribbonFontBodyNamed', { font: bodyFontName })}
-                    title={t('ribbonFontFamilyTip')}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                    }}
-                    onChange={(e) => {
-                      // Chromium marks a datalist pick as insertReplacementText: apply right away
-                      const it = (e.nativeEvent as InputEvent).inputType
-                      if (it === 'insertReplacementText') (e.target as HTMLInputElement).blur()
-                    }}
-                    onBlur={(e) => {
-                      const v = e.target.value.trim()
-                      if (v !== currentFont) setTextStyle({ font: v || null })
-                    }}
-                  />
-                  <datalist id="rb-font-family-options">
-                    {fontFamiliesFor(lang)
-                      .filter((f) => f !== bodyFontName)
-                      .map((f) => (
-                        <option key={f} value={f} />
-                      ))}
-                  </datalist>
-                  <input
-                    className="rb-select rb-font-size"
-                    type="number"
-                    list="rb-font-size-options"
-                    min={1}
-                    max={1638}
-                    step={0.5}
-                    disabled={!canEdit}
-                    key={`s:${currentSize}:${hasDoc}`}
-                    defaultValue={currentSize}
-                    title={t('ribbonFontSizeTip')}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                    }}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value)
-                      if (!Number.isFinite(v) || v <= 0) return
-                      const half = Math.round(Math.min(1638, Math.max(1, v)) * 2)
-                      if (half !== Math.round(currentSize * 2))
-                        setTextStyle({ sizeHalfPoints: half })
-                    }}
-                  />
-                  <datalist id="rb-font-size-options">
-                    {FONT_SIZES.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
+                  {/* Editable combobox (free-typed input + full preset dropdown): real
+                      documents use fonts and sizes outside any fixed list (GB/T 9704
+                      fonts, half sizes like 13.5pt) */}
+                  <div className="rb-split-wrap">
+                    <input
+                      className="rb-select rb-font-family"
+                      disabled={!canEdit}
+                      key={`f:${currentFont}:${hasDoc}`}
+                      defaultValue={currentFont}
+                      placeholder={t('ribbonFontBodyNamed', { font: bodyFontName })}
+                      data-tip={t('ribbonFontFamilyTip')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                      }}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim()
+                        if (v !== currentFont) setFont(v || null)
+                      }}
+                    />
+                    <button
+                      className="rb-caret rb-combo-caret"
+                      disabled={!canEdit}
+                      data-tip={t('ribbonFontFamilyTip')}
+                      aria-label={t('ribbonFontFamilyTip')}
+                      onClick={() => {
+                        if (dropdown !== 'fontFamily') loadSystemFonts()
+                        setDropdown((v) => (v === 'fontFamily' ? null : 'fontFamily'))
+                      }}
+                    >
+                      <IconCaret />
+                    </button>
+                    {dropdown === 'fontFamily' && (
+                      <div className="spacing-menu rb-font-family-menu">
+                        <button
+                          className={!currentFont ? 'active' : ''}
+                          style={{ fontFamily: cssFontFamily(bodyFontName) }}
+                          onClick={() => setFont(null)}
+                        >
+                          {t('ribbonFontBodyNamed', { font: bodyFontName })}
+                        </button>
+                        {fontFamilies
+                          .filter((f) => f !== bodyFontName)
+                          .map((f) => (
+                            <button
+                              key={f}
+                              className={f === currentFont ? 'active' : ''}
+                              style={{ fontFamily: cssFontFamily(f) }}
+                              onClick={() => setFont(f)}
+                            >
+                              {f}
+                            </button>
+                          ))}
+                        {systemFontFamilies.length > 0 && (
+                          <>
+                            <div className="rb-menu-group-label">{t('ribbonFontsSystem')}</div>
+                            {systemFontFamilies
+                              .filter((f) => f !== bodyFontName)
+                              .map((f) => (
+                                <button
+                                  key={f}
+                                  className={f === currentFont ? 'active' : ''}
+                                  // symbol fonts would render their own name as pictographs
+                                  style={{
+                                    fontFamily: isSymbolFontFamily(f)
+                                      ? undefined
+                                      : cssFontFamily(f),
+                                  }}
+                                  onClick={() => setFont(f)}
+                                >
+                                  {f}
+                                </button>
+                              ))}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="rb-split-wrap">
+                    <input
+                      className="rb-select rb-font-size"
+                      type="number"
+                      min={1}
+                      max={1638}
+                      step={0.5}
+                      disabled={!canEdit}
+                      key={`s:${currentSize}:${hasDoc}`}
+                      defaultValue={currentSize}
+                      data-tip={t('ribbonFontSizeTip')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                      }}
+                      onBlur={(e) => {
+                        const v = Number(e.target.value)
+                        if (!Number.isFinite(v) || v <= 0) return
+                        const half = Math.round(Math.min(1638, Math.max(1, v)) * 2)
+                        if (half !== Math.round(currentSize * 2))
+                          setTextStyle({ sizeHalfPoints: half })
+                      }}
+                    />
+                    <button
+                      className="rb-caret rb-combo-caret"
+                      disabled={!canEdit}
+                      data-tip={t('ribbonFontSizeTip')}
+                      aria-label={t('ribbonFontSizeTip')}
+                      onClick={() => setDropdown((v) => (v === 'fontSize' ? null : 'fontSize'))}
+                    >
+                      <IconCaret />
+                    </button>
+                    {dropdown === 'fontSize' && (
+                      <div className="spacing-menu rb-font-size-menu">
+                        {FONT_SIZES.map((s) => (
+                          <button
+                            key={s}
+                            className={
+                              Math.round(s * 2) === Math.round(currentSize * 2) ? 'active' : ''
+                            }
+                            onClick={() => setTextStyle({ sizeHalfPoints: Math.round(s * 2) })}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     className="rb-icon"
                     disabled={!canEdit}
-                    title={t('ribbonGrowFont')}
+                    data-tip={t('ribbonGrowFont')}
+                    aria-label={t('ribbonGrowFont')}
                     onClick={() => stepFontSize(1)}
                   >
                     <IconGrowFont />
@@ -1832,7 +2410,8 @@ function RibbonInner({
                   <button
                     className="rb-icon"
                     disabled={!canEdit}
-                    title={t('ribbonShrinkFont')}
+                    data-tip={t('ribbonShrinkFont')}
+                    aria-label={t('ribbonShrinkFont')}
                     onClick={() => stepFontSize(-1)}
                   >
                     <IconShrinkFont />
@@ -1842,7 +2421,7 @@ function RibbonInner({
                     <button
                       className="rb-icon"
                       disabled={!canEdit}
-                      title={t('ribbonChangeCase')}
+                      data-tip={t('ribbonChangeCase')}
                       onClick={() => setDropdown((v) => (v === 'case' ? null : 'case'))}
                     >
                       Aa
@@ -1864,7 +2443,8 @@ function RibbonInner({
                   <button
                     className="rb-icon"
                     disabled={!canEdit}
-                    title={t('ribbonClearFormatting')}
+                    data-tip={t('ribbonClearFormatting')}
+                    aria-label={t('ribbonClearFormatting')}
                     onClick={() => chain().unsetAllMarks().run()}
                   >
                     <IconClearFormat />
@@ -1878,7 +2458,7 @@ function RibbonInner({
                   <button
                     className={`rb-icon rb-script ${fs.vertAlign === 'subscript' ? 'active' : ''}`}
                     disabled={!canEdit}
-                    title={t('ribbonSubscript')}
+                    data-tip={t('ribbonSubscript')}
                     onClick={() => toggleVertAlign('subscript')}
                   >
                     x<sub>2</sub>
@@ -1886,7 +2466,7 @@ function RibbonInner({
                   <button
                     className={`rb-icon rb-script ${fs.vertAlign === 'superscript' ? 'active' : ''}`}
                     disabled={!canEdit}
-                    title={t('ribbonSuperscript')}
+                    data-tip={t('ribbonSuperscript')}
                     onClick={() => toggleVertAlign('superscript')}
                   >
                     x<sup>2</sup>
@@ -1897,7 +2477,8 @@ function RibbonInner({
                     <button
                       className={`rb-icon rb-color-btn ${fs.highlight ? 'active' : ''}`}
                       disabled={!canEdit}
-                      title={t('ribbonTextHighlightColor')}
+                      data-tip={t('ribbonTextHighlightColor')}
+                      aria-label={t('ribbonTextHighlightColor')}
                       onClick={() =>
                         setTextStyle({
                           highlight: fs.highlight === penHighlight ? null : penHighlight,
@@ -1927,7 +2508,8 @@ function RibbonInner({
                             <button
                               key={h}
                               className={`color-swatch color-highlight-swatch ${fs.highlight === h ? 'selected' : ''}`}
-                              title={h}
+                              data-tip={h}
+                              aria-label={h}
                               style={{ background: HIGHLIGHT_CSS[h] }}
                               onClick={() => {
                                 setPenHighlight(h)
@@ -1950,7 +2532,7 @@ function RibbonInner({
                     <button
                       className="rb-icon rb-color-btn"
                       disabled={!canEdit}
-                      title={t('ribbonFontColor')}
+                      data-tip={t('ribbonFontColor')}
                       onClick={() =>
                         setTextStyle({ color: penColor === '000000' ? null : penColor })
                       }
@@ -1982,7 +2564,8 @@ function RibbonInner({
                             <button
                               key={c.hex}
                               className={`color-swatch color-swatch-large ${fs.textColor === c.hex ? 'selected' : ''}`}
-                              title={t(c.nameKey)}
+                              data-tip={t(c.nameKey)}
+                              aria-label={t(c.nameKey)}
                               style={{ background: `#${c.hex}` }}
                               onClick={() => {
                                 setPenColor(c.hex)
@@ -1997,7 +2580,11 @@ function RibbonInner({
                               <button
                                 key={`${rowIndex}-${columnIndex}-${hex}`}
                                 className={`color-swatch color-swatch-large ${fs.textColor === hex ? 'selected' : ''}`}
-                                title={t('ribbonThemeColorShadeTip', {
+                                data-tip={t('ribbonThemeColorShadeTip', {
+                                  r: rowIndex + 1,
+                                  c: columnIndex + 1,
+                                })}
+                                aria-label={t('ribbonThemeColorShadeTip', {
                                   r: rowIndex + 1,
                                   c: columnIndex + 1,
                                 })}
@@ -2018,7 +2605,8 @@ function RibbonInner({
                             <button
                               key={c.hex}
                               className={`color-swatch color-swatch-large ${fs.textColor === c.hex ? 'selected' : ''}`}
-                              title={t(c.nameKey)}
+                              data-tip={t(c.nameKey)}
+                              aria-label={t(c.nameKey)}
                               style={{ background: `#${c.hex}` }}
                               onClick={() => {
                                 setPenColor(c.hex)
@@ -2060,7 +2648,8 @@ function RibbonInner({
                     <button
                       className={`rb-icon ${fs.listBullet ? 'active' : ''}`}
                       disabled={!canEdit || !!sub}
-                      title={t('ribbonBullets')}
+                      data-tip={t('ribbonBullets')}
+                      aria-label={t('ribbonBullets')}
                       onClick={() => toggleList('bullet')}
                     >
                       <IconBullets />
@@ -2068,7 +2657,8 @@ function RibbonInner({
                     <button
                       className="rb-caret"
                       disabled={!canEdit || !!sub}
-                      title={t('ribbonBullets')}
+                      data-tip={t('ribbonBullets')}
+                      aria-label={t('ribbonBullets')}
                       onClick={() => setDropdown((v) => (v === 'bulletLib' ? null : 'bulletLib'))}
                     >
                       <IconCaret />
@@ -2094,7 +2684,8 @@ function RibbonInner({
                     <button
                       className={`rb-icon ${fs.listOrdered ? 'active' : ''}`}
                       disabled={!canEdit || !!sub}
-                      title={t('ribbonNumbering')}
+                      data-tip={t('ribbonNumbering')}
+                      aria-label={t('ribbonNumbering')}
                       onClick={() => toggleList('ordered')}
                     >
                       <IconNumbered />
@@ -2102,7 +2693,8 @@ function RibbonInner({
                     <button
                       className="rb-caret"
                       disabled={!canEdit || !!sub}
-                      title={t('ribbonNumbering')}
+                      data-tip={t('ribbonNumbering')}
+                      aria-label={t('ribbonNumbering')}
                       onClick={() => setDropdown((v) => (v === 'numberLib' ? null : 'numberLib'))}
                     >
                       <IconCaret />
@@ -2133,7 +2725,8 @@ function RibbonInner({
                     <button
                       className="rb-icon"
                       disabled={!canEdit || !!sub}
-                      title={t('ribbonMultilevelTip')}
+                      data-tip={t('ribbonMultilevelTip')}
+                      aria-label={t('ribbonMultilevelTip')}
                       onClick={() => setDropdown((v) => (v === 'multiLib' ? null : 'multiLib'))}
                     >
                       <IconMultilevel />
@@ -2172,7 +2765,8 @@ function RibbonInner({
                   <button
                     className="rb-icon"
                     disabled={!canEdit || !!sub}
-                    title={t('ribbonDecreaseIndent')}
+                    data-tip={t('ribbonDecreaseIndent')}
+                    aria-label={t('ribbonDecreaseIndent')}
                     onClick={() => changeIndent(-1)}
                   >
                     <IconIndentDec />
@@ -2180,7 +2774,8 @@ function RibbonInner({
                   <button
                     className="rb-icon"
                     disabled={!canEdit || !!sub}
-                    title={t('ribbonIncreaseIndent')}
+                    data-tip={t('ribbonIncreaseIndent')}
+                    aria-label={t('ribbonIncreaseIndent')}
                     onClick={() => changeIndent(1)}
                   >
                     <IconIndentInc />
@@ -2189,14 +2784,16 @@ function RibbonInner({
                   <button
                     className="rb-icon"
                     disabled
-                    title={t('ribbonNotSupportedSuffix', { label: t('ribbonSort') })}
+                    data-tip={t('ribbonNotSupportedSuffix', { label: t('ribbonSort') })}
+                    aria-label={t('ribbonNotSupportedSuffix', { label: t('ribbonSort') })}
                   >
                     <IconSort />
                   </button>
                   <button
                     className={`rb-icon ${showMarks ? 'active' : ''}`}
                     disabled={!hasDoc}
-                    title={t('ribbonShowMarks')}
+                    data-tip={t('ribbonShowMarks')}
+                    aria-label={t('ribbonShowMarks')}
                     onClick={() => onShowMarks(!showMarks)}
                   >
                     <IconPilcrow />
@@ -2206,7 +2803,8 @@ function RibbonInner({
                   <button
                     className={`rb-icon ${activeAlign === 'left' ? 'active' : ''}`}
                     disabled={!canEdit}
-                    title={t('ribbonAlignLeftTip')}
+                    data-tip={t('ribbonAlignLeftTip')}
+                    aria-label={t('ribbonAlignLeftTip')}
                     onClick={() => setSelectionAlign(ed, 'left')}
                   >
                     <IconAlignLeft />
@@ -2214,7 +2812,8 @@ function RibbonInner({
                   <button
                     className={`rb-icon ${activeAlign === 'center' ? 'active' : ''}`}
                     disabled={!canEdit}
-                    title={t('ribbonAlignCenterTip')}
+                    data-tip={t('ribbonAlignCenterTip')}
+                    aria-label={t('ribbonAlignCenterTip')}
                     onClick={() => setSelectionAlign(ed, 'center')}
                   >
                     <IconAlignCenter />
@@ -2222,7 +2821,8 @@ function RibbonInner({
                   <button
                     className={`rb-icon ${activeAlign === 'right' ? 'active' : ''}`}
                     disabled={!canEdit}
-                    title={t('ribbonAlignRightTip')}
+                    data-tip={t('ribbonAlignRightTip')}
+                    aria-label={t('ribbonAlignRightTip')}
                     onClick={() => setSelectionAlign(ed, 'right')}
                   >
                     <IconAlignRight />
@@ -2230,7 +2830,8 @@ function RibbonInner({
                   <button
                     className={`rb-icon ${activeAlign === 'justify' ? 'active' : ''}`}
                     disabled={!canEdit}
-                    title={t('ribbonJustifyTip')}
+                    data-tip={t('ribbonJustifyTip')}
+                    aria-label={t('ribbonJustifyTip')}
                     onClick={() => setSelectionAlign(ed, 'justify')}
                   >
                     <IconAlignJustify />
@@ -2239,7 +2840,8 @@ function RibbonInner({
                   <button
                     className={`rb-icon ${!fs.bidi ? 'active' : ''}`}
                     disabled={!canEdit || !!sub}
-                    title={t('ribbonDirLtrTip')}
+                    data-tip={t('ribbonDirLtrTip')}
+                    aria-label={t('ribbonDirLtrTip')}
                     onClick={() => setParagraphDirection(editor, 'ltr')}
                   >
                     <IconDirLtr />
@@ -2247,7 +2849,8 @@ function RibbonInner({
                   <button
                     className={`rb-icon ${fs.bidi ? 'active' : ''}`}
                     disabled={!canEdit || !!sub}
-                    title={t('ribbonDirRtlTip')}
+                    data-tip={t('ribbonDirRtlTip')}
+                    aria-label={t('ribbonDirRtlTip')}
                     onClick={() => setParagraphDirection(editor, 'rtl')}
                   >
                     <IconDirRtl />
@@ -2257,7 +2860,8 @@ function RibbonInner({
                     <button
                       className={`rb-icon ${activeSpacing ? 'active' : ''}`}
                       disabled={!canEdit}
-                      title={t('ribbonLineSpacing')}
+                      data-tip={t('ribbonLineSpacing')}
+                      aria-label={t('ribbonLineSpacing')}
                       onClick={() => setDropdown((v) => (v === 'spacing' ? null : 'spacing'))}
                     >
                       <IconLineSpacing />
@@ -2303,7 +2907,8 @@ function RibbonInner({
                     <button
                       className={`rb-icon ${fs.shadingFill ? 'active' : ''}`}
                       disabled={!canEdit}
-                      title={t('ribbonParagraphShading')}
+                      data-tip={t('ribbonParagraphShading')}
+                      aria-label={t('ribbonParagraphShading')}
                       onClick={() => setDropdown((v) => (v === 'shading' ? null : 'shading'))}
                     >
                       <IconShading />
@@ -2318,7 +2923,8 @@ function RibbonInner({
                             key={c.hex}
                             className="color-swatch"
                             style={{ background: `#${c.hex}` }}
-                            title={t(c.nameKey)}
+                            data-tip={t(c.nameKey)}
+                            aria-label={t(c.nameKey)}
                             onClick={() => setParaAttr({ shadingFill: c.hex })}
                           />
                         ))}
@@ -2335,7 +2941,8 @@ function RibbonInner({
                     <button
                       className={`rb-icon ${fs.paraBorders ? 'active' : ''}`}
                       disabled={!canEdit}
-                      title={t('ribbonParagraphBorders')}
+                      data-tip={t('ribbonParagraphBorders')}
+                      aria-label={t('ribbonParagraphBorders')}
                       onClick={() => setDropdown((v) => (v === 'borders' ? null : 'borders'))}
                     >
                       <IconBorderAll />
@@ -2374,60 +2981,28 @@ function RibbonInner({
             <div className="ribbon-sep" />
 
             {/* ---- Styles ---- */}
-            <div className="ribbon-group">
-              <div className="ribbon-group-items style-gallery">
-                {STYLE_GALLERY.map((s) => (
+            <div className="ribbon-group ribbon-group-styles">
+              <div className="ribbon-group-items rb-split-wrap style-gallery-wrap">
+                <div className="style-gallery" ref={styleGalleryRef}>
+                  {renderStyleCards(false)}
+                </div>
+                {/* clipped cards stay reachable through the expander grid */}
+                {styleGalleryOverflow && (
                   <button
-                    key={s.key}
-                    className={`style-card ${activeStyleKey === s.key ? 'active' : ''}`}
-                    disabled={!canEdit || !!sub}
-                    onClick={() => applyStyle(s.key)}
+                    className="style-gallery-more"
+                    data-tip={t('ribbonMoreStyles')}
+                    aria-label={t('ribbonMoreStyles')}
+                    aria-expanded={dropdown === 'styleGallery'}
+                    onClick={() =>
+                      setDropdown((v) => (v === 'styleGallery' ? null : 'styleGallery'))
+                    }
                   >
-                    <span className={`style-card-preview ${s.className}`}>
-                      {t('ribbonStylePreview')}
-                    </span>
-                    <span className="style-card-label">{t(s.labelKey)}</span>
+                    <IconCaret />
                   </button>
-                ))}
-                {charStyleItems.slice(0, MAX_INLINE_CHAR_STYLES).map((s) => (
-                  <button
-                    key={s.key}
-                    className={`style-card style-card-char ${activeStyleKey === s.key ? 'active' : ''}`}
-                    disabled={!canEdit}
-                    title={s.label}
-                    onClick={() => applyStyle(s.key)}
-                  >
-                    <span className="style-card-preview" style={s.previewStyle}>
-                      Aa
-                    </span>
-                    <span className="style-card-label">{s.label}</span>
-                  </button>
-                ))}
-                <button
-                  className="style-gallery-more"
-                  disabled={!hasDoc}
-                  title={t('ribbonStylePaneTip')}
-                  onClick={() => onStylesPanel?.()}
-                >
-                  {/* "More styles" icon: horizontal lines + down arrow */}
-                  <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
-                    <path
-                      d="M1.5 2h8"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                      fill="none"
-                    />
-                    <path
-                      d="M2 5.5 5.5 9 9 5.5"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </svg>
-                </button>
+                )}
+                {dropdown === 'styleGallery' && (
+                  <div className="style-gallery-menu">{renderStyleCards(true)}</div>
+                )}
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupStyles')}</div>
             </div>

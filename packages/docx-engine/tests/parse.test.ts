@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseDocx } from '../src/index'
-import { buildKitchenSinkDocx } from './helpers/build-docx'
+import { buildDocx, buildKitchenSinkDocx } from './helpers/build-docx'
 
 describe('parseDocx', () => {
   it('parses the kitchen-sink document into anchored blocks', async () => {
@@ -145,5 +145,42 @@ describe('parseDocx', () => {
       ['paragraph', undefined],
       ['paragraph', undefined],
     ])
+  })
+})
+
+describe('style-level pageBreakBefore', () => {
+  it('parses pageBreakBefore into style display, inherited via basedOn, without touching paragraph format', async () => {
+    const bytes = await buildDocx({
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="ChapterTitle"><w:name w:val="Chapter Title"/>' +
+        '<w:pPr><w:pageBreakBefore/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="ChapterSub"><w:name w:val="Chapter Sub"/>' +
+        '<w:basedOn w:val="ChapterTitle"/></w:style>',
+      bodyXml:
+        '<w:p><w:pPr><w:pStyle w:val="ChapterTitle"/></w:pPr><w:r><w:t>ch</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.styles.get('ChapterTitle')?.display?.pageBreakBefore).toBe(true)
+    expect(doc.styles.get('ChapterSub')?.display?.pageBreakBefore).toBe(true)
+    expect(doc.styles.get('Normal')?.display?.pageBreakBefore).toBeUndefined()
+    // style-level value must not leak into paragraph format (would be saved as redundant pPr)
+    expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
+  })
+})
+
+describe('empty paragraph line size', () => {
+  it('records the w:sz that governs a run-less paragraph', async () => {
+    const bodyXml =
+      '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
+      // paragraph-mark rPr wins
+      '<w:p><w:pPr><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="4"/></w:rPr><w:t></w:t></w:r></w:p>' +
+      // no pPr rPr: falls back to the (dropped) empty run
+      '<w:p><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:t></w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(doc.blocks[1].runs).toEqual([])
+    expect(doc.blocks[1].format?.emptyRunSizeHalfPoints).toBe(2)
+    expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBe(16)
   })
 })

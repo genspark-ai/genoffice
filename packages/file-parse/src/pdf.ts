@@ -29,18 +29,39 @@ function installDomMatrixPolyfill(): void {
   const g = globalThis as { DOMMatrix?: unknown }
   if (g.DOMMatrix) return
   class DOMMatrixPolyfill {
-    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0
+    a = 1
+    b = 0
+    c = 0
+    d = 1
+    e = 0
+    f = 0
     constructor(init?: number[] | DOMMatrixPolyfill) {
       if (Array.isArray(init) && init.length >= 6) {
-        ;[this.a, this.b, this.c, this.d, this.e, this.f] = init as [number, number, number, number, number, number]
+        ;[this.a, this.b, this.c, this.d, this.e, this.f] = init as [
+          number,
+          number,
+          number,
+          number,
+          number,
+          number,
+        ]
       } else if (init && typeof init === 'object') {
         const m = init as DOMMatrixPolyfill
-        this.a = m.a; this.b = m.b; this.c = m.c; this.d = m.d; this.e = m.e; this.f = m.f
+        this.a = m.a
+        this.b = m.b
+        this.c = m.c
+        this.d = m.d
+        this.e = m.e
+        this.f = m.f
       }
     }
-    get is2D(): boolean { return true }
+    get is2D(): boolean {
+      return true
+    }
     get isIdentity(): boolean {
-      return this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0
+      return (
+        this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0
+      )
     }
     /** this × other (DOM spec semantics: result applied to a point = this(other(p))) */
     #product(o: DOMMatrixPolyfill): [number, number, number, number, number, number] {
@@ -57,28 +78,57 @@ function installDomMatrixPolyfill(): void {
       ;[this.a, this.b, this.c, this.d, this.e, this.f] = v
       return this
     }
-    multiply(o: DOMMatrixPolyfill): DOMMatrixPolyfill { return new DOMMatrixPolyfill(this.#product(o)) }
-    multiplySelf(o: DOMMatrixPolyfill): this { return this.#assign(this.#product(o)) }
-    preMultiplySelf(o: DOMMatrixPolyfill): this { return this.#assign(o.#product(this)) }
+    multiply(o: DOMMatrixPolyfill): DOMMatrixPolyfill {
+      return new DOMMatrixPolyfill(this.#product(o))
+    }
+    multiplySelf(o: DOMMatrixPolyfill): this {
+      return this.#assign(this.#product(o))
+    }
+    preMultiplySelf(o: DOMMatrixPolyfill): this {
+      return this.#assign(o.#product(this))
+    }
     translate(tx = 0, ty = 0): DOMMatrixPolyfill {
       return this.multiply(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty]))
     }
-    translateSelf(tx = 0, ty = 0): this { return this.multiplySelf(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty])) }
+    translateSelf(tx = 0, ty = 0): this {
+      return this.multiplySelf(new DOMMatrixPolyfill([1, 0, 0, 1, tx, ty]))
+    }
     scale(sx = 1, sy?: number): DOMMatrixPolyfill {
       return this.multiply(new DOMMatrixPolyfill([sx, 0, 0, sy ?? sx, 0, 0]))
     }
-    scaleSelf(sx = 1, sy?: number): this { return this.multiplySelf(new DOMMatrixPolyfill([sx, 0, 0, sy ?? sx, 0, 0])) }
+    scaleSelf(sx = 1, sy?: number): this {
+      return this.multiplySelf(new DOMMatrixPolyfill([sx, 0, 0, sy ?? sx, 0, 0]))
+    }
     invertSelf(): this {
       const { a, b, c, d, e, f } = this
       const det = a * d - b * c
       if (!det || !Number.isFinite(det)) return this.#assign([NaN, NaN, NaN, NaN, NaN, NaN])
-      return this.#assign([d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det])
+      return this.#assign([
+        d / det,
+        -b / det,
+        -c / det,
+        a / det,
+        (c * f - d * e) / det,
+        (b * e - a * f) / det,
+      ])
     }
-    inverse(): DOMMatrixPolyfill { return new DOMMatrixPolyfill(this).invertSelf() }
-    transformPoint(p: { x?: number; y?: number } = {}): { x: number; y: number; z: number; w: number } {
+    inverse(): DOMMatrixPolyfill {
+      return new DOMMatrixPolyfill(this).invertSelf()
+    }
+    transformPoint(p: { x?: number; y?: number } = {}): {
+      x: number
+      y: number
+      z: number
+      w: number
+    } {
       const x = p.x ?? 0
       const y = p.y ?? 0
-      return { x: this.a * x + this.c * y + this.e, y: this.b * x + this.d * y + this.f, z: 0, w: 1 }
+      return {
+        x: this.a * x + this.c * y + this.e,
+        y: this.b * x + this.d * y + this.f,
+        z: 0,
+        w: 1,
+      }
     }
   }
   g.DOMMatrix = DOMMatrixPolyfill
@@ -95,13 +145,15 @@ export async function pdfToText(bytes: Uint8Array): Promise<string> {
   await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const fontUrl = standardFontDataUrl()
-  const doc = await getDocument({
+  // pdfjs-dist 6.x removed PDFDocumentProxy.destroy(); cleanup goes through the loading task
+  const loadingTask = getDocument({
     // pdfjs transfers the given buffer, so pass a copy
     data: new Uint8Array(bytes),
     useSystemFonts: true,
     ...(fontUrl ? { standardFontDataUrl: fontUrl } : {}),
     verbosity: 0,
-  }).promise
+  })
+  const doc = await loadingTask.promise
   try {
     const pages: string[] = []
     for (let i = 1; i <= doc.numPages; i++) {
@@ -119,6 +171,6 @@ export async function pdfToText(bytes: Uint8Array): Promise<string> {
     }
     return pages.join('\n\n')
   } finally {
-    await doc.destroy()
+    await loadingTask.destroy()
   }
 }

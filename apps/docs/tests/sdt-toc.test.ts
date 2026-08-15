@@ -120,3 +120,89 @@ describe('multi-paragraph TOC sdt in the editor', () => {
     for (let n = 1; n <= 13; n++) expect(xml).toContain(`Chapter ${n}`)
   })
 })
+
+describe('nested cover-page sdt in the editor', () => {
+  const NESTED_SDT =
+    '<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Cover Pages"/></w:docPartObj></w:sdtPr><w:sdtContent>' +
+    '<w:sdt><w:sdtPr><w:alias w:val="Title"/><w:text/></w:sdtPr><w:sdtContent>' +
+    '<w:p><w:r><w:t>Resume Title</w:t></w:r></w:p>' +
+    '</w:sdtContent></w:sdt>' +
+    '<w:p><w:r><w:t>plain between</w:t></w:r></w:p>' +
+    '<w:sdt><w:sdtPr><w:alias w:val="Company"/><w:text/></w:sdtPr><w:sdtContent>' +
+    '<w:p><w:r><w:t>ACME Corp</w:t></w:r></w:p>' +
+    '</w:sdtContent></w:sdt>' +
+    '</w:sdtContent></w:sdt>'
+
+  async function openNested() {
+    const bytes = await buildDocx({ bodyXml: NESTED_SDT })
+    const parsed = await parseDocx(bytes)
+    const doc = blocksToPmDoc(parsed.blocks)
+    return { bytes, parsed, doc }
+  }
+
+  it('untouched nested sdt round-trips byte-identical', async () => {
+    const { bytes, parsed, doc } = await openNested()
+    const plan = pmDocToSavePlan(doc, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    expect(Buffer.from(saved).equals(Buffer.from(bytes))).toBe(true)
+  })
+
+  it('deleting the first inner field keeps the sdt tree balanced', async () => {
+    const { parsed, doc } = await openNested()
+    // drop "Resume Title": its member carries the inner </sdt><sdt> wrapper fragment
+    const pruned: PmNode = { ...doc, content: doc.content!.slice(1) }
+    const plan = pmDocToSavePlan(pruned, parsed.blocks)
+    const xml = await documentXmlOf(await saveDocx(parsed, plan.saveBlocks))
+    expect(sdtOpenCount(xml)).toBe(sdtCloseCount(xml))
+    expect(xml).toContain('plain between')
+    expect(xml).toContain('ACME Corp')
+    expect(xml).not.toContain('Resume Title')
+  })
+
+  it('deleting the middle plain paragraph keeps the sdt tree balanced', async () => {
+    const { parsed, doc } = await openNested()
+    const pruned: PmNode = { ...doc, content: [doc.content![0], doc.content![2]] }
+    const plan = pmDocToSavePlan(pruned, parsed.blocks)
+    const xml = await documentXmlOf(await saveDocx(parsed, plan.saveBlocks))
+    expect(sdtOpenCount(xml)).toBe(sdtCloseCount(xml))
+    expect(xml).toContain('Resume Title')
+    expect(xml).toContain('ACME Corp')
+  })
+
+  it('deleting the last inner field still emits the outer close', async () => {
+    // regression: middle survivors carry fragment closeXml, which used to satisfy
+    // the group-close check and drop the real outer close entirely
+    const { parsed, doc } = await openNested()
+    const pruned: PmNode = { ...doc, content: doc.content!.slice(0, 2) }
+    const plan = pmDocToSavePlan(pruned, parsed.blocks)
+    const xml = await documentXmlOf(await saveDocx(parsed, plan.saveBlocks))
+    expect(sdtOpenCount(xml)).toBe(sdtCloseCount(xml))
+    expect(xml).toContain('Resume Title')
+    expect(xml).not.toContain('ACME Corp')
+  })
+
+  it('deleting several leading members keeps the wrapper fragments in document order', async () => {
+    const { parsed, doc } = await openNested()
+    const pruned: PmNode = { ...doc, content: doc.content!.slice(2) }
+    const plan = pmDocToSavePlan(pruned, parsed.blocks)
+    const xml = await documentXmlOf(await saveDocx(parsed, plan.saveBlocks))
+    expect(sdtOpenCount(xml)).toBe(sdtCloseCount(xml))
+    expect(xml).toContain('ACME Corp')
+    // the Title sdt's close must come after its open, before the Company sdt opens
+    const titleOpen = xml.indexOf('w:val="Title"')
+    const companyOpen = xml.indexOf('w:val="Company"')
+    expect(titleOpen).toBeGreaterThan(-1)
+    expect(companyOpen).toBeGreaterThan(titleOpen)
+    const between = xml.slice(titleOpen, companyOpen)
+    expect((between.match(/<\/w:sdt>/g) ?? []).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('deleting the whole group leaves no dangling sdt bytes', async () => {
+    const { parsed, doc } = await openNested()
+    const pruned: PmNode = { ...doc, content: [] }
+    const plan = pmDocToSavePlan(pruned, parsed.blocks)
+    const xml = await documentXmlOf(await saveDocx(parsed, plan.saveBlocks))
+    expect(sdtOpenCount(xml)).toBe(0)
+    expect(sdtCloseCount(xml)).toBe(0)
+  })
+})

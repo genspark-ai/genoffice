@@ -1,22 +1,50 @@
+/* Shared chrome/AI-panel tokens come from @genoffice/ui/tokens.css (imported
+ * before this file in main.tsx); only shell-specific tokens live here. */
 :root {
-  --accent: #2367ec;
-  --accent-hover: #1b58cf;
-  --surface: #ffffff;
-  --surface-subtle: #f6f7f9;
-  --border: #e3e6ea;
-  --text: #242424;
-  --text-muted: #878e96;
-  --text-secondary: #606366;
-
-  /* Design tokens (confirm dialog) */
-  --radius-6: 6px;
-  --radius-8: 8px;
-  --color-error: #ef4444;
-  --color-border-default: #eaeaea;
-  --color-bg-overlay: rgb(0 0 0 / 50%);
-  --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
+  /* Genspark DS v4.1: guide/onboarding accent is the brand blue */
+  --accent: #0f7fff;
+  --accent-hover: #0e72e5;
   --modal-width-sm: 480px;
-  color-scheme: light;
+  --avatar-bg: #e8ebef;
+  --badge-bg: #eaf0fd;
+  --checkbox-bg: #ececec;
+  --timeline-user-bg: #eef1f5;
+  --timeline-user-text: #5a6170;
+  /* lift for the active segment in gray-track tab pills */
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 8%);
+
+  /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
+  --logo-invert: 0;
+}
+
+/* ── Dark mode overrides ─────────────────────────────────── */
+
+/* Explicit dark: [data-theme="dark"] on <html> */
+[data-theme='dark'] {
+  --accent: #3f99ff;
+  --accent-hover: #5ba5ff;
+  --avatar-bg: #333;
+  --badge-bg: #2a3a4a;
+  --checkbox-bg: #333;
+  --timeline-user-bg: #2a2a3a;
+  --timeline-user-text: #b0b0c0;
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
+  --logo-invert: 1;
+}
+
+/* System dark: no data-theme or data-theme="system" — follow OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --accent: #3f99ff;
+    --accent-hover: #5ba5ff;
+    --avatar-bg: #333;
+    --badge-bg: #2a3a4a;
+    --checkbox-bg: #333;
+    --timeline-user-bg: #2a2a3a;
+    --timeline-user-text: #b0b0c0;
+    --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
+    --logo-invert: 1;
+  }
 }
 
 * {
@@ -88,6 +116,7 @@ body.vib .home {
   display: block;
   height: 28px;
   width: auto;
+  filter: invert(var(--logo-invert));
 }
 
 .sidebar-nav {
@@ -113,17 +142,17 @@ body.vib .home {
 }
 
 .nav-item:hover {
-  background: #f5f5f5;
+  background: var(--bg-hover);
 }
 
 .nav-item.active {
-  background: #f5f5f5;
+  background: var(--bg-hover);
   font-weight: 600;
 }
 
 .nav-item svg {
   flex-shrink: 0;
-  color: #232425;
+  color: var(--text-primary);
 }
 
 .nav-label {
@@ -140,42 +169,14 @@ body.vib .home {
 }
 
 /* ---- bottom-left account entry (today = Genspark login, later = signup/account system) ---- */
-/* language switching lives in the account popup menu (.lang-row / .lang-flyout) */
-
-.lang-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  width: 100%;
-  height: 34px;
-  margin: 2px 0;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  color: #232425;
-  cursor: pointer;
-  text-align: left;
-}
-
-.lang-menu-item:hover {
-  background: #f5f5f5;
-}
-
-.lang-menu-item.active {
-  color: var(--accent);
-  font-weight: 600;
-}
+/* clicking it opens the settings modal (settings.css) directly, which hosts
+   login/logout plus preferences (language / theme / save location / update channel) */
 
 .account-entry {
   position: relative;
   margin-top: auto;
   padding-top: 12px;
-  border-top: 1px solid #efefef;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .account-btn {
@@ -204,7 +205,7 @@ body.vib .home {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #e8ebef;
+  background: var(--avatar-bg);
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 700;
@@ -234,6 +235,13 @@ body.vib .home {
   flex-direction: column;
   min-width: 0;
   line-height: 1.25;
+  flex: 1;
+}
+
+.account-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-muted);
 }
 
 .account-name {
@@ -280,177 +288,17 @@ body.vib .home {
   font-size: 13px;
   line-height: 20px;
   padding: 6px 8px;
-  color: #232425;
+  color: var(--text-primary);
   cursor: pointer;
   text-align: left;
 }
 
 .login-hint button:hover {
-  background: #f5f5f5;
+  background: var(--bg-hover);
 }
 
-.login-hint .login-hint-open,
-.account-menu-item.login-rescue {
+.login-hint .login-hint-open {
   color: var(--accent);
-}
-
-/* popup panel metrics match the Genspark account dropdown;
-   stretched past the account entry (max width the sidebar can host un-clipped) */
-.account-menu {
-  position: absolute;
-  left: -8px;
-  bottom: calc(100% + 4px);
-  width: calc(100% + 16px);
-  padding: 16px 8px;
-  border: none;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  z-index: 30;
-}
-
-.account-menu-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 8px;
-}
-
-.account-menu-email {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-menu-divider {
-  height: 1px;
-  margin: 9px 0;
-  background: #efefef;
-}
-
-.account-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 34px;
-  margin: 2px 0;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  color: #232425;
-  cursor: pointer;
-  text-align: left;
-}
-
-.account-menu-item:hover {
-  background: #f5f5f5;
-}
-
-.account-menu-item.danger {
-  color: #d93025;
-}
-
-.account-menu-item.danger svg {
-  flex-shrink: 0;
-}
-
-.account-menu-version {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 34px;
-  margin: 2px 0;
-  padding: 6px 8px;
-  font-size: 14px;
-  line-height: 22px;
-  color: #232425;
-  user-select: text;
-}
-
-.account-menu-version svg {
-  flex-shrink: 0;
-  color: #232425;
-}
-
-.version-row-label {
-  flex-shrink: 0;
-}
-
-.version-row-value {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.account-menu-item:disabled {
-  color: var(--text-muted);
-  cursor: default;
-}
-
-/* language row in the account menu (hover opens the flyout) */
-.account-menu-item.lang-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.lang-row svg {
-  flex-shrink: 0;
-  color: #232425;
-}
-
-.lang-row-label {
-  flex-shrink: 0;
-}
-
-.lang-row-current {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* wrapper spans the menu's full row width (takes over the item's negative margins)
-   and hosts the hover flyout */
-.lang-row-wrap {
-  width: 100%;
-  margin: 2px 0;
-}
-
-.lang-row-wrap .lang-row {
-  width: 100%;
-  margin: 0;
-}
-
-/* hover flyout with the language list; fixed-position (anchored from JS) so it
-   is not clipped by the sidebar scroll container */
-.lang-flyout {
-  position: fixed;
-  min-width: 160px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 8px;
-  border: none;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  z-index: 40;
 }
 
 /* ---- main content ---- */
@@ -460,7 +308,7 @@ body.vib .home {
   min-width: 0;
   padding: 28px 36px 40px;
   overflow-y: auto;
-  background: #fafafa;
+  background: var(--bg-content);
 }
 
 .section-head {
@@ -471,10 +319,10 @@ body.vib .home {
 }
 
 .section-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
 }
 
 .home-hero {
@@ -487,13 +335,13 @@ body.vib .home {
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.3;
-  color: #232425;
+  color: var(--text-primary);
 }
 
 .hero-ask {
   display: block;
   margin-top: 0;
-  color: #232425;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -526,7 +374,7 @@ body.vib .home {
 }
 
 .quick-card:hover {
-  border-color: #d3d7dd;
+  border-color: var(--border-hover);
   box-shadow: 0 3px 12px rgb(0 0 0 / 8%);
 }
 
@@ -537,6 +385,9 @@ body.vib .home {
 .quick-text {
   flex: 1;
   min-width: 0;
+  /* cap at the card's content box: long ext lists ellipsize inside the padding
+     instead of stretching the wrapper and getting clipped at the card border */
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -584,7 +435,7 @@ body.vib .home {
 .ai-chip {
   padding: 1px 6px;
   border-radius: 4px;
-  background: #eaf0fd;
+  background: var(--badge-bg);
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
@@ -605,14 +456,22 @@ body.vib .home {
 /* ---- recents ---- */
 
 .recents {
-  margin-top: 34px;
+  margin-top: 24px;
 }
 
+/* sticks to the top of the .content scrollport while the list scrolls under;
+   the gap below is padding (not margin) so the background paints over rows.
+   z-index stays under the sort dropdown (z-index: 5). */
 .recents-toolbar {
+  position: sticky;
+  /* offsets .content's 28px padding-top so the bar hugs the visible top edge */
+  top: -28px;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  padding: 10px 0 14px;
+  background: var(--bg-content);
 }
 
 /* "RECENT · N files" on one baseline */
@@ -620,43 +479,60 @@ body.vib .home {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  /* optical: geometrically the label is dead level with the tab text (glyph
+     boxes coincide), but naked bold text beside the gray pill track reads
+     high — compensate down */
+  transform: translateY(2px);
 }
 
+/* matches .section-label so "Recent · N files" reads as one label */
 .file-count {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-tertiary);
 }
 
 /* segmented control: gray track, active segment = white card */
-.filter-pills {
+/* segmented filter control: gray track, active segment = white card.
+   One shared 40px rail for the recents page and the Genspark Projects
+   toolbar (where it lines up with the 40px refresh button and search box). */
+.filter-pills,
+.cloud-seg {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  align-items: center;
+  height: 40px;
+  padding: 0 3px;
   border-radius: 10px;
-  background: #ececec;
+  background: var(--checkbox-bg);
+  flex-shrink: 0;
 }
 
-.filter-pill {
-  padding: 5px 14px;
+.filter-pill,
+.cloud-seg button {
+  padding: 7px 15px;
   border: none;
   border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: 13px;
-  color: #606366;
+  /* same size as the toolbar's heading text ("Recent · N files") so the two
+     sit on one optical line — a 13px/14px mix reads as misaligned */
+  font-size: 14px;
+  color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.filter-pill:hover {
+.filter-pill:hover,
+.cloud-seg button:hover {
   color: var(--text);
 }
 
-.filter-pill.active {
+.filter-pill.active,
+.cloud-seg button.active {
   background: var(--surface);
   color: var(--text);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+  box-shadow: var(--shadow-pill);
 }
 
 .empty {
@@ -690,11 +566,14 @@ body.vib .home {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* keeps the toolbar the same height as the 40px filter pills it replaces */
+  min-height: 40px;
 }
 
+/* matches .selection-action's text (14px, body text color) */
 .selection-count {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 14px;
+  color: var(--text);
   margin-right: 4px;
 }
 
@@ -713,12 +592,12 @@ body.vib .home {
 }
 
 .selection-action.danger {
-  color: #d13438;
-  border-color: #f0c8c9;
+  color: var(--danger);
+  border-color: var(--danger-border);
 }
 
 .selection-action.danger:hover {
-  background: #fdf3f3;
+  background: var(--danger-bg);
 }
 
 /* ---- file table ---- */
@@ -742,11 +621,11 @@ body.vib .home {
 .recent-columns {
   padding-top: 11px;
   padding-bottom: 11px;
-  border-bottom: 1px solid #efefef;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: #909499;
+  color: var(--text-secondary);
 }
 
 /* header label starts at the icon column so it lines up with the file badges */
@@ -765,7 +644,7 @@ body.vib .home {
 }
 
 .recent-list li + li {
-  border-top: 1px solid #efefef;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .recent-item {
@@ -786,7 +665,7 @@ body.vib .home {
 
 /* checked rows keep the same gray as the sidebar's active item */
 .recent-row:has(.row-check:checked) .recent-item {
-  background: #f5f5f5;
+  background: var(--bg-hover);
 }
 
 .recent-item:focus-visible {
@@ -804,7 +683,7 @@ body.vib .home {
   height: 14px;
   margin: 0;
   appearance: none;
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   background: var(--surface);
   cursor: pointer;
@@ -845,12 +724,12 @@ body.vib .home {
   border: none;
   border-radius: 6px;
   background: none;
-  color: #b9bfc7;
+  color: var(--icon-muted);
   cursor: pointer;
 }
 
 .star-btn:hover {
-  background: #f0f2f5;
+  background: var(--bg-hover-subtle);
 }
 
 .recent-item:hover .star-btn,
@@ -875,7 +754,7 @@ body.vib .home {
 
 .recent-path {
   font-size: 12px;
-  color: #909499;
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -883,13 +762,13 @@ body.vib .home {
 
 .recent-time {
   font-size: 12px;
-  color: #909499;
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
 
 .recent-size {
   font-size: 12px;
-  color: #909499;
+  color: var(--text-tertiary);
   white-space: nowrap;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -917,7 +796,7 @@ body.vib .home {
 
 .more-btn:hover,
 .more-btn[aria-expanded='true'] {
-  background: #e8eaee;
+  background: var(--bg-hover-strong);
   color: var(--text);
 }
 
@@ -961,17 +840,17 @@ body.vib .home {
 }
 
 .row-menu button.danger {
-  color: #d13438;
+  color: var(--danger);
 }
 
 .row-menu button.danger:hover {
-  background: #fdf3f3;
+  background: var(--danger-bg);
 }
 
 .row-menu-divider {
   height: 1px;
   margin: 5px 6px;
-  background: #efefef;
+  background: var(--border-subtle);
 }
 
 /* ---- buttons + modal ---- */
@@ -989,13 +868,8 @@ body.vib .home {
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* design-system interaction states */
-.btn:hover:not(:disabled) {
-  filter: brightness(0.92);
-}
-
+/* design-system interaction states; hover fills live on each variant below */
 .btn:active:not(:disabled) {
-  filter: brightness(0.88);
   transform: scale(0.98);
 }
 
@@ -1010,10 +884,19 @@ body.vib .home {
   color: var(--text);
 }
 
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
 .btn-danger {
   background: var(--color-error);
   border: none;
   color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-error-hover);
 }
 
 .modal-overlay {
@@ -1080,7 +963,7 @@ body.vib .home {
 .sidebar-divider {
   height: 1px;
   margin: 12px 0;
-  background: #efefef;
+  background: var(--border-subtle);
 }
 
 .proj-panel {
@@ -1100,9 +983,8 @@ body.vib .home {
 .proj-panel-title {
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 .proj-add-btn {
@@ -1163,7 +1045,7 @@ body.vib .home {
 }
 
 .proj-item.active {
-  background: #f5f5f5;
+  background: var(--bg-hover);
 }
 
 .proj-item-main {
@@ -1184,7 +1066,7 @@ body.vib .home {
 }
 
 .proj-item:hover .proj-item-main {
-  background: #f5f5f5;
+  background: var(--bg-hover);
 }
 
 .proj-item.active .proj-item-main {
@@ -1193,7 +1075,7 @@ body.vib .home {
 
 .proj-item-icon {
   flex-shrink: 0;
-  color: #232425;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
 }
@@ -1267,7 +1149,7 @@ body.vib .home {
 
 .proj-more-btn:hover,
 .proj-more-btn[aria-expanded='true'] {
-  background: #e0e4ea;
+  background: var(--bg-hover-accent);
   color: var(--text);
 }
 
@@ -1304,11 +1186,11 @@ body.vib .home {
 }
 
 .proj-menu button.danger {
-  color: #d13438;
+  color: var(--danger);
 }
 
 .proj-menu button.danger:hover {
-  background: #fdf3f3;
+  background: var(--danger-bg);
 }
 
 /* "move to project" submenu on a file row */
@@ -1404,7 +1286,7 @@ body.vib .home {
   text-align: center;
   margin: 0;
   padding-bottom: 60px;
-  color: #909499;
+  color: var(--text-tertiary);
   line-height: 1.7 !important;
 }
 
@@ -1485,7 +1367,7 @@ body.vib .home {
 }
 
 .timeline-list .timeline-item + .timeline-item {
-  border-top: 1px solid #efefef;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .timeline-item:hover {
@@ -1506,12 +1388,12 @@ body.vib .home {
 }
 
 .timeline-role.user {
-  background: #eef1f5;
-  color: #5a6170;
+  background: var(--timeline-user-bg);
+  color: var(--timeline-user-text);
 }
 
 .timeline-role.assistant {
-  background: #eaf0fd;
+  background: var(--badge-bg);
   color: var(--accent);
 }
 
@@ -1547,4 +1429,334 @@ body.vib .home {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   padding-top: 1px;
+}
+
+/* ── Cloud (Genspark web) projects ── */
+
+/* fixed header: the content column never scrolls; only .cloud-scroll does */
+/* whole page scrolls (same as the recents page) so the wheel works anywhere;
+   no bottom padding: the list runs flush to the window edge */
+.content:has(.cloud-projects) {
+  padding: 40px 36px 0;
+}
+
+.cloud-projects .proj-empty {
+  flex: 1;
+}
+
+/* pinned while the page scrolls (wheel still works anywhere); the ::before
+   covers the seam left by the content's 40px top padding */
+.cloud-hero {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-content);
+  padding-bottom: 12px;
+}
+
+.cloud-hero::before {
+  content: '';
+  position: absolute;
+  top: -40px;
+  left: -36px;
+  right: -36px;
+  height: 40px;
+  background: var(--bg-content);
+}
+
+.cloud-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cloud-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.cloud-subtitle {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.cloud-sort-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 150px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+  padding: 4px;
+  z-index: 5;
+}
+
+.cloud-sort-menu button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 8px 11px;
+  font-size: 13px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.cloud-sort-check {
+  flex-shrink: 0;
+}
+
+.cloud-sort-menu button:hover {
+  background: var(--surface-subtle);
+}
+
+.cloud-sort-menu button.active {
+  font-weight: 600;
+}
+
+.cloud-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.cloud-search {
+  /* sits at the toolbar's right edge, flush with the table below */
+  flex: 1;
+  max-width: 520px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.cloud-search:focus-within {
+  border-color: var(--accent);
+}
+
+.cloud-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* placeholder color follows the suite convention (AI input boxes):
+   tertiary text, not the browser's UA default */
+.cloud-search input::placeholder,
+.proj-rename-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* .cloud-seg styles live with .filter-pills (shared segmented control). */
+
+/* the toolbar → table gap lives in the sticky hero's padding-bottom so the
+   pinned header paints over rows scrolling underneath */
+.cloud-scroll {
+  margin-top: 0;
+}
+
+/* Genspark Projects list styled like the recent-files table: bordered
+   rounded container, column header, grid rows with hairline dividers */
+.cloud-table {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cloud-columns,
+.cloud-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.cloud-columns {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+/* header label starts at the icon column so it lines up with the file badges */
+.cloud-columns .col-name {
+  grid-column: 1 / 3;
+}
+
+/* WPS-style sortable column header: label + direction arrow, click opens
+   the sort popover (menu styles shared with .cloud-sort-menu) */
+.cloud-col-sort {
+  position: relative;
+  justify-self: start;
+}
+
+.cloud-col-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cloud-col-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.cloud-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cloud-list li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cloud-row {
+  width: 100%;
+  /* matches the recent-file rows: 14px paddings + a 26px control column */
+  min-height: 54px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+
+.cloud-list li:last-child .cloud-row {
+  border-radius: 0 0 12px 12px;
+}
+
+.cloud-row:hover {
+  background: var(--surface-subtle);
+}
+
+.cloud-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* title + trailing external icon; the icon hugs the text and survives truncation */
+.cloud-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.cloud-row-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cloud-row-time {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* always visible so rows read as external links; darkens on hover */
+.cloud-row-external {
+  flex-shrink: 0;
+  color: #c9ced4;
+}
+
+.cloud-row:hover .cloud-row-external,
+.cloud-row:focus-visible .cloud-row-external {
+  color: var(--text-secondary);
+}
+
+/* right-aligned to match the sidebar count column (22px, centered digits) */
+.nav-external {
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 4px;
+  color: var(--text-muted);
+}
+
+.cloud-refresh-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* sits in the toolbar next to the 40px filter tabs / search box */
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cloud-refresh-btn:hover:not(:disabled) {
+  background: var(--surface-subtle);
+}
+
+.cloud-refresh-btn.syncing svg {
+  animation: cloud-refresh-spin 0.9s linear infinite;
+  color: var(--text-muted);
+}
+
+@keyframes cloud-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Motion accessibility: suppress all animation for users who opt out */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

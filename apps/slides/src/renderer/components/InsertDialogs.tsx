@@ -19,7 +19,13 @@ interface LinkDialogProps {
   onClose: () => void
 }
 
-export function LinkDialog({ initial, slideCount, currentSlide, onApply, onClose }: LinkDialogProps) {
+export function LinkDialog({
+  initial,
+  slideCount,
+  currentSlide,
+  onApply,
+  onClose,
+}: LinkDialogProps) {
   const { t } = useI18n()
   const [mode, setMode] = useState<'url' | 'slide'>(initial?.kind === 'slide' ? 'slide' : 'url')
   const [url, setUrl] = useState(initial?.kind === 'url' ? initial.url : 'https://')
@@ -97,7 +103,12 @@ export function LinkDialog({ initial, slideCount, currentSlide, onApply, onClose
 // ── Header & footer ───────────────────────────────────────────────────────
 
 interface HeaderFooterDialogProps {
-  onApply: (opts: { footer: string | null; slideNum: boolean; date: string | null; dateAuto: boolean }) => void
+  onApply: (opts: {
+    footer: string | null
+    slideNum: boolean
+    date: string | null
+    dateAuto: boolean
+  }) => void
   onClose: () => void
   /** Display: current page state */
   initial: { footer: string | null; slideNum: boolean; date: string | null }
@@ -123,7 +134,11 @@ export function HeaderFooterDialog({ initial, onApply, onClose }: HeaderFooterDi
         {dateOn && (
           <div className="dlg-indent">
             <label className="dlg-check">
-              <input type="checkbox" checked={dateAuto} onChange={(e) => setDateAuto(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={dateAuto}
+                onChange={(e) => setDateAuto(e.target.checked)}
+              />
               {t('ribbonDlgAutoUpdate')}
             </label>
             <input
@@ -139,7 +154,11 @@ export function HeaderFooterDialog({ initial, onApply, onClose }: HeaderFooterDi
           {t('ribbonDlgSlideNum')}
         </label>
         <label className="dlg-check">
-          <input type="checkbox" checked={footerOn} onChange={(e) => setFooterOn(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={footerOn}
+            onChange={(e) => setFooterOn(e.target.checked)}
+          />
           {t('ribbonDlgFooter')}
         </label>
         {footerOn && (
@@ -198,7 +217,12 @@ export function EquationDialog({ onInsert, onClose }: EquationDialogProps) {
         <h2>{t('ribbonDlgInsertEquation')}</h2>
         <div className="eq-gallery">
           {EQUATION_GALLERY.map((eq) => (
-            <button key={eq.text} className="eq-item" title={eq.label} onClick={() => setText(eq.text)}>
+            <button
+              key={eq.text}
+              className="eq-item"
+              data-tip={eq.label}
+              onClick={() => setText(eq.text)}
+            >
               <span className="eq-preview">{eq.text}</span>
               <span className="eq-label">{eq.label}</span>
             </button>

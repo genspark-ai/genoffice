@@ -5,11 +5,13 @@
  */
 import { columnLabel, parseRange } from '../domain/cell-address'
 import { applyPivotSlicer, growPivotDefinition, recomputePivotData } from '../domain/pivot-engine'
+import { timelineDomainOf, timelineSelection, type MonthKey } from '../domain/pivot-timeline'
 import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
 import { journalSize, recordPivotCacheRefresh, recordPivotRefreshUpdate } from './edit-journal'
 import { t } from './i18n/locale'
 import type { OoXmlPivotConfig, PivotEditSeed, PivotField } from './PivotDialog'
 import type { SlicerMember, SlicerUiState } from './SlicerPanel'
+import type { TimelineUiState } from './TimelinePanel'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 import { applyAiPivotAdd, applyGrownPivotOutput, pivotConfigToOpParts } from './workbook-ops'
 
@@ -32,6 +34,13 @@ export interface SlicerPickerState {
   fields: readonly { field: number; name: string }[]
 }
 
+/// Non-null while the "Insert Timeline" field picker is open.
+export interface TimelinePickerState {
+  sheetId: string
+  pivotPath: string
+  fields: readonly { field: number; name: string }[]
+}
+
 /** The App refs/state the pivot actions need; built fresh per call. */
 export interface PivotActionContext {
   univerRef: { readonly current: UniverRuntime | null }
@@ -41,6 +50,12 @@ export interface PivotActionContext {
   slicerPicker: SlicerPickerState | null
   setSlicers: (update: (current: readonly SlicerUiState[]) => readonly SlicerUiState[]) => void
   setSlicerPicker: (value: SlicerPickerState | null) => void
+  timelines: readonly TimelineUiState[]
+  timelinePicker: TimelinePickerState | null
+  setTimelines: (
+    update: (current: readonly TimelineUiState[]) => readonly TimelineUiState[],
+  ) => void
+  setTimelinePicker: (value: TimelinePickerState | null) => void
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
 }
@@ -402,6 +417,21 @@ export function handleRefreshPivot(ctx: PivotActionContext): string | null {
   }
 }
 
+/// Slicers and timelines both apply through the pivot's per-field hidden-items
+/// state, so a field can carry at most one filter panel: a second one on the
+/// same field would silently overwrite (and on removal, wholesale clear) the
+/// first one's selection. Both pickers exclude fields already taken.
+function fieldsWithFilterPanel(ctx: PivotActionContext, pivotPath: string): Set<number> {
+  const taken = new Set<number>()
+  for (const slicer of ctx.slicers) {
+    if (slicer.pivotPath === pivotPath) taken.add(slicer.field)
+  }
+  for (const timeline of ctx.timelines) {
+    if (timeline.pivotPath === pivotPath) taken.add(timeline.field)
+  }
+  return taken
+}
+
 /// Insert slicer: when the cursor hits a pivot, open the field picker
 /// (row/column/report-filter dimension fields).
 export function handleOpenSlicerPicker(ctx: PivotActionContext): void {
@@ -420,6 +450,7 @@ export function handleOpenSlicerPicker(ctx: PivotActionContext): void {
     return
   }
   const definition = found.definition
+  const taken = fieldsWithFilterPanel(ctx, found.pivot.path)
   const seen = new Set<number>()
   const fields: { field: number; name: string }[] = []
   for (const field of [
@@ -438,7 +469,12 @@ export function handleOpenSlicerPicker(ctx: PivotActionContext): void {
     ctx.setMessage(t('appPivotNoSlicerFields'))
     return
   }
-  ctx.setSlicerPicker({ sheetId: found.sheetId, pivotPath: found.pivot.path, fields })
+  const available = fields.filter((entry) => !taken.has(entry.field))
+  if (available.length === 0) {
+    ctx.setMessage(t('appFieldFilterTaken'))
+    return
+  }
+  ctx.setSlicerPicker({ sheetId: found.sheetId, pivotPath: found.pivot.path, fields: available })
 }
 
 /// Creates the slicer panel after field selection: members come from the pivot
@@ -483,7 +519,8 @@ export function handleCreateSlicer(ctx: PivotActionContext, field: number): stri
 /// recover). Returns an error message; null = success (incl. no-change no-ops).
 export function applySlicerSelection(
   ctx: PivotActionContext,
-  slicer: SlicerUiState,
+  // Both slicers and timelines apply through here (same hidden-items model).
+  slicer: { readonly sheetId: string; readonly pivotPath: string; readonly field: number },
   selectedMembers: readonly number[] | null,
 ): string | null {
   const state = ctx.lazyWorkbookRef.current
@@ -597,4 +634,119 @@ export function handleRemoveSlicer(ctx: PivotActionContext, slicerId: string): v
   }
   ctx.setSlicers((current) => current.filter((entry) => entry.id !== slicerId))
   ctx.setMessage(t('appSlicerRemoved', { name: slicer.fieldName }))
+}
+
+/// Insert timeline: like the slicer picker, but only ungrouped fields whose
+/// non-blank cache items all parse as dates qualify.
+export function handleOpenTimelinePicker(ctx: PivotActionContext): void {
+  const state = ctx.lazyWorkbookRef.current
+  if (!state) {
+    ctx.setMessage(t('appSlicerNeedsFile'))
+    return
+  }
+  const found = findPivotAtSelection(ctx)
+  if (!found) {
+    ctx.setMessage(t('appCursorNotInPivot'))
+    return
+  }
+  if (!found.definition) {
+    ctx.setMessage(t('appPivotDefNotLoaded'))
+    return
+  }
+  const definition = found.definition
+  const taken = fieldsWithFilterPanel(ctx, found.pivot.path)
+  const seen = new Set<number>()
+  const fields: { field: number; name: string }[] = []
+  for (const field of [
+    ...definition.rowFields,
+    ...definition.colFields,
+    ...definition.pageFields.map((page) => page.field),
+  ]) {
+    if (field < 0 || seen.has(field)) continue
+    seen.add(field)
+    const meta = definition.fields[field]
+    if (!meta || meta.grouping !== undefined) continue
+    if (timelineDomainOf(meta.sharedItems, definition.fieldItems[field] ?? []) === null) continue
+    fields.push({ field, name: meta.name || t('appFieldN', { n: field + 1 }) })
+  }
+  if (fields.length === 0) {
+    ctx.setMessage(t('appTimelineNoDateFields'))
+    return
+  }
+  const available = fields.filter((entry) => !taken.has(entry.field))
+  if (available.length === 0) {
+    ctx.setMessage(t('appFieldFilterTaken'))
+    return
+  }
+  ctx.setTimelinePicker({ sheetId: found.sheetId, pivotPath: found.pivot.path, fields: available })
+}
+
+/// Creates the timeline panel after field selection. Returns an error message;
+/// null = success.
+export function handleCreateTimeline(ctx: PivotActionContext, field: number): string | null {
+  const state = ctx.lazyWorkbookRef.current
+  const picker = ctx.timelinePicker
+  if (!state || !picker) return t('appSlicerPivotStale')
+  const definition = state.pivotDefinitions.get(picker.pivotPath)
+  if (!definition) return t('appPivotDefNotLoaded')
+  const meta = definition.fields[field]
+  const domain = timelineDomainOf(meta?.sharedItems ?? [], definition.fieldItems[field] ?? [])
+  if (!domain) return t('appTimelineNoDateFields')
+  const timeline: TimelineUiState = {
+    id: `timeline-${Date.now().toString(36)}-${ctx.timelines.length + 1}`,
+    sheetId: picker.sheetId,
+    pivotPath: picker.pivotPath,
+    field,
+    fieldName: meta?.name || t('appFieldN', { n: field + 1 }),
+    members: domain.members,
+    minMonth: domain.minMonth,
+    maxMonth: domain.maxMonth,
+    range: null,
+  }
+  ctx.setTimelines((current) => [...current, timeline])
+  ctx.setMessage(t('appTimelineCreated', { name: timeline.fieldName }))
+  return null
+}
+
+/// Applies a month range (null = clear) through the slicer mechanism.
+export function handleTimelineRange(
+  ctx: PivotActionContext,
+  timelineId: string,
+  range: { readonly start: MonthKey; readonly end: MonthKey } | null,
+): void {
+  const timeline = ctx.timelines.find((entry) => entry.id === timelineId)
+  if (!timeline) return
+  const selected = timelineSelection(
+    { members: timeline.members, minMonth: timeline.minMonth, maxMonth: timeline.maxMonth },
+    range,
+  )
+  if (selected !== null && selected.length === 0) {
+    ctx.setMessage(t('appTimelineEmptyRange'))
+    return
+  }
+  const failure = applySlicerSelection(ctx, timeline, selected)
+  if (failure !== null) {
+    ctx.setMessage(failure)
+    return
+  }
+  ctx.setTimelines((current) =>
+    current.map((entry) => (entry.id === timelineId ? { ...entry, range } : entry)),
+  )
+  ctx.setMessage(
+    range === null
+      ? t('appTimelineCleared', { name: timeline.fieldName })
+      : t('appTimelineApplied', { name: timeline.fieldName }),
+  )
+}
+
+export function handleRemoveTimeline(ctx: PivotActionContext, timelineId: string): void {
+  const timeline = ctx.timelines.find((entry) => entry.id === timelineId)
+  if (!timeline) return
+  const failure = applySlicerSelection(ctx, timeline, null)
+  if (failure !== null) {
+    ctx.setMessage(failure)
+    return
+  }
+  ctx.setTimelines((current) => current.filter((entry) => entry.id !== timelineId))
+  ctx.setMessage(t('appTimelineRemoved', { name: timeline.fieldName }))
 }

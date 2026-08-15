@@ -41,6 +41,31 @@ describe('paragraph shading and borders', () => {
     expect(doc.blocks[0].format?.shadingFill).toBe('FFF2CC')
     expect(doc.blocks[0].format?.borders).toBe('tb')
   })
+
+  it('keeps declared pBdr color and width (w:sz eighth-points -> pt)', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pBdr>' +
+      '<w:top w:val="single" w:sz="4" w:space="1" w:color="auto"/>' +
+      '<w:bottom w:val="single" w:sz="12" w:space="1" w:color="0B5394"/>' +
+      '</w:pBdr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].format?.borders).toBe('tb')
+    expect(doc.blocks[0].format?.borderLines).toEqual({
+      t: { szPt: 0.5 },
+      b: { color: '0B5394', szPt: 1.5 },
+    })
+  })
+
+  it('a later duplicated w:pBdr overrides a side declared look', async () => {
+    const xml =
+      '<w:p><w:pPr>' +
+      '<w:pBdr><w:bottom w:val="single" w:sz="4" w:color="FF0000"/></w:pBdr>' +
+      '<w:pBdr><w:bottom w:val="single" w:sz="24" w:color="0B5394"/></w:pBdr>' +
+      '</w:pPr><w:r><w:t>x</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].format?.borders).toBe('b')
+    expect(doc.blocks[0].format?.borderLines).toEqual({ b: { color: '0B5394', szPt: 3 } })
+  })
 })
 
 describe('page border and columns (sectPr)', () => {

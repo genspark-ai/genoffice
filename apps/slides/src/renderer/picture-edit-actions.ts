@@ -14,10 +14,24 @@ export function startCrop(ctx: ActionCtx): void {
   const node = ctx.slide.nodes.find((n) => n.sourceId === id)
   if (!node || node.type !== 'picture') return
   const picNode = node as PictureRenderNode
+  // Reconstruct the full original-image extent from the displayed (cropped) box:
+  // the crop is non-destructive (srcRect), so the frame may expand back out to it.
+  const sr = picNode.srcRect
+  const kw = sr ? Math.max(1 - sr.l - sr.r, 0.01) : 1
+  const kh = sr ? Math.max(1 - sr.t - sr.b, 0.01) : 1
+  const fullW = picNode.box.w / kw
+  const fullH = picNode.box.h / kh
   ctx.setCropTarget({
     sourceId: id,
     box: { x: picNode.box.x, y: picNode.box.y, w: picNode.box.w, h: picNode.box.h },
-    srcRect: picNode.srcRect,
+    srcRect: sr,
+    fullBox: {
+      x: picNode.box.x - (sr?.l ?? 0) * fullW,
+      y: picNode.box.y - (sr?.t ?? 0) * fullH,
+      w: fullW,
+      h: fullH,
+    },
+    dataUrl: picNode.dataUrl,
   })
 }
 
@@ -26,12 +40,27 @@ export async function commitCrop(
   rect: { l: number; t: number; r: number; b: number } | null,
 ): Promise<void> {
   if (!ctx.cropTarget) return
-  const sourceId = ctx.cropTarget.sourceId
+  const { sourceId, srcRect: prev, fullBox } = ctx.cropTarget
   ctx.setCropTarget(null)
+  // `rect` is relative to the FULL original image (the frame may have been dragged
+  // outward past the previous crop); null = frame covers the whole original.
+  if (!rect && !prev) return // never cropped and frame left at full — nothing to do
+  // The element frame moves/resizes to the on-screen crop frame in the same atomic
+  // edit: the kept region stays exactly where it was framed (PowerPoint semantics),
+  // dragging outward restores original content, and one undo reverts everything.
   const updated = await window.slidesApi.editPictureSrcRect({
     slideIndex: ctx.current,
     sourceId,
     srcRect: rect,
+    boxPx: rect
+      ? {
+          x: fullBox.x + rect.l * fullBox.w,
+          y: fullBox.y + rect.t * fullBox.h,
+          w: Math.max(1, fullBox.w * (1 - rect.l - rect.r)),
+          h: Math.max(1, fullBox.h * (1 - rect.t - rect.b)),
+        }
+      : { x: fullBox.x, y: fullBox.y, w: fullBox.w, h: fullBox.h }, // full frame = original restored
+    fitWidthPx: FIT_WIDTH,
   })
   if (updated) {
     ctx.applySlide(ctx.current, updated)
@@ -64,10 +93,10 @@ export function startCutout(ctx: ActionCtx): void {
 }
 
 /**
- * Apply the cutout result: insert the background-removed PNG at the same position/size
- * (inheriting rotation/crop), then delete the original. Replacement is composed from existing
- * IPC (no direct source-swap IPC); the new image ends up on top.
- * TODO: if the original z-order must be strictly preserved, append reorderElement steps to move it down.
+ * Apply the cutout result: swap the picture's backing image for the
+ * background-removed PNG in place. One atomic IPC — frame, rotation, z-order,
+ * border and effects all survive; the crop window is kept because the result
+ * PNG shares the source image's pixel geometry.
  */
 export async function applyCutout(ctx: ActionCtx, pngDataUrl: string): Promise<void> {
   if (!ctx.cutoutTarget || !ctx.slide) return
@@ -75,58 +104,24 @@ export async function applyCutout(ctx: ActionCtx, pngDataUrl: string): Promise<v
   const node = ctx.slide.nodes.find((n) => n.sourceId === targetId)
   ctx.setCutoutTarget(null)
   if (!node || node.type !== 'picture') return
-  const pic = node as PictureRenderNode
   const base64 = pngDataUrl.split(',')[1]
   if (!base64) {
     ctx.setStatus(t('appStatusCutoutEncodeFailed'))
     return
   }
-  const added = await window.slidesApi.addImageBytes({
+  const updated = await window.slidesApi.replacePictureBytes({
     slideIndex: ctx.current,
+    sourceId: targetId,
     base64,
     ext: 'png',
-    xPx: Math.round(pic.box.x),
-    yPx: Math.round(pic.box.y),
-    wPx: Math.max(1, Math.round(pic.box.w)),
-    hPx: Math.max(1, Math.round(pic.box.h)),
-    fitWidthPx: FIT_WIDTH,
-    name: pic.name ? `${pic.name} (background removed)` : 'Background-removed image',
+    keepSrcRect: true,
   })
-  if (!added || 'error' in added) {
+  if (!updated || 'error' in updated) {
     ctx.setStatus(t('appStatusCutoutInsertFailed'))
     return
   }
-  let updated = added.slide
-  // Inherit rotation (addImageBytes takes no rotation parameter)
-  if (pic.box.rotationDeg) {
-    const r = await window.slidesApi.editTransform({
-      slideIndex: ctx.current,
-      sourceId: added.sourceId,
-      xPx: pic.box.x,
-      yPx: pic.box.y,
-      wPx: pic.box.w,
-      hPx: pic.box.h,
-      rotationDeg: pic.box.rotationDeg,
-      fitWidthPx: FIT_WIDTH,
-    })
-    if (r) updated = r
-  }
-  // Inherit crop (the result PNG is processed from the full source image, srcRect semantics unchanged)
-  if (pic.srcRect) {
-    const r = await window.slidesApi.editPictureSrcRect({
-      slideIndex: ctx.current,
-      sourceId: added.sourceId,
-      srcRect: pic.srcRect,
-    })
-    if (r) updated = r
-  }
-  const afterDelete = await window.slidesApi.deleteElement({
-    slideIndex: ctx.current,
-    sourceId: targetId,
-  })
-  if (afterDelete) updated = afterDelete
   ctx.applySlide(ctx.current, updated)
-  ctx.setSelectedIds([added.sourceId])
+  ctx.setSelectedIds([targetId])
   ctx.setDirty(true)
   ctx.setStatus(t('appStatusCutoutDone'))
 }

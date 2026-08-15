@@ -17,6 +17,7 @@ export default tseslint.config(
       '**/coverage/**',
       'scripts/drivers/**',
       'apps/*/build/**',
+      'packages/*/src/vendor/**',
     ],
   },
   js.configs.recommended,

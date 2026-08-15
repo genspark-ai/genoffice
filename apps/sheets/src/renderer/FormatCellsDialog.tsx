@@ -20,6 +20,7 @@ import {
 } from './numfmt-dialog'
 
 import type { SelectionFormat } from './selection-format'
+import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
 
 /// Excel's Format Cells dialog (⌘1), scoped to what the save pipeline can
 /// persist today: number format, alignment, font, border, fill, and
@@ -95,7 +96,6 @@ const DECIMAL_CATEGORIES: readonly NumfmtCategory[] = [
   'scientific',
 ]
 
-const FONT_FAMILIES = ['Aptos', 'Arial', 'Calibri', 'Times New Roman', '微软雅黑', '宋体']
 const FONT_SIZES = ['9', '10', '11', '12', '14', '16', '18', '22', '26']
 /// OOXML ST_BorderStyle names offered by the line-style picker; the
 /// journal maps them 1:1 to Univer BorderStyleTypes and back to the file.
@@ -166,10 +166,10 @@ export function FormatCellsDialog({
   )
   const negativeSample = -Math.abs(typeof sample === 'number' ? sample : 1234.56)
 
-  const familyOptions =
-    !draft.family || FONT_FAMILIES.includes(draft.family)
-      ? FONT_FAMILIES
-      : [draft.family, ...FONT_FAMILIES]
+  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  // the dialog opens from a click, so activation is still live here
+  useEffect(() => loadSystemFonts(), [loadSystemFonts])
+  const fontGroups = fontFamilyGroups(systemFontFamilies, draft.family)
   const sizeOptions =
     !draft.size || FONT_SIZES.includes(draft.size)
       ? FONT_SIZES
@@ -419,9 +419,18 @@ export function FormatCellsDialog({
                 {t('dlgFcFont')}
                 <select value={draft.family} onChange={(e) => set('family', e.target.value)}>
                   <option value="">{t('dlgFcUnchanged')}</option>
-                  {familyOptions.map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
+                  <optgroup label={t('dlgFcFontsCommon')}>
+                    {fontGroups.common.map((f) => (
+                      <option key={f}>{f}</option>
+                    ))}
+                  </optgroup>
+                  {fontGroups.system.length > 0 && (
+                    <optgroup label={t('dlgFcFontsSystem')}>
+                      {fontGroups.system.map((f) => (
+                        <option key={f}>{f}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </label>
               <label>

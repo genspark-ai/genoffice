@@ -31,6 +31,7 @@ export type {
 } from './auth'
 export { chatForProvider } from './chat'
 export { fetchCodexCapabilities } from './codex'
+export { setRescueFetch } from './fetch'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
 export {

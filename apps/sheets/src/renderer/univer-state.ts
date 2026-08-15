@@ -93,7 +93,11 @@ export interface PinnedClosureCell {
 export const CLOSURE_MAX_CELLS = 50_000
 
 /// Streaming re-installs viewport cells through the same mutation user edits
-/// produce; this flag keeps programmatic patches out of the edit journal.
+/// produce; this flag keeps programmatic patches out of the edit journal AND
+/// out of the undo stack (App.tsx wraps the Univer undo service's
+/// pushUndoRedo to drop entries while it is active) — otherwise a freshly
+/// opened workbook already "has undo", and undoing would strip loaded file
+/// content/layout instead of user edits.
 /// Shared mutable state between App.tsx and univer-sync.ts.
 export const journalSuppression = { active: false }
 

@@ -3,7 +3,13 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      // resolve workspace types from this checkout's sources: in a git worktree
+      // node_modules is a symlink into the main checkout, so bare specifiers
+      // would typecheck against the other checkout's (possibly stale) types
+      "@genoffice/docx-engine": ["../../packages/docx-engine/src/index.ts"]
+    }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]
 }

@@ -250,7 +250,7 @@ export function PivotDialog({
             ))}
           </select>
           <select
-            title={t('dlgPivotGrouping')}
+            data-tip={t('dlgPivotGrouping')}
             value={groupingSelectValue(fieldGroupings[fieldIdx])}
             onChange={(event) => setFieldGrouping(fieldIdx, event.target.value)}
           >
@@ -263,7 +263,7 @@ export function PivotDialog({
           {fieldGroupings[fieldIdx]?.kind === 'range' && (
             <input
               type="number"
-              title={t('dlgPivotRangeStep')}
+              data-tip={t('dlgPivotRangeStep')}
               className="cell-input"
               style={{ width: 64 }}
               min={1}
@@ -278,7 +278,7 @@ export function PivotDialog({
             />
           )}
           <select
-            title={t('dlgPivotLabelFilter')}
+            data-tip={t('dlgPivotLabelFilter')}
             value={labelFilters[fieldIdx]?.op ?? ''}
             onChange={(event) => {
               const op = event.target.value as PivotLabelFilterOption['op'] | ''
@@ -298,7 +298,7 @@ export function PivotDialog({
           {labelFilters[fieldIdx] && (
             <input
               type="text"
-              title={t('dlgPivotLabelFilterText')}
+              data-tip={t('dlgPivotLabelFilterText')}
               className="cell-input"
               placeholder={t('dlgPivotFilterTextPlaceholder')}
               style={{ width: 76 }}
@@ -317,7 +317,8 @@ export function PivotDialog({
             className="secondary"
             style={{ padding: '1px 6px' }}
             disabled={i === 0}
-            title={t('dlgPivotMoveUp')}
+            data-tip={t('dlgPivotMoveUp')}
+            aria-label={t('dlgPivotMoveUp')}
             onClick={() => moveAxisField(setAxis, i, -1)}
           >
             ↑
@@ -327,7 +328,8 @@ export function PivotDialog({
             className="secondary"
             style={{ padding: '1px 6px' }}
             disabled={i === indices.length - 1}
-            title={t('dlgPivotMoveDown')}
+            data-tip={t('dlgPivotMoveDown')}
+            aria-label={t('dlgPivotMoveDown')}
             onClick={() => moveAxisField(setAxis, i, 1)}
           >
             ↓
@@ -337,7 +339,8 @@ export function PivotDialog({
               type="button"
               className="secondary"
               style={{ padding: '1px 6px' }}
-              title={t('dlgPivotRemoveLevel')}
+              data-tip={t('dlgPivotRemoveLevel')}
+              aria-label={t('dlgPivotRemoveLevel')}
               onClick={() => removeAxisField(setAxis, i)}
             >
               ✕
@@ -471,7 +474,7 @@ export function PivotDialog({
                     </>
                   )}
                   <select
-                    title={t('dlgPivotShowAs')}
+                    data-tip={t('dlgPivotShowAs')}
                     value={spec.showDataAs ?? ''}
                     onChange={(event) => {
                       const v = event.target.value as PivotShowDataAsOption | ''
@@ -486,7 +489,7 @@ export function PivotDialog({
                     ))}
                   </select>
                   <select
-                    title={t('dlgPivotValueFilter')}
+                    data-tip={t('dlgPivotValueFilter')}
                     value={valueFilters[i]?.op ?? ''}
                     onChange={(event) => {
                       const op = event.target.value as PivotValueFilterOption['op'] | ''
@@ -508,7 +511,7 @@ export function PivotDialog({
                   {valueFilters[i]?.op === 'top' && (
                     <input
                       type="number"
-                      title={t('dlgPivotTopNCount')}
+                      data-tip={t('dlgPivotTopNCount')}
                       className="cell-input"
                       style={{ width: 52 }}
                       min={1}
@@ -522,7 +525,7 @@ export function PivotDialog({
                   {valueFilters[i]?.op === 'greaterThan' && (
                     <input
                       type="number"
-                      title={t('dlgPivotGreaterThanValue')}
+                      data-tip={t('dlgPivotGreaterThanValue')}
                       className="cell-input"
                       style={{ width: 64 }}
                       value={valueFilters[i].from ?? 0}
@@ -536,7 +539,7 @@ export function PivotDialog({
                     <>
                       <input
                         type="number"
-                        title={t('dlgPivotBetweenFrom')}
+                        data-tip={t('dlgPivotBetweenFrom')}
                         className="cell-input"
                         style={{ width: 56 }}
                         value={valueFilters[i].from ?? 0}
@@ -550,7 +553,7 @@ export function PivotDialog({
                       />
                       <input
                         type="number"
-                        title={t('dlgPivotBetweenTo')}
+                        data-tip={t('dlgPivotBetweenTo')}
                         className="cell-input"
                         style={{ width: 56 }}
                         value={valueFilters[i].to ?? 100}
@@ -605,7 +608,7 @@ export function PivotDialog({
                 placeholder={t('dlgPivotTargetPlaceholder')}
                 value={targetCell}
                 disabled={mode === 'edit'}
-                title={mode === 'edit' ? t('dlgPivotTargetLocked') : undefined}
+                data-tip={mode === 'edit' ? t('dlgPivotTargetLocked') : undefined}
                 onChange={(event) => setTargetCell(event.target.value.toUpperCase())}
                 style={{ width: 80 }}
               />

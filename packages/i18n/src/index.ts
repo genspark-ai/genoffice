@@ -88,6 +88,55 @@ export function htmlLang(lang: Lang): string {
   return HTML_LANGS[lang]
 }
 
+// ---- platform-native shortcut hints ----
+// Dictionaries write shortcut hints in Mac notation (⌘S, ⇧⌘Z, ⌘+Click); on
+// Windows/Linux every translated string is rewritten to Ctrl/Alt/Shift form.
+
+const MAC_KEY_NAMES: Record<string, string> = {
+  '⌫': 'Backspace',
+  '⌦': 'Delete',
+  '⏎': 'Enter',
+  '↩': 'Enter',
+  '␣': 'Space',
+}
+
+const HAS_MAC_SYMBOL = /[⌘⌃⌥⇧⌫⌦⏎↩␣]/
+const CHORD = /([⌘⌃⌥⇧]+)(F\d{1,2}|[A-Za-z0-9±=`'\\,./;[\]\-←↑→↓⌫⌦⏎↩␣]|\+)?/g
+
+function chordToWin(mods: string, key: string | undefined): string {
+  const parts: string[] = []
+  if (mods.includes('⌘') || mods.includes('⌃')) parts.push('Ctrl')
+  if (mods.includes('⌥')) parts.push('Alt')
+  if (mods.includes('⇧')) parts.push('Shift')
+  if (key) parts.push(MAC_KEY_NAMES[key] ?? key)
+  return parts.join('+')
+}
+
+/** rewrite Mac shortcut notation in a UI string to Windows/Linux form (pure) */
+export function macShortcutsToWin(text: string): string {
+  if (!HAS_MAC_SYMBOL.test(text)) return text
+  return text
+    .replace(/⌘\/(?=\p{L}{2})/gu, '') // "⌘/Ctrl+Enter" dual-platform listings: keep the Ctrl side
+    .replace(CHORD, (_m, mods: string, key: string | undefined) =>
+      key === '+' ? `${chordToWin(mods, undefined)}+` : chordToWin(mods, key),
+    )
+    .replace(/[⌫⌦⏎↩␣]/g, (glyph) => MAC_KEY_NAMES[glyph] ?? glyph)
+}
+
+const IS_MAC = (() => {
+  const g = globalThis as {
+    navigator?: { platform?: string }
+    process?: { platform?: string }
+  }
+  if (g.navigator?.platform) return /mac/i.test(g.navigator.platform)
+  return g.process?.platform === 'darwin'
+})()
+
+/** platform-aware shortcut display: identity on macOS */
+export const platformShortcuts: (text: string) => string = IS_MAC
+  ? (text) => text
+  : macShortcutsToWin
+
 export type Params = Record<string, string | number>
 
 /** fill {name} placeholders; unknown placeholders are left as-is */
@@ -140,5 +189,6 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  * runtime fallback.
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
-  return (lang: Lang, key: keyof D, params?: Params): string => format(dicts[lang][key], params)
+  return (lang: Lang, key: keyof D, params?: Params): string =>
+    platformShortcuts(format(dicts[lang][key], params))
 }

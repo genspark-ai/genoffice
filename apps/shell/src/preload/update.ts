@@ -17,6 +17,9 @@ const api: UpdateWindowApi = {
   later() {
     void ipcRenderer.invoke(UPDATE_CHANNELS.later)
   },
+  openDownload() {
+    void ipcRenderer.invoke(UPDATE_CHANNELS.openDownload)
+  },
   onState(handler) {
     const listener = (_event: IpcRendererEvent, state: UpdateUiState) => handler(state)
     ipcRenderer.on(UPDATE_CHANNELS.changed, listener)

@@ -252,7 +252,7 @@ export function DesignTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonThemesTip')}
+              data-tip={t('ribbonThemesTip')}
               onClick={() => toggleDropdown(setDropdown, 'theme')}
             >
               <span className="rb-big-icon">
@@ -284,7 +284,7 @@ export function DesignTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonThemeFontsTip')}
+              data-tip={t('ribbonThemeFontsTip')}
               onClick={() => toggleDropdown(setDropdown, 'themefonts')}
             >
               <span className="rb-big-icon">
@@ -318,7 +318,7 @@ export function DesignTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonThemeColorsTip')}
+              data-tip={t('ribbonThemeColorsTip')}
               onClick={() => toggleDropdown(setDropdown, 'themecolors')}
             >
               <span className="rb-big-icon">
@@ -364,7 +364,7 @@ export function DesignTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonPageColorTip')}
+              data-tip={t('ribbonPageColorTip')}
               onClick={() => toggleDropdown(setDropdown, 'pagecolor')}
             >
               <span className="rb-big-icon rb-big-icon-colored">
@@ -383,7 +383,8 @@ export function DesignTab({
                   <button
                     key={c.hex ?? 'auto'}
                     className={`color-swatch ${(pageColor ?? null) === c.hex ? 'selected' : ''}`}
-                    title={t(c.nameKey)}
+                    data-tip={t(c.nameKey)}
+                    aria-label={t(c.nameKey)}
                     style={{ background: c.hex ? `#${c.hex}` : '#ffffff' }}
                     onClick={() => {
                       onPageColor(c.hex)
@@ -407,7 +408,7 @@ export function DesignTab({
             <button
               className={`rb-big ${watermark ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonWatermarkTip')}
+              data-tip={t('ribbonWatermarkTip')}
               onClick={() => toggleDropdown(setDropdown, 'watermark')}
             >
               <span className="rb-big-icon">
@@ -447,7 +448,7 @@ export function DesignTab({
             <button
               className={`rb-big ${section?.pageBorder ? 'active' : ''}`}
               disabled={!hasDoc || !section}
-              title={t('ribbonPageBordersTip')}
+              data-tip={t('ribbonPageBordersTip')}
               onClick={() => toggleDropdown(setDropdown, 'pgborders')}
             >
               <span className="rb-big-icon">

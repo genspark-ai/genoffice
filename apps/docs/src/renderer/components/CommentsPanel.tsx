@@ -124,7 +124,9 @@ export const CommentsPanel = memo(function CommentsPanel({
             {c.done && <span className="comment-resolved-badge">{t('appResolved')}</span>}
             <span
               className="comment-card-del"
-              title={replies.length > 0 ? t('appDeleteCommentWithReplies') : t('appDeleteComment')}
+              data-tip={
+                replies.length > 0 ? t('appDeleteCommentWithReplies') : t('appDeleteComment')
+              }
               role="button"
               aria-label={t('appDeleteComment')}
               tabIndex={0}
@@ -153,7 +155,8 @@ export const CommentsPanel = memo(function CommentsPanel({
               <span className="comment-date">{formatDate(r.date)}</span>
               <span
                 className="comment-card-del"
-                title={t('appDeleteReply')}
+                data-tip={t('appDeleteReply')}
+                aria-label={t('appDeleteReply')}
                 role="button"
                 tabIndex={0}
                 onClick={(e) => {
@@ -206,7 +209,12 @@ export const CommentsPanel = memo(function CommentsPanel({
         <span className="comments-pane-title">
           <IconComment size={14} /> {t('appCommentsTitle', { n: comments.length })}
         </span>
-        <button className="comments-pane-close" title={t('appClose')} onClick={onClose}>
+        <button
+          className="comments-pane-close"
+          data-tip={t('appClose')}
+          aria-label={t('appClose')}
+          onClick={onClose}
+        >
           ✕
         </button>
       </div>

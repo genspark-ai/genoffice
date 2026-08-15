@@ -31,8 +31,10 @@ describe('note numbering', () => {
         ],
       } as never,
     })
+    // bare number/roman text: the editor-only brackets are CSS ::before/::after
+    // (hidden in print so they don't leak into exported PDF text)
     const sups = [...editor.view.dom.querySelectorAll('sup[data-note-ref]')]
-    expect(sups.map((s) => s.textContent)).toEqual(['[2]', '[ii]'])
+    expect(sups.map((s) => s.textContent)).toEqual(['2', 'ii'])
     editor.destroy()
   })
 })

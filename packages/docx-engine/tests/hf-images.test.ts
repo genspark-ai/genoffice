@@ -23,7 +23,7 @@ const HEADER_RELS =
   '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>' +
   '</Relationships>'
 
-async function buildHeaderLogoDocx(): Promise<Uint8Array> {
+async function buildHeaderLogoDocx(headerXml: string = HEADER_XML): Promise<Uint8Array> {
   return buildDocx({
     bodyXml: '<w:p><w:r><w:t>Body</w:t></w:r></w:p>',
     withImage: true,
@@ -33,7 +33,7 @@ async function buildHeaderLogoDocx(): Promise<Uint8Array> {
     extraParts: [
       {
         path: 'word/header1.xml',
-        xml: HEADER_XML,
+        xml: headerXml,
         contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
       },
       {
@@ -68,5 +68,28 @@ describe('header/footer images (display-only Logo)', () => {
       .filter((b) => !b.hidden && b.docxIndex !== null)
       .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! }))
     expect(await saveDocx(doc, blocks)).toEqual(bytes)
+  })
+
+  it('inline image follows its paragraph alignment (POI headerPic: w:jc right)', async () => {
+    const headerXml = HEADER_XML.replace(
+      '<w:p><w:r><w:drawing>',
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:drawing>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages![0].align).toBe('right')
+  })
+
+  it('AlternateContent picks the first blip whose media resolves (mac PDF Choice → PNG Fallback)', async () => {
+    // rId9 is unresolvable (missing media part); the PNG fallback must be used
+    const headerXml = HEADER_XML.replace(
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill></pic:pic>',
+      '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+        '<mc:Choice Requires="ma"><pic:pic><pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill></pic:pic></mc:Choice>' +
+        '<mc:Fallback><pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill></pic:pic></mc:Fallback>' +
+        '</mc:AlternateContent>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages).toHaveLength(1)
+    expect(doc.headerImages![0].dataUrl.startsWith('data:image/png;base64,')).toBe(true)
   })
 })

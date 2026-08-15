@@ -175,6 +175,26 @@ describe('konva-adapter (thin data mapping)', () => {
     expect(r.fillLinearGradientColorStops).toEqual([0, '#000000', 1, '#FFFFFF'])
   })
 
+  it('linear gradient vector spans the box projection, not max(w,h)', () => {
+    // Vertical gradient on a wide box: the ramp must run exactly top edge -> bottom edge
+    const r = fillToKonva(
+      {
+        kind: 'gradient',
+        stops: [
+          { pos: 0, color: '#000000' },
+          { pos: 1, color: '#FFFFFF' },
+        ],
+        angleDeg: 90,
+      },
+      784,
+      128,
+    )
+    expect(r.fillLinearGradientStartPoint!.x).toBeCloseTo(392, 6)
+    expect(r.fillLinearGradientStartPoint!.y).toBeCloseTo(0, 6)
+    expect(r.fillLinearGradientEndPoint!.x).toBeCloseTo(392, 6)
+    expect(r.fillLinearGradientEndPoint!.y).toBeCloseTo(128, 6)
+  })
+
   it('8-digit hex → rgba', () => {
     expect(normalizeColor('#FF000080')).toMatch(/^rgba\(255,0,0,0\.50/)
   })

@@ -1,11 +1,13 @@
 {
   "name": "@genoffice/shell",
   "productName": "GenOffice",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/genspark-ai/genoffice",
   "private": true,
   "description": "Unified GenOffice shell: one app hosting the docs and sheets modules behind a home/launcher window",
   "main": "out/main/index.js",
+  "desktopName": "genoffice.desktop",
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
@@ -13,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "start": "electron-vite build && electron .",
     "dist:mac": "electron-vite build && electron-builder --mac",
-    "dist:win": "electron-vite build && electron-builder --win"
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux"
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",
@@ -27,10 +30,11 @@
     "@genoffice/pptx-render": "*",
     "@genoffice/sheets": "*",
     "@genoffice/slides": "*",
+    "@genoffice/ui": "*",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^41.0.3",
+    "electron": "^43.3.0",
     "electron-builder": "^26.0.12",
     "electron-updater": "^6.8.9",
     "electron-vite": "^5.0.0",

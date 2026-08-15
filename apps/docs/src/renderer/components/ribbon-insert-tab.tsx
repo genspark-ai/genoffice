@@ -1,15 +1,13 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Editor } from '@tiptap/core'
-import {
-  WORDART_PRESETS,
-  type ChartDisplay,
-  type HeaderFooter,
-  type NewChart,
-} from '@genoffice/docx-engine'
+import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
+import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
+import { hfHasPageField, hfWithoutPageMarks } from '../editor/hf-dom'
 import { EquationGallery, EquationModal } from './EquationModal'
 import { COVER_PRESETS, insertCoverPage, type CoverPreset } from '../editor/cover-pages'
-import { useI18n } from '../i18n/locale'
+import { startShapeDrawMode } from '../editor/shape-draw'
+import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 import {
   IconBook,
@@ -39,7 +37,7 @@ import {
 import {
   BIG,
   InsertTabProps,
-  SHAPE_PRESETS,
+  DOC_SHAPE_GROUPS,
   insertBlankPageAt,
   insertImageViaDialog,
   insertPageBreakAt,
@@ -258,13 +256,14 @@ export function BookmarkModal({ editor, onClose }: { editor: Editor; onClose: ()
           )}
           {bookmarks.map((b) => (
             <div key={`${b.name}-${b.pos}`} className="bookmark-row">
-              <button className="bookmark-name" title={b.preview} onClick={() => jumpTo(b.pos)}>
+              <button className="bookmark-name" data-tip={b.preview} onClick={() => jumpTo(b.pos)}>
                 {b.name}
               </button>
               <span className="bookmark-preview">{b.preview}</span>
               <button
                 className="bookmark-del"
-                title={t('ribbonBookmarkDeleteTip')}
+                data-tip={t('ribbonBookmarkDeleteTip')}
+                aria-label={t('ribbonBookmarkDeleteTip')}
                 onClick={() => removeBookmark(b)}
               >
                 <IconClose size={12} />
@@ -595,7 +594,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonCoverPageTip')}
+              data-tip={t('ribbonCoverPageTip')}
               onClick={() => toggleDropdown(setDropdown, 'cover')}
             >
               <span className="rb-big-icon">
@@ -610,7 +609,7 @@ export function InsertTab({
                   <button
                     key={preset.id}
                     className="cover-card"
-                    title={t('ribbonInsertCoverTip', { name: preset.name })}
+                    data-tip={t('ribbonInsertCoverTip', { name: preset.name })}
                     onClick={() => {
                       insertCoverPage(editor, preset)
                       setDropdown(() => null)
@@ -626,7 +625,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonBlankPageTip')}
+            data-tip={t('ribbonBlankPageTip')}
             onClick={() => insertBlankPageAt(editor)}
           >
             <span className="rb-big-icon">
@@ -637,7 +636,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonPageBreakTip')}
+            data-tip={t('ribbonPageBreakTip')}
             onClick={() => insertPageBreakAt(editor)}
           >
             <span className="rb-big-icon">
@@ -657,7 +656,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonTableTip')}
+              data-tip={t('ribbonTableTip')}
               onClick={() => toggleDropdown(setDropdown, 'table')}
             >
               <span className="rb-big-icon">
@@ -699,7 +698,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonPictureTip')}
+            data-tip={t('ribbonPictureTip')}
             onClick={() => void insertImageViaDialog(editor)}
           >
             <span className="rb-big-icon">
@@ -710,7 +709,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonChartTip')}
+            data-tip={t('ribbonChartTip')}
             onClick={() => setChartOpen(true)}
           >
             <span className="rb-big-icon">
@@ -722,7 +721,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonShapesTip')}
+              data-tip={t('ribbonShapesTip')}
               onClick={() => toggleDropdown(setDropdown, 'shape')}
             >
               <span className="rb-big-icon">
@@ -732,27 +731,31 @@ export function InsertTab({
               <span>{t('ribbonShapes')}</span>
             </button>
             {dropdown === 'shape' && (
-              <div className="shape-palette">
-                {SHAPE_PRESETS.map((s) => (
-                  <button
-                    key={s.prst}
-                    className="shape-cell"
-                    title={t(s.labelKey)}
-                    onClick={() => {
-                      insertShapeAt(editor, s.prst)
-                      setDropdown(() => null)
-                    }}
-                  >
-                    <span
-                      className="shape-preview"
-                      style={{
-                        background: '#4472C4',
-                        ...(s.clipPath ? { clipPath: s.clipPath } : {}),
-                        ...(s.borderRadius ? { borderRadius: s.borderRadius } : {}),
-                      }}
-                    />
-                    <span className="shape-label">{t(s.labelKey)}</span>
-                  </button>
+              <div className="shape-palette rb-shape-gallery">
+                {DOC_SHAPE_GROUPS.map((group) => (
+                  <div key={group.groupKey}>
+                    <div className="rb-drop-title">{t(group.groupKey as StringKey)}</div>
+                    <div className="rb-shape-grid">
+                      {group.shapes.map((s) => (
+                        <button
+                          key={s.prst}
+                          className="rb-shape-cell"
+                          data-tip={t(s.labelKey as StringKey)}
+                          aria-label={t(s.labelKey as StringKey)}
+                          onClick={() => {
+                            // Word parity: arm crosshair draw mode (click = default 1in
+                            // square, drag = custom size, Shift = square, Esc = cancel)
+                            startShapeDrawMode(editor, s.prst, (opts) =>
+                              insertShapeAt(editor, s.prst, opts),
+                            )
+                            setDropdown(() => null)
+                          }}
+                        >
+                          <ShapePreview prst={s.prst} size={18} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -769,7 +772,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={t('ribbonTextBoxTip')}
+            data-tip={t('ribbonTextBoxTip')}
             onClick={() => insertTextboxAt(editor)}
           >
             <span className="rb-big-icon">
@@ -781,7 +784,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonWordArtTip')}
+              data-tip={t('ribbonWordArtTip')}
               onClick={() => toggleDropdown(setDropdown, 'wordArt')}
             >
               <span className="rb-big-icon">
@@ -796,23 +799,21 @@ export function InsertTab({
                   <button
                     key={p.id}
                     className="wordart-cell"
-                    title={p.label}
+                    data-tip={t(p.nameKey as StringKey)}
+                    style={{
+                      color: p.fill,
+                      WebkitTextStroke: p.outline
+                        ? `${wordArtStrokePx(p.outline.widthEmu)}px ${p.outline.color}`
+                        : undefined,
+                      fontWeight: p.bold ? 800 : 400,
+                      fontStyle: p.italic ? 'italic' : undefined,
+                    }}
                     onClick={() => {
-                      insertWordArtAt(editor, p.id)
+                      insertWordArtAt(editor, p)
                       setDropdown(() => null)
                     }}
                   >
-                    <span
-                      className="wordart-preview"
-                      style={{
-                        WebkitTextFillColor: p.noFill ? 'transparent' : `#${p.colorHex}`,
-                        WebkitTextStroke: p.noFill ? `2px #${p.borderHex}` : undefined,
-                        color: `#${p.colorHex}`,
-                      }}
-                    >
-                      {t('ribbonWordArtPreviewChar')}
-                    </span>
-                    <span className="wordart-label">{p.label}</span>
+                    {t('ribbonWordArtPreviewChar')}
                   </button>
                 ))}
               </div>
@@ -822,7 +823,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonDropCap')}
+              data-tip={t('ribbonDropCap')}
               onClick={() => toggleDropdown(setDropdown, 'dropCap')}
             >
               <span
@@ -854,7 +855,7 @@ export function InsertTab({
                   <button
                     key={opt.label}
                     className="dropcap-option"
-                    title={opt.desc}
+                    data-tip={opt.desc}
                     onClick={() => {
                       setDropdown(() => null)
                       const newDropCap = opt.val
@@ -874,7 +875,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonFieldTip')}
+              data-tip={t('ribbonFieldTip')}
               onClick={() => toggleDropdown(setDropdown, 'field')}
             >
               <span className="rb-big-icon" style={{ fontSize: 15, lineHeight: 1.2 }}>
@@ -920,7 +921,7 @@ export function InsertTab({
             <button
               className="rb-small"
               disabled={!hasDoc}
-              title={t('ribbonLinkTip')}
+              data-tip={t('ribbonLinkTip')}
               onClick={() => setLinkOpen(true)}
             >
               <IconLink size={14} /> {t('ribbonLink')}
@@ -928,7 +929,7 @@ export function InsertTab({
             <button
               className="rb-small"
               disabled={!hasDoc}
-              title={t('ribbonBookmarkTip')}
+              data-tip={t('ribbonBookmarkTip')}
               onClick={() => setBookmarkOpen(true)}
             >
               <IconBook size={14} /> {t('ribbonBookmark')}
@@ -936,7 +937,7 @@ export function InsertTab({
             <button
               className="rb-small"
               disabled={!hasDoc}
-              title={t('ribbonCrossRefTip')}
+              data-tip={t('ribbonCrossRefTip')}
               onClick={() => setCrossRefOpen(true)}
             >
               <IconRefresh size={14} /> {t('ribbonCrossRef')}
@@ -953,7 +954,7 @@ export function InsertTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
-            title={
+            data-tip={
               commentCount > 0
                 ? t('ribbonViewCommentsTip', { count: commentCount })
                 : t('ribbonViewCommentsNoneTip')
@@ -977,7 +978,7 @@ export function InsertTab({
             <button
               className={`rb-big ${header?.text ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonHeaderTip')}
+              data-tip={t('ribbonHeaderTip')}
               onClick={() => toggleDropdown(setDropdown, 'header')}
             >
               <span className="rb-big-icon">
@@ -999,7 +1000,7 @@ export function InsertTab({
             <button
               className={`rb-big ${footer?.text ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonFooterTip')}
+              data-tip={t('ribbonFooterTip')}
               onClick={() => toggleDropdown(setDropdown, 'footer')}
             >
               <span className="rb-big-icon">
@@ -1021,7 +1022,7 @@ export function InsertTab({
             <button
               className={`rb-big ${footer?.pageNumber ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonPageNumber')}
+              data-tip={t('ribbonPageNumber')}
               onClick={() => toggleDropdown(setDropdown, 'pagenum')}
             >
               <span className="rb-big-icon">
@@ -1068,12 +1069,8 @@ export function InsertTab({
                 </button>
                 <button
                   onClick={() => {
-                    if (footer?.pageNumber || footer?.text.includes('#')) {
-                      onFooter({ text: (footer?.text ?? '').replace(/#/g, ''), pageNumber: false })
-                    }
-                    if (header?.pageNumber || header?.text.includes('#')) {
-                      onHeader({ text: (header?.text ?? '').replace(/#/g, ''), pageNumber: false })
-                    }
+                    if (hfHasPageField(footer)) onFooter(hfWithoutPageMarks(footer!))
+                    if (hfHasPageField(header)) onHeader(hfWithoutPageMarks(header!))
                     setDropdown(() => null)
                   }}
                 >
@@ -1086,7 +1083,7 @@ export function InsertTab({
             <button
               className={`rb-small ${titlePg ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonDiffFirstPageTip')}
+              data-tip={t('ribbonDiffFirstPageTip')}
               onClick={() => onTitlePg(!titlePg)}
             >
               {titlePg ? <IconCheckboxChecked /> : <IconCheckbox />} {t('ribbonDiffFirstPage')}
@@ -1094,7 +1091,7 @@ export function InsertTab({
             <button
               className={`rb-small ${evenOddHf ? 'active' : ''}`}
               disabled={!hasDoc}
-              title={t('ribbonDiffOddEvenTip')}
+              data-tip={t('ribbonDiffOddEvenTip')}
               onClick={() => onEvenOddHf(!evenOddHf)}
             >
               {evenOddHf ? <IconCheckboxChecked /> : <IconCheckbox />} {t('ribbonDiffOddEven')}
@@ -1112,7 +1109,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonSymbolTip')}
+              data-tip={t('ribbonSymbolTip')}
               onClick={() => toggleDropdown(setDropdown, 'symbol')}
             >
               <span className="rb-big-icon">
@@ -1142,7 +1139,7 @@ export function InsertTab({
             <button
               className="rb-big"
               disabled={!hasDoc}
-              title={t('ribbonEquationTip')}
+              data-tip={t('ribbonEquationTip')}
               onClick={() => toggleDropdown(setDropdown, 'equation')}
             >
               <span className="rb-big-icon">

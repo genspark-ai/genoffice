@@ -27,6 +27,14 @@ export function resolveFill(
         stops: fill.stops.map((s) => ({ pos: s.pos, color: s.color })),
         angleDeg: fill.angle != null ? fill.angle / 60000 : 0,
         ...(fill.path ? { radial: true } : {}),
+        ...(fill.path && fill.fillTo
+          ? {
+              center: {
+                x: (fill.fillTo.l + (1 - fill.fillTo.r)) / 2,
+                y: (fill.fillTo.t + (1 - fill.fillTo.b)) / 2,
+              },
+            }
+          : {}),
       }
     case 'image':
       return {

@@ -19,6 +19,31 @@ import type {
 } from '@genoffice/pptx-render'
 import { classifyCjkScript } from '../shared/cjk-script'
 
+/**
+ * Konva container props for a placed box: rotation and flip pivot on the box CENTER
+ * (OOXML semantics — a:xfrm off is the unrotated top-left, rot/flip apply about the center).
+ * The node's reported position is the box center; model x/y = position − w/2, h/2.
+ */
+export function boxPivotProps(box: {
+  x: number
+  y: number
+  w: number
+  h: number
+  rotationDeg: number
+  flipH?: boolean
+  flipV?: boolean
+}) {
+  return {
+    x: box.x + box.w / 2,
+    y: box.y + box.h / 2,
+    offsetX: box.w / 2,
+    offsetY: box.h / 2,
+    rotation: box.rotationDeg,
+    scaleX: box.flipH ? -1 : 1,
+    scaleY: box.flipV ? -1 : 1,
+  }
+}
+
 /** Konva fill attributes (for Rect/Path/Text). */
 export interface KonvaFillProps {
   fill?: string
@@ -31,8 +56,37 @@ export interface KonvaFillProps {
   fillRadialGradientEndRadius?: number
   fillRadialGradientColorStops?: Array<number | string>
   fillPatternImage?: HTMLImageElement
+  fillPatternRepeat?: string
   fillPatternScaleX?: number
   fillPatternScaleY?: number
+  fillPatternX?: number
+  fillPatternY?: number
+}
+
+/**
+ * Shift fill coordinates for Konva shapes whose local origin is the CENTER (Ellipse):
+ * fillToKonva computes gradient points / pattern anchors in box-local top-left space,
+ * so centered shapes would otherwise show the pattern wrapping around the middle and
+ * only the first half of a gradient.
+ */
+export function centerFillProps(props: KonvaFillProps, w: number, h: number): KonvaFillProps {
+  const shift = (p: { x: number; y: number }) => ({ x: p.x - w / 2, y: p.y - h / 2 })
+  return {
+    ...props,
+    ...(props.fillLinearGradientStartPoint
+      ? { fillLinearGradientStartPoint: shift(props.fillLinearGradientStartPoint) }
+      : {}),
+    ...(props.fillLinearGradientEndPoint
+      ? { fillLinearGradientEndPoint: shift(props.fillLinearGradientEndPoint) }
+      : {}),
+    ...(props.fillRadialGradientStartPoint
+      ? { fillRadialGradientStartPoint: shift(props.fillRadialGradientStartPoint) }
+      : {}),
+    ...(props.fillRadialGradientEndPoint
+      ? { fillRadialGradientEndPoint: shift(props.fillRadialGradientEndPoint) }
+      : {}),
+    ...(props.fillPatternImage ? { fillPatternX: -w / 2, fillPatternY: -h / 2 } : {}),
+  }
 }
 
 /** Collect the image dataUrl referenced by a fill (for preloading upstream). */
@@ -51,28 +105,38 @@ export function fillToKonva(
       return { fill: normalizeColor(fill.color) }
     case 'gradient': {
       if (fill.radial) {
-        // Radial (circle/rect/shape all approximated as circular): center → covering the farthest corner
-        const cx = w / 2
-        const cy = h / 2
+        // Radial (circle/rect/shape all approximated as circular). Center follows fillToRect;
+        // the 100% ring sits well beyond the farthest corner (×1.8): PowerPoint's path-gradient
+        // falloff is much slower than a corner-normalized radial (calibrated against PPT renders).
+        const cx = (fill.center?.x ?? 0.5) * w
+        const cy = (fill.center?.y ?? 0.5) * h
+        const far = Math.max(
+          Math.hypot(cx, cy),
+          Math.hypot(w - cx, cy),
+          Math.hypot(cx, h - cy),
+          Math.hypot(w - cx, h - cy),
+        )
         return {
           fillRadialGradientStartPoint: { x: cx, y: cy },
           fillRadialGradientEndPoint: { x: cx, y: cy },
           fillRadialGradientStartRadius: 0,
-          fillRadialGradientEndRadius: Math.sqrt(cx * cx + cy * cy),
+          fillRadialGradientEndRadius: far * 1.8,
           fillRadialGradientColorStops: fill.stops.flatMap((s) => [s.pos, normalizeColor(s.color)]),
         }
       }
+      const sorted = [...fill.stops].sort((a, b) => a.pos - b.pos)
       const rad = (fill.angleDeg * Math.PI) / 180
       const dx = Math.cos(rad)
       const dy = Math.sin(rad)
-      // Project from the rectangle center to the boundary
+      // Gradient vector length = the box's projection onto the gradient direction,
+      // so the ramp spans exactly the shape (PowerPoint semantics for a:lin)
       const cx = w / 2
       const cy = h / 2
-      const half = Math.max(w, h)
+      const len = Math.abs(dx) * w + Math.abs(dy) * h
       return {
-        fillLinearGradientStartPoint: { x: cx - (dx * half) / 2, y: cy - (dy * half) / 2 },
-        fillLinearGradientEndPoint: { x: cx + (dx * half) / 2, y: cy + (dy * half) / 2 },
-        fillLinearGradientColorStops: fill.stops.flatMap((s) => [s.pos, normalizeColor(s.color)]),
+        fillLinearGradientStartPoint: { x: cx - (dx * len) / 2, y: cy - (dy * len) / 2 },
+        fillLinearGradientEndPoint: { x: cx + (dx * len) / 2, y: cy + (dy * len) / 2 },
+        fillLinearGradientColorStops: sorted.flatMap((s) => [s.pos, normalizeColor(s.color)]),
       }
     }
     case 'image': {
@@ -82,6 +146,7 @@ export function fillToKonva(
           ? { fillPatternImage: img }
           : {
               fillPatternImage: img,
+              fillPatternRepeat: 'no-repeat',
               fillPatternScaleX: w / (img.width || w),
               fillPatternScaleY: h / (img.height || h),
             }
@@ -219,6 +284,8 @@ export interface GlyphDraw {
   direction?: 'rtl'
   /** Vertical latin word: rotated 90° clockwise (x/y is the rotation anchor) */
   rotation?: number
+  /** Text highlight (<a:rPr><a:highlight>): background rect drawn behind the run, covering the line box */
+  highlight?: { x: number; y: number; w: number; h: number; color: string }
 }
 
 // Same-script fallback chains for Japanese/Korean/Traditional Chinese (win/mac family names back each other up); shared by FONT_STACK and the unknown-font fallback
@@ -352,7 +419,22 @@ export function layoutGlyphs(text: RenderTextLayout | undefined): GlyphDraw[] {
   if (!text) return []
   const out: GlyphDraw[] = []
   for (const line of text.lines) {
-    for (const run of line.runs) out.push(glyphToDraw(run))
+    for (const run of line.runs) {
+      const g = glyphToDraw(run)
+      // PowerPoint draws the highlight over the full line box (not just the glyph extent).
+      // Vertical layouts are skipped entirely: their "lines" are full columns, so the
+      // line box would paint a column-tall background.
+      if (run.highlight && !text.vert) {
+        g.highlight = {
+          x: run.x,
+          y: line.top,
+          w: run.widthPx,
+          h: line.height,
+          color: normalizeColor(run.highlight),
+        }
+      }
+      out.push(g)
+    }
   }
   return out
 }

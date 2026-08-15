@@ -269,6 +269,7 @@ Search and images:
 - **Figure provenance is enforced at the tool layer**: add_chart / edit_chart (with series) and data-dense generate_deck / regenerate_slide briefs refuse to run without a dataSource declaration; 'search' is only accepted after an actual web_search in this conversation. Fabricating precise numbers (¥21.8-style precision) and delivering them as fact is the worst failure mode — when no real data is available, use dataSource:'sample' and tell the user explicitly that the figures are illustrative.
 - image_search for images (English keywords) → get imageUrl. **Two usages**: 1) when redoing a page via regenerate_slide, pass the imageUrl in image_urls; 2) when adding an image to an existing page, use insert_web_image to insert at a position. (generate_deck searches images internally; no advance search needed for a whole new deck.)
 - Travel, product, people, and brand decks get images by default without the user asking; mind whitespace between images and text, no overlap.
+- Editing an EXISTING picture: crop_image (non-destructive srcRect), set_picture_opacity, replace_image (in-place swap keeping frame/z-order/border). For "remove this image's background / upscale / edit this image": run generate_image with referenceImageUrls pointing at a source URL you have (an image_search result or one the user provided — embedded picture bytes are not addressable by URL), then replace_image with the returned URL. Never delete+reinsert a picture to change its content — that loses z-order and effects.
 
 Style templates:
 - When the user says "use last time's style"/"use some template": first call list_style_templates() to see what exists, then pass the style_template name to generate_deck (the system skips Step 0 and uses the template's style).
@@ -505,7 +506,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'generate_image',
     description:
-      'AI image generation/editing (Genspark). Text-to-image, or pass referenceImageUrls for image editing; returns an image URL, then insert with insert_web_image. Use for custom illustrations/icons/backgrounds, style-consistent imagery, and edits like background removal/upscaling/outpainting; for real photos/screenshots still use image_search.',
+      'AI image generation/editing (Genspark). Text-to-image, or pass referenceImageUrls for image editing; returns an image URL. NEW imagery: insert with insert_web_image. Editing an EXISTING slide picture (background removal/upscaling/etc.): swap it in place with replace_image — do not insert a duplicate. Use for custom illustrations/icons/backgrounds, style-consistent imagery; for real photos/screenshots still use image_search.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -568,6 +569,52 @@ const TOOLS: AgentToolDef[] = [
         h: { type: 'number' },
       },
       required: ['slideIndex', 'url', 'x', 'y', 'w', 'h'],
+    },
+  },
+  {
+    name: 'crop_image',
+    description:
+      'Crop a picture non-destructively (srcRect): l/t/r/b are fractions (0..1) cut from each edge of the source image. The element frame stays where it is; the remaining region stretches to fill it. Pass all zeros to remove an existing crop.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'integer' },
+        sourceId: { type: 'string', description: 'Picture element id' },
+        l: { type: 'number', description: 'Fraction cut from the left edge (0..1)' },
+        t: { type: 'number', description: 'Fraction cut from the top edge (0..1)' },
+        r: { type: 'number', description: 'Fraction cut from the right edge (0..1)' },
+        b: { type: 'number', description: 'Fraction cut from the bottom edge (0..1)' },
+      },
+      required: ['slideIndex', 'sourceId', 'l', 't', 'r', 'b'],
+    },
+  },
+  {
+    name: 'set_picture_opacity',
+    description:
+      "Set a picture's whole-image opacity. opacity 0..1; 1 = fully opaque (removes the effect).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'integer' },
+        sourceId: { type: 'string', description: 'Picture element id' },
+        opacity: { type: 'number', description: '0 (invisible) .. 1 (opaque)' },
+      },
+      required: ['slideIndex', 'sourceId', 'opacity'],
+    },
+  },
+  {
+    name: 'replace_image',
+    description:
+      'Swap a picture\'s source image for a URL (from image_search or generate_image) in place — position, size, z-order, border and effects all survive. This is the tool for "change/AI-edit this image" flows: e.g. run generate_image with referenceImageUrls for background removal/upscaling/editing, then replace_image with the returned URL. keepCrop keeps the existing crop window and is only correct when the new image has the same pixel geometry as the old one (e.g. background removal output).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'integer' },
+        sourceId: { type: 'string', description: 'Picture element id' },
+        url: { type: 'string', description: 'Direct image link' },
+        keepCrop: { type: 'boolean', description: 'Keep the existing crop window (default false)' },
+      },
+      required: ['slideIndex', 'sourceId', 'url'],
     },
   },
   {
@@ -2014,7 +2061,9 @@ async function executeTool(
         items: [{ url: r.url, title: prompt.slice(0, 60) }],
       }
       return {
-        output: `Image generated, URL: ${r.url}\nInsert it into the target page with insert_web_image.`,
+        output:
+          `Image generated, URL: ${r.url}\n` +
+          'New imagery: insert it with insert_web_image. If this edits an existing slide picture (e.g. background removal), swap it in place with replace_image instead.',
         mutated: false,
         summary: t('aiSumGenImage', {
           prompt: `${prompt.slice(0, 20)}${prompt.length > 20 ? '…' : ''}`,
@@ -2067,6 +2116,94 @@ async function executeTool(
         output: `Inserted the image on page ${idx + 1}, element id=${r.sourceId}.`,
         mutated: true,
         summary: t('aiSumInsertImage', { n: idx + 1 }),
+      }
+    }
+
+    case 'crop_image':
+    case 'set_picture_opacity':
+    case 'replace_image': {
+      const idx = Number(call.input.slideIndex)
+      const sourceId = String(call.input.sourceId ?? '')
+      const failKey =
+        call.name === 'crop_image'
+          ? ('aiFailCropImage' as const)
+          : call.name === 'set_picture_opacity'
+            ? ('aiFailPictureOpacity' as const)
+            : ('aiFailReplaceImage' as const)
+      const slide = slides[idx]
+      if (!slide) return fail(t(failKey), `slideIndex out of range (0-${slides.length - 1})`)
+      const target = resolveEditTarget(slide, sourceId)
+      const terr = targetError(target, sourceId, idx + 1)
+      if (terr || !target || 'nested' in target) return fail(t(failKey), terr!)
+      if (target.node.type !== 'picture')
+        return fail(t(failKey), `Element ${sourceId} is not a picture (type: ${target.node.type})`)
+      if (target.groupId)
+        return fail(
+          t(failKey),
+          `Element ${sourceId} is inside a group; this tool only supports top-level pictures — ungroup_element first`,
+        )
+
+      if (call.name === 'crop_image') {
+        const frac = (v: unknown) => Math.min(1, Math.max(0, Number(v) || 0))
+        const cl = frac(call.input.l)
+        const ct = frac(call.input.t)
+        const cr = frac(call.input.r)
+        const cb = frac(call.input.b)
+        if (cl + cr >= 0.99 || ct + cb >= 0.99)
+          return fail(t(failKey), 'Crop removes the whole image (l+r and t+b must be < 1)')
+        const srcRect = cl || ct || cr || cb ? { l: cl, t: ct, r: cr, b: cb } : null
+        const updated = await window.slidesApi.editPictureSrcRect({
+          slideIndex: idx,
+          sourceId,
+          srcRect,
+        })
+        if (!updated) return fail(t(failKey), 'Crop failed')
+        access.applySlide(idx, updated)
+        return {
+          output: srcRect
+            ? `Cropped picture ${sourceId} on page ${idx + 1} (l=${cl} t=${ct} r=${cr} b=${cb}).`
+            : `Removed the crop of picture ${sourceId} on page ${idx + 1}.`,
+          mutated: true,
+          summary: t('aiSumCropImage', { n: idx + 1 }),
+        }
+      }
+
+      if (call.name === 'set_picture_opacity') {
+        const opacity = Number(call.input.opacity)
+        if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1)
+          return fail(t(failKey), 'opacity must be between 0 and 1')
+        const updated = await window.slidesApi.editPictureOpacity({
+          slideIndex: idx,
+          sourceId,
+          opacity,
+        })
+        if (!updated) return fail(t(failKey), 'Opacity change failed')
+        access.applySlide(idx, updated)
+        return {
+          output: `Set the opacity of picture ${sourceId} on page ${idx + 1} to ${opacity}.`,
+          mutated: true,
+          summary: t('aiSumPictureOpacity', { n: idx + 1 }),
+        }
+      }
+
+      const url = String(call.input.url ?? '')
+      if (!/^https?:\/\//.test(url)) return fail(t(failKey), 'Invalid url')
+      const updated = await window.slidesApi.replacePictureUrl({
+        slideIndex: idx,
+        sourceId,
+        url,
+        ...(call.input.keepCrop ? { keepSrcRect: true } : {}),
+      })
+      if (!updated)
+        return fail(
+          t(failKey),
+          'Replacement failed (the image may be inaccessible, or the element is not a replaceable picture)',
+        )
+      access.applySlide(idx, updated)
+      return {
+        output: `Replaced the image of picture ${sourceId} on page ${idx + 1} in place (frame/z-order/effects kept).`,
+        mutated: true,
+        summary: t('aiSumReplaceImage', { n: idx + 1 }),
       }
     }
 

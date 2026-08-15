@@ -50,8 +50,14 @@ export type CtxMenuState =
 
 export interface CropTargetState {
   sourceId: string
+  /** Current (possibly cropped) on-screen box */
   box: { x: number; y: number; w: number; h: number }
   srcRect?: { l: number; t: number; r: number; b: number }
+  /** Full original-image extent derived from box + srcRect: the crop frame may
+   * expand back out to this box, restoring toward the uncropped original */
+  fullBox: { x: number; y: number; w: number; h: number }
+  /** Source bitmap for the ghost preview of the original beyond the crop */
+  dataUrl?: string
 }
 
 export interface CutoutTargetState {

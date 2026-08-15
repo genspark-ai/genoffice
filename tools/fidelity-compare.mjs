@@ -1,17 +1,18 @@
 /**
  * pptx rendering fidelity comparison pipeline.
  *
- * Reference side: LibreOffice headless export to PDF → pdftoppm PNG per page (96dpi, 16:9 → 1280×720).
- *   (AppleScript batch export in the new PowerPoint for Mac is broken; LibreOffice serves as
- *   the automatable reference renderer, with PowerPoint used for manual spot checks.)
+ * Reference side: LibreOffice headless (default) or PowerPoint for Mac (--ref powerpoint)
+ *   export to PDF → pdftoppm PNG per page (96dpi, 16:9 → 1280×720).
+ *   (PowerPoint AppleScript needs its first-run screens clicked through once per machine;
+ *   before that the process starts windowless and every apple event times out.)
  * Our side: playwright drives the packaged GenOffice Slides (Electron) with zoom locked at 100%,
  *   clicks through the thumbnails page by page, and screenshots the canvas element .stage-rel.
  * Compare: pixelmatch per-pixel diff (bilinear-scaled to the same size first), emitting a side-by-side HTML report.
  *
- * Usage: node tools/fidelity-compare.mjs <a.pptx> [b.pptx …] [--max-slides N] [--out DIR]
+ * Usage: node tools/fidelity-compare.mjs <a.pptx> [b.pptx …] [--max-slides N] [--out DIR] [--ref powerpoint]
  * Prereq: npm run build -w @genoffice/slides; brew: libreoffice + poppler (pdftoppm).
  */
-/* global document, MouseEvent -- used inside page.evaluate() browser context */
+/* global document, window, MouseEvent -- used inside page.evaluate() browser context */
 import { _electron as electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
@@ -30,9 +31,15 @@ const args = process.argv.slice(2)
 const files = []
 let maxSlides = 12
 let outDir = '/tmp/fidelity/run'
+let refKind = 'libreoffice'
+let refCache = null
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--max-slides') maxSlides = parseInt(args[++i], 10)
   else if (args[i] === '--out') outDir = args[++i]
+  else if (args[i] === '--ref')
+    refKind = args[++i] // libreoffice | powerpoint
+  else if (args[i] === '--ref-cache')
+    refCache = path.resolve(args[++i]) // previous run's outDir: reuse <cache>/<deck>/ref instead of re-exporting
   else files.push(path.resolve(args[i]))
 }
 if (!files.length) {
@@ -44,16 +51,50 @@ fs.mkdirSync(outDir, { recursive: true })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/**
+ * Thumbnail indexes of visible slides, in presentation order. LibreOffice/PowerPoint skip
+ * hidden slides (show="0") when exporting PDF, so the reference page k maps to thumbnail
+ * visibleSlideIndexes(pptx)[k], not k.
+ */
+function visibleSlideIndexes(pptx) {
+  const read = (entry) =>
+    execFileSync('unzip', ['-p', pptx, entry], { maxBuffer: 64 * 1024 * 1024 }).toString('utf8')
+  const rels = read('ppt/_rels/presentation.xml.rels')
+  const relMap = {}
+  for (const tag of rels.match(/<Relationship\b[^>]*>/g) ?? []) {
+    const id = tag.match(/ Id="([^"]+)"/)?.[1]
+    const target = tag.match(/ Target="([^"]+)"/)?.[1]
+    if (id && target) relMap[id] = target
+  }
+  const pres = read('ppt/presentation.xml')
+  const sldIds = [...pres.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((m) => m[1])
+  const visible = []
+  sldIds.forEach((rid, i) => {
+    const target = relMap[rid]?.replace(/^\/?(ppt\/)?/, 'ppt/')
+    if (!target) return
+    const hidden = /<p:sld\b[^>]*\bshow="0"/.test(read(target).slice(0, 4096))
+    if (!hidden) visible.push(i)
+  })
+  return { visible, total: sldIds.length }
+}
+
 /** LibreOffice → PDF → PNG per page; returns the array of png paths. */
 function exportRef(pptx, dir) {
   fs.mkdirSync(dir, { recursive: true })
-  execFileSync('soffice', ['--headless', '--convert-to', 'pdf', '--outdir', dir, pptx], {
+  if (refKind === 'powerpoint') {
+    exportPdfViaPowerPoint(pptx, path.join(dir, 'ref.pdf'))
+  } else {
+    execFileSync('soffice', ['--headless', '--convert-to', 'pdf', '--outdir', dir, pptx], {
+      stdio: 'pipe',
+      timeout: 120_000,
+    })
+    const pdf = path.join(dir, path.basename(pptx).replace(/\.pptx$/i, '.pdf'))
+    if (!fs.existsSync(pdf)) throw new Error('soffice produced no pdf: ' + pdf)
+    fs.renameSync(pdf, path.join(dir, 'ref.pdf'))
+  }
+  execFileSync('pdftoppm', ['-png', '-r', '96', path.join(dir, 'ref.pdf'), path.join(dir, 'ref')], {
     stdio: 'pipe',
-    timeout: 120_000,
   })
-  const pdf = path.join(dir, path.basename(pptx).replace(/\.pptx$/i, '.pdf'))
-  if (!fs.existsSync(pdf)) throw new Error('soffice produced no pdf: ' + pdf)
-  execFileSync('pdftoppm', ['-png', '-r', '96', pdf, path.join(dir, 'ref')], { stdio: 'pipe' })
   return fs
     .readdirSync(dir)
     .filter((f) => /^ref-\d+\.png$/.test(f))
@@ -62,10 +103,49 @@ function exportRef(pptx, dir) {
 }
 
 /**
+ * PowerPoint for Mac → PDF via AppleScript. The file is copied into PowerPoint's sandbox
+ * container so neither open nor save trips a TCC consent prompt. A modal dialog (e.g. repair
+ * prompt on a corrupt deck) would hang osascript forever, so on timeout PowerPoint is killed
+ * to unblock the remaining decks.
+ */
+function exportPdfViaPowerPoint(pptx, outPdf) {
+  const box = path.join(
+    process.env.HOME,
+    'Library/Containers/com.microsoft.Powerpoint/Data/fidelity-tmp',
+  )
+  fs.mkdirSync(box, { recursive: true })
+  const src = path.join(box, 'in.pptx')
+  const pdf = path.join(box, 'out.pdf')
+  fs.copyFileSync(pptx, src)
+  fs.rmSync(pdf, { force: true })
+  const script = `
+    tell application "Microsoft PowerPoint"
+      open (POSIX file "${src}")
+      set p to active presentation
+      save p in (POSIX file "${pdf}") as save as PDF
+      close p saving no
+    end tell`
+  try {
+    execFileSync('osascript', ['-e', script], { stdio: 'pipe', timeout: 120_000 })
+  } catch (e) {
+    try {
+      execFileSync('pkill', ['-x', 'Microsoft PowerPoint'], { stdio: 'ignore' })
+    } catch {
+      /* no process to kill */
+    }
+    throw new Error('PowerPoint export failed: ' + (e.message ?? e), { cause: e })
+  } finally {
+    fs.rmSync(src, { force: true })
+  }
+  if (!fs.existsSync(pdf)) throw new Error('PowerPoint produced no pdf')
+  fs.renameSync(pdf, outPdf)
+}
+
+/**
  * Opens GenOffice Slides and, page by page, composites the main canvas's Konva layers into a PNG
  * (in-page toDataURL, unaffected by window size/zoom/DPR; output = slide logical pixels 1280×720).
  */
-async function shootOurs(pptx, dir, nSlides) {
+async function shootOurs(pptx, dir, thumbIndexes) {
   fs.mkdirSync(dir, { recursive: true })
   const app = await electron.launch({
     executablePath: ELECTRON_BIN,
@@ -82,12 +162,19 @@ async function shootOurs(pptx, dir, nSlides) {
       await sleep(500)
     }
     const total = await page.evaluate(() => document.querySelectorAll('.thumb').length)
+    // Hide the "Click to add title" placeholder hints; the event re-renders the canvas
+    // even on single-slide decks where no slide switch follows.
+    await page.evaluate(() => {
+      window.__genofficeHidePhPrompts = true
+      window.dispatchEvent(new Event('genoffice:hide-ph-prompts'))
+    })
+    await sleep(300)
     const shots = []
-    for (let i = 0; i < Math.min(total, nSlides); i++) {
-      await page.evaluate((idx) => {
+    for (const idx of thumbIndexes.filter((i) => i < total)) {
+      await page.evaluate((i) => {
         const thumbs = document.querySelectorAll('.thumb')
-        thumbs[idx]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      }, i)
+        thumbs[i]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      }, idx)
       await sleep(600) // wait for image decode / repaint
       const dataUrl = await page.evaluate(() => {
         const stage = document.querySelector('.stage-rel')
@@ -102,11 +189,24 @@ async function shootOurs(pptx, dir, nSlides) {
         const ctx = out.getContext('2d')
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, w, h)
-        for (const c of canvases) ctx.drawImage(c, 0, 0, w, h)
+        // Each canvas is larger than the slide (CANVAS_BLEED ring for the page shadow) and
+        // CSS-transformed by zoom; place it by its on-screen box mapped into slide-logical
+        // coordinates so the output is exactly the slide rect at widthPx × heightPx.
+        const sr = stage.getBoundingClientRect()
+        for (const c of canvases) {
+          const r = c.getBoundingClientRect()
+          ctx.drawImage(
+            c,
+            ((r.left - sr.left) * w) / sr.width,
+            ((r.top - sr.top) * h) / sr.height,
+            (r.width * w) / sr.width,
+            (r.height * h) / sr.height,
+          )
+        }
         return out.toDataURL('image/png')
       })
-      if (!dataUrl) throw new Error('canvas compositing failed (slide ' + (i + 1) + ')')
-      const f = path.join(dir, `ours-${i + 1}.png`)
+      if (!dataUrl) throw new Error('canvas compositing failed (thumb ' + (idx + 1) + ')')
+      const f = path.join(dir, `ours-${shots.length + 1}.png`)
       fs.writeFileSync(f, Buffer.from(dataUrl.split(',')[1], 'base64'))
       shots.push(f)
     }
@@ -160,13 +260,42 @@ for (const pptx of files) {
   console.log(`\n=== ${name} ===`)
   let refs
   try {
-    refs = exportRef(pptx, path.join(deckDir, 'ref'))
+    const cached = refCache && path.join(refCache, name, 'ref')
+    if (
+      cached &&
+      fs.existsSync(cached) &&
+      fs.readdirSync(cached).some((f) => /^ref-\d+\.png$/.test(f))
+    ) {
+      fs.cpSync(cached, path.join(deckDir, 'ref'), { recursive: true })
+      refs = fs
+        .readdirSync(path.join(deckDir, 'ref'))
+        .filter((f) => /^ref-\d+\.png$/.test(f))
+        .sort((a, b) => parseInt(a.match(/\d+/)[0], 10) - parseInt(b.match(/\d+/)[0], 10))
+        .map((f) => path.join(deckDir, 'ref', f))
+      console.log(`  reusing ${refs.length} cached reference page(s)`)
+    } else {
+      refs = exportRef(pptx, path.join(deckDir, 'ref'))
+    }
   } catch (e) {
     console.error('reference export failed:', e.message)
     continue
   }
-  const n = Math.min(refs.length, maxSlides)
-  const ours = await shootOurs(pptx, path.join(deckDir, 'ours'), n)
+  let visible
+  try {
+    const scan = visibleSlideIndexes(pptx)
+    // LibreOffice omits hidden slides from the PDF; PowerPoint may include them. Trust the
+    // page count: a full-length PDF means no mapping is needed.
+    visible = refs.length >= scan.total ? refs.map((_, i) => i) : scan.visible
+    if (visible.length < scan.total)
+      console.log(
+        `  ${scan.total - visible.length} hidden slide(s) skipped to match the PDF export`,
+      )
+  } catch (e) {
+    console.error('  visible-slide scan failed, assuming none hidden:', e.message)
+    visible = refs.map((_, i) => i)
+  }
+  const n = Math.min(refs.length, visible.length, maxSlides)
+  const ours = await shootOurs(pptx, path.join(deckDir, 'ours'), visible.slice(0, n))
   for (let i = 0; i < Math.min(n, ours.length); i++) {
     const diffPath = path.join(deckDir, `diff-${i + 1}.png`)
     const pct = diffPair(refs[i], ours[i], diffPath)
@@ -182,7 +311,7 @@ const html = `<!doctype html><meta charset="utf-8"><title>pptx fidelity comparis
 h2{margin:24px 0 8px}table{border-collapse:collapse}td{padding:4px;vertical-align:top;text-align:center}
 img{width:420px;border:1px solid #ccc;background:#fff}
 .pct{font-weight:600}.bad{color:#c00}.ok{color:#080}</style>
-<h1>pptx fidelity comparison (reference: LibreOffice)</h1>
+<h1>pptx fidelity comparison (reference: ${refKind})</h1>
 ${rows
   .map(
     (r) => `

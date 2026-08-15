@@ -25,7 +25,9 @@ function fmtPdfDate(raw?: string): string {
 }
 
 const fmtSize = (bytes: number): string =>
-  bytes >= 1 << 20 ? `${(bytes / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+  bytes >= 1 << 20
+    ? `${(bytes / (1 << 20)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`
 
 /** Document properties: first four fields are editable and become unsaved changes; the rest are read-only */
 export function PropertiesDialog({
@@ -86,7 +88,7 @@ export function PropertiesDialog({
   const row = (label: string, value: string): ReactElement => (
     <div className="pdf-prop-row">
       <span>{label}</span>
-      <em title={value}>{value || '—'}</em>
+      <em data-tip={value}>{value || '—'}</em>
     </div>
   )
 

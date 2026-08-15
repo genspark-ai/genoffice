@@ -62,7 +62,7 @@ export function LinkLayer({
           className="pdf-link"
           style={pdfRectToCss(geom, l.rect, scale)}
           href={l.url ?? '#'}
-          title={l.url}
+          data-tip={l.url}
           target={l.url ? '_blank' : undefined}
           rel="noreferrer"
           onClick={(e) => {

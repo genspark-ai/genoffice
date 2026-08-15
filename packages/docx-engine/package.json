@@ -6,7 +6,8 @@
   "type": "module",
   "description": "docx parsing (Block tree with docxIndex anchors), OOXML fragment generation, paragraph-patch save",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./math": "./src/math.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -16,7 +17,8 @@
   },
   "dependencies": {
     "fast-xml-parser": "^5.3.4",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "utif2": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

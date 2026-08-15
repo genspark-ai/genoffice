@@ -59,6 +59,7 @@ import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
+import { showToast } from './components/toast-bus'
 
 /** The App state the file actions need; built fresh per call. */
 export interface FileActionContext {
@@ -68,6 +69,9 @@ export interface FileActionContext {
   saveInFlightRef: { current: boolean }
   saveIncompleteRef: { current: boolean }
   pendingMixedExportRef: { current: boolean | string }
+  /** the print dialog auto-opened the pagination preview: closing the dialog closes it again */
+  printAutoOpenedPreviewRef: { current: boolean }
+  setShowPrintDialog: (show: boolean) => void
   setStatus: (status: string) => void
   setRecent: (paths: string[]) => void
   setShowAi: (show: boolean) => void
@@ -181,7 +185,7 @@ export async function loadFile(
   try {
     const parsed = await parseDocx(new Uint8Array(result.data))
     ctx.editor.storage.listNumbering.defs = parsed.numbering
-    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: result.path, fileName: result.name, hash: result.hash })
@@ -193,8 +197,12 @@ export async function loadFile(
     ctx.setPageColor(readPageColor(parsed))
     ctx.setPageColorDirty(false)
     ctx.setHeader(
-      parsed.headerText || parsed.headerParas?.length
-        ? { text: parsed.headerText ?? '', paras: parsed.headerParas ?? undefined }
+      parsed.headerText || parsed.headerHasPageNumber || parsed.headerParas?.length
+        ? {
+            text: parsed.headerText ?? '',
+            pageNumber: parsed.headerHasPageNumber,
+            paras: parsed.headerParas ?? undefined,
+          }
         : null,
     )
     ctx.setHeaderDirty(false)
@@ -265,7 +273,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const bytes = await buildBlankDocx({ eastAsiaFont: defaultEastAsiaFontFor(getLang()) })
     const parsed = await parseDocx(bytes)
     ctx.editor.storage.listNumbering.defs = parsed.numbering
-    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: null, fileName: t('appUntitledDocx'), hash: '', isBlank: true })
@@ -556,7 +564,10 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
         ? await window.desktop.saveDocxAs(autoName ?? doc.fileName, buffer)
         : await window.desktop.saveDocxNew(autoName ?? doc.fileName, buffer)
       if (!result.ok) {
-        if (result.error) ctx.setStatus(t('appSaveFailed', { error: result.error }))
+        if (result.error) {
+          ctx.setStatus(t('appSaveFailed', { error: result.error }))
+          if (!auto) showToast(t('appSaveFailed', { error: result.error }), 'error')
+        }
         return false
       }
       savedPath = result.path!
@@ -568,6 +579,7 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
         // deferred to a manual save) — stay dirty, no second dialog/error banner
         if (result.reason !== 'external-modified') {
           ctx.setStatus(t('appSaveFailed', { error: result.error ?? '' }))
+          if (!auto) showToast(t('appSaveFailed', { error: result.error ?? '' }), 'error')
         }
         return false
       }
@@ -590,12 +602,15 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
       ctx.setStatus(
         auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
       )
+      // No success toast: the doc is still dirty (edits raced the save), and the
+      // close-guard's saveUntilPersisted retries would repeat it on every pass —
+      // the converging complete save below toasts once.
       return true
     }
     // Reload from saved bytes so docxIndex anchors point at the new file.
     const reparsed = await parseDocx(bytes)
     editor.storage.listNumbering.defs = reparsed.numbering
-    const rebasedPm = blocksToPmDoc(reparsed.blocks)
+    const rebasedPm = blocksToPmDoc(reparsed.blocks, readSections(reparsed))
     let unchanged = false
     try {
       unchanged = editor.state.doc.eq(editor.schema.nodeFromJSON(rebasedPm))
@@ -631,8 +646,12 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
     ctx.setPageColor(readPageColor(reparsed))
     ctx.setPageColorDirty(false)
     ctx.setHeader(
-      reparsed.headerText || reparsed.headerParas?.length
-        ? { text: reparsed.headerText ?? '', paras: reparsed.headerParas ?? undefined }
+      reparsed.headerText || reparsed.headerHasPageNumber || reparsed.headerParas?.length
+        ? {
+            text: reparsed.headerText ?? '',
+            pageNumber: reparsed.headerHasPageNumber,
+            paras: reparsed.headerParas ?? undefined,
+          }
         : null,
     )
     ctx.setHeaderDirty(false)
@@ -678,13 +697,31 @@ async function saveOnce(ctx: FileActionContext, saveAs: boolean, auto: boolean):
     ctx.setStatus(
       auto ? t('appAutoSavedAt', { time: new Date().toLocaleTimeString() }) : t('appSaved'),
     )
+    if (!auto) showToast(t('appSaved'))
     return true
   } catch (err) {
     ctx.setStatus(t('appSaveFailed', { error: String(err) }))
+    if (!auto) showToast(t('appSaveFailed', { error: String(err) }), 'error')
     return false
   } finally {
     ctx.saveInFlightRef.current = false
   }
+}
+
+/**
+ * Print via the pagination preview so each printed sheet is exactly one editor page
+ * (WYSIWYG). Printing the continuous canvas instead would let Chromium auto-paginate:
+ * middle pages lose the per-page top/bottom margins and the breaks drift from the
+ * editor. Opens the Word-style print dialog (preview + range); the pagination
+ * preview is mounted (visually hidden behind the dialog) as its print source.
+ */
+export function printDoc(ctx: FileActionContext): void {
+  if (!ctx.doc) return
+  if (!document.querySelector('.pagination-preview')) {
+    ctx.printAutoOpenedPreviewRef.current = true
+    ctx.setShowPagePreview(true)
+  }
+  ctx.setShowPrintDialog(true)
 }
 
 export async function exportPdf(ctx: FileActionContext, outPath?: string): Promise<void> {
@@ -705,6 +742,21 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
       if (last && last.w === w && last.h === h) last.to = i
       else groups.push({ w, h, from: i, to: i })
     })
+    // Chromium's printToPDF can non-deterministically paint later pages blank
+    // when one job carries hundreds of heavy pages (large table clones on
+    // 100+-page forms). Chunk long documents through the group-merge path so
+    // each print job stays small.
+    const PRINT_CHUNK = 40
+    if (pvPages.length > 60) {
+      const chunked: typeof groups = []
+      for (const g of groups) {
+        for (let s = g.from; s <= g.to; s += PRINT_CHUNK) {
+          chunked.push({ w: g.w, h: g.h, from: s, to: Math.min(s + PRINT_CHUNK - 1, g.to) })
+        }
+      }
+      groups.length = 0
+      groups.push(...chunked)
+    }
     if (groups.length > 1) {
       const parts: string[] = []
       try {

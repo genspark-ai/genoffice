@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { parseDocx, saveDocx, type SaveBlock } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const STYLED_TABLE_XML =
@@ -42,7 +42,12 @@ describe('table display model', () => {
 
     const header = table.rows[0]
     expect(header.map((c) => c.paras[0])).toEqual(['排名', '品牌', '份额'])
-    expect(header[0]).toMatchObject({ fill: '1F3864', color: 'FFFFFF', bold: true, align: 'center' })
+    expect(header[0]).toMatchObject({
+      fill: '1F3864',
+      color: 'FFFFFF',
+      bold: true,
+      align: 'center',
+    })
 
     const dataRow = table.rows[1]
     expect(dataRow[1].colSpan).toBe(2)
@@ -141,5 +146,127 @@ describe('table display model', () => {
     expect(table.borders?.top).toMatchObject({ style: 'single', szEighths: 16, color: '00FF00' })
     expect(table.borders?.insideH).toMatchObject({ style: 'dashed' })
     expect(table.cellMarTwips).toEqual({ left: 200, right: 200 })
+  })
+})
+
+describe('cell alignment aggregation and trailing empty paragraphs', () => {
+  it('sets cell.align only when every text paragraph declares the same jc', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>' +
+      // centered title + jc-less body: a td-level center would leak onto the body
+      '<w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>标题</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:t>要点</w:t></w:r></w:p></w:tc>' +
+      // all text paragraphs agree (the empty one does not vote)
+      '<w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>甲</w:t></w:r></w:p>' +
+      '<w:p/>' +
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>乙</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const [mixed, agreed] = doc.blocks[0].table!.rows[0]
+    expect(mixed.align).toBeUndefined()
+    expect(agreed.align).toBe('center')
+  })
+
+  it('keeps trailing empty cell paragraphs and their empty-run size', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>内容</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>' +
+      '</w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    expect(cell.paras).toEqual(['内容', ''])
+    expect(cell.richParas?.[1].emptyRunSizeHalfPoints).toBe(2)
+    expect(cell.richParas?.[1].runs).toEqual([])
+  })
+})
+
+describe('fixed-layout grid vs tcW arbitration', () => {
+  const fixedTable = (tblLayout: string) =>
+    `<w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0"/>${tblLayout}<w:tblInd w:w="1450" w:type="dxa"/></w:tblPr>` +
+    '<w:tblGrid><w:gridCol w:w="6120"/><w:gridCol w:w="6120"/></w:tblGrid>' +
+    '<w:tr>' +
+    '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4680"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+    '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4680"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc>' +
+    '</w:tr></w:tbl>'
+
+  it('fixed layout takes tcW even when the grid has the same ratio (stale wider grid)', async () => {
+    // regression sample 30: grid 12240 total pushed the table + 1450 indent off paper,
+    // Word lays the same table out from the 9360-total first-row tcW
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: fixedTable('<w:tblLayout w:type="fixed"/>') }),
+    )
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
+  })
+
+  it('auto layout keeps the grid when only the absolute sums differ', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: fixedTable('') }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([6120, 6120])
+  })
+
+  it('garbage over-wide grid widths stay raw in the model (clamping is render-side only)', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="1871"/><w:gridCol w:w="130618601"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([1871, 130618601])
+  })
+
+  it('tcW column widths take the max across rows, not the first row (Word widens to fit)', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="5000"/><w:gridCol w:w="5000"/></w:tblGrid>' +
+      '<w:tr>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="2000"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="6000"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc>' +
+      '</w:tr><w:tr>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4000"/></w:tcPr><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="6000"/></w:tcPr><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4000, 6000])
+  })
+
+  it('tcW preference never touches saved bytes: roundtrip keeps the original tblGrid', async () => {
+    const bytes = await buildDocx({ bodyXml: fixedTable('<w:tblLayout w:type="fixed"/>') })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((b) => !b.hidden)
+        .map((b): SaveBlock => ({ kind: 'original', docxIndex: b.docxIndex! })),
+    )
+    expect(saved).toBe(bytes)
+    expect(doc.blocks[0].originalXml).toContain(
+      '<w:tblGrid><w:gridCol w:w="6120"/><w:gridCol w:w="6120"/></w:tblGrid>',
+    )
+  })
+})
+
+describe('duplicated border containers merge per side, later wins', () => {
+  it('a second w:tcBorders overrides the sides of an all-nil first one', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr>' +
+      '<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>' +
+      '<w:tcBorders><w:bottom w:val="single" w:sz="4" w:color="000000"/></w:tcBorders>' +
+      '</w:tcPr><w:p><w:r><w:t>签名</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    expect(cell.borders?.bottom).toEqual({ style: 'single', szEighths: 4, color: '000000' })
+    expect(cell.borders?.top).toEqual({ style: 'nil' })
+  })
+
+  it('a second w:tblBorders overrides the sides of the first one', async () => {
+    const xml =
+      '<w:tbl><w:tblPr>' +
+      '<w:tblBorders><w:top w:val="nil"/><w:bottom w:val="nil"/></w:tblBorders>' +
+      '<w:tblBorders><w:bottom w:val="single" w:sz="8"/></w:tblBorders>' +
+      '</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const borders = doc.blocks[0].table!.borders
+    expect(borders?.bottom).toEqual({ style: 'single', szEighths: 8 })
+    expect(borders?.top).toEqual({ style: 'nil' })
   })
 })

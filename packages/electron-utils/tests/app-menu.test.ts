@@ -1,4 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const electronMock = vi.hoisted(() => ({
+  getFocusedWebContents: vi.fn(),
+}))
+
+vi.mock('electron', () => ({
+  webContents: {
+    getFocusedWebContents: electronMock.getFocusedWebContents,
+  },
+}))
 
 import {
   appMenuLabels,
@@ -34,6 +44,10 @@ const en = appMenuLabels('en')
 
 type Item = { role?: string; type?: string; label?: string; accelerator?: string }
 const submenuOf = (tpl: { submenu?: unknown }): Item[] => tpl.submenu as Item[]
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('appMenuLabels', () => {
   it('covers all 19 languages with every key non-empty', () => {
@@ -108,10 +122,10 @@ describe('viewMenuTemplate', () => {
   it('mirrors the viewMenu role expansion with labeled roles', () => {
     const tpl = viewMenuTemplate(en)
     expect(tpl.label).toBe('View')
-    expect(submenuOf(tpl).map((i) => i.role ?? i.type)).toEqual([
+    expect(submenuOf(tpl).map((i) => i.role ?? i.type ?? i.label)).toEqual([
       'reload',
       'forceReload',
-      'toggleDevTools',
+      'Developer Tools',
       'separator',
       'resetZoom',
       'zoomIn',
@@ -120,5 +134,32 @@ describe('viewMenuTemplate', () => {
       'togglefullscreen',
     ])
     for (const item of submenuOf(tpl)) if (item.role) expect(item.label).toBeTruthy()
+  })
+
+  it('opens DevTools via an explicit click item, not the docking role', () => {
+    const item = submenuOf(viewMenuTemplate(en))[2] as Item & { click?: unknown }
+    expect(item.role).toBeUndefined()
+    expect(typeof item.click).toBe('function')
+    expect(item.accelerator).toBe(process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I')
+  })
+
+  it('closes detached DevTools when they have focus', async () => {
+    const target = {
+      devToolsWebContents: {},
+      isDestroyed: vi.fn(() => false),
+      isDevToolsOpened: vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn(),
+    }
+    electronMock.getFocusedWebContents.mockReturnValueOnce(target).mockReturnValueOnce(null)
+    const item = submenuOf(viewMenuTemplate(en))[2] as Item & {
+      click: () => Promise<void>
+    }
+
+    await item.click()
+    await item.click()
+
+    expect(target.openDevTools).toHaveBeenCalledWith({ mode: 'detach' })
+    expect(target.closeDevTools).toHaveBeenCalledOnce()
   })
 })

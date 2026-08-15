@@ -4,7 +4,7 @@
 
 `{op:"add_shape", sheetId, shapeType, anchorCell:"E2", fillColor?, text?}`
 
-- shapeType: "rect" | "roundRect" | "ellipse" | "triangle" | "diamond" | "rightArrow" | "leftArrow" | "pentagon" | "hexagon" | "textbox"
+- shapeType: any OOXML prstGeom name from the insert gallery — rectangles ("rect", "roundRect", snip/round corner variants), basic shapes ("ellipse", "triangle", "diamond", "hexagon", "heart", "cloud", "donut", "smileyFace", …), block arrows ("rightArrow", "quadArrow", "chevron", …), stars/banners ("star5", "star12", "ribbon", "wave", …), flowchart nodes ("flowChartProcess", "flowChartDecision", "flowChartDocument", …), callouts ("wedgeRectCallout", "cloudCallout", …), or "textbox"
 - textbox defaults to a white background with "Text"; other shapes default to a light-blue fill. text can carry the annotation directly.
 - Layout-class: can share a batch with content/format, not with structural operations; only works on imported xlsx, written with ⌘S.
 
@@ -25,7 +25,12 @@ No chart object needed — draw a mini trend chart inside a cell with a formula:
 Great for a "Trend" column at the end of each summary row — the trend is visible at a glance and is lighter than inserting many charts.
 
 ```json
-{"op":"set_formula","sheetId":"s1","address":"N2","formula":"=SPARKLINE(B2:M2,{\"charttype\",\"column\"})"}
+{
+  "op": "set_formula",
+  "sheetId": "s1",
+  "address": "N2",
+  "formula": "=SPARKLINE(B2:M2,{\"charttype\",\"column\"})"
+}
 ```
 
 ## In-cell images / links (supported)

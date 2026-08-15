@@ -43,16 +43,22 @@ import {
   addWorksheetRelationship,
   applySheetPlanToWorkbookXml,
   assertNoSheetScopedDefinedNames,
-  assertSheetRelsRemovable,
   buildWorksheetPartXml,
   chartReferencesSheet,
+  classifyRemovedSheetRels,
   definedNamesReferenceSheet,
+  definedNamesUseToken,
   maxRelationshipId,
   maxSheetIdInWorkbook,
+  parseRelationships,
   parseSheetElements,
+  partPathForRels,
+  pivotCacheReadsFromSheet,
   prepareClonedSheetRels,
+  removePartOverride,
   removeRelationshipById,
-  removeWorksheetOverride,
+  tableDisplayName,
+  renameSheetInPivotCacheSource,
   renameSheetReferencesInChart,
   renameSheetReferencesInDefinedNames,
   renameSheetReferencesInWorksheet,
@@ -584,29 +590,6 @@ export async function planCellEditsToXlsx(
   sparklineAdditions: readonly SheetSparklineAddition[] = [],
   formulaValues: readonly SheetFormulaValues[] = [],
 ): Promise<MutationPlan> {
-  if (
-    edits.length === 0 &&
-    structuralOps.length === 0 &&
-    chartEdits.length === 0 &&
-    sheetPlan === undefined &&
-    filterStates.length === 0 &&
-    hyperlinkEdits.length === 0 &&
-    cfStates.length === 0 &&
-    dvStates.length === 0 &&
-    sheetProtections.length === 0 &&
-    definedNamesState === null &&
-    visualAdditions.length === 0 &&
-    pageSetupStates.length === 0 &&
-    noteStates.length === 0 &&
-    tableAdditions.length === 0 &&
-    pivotAdditions.length === 0 &&
-    pivotCacheRefreshPaths.length === 0 &&
-    pivotRefreshUpdates.length === 0 &&
-    visualEdits.length === 0 &&
-    sparklineAdditions.length === 0
-  ) {
-    throw new Error('There are no edits to save.')
-  }
   // A pending pivot pins final coordinates for its source and output; shifts
   // on either sheet, and sheet renames (worksheetSource@sheet), would desync
   // the recorded ranges. Fail closed, mirroring the table-add guard.
@@ -1188,6 +1171,71 @@ async function applySheetPlanToPackage(
   const chartPaths = packagePaths.filter(
     (path) => path.startsWith('xl/charts/') && path.endsWith('.xml'),
   )
+  const pivotCacheDefinitionPaths = packagePaths.filter((path) =>
+    /^xl\/pivotCache\/pivotCacheDefinition[^/]*\.xml$/.test(path),
+  )
+
+  // Satellite parts owned by the removed sheets — drawings with their images
+  // and charts, legacy VML, comments, tables — die with the sheet. The
+  // closure walks each owned part's own relationships; unsupported sheet
+  // relationships (pivot tables, slicers) fail closed inside
+  // classifyRemovedSheetRels.
+  const removalRelsPaths = new Map<string, string>()
+  const ownedPartsByRemoval = new Map<string, ReadonlySet<string>>()
+  const removedOwnedParts = new Set<string>()
+  for (const removal of plan.removals) {
+    const removalPath = removalPaths.get(removal) ?? ''
+    const relsPath = relsPathFor(removalPath)
+    removalRelsPaths.set(removal, relsPath)
+    const owned = new Set<string>()
+    if (await pkg.has(relsPath)) {
+      const targets = classifyRemovedSheetRels(await pkg.readText(relsPath), removal)
+      const queue = targets.map((target) => resolveRelTarget(removalPath, target))
+      while (queue.length > 0) {
+        const part = queue.pop() as string
+        if (owned.has(part) || !(await pkg.has(part))) continue
+        owned.add(part)
+        const childRelsPath = relsPathFor(part)
+        if (!(await pkg.has(childRelsPath))) continue
+        owned.add(childRelsPath)
+        for (const entry of parseRelationships(await pkg.readText(childRelsPath))) {
+          if (!entry.external) queue.push(resolveRelTarget(part, entry.target))
+        }
+      }
+    }
+    ownedPartsByRemoval.set(removal, owned)
+    for (const part of owned) removedOwnedParts.add(part)
+  }
+
+  // A part in the closure may also be referenced from a part that survives —
+  // an image placed on two sheets shares one xl/media entry. Walk every
+  // surviving rels part and pull such targets (with their own subtrees) back
+  // out of the removal set.
+  const dyingRelsParts = new Set([
+    ...removalRelsPaths.values(),
+    ...[...removedOwnedParts].filter((part) => part.endsWith('.rels')),
+  ])
+  const keepQueue: string[] = []
+  for (const relsPath of packagePaths) {
+    if (!relsPath.endsWith('.rels') || dyingRelsParts.has(relsPath)) continue
+    const owner = partPathForRels(relsPath)
+    if (removedPathSet.has(owner)) continue
+    for (const entry of parseRelationships(await pkg.readText(relsPath))) {
+      if (entry.external) continue
+      const target = resolveRelTarget(owner, entry.target)
+      if (removedOwnedParts.has(target)) keepQueue.push(target)
+    }
+  }
+  while (keepQueue.length > 0) {
+    const part = keepQueue.pop() as string
+    if (!removedOwnedParts.delete(part)) continue
+    const childRelsPath = relsPathFor(part)
+    if (removedOwnedParts.delete(childRelsPath)) {
+      for (const entry of parseRelationships(await pkg.readText(childRelsPath))) {
+        if (!entry.external) keepQueue.push(resolveRelTarget(part, entry.target))
+      }
+    }
+  }
 
   // Removals fail closed while every reference to the sheet is still intact.
   const removedLocalIds = new Set(
@@ -1210,6 +1258,9 @@ async function applySheetPlanToPackage(
       }
     }
     for (const chartPath of chartPaths) {
+      // Charts dying with a removed sheet chart that sheet's own data; only
+      // surviving charts can hold a genuinely dangling reference.
+      if (removedOwnedParts.has(chartPath)) continue
       if (chartReferencesSheet(await pkg.readText(chartPath), removal)) {
         throw new SheetEditError(
           `A chart reads its data from "${removal}" — deleting it is not allowed.`,
@@ -1221,14 +1272,53 @@ async function applySheetPlanToPackage(
         `A workbook defined name references "${removal}" — deleting it is not allowed.`,
       )
     }
-    const removalPath = removalPaths.get(removal) ?? ''
-    const relsPath = removalPath.replace(/^(xl\/worksheets\/)([^/]+)$/, '$1_rels/$2.rels')
-    if (await pkg.has(relsPath)) {
-      assertSheetRelsRemovable(await pkg.readText(relsPath), removal)
-      pkg.remove(relsPath)
+    // A pivot hosted on a surviving sheet may read its source rows from the
+    // removed sheet; only the pivotCacheDefinition records that link
+    // (cacheSource/worksheetSource@sheet), so the hosting-sheet pivotTable
+    // fail-close in classifyRemovedSheetRels cannot catch it.
+    for (const cachePath of pivotCacheDefinitionPaths) {
+      if (pivotCacheReadsFromSheet(await pkg.readText(cachePath), removal)) {
+        throw new SheetEditError(
+          `A pivot table reads its source data from "${removal}" — deleting it is not allowed.`,
+        )
+      }
     }
-    pkg.remove(removalPath)
+    // Structured references (DecoTable[Amount]) into a removed table are not
+    // sheet-qualified, so the sheet-name checks above cannot catch them.
+    // Excel treats table names as case-insensitive, so the scan must too;
+    // entries too large to patch fall back to the sidecar's exact-case scan.
+    for (const part of ownedPartsByRemoval.get(removal) ?? []) {
+      if (!removedOwnedParts.has(part) || !/^xl\/tables\/[^/]+\.xml$/.test(part)) continue
+      const name = tableDisplayName(await pkg.readText(part))
+      if (name === undefined) continue
+      const needle = `${name}[`
+      const needleLower = needle.toLowerCase()
+      for (const path of survivingWorksheetPaths) {
+        const referenced = (await pkg.canPatch(path))
+          ? (await pkg.readText(path)).toLowerCase().includes(needleLower)
+          : await pkg.containsText(path, needle)
+        if (referenced) {
+          throw new SheetEditError(
+            `Another sheet's formulas use table "${name}" on "${removal}" — deleting it is not allowed.`,
+          )
+        }
+      }
+      // Defined names scoped to a removed sheet die with it (matching the
+      // sheet-name check above), so only surviving names can block.
+      if (definedNamesUseToken(workbookXml, needle, removedLocalIds)) {
+        throw new SheetEditError(
+          `A workbook defined name uses table "${name}" on "${removal}" — deleting it is not allowed.`,
+        )
+      }
+    }
   }
+
+  for (const removal of plan.removals) {
+    const relsPath = removalRelsPaths.get(removal) ?? ''
+    if (await pkg.has(relsPath)) pkg.remove(relsPath)
+    pkg.remove(removalPaths.get(removal) ?? '')
+  }
+  for (const part of removedOwnedParts) pkg.remove(part)
 
   // Renames rewrite every qualified reference in the surviving parts.
   for (const rename of plan.renames) {
@@ -1250,11 +1340,24 @@ async function applySheetPlanToPackage(
       }
     }
     for (const chartPath of chartPaths) {
+      // Charts cascade-deleted with a removed sheet are already gone from the
+      // package by this point — reading them would throw.
+      if (removedOwnedParts.has(chartPath)) continue
       const xml = await pkg.readText(chartPath)
       const renamed = renameSheetReferencesInChart(xml, rename.sheetName, rename.newName)
       if (renamed !== xml) {
         pkg.write(chartPath, renamed)
         touchedEntries.add(chartPath)
+      }
+    }
+    // Pivot caches sourced from the renamed sheet keep working only if their
+    // worksheetSource@sheet follows the rename.
+    for (const cachePath of pivotCacheDefinitionPaths) {
+      const xml = await pkg.readText(cachePath)
+      const renamed = renameSheetInPivotCacheSource(xml, rename.sheetName, rename.newName)
+      if (renamed !== xml) {
+        pkg.write(cachePath, renamed)
+        touchedEntries.add(cachePath)
       }
     }
     workbookXml = renameSheetReferencesInDefinedNames(workbookXml, rename.sheetName, rename.newName)
@@ -1283,7 +1386,10 @@ async function applySheetPlanToPackage(
   const originalContentTypes = await pkg.readText(contentTypesPath)
   let contentTypesXml = originalContentTypes
   for (const removal of plan.removals) {
-    contentTypesXml = removeWorksheetOverride(contentTypesXml, removalPaths.get(removal) ?? '')
+    contentTypesXml = removePartOverride(contentTypesXml, removalPaths.get(removal) ?? '')
+  }
+  for (const part of removedOwnedParts) {
+    contentTypesXml = removePartOverride(contentTypesXml, part)
   }
   for (const addition of additions) {
     contentTypesXml = addWorksheetOverride(contentTypesXml, addition.path)
@@ -1350,16 +1456,41 @@ export function toA1Address(row: number, column: number): string {
   return `${letters}${row + 1}`
 }
 
+/**
+ * Flush a freshly written file before it is renamed into place. The handle
+ * must be writable — Windows' FlushFileBuffers rejects read-only handles
+ * with EPERM (#356) — and the flush is best-effort on top of that: inside
+ * cloud-sync folders (OneDrive/Dropbox) or under AV locks, reopening or
+ * syncing can still be refused with EPERM/EACCES/EBUSY. The bytes are
+ * already written at this point, so a refused flush only weakens crash
+ * durability and must not fail the save itself.
+ */
+export async function syncFileBestEffort(path: string): Promise<void> {
+  const tolerated = (error: unknown) =>
+    ['EPERM', 'EACCES', 'EBUSY', 'EINVAL', 'ENOSYS'].includes(
+      (error as NodeJS.ErrnoException).code ?? '',
+    )
+  let handle
+  try {
+    handle = await open(path, 'r+')
+  } catch (error: unknown) {
+    if (tolerated(error)) return
+    throw error
+  }
+  try {
+    await handle.sync()
+  } catch (error: unknown) {
+    if (!tolerated(error)) throw error
+  } finally {
+    await handle.close()
+  }
+}
+
 export async function writeXlsxAtomically(path: string, buffer: Buffer): Promise<void> {
   const temporaryPath = join(dirname(path), `.${crypto.randomUUID()}.tmp.xlsx`)
   try {
     await writeFile(temporaryPath, buffer, { flag: 'wx' })
-    const handle = await open(temporaryPath, 'r')
-    try {
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
+    await syncFileBestEffort(temporaryPath)
     await rename(temporaryPath, path)
   } catch (error: unknown) {
     await rm(temporaryPath, { force: true })

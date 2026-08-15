@@ -16,12 +16,20 @@ export interface HeaderFooterResult {
 }
 
 type SectionKey =
-  | 'header-left' | 'header-center' | 'header-right'
-  | 'footer-left' | 'footer-center' | 'footer-right'
+  | 'header-left'
+  | 'header-center'
+  | 'header-right'
+  | 'footer-left'
+  | 'footer-center'
+  | 'footer-right'
 
 const SECTION_KEYS: readonly SectionKey[] = [
-  'header-left', 'header-center', 'header-right',
-  'footer-left', 'footer-center', 'footer-right',
+  'header-left',
+  'header-center',
+  'header-right',
+  'footer-left',
+  'footer-center',
+  'footer-right',
 ]
 
 const SECTION_LABELS: Record<SectionKey, StringKey> = {
@@ -110,7 +118,9 @@ export function HeaderFooterDialog({
                   if (element) inputs.current.set(key, element)
                   else inputs.current.delete(key)
                 }}
-                onFocus={() => { focusedKey.current = key }}
+                onFocus={() => {
+                  focusedKey.current = key
+                }}
                 onChange={(event) => {
                   const next = event.target.value
                   setValues((prev) => ({ ...prev, [key]: next }))
@@ -123,7 +133,7 @@ export function HeaderFooterDialog({
               <button
                 key={field.code}
                 className="secondary"
-                title={t('dlgHfInsertCode', { code: field.code })}
+                data-tip={t('dlgHfInsertCode', { code: field.code })}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertCode(field.code)}
               >
@@ -131,22 +141,30 @@ export function HeaderFooterDialog({
               </button>
             ))}
           </div>
-          <p className="dialog-note dialog-span">
-            {t('dlgHfNote')}
-          </p>
+          <p className="dialog-note dialog-span">{t('dlgHfNote')}</p>
         </div>
-        {error && <p className="dialog-note" role="alert">{error}</p>}
+        {error && (
+          <p className="dialog-note" role="alert">
+            {error}
+          </p>
+        )}
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
           <button
             className="primary-action"
             onClick={() => {
               const failure = onApply({
                 header: toParts(
-                  values['header-left'], values['header-center'], values['header-right'],
+                  values['header-left'],
+                  values['header-center'],
+                  values['header-right'],
                 ),
                 footer: toParts(
-                  values['footer-left'], values['footer-center'], values['footer-right'],
+                  values['footer-left'],
+                  values['footer-center'],
+                  values['footer-right'],
                 ),
               })
               setError(failure)

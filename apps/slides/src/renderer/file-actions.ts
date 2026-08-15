@@ -1,11 +1,13 @@
 /**
  * File actions extracted from App.tsx: save / save-as, image & PDF
- * export, and printing. Each function takes the ActionCtx built fresh per call.
+ * export. Each function takes the ActionCtx built fresh per call.
+ * (Printing lives in components/PrintDialog.tsx — preview + options dialog.)
  */
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ActionCtx } from './action-context'
 import { renderSlidesToPngBase64 } from './export-render'
 import { t } from './i18n/locale'
+import { showToast } from './components/toast-bus'
 
 /**
  * If a text box/table is still being edited on ⌘S/close-save, blur first so the
@@ -37,7 +39,7 @@ export function adoptSavedSlides(ctx: ActionCtx, next: RenderSlide[]): void {
   ctx.setSlides(next)
 }
 
-export async function save(ctx: ActionCtx): Promise<boolean> {
+export async function save(ctx: ActionCtx, quiet = false): Promise<boolean> {
   await flushActiveEdit(ctx)
   await ctx.flushNotes()
   const r = await window.slidesApi.save()
@@ -45,8 +47,14 @@ export async function save(ctx: ActionCtx): Promise<boolean> {
     if (r.slides) adoptSavedSlides(ctx, r.slides)
     if (r.path) ctx.setPath(r.path)
     ctx.setDirty(false)
-    ctx.setStatus(t('appStatusSaved', { name: r.path?.split('/').pop() ?? '' }))
-  } else ctx.setStatus(t('appStatusSaveFailed', { error: r.error ?? t('appErrorCanceled') }))
+    const saved = t('appStatusSaved')
+    ctx.setStatus(saved)
+    if (!quiet) showToast(saved)
+  } else {
+    const failed = t('appStatusSaveFailed', { error: r.error ?? t('appErrorCanceled') })
+    ctx.setStatus(failed)
+    if (!quiet) showToast(failed, 'error')
+  }
   return r.ok
 }
 
@@ -59,7 +67,15 @@ export async function saveAs(ctx: ActionCtx): Promise<void> {
     if (r.slides) adoptSavedSlides(ctx, r.slides)
     ctx.setPath(r.path ?? ctx.path)
     ctx.setDirty(false)
-    ctx.setStatus(t('appStatusSavedAs', { name: r.path?.split('/').pop() ?? '' }))
+    const saved = t('appStatusSavedAs')
+    ctx.setStatus(saved)
+    showToast(saved)
+  } else if (r.error) {
+    // a canceled dialog returns ok:false without error — only real write
+    // failures surface, matching the docs/sheets save-as feedback
+    const failed = t('appStatusSaveFailed', { error: r.error })
+    ctx.setStatus(failed)
+    showToast(failed, 'error')
   }
 }
 
@@ -120,38 +136,5 @@ export async function exportPdf(ctx: ActionCtx): Promise<void> {
     )
   } catch (err) {
     ctx.setStatus(t('appExportPdfFailed', { error: String(err) }))
-  }
-}
-
-/** Print: after picking a layout (full page/handout/notes), reuse the PDF offscreen rendering pipeline through the system print dialog */
-export async function printSlides(
-  ctx: ActionCtx,
-  layout: 'full' | 'handout2' | 'handout3' | 'handout6' | 'notes',
-): Promise<void> {
-  const visible = ctx.slides.filter((s) => !s.hidden)
-  if (visible.length === 0) {
-    ctx.setStatus(t('appExportNoSlides'))
-    return
-  }
-  ctx.setStatus(t('appPrintProgress'))
-  try {
-    const pngs = await renderSlidesToPngBase64(visible, ctx.images)
-    // The notes layout must take notes text by visible page (hidden pages filtered; indexes must map back to original pages)
-    const notes =
-      layout === 'notes'
-        ? await Promise.all(
-            ctx.slides.flatMap((sl, i) => (sl.hidden ? [] : [window.slidesApi.getNotes(i)])),
-          )
-        : undefined
-    const r = await window.slidesApi.printSlides({
-      pngsBase64: pngs,
-      widthPx: visible[0].widthPx,
-      heightPx: visible[0].heightPx,
-      layout,
-      ...(notes ? { notes } : {}),
-    })
-    ctx.setStatus(r.ok ? '' : t('appPrintFailed', { error: r.error ?? t('appUnknownError') }))
-  } catch (err) {
-    ctx.setStatus(t('appPrintFailed', { error: String(err) }))
   }
 }

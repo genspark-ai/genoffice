@@ -14,6 +14,7 @@ interface UpdateActions {
   onDownload: () => void
   onInstall: () => void
   onLater: () => void
+  onOpenDownload: () => void
 }
 
 let updateWin: BrowserWindow | null = null
@@ -31,6 +32,7 @@ function registerIpc(): void {
   ipcMain.handle(UPDATE_CHANNELS.download, () => actions?.onDownload())
   ipcMain.handle(UPDATE_CHANNELS.install, () => actions?.onInstall())
   ipcMain.handle(UPDATE_CHANNELS.later, () => actions?.onLater())
+  ipcMain.handle(UPDATE_CHANNELS.openDownload, () => actions?.onOpenDownload())
 }
 
 export function showUpdateWindow(
@@ -82,6 +84,10 @@ export function showUpdateWindow(
   } else {
     void win.loadFile(join(__dirname, '../renderer/update.html'))
   }
+}
+
+export function isUpdateWindowOpen(): boolean {
+  return updateWin !== null && !updateWin.isDestroyed()
 }
 
 export function pushUpdateState(patch: Partial<UpdateUiState>): void {

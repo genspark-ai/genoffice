@@ -139,7 +139,7 @@ export function Ruler({
       {/* Tab type selector button at far left */}
       <button
         className="ruler-tab-type"
-        title={t('appTabTypeTip', { type: t(TAB_TYPE_NAME_KEYS[nextTabType]) })}
+        data-tip={t('appTabTypeTip', { type: t(TAB_TYPE_NAME_KEYS[nextTabType]) })}
         onClick={(e) => {
           e.stopPropagation()
           const idx = TAB_TYPE_CYCLE.indexOf(nextTabType)
@@ -174,7 +174,7 @@ export function Ruler({
           data-ruler-stop={i}
           className={`ruler-tab ruler-tab-${stop.val}`}
           style={{ left: twipsToPx(stop.pos) }}
-          title={
+          data-tip={
             t('appTabStopTitle', {
               type: t(TAB_TYPE_NAME_KEYS[stop.val]),
               pos: Math.round((stop.pos / 144) * 10) / 10,

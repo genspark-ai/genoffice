@@ -4,6 +4,11 @@
  * refs and state never go stale.
  */
 import { columnLabel, parseAddress, parseRange } from '../domain/cell-address'
+import {
+  hasNumericYearAxis,
+  recommendCharts,
+  type ChartRecommendations,
+} from '../domain/chart-recommend'
 import { buildChartVisual, chartDataFromValues } from '../domain/chart-visual'
 import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
 import { buildPivotChartData } from '../domain/pivot-chart'
@@ -25,6 +30,7 @@ import {
 } from './edit-journal'
 import { t } from './i18n/locale'
 import { findPivotAtSelection, type PivotActionContext } from './pivot-actions'
+import { startSheetShapeDraw } from './shape-draw'
 import {
   a1RangeRef,
   a1RowRangeRef,
@@ -196,13 +202,18 @@ export async function handleInsertChart(
     return
   }
   // Scatter reads its X values from the first data vector.
-  const parsed = chartDataFromValues(
+  let parsed = chartDataFromValues(
     values,
     chartKind === 'scatter' ? { numericCategoryColumn: true } : undefined,
   )
   if (!parsed) {
     ctx.setMessage(t('appChartNeedsNumericColumn'))
     return
+  }
+  // Keep Year/Value selections consistent with the recommendation previews:
+  // the year vector is the category axis, not a plotted series.
+  if (chartKind !== 'scatter' && hasNumericYearAxis(parsed)) {
+    parsed = chartDataFromValues(values, { numericCategoryColumn: true }) ?? parsed
   }
   const sheetName = worksheet.getSheetName()
   const dataStartRow = startRow + (parsed.hasHeaderRow && !parsed.byRow ? 1 : 0)
@@ -371,6 +382,47 @@ export async function handleInsertPivotChart(
   )
 }
 
+/**
+ * Excel-parity draw mode entry: arm the crosshair over the grid; the drawn
+ * rectangle (or single click = default 1in square) becomes the shape's anchor.
+ */
+export function startShapeDraw(ctx: VisualActionContext, shapeType: string): void {
+  const runtime = ctx.univerRef.current
+  if (!runtime) return
+  if (!ctx.lazyWorkbookRef.current) {
+    ctx.setMessage(t('appShapeNeedsFile'))
+    return
+  }
+  startSheetShapeDraw(runtime, shapeType, (anchor) => insertShapeAtAnchor(ctx, shapeType, anchor))
+}
+
+/** Insert a gallery shape at an explicit twoCellAnchor (draw-mode commit). */
+export function insertShapeAtAnchor(
+  ctx: VisualActionContext,
+  shapeType: string,
+  anchor: WorkbookVisualObject['anchor'],
+): void {
+  const runtime = ctx.univerRef.current
+  const state = ctx.lazyWorkbookRef.current
+  if (!runtime || !state) return
+  const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  if (!worksheet) return
+  const sheetId = worksheet.getSheetId()
+  if (isSheetRemoved(state.editJournal, sheetId)) return
+  const visual: WorkbookVisualObject = {
+    id: `added-shape-${Date.now().toString(36)}-${state.editJournal.visualAdds.length + 1}`,
+    sheetId,
+    kind: 'shape',
+    anchor,
+    shapeType,
+    fillColor: '#DDEBF7',
+  }
+  pushVisualAddUndo(ctx, runtime, state, visual)
+  ctx.setPendingEdits(journalSize(state.editJournal))
+  queueCtxVisualInstall(ctx, runtime, sheetId)
+  ctx.setMessage(t('appShapeInserted'))
+}
+
 export function handleInsertShape(
   ctx: VisualActionContext,
   shapeType: string,
@@ -413,7 +465,7 @@ export function handleInsertShape(
       ? { name: 'TextBox', fillColor: '#FFFFFF', text: 'Text' }
       : { fillColor: '#DDEBF7' }),
   }
-  recordVisualAdd(state.editJournal, visual)
+  pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
   queueCtxVisualInstall(ctx, runtime, sheetId)
   ctx.setMessage(isTextBox ? t('appTextBoxInserted') : t('appShapeInserted'))
@@ -652,6 +704,75 @@ export function handleInsertPicture(ctx: VisualActionContext): void {
   input.click()
 }
 
+/// Reads the selection the same way handleInsertChart does and ranks chart
+/// kinds for it; null (with a status message) when there is nothing to chart.
+export async function handleRecommendedCharts(
+  ctx: VisualActionContext,
+): Promise<ChartRecommendations | null> {
+  const runtime = ctx.univerRef.current
+  const state = ctx.lazyWorkbookRef.current
+  if (!runtime || !state) {
+    ctx.setMessage(t('appSelectDataRangeFirst'))
+    return null
+  }
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  const worksheet = workbook?.getActiveSheet()
+  const range = workbook?.getActiveRange()
+  if (!workbook || !worksheet || !range) {
+    ctx.setMessage(t('appSelectDataRangeFirst'))
+    return null
+  }
+  const startRow = range.getRow()
+  const startColumn = range.getColumn()
+  const endColumn = startColumn + range.getWidth() - 1
+  const endRow = startRow + range.getHeight() - 1
+  let values: (string | number | boolean | null | undefined)[][]
+  try {
+    values = await readChartGridValues(
+      state,
+      runtime,
+      worksheet.getSheetId(),
+      `${columnLabel(startColumn)}${startRow + 1}:${columnLabel(endColumn)}${endRow + 1}`,
+    )
+  } catch (error) {
+    ctx.setMessage(error instanceof Error ? error.message : t('appChartNeedsNumericColumn'))
+    return null
+  }
+  const recommendations = recommendCharts(values)
+  if (!recommendations) {
+    ctx.setMessage(t('appChartNeedsNumericColumn'))
+    return null
+  }
+  return recommendations
+}
+
+export function handleInsertScreenshot(
+  ctx: VisualActionContext,
+  dataUrl: string,
+  width: number,
+  height: number,
+): void {
+  insertPictureVisual(ctx, dataUrl, 'image/png', 'Screenshot.png', width, height)
+}
+
+export function handleInsertEquation(
+  ctx: VisualActionContext,
+  dataUrl: string,
+  width: number,
+  height: number,
+): void {
+  insertPictureVisual(ctx, dataUrl, 'image/png', 'Equation.png', width, height)
+}
+
+export function handleInsertIcon(
+  ctx: VisualActionContext,
+  dataUrl: string,
+  size: number,
+  name: string,
+): void {
+  insertPictureVisual(ctx, dataUrl, 'image/png', `${name.replace(/\s+/g, '-')}.png`, size, size)
+}
+
 function insertPictureVisual(
   ctx: VisualActionContext,
   dataUrl: string,
@@ -696,7 +817,7 @@ function insertPictureVisual(
     mediaDataUrl: dataUrl,
     name: fileName,
   }
-  recordVisualAdd(state.editJournal, visual)
+  pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
   queueCtxVisualInstall(ctx, runtime, sheetId)
   ctx.setMessage(t('appPictureInserted'))

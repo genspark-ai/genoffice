@@ -2,13 +2,22 @@ import React, { useEffect, useRef, useState } from 'react'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
-import type { AttachmentMeta } from '../../shared/desktop-api'
+import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import attachIcon from '../assets/attach-icon.png'
+import filePdfIcon from '../assets/file-pdf.png'
+import fileWordIcon from '../assets/file-word.png'
+import fileExcelIcon from '../assets/file-excel.png'
+import filePptIcon from '../assets/file-ppt.png'
+import fileImageIcon from '../assets/file-image.png'
+import fileVideoIcon from '../assets/file-video.png'
+import fileVoiceIcon from '../assets/file-voice.png'
+import fileDocumentIcon from '../assets/file-document.png'
+import fileGeneralIcon from '../assets/file-general.png'
 
 /** Clipboard bitmap MIME → attachment extension (matches the main process's
  * ATTACHMENT_IMAGE_EXTS) */
@@ -19,17 +28,142 @@ const PASTE_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
 }
 
+/** File-type icons for attachment cards (Genspark attachment icon set); exts the
+ *  attachment allowlist doesn't accept yet are mapped ahead so they light up when added */
+const ATTACHMENT_CARD_ICON_GROUPS: [icon: string, exts: string[]][] = [
+  [fileWordIcon, ['doc', 'docx']],
+  [fileExcelIcon, ['xls', 'xlsx', 'csv', 'tsv']],
+  [filePptIcon, ['ppt', 'pptx']],
+  [filePdfIcon, ['pdf']],
+  [fileImageIcon, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'tiff', 'heic']],
+  [fileVideoIcon, ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v']],
+  [fileVoiceIcon, ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus']],
+  [
+    fileDocumentIcon,
+    [
+      'txt',
+      'md',
+      'markdown',
+      'rtf',
+      'log',
+      'json',
+      'yaml',
+      'yml',
+      'xml',
+      'html',
+      'htm',
+      'js',
+      'ts',
+      'tsx',
+      'jsx',
+      'py',
+      'java',
+      'c',
+      'h',
+      'cpp',
+      'go',
+      'rs',
+      'rb',
+      'sh',
+      'sql',
+      'css',
+    ],
+  ],
+]
+
+const ATTACHMENT_CARD_ICONS: Record<string, string> = Object.fromEntries(
+  ATTACHMENT_CARD_ICON_GROUPS.flatMap(([icon, exts]) => exts.map((ext) => [ext, icon])),
+)
+
+function AttachmentCardIcon({ ext }: { ext: string }) {
+  return <img src={ATTACHMENT_CARD_ICONS[ext] ?? fileGeneralIcon} alt="" aria-hidden />
+}
+
+/** Card name slot width: 190 card - 2 border - 8/14 padding - 40 icon - 10 gap */
+const CARD_NAME_MAX_WIDTH = 116
+let cardNameCtx: CanvasRenderingContext2D | null = null
+
+/** Ellipsize like the design: cut at the limit, strip trailing -_./spaces so
+ *  punctuation never sits against the …; CSS text-overflow stays as fallback */
+function truncateCardName(name: string): string {
+  cardNameCtx ??= document.createElement('canvas').getContext('2d')
+  if (!cardNameCtx) return name
+  // must match the stack the card name actually renders with (body font in styles.css)
+  cardNameCtx.font =
+    "500 13px 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+  if (cardNameCtx.measureText(name).width <= CARD_NAME_MAX_WIDTH) return name
+  let lo = 1
+  let hi = name.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (cardNameCtx.measureText(`${name.slice(0, mid)}…`).width <= CARD_NAME_MAX_WIDTH) lo = mid
+    else hi = mid - 1
+  }
+  return `${name.slice(0, lo).replace(/[-_.\s]+$/, '')}…`
+}
+
+function formatAttachmentSize(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+    : `${(bytes / 1024).toFixed(2)} KB`
+}
+
+/** Read-only echo of the attachments a user message consumed from the composer
+ *  (image previews when the file is still readable; otherwise the placeholder icon) */
+function SentAttachments({
+  atts,
+  previews,
+}: {
+  readonly atts: readonly AttachmentMeta[]
+  readonly previews: Record<string, string>
+}): React.JSX.Element {
+  return (
+    <div className="ai-msg-attachments">
+      {atts.map((a) =>
+        ATTACHMENT_IMAGE_EXTS.has(a.ext) ? (
+          <span key={a.path} className="ai-attachment-thumb" title={a.name}>
+            {previews[a.path] ? (
+              <img src={previews[a.path]} alt={a.name} />
+            ) : (
+              <span className="ai-attachment-thumb-pending" aria-hidden>
+                <img src={fileImageIcon} alt="" />
+              </span>
+            )}
+          </span>
+        ) : (
+          <span key={a.path} className="ai-attachment-card" title={a.name}>
+            <span className="ai-attachment-card-icon">
+              <AttachmentCardIcon ext={a.ext} />
+            </span>
+            <span className="ai-attachment-card-meta">
+              <span className="ai-attachment-card-name">{truncateCardName(a.name)}</span>
+              <span className="ai-attachment-card-size">{formatAttachmentSize(a.sizeBytes)}</span>
+            </span>
+          </span>
+        ),
+      )}
+    </div>
+  )
+}
+
 /** Resizable panel width: persisted, clamped to min/max, drives the .sheet-body grid column via --copilot-width */
 const PANEL_WIDTH_KEY = 'sheets-ai-panel-width'
 const PANEL_WIDTH_MIN = 280
 
 function clampPanelWidth(w: number): number {
-  return Math.min(Math.max(w, PANEL_WIDTH_MIN), Math.min(720, Math.round(window.innerWidth * 0.6)))
+  // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
+  // shell lays it out), so never let the ceiling drop below the minimum
+  const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
+  return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
 }
 
 function loadPanelWidth(): number | null {
   const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY))
-  return Number.isFinite(saved) && saved > 0 ? clampPanelWidth(saved) : null
+  // static bounds only — clamping against the window here would bake a
+  // transiently small viewport into the restored preference
+  return Number.isFinite(saved) && saved > 0
+    ? Math.min(Math.max(saved, PANEL_WIDTH_MIN), 720)
+    : null
 }
 
 export interface AiToolChip {
@@ -55,6 +189,8 @@ export interface AiChatMessage {
   readonly loginRequired?: boolean | undefined
   /** Set when this message reflects an auto-applied plan; renders an inline [Undo] button. */
   readonly autoApplied?: { readonly opCount: number } | undefined
+  /** attachments consumed from the composer by this user message (read-only echo chips) */
+  readonly attachments?: readonly AttachmentMeta[] | undefined
 }
 
 export function AiChatPanel({
@@ -98,8 +234,9 @@ export function AiChatPanel({
   readonly preview: ChangePlan | null
   readonly aiBusy: boolean
   readonly onPromptChange: (prompt: string) => void
-  /** Send the composer text, or the given instruction when provided (used by the failed-run Retry) */
-  readonly onSend: (instruction?: string) => void
+  /** Send the composer text, or the given instruction when provided (used by the
+   *  failed-run Retry, which also resends the message's original attachments) */
+  readonly onSend: (instruction?: string, attachments?: readonly AttachmentMeta[]) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: () => void
@@ -113,29 +250,82 @@ export function AiChatPanel({
   const [dragOver, setDragOver] = useState(false)
   const asideRef = useRef<HTMLElement | null>(null)
   const [resizing, setResizing] = useState(false)
+  /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
+  const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
+  /** image paths with a read already issued — one readAttachmentImage per attach, even while pending */
+  const previewRequestedRef = useRef(new Set<string>())
+  useEffect(() => {
+    // previews cover the composer plus every image echoed on a sent/history message
+    // (history chips re-read the file by its stored path; a deleted file keeps the placeholder)
+    const wanted = [
+      ...attachments,
+      ...chat.flatMap((m) => m.attachments ?? []),
+      ...historicChat.flatMap((m) => m.attachments ?? []),
+    ]
+    const alive = new Set(wanted.map((a) => a.path))
+    // drop previews (and request markers) of removed attachments, so memory is reclaimed and a re-attach re-reads
+    setAttachmentPreviews((prev) => {
+      const stale = Object.keys(prev).filter((p) => !alive.has(p))
+      if (stale.length === 0) return prev
+      const next = { ...prev }
+      for (const p of stale) delete next[p]
+      return next
+    })
+    for (const p of previewRequestedRef.current) {
+      if (!alive.has(p)) previewRequestedRef.current.delete(p)
+    }
+    for (const a of wanted) {
+      if (!ATTACHMENT_IMAGE_EXTS.has(a.ext) || previewRequestedRef.current.has(a.path)) continue
+      previewRequestedRef.current.add(a.path)
+      void window.desktopApi.readAttachmentImage(a.path).then((r) => {
+        if (!previewRequestedRef.current.has(a.path)) return // removed while the read was in flight
+        if (r.ok && r.base64 && r.mime) {
+          setAttachmentPreviews((prev) => ({
+            ...prev,
+            [a.path]: `data:${r.mime};base64,${r.base64}`,
+          }))
+        }
+      })
+    }
+  }, [attachments, chat, historicChat])
+  /** paints the strip's scrollbar thumb while the user scrolls it (cleared 800ms after the last event) */
+  const attachScrollFadeRef = useRef(0)
+  const onAttachmentsScroll = (e: React.UIEvent<HTMLDivElement>): void => {
+    const el = e.currentTarget
+    el.classList.add('is-scrolling')
+    window.clearTimeout(attachScrollFadeRef.current)
+    attachScrollFadeRef.current = window.setTimeout(() => el.classList.remove('is-scrolling'), 800)
+  }
   /** Wall-clock start of the current run (aiBusy false→true), drives the elapsed badge */
   const busyStartRef = useRef(0)
   useEffect(() => {
     if (aiBusy) busyStartRef.current = Date.now()
   }, [aiBusy])
 
+  // preferred = the user's chosen width (the only value persisted); the CSS var
+  // gets the clamped display width. Deriving the display width from the
+  // preference means a transiently small window never permanently shrinks the panel.
+  const preferredWidthRef = useRef<number | null>(null)
+
   // Restore the persisted panel width (the grid column tracks --copilot-width on .sheet-body)
   useEffect(() => {
     if (!isOpen) return
     const saved = loadPanelWidth()
     if (saved === null) return
+    preferredWidthRef.current = saved
     const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
-    area?.style.setProperty('--copilot-width', `${saved}px`)
+    area?.style.setProperty('--copilot-width', `${clampPanelWidth(saved)}px`)
   }, [isOpen])
 
-  // Re-clamp the panel width when the window shrinks (max is 60% of the window)
+  // Re-derive the display width on window resize (max is 60% of the window);
+  // growing the window back restores the preferred width
   useEffect(() => {
     if (!isOpen) return
     const onResize = (): void => {
       const area = asideRef.current?.closest('.sheet-body') as HTMLElement | null
-      const current = parseFloat(area?.style.getPropertyValue('--copilot-width') ?? '')
-      if (!area || !Number.isFinite(current)) return
-      area.style.setProperty('--copilot-width', `${clampPanelWidth(current)}px`)
+      const preferred = preferredWidthRef.current
+      if (!area || preferred === null) return
+      area.style.setProperty('--copilot-width', `${clampPanelWidth(preferred)}px`)
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -164,6 +354,7 @@ export function AiChatPanel({
     let width = 0
     const onMove = (ev: PointerEvent): void => {
       width = clampPanelWidth(ev.clientX)
+      preferredWidthRef.current = width
       area.style.setProperty('--copilot-width', `${width}px`)
     }
     let done = false
@@ -199,7 +390,12 @@ export function AiChatPanel({
   if (!isOpen) {
     return (
       <aside className="copilot collapsed">
-        <button className="expand-copilot" onClick={onExpand} title={t('aiOpenAssistant')}>
+        <button
+          className="expand-copilot"
+          onClick={onExpand}
+          data-tip={t('aiOpenAssistant')}
+          aria-label={t('aiOpenAssistant')}
+        >
           <GensparkMark size={22} />
         </button>
       </aside>
@@ -270,11 +466,21 @@ export function AiChatPanel({
         </span>
         <div className="ai-panel-header-actions">
           {(chat.length > 0 || historicChat.length > 0) && (
-            <button className="ai-header-btn" onClick={onNewChat} title={t('aiNewChat')}>
+            <button
+              className="ai-header-btn"
+              onClick={onNewChat}
+              data-tip={t('aiNewChat')}
+              aria-label={t('aiNewChat')}
+            >
               <IconNewChat size={15} />
             </button>
           )}
-          <button className="ai-header-btn" onClick={onCollapse} title={t('aiCollapsePanel')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('aiCollapsePanel')}
+            aria-label={t('aiCollapsePanel')}
+          >
             <IconCollapse size={15} />
           </button>
         </div>
@@ -286,6 +492,9 @@ export function AiChatPanel({
           <>
             {historicChat.map((entry, i) => (
               <div key={`h${i}`} className={`ai-msg ai-msg-${entry.role} ai-msg-historic`}>
+                {entry.role === 'user' && entry.attachments && entry.attachments.length > 0 && (
+                  <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
+                )}
                 {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
                 {entry.text && <Markdown text={entry.text} />}
               </div>
@@ -310,12 +519,18 @@ export function AiChatPanel({
           >
             {entry.role === 'user' ? (
               <>
+                {entry.attachments && entry.attachments.length > 0 && (
+                  <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
+                )}
                 {entry.text}
                 {entry.undelivered && (
                   <div className="ai-msg-undelivered">
                     {t('aiUndelivered')}
                     {!aiBusy && (
-                      <button className="ai-retry-btn" onClick={() => onSend(entry.text)}>
+                      <button
+                        className="ai-retry-btn"
+                        onClick={() => onSend(entry.text, entry.attachments ?? [])}
+                      >
                         {t('aiRetry')}
                       </button>
                     )}
@@ -341,7 +556,7 @@ export function AiChatPanel({
                     <span className="ai-auto-applied-text">
                       {t('aiAutoApplied', { count: entry.autoApplied.opCount })}
                     </span>
-                    <button className="ai-undo-btn" onClick={onUndo} title={t('aiUndoTitle')}>
+                    <button className="ai-undo-btn" onClick={onUndo} data-tip={t('aiUndoTitle')}>
                       {t('aiUndo')}
                     </button>
                   </div>
@@ -409,25 +624,79 @@ export function AiChatPanel({
       </div>
 
       <div className="ai-composer">
-        {attachments.length > 0 && (
-          <div className="ai-attachments">
-            {attachments.map((attachment) => (
-              <span key={attachment.path} className="ai-attachment-chip" title={attachment.path}>
-                <IconPaperclip size={11} />
-                {attachment.name}
-                <button
-                  className="ai-attachment-remove"
-                  onClick={() => onRemoveAttachment(attachment.path)}
-                  title={t('aiRemoveAttachment')}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
+          header={
+            attachments.length > 0 && (
+              <div className="ai-attachments" onScroll={onAttachmentsScroll}>
+                {attachments.map((attachment) =>
+                  ATTACHMENT_IMAGE_EXTS.has(attachment.ext) ? (
+                    <span
+                      key={attachment.path}
+                      className="ai-attachment-thumb"
+                      data-tip={attachment.path}
+                    >
+                      {attachmentPreviews[attachment.path] ? (
+                        <img src={attachmentPreviews[attachment.path]} alt={attachment.name} />
+                      ) : (
+                        <span className="ai-attachment-thumb-pending" aria-hidden>
+                          <img src={fileImageIcon} alt="" />
+                        </span>
+                      )}
+                      <button
+                        className="ai-attachment-thumb-remove"
+                        onClick={() => onRemoveAttachment(attachment.path)}
+                        data-tip={t('aiRemoveAttachment')}
+                        aria-label={t('aiRemoveAttachment')}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                          <path
+                            d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
+                            fill="currentColor"
+                            stroke="currentColor"
+                            strokeWidth="0.25"
+                          />
+                        </svg>
+                      </button>
+                    </span>
+                  ) : (
+                    <span
+                      key={attachment.path}
+                      className="ai-attachment-card"
+                      data-tip={attachment.path}
+                    >
+                      <span className="ai-attachment-card-icon">
+                        <AttachmentCardIcon ext={attachment.ext} />
+                      </span>
+                      <span className="ai-attachment-card-meta">
+                        <span className="ai-attachment-card-name">
+                          {truncateCardName(attachment.name)}
+                        </span>
+                        <span className="ai-attachment-card-size">
+                          {formatAttachmentSize(attachment.sizeBytes)}
+                        </span>
+                      </span>
+                      <button
+                        className="ai-attachment-thumb-remove"
+                        onClick={() => onRemoveAttachment(attachment.path)}
+                        data-tip={t('aiRemoveAttachment')}
+                        aria-label={t('aiRemoveAttachment')}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                          <path
+                            d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
+                            fill="currentColor"
+                            stroke="currentColor"
+                            strokeWidth="0.25"
+                          />
+                        </svg>
+                      </button>
+                    </span>
+                  ),
+                )}
+              </div>
+            )
+          }
           value={prompt}
           busy={aiBusy}
           placeholder={t(hasContent ? 'aiComposerPlaceholder' : 'aiComposerPlaceholderBuild')}
@@ -445,7 +714,8 @@ export function AiChatPanel({
             <button
               className="ai-attach-btn"
               onClick={onPickAttachments}
-              title={t('aiAttachTitle')}
+              data-tip={t('aiAttachTitle')}
+              aria-label={t('aiAttachTitle')}
             >
               <img src={attachIcon} alt="" aria-hidden />
             </button>
@@ -508,17 +778,6 @@ function IconCollapse({ size }: { size: number }): React.JSX.Element {
       <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
       <path d="M5.5 2.5v11" />
       <path d="M12.5 8H8.1M9.8 5.9 7.7 8l2.1 2.1" strokeWidth="1.3" strokeLinejoin="round" />
-    </Svg>
-  )
-}
-
-function IconPaperclip({ size }: { size: number }): React.JSX.Element {
-  return (
-    <Svg size={size}>
-      <path
-        d="M13 7.2 8.2 12a3.4 3.4 0 0 1-4.8-4.8l5-5a2.3 2.3 0 0 1 3.2 3.2l-5 5a1.1 1.1 0 0 1-1.6-1.6l4.6-4.6"
-        strokeLinejoin="round"
-      />
     </Svg>
   )
 }
@@ -631,14 +890,14 @@ function ToolChipList({ tools }: { tools: readonly AiToolChip[] }): React.JSX.El
                     <button
                       type="button"
                       className="ai-step-title clickable"
-                      title={tool.name}
+                      data-tip={tool.name}
                       aria-expanded={isOpen}
                       onClick={() => toggle(j)}
                     >
                       {tool.summary}
                     </button>
                   ) : (
-                    <span className="ai-step-title" title={tool.name}>
+                    <span className="ai-step-title" data-tip={tool.name}>
                       {tool.summary}
                     </span>
                   )}

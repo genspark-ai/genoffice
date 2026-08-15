@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   AccountLoginEvent,
   AccountStatus,
+  CloudProjectsSnapshot,
   HomeApi,
   RecentEntry,
   RecentPage,
@@ -82,6 +83,9 @@ const homeApi: HomeApi = {
   async newSlide(opts) {
     await ipcRenderer.invoke(HOME_CHANNELS.newSlide, opts)
   },
+  async newMarkdown(opts) {
+    await ipcRenderer.invoke(HOME_CHANNELS.newMarkdown, opts)
+  },
   async removeRecent(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.removeRecent, paths)
   },
@@ -111,6 +115,18 @@ const homeApi: HomeApi = {
   async setLanguage(lang) {
     if (!isUiLanguage(lang)) throw new Error('Invalid language.')
     await ipcRenderer.invoke(HOME_CHANNELS.setLanguage, lang)
+  },
+  async getUpdateChannel() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getUpdateChannel)
+    return result === 'beta' ? 'beta' : 'stable'
+  },
+  async setUpdateChannel(channel) {
+    // validated inline: a runtime import from ../shared/update-api would be
+    // shared with the update.ts preload entry and get split into a chunk,
+    // which sandboxed preload scripts cannot load (window.aiOffice would
+    // silently disappear). Preload entries must stay single-file bundles.
+    if (channel !== 'stable' && channel !== 'beta') throw new Error('Invalid update channel.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setUpdateChannel, channel)
   },
   async accountStatus() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.accountStatus)
@@ -142,9 +158,84 @@ const homeApi: HomeApi = {
   async setOnboardingSeen() {
     await ipcRenderer.invoke(HOME_CHANNELS.setOnboardingSeen)
   },
+  async getTheme() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getTheme)
+    return result === 'dark' || result === 'light' ? result : 'system'
+  },
+  async setTheme(theme) {
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system')
+      throw new Error('Invalid theme.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setTheme, theme)
+  },
+  async getDefaultSaveDir() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDefaultSaveDir)
+    return typeof result === 'string' ? result : ''
+  },
+  async pickDefaultSaveDir() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.pickDefaultSaveDir)
+    return typeof result === 'string' && result ? result : null
+  },
+  onThemeChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, theme: unknown) => {
+      if (theme === 'light' || theme === 'dark' || theme === 'system') handler(theme)
+    }
+    ipcRenderer.on('app:theme-changed', listener)
+    return () => ipcRenderer.removeListener('app:theme-changed', listener)
+  },
   async openGenTeam() {
     await ipcRenderer.invoke(HOME_CHANNELS.openGenTeam)
   },
+  async openCreditUsage() {
+    await ipcRenderer.invoke(HOME_CHANNELS.openCreditUsage)
+  },
+  async openGitHubRepo() {
+    await ipcRenderer.invoke(HOME_CHANNELS.openGitHubRepo)
+  },
+  async githubStars() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.githubStars)
+    return typeof result === 'number' && Number.isFinite(result) ? result : null
+  },
+  async starPromptShouldShow() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.starPromptShouldShow)
+    const raw = (result ?? {}) as { show?: unknown; docOpens?: unknown }
+    return {
+      show: raw.show === true,
+      docOpens:
+        typeof raw.docOpens === 'number' && Number.isFinite(raw.docOpens) ? raw.docOpens : 0,
+    }
+  },
+  async starPromptAction(action) {
+    if (action !== 'starred' && action !== 'later') throw new Error('Invalid star prompt action.')
+    await ipcRenderer.invoke(HOME_CHANNELS.starPromptAction, action)
+  },
+  async cloudProjectsCached() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.cloudProjectsCached)
+    return asCloudProjectsSnapshot(result)
+  },
+  async cloudProjectsSync() {
+    // failures (network / CLI) resolve to null so the renderer keeps whatever it has
+    try {
+      const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.cloudProjects)
+      return asCloudProjectsSnapshot(result)
+    } catch {
+      return null
+    }
+  },
+  async openCloudProject(projectUrl) {
+    if (typeof projectUrl !== 'string' || !projectUrl) throw new Error('Invalid project URL.')
+    await ipcRenderer.invoke(HOME_CHANNELS.openCloudProject, projectUrl)
+  },
+}
+
+function asCloudProjectsSnapshot(result: unknown): CloudProjectsSnapshot | null {
+  if (
+    result &&
+    typeof result === 'object' &&
+    Array.isArray((result as CloudProjectsSnapshot).projects)
+  ) {
+    return result as CloudProjectsSnapshot
+  }
+  return null
 }
 
 contextBridge.exposeInMainWorld('aiOffice', homeApi)
@@ -208,6 +299,9 @@ const tabsApi: TabsApi = {
     const listener = (_event: IpcRendererEvent, tabs: TabSummary[]) => handler(tabs)
     ipcRenderer.on(TABS_CHANNELS.changed, listener)
     return () => ipcRenderer.removeListener(TABS_CHANNELS.changed, listener)
+  },
+  notifyChromePressed() {
+    ipcRenderer.send(TABS_CHANNELS.chromePressed)
   },
 }
 

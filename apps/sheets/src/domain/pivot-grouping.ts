@@ -55,7 +55,7 @@ const DAY_MS = 86_400_000
 /// Parses a cell date: numbers as Excel serial dates, strings in YYYY-MM-DD /
 /// YYYY/M/D read digits directly (avoiding Date.parse timezone ambiguity), and
 /// everything else goes to Date.parse.
-function parseDateParts(value: string | number): { year: number; month: number } | null {
+export function parseDateParts(value: string | number): { year: number; month: number } | null {
   if (typeof value === 'number') {
     if (!Number.isFinite(value) || value < 0 || value > 2_958_465) return null
     const date = new Date(EXCEL_EPOCH_UTC + Math.floor(value) * DAY_MS)

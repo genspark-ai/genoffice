@@ -7,10 +7,14 @@ export const UPDATE_CHANNELS = {
   download: 'update:download',
   install: 'update:install',
   later: 'update:later',
+  openDownload: 'update:open-download',
   changed: 'update:changed',
 } as const
 
-export type UpdatePhase = 'available' | 'downloading' | 'downloaded' | 'error'
+/** 'manual' = automatic updating is not working for this version (repeated
+ * failures, e.g. a signing-identity change the installed app refuses) — the
+ * dialog guides the user to download the installer from the releases page */
+export type UpdatePhase = 'available' | 'downloading' | 'downloaded' | 'error' | 'manual'
 
 /** window copy is localized in the main process (owner of UI language) */
 export interface UpdateUiStrings {
@@ -23,6 +27,8 @@ export interface UpdateUiStrings {
   downloading: string
   failed: string
   retry: string
+  manualDesc: string
+  openDownload: string
 }
 
 export interface UpdateUiState {
@@ -41,5 +47,13 @@ export interface UpdateWindowApi {
   download(): void
   install(): void
   later(): void
+  openDownload(): void
   onState(handler: (state: UpdateUiState) => void): () => void
+}
+
+/** user-selectable update channel; 'stable' maps to the latest.yml feed, 'beta' to beta.yml */
+export type UpdateChannel = 'stable' | 'beta'
+
+export function isUpdateChannel(v: unknown): v is UpdateChannel {
+  return v === 'stable' || v === 'beta'
 }

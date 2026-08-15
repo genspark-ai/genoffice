@@ -227,7 +227,7 @@ export function MasterView({ initialItems, onClose }: Props) {
               key={it.partPath}
               className={`thumb master-thumb ${i === sel ? 'active' : ''} ${it.kind === 'layout' ? 'master-thumb-layout' : ''}`}
               onClick={() => void selectPart(i)}
-              title={it.kind === 'master' ? t('appMasterThumbMaster') : it.name}
+              data-tip={it.kind === 'master' ? t('appMasterThumbMaster') : it.name}
             >
               <SlideThumb
                 slide={it.slide}

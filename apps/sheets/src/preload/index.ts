@@ -13,6 +13,9 @@ import type {
   AttachmentMeta,
   AttachmentReadResult,
   DesktopApi,
+  ScreenCaptureResult,
+  ScreenSourcesResult,
+  UiTheme,
   WorkbookCellStyle,
   WorkbookConditionalRule,
   WorkbookFile,
@@ -43,6 +46,17 @@ const desktopApi: DesktopApi = {
     ) => handler(lang)
     ipcRenderer.on('app:language-changed', listener)
     return () => ipcRenderer.removeListener('app:language-changed', listener)
+  },
+  getTheme: () => ipcRenderer.invoke('app:get-theme'),
+  onThemeChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, theme: UiTheme) => handler(theme)
+    ipcRenderer.on('app:theme-changed', listener)
+    return () => ipcRenderer.removeListener('app:theme-changed', listener)
+  },
+  onChromePressed(handler) {
+    const listener = () => handler()
+    ipcRenderer.on('app:chrome-pressed', listener)
+    return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
   },
   async selectWorkbook() {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.selectWorkbook)
@@ -97,6 +111,37 @@ const desktopApi: DesktopApi = {
       throw new Error('Invalid local image response.')
     }
     return result as { mediaType: 'image/png' | 'image/jpeg' | 'image/gif'; base64: string }
+  },
+  async captureScreenSources() {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.captureScreenSources)
+    if (
+      !isRecord(result) ||
+      (result.status !== 'ok' && result.status !== 'denied') ||
+      !Array.isArray(result.sources)
+    ) {
+      throw new Error('Invalid screen sources response.')
+    }
+    return result as ScreenSourcesResult
+  },
+  async captureScreenSource(request) {
+    if (!isRecord(request) || typeof request.id !== 'string' || request.id.length === 0) {
+      throw new Error('Invalid screen capture request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.captureScreenSource, {
+      id: request.id,
+    })
+    if (result === null) return null
+    if (
+      !isRecord(result) ||
+      result.mediaType !== 'image/png' ||
+      typeof result.base64 !== 'string' ||
+      result.base64.length === 0 ||
+      typeof result.width !== 'number' ||
+      typeof result.height !== 'number'
+    ) {
+      throw new Error('Invalid screen capture response.')
+    }
+    return result as ScreenCaptureResult
   },
   async readPivotDefinition(request) {
     const validatedRequest = parsePivotRequest(request)
@@ -267,6 +312,10 @@ const desktopApi: DesktopApi = {
   },
   async consumeNewBlankWorkbook() {
     const result: unknown = await ipcRenderer.invoke('sheets:consume-new-blank')
+    return result === true
+  },
+  async hasQueuedWorkbook() {
+    const result: unknown = await ipcRenderer.invoke('sheets:has-queued-workbook')
     return result === true
   },
   async pickAttachments() {
@@ -511,7 +560,9 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         typeof columnWidth.hidden !== 'boolean' ||
         (columnWidth.outlineLevel !== undefined &&
           (!isNonnegativeInteger(columnWidth.outlineLevel) || columnWidth.outlineLevel > 7)) ||
-        (columnWidth.collapsed !== undefined && typeof columnWidth.collapsed !== 'boolean')
+        (columnWidth.collapsed !== undefined && typeof columnWidth.collapsed !== 'boolean') ||
+        (columnWidth.styleIndex !== undefined &&
+          (!isNonnegativeInteger(columnWidth.styleIndex) || columnWidth.styleIndex === 0))
       ) {
         throw new Error('Invalid worksheet column width.')
       }
@@ -524,6 +575,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
           ? {}
           : { outlineLevel: columnWidth.outlineLevel }),
         ...(columnWidth.collapsed === undefined ? {} : { collapsed: columnWidth.collapsed }),
+        ...(columnWidth.styleIndex === undefined ? {} : { styleIndex: columnWidth.styleIndex }),
       }
     })
     return {
@@ -755,7 +807,9 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
       typeof row.hidden !== 'boolean' ||
       (row.outlineLevel !== undefined &&
         (!isNonnegativeInteger(row.outlineLevel) || row.outlineLevel > 7)) ||
-      (row.collapsed !== undefined && typeof row.collapsed !== 'boolean')
+      (row.collapsed !== undefined && typeof row.collapsed !== 'boolean') ||
+      (row.styleIndex !== undefined &&
+        (!isNonnegativeInteger(row.styleIndex) || row.styleIndex === 0))
     ) {
       throw new Error('Invalid workbook row response.')
     }
@@ -765,6 +819,7 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
       ...(row.height === undefined ? {} : { height: row.height }),
       ...(row.outlineLevel === undefined ? {} : { outlineLevel: row.outlineLevel }),
       ...(row.collapsed === undefined ? {} : { collapsed: row.collapsed }),
+      ...(row.styleIndex === undefined ? {} : { styleIndex: row.styleIndex }),
     }
   })
   const merges = input.merges.map((merge) => {
@@ -1041,7 +1096,8 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
         typeof state.protected !== 'boolean',
     ) ||
     !isDefinedNamesState(input.definedNamesState) ||
-    (input.edits.length === 0 &&
+    (input.mode !== 'save-as' &&
+      input.edits.length === 0 &&
       input.structuralOps.length === 0 &&
       input.chartEdits.length === 0 &&
       input.visualEdits.length === 0 &&
@@ -1348,6 +1404,20 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
       continue
     }
     const { index, count } = op
+    if ('before' in op) {
+      if (
+        op.kind !== 'move-rows' ||
+        !isNonnegativeInteger(index) ||
+        !isNonnegativeInteger(count) ||
+        count === 0 ||
+        count > 10_000 ||
+        !isNonnegativeInteger(op.before) ||
+        (op.before >= index && op.before <= index + count)
+      ) {
+        throw new Error('Invalid workbook structural operation.')
+      }
+      continue
+    }
     if (
       !['insert-rows', 'remove-rows', 'insert-cols', 'remove-cols'].includes(String(op.kind)) ||
       !isNonnegativeInteger(index) ||

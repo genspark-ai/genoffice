@@ -44,9 +44,12 @@ export interface GapMetrics {
   marginRight: number
 }
 
-const GAP_BAND = 28
+/** height of the gray inter-page band inside a page gap */
+export const GAP_BAND = 28
 
-function makeGapEl(m: GapMetrics, kind: 'block' | 'inline' | 'table' | 'cut'): HTMLElement {
+export type GapKind = 'block' | 'inline' | 'table' | 'cut' | 'cell'
+
+export function makeGapEl(m: GapMetrics, kind: GapKind): HTMLElement {
   const gap = document.createElement(kind === 'table' ? 'tr' : 'div')
   gap.contentEditable = 'false'
   if (kind === 'cut') {
@@ -71,13 +74,19 @@ function makeGapEl(m: GapMetrics, kind: 'block' | 'inline' | 'table' | 'cut'): H
     gap.appendChild(cell)
     return gap
   }
-  gap.className = kind === 'inline' ? 'page-gap page-gap-inline' : 'page-gap'
+  gap.className =
+    kind === 'cell'
+      ? // in-cell gap (single-column in-row table cut): inline gap + opaque bands covering the cell's fill/borders
+        'page-gap page-gap-inline page-gap-cell'
+      : kind === 'inline'
+        ? 'page-gap page-gap-inline'
+        : 'page-gap'
   gap.style.marginLeft = `-${m.marginLeft}px`
   gap.style.marginRight = `-${m.marginRight}px`
   // inline-block (not block-level): avoids block-in-inline anonymous-box splitting,
   // which would re-apply text-indent/alignment on continuation lines and drift line
   // breaks; negative margins don't widen an inline-block, so width explicitly adds the bleed
-  if (kind === 'inline') gap.style.width = `calc(100% + ${m.marginLeft + m.marginRight}px)`
+  if (kind !== 'block') gap.style.width = `calc(100% + ${m.marginLeft + m.marginRight}px)`
   return gap
 }
 
@@ -87,20 +96,41 @@ export type PageGapSpec = {
   /** Previous page's bottom footnote area (a ready-made positioned/sized element) and its content signature (change triggers rebuild) */
   notes?: HTMLElement
   notesKey?: string
-} & ({ el: HTMLElement } | { pos: number; kind?: 'inline' | 'table' | 'cut' })
+  /** Previous page's footer / next page's header (ready-made positioned .page-gap-hf elements) and their content signature */
+  hfEls?: HTMLElement[]
+  hfKey?: string
+  /** w:tblHeader repetition: cloned header rows rendered right after a table gap
+   *  (the slicing engine already reserved their height on the new page) */
+  repeatHeaderEls?: HTMLElement[]
+  repeatHeaderKey?: string
+  /** page forced by an explicit break (w:br page / pageBreakBefore): Word drops the
+   *  lead block's space-before, so a node decoration zeroes its margin-top */
+  suppressLeadMt?: boolean
+} & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
 export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
   const decos: Decoration[] = []
+  let ordinal = -1
   for (const gap of gaps) {
-    const { metrics, notes } = gap
+    ordinal++
+    const { metrics, notes, hfEls } = gap
     let pos: number
-    let kind: 'block' | 'inline' | 'table' | 'cut'
+    let kind: GapKind
     if ('el' in gap) {
       kind = 'block'
       try {
-        const inside = view.posAtDOM(gap.el, 0)
-        pos = view.state.doc.resolve(inside).before(1)
+        const $inside = view.state.doc.resolve(view.posAtDOM(gap.el, 0))
+        pos = $inside.before(1)
+        if (gap.suppressLeadMt)
+          decos.push(
+            Decoration.node(
+              pos,
+              $inside.after(1),
+              { class: 'page-break-lead' },
+              { key: `page-lead-${ordinal}` },
+            ),
+          )
       } catch {
         continue
       }
@@ -115,19 +145,107 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
         () => {
           const el = makeGapEl(metrics, kind)
           if (notes) el.appendChild(notes)
+          if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
+            for (const hf of hfEls) el.appendChild(hf)
+          } else if (hfEls && kind === 'table') {
+            // table-row gaps position their strips inside the absolutely-filled cell;
+            // only zero-height cut markers still can't carry them
+            const fill = el.querySelector('.page-gap-table-fill')
+            if (fill) for (const hf of hfEls) fill.appendChild(hf)
+          }
           return el
         },
         {
           side: -1,
-          key: `page-gap-${kind[0]}-${pos}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}`,
+          // keyed by page ordinal, NOT pos: edits above a gap shift its mapped
+          // position without changing the page, so an ordinal key lets sameGaps
+          // skip the dispatch entirely and lets PM reuse the widget DOM when a
+          // dispatch does happen
+          // full kind, not kind[0]: 'cut' and 'cell' would collide and skip the rebuild
+          key: `page-gap-${kind}-${ordinal}-${mKey}${gap.notesKey ? `-${gap.notesKey}` : ''}${gap.hfKey ? `-${gap.hfKey}` : ''}`,
         },
       ),
     )
+    // repeated header rows (w:tblHeader) directly after the table gap: one widget per
+    // cloned tr, side 0 so they land between the gap (side -1) and the split row
+    if (kind === 'table' && gap.repeatHeaderEls?.length) {
+      gap.repeatHeaderEls.forEach((rowEl, i) => {
+        decos.push(
+          Decoration.widget(pos, () => rowEl, {
+            side: 0,
+            key: `page-gap-rh-${pos}-${i}-${gap.repeatHeaderKey ?? ''}`,
+          }),
+        )
+      })
+    }
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)
-  if (prev && sameGaps(prev, next)) return
-  view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  if (!prev || !sameGaps(prev, next))
+    view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  // DOM-only rowspan bridging; observer paused so PM never re-parses the mutated
+  // cells (a reparse would wipe cell attrs that don't round-trip through DOM)
+  const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver
+  obs?.stop()
+  try {
+    syncPhantomRowspans(view.dom as HTMLElement)
+  } finally {
+    obs?.start()
+  }
+}
+
+/**
+ * Phantom table rows (page-gap rows, repeated-header clones) occupy grid row
+ * slots, so a vMerge cell spanning across them exhausts its rowspan early and
+ * every later cell in the row shifts one column left. Bridge: grow each
+ * crossing cell's rowspan by the phantom rows inside its span, keeping the
+ * source value in data-base-rowspan (clone/export paths drop phantom rows and
+ * restore from it). Idempotent; with no phantom rows left it restores all cells.
+ */
+export function syncPhantomRowspans(root: HTMLElement): void {
+  const isPhantom = (tr: HTMLTableRowElement) =>
+    tr.classList.contains('page-gap') || tr.classList.contains('page-repeat-header')
+  const grown = new Set<HTMLTableCellElement>()
+  for (const table of Array.from(root.querySelectorAll('table'))) {
+    const real: HTMLTableRowElement[] = []
+    /** phantom rows between real[i-1] and real[i] */
+    const phantomsBefore: number[] = []
+    let pending = 0
+    let hasPhantom = false
+    for (const tr of Array.from(table.rows)) {
+      if (isPhantom(tr)) {
+        pending++
+        hasPhantom = true
+        continue
+      }
+      phantomsBefore.push(pending)
+      pending = 0
+      real.push(tr)
+    }
+    if (!hasPhantom) continue
+    real.forEach((tr, start) => {
+      for (const td of Array.from(tr.cells)) {
+        const base = Number(td.getAttribute('data-base-rowspan')) || td.rowSpan
+        if (base <= 1) continue
+        // phantoms strictly inside the span [start, start+base): each boundary counts once
+        let extra = 0
+        for (let r = start + 1; r < Math.min(start + base, real.length); r++)
+          extra += phantomsBefore[r]
+        if (extra === 0) continue
+        if (td.getAttribute('data-base-rowspan') !== String(base))
+          td.setAttribute('data-base-rowspan', String(base))
+        if (td.rowSpan !== base + extra) td.rowSpan = base + extra
+        grown.add(td)
+      }
+    })
+  }
+  for (const td of Array.from(
+    root.querySelectorAll<HTMLTableCellElement>('td[data-base-rowspan], th[data-base-rowspan]'),
+  )) {
+    if (grown.has(td)) continue
+    td.rowSpan = Number(td.getAttribute('data-base-rowspan')) || 1
+    td.removeAttribute('data-base-rowspan')
+  }
 }
 
 function sameGaps(a: DecorationSet, b: DecorationSet): boolean {

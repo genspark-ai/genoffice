@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react'
 import { IconEnter, IconSend, IconStop } from './icons'
 
-// Keep in sync with the CSS `max-height` on `.ai-input-box textarea` (7 lines à 21px)
-const MAX_TEXTAREA_HEIGHT = 147
+// Keep in sync with the CSS `max-height` on `.ai-input-box textarea` (7 lines à 24px)
+const MAX_TEXTAREA_HEIGHT = 168
 
 /**
  * The AI panel input box shared by docs and sheets: auto-growing textarea
@@ -20,6 +20,7 @@ export function AiComposer({
   sendLabel,
   stopLabel,
   ariaLabel,
+  header,
   footerStart,
   iconOnly = false,
   sendIconEnabled,
@@ -41,6 +42,8 @@ export function AiComposer({
   readonly sendLabel: string
   readonly stopLabel: string
   readonly ariaLabel?: string | undefined
+  /** content inside the box above the textarea (attachment chips, …) — Genspark composer style */
+  readonly header?: React.ReactNode
   /** extra controls at the left of the footer (attach button, toggles, …) */
   readonly footerStart?: React.ReactNode
   /** compact variant: no hint text, icon-only enter/stop button (Genspark composer style) */
@@ -79,6 +82,7 @@ export function AiComposer({
 
   return (
     <div className="ai-input-box">
+      {header}
       <textarea
         ref={ref}
         value={value}

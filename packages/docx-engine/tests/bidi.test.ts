@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergePPrFormat, parseDocx, saveDocx } from '../src/index'
+import { mergeRPrModel } from '../src/generate'
 import { buildDocx } from './helpers/build-docx'
 
 const BIDI_BODY =
@@ -53,5 +54,45 @@ describe('RTL tables (tblPr w:bidiVisual)', () => {
       '<w:tr><w:tc><w:p><w:r><w:t>א</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
     const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
     expect(doc.blocks[0].table?.bidiVisual).toBe(true)
+  })
+})
+
+describe('complex-script bold and italic', () => {
+  // Word renders Arabic and Hebrew bold from w:bCs, not w:b, so emitting only w:b makes
+  // the Bold button do nothing to that text.
+  const CS_RUN = '<w:rPr><w:rFonts w:cs="Traditional Arabic"/><w:szCs w:val="28"/></w:rPr>'
+
+  it('emits the Cs twin when bold is turned on', () => {
+    const out = mergeRPrModel(CS_RUN, { text: 'مرحبا', bold: true }, false)
+    expect(out).toContain('<w:b/>')
+    expect(out).toContain('<w:bCs/>')
+  })
+
+  it('emits the Cs twin when italic is turned on', () => {
+    const out = mergeRPrModel(CS_RUN, { text: 'مرحبا', italic: true }, false)
+    expect(out).toContain('<w:i/>')
+    expect(out).toContain('<w:iCs/>')
+  })
+
+  it('restores it after the flag is turned off and on again', () => {
+    const bold = '<w:rPr><w:rFonts w:cs="Traditional Arabic"/><w:b/><w:bCs/></w:rPr>'
+    const off = mergeRPrModel(bold, { text: 'مرحبا', bold: false }, false)
+    expect(off).not.toContain('<w:b/>')
+    expect(off).not.toContain('<w:bCs/>')
+    expect(mergeRPrModel(off, { text: 'مرحبا', bold: true }, false)).toContain('<w:bCs/>')
+  })
+
+  it('leaves an unchanged run on its original bytes', () => {
+    const bold = '<w:rPr><w:rFonts w:cs="Traditional Arabic"/><w:b/><w:bCs/></w:rPr>'
+    expect(mergeRPrModel(bold, { text: 'مرحبا', bold: true }, false)).toBe(bold)
+  })
+
+  it('rebuilds the twins the way size already does', () => {
+    // w:sz has written its w:szCs companion from the model for as long as this path has
+    // existed, so a rebuild has always restored a Cs value the original may not have carried.
+    // Bold and italic were the two properties left out of that.
+    const fresh = mergeRPrModel('', { text: 'مرحبا', bold: true, sizeHalfPoints: 28 }, false)
+    expect(fresh).toContain('<w:szCs w:val="28"/>')
+    expect(fresh).toContain('<w:b/><w:bCs/>')
   })
 })

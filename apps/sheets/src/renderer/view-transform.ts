@@ -19,7 +19,58 @@ interface CellArea {
 type RowColumnOp = Extract<StructuralOp, { index: number }>
 
 function axisOf(op: RowColumnOp): Axis {
-  return op.kind === 'insert-rows' || op.kind === 'remove-rows' ? 'row' : 'column'
+  return op.kind === 'insert-cols' || op.kind === 'remove-cols' ? 'column' : 'row'
+}
+
+/// The two adjacent pre-move blocks a move swaps: `first` then `second`,
+/// with `second` immediately following `first`.
+function swapBlocks(op: Extract<RowColumnOp, { before: number }>): {
+  first: { start: number; end: number }
+  second: { start: number; end: number }
+} {
+  const first =
+    op.before > op.index
+      ? { start: op.index, end: op.index + op.count - 1 }
+      : { start: op.before, end: op.index - 1 }
+  const second =
+    op.before > op.index
+      ? { start: op.index + op.count, end: op.before - 1 }
+      : { start: op.index, end: op.index + op.count - 1 }
+  return { first, second }
+}
+
+/// The two blocks a move swaps, in the coordinate space the map operates on:
+/// pre-move blocks for the forward map, their post-move images (split at
+/// `first.start + secondLength`) for the inverse.
+function swapImageBlocks(
+  op: Extract<RowColumnOp, { before: number }>,
+  forward: boolean,
+): [{ start: number; end: number }, { start: number; end: number }] {
+  const { first, second } = swapBlocks(op)
+  const secondLength = second.end - second.start + 1
+  return forward
+    ? [first, second]
+    : [
+        { start: first.start, end: first.start + secondLength - 1 },
+        { start: first.start + secondLength, end: second.end },
+      ]
+}
+
+/// A move as the two adjacent blocks that swap places; `forward` maps
+/// pre-move → post-move, its inverse swaps the (equal-length) images back.
+function swapMap(
+  position: number,
+  op: Extract<RowColumnOp, { before: number }>,
+  forward: boolean,
+): number {
+  const [a, b] = swapImageBlocks(op, forward)
+  if (position >= a.start && position <= a.end) {
+    return position + (b.end - b.start + 1)
+  }
+  if (position >= b.start && position <= b.end) {
+    return position - (a.end - a.start + 1)
+  }
+  return position
 }
 
 function isInsert(op: RowColumnOp): boolean {
@@ -39,7 +90,9 @@ export function fileToScreen(
 ): number | null {
   let position = index
   for (const op of rowColumnOps(ops, axis)) {
-    if (isInsert(op)) {
+    if ('before' in op) {
+      position = swapMap(position, op, true)
+    } else if (isInsert(op)) {
       if (position >= op.index) position += op.count
     } else {
       if (position >= op.index && position < op.index + op.count) return null
@@ -61,7 +114,9 @@ export function screenToFile(
   for (let step = relevant.length - 1; step >= 0; step -= 1) {
     const op = relevant[step]
     if (!op) continue
-    if (isInsert(op)) {
+    if ('before' in op) {
+      position = swapMap(position, op, false)
+    } else if (isInsert(op)) {
       if (position >= op.index && position < op.index + op.count) return null
       if (position >= op.index + op.count) position -= op.count
     } else if (position >= op.index) {
@@ -75,28 +130,84 @@ export function screenToFile(
 export function netAxisDelta(ops: readonly StructuralOp[], axis: Axis): number {
   let delta = 0
   for (const op of rowColumnOps(ops, axis)) {
+    if ('before' in op) continue
     delta += isInsert(op) ? op.count : -op.count
   }
   return delta
 }
 
-function axisSpanToFile(
+interface Span {
+  start: number
+  end: number
+}
+
+/// Envelope of a span's image through an insertion: a monotone shift, so the
+/// span ends map to the envelope ends.
+function insertEnvelope(span: Span, index: number, count: number): Span {
+  return {
+    start: span.start >= index ? span.start + count : span.start,
+    end: span.end >= index ? span.end + count : span.end,
+  }
+}
+
+/// Envelope of a span's image through a removal; null when the whole span
+/// falls inside the removed block.
+function removeEnvelope(span: Span, index: number, count: number): Span | null {
+  const left = span.start < index ? { start: span.start, end: Math.min(span.end, index - 1) } : null
+  const right =
+    span.end >= index + count
+      ? { start: Math.max(span.start, index + count) - count, end: span.end - count }
+      : null
+  if (left && right) return { start: left.start, end: right.end }
+  return left ?? right
+}
+
+/// Envelope of a span's image through one move. The map is a translation on
+/// each swap block and the identity elsewhere, so extremes over the span sit
+/// at the span ends or at block boundaries inside the span.
+function moveEnvelope(
+  span: Span,
+  op: Extract<RowColumnOp, { before: number }>,
+  forward: boolean,
+): Span {
+  const [a, b] = swapImageBlocks(op, forward)
+  let start = Infinity
+  let end = -Infinity
+  for (const position of [span.start, span.end, a.start, a.end, b.start, b.end]) {
+    if (position < span.start || position > span.end) continue
+    const mapped = swapMap(position, op, forward)
+    start = Math.min(start, mapped)
+    end = Math.max(end, mapped)
+  }
+  return { start, end }
+}
+
+/// Envelope of a span's image through the whole op sequence (`forward` =
+/// file → screen). Moves make the composite non-monotonic, so the envelope is
+/// tracked op by op: each op's blocks are evaluated in the intermediate
+/// coordinate space that op actually ran in. Over-reading is safe, tearing is
+/// not. Null when nothing in the span survives the mapping.
+function spanEnvelope(
   ops: readonly StructuralOp[],
   axis: Axis,
-  start: number,
-  end: number,
-): { start: number; end: number } | null {
-  let fileStart: number | null = null
-  for (let index = start; index <= end && fileStart === null; index += 1) {
-    fileStart = screenToFile(ops, axis, index)
+  span: Span,
+  forward: boolean,
+): Span | null {
+  const relevant = rowColumnOps(ops, axis)
+  if (!forward) relevant.reverse()
+  let current: Span | null = span
+  for (const op of relevant) {
+    if (!current) return null
+    if ('before' in op) {
+      current = moveEnvelope(current, op, forward)
+    } else if (isInsert(op) === forward) {
+      // Inserts applied forward and removals inverted both shift lines apart.
+      current = insertEnvelope(current, op.index, op.count)
+    } else {
+      current = removeEnvelope(current, op.index, op.count)
+    }
   }
-  if (fileStart === null) return null
-  let fileEnd: number | null = null
-  for (let index = end; index >= start && fileEnd === null; index -= 1) {
-    fileEnd = screenToFile(ops, axis, index)
-  }
-  if (fileEnd === null || fileEnd < fileStart) return null
-  return { start: fileStart, end: fileEnd }
+  return current
 }
 
 /// File-space range backing a screen-space range. The result may span file
@@ -106,8 +217,13 @@ export function screenRangeToFileRange(
   ops: readonly StructuralOp[],
   range: CellArea,
 ): CellArea | null {
-  const rows = axisSpanToFile(ops, 'row', range.startRow, range.endRow)
-  const columns = axisSpanToFile(ops, 'column', range.startColumn, range.endColumn)
+  const rows = spanEnvelope(ops, 'row', { start: range.startRow, end: range.endRow }, false)
+  const columns = spanEnvelope(
+    ops,
+    'column',
+    { start: range.startColumn, end: range.endColumn },
+    false,
+  )
   if (!rows || !columns) return null
   return {
     startRow: rows.start,
@@ -117,33 +233,19 @@ export function screenRangeToFileRange(
   }
 }
 
-function axisSpanToScreen(
-  ops: readonly StructuralOp[],
-  axis: Axis,
-  start: number,
-  end: number,
-): { start: number; end: number } | null {
-  let screenStart: number | null = null
-  for (let index = start; index <= end && screenStart === null; index += 1) {
-    screenStart = fileToScreen(ops, axis, index)
-  }
-  if (screenStart === null) return null
-  let screenEnd: number | null = null
-  for (let index = end; index >= start && screenEnd === null; index -= 1) {
-    screenEnd = fileToScreen(ops, axis, index)
-  }
-  if (screenEnd === null || screenEnd < screenStart) return null
-  return { start: screenStart, end: screenEnd }
-}
-
 /// Screen-space extent of a file-space range; null when every line in the
 /// range was deleted.
 export function fileRangeToScreenRange(
   ops: readonly StructuralOp[],
   range: CellArea,
 ): CellArea | null {
-  const rows = axisSpanToScreen(ops, 'row', range.startRow, range.endRow)
-  const columns = axisSpanToScreen(ops, 'column', range.startColumn, range.endColumn)
+  const rows = spanEnvelope(ops, 'row', { start: range.startRow, end: range.endRow }, true)
+  const columns = spanEnvelope(
+    ops,
+    'column',
+    { start: range.startColumn, end: range.endColumn },
+    true,
+  )
   if (!rows || !columns) return null
   return {
     startRow: rows.start,

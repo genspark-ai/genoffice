@@ -53,6 +53,8 @@ export type Fill =
       angle?: number
       /** <a:path path>: circle/rect/shape = radial/path gradient (linear by default) */
       path?: 'circle' | 'rect' | 'shape'
+      /** <a:fillToRect> insets as fractions (may exceed 0..1); defines the gradient focus */
+      fillTo?: { l: number; t: number; r: number; b: number }
     }
   | { type: 'image'; mediaRef: string; mode?: 'stretch' | 'tile' }
   | { type: 'pattern'; fg: ResolvedColor; bg: ResolvedColor; preset: string }
@@ -133,7 +135,14 @@ export interface TextRun {
   csFont?: string
   /** Run has no explicit font declaration (inherits/theme); patches don't inject latin/ea when the font is unchanged */
   fontImplicit?: boolean
+  /**
+   * Effective character casing ('all' | 'small', explicit rPr cap or inherited from
+   * placeholder styles). Display-only: the render layer uppercases; never written back.
+   */
+  cap?: string
   color?: ResolvedColor
+  /** Text highlight color <a:rPr><a:highlight> (drawn as a background behind the run) */
+  highlight?: ResolvedColor
   /** color is display-only (from schemeClr/inheritance, not an explicit run srgbClr);
    * the patch path won't write srgbClr from it, avoiding baking in theme colors and breaking theme switches */
   colorFollowsTheme?: boolean

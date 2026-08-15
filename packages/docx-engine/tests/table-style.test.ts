@@ -90,6 +90,26 @@ describe('table styles (tblStyle display)', () => {
     })
   })
 
+  it('deep-merges paraSpacing through basedOn (partial child keeps parent values)', async () => {
+    const spacedStyles =
+      '<w:style w:type="table" w:styleId="SpacedParent"><w:name w:val="Spaced"/>' +
+      '<w:pPr><w:spacing w:before="120" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:style>' +
+      '<w:style w:type="table" w:styleId="SpacedChild"><w:name w:val="Spaced Child"/><w:basedOn w:val="SpacedParent"/>' +
+      '<w:pPr><w:spacing w:after="60"/></w:pPr></w:style>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraStylesXml: spacedStyles,
+      }),
+    )
+    expect(doc.styles.get('SpacedChild')!.tableDisplay?.paraSpacing).toMatchObject({
+      beforeTwips: 120,
+      afterTwips: 60,
+      lineRawTwips: 240,
+      lineSpacing: 1,
+    })
+  })
+
   it('style-derived display keeps untouched tables byte-identical', async () => {
     const source = await buildDocx({
       bodyXml: styledTable('<w:tblLook w:firstRow="1" w:noHBand="0"/>'),

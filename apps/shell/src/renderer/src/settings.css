@@ -1,0 +1,266 @@
+/* Settings modal (opened from the account menu): two-pane dialog matched to
+   GenMail's settings window (values read from its packaged CSS) — borderless
+   header/nav, label-left / control-right rows with hairline dividers.
+   Chrome colors use semantic tokens only (see CLAUDE.md theming rules). */
+
+.set-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5vh 24px;
+  background: var(--color-bg-overlay);
+  backdrop-filter: blur(6px);
+}
+
+.set-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  height: min(720px, 90vh);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-modal-strong);
+  overflow: hidden;
+}
+
+.set-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+}
+
+.set-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.set-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.set-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.set-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.set-nav {
+  flex-shrink: 0;
+  width: 232px;
+  padding: 8px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.set-nav-item svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.set-nav-item:hover:not(.active) {
+  background: var(--bg-content);
+}
+
+.set-nav-item.active {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+
+.set-nav-item.active svg {
+  color: var(--text-primary);
+}
+
+.set-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 28px 24px;
+  overflow-y: auto;
+}
+
+.set-pane-title {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.set-field {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 52px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.set-field:last-child {
+  border-bottom: none;
+}
+
+.set-field-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.set-field-label {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+}
+
+.set-field-value {
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: right;
+  user-select: text;
+  word-break: break-all;
+}
+
+/* GenMail-style select pill: the visible layer is just the current value +
+   chevron (width hugs the content); the real <select> sits on top invisibly
+   and only supplies the click target and the native popup. */
+.set-select-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.set-select-wrap:hover,
+.set-select-wrap:focus-within {
+  background: var(--bg-hover);
+}
+
+.set-select-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.set-select-wrap::after {
+  content: '';
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  border-right: 1.5px solid var(--text-primary);
+  border-bottom: 1.5px solid var(--text-primary);
+  transform: rotate(45deg);
+}
+
+.set-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  font: inherit;
+  cursor: pointer;
+  /* the element is invisible, but the OS popup that opens on click reads its
+     computed color/background to render the option list */
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.set-select option {
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.set-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.set-btn:hover {
+  background: var(--bg-hover-strong);
+}
+
+.set-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.set-btn.primary {
+  border-color: var(--color-btn-primary);
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+}
+
+.set-btn.primary:hover {
+  background: var(--color-btn-primary-hover);
+}
+
+.set-btn.danger {
+  color: var(--danger);
+}
+
+.set-pane-footer {
+  margin-top: auto;
+  padding-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

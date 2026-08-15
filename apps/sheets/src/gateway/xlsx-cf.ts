@@ -27,9 +27,23 @@ export interface DxfSink {
 /// OOXML-representable icon sets; Univer's extras (3Triangles, 3Stars,
 /// 5Boxes, …) are x14-only and fail closed.
 export const OOXML_ICON_SETS = new Set([
-  '3Arrows', '3ArrowsGray', '3Flags', '3TrafficLights1', '3TrafficLights2',
-  '3Signs', '3Symbols', '3Symbols2', '4Arrows', '4ArrowsGray', '4RedToBlack',
-  '4Rating', '4TrafficLights', '5Arrows', '5ArrowsGray', '5Quarters', '5Rating',
+  '3Arrows',
+  '3ArrowsGray',
+  '3Flags',
+  '3TrafficLights1',
+  '3TrafficLights2',
+  '3Signs',
+  '3Symbols',
+  '3Symbols2',
+  '4Arrows',
+  '4ArrowsGray',
+  '4RedToBlack',
+  '4Rating',
+  '4TrafficLights',
+  '5Arrows',
+  '5ArrowsGray',
+  '5Quarters',
+  '5Rating',
 ])
 
 /// Univer's iconMap lists most sets best-icon-first, but the rating sets run
@@ -44,8 +58,22 @@ export function iconSetSaveable(config: unknown): boolean {
   const iconTypes = new Set(entries.map((entry) => String(entry?.iconType)))
   if (iconTypes.size !== 1 || !OOXML_ICON_SETS.has([...iconTypes][0] ?? '')) return false
   const ids = entries.map((entry) => String(entry?.iconId))
-  return ids.every((id, index) => id === String(index))
-    || ids.every((id, index) => id === String(entries.length - 1 - index))
+  return (
+    ids.every((id, index) => id === String(index)) ||
+    ids.every((id, index) => id === String(entries.length - 1 - index))
+  )
+}
+
+/// Dry-runs the rule serializer so the UI can reject a rule the save would
+/// fail closed on (same code path — zero drift). Returns the save-side error
+/// message, or null when the rule is saveable.
+export function cfRuleUnsaveableReason(rule: Record<string, unknown>): string | null {
+  try {
+    serializeCfRule(rule, 1, false, 'A1', { internDxf: () => 0 })
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
 }
 
 interface PreservedBlock {
@@ -119,8 +147,9 @@ export function applyCfRules(
     return xml.slice(0, end) + body + xml.slice(end)
   }
   const anchor =
-    /<dataValidations\b|<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/
-      .exec(xml)
+    /<dataValidations\b|<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/.exec(
+      xml,
+    )
   if (anchor) {
     return xml.slice(0, anchor.index) + body + xml.slice(anchor.index)
   }
@@ -160,14 +189,11 @@ function serializeCfRule(
   throw new CfEditError(`Unsupported conditional-formatting rule type "${String(type)}".`)
 }
 
-function attributes(
-  base: string,
-  priority: number,
-  stopIfTrue: boolean,
-  dxfId?: number,
-): string {
-  return `type="${base}"${dxfId === undefined ? '' : ` dxfId="${dxfId}"`} priority="${priority}"`
-    + (stopIfTrue ? ' stopIfTrue="1"' : '')
+function attributes(base: string, priority: number, stopIfTrue: boolean, dxfId?: number): string {
+  return (
+    `type="${base}"${dxfId === undefined ? '' : ` dxfId="${dxfId}"`} priority="${priority}"` +
+    (stopIfTrue ? ' stopIfTrue="1"' : '')
+  )
 }
 
 function highlightRule(
@@ -225,35 +251,30 @@ function highlightRule(
             [`RIGHT(${anchor},LEN(${quoted}))=${quoted}`],
           )
         case 'equal':
-          return element(
-            `${attributes('cellIs', priority, stopIfTrue, dxfId)} operator="equal"`,
-            [quoted],
-          )
+          return element(`${attributes('cellIs', priority, stopIfTrue, dxfId)} operator="equal"`, [
+            quoted,
+          ])
         case 'notEqual':
           return element(
             `${attributes('cellIs', priority, stopIfTrue, dxfId)} operator="notEqual"`,
             [quoted],
           )
         case 'containsBlanks':
-          return element(
-            attributes('containsBlanks', priority, stopIfTrue, dxfId),
-            [`LEN(TRIM(${anchor}))=0`],
-          )
+          return element(attributes('containsBlanks', priority, stopIfTrue, dxfId), [
+            `LEN(TRIM(${anchor}))=0`,
+          ])
         case 'notContainsBlanks':
-          return element(
-            attributes('notContainsBlanks', priority, stopIfTrue, dxfId),
-            [`LEN(TRIM(${anchor}))>0`],
-          )
+          return element(attributes('notContainsBlanks', priority, stopIfTrue, dxfId), [
+            `LEN(TRIM(${anchor}))>0`,
+          ])
         case 'containsErrors':
-          return element(
-            attributes('containsErrors', priority, stopIfTrue, dxfId),
-            [`ISERROR(${anchor})`],
-          )
+          return element(attributes('containsErrors', priority, stopIfTrue, dxfId), [
+            `ISERROR(${anchor})`,
+          ])
         case 'notContainsErrors':
-          return element(
-            attributes('notContainsErrors', priority, stopIfTrue, dxfId),
-            [`NOT(ISERROR(${anchor}))`],
-          )
+          return element(attributes('notContainsErrors', priority, stopIfTrue, dxfId), [
+            `NOT(ISERROR(${anchor}))`,
+          ])
         default:
           throw new CfEditError(`Unsupported text operator "${String(operator)}".`)
       }
@@ -266,9 +287,9 @@ function highlightRule(
       const rank = typeof value === 'number' && Number.isFinite(value) ? value : undefined
       if (rank === undefined) throw new CfEditError('A top/bottom rule needs a rank value.')
       return element(
-        `${attributes('top10', priority, stopIfTrue, dxfId)}`
-        + `${rule.isPercent === true ? ' percent="1"' : ''}`
-        + `${rule.isBottom === true ? ' bottom="1"' : ''} rank="${rank}"`,
+        `${attributes('top10', priority, stopIfTrue, dxfId)}` +
+          `${rule.isPercent === true ? ' percent="1"' : ''}` +
+          `${rule.isBottom === true ? ' bottom="1"' : ''} rank="${rank}"`,
       )
     }
     case 'average': {
@@ -290,10 +311,9 @@ function highlightRule(
       if (typeof value !== 'string' || value.length === 0) {
         throw new CfEditError('A formula rule needs a formula.')
       }
-      return element(
-        attributes('expression', priority, stopIfTrue, dxfId),
-        [value.startsWith('=') ? value.slice(1) : value],
-      )
+      return element(attributes('expression', priority, stopIfTrue, dxfId), [
+        value.startsWith('=') ? value.slice(1) : value,
+      ])
     }
     case 'timePeriod':
       throw new CfEditError('Date-occurring rules cannot be saved yet.')
@@ -316,17 +336,17 @@ function colorScaleRule(
   )
   const cfvos = stops.map((stop) => serializeCfvo(stop?.value)).join('')
   const colors = stops
-    .map((stop) => `<color rgb="${toArgb(requireColor(stop?.color ?? '#FFFFFF', 'color scale'))}"/>`)
+    .map(
+      (stop) => `<color rgb="${toArgb(requireColor(stop?.color ?? '#FFFFFF', 'color scale'))}"/>`,
+    )
     .join('')
-  return `<cfRule ${attributes('colorScale', priority, stopIfTrue)}>`
-    + `<colorScale>${cfvos}${colors}</colorScale></cfRule>`
+  return (
+    `<cfRule ${attributes('colorScale', priority, stopIfTrue)}>` +
+    `<colorScale>${cfvos}${colors}</colorScale></cfRule>`
+  )
 }
 
-function dataBarRule(
-  rule: Record<string, unknown>,
-  priority: number,
-  stopIfTrue: boolean,
-): string {
+function dataBarRule(rule: Record<string, unknown>, priority: number, stopIfTrue: boolean): string {
   const config = rule.config as Record<string, unknown> | undefined
   if (typeof config !== 'object' || config === null) {
     throw new CfEditError('A data bar rule has no configuration.')
@@ -334,16 +354,14 @@ function dataBarRule(
   const showValue = rule.isShowValue === false ? ' showValue="0"' : ''
   // The base schema stores one bar color; the negative color is x14-only and
   // is dropped.
-  return `<cfRule ${attributes('dataBar', priority, stopIfTrue)}>`
-    + `<dataBar${showValue}>${serializeCfvo(config.min)}${serializeCfvo(config.max)}`
-    + `<color rgb="${toArgb(requireColor(config.positiveColor ?? '#638EC6', 'data bar'))}"/></dataBar></cfRule>`
+  return (
+    `<cfRule ${attributes('dataBar', priority, stopIfTrue)}>` +
+    `<dataBar${showValue}>${serializeCfvo(config.min)}${serializeCfvo(config.max)}` +
+    `<color rgb="${toArgb(requireColor(config.positiveColor ?? '#638EC6', 'data bar'))}"/></dataBar></cfRule>`
+  )
 }
 
-function iconSetRule(
-  rule: Record<string, unknown>,
-  priority: number,
-  stopIfTrue: boolean,
-): string {
+function iconSetRule(rule: Record<string, unknown>, priority: number, stopIfTrue: boolean): string {
   const config = rule.config
   if (!Array.isArray(config) || config.length < 2) {
     throw new CfEditError('An icon set needs at least two thresholds.')
@@ -370,15 +388,19 @@ function iconSetRule(
   else if (!iconIds.every((id, index) => id === naturalIds[index])) {
     throw new CfEditError('Custom icon orderings are extended-format-only and cannot be saved.')
   }
-  const cfvos = ascending.map((entry, index) => {
-    const gte = entry?.operator === 'greaterThan' ? ' gte="0"' : ''
-    // The first threshold is the catch-all minimum.
-    if (index === 0) return '<cfvo type="percent" val="0"/>'
-    return serializeCfvo(entry?.value, gte)
-  }).join('')
+  const cfvos = ascending
+    .map((entry, index) => {
+      const gte = entry?.operator === 'greaterThan' ? ' gte="0"' : ''
+      // The first threshold is the catch-all minimum.
+      if (index === 0) return '<cfvo type="percent" val="0"/>'
+      return serializeCfvo(entry?.value, gte)
+    })
+    .join('')
   const showValue = rule.isShowValue === false ? ' showValue="0"' : ''
-  return `<cfRule ${attributes('iconSet', priority, stopIfTrue)}>`
-    + `<iconSet iconSet="${escapeXmlAttribute(iconSet)}"${showValue}${reverse}>${cfvos}</iconSet></cfRule>`
+  return (
+    `<cfRule ${attributes('iconSet', priority, stopIfTrue)}>` +
+    `<iconSet iconSet="${escapeXmlAttribute(iconSet)}"${showValue}${reverse}>${cfvos}</iconSet></cfRule>`
+  )
 }
 
 function serializeCfvo(value: unknown, extra = ''): string {
@@ -405,15 +427,15 @@ export function buildDxfXml(style: unknown): string {
   if (fontColor) fontParts.push(`<color rgb="${toArgb(fontColor)}"/>`)
   const fillColor = rgbOf(s.bg)
   const font = fontParts.length === 0 ? '' : `<font>${fontParts.join('')}</font>`
-  const fill = fillColor === undefined
-    ? ''
-    : `<fill><patternFill><bgColor rgb="${toArgb(fillColor)}"/></patternFill></fill>`
+  const fill =
+    fillColor === undefined
+      ? ''
+      : `<fill><patternFill><bgColor rgb="${toArgb(fillColor)}"/></patternFill></fill>`
   return `<dxf>${font}${fill}</dxf>`
 }
 
 function isLine(value: unknown): boolean {
-  return typeof value === 'object' && value !== null
-    && (value as Record<string, unknown>).s === 1
+  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).s === 1
 }
 
 function rgbOf(value: unknown): string | undefined {
@@ -429,7 +451,8 @@ function parseColor(input: string): string | undefined {
   if (hex?.[1]) return `#${hex[1].toUpperCase()}`
   const rgb = /^rgba?\(\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)/.exec(value)
   if (!rgb) return undefined
-  const channels = rgb.slice(1, 4)
+  const channels = rgb
+    .slice(1, 4)
     .map((channel) => Math.min(255, Number(channel)).toString(16).padStart(2, '0'))
     .join('')
   return `#${channels}`.toUpperCase()
@@ -446,8 +469,8 @@ function requireColor(input: unknown, what: string): string {
 function toRef(range: CfCellArea): string {
   return range.startRow === range.endRow && range.startColumn === range.endColumn
     ? `${columnToLetters(range.startColumn)}${range.startRow + 1}`
-    : `${columnToLetters(range.startColumn)}${range.startRow + 1}`
-    + `:${columnToLetters(range.endColumn)}${range.endRow + 1}`
+    : `${columnToLetters(range.startColumn)}${range.startRow + 1}` +
+        `:${columnToLetters(range.endColumn)}${range.endRow + 1}`
 }
 
 function columnToLetters(column: number): string {

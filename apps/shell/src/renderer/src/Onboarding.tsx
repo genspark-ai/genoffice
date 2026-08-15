@@ -19,6 +19,8 @@ interface Slide {
   bodyDim?: boolean
   /** community slide shows the credits offer panel with the "Join GenTeam" call-to-action */
   showOffer?: boolean
+  /** closing slide shows the "star us on GitHub" hint */
+  showStar?: boolean
   art: 'logo' | 'gift' | 'check'
 }
 
@@ -30,6 +32,7 @@ const SLIDES: readonly Slide[] = [
     subtitleKey: 'onbBody3',
     bodyKey: 'onbNote3',
     bodyDim: true,
+    showStar: true,
     art: 'check',
   },
 ]
@@ -176,6 +179,26 @@ export function Onboarding({ onDone }: OnboardingProps) {
               <p className="onb-subtitle">{t(s.subtitleKey)}</p>
               {s.bodyKey && (
                 <p className={`onb-body${s.bodyDim ? ' onb-body-dim' : ''}`}>{t(s.bodyKey)}</p>
+              )}
+              {s.showStar && (
+                <div className="onb-star">
+                  <p className="onb-star-hint">{t('onbStarHint')}</p>
+                  <button
+                    className="onb-star-btn"
+                    onClick={() => void window.aiOffice.openGitHubRepo()}
+                  >
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.3l-5.8 3.1 1.1-6.5L2.6 9.3l6.5-.9L12 2.5z" />
+                    </svg>
+                    {t('starOnGitHub')}
+                  </button>
+                </div>
               )}
               {s.showOffer && (
                 <div className="onb-offer">

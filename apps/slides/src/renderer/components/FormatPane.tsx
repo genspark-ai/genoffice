@@ -5,7 +5,7 @@
  * inputs via key.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import type { RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
+import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
 import type { GradientFillSpec, LinkTargetOp } from '../../shared/ipc'
 import { useI18n } from '../i18n/locale'
 import { armColorInput } from '../color-input'
@@ -107,11 +107,12 @@ export function FormatPane({
   const canTransform = !!node && TRANSFORMABLE.has(node.type)
   const shape =
     node && (node.type === 'shape' || node.type === 'text') ? (node as ShapeRenderNode) : null
+  const pic = node && node.type === 'picture' ? (node as PictureRenderNode) : null
   const fillColor = shape?.fill.kind === 'solid' ? toHex6(shape.fill.color) : null
   const fillAlpha = shape?.fill.kind === 'solid' ? alphaOf(shape.fill.color) : 255
   // 0..100 transparency shown in the dropdown (0 = opaque)
   const fillTransparency = Math.round(((255 - fillAlpha) / 255) * 100)
-  const stroke = shape?.stroke
+  const stroke = (shape ?? pic)?.stroke
   const strokeWidthPt = stroke ? Math.max(0.5, Math.round(stroke.widthPt * 2) / 2) : 1
   const strokeColor = stroke ? toHex6(stroke.color) : '#000000'
   const strokeDash = stroke?.dashPreset ?? 'solid'
@@ -196,7 +197,12 @@ export function FormatPane({
       <div className="ai-panel-header">
         <span className="ai-panel-title">{t('paneFormatTitle')}</span>
         <div className="ai-panel-header-actions">
-          <button className="ai-header-btn" onClick={onCollapse} title={t('paneFormatClose')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('paneFormatClose')}
+            aria-label={t('paneFormatClose')}
+          >
             <IconSidebarCollapse size={15} />
           </button>
         </div>
@@ -247,7 +253,7 @@ export function FormatPane({
                 <button
                   className="fp-btn"
                   disabled={!pictureCanCutout}
-                  title={pictureCanCutout ? t('paneFormatCutoutTip') : t('paneFormatCutoutNA')}
+                  data-tip={pictureCanCutout ? t('paneFormatCutoutTip') : t('paneFormatCutoutNA')}
                   onClick={() => onPictureCutout?.()}
                 >
                   {t('paneCutoutTitle')}
@@ -337,14 +343,14 @@ export function FormatPane({
                   className="fp-color"
                   value={gradFrom}
                   onChange={(e) => setGradFrom(e.target.value)}
-                  title={t('paneFormatGradientFrom')}
+                  data-tip={t('paneFormatGradientFrom')}
                 />
                 <input
                   type="color"
                   className="fp-color"
                   value={gradTo}
                   onChange={(e) => setGradTo(e.target.value)}
-                  title={t('paneFormatGradientTo')}
+                  data-tip={t('paneFormatGradientTo')}
                 />
                 {(
                   [
@@ -357,7 +363,8 @@ export function FormatPane({
                   <button
                     key={label}
                     className="fp-btn"
-                    title={radial ? t('paneFormatGradientRadial') : `${angleDeg}°`}
+                    data-tip={radial ? t('paneFormatGradientRadial') : `${angleDeg}°`}
+                    aria-label={radial ? t('paneFormatGradientRadial') : `${angleDeg}°`}
                     onClick={() =>
                       onFill(node.sourceId, {
                         gradient: {
@@ -376,7 +383,7 @@ export function FormatPane({
             </>
           )}
 
-          {shape && (
+          {(shape || pic) && (
             <>
               <div className="fp-section">{t('paneFormatOutline')}</div>
               <div className="fp-row">
@@ -387,7 +394,7 @@ export function FormatPane({
                   defaultValue={strokeColor}
                   onPointerDown={(e) => armColorInput(e.currentTarget)}
                   onChange={(e) => commitStroke(node.sourceId, { color: e.target.value })}
-                  title={t('paneFormatOutlineColor')}
+                  data-tip={t('paneFormatOutlineColor')}
                 />
                 <label className="fp-field" style={{ flex: 1 }}>
                   <span>{t('paneFormatPt')}</span>
@@ -477,7 +484,7 @@ export function FormatPane({
               <div className="fp-row">
                 <span
                   className="fp-link-target"
-                  title={link?.kind === 'url' ? link.url : undefined}
+                  data-tip={link?.kind === 'url' ? link.url : undefined}
                 >
                   {link
                     ? link.kind === 'url'

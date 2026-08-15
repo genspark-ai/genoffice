@@ -125,11 +125,33 @@ const WINGDINGS: Record<number, string> = {
   0xfe: '☑',
 }
 
+// 0x95-0xA6: circle/ring/square/box bullet series (sizes collapsed to the nearest Unicode shape)
+const WINGDINGS_2: Record<number, string> = {
+  0x95: '•',
+  0x96: '●',
+  0x97: '●',
+  0x98: '●',
+  0x99: '◦',
+  0x9a: '○',
+  0x9b: '○',
+  0x9c: '○',
+  0x9d: '◉',
+  0x9e: '◉',
+  0x9f: '▪',
+  0xa0: '■',
+  0xa1: '■',
+  0xa2: '■',
+  0xa3: '□',
+  0xa4: '□',
+  0xa5: '□',
+  0xa6: '□',
+}
+
 const SYMBOL_FONT_MAPS: Record<string, Record<number, string>> = {
   symbol: SYMBOL,
   wingdings: WINGDINGS,
+  'wingdings 2': WINGDINGS_2,
   // recognized as symbol-encoded so unmapped glyphs get sane fallbacks, but no table yet
-  'wingdings 2': {},
   'wingdings 3': {},
   webdings: {},
 }
@@ -144,6 +166,16 @@ export function decodeSymbolChar(font: string, code: number): string | null {
   if (!map) return null
   const low = code >= 0xf000 && code <= 0xf0ff ? code - 0xf000 : code
   return map[low] ?? null
+}
+
+/** raw-byte glyph codes → their U+F0xx private-use form (how symbol-font cmaps index glyphs) */
+export function toSymbolPua(text: string): string {
+  let out = ''
+  for (const ch of text) {
+    const code = ch.codePointAt(0) as number
+    out += code > 0x20 && code <= 0xff ? String.fromCodePoint(0xf000 + code) : ch
+  }
+  return out
 }
 
 /** whole string decode; null unless every non-whitespace char maps */

@@ -285,6 +285,7 @@ pub struct ColorContext {
 pub fn read_styles(
     archive: &mut ZipArchive<File>,
     colors: &ColorContext,
+    locale: &str,
 ) -> Result<(Vec<CellStyle>, Vec<CellStyle>), SidecarError> {
     let Some(xml) = read_optional_xml(archive, "xl/styles.xml")? else {
         return Ok((vec![CellStyle::default()], Vec::new()));
@@ -354,7 +355,9 @@ pub fn read_styles(
                             custom_formats
                                 .get(&(id as u32))
                                 .cloned()
-                                .or_else(|| builtin_number_format(id as u32).map(ToOwned::to_owned))
+                                .or_else(|| {
+                                    builtin_number_format(id as u32, locale).map(ToOwned::to_owned)
+                                })
                         });
                     let alignment = xf.children().find(|child| child.has_tag_name("alignment"));
                     CellStyle {
@@ -1602,12 +1605,12 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
 /// falls back to General (which would surface raw date serials, #numFmt58).
 ///
 /// Locale-reserved ranges carry no formatCode in styles.xml — the reader is
-/// expected to know them:
-///  - 27-36 / 50-58: East-Asian date/time formats. The same id means a
-///    different pattern per locale (zh/ja/ko/zh-TW) and the file does not
-///    record which; we resolve with the zh-CN table since every locale's
-///    variant is a date/time of the same shape, and zh Excel/WPS files are
-///    the ones we actually receive. The zh AM/PM token (U+4E0A/U+4E0B
+/// expected to resolve them for its current locale:
+///  - 27-36 / 50-58: locale-dependent date/time formats. The same id means a
+///    different pattern per locale and the file does not record which. CJK
+///    locales use the zh-CN-compatible table below; other locales use their
+///    local full short-date pattern so a CJK month/day format cannot leak into
+///    a European workbook and discard its year. The zh AM/PM token (U+4E0A/U+4E0B
 ///    U+5348) is not understood by the renderer's numfmt, so 34/35/55/56
 ///    render as 24-hour. Escapes: U+5E74 year, U+6708 month, U+65E5 day,
 ///    U+65F6 hour, U+5206 minute, U+79D2 second.
@@ -1615,7 +1618,14 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
 ///    locale-defined and unrecorded.
 ///  - 59-81: th-TH; numfmt has no Thai digit/era tokens, so these map to
 ///    Arabic-digit equivalents (Buddhist-era years render as Gregorian).
-fn builtin_number_format(id: u32) -> Option<&'static str> {
+fn builtin_number_format(id: u32, locale: &str) -> Option<&'static str> {
+    if matches!(
+        id,
+        27 | 28 | 29 | 30 | 31 | 36 | 50 | 51 | 52 | 53 | 54 | 57 | 58
+    ) && !matches!(locale, "zh" | "zh-TW" | "ja" | "ko")
+    {
+        return Some(locale_short_date_format(locale));
+    }
     match id {
         0 => Some("General"),
         1 => Some("0"),
@@ -1678,6 +1688,15 @@ fn builtin_number_format(id: u32) -> Option<&'static str> {
         80 => Some("mm:ss.0"),
         81 => Some("d/m/yy"),
         _ => None,
+    }
+}
+
+fn locale_short_date_format(locale: &str) -> &'static str {
+    match locale {
+        "en" => "m/d/yyyy",
+        "de" | "pl" | "ru" => "d.m.yyyy",
+        "nl" => "d-m-yyyy",
+        _ => "d/m/yyyy",
     }
 }
 

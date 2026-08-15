@@ -7,10 +7,8 @@
  * no-op in a plain Node environment), avoiding the Windows problem where
  * .cmd files cannot be passed to execFile.
  *
- * Auth: the api_key field in ~/.genspark-tool-cli/config.json written by
- * `gsk login`, or the GSK_API_KEY environment variable. When not logged in,
- * hasGskAuth() returns false and callers should fall back to other
- * implementations (e.g. Serper/DuckDuckGo search).
+ * Auth: gskApiKey() below. When not logged in, hasGskAuth() returns false and
+ * callers should fall back to other implementations (e.g. Serper search).
  */
 
 import { execFile } from 'node:child_process'
@@ -22,10 +20,12 @@ import {
   COPYRIGHT_HOSTS,
   asRecord,
   firstItem,
+  gskProxyUrl,
   safeHost,
   type ImageSearchResult,
   type WebSearchResult,
 } from './shared'
+import { genofficeApiKey } from './genoffice-auth'
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -78,9 +78,15 @@ function electronCompatArgs(): string[] {
   return compatPath ? ['--require', compatPath] : []
 }
 
-/** API key written by gsk login (or GSK_API_KEY env var); '' when not logged in. Also used for Genspark LLM proxy auth. */
+/**
+ * API key for Genspark LLM proxy / tool_cli auth; '' when not logged in.
+ * Priority: GSK_API_KEY env → GenOffice's own key (bills to us via its
+ * key_name) → shared gsk CLI login (bills to the Claw bucket).
+ */
 export function gskApiKey(): string {
   if (process.env.GSK_API_KEY) return process.env.GSK_API_KEY
+  const own = genofficeApiKey()
+  if (own) return own
   try {
     const configPath = join(homedir(), '.genspark-tool-cli', 'config.json')
     if (!existsSync(configPath)) return ''
@@ -98,6 +104,43 @@ export function gskApiKey(): string {
 export function hasGskAuth(): boolean {
   if (process.env.AI_SEARCH_DISABLE_GSK === '1') return false
   return !!gskApiKey() && resolveGskEntry() !== null
+}
+
+// ── Child-process proxy plumbing ────────────────────────────────────
+
+// The main process's undici dispatcher (see the apps' proxy bootstraps) never
+// reaches child processes: without forwarding they dial genspark.ai directly.
+export { setGskProxyUrl, gskProxyUrl } from './shared'
+
+/**
+ * env for gsk CLI children: Electron-as-Node plus proxy forwarding. The CLI
+ * uses Node's built-in fetch, which ignores proxy env vars unless
+ * NODE_USE_ENV_PROXY=1 (Node >= 24 — Electron 41 ships Node 24). Only
+ * http(s):// proxies are forwarded; undici's env proxy cannot speak SOCKS.
+ */
+export function gskChildEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, ELECTRON_RUN_AS_NODE: '1' }
+  const proxy = [
+    gskProxyUrl(),
+    base.HTTPS_PROXY,
+    base.https_proxy,
+    base.HTTP_PROXY,
+    base.http_proxy,
+    base.ALL_PROXY,
+    base.all_proxy,
+  ].find((v) => v && /^https?:\/\//.test(v))
+  if (proxy) {
+    // scrub inherited variants: undici's env proxy prefers the lowercase
+    // names, so a leftover https_proxy/all_proxy would override the selection
+    delete env.https_proxy
+    delete env.http_proxy
+    delete env.ALL_PROXY
+    delete env.all_proxy
+    env.NODE_USE_ENV_PROXY = '1'
+    env.HTTPS_PROXY = proxy
+    env.HTTP_PROXY = proxy
+  }
+  return env
 }
 
 // ── Low-level execution ─────────────────────────────────────────────
@@ -130,6 +173,8 @@ export function parseGskOutput(stdout: string): unknown {
 function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
   const entry = resolveGskEntry()
   if (!entry) return Promise.reject(new Error('@genspark/cli is not installed'))
+  // inject the resolved key so the CLI bills the same identity as our direct HTTP calls
+  const key = gskApiKey()
   return new Promise((resolve, reject) => {
     execFile(
       process.execPath,
@@ -137,7 +182,10 @@ function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promis
       {
         timeout: timeoutMs,
         maxBuffer: MAX_BUFFER,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        env: {
+          ...gskChildEnv(),
+          ...(key ? { GSK_API_KEY: key } : {}),
+        },
         ...(signal ? { signal } : {}),
       },
       (err, stdout, stderr) => {
@@ -507,6 +555,86 @@ export async function gskUpload(filePath: string): Promise<string> {
   return String(url)
 }
 
+// ── Past projects (Genspark web) ────────────────────────────────────
+
+export interface GskPastProject {
+  projectId: string
+  /** raw project type, e.g. 'slides_agent_git' */
+  type: string
+  title: string
+  /** creation time, ISO-like string from the API */
+  ctime: string
+  /** relative web URL, e.g. '/agents?id=...' — join with https://www.genspark.ai */
+  projectUrl: string
+}
+
+export interface GskPastProjectsPage {
+  projects: GskPastProject[]
+  total: number
+  hasMore: boolean
+}
+
+/**
+ * Parses `gsk projects`. data.projects lacks project_url — it only appears in
+ * session_state.past_projects — so take it from there, falling back to
+ * deriving it from the project id. (exported for tests)
+ */
+export function parseGskPastProjects(raw: unknown): GskPastProjectsPage {
+  const rec = asRecord(raw)
+  const data = asRecord(rec.data ?? raw)
+  const urlById = new Map<string, string>()
+  const sessionProjects = asRecord(asRecord(rec.session_state).past_projects).projects
+  if (Array.isArray(sessionProjects)) {
+    for (const item of sessionProjects) {
+      const p = asRecord(item)
+      if (p.project_id && typeof p.project_url === 'string' && p.project_url) {
+        urlById.set(String(p.project_id), p.project_url)
+      }
+    }
+  }
+  const listRaw: unknown[] = Array.isArray(data.projects) ? data.projects : []
+  const projects: GskPastProject[] = []
+  for (const item of listRaw) {
+    const p = asRecord(item)
+    const projectId = String(p.project_id ?? '')
+    if (!projectId) continue
+    projects.push({
+      projectId,
+      type: String(p.type ?? ''),
+      title: String(p.title ?? ''),
+      ctime: String(p.ctime ?? ''),
+      projectUrl: urlById.get(projectId) ?? `/agents?id=${projectId}`,
+    })
+  }
+  const total = Number(data.total)
+  return {
+    projects,
+    total: Number.isFinite(total) ? total : projects.length,
+    hasMore: data.has_more === true,
+  }
+}
+
+export interface GskListPastProjectsOptions {
+  /** 'slides' | 'docs' | 'sheets' | ...; omit for all kinds */
+  artifactTypes?: string[]
+  /** page size, CLI default 20, max 100 */
+  limit?: number
+  offset?: number
+  signal?: AbortSignal
+}
+
+/** Lists the user's own past Genspark web projects, newest first (`gsk projects`). */
+export async function gskListPastProjects(
+  options: GskListPastProjectsOptions = {},
+): Promise<GskPastProjectsPage> {
+  const args = ['projects']
+  if (options.artifactTypes?.length) args.push('--artifact_types', ...options.artifactTypes)
+  if (options.limit !== undefined) args.push('--limit', String(options.limit))
+  if (options.offset) args.push('--offset', String(options.offset))
+  const raw = await runGsk(args, SEARCH_TIMEOUT_MS, options.signal)
+  return parseGskPastProjects(raw)
+}
+
 export interface GskLoginInfo {
   email: string
   plan: string
@@ -529,165 +657,4 @@ export async function gskLoginInfo(): Promise<GskLoginInfo | null> {
   } catch {
     return null
   }
-}
-
-/** Progress event for the browser login flow. */
-export interface GskLoginProgress {
-  phase: 'url' | 'success' | 'error'
-  url?: string
-  expiresInSec?: number
-  /** 'network' | 'expired' | raw CLI error text */
-  error?: string
-}
-
-/** One parsed line of `gsk login` output (info/errors go to stderr with [INFO]/[ERROR] prefixes; success JSON to stdout). */
-export type GskLoginParsedLine =
-  | { kind: 'url'; url: string }
-  | { kind: 'expires'; expiresInSec: number }
-  | { kind: 'success' }
-  | { kind: 'error'; reason: 'network' | 'expired' | 'other'; message: string }
-
-const LOGIN_NETWORK_ERROR_RE =
-  /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|network|HTTP 5\d\d/i
-
-export function parseGskLoginLine(line: string): GskLoginParsedLine | null {
-  const trimmed = line.trim()
-  const url = trimmed.match(/^\[INFO\] Login URL: (\S+)/)
-  if (url) return { kind: 'url', url: url[1]! }
-  const expires = trimmed.match(/^\[INFO\] Waiting for authorization \(expires in (\d+)s/)
-  if (expires) return { kind: 'expires', expiresInSec: Number(expires[1]) }
-  if (/^\[INFO\] Login successful/.test(trimmed) || /"message":\s*"Login successful"/.test(trimmed))
-    return { kind: 'success' }
-  const err = trimmed.match(/^\[ERROR\] (.+)/)
-  if (err) {
-    const message = err[1]!.trim()
-    if (/^Authorization (expired|timed out)/.test(message))
-      return { kind: 'error', reason: 'expired', message }
-    return {
-      kind: 'error',
-      reason: LOGIN_NETWORK_ERROR_RE.test(message) ? 'network' : 'other',
-      message,
-    }
-  }
-  return null
-}
-
-function onStreamLines(stream: NodeJS.ReadableStream | null, handle: (line: string) => void): void {
-  if (!stream) return
-  let buf = ''
-  stream.setEncoding('utf8')
-  stream.on('data', (chunk: string) => {
-    buf += chunk
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) handle(line)
-  })
-  stream.on('end', () => {
-    if (buf) handle(buf)
-  })
-}
-
-let activeLogin: { child: ReturnType<typeof execFile>; cancel: () => void } | null = null
-
-/**
- * Starts the browser login flow (device code), killing any previous in-flight
- * login CLI first (its device code would otherwise be authorized into a dead
- * process). The superseded session is silenced *before* the kill so that
- * output still buffered in its pipes can't leak stale url/error events into
- * the new attempt. Progress is reported via onEvent; api_key still lands in
- * config.json on success, so polling that file remains a valid fallback.
- * Returns whether the CLI was launched.
- */
-export function gskLoginStart(onEvent?: (progress: GskLoginProgress) => void): boolean {
-  const entry = resolveGskEntry()
-  if (!entry) return false
-  activeLogin?.cancel()
-  const emit = onEvent ?? (() => {})
-  let done = false
-  let lastUrl: string | undefined
-  let lastErrorLine: string | undefined
-  const finish = (progress: GskLoginProgress) => {
-    if (done) return
-    done = true
-    // the session is terminal: stop advertising it as reusable to gskLogin()
-    // right away rather than waiting for the child to exit, and reap a CLI
-    // that lingers after reporting an error (its device code is dead anyway)
-    if (activeLogin?.child === child) activeLogin = null
-    if (progress.phase === 'error') child.kill()
-    emit(progress)
-  }
-  const child = execFile(
-    process.execPath,
-    [...electronCompatArgs(), entry, 'login'],
-    { timeout: 360_000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
-    (error) => {
-      if (activeLogin?.child === child) activeLogin = null
-      if (done) return
-      if (!error) {
-        finish({ phase: 'success' })
-      } else if (error.killed) {
-        done = true // execFile timeout kill — Home's expires_in deadline already covers the UI
-      } else {
-        // exit before the URL ever appeared = the device-code request failed
-        finish({ phase: 'error', error: lastErrorLine ?? (lastUrl ? 'login failed' : 'network') })
-      }
-    },
-  )
-  activeLogin = {
-    child,
-    cancel: () => {
-      done = true
-      child.kill()
-    },
-  }
-  const handleLine = (line: string) => {
-    if (done) return
-    const parsed = parseGskLoginLine(line)
-    if (!parsed) return
-    if (parsed.kind === 'url') {
-      lastUrl = parsed.url
-      emit({ phase: 'url', url: parsed.url })
-    } else if (parsed.kind === 'expires') {
-      emit({
-        phase: 'url',
-        ...(lastUrl ? { url: lastUrl } : {}),
-        expiresInSec: parsed.expiresInSec,
-      })
-    } else if (parsed.kind === 'success') {
-      finish({ phase: 'success' })
-    } else {
-      const reason = parsed.reason === 'other' && !lastUrl ? 'network' : parsed.reason
-      lastErrorLine = reason === 'other' ? parsed.message : reason
-      finish({ phase: 'error', error: lastErrorLine })
-    }
-  }
-  onStreamLines(child.stdout, handleLine)
-  onStreamLines(child.stderr, handleLine)
-  return true
-}
-
-/**
- * Triggers browser login without progress reporting (api_key is written to
- * config.json on completion). Unlike gskLoginStart, a login already in flight
- * (e.g. the Home account menu's) is reused rather than killed — killing it
- * would silently strand that caller on a dead device code. Returns whether a
- * login CLI is running.
- */
-export function gskLogin(): boolean {
-  if (activeLogin) return true
-  return gskLoginStart()
-}
-
-/** Logs out (deletes the saved API key; note login state is shared globally with the terminal gsk CLI) */
-export function gskLogout(): Promise<void> {
-  const entry = resolveGskEntry()
-  if (!entry) return Promise.resolve()
-  return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      [...electronCompatArgs(), entry, 'logout'],
-      { timeout: 60_000, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
-      () => resolve(),
-    )
-  })
 }

@@ -250,7 +250,12 @@ async function oursExport(docxPath, pdfPath, index) {
       `--user-data-dir=${userData}`,
     ],
     {
-      env: { ...process.env, NODE_ENV: 'production', GENOFFICE_LANG: 'zh' },
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        GENOFFICE_LANG: 'zh',
+        GENOFFICE_TEST_EXPORT_DIR: OURS_PDF_DIR,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   )
@@ -279,32 +284,68 @@ async function oursExport(docxPath, pdfPath, index) {
       await sleep(700)
     }
     if (lastPages < 1) throw new Error('no pagination output within 60s')
-    await cdp.evaluate('document.fonts.ready.then(() => true)')
+    // Large documents keep the renderer main thread busy for long synchronous
+    // stretches (post-font-substitution remeasure, preview snapshot); V8 may
+    // collect an awaited inspector promise during the GC storms ("Promise was
+    // collected") even though the page is alive. Those evaluates are retried.
+    const collected = (err) =>
+      /Promise was collected|Cannot find context|Execution context was destroyed/.test(String(err))
+    try {
+      await cdp.evaluate('document.fonts.ready.then(() => true)')
+    } catch (err) {
+      if (!collected(err)) throw err
+      await sleep(2000)
+    }
     await sleep(500)
     // Open paginated preview before exporting: on the preview path each .pv-page is exactly one
     // sheet (WYSIWYG), whereas the continuous-flow path lets Chromium reflow, making page count
     // and headers/footers diverge from what's on screen
     // the CJK literals match the zh default UI labels for View / Paginated Preview
-    const opened = await cdp.evaluate(`(async () => {
-      ;[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === '视图')?.click()
-      await new Promise((r) => setTimeout(r, 300))
-      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('分页预览'))
-      if (!btn) return false
-      btn.click()
-      return true
-    })()`)
+    let opened = false
+    for (let attempt = 0; attempt < 4 && !opened; attempt++) {
+      try {
+        opened = await cdp.evaluate(`(async () => {
+          if (document.querySelector('.pv-page')) return true
+          ;[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === '视图')?.click()
+          await new Promise((r) => setTimeout(r, 300))
+          const btn = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('分页预览'))
+          if (!btn) return false
+          btn.click()
+          return true
+        })()`)
+        if (!opened) break // context healthy, button genuinely missing
+      } catch (err) {
+        if (!collected(err)) throw err
+        await sleep(3000)
+        // the click may have landed before the promise was collected
+        try {
+          opened = (await cdp.evaluate(`document.querySelectorAll('.pv-page').length`)) > 0
+        } catch {}
+      }
+    }
     if (!opened) throw new Error('paginated-preview button not found')
     let pvPages = 0
     for (let k = 0; k < 60; k++) {
       await sleep(700)
-      const n = await cdp.evaluate(`document.querySelectorAll('.pv-page').length`)
+      let n = 0
+      try {
+        n = await cdp.evaluate(`document.querySelectorAll('.pv-page').length`)
+      } catch (err) {
+        if (!collected(err)) throw err
+        continue
+      }
       if (n >= 1 && n === pvPages) break
       pvPages = n
     }
     if (pvPages < 1) throw new Error('paginated preview produced no pages')
     lastPages = pvPages
-    await cdp.evaluate(`window.__exportPdf(${JSON.stringify(pdfPath)})`)
-    for (let i = 0; i < 60 && !existsSync(pdfPath); i++) await sleep(500)
+    try {
+      await cdp.evaluate(`window.__exportPdf(${JSON.stringify(pdfPath)})`)
+    } catch (err) {
+      if (!collected(err)) throw err
+      // printToPDF proceeds despite the collected promise; the file poll below decides
+    }
+    for (let i = 0; i < 120 && !existsSync(pdfPath); i++) await sleep(500)
     if (!existsSync(pdfPath)) {
       const s = await cdp.evaluate(`document.querySelector('.status-msg')?.textContent ?? ''`)
       throw new Error(`export produced no PDF (status: ${s.trim()})`)
@@ -742,7 +783,26 @@ for (let i = 0; i < files.length; i++) {
   } else {
     try {
       process.stdout.write('  ours→pdf ... ')
-      r.displayPages = await oursExport(docxPath, oursPdf, i)
+      // Hang guard: a pathological docx can freeze the renderer main thread, leaving
+      // every cdp.evaluate pending forever — time the whole export out and reap the
+      // stray Electron so one bad document can't stall the sweep.
+      let hangTimer
+      try {
+        r.displayPages = await Promise.race([
+          oursExport(docxPath, oursPdf, i),
+          new Promise((_, rej) => {
+            hangTimer = setTimeout(
+              () => rej(new Error('export timed out (renderer hang)')),
+              240_000,
+            )
+          }),
+        ])
+      } finally {
+        clearTimeout(hangTimer)
+        try {
+          execFileSync('pkill', ['-9', '-f', `fidelity-${process.pid}-${i}`])
+        } catch {}
+      }
       oursMeta[stem] = r.displayPages
       writeFileSync(oursMetaPath, JSON.stringify(oursMeta, null, 2))
       console.log('✓')

@@ -2,7 +2,8 @@ import { Extension, Mark } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssFontFamily } from '../line-metrics'
+import { cssCsFontFamily, cssDualFontFamily, cssFontFamily } from '../line-metrics'
+import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import {} from '@genoffice/docx-engine'
 
@@ -277,7 +278,13 @@ export const RevisionOriginalExtension = Extension.create({
               ]
               if (old.color) styles.push(`color:#${old.color}`)
               if (old.sizeHalfPoints) styles.push(`font-size:${Number(old.sizeHalfPoints) / 2}pt`)
-              if (old.font) styles.push(`font-family:${cssFontFamily(String(old.font))}`)
+              if (old.font || old.fontAscii) {
+                const ea = old.font ? String(old.font) : null
+                const ascii = old.fontAscii ? String(old.fontAscii) : null
+                styles.push(
+                  `font-family:${ea && ascii ? cssDualFontFamily(ascii, ea) : cssFontFamily((ea ?? ascii)!)}`,
+                )
+              }
               decos.push(Decoration.inline(pos, pos + node.nodeSize, { style: styles.join(';') }))
             })
             return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
@@ -339,6 +346,33 @@ export const InstrFieldMark = Mark.create({
   },
 })
 
+/**
+ * font-family chain → dual-slot font attrs, inverting renderHTML's encoding:
+ * the Latin slot is the chain's first Latin family, the eastAsia slot its first
+ * East Asian family. Generic families and the bundled CJK tofu-fallbacks that
+ * cssFontFamily appends to Latin chains are not user picks and are skipped.
+ * A Latin-only chain fills both slots, matching how parse.ts reads a
+ * Latin-only w:rFonts. Exported for tests.
+ */
+export function fontAttrsFromFamilyChain(chain: string | undefined): Record<string, unknown> {
+  const families = (chain ?? '')
+    .split(',')
+    .map((x) => x.trim().replace(/^["']|["']$/g, ''))
+    .filter(
+      (x) =>
+        x &&
+        !/^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/i.test(x) &&
+        // internal fonts.css aliases (GenOffice Songti SC etc.) are not user picks
+        !/^genoffice /i.test(x),
+    )
+  const ea = families.find(
+    (f, i) => isEastAsianFontName(f) && (i === 0 || !/^noto (sans|serif) cjk sc$/i.test(f)),
+  )
+  const latin = families.find((f) => !isEastAsianFontName(f))
+  if (!ea && !latin) return {}
+  return { font: ea ?? latin, ...(latin ? { fontAscii: latin } : {}) }
+}
+
 /** Inline styles of foreign HTML → docTextStyle attrs (returns false when no usable style, so no mark is applied) */
 function textStyleAttrsFromDom(el: HTMLElement): Record<string, unknown> | false {
   const attrs: Record<string, unknown> = {}
@@ -365,11 +399,7 @@ function textStyleAttrsFromDom(el: HTMLElement): Record<string, unknown> | false
       else if (size.endsWith('px')) attrs.sizeHalfPoints = Math.round(v * 1.5)
     }
   }
-  const family = st.fontFamily
-    ?.split(',')[0]
-    ?.trim()
-    .replace(/^["']|["']$/g, '')
-  if (family) attrs.font = family
+  Object.assign(attrs, fontAttrsFromFamilyChain(st.fontFamily))
   const spacing = parseFloat(st.letterSpacing)
   if (Number.isFinite(spacing) && spacing !== 0) {
     attrs.charSpacingTwips = Math.round(
@@ -391,13 +421,23 @@ export const TextStyleMark = Mark.create({
       color: { default: null as string | null },
       sizeHalfPoints: { default: null as number | null },
       font: { default: null as string | null },
+      // the EA face backfills an empty theme slot (line metrics follow the Latin face like LO)
+      eaSlotEmpty: { default: null as boolean | null },
+      // Latin slot (w:ascii/w:hAnsi) when it differs from the primary/eastAsia font
+      fontAscii: { default: null as string | null },
+      // complex-script slot (w:cs); convert sets it only when the run text needs it
+      csFont: { default: null as string | null },
       charSpacingTwips: { default: null as number | null },
       // letter spacing (em, negative = condensed) converted from w:w scaling; precomputed by convert per run text
       charScaleEm: { default: null as number | null },
       highlight: { default: null as string | null },
+      // run shading fill, hex without '#' (w:shd w:fill)
+      shading: { default: null as string | null },
       vertAlign: { default: null as 'superscript' | 'subscript' | null },
       // East Asian emphasis mark (w:em val); saving is kept faithful by rawRPr
       em: { default: null as string | null },
+      // w:caps ('all') / w:smallCaps ('small'); saving is kept faithful by rawRPr
+      caps: { default: null as 'all' | 'small' | null },
       styleId: { default: null as string | null },
       // raw rPr slice pass-through (not rendered; on save mergeRPrModel preserves unmodeled attributes)
       rawRPr: { default: null as string | null, rendered: false },
@@ -420,12 +460,27 @@ export const TextStyleMark = Mark.create({
     if (mark.attrs.color) styles.push(`color:#${mark.attrs.color}`)
     if (mark.attrs.sizeHalfPoints)
       styles.push(`font-size:${Number(mark.attrs.sizeHalfPoints) / 2}pt`)
-    if (mark.attrs.font) styles.push(`font-family:${cssFontFamily(String(mark.attrs.font))}`)
+    if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
+      const ea = mark.attrs.font ? String(mark.attrs.font) : null
+      const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null
+      const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
+      styles.push(
+        `font-family:${
+          cs
+            ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
+            : ea && ascii
+              ? cssDualFontFamily(ascii, ea)
+              : cssFontFamily((ea ?? ascii)!)
+        }`,
+      )
+    }
     const spacingPt = mark.attrs.charSpacingTwips ? Number(mark.attrs.charSpacingTwips) / 20 : 0
     const scaleEm = mark.attrs.charScaleEm ? Number(mark.attrs.charScaleEm) : 0
     if (spacingPt && scaleEm) styles.push(`letter-spacing:calc(${spacingPt}pt + ${scaleEm}em)`)
     else if (spacingPt) styles.push(`letter-spacing:${spacingPt}pt`)
     else if (scaleEm) styles.push(`letter-spacing:${scaleEm}em`)
+    // shading first: when both are set the later highlight declaration wins (Word behavior)
+    if (mark.attrs.shading) styles.push(`background-color:#${mark.attrs.shading}`)
     if (mark.attrs.highlight) {
       styles.push(
         `background-color:${HIGHLIGHT_CSS[mark.attrs.highlight as string] ?? mark.attrs.highlight}`,
@@ -435,11 +490,14 @@ export const TextStyleMark = Mark.create({
     if (mark.attrs.vertAlign === 'subscript') styles.push('vertical-align:sub;font-size:0.75em')
     if (mark.attrs.em) {
       const em = String(mark.attrs.em)
-      const shape = em === 'circle' ? 'open circle' : em === 'comma' ? 'filled sesame' : 'filled dot'
+      const shape =
+        em === 'circle' ? 'open circle' : em === 'comma' ? 'filled sesame' : 'filled dot'
       // Word renders Chinese emphasis marks (dot/underDot) below the text; comma/circle kenten go above
       const pos = em === 'comma' || em === 'circle' ? 'over' : 'under'
       styles.push(`text-emphasis:${shape}`, `text-emphasis-position:${pos} right`)
     }
+    if (mark.attrs.caps === 'all') styles.push('text-transform:uppercase')
+    else if (mark.attrs.caps === 'small') styles.push('font-variant-caps:small-caps')
     const attrs: Record<string, string> = { 'data-doc-style': '1', style: styles.join(';') }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
     return ['span', attrs, 0]

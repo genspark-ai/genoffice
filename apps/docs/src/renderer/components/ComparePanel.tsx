@@ -41,7 +41,12 @@ export function ComparePanel({
         <span className="comments-pane-title">
           <IconCompare size={14} /> {t('appCompareResult')}
         </span>
-        <button className="comments-pane-close" title={t('appClose')} onClick={onClose}>
+        <button
+          className="comments-pane-close"
+          data-tip={t('appClose')}
+          aria-label={t('appClose')}
+          onClick={onClose}
+        >
           ✕
         </button>
       </div>

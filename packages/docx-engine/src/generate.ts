@@ -7,7 +7,7 @@ import type {
   TableCell,
   TableModel,
 } from './types'
-import { escapeXmlAttr, escapeXmlText } from './xml-utils'
+import { escapeXmlAttr, escapeXmlText, textHasComplexScript } from './xml-utils'
 
 export interface GenerateContext {
   /** heading level -> styleId existing in the original styles.xml */
@@ -34,6 +34,11 @@ export interface ImagePatch {
    */
   posOffsetX?: number
   posOffsetY?: number
+  /** rotation in degrees clockwise; 0 removes the rot attribute; undefined keeps */
+  rotDeg?: number
+  /** mirror flips; false removes the attribute; undefined keeps */
+  flipH?: boolean
+  flipV?: boolean
 }
 
 /**
@@ -42,6 +47,23 @@ export interface ImagePatch {
  */
 export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
   let out = xml
+  if (patch.rotDeg !== undefined || patch.flipH !== undefined || patch.flipV !== undefined) {
+    // rotation/flip live on the pic's own xfrm, not an anchored textbox sibling's
+    out = out.replace(/(<pic:spPr[^>]*>[\s\S]*?)<a:xfrm([^>]*)>/, (_whole, prefix, attrs) => {
+      let a = attrs as string
+      const setAttr = (name: string, value: string | null) => {
+        a = a.replace(new RegExp(`\\s*\\b${name}="[^"]*"`), '')
+        if (value != null) a += ` ${name}="${value}"`
+      }
+      if (patch.rotDeg !== undefined) {
+        const norm = ((Math.round(patch.rotDeg) % 360) + 360) % 360
+        setAttr('rot', norm ? String(norm * 60000) : null)
+      }
+      if (patch.flipH !== undefined) setAttr('flipH', patch.flipH ? '1' : null)
+      if (patch.flipV !== undefined) setAttr('flipV', patch.flipV ? '1' : null)
+      return `${prefix}<a:xfrm${a}>`
+    })
+  }
   if (patch.widthPx && patch.heightPx) {
     const cx = Math.max(1, Math.round(patch.widthPx * EMU_PER_PX))
     const cy = Math.max(1, Math.round(patch.heightPx * EMU_PER_PX))
@@ -49,6 +71,31 @@ export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
       tag.replace(/cx="\d+"/, `cx="${cx}"`).replace(/cy="\d+"/, `cy="${cy}"`)
     out = out.replace(/<wp:extent[^>]*\/?>/, resize)
     out = out.replace(/<a:ext[^>]*\/>/, resize)
+  }
+  // Word lays the drawing out against the unrotated wp:extent plus
+  // wp:effectExtent: a 90°/270° turn of a non-square picture needs the extra
+  // bounding-box space recorded there or Word crops / misplaces it. Recompute
+  // only when rotation changes, or the size changes while a rotation is in
+  // effect — flips leave the bounding box alone, and untouched drawings keep
+  // their original effectExtent (possibly Word-authored shadow/glow padding).
+  {
+    const rotM = /<pic:spPr[^>]*>[\s\S]*?<a:xfrm[^>]*?\brot="(-?\d+)"/.exec(out)
+    const extM = /<wp:extent[^>]*?\bcx="(\d+)"[^>]*?\bcy="(\d+)"/.exec(out)
+    const touchRot = patch.rotDeg !== undefined
+    const touchSize = !!(patch.widthPx && patch.heightPx)
+    if (extM && (touchRot || (touchSize && rotM))) {
+      const rad = (((rotM ? Number(rotM[1]) : 0) / 60000) * Math.PI) / 180
+      const cx = Number(extM[1])
+      const cy = Number(extM[2])
+      const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
+      const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
+      const dx = Math.max(0, Math.round((bw - cx) / 2))
+      const dy = Math.max(0, Math.round((bh - cy) / 2))
+      const ee = `<wp:effectExtent l="${dx}" t="${dy}" r="${dx}" b="${dy}"/>`
+      if (/<wp:effectExtent\b[^>]*\/>/.test(out))
+        out = out.replace(/<wp:effectExtent\b[^>]*\/>/, ee)
+      else out = out.replace(/(<wp:extent\b[^>]*\/?>)/, `$1${ee}`)
+    }
   }
   if (patch.align !== undefined) {
     out = out.replace(/<w:jc w:val="[^"]*"\/>/, '')
@@ -253,7 +300,9 @@ export interface FieldTextPatch {
 export function patchFieldParagraphXml(xml: string, patch: FieldTextPatch): string {
   const nodes = textNodes(xml, 'w:t')
   if (nodes.length === 0) return xml
-  const tabIndex = xml.search(/<w:tab(?:\s[^>]*)?\/>/)
+  // run-level tab only (attribute-less CT_Empty) — `<w:tab w:val=…/>` inside
+  // w:tabs is a tab-stop definition and must not split the left/right texts
+  const tabIndex = xml.search(/<w:tab\/>/)
   if (patch.right !== undefined && tabIndex === -1) return xml
   const leftNodes = tabIndex === -1 ? nodes : nodes.filter((node) => node.start < tabIndex)
   const rightNodes = tabIndex === -1 ? [] : nodes.filter((node) => node.start > tabIndex)
@@ -346,12 +395,21 @@ function patchCellXml(tcXml: string, paras: string[]): string | null {
   const pPr = /<w:pPr[\s\S]*?<\/w:pPr>|<w:pPr[^>]*\/>/.exec(firstP)?.[0] ?? ''
   const firstRun = /<w:r(?: [^>]*)?>[\s\S]*?<\/w:r>/.exec(firstP)?.[0] ?? ''
   const rPr = /<w:rPr[\s\S]*?<\/w:rPr>/.exec(firstRun)?.[0] ?? ''
+  // picture runs are not part of the text model; carry them over verbatim so a
+  // text edit in a cell with an inline image doesn't drop the image
+  const drawingRuns = tcXml.includes('<w:drawing')
+    ? xmlSegments(tcXml, 'w:r', 0, tcXml.length)
+        .map((seg) => tcXml.slice(seg.start, seg.end))
+        .filter((r) => r.includes('<w:drawing'))
+        .join('')
+    : ''
   const body = paras
-    .map((t) =>
-      t === ''
-        ? `<w:p>${pPr}</w:p>`
-        : `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXmlText(t)}</w:t></w:r></w:p>`,
-    )
+    .map((t, i) => {
+      const keep = i === 0 ? drawingRuns : ''
+      return t === ''
+        ? `<w:p>${pPr}${keep}</w:p>`
+        : `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXmlText(t)}</w:t></w:r>${keep}</w:p>`
+    })
     .join('')
   return openTag + tcPr + body + '</w:tc>'
 }
@@ -595,6 +653,242 @@ export function patchTextboxHeights(
   return resizedXml
 }
 
+/** Connector/line prsts rendered as display boxes despite having no text body */
+const LINE_SHAPE_RE =
+  /<a:prstGeom[^>]*prst="(?:line|straightConnector1|bentConnector[234]|curvedConnector[234])"/
+
+/** Same drawing set extractTextboxes yields boxes for (keeps patch indexes aligned) */
+function isBoxDrawing(drawingXml: string): boolean {
+  if (drawingXml.includes('<w:txbxContent') && paraPlainText(drawingXml) !== '') return true
+  return LINE_SHAPE_RE.test(drawingXml) && drawingXml.includes('<wp:wrapSquare')
+}
+
+export interface TextboxSizePatch {
+  wPx?: number | null
+  hPx?: number | null
+}
+
+/** Resize fixed DrawingML textboxes/shapes while preserving anchors and styling. */
+export function patchTextboxSizes(
+  paragraphXml: string,
+  sizes: ReadonlyArray<TextboxSizePatch | null | undefined>,
+): string {
+  if (sizes.every((size) => size == null || (size.wPx == null && size.hPx == null)))
+    return paragraphXml
+  const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
+  let out = ''
+  let cursor = 0
+  let boxIndex = -1
+  for (const drawing of drawings) {
+    const drawingXml = paragraphXml.slice(drawing.start, drawing.end)
+    if (!isBoxDrawing(drawingXml)) continue
+    boxIndex++
+    const size = sizes[boxIndex]
+    if (!size || (size.wPx == null && size.hPx == null)) continue
+    let resized = drawingXml
+    if (size.wPx != null) {
+      const cx = Math.max(1, Math.round(size.wPx * EMU_PER_PX))
+      resized = resized
+        .replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+        .replace(/(<a:ext\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+    }
+    if (size.hPx != null) {
+      const cy = Math.max(1, Math.round(size.hPx * EMU_PER_PX))
+      resized = resized
+        .replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+        .replace(/(<a:ext\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+        // a fixed height only sticks if Word stops auto-fitting the shape
+        .replace(/<a:spAutoFit\s*\/>|<a:spAutoFit\s*>\s*<\/a:spAutoFit>/, '<a:noAutofit/>')
+    }
+    out += paragraphXml.slice(cursor, drawing.start) + resized
+    cursor = drawing.end
+  }
+  let resizedXml = out + paragraphXml.slice(cursor)
+
+  let fallbackIndex = -1
+  resizedXml = resizedXml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, (fallback) => {
+    if (!isBoxDrawing(fallback) && !fallback.includes('<w:txbxContent')) return fallback
+    if (fallback.includes('<w:txbxContent') && paraPlainText(fallback) === '') return fallback
+    fallbackIndex++
+    const size = sizes[fallbackIndex]
+    if (!size) return fallback
+    let next = fallback
+    if (size.hPx != null) {
+      next = next.replace(
+        /(style="[^"]*\bheight:)\s*[\d.]+(pt|px)/,
+        (_whole, prefix: string, unit: string) => {
+          const value =
+            unit === 'pt' ? Math.round(size.hPx! * 75) / 100 : Math.round(size.hPx! * 100) / 100
+          return `${prefix}${value}${unit}`
+        },
+      )
+    }
+    if (size.wPx != null) {
+      next = next.replace(
+        /(style="[^"]*\bwidth:)\s*[\d.]+(pt|px)/,
+        (_whole, prefix: string, unit: string) => {
+          const value =
+            unit === 'pt' ? Math.round(size.wPx! * 75) / 100 : Math.round(size.wPx! * 100) / 100
+          return `${prefix}${value}${unit}`
+        },
+      )
+    }
+    return next
+  })
+  return resizedXml
+}
+
+export interface ShapeStylePatch {
+  /** solid fill hex without '#'; null = a:noFill; undefined = keep */
+  fillHex?: string | null
+  /** outline color hex without '#'; null = no outline; undefined = keep */
+  borderHex?: string | null
+}
+
+/** Replace the first fill slot (a:solidFill/a:noFill) inside an XML slice. */
+function replaceFillSlot(xml: string, hex: string | null): string {
+  const markup = hex ? `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>` : '<a:noFill/>'
+  if (/<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(xml)) {
+    return xml.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/, markup)
+  }
+  if (xml.includes('<a:noFill/>')) return xml.replace('<a:noFill/>', markup)
+  return xml
+}
+
+/** Recolor floating shapes/textboxes/lines (same drawing set as extractTextboxes). */
+export function patchShapeStyles(
+  paragraphXml: string,
+  styles: ReadonlyArray<ShapeStylePatch | null | undefined>,
+): string {
+  if (styles.every((s) => s == null || (s.fillHex === undefined && s.borderHex === undefined)))
+    return paragraphXml
+  const drawings = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length)
+  let out = ''
+  let cursor = 0
+  let boxIndex = -1
+  for (const drawing of drawings) {
+    let drawingXml = paragraphXml.slice(drawing.start, drawing.end)
+    if (!isBoxDrawing(drawingXml)) continue
+    boxIndex++
+    const style = styles[boxIndex]
+    if (!style || (style.fillHex === undefined && style.borderHex === undefined)) continue
+    const spPrMatch = /<wps:spPr>[\s\S]*?<\/wps:spPr>/.exec(drawingXml)
+    if (spPrMatch) {
+      let spPr = spPrMatch[0]
+      const lnStart = spPr.search(/<a:ln[\s>]/)
+      if (style.fillHex !== undefined) {
+        // the shape fill slot lives before a:ln; outline colors stay untouched
+        const head = lnStart === -1 ? spPr : spPr.slice(0, lnStart)
+        const tail = lnStart === -1 ? '' : spPr.slice(lnStart)
+        spPr = replaceFillSlot(head, style.fillHex) + tail
+      }
+      if (style.borderHex !== undefined) {
+        const lnMatch = /<a:ln[\s>][\s\S]*?<\/a:ln>/.exec(spPr)
+        if (lnMatch) {
+          spPr = spPr.replace(lnMatch[0], replaceFillSlot(lnMatch[0], style.borderHex))
+        } else if (style.borderHex) {
+          spPr = spPr.replace(
+            '</wps:spPr>',
+            `<a:ln><a:solidFill><a:srgbClr val="${style.borderHex}"/></a:solidFill></a:ln></wps:spPr>`,
+          )
+        }
+      }
+      drawingXml = drawingXml.replace(spPrMatch[0], spPr)
+    }
+    out += paragraphXml.slice(cursor, drawing.start) + drawingXml
+    cursor = drawing.end
+  }
+  return out + paragraphXml.slice(cursor)
+}
+
+/** Rewrite the first drawing's extent (chart/SmartArt graphicFrame paragraphs). */
+export function patchDrawingExtent(paragraphXml: string, wPx: number, hPx: number): string {
+  const cx = Math.max(1, Math.round(wPx * EMU_PER_PX))
+  const cy = Math.max(1, Math.round(hPx * EMU_PER_PX))
+  return paragraphXml
+    .replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+    .replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+    .replace(/(<a:ext\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+    .replace(/(<a:ext\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+}
+
+/** Insertable line/connector kinds: stroke-only wps:wsp with optional arrow ends */
+export const LINE_KINDS: Record<string, { prst: string; head?: boolean; tail?: boolean }> = {
+  line: { prst: 'line' },
+  lineArrow: { prst: 'straightConnector1', tail: true },
+  lineArrowDouble: { prst: 'straightConnector1', head: true, tail: true },
+  lineBent: { prst: 'bentConnector3' },
+  lineCurved: { prst: 'curvedConnector3' },
+}
+
+/** Insert a floating stroke-only line/connector paragraph (wp:anchor + wps:wsp). */
+export function buildLineParagraphXml(opts: {
+  kind: string
+  widthEmu?: number
+  heightEmu?: number
+  id?: number
+  colorHex?: string
+}): string {
+  const def = LINE_KINDS[opts.kind] ?? LINE_KINDS.line
+  const widthEmu = opts.widthEmu ?? 1800000
+  const heightEmu = opts.heightEmu ?? 114300
+  const id = opts.id ?? 1
+  const colorHex = opts.colorHex ?? '000000'
+
+  const ln =
+    `<a:ln w="12700"><a:solidFill><a:srgbClr val="${colorHex}"/></a:solidFill>` +
+    (def.head ? '<a:headEnd type="triangle"/>' : '') +
+    (def.tail ? '<a:tailEnd type="triangle"/>' : '') +
+    `</a:ln>`
+
+  const spPr =
+    `<wps:spPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm>` +
+    `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>` +
+    `<a:noFill/>` +
+    ln +
+    `</wps:spPr>`
+
+  const wsp =
+    `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">` +
+    `<wps:cNvSpPr/>` +
+    spPr +
+    `<wps:bodyPr/>` +
+    `</wps:wsp>`
+
+  const graphicData =
+    `<a:graphicData xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
+    `uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">${wsp}</a:graphicData>`
+
+  const graphic = `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${graphicData}</a:graphic>`
+
+  const anchor =
+    `<wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ` +
+    `distT="0" distB="0" distL="114300" distR="114300" simplePos="0" ` +
+    `relativeHeight="251658240" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<wp:simplePos x="0" y="0"/>` +
+    `<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="${widthEmu}" cy="${heightEmu}"/>` +
+    `<wp:effectExtent l="0" t="0" r="0" b="0"/>` +
+    `<wp:wrapSquare wrapText="bothSides"/>` +
+    `<wp:docPr id="${id}" name="${def.prst} ${id}"/>` +
+    graphic +
+    `</wp:anchor>`
+
+  const mcNs =
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
+  const mcChoice = `<mc:Choice Requires="wps"><w:drawing>${anchor}</w:drawing></mc:Choice>`
+  const vmlLine =
+    `<v:line xmlns:v="urn:schemas-microsoft-com:vml" ` +
+    `from="0,0" to="${Math.round(widthEmu / EMU_PER_PT)}pt,${Math.round(heightEmu / EMU_PER_PT)}pt" ` +
+    `strokecolor="#${colorHex}"/>`
+  const mcFallback = `<mc:Fallback><w:pict>${vmlLine}</w:pict></mc:Fallback>`
+
+  return `<w:p><w:r><mc:AlternateContent ${mcNs}>${mcChoice}${mcFallback}</mc:AlternateContent></w:r></w:p>`
+}
+
 /** CT_PPr child sequence (subset), for schema-ordered assembly and merging */
 export const PPR_CHILD_ORDER = [
   'w:pStyle',
@@ -646,13 +940,18 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   const out: PPrChild[] = []
   if (format.pageBreakBefore) out.push({ name: 'w:pageBreakBefore', xml: '<w:pageBreakBefore/>' })
   if (format.borders) {
-    const line = (side: string) => `<w:${side} w:val="single" w:sz="4" w:space="1" w:color="auto"/>`
+    const line = (side: string, ch: 't' | 'b' | 'l' | 'r') => {
+      const declared = format.borderLines?.[ch]
+      const sz = declared?.szPt ? Math.max(1, Math.round(declared.szPt * 8)) : 4
+      const color = declared?.color ? escapeXmlAttr(declared.color) : 'auto'
+      return `<w:${side} w:val="single" w:sz="${sz}" w:space="1" w:color="${color}"/>`
+    }
     const sides: string[] = []
     // schema order inside pBdr: top, left, bottom, right
-    if (format.borders.includes('t')) sides.push(line('top'))
-    if (format.borders.includes('l')) sides.push(line('left'))
-    if (format.borders.includes('b')) sides.push(line('bottom'))
-    if (format.borders.includes('r')) sides.push(line('right'))
+    if (format.borders.includes('t')) sides.push(line('top', 't'))
+    if (format.borders.includes('l')) sides.push(line('left', 'l'))
+    if (format.borders.includes('b')) sides.push(line('bottom', 'b'))
+    if (format.borders.includes('r')) sides.push(line('right', 'r'))
     if (sides.length > 0) out.push({ name: 'w:pBdr', xml: `<w:pBdr>${sides.join('')}</w:pBdr>` })
   }
   if (format.shadingFill) {
@@ -716,6 +1015,10 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
       name: 'w:framePr',
       xml: `<w:framePr w:dropCap="${type}" w:lines="${lines}" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>`,
     })
+  }
+  if (format.emptyRunSizeHalfPoints) {
+    const sz = Math.round(format.emptyRunSizeHalfPoints)
+    out.push({ name: 'w:rPr', xml: `<w:rPr><w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr>` })
   }
   return out
 }
@@ -807,6 +1110,7 @@ function rawIndUnchanged(raw: string | undefined, f: ParaFormat): boolean {
 
 function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   let rawBorders = ''
+  const rawLines: NonNullable<ParaFormat['borderLines']> = {}
   if (raw) {
     const inner = raw.replace(/^<w:pBdr[^>]*>/, '').replace(/<\/w:pBdr>$/, '')
     const kids = splitXmlChildren(inner)
@@ -817,11 +1121,29 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
       ['right', 'r'],
     ] as const) {
       const el = kids.find((k) => k.name === `w:${side}`)
-      if (el && rawAttr(el.xml, 'w:val') !== 'none') rawBorders += ch
+      // mirror extractParaFormat: nil is a reset, not a border, or the raw/model
+      // comparison never matches and the pBdr always gets rebuilt from the model
+      const val = el ? rawAttr(el.xml, 'w:val') : undefined
+      if (!el || val === 'none' || val === 'nil') continue
+      rawBorders += ch
+      const color = rawAttr(el.xml, 'w:color')
+      const sz = parseInt(rawAttr(el.xml, 'w:sz') ?? '', 10)
+      const line: NonNullable<ParaFormat['borderLines']>[typeof ch] = {}
+      if (color && color !== 'auto') line.color = color
+      if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
+      if (line.color !== undefined || line.szPt !== undefined) rawLines[ch] = line
     }
   }
   const norm = (s: string | undefined) => (s ? [...new Set(s)].sort().join('') : '')
-  return norm(rawBorders) === norm(f.borders)
+  if (norm(rawBorders) !== norm(f.borders)) return false
+  const normLines = (lines: ParaFormat['borderLines']) =>
+    JSON.stringify(
+      (['t', 'b', 'l', 'r'] as const).map((ch) => [
+        lines?.[ch]?.color ?? null,
+        lines?.[ch]?.szPt ?? null,
+      ]),
+    )
+  return normLines(rawLines) === normLines(f.borderLines)
 }
 
 function rawTabsUnchanged(raw: string | undefined, stops: TabStop[]): boolean {
@@ -885,6 +1207,10 @@ function pprGroupUnchanged(tag: string, raw: string | undefined, f: ParaFormat):
       return rawTabsUnchanged(raw, f.tabStops ?? [])
     case 'w:framePr':
       return rawFramePrUnchanged(raw, f)
+    case 'w:rPr': {
+      const m = raw ? /<w:sz\b[^>]*w:val="(\d+)"/.exec(raw) : null
+      return (m ? parseInt(m[1], 10) : undefined) === f.emptyRunSizeHalfPoints
+    }
     default:
       return false
   }
@@ -907,22 +1233,32 @@ export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): 
   const open = /^<w:pPr(?: [^>]*)?>/.exec(rawPPr)?.[0]
   const fresh = formatPPrChildren(format)
   if (!open) {
-    // '<w:pPr/>' or unrecognized: rebuild from the format model alone
-    return fresh.length > 0 ? `<w:pPr>${fresh.map((c) => c.xml).join('')}</w:pPr>` : ''
+    // '<w:pPr/>' or unrecognized: rebuild from the format model alone, in schema order
+    // (formatPPrChildren emits by concern, and CT_PPr order is not optional)
+    const sorted = [...fresh].sort(
+      (a, b) => PPR_CHILD_ORDER.indexOf(a.name) - PPR_CHILD_ORDER.indexOf(b.name),
+    )
+    return sorted.length > 0 ? `<w:pPr>${sorted.map((c) => c.xml).join('')}</w:pPr>` : ''
   }
   const inner = rawPPr.slice(open.length, rawPPr.length - '</w:pPr>'.length)
   // build set of managed tags for this format (base + conditional)
   const managedTags = new Set(FORMAT_MANAGED_TAGS)
   if (format?.tabStops !== undefined) managedTags.add('w:tabs')
   if (format?.dropCap !== undefined) managedTags.add('w:framePr')
+  // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
+  if (format?.emptyRunSizeHalfPoints !== undefined) managedTags.add('w:rPr')
   const rawChildren = splitXmlChildren(inner)
   const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
   const rebuilt = new Set(
     [...managedTags].filter((tag) => !pprGroupUnchanged(tag, rawOf(tag), format ?? {})),
   )
-  const freshOut = fresh.filter((c) => rebuilt.has(c.name))
-  const kept = rawChildren.filter((c) => !rebuilt.has(c.name))
   const rank = (n: string) => PPR_CHILD_ORDER.indexOf(n)
+  // the interleave below walks freshOut once with a monotonic index, so it has to arrive in
+  // schema order; formatPPrChildren emits by concern and leaves framePr and tabs until last
+  const freshOut = fresh
+    .filter((c) => rebuilt.has(c.name))
+    .sort((a, b) => rank(a.name) - rank(b.name))
+  const kept = rawChildren.filter((c) => !rebuilt.has(c.name))
   const parts: string[] = []
   let fi = 0
   let prevRank = -1
@@ -1187,22 +1523,30 @@ function tableCellXml(
         align: cell.align,
         runs: text === '' ? [] : [{ text, bold: cell.bold, color: cell.color }],
       }))
-  const content = paragraphs
-    .map((paragraph) => {
-      const align = paragraph.align ?? cell.align
-      const list = 'list' in paragraph ? paragraph.list : undefined
-      // schema order inside pPr: numPr before jc
-      const numPr = list
-        ? `<w:numPr><w:ilvl w:val="${list.ilvl}"/><w:numId w:val="${escapeXmlAttr(list.numId)}"/></w:numPr>`
-        : ''
-      const jc = align ? `<w:jc w:val="${align === 'justify' ? 'both' : align}"/>` : ''
-      const pPr = numPr || jc ? `<w:pPr>${numPr}${jc}</w:pPr>` : ''
-      return `<w:p>${pPr}${runsXml(paragraph.runs, null)}</w:p>`
-    })
-    .join('')
-  // nested tables are regenerated from the model; OOXML requires tc to end with w:p
-  const nested = (cell.nestedTables ?? []).map((nt) => generateTableModelXml(nt)).join('')
-  return `<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${content}${nested ? `${nested}<w:p/>` : ''}</w:tc>`
+  const paraXmls = paragraphs.map((paragraph) => {
+    const list = 'list' in paragraph ? paragraph.list : undefined
+    const numPr = list
+      ? `<w:numPr><w:ilvl w:val="${list.ilvl}"/><w:numId w:val="${escapeXmlAttr(list.numId)}"/></w:numPr>`
+      : ''
+    // no cell.align fallback here: it is a display aggregate of the paragraphs' own
+    // jc values, and writing it back would stamp w:jc into paragraphs that never had one
+    // (rich paragraphs carry their own align; the plain-paras fallback above sets it).
+    // The parsed format, not just w:jc: hand-building the pPr here dropped w:bidi and
+    // discarded every other paragraph property the model carries.
+    const pPr = mergePPrFormat(`<w:pPr>${numPr}</w:pPr>`, paragraph)
+    return `<w:p>${pPr}${runsXml(paragraph.runs, null)}</w:p>`
+  })
+  // nested tables are regenerated from the model at their paragraph anchors (reverse
+  // insertion keeps anchor indexes valid); OOXML requires tc to end with w:p
+  const nested = cell.nestedTables ?? []
+  const items = paraXmls.map((xml) => ({ tbl: false, xml }))
+  for (let i = nested.length - 1; i >= 0; i--) {
+    const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraXmls.length, paraXmls.length)
+    items.splice(at, 0, { tbl: true, xml: generateTableModelXml(nested[i]) })
+  }
+  const tail = items.length === 0 || items[items.length - 1].tbl ? '<w:p/>' : ''
+  const content = items.map((item) => item.xml).join('')
+  return `<w:tc><w:tcPr>${tcPr.join('')}</w:tcPr>${content}${tail}</w:tc>`
 }
 
 /**
@@ -1249,7 +1593,8 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       if (trPr && !trPr.endsWith('</w:trPr>')) trPr = ''
       const h = model.rowHeightsTwips?.[ri]
       if (h != null && h > 0) {
-        const tag = `<w:trHeight w:val="${Math.round(h)}" w:hRule="atLeast"/>`
+        const rule = model.rowHeightRules?.[ri] === 'exact' ? 'exact' : 'atLeast'
+        const tag = `<w:trHeight w:val="${Math.round(h)}" w:hRule="${rule}"/>`
         if (!trPr) trPr = `<w:trPr>${tag}</w:trPr>`
         else if (/<w:trHeight[^>]*\/>/.test(trPr)) trPr = trPr.replace(/<w:trHeight[^>]*\/>/, tag)
         else trPr = trPr.replace('</w:trPr>', `${tag}</w:trPr>`)
@@ -1547,6 +1892,11 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   if (run.math) return run.math.omml
   // atomic phonetic guide: the exact <w:ruby> fragment re-wrapped in a run
   if (run.ruby) return `<w:r>${run.ruby.xml}</w:r>`
+  // atomic cell picture: the exact <w:drawing> fragment re-wrapped in a run
+  if (run.image) {
+    const text = run.text === '' ? '' : generateRunXml({ ...run, image: undefined }, insideLink)
+    return `${text}<w:r>${run.image.xml}</w:r>`
+  }
   if (run.noteRef) {
     const tag = run.noteRef.kind === 'footnote' ? 'w:footnoteReference' : 'w:endnoteReference'
     return (
@@ -1644,6 +1994,7 @@ const RUN_MANAGED_GROUPS: Array<{ key: string; tags: string[] }> = [
   { key: 'size', tags: ['w:sz', 'w:szCs'] },
   { key: 'highlight', tags: ['w:highlight'] },
   { key: 'underline', tags: ['w:u'] },
+  { key: 'shading', tags: ['w:shd'] },
   { key: 'vertAlign', tags: ['w:vertAlign'] },
   { key: 'rPrChange', tags: ['w:rPrChange'] },
 ]
@@ -1659,18 +2010,52 @@ function rawBool(xml: string | undefined): boolean {
   return !['0', 'false', 'none', 'off'].includes(val.toLowerCase())
 }
 
+/** rFonts built from the model alone (no original element to preserve).
+ * Latin-only keeps eastAsia empty; a lone primary font fills every slot (legacy behavior). */
+function freshRFontsXml(font: string | undefined, fontAscii: string | undefined): string {
+  const a = escapeXmlAttr(fontAscii ?? font ?? '')
+  const ea = font ? ` w:eastAsia="${escapeXmlAttr(font)}"` : ''
+  return `<w:rFonts w:ascii="${a}"${ea} w:hAnsi="${a}" w:cs="${a}"/>`
+}
+
+/**
+ * Rebuild rFonts merging the model into the original attributes: only the slots the
+ * model holds are overwritten (their theme attrs dropped so the explicit value wins);
+ * cs/hint and any untouched slot keep their original values.
+ */
+function mergeRFontsXml(rawXml: string, run: Run): string {
+  const attrs = new Map<string, string>()
+  for (const m of rawXml.matchAll(/ ([\w:]+)="([^"]*)"/g)) attrs.set(m[1], m[2])
+  // run.font may just be the parse-side derivation of an ascii-only element; writing
+  // it back would invent an eastAsia slot that pins CJK to the old Latin font. Only
+  // write eastAsia when the slot already existed or the user actually changed it.
+  const rawPrimary = attrs.get('w:eastAsia') ?? attrs.get('w:ascii') ?? attrs.get('w:hAnsi')
+  const hadEastAsia = attrs.has('w:eastAsia') || attrs.has('w:eastAsiaTheme')
+  const set = (slot: string, theme: string, value: string) => {
+    attrs.set(slot, escapeXmlAttr(value))
+    attrs.delete(theme)
+  }
+  if (run.fontAscii) {
+    set('w:ascii', 'w:asciiTheme', run.fontAscii)
+    set('w:hAnsi', 'w:hAnsiTheme', run.fontAscii)
+  }
+  if (run.font && (hadEastAsia || run.font !== rawPrimary)) {
+    set('w:eastAsia', 'w:eastAsiaTheme', run.font)
+  }
+  return `<w:rFonts${[...attrs].map(([k, v]) => ` ${k}="${v}"`).join('')}/>`
+}
+
 function revisionRPrChangeXml(run: Run): string | null {
   const change = run.rPrChange
   if (!change) return null
   const old = change.old ?? {}
   const props: string[] = []
   if (old.styleId) props.push(`<w:rStyle w:val="${escapeXmlAttr(old.styleId)}"/>`)
-  if (old.font) {
-    const font = escapeXmlAttr(old.font)
-    props.push(
-      `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>`,
-    )
-  }
+  if (old.font || old.fontAscii) props.push(freshRFontsXml(old.font, old.fontAscii))
+  // no Cs twins here: this nested w:rPr records what the run looked like before the tracked
+  // revision, and old.bold cannot tell w:b from w:b plus w:bCs. Adding them would invent a
+  // complex-script flag the document never had, so rejecting the revision would bold Arabic
+  // that was never bold.
   if (old.bold) props.push('<w:b/>')
   if (old.italic) props.push('<w:i/>')
   if (old.strike) props.push('<w:strike/>')
@@ -1697,15 +2082,17 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   if (insideLink) out.push({ name: 'w:rStyle', xml: '<w:rStyle w:val="Hyperlink"/>' })
   else if (run.styleId)
     out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(run.styleId)}"/>` })
-  if (run.font) {
-    const f = escapeXmlAttr(run.font)
-    out.push({
-      name: 'w:rFonts',
-      xml: `<w:rFonts w:ascii="${f}" w:eastAsia="${f}" w:hAnsi="${f}" w:cs="${f}"/>`,
-    })
+  if (run.font || run.fontAscii) {
+    out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii) })
   }
-  if (run.bold) out.push({ name: 'w:b', xml: '<w:b/>' })
-  if (run.italic) out.push({ name: 'w:i', xml: '<w:i/>' })
+  // the Cs twins carry the same flag for complex-script text; without them clicking Bold
+  // on Arabic or Hebrew changes nothing on screen, which is what Word writes too
+  if (run.bold) {
+    out.push({ name: 'w:b', xml: '<w:b/>' }, { name: 'w:bCs', xml: '<w:bCs/>' })
+  }
+  if (run.italic) {
+    out.push({ name: 'w:i', xml: '<w:i/>' }, { name: 'w:iCs', xml: '<w:iCs/>' })
+  }
   if (run.strike) out.push({ name: 'w:strike', xml: '<w:strike/>' })
   if (run.color)
     out.push({ name: 'w:color', xml: `<w:color w:val="${escapeXmlAttr(run.color)}"/>` })
@@ -1716,6 +2103,12 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   if (run.highlight)
     out.push({ name: 'w:highlight', xml: `<w:highlight w:val="${escapeXmlAttr(run.highlight)}"/>` })
   if (run.underline) out.push({ name: 'w:u', xml: '<w:u w:val="single"/>' })
+  if (run.shading) {
+    out.push({
+      name: 'w:shd',
+      xml: `<w:shd w:val="clear" w:color="auto" w:fill="${escapeXmlAttr(run.shading)}"/>`,
+    })
+  }
   if (run.vertAlign)
     out.push({ name: 'w:vertAlign', xml: `<w:vertAlign w:val="${run.vertAlign}"/>` })
   const rPrChange = revisionRPrChangeXml(run)
@@ -1739,6 +2132,9 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
   const inner = rawRPr.slice(open.length, rawRPr.length - '</w:rPr>'.length)
   const rawChildren = splitXmlChildren(inner)
   const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
+  // complex-script runs decode bold/italic/size from the Cs twins on the parse side;
+  // compare against the same elements or every untouched cs run would get "rebuilt"
+  const cs = run.cs ?? textHasComplexScript(run.text)
 
   // Compare model vs raw-encoded values group by group; equal → keep the original bytes
   // (drop the group from fresh)
@@ -1759,15 +2155,15 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return raw === modeled || (raw === 'Hyperlink' && !modeled)
       }
       case 'rFonts': {
+        // mirrors the parse side: primary = eastAsia ?? ascii ?? hAnsi, latin = ascii ?? hAnsi
         const attrs = rawOf('w:rFonts')
-        const raw =
-          rawAttr(attrs, 'w:eastAsia') ?? rawAttr(attrs, 'w:ascii') ?? rawAttr(attrs, 'w:hAnsi')
-        return raw === run.font
+        const ascii = rawAttr(attrs, 'w:ascii') ?? rawAttr(attrs, 'w:hAnsi')
+        return (rawAttr(attrs, 'w:eastAsia') ?? ascii) === run.font && ascii === run.fontAscii
       }
       case 'bold':
-        return rawBool(rawOf('w:b')) === !!run.bold
+        return rawBool(rawOf(cs ? 'w:bCs' : 'w:b')) === !!run.bold
       case 'italic':
-        return rawBool(rawOf('w:i')) === !!run.italic
+        return rawBool(rawOf(cs ? 'w:iCs' : 'w:i')) === !!run.italic
       case 'strike':
         return rawBool(rawOf('w:strike')) === !!run.strike
       case 'color': {
@@ -1775,12 +2171,16 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return (raw === 'auto' ? undefined : raw) === run.color
       }
       case 'size': {
-        const raw = rawAttr(rawOf('w:sz'), 'w:val')
+        const raw = rawAttr(rawOf(cs ? 'w:szCs' : 'w:sz'), 'w:val')
         return (raw ? parseInt(raw, 10) || undefined : undefined) === run.sizeHalfPoints
       }
       case 'highlight': {
         const raw = rawAttr(rawOf('w:highlight'), 'w:val')
         return (raw === 'none' ? undefined : raw) === run.highlight
+      }
+      case 'shading': {
+        const raw = rawAttr(rawOf('w:shd'), 'w:fill')
+        return (raw && raw !== 'auto' ? raw : undefined) === run.shading
       }
       case 'underline': {
         // w:u is not a boolean prop: no w:val (or val="none") means no
@@ -1804,7 +2204,13 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
   for (const g of RUN_MANAGED_GROUPS) {
     if (groupEqual(g.key)) continue
     for (const t of g.tags) rebuiltTags.add(t)
-    freshOut.push(...freshByGroup.get(g.key)!)
+    const rawRFonts = g.key === 'rFonts' ? rawOf('w:rFonts') : undefined
+    if (rawRFonts && (run.font || run.fontAscii)) {
+      // edited font slots merge into the original element instead of replacing it
+      freshOut.push({ name: 'w:rFonts', xml: mergeRFontsXml(rawRFonts, run) })
+    } else {
+      freshOut.push(...freshByGroup.get(g.key)!)
+    }
   }
 
   const kept = rawChildren.filter((c) => !rebuiltTags.has(c.name))
@@ -1987,60 +2393,18 @@ export function buildShapeParagraphXml(opts: {
   return `<w:p><w:r>${alternateContent}</w:r></w:p>`
 }
 
-/** WordArt preset definitions (style name → shape fill/stroke/text color). */
-export const WORDART_PRESETS = [
-  {
-    id: 'wordArt-1',
-    label: 'Fill - accent color',
-    colorHex: '4472C4',
-    borderHex: '2F5496',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-2',
-    label: 'Gradient - blue violet',
-    colorHex: '7B2FBE',
-    borderHex: '4472C4',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-3',
-    label: 'Outline - no fill',
-    colorHex: '4472C4',
-    borderHex: '4472C4',
-    noFill: true,
-  },
-  {
-    id: 'wordArt-4',
-    label: 'Shadow - dark',
-    colorHex: '1F3864',
-    borderHex: '1F3864',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-5',
-    label: 'Glow - orange',
-    colorHex: 'ED7D31',
-    borderHex: 'C55A11',
-    noFill: false,
-  },
-  {
-    id: 'wordArt-6',
-    label: 'Fill - dark red',
-    colorHex: 'C00000',
-    borderHex: '9B0000',
-    noFill: false,
-  },
-] as const
-
 /**
  * Build a <w:p> fragment containing a floating WordArt WPS text box.
  * The shape has no background fill; the text runs carry large size (36pt)
- * and the specified color. Style is approximated — Word can open the result.
+ * and the specified solid color. Style is approximated (no stroke/effects in
+ * the saved run — the caller picks a readable solid color) — Word can open
+ * the result. Presets live in the UI layer (@genoffice/ui wordart-presets).
  */
 export function buildWordArtParagraphXml(opts: {
   text?: string
-  wordArtId?: string
+  /** 6-digit hex without '#'; defaults to the Office accent blue. */
+  colorHex?: string
+  italic?: boolean
   widthEmu?: number
   heightEmu?: number
   id?: number
@@ -2048,14 +2412,15 @@ export function buildWordArtParagraphXml(opts: {
   const widthEmu = opts.widthEmu ?? 2700000 // ~7.5 cm
   const heightEmu = opts.heightEmu ?? 720000 // ~2 cm
   const id = opts.id ?? 1
-  const preset = WORDART_PRESETS.find((p) => p.id === opts.wordArtId) ?? WORDART_PRESETS[0]
+  const colorHex = opts.colorHex ?? '4472C4'
   const text = opts.text ?? 'WordArt'
 
-  // Build run props: large font + color
+  // Build run props: large font + color (schema order: b < i < color < sz)
   const rPr =
     `<w:rPr>` +
     `<w:b/>` +
-    `<w:color w:val="${preset.colorHex}"/>` +
+    (opts.italic ? `<w:i/>` : '') +
+    `<w:color w:val="${colorHex}"/>` +
     `<w:sz w:val="72"/>` + // 36pt = 72 half-points
     `<w:szCs w:val="72"/>` +
     `</w:rPr>`

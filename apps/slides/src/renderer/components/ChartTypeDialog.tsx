@@ -13,9 +13,11 @@ const KINDS: Array<{ kind: ChartKind; label: StringKey }> = [
   { kind: 'barStacked', label: 'ribbonChartKindBarStacked' },
   { kind: 'barPercentStacked', label: 'ribbonChartKindBarPercentStacked' },
   { kind: 'barH', label: 'ribbonChartKindBarH' },
+  { kind: 'bar3D', label: 'ribbonChartKindBar3D' },
   { kind: 'line', label: 'ribbonChartKindLine' },
   { kind: 'area', label: 'ribbonChartKindArea' },
   { kind: 'pie', label: 'ribbonChartKindPie' },
+  { kind: 'pie3D', label: 'ribbonChartKindPie3D' },
   { kind: 'doughnut', label: 'ribbonChartKindDoughnut' },
   { kind: 'scatter', label: 'ribbonChartKindScatter' },
   { kind: 'radar', label: 'ribbonChartKindRadar' },
@@ -34,7 +36,7 @@ export function ChartKindThumb({ kind, width = 96 }: { kind: ChartKind; width?: 
   const plot = { x: 9, y: 7, w: W - 18, h: H - 15 }
   const bottom = plot.y + plot.h
   const els: ReactNode[] = []
-  const cartesian = kind !== 'pie' && kind !== 'doughnut' && kind !== 'radar'
+  const cartesian = kind !== 'pie' && kind !== 'pie3D' && kind !== 'doughnut' && kind !== 'radar'
 
   if (cartesian) {
     for (let i = 1; i <= 2; i++) {
@@ -99,6 +101,27 @@ export function ChartKindThumb({ kind, width = 96 }: { kind: ChartKind; width?: 
         ),
       )
     }
+  } else if (kind === 'bar3D') {
+    const vals = [0.55, 0.85, 0.45, 0.7]
+    const slot = plot.w / vals.length
+    const barW = 12
+    const d = 4
+    vals.forEach((v, i) => {
+      const x = plot.x + i * slot + (slot - barW) / 2
+      const y = py(v)
+      const h = plot.h * v
+      els.push(
+        <path key={`t${i}`} d={`M ${x} ${y} h ${barW} l ${d} ${-d} h ${-barW} Z`} fill="#6B8FD4" />,
+      )
+      els.push(
+        <path
+          key={`f${i}`}
+          d={`M ${x + barW} ${y} l ${d} ${-d} v ${h} l ${-d} ${d} Z`}
+          fill="#2F5496"
+        />,
+      )
+      els.push(<rect key={`b${i}`} x={x} y={y} width={barW} height={h} fill={C1} />)
+    })
   } else if (kind === 'barStacked' || kind === 'barPercentStacked') {
     const vals: Array<[number, number]> =
       kind === 'barStacked'
@@ -219,6 +242,28 @@ export function ChartKindThumb({ kind, width = 96 }: { kind: ChartKind; width?: 
         fillOpacity={0.25}
         stroke={C1}
         strokeWidth={1.8}
+      />,
+    )
+  } else if (kind === 'pie3D') {
+    const cx = W / 2
+    const cy = H / 2 - 3
+    const rx = H / 2 - 8
+    const ry = rx * 0.55
+    const d = 7
+    els.push(
+      <path
+        key="rim"
+        d={`M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy} v ${d} A ${rx} ${ry} 0 0 1 ${cx - rx} ${cy + d} Z`}
+        fill="#2F5496"
+      />,
+    )
+    els.push(<ellipse key="p1" cx={cx} cy={cy} rx={rx} ry={ry} fill={C1} />)
+    const a = ((-90 + 120) * Math.PI) / 180
+    els.push(
+      <path
+        key="p2"
+        d={`M ${cx} ${cy} L ${cx} ${cy - ry} A ${rx} ${ry} 0 0 1 ${cx + Math.cos(a) * rx} ${cy + Math.sin(a) * ry} Z`}
+        fill={C2}
       />,
     )
   } else {

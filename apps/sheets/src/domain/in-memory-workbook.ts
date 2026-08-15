@@ -266,6 +266,11 @@ export class InMemoryWorkbookAdapter implements WorkbookAdapter {
     return null
   }
 
+  /** Whether undo() has a transaction to revert (drives the QAT button gray state). */
+  get canUndo(): boolean {
+    return this.history.length > 0
+  }
+
   undo(): CommitReceipt {
     const previous = this.history.pop()
     if (!previous) {

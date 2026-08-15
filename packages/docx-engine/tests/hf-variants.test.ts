@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { parseDocx, saveDocx } from '../src/index'
+import { PAGE_MARK, parseDocx, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const BODY = '<w:p><w:r><w:t>正文</w:t></w:r></w:p>'
@@ -42,7 +42,7 @@ describe('first-page / even-page headers & footers', () => {
     expect(reparsed.headerText).toBe('默认页眉')
     expect(reparsed.headerFirst?.text).toBe('首页页眉')
     expect(reparsed.headerEven?.text).toBe('偶数页页眉')
-    expect(reparsed.footerEven?.text).toBe('偶 #')
+    expect(reparsed.footerEven?.text).toBe(`偶 ${PAGE_MARK}`)
     expect(reparsed.footerEven?.hasPageNumber).toBe(true)
     expect(reparsed.footerFirst).toBeNull()
   })

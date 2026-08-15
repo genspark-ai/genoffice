@@ -10,6 +10,11 @@ import {
   setActiveDocsResolver,
   teardownDocsRenderer,
 } from '../../../docs/src/main/docs-main'
+import {
+  createMarkdownView,
+  markdownIsDirty,
+  requestMarkdownClose,
+} from '../../../markdown/src/main/markdown-main'
 import { createPdfView, pdfIsDirty, requestPdfClose } from '../../../pdf/src/main/pdf-main'
 import {
   createSheetsView,
@@ -53,6 +58,10 @@ export class TabManager {
   private nextId = 1
   /** tab whose page entered HTML fullscreen (e.g. slides slideshow) — its view covers the tab strip */
   private htmlFullScreenId: string | null = null
+  /** webContents ids whose view must cover the tab strip without HTML fullscreen
+   *  (slides show: the window snaps via simpleFullScreen and asks for the bleed
+   *  over IPC, since requestFullscreen would animate the native transition) */
+  private readonly bleedWcIds = new Set<number>()
   /** tabs mid unsaved-changes prompt, so a second close click doesn't stack dialogs */
   private readonly closingIds = new Set<string>()
 
@@ -63,7 +72,15 @@ export class TabManager {
     /** localized placeholder title for a tab that has no file yet */
     private readonly untitledTitleFor?: (kind: TabKind) => string,
   ) {
-    shellWindow.on('resize', () => this.layout())
+    // Layout once synchronously for macOS/Windows (bounds are already correct),
+    // then once more on the next tick. On Linux/X11, `resize` fires before the
+    // window manager applies the new size, so getContentBounds() is still the
+    // pre-maximize size inside the handler and a follow-up layout is required.
+    // See https://github.com/genspark-ai/genoffice/issues/15
+    shellWindow.on('resize', () => {
+      this.layout()
+      setImmediate(() => this.layout())
+    })
   }
 
   private untitled(kind: TabKind, fallback: string): string {
@@ -75,7 +92,18 @@ export class TabManager {
     if (this.htmlFullScreenId !== null && this.htmlFullScreenId === this.activeId) {
       return { x: 0, y: 0, width, height }
     }
+    const active = this.tabs.find((t) => t.id === this.activeId)
+    if (active?.view && this.bleedWcIds.has(active.view.webContents.id)) {
+      return { x: 0, y: 0, width, height }
+    }
     return { x: 0, y: TAB_STRIP_HEIGHT, width, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
+  }
+
+  /** Grow/restore a tab view over the tab strip on request (slides show fullscreen) */
+  setContentBleed(wc: WebContents, on: boolean): void {
+    if (on) this.bleedWcIds.add(wc.id)
+    else this.bleedWcIds.delete(wc.id)
+    this.layout()
   }
 
   /**
@@ -96,6 +124,8 @@ export class TabManager {
 
   /** re-fit the active tab's view after a window resize */
   layout(): void {
+    // Deferred resize layouts can land after the shell window was closed.
+    if (this.shellWindow.isDestroyed()) return
     const active = this.tabs.find((t) => t.id === this.activeId)
     if (active?.view) active.view.setBounds(this.contentBounds())
   }
@@ -178,6 +208,23 @@ export class TabManager {
     return id
   }
 
+  openMarkdownTab(openPath?: string): string {
+    const view = createMarkdownView(openPath)
+    const id = `t${this.nextId++}`
+    this.shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    this.trackHtmlFullScreen(id, view)
+    this.tabs.push({
+      id,
+      kind: 'markdown',
+      view,
+      title: openPath ? basename(openPath) : this.untitled('markdown', 'AI Markdown'),
+      filePath: openPath,
+    })
+    this.activateTab(id)
+    return id
+  }
+
   activateTab(id: string): void {
     const target = this.tabs.find((t) => t.id === id)
     if (!target) return
@@ -245,6 +292,13 @@ export class TabManager {
       .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
   }
 
+  /** markdown tabs whose renderer reports unsaved edits (shell-close guard) */
+  dirtyMarkdownTabs(): Array<{ id: string; webContents: WebContents }> {
+    return this.tabs
+      .filter((t) => t.kind === 'markdown' && t.view && markdownIsDirty(t.view.webContents.id))
+      .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
+  }
+
   /** slides tabs whose main-process session has unsaved edits (shell-close guard) */
   dirtySlidesTabs(): Array<{ id: string; webContents: WebContents }> {
     return this.tabs
@@ -274,9 +328,11 @@ export class TabManager {
         ? requestSheetsClose
         : tab.kind === 'pdf' && pdfIsDirty(tab.view.webContents.id)
           ? requestPdfClose
-          : tab.kind === 'slides' && slidesIsDirty(tab.view.webContents.id)
-            ? requestSlidesClose
-            : null)
+          : tab.kind === 'markdown' && markdownIsDirty(tab.view.webContents.id)
+            ? requestMarkdownClose
+            : tab.kind === 'slides' && slidesIsDirty(tab.view.webContents.id)
+              ? requestSlidesClose
+              : null)
     // docs dirty state lives in the renderer and needs an async query; skip the guard when clean (avoids a flash activation)
     if (!closeGuard && tab.kind === 'docs' && tab.view) {
       this.closingIds.add(id)
@@ -341,6 +397,18 @@ export class TabManager {
 
   findPdfTabByPath(path: string): string | undefined {
     return this.tabs.find((t) => t.kind === 'pdf' && t.filePath === path)?.id
+  }
+
+  findMarkdownTabByPath(path: string): string | undefined {
+    return this.tabs.find((t) => t.kind === 'markdown' && t.filePath === path)?.id
+  }
+
+  /** the active tab's markdown view, if the active tab is markdown (markdown menu target) */
+  activeMarkdownTab(): { id: string; webContents: WebContents; filePath?: string } | undefined {
+    const tab = this.tabs.find((t) => t.id === this.activeId)
+    return tab?.kind === 'markdown' && tab.view
+      ? { id: tab.id, webContents: tab.view.webContents, filePath: tab.filePath }
+      : undefined
   }
 
   /** the active tab's pdf view, if the active tab is a pdf (pdf menu target) */

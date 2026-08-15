@@ -50,12 +50,13 @@ export function findChildren(node: XNode, name: string): XNode[] {
  * or paragraphs at any level; for display purposes the wrapper is transparent
  * (research-report templates wrap every field in an sdt).
  */
-export function childrenThroughSdt(node: XNode, name: string): XNode[] {
+export function childrenThroughSdt(node: XNode, name: string | readonly string[]): XNode[] {
+  const names = Array.isArray(name) ? (name as readonly string[]) : [name as string]
   const out: XNode[] = []
   const visit = (n: XNode): void => {
     for (const child of childrenOf(n)) {
       const cn = nameOf(child)
-      if (cn === name) out.push(child)
+      if (cn !== undefined && names.includes(cn)) out.push(child)
       else if (cn === 'w:sdt') {
         const content = findChild(child, 'w:sdtContent')
         if (content) visit(content)
@@ -118,4 +119,11 @@ export function escapeXmlText(text: string): string {
 
 export function escapeXmlAttr(text: string): string {
   return escapeXmlText(text).replace(/"/g, '&quot;')
+}
+
+/** Text contains complex-script characters (Arabic/Hebrew/Syriac/Thaana/NKo/Indic/Thai), i.e. the w:*Cs run properties apply */
+export function textHasComplexScript(text: string): boolean {
+  return /[\u0590-\u05FF\u0600-\u077F\u0780-\u07FF\u08A0-\u08FF\u0900-\u0DFF\u0E00-\u0E7F\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(
+    text,
+  )
 }

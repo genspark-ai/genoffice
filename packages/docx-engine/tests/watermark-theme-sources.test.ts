@@ -33,9 +33,7 @@ describe('watermark', () => {
 
   it('a header text rewrite carries the existing watermark through', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
-    const withWm = await parseDocx(
-      await saveDocx(doc, originalOrder(doc), { watermark: '草稿' }),
-    )
+    const withWm = await parseDocx(await saveDocx(doc, originalOrder(doc), { watermark: '草稿' }))
     const out = await parseDocx(
       await saveDocx(withWm, originalOrder(withWm), { header: { text: '公司内部' } }),
     )
@@ -66,7 +64,13 @@ describe('theme fonts / colors', () => {
     })
     const zip = await JSZip.loadAsync(out)
     const theme = await zip.file('word/theme/theme1.xml')!.async('string')
-    expect(readThemeFonts(theme)).toEqual({ major: '微软雅黑', minor: '宋体', eastAsia: '宋体' })
+    // buildThemeXml writes the eastAsia face into both font groups
+    expect(readThemeFonts(theme)).toEqual({
+      major: '微软雅黑',
+      minor: '宋体',
+      eastAsia: '宋体',
+      majorEastAsia: '宋体',
+    })
     expect(readThemeColors(theme)?.accent1).toBe('1F4E79')
     const ct = await zip.file('[Content_Types].xml')!.async('string')
     expect(ct).toContain('/word/theme/theme1.xml')
@@ -74,7 +78,12 @@ describe('theme fonts / colors', () => {
     expect(rels).toContain('theme/theme1.xml')
 
     const reparsed = await parseDocx(out)
-    expect(reparsed.themeFonts).toEqual({ major: '微软雅黑', minor: '宋体', eastAsia: '宋体' })
+    expect(reparsed.themeFonts).toEqual({
+      major: '微软雅黑',
+      minor: '宋体',
+      eastAsia: '宋体',
+      majorEastAsia: '宋体',
+    })
   })
 
   it('patches an existing theme part in place', async () => {
@@ -127,7 +136,17 @@ describe('bibliography sources', () => {
     const first = await parseDocx(await saveDocx(doc, originalOrder(doc), { sources: [source] }))
     const second = await parseDocx(
       await saveDocx(first, originalOrder(first), {
-        sources: [...first.sources, { tag: 'Li2023', type: 'JournalArticle', author: '李强', title: 'LLM 综述', year: '2023', publisher: '计算机学报' }],
+        sources: [
+          ...first.sources,
+          {
+            tag: 'Li2023',
+            type: 'JournalArticle',
+            author: '李强',
+            title: 'LLM 综述',
+            year: '2023',
+            publisher: '计算机学报',
+          },
+        ],
       }),
     )
     expect(second.sources).toHaveLength(2)

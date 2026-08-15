@@ -19,6 +19,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: '总结这篇文档的主要内容和要点',
     aiPolishBtn: 'AI 润色',
     aiPolishPrompt: '润色全文,使表达更清晰流畅',
+    aiTidyBtn: 'AI 排版',
+    aiTidyPrompt:
+      '整理全文排版,例如修正标题层级、统一列表格式、去除多余的加粗和斜体、为正文补齐首行缩进等;只调整格式,不要改动任何文字内容',
     aiSwitchModelTitle: '切换 AI 模型',
     aiCodexModelLabel: 'Codex 模型',
     aiCodexReasoningLabel: '推理强度',
@@ -124,6 +127,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Summarize the main content and key points of this document',
     aiPolishBtn: 'AI Polish',
     aiPolishPrompt: 'Polish the whole document to make the writing clearer and more fluent',
+    aiTidyBtn: 'AI Format',
+    aiTidyPrompt:
+      'Tidy up the document formatting — for example fix heading levels, unify list formatting, remove unnecessary bold and italics, and make paragraph indentation consistent. Adjust formatting only — do not change any text content',
     aiSwitchModelTitle: 'Switch AI model',
     aiCodexModelLabel: 'Codex model',
     aiCodexReasoningLabel: 'Reasoning effort',
@@ -234,6 +240,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'この文書の主な内容と要点を要約してください',
     aiPolishBtn: 'AI 推敲',
     aiPolishPrompt: '文書全体を推敲し、より明確で読みやすい文章にしてください',
+    aiTidyBtn: 'AI 書式整理',
+    aiTidyPrompt:
+      '文書全体の書式を整えてください。例えば見出しレベルの修正、リスト形式の統一、不要な太字・斜体の削除、本文段落の字下げの調整など。書式のみを変更し、本文の文字は一切変更しないでください',
     aiSwitchModelTitle: 'AI モデルを切り替え',
     aiCodexModelLabel: 'Codex モデル',
     aiCodexReasoningLabel: '推論の強さ',
@@ -345,6 +354,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: '이 문서의 주요 내용과 핵심 사항을 요약해 주세요',
     aiPolishBtn: 'AI 다듬기',
     aiPolishPrompt: '문서 전체를 다듬어 더 명확하고 매끄럽게 만들어 주세요',
+    aiTidyBtn: 'AI 서식 정리',
+    aiTidyPrompt:
+      '문서 전체 서식을 정리해 주세요. 예를 들어 제목 수준 수정, 목록 형식 통일, 불필요한 굵게/기울임 제거, 본문 단락 들여쓰기 정리 등. 서식만 조정하고 본문 텍스트는 절대 변경하지 마세요',
     aiSwitchModelTitle: 'AI 모델 전환',
     aiCodexModelLabel: 'Codex 모델',
     aiCodexReasoningLabel: '추론 수준',
@@ -456,6 +468,9 @@ export const aiStrings = defineStrings({
     aiPolishBtn: 'Amélioration IA',
     aiPolishPrompt:
       "Améliorez l'ensemble du document pour rendre le texte plus clair et plus fluide",
+    aiTidyBtn: 'Mise en forme IA',
+    aiTidyPrompt:
+      "Mettez en ordre la mise en forme du document — par exemple corrigez les niveaux de titres, uniformisez les listes, supprimez les gras et italiques superflus et harmonisez l'indentation des paragraphes. Ne modifiez que la mise en forme, sans changer le texte",
     aiSwitchModelTitle: "Changer de modèle d'IA",
     aiCodexModelLabel: 'Modèle Codex',
     aiCodexReasoningLabel: 'Niveau de raisonnement',
@@ -569,6 +584,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Fasse den Hauptinhalt und die Kernpunkte dieses Dokuments zusammen',
     aiPolishBtn: 'KI-Feinschliff',
     aiPolishPrompt: 'Überarbeite das gesamte Dokument, damit der Text klarer und flüssiger wird',
+    aiTidyBtn: 'KI-Formatierung',
+    aiTidyPrompt:
+      'Bringe die Formatierung des gesamten Dokuments in Ordnung – zum Beispiel Überschriftenebenen korrigieren, Listen vereinheitlichen, überflüssige Fett- und Kursivauszeichnungen entfernen, Absatzeinzüge angleichen. Passe nur die Formatierung an, ohne den Text zu verändern',
     aiSwitchModelTitle: 'KI-Modell wechseln',
     aiCodexModelLabel: 'Codex-Modell',
     aiCodexReasoningLabel: 'Denkaufwand',
@@ -682,6 +700,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Resume el contenido principal y los puntos clave de este documento',
     aiPolishBtn: 'Pulido IA',
     aiPolishPrompt: 'Pule todo el documento para que la redacción sea más clara y fluida',
+    aiTidyBtn: 'Formato IA',
+    aiTidyPrompt:
+      'Ordena el formato de todo el documento; por ejemplo, corrige los niveles de título, unifica las listas, elimina negritas y cursivas innecesarias y homogeneiza la sangría de los párrafos. Ajusta solo el formato, sin cambiar el texto',
     aiSwitchModelTitle: 'Cambiar modelo de IA',
     aiCodexModelLabel: 'Modelo Codex',
     aiCodexReasoningLabel: 'Nivel de razonamiento',
@@ -794,6 +815,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'สรุปเนื้อหาหลักและประเด็นสำคัญของเอกสารนี้',
     aiPolishBtn: 'ขัดเกลาด้วย AI',
     aiPolishPrompt: 'ขัดเกลาเอกสารทั้งฉบับให้อ่านชัดเจนและลื่นไหลขึ้น',
+    aiTidyBtn: 'จัดรูปแบบด้วย AI',
+    aiTidyPrompt:
+      'จัดระเบียบรูปแบบทั้งเอกสาร เช่น แก้ไขระดับหัวข้อ ปรับรูปแบบรายการให้สอดคล้องกัน ลบตัวหนาตัวเอียงที่ไม่จำเป็น และปรับการเยื้องย่อหน้าให้สม่ำเสมอ เป็นต้น ปรับเฉพาะรูปแบบเท่านั้น ห้ามแก้ไขข้อความ',
     aiSwitchModelTitle: 'สลับโมเดล AI',
     aiCodexModelLabel: 'โมเดล Codex',
     aiCodexReasoningLabel: 'ระดับการให้เหตุผล',
@@ -904,6 +928,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Ringkas isi utama dan poin-poin penting dokumen ini',
     aiPolishBtn: 'Poles AI',
     aiPolishPrompt: 'Poles seluruh dokumen agar tulisan lebih jelas dan mengalir',
+    aiTidyBtn: 'Format AI',
+    aiTidyPrompt:
+      'Rapikan format seluruh dokumen, misalnya perbaiki level judul, seragamkan format daftar, hapus cetak tebal/miring yang tidak perlu, dan samakan indentasi paragraf. Ubah format saja, jangan mengubah teks apa pun',
     aiSwitchModelTitle: 'Ganti model AI',
     aiCodexModelLabel: 'Model Codex',
     aiCodexReasoningLabel: 'Tingkat penalaran',
@@ -1014,6 +1041,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Кратко изложите основное содержание и ключевые моменты этого документа',
     aiPolishBtn: 'ИИ-редактура',
     aiPolishPrompt: 'Отредактируйте весь документ, чтобы текст стал яснее и плавнее',
+    aiTidyBtn: 'ИИ-форматирование',
+    aiTidyPrompt:
+      'Приведите в порядок форматирование всего документа — например, исправьте уровни заголовков, унифицируйте списки, уберите лишнее выделение жирным и курсивом, выровняйте отступы абзацев. Меняйте только форматирование, не изменяя текст',
     aiSwitchModelTitle: 'Сменить модель ИИ',
     aiCodexModelLabel: 'Модель Codex',
     aiCodexReasoningLabel: 'Уровень рассуждений',
@@ -1125,6 +1155,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'لخّص المحتوى الرئيسي والنقاط الأساسية لهذا المستند',
     aiPolishBtn: 'تحسين AI',
     aiPolishPrompt: 'حسّن المستند بأكمله لجعل الكتابة أوضح وأكثر سلاسة',
+    aiTidyBtn: 'تنسيق AI',
+    aiTidyPrompt:
+      'رتّب تنسيق المستند بأكمله، مثل تصحيح مستويات العناوين، وتوحيد تنسيق القوائم، وإزالة الخط الغامق والمائل غير الضروري، وتوحيد المسافات البادئة للفقرات وغيرها. عدّل التنسيق فقط دون تغيير أي نص',
     aiSwitchModelTitle: 'تبديل نموذج الذكاء الاصطناعي',
     aiCodexModelLabel: 'نموذج Codex',
     aiCodexReasoningLabel: 'مستوى الاستدلال',
@@ -1235,6 +1268,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Resuma o conteúdo principal e os pontos-chave deste documento',
     aiPolishBtn: 'Aprimorar IA',
     aiPolishPrompt: 'Aprimore todo o documento para deixar o texto mais claro e fluente',
+    aiTidyBtn: 'Formatação IA',
+    aiTidyPrompt:
+      'Organize a formatação de todo o documento — por exemplo, corrija os níveis de título, uniformize as listas, remova negritos e itálicos desnecessários e padronize o recuo dos parágrafos. Ajuste apenas a formatação, sem alterar o texto',
     aiSwitchModelTitle: 'Trocar modelo de IA',
     aiCodexModelLabel: 'Modelo Codex',
     aiCodexReasoningLabel: 'Nível de raciocínio',
@@ -1347,6 +1383,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Riassumi il contenuto principale e i punti chiave di questo documento',
     aiPolishBtn: 'Rifinitura IA',
     aiPolishPrompt: 'Rifinisci tutto il documento per rendere il testo più chiaro e scorrevole',
+    aiTidyBtn: 'Formattazione IA',
+    aiTidyPrompt:
+      'Sistema la formattazione di tutto il documento — ad esempio correggi i livelli dei titoli, uniforma gli elenchi, rimuovi grassetti e corsivi superflui e uniforma i rientri dei paragrafi. Modifica solo la formattazione, senza cambiare il testo',
     aiSwitchModelTitle: 'Cambia modello IA',
     aiCodexModelLabel: 'Modello Codex',
     aiCodexReasoningLabel: 'Livello di ragionamento',
@@ -1461,6 +1500,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Podsumuj główną treść i kluczowe punkty tego dokumentu',
     aiPolishBtn: 'Szlif AI',
     aiPolishPrompt: 'Dopracuj cały dokument, aby tekst był jaśniejszy i płynniejszy',
+    aiTidyBtn: 'Formatowanie AI',
+    aiTidyPrompt:
+      'Uporządkuj formatowanie całego dokumentu — na przykład popraw poziomy nagłówków, ujednolić listy, usuń zbędne pogrubienia i kursywę, wyrównaj wcięcia akapitów. Zmieniaj tylko formatowanie, nie zmieniając tekstu',
     aiSwitchModelTitle: 'Przełącz model AI',
     aiCodexModelLabel: 'Model Codex',
     aiCodexReasoningLabel: 'Poziom rozumowania',
@@ -1572,6 +1614,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Vat de hoofdinhoud en kernpunten van dit document samen',
     aiPolishBtn: 'AI-polijsten',
     aiPolishPrompt: 'Polijst het hele document zodat de tekst duidelijker en vloeiender wordt',
+    aiTidyBtn: 'AI-opmaak',
+    aiTidyPrompt:
+      'Ruim de opmaak van het hele document op — bijvoorbeeld kopniveaus corrigeren, lijsten uniform maken, overbodige vet- en cursiefopmaak verwijderen en alinea-inspringingen consistent maken. Pas alleen de opmaak aan, verander de tekst niet',
     aiSwitchModelTitle: 'AI-model wisselen',
     aiCodexModelLabel: 'Codex-model',
     aiCodexReasoningLabel: 'Redeneerniveau',
@@ -1683,6 +1728,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'Ringkaskan kandungan utama dan perkara penting dokumen ini',
     aiPolishBtn: 'Gilap AI',
     aiPolishPrompt: 'Gilap keseluruhan dokumen supaya penulisan lebih jelas dan lancar',
+    aiTidyBtn: 'Format AI',
+    aiTidyPrompt:
+      'Kemaskan format keseluruhan dokumen, contohnya betulkan tahap tajuk, seragamkan format senarai, buang huruf tebal/condong yang tidak perlu, dan selaraskan inden perenggan. Laraskan format sahaja, jangan ubah sebarang teks',
     aiSwitchModelTitle: 'Tukar model AI',
     aiCodexModelLabel: 'Model Codex',
     aiCodexReasoningLabel: 'Tahap penaakulan',
@@ -1793,6 +1841,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'סכם את התוכן העיקרי ואת הנקודות המרכזיות של מסמך זה',
     aiPolishBtn: 'ליטוש AI',
     aiPolishPrompt: 'לטש את המסמך כולו כדי שהכתיבה תהיה ברורה וזורמת יותר',
+    aiTidyBtn: 'עיצוב AI',
+    aiTidyPrompt:
+      'סדר את העיצוב של המסמך כולו — למשל תקן רמות כותרות, אחד את עיצוב הרשימות, הסר הדגשות והטיות מיותרות ויישר את הזחות הפסקאות. שנה רק את העיצוב, בלי לשנות את הטקסט',
     aiSwitchModelTitle: 'החלפת מודל AI',
     aiCodexModelLabel: 'מודל Codex',
     aiCodexReasoningLabel: 'רמת חשיבה',
@@ -1901,6 +1952,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: 'इस दस्तावेज़ की मुख्य सामग्री और प्रमुख बिंदुओं का सारांश दें',
     aiPolishBtn: 'AI परिष्करण',
     aiPolishPrompt: 'पूरे दस्तावेज़ को परिष्कृत करें ताकि लेखन अधिक स्पष्ट और प्रवाहपूर्ण हो',
+    aiTidyBtn: 'AI स्वरूपण',
+    aiTidyPrompt:
+      'पूरे दस्तावेज़ का स्वरूपण व्यवस्थित करें — उदाहरण के लिए शीर्षक स्तर ठीक करें, सूचियों का प्रारूप एकरूप करें, अनावश्यक बोल्ड/इटैलिक हटाएँ और अनुच्छेदों का इंडेंट एकसमान करें। केवल स्वरूपण बदलें, पाठ में कोई बदलाव न करें',
     aiSwitchModelTitle: 'AI मॉडल बदलें',
     aiCodexModelLabel: 'Codex मॉडल',
     aiCodexReasoningLabel: 'तर्क स्तर',
@@ -2011,6 +2065,9 @@ export const aiStrings = defineStrings({
     aiSummarizePrompt: '總結這篇文件的主要內容和要點',
     aiPolishBtn: 'AI 潤飾',
     aiPolishPrompt: '潤飾全文,使表達更清晰流暢',
+    aiTidyBtn: 'AI 排版',
+    aiTidyPrompt:
+      '整理全文排版,例如修正標題層級、統一列表格式、移除多餘的粗體和斜體、為內文補齊首行縮排等;只調整格式,不要改動任何文字內容',
     aiSwitchModelTitle: '切換 AI 模型',
     aiCodexModelLabel: 'Codex 模型',
     aiCodexReasoningLabel: '推理強度',

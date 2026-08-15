@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { computeListMarkers, parseDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -88,5 +88,34 @@ describe('mixed multilevel list kind', () => {
       }),
     )
     expect(doc.blocks[0].list).toMatchObject({ kind: 'ordered', ilvl: 4 })
+  })
+})
+
+describe('missing w:start default', () => {
+  const NO_START_NUMBERING =
+    XML_DECL +
+    '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:abstractNum w:abstractNumId="0">' +
+    '<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>' +
+    '</w:abstractNum>' +
+    '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+    '</w:numbering>'
+
+  it('a w:lvl without w:start starts at 0, as Word renders it', async () => {
+    const li = (text: string) =>
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+      `<w:r><w:t>${text}</w:t></w:r></w:p>`
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: li('a') + li('b'), numberingXml: NO_START_NUMBERING }),
+    )
+    expect(doc.numbering.get('1')!.levels[0].start).toBe(0)
+    const markers = computeListMarkers(
+      [
+        { numId: '1', ilvl: 0 },
+        { numId: '1', ilvl: 0 },
+      ],
+      doc.numbering,
+    )
+    expect(markers).toEqual(['0.', '1.'])
   })
 })

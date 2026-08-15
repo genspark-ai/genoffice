@@ -775,3 +775,58 @@ describe('per-data-point chart colors', () => {
     expect(el.chart.series[0]!.pointColors?.[1]).toBeUndefined()
   })
 })
+
+describe('3-D chart kinds survive insert and edit round-trips', () => {
+  it('pie3D inserts, edits keep the 3-D type, and an explicit switch to 2-D works', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    addChart(opened, 0, {
+      kind: 'pie3D',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [7, 3] }],
+      offset: { ...OFF },
+    })
+    let reopened = await openPptx(await savePptx(opened))
+    let el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.kind).toBe('pie')
+    expect(el.chart.pseudo3D).toBe(true)
+
+    // Data-only edit keeps 3-D
+    expect(editChartElement(reopened, 0, el.id, { series: [{ name: 'S', values: [5, 5] }] })).toBe(
+      true,
+    )
+    reopened = await openPptx(await savePptx(reopened))
+    el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.pseudo3D).toBe(true)
+    expect(el.chart.series[0]!.values).toEqual([5, 5])
+
+    // Explicit type change back to flat pie drops the 3-D view
+    expect(editChartElement(reopened, 0, el.id, { kind: 'pie' })).toBe(true)
+    reopened = await openPptx(await savePptx(reopened))
+    el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.pseudo3D).toBeUndefined()
+  })
+
+  it('bar3D inserts and a data edit keeps the 3-D type', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    addChart(opened, 0, {
+      kind: 'bar3D',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      offset: { ...OFF },
+    })
+    let reopened = await openPptx(await savePptx(opened))
+    let el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.kind).toBe('bar')
+    expect(el.chart.pseudo3D).toBe(true)
+    expect(
+      editChartElement(reopened, 0, el.id, {
+        categories: ['A', 'B', 'C'],
+        series: [{ name: 'S', values: [1, 2, 3] }],
+      }),
+    ).toBe(true)
+    reopened = await openPptx(await savePptx(reopened))
+    el = reopened.deck.slides[0]!.elements.at(-1) as ChartElement
+    expect(el.chart.pseudo3D).toBe(true)
+    expect(el.chart.categories).toEqual(['A', 'B', 'C'])
+  })
+})

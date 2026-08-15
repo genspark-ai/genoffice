@@ -32,7 +32,9 @@ export class StylesheetEditor {
     const bordersInner = sectionInner(stylesXml, 'borders')
     const cellXfsInner = sectionInner(stylesXml, 'cellXfs')
     if (fontsInner === null || fillsInner === null || cellXfsInner === null) {
-      throw new Error('The workbook stylesheet is missing fonts, fills, or cellXfs — style edits cannot be saved.')
+      throw new Error(
+        'The workbook stylesheet is missing fonts, fills, or cellXfs — style edits cannot be saved.',
+      )
     }
     this.fonts = extractElements(fontsInner, 'font')
     this.fills = extractElements(fillsInner, 'fill')
@@ -44,7 +46,9 @@ export class StylesheetEditor {
     this.hadDxfsSection = dxfsInner !== null
     this.dxfs = dxfsInner === null ? [] : extractElements(dxfsInner, 'dxf')
     if (this.fonts.length === 0 || this.cellXfs.length === 0) {
-      throw new Error('The workbook stylesheet has no base font or cell format — style edits cannot be saved.')
+      throw new Error(
+        'The workbook stylesheet has no base font or cell format — style edits cannot be saved.',
+      )
     }
     this.originalCounts = {
       numFmts: this.numFmts.length,
@@ -54,19 +58,22 @@ export class StylesheetEditor {
       cellXfs: this.cellXfs.length,
       dxfs: this.dxfs.length,
     }
-    this.nextNumFmtId = this.numFmts.reduce(
-      (maximum, entry) => Math.max(maximum, Number(readAttribute(entry, 'numFmtId') ?? 0)),
-      163,
-    ) + 1
+    this.nextNumFmtId =
+      this.numFmts.reduce(
+        (maximum, entry) => Math.max(maximum, Number(readAttribute(entry, 'numFmtId') ?? 0)),
+        163,
+      ) + 1
   }
 
   get changed(): boolean {
-    return this.numFmts.length !== this.originalCounts.numFmts
-      || this.fonts.length !== this.originalCounts.fonts
-      || this.fills.length !== this.originalCounts.fills
-      || this.borders.length !== this.originalCounts.borders
-      || this.cellXfs.length !== this.originalCounts.cellXfs
-      || this.dxfs.length !== this.originalCounts.dxfs
+    return (
+      this.numFmts.length !== this.originalCounts.numFmts ||
+      this.fonts.length !== this.originalCounts.fonts ||
+      this.fills.length !== this.originalCounts.fills ||
+      this.borders.length !== this.originalCounts.borders ||
+      this.cellXfs.length !== this.originalCounts.cellXfs ||
+      this.dxfs.length !== this.originalCounts.dxfs
+    )
   }
 
   /// Conditional-formatting highlight styles; deduped like every other list.
@@ -121,9 +128,7 @@ export class StylesheetEditor {
       ...(protection !== '' ? ['applyProtection="1"'] : []),
     ].join(' ')
     const children = `${alignment}${protection}`
-    const xf = children === ''
-      ? `<xf ${attributes}/>`
-      : `<xf ${attributes}>${children}</xf>`
+    const xf = children === '' ? `<xf ${attributes}/>` : `<xf ${attributes}>${children}</xf>`
 
     const index = internElement(this.cellXfs, xf)
     this.cache.set(cacheKey, index)
@@ -147,8 +152,9 @@ export class StylesheetEditor {
     } else if (this.dxfs.length > 0) {
       const section = `<dxfs count="${this.dxfs.length}">${this.dxfs.join('')}</dxfs>`
       // Schema order: dxfs follows cellStyles (when present) or cellXfs.
-      const anchor = /<\/cellStyles>|<cellStyles\b[^>]*\/>/.exec(result)
-        ?? /<\/cellXfs>|<cellXfs\b[^>]*\/>/.exec(result)
+      const anchor =
+        /<\/cellStyles>|<cellStyles\b[^>]*\/>/.exec(result) ??
+        /<\/cellXfs>|<cellXfs\b[^>]*\/>/.exec(result)
       if (anchor) {
         const at = anchor.index + anchor[0].length
         result = result.slice(0, at) + section + result.slice(at)
@@ -157,7 +163,10 @@ export class StylesheetEditor {
     if (this.numFmts.length > 0) {
       const section = `<numFmts count="${this.numFmts.length}">${this.numFmts.join('')}</numFmts>`
       if (sectionInner(result, 'numFmts') !== null) {
-        result = result.replace(/<numFmts\b[^>]*>[\s\S]*?<\/numFmts>|<numFmts\b[^>]*\/>/, () => section)
+        result = result.replace(
+          /<numFmts\b[^>]*>[\s\S]*?<\/numFmts>|<numFmts\b[^>]*\/>/,
+          () => section,
+        )
       } else {
         // Schema order: numFmts comes immediately before fonts.
         result = result.replace(/<fonts\b/, () => `${section}<fonts`)
@@ -202,14 +211,16 @@ const BUILTIN_NUMBER_FORMATS = new Map<string, number>([
 ])
 
 function hasFontDelta(delta: WorkbookStyleEdit): boolean {
-  return delta.bold !== undefined
-    || delta.italic !== undefined
-    || delta.underline !== undefined
-    || delta.underlineStyle !== undefined
-    || delta.strikethrough !== undefined
-    || delta.fontFamily !== undefined
-    || delta.fontSize !== undefined
-    || delta.fontColor !== undefined
+  return (
+    delta.bold !== undefined ||
+    delta.italic !== undefined ||
+    delta.underline !== undefined ||
+    delta.underlineStyle !== undefined ||
+    delta.strikethrough !== undefined ||
+    delta.fontFamily !== undefined ||
+    delta.fontSize !== undefined ||
+    delta.fontColor !== undefined
+  )
 }
 
 /// Applies the delta to a copy of the base font XML. Only overridden child
@@ -262,10 +273,12 @@ const BORDER_DELTA_KEYS = {
 } as const
 
 function hasBorderDelta(delta: WorkbookStyleEdit): boolean {
-  return delta.borderTop !== undefined
-    || delta.borderBottom !== undefined
-    || delta.borderLeft !== undefined
-    || delta.borderRight !== undefined
+  return (
+    delta.borderTop !== undefined ||
+    delta.borderBottom !== undefined ||
+    delta.borderLeft !== undefined ||
+    delta.borderRight !== undefined
+  )
 }
 
 /// Applies edge deltas to a copy of the base border XML. Children rebuild in
@@ -292,31 +305,64 @@ function buildBorder(baseBorderXml: string, delta: WorkbookStyleEdit): string {
     : `<border${attributes}>${content}</border>`
 }
 
+/** CT_CellAlignment attributes with no model field; readingOrder is the cell's RTL flag */
+const ALIGNMENT_CARRIED = ['relativeIndent', 'justifyLastLine', 'shrinkToFit', 'readingOrder']
+
 function buildAlignment(baseXf: string, delta: WorkbookStyleEdit): string {
   const baseAlignment = /<alignment\b[^>]*\/?>/.exec(baseXf)?.[0] ?? ''
-  const horizontal = delta.horizontalAlignment
-    ?? readAttribute(baseAlignment, 'horizontal')
-  const vertical = delta.verticalAlignment !== undefined
-    ? XLSX_VERTICAL[delta.verticalAlignment]
-    : readAttribute(baseAlignment, 'vertical')
-  const wrap = delta.wrapText !== undefined
-    ? delta.wrapText
-    : readAttribute(baseAlignment, 'wrapText') === '1'
+  const horizontal = delta.horizontalAlignment ?? readAttribute(baseAlignment, 'horizontal')
+  const vertical =
+    delta.verticalAlignment !== undefined
+      ? XLSX_VERTICAL[delta.verticalAlignment]
+      : readAttribute(baseAlignment, 'vertical')
+  const wrap =
+    delta.wrapText !== undefined ? delta.wrapText : readAttribute(baseAlignment, 'wrapText') === '1'
   // 0 clears the rotation (the attribute's absence is "no rotation").
-  const rotation = delta.textRotation !== undefined
-    ? (delta.textRotation === 0 ? undefined : String(delta.textRotation))
-    : readAttribute(baseAlignment, 'textRotation')
-  const indent = delta.indent !== undefined
-    ? (delta.indent === 0 ? undefined : String(delta.indent))
-    : readAttribute(baseAlignment, 'indent')
-  const attributes = [
+  const rotation =
+    delta.textRotation !== undefined
+      ? delta.textRotation === 0
+        ? undefined
+        : String(delta.textRotation)
+      : readAttribute(baseAlignment, 'textRotation')
+  const indent =
+    delta.indent !== undefined
+      ? delta.indent === 0
+        ? undefined
+        : String(delta.indent)
+      : readAttribute(baseAlignment, 'indent')
+  const modeled = [
     ...(horizontal ? [`horizontal="${horizontal}"`] : []),
     ...(vertical ? [`vertical="${vertical}"`] : []),
     ...(wrap ? ['wrapText="1"'] : []),
     ...(rotation ? [`textRotation="${rotation}"`] : []),
     ...(indent ? [`indent="${indent}"`] : []),
   ]
+  // carrying must not create an <alignment> that would not otherwise exist, which would
+  // start applying an alignment the cell was inheriting; once the element is there anyway
+  // the cell already applies it, so the rest of its attributes belong with it
+  // applyAlignment is xsd:boolean, which spells true both ways
+  const applyAlignment = readCoreAttribute(baseXf, 'applyAlignment')
+  const applies = modeled.length > 0 || applyAlignment === '1' || applyAlignment === 'true'
+  const attributes =
+    applies && ownsItsAlignment(baseXf)
+      ? [...modeled, ...carriedAttributes(baseAlignment, ALIGNMENT_CARRIED)]
+      : modeled
   return attributes.length === 0 ? '' : `<alignment ${attributes.join(' ')}/>`
+}
+
+/**
+ * Whether the regex reads above can be trusted to have found the cell's own alignment.
+ * CT_Xf allows only alignment, protection and extLst, so an xf holding nothing but the
+ * first two cannot hide a second <alignment> or an applyAlignment belonging to someone
+ * else. Anything further, an extension or an mc:AlternateContent branch, could supply
+ * either, and a vendor's reading order is not the cell's; carry nothing and leave the
+ * result as it was.
+ */
+function ownsItsAlignment(xf: string): boolean {
+  for (const element of xf.matchAll(/<\/?([\w.-]+(?::[\w.-]+)?)/g)) {
+    if (!/^(xf|alignment|protection)$/.test(element[1] ?? '')) return false
+  }
+  return true
 }
 
 /// Merges protection flag deltas over the base xf's <protection>. Attributes
@@ -324,10 +370,10 @@ function buildAlignment(baseXf: string, delta: WorkbookStyleEdit): string {
 /// drops the element.
 function buildProtection(baseXf: string, delta: WorkbookStyleEdit): string {
   const baseProtection = /<protection\b[^>]*\/?>/.exec(baseXf)?.[0] ?? ''
-  const locked = delta.protectionLocked
-    ?? (readAttribute(baseProtection, 'locked') === '0' ? false : undefined)
-  const hidden = delta.protectionHidden
-    ?? (readAttribute(baseProtection, 'hidden') === '1' ? true : undefined)
+  const locked =
+    delta.protectionLocked ?? (readAttribute(baseProtection, 'locked') === '0' ? false : undefined)
+  const hidden =
+    delta.protectionHidden ?? (readAttribute(baseProtection, 'hidden') === '1' ? true : undefined)
   const attributes = [
     ...(locked === false ? ['locked="0"'] : []),
     ...(hidden === true ? ['hidden="1"'] : []),
@@ -364,13 +410,26 @@ function replaceSection(xml: string, tag: string, elements: readonly string[]): 
 }
 
 function extractElements(inner: string, tag: string): string[] {
-  return [...inner.matchAll(
-    new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'g'),
-  )].map((match) => match[0])
+  return [
+    ...inner.matchAll(new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, 'g')),
+  ].map((match) => match[0])
 }
 
 function readAttribute(element: string, name: string): string | undefined {
   return new RegExp(`\\b${name}="([^"]*)"`).exec(element)?.[1]
+}
+
+/** like readAttribute, but never matches a namespace-prefixed name */
+function readCoreAttribute(element: string, name: string): string | undefined {
+  return new RegExp(`(?<![\\w:.-])${name}="([^"]*)"`).exec(element)?.[1]
+}
+
+/** attributes the style model does not represent, kept verbatim off the base element */
+function carriedAttributes(element: string, names: readonly string[]): string[] {
+  return names.flatMap((name) => {
+    const value = readCoreAttribute(element, name)
+    return value === undefined ? [] : [`${name}="${value}"`]
+  })
 }
 
 function toArgb(hexColor: string): string {

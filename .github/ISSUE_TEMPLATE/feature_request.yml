@@ -11,6 +11,7 @@ body:
         - GenOffice Sheets (sheets)
         - GenOffice Slides (slides)
         - GenOffice PDF (pdf)
+        - GenOffice Markdown (markdown)
         - Shell / home screen
         - AI panel / providers
         - Whole suite

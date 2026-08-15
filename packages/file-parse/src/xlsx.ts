@@ -1,7 +1,18 @@
 import JSZip from 'jszip'
 import { XMLParser } from 'fast-xml-parser'
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
+// Text fidelity: no trim (xml:space="preserve" runs carry the spaces between words),
+// no numeric coercion of tag values (otherwise <t>02139</t> becomes a number and loses characters)
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  trimValues: false,
+  parseTagValue: false,
+  // trimValues also governs attributes; nothing read here (r:id, Target, cell ref, sheet
+  // name) carries meaningful edge whitespace, and an untrimmed Target builds the wrong zip
+  // path, which silently drops the whole sheet
+  attributeValueProcessor: (_name, value) => value.trim(),
+})
 
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined || value === null) return []
@@ -44,10 +55,13 @@ interface Cell {
 
 function cellText(cell: Cell, shared: string[]): string {
   const type = cell['@_t'] ?? ''
-  if (type === 's') return shared[Number(textOf(cell.v))] ?? ''
   if (type === 'inlineStr') return cell.is ? sharedStringText(cell.is) : ''
-  if (type === 'b') return textOf(cell.v) === '1' ? 'TRUE' : 'FALSE'
-  return textOf(cell.v)
+  // <v> is ST_Xstring so it reaches the caller verbatim; the two reads that need it as a
+  // scalar handle their own whitespace (Number tolerates it, the boolean compare strips it)
+  const value = textOf(cell.v)
+  if (type === 's') return shared[Number(value)] ?? ''
+  if (type === 'b') return value.trim() === '1' ? 'TRUE' : 'FALSE'
+  return value
 }
 
 async function zipText(zip: JSZip, path: string): Promise<string | undefined> {
@@ -94,7 +108,9 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
     if (!sheetXml) continue
     const worksheet = parser.parse(sheetXml) as Record<string, any>
     const lines: string[] = [`# ${String(sheet['@_name'] ?? '')}`]
-    for (const row of asArray(worksheet.worksheet?.sheetData?.row) as Array<Record<string, unknown>>) {
+    for (const row of asArray(worksheet.worksheet?.sheetData?.row) as Array<
+      Record<string, unknown>
+    >) {
       const cells: string[] = []
       for (const cell of asArray(row.c as Cell | Cell[])) {
         const text = cellText(cell, shared)

@@ -34,7 +34,7 @@
 
 `{op:"add_shape", sheetId, shapeType, anchorCell:"E2", fillColor?, text?}`
 
-- shapeType: "rect" | "roundRect" | "ellipse" | "triangle" | "diamond" | "rightArrow" | "leftArrow" | "pentagon" | "hexagon" | "textbox"
+- shapeType: any OOXML prstGeom name from the insert gallery ("rect", "roundRect", "ellipse", "heart", "star5", "flowChartProcess", "wedgeRectCallout", …; see the shape-image guide) or "textbox"
 - textbox defaults to a white background with the text "Text"; other shapes default to a light-blue fill. text can carry the annotation directly.
 - Likewise only works for imported xlsx files; written into the file on save.
 
@@ -51,12 +51,12 @@
 
 ## Chart type selection (by data intent)
 
-| Data intent | Recommended type | Notes |
-|---|---|---|
-| Time trend / continuous change | `line` / `area` | line for multi-period trends; area to emphasize cumulative amount/volume |
-| Category comparison | `column` (vertical) / `bar` (horizontal) | use bar when category names are long or numerous (easier to read horizontally) |
-| Share of total (≤ 6 items) | `pie` | uses only the first numeric column; switch to bar when there are many items |
-| Relationship between two variables | scatter | first column as X (must be numeric), remaining columns as Y |
+| Data intent                        | Recommended type                         | Notes                                                                          |
+| ---------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ |
+| Time trend / continuous change     | `line` / `area`                          | line for multi-period trends; area to emphasize cumulative amount/volume       |
+| Category comparison                | `column` (vertical) / `bar` (horizontal) | use bar when category names are long or numerous (easier to read horizontally) |
+| Share of total (≤ 6 items)         | `pie`                                    | uses only the first numeric column; switch to bar when there are many items    |
+| Relationship between two variables | scatter                                  | first column as X (must be numeric), remaining columns as Y                    |
 
 Selection principle: one chart answers one question; for multiple comparison dimensions, prefer column (detail) + pie (share) as complements.
 

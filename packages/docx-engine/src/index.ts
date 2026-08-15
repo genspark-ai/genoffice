@@ -11,7 +11,6 @@ export {
 } from './patch'
 export {
   TABLE_HEADER_FILL,
-  WORDART_PRESETS,
   applyImageWrap,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
@@ -31,6 +30,13 @@ export {
   patchTableCellTexts,
   patchTextboxHeights,
   patchTextboxParas,
+  patchTextboxSizes,
+  patchShapeStyles,
+  type ShapeStylePatch,
+  patchDrawingExtent,
+  buildLineParagraphXml,
+  LINE_KINDS,
+  type TextboxSizePatch,
   type CellTextsPatch,
   type FieldTextPatch,
   type GenerateContext,
@@ -87,4 +93,12 @@ export {
 export { bibliographyLine, citationText, parseSourcesXml } from './sources'
 export { readThemeColors, readThemeFonts } from './theme'
 export { hashProtectionPassword, verifyProtectionPassword } from './protection'
-export { decodeSymbolChar, decodeSymbolText, isSymbolFont } from './symbol-fonts'
+export { decodeSymbolChar, decodeSymbolText, isSymbolFont, toSymbolPua } from './symbol-fonts'
+export {
+  bulletMarkerScale,
+  computeListMarkerInfos,
+  computeListMarkers,
+  formatNumber,
+  type ListItemRef,
+  type ListMarkerInfo,
+} from './list-markers'

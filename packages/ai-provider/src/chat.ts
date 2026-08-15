@@ -1,3 +1,4 @@
+import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
@@ -10,7 +11,7 @@ async function chatAnthropic(
   user: string,
   baseUrl = 'https://api.anthropic.com',
 ): Promise<AiChatResponse> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/messages`, {
+  const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/v1/messages`, {
     method: 'POST',
     signal: wd.signal,
     headers: {
@@ -52,7 +53,7 @@ async function chatGemini(
   baseUrl = 'https://generativelanguage.googleapis.com/v1beta',
 ): Promise<AiChatResponse> {
   const url = `${baseUrl.replace(/\/$/, '')}/models/${config.model}:generateContent`
-  const response = await fetch(url, {
+  const response = await aiFetch(url, {
     method: 'POST',
     signal: wd.signal,
     headers: {
@@ -88,7 +89,7 @@ async function chatOpenAiCompatible(
   system: string,
   user: string,
 ): Promise<AiChatResponse> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     signal: wd.signal,
     headers: {

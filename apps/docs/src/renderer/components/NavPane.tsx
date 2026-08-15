@@ -16,7 +16,7 @@ export const NavPane = memo(function NavPane({ editor, doc }: { editor: Editor; 
           <button
             key={`${h.pos}-${i}`}
             className={`nav-item nav-l${Math.min(h.level, 4)}`}
-            title={h.text}
+            data-tip={h.text}
             onClick={() => {
               const dom = editor.view.nodeDOM(h.pos) as HTMLElement | null
               dom?.scrollIntoView({ behavior: 'smooth', block: 'start' })

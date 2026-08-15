@@ -23,10 +23,22 @@ interface Props {
 function fmtDt(dt: string, locale: string): string {
   const d = new Date(dt)
   if (Number.isNaN(d.getTime())) return dt
-  return d.toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString(locale, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-export function CommentsPane({ slideIndex, comments, focusNonce, onAdd, onDelete, onCollapse }: Props) {
+export function CommentsPane({
+  slideIndex,
+  comments,
+  focusNonce,
+  onAdd,
+  onDelete,
+  onCollapse,
+}: Props) {
   const { t, dateLocale } = useI18n()
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -47,7 +59,12 @@ export function CommentsPane({ slideIndex, comments, focusNonce, onAdd, onDelete
       <div className="ai-panel-header">
         <span className="ai-panel-title">{t('paneCommentsTitle', { n: slideIndex + 1 })}</span>
         <div className="ai-panel-header-actions">
-          <button className="ai-header-btn" onClick={onCollapse} title={t('paneCommentsCollapse')}>
+          <button
+            className="ai-header-btn"
+            onClick={onCollapse}
+            data-tip={t('paneCommentsCollapse')}
+            aria-label={t('paneCommentsCollapse')}
+          >
             <IconSidebarCollapse size={15} />
           </button>
         </div>
@@ -69,7 +86,12 @@ export function CommentsPane({ slideIndex, comments, focusNonce, onAdd, onDelete
                 <span className="comment-author">{c.author}</span>
                 {c.dt && <span className="comment-time">{fmtDt(c.dt, dateLocale)}</span>}
               </span>
-              <button className="comment-del" title={t('paneCommentsDelete')} onClick={() => onDelete(c)}>
+              <button
+                className="comment-del"
+                data-tip={t('paneCommentsDelete')}
+                aria-label={t('paneCommentsDelete')}
+                onClick={() => onDelete(c)}
+              >
                 ✕
               </button>
             </div>

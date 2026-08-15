@@ -1,13 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import {
+  gskChildEnv,
+  setGskProxyUrl,
   parseGskOutput,
   parseGskWebSearch,
   parseGskImageSearch,
   parseGskGeneratedImage,
   parseGskConvertResult,
+  parseGskPastProjects,
   extractGskText,
   parseToolCliNdjson,
-  parseGskLoginLine,
 } from '../src/gsk'
 
 describe('parseGskOutput', () => {
@@ -27,6 +29,57 @@ describe('parseGskOutput', () => {
 
   it('throws when no JSON present', () => {
     expect(() => parseGskOutput('[INFO] nothing here')).toThrow()
+  })
+})
+
+describe('gskChildEnv', () => {
+  afterEach(() => setGskProxyUrl(''))
+
+  it('sets ELECTRON_RUN_AS_NODE and no proxy vars when no proxy is known', () => {
+    const env = gskChildEnv({ PATH: '/bin' })
+    expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(env.NODE_USE_ENV_PROXY).toBeUndefined()
+    expect(env.HTTPS_PROXY).toBeUndefined()
+  })
+
+  it('forwards the proxy registered by the main-process bootstrap', () => {
+    setGskProxyUrl('http://127.0.0.1:7890')
+    const env = gskChildEnv({ PATH: '/bin' })
+    expect(env.NODE_USE_ENV_PROXY).toBe('1')
+    expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:7890')
+    expect(env.HTTP_PROXY).toBe('http://127.0.0.1:7890')
+  })
+
+  it('falls back to inherited proxy env vars (terminal launch)', () => {
+    const env = gskChildEnv({ https_proxy: 'http://10.0.0.1:8080' })
+    expect(env.NODE_USE_ENV_PROXY).toBe('1')
+    expect(env.HTTPS_PROXY).toBe('http://10.0.0.1:8080')
+  })
+
+  it('prefers the registered proxy over env vars', () => {
+    setGskProxyUrl('http://127.0.0.1:7890')
+    const env = gskChildEnv({ HTTPS_PROXY: 'http://10.0.0.1:8080' })
+    expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:7890')
+  })
+
+  it('scrubs lowercase/ALL_PROXY variants so they cannot override the selection', () => {
+    setGskProxyUrl('http://127.0.0.1:7890')
+    const env = gskChildEnv({
+      https_proxy: 'socks5://127.0.0.1:1080',
+      http_proxy: 'http://10.0.0.1:8080',
+      all_proxy: 'socks5://127.0.0.1:1080',
+    })
+    expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:7890')
+    expect(env.https_proxy).toBeUndefined()
+    expect(env.http_proxy).toBeUndefined()
+    expect(env.all_proxy).toBeUndefined()
+  })
+
+  it('ignores SOCKS proxies (undici env proxy is http(s)-only)', () => {
+    setGskProxyUrl('socks5://127.0.0.1:1080')
+    const env = gskChildEnv({ ALL_PROXY: 'socks5://127.0.0.1:1080' })
+    expect(env.NODE_USE_ENV_PROXY).toBeUndefined()
+    expect(env.HTTPS_PROXY).toBeUndefined()
   })
 })
 
@@ -93,6 +146,86 @@ describe('parseGskImageSearch', () => {
     }
     const images = parseGskImageSearch(raw, 8)
     expect(images.map((i) => i.title)).toEqual(['ok'])
+  })
+})
+
+describe('parseGskPastProjects', () => {
+  // real `gsk projects --artifact_types slides` shape (trimmed)
+  const raw = {
+    version: 1,
+    status: 'ok',
+    message: 'success',
+    data: {
+      projects: [
+        {
+          project_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          type: 'slides_agent_git',
+          title: 'Product launch trailer presentation',
+          ctime: '2026-07-29T07:09:43.706212',
+        },
+        {
+          project_id: '12345678-90ab-4cde-8f01-234567890abc',
+          type: 'slides_agent_git',
+          title: 'Team collaboration deck request',
+          ctime: '2026-07-23T08:39:04.464484',
+        },
+      ],
+      total: 222,
+      offset: 0,
+      has_more: true,
+      returned: 2,
+    },
+    session_state: {
+      past_projects: {
+        projects: [
+          {
+            project_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            project_url: '/agents?id=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            artifacts: [],
+          },
+        ],
+      },
+    },
+  }
+
+  it('maps projects, preferring session_state project_url and deriving the rest', () => {
+    const page = parseGskPastProjects(raw)
+    expect(page.total).toBe(222)
+    expect(page.hasMore).toBe(true)
+    expect(page.projects).toEqual([
+      {
+        projectId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        type: 'slides_agent_git',
+        title: 'Product launch trailer presentation',
+        ctime: '2026-07-29T07:09:43.706212',
+        projectUrl: '/agents?id=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      },
+      {
+        projectId: '12345678-90ab-4cde-8f01-234567890abc',
+        type: 'slides_agent_git',
+        title: 'Team collaboration deck request',
+        ctime: '2026-07-23T08:39:04.464484',
+        projectUrl: '/agents?id=12345678-90ab-4cde-8f01-234567890abc',
+      },
+    ])
+  })
+
+  it('skips entries without project_id and tolerates missing data', () => {
+    const page = parseGskPastProjects({
+      status: 'ok',
+      data: { projects: [{ title: 'no id' }], has_more: false },
+    })
+    expect(page.projects).toEqual([])
+    expect(page.total).toBe(0)
+    expect(page.hasMore).toBe(false)
+  })
+
+  it('tolerates a completely empty response', () => {
+    expect(parseGskPastProjects({ status: 'ok' })).toEqual({
+      projects: [],
+      total: 0,
+      hasMore: false,
+    })
   })
 })
 
@@ -181,70 +314,5 @@ describe('parseToolCliNdjson', () => {
 
   it('throws when no result line exists', () => {
     expect(() => parseToolCliNdjson('{"heartbeat":1}\nnot json')).toThrow(/No result line/)
-  })
-})
-
-// sample lines mirror @genspark/cli login: info/errors on stderr with
-// [INFO]/[ERROR] prefixes, success JSON envelope on stdout
-describe('parseGskLoginLine', () => {
-  it('extracts the auth URL', () => {
-    expect(
-      parseGskLoginLine('[INFO] Login URL: https://www.genspark.ai/cli-auth?code=abc'),
-    ).toEqual({ kind: 'url', url: 'https://www.genspark.ai/cli-auth?code=abc' })
-  })
-
-  it('extracts expires_in from the waiting line', () => {
-    expect(
-      parseGskLoginLine(
-        '[INFO] Waiting for authorization (expires in 300s, press Ctrl+C to cancel)...',
-      ),
-    ).toEqual({ kind: 'expires', expiresInSec: 300 })
-  })
-
-  it('detects success from the stderr info line and the stdout json envelope', () => {
-    expect(parseGskLoginLine('[INFO] Login successful! API key saved.')).toEqual({
-      kind: 'success',
-    })
-    expect(parseGskLoginLine('  "message": "Login successful",')).toEqual({ kind: 'success' })
-  })
-
-  it('classifies expiry and timeout as expired', () => {
-    expect(parseGskLoginLine('[ERROR] Authorization expired. Please try again.')).toEqual({
-      kind: 'error',
-      reason: 'expired',
-      message: 'Authorization expired. Please try again.',
-    })
-    expect(parseGskLoginLine('[ERROR] Authorization timed out. Please try again.')).toMatchObject({
-      kind: 'error',
-      reason: 'expired',
-    })
-  })
-
-  it('classifies device-code request failures as network', () => {
-    expect(parseGskLoginLine('[ERROR] fetch failed')).toMatchObject({
-      kind: 'error',
-      reason: 'network',
-    })
-    expect(parseGskLoginLine('[ERROR] HTTP 502: Bad Gateway')).toMatchObject({
-      kind: 'error',
-      reason: 'network',
-    })
-  })
-
-  it('passes other errors through as-is', () => {
-    expect(parseGskLoginLine('[ERROR] auth_url host does not match baseUrl host')).toEqual({
-      kind: 'error',
-      reason: 'other',
-      message: 'auth_url host does not match baseUrl host',
-    })
-  })
-
-  it('ignores noise lines', () => {
-    expect(parseGskLoginLine('[INFO] Requesting device code...')).toBeNull()
-    expect(parseGskLoginLine('[INFO] Opening browser for login...')).toBeNull()
-    expect(
-      parseGskLoginLine('[INFO] Still waiting for authorization... (295s remaining)'),
-    ).toBeNull()
-    expect(parseGskLoginLine('')).toBeNull()
   })
 })

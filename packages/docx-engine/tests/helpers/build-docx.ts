@@ -17,6 +17,8 @@ export interface BuildDocxOptions {
   extraRels?: string
   /** extra zip parts (charts etc.) with their [Content_Types].xml override */
   extraParts?: Array<{ path: string; xml: string; contentType: string }>
+  /** extra binary media parts with their [Content_Types].xml Default extension */
+  binaryParts?: Array<{ path: string; base64: string; extension: string; contentType: string }>
   /** extra sectPr children inserted first (headerReference/footerReference…) */
   sectPrExtra?: string
 }
@@ -68,6 +70,9 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     ...(options.extraParts ?? []).map(
       (p) => `<Override PartName="/${p.path}" ContentType="${p.contentType}"/>`,
     ),
+    ...(options.binaryParts ?? []).map(
+      (p) => `<Default Extension="${p.extension}" ContentType="${p.contentType}"/>`,
+    ),
   ].join('')
   zip.file(
     '[Content_Types].xml',
@@ -100,6 +105,7 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
   if (withNumbering) zip.file('word/numbering.xml', options.numberingXml ?? NUMBERING_XML)
   if (options.withImage) zip.file('word/media/image1.png', TINY_PNG_BASE64, { base64: true })
   for (const part of options.extraParts ?? []) zip.file(part.path, part.xml)
+  for (const part of options.binaryParts ?? []) zip.file(part.path, part.base64, { base64: true })
 
   const sectPr =
     `<w:sectPr>${options.sectPrExtra ?? ''}<w:pgSz w:w="11906" w:h="16838"/>` +

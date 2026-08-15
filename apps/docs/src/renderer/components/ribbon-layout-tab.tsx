@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { type SectionSettings } from '@genoffice/docx-engine'
 import { WRAP_OPTIONS } from './ContextMenu'
+import { MarginDialog, cmFromTwips, marginsFitPage, type PageMargins } from './MarginDialog'
 import { useI18n, type StringKey } from '../i18n/locale'
 import {
   IconCaret,
@@ -62,6 +64,20 @@ const MARGIN_PRESETS: Array<{
   },
 ]
 
+const LAST_CUSTOM_MARGINS_KEY = 'aidocs.marginLastCustom'
+
+function readLastCustomMargins(): PageMargins | null {
+  try {
+    const raw = localStorage.getItem(LAST_CUSTOM_MARGINS_KEY)
+    if (!raw) return null
+    const v = JSON.parse(raw) as PageMargins
+    const sides = [v.top, v.right, v.bottom, v.left]
+    return sides.every((n) => Number.isFinite(n) && n >= 0) ? v : null
+  } catch {
+    return null
+  }
+}
+
 const PAPER_SIZES = [
   { key: 'a4', name: 'A4', desc: '21 × 29.7 cm', w: 11906, h: 16838 },
   { key: 'letter', name: 'Letter', desc: '21.59 × 27.94 cm', w: 12240, h: 15840 },
@@ -92,6 +108,25 @@ export function LayoutTab({
   const { t } = useI18n()
   const paraAttrs = activeParaAttrs(editor)
   const enabled = hasDoc && !!section
+  const [marginDialog, setMarginDialog] = useState(false)
+
+  const applyMargins = (m: PageMargins) => {
+    if (!section || !marginsFitPage(m, section.pageWidth, section.pageHeight)) return
+    onSection({
+      ...section,
+      marginTop: m.top,
+      marginRight: m.right,
+      marginBottom: m.bottom,
+      marginLeft: m.left,
+    })
+  }
+
+  const marginsActive = (m: PageMargins) =>
+    !!section &&
+    section.marginTop === m.top &&
+    section.marginRight === m.right &&
+    section.marginBottom === m.bottom &&
+    section.marginLeft === m.left
 
   // Arrange group: enabled when a floating object (image/textbox) is selected; maps to Word's Position / Wrap Text
   const protAttrs = editor.getAttributes('docProtected')
@@ -154,7 +189,7 @@ export function LayoutTab({
   const ptInput = (attr: string, title: string) => {
     const twips = Number(paraAttrs[attr]) || 0
     return (
-      <label className="layout-num" title={title}>
+      <label className="layout-num" data-tip={title}>
         <span>{title}</span>
         <input
           type="number"
@@ -181,7 +216,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonMargins')}
+              data-tip={t('ribbonMargins')}
               onClick={() => toggleDropdown(setDropdown, 'margins')}
             >
               <span className="rb-big-icon">
@@ -192,27 +227,57 @@ export function LayoutTab({
             </button>
             {dropdown === 'margins' && section && (
               <div className="layout-menu">
-                {MARGIN_PRESETS.map((m) => (
-                  <button
-                    key={m.key}
-                    className={
-                      section.marginTop === m.top && section.marginLeft === m.left ? 'active' : ''
-                    }
-                    onClick={() => {
-                      onSection({
-                        ...section,
-                        marginTop: m.top,
-                        marginRight: m.right,
-                        marginBottom: m.bottom,
-                        marginLeft: m.left,
-                      })
-                      setDropdown(() => null)
-                    }}
-                  >
-                    <b>{t(m.nameKey)}</b>
-                    <span>{t(m.descKey)}</span>
-                  </button>
-                ))}
+                {(() => {
+                  const storedLastCustom = readLastCustomMargins()
+                  const lastCustom =
+                    storedLastCustom &&
+                    marginsFitPage(storedLastCustom, section.pageWidth, section.pageHeight)
+                      ? storedLastCustom
+                      : null
+                  return (
+                    <>
+                      {lastCustom && (
+                        <button
+                          className={marginsActive(lastCustom) ? 'active' : ''}
+                          onClick={() => {
+                            applyMargins(lastCustom)
+                            setDropdown(() => null)
+                          }}
+                        >
+                          <b>{t('ribbonMarginLastCustom')}</b>
+                          <span>
+                            {t('ribbonMarginTop')} {cmFromTwips(lastCustom.top)} ·{' '}
+                            {t('ribbonMarginBottom')} {cmFromTwips(lastCustom.bottom)} ·{' '}
+                            {t('ribbonMarginLeft')} {cmFromTwips(lastCustom.left)} ·{' '}
+                            {t('ribbonMarginRight')} {cmFromTwips(lastCustom.right)} cm
+                          </span>
+                        </button>
+                      )}
+                      {MARGIN_PRESETS.map((m) => (
+                        <button
+                          key={m.key}
+                          className={marginsActive(m) ? 'active' : ''}
+                          disabled={!marginsFitPage(m, section.pageWidth, section.pageHeight)}
+                          onClick={() => {
+                            applyMargins(m)
+                            setDropdown(() => null)
+                          }}
+                        >
+                          <b>{t(m.nameKey)}</b>
+                          <span>{t(m.descKey)}</span>
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setDropdown(() => null)
+                          setMarginDialog(true)
+                        }}
+                      >
+                        <b>{t('ribbonMarginCustom')}</b>
+                      </button>
+                    </>
+                  )
+                })()}
               </div>
             )}
           </div>
@@ -220,7 +285,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonOrientation')}
+              data-tip={t('ribbonOrientation')}
               onClick={() => toggleDropdown(setDropdown, 'orient')}
             >
               <span className="rb-big-icon">
@@ -250,7 +315,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonPaperSize')}
+              data-tip={t('ribbonPaperSize')}
               onClick={() => toggleDropdown(setDropdown, 'paper')}
             >
               <span className="rb-big-icon">
@@ -281,7 +346,7 @@ export function LayoutTab({
             <button
               className={`rb-big ${section && section.columns > 1 ? 'active' : ''}`}
               disabled={!enabled}
-              title={t('ribbonColumns')}
+              data-tip={t('ribbonColumns')}
               onClick={() => toggleDropdown(setDropdown, 'columns')}
             >
               <span className="rb-big-icon">
@@ -315,7 +380,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!enabled}
-              title={t('ribbonSectionBreakTip')}
+              data-tip={t('ribbonSectionBreakTip')}
               onClick={() => toggleDropdown(setDropdown, 'sectbreak')}
             >
               <span className="rb-big-icon">
@@ -397,7 +462,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!canPosition}
-              title={t('ribbonPosition')}
+              data-tip={t('ribbonPosition')}
               onClick={() => toggleDropdown(setDropdown, 'arrange-pos')}
             >
               <span className="rb-big-icon">
@@ -422,7 +487,8 @@ export function LayoutTab({
                         className={`pos-cell ph-${h} pv-${v}${
                           protAttrs?.imagePosH === h && protAttrs?.imagePosV === v ? ' active' : ''
                         }`}
-                        title={t('ribbonPosition')}
+                        data-tip={t('ribbonPosition')}
+                        aria-label={t('ribbonPosition')}
                         onClick={() => applyPositionPreset(h, v)}
                       >
                         <span className="pos-dot" />
@@ -437,7 +503,7 @@ export function LayoutTab({
             <button
               className="rb-big"
               disabled={!canWrap}
-              title={t('ribbonWrapText')}
+              data-tip={t('ribbonWrapText')}
               onClick={() => toggleDropdown(setDropdown, 'arrange-wrap')}
             >
               <span className="rb-big-icon">
@@ -463,6 +529,24 @@ export function LayoutTab({
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
       </div>
+
+      {marginDialog && section && (
+        <MarginDialog
+          margins={{
+            top: section.marginTop,
+            right: section.marginRight,
+            bottom: section.marginBottom,
+            left: section.marginLeft,
+          }}
+          pageWidth={section.pageWidth}
+          pageHeight={section.pageHeight}
+          onApply={(m) => {
+            applyMargins(m)
+            localStorage.setItem(LAST_CUSTOM_MARGINS_KEY, JSON.stringify(m))
+          }}
+          onClose={() => setMarginDialog(false)}
+        />
+      )}
     </>
   )
 }

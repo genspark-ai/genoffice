@@ -57,6 +57,27 @@ describe('buildSearchIndex', () => {
     const index = await buildSearchIndex(doc)
     expect(index[0]!.items[0]!.h).toBe(5) // hypot(3, 4)
   })
+
+  it('flags rotated runs and leaves upright ones unflagged', async () => {
+    const doc = fakeDoc([
+      [
+        item('upright', 10, 700, 60, 12),
+        { str: 'rotated', transform: [0, 12, -12, 0, 200, 400], width: 60, height: 12 },
+      ],
+    ])
+    const index = await buildSearchIndex(doc)
+    expect(index[0]!.items[0]!.rot).toBeUndefined()
+    expect(index[0]!.items[1]!.rot).toBe(true)
+  })
+
+  it('synthetic italic shear (c ≠ 0, horizontal baseline) is not flagged as rotated', async () => {
+    // ~12° shear as writers emit for fake italics: b = 0, c = tan(12°) × size
+    const doc = fakeDoc([
+      [{ str: 'emphasis', transform: [12, 0, 2.55, 12, 100, 700], width: 48, height: 12 }],
+    ])
+    const index = await buildSearchIndex(doc)
+    expect(index[0]!.items[0]!.rot).toBeUndefined()
+  })
 })
 
 describe('searchInIndex', () => {

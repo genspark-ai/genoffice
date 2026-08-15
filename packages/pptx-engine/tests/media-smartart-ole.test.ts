@@ -118,6 +118,62 @@ describe('SmartArt prerendered drawing read-only preview', () => {
     })
     expect(slide.elements[0]!.anchor.originalXml).toBe(SMARTART_FRAME)
   })
+
+  it('dsp:txXfrm text frame keeps fontRef color but not the shape effectRef', () => {
+    const drawing =
+      '<dsp:drawing xmlns:dsp="dsp" xmlns:a="a"><dsp:spTree><dsp:nvGrpSpPr/><dsp:grpSpPr/>' +
+      '<dsp:sp modelId="{X}"><dsp:nvSpPr><dsp:cNvPr id="1" name=""/><dsp:cNvSpPr/></dsp:nvSpPr>' +
+      '<dsp:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2000" cy="1000"/></a:xfrm>' +
+      '<a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom></dsp:spPr>' +
+      '<dsp:txXfrm><a:off x="100" y="200"/><a:ext cx="1800" cy="600"/></dsp:txXfrm>' +
+      '<dsp:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef>' +
+      '<a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef>' +
+      '<a:effectRef idx="3"><a:schemeClr val="accent1"/></a:effectRef>' +
+      '<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></dsp:style>' +
+      '<dsp:txBody><a:bodyPr/><a:p><a:r><a:t>Step One</a:t></a:r></a:p></dsp:txBody></dsp:sp>' +
+      '</dsp:spTree></dsp:drawing>'
+    const effectTheme: any = {
+      colors: { accent1: '#4472C4', lt1: '#FFFFFF', dk1: '#000000' },
+      effectStyles: [
+        { 'a:effectStyle': { 'a:effectLst': {} } },
+        { 'a:effectStyle': { 'a:effectLst': {} } },
+        {
+          'a:effectStyle': {
+            'a:effectLst': {
+              'a:glow': {
+                '@_rad': '63500',
+                'a:schemeClr': { '@_val': 'phClr', 'a:alpha': { '@_val': '40000' } },
+              },
+              'a:outerShdw': {
+                '@_blurRad': '57150',
+                '@_dist': '19050',
+                '@_dir': '5400000',
+                'a:srgbClr': { '@_val': '000000', 'a:alpha': { '@_val': '63000' } },
+              },
+            },
+          },
+        },
+      ],
+    }
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(SMARTART_FRAME),
+      ctx: { theme: effectTheme, diagramDrawings: new Map([['rId1', drawing]]) },
+    })
+    const shapes = (slide.elements[0] as PassthroughElement).previewShapes as TextElement[]
+    expect(shapes).toHaveLength(2)
+    const [shape, text] = shapes
+    expect(shape!.presetGeometry).toBe('roundRect')
+    expect(shape!.shadow).toBeTruthy()
+    expect(shape!.glow).toBeTruthy()
+    expect(shape!.text).toBeUndefined()
+    expect(text!.fill).toEqual({ type: 'none' })
+    expect(text!.stroke).toBeUndefined()
+    expect(text!.shadow).toBeUndefined()
+    expect(text!.glow).toBeUndefined()
+    expect(text!.text!.paragraphs[0]!.runs[0]!.text).toBe('Step One')
+    expect(text!.text!.paragraphs[0]!.runs[0]!.color).toBe('#FFFFFF')
+  })
 })
 
 const OLE_FRAME =

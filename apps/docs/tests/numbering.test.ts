@@ -4,7 +4,12 @@ import { parseDocx, saveDocx, type NumberingDef } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { computeListMarkers, formatNumber } from '../src/renderer/editor/numbering'
+import {
+  bulletMarkerScale,
+  computeListMarkerInfos,
+  computeListMarkers,
+  formatNumber,
+} from '../src/renderer/editor/numbering'
 
 function def(
   partial: Partial<NumberingDef> & Pick<NumberingDef, 'numId' | 'levels'>,
@@ -235,5 +240,74 @@ describe('computeListMarkers', () => {
       ),
     )
     expect(markers).toEqual(['●', '▪', '•', '•', '•'])
+  })
+
+  it('bullet infos carry the original glyph (U+F0xx form) and the declared symbol font', () => {
+    const mk = (numId: string, lvlText: string, font?: string) =>
+      def({
+        numId,
+        levels: { 0: { numFmt: 'bullet', lvlText, start: 1, ...(font ? { font } : {}) } },
+      })
+    const infos = computeListMarkerInfos(
+      [
+        { numId: '1', ilvl: 0 },
+        { numId: '2', ilvl: 0 },
+        { numId: '3', ilvl: 0 },
+        { numId: '4', ilvl: 0 },
+        { numId: '5', ilvl: 0 },
+      ],
+      defs(
+        mk('1', '\uF0B7', 'Symbol'),
+        mk('2', 'l', 'Wingdings'), // raw byte normalized to U+F0xx
+        mk('3', '\uF0C1', 'Symbol'), // undecodable → default text, glyph still kept
+        mk('4', '\uF0B7'), // no symbol font → plain substitute
+        def({ numId: '5', levels: DECIMAL_3LVL.levels }),
+      ),
+    )
+    expect(infos[0]).toEqual({ text: '•', symbolChar: '\uF0B7', symbolFont: 'Symbol' })
+    expect(infos[1]).toEqual({ text: '●', symbolChar: '\uF06C', symbolFont: 'Wingdings' })
+    expect(infos[2]).toEqual({ text: '•', symbolChar: '\uF0C1', symbolFont: 'Symbol' })
+    expect(infos[3]).toEqual({ text: '•' })
+    expect(infos[4]).toEqual({ text: '1.' })
+  })
+
+  it('upscales only solid round substitute glyphs', () => {
+    expect(bulletMarkerScale('•')).toBe(1.25)
+    expect(bulletMarkerScale('●')).toBe(1.35)
+    expect(bulletMarkerScale('▪')).toBe(1)
+    expect(bulletMarkerScale('1.')).toBe(1)
+  })
+
+  it('substitutes uncovered symbol bullets with a pinned font + scale and follows the first run size', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0">' +
+      '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#xF0B7;"/>' +
+      '<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr></w:lvl>' +
+      '</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '</w:numbering>'
+    const source = await buildDocx({
+      bodyXml:
+        '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+        '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>item</w:t></w:r></w:p>',
+      numberingXml,
+    })
+    const parsed = await parseDocx(source)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const el = editor.view.dom.querySelector('.doc-li')!
+    // no canvas in the test DOM → coverage probe fails → substitution path
+    expect(el.getAttribute('data-marker')).toBe('•')
+    const style = el.getAttribute('style') ?? ''
+    expect(style).toContain("--li-marker-font: Arial,'Helvetica Neue',sans-serif")
+    expect(style).toContain('--li-marker-scale: 1.25')
+    expect(style).toContain('--li-marker-lh: 0')
+    expect(style).toContain('--li-marker-size: 12pt')
+    editor.destroy()
   })
 })

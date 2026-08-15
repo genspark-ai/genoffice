@@ -1,17 +1,5 @@
 import type { ParsedDoc } from '@genoffice/docx-engine'
-import { cssFontFamily } from './line-metrics'
-
-/** bundled web fonts (fonts.css) — always "available" but they are the
- *  one-size-fits-all fallback, so landing on them still counts as a miss */
-const BUNDLED = new Set([
-  'Noto Sans CJK SC',
-  'Noto Serif CJK SC',
-  'Carlito',
-  'Caladea',
-  'Liberation Serif',
-  'Liberation Sans',
-  'Liberation Mono',
-])
+import { BUNDLED_FONTS, cssFontFamily, isBundledFont } from './line-metrics'
 
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace'])
 
@@ -58,6 +46,41 @@ function fontAvailableIn(cx: CanvasRenderingContext2D, family: string): boolean 
   )
 }
 
+const symbolCoverCache = new Map<string, boolean>()
+/** outside the F020-F0FF range every symbol-encoded legacy font maps, so this always draws .notdef */
+const PUA_TOFU = '\uE000'
+
+/**
+ * Family installed AND covering every char of text — macOS ships a Symbol.ttf
+ * without the F0xx cmap. An uncovered PUA char renders the stack's .notdef
+ * (whose metrics differ from any other stack's), so the only reliable probe is
+ * comparing against a known .notdef in the same stack.
+ */
+export function symbolFontCovers(family: string, text: string): boolean {
+  const key = `${family}\u0000${text}`
+  const hit = symbolCoverCache.get(key)
+  if (hit !== undefined) return hit
+  const cx = ctx2d()
+  let covers = false
+  if (cx) {
+    cx.font = `32px "${family.replace(/"/g, '')}"`
+    const metrics = (s: string): string => {
+      const m = cx.measureText(s)
+      return [
+        m.width,
+        m.actualBoundingBoxLeft,
+        m.actualBoundingBoxRight,
+        m.actualBoundingBoxAscent,
+        m.actualBoundingBoxDescent,
+      ].join()
+    }
+    const tofu = metrics(PUA_TOFU)
+    covers = [...text].every((ch) => ch <= ' ' || metrics(ch) !== tofu)
+  }
+  symbolCoverCache.set(key, covers)
+  return covers
+}
+
 export interface FontSubstitution {
   name: string
   /** first available family in the fallback chain, null = only bundled fallback left */
@@ -74,12 +97,13 @@ export function checkMissingFonts(names: string[]): FontSubstitution[] {
   if (!cx) return []
   const out: FontSubstitution[] = []
   for (const name of names) {
-    if (fontAvailableIn(cx, name)) continue
+    // a declared bundled face resolves in canvas yet still renders the subset fallback — report it
+    if (!isBundledFont(name) && fontAvailableIn(cx, name)) continue
     const chain = cssFontFamily(name)
       .split(',')
       .map((s) => s.trim().replace(/^'|'$/g, ''))
       .filter((c) => c !== name && !GENERIC.has(c))
-    const substitute = chain.find((c) => !BUNDLED.has(c) && fontAvailableIn(cx, c)) ?? null
+    const substitute = chain.find((c) => !BUNDLED_FONTS.has(c) && fontAvailableIn(cx, c)) ?? null
     out.push({ name, substitute })
   }
   return out

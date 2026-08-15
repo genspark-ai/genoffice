@@ -200,6 +200,7 @@ function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     onWatermark: noop,
     themeFonts: null,
     onThemeFonts: noop,
+    themeColors: null,
     onThemeColors: noop,
     inkTool: 'select' as const,
     onInkTool: noop,

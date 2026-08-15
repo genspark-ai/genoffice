@@ -13,3 +13,6 @@ apps/shell/build/THIRD-PARTY-NOTICES.txt
 
 # Local-only acceptance drivers are intentionally outside CI.
 scripts/drivers/driver.*.mjs
+
+# Vendored third-party sources stay byte-identical to upstream.
+packages/*/src/vendor/

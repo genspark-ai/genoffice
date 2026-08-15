@@ -185,7 +185,11 @@ const line = (color: string, width = 12700): Stroke => ({ fill: solid(color), wi
  * predefined-table-styles implementation; colors are resolved to final values via the
  * theme; banded alpha is pre-blended against the underlying background).
  */
-function builtinStyle(family: BuiltinFamily, accentName: string | undefined, theme: Theme | undefined): TableStyleDef {
+function builtinStyle(
+  family: BuiltinFamily,
+  accentName: string | undefined,
+  theme: Theme | undefined,
+): TableStyleDef {
   const lt1 = resolveSchemeColor('lt1', theme) ?? '#FFFFFF'
   const dk1 = resolveSchemeColor('dk1', theme) ?? '#000000'
   const accent = accentName ? (resolveSchemeColor(accentName, theme) ?? '#4472C4') : undefined
@@ -347,8 +351,14 @@ function builtinStyle(family: BuiltinFamily, accentName: string | undefined, the
     case 'dark2': {
       const a = accent ?? dk1
       // Header paired colors: base=dk1, Accent1->accent2 / Accent3->accent4 / Accent5->accent6
-      const headerPair: Record<string, string> = { accent1: 'accent2', accent3: 'accent4', accent5: 'accent6' }
-      const header = accentName ? (resolveSchemeColor(headerPair[accentName] ?? accentName, theme) ?? dk1) : dk1
+      const headerPair: Record<string, string> = {
+        accent1: 'accent2',
+        accent3: 'accent4',
+        accent5: 'accent6',
+      }
+      const header = accentName
+        ? (resolveSchemeColor(headerPair[accentName] ?? accentName, theme) ?? dk1)
+        : dk1
       const band = solid(tint(a, 0.4))
       return {
         wholeTbl: { fill: solid(tint(a, 0.2)), textColor: dk1 },
@@ -439,10 +449,7 @@ function readPart(part: unknown, theme: Theme | undefined): TablePartStyle | und
   if (!part || typeof part !== 'object') return undefined
   const p = asXmlNode(part)
   const out: TablePartStyle = {}
-  const fillColor = readColor(
-    asXmlNode(asXmlNode(p['a:tcStyle'])['a:fill'])['a:solidFill'],
-    theme,
-  )
+  const fillColor = readColor(asXmlNode(asXmlNode(p['a:tcStyle'])['a:fill'])['a:solidFill'], theme)
   if (fillColor) out.fill = solid(fillColor)
   if (p['a:tcTxStyle']) {
     const tx = asXmlNode(p['a:tcTxStyle'])
@@ -453,7 +460,11 @@ function readPart(part: unknown, theme: Theme | undefined): TablePartStyle | und
   return Object.keys(out).length ? out : undefined
 }
 
-function readInside(part: unknown, tag: 'a:insideH' | 'a:insideV', theme: Theme | undefined): Stroke | undefined {
+function readInside(
+  part: unknown,
+  tag: 'a:insideH' | 'a:insideV' | 'a:left' | 'a:right' | 'a:top' | 'a:bottom',
+  theme: Theme | undefined,
+): Stroke | undefined {
   const bdr = asXmlNode(asXmlNode(asXmlNode(part)['a:tcStyle'])['a:tcBdr'])
   const lnRaw = asXmlNode(bdr[tag])['a:ln']
   if (!lnRaw) return undefined
@@ -463,7 +474,11 @@ function readInside(part: unknown, tag: 'a:insideH' | 'a:insideV', theme: Theme 
   return line(c, parseInt(String(ln['@_w']), 10) || 12700)
 }
 
-function parseTableStylesXml(xml: string, styleId: string, theme: Theme | undefined): TableStyleDef | undefined {
+function parseTableStylesXml(
+  xml: string,
+  styleId: string,
+  theme: Theme | undefined,
+): TableStyleDef | undefined {
   let doc: XmlNode
   try {
     doc = asXmlNode(tsParser.parse(xml))
@@ -474,7 +489,17 @@ function parseTableStylesXml(xml: string, styleId: string, theme: Theme | undefi
   const style = xmlArray(list).find((s) => s['@_styleId'] === styleId)
   if (!style) return undefined
   const def: TableStyleDef = {}
-  for (const key of ['wholeTbl', 'band1H', 'band2H', 'band1V', 'band2V', 'firstRow', 'lastRow', 'firstCol', 'lastCol'] as const) {
+  for (const key of [
+    'wholeTbl',
+    'band1H',
+    'band2H',
+    'band1V',
+    'band2V',
+    'firstRow',
+    'lastRow',
+    'firstCol',
+    'lastCol',
+  ] as const) {
     const p = readPart(style['a:' + key], theme)
     if (p) def[key] = p
   }
@@ -482,6 +507,13 @@ function parseTableStylesXml(xml: string, styleId: string, theme: Theme | undefi
   def.insideV = readInside(style['a:wholeTbl'], 'a:insideV', theme)
   if (!def.insideH) delete def.insideH
   if (!def.insideV) delete def.insideV
+  const outer = {
+    l: readInside(style['a:wholeTbl'], 'a:left', theme),
+    r: readInside(style['a:wholeTbl'], 'a:right', theme),
+    t: readInside(style['a:wholeTbl'], 'a:top', theme),
+    b: readInside(style['a:wholeTbl'], 'a:bottom', theme),
+  }
+  if (outer.l || outer.r || outer.t || outer.b) def.outer = outer
   return Object.keys(def).length ? def : undefined
 }
 
@@ -498,7 +530,9 @@ export function cellPartStyle(
   nCols: number,
 ): TablePartStyle {
   const merge = (base: TablePartStyle, over?: TablePartStyle): TablePartStyle =>
-    over ? { ...base, ...Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) } : base
+    over
+      ? { ...base, ...Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)) }
+      : base
 
   let out: TablePartStyle = { ...(def.wholeTbl ?? {}) }
   const isFirstRow = flags.firstRow && r === 0

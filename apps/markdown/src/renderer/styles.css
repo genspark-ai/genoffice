@@ -1,0 +1,2166 @@
+/* Per-app accent (word-blue family) + markdown-only tokens.
+ * Chrome tokens (surface/text/border/…, AI panel --color-*) come from
+ * @genoffice/ui/tokens.css; nothing here may shadow those names. */
+:root {
+  --accent: #185abd;
+  --accent-dark: #124a9e;
+  --accent-soft: #e8f1fb;
+  --word-blue: var(--accent);
+
+  --md-link: #0a69da;
+  --md-code-bg: #f6f8fa;
+  --md-code-inline-bg: rgb(129 139 152 / 14%);
+  --md-table-header-bg: #f6f8fa;
+  --md-ai-changed: rgb(255 213 79 / 40%);
+  --md-selection: rgb(59 130 246 / 10%);
+  --md-text-selection: rgb(56 108 255 / 32%);
+  --md-focus: #3b82f6;
+  --md-node-outline: rgb(59 130 246 / 60%);
+  --md-focus-ring: rgb(35 36 37 / 20%);
+  --md-focus-ring-blue: rgb(74 141 246 / 30%);
+  --md-error: #c62828;
+  --md-error-border: rgb(198 40 40 / 45%);
+  --md-error-bg: rgb(198 40 40 / 8%);
+  --md-shadow-color: rgb(0 0 0 / 13%);
+  --md-shadow-soft: rgb(0 0 0 / 9%);
+  --md-shimmer-base: #666666;
+  --md-shimmer-hi: #d9d9d9;
+  --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 10%);
+  /* same paper shadow as the pdf app's --pdf-shadow-page */
+  --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+}
+
+[data-theme='dark'] {
+  --accent: #4a9eff;
+  --accent-dark: #3a8eef;
+  --accent-soft: #1e3a5f;
+
+  --md-link: #4a9eff;
+  --md-code-bg: #23272e;
+  --md-code-inline-bg: rgb(129 139 152 / 22%);
+  --md-table-header-bg: #282c32;
+  --md-ai-changed: rgb(255 213 79 / 28%);
+  --md-selection: rgb(74 158 255 / 20%);
+  --md-text-selection: rgb(74 158 255 / 40%);
+  --md-focus: #4a9eff;
+  --md-node-outline: rgb(74 158 255 / 70%);
+  --md-focus-ring: rgb(228 228 228 / 25%);
+  --md-focus-ring-blue: rgb(74 158 255 / 40%);
+  --md-error: #f28b82;
+  --md-error-border: rgb(242 139 130 / 45%);
+  --md-error-bg: rgb(242 139 130 / 12%);
+  --md-shadow-color: rgb(0 0 0 / 55%);
+  --md-shadow-soft: rgb(0 0 0 / 45%);
+  --md-shimmer-base: #8a8a8a;
+  --md-shimmer-hi: #d0d0d0;
+  --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+  --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 35%);
+  --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --accent: #4a9eff;
+    --accent-dark: #3a8eef;
+    --accent-soft: #1e3a5f;
+
+    --md-link: #4a9eff;
+    --md-code-bg: #23272e;
+    --md-code-inline-bg: rgb(129 139 152 / 22%);
+    --md-table-header-bg: #282c32;
+    --md-ai-changed: rgb(255 213 79 / 28%);
+    --md-selection: rgb(74 158 255 / 20%);
+    --md-text-selection: rgb(74 158 255 / 40%);
+    --md-focus: #4a9eff;
+    --md-node-outline: rgb(74 158 255 / 70%);
+    --md-focus-ring: rgb(228 228 228 / 25%);
+    --md-focus-ring-blue: rgb(74 158 255 / 40%);
+    --md-error: #f28b82;
+    --md-error-border: rgb(242 139 130 / 45%);
+    --md-error-bg: rgb(242 139 130 / 12%);
+    --md-shadow-color: rgb(0 0 0 / 55%);
+    --md-shadow-soft: rgb(0 0 0 / 45%);
+    --md-shimmer-base: #8a8a8a;
+    --md-shimmer-hi: #d0d0d0;
+    --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+    --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 35%);
+    --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* UI CJK fonts per language, same table as the docs/slides chrome
+ * (documentElement.lang is set at bootstrap and on switch) */
+:root {
+  --ui-cjk: 'PingFang SC', 'Microsoft YaHei';
+}
+
+:root:lang(ja) {
+  --ui-cjk: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo';
+}
+
+:root:lang(ko) {
+  --ui-cjk: 'Apple SD Gothic Neo', 'Malgun Gothic';
+}
+
+:root:lang(zh-TW) {
+  --ui-cjk: 'PingFang TC', 'Microsoft JhengHei';
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* same UI stack as the docs/slides chrome ('Segoe UI' first + per-language
+     CJK token) so shared toolbar controls measure identically across apps */
+  font-family:
+    'Segoe UI',
+    -apple-system,
+    BlinkMacSystemFont,
+    var(--ui-cjk),
+    sans-serif;
+  color: var(--text);
+  background: var(--surface-subtle);
+  /* grayscale AA like the docs/sheets/slides/pdf chrome — macOS subpixel
+     rendering paints the same weight visibly heavier */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* buttons follow the chrome font instead of the UA default, like docs */
+button {
+  font-family: inherit;
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.center-note {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.editor-scroll {
+  flex: 1;
+  overflow-y: auto;
+  /* same canvas backdrop as the slides workspace; the doc page stays white */
+  background: var(--canvas);
+}
+
+.doc-page {
+  max-width: 860px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 40px 72px 120px;
+  background: var(--surface);
+  box-shadow: var(--md-page-shadow);
+}
+
+.status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  user-select: none;
+}
+
+.status-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-save {
+  margin-left: auto;
+}
+
+.status-failed {
+  color: var(--danger);
+}
+
+/* ---- editor content ---- */
+
+.doc-editor {
+  outline: none;
+  font-size: 16px;
+  line-height: 1.75;
+  word-wrap: break-word;
+}
+
+.doc-editor > *:first-child {
+  margin-top: 0;
+}
+
+.doc-editor h1,
+.doc-editor h2,
+.doc-editor h3,
+.doc-editor h4,
+.doc-editor h5,
+.doc-editor h6 {
+  line-height: 1.3;
+  margin: 1.4em 0 0.5em;
+  font-weight: 650;
+}
+
+.doc-editor h1 {
+  font-size: 2em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-editor h2 {
+  font-size: 1.5em;
+}
+
+.doc-editor h3 {
+  font-size: 1.25em;
+}
+
+.doc-editor h4 {
+  font-size: 1.1em;
+}
+
+.doc-editor p {
+  margin: 0.6em 0;
+}
+
+.doc-editor ul,
+.doc-editor ol {
+  padding-left: 1.6em;
+  margin: 0.6em 0;
+}
+
+.doc-editor li > p {
+  margin: 0.15em 0;
+}
+
+.doc-editor blockquote {
+  margin: 0.8em 0;
+  padding: 0.1em 1em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.doc-editor code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.875em;
+  background: var(--md-code-inline-bg);
+  border-radius: 4px;
+  padding: 0.15em 0.35em;
+}
+
+.doc-editor pre {
+  background: var(--md-code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+
+.doc-editor pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+.doc-editor hr {
+  border: none;
+  border-top: 2px solid var(--border);
+  margin: 1.6em 0;
+}
+
+.doc-editor a {
+  color: var(--md-link);
+}
+
+.doc-editor img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---- tables ---- */
+
+.doc-editor .tableWrapper {
+  margin: 0.8em 0;
+  overflow-x: auto;
+}
+
+.doc-editor table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0;
+}
+
+.doc-editor th,
+.doc-editor td {
+  border: 1px solid var(--border-strong);
+  padding: 6px 10px;
+  vertical-align: top;
+  text-align: start;
+}
+
+/* cells hold paragraph nodes — the document paragraph margin would bloat rows */
+.doc-editor th > p,
+.doc-editor td > p {
+  margin: 0;
+}
+
+.doc-editor th {
+  background: var(--md-table-header-bg);
+  font-weight: 600;
+}
+
+/* ---- ribbon ---- */
+
+.ribbon {
+  flex: 0 0 auto;
+  /* white chrome + shared toolbar ink, same as the docs ribbon */
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  user-select: none;
+  color: var(--text-primary);
+}
+
+/* slim quick-access row above the toolbar (save / undo / redo / autosave),
+ * same metrics as the docs tab row; it doubles as the window drag strip */
+.ribbon-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 10px 0;
+  /* docs/slides size this row with their menu tabs (13px semibold labels,
+     7/6 padding + 2.5px underline ⇒ 39px measured); markdown has no menu
+     tabs, so pin the row so the toolbar bottom edge lines up across tabs */
+  min-height: 39px;
+  -webkit-app-region: drag;
+}
+
+.ribbon-tabs button,
+.ribbon-tabs .autosave-toggle {
+  -webkit-app-region: no-drag;
+}
+
+/* the toolbar row below the QAT row (old single-row ribbon) */
+.ribbon-body {
+  display: flex;
+  /* stretch like the docs ribbon: groups fill the band and the tall AI
+     buttons top-align at the same size/position as docs */
+  align-items: stretch;
+  /* band metrics shared with the docs/slides/pdf ribbons; no row gap — groups
+     own their spacing (2px 4px padding) exactly like the docs/slides ribbons */
+  padding: 6px 12px;
+  /* HARD-fixed height like the other editors' ribbons, so switching shell tabs
+     never shifts the toolbar's bottom edge (no wrap-driven growth) */
+  height: 80px;
+  /* groups never shrink, so a narrow window scrolls the row inside the ribbon
+     instead of spilling controls out of reach (matching the docs ribbon). The
+     .rb-link-pop dropdown is position: fixed + anchor-positioned, so this
+     clip cannot cut it off */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.ribbon-body::-webkit-scrollbar {
+  display: none;
+}
+
+.rb-sep {
+  width: 1px;
+  flex-shrink: 0;
+  align-self: stretch;
+  background: var(--border);
+  /* 2px matches the groups' vertical padding — same inset as docs/slides */
+  margin: 2px 6px;
+}
+
+.rb-spacer {
+  flex: 1;
+}
+
+/* ---- quick-access buttons (save / undo / redo), same as the docs QAT ---- */
+
+.qa-btn {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.qa-btn svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.qa-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.qa-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* ---- autosave toggle (pill), same as the docs one ---- */
+
+.autosave-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  margin-left: 4px;
+  margin-right: 4px;
+  user-select: none;
+}
+
+.autosave-toggle input {
+  display: none;
+}
+
+.autosave-knob {
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--border-strong, var(--border));
+  position: relative;
+  transition: background 0.15s;
+}
+
+.autosave-knob::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: left 0.15s;
+}
+
+.autosave-toggle.on .autosave-knob {
+  background: var(--accent);
+}
+
+.autosave-toggle.on .autosave-knob::after {
+  left: 14px;
+}
+
+.autosave-text {
+  font-size: 11px;
+  /* same ink as the docs/slides autosave label */
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* inline toolbar button + suite-wide states (ink/hover/neutral selected
+ * plate, no brand color) — same metrics as the docs/slides .rb-icon
+ * (28px min box, 30px tall, 3px radius, 15px letterform glyphs) */
+.rb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 30px;
+  padding: 0 4px;
+  white-space: nowrap;
+  border: none;
+  border-radius: 3px;
+  font-size: 15px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.rb-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.rb-btn.active {
+  background: var(--active-bg);
+  color: var(--text-primary);
+}
+
+.rb-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- docs-parity ribbon group with tall AI buttons ---- */
+
+.ribbon-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2px 4px;
+  /* groups never shrink below content, same as the docs/slides ribbons */
+  flex-shrink: 0;
+}
+
+.ribbon-group-items {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.rb-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  padding: 4px 7px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.rb-big-icon {
+  min-height: 28px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  /* same icon-row box as docs: full button width with horizontal bleed */
+  align-self: stretch;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin: 0 -4px;
+}
+
+.rb-big:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* the AI entries read as one piece: hover/press tint the whole button */
+.rb-big.ai-entry:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+/* neutral gray open state, same control across docs/sheets/slides ribbons */
+.rb-big.ai-entry.active {
+  background: var(--active-bg);
+  color: var(--text-primary);
+}
+
+.ai-feature-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-brand-secondary);
+}
+
+.ai-feature-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* typographic letterform glyphs (B/I/U/S): 15px/600 like the docs inline row */
+.rb-mono {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+/* block-style picker: same box as the docs/slides font pickers (.rb-font-btn:
+ * 28px tall, 3px radius, 13px label, 7px inline padding, strong border) */
+.rb-style-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.rb-style {
+  height: 28px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  /* native chevron replaced by .rb-style-caret so it can sit off the edge */
+  appearance: none;
+  padding: 0 26px 0 7px;
+  min-width: 108px;
+  outline: none;
+}
+
+.rb-style-caret {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+/* Anchor for the link popover, which is position: fixed so it escapes the
+   ribbon-body scroll clip while tracking its trigger (same pattern as the
+   docs ribbon dropdowns) */
+.rb-link-anchor {
+  position: relative;
+  display: inline-flex;
+  anchor-name: --rb-link-anchor;
+  anchor-scope: --rb-link-anchor;
+}
+
+.rb-link-pop {
+  position: fixed;
+  position-anchor: --rb-link-anchor;
+  top: calc(anchor(bottom) + 2px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 30;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--md-shadow-color);
+}
+
+.rb-link-pop input {
+  width: 240px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.rb-link-pop button {
+  height: 26px;
+  border: none;
+  border-radius: 5px;
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+  font-size: 12.5px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.rb-link-pop button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- slash menu ---- */
+
+.slash-menu {
+  z-index: 40;
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px var(--md-shadow-color);
+}
+
+.slash-item {
+  display: block;
+  width: 100%;
+  text-align: start;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.slash-item.active {
+  background: var(--pressed);
+}
+
+.slash-empty {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ---- block drag handle ---- */
+
+.md-drag-handle-legacy {
+  position: absolute;
+  z-index: 20;
+  width: 18px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--icon-muted);
+  cursor: grab;
+}
+
+.md-drag-handle-legacy:hover {
+  background: var(--hover);
+  color: var(--text-muted);
+}
+
+/* ---- task list ---- */
+
+.doc-editor ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.4em;
+}
+
+.doc-editor ul[data-type='taskList'] li {
+  display: flex;
+  gap: 8px;
+}
+
+.doc-editor ul[data-type='taskList'] li > label {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* match the first line box (16px x 1.75) so the checkbox centers on it */
+  height: 1.75em;
+  margin-top: 0.15em;
+  user-select: none;
+}
+
+.doc-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
+  margin: 0;
+}
+
+.doc-editor ul[data-type='taskList'] li > div {
+  flex: 1;
+}
+
+/* the task text lives in li > div > p, so the generic `li > p` list
+ * override misses it and it keeps the full 0.6em paragraph margin */
+.doc-editor ul[data-type='taskList'] li > div > p {
+  margin: 0.15em 0;
+}
+
+.doc-editor ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* ---- table selection ---- */
+
+.doc-editor .selectedCell {
+  background: var(--md-selection);
+}
+
+.doc-editor table .column-resize-handle {
+  background: var(--md-focus);
+}
+
+/* ---- placeholder ---- */
+
+.doc-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--icon-muted);
+  pointer-events: none;
+  height: 0;
+}
+
+/* ---- frontmatter panel ---- */
+
+.fm-panel {
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-content);
+  overflow: hidden;
+}
+
+.fm-title {
+  padding: 6px 12px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.fm-textarea {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  resize: vertical;
+  padding: 6px 12px 10px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  outline: none;
+}
+
+/* ---- editor drop cursor / node selection ---- */
+
+.doc-editor .ProseMirror-selectednode {
+  outline: 2px solid var(--md-node-outline);
+  border-radius: 4px;
+}
+/* ── AI sidebar (aligned with docs/sheets panel language) ── */
+
+/* dock wrapper: its width animates between the panel and the 34px collapsed rail
+ * (docs-parity 180ms ease); the panel inside keeps its natural width and is clipped */
+.ai-dock {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
+  width: var(--ai-panel-width, 360px);
+  overflow: hidden;
+  transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-dock.collapsed {
+  width: 34px;
+}
+
+/* while dragging the resizer, follow the pointer without easing */
+.ai-dock:has(.ai-panel-resizing) {
+  transition: none;
+}
+
+/* the panel stays mounted (chat history survives) but hidden while collapsed */
+.ai-dock.collapsed .copilot {
+  display: none;
+}
+
+/* the rail stretches to fill the dock while the width animates */
+.ai-dock .ai-rail {
+  flex: 1;
+  width: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-dock {
+    transition: none;
+  }
+}
+
+/* collapsed AI sidebar: thin rail on the left edge (same as docs) */
+.ai-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 34px;
+  padding: 12px 2px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ai-rail:hover {
+  background: var(--hover);
+}
+
+.copilot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  flex-shrink: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* same visible divider as the docs panel: strong border so it doesn't drown */
+  border-right: 1px solid var(--color-border-strong);
+  background: var(--color-bg-page);
+  font-family: var(--gs-font-sans);
+  color: var(--color-text-primary);
+}
+
+/* drag handle on the panel's right edge — resize the panel horizontally */
+.ai-panel-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+}
+
+/* while dragging: keep the col-resize cursor everywhere, no text selection */
+.ai-panel-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.ai-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--color-border-default);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.ai-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+/* Genspark brand logo (shared by the collapsed entry and the AI panel title) */
+.genspark-badge {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.ai-panel-title .genspark-badge {
+  width: 18px;
+  height: 18px;
+}
+
+.ai-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ai-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  border-radius: var(--radius-8);
+  color: var(--color-text-secondary);
+  padding: 0;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-header-btn:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.ai-chat {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  /* uniform 16px flex gap between blocks, messages carry no margin */
+  gap: 16px;
+  overflow-y: auto;
+  padding: 32px 16px;
+  font-family: var(--gs-font-sans);
+}
+
+/* Boundary between the restored transcript and the live turn */
+.ai-history-sep {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+.ai-chat-empty {
+  margin-top: 36px;
+  padding: 0 10px;
+  text-align: center;
+  font-family: var(--gs-font-sans);
+}
+
+.ai-chat-empty-title {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+
+.ai-chat-empty-body {
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* clickable starter prompts in the empty state — suggestion chips:
+ * 30px-radius outline pills, 13px/400 (same as docs) */
+.ai-starter-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ai-starter {
+  padding: 8px 16px;
+  border-radius: var(--radius-30);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-page);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-starter:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-subtle);
+}
+
+.ai-starter:active {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
+/* Chat messages (scaled to the 14px panel): user = gray pill, AI = plain text without a bubble, no accent colors */
+.ai-msg {
+  position: relative;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* User pill: gray, fully rounded (no tail) */
+.ai-msg-user {
+  align-self: flex-end;
+  color: var(--text-primary);
+  background: var(--color-bg-subtle);
+  padding: 8px 16px;
+  border-radius: 14px;
+  max-width: 80%;
+  line-height: 1.5;
+}
+
+.ai-msg-assistant {
+  align-self: stretch;
+  border: none;
+  background: none;
+  padding: 0;
+  max-width: 100%;
+  color: var(--text-primary);
+  white-space: normal;
+}
+
+.ai-msg-error {
+  border-color: var(--md-error-border);
+  color: var(--md-error);
+}
+
+.ai-md p,
+.ai-md ul,
+.ai-md ol {
+  margin: 0 0 16px;
+}
+
+.ai-md :last-child {
+  margin-bottom: 0;
+}
+
+/* blank markdown paragraphs would each eat a 16px margin — the stream never renders them */
+.ai-md p:empty {
+  display: none;
+}
+
+.ai-md .ai-md-h {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 20px 0 8px;
+}
+
+.ai-md .ai-md-h:first-child {
+  margin-top: 0;
+}
+
+.ai-md ul,
+.ai-md ol {
+  margin-bottom: 20px;
+  padding-left: 20px;
+}
+
+.ai-md li {
+  margin-left: 20px;
+  line-height: 28px;
+}
+
+/* inline code: neutral gray chip (deliberately not red), 2px below body size */
+.ai-md code {
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
+/* Collapsible tool-activity group (ported from docs) */
+.ai-work-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.ai-msg-assistant .ai-work-group:first-child,
+.ai-work-group:only-child {
+  margin-top: 0;
+}
+
+.ai-work-group-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-work-group-summary:hover {
+  color: var(--color-text-secondary);
+}
+
+.ai-work-group-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--md-focus-ring);
+  border-radius: 4px;
+}
+
+.ai-work-group-summary.running {
+  color: var(--color-text-secondary);
+}
+
+.ai-work-group-summary.running .ai-work-group-label {
+  animation: ai-summary-pulse 1500ms linear infinite;
+}
+
+@keyframes ai-summary-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.ai-work-group-body {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-work-group-body.open {
+  grid-template-rows: 1fr;
+}
+
+.ai-work-group-body-inner {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 0 0 8px;
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-work-group-body.open .ai-work-group-body-inner {
+  padding: 4px 0 8px 8px;
+}
+
+/* Step rows inside the group: 20px icon slot + 1px connector */
+.ai-step-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  color: var(--color-text-tertiary);
+  animation: ai-row-ease-in 320ms ease-out;
+}
+
+.ai-step-row:not(:last-child) {
+  padding-bottom: 16px;
+}
+
+.ai-step-row:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 9.5px;
+  top: 32px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--color-border-default);
+}
+
+.ai-step-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+}
+
+.ai-step-icon.done {
+  color: var(--color-text-secondary);
+}
+
+.ai-step-icon.error {
+  color: var(--md-error);
+}
+
+.ai-step-icon.running svg {
+  animation: ai-hourglass-flip 1.8s ease-in-out infinite;
+}
+
+@keyframes ai-hourglass-flip {
+  0%,
+  12% {
+    transform: rotate(0);
+  }
+  44%,
+  56% {
+    transform: rotate(180deg);
+  }
+  88%,
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-step-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 1px;
+}
+
+.ai-step-title {
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+}
+
+.ai-step-title.clickable {
+  cursor: pointer;
+  transition: color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-step-title.clickable:hover {
+  color: var(--text-primary);
+}
+
+.ai-step-title.clickable:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--md-focus-ring);
+  border-radius: 4px;
+}
+
+/* Step detail opens instantly, no animation */
+.ai-step-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-step-row,
+  .ai-step-icon.running svg,
+  .ai-work-group-summary.running .ai-work-group-label {
+    animation: none;
+  }
+}
+
+/* Running tool row: two grow/shrink brand dots */
+.ai-tool-chip-spinner {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+
+.ai-tool-chip-spinner::before,
+.ai-tool-chip-spinner::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-brand-secondary);
+}
+
+.ai-tool-chip-spinner::before {
+  animation: ai-tool-dot-grow 2s infinite;
+}
+
+.ai-tool-chip-spinner::after {
+  animation: ai-tool-dot-shrink 2s infinite;
+}
+
+@keyframes ai-tool-dot-grow {
+  0%,
+  100% {
+    transform: scale(0.333);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes ai-tool-dot-shrink {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.333);
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-tool-chip-spinner::before,
+  .ai-tool-chip-spinner::after {
+    animation: none;
+    opacity: 0.65;
+  }
+}
+
+/* Elapsed run time next to the typing indicator */
+.ai-typing-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* caret: text glyph right after the label, always visible, rotates open */
+.ai-tool-chip-caret {
+  margin-left: 4px;
+  opacity: 0.7;
+  display: inline-block;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-tool-chip-caret.open {
+  transform: rotate(90deg);
+}
+
+/* stream rows ease in */
+@keyframes ai-row-ease-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* expanded step detail: subtle gray card, no border */
+.ai-tool-output {
+  background: var(--color-bg-subtle);
+  border: none;
+  border-radius: 12px;
+  font-family:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+  max-height: 300px;
+  overflow-y: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ai-tool-output-pre {
+  padding: 12px 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* Thinking indicator: shimmer label above two grow/shrink dots */
+.ai-typing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.ai-typing-label {
+  display: inline-block;
+  position: relative;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--md-shimmer-base);
+  -webkit-text-fill-color: transparent;
+  background: var(--md-shimmer-base)
+    linear-gradient(
+      to left,
+      var(--md-shimmer-base),
+      var(--md-shimmer-hi) 50%,
+      var(--md-shimmer-base)
+    );
+  background-clip: text;
+  -webkit-background-clip: text;
+  background-repeat: no-repeat;
+  background-size: 70% 100%;
+  animation: ai-thinking-shimmer 1.2s infinite alternate linear;
+}
+
+.ai-typing-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes ai-thinking-shimmer {
+  0% {
+    background-position: -100% top;
+  }
+  100% {
+    background-position: 250% top;
+  }
+}
+
+.ai-typing-dots {
+  height: 12px;
+  display: flex;
+  gap: 2px;
+}
+
+.ai-typing-dot-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 12px;
+}
+
+.ai-typing-dot-grow,
+.ai-typing-dot-shrink {
+  background: var(--color-brand-secondary);
+  border-radius: 50%;
+}
+
+.ai-typing-dot-grow {
+  animation: ai-dot-grow 2s infinite;
+}
+
+.ai-typing-dot-shrink {
+  animation: ai-dot-shrink 2s infinite;
+}
+
+@keyframes ai-dot-grow {
+  0%,
+  100% {
+    width: 4px;
+    height: 4px;
+    opacity: 0.45;
+  }
+  50% {
+    width: 12px;
+    height: 12px;
+    opacity: 1;
+  }
+}
+
+@keyframes ai-dot-shrink {
+  0%,
+  100% {
+    width: 12px;
+    height: 12px;
+    opacity: 1;
+  }
+  50% {
+    width: 4px;
+    height: 4px;
+    opacity: 0.45;
+  }
+}
+
+/* streaming caret at the tail of streaming assistant text */
+.ai-msg-streaming .ai-md > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: var(--color-text-secondary);
+  vertical-align: text-bottom;
+  animation: ai-caret-blink 900ms steps(1, end) infinite;
+}
+
+@keyframes ai-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-typing-label,
+  .ai-msg-streaming .ai-md > :last-child::after {
+    animation: none;
+  }
+}
+
+/* hover actions under assistant messages (copy / regenerate):
+ * borderless 30px icon buttons, radius 8, hover = subtle gray fill (same as docs) */
+.ai-msg-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.ai-msg-tool-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 30px;
+  min-width: 30px;
+  padding: 5px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-msg-tool-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ai-msg-tool-btn:hover {
+  background: var(--color-bg-subtle);
+}
+
+.ai-msg-tool-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--md-focus-ring-blue);
+}
+
+.ai-msg-tool-btn:active {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
+/* Version snapshots footer (same as docs) */
+.ai-versions {
+  border-top: 1px solid var(--border);
+  padding: 8px 14px 10px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.ai-versions-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.ai-version-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+}
+
+.ai-version-row:hover {
+  background: var(--hover);
+}
+
+.ai-version-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text);
+  min-width: 0;
+}
+
+.ai-version-label > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-version-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-version-rollback {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--word-blue);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.ai-version-rollback:hover {
+  background: var(--active-bg);
+}
+
+.ai-version-rollback:disabled {
+  color: var(--text-dim);
+  cursor: default;
+  background: none;
+}
+
+/* Composer floats over the chat scroll area — no top border (agent-shell §4.6) */
+.ai-composer {
+  border-top: none;
+  padding: 8px 12px 12px;
+  background: var(--color-bg-page);
+  font-family: var(--gs-font-sans);
+}
+
+/* composer card — 16px radius, default border, production float shadow */
+.ai-input-box {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-16);
+  background: var(--color-bg-page);
+  box-shadow: 0 6px 30px var(--md-shadow-soft);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+/* textarea: 16px / 24px fixed line-height, same text spec as the slides
+ * composer; auto-grow band (resting height matches the other AI panels) */
+.ai-input-box textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: none;
+  background: none;
+  border-radius: var(--radius-16) var(--radius-16) 0 0;
+  padding: 12px 14px 4px;
+  font-size: 16px;
+  font-family: inherit;
+  line-height: 24px;
+  outline: none;
+  color: var(--color-text-primary);
+  min-height: 64px;
+  max-height: 147px;
+  overflow-y: auto;
+}
+
+.ai-input-box textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.ai-input-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 8px 10px;
+}
+
+.ai-input-hint {
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* icon-only enter key: transparent button chrome, visuals come from brand-supplied PNGs
+ * (gray arrow = disabled, black arrow = enabled), 36×36, same as the other AI panels */
+.ai-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 35%;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-send-btn img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ai-send-btn:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.ai-send-btn:active:not(:disabled) {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
+.ai-send-btn:disabled {
+  cursor: default;
+}
+
+/* Stop button while generating: brand-supplied art (white square on black), transparent button chrome */
+.ai-send-btn.ai-stop-btn {
+  background: transparent;
+}
+
+.ai-send-btn.ai-stop-btn:hover {
+  filter: brightness(0.92);
+}
+
+/* ── pdfjs text layer (select/copy); structure requirements per pdfjs TextLayer ── */
+
+/* Matches pdf.js's official text_layer.css: spans laid out in unrotated page space,
+   whole layer rotated via data-main-rotation; font size/scale driven by --font-height/--scale-x vars */
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+}
+
+.textLayer[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.textLayer[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.textLayer[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span::selection {
+  background: var(--md-text-selection);
+}
+
+/* pdfjs uses endOfContent to carry cross-page selection */
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+
+.ai-msg-undelivered {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--md-error);
+}
+
+.ai-retry-btn {
+  border: 1px solid var(--md-error-border);
+  border-radius: 4px;
+  background: none;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--md-error);
+  cursor: pointer;
+}
+
+.ai-retry-btn:hover {
+  background: var(--md-error-bg);
+}
+
+/* ================= status bar (unified chrome shared with docs/sheets/slides) ================= */
+
+.status-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  height: 24px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--border);
+}
+
+.status-left {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-item {
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.zoom-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.zoom-btn:hover {
+  background: var(--active-bg);
+}
+
+.zoom-slider {
+  width: 110px;
+  accent-color: var(--text-muted);
+  height: 3px;
+}
+
+.zoom-value {
+  min-width: 38px;
+  text-align: right;
+}
+
+/* body row (AI dock + content column) — the status bar spans only the content
+   column so the dock runs the full height of the window */
+.app-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- main layout: AI dock (left) + editor ---- */
+
+.app-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.app-main .editor-scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- transient AI-change highlight ---- */
+
+.doc-editor .ai-changed {
+  background: var(--md-ai-changed);
+  border-radius: 2px;
+  transition: background 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---- code block chrome ---- */
+
+.md-codeblock {
+  position: relative;
+  margin: 0.8em 0;
+}
+
+.md-codeblock pre {
+  margin: 0;
+}
+
+.md-codeblock-bar {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.md-codeblock:hover .md-codeblock-bar,
+.md-codeblock-bar:focus-within {
+  opacity: 1;
+}
+
+.md-codeblock-lang {
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  padding: 0 4px;
+  outline: none;
+}
+
+.md-codeblock-copy {
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  padding: 0 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.md-codeblock-copy:hover {
+  background: var(--hover);
+}
+
+/* ---- floating table menu ---- */
+
+.table-menu {
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--md-shadow-color);
+}
+
+.tm-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tm-btn:hover {
+  background: var(--hover);
+}
+
+.tm-btn.active {
+  background: var(--active-bg);
+  color: var(--color-text-primary);
+}
+
+.tm-btn.danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.tm-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+/* ---- block gutter (+ and grip) & block menu ---- */
+
+.md-block-gutter {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.md-gutter-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--icon-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.md-gutter-btn:hover {
+  background: var(--hover);
+  color: var(--text-muted);
+}
+
+.md-gutter-grip {
+  cursor: grab;
+}
+
+.md-block-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 150px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px var(--md-shadow-color);
+}
+
+.md-block-menu-item {
+  display: block;
+  width: 100%;
+  text-align: start;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.md-block-menu-item:hover {
+  background: var(--hover);
+}
+
+.md-block-menu-item.danger {
+  color: var(--danger);
+}
+
+.md-block-menu-item.danger:hover {
+  background: var(--danger-bg);
+}

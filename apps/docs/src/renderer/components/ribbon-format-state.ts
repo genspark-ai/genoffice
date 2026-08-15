@@ -4,6 +4,7 @@ import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/table
 import type { DocDefaults, StyleInfo } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
 import { effectiveSizeHalfPoints } from '../editor/text-style-resolve'
+import { textHasCjk } from '../line-metrics'
 import { cachedByDoc } from '../doc-cache'
 
 /**
@@ -28,8 +29,13 @@ export interface RibbonFormatState {
   imageAlign: string | null
   imageWidthPx: number | null
   imageHeightPx: number | null
+  imageFlipH: boolean
+  imageFlipV: boolean
   imageHasDocxIndex: boolean
   textboxSelected: boolean
+  shapeFill: string | null
+  shapeBorderColor: string | null
+  shapePrst: string | null
   cellKey: number | null
   cellHeightCm: number | null
   cellWidthCm: number | null
@@ -73,8 +79,13 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   imageAlign: null,
   imageWidthPx: null,
   imageHeightPx: null,
+  imageFlipH: false,
+  imageFlipV: false,
   imageHasDocxIndex: false,
   textboxSelected: false,
+  shapeFill: null,
+  shapeBorderColor: null,
+  shapePrst: null,
   cellKey: null,
   cellHeightCm: null,
   cellWidthCm: null,
@@ -154,6 +165,21 @@ export function computeFormatState(
   const imageSelected = protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl
 
   const textAttrs = ed.getAttributes('docTextStyle')
+  // Dual-slot runs: like Word's font box, show the slot matching the script at the caret
+  const displayFont = (): string => {
+    const font = str(textAttrs.font)
+    const fontAscii = str(textAttrs.fontAscii)
+    if (!font || !fontAscii || font === fontAscii) return font ?? fontAscii ?? ''
+    const { from, to } = ed.state.selection
+    const sample =
+      from === to
+        ? ed.state.doc.textBetween(
+            Math.max(0, from - 1),
+            Math.min(ed.state.doc.content.size, from + 1),
+          )
+        : ed.state.doc.textBetween(from, Math.min(to, from + 32), ' ')
+    return textHasCjk(sample) ? font : fontAscii
+  }
   const paraAttrs = sub ? ed.getAttributes('docParagraph') : paraAttrsOf(editor)
   const mainPara = paraAttrsOf(editor)
 
@@ -171,8 +197,19 @@ export function computeFormatState(
     imageAlign: str(protAttrs.imageAlign),
     imageWidthPx: num(protAttrs.imageWidthPx),
     imageHeightPx: num(protAttrs.imageHeightPx),
+    imageFlipH: !!protAttrs.imageFlipH,
+    imageFlipV: !!protAttrs.imageFlipV,
     imageHasDocxIndex: protAttrs.docxIndex != null,
     textboxSelected: Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0,
+    shapeFill: Array.isArray(protAttrs.textboxes)
+      ? str((protAttrs.textboxes[0] as { fill?: string } | undefined)?.fill)
+      : null,
+    shapeBorderColor: Array.isArray(protAttrs.textboxes)
+      ? str((protAttrs.textboxes[0] as { borderColor?: string } | undefined)?.borderColor)
+      : null,
+    shapePrst: Array.isArray(protAttrs.textboxes)
+      ? str((protAttrs.textboxes[0] as { prst?: string } | undefined)?.prst)
+      : null,
     cellKey,
     cellHeightCm,
     cellWidthCm,
@@ -186,7 +223,7 @@ export function computeFormatState(
     textColor: str(textAttrs.color),
     charStyleId: str(textAttrs.styleId),
     fontSizePt: (effectiveSizeHalfPoints(ed, styles, docDefaults) ?? 22) / 2,
-    fontFamily: str(textAttrs.font) ?? '',
+    fontFamily: displayFont(),
     headingLevel: editor.isActive('docHeading')
       ? Number(editor.getAttributes('docHeading').level ?? 1)
       : null,
