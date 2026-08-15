@@ -7,6 +7,7 @@ import type {
   CodexAuthContext,
   CodexCapabilities,
   CodexReasoningEffort,
+  CodexServiceTier,
 } from './types'
 import { CodexError, type CodexErrorCode } from './types'
 
@@ -141,6 +142,9 @@ export function buildCodexRequest(request: CodexAdapterRequest) {
     ...(request.reasoningEffort && request.reasoningEffort !== 'none'
       ? { reasoning: { effort: request.reasoningEffort } }
       : {}),
+    ...(request.serviceTier && request.serviceTier !== 'default'
+      ? { service_tier: request.serviceTier }
+      : {}),
     store: false,
     stream: true,
   }
@@ -196,6 +200,8 @@ function parseCodexCapabilities(value: unknown): CodexCapabilities {
     ) {
       continue
     }
+    const displayName = typeof record.display_name === 'string' ? record.display_name.trim() : ''
+    const name = displayName ? displayName.replace(/^GPT-/i, '').replaceAll('-', ' ') : undefined
     const reasoningEfforts = Array.isArray(record.supported_reasoning_levels)
       ? record.supported_reasoning_levels
           .map((preset) =>
@@ -211,8 +217,35 @@ function parseCodexCapabilities(value: unknown): CodexCapabilities {
               CODEX_REASONING_EFFORTS.has(effort as CodexReasoningEffort),
           )
       : []
+    const serviceTiers: CodexServiceTier[] = []
+    if (Array.isArray(record.service_tiers)) {
+      for (const tier of record.service_tiers) {
+        if (!tier || typeof tier !== 'object') continue
+        const tierRecord = tier as Record<string, unknown>
+        const tierId = typeof tierRecord.id === 'string' ? tierRecord.id.trim() : ''
+        const tierName = typeof tierRecord.name === 'string' ? tierRecord.name.trim() : ''
+        const description =
+          typeof tierRecord.description === 'string' ? tierRecord.description.trim() : undefined
+        if (!tierId || !/^[a-zA-Z0-9._-]+$/.test(tierId) || !tierName) continue
+        if (serviceTiers.some((candidate) => candidate.id === tierId)) continue
+        serviceTiers.push({ id: tierId, name: tierName, ...(description ? { description } : {}) })
+      }
+    }
+    const defaultServiceTier =
+      typeof record.default_service_tier === 'string' && record.default_service_tier.trim()
+        ? record.default_service_tier.trim()
+        : 'default'
+    if (!serviceTiers.some((tier) => tier.id === 'default')) {
+      serviceTiers.unshift({ id: 'default', name: 'Standard' })
+    }
     seen.add(id)
-    models.push({ id, reasoningEfforts: [...new Set(reasoningEfforts)] })
+    models.push({
+      id,
+      ...(name ? { name } : {}),
+      reasoningEfforts: [...new Set(reasoningEfforts)],
+      serviceTiers,
+      defaultServiceTier,
+    })
   }
   return { models }
 }

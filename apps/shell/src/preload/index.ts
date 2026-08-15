@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   AccountLoginEvent,
   AccountStatus,
+  CodexAccountStatus,
   CloudProjectsSnapshot,
   HomeApi,
   RecentEntry,
@@ -146,6 +147,21 @@ const homeApi: HomeApi = {
   },
   async accountLogout() {
     await ipcRenderer.invoke(HOME_CHANNELS.accountLogout)
+  },
+  async codexStatus() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.codexStatus)
+    return (result ?? { loggedIn: false }) as CodexAccountStatus
+  },
+  async codexLogin() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.codexLogin)
+    return (result ?? { loggedIn: false }) as CodexAccountStatus
+  },
+  async codexCancelLogin() {
+    await ipcRenderer.invoke(HOME_CHANNELS.codexCancelLogin)
+  },
+  async codexLogout() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.codexLogout)
+    return (result ?? { loggedIn: false }) as CodexAccountStatus
   },
   async getAppVersion() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAppVersion)

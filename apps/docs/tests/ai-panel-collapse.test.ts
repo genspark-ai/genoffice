@@ -151,8 +151,19 @@ describe('AiPanel collapse', () => {
         aiStreamCancel: vi.fn().mockResolvedValue(undefined),
         aiCodexCapabilities: vi.fn().mockResolvedValue({
           models: [
-            { id: 'gpt-5.5', reasoningEfforts: ['none', 'low', 'high'] },
-            { id: 'gpt-5.4', reasoningEfforts: ['none', 'medium'] },
+            {
+              id: 'gpt-5.5',
+              reasoningEfforts: ['none', 'low', 'high'],
+              serviceTiers: [
+                { id: 'default', name: 'Standard' },
+                { id: 'priority', name: 'Fast' },
+              ],
+            },
+            {
+              id: 'gpt-5.4',
+              reasoningEfforts: ['none', 'medium'],
+              serviceTiers: [{ id: 'default', name: 'Standard' }],
+            },
           ],
         }),
         aiCodexStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
@@ -173,8 +184,9 @@ describe('AiPanel collapse', () => {
 
     act(() => container.querySelector<HTMLButtonElement>('.ai-codex-model-trigger')!.click())
     expect(container.querySelector('.ai-codex-model-popover')).not.toBeNull()
+    expect(container.querySelectorAll('[data-codex-menu-item]')).toHaveLength(3)
     expect(container.querySelectorAll('[data-codex-model-option]')).toHaveLength(2)
-    expect(container.querySelectorAll('[data-codex-reasoning-option]')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-codex-reasoning-option]')).toHaveLength(0)
 
     act(() => container.querySelector<HTMLElement>('[data-codex-model-option="gpt-5.4"]')!.click())
     expect(onSettingsChange).toHaveBeenLastCalledWith(
@@ -184,6 +196,12 @@ describe('AiPanel collapse', () => {
         }),
       }),
     )
+
+    act(() => container.querySelector<HTMLButtonElement>('.ai-codex-model-trigger')!.click())
+    act(() =>
+      container.querySelector<HTMLButtonElement>('[data-codex-menu-item="effort"]')!.click(),
+    )
+    expect(container.querySelectorAll('[data-codex-reasoning-option]')).toHaveLength(3)
     act(() => container.querySelector<HTMLElement>('[data-codex-reasoning-option="high"]')!.click())
     expect(onSettingsChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -193,45 +211,25 @@ describe('AiPanel collapse', () => {
       }),
     )
 
+    act(() => container.querySelector<HTMLButtonElement>('.ai-codex-model-trigger')!.click())
+    act(() => container.querySelector<HTMLButtonElement>('[data-codex-menu-item="speed"]')!.click())
+    expect(container.querySelectorAll('[data-codex-service-tier-option]')).toHaveLength(2)
+    act(() =>
+      container.querySelector<HTMLElement>('[data-codex-service-tier-option="priority"]')!.click(),
+    )
+    expect(onSettingsChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        providers: expect.objectContaining({
+          'openai-codex': expect.objectContaining({ serviceTier: 'priority' }),
+        }),
+      }),
+    )
+
     cleanup()
     if (previousDesktop) Object.defineProperty(window, 'desktop', previousDesktop)
     else delete (window as Partial<Window>).desktop
     editor.destroy()
     void streamListener
-  })
-
-  it('opens explanatory Track changes choices and persists the selected mode', () => {
-    const editor = createEditor()
-    localStorage.removeItem('ai-docs-track-changes')
-    const { container, cleanup } = mount(createElement(AiPanel, panelProps(editor)))
-    const trigger = container.querySelector<HTMLButtonElement>('.ai-track-btn')!
-
-    act(() => trigger.click())
-    expect(container.querySelector('.ai-track-popover')).not.toBeNull()
-    expect(container.querySelectorAll('[data-track-choice]')).toHaveLength(2)
-    expect(container.querySelector('[data-track-choice="on"]')?.textContent).toContain(
-      '修订追踪已开启',
-    )
-
-    act(() => container.querySelector<HTMLElement>('[data-track-choice="on"]')!.click())
-    expect(trigger.classList.contains('on')).toBe(true)
-    expect(localStorage.getItem('ai-docs-track-changes')).toBe('1')
-
-    act(() => trigger.click())
-    act(() => container.querySelector<HTMLElement>('[data-track-choice="off"]')!.click())
-    expect(trigger.classList.contains('on')).toBe(false)
-    expect(localStorage.getItem('ai-docs-track-changes')).toBe('0')
-
-    act(() => trigger.click())
-    act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    expect(container.querySelector('.ai-track-popover')).toBeNull()
-
-    act(() => trigger.click())
-    act(() => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
-    expect(container.querySelector('.ai-track-popover')).toBeNull()
-
-    cleanup()
-    editor.destroy()
   })
 
   it('preflights Codex auth before enabling send or loading capabilities', async () => {

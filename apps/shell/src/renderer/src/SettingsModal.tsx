@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useI18n } from './locale'
 import type { StringKey } from './locale'
-import type { AccountStatus, UiTheme } from '../../shared/home-api'
+import type { AccountStatus, CodexAccountStatus, UiTheme } from '../../shared/home-api'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -53,10 +53,11 @@ function formatStars(n: number): string {
   return `${k >= 100 ? Math.round(k) : (Math.round(k * 10) / 10).toString().replace(/\.0$/, '')}k`
 }
 
-type SectionId = 'account' | 'general' | 'about'
+type SectionId = 'account' | 'provider' | 'general' | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'account', labelKey: 'setSecAccount' },
+  { id: 'provider', labelKey: 'setSecProvider' },
   { id: 'general', labelKey: 'setSecGeneral' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
@@ -86,6 +87,19 @@ function SectionIcon({ id }: { id: SectionId }) {
         />
         <circle cx="11.5" cy="5" r="1.7" stroke="currentColor" strokeWidth="1.3" />
         <circle cx="4.5" cy="11" r="1.7" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
+    )
+  }
+  if (id === 'provider') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M8 2.2v11.6M2.2 8h11.6"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
+        <circle cx="8" cy="8" r="3.1" stroke="currentColor" strokeWidth="1.3" />
       </svg>
     )
   }
@@ -158,6 +172,8 @@ export function SettingsModal({
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
+  const [codexStatus, setCodexStatus] = useState<CodexAccountStatus | null>(null)
+  const [codexBusy, setCodexBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -175,6 +191,9 @@ export function SettingsModal({
     })
     void window.aiOffice.githubStars?.().then((n) => {
       if (alive && n !== null) setGithubStars(n)
+    })
+    void window.aiOffice.codexStatus?.().then((next) => {
+      if (alive) setCodexStatus(next)
     })
     return () => {
       alive = false
@@ -200,6 +219,26 @@ export function SettingsModal({
     void window.aiOffice.pickDefaultSaveDir?.().then((dir) => {
       if (dir) setSaveDir(dir)
     })
+  }
+
+  const loginCodex = () => {
+    if (!window.aiOffice.codexLogin || codexBusy) return
+    setCodexBusy(true)
+    void window.aiOffice
+      .codexLogin()
+      .then(setCodexStatus)
+      .catch(() => setCodexStatus({ loggedIn: false, errorCode: 'provider-failure' }))
+      .finally(() => setCodexBusy(false))
+  }
+
+  const logoutCodex = () => {
+    if (!window.aiOffice.codexLogout || codexBusy) return
+    setCodexBusy(true)
+    void window.aiOffice
+      .codexLogout()
+      .then(setCodexStatus)
+      .catch(() => setCodexStatus({ loggedIn: false, errorCode: 'provider-failure' }))
+      .finally(() => setCodexBusy(false))
   }
 
   const loggedIn = status?.loggedIn ?? false
@@ -350,6 +389,41 @@ export function SettingsModal({
                     </button>
                   }
                 />
+              </>
+            )}
+            {section === 'provider' && (
+              <>
+                <h3 className="set-pane-title">{t('setSecProvider')}</h3>
+                <div className="set-provider-row">
+                  <div className="set-provider-info">
+                    <div className="set-provider-name">ChatGPT Codex</div>
+                    <div className="set-provider-value">
+                      {codexStatus?.loggedIn
+                        ? codexStatus.email || t('loggedIn')
+                        : t('setNotLoggedIn')}
+                    </div>
+                    {codexStatus?.errorCode && (
+                      <div className="set-provider-error">{t('loginFailed')}</div>
+                    )}
+                  </div>
+                  <span
+                    className={`set-provider-status${codexStatus?.loggedIn ? ' connected' : ''}`}
+                  >
+                    <span aria-hidden="true" />
+                    {codexStatus?.loggedIn ? t('loggedIn') : t('setNotLoggedIn')}
+                  </span>
+                </div>
+                <div className="set-pane-footer">
+                  {codexStatus?.loggedIn ? (
+                    <button className="set-btn danger" disabled={codexBusy} onClick={logoutCodex}>
+                      {codexBusy ? t('loggingOut') : t('logout')}
+                    </button>
+                  ) : (
+                    <button className="set-btn primary" disabled={codexBusy} onClick={loginCodex}>
+                      {codexBusy ? t('waitingShort') : t('login')}
+                    </button>
+                  )}
+                </div>
               </>
             )}
             {section === 'about' && (

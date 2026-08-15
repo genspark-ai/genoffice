@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
@@ -9,7 +9,9 @@ import {
   type AttachmentMeta,
   type CodexAccountStatus,
   type CodexCapabilitiesResult,
+  type CodexModelCapability,
   type CodexReasoningEffort,
+  type CodexServiceTier,
 } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
@@ -32,8 +34,8 @@ import {
   IconCaret,
   IconCheck,
   IconNewChat,
+  IconRefresh,
   IconSidebarCollapse,
-  IconTrackChanges,
 } from '../components/icons'
 import filePdfIcon from '../assets/file-pdf.png'
 import fileWordIcon from '../assets/file-word.png'
@@ -106,6 +108,38 @@ const EDIT_STARTER_PROMPTS: StringKey[] = [
 const PANEL_WIDTH_KEY = 'docs-ai-panel-width'
 const PANEL_WIDTH_DEFAULT = 360
 const PANEL_WIDTH_MIN = 280
+
+const DEFAULT_CODEX_SERVICE_TIER: CodexServiceTier = { id: 'default', name: 'Standard' }
+const CODEX_REASONING_LABELS: Record<CodexReasoningEffort, string> = {
+  none: 'None',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra High',
+  max: 'Max',
+  ultra: 'Ultra',
+}
+
+function codexReasoningLabel(value: string): string {
+  return CODEX_REASONING_LABELS[value as CodexReasoningEffort] ?? value
+}
+
+function codexServiceTiers(model: CodexModelCapability): CodexServiceTier[] {
+  const tiers = model.serviceTiers?.length ? model.serviceTiers : [DEFAULT_CODEX_SERVICE_TIER]
+  return tiers.some((tier) => tier.id === 'default')
+    ? tiers
+    : [DEFAULT_CODEX_SERVICE_TIER, ...tiers]
+}
+
+function selectedCodexServiceTier(model: CodexModelCapability, value?: string): string {
+  const tiers = codexServiceTiers(model)
+  if (value && tiers.some((tier) => tier.id === value)) return value
+  if (model.defaultServiceTier && tiers.some((tier) => tier.id === model.defaultServiceTier)) {
+    return model.defaultServiceTier
+  }
+  return tiers[0]?.id ?? 'default'
+}
 
 function maxPanelWidth(): number {
   // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
@@ -366,9 +400,13 @@ export function AiPanel({
   const preferredWidthRef = useRef(loadPanelWidth())
   const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
   const [resizing, setResizing] = useState(false)
-  const [activePopover, setActivePopover] = useState<'model' | 'track' | null>(null)
+  const [activePopover, setActivePopover] = useState<'model' | 'effort' | 'speed' | null>(null)
   const asideRef = useRef<HTMLElement>(null)
   const composerMenuRef = useRef<HTMLDivElement>(null)
+  const codexTriggerRef = useRef<HTMLButtonElement>(null)
+  const codexPickerRef = useRef<HTMLDivElement>(null)
+  const codexRootRef = useRef<HTMLDivElement>(null)
+  const codexSubmenuRef = useRef<HTMLDivElement>(null)
   const codexAccountRef = useRef<CodexAccountStatus | null>(null)
   const codexLoginPendingRef = useRef(false)
   const codexSelectionRef = useRef(0)
@@ -488,12 +526,17 @@ export function AiPanel({
         const reasoningEffort = model.reasoningEfforts.includes(current.reasoningEffort ?? 'none')
           ? (current.reasoningEffort ?? 'none')
           : (model.reasoningEfforts[0] ?? 'none')
-        if (model.id !== current.model || reasoningEffort !== (current.reasoningEffort ?? 'none')) {
+        const serviceTier = selectedCodexServiceTier(model, current.serviceTier)
+        if (
+          model.id !== current.model ||
+          reasoningEffort !== (current.reasoningEffort ?? 'none') ||
+          serviceTier !== (current.serviceTier ?? 'default')
+        ) {
           onSettingsChange({
             ...settingsRef.current,
             providers: {
               ...settingsRef.current.providers,
-              'openai-codex': { ...current, model: model.id, reasoningEffort },
+              'openai-codex': { ...current, model: model.id, reasoningEffort, serviceTier },
             },
           })
         }
@@ -522,8 +565,46 @@ export function AiPanel({
     }
   }, [activePopover])
 
+  useLayoutEffect(() => {
+    if (!activePopover) return
+    const trigger = codexTriggerRef.current
+    const picker = codexPickerRef.current
+    const root = codexRootRef.current
+    const submenu = codexSubmenuRef.current
+    if (!trigger || !picker || !root || !submenu) return
+
+    const position = () => {
+      const triggerRect = trigger.getBoundingClientRect()
+      submenu.style.removeProperty('max-width')
+      const rootRect = root.getBoundingClientRect()
+      const submenuRect = submenu.getBoundingClientRect()
+      const margin = 8
+      const gap = 10
+      const maxLeft = Math.max(margin, window.innerWidth - rootRect.width - margin)
+      const left = Math.min(Math.max(margin, triggerRect.right - rootRect.width), maxLeft)
+      const maxTop = Math.max(margin, window.innerHeight - rootRect.height - margin)
+      const top = Math.min(Math.max(margin, triggerRect.top - rootRect.height - gap), maxTop)
+      const rightSpace = window.innerWidth - margin - left - rootRect.width - gap
+      const leftSpace = left - margin - gap
+      const flipped = rightSpace < submenuRect.width && leftSpace > rightSpace
+      const submenuSpace = flipped ? leftSpace : rightSpace
+
+      picker.dataset.flipped = String(flipped)
+      picker.style.left = `${left}px`
+      picker.style.top = `${top}px`
+      if (submenuSpace > 0 && submenuSpace < submenuRect.width) {
+        submenu.style.maxWidth = `${submenuSpace}px`
+      }
+      picker.dataset.positioned = 'true'
+    }
+
+    position()
+    window.addEventListener('resize', position)
+    return () => window.removeEventListener('resize', position)
+  }, [activePopover, panelWidth])
+
   useEffect(() => {
-    if (settings.provider !== 'openai-codex' && activePopover === 'model') {
+    if (settings.provider !== 'openai-codex' && activePopover) {
       setActivePopover(null)
     }
   }, [activePopover, settings.provider])
@@ -974,6 +1055,7 @@ export function AiPanel({
           reasoningEffort: capability.reasoningEfforts.includes(current.reasoningEffort ?? 'none')
             ? (current.reasoningEffort ?? 'none')
             : (capability.reasoningEfforts[0] ?? 'none'),
+          serviceTier: selectedCodexServiceTier(capability, current.serviceTier),
         },
       },
     })
@@ -996,6 +1078,68 @@ export function AiPanel({
         },
       },
     })
+  }
+
+  const changeCodexServiceTier = (serviceTier: string) => {
+    if (!onSettingsChange || !codexCapabilities) return
+    const model = codexCapabilities.models.find(
+      (candidate) => candidate.id === settings.providers['openai-codex'].model,
+    )
+    if (!model || !codexServiceTiers(model).some((tier) => tier.id === serviceTier)) return
+    onSettingsChange({
+      ...settings,
+      providers: {
+        ...settings.providers,
+        'openai-codex': {
+          ...settings.providers['openai-codex'],
+          serviceTier,
+        },
+      },
+    })
+  }
+
+  const resetCodexSettings = () => {
+    if (!onSettingsChange || !codexCapabilities?.models.length) return
+    const defaultModel =
+      codexCapabilities.models.find(
+        (model) =>
+          model.id ===
+          AI_PROVIDERS.find((provider) => provider.id === 'openai-codex')?.defaultModel,
+      ) ?? codexCapabilities.models[0]
+    const current = settings.providers['openai-codex']
+    const reasoningEffort = defaultModel.reasoningEfforts.includes('none')
+      ? 'none'
+      : (defaultModel.reasoningEfforts[0] ?? 'none')
+    const serviceTier = selectedCodexServiceTier(
+      defaultModel,
+      defaultModel.defaultServiceTier ?? 'default',
+    )
+    onSettingsChange({
+      ...settings,
+      providers: {
+        ...settings.providers,
+        'openai-codex': {
+          ...current,
+          model: defaultModel.id,
+          reasoningEffort,
+          serviceTier,
+        },
+      },
+    })
+  }
+
+  const toggleCodexPicker = () => {
+    const trigger = codexTriggerRef.current
+    if (trigger) {
+      trigger.style.width = `${trigger.getBoundingClientRect().width}px`
+      void trigger.offsetWidth
+    }
+    setActivePopover((current) => (current ? null : 'model'))
+    const schedule =
+      typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : (callback: () => void) => window.setTimeout(callback, 0)
+    schedule(() => codexTriggerRef.current?.style.removeProperty('width'))
   }
 
   const startLogin = async () => {
@@ -1099,12 +1243,12 @@ export function AiPanel({
     clearAiHighlights()
   }
 
-  const setTrackChangesMode = (next: boolean) => {
+  const toggleTrackChanges = () => {
+    const next = !trackChanges
     setTrackChanges(next)
     localStorage.setItem(TRACK_CHANGES_KEY, next ? '1' : '0')
     // switching off keeps nothing pending: accept whatever is still highlighted
     if (!next) acceptChanges()
-    setActivePopover(null)
   }
 
   const rollback = (entryIdx: number, snapshot: PmNode) => {
@@ -1158,6 +1302,14 @@ export function AiPanel({
     (candidate) => candidate.id === settings.providers['openai-codex'].model,
   )
   const activeCodexReasoning = settings.providers['openai-codex'].reasoningEffort ?? 'none'
+  const activeCodexReasoningLabel = codexReasoningLabel(activeCodexReasoning)
+  const activeCodexServiceTier = activeCodexModel
+    ? selectedCodexServiceTier(activeCodexModel, settings.providers['openai-codex'].serviceTier)
+    : 'default'
+  const activeCodexSpeed = activeCodexModel
+    ? (codexServiceTiers(activeCodexModel).find((tier) => tier.id === activeCodexServiceTier) ??
+      DEFAULT_CODEX_SERVICE_TIER)
+    : DEFAULT_CODEX_SERVICE_TIER
 
   // collapsed: rail only — after all hooks, so the instance and its state survive
   if (!open) {
@@ -1242,7 +1394,9 @@ export function AiPanel({
         codexAccount &&
         (codexAccount.loggedIn === false || codexAccount.errorCode) && (
           <div className="ai-codex-auth-banner" role="status">
+            <span className="ai-codex-auth-dot" aria-hidden="true" />
             <div className="ai-codex-auth-copy">
+              <strong>ChatGPT Codex</strong>
               {codexAccount.loggedIn === false && <span>{t('aiCodexSignInRequired')}</span>}
               {codexAccount.errorCode && (
                 <span className="ai-codex-auth-error">
@@ -1531,51 +1685,14 @@ export function AiPanel({
               >
                 <img src={attachIcon} alt="" aria-hidden />
               </button>
-              <div className="ai-track-control">
-                <button
-                  type="button"
-                  className={`ai-track-btn${trackChanges ? ' on' : ''}`}
-                  onClick={() =>
-                    setActivePopover((current) => (current === 'track' ? null : 'track'))
-                  }
-                  title={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
-                  aria-expanded={activePopover === 'track'}
-                  aria-haspopup="menu"
-                >
-                  <IconTrackChanges size={16} />
-                  {t('aiTrackChanges')}
-                  <IconCaret size={11} />
-                </button>
-                {activePopover === 'track' && (
-                  <div className="ai-track-popover" role="menu" aria-label={t('aiTrackChanges')}>
-                    <div className="ai-popover-heading">{t('aiTrackChanges')}</div>
-                    <button
-                      type="button"
-                      className={`ai-track-option${trackChanges ? ' selected' : ''}`}
-                      data-track-choice="on"
-                      role="menuitemradio"
-                      aria-checked={trackChanges}
-                      onClick={() => setTrackChangesMode(true)}
-                    >
-                      <IconTrackChanges size={17} />
-                      <span>{t('aiTrackOnTitle')}</span>
-                      {trackChanges && <IconCheck size={16} />}
-                    </button>
-                    <button
-                      type="button"
-                      className={`ai-track-option${!trackChanges ? ' selected' : ''}`}
-                      data-track-choice="off"
-                      role="menuitemradio"
-                      aria-checked={!trackChanges}
-                      onClick={() => setTrackChangesMode(false)}
-                    >
-                      <IconTrackChanges size={17} />
-                      <span>{t('aiTrackOffTitle')}</span>
-                      {!trackChanges && <IconCheck size={16} />}
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                className={`ai-track-btn${trackChanges ? ' on' : ''}`}
+                onClick={toggleTrackChanges}
+                data-tip={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
+              >
+                <span className="ai-track-dot" aria-hidden />
+                {t('aiTrackChanges')}
+              </button>
               {settings.provider === 'openai-codex' && codexCapabilities?.errorCode && (
                 <span className="ai-codex-auth-error" role="status">
                   {codexErrorText(codexCapabilities.errorCode, t)}
@@ -1585,55 +1702,151 @@ export function AiPanel({
                 <div className="ai-model-control">
                   <button
                     type="button"
-                    className="ai-codex-model-trigger"
-                    onClick={() =>
-                      setActivePopover((current) => (current === 'model' ? null : 'model'))
-                    }
-                    aria-label={`${t('aiCodexModelLabel')}: ${activeCodexModel.id}; ${t('aiCodexReasoningLabel')}: ${activeCodexReasoning}`}
-                    aria-expanded={activePopover === 'model'}
+                    ref={codexTriggerRef}
+                    className={`ai-codex-model-trigger${activePopover ? ' expanded' : ''}`}
+                    onClick={toggleCodexPicker}
+                    aria-label={`${t('aiCodexModelLabel')}: ${activeCodexModel.name ?? activeCodexModel.id}; ${t('aiCodexReasoningLabel')}: ${activeCodexReasoningLabel}; ${t('aiCodexSpeedLabel')}: ${activeCodexSpeed.name}`}
+                    aria-expanded={Boolean(activePopover)}
                     aria-haspopup="menu"
                   >
-                    <span>{activeCodexModel.id}</span>
-                    <span className="ai-codex-model-effort">{activeCodexReasoning}</span>
+                    <span>{activeCodexModel.name ?? activeCodexModel.id}</span>
+                    <span className="ai-codex-model-effort">{activeCodexReasoningLabel}</span>
                     <IconCaret size={12} />
                   </button>
-                  {activePopover === 'model' && (
-                    <div
-                      className="ai-codex-model-popover"
-                      role="menu"
-                      aria-label={t('aiCodexModelLabel')}
-                    >
-                      <div className="ai-popover-heading">{t('aiCodexModelLabel')}</div>
-                      {codexCapabilities?.models.map((model) => (
+                  {activePopover && (
+                    <div ref={codexPickerRef} className="ai-codex-model-popover" data-codex-picker>
+                      <div
+                        ref={codexRootRef}
+                        className="ai-codex-menu-root"
+                        role="menu"
+                        aria-label={`${t('aiCodexModelLabel')}, ${t('aiCodexReasoningLabel')}, ${t('aiCodexSpeedLabel')}`}
+                      >
+                        {(
+                          [
+                            {
+                              id: 'model' as const,
+                              label: t('aiCodexModelLabel'),
+                              value: activeCodexModel.name ?? activeCodexModel.id,
+                            },
+                            {
+                              id: 'effort' as const,
+                              label: t('aiCodexReasoningLabel'),
+                              value: activeCodexReasoningLabel,
+                            },
+                            {
+                              id: 'speed' as const,
+                              label: t('aiCodexSpeedLabel'),
+                              value: activeCodexSpeed.name,
+                            },
+                          ] as const
+                        ).map((item) => (
+                          <button
+                            type="button"
+                            key={item.id}
+                            className={`ai-codex-menu-item${activePopover === item.id ? ' active' : ''}`}
+                            data-codex-menu-item={item.id}
+                            role="menuitem"
+                            aria-haspopup="menu"
+                            aria-expanded={activePopover === item.id}
+                            aria-controls="ai-codex-submenu"
+                            onClick={() => setActivePopover(item.id)}
+                            onMouseEnter={() => setActivePopover(item.id)}
+                            onFocus={() => setActivePopover(item.id)}
+                          >
+                            <span>{item.label}</span>
+                            <span className="ai-codex-menu-value">{item.value}</span>
+                            <IconCaret size={12} />
+                          </button>
+                        ))}
+                        <div className="ai-popover-divider" />
                         <button
                           type="button"
-                          key={model.id}
-                          className={`ai-codex-option${model.id === activeCodexModel.id ? ' selected' : ''}`}
-                          data-codex-model-option={model.id}
-                          role="menuitemradio"
-                          aria-checked={model.id === activeCodexModel.id}
-                          onClick={() => changeCodexModel(model.id)}
+                          className="ai-codex-reset"
+                          role="menuitem"
+                          onClick={() => {
+                            resetCodexSettings()
+                            setActivePopover(null)
+                          }}
                         >
-                          <span>{model.id}</span>
-                          {model.id === activeCodexModel.id && <IconCheck size={16} />}
+                          <span>{t('aiResetDefault')}</span>
+                          <IconRefresh size={16} />
                         </button>
-                      ))}
-                      <div className="ai-popover-divider" />
-                      <div className="ai-popover-heading">{t('aiCodexReasoningLabel')}</div>
-                      {activeCodexModel.reasoningEfforts.map((effort) => (
-                        <button
-                          type="button"
-                          key={effort}
-                          className={`ai-codex-option${effort === activeCodexReasoning ? ' selected' : ''}`}
-                          data-codex-reasoning-option={effort}
-                          role="menuitemradio"
-                          aria-checked={effort === activeCodexReasoning}
-                          onClick={() => changeCodexReasoning(effort)}
-                        >
-                          <span>{effort}</span>
-                          {effort === activeCodexReasoning && <IconCheck size={16} />}
-                        </button>
-                      ))}
+                      </div>
+                      <div
+                        ref={codexSubmenuRef}
+                        id="ai-codex-submenu"
+                        className="ai-codex-submenu"
+                        role="menu"
+                        aria-label={
+                          activePopover === 'model'
+                            ? t('aiCodexModelLabel')
+                            : activePopover === 'effort'
+                              ? t('aiCodexReasoningLabel')
+                              : t('aiCodexSpeedLabel')
+                        }
+                      >
+                        {activePopover === 'model' &&
+                          codexCapabilities?.models.map((model) => (
+                            <button
+                              type="button"
+                              key={model.id}
+                              className={`ai-codex-option${model.id === activeCodexModel.id ? ' selected' : ''}`}
+                              data-codex-model-option={model.id}
+                              role="menuitemradio"
+                              aria-checked={model.id === activeCodexModel.id}
+                              onClick={() => {
+                                changeCodexModel(model.id)
+                                setActivePopover(null)
+                              }}
+                            >
+                              <span>{model.name ?? model.id}</span>
+                              {model.id === activeCodexModel.id && <IconCheck size={16} />}
+                            </button>
+                          ))}
+                        {activePopover === 'effort' &&
+                          activeCodexModel.reasoningEfforts.map((effort) => (
+                            <button
+                              type="button"
+                              key={effort}
+                              className={`ai-codex-option${effort === activeCodexReasoning ? ' selected' : ''}`}
+                              data-codex-reasoning-option={effort}
+                              role="menuitemradio"
+                              aria-checked={effort === activeCodexReasoning}
+                              onClick={() => {
+                                changeCodexReasoning(effort)
+                                setActivePopover(null)
+                              }}
+                            >
+                              <span>{codexReasoningLabel(effort)}</span>
+                              {effort === activeCodexReasoning && <IconCheck size={16} />}
+                            </button>
+                          ))}
+                        {activePopover === 'speed' &&
+                          codexServiceTiers(activeCodexModel).map((tier) => (
+                            <button
+                              type="button"
+                              key={tier.id}
+                              className={`ai-codex-option${tier.id === activeCodexServiceTier ? ' selected' : ''}`}
+                              data-codex-service-tier-option={tier.id}
+                              role="menuitemradio"
+                              aria-checked={tier.id === activeCodexServiceTier}
+                              onClick={() => {
+                                changeCodexServiceTier(tier.id)
+                                setActivePopover(null)
+                              }}
+                            >
+                              <span>
+                                <span>{tier.name}</span>
+                                {tier.description && (
+                                  <small className="ai-codex-option-description">
+                                    {tier.description}
+                                  </small>
+                                )}
+                              </span>
+                              {tier.id === activeCodexServiceTier && <IconCheck size={16} />}
+                            </button>
+                          ))}
+                      </div>
                     </div>
                   )}
                 </div>

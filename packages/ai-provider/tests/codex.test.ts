@@ -141,6 +141,35 @@ describe('buildCodexRequest', () => {
       }),
     ).not.toHaveProperty('reasoning')
   })
+
+  it('serializes a non-default service tier and omits the default tier', () => {
+    expect(
+      buildCodexRequest({
+        auth,
+        instructions: '',
+        model: 'gpt-test',
+        serviceTier: 'priority',
+        messages: [],
+        tools: [],
+        signal: new AbortController().signal,
+        onDelta: () => {},
+        onToolCall: () => {},
+      }),
+    ).toMatchObject({ service_tier: 'priority' })
+    expect(
+      buildCodexRequest({
+        auth,
+        instructions: '',
+        model: 'gpt-test',
+        serviceTier: 'default',
+        messages: [],
+        tools: [],
+        signal: new AbortController().signal,
+        onDelta: () => {},
+        onToolCall: () => {},
+      }),
+    ).not.toHaveProperty('service_tier')
+  })
 })
 
 describe('fetchCodexCapabilities', () => {
@@ -151,6 +180,7 @@ describe('fetchCodexCapabilities', () => {
           models: [
             {
               slug: 'gpt-5.5',
+              display_name: 'GPT-5.5',
               visibility: 'list',
               supported_in_api: true,
               supported_reasoning_levels: [
@@ -158,6 +188,8 @@ describe('fetchCodexCapabilities', () => {
                 { effort: 'high' },
                 { effort: 'bad' },
               ],
+              service_tiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
+              default_service_tier: 'default',
             },
             {
               slug: 'hidden',
@@ -177,7 +209,18 @@ describe('fetchCodexCapabilities', () => {
     )
 
     await expect(fetchCodexCapabilities(auth, undefined, fetchMock)).resolves.toEqual({
-      models: [{ id: 'gpt-5.5', reasoningEfforts: ['low', 'high'] }],
+      models: [
+        {
+          id: 'gpt-5.5',
+          name: '5.5',
+          reasoningEfforts: ['low', 'high'],
+          serviceTiers: [
+            { id: 'default', name: 'Standard' },
+            { id: 'priority', name: 'Fast', description: '1.5x speed' },
+          ],
+          defaultServiceTier: 'default',
+        },
+      ],
     })
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/codex/models?client_version=0.144.1')
   })

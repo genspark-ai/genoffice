@@ -914,6 +914,7 @@ export async function streamForProvider(
         tools,
         model: config.model,
         ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
+        ...(config.serviceTier ? { serviceTier: config.serviceTier } : {}),
         signal: cb.signal,
         onDelta: cb.onDelta,
         onToolCall: cb.onToolCall,

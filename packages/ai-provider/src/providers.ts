@@ -109,7 +109,9 @@ export function defaultAiSettings(
     providers[meta.id] = {
       apiKey: defaultApiKeys?.[meta.id] ?? '',
       model: meta.defaultModel,
-      ...(meta.id === 'openai-codex' ? { reasoningEffort: 'none' as const } : {}),
+      ...(meta.id === 'openai-codex'
+        ? { reasoningEffort: 'none' as const, serviceTier: 'default' }
+        : {}),
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }

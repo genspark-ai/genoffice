@@ -14,6 +14,8 @@ export interface AiProviderConfig {
   model: string
   /** Codex-only Responses reasoning setting; `none` omits the request field. */
   reasoningEffort?: CodexReasoningEffort
+  /** Codex-only Responses service tier; `default` omits the request field. */
+  serviceTier?: string
   /** only used by the custom (OpenAI-compatible) provider */
   baseUrl?: string | undefined
 }
@@ -51,9 +53,19 @@ export class CodexError extends Error {
 }
 
 /** Renderer-safe, account-specific Codex model capabilities. */
+export interface CodexServiceTier {
+  id: string
+  name: string
+  description?: string
+}
+
 export interface CodexModelCapability {
   id: string
+  /** Codex display copy, normalized from the catalog's `display_name`. */
+  name?: string
   reasoningEfforts: CodexReasoningEffort[]
+  serviceTiers?: CodexServiceTier[]
+  defaultServiceTier?: string
 }
 
 export interface CodexCapabilities {
@@ -89,6 +101,7 @@ export interface CodexAdapterRequest {
   tools: AgentToolDef[]
   model: string
   reasoningEffort?: CodexReasoningEffort
+  serviceTier?: string
   signal: AbortSignal
   onDelta: (text: string) => void
   onToolCall: (call: AgentToolCall) => void

@@ -42,7 +42,9 @@ export type {
   AiStreamRequest,
   CodexAccountStatus,
   CodexCapabilities,
+  CodexModelCapability,
   CodexReasoningEffort,
+  CodexServiceTier,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'

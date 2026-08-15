@@ -32,6 +32,7 @@ describe('defaultAiSettings', () => {
       apiKey: '',
       model: 'gpt-5.5',
       reasoningEffort: 'none',
+      serviceTier: 'default',
       baseUrl: undefined,
     })
   })
@@ -90,6 +91,7 @@ describe('resolveAiSettings', () => {
       apiKey: '',
       model: 'gpt-5.5',
       reasoningEffort: 'none',
+      serviceTier: 'default',
       baseUrl: undefined,
     })
   })

@@ -7,6 +7,7 @@ export type {
   CodexCapabilities,
   CodexModelCapability,
   CodexReasoningEffort,
+  CodexServiceTier,
   CodexErrorCode,
   AiProviderConfig,
   AiProviderId,

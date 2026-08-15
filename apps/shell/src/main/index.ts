@@ -68,6 +68,7 @@ import {
   syncCloudProjects,
 } from './cloud-projects'
 import { ProjectStore } from '@genoffice/project-store'
+import { CodexError, type CodexAccountStatus } from '@genoffice/ai-provider'
 import {
   ensureGenofficeLogin,
   genofficeLogout,
@@ -105,6 +106,7 @@ import {
   defaultSaveDir,
   uniquePathIn,
 } from '../../../docs/src/main/docs-main'
+import { getCodexAuth } from '../../../docs/src/main/codex-auth-main'
 import { blankXlsxBuffer } from '../../../sheets/src/gateway/csv-import'
 import {
   configureSheetsRuntime,
@@ -1911,6 +1913,40 @@ function registerHomeIpc(): void {
     await genofficeLogout()
     // the cloud projects cache belongs to the account that just signed out
     clearCloudProjectsStore(cloudProjectsStorePath())
+  })
+
+  const codexFailure = (error: unknown): CodexAccountStatus => ({
+    loggedIn: false,
+    errorCode: error instanceof CodexError ? error.code : 'provider-failure',
+  })
+
+  ipcMain.handle(HOME_CHANNELS.codexStatus, async () => {
+    try {
+      return await getCodexAuth().status()
+    } catch (error) {
+      return codexFailure(error)
+    }
+  })
+
+  ipcMain.handle(HOME_CHANNELS.codexLogin, async () => {
+    try {
+      return await getCodexAuth().login()
+    } catch (error) {
+      return codexFailure(error)
+    }
+  })
+
+  ipcMain.handle(HOME_CHANNELS.codexCancelLogin, () => {
+    getCodexAuth().cancelLogin()
+  })
+
+  ipcMain.handle(HOME_CHANNELS.codexLogout, async () => {
+    try {
+      await getCodexAuth().logout()
+      return { loggedIn: false }
+    } catch (error) {
+      return codexFailure(error)
+    }
   })
 
   ipcMain.handle(HOME_CHANNELS.getAppVersion, (): string => app.getVersion())

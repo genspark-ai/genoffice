@@ -2507,6 +2507,7 @@ function sanitizeAiSettings(stored: Partial<AiSettings> & LegacyAiSettings): AiS
             reasoningEffort: isCodexReasoningEffort(raw?.reasoningEffort)
               ? raw.reasoningEffort
               : 'none',
+            serviceTier: isCodexServiceTier(raw?.serviceTier) ? raw.serviceTier : 'default',
           }
         : {}),
     }
@@ -2518,6 +2519,10 @@ function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
   return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(
     value as string,
   )
+}
+
+function isCodexServiceTier(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9._-]{1,64}$/.test(value)
 }
 
 function codexErrorCode(error: unknown): CodexErrorCode {
@@ -2629,6 +2634,18 @@ export function registerAiIpc(): void {
           config?.reasoningEffort &&
           config.reasoningEffort !== 'none' &&
           !model.reasoningEfforts.includes(config.reasoningEffort)
+        ) {
+          send({
+            requestId,
+            type: 'error',
+            errorCode: 'capabilities-unavailable',
+          })
+          return
+        }
+        if (
+          config?.serviceTier &&
+          config.serviceTier !== 'default' &&
+          !model.serviceTiers?.some((tier) => tier.id === config?.serviceTier)
         ) {
           send({
             requestId,

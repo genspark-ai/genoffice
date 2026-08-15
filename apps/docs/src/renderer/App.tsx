@@ -306,7 +306,14 @@ const DEFAULT_SETTINGS: AiSettings = {
   providers: Object.fromEntries(
     AI_PROVIDERS.map((p) => [
       p.id,
-      { apiKey: '', model: p.defaultModel, baseUrl: p.needsBaseUrl ? '' : undefined },
+      {
+        apiKey: '',
+        model: p.defaultModel,
+        baseUrl: p.needsBaseUrl ? '' : undefined,
+        ...(p.id === 'openai-codex'
+          ? { reasoningEffort: 'none' as const, serviceTier: 'default' }
+          : {}),
+      },
     ]),
   ) as AiSettings['providers'],
 }
