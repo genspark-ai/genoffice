@@ -24,6 +24,7 @@ import type {
   AiStreamRequest,
   CodexAccountStatus,
   CodexCapabilities,
+  CodexErrorCode,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
@@ -46,9 +47,9 @@ export type {
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 
-/** Main-process validated Codex model catalog; error text is already redacted. */
+/** Main-process validated Codex model catalog; failures cross IPC as codes. */
 export interface CodexCapabilitiesResult extends CodexCapabilities {
-  error?: string
+  errorCode?: CodexErrorCode
 }
 
 // ---- agent protocol: canonical types live in @genoffice/agent-core ----

@@ -1,11 +1,14 @@
 import type { AgentMessage, AgentToolDef } from '@genoffice/agent-core'
+import { aiFetch } from './fetch'
 import { sseLines } from './stream'
+import { createStreamWatchdog } from './watchdog'
 import type {
   CodexAdapterRequest,
   CodexAuthContext,
   CodexCapabilities,
   CodexReasoningEffort,
 } from './types'
+import { CodexError, type CodexErrorCode } from './types'
 
 export const CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses'
 export const CODEX_MODELS_URL = 'https://chatgpt.com/backend-api/codex/models'
@@ -24,35 +27,27 @@ const CODEX_REASONING_EFFORTS = new Set<CodexReasoningEffort>([
 ])
 
 /** A status error with a deliberately minimal, safe 400 diagnostic. */
-export class CodexHttpError extends Error {
-  readonly status: number
-  readonly code?: string
-  readonly detail?: string
-
+export class CodexHttpError extends CodexError {
   constructor(status: number, body: string) {
-    super(`Codex HTTP ${status}`)
+    const diagnosticCode = status === 400 ? codex400Diagnostic(body) : undefined
+    super(codexHttpErrorCode(status, diagnosticCode), {
+      status,
+      ...(diagnosticCode ? { diagnosticCode } : {}),
+    })
     this.name = 'CodexHttpError'
-    this.status = status
-    if (status === 400) {
-      const diagnostic = codex400Diagnostic(body)
-      if (diagnostic.code) this.code = diagnostic.code
-      if (diagnostic.detail) this.detail = diagnostic.detail
-    }
   }
 }
 
-function codex400Diagnostic(body: string): { code?: string; detail?: string } {
+function codex400Diagnostic(body: string): string | undefined {
   try {
     const parsed: unknown = JSON.parse(body)
-    if (!parsed || typeof parsed !== 'object') return {}
+    if (!parsed || typeof parsed !== 'object') return undefined
     const root = parsed as Record<string, unknown>
     const error =
       root.error && typeof root.error === 'object' ? (root.error as Record<string, unknown>) : root
-    const code = safeCode(error.code)
-    const detail = safeDetail(error.message ?? error.detail)
-    return { ...(code ? { code } : {}), ...(detail ? { detail } : {}) }
+    return safeCode(error.code)
   } catch {
-    return {}
+    return undefined
   }
 }
 
@@ -62,19 +57,20 @@ function safeCode(value: unknown): string | undefined {
   return /^[a-z][a-z0-9_.-]{0,63}$/i.test(code) ? code : undefined
 }
 
-function safeDetail(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const detail = value.replace(/\s+/g, ' ').trim()
-  // Refuse, rather than redact, a provider detail containing any secret or URL.
+function codexHttpErrorCode(status: number, diagnosticCode?: string): CodexErrorCode {
+  if (status === 401 || status === 403) return 'auth-expired'
+  if (status === 408 || status === 504) return 'timeout'
   if (
-    !detail ||
-    /https?:\/\/|\b(?:authorization|bearer|token|api[_ -]?key|password|secret|credential)\b|\b(?:sk-|sess-|eyJ)[a-z0-9_-]{8,}/i.test(
-      detail,
-    )
+    status === 404 ||
+    ['invalid_model', 'model_not_found', 'model_unavailable'].includes(diagnosticCode ?? '')
   ) {
-    return undefined
+    return 'capabilities-unavailable'
   }
-  return detail.slice(0, 160)
+  if (status === 429 || ['rate_limit_exceeded', 'rate_limited'].includes(diagnosticCode ?? '')) {
+    return 'rate-limit'
+  }
+  if (status >= 500) return 'provider-failure'
+  return 'request-rejected'
 }
 
 type CodexInput =
@@ -154,7 +150,8 @@ export function buildCodexRequest(request: CodexAdapterRequest) {
 export async function fetchCodexCapabilities(
   auth: CodexAuthContext,
   clientVersion: string = CODEX_CLIENT_VERSION,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = (url, init) =>
+    aiFetch(url, init ?? {}),
 ): Promise<CodexCapabilities> {
   const response = await fetchImpl(
     `${CODEX_MODELS_URL}?client_version=${encodeURIComponent(clientVersion)}`,
@@ -164,10 +161,14 @@ export async function fetchCodexCapabilities(
     },
   )
   if (!response.ok) throw new CodexHttpError(response.status, await response.text())
-  const parsed: unknown = await response.json()
+  let parsed: unknown
+  try {
+    parsed = await response.json()
+  } catch {
+    throw new CodexError('capabilities-unavailable', { status: response.status })
+  }
   const capabilities = parseCodexCapabilities(parsed)
-  if (capabilities.models.length === 0)
-    throw new Error('Codex models response has no selectable models')
+  if (capabilities.models.length === 0) throw new CodexError('capabilities-unavailable')
   return capabilities
 }
 
@@ -177,7 +178,7 @@ function parseCodexCapabilities(value: unknown): CodexCapabilities {
     typeof value !== 'object' ||
     !Array.isArray((value as { models?: unknown }).models)
   ) {
-    throw new Error('Codex models response malformed')
+    throw new CodexError('capabilities-unavailable')
   }
   const seen = new Set<string>()
   const models = [] as CodexCapabilities['models']
@@ -250,86 +251,116 @@ function toolInput(argumentsJson: string): Record<string, unknown> {
     }
     return parsed as Record<string, unknown>
   } catch {
-    throw new Error(`Codex tool arguments malformed: ${argumentsJson.slice(0, 500)}`)
+    throw new CodexError('invalid-tool-call')
   }
 }
 
 /** Stream Codex Responses events into existing GenOffice callbacks; never execute tools. */
 export async function streamCodexResponse(request: CodexAdapterRequest): Promise<void> {
   if (request.signal.aborted) throw abortError()
-  const response = await fetch(CODEX_RESPONSES_URL, {
-    method: 'POST',
-    signal: request.signal,
-    headers: codexHeaders(request.auth, crypto.randomUUID()),
-    body: JSON.stringify(buildCodexRequest(request)),
-  })
-  if (!response.ok || !response.body) {
-    throw new CodexHttpError(response.status, await response.text())
-  }
-
-  const pending = new Map<string, { name: string; arguments: string }>()
-  for await (const line of sseLines(response.body)) {
-    if (request.signal.aborted) throw abortError()
-    if (!line.startsWith('data:')) continue
-    const payload = line.slice(5).trim()
-    if (!payload || payload === '[DONE]') continue
-    let event: {
-      type?: string
-      delta?: string
-      call_id?: string
-      name?: string
-      arguments?: string
-      item?: { type?: string; call_id?: string; name?: string; arguments?: string }
-      error?: { message?: string }
-      response?: { error?: { message?: string } }
+  const watchdog = createStreamWatchdog(request.signal)
+  return watchdog.guard(async () => {
+    const onBytes = () => {
+      watchdog.touch()
+      request.onActivity?.()
     }
     try {
-      event = JSON.parse(payload) as typeof event
-    } catch {
-      throw new Error(`Codex stream malformed event: ${payload.slice(0, 500)}`)
-    }
-    if (event.type === 'response.output_text.delta' && event.delta) {
-      request.onDelta(event.delta)
-      continue
-    }
-    if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
-      const callId = event.item.call_id
-      if (callId)
-        pending.set(callId, { name: event.item.name ?? '', arguments: event.item.arguments ?? '' })
-      continue
-    }
-    if (event.type === 'response.function_call_arguments.delta' && event.call_id) {
-      const call = pending.get(event.call_id)
-      if (call) call.arguments += event.delta ?? ''
-      continue
-    }
-    if (event.type === 'response.function_call_arguments.done' && event.call_id) {
-      const call = pending.get(event.call_id)
-      if (!call) continue
-      pending.delete(event.call_id)
-      request.onToolCall({
-        id: event.call_id,
-        name: event.name ?? call.name,
-        input: toolInput(event.arguments ?? call.arguments),
+      const response = await aiFetch(CODEX_RESPONSES_URL, {
+        method: 'POST',
+        signal: watchdog.signal,
+        headers: codexHeaders(request.auth, crypto.randomUUID()),
+        body: JSON.stringify(buildCodexRequest(request)),
       })
-      continue
+      onBytes()
+      if (!response.ok || !response.body) {
+        throw new CodexHttpError(response.status, await response.text())
+      }
+
+      const pending = new Map<string, { name: string; arguments: string }>()
+      let completed = false
+      for await (const line of sseLines(response.body, onBytes)) {
+        if (request.signal.aborted) throw abortError()
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        let event: {
+          type?: string
+          delta?: string
+          call_id?: string
+          name?: string
+          arguments?: string
+          item?: { type?: string; call_id?: string; name?: string; arguments?: string }
+          error?: { code?: unknown; status?: unknown }
+          response?: { error?: { code?: unknown; status?: unknown } }
+        }
+        try {
+          event = JSON.parse(payload) as typeof event
+        } catch {
+          throw new CodexError('invalid-stream')
+        }
+        if (event.type === 'response.completed') {
+          completed = true
+          continue
+        }
+        if (event.type === 'response.output_text.delta' && event.delta) {
+          request.onDelta(event.delta)
+          continue
+        }
+        if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
+          const callId = event.item.call_id
+          if (callId)
+            pending.set(callId, {
+              name: event.item.name ?? '',
+              arguments: event.item.arguments ?? '',
+            })
+          continue
+        }
+        if (event.type === 'response.function_call_arguments.delta' && event.call_id) {
+          const call = pending.get(event.call_id)
+          if (call) call.arguments += event.delta ?? ''
+          continue
+        }
+        if (event.type === 'response.function_call_arguments.done' && event.call_id) {
+          const call = pending.get(event.call_id)
+          if (!call) continue
+          pending.delete(event.call_id)
+          request.onToolCall({
+            id: event.call_id,
+            name: event.name ?? call.name,
+            input: toolInput(event.arguments ?? call.arguments),
+          })
+          continue
+        }
+        if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
+          const callId = event.item.call_id
+          if (!callId) continue
+          const call = pending.get(callId) ?? { name: event.item.name ?? '', arguments: '' }
+          pending.delete(callId)
+          request.onToolCall({
+            id: callId,
+            name: event.item.name ?? call.name,
+            input: toolInput(event.item.arguments ?? call.arguments),
+          })
+          continue
+        }
+        if (event.type === 'error' || event.type === 'response.failed') {
+          const providerError = event.error ?? event.response?.error
+          const record =
+            providerError && typeof providerError === 'object'
+              ? (providerError as { code?: unknown; status?: unknown })
+              : undefined
+          const diagnosticCode = safeCode(record?.code)
+          const status = typeof record?.status === 'number' ? record.status : 0
+          throw new CodexError(codexHttpErrorCode(status, diagnosticCode), {
+            ...(diagnosticCode ? { diagnosticCode } : {}),
+            ...(status ? { status } : {}),
+          })
+        }
+      }
+      if (!completed) throw new CodexError('invalid-stream')
+    } catch (error) {
+      if (request.signal.aborted) throw abortError()
+      throw error
     }
-    if (event.type === 'response.output_item.done' && event.item?.type === 'function_call') {
-      const callId = event.item.call_id
-      if (!callId) continue
-      const call = pending.get(callId) ?? { name: event.item.name ?? '', arguments: '' }
-      pending.delete(callId)
-      request.onToolCall({
-        id: callId,
-        name: event.item.name ?? call.name,
-        input: toolInput(event.item.arguments ?? call.arguments),
-      })
-      continue
-    }
-    if (event.type === 'error' || event.type === 'response.failed') {
-      throw new Error(
-        event.error?.message ?? event.response?.error?.message ?? 'Codex stream failed',
-      )
-    }
-  }
+  })
 }

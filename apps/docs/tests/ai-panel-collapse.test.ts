@@ -338,8 +338,8 @@ describe('AiPanel collapse', () => {
     const editor = createEditor()
     const aiCodexLogin = vi
       .fn()
-      .mockResolvedValueOnce({ loggedIn: false, error: 'safe error' })
-      .mockResolvedValueOnce({ loggedIn: false, error: 'safe error' })
+      .mockResolvedValueOnce({ loggedIn: false, errorCode: 'auth-temporary' as const })
+      .mockResolvedValueOnce({ loggedIn: false, errorCode: 'auth-temporary' as const })
     const restoreDesktop = installDesktop({
       onAiStream: () => () => {},
       aiStream: vi.fn(),
@@ -365,7 +365,9 @@ describe('AiPanel collapse', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(container.querySelector('.ai-codex-auth-banner')?.textContent).toContain('safe error')
+    expect(container.querySelector('.ai-codex-auth-banner')?.textContent).toContain(
+      'ChatGPT 登录暂时不可用',
+    )
     expect(container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!.value).toBe(
       'Draft survives failure',
     )
@@ -444,14 +446,18 @@ describe('AiPanel collapse', () => {
   it('does not show Codex login action for a non-auth stream error', async () => {
     const editor = createEditor()
     let streamListener:
-      ((chunk: { requestId: string; type: 'error'; error: string }) => void) | undefined
+      | ((chunk: {
+          requestId: string
+          type: 'error'
+          errorCode: 'capabilities-unavailable'
+        }) => void)
+      | undefined
     const aiStream = vi.fn((request: { requestId: string }) => {
       queueMicrotask(() =>
         streamListener?.({
           requestId: request.requestId,
           type: 'error',
-          error:
-            'ChatGPT Codex rejected the request (HTTP 400; invalid_model: The selected model is unavailable.).',
+          errorCode: 'capabilities-unavailable',
         }),
       )
       return Promise.resolve()
@@ -489,7 +495,7 @@ describe('AiPanel collapse', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(container.querySelector('.ai-msg-error')?.textContent).toContain('invalid_model')
+    expect(container.querySelector('.ai-msg-error')?.textContent).toContain('Codex 模型暂不可用')
     expect(container.querySelector('.ai-login-btn')).toBeNull()
 
     cleanup()

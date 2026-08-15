@@ -19,7 +19,7 @@ import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
-import { createElectronTransport } from './transport'
+import { codexErrorText, createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
@@ -309,7 +309,6 @@ export function AiPanel({
   const [codexAccount, setCodexAccount] = useState<CodexAccountStatus | null>(null)
   const [codexLoginPending, setCodexLoginPending] = useState(false)
   const [codexCapabilities, setCodexCapabilities] = useState<CodexCapabilitiesResult | null>(null)
-  const [, setCodexCapabilitiesLoading] = useState(false)
   /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
   const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
   /** image paths with a read already issued — one readAttachmentImage per attach, even while pending */
@@ -456,7 +455,7 @@ export function AiPanel({
           statusRequest !== codexStatusRequestRef.current
         )
           return
-        const account = { loggedIn: false, error: tModule('aiUnknownError') }
+        const account = { loggedIn: false, errorCode: 'provider-failure' as const }
         codexAccountRef.current = account
         setCodexAccount(account)
       })
@@ -468,18 +467,16 @@ export function AiPanel({
   useEffect(() => {
     if (settings.provider !== 'openai-codex' || codexAccount?.loggedIn !== true) {
       setCodexCapabilities(null)
-      setCodexCapabilitiesLoading(false)
       return
     }
     let active = true
-    setCodexCapabilitiesLoading(true)
     void window.desktop
       .aiCodexCapabilities()
       .then((capabilities) => {
         if (!active) return
         setCodexCapabilities((previous) =>
-          capabilities.error && previous?.models.length
-            ? { models: previous.models, error: capabilities.error }
+          capabilities.errorCode && previous?.models.length
+            ? { models: previous.models, errorCode: capabilities.errorCode }
             : capabilities,
         )
         const selected = capabilities.models.find(
@@ -502,10 +499,7 @@ export function AiPanel({
         }
       })
       .catch(() => {
-        if (active) setCodexCapabilities({ models: [], error: tModule('aiUnknownError') })
-      })
-      .finally(() => {
-        if (active) setCodexCapabilitiesLoading(false)
+        if (active) setCodexCapabilities({ models: [], errorCode: 'provider-failure' })
       })
     return () => {
       active = false
@@ -1025,7 +1019,7 @@ export function AiPanel({
           settingsRef.current.provider === 'openai-codex' &&
           selection === codexSelectionRef.current
         ) {
-          const account = { loggedIn: false, error: tModule('aiUnknownError') }
+          const account = { loggedIn: false, errorCode: 'provider-failure' as const }
           codexAccountRef.current = account
           setCodexAccount(account)
         }
@@ -1244,25 +1238,31 @@ export function AiPanel({
         </div>
       </div>
 
-      {settings.provider === 'openai-codex' && codexAccount?.loggedIn === false && (
-        <div className="ai-codex-auth-banner" role="status">
-          <div className="ai-codex-auth-copy">
-            <span>{t('aiCodexSignInRequired')}</span>
-            {codexAccount.error && (
-              <span className="ai-codex-auth-error">{codexAccount.error}</span>
+      {settings.provider === 'openai-codex' &&
+        codexAccount &&
+        (codexAccount.loggedIn === false || codexAccount.errorCode) && (
+          <div className="ai-codex-auth-banner" role="status">
+            <div className="ai-codex-auth-copy">
+              {codexAccount.loggedIn === false && <span>{t('aiCodexSignInRequired')}</span>}
+              {codexAccount.errorCode && (
+                <span className="ai-codex-auth-error">
+                  {codexErrorText(codexAccount.errorCode, t)}
+                </span>
+              )}
+            </div>
+            {codexAccount.loggedIn === false && (
+              <button
+                type="button"
+                className="ai-codex-auth-login"
+                disabled={codexLoginPending}
+                aria-busy={codexLoginPending}
+                onClick={() => void startLogin()}
+              >
+                {t('aiCodexLoginBtn')}
+              </button>
             )}
           </div>
-          <button
-            type="button"
-            className="ai-codex-auth-login"
-            disabled={codexLoginPending}
-            aria-busy={codexLoginPending}
-            onClick={() => void startLogin()}
-          >
-            {t('aiCodexLoginBtn')}
-          </button>
-        </div>
-      )}
+        )}
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* past conversation (read-only transcript, not fed to the model), shown continuously with the current turn */}
@@ -1576,6 +1576,11 @@ export function AiPanel({
                   </div>
                 )}
               </div>
+              {settings.provider === 'openai-codex' && codexCapabilities?.errorCode && (
+                <span className="ai-codex-auth-error" role="status">
+                  {codexErrorText(codexCapabilities.errorCode, t)}
+                </span>
+              )}
               {settings.provider === 'openai-codex' && activeCodexModel && (
                 <div className="ai-model-control">
                   <button

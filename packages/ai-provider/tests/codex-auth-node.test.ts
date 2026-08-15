@@ -1,0 +1,173 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createServer, type AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beginCodexCallback, codexCredentialStore } from '../src/codex-auth-node'
+
+const credentials = {
+  accessToken: 'access',
+  refreshToken: 'refresh',
+  accountId: 'account',
+  expiresAt: 1,
+  email: 'person@example.test',
+}
+
+let authDir: string
+const originalAuthDir = process.env.GENOFFICE_AUTH_DIR
+
+async function openPort(port = 0) {
+  const server = createServer()
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(port, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('test server has no address')
+  return { server, port: (address as AddressInfo).port }
+}
+
+async function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  )
+}
+
+async function freePort(): Promise<number> {
+  const reserved = await openPort()
+  await closeServer(reserved.server)
+  return reserved.port
+}
+
+beforeEach(() => {
+  authDir = mkdtempSync(join(tmpdir(), 'codex-auth-json-'))
+  process.env.GENOFFICE_AUTH_DIR = authDir
+})
+
+afterEach(() => {
+  if (originalAuthDir === undefined) delete process.env.GENOFFICE_AUTH_DIR
+  else process.env.GENOFFICE_AUTH_DIR = originalAuthDir
+  rmSync(authDir, { recursive: true, force: true })
+})
+
+describe('codexCredentialStore', () => {
+  it('writes JSON credentials with restrictive permissions', async () => {
+    const store = codexCredentialStore()
+
+    await store.set(credentials)
+
+    const path = join(authDir, 'codex-auth.json')
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+      type: 'oauth',
+      access: 'access',
+      refresh: 'refresh',
+      expires: 1,
+      accountId: 'account',
+      email: 'person@example.test',
+    })
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    await expect(store.get()).resolves.toEqual(credentials)
+  })
+
+  it('treats malformed JSON as signed out', async () => {
+    const path = join(authDir, 'codex-auth.json')
+    writeFileSync(path, '{broken')
+
+    await expect(codexCredentialStore().get()).resolves.toBeUndefined()
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('deletes the JSON credential file on logout', async () => {
+    const store = codexCredentialStore()
+    await store.set(credentials)
+    await store.delete()
+
+    expect(existsSync(join(authDir, 'codex-auth.json'))).toBe(false)
+  })
+})
+
+describe('beginCodexCallback', () => {
+  it('keeps listening after an invalid callback and completes a later valid callback', async () => {
+    const port = await freePort()
+    const handle = beginCodexCallback('valid-state', port)
+    await handle.ready
+
+    const invalid = await fetch(`http://127.0.0.1:${port}/auth/callback?state=wrong&code=code`)
+    expect(invalid.status).toBe(400)
+    let settled = false
+    void handle.wait.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      },
+    )
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    const validResponse = fetch(
+      `http://127.0.0.1:${port}/auth/callback?state=valid-state&code=code`,
+    )
+    await expect(handle.wait).resolves.toEqual({ state: 'valid-state', code: 'code' })
+    handle.complete?.(true)
+    expect((await validResponse).status).toBe(200)
+  })
+
+  it('does not replace the first valid callback response', async () => {
+    const port = await freePort()
+    const handle = beginCodexCallback('valid-state', port)
+    await handle.ready
+
+    const firstResponse = fetch(
+      `http://127.0.0.1:${port}/auth/callback?state=valid-state&code=first-code`,
+    )
+    await expect(handle.wait).resolves.toEqual({ state: 'valid-state', code: 'first-code' })
+
+    const duplicateResponse = await fetch(
+      `http://127.0.0.1:${port}/auth/callback?state=valid-state&code=second-code`,
+    )
+    expect(duplicateResponse.status).toBe(409)
+    expect(await duplicateResponse.text()).toBe('Sign-in callback already received.')
+
+    handle.complete?.(true)
+    expect((await firstResponse).status).toBe(200)
+  })
+
+  it('rejects readiness and wait on a port collision', async () => {
+    const occupied = await openPort()
+    const handle = beginCodexCallback('state', occupied.port)
+
+    await expect(handle.ready).rejects.toThrow('callback unavailable')
+    await expect(handle.wait).rejects.toThrow('callback unavailable')
+    await closeServer(occupied.server)
+  })
+
+  it('cancels and closes the callback server once', async () => {
+    const port = await freePort()
+    const handle = beginCodexCallback('state', port)
+    await handle.ready
+
+    const wait = handle.wait.catch((error: unknown) => error)
+    handle.cancel()
+    handle.cancel()
+    await expect(wait).resolves.toMatchObject({ message: 'ChatGPT sign-in cancelled' })
+    await expect(fetch(`http://127.0.0.1:${port}/auth/callback`)).rejects.toThrow()
+  })
+
+  it('times out and closes the callback server', async () => {
+    vi.useFakeTimers()
+    try {
+      const port = await freePort()
+      const handle = beginCodexCallback('state', port)
+      await handle.ready
+
+      const result = expect(handle.wait).rejects.toThrow('ChatGPT sign-in timed out')
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+      await result
+      await expect(fetch(`http://127.0.0.1:${port}/auth/callback`)).rejects.toThrow()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

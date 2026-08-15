@@ -6,7 +6,8 @@
   "type": "module",
   "description": "Multi-provider LLM streaming + one-shot chat client (Claude/Gemini/DeepSeek/OpenAI/custom), shared by AI Docs and future apps (Excel / PPT)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./codex-auth-node": "./src/codex-auth-node.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -5,7 +5,9 @@ import {
   fetchCodexCapabilities,
   streamCodexResponse,
 } from '../src/codex'
+import { setRescueFetch } from '../src/fetch'
 import { streamForProvider } from '../src/stream'
+import { AI_CONNECT_TIMEOUT_MS, AiTimeoutError } from '../src/watchdog'
 import { okResponse, sseStream } from './test-utils'
 
 const auth = {
@@ -14,7 +16,16 @@ const auth = {
   expiresAt: 1_800_000_000_000,
 }
 
-afterEach(() => vi.unstubAllGlobals())
+const incompleteStreams: Array<[string, string[]]> = [
+  ['EOF', []],
+  ['[DONE]', ['data: [DONE]']],
+]
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  setRescueFetch(null)
+})
 
 describe('buildCodexRequest', () => {
   it('translates instructions, history, images, tools, and tool results into Responses input', () => {
@@ -178,14 +189,14 @@ describe('fetchCodexCapabilities', () => {
         undefined,
         vi.fn().mockResolvedValue(new Response('{"models":"bad"}')),
       ),
-    ).rejects.toThrow('Codex models response malformed')
+    ).rejects.toMatchObject({ code: 'capabilities-unavailable' })
     await expect(
       fetchCodexCapabilities(
         auth,
         undefined,
         vi.fn().mockResolvedValue(new Response('{"models":[]}')),
       ),
-    ).rejects.toThrow('Codex models response has no selectable models')
+    ).rejects.toMatchObject({ code: 'capabilities-unavailable' })
   })
 })
 
@@ -232,6 +243,100 @@ describe('streamCodexResponse', () => {
     ])
   })
 
+  it.each(incompleteStreams)(
+    'rejects a stream ending with %s before response.completed',
+    async (_ending, lines) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(sseStream(lines))))
+
+      await expect(
+        streamCodexResponse({
+          auth,
+          instructions: 'Write.',
+          model: 'gpt-5.5',
+          messages: [],
+          tools: [],
+          signal: new AbortController().signal,
+          onDelta: () => {},
+          onToolCall: () => {},
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-stream' })
+    },
+  )
+
+  it('reports received bytes through onActivity', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(okResponse(sseStream(['data: {"type":"response.completed"}']))),
+    )
+    const onActivity = vi.fn()
+
+    await streamCodexResponse({
+      auth,
+      instructions: 'Write.',
+      model: 'gpt-5.5',
+      messages: [],
+      tools: [],
+      signal: new AbortController().signal,
+      onDelta: () => {},
+      onToolCall: () => {},
+      onActivity,
+    })
+
+    expect(onActivity).toHaveBeenCalled()
+  })
+
+  it('retries an initial network failure through the rescue fetch', async () => {
+    const primary = vi.fn().mockRejectedValue(new Error('network failure'))
+    const rescue = vi
+      .fn()
+      .mockResolvedValue(okResponse(sseStream(['data: {"type":"response.completed"}'])))
+    vi.stubGlobal('fetch', primary)
+    setRescueFetch(rescue)
+
+    await streamCodexResponse({
+      auth,
+      instructions: 'Write.',
+      model: 'gpt-5.5',
+      messages: [],
+      tools: [],
+      signal: new AbortController().signal,
+      onDelta: () => {},
+      onToolCall: () => {},
+    })
+
+    expect(primary).toHaveBeenCalledOnce()
+    expect(rescue).toHaveBeenCalledOnce()
+  })
+
+  it('reports watchdog expiry as AiTimeoutError', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+              once: true,
+            })
+          }),
+      ),
+    )
+
+    const run = streamCodexResponse({
+      auth,
+      instructions: 'Write.',
+      model: 'gpt-5.5',
+      messages: [],
+      tools: [],
+      signal: new AbortController().signal,
+      onDelta: () => {},
+      onToolCall: () => {},
+    })
+    const result = expect(run).rejects.toBeInstanceOf(AiTimeoutError)
+    await vi.advanceTimersByTimeAsync(AI_CONNECT_TIMEOUT_MS)
+    await result
+  })
+
   it('raises a bounded error for malformed tool arguments', async () => {
     vi.stubGlobal(
       'fetch',
@@ -259,10 +364,14 @@ describe('streamCodexResponse', () => {
         onDelta: () => {},
         onToolCall: () => {},
       }),
-    ).rejects.toThrow(/Codex tool arguments malformed: \{broken/)
+    ).rejects.toMatchObject({ code: 'invalid-tool-call' })
   })
 
-  it.each([401, 429, 500])('normalizes Codex HTTP %s into a provider error', async (status) => {
+  it.each([
+    [401, 'auth-expired'],
+    [429, 'rate-limit'],
+    [500, 'provider-failure'],
+  ] as const)('normalizes Codex HTTP %s into a provider error code', async (status, code) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('backend detail', { status })))
 
     await expect(
@@ -276,10 +385,10 @@ describe('streamCodexResponse', () => {
         onDelta: () => {},
         onToolCall: () => {},
       }),
-    ).rejects.toMatchObject({ name: 'CodexHttpError', status })
+    ).rejects.toMatchObject({ name: 'CodexHttpError', status, code })
   })
 
-  it('extracts a bounded safe 400 code and detail', async () => {
+  it('classifies a safe 400 diagnostic without retaining provider text', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -306,8 +415,8 @@ describe('streamCodexResponse', () => {
     ).rejects.toMatchObject({
       name: 'CodexHttpError',
       status: 400,
-      code: 'invalid_model',
-      detail: 'The selected model is unavailable.',
+      code: 'capabilities-unavailable',
+      diagnosticCode: 'invalid_model',
     })
   })
 
@@ -338,37 +447,14 @@ describe('streamCodexResponse', () => {
       onToolCall: () => {},
     }).catch((reason: unknown) => reason)
 
-    expect(error).toMatchObject({ name: 'CodexHttpError', status: 400, code: 'invalid_request' })
-    expect(error).toHaveProperty('detail', undefined)
+    expect(error).toMatchObject({
+      name: 'CodexHttpError',
+      status: 400,
+      code: 'request-rejected',
+      diagnosticCode: 'invalid_request',
+    })
     expect(String(error)).not.toContain('secret-token')
     expect(String(error)).not.toContain('private.example')
-  })
-
-  it('caps a safe 400 detail before it crosses the provider boundary', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(
-            JSON.stringify({ error: { code: 'invalid_request', message: 'x'.repeat(200) } }),
-            { status: 400 },
-          ),
-        ),
-    )
-
-    const error = (await streamCodexResponse({
-      auth,
-      instructions: 'Write.',
-      model: 'gpt-5.5',
-      messages: [],
-      tools: [],
-      signal: new AbortController().signal,
-      onDelta: () => {},
-      onToolCall: () => {},
-    }).catch((reason: unknown) => reason)) as { detail?: string }
-
-    expect(error.detail).toHaveLength(160)
   })
 
   it('rejects malformed SSE JSON before emitting a callback', async () => {
@@ -385,7 +471,7 @@ describe('streamCodexResponse', () => {
         onDelta: () => {},
         onToolCall: () => {},
       }),
-    ).rejects.toThrow(/Codex stream malformed event: \{not-json\}/)
+    ).rejects.toMatchObject({ code: 'invalid-stream' })
   })
 
   it('passes cancellation signal to fetch and stops before stale callbacks', async () => {

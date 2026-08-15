@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createIpcTransport,
   IPC_STREAM_SILENCE_TIMEOUT_MS,
+  type IpcErrorCode,
   type IpcStreamChunk,
   type IpcStreamStart,
 } from '../src'
@@ -13,6 +14,7 @@ interface FakeSettings {
 function setup(
   startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
   creditsErrorText?: () => string,
+  resolveErrorCode?: (code: IpcErrorCode | undefined) => string | undefined,
 ) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
   const unsubscribe = vi.fn(() => {
@@ -34,6 +36,7 @@ function setup(
     unknownErrorText: () => 'unknown error',
     timeoutErrorText: () => 'timed out',
     ...(creditsErrorText ? { creditsErrorText } : {}),
+    ...(resolveErrorCode ? { resolveErrorCode } : {}),
   })
   const cb = {
     onDelta: vi.fn(),
@@ -121,6 +124,18 @@ describe('createIpcTransport', () => {
       errorCode: 'credits',
     })
     expect(cb.onError).toHaveBeenCalledWith('Your Genspark credits have been exhausted.')
+  })
+
+  it('resolves known codes locally and hides raw text for unknown or missing codes', () => {
+    const resolveErrorCode = (code: IpcErrorCode | undefined) =>
+      code === 'provider-failure' ? 'safe provider error' : undefined
+    const known = setup(undefined, undefined, resolveErrorCode)
+    known.emit({ type: 'error', error: 'raw provider payload', errorCode: 'provider-failure' })
+    expect(known.cb.onError).toHaveBeenCalledWith('safe provider error')
+
+    const unknown = setup(undefined, undefined, resolveErrorCode)
+    unknown.emit({ type: 'error', error: 'raw provider payload' })
+    expect(unknown.cb.onError).toHaveBeenCalledWith('unknown error')
   })
 
   it('fails the run after prolonged silence; pings re-arm the watchdog', () => {

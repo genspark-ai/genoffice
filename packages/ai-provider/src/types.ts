@@ -21,6 +21,35 @@ export interface AiProviderConfig {
 export type CodexReasoningEffort =
   'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
+export type CodexErrorCode =
+  | 'auth-required'
+  | 'auth-expired'
+  | 'auth-temporary'
+  | 'timeout'
+  | 'capabilities-unavailable'
+  | 'rate-limit'
+  | 'request-rejected'
+  | 'invalid-stream'
+  | 'invalid-tool-call'
+  | 'provider-failure'
+
+export type AiErrorCode = CodexErrorCode | 'credits'
+
+export class CodexError extends Error {
+  constructor(
+    readonly code: CodexErrorCode,
+    options: { status?: number; diagnosticCode?: string } = {},
+  ) {
+    super(code)
+    this.name = 'CodexError'
+    if (options.status !== undefined) this.status = options.status
+    if (options.diagnosticCode !== undefined) this.diagnosticCode = options.diagnosticCode
+  }
+
+  readonly status?: number
+  readonly diagnosticCode?: string
+}
+
 /** Renderer-safe, account-specific Codex model capabilities. */
 export interface CodexModelCapability {
   id: string
@@ -63,6 +92,7 @@ export interface CodexAdapterRequest {
   signal: AbortSignal
   onDelta: (text: string) => void
   onToolCall: (call: AgentToolCall) => void
+  onActivity?: () => void
 }
 
 export interface AiSettings {
@@ -106,8 +136,8 @@ export interface AiStreamChunk {
   /** complete parsed tool call (emitted once its arguments finish streaming) */
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause ('timeout', exhausted 'credits'); lets the renderer localize the message */
-  errorCode?: 'timeout' | 'credits'
+  /** machine-readable error cause; lets the renderer localize the message */
+  errorCode?: AiErrorCode
   /** normalized stop reason carried on 'done' ('max_tokens' = output cut off by the token limit) */
   stopReason?: string
 }

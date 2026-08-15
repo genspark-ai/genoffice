@@ -917,6 +917,7 @@ export async function streamForProvider(
         signal: cb.signal,
         onDelta: cb.onDelta,
         onToolCall: cb.onToolCall,
+        ...(cb.onActivity ? { onActivity: cb.onActivity } : {}),
       })
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')

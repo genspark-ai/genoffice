@@ -1,11 +1,13 @@
 export type {
   AiChatRequest,
   AiChatResponse,
+  AiErrorCode,
   CodexAdapterRequest,
   CodexAuthContext,
   CodexCapabilities,
   CodexModelCapability,
   CodexReasoningEffort,
+  CodexErrorCode,
   AiProviderConfig,
   AiProviderId,
   AiProviderMeta,
@@ -15,6 +17,7 @@ export type {
   GenSparkAccountStatus,
   LegacyAiSettings,
 } from './types'
+export { CodexError } from './types'
 export {
   AI_PROVIDERS,
   GENSPARK_LLM_BASE_URLS,
@@ -29,6 +32,7 @@ export type {
   CodexCredentials,
   CodexLoginCallback,
 } from './auth'
+export { CodexAuthService } from './auth'
 export { chatForProvider } from './chat'
 export { fetchCodexCapabilities } from './codex'
 export { setRescueFetch } from './fetch'

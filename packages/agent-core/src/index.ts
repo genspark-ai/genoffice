@@ -22,4 +22,9 @@ export type {
   ToolExecutedEvent,
 } from './loop'
 export { createIpcTransport, IPC_STREAM_SILENCE_TIMEOUT_MS } from './electron-transport'
-export type { IpcStreamChunk, IpcStreamStart, IpcTransportOptions } from './electron-transport'
+export type {
+  IpcErrorCode,
+  IpcStreamChunk,
+  IpcStreamStart,
+  IpcTransportOptions,
+} from './electron-transport'
