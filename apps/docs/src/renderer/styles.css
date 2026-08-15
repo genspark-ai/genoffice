@@ -4708,6 +4708,11 @@ body.docs-crop-active
   box-shadow: 0 0 0 3px var(--docs-brand-ghost-weak);
 }
 
+.ai-codex-auth-dot.error {
+  background: var(--color-error);
+  box-shadow: 0 0 0 3px var(--docs-ai-error-bg);
+}
+
 .ai-codex-auth-copy {
   display: flex;
   flex: 1 1 150px;
@@ -4752,32 +4757,64 @@ body.docs-crop-active
   opacity: 0.65;
 }
 
-/* provider switcher: quiet text control at the far edge of the header */
-.ai-provider-select {
+/* provider switcher: visible value + chevron, with the native select overlaid */
+.ai-provider-select-wrap {
+  position: relative;
   min-width: 0;
-  max-width: 118px;
   margin-left: 4px;
-  padding: 4px 0 4px 5px;
-  border: none;
-  outline: none;
-  background: transparent;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
   color: var(--color-text-secondary);
-  font: inherit;
-  font-size: 12px;
-  text-align: right;
-  text-overflow: ellipsis;
   cursor: pointer;
-  appearance: none;
 }
 
-.ai-provider-select:hover {
+.ai-provider-select-wrap:hover,
+.ai-provider-select-wrap:focus-within {
+  background: var(--color-bg-subtle);
   color: var(--color-text-primary);
 }
 
-.ai-provider-select:focus-visible {
-  outline: 2px solid var(--color-brand-secondary);
-  outline-offset: 2px;
-  border-radius: 4px;
+.ai-provider-select-wrap::after {
+  content: '';
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: -4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.ai-provider-select-text {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-provider-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  opacity: 0;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  background: var(--color-bg-page);
+}
+
+.ai-provider-select option {
+  color: var(--color-text-primary);
+  background: var(--color-bg-page);
 }
 
 .ai-header-btn {
@@ -5760,18 +5797,21 @@ body.docs-crop-active
 
 .ai-model-control {
   position: relative;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
   margin-left: auto;
   --ai-codex-menu-root-width: min(224px, calc(100vw - 16px));
   --ai-codex-menu-submenu-width: 280px;
 }
 
 .ai-codex-model-trigger {
-  display: inline-flex;
+  display: inline-grid;
   align-items: center;
-  gap: 7px;
-  width: max-content;
-  max-width: var(--ai-codex-menu-root-width);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 4px;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
   height: 26px;
   padding: 0 10px;
@@ -5799,21 +5839,46 @@ body.docs-crop-active
   width: var(--ai-codex-menu-root-width);
 }
 
-.ai-codex-model-trigger > span:first-child {
-  flex: 1 1 auto;
+.ai-codex-model-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 12px;
+  overflow: hidden;
+}
+
+.ai-codex-model-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+}
+
+.ai-codex-model-name,
+.ai-codex-model-effort {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.ai-codex-model-name {
+  flex: 1 1 auto;
+}
+
 .ai-codex-model-effort {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   color: var(--color-text-secondary);
-  white-space: nowrap;
 }
 
 .ai-codex-model-trigger > svg {
+  grid-column: 2;
+  justify-self: end;
   flex: 0 0 auto;
 }
 
@@ -5850,7 +5915,10 @@ body.docs-crop-active
 
 .ai-codex-submenu {
   position: absolute;
-  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  top: 0;
   left: calc(100% + 8px);
   width: var(--ai-codex-menu-submenu-width);
   max-width: min(var(--ai-codex-menu-submenu-width), calc(100vw - 16px));
@@ -5899,6 +5967,7 @@ body.docs-crop-active
 .ai-codex-menu-item > svg {
   flex-shrink: 0;
   color: var(--color-text-secondary);
+  transform: rotate(-90deg);
 }
 
 .ai-popover-heading {
@@ -5918,9 +5987,9 @@ body.docs-crop-active
   display: flex;
   align-items: flex-start;
   width: 100%;
-  min-height: 32px;
+  min-height: 30px;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -6214,12 +6283,6 @@ body.docs-crop-active
 .ai-attachment-remove:hover {
   background: var(--hover);
   color: var(--text);
-}
-
-.ai-attach-notice {
-  margin-bottom: 7px;
-  font-size: 11.5px;
-  color: var(--docs-ai-error);
 }
 
 /* whole-panel drop target highlight */

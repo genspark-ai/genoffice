@@ -114,10 +114,14 @@ describe('AiPanel collapse', () => {
     const actions = container.querySelector('.ai-panel-header-actions')!
     const provider = actions.querySelector('.ai-provider-select')
     const headerButtons = [...actions.querySelectorAll<HTMLButtonElement>('.ai-header-btn')]
+    const providerOptions = [...provider!.querySelectorAll('option')].map(
+      (option) => option.textContent,
+    )
 
     expect(headerButtons).toHaveLength(2)
     expect(provider?.nextElementSibling).toBe(headerButtons[0])
     expect(headerButtons[0]?.nextElementSibling).toBe(headerButtons[1])
+    expect(providerOptions).toEqual(['Genspark', 'ChatGPT Codex'])
 
     cleanup()
     restoreDesktop()

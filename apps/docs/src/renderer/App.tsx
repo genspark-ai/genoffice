@@ -302,7 +302,7 @@ interface DocStats {
 }
 
 const DEFAULT_SETTINGS: AiSettings = {
-  provider: 'anthropic',
+  provider: 'genspark',
   providers: Object.fromEntries(
     AI_PROVIDERS.map((p) => [
       p.id,

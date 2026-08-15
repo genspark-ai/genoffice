@@ -2489,7 +2489,7 @@ function sanitizeAiSettings(stored: Partial<AiSettings> & LegacyAiSettings): AiS
     stored && typeof stored === 'object' ? stored : {},
     defaultAiSettings(),
   )
-  if (!AI_PROVIDERS.some((provider) => provider.id === settings.provider)) {
+  if (settings.provider !== 'genspark' && settings.provider !== 'openai-codex') {
     settings.provider = 'genspark'
   }
   const safeProviders = {} as AiSettings['providers']

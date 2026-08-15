@@ -108,6 +108,9 @@ const EDIT_STARTER_PROMPTS: StringKey[] = [
 const PANEL_WIDTH_KEY = 'docs-ai-panel-width'
 const PANEL_WIDTH_DEFAULT = 360
 const PANEL_WIDTH_MIN = 280
+const DOCS_PROVIDERS = AI_PROVIDERS.filter(
+  (provider) => provider.id === 'genspark' || provider.id === 'openai-codex',
+)
 
 const DEFAULT_CODEX_SERVICE_TIER: CodexServiceTier = { id: 'default', name: 'Standard' }
 const CODEX_REASONING_LABELS: Record<CodexReasoningEffort, string> = {
@@ -576,7 +579,11 @@ export function AiPanel({
     const position = () => {
       const triggerRect = trigger.getBoundingClientRect()
       submenu.style.removeProperty('max-width')
+      submenu.style.removeProperty('top')
+      submenu.style.removeProperty('bottom')
       const rootRect = root.getBoundingClientRect()
+      const activeRow = root.querySelector<HTMLElement>(`[data-codex-menu-item="${activePopover}"]`)
+      const rowOffset = activeRow ? activeRow.getBoundingClientRect().top - rootRect.top : 0
       const submenuRect = submenu.getBoundingClientRect()
       const margin = 8
       const gap = 10
@@ -595,6 +602,12 @@ export function AiPanel({
       if (submenuSpace > 0 && submenuSpace < submenuRect.width) {
         submenu.style.maxWidth = `${submenuSpace}px`
       }
+      const positionedSubmenuRect = submenu.getBoundingClientRect()
+      const submenuTop = Math.min(
+        Math.max(margin, top + rowOffset),
+        Math.max(margin, window.innerHeight - positionedSubmenuRect.height - margin),
+      )
+      submenu.style.top = `${submenuTop - top}px`
       picker.dataset.positioned = 'true'
     }
 
@@ -1310,6 +1323,12 @@ export function AiPanel({
     ? (codexServiceTiers(activeCodexModel).find((tier) => tier.id === activeCodexServiceTier) ??
       DEFAULT_CODEX_SERVICE_TIER)
     : DEFAULT_CODEX_SERVICE_TIER
+  const codexBannerError = codexAccount?.errorCode ?? codexCapabilities?.errorCode
+  const showCodexBanner =
+    settings.provider === 'openai-codex' &&
+    Boolean(codexAccount) &&
+    (codexAccount?.loggedIn === false || Boolean(codexBannerError))
+  const showComposerBanner = showCodexBanner || Boolean(attachNotice)
 
   // collapsed: rail only — after all hooks, so the instance and its state survive
   if (!open) {
@@ -1355,18 +1374,24 @@ export function AiPanel({
           GenSpark AI
         </span>
         <div className="ai-panel-header-actions">
-          <select
-            className="ai-provider-select"
-            aria-label={t('aiSwitchModelTitle')}
-            value={settings.provider}
-            onChange={(event) => changeProvider(event.target.value as AiSettings['provider'])}
-          >
-            {AI_PROVIDERS.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.label}
-              </option>
-            ))}
-          </select>
+          <span className="ai-provider-select-wrap">
+            <span className="ai-provider-select-text" aria-hidden="true">
+              {DOCS_PROVIDERS.find((provider) => provider.id === settings.provider)?.label ??
+                settings.provider}
+            </span>
+            <select
+              className="ai-provider-select"
+              aria-label={t('aiSwitchModelTitle')}
+              value={settings.provider}
+              onChange={(event) => changeProvider(event.target.value as AiSettings['provider'])}
+            >
+              {DOCS_PROVIDERS.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+            </select>
+          </span>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -1390,33 +1415,37 @@ export function AiPanel({
         </div>
       </div>
 
-      {settings.provider === 'openai-codex' &&
-        codexAccount &&
-        (codexAccount.loggedIn === false || codexAccount.errorCode) && (
-          <div className="ai-codex-auth-banner" role="status">
-            <span className="ai-codex-auth-dot" aria-hidden="true" />
-            <div className="ai-codex-auth-copy">
-              <strong>ChatGPT Codex</strong>
-              {codexAccount.loggedIn === false && <span>{t('aiCodexSignInRequired')}</span>}
-              {codexAccount.errorCode && (
-                <span className="ai-codex-auth-error">
-                  {codexErrorText(codexAccount.errorCode, t)}
-                </span>
-              )}
-            </div>
-            {codexAccount.loggedIn === false && (
-              <button
-                type="button"
-                className="ai-codex-auth-login"
-                disabled={codexLoginPending}
-                aria-busy={codexLoginPending}
-                onClick={() => void startLogin()}
-              >
-                {t('aiCodexLoginBtn')}
-              </button>
+      {showComposerBanner && (
+        <div className="ai-codex-auth-banner" role="status">
+          <span
+            className={`ai-codex-auth-dot${codexBannerError || attachNotice ? ' error' : ''}`}
+            aria-hidden="true"
+          />
+          <div className="ai-codex-auth-copy">
+            {settings.provider === 'openai-codex' && codexAccount && (
+              <>
+                <strong>ChatGPT Codex</strong>
+                {codexAccount.loggedIn === false && <span>{t('aiCodexSignInRequired')}</span>}
+              </>
             )}
+            {codexBannerError && (
+              <span className="ai-codex-auth-error">{codexErrorText(codexBannerError, t)}</span>
+            )}
+            {attachNotice && <span className="ai-codex-auth-error">{attachNotice}</span>}
           </div>
-        )}
+          {settings.provider === 'openai-codex' && codexAccount?.loggedIn === false && (
+            <button
+              type="button"
+              className="ai-codex-auth-login"
+              disabled={codexLoginPending}
+              aria-busy={codexLoginPending}
+              onClick={() => void startLogin()}
+            >
+              {t('aiCodexLoginBtn')}
+            </button>
+          )}
+        </div>
+      )}
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* past conversation (read-only transcript, not fed to the model), shown continuously with the current turn */}
@@ -1594,7 +1623,6 @@ export function AiPanel({
       </div>
 
       <div className="ai-composer">
-        {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
           header={
             attachments.length > 0 && (
@@ -1693,11 +1721,6 @@ export function AiPanel({
                 <span className="ai-track-dot" aria-hidden />
                 {t('aiTrackChanges')}
               </button>
-              {settings.provider === 'openai-codex' && codexCapabilities?.errorCode && (
-                <span className="ai-codex-auth-error" role="status">
-                  {codexErrorText(codexCapabilities.errorCode, t)}
-                </span>
-              )}
               {settings.provider === 'openai-codex' && activeCodexModel && (
                 <div className="ai-model-control">
                   <button
@@ -1709,8 +1732,14 @@ export function AiPanel({
                     aria-expanded={Boolean(activePopover)}
                     aria-haspopup="menu"
                   >
-                    <span>{activeCodexModel.name ?? activeCodexModel.id}</span>
-                    <span className="ai-codex-model-effort">{activeCodexReasoningLabel}</span>
+                    <span className="ai-codex-model-label">
+                      <span className="ai-codex-model-text">
+                        <span className="ai-codex-model-name">
+                          {activeCodexModel.name ?? activeCodexModel.id}
+                        </span>
+                        <span className="ai-codex-model-effort">{activeCodexReasoningLabel}</span>
+                      </span>
+                    </span>
                     <IconCaret size={12} />
                   </button>
                   {activePopover && (
@@ -1785,6 +1814,13 @@ export function AiPanel({
                               : t('aiCodexSpeedLabel')
                         }
                       >
+                        <div className="ai-popover-heading">
+                          {activePopover === 'model'
+                            ? t('aiCodexModelLabel')
+                            : activePopover === 'effort'
+                              ? t('aiCodexReasoningLabel')
+                              : t('aiCodexSpeedLabel')}
+                        </div>
                         {activePopover === 'model' &&
                           codexCapabilities?.models.map((model) => (
                             <button

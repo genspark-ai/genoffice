@@ -94,12 +94,11 @@ function SectionIcon({ id }: { id: SectionId }) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path
-          d="M8 2.2v11.6M2.2 8h11.6"
+          d="m6.1 9.9-1.3 1.3a2.4 2.4 0 0 1-3.4-3.4l1.7-1.7a2.4 2.4 0 0 1 3.4 0M9.9 6.1l1.3-1.3a2.4 2.4 0 0 1 3.4 3.4l-1.7 1.7a2.4 2.4 0 0 1-3.4 0M5.5 10.5l5-5"
           stroke="currentColor"
           strokeWidth="1.3"
           strokeLinecap="round"
         />
-        <circle cx="8" cy="8" r="3.1" stroke="currentColor" strokeWidth="1.3" />
       </svg>
     )
   }
@@ -243,6 +242,7 @@ export function SettingsModal({
 
   const loggedIn = status?.loggedIn ?? false
   const email = status?.email ?? ''
+  const codexStatusLabel = codexStatus?.loggedIn ? t('loggedIn') : t('setNotLoggedIn')
 
   return (
     <div
@@ -396,33 +396,35 @@ export function SettingsModal({
                 <h3 className="set-pane-title">{t('setSecProvider')}</h3>
                 <div className="set-provider-row">
                   <div className="set-provider-info">
-                    <div className="set-provider-name">ChatGPT Codex</div>
+                    <div className="set-provider-name-row">
+                      <div className="set-provider-name">ChatGPT Codex</div>
+                      <span
+                        className={`set-provider-status${codexStatus?.loggedIn ? ' connected' : ''}`}
+                        role="img"
+                        aria-label={codexStatusLabel}
+                        data-tip={codexStatusLabel}
+                      />
+                    </div>
                     <div className="set-provider-value">
                       {codexStatus?.loggedIn
-                        ? codexStatus.email || t('loggedIn')
-                        : t('setNotLoggedIn')}
+                        ? codexStatus.email || codexStatusLabel
+                        : codexStatusLabel}
                     </div>
                     {codexStatus?.errorCode && (
                       <div className="set-provider-error">{t('loginFailed')}</div>
                     )}
                   </div>
-                  <span
-                    className={`set-provider-status${codexStatus?.loggedIn ? ' connected' : ''}`}
-                  >
-                    <span aria-hidden="true" />
-                    {codexStatus?.loggedIn ? t('loggedIn') : t('setNotLoggedIn')}
-                  </span>
-                </div>
-                <div className="set-pane-footer">
-                  {codexStatus?.loggedIn ? (
-                    <button className="set-btn danger" disabled={codexBusy} onClick={logoutCodex}>
-                      {codexBusy ? t('loggingOut') : t('logout')}
-                    </button>
-                  ) : (
-                    <button className="set-btn primary" disabled={codexBusy} onClick={loginCodex}>
-                      {codexBusy ? t('waitingShort') : t('login')}
-                    </button>
-                  )}
+                  <div className="set-provider-actions">
+                    {codexStatus?.loggedIn ? (
+                      <button className="set-btn danger" disabled={codexBusy} onClick={logoutCodex}>
+                        {codexBusy ? t('loggingOut') : t('logout')}
+                      </button>
+                    ) : (
+                      <button className="set-btn primary" disabled={codexBusy} onClick={loginCodex}>
+                        {codexBusy ? t('waitingShort') : t('login')}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </>
             )}

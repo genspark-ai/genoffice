@@ -129,7 +129,7 @@
 
 .set-provider-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
   padding: 8px 0 16px;
@@ -138,6 +138,18 @@
 
 .set-provider-info {
   min-width: 0;
+}
+
+.set-provider-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-provider-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
 }
 
 .set-provider-name {
@@ -164,25 +176,14 @@
 .set-provider-status {
   display: inline-flex;
   flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
-.set-provider-status > span {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--text-tertiary);
 }
 
 .set-provider-status.connected {
-  color: var(--accent);
-}
-
-.set-provider-status.connected > span {
-  background: var(--accent);
+  background: var(--color-success);
 }
 
 .set-field {
