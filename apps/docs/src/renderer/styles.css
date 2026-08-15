@@ -4757,66 +4757,6 @@ body.docs-crop-active
   opacity: 0.65;
 }
 
-/* provider switcher: visible value + chevron, with the native select overlaid */
-.ai-provider-select-wrap {
-  position: relative;
-  min-width: 0;
-  margin-left: 4px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.ai-provider-select-wrap:hover,
-.ai-provider-select-wrap:focus-within {
-  background: var(--color-bg-subtle);
-  color: var(--color-text-primary);
-}
-
-.ai-provider-select-wrap::after {
-  content: '';
-  flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  margin-top: -4px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-
-.ai-provider-select-text {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-provider-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-  outline: none;
-  opacity: 0;
-  color: var(--color-text-secondary);
-  font: inherit;
-  cursor: pointer;
-  background: var(--color-bg-page);
-}
-
-.ai-provider-select option {
-  color: var(--color-text-primary);
-  background: var(--color-bg-page);
-}
-
 .ai-header-btn {
   display: flex;
   align-items: center;

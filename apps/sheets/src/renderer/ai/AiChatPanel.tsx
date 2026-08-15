@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import {
+  AiCodexModelControl,
+  AiComposer,
+  AiProviderAuthBanner,
+  AiProviderSelect,
+  AiTypingIndicator,
+  useAiProviderControls,
+} from '@genoffice/ui'
+import { defaultAiSettings, getCodexUiLabels, type AiSettings } from '@genoffice/ai-provider'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -214,6 +222,8 @@ export function AiChatPanel({
   onUndo,
   onExpand,
   onCollapse,
+  settings,
+  onSettingsChange,
 }: {
   readonly isOpen: boolean
   /** the workbook has cells with content — empty workbooks get "build me a sheet" copy instead */
@@ -242,8 +252,19 @@ export function AiChatPanel({
   readonly onUndo: () => void
   readonly onExpand: () => void
   readonly onCollapse: () => void
+  readonly settings: AiSettings | null
+  readonly onSettingsChange: (settings: AiSettings) => void
 }): React.JSX.Element {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
+  const effectiveSettings = settings ?? defaultAiSettings()
+  const providerControls = useAiProviderControls({
+    settings: effectiveSettings,
+    onSettingsChange,
+    api: window.desktopApi,
+    positionKey: isOpen ? 'open' : 'closed',
+  })
+  const labels = getCodexUiLabels(lang)
+  const sendDisabled = settings === null || providerControls.sendDisabled
   const chatRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const stickToBottomRef = useRef(true)
@@ -402,7 +423,7 @@ export function AiChatPanel({
     )
   }
 
-  const canSend = prompt.trim().length > 0 && !aiBusy
+  const canSend = prompt.trim().length > 0 && !aiBusy && !sendDisabled
 
   const send = (): void => {
     if (!canSend) return
@@ -465,6 +486,11 @@ export function AiChatPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <AiProviderSelect
+            settings={effectiveSettings}
+            labels={labels}
+            controls={providerControls}
+          />
           {(chat.length > 0 || historicChat.length > 0) && (
             <button
               className="ai-header-btn"
@@ -485,6 +511,13 @@ export function AiChatPanel({
           </button>
         </div>
       </header>
+
+      <AiProviderAuthBanner
+        settings={effectiveSettings}
+        labels={labels}
+        controls={providerControls}
+        notice={attachNotice}
+      />
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {/* Past conversation (read-only transcript), shown continuously with the current turn */}
@@ -526,7 +559,7 @@ export function AiChatPanel({
                 {entry.undelivered && (
                   <div className="ai-msg-undelivered">
                     {t('aiUndelivered')}
-                    {!aiBusy && (
+                    {!aiBusy && !sendDisabled && (
                       <button
                         className="ai-retry-btn"
                         onClick={() => onSend(entry.text, entry.attachments ?? [])}
@@ -624,7 +657,6 @@ export function AiChatPanel({
       </div>
 
       <div className="ai-composer">
-        {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
           header={
             attachments.length > 0 && (
@@ -699,6 +731,7 @@ export function AiChatPanel({
           }
           value={prompt}
           busy={aiBusy}
+          sendDisabled={sendDisabled}
           placeholder={t(hasContent ? 'aiComposerPlaceholder' : 'aiComposerPlaceholderBuild')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
@@ -711,14 +744,21 @@ export function AiChatPanel({
           sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
           stopIcon={<img src={sendStop} alt="" aria-hidden />}
           footerStart={
-            <button
-              className="ai-attach-btn"
-              onClick={onPickAttachments}
-              data-tip={t('aiAttachTitle')}
-              aria-label={t('aiAttachTitle')}
-            >
-              <img src={attachIcon} alt="" aria-hidden />
-            </button>
+            <>
+              <button
+                className="ai-attach-btn"
+                onClick={onPickAttachments}
+                data-tip={t('aiAttachTitle')}
+                aria-label={t('aiAttachTitle')}
+              >
+                <img src={attachIcon} alt="" aria-hidden />
+              </button>
+              <AiCodexModelControl
+                settings={effectiveSettings}
+                labels={labels}
+                controls={providerControls}
+              />
+            </>
           }
           textareaRef={inputRef}
           onChange={onPromptChange}

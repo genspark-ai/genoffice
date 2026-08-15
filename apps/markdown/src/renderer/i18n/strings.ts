@@ -1,5 +1,8 @@
+import { codexStrings } from '@genoffice/ai-provider'
+
 export const strings = {
   zh: {
+    ...codexStrings.zh,
     loading: '正在打开…',
     loadError: '文件打开失败',
     saving: '保存中…',
@@ -105,6 +108,7 @@ export const strings = {
     aiToolWebSearchDone: '搜索"{query}" · {count} 条结果',
   },
   en: {
+    ...codexStrings.en,
     loading: 'Opening…',
     loadError: 'Failed to open the file',
     saving: 'Saving…',
@@ -211,6 +215,7 @@ export const strings = {
     aiToolWebSearchDone: 'Searched "{query}" · {count} results',
   },
   ja: {
+    ...codexStrings.ja,
     loading: '開いています…',
     loadError: 'ファイルを開けませんでした',
     saving: '保存中…',
@@ -317,6 +322,7 @@ export const strings = {
     aiToolWebSearchDone: '「{query}」を検索 · {count} 件',
   },
   ko: {
+    ...codexStrings.ko,
     loading: '여는 중…',
     loadError: '파일을 열지 못했습니다',
     saving: '저장 중…',
@@ -423,6 +429,7 @@ export const strings = {
     aiToolWebSearchDone: '"{query}" 검색 · 결과 {count}개',
   },
   fr: {
+    ...codexStrings.fr,
     loading: 'Ouverture…',
     loadError: "Échec de l'ouverture du fichier",
     saving: 'Enregistrement…',
@@ -531,6 +538,7 @@ export const strings = {
     aiToolWebSearchDone: 'Recherche « {query} » · {count} résultats',
   },
   de: {
+    ...codexStrings.de,
     loading: 'Wird geöffnet…',
     loadError: 'Datei konnte nicht geöffnet werden',
     saving: 'Wird gespeichert…',
@@ -638,6 +646,7 @@ export const strings = {
     aiToolWebSearchDone: '„{query}" gesucht · {count} Treffer',
   },
   es: {
+    ...codexStrings.es,
     loading: 'Abriendo…',
     loadError: 'No se pudo abrir el archivo',
     saving: 'Guardando…',
@@ -745,6 +754,7 @@ export const strings = {
     aiToolWebSearchDone: 'Búsqueda de «{query}» · {count} resultados',
   },
   th: {
+    ...codexStrings.th,
     loading: 'กำลังเปิด…',
     loadError: 'เปิดไฟล์ไม่สำเร็จ',
     saving: 'กำลังบันทึก…',
@@ -851,6 +861,7 @@ export const strings = {
     aiToolWebSearchDone: 'ค้นหา "{query}" · {count} รายการ',
   },
   id: {
+    ...codexStrings.id,
     loading: 'Membuka…',
     loadError: 'Gagal membuka file',
     saving: 'Menyimpan…',
@@ -957,6 +968,7 @@ export const strings = {
     aiToolWebSearchDone: 'Mencari "{query}" · {count} hasil',
   },
   ru: {
+    ...codexStrings.ru,
     loading: 'Открытие…',
     loadError: 'Не удалось открыть файл',
     saving: 'Сохранение…',
@@ -1063,6 +1075,7 @@ export const strings = {
     aiToolWebSearchDone: 'Поиск «{query}» · {count} результатов',
   },
   ar: {
+    ...codexStrings.ar,
     loading: 'جارٍ الفتح…',
     loadError: 'فشل فتح الملف',
     saving: 'جارٍ الحفظ…',
@@ -1169,6 +1182,7 @@ export const strings = {
     aiToolWebSearchDone: 'بحث عن "{query}" · {count} نتيجة',
   },
   pt: {
+    ...codexStrings.pt,
     loading: 'Abrindo…',
     loadError: 'Falha ao abrir o arquivo',
     saving: 'Salvando…',
@@ -1275,6 +1289,7 @@ export const strings = {
     aiToolWebSearchDone: 'Pesquisa por "{query}" · {count} resultados',
   },
   it: {
+    ...codexStrings.it,
     loading: 'Apertura…',
     loadError: 'Impossibile aprire il file',
     saving: 'Salvataggio…',
@@ -1381,6 +1396,7 @@ export const strings = {
     aiToolWebSearchDone: 'Cercato "{query}" · {count} risultati',
   },
   pl: {
+    ...codexStrings.pl,
     loading: 'Otwieranie…',
     loadError: 'Nie udało się otworzyć pliku',
     saving: 'Zapisywanie…',
@@ -1487,6 +1503,7 @@ export const strings = {
     aiToolWebSearchDone: 'Wyszukano „{query}" · {count} wyników',
   },
   nl: {
+    ...codexStrings.nl,
     loading: 'Openen…',
     loadError: 'Bestand openen mislukt',
     saving: 'Opslaan…',
@@ -1593,6 +1610,7 @@ export const strings = {
     aiToolWebSearchDone: 'Gezocht naar "{query}" · {count} resultaten',
   },
   ms: {
+    ...codexStrings.ms,
     loading: 'Membuka…',
     loadError: 'Gagal membuka fail',
     saving: 'Menyimpan…',
@@ -1699,6 +1717,7 @@ export const strings = {
     aiToolWebSearchDone: 'Cari "{query}" · {count} hasil',
   },
   he: {
+    ...codexStrings.he,
     loading: 'פותח…',
     loadError: 'פתיחת הקובץ נכשלה',
     saving: 'שומר…',
@@ -1805,6 +1824,7 @@ export const strings = {
     aiToolWebSearchDone: 'חיפוש "{query}" · {count} תוצאות',
   },
   hi: {
+    ...codexStrings.hi,
     loading: 'खोला जा रहा है…',
     loadError: 'फ़ाइल खोलने में विफल',
     saving: 'सहेजा जा रहा है…',
@@ -1911,6 +1931,7 @@ export const strings = {
     aiToolWebSearchDone: '"{query}" खोजा · {count} परिणाम',
   },
   'zh-TW': {
+    ...codexStrings['zh-TW'],
     loading: '正在開啟…',
     loadError: '檔案開啟失敗',
     saving: '儲存中…',

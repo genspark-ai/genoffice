@@ -199,6 +199,7 @@ export interface DesktopApi {
   fontMetrics(family: string): Promise<FaceVerticalMetrics | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   /** system print dialog for the current window; ok=false without error = canceled */
   print(): Promise<{ ok: boolean; error?: string }>
   /** render the document to PDF and ask where to save; size in twips.

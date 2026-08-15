@@ -1,8 +1,10 @@
 import { defineStrings } from '@genoffice/i18n'
+import { codexStrings } from '@genoffice/ai-provider'
 
 /** User-visible copy for the ai/ panel and tool feedback (LLM prompts are not included here) */
 export const aiStrings = defineStrings({
   zh: {
+    ...codexStrings.zh,
     aiInputPlaceholderGen: '描述要生成的演示文稿,或直接提问',
     aiEmptyGenTitle: '让 AI 为你生成演示文稿',
     aiEmptyGenBody1: '描述主题、场合和大致页数,',
@@ -29,7 +31,6 @@ export const aiStrings = defineStrings({
     aiImagePrompt: '根据这一页的内容生成一张相关配图,并插入到幻灯片的合适位置',
     aiBeautifyBtn: 'AI 美化',
     aiBeautifyPrompt: '美化这一页幻灯片:优化排版、配色和字体层级,使页面更专业美观',
-    aiSwitchModel: '切换 AI 模型',
     aiNewChat: '新对话',
     aiCollapsePanel: '收起面板',
     aiHistorySep: '—— 以上是历史对话 ——',
@@ -198,6 +199,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '列出 {count} 个风格模板',
   },
   en: {
+    ...codexStrings.en,
     aiInputPlaceholderGen: 'Describe the deck to generate, or ask anything',
     aiEmptyGenTitle: 'Let AI generate your presentation',
     aiEmptyGenBody1: 'Describe the topic, audience, and rough page count;',
@@ -227,7 +229,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'AI Beautify',
     aiBeautifyPrompt:
       'Beautify this slide: improve the layout, colors, and typography to make it look more professional',
-    aiSwitchModel: 'Switch AI model',
     aiNewChat: 'New chat',
     aiCollapsePanel: 'Collapse panel',
     aiHistorySep: '—— earlier conversation ——',
@@ -399,6 +400,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'Listed {count} style templates',
   },
   ja: {
+    ...codexStrings.ja,
     aiInputPlaceholderGen: '作りたいプレゼンを説明するか、質問を入力',
     aiEmptyGenTitle: 'AI にプレゼンの作成を任せる',
     aiEmptyGenBody1: 'テーマ・用途・ページ数の目安を伝えると',
@@ -427,7 +429,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'AI デザイン',
     aiBeautifyPrompt:
       'このスライドを美しく整えてください:レイアウト・配色・文字の階層を改善し、より洗練されたページにしてください',
-    aiSwitchModel: 'AI モデルを切り替え',
     aiNewChat: '新しいチャット',
     aiCollapsePanel: 'パネルを折りたたむ',
     aiHistorySep: '—— ここまでは過去の会話 ——',
@@ -599,6 +600,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} 個のスタイル テンプレートを一覧表示',
   },
   ko: {
+    ...codexStrings.ko,
     aiInputPlaceholderGen: '만들 프레젠테이션을 설명하거나 질문하세요',
     aiEmptyGenTitle: 'AI에게 프레젠테이션 생성을 맡기세요',
     aiEmptyGenBody1: '주제, 용도, 대략의 페이지 수를 알려주면',
@@ -628,7 +630,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'AI 꾸미기',
     aiBeautifyPrompt:
       '이 슬라이드를 보기 좋게 다듬어 주세요: 레이아웃, 색상, 글자 위계를 개선해 더 전문적으로 만들어 주세요',
-    aiSwitchModel: 'AI 모델 전환',
     aiNewChat: '새 대화',
     aiCollapsePanel: '패널 접기',
     aiHistorySep: '—— 여기까지 이전 대화 ——',
@@ -800,6 +801,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '스타일 템플릿 {count}개 나열',
   },
   fr: {
+    ...codexStrings.fr,
     aiInputPlaceholderGen: 'Décrivez la présentation à générer, ou posez une question',
     aiEmptyGenTitle: "Laissez l'IA générer votre présentation",
     aiEmptyGenBody1: 'Décrivez le sujet, le contexte et le nombre de pages ;',
@@ -829,7 +831,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Design IA',
     aiBeautifyPrompt:
       'Embellissez cette diapositive : améliorez la mise en page, les couleurs et la typographie pour un rendu plus professionnel',
-    aiSwitchModel: "Changer de modèle d'IA",
     aiNewChat: 'Nouvelle conversation',
     aiCollapsePanel: 'Réduire le panneau',
     aiHistorySep: '—— conversation précédente ——',
@@ -1003,6 +1004,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} modèles de style listés',
   },
   de: {
+    ...codexStrings.de,
     aiInputPlaceholderGen: 'Beschreibe die zu erstellende Präsentation oder frag etwas',
     aiEmptyGenTitle: 'Lass die KI deine Präsentation erstellen',
     aiEmptyGenBody1: 'Beschreibe Thema, Anlass und ungefähre Seitenzahl;',
@@ -1033,7 +1035,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'KI-Design',
     aiBeautifyPrompt:
       'Gestalte diese Folie ansprechender: Verbessere Layout, Farben und Typografie für einen professionelleren Look',
-    aiSwitchModel: 'KI-Modell wechseln',
     aiNewChat: 'Neuer Chat',
     aiCollapsePanel: 'Bereich einklappen',
     aiHistorySep: '—— bisheriger Verlauf ——',
@@ -1206,6 +1207,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} Stilvorlagen aufgelistet',
   },
   es: {
+    ...codexStrings.es,
     aiInputPlaceholderGen: 'Describe la presentación a generar, o pregunta lo que quieras',
     aiEmptyGenTitle: 'Deja que la IA genere tu presentación',
     aiEmptyGenBody1: 'Describe el tema, la ocasión y el número aproximado de páginas;',
@@ -1235,7 +1237,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Diseño IA',
     aiBeautifyPrompt:
       'Embellece esta diapositiva: mejora el diseño, los colores y la tipografía para que luzca más profesional',
-    aiSwitchModel: 'Cambiar de modelo de IA',
     aiNewChat: 'Nueva conversación',
     aiCollapsePanel: 'Contraer panel',
     aiHistorySep: '—— conversación anterior ——',
@@ -1409,6 +1410,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'Se enumeraron {count} plantillas de estilo',
   },
   th: {
+    ...codexStrings.th,
     aiInputPlaceholderGen: 'อธิบายงานนำเสนอที่จะสร้าง หรือถามได้เลย',
     aiEmptyGenTitle: 'ให้ AI สร้างงานนำเสนอให้คุณ',
     aiEmptyGenBody1: 'อธิบายหัวข้อ โอกาส และจำนวนหน้าโดยประมาณ',
@@ -1436,7 +1438,6 @@ export const aiStrings = defineStrings({
     aiImagePrompt: 'สร้างภาพที่สอดคล้องกับเนื้อหาของสไลด์นี้ และแทรกลงในตำแหน่งที่เหมาะสมบนสไลด์',
     aiBeautifyBtn: 'ตกแต่งด้วย AI',
     aiBeautifyPrompt: 'ตกแต่งสไลด์นี้: ปรับปรุงเลย์เอาต์ สี และตัวอักษรให้ดูเป็นมืออาชีพยิ่งขึ้น',
-    aiSwitchModel: 'สลับโมเดล AI',
     aiNewChat: 'แชทใหม่',
     aiCollapsePanel: 'ยุบแผง',
     aiHistorySep: '—— ด้านบนคือการสนทนาก่อนหน้า ——',
@@ -1608,6 +1609,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'แสดงเทมเพลตสไตล์ {count} รายการ',
   },
   id: {
+    ...codexStrings.id,
     aiInputPlaceholderGen: 'Jelaskan presentasi yang akan dibuat, atau tanyakan apa saja',
     aiEmptyGenTitle: 'Biarkan AI membuat presentasi Anda',
     aiEmptyGenBody1: 'Jelaskan topik, acara, dan perkiraan jumlah halaman;',
@@ -1637,7 +1639,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Percantik AI',
     aiBeautifyPrompt:
       'Percantik slide ini: perbaiki tata letak, warna, dan tipografi agar tampak lebih profesional',
-    aiSwitchModel: 'Ganti model AI',
     aiNewChat: 'Obrolan baru',
     aiCollapsePanel: 'Ciutkan panel',
     aiHistorySep: '—— percakapan sebelumnya ——',
@@ -1810,6 +1811,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'Menampilkan {count} templat gaya',
   },
   ru: {
+    ...codexStrings.ru,
     aiInputPlaceholderGen: 'Опишите презентацию для создания или задайте вопрос',
     aiEmptyGenTitle: 'Пусть ИИ создаст вашу презентацию',
     aiEmptyGenBody1: 'Опишите тему, аудиторию и примерное число страниц;',
@@ -1839,7 +1841,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'ИИ-дизайн',
     aiBeautifyPrompt:
       'Улучшите оформление этого слайда: доработайте макет, цвета и типографику, чтобы он выглядел профессиональнее',
-    aiSwitchModel: 'Сменить модель ИИ',
     aiNewChat: 'Новый чат',
     aiCollapsePanel: 'Свернуть панель',
     aiHistorySep: '—— выше — предыдущий диалог ——',
@@ -2012,6 +2013,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'Показано шаблонов стиля: {count}',
   },
   ar: {
+    ...codexStrings.ar,
     aiInputPlaceholderGen: 'صف العرض المطلوب إنشاؤه أو اطرح أي سؤال',
     aiEmptyGenTitle: 'دع الذكاء الاصطناعي ينشئ عرضك التقديمي',
     aiEmptyGenBody1: 'صف الموضوع والمناسبة وعدد الصفحات التقريبي؛',
@@ -2039,7 +2041,6 @@ export const aiStrings = defineStrings({
     aiImagePrompt: 'أنشئ صورة تتناسب مع محتوى هذه الشريحة وأدرجها في موضع مناسب على الشريحة',
     aiBeautifyBtn: 'تجميل AI',
     aiBeautifyPrompt: 'جمّل هذه الشريحة: حسّن التخطيط والألوان وأسلوب الخط لتبدو أكثر احترافية',
-    aiSwitchModel: 'تبديل نموذج الذكاء الاصطناعي',
     aiNewChat: 'محادثة جديدة',
     aiCollapsePanel: 'طي اللوحة',
     aiHistorySep: '—— ما سبق محادثة سابقة ——',
@@ -2211,6 +2212,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'سرد {count} من قوالب الأنماط',
   },
   pt: {
+    ...codexStrings.pt,
     aiInputPlaceholderGen: 'Descreva o deck a gerar, ou pergunte algo',
     aiEmptyGenTitle: 'Deixe a IA gerar sua apresentação',
     aiEmptyGenBody1: 'Descreva o tema, a ocasião e o número aproximado de páginas;',
@@ -2240,7 +2242,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Design IA',
     aiBeautifyPrompt:
       'Deixe este slide mais bonito: melhore o layout, as cores e a tipografia para um visual mais profissional',
-    aiSwitchModel: 'Trocar modelo de IA',
     aiNewChat: 'Nova conversa',
     aiCollapsePanel: 'Recolher painel',
     aiHistorySep: '—— conversa anterior ——',
@@ -2413,6 +2414,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} modelos de estilo listados',
   },
   it: {
+    ...codexStrings.it,
     aiInputPlaceholderGen: 'Descrivi la presentazione da generare, o chiedi qualsiasi cosa',
     aiEmptyGenTitle: "Lascia che l'IA generi la tua presentazione",
     aiEmptyGenBody1: "Descrivi l'argomento, l'occasione e il numero indicativo di pagine;",
@@ -2442,7 +2444,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Design IA',
     aiBeautifyPrompt:
       "Migliora l'aspetto di questa diapositiva: perfeziona layout, colori e tipografia per un look più professionale",
-    aiSwitchModel: 'Cambia modello di IA',
     aiNewChat: 'Nuova conversazione',
     aiCollapsePanel: 'Comprimi il pannello',
     aiHistorySep: '—— conversazione precedente ——',
@@ -2615,6 +2616,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} modelli di stile elencati',
   },
   pl: {
+    ...codexStrings.pl,
     aiInputPlaceholderGen: 'Opisz prezentację do wygenerowania albo zadaj pytanie',
     aiEmptyGenTitle: 'Pozwól AI wygenerować twoją prezentację',
     aiEmptyGenBody1: 'Opisz temat, okazję i przybliżoną liczbę stron;',
@@ -2644,7 +2646,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Upiększanie AI',
     aiBeautifyPrompt:
       'Upiększ ten slajd: popraw układ, kolory i typografię, aby wyglądał bardziej profesjonalnie',
-    aiSwitchModel: 'Zmień model AI',
     aiNewChat: 'Nowy czat',
     aiCollapsePanel: 'Zwiń panel',
     aiHistorySep: '—— wcześniejsza rozmowa ——',
@@ -2817,6 +2818,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'Wyświetlono szablony stylu: {count}',
   },
   nl: {
+    ...codexStrings.nl,
     aiInputPlaceholderGen: 'Beschrijf de presentatie om te genereren, of stel een vraag',
     aiEmptyGenTitle: 'Laat AI je presentatie genereren',
     aiEmptyGenBody1: 'Beschrijf het onderwerp, de gelegenheid en het aantal pagina’s;',
@@ -2846,7 +2848,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'AI-opmaak',
     aiBeautifyPrompt:
       'Maak deze dia mooier: verbeter de lay-out, kleuren en typografie voor een professionelere uitstraling',
-    aiSwitchModel: 'AI-model wisselen',
     aiNewChat: 'Nieuwe chat',
     aiCollapsePanel: 'Paneel samenvouwen',
     aiHistorySep: '—— eerder gesprek ——',
@@ -3020,6 +3021,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} stijlsjablonen weergegeven',
   },
   ms: {
+    ...codexStrings.ms,
     aiInputPlaceholderGen: 'Terangkan pembentangan untuk dijana, atau tanya apa sahaja',
     aiEmptyGenTitle: 'Biarkan AI menjana pembentangan anda',
     aiEmptyGenBody1: 'Terangkan topik, majlis dan anggaran bilangan halaman;',
@@ -3049,7 +3051,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'Percantik AI',
     aiBeautifyPrompt:
       'Percantik slaid ini: perbaiki susun atur, warna dan tipografi supaya kelihatan lebih profesional',
-    aiSwitchModel: 'Tukar model AI',
     aiNewChat: 'Sembang baharu',
     aiCollapsePanel: 'Runtuhkan panel',
     aiHistorySep: '—— perbualan terdahulu ——',
@@ -3222,6 +3223,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'Menyenaraikan {count} templat gaya',
   },
   he: {
+    ...codexStrings.he,
     aiInputPlaceholderGen: 'תארו את המצגת ליצירה, או שאלו כל דבר',
     aiEmptyGenTitle: 'תנו ל-AI ליצור את המצגת שלכם',
     aiEmptyGenBody1: 'תארו את הנושא, הקהל ומספר העמודים המשוער;',
@@ -3250,7 +3252,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'עיצוב AI',
     aiBeautifyPrompt:
       'עצב את השקופית הזו: שפר את הפריסה, הצבעים והטיפוגרפיה כדי שתיראה מקצועית יותר',
-    aiSwitchModel: 'החלף מודל AI',
     aiNewChat: 'שיחה חדשה',
     aiCollapsePanel: 'כווץ את הלוח',
     aiHistorySep: '—— שיחה קודמת ——',
@@ -3421,6 +3422,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: 'הוצגו {count} תבניות סגנון',
   },
   hi: {
+    ...codexStrings.hi,
     aiInputPlaceholderGen: 'बनाने के लिए प्रस्तुति बताएँ, या कुछ भी पूछें',
     aiEmptyGenTitle: 'AI से अपनी प्रस्तुति बनवाएँ',
     aiEmptyGenBody1: 'विषय, अवसर और अनुमानित पेज संख्या बताएँ;',
@@ -3450,7 +3452,6 @@ export const aiStrings = defineStrings({
     aiBeautifyBtn: 'AI सजावट',
     aiBeautifyPrompt:
       'इस स्लाइड को सुंदर बनाएँ: लेआउट, रंग और टाइपोग्राफ़ी सुधारें ताकि यह अधिक पेशेवर दिखे',
-    aiSwitchModel: 'AI मॉडल बदलें',
     aiNewChat: 'नई चैट',
     aiCollapsePanel: 'पैनल संक्षिप्त करें',
     aiHistorySep: '—— पिछली बातचीत ——',
@@ -3622,6 +3623,7 @@ export const aiStrings = defineStrings({
     aiSumListTemplates: '{count} स्टाइल टेम्पलेट सूचीबद्ध किए गए',
   },
   'zh-TW': {
+    ...codexStrings['zh-TW'],
     aiInputPlaceholderGen: '描述要生成的簡報,或直接提問',
     aiEmptyGenTitle: '讓 AI 為你生成簡報',
     aiEmptyGenBody1: '描述主題、場合和大致頁數,',
@@ -3648,7 +3650,6 @@ export const aiStrings = defineStrings({
     aiImagePrompt: '根據這一頁的內容生成一張相關配圖,並插入到投影片的合適位置',
     aiBeautifyBtn: 'AI 美化',
     aiBeautifyPrompt: '美化這一頁投影片:優化排版、配色和字體層級,使頁面更專業美觀',
-    aiSwitchModel: '切換 AI 模型',
     aiNewChat: '新對話',
     aiCollapsePanel: '收合面板',
     aiHistorySep: '—— 以上是歷史對話 ——',

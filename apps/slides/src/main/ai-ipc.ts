@@ -4,21 +4,17 @@
  * to avoid renderer CORS), search tools, and the slides-only ai:* channels
  * (image generation, media analysis, style templates).
  */
-import { app, ipcMain, net, shell } from 'electron'
+import { app, ipcMain, net, shell, webContents } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  AiCreditsError,
-  AiTimeoutError,
-  defaultAiSettings,
-  resolveAiSettings,
+  AiMainRuntime,
+  sanitizeAiSettings,
   setRescueFetch,
-  streamForProvider,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
-  type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { fetchRemoteImage } from '@genoffice/electron-utils'
 import {
@@ -33,6 +29,7 @@ import {
 } from '@genoffice/ai-search'
 import { addPicture, replacePictureBytes } from '@genoffice/pptx-engine'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
+import { getCodexAuth } from './codex-auth-main'
 import { tm } from './i18n-main'
 import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './session-state'
 
@@ -54,18 +51,17 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, JSON.stringify(value, null, 2))
 }
 
-const activeAiStreams = new Map<string, AbortController>()
+const aiRuntime = new AiMainRuntime({
+  auth: getCodexAuth(),
+  getGensparkApiKey: gskApiKey,
+})
 
 export function registerAiIpc(): void {
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
 
   ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
-    settings.provider = 'genspark'
-    return settings
+    return sanitizeAiSettings(readJson<unknown>(AI_SETTINGS_PATH(), {}))
   })
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
@@ -83,78 +79,32 @@ export function registerAiIpc(): void {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
+  ipcMain.handle('ai:codex-status', () => aiRuntime.codexStatus())
+  ipcMain.handle('ai:codex-login', () => aiRuntime.codexLogin())
+  ipcMain.handle('ai:codex-cancel-login', () => aiRuntime.codexCancelLogin())
+  ipcMain.handle('ai:codex-logout', () => aiRuntime.codexLogout())
+  ipcMain.handle('ai:codex-capabilities', () => aiRuntime.codexCapabilities())
+
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(AI_SETTINGS_PATH(), settings)
+    const sanitized = sanitizeAiSettings(settings)
+    writeJson(AI_SETTINGS_PATH(), sanitized)
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send('ai:settings-changed', sanitized)
+    }
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
-    const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // The genspark key never enters the settings file; it is fetched from the gsk login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    const send = (chunk: AiStreamChunk) => {
+    const send = (chunk: AiStreamChunk): void => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
-      send({
-        requestId,
-        type: 'error',
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
-      })
-      return
-    }
-    if (!config.model) {
-      send({ requestId, type: 'error', error: tm('errNoModel') })
-      return
-    }
-    const controller = new AbortController()
-    activeAiStreams.set(requestId, controller)
-    // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
-    let lastPing = 0
-    const ping = () => {
-      const now = Date.now()
-      if (now - lastPing < 5_000) return
-      lastPing = now
-      send({ requestId, type: 'ping' })
-    }
-    try {
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
-        signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
-        onActivity: ping,
-      })
-      send({ requestId, type: 'done' })
-    } catch (err) {
-      if (controller.signal.aborted) {
-        send({ requestId, type: 'done' })
-      } else {
-        const msg = err instanceof Error ? err.message : String(err)
-        console.error(`[ai-stream] ${requestId} (${provider}/${config.model}) failed:`, msg)
-        send({
-          requestId,
-          type: 'error',
-          error: msg,
-          ...(err instanceof AiTimeoutError
-            ? { errorCode: 'timeout' as const }
-            : err instanceof AiCreditsError
-              ? { errorCode: 'credits' as const }
-              : {}),
-        })
-      }
-    } finally {
-      activeAiStreams.delete(requestId)
-    }
+    await aiRuntime.stream(request, send, {
+      noGensparkApiKey: tm('errGskNotLoggedIn'),
+      noApiKey: (provider) => tm('errNoApiKey', { provider }),
+      noModel: tm('errNoModel'),
+    })
   })
 
-  ipcMain.handle('ai:stream-cancel', (_event, requestId: string) => {
-    activeAiStreams.get(requestId)?.abort()
-  })
+  ipcMain.handle('ai:stream-cancel', (_event, requestId: string) => aiRuntime.cancel(requestId))
 
   // Search tools (content + images), Serper with DuckDuckGo fallback
   ipcMain.handle('ai:web-search', async (_event, query: string, maxResults?: number) => {

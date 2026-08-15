@@ -710,6 +710,8 @@ export function App() {
     void window.desktop.getAiSettings().then(setSettings)
   }, [])
 
+  useEffect(() => window.desktop.onAiSettingsChanged(setSettings), [])
+
   const updateAiSettings = (next: AiSettings) => {
     setSettings(next)
     void window.desktop.setAiSettings(next)

@@ -21,9 +21,14 @@ export type {
   CompactionOptions,
   ToolExecutedEvent,
 } from './loop'
-export { createIpcTransport, IPC_STREAM_SILENCE_TIMEOUT_MS } from './electron-transport'
+export {
+  createIpcTransport,
+  IPC_STREAM_SILENCE_TIMEOUT_MS,
+  resolveIpcErrorCode,
+} from './electron-transport'
 export type {
   IpcErrorCode,
+  IpcErrorMessages,
   IpcStreamChunk,
   IpcStreamStart,
   IpcTransportOptions,

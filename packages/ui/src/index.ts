@@ -1,6 +1,19 @@
 export { AiComposer } from './AiComposer'
 export { installScreenTips } from './screentip'
 export { AiTypingIndicator } from './AiTypingIndicator'
+export {
+  AiCodexModelControl,
+  AiProviderAuthBanner,
+  AiProviderSelect,
+  useAiProviderControls,
+} from './AiProviderControls'
+export type {
+  AiProviderControlApi,
+  AiProviderControlLabels,
+  AiProviderControlsState,
+  AiProviderControlsState as UseAiProviderControlsState,
+  CodexCapabilitiesResult,
+} from './AiProviderControls'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'
 export { isSymbolFontFamily } from './symbol-fonts'

@@ -24,6 +24,18 @@ export type IpcErrorCode =
   | 'invalid-tool-call'
   | 'provider-failure'
 
+export type IpcErrorMessages = Readonly<Record<IpcErrorCode, string>> & {
+  unknown: string
+}
+
+/** Resolve an IPC error code without exposing main-process/provider text. */
+export function resolveIpcErrorCode(
+  code: IpcErrorCode | string | undefined,
+  messages: IpcErrorMessages,
+): string {
+  return (code && messages[code as IpcErrorCode]) || messages.unknown
+}
+
 export interface IpcStreamChunk {
   requestId: string
   /** 'ping' = wire-level keepalive; re-arms the silence watchdog and carries no payload */

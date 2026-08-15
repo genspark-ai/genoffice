@@ -10,7 +10,17 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, net, shell } from 'electron'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  dialog,
+  ipcMain,
+  net,
+  shell,
+  webContents,
+} from 'electron'
 import {
   appMenuLabels,
   configuredDefaultSaveDir,
@@ -36,25 +46,15 @@ import type {
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
 import {
-  AiCreditsError,
-  AiTimeoutError,
-  CodexError,
+  AiMainRuntime,
   chatForProvider,
-  AI_PROVIDERS,
-  defaultAiSettings,
-  fetchCodexCapabilities,
-  resolveAiSettings,
   setRescueFetch,
-  streamForProvider,
   type AiChatRequest,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
-  CodexAuthService,
-  type CodexErrorCode,
-  type CodexReasoningEffort,
-  type LegacyAiSettings,
+  sanitizeAiSettings,
 } from '@genoffice/ai-provider'
 import {
   ensureGenofficeLogin,
@@ -2483,51 +2483,10 @@ const TWIPS_PER_INCH = 1440
 
 const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
-const activeAiStreams = new Map<string, AbortController>()
-function sanitizeAiSettings(stored: Partial<AiSettings> & LegacyAiSettings): AiSettings {
-  const settings = resolveAiSettings(
-    stored && typeof stored === 'object' ? stored : {},
-    defaultAiSettings(),
-  )
-  if (settings.provider !== 'genspark' && settings.provider !== 'openai-codex') {
-    settings.provider = 'genspark'
-  }
-  const safeProviders = {} as AiSettings['providers']
-  for (const meta of AI_PROVIDERS) {
-    const raw = settings.providers[meta.id]
-    safeProviders[meta.id] = {
-      apiKey:
-        meta.requiresApiKey === false ? '' : typeof raw?.apiKey === 'string' ? raw.apiKey : '',
-      model: typeof raw?.model === 'string' && raw.model ? raw.model : meta.defaultModel,
-      ...(meta.needsBaseUrl
-        ? { baseUrl: typeof raw?.baseUrl === 'string' ? raw.baseUrl : '' }
-        : {}),
-      ...(meta.id === 'openai-codex'
-        ? {
-            reasoningEffort: isCodexReasoningEffort(raw?.reasoningEffort)
-              ? raw.reasoningEffort
-              : 'none',
-            serviceTier: isCodexServiceTier(raw?.serviceTier) ? raw.serviceTier : 'default',
-          }
-        : {}),
-    }
-  }
-  return { provider: settings.provider, providers: safeProviders }
-}
-
-function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
-  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(
-    value as string,
-  )
-}
-
-function isCodexServiceTier(value: unknown): value is string {
-  return typeof value === 'string' && /^[a-zA-Z0-9._-]{1,64}$/.test(value)
-}
-
-function codexErrorCode(error: unknown): CodexErrorCode {
-  return error instanceof CodexError ? error.code : 'provider-failure'
-}
+const aiRuntime = new AiMainRuntime({
+  auth: getCodexAuth(),
+  getGensparkApiKey: gskApiKey,
+})
 
 /**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
@@ -2536,7 +2495,7 @@ function codexErrorCode(error: unknown): CodexErrorCode {
  */
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    const stored = readJson<unknown>(SETTINGS_PATH(), {})
     return sanitizeAiSettings(stored)
   })
 
@@ -2556,181 +2515,46 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:codex-status', async () => {
-    try {
-      return await getCodexAuth().status()
-    } catch (error) {
-      return { loggedIn: false, errorCode: codexErrorCode(error) }
-    }
+    return aiRuntime.codexStatus()
   })
 
   ipcMain.handle('ai:codex-login', async () => {
-    try {
-      return await getCodexAuth().login()
-    } catch (error) {
-      return { loggedIn: false, errorCode: codexErrorCode(error) }
-    }
+    return aiRuntime.codexLogin()
   })
 
   ipcMain.handle('ai:codex-cancel-login', () => {
-    getCodexAuth().cancelLogin()
+    aiRuntime.codexCancelLogin()
   })
 
   ipcMain.handle('ai:codex-logout', async () => {
-    try {
-      await getCodexAuth().logout()
-      return { loggedIn: false }
-    } catch (error) {
-      return { loggedIn: false, errorCode: codexErrorCode(error) }
-    }
+    return aiRuntime.codexLogout()
   })
 
   ipcMain.handle('ai:codex-capabilities', async () => {
-    let context: Awaited<ReturnType<CodexAuthService['getContext']>>
-    try {
-      context = await getCodexAuth().getContext()
-    } catch (error) {
-      return { models: [], errorCode: codexErrorCode(error) }
-    }
-    try {
-      return await fetchCodexCapabilities(context)
-    } catch (error) {
-      return { models: [], errorCode: codexErrorCode(error) }
-    }
+    return aiRuntime.codexCapabilities()
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(SETTINGS_PATH(), sanitizeAiSettings(settings))
+    const sanitized = sanitizeAiSettings(settings)
+    writeJson(SETTINGS_PATH(), sanitized)
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send('ai:settings-changed', sanitized)
+    }
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
-    const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    let codexContext: Awaited<ReturnType<CodexAuthService['getContext']>> | undefined
-    // the genspark key never enters the settings file; requests take it from the gsk login state
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    const send = (chunk: AiStreamChunk) => {
+    const send = (chunk: AiStreamChunk): void => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (provider === 'openai-codex') {
-      try {
-        codexContext = await getCodexAuth().getContext()
-      } catch (error) {
-        send({ requestId, type: 'error', errorCode: codexErrorCode(error) })
-        return
-      }
-      try {
-        const capabilities = await fetchCodexCapabilities(codexContext)
-        const model = capabilities.models.find((candidate) => candidate.id === config?.model)
-        if (!model) {
-          send({ requestId, type: 'error', errorCode: 'capabilities-unavailable' })
-          return
-        }
-        if (
-          config?.reasoningEffort &&
-          config.reasoningEffort !== 'none' &&
-          !model.reasoningEfforts.includes(config.reasoningEffort)
-        ) {
-          send({
-            requestId,
-            type: 'error',
-            errorCode: 'capabilities-unavailable',
-          })
-          return
-        }
-        if (
-          config?.serviceTier &&
-          config.serviceTier !== 'default' &&
-          !model.serviceTiers?.some((tier) => tier.id === config?.serviceTier)
-        ) {
-          send({
-            requestId,
-            type: 'error',
-            errorCode: 'capabilities-unavailable',
-          })
-          return
-        }
-      } catch (error) {
-        send({ requestId, type: 'error', errorCode: codexErrorCode(error) })
-        return
-      }
-    } else if (!config?.apiKey) {
-      send({
-        requestId,
-        type: 'error',
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
-      })
-      return
-    }
-    if (!config.model) {
-      send({ requestId, type: 'error', error: tm('errNoModel') })
-      return
-    }
-    const controller = new AbortController()
-    activeAiStreams.set(requestId, controller)
-    // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
-    let lastPing = 0
-    const ping = () => {
-      const now = Date.now()
-      if (now - lastPing < 5_000) return
-      lastPing = now
-      send({ requestId, type: 'ping' })
-    }
-    try {
-      let stopReason: string | undefined
-      await streamForProvider(
-        provider,
-        config,
-        system,
-        messages,
-        tools,
-        maxTokens,
-        {
-          signal: controller.signal,
-          onDelta: (text) => send({ requestId, type: 'delta', text }),
-          onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
-          onActivity: ping,
-          onStopReason: (reason) => {
-            stopReason = reason
-          },
-        },
-        codexContext,
-      )
-      send({ requestId, type: 'done', stopReason })
-    } catch (err) {
-      if (controller.signal.aborted) {
-        send({ requestId, type: 'done' })
-      } else {
-        if (provider === 'openai-codex') {
-          send({
-            requestId,
-            type: 'error',
-            errorCode: err instanceof AiTimeoutError ? 'timeout' : codexErrorCode(err),
-          })
-        } else {
-          send({
-            requestId,
-            type: 'error',
-            error: err instanceof Error ? err.message : String(err),
-            ...(err instanceof AiTimeoutError
-              ? { errorCode: 'timeout' as const }
-              : err instanceof AiCreditsError
-                ? { errorCode: 'credits' as const }
-                : {}),
-          })
-        }
-      }
-    } finally {
-      activeAiStreams.delete(requestId)
-    }
+    await aiRuntime.stream(request, send, {
+      noGensparkApiKey: tm('errGskNotLoggedIn'),
+      noApiKey: (provider) => tm('errNoApiKey', { provider }),
+      noModel: tm('errNoModel'),
+    })
   })
 
   ipcMain.handle('ai:stream-cancel', (_event, requestId: string) => {
-    activeAiStreams.get(requestId)?.abort()
+    aiRuntime.cancel(requestId)
   })
 
   // shared search tools (content + images): Serper with DuckDuckGo fallback (same source as slides/sheets)

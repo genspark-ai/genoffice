@@ -582,6 +582,11 @@ export function App(): React.JSX.Element {
   const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
   const aiSettingsRef = useRef<AiSettings | null>(null)
   aiSettingsRef.current = aiSettings
+  const updateAiSettings = (next: AiSettings): void => {
+    aiSettingsRef.current = next
+    setAiSettingsState(next)
+    void window.desktopApi.setAiSettings(next)
+  }
   const [aiBusy, setAiBusy] = useState(false)
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
@@ -1124,7 +1129,14 @@ export function App(): React.JSX.Element {
   }
 
   useEffect(() => {
-    void window.desktopApi.getAiSettings().then(setAiSettingsState)
+    void window.desktopApi.getAiSettings().then((next) => {
+      aiSettingsRef.current = next
+      setAiSettingsState(next)
+    })
+    return window.desktopApi.onAiSettingsChanged((next) => {
+      aiSettingsRef.current = next
+      setAiSettingsState(next)
+    })
   }, [])
 
   useEffect(() => {
@@ -2155,9 +2167,20 @@ export function App(): React.JSX.Element {
   function handleSend(
     overrideInstruction?: string,
     overrideAttachments?: readonly AttachmentMeta[],
+    codexStatusChecked = false,
   ): void {
     const instruction = (overrideInstruction ?? prompt).trim()
     if (!instruction || aiBusy) return
+    if (!aiSettings) return
+    if (aiSettings.provider === 'openai-codex' && !codexStatusChecked) {
+      void window.desktopApi
+        .aiCodexStatus()
+        .then((status) => {
+          if (status.loggedIn) handleSend(overrideInstruction, overrideAttachments, true)
+        })
+        .catch(() => {})
+      return
+    }
     runToolsRef.current = []
     // The message consumes the composer attachments: they ride along (echoed on the
     // bubble, images multimodal, files via the files skill) and the composer clears.
@@ -3208,6 +3231,8 @@ export function App(): React.JSX.Element {
         historicChat={historicChat}
         attachments={attachments}
         attachNotice={attachNotice}
+        aiSettings={aiSettings}
+        onAiSettingsChange={updateAiSettings}
         onPickAttachments={() => void handlePickAttachments()}
         onAddAttachmentPaths={(paths) => void handleAddAttachmentPaths(paths)}
         onAddPastedImage={(data, ext) => void handleAddPastedImage(data, ext)}

@@ -2,10 +2,26 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createIpcTransport,
   IPC_STREAM_SILENCE_TIMEOUT_MS,
+  resolveIpcErrorCode,
   type IpcErrorCode,
   type IpcStreamChunk,
   type IpcStreamStart,
 } from '../src'
+
+const errorMessages = {
+  timeout: 'timeout',
+  credits: 'credits',
+  'auth-required': 'auth-required',
+  'auth-expired': 'auth-expired',
+  'auth-temporary': 'auth-temporary',
+  'capabilities-unavailable': 'capabilities-unavailable',
+  'rate-limit': 'rate-limit',
+  'request-rejected': 'request-rejected',
+  'invalid-stream': 'invalid-stream',
+  'invalid-tool-call': 'invalid-tool-call',
+  'provider-failure': 'provider-failure',
+  unknown: 'unknown',
+} as const
 
 interface FakeSettings {
   provider: string
@@ -52,6 +68,27 @@ function setup(
 }
 
 describe('createIpcTransport', () => {
+  it.each([
+    'timeout',
+    'credits',
+    'auth-required',
+    'auth-expired',
+    'auth-temporary',
+    'capabilities-unavailable',
+    'rate-limit',
+    'request-rejected',
+    'invalid-stream',
+    'invalid-tool-call',
+    'provider-failure',
+  ] as const)('resolves %s through the shared safe error helper', (code) => {
+    expect(resolveIpcErrorCode(code, errorMessages)).toBe(code)
+  })
+
+  it('uses the shared unknown fallback for missing or unrecognized codes', () => {
+    expect(resolveIpcErrorCode(undefined, errorMessages)).toBe('unknown')
+    expect(resolveIpcErrorCode('not-a-code', errorMessages)).toBe('unknown')
+  })
+
   it('starts one request with settings and forwards deltas and tool calls', () => {
     const { started, cb, emit } = setup()
     expect(started).toHaveLength(1)

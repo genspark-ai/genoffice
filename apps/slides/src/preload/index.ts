@@ -76,8 +76,51 @@ import type {
   MenuCommand,
   OpenResult,
   SlidesApi,
+  CodexCapabilitiesResult,
+  CodexAccountStatus,
   UiTheme,
 } from '../shared/ipc'
+
+const CODEX_ERROR_CODES = new Set([
+  'auth-required',
+  'auth-expired',
+  'auth-temporary',
+  'timeout',
+  'capabilities-unavailable',
+  'rate-limit',
+  'request-rejected',
+  'invalid-stream',
+  'invalid-tool-call',
+  'provider-failure',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseCodexAccountStatus(value: unknown): CodexAccountStatus {
+  if (
+    !isRecord(value) ||
+    typeof value.loggedIn !== 'boolean' ||
+    (value.errorCode !== undefined &&
+      (typeof value.errorCode !== 'string' || !CODEX_ERROR_CODES.has(value.errorCode)))
+  ) {
+    throw new Error('Invalid Codex account status response.')
+  }
+  return value as unknown as CodexAccountStatus
+}
+
+function parseCodexCapabilities(value: unknown): CodexCapabilitiesResult {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.models) ||
+    (value.errorCode !== undefined &&
+      (typeof value.errorCode !== 'string' || !CODEX_ERROR_CODES.has(value.errorCode)))
+  ) {
+    throw new Error('Invalid Codex capabilities response.')
+  }
+  return value as unknown as CodexCapabilitiesResult
+}
 
 const api: SlidesApi = {
   getLanguage: () => ipcRenderer.invoke('app:get-language'),
@@ -287,10 +330,25 @@ const api: SlidesApi = {
   },
   getAiSettings: () => ipcRenderer.invoke('ai:get-settings'),
   setAiSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:set-settings', settings),
+  onAiSettingsChanged: (handler) => {
+    const listener = (_event: IpcRendererEvent, value: unknown): void => {
+      if (!isRecord(value) || typeof value.provider !== 'string' || !isRecord(value.providers))
+        return
+      handler(value as unknown as AiSettings)
+    }
+    ipcRenderer.on('ai:settings-changed', listener)
+    return () => ipcRenderer.removeListener('ai:settings-changed', listener)
+  },
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
+  aiCodexStatus: async () => parseCodexAccountStatus(await ipcRenderer.invoke('ai:codex-status')),
+  aiCodexLogin: async () => parseCodexAccountStatus(await ipcRenderer.invoke('ai:codex-login')),
+  aiCodexCancelLogin: () => ipcRenderer.invoke('ai:codex-cancel-login'),
+  aiCodexLogout: async () => parseCodexAccountStatus(await ipcRenderer.invoke('ai:codex-logout')),
+  aiCodexCapabilities: async () =>
+    parseCodexCapabilities(await ipcRenderer.invoke('ai:codex-capabilities')),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),
   imageSearch: (query: string, maxResults?: number) =>

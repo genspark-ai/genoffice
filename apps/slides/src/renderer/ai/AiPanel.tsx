@@ -22,7 +22,14 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { getCodexUiLabels } from '@genoffice/ai-provider'
+import {
+  AiCodexModelControl,
+  AiProviderAuthBanner,
+  AiProviderSelect,
+  Markdown,
+  useAiProviderControls,
+} from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -261,6 +268,7 @@ interface AiPanelProps {
   applyDeck: (slides: RenderSlide[], goTo?: number) => void
   fitWidthPx: number
   settings: AiSettings
+  onSettingsChange?: (settings: AiSettings) => void
   /** Preset instruction pushed from the ribbon/start screen; sent immediately when autoRun. When displayText exists the chat bubble shows only it while the full text still goes to the model.
       attachments are local files added in the start-screen input, taking effect with the first message.
       slideShot attaches a rendering of the current slide so the model sees what it's editing (AI Beautify) */
@@ -356,6 +364,7 @@ export function AiPanel({
   applyDeck,
   fitWidthPx,
   settings,
+  onSettingsChange,
   preset,
   open = true,
   onExpand,
@@ -364,7 +373,14 @@ export function AiPanel({
   onDeckProgress,
   currentFilePath,
 }: AiPanelProps) {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
+  const labels = getCodexUiLabels(lang)
+  const providerControls = useAiProviderControls({
+    settings,
+    onSettingsChange,
+    api: window.slidesApi,
+    positionKey: open ? 'open' : 'closed',
+  })
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -770,7 +786,9 @@ export function AiPanel({
           else if (chunk.type === 'error')
             finish({
               ok: false,
-              error: chunk.error ?? tGlobal('aiErrUnknown'),
+              error: chunk.errorCode
+                ? labels.resolveError(chunk.errorCode)
+                : (chunk.error ?? labels.resolveError(undefined)),
               // Empty gateway streams surface as errors now (ai-provider stream.ts
               // tags them with this suffix); keep classifying them as empty output
               // so retry ladders fail fast instead of burning billed attempts
@@ -1264,20 +1282,22 @@ export function AiPanel({
           })
           // Signed-out failures get an inline sign-in button; detected via
           // gsk status rather than matching the localized error text
-          void window.slidesApi
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
-              setChat((prev) => {
-                const next = [...prev]
-                const last = next.at(-1)
-                if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
-                }
-                return next
+          if (settingsRef.current.provider === 'genspark') {
+            void window.slidesApi
+              .aiGskStatus()
+              .then((status) => {
+                if (status.loggedIn) return
+                setChat((prev) => {
+                  const next = [...prev]
+                  const last = next.at(-1)
+                  if (last?.role === 'assistant' && last.error) {
+                    next[next.length - 1] = { ...last, loginRequired: true }
+                  }
+                  return next
+                })
               })
-            })
-            .catch(() => {})
+              .catch(() => {})
+          }
           void finishHistoryBatch().finally(() => setBusy(false))
         },
       },
@@ -1382,7 +1402,15 @@ export function AiPanel({
     // so duplicate triggers must be blocked synchronously (e.g. StrictMode double-running the preset autoRun effect),
     // otherwise two sets of bubbles get pushed and the earlier assistant placeholder stays at "thinking" forever.
     // qcRunningRef: the post-generation QC pass edits the deck outside the main loop — no concurrent runs
-    if (!instruction || !loop || loop.busy || runStartingRef.current || qcRunningRef.current) return
+    if (
+      !instruction ||
+      providerControls.sendDisabled ||
+      !loop ||
+      loop.busy ||
+      runStartingRef.current ||
+      qcRunningRef.current
+    )
+      return
     runStartingRef.current = true
     setInput('')
     // The message consumes the composer attachments: they ride along (echoed on the
@@ -1689,14 +1717,15 @@ export function AiPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Genspark AI"
+        aria-label="Genspark"
       />
       <div className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
-          {t('aiPanelTitle')}
+          Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <AiProviderSelect settings={settings} labels={labels} controls={providerControls} />
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -1719,6 +1748,13 @@ export function AiPanel({
           )}
         </div>
       </div>
+
+      <AiProviderAuthBanner
+        settings={settings}
+        labels={labels}
+        controls={providerControls}
+        notice={attachNotice}
+      />
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* Past conversation (read-only transcript, not fed to the model), displayed continuously with the current turn */}
@@ -2028,6 +2064,11 @@ export function AiPanel({
               >
                 <img src={attachIcon} alt="" aria-hidden />
               </button>
+              <AiCodexModelControl
+                settings={settings}
+                labels={labels}
+                controls={providerControls}
+              />
               {busy ? (
                 <button
                   className="ai-send-btn ai-stop-btn"
@@ -2041,7 +2082,7 @@ export function AiPanel({
                 <button
                   className="ai-send-btn"
                   onClick={run}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || providerControls.sendDisabled}
                   data-tip={t('aiSend')}
                   aria-label={t('aiSend')}
                 >

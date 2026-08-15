@@ -120,4 +120,93 @@ describe('AiPanel collapse (slides)', () => {
 
     cleanup()
   })
+
+  it('renders Codex controls and keeps Send disabled while signed out', async () => {
+    const previous = Object.getOwnPropertyDescriptor(window, 'slidesApi')
+    const api = {
+      aiCodexStatus: vi.fn(async () => ({ loggedIn: false })),
+      aiCodexLogin: vi.fn(async () => ({ loggedIn: true })),
+      aiCodexCancelLogin: vi.fn(async () => {}),
+      aiCodexLogout: vi.fn(async () => ({ loggedIn: false })),
+      aiCodexCapabilities: vi.fn(async () => ({ models: [] })),
+      setAiSettings: vi.fn(async () => {}),
+      onAiStream: vi.fn(() => () => {}),
+      aiStream: vi.fn(async () => {}),
+      aiStreamCancel: vi.fn(async () => {}),
+    }
+    Object.defineProperty(window, 'slidesApi', { configurable: true, value: api })
+    const onSettingsChange = vi.fn()
+    const codexSettings: AiSettings = {
+      ...settings,
+      provider: 'openai-codex',
+      providers: {
+        ...settings.providers,
+        'openai-codex': {
+          ...settings.providers['openai-codex'],
+          reasoningEffort: 'none',
+          serviceTier: 'default',
+        },
+      },
+    }
+    const { container, cleanup } = mount(
+      createElement(AiPanel, panelProps({ settings: codexSettings, onSettingsChange })),
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelectorAll('.ai-provider-select-input option')).toHaveLength(2)
+    expect(container.querySelector<HTMLButtonElement>('.ai-send-btn')?.disabled).toBe(true)
+    cleanup()
+    if (previous) Object.defineProperty(window, 'slidesApi', previous)
+    else delete (window as Partial<Window>).slidesApi
+  })
+
+  it('renders the capability-backed model control after Codex sign-in', async () => {
+    const previous = Object.getOwnPropertyDescriptor(window, 'slidesApi')
+    const api = {
+      aiCodexStatus: vi.fn(async () => ({ loggedIn: true })),
+      aiCodexLogin: vi.fn(async () => ({ loggedIn: true })),
+      aiCodexCancelLogin: vi.fn(async () => {}),
+      aiCodexLogout: vi.fn(async () => ({ loggedIn: false })),
+      aiCodexCapabilities: vi.fn(async () => ({
+        models: [
+          {
+            id: 'gpt-5.5',
+            name: 'GPT-5.5',
+            reasoningEfforts: ['none', 'high'],
+            serviceTiers: [{ id: 'default', name: 'Standard' }],
+          },
+        ],
+      })),
+      setAiSettings: vi.fn(async () => {}),
+      onAiStream: vi.fn(() => () => {}),
+      aiStream: vi.fn(async () => {}),
+      aiStreamCancel: vi.fn(async () => {}),
+    }
+    Object.defineProperty(window, 'slidesApi', { configurable: true, value: api })
+    const codexSettings: AiSettings = {
+      ...settings,
+      provider: 'openai-codex',
+      providers: {
+        ...settings.providers,
+        'openai-codex': {
+          ...settings.providers['openai-codex'],
+          reasoningEffort: 'none',
+          serviceTier: 'default',
+        },
+      },
+    }
+    const { container, cleanup } = mount(
+      createElement(AiPanel, panelProps({ settings: codexSettings })),
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull()
+    cleanup()
+    if (previous) Object.defineProperty(window, 'slidesApi', previous)
+    else delete (window as Partial<Window>).slidesApi
+  })
 })

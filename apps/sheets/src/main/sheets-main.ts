@@ -25,6 +25,7 @@ import {
   session as electronSession,
   shell,
   systemPreferences,
+  webContents,
   WebContentsView,
 } from 'electron'
 import type {
@@ -51,19 +52,19 @@ import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@gen
 import { ProjectStore } from '@genoffice/project-store'
 
 import {
-  AiCreditsError,
-  AiTimeoutError,
+  AiMainRuntime,
+  CodexAuthService,
   chatForProvider,
-  defaultAiSettings,
-  resolveAiSettings,
   setRescueFetch,
-  streamForProvider,
+  sanitizeAiSettings,
+  type AiProviderConfig,
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
+  type AiStreamRequest,
   type GenSparkAccountStatus,
-  type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { beginCodexCallback, codexCredentialStore } from '@genoffice/ai-provider/codex-auth-node'
 import { csvToXlsxBuffer, decodeCsvBuffer } from '../gateway/csv-import'
 import {
   ensureGenofficeLogin,
@@ -1055,14 +1056,39 @@ interface SheetsTabSession {
   readonly webContents: WebContents
   readonly client: XlsxSidecarClient
   readonly sessions: Map<string, SessionInfo>
-  readonly aiStreams: Map<string, AbortController>
 }
 
 /** per-tab session state, keyed by webContents.id — replaces the old single-window closures
  * that `registerIpcHandlers`/`validateSender` used to capture, which broke as soon as a second
  * tab (or a closed-then-reopened tab) registered and overwrote the previous closure. */
 const sheetsTabs = new Map<number, SheetsTabSession>()
+const sheetsAiRuntimes = new Map<number, AiMainRuntime>()
+let sheetsCodexAuth: CodexAuthService | undefined
 let activeSheetsWebContents: WebContents | null = null
+
+function getSheetsCodexAuth(): CodexAuthService {
+  sheetsCodexAuth ??= new CodexAuthService({
+    store: codexCredentialStore(),
+    clock: () => Date.now(),
+    fetch,
+    openBrowser: async (url) => {
+      const target = safeExternalUrl(url)
+      if (!target) throw new Error('ChatGPT sign-in URL rejected')
+      await shell.openExternal(target)
+    },
+    beginCallback: beginCodexCallback,
+  })
+  return sheetsCodexAuth
+}
+
+function aiRuntimeFor(entry: SheetsTabSession): AiMainRuntime {
+  let runtime = sheetsAiRuntimes.get(entry.webContents.id)
+  if (!runtime) {
+    runtime = new AiMainRuntime({ auth: getSheetsCodexAuth(), getGensparkApiKey: gskApiKey })
+    sheetsAiRuntimes.set(entry.webContents.id, runtime)
+  }
+  return runtime
+}
 
 function sessionFor(event: IpcMainInvokeEvent): SheetsTabSession {
   const entry = sheetsTabs.get(event.sender.id)
@@ -1091,11 +1117,12 @@ async function saveFileDialog(event: IpcMainInvokeEvent, options: SaveDialogOpti
 
 /** register a tab's webContents/client pair and wire up cleanup on teardown */
 function registerSheetsSession(webContents: WebContents, client: XlsxSidecarClient): void {
-  sheetsTabs.set(webContents.id, { webContents, client, sessions: new Map(), aiStreams: new Map() })
+  sheetsTabs.set(webContents.id, { webContents, client, sessions: new Map() })
   activeSheetsWebContents = webContents
   webContents.once('destroyed', () => {
     const entry = sheetsTabs.get(webContents.id)
     sheetsTabs.delete(webContents.id)
+    sheetsAiRuntimes.delete(webContents.id)
     if (entry) void closeAllSessions(entry)
     if (activeSheetsWebContents === webContents) activeSheetsWebContents = null
   })
@@ -2120,19 +2147,15 @@ export function registerSheetsAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return sanitizeAiSettings(readJson<unknown>(SETTINGS_PATH(), {}))
   })
 
   // Genspark account (gsk login state): the auth source for AI features; the
   // frontend uses it to guide sign-in when logged out
   ipcMain.handle(
     IPC_CHANNELS.aiGskStatus,
-    async (_event, withEmail?: unknown): Promise<GenSparkAccountStatus> => {
+    async (event, withEmail?: unknown): Promise<GenSparkAccountStatus> => {
+      sessionFor(event)
       if (!hasGskAuth()) return { loggedIn: false }
       if (!withEmail) return { loggedIn: true }
       const info = await gskLoginInfo()
@@ -2140,14 +2163,43 @@ export function registerSheetsAiIpc(): void {
     },
   )
 
-  ipcMain.handle(IPC_CHANNELS.aiGskLogin, () => {
+  ipcMain.handle(IPC_CHANNELS.aiGskLogin, (event) => {
+    sessionFor(event)
     ensureGenofficeLogin((url) => void shell.openExternal(url))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.aiCodexStatus, (event) => {
+    const entry = sessionFor(event)
+    return aiRuntimeFor(entry).codexStatus()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.aiCodexLogin, (event) => {
+    const entry = sessionFor(event)
+    return aiRuntimeFor(entry).codexLogin()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.aiCodexCancelLogin, (event) => {
+    const entry = sessionFor(event)
+    aiRuntimeFor(entry).codexCancelLogin()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.aiCodexLogout, (event) => {
+    const entry = sessionFor(event)
+    return aiRuntimeFor(entry).codexLogout()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.aiCodexCapabilities, (event) => {
+    const entry = sessionFor(event)
+    return aiRuntimeFor(entry).codexCapabilities()
   })
 
   ipcMain.handle(IPC_CHANNELS.aiSetSettings, (event, input: unknown) => {
     sessionFor(event)
-    const settings = aiSettingsInputSchema.parse(input)
+    const settings = sanitizeAiSettings(aiSettingsInputSchema.parse(input))
     writeJson(SETTINGS_PATH(), settings)
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.aiSettingsChanged, settings)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
@@ -2166,7 +2218,12 @@ export function registerSheetsAiIpc(): void {
     }
     if (!config.model) return { ok: false, error: tm('errNoModel') }
     try {
-      return await chatForProvider(provider, config, request.system, request.user)
+      return await chatForProvider(
+        provider,
+        config as AiProviderConfig,
+        request.system,
+        request.user,
+      )
     } catch (err) {
       return { ok: false, error: String(err) }
     }
@@ -2174,73 +2231,20 @@ export function registerSheetsAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.aiStream, async (event, input: unknown) => {
     const entry = sessionFor(event)
-    const request = aiStreamRequestSchema.parse(input)
-    const { requestId, system, messages } = request
-    const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
-    const provider = request.settings.provider as AiProviderId
-    let config = request.settings.providers[provider]
-    // Genspark's key never enters the settings file; it is read from the gsk
-    // login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    const send = (chunk: AiStreamChunk) => {
+    const request = aiStreamRequestSchema.parse(input) as unknown as AiStreamRequest
+    const send = (chunk: AiStreamChunk): void => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config?.apiKey) {
-      send({
-        requestId,
-        type: 'error',
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
-      })
-      return
-    }
-    if (!config.model) {
-      send({ requestId, type: 'error', error: tm('errNoModel') })
-      return
-    }
-    const controller = new AbortController()
-    entry.aiStreams.set(requestId, controller)
-    // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
-    let lastPing = 0
-    const ping = () => {
-      const now = Date.now()
-      if (now - lastPing < 5_000) return
-      lastPing = now
-      send({ requestId, type: 'ping' })
-    }
-    try {
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
-        signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
-        onActivity: ping,
-      })
-      send({ requestId, type: 'done' })
-    } catch (err) {
-      if (controller.signal.aborted) {
-        send({ requestId, type: 'done' })
-      } else {
-        send({
-          requestId,
-          type: 'error',
-          error: err instanceof Error ? err.message : String(err),
-          ...(err instanceof AiTimeoutError
-            ? { errorCode: 'timeout' as const }
-            : err instanceof AiCreditsError
-              ? { errorCode: 'credits' as const }
-              : {}),
-        })
-      }
-    } finally {
-      entry.aiStreams.delete(requestId)
-    }
+    await aiRuntimeFor(entry).stream(request, send, {
+      noGensparkApiKey: tm('errGskNotLoggedIn'),
+      noApiKey: (provider) => tm('errNoApiKey', { provider }),
+      noModel: tm('errNoModel'),
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.aiStreamCancel, (event, requestId: unknown) => {
     const entry = sessionFor(event)
-    entry.aiStreams.get(z.string().min(1).parse(requestId))?.abort()
+    aiRuntimeFor(entry).cancel(z.string().min(1).parse(requestId))
   })
 
   // Shared search tools (content + images): Serper with DuckDuckGo fallback
