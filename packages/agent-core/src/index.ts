@@ -23,3 +23,5 @@ export type {
 } from './loop'
 export { createIpcTransport, IPC_STREAM_SILENCE_TIMEOUT_MS } from './electron-transport'
 export type { IpcStreamChunk, IpcStreamStart, IpcTransportOptions } from './electron-transport'
+export { createA2ATransport } from './a2a-transport'
+export type { A2ATransportOptions } from './a2a-transport'
