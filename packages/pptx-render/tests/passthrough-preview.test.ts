@@ -110,3 +110,36 @@ describe('passthrough preview rendering', () => {
     expect(n.media).toBe('video')
   })
 })
+
+describe('stale drawing scale-to-frame threshold', () => {
+  const mkPreview = (childCy: number): PassthroughElement =>
+    ({
+      id: 'pt1',
+      type: 'passthrough',
+      kind: 'smartart',
+      anchor,
+      transform: transform(0, 0, 1000000, 1000000),
+      previewShapes: [
+        {
+          id: 'sp1',
+          type: 'shape',
+          anchor,
+          transform: transform(0, 0, 1000000, childCy),
+          fill: { type: 'solid', color: '#4F81BD' },
+        } as any,
+      ],
+    }) as any
+  const groupScaleY = (el: PassthroughElement): number => {
+    const rs = buildRenderSlide(slideOf([el]), size, { fitWidthPx: 1280 })
+    const g = rs.nodes[0] as GroupRenderNode
+    return g.childScaleY ?? 1
+  }
+
+  it('a small overshoot (intentional bleed) is left alone', () => {
+    expect(groupScaleY(mkPreview(1100000))).toBeCloseTo(1, 3)
+  })
+
+  it('a gross overflow (stale cache) compresses into the frame', () => {
+    expect(groupScaleY(mkPreview(2500000))).toBeLessThan(0.5)
+  })
+})

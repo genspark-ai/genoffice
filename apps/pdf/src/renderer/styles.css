@@ -70,7 +70,6 @@
   --pdf-shadow-page: 0 1px 4px rgb(0 0 0 / 18%);
   --pdf-shadow-pin: 0 1px 4px rgb(0 0 0 / 30%);
   --pdf-shadow-drop: 0 6px 20px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
-  --pdf-shadow-palette: 0 3px 10px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 8%);
   --pdf-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
 }
 
@@ -1541,7 +1540,16 @@ button {
   padding: 4px 10px 8px;
 }
 
-.pdf-note-draft-box textarea {
+/* Inline rewrite of an existing comment; sits inside the comment's own padding */
+.pdf-note-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.pdf-note-draft-box textarea,
+.pdf-note-edit-box textarea {
   resize: none;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1551,7 +1559,8 @@ button {
   font: inherit;
 }
 
-.pdf-note-draft-box textarea:focus {
+.pdf-note-draft-box textarea:focus,
+.pdf-note-edit-box textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -1596,7 +1605,23 @@ button {
   font-size: 11px;
 }
 
-.pdf-note-comment-del {
+/* Edit/delete live here; hidden until the pointer is over the comment (or a button
+   has keyboard focus) so the thread stays readable */
+.pdf-note-comment-actions {
+  display: inline-flex;
+  align-self: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.pdf-note-comment:hover .pdf-note-comment-actions,
+.pdf-note-comment-actions:focus-within {
+  opacity: 1;
+}
+
+.pdf-note-comment-del,
+.pdf-note-comment-edit {
   display: inline-flex;
   align-items: center;
   align-self: center;
@@ -1612,6 +1637,11 @@ button {
 .pdf-note-comment-del:hover {
   background: var(--hover);
   color: var(--danger);
+}
+
+.pdf-note-comment-edit:hover {
+  background: var(--hover);
+  color: var(--accent);
 }
 
 .pdf-note-comment-body {
@@ -2197,14 +2227,6 @@ button {
   border-radius: 3px;
 }
 
-.pdf-color-picker-popup {
-  padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--pdf-shadow-palette);
-}
-
 .pdf-form-color-popup {
   position: absolute;
   top: calc(100% + 6px);
@@ -2219,115 +2241,13 @@ button {
   z-index: 8;
 }
 
+/* Positioning-only wrapper: the shared @genoffice/ui .gcp-palette inside
+   draws the panel chrome (background, border, radius, shadow). */
 .pdf-color-popover {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 4;
-  /* Border-box 238 = 216px content (exactly the integer-pixel swatch grid:
-     6×31 + 5×6) + 2×10 padding + 2×1 border */
-  width: 238px;
-  padding: 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: var(--pdf-shadow-popup);
-}
-
-/* Saturation/value gradient field (gradient itself is inline — color content) */
-.pdf-cp-sv {
-  position: relative;
-  height: 130px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: crosshair;
-  touch-action: none;
-}
-
-.pdf-cp-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0;
-}
-
-.pdf-cp-hue {
-  position: relative;
-  flex: 1;
-  height: 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  touch-action: none;
-}
-
-.pdf-cp-thumb {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.pdf-cp-preview {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 auto;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-}
-
-.pdf-cp-eyedrop {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.pdf-cp-eyedrop:hover {
-  background: var(--hover);
-}
-
-.pdf-color-palette {
-  display: grid;
-  margin-bottom: 9px;
-}
-
-.pdf-color-choice {
-  aspect-ratio: 1;
-  width: 100%;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-
-.pdf-color-choice:hover,
-.pdf-color-choice.active {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.pdf-color-hex {
-  box-sizing: border-box;
-  width: 100%;
-  text-transform: uppercase;
-}
-
-.pdf-color-popover-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 9px;
 }
 
 .pdf-wm-preview {
@@ -2672,63 +2592,44 @@ button {
   padding: 8px;
 }
 
-.rb-drop.pdf-color-picker-popup {
-  box-shadow: var(--pdf-shadow-palette);
+/* Dialog color well (stamp dialog): swatch trigger + the shared picker popover.
+   The popover is fixed + anchored so it escapes the modal's overflow-y clip. */
+.pdf-color-well-wrap {
+  position: relative;
+  anchor-name: --pdf-color-well;
 }
 
-.pdf-color-picker {
-  display: grid;
-  grid-template-columns: repeat(var(--pdf-color-columns), 22px);
-  gap: 6px;
-  width: max-content;
-}
-
-.pdf-color-swatch {
-  width: 22px;
-  height: 22px;
+.pdf-color-well {
+  width: 48px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   cursor: pointer;
 }
 
-.pdf-color-swatch:hover,
-.pdf-color-swatch.active {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-}
-
-.pdf-color-more {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.pdf-color-more input[type='color'] {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  background: none;
-  cursor: pointer;
+.pdf-color-popover.pdf-color-well-pop {
+  position: fixed;
+  position-anchor: --pdf-color-well;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  right: auto;
+  position-try-fallbacks: flip-block, flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
 }
 
 /* Shared color picker anchored to a ribbon trigger: the .rb-drop rules give it
    the fixed anchor positioning; drop the popover's own right-pin so the two
    inset systems don't fight (matters in RTL) */
+/* Ribbon-anchored variant: .rb-drop supplies the anchor positioning; strip its
+   panel chrome so only the shared picker's own chrome shows. */
 .rb-drop.pdf-color-popover {
   right: auto;
-  padding: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
 }
 
 .pdf-modal-textarea {

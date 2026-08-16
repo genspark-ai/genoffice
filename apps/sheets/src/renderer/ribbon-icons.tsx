@@ -37,8 +37,7 @@ export function CaretIcon(): ReactElement {
   )
 }
 
-/// Quick-access save button (floppy) — design-supplied geometry shared with
-/// the docs and slides ribbons, so the three apps' save buttons read identically.
+/// Quick-access save button — standard floppy glyph shared across all apps.
 export function SaveIcon(): ReactElement {
   return (
     <Icon>
@@ -227,8 +226,10 @@ export const RIBBON_GLYPH_ICONS: Record<string, ReactElement> = {
   ),
   '🖌': (
     <Icon>
-      <path d="M 16.5 4 H 3.97 V 10.71 H 16.5 Z" />
-      <path d="M 16.51 7.13 H 20.53 V 14.33 L 9.79 15.72 V 21" />
+      <rect x="10.65" y="4.05" width="2.7" height="5.1" rx="1.35" />
+      <rect x="4.5" y="9.15" width="15" height="10.8" rx="1.5" />
+      <path d="M 4.5 13.35 H 19.5" />
+      <path d="M 9.3 16.35 V 18.15 M 14.7 16.35 V 18.15" />
     </Icon>
   ),
   // ---- find / filter ----

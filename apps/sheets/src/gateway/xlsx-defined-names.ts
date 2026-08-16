@@ -18,9 +18,11 @@ export interface DefinedNamesState {
 }
 
 /// Excel name rules (simplified): starts with a letter, `_`, or `\`;
-/// continues with word characters, `.`, or `\`; must not look like an A1 or
-/// R1C1 cell reference.
-const NAME_PATTERN = /^[A-Za-z_\\][A-Za-z0-9_.\\]*$/
+/// continues with letters, digits, `_`, `.`, or `\`; must not look like an
+/// A1 or R1C1 cell reference. Letters are Unicode — Excel accepts CJK names,
+/// and Create from Selection builds them from localized headers, so this
+/// must accept everything definedNameFromLabel produces.
+const NAME_PATTERN = /^[\p{L}_\\][\p{L}\p{N}_.\\]*$/u
 const CELL_REF_PATTERN = /^(?:[A-Za-z]{1,3}[0-9]+|[Rr][0-9]*[Cc][0-9]*)$/
 
 export function applyDefinedNamesState(workbookXml: string, state: DefinedNamesState): string {

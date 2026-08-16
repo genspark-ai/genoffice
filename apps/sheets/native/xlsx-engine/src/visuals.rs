@@ -28,12 +28,30 @@ pub struct CellStyle {
     pub font_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_color: Option<String>,
+    /// Theme provenance (slot index + tint) for colors resolved from the
+    /// theme palette, so the renderer can re-resolve them when the document
+    /// theme changes. Absent for literal rgb / indexed colors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_color_theme: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_color_tint: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_color_theme: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_color_tint: Option<f64>,
+    /// font/scheme: "major" or "minor" — the family follows the theme fonts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_scheme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub horizontal_alignment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vertical_alignment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent: Option<u32>,
+    /// OOXML alignment/@textRotation: 1-90 counter-clockwise, 91-180 encodes
+    /// clockwise as 90+deg, 255 is vertically stacked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_rotation: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number_format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -76,6 +94,7 @@ impl CellStyle {
             || self.horizontal_alignment != default.horizontal_alignment
             || self.vertical_alignment != default.vertical_alignment
             || self.indent != default.indent
+            || self.text_rotation != default.text_rotation
             || self.wrap_text != default.wrap_text
     }
 }
@@ -127,6 +146,14 @@ pub struct ChartSeries {
     pub explosion_pct: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub point_explosions: Option<Vec<PointExplosion>>,
+    /// spPr/a:ln color; "none" for an explicit a:noFill line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smooth: Option<bool>,
+    /// c:marker/c:symbol — "none" hides scatter/line markers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marker: Option<String>,
 }
 
 /// Per-point fill override from `c:dPt`, e.g. pie slice colors.
@@ -145,6 +172,37 @@ pub struct PointExplosion {
     pub pct: u32,
 }
 
+/// One paragraph of a shape/text-box `xdr:txBody`, with Excel's run styling.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShapeParagraph {
+    /// a:pPr/@algn — l | ctr | r | just; absent means left.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub align: Option<String>,
+    pub runs: Vec<ShapeRun>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShapeRun {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub bold: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub italic: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub underline: bool,
+    /// Points (a:rPr/@sz / 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<f64>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// Explicit `c:scaling` bounds; absent keys mean auto.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +211,39 @@ pub struct ValueAxisBounds {
     pub min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
+}
+
+/// One plot axis, keyed by its `c:axPos` side rather than element kind, so
+/// scatter charts (two valAx) pair titles/bounds with the right axis.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AxisInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub major_unit: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_fmt: Option<String>,
+    pub major_gridlines: bool,
+    /// c:delete — the axis exists for scaling but is not drawn.
+    pub hidden: bool,
+}
+
+/// Chart-title font shorthand from c:title/c:txPr//a:defRPr.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartTitleStyle {
+    /// Points (defRPr/@sz / 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -174,7 +265,10 @@ pub struct ChartMetadata {
     /// Always present ("none" when the legend is absent) so the editor can
     /// echo the current state back.
     pub legend: String,
-    pub data_labels: String,
+    /// Absent when the part has no dLbls at all (renderer defaults apply);
+    /// "none" is an explicit off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_labels: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_label_position: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -196,6 +290,21 @@ pub struct ChartMetadata {
     pub gap_width_pct: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hole_size_pct: Option<u32>,
+    /// Bottom/top axis (category, or scatter X), by axPos.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_axis: Option<AxisInfo>,
+    /// Left/right axis (values), by axPos.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y_axis: Option<AxisInfo>,
+    /// c:scatterStyle — whether scatter points connect with lines.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scatter_style: Option<String>,
+    /// Second left/right value axis (combo charts) — scaling for the line
+    /// series and, when not hidden, a drawn right-hand scale.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary_y_axis: Option<AxisInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_style: Option<ChartTitleStyle>,
     pub series: Vec<ChartSeries>,
 }
 
@@ -221,11 +330,30 @@ pub struct VisualObject {
     pub shape_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_color: Option<String>,
+    /// spPr/a:ln solid color, or the xdr:style lnRef theme color; "none"
+    /// for an explicit a:noFill outline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_color: Option<String>,
+    /// a:ln/@w in points.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_width: Option<f64>,
+    /// xdr:style fontRef theme color — the default run color.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_color: Option<String>,
+    /// a:bodyPr/@anchor — t | ctr | b.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_anchor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraphs: Option<Vec<ShapeParagraph>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     /// Degrees clockwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
+    /// xdr:cNvPr/@id — pairs a drawing fallback shape with its worksheet
+    /// <oleObject shapeId=…>. Engine-internal, never serialized.
+    #[serde(skip)]
+    pub nv_id: Option<u32>,
     /// ZIP entry path of the drawing part this visual lives in, plus its
     /// anchor index within that part — the save-side edit locator.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -262,6 +390,9 @@ struct FontStyle {
     underline: bool,
     strikethrough: bool,
     color: Option<String>,
+    color_theme: Option<usize>,
+    color_tint: Option<f64>,
+    scheme: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -282,17 +413,75 @@ pub struct ColorContext {
     theme: Vec<(u8, u8, u8)>,
 }
 
+impl ColorContext {
+    /// The palette as `#RRGGBB` strings in theme index order, or None when
+    /// the workbook has no readable theme.
+    pub fn palette_hex(&self) -> Option<Vec<String>> {
+        if self.theme.is_empty() {
+            return None;
+        }
+        Some(
+            self.theme
+                .iter()
+                .map(|(red, green, blue)| format!("#{red:02X}{green:02X}{blue:02X}"))
+                .collect(),
+        )
+    }
+}
+
+/// Major/minor latin typefaces from the theme's fontScheme.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeFonts {
+    pub major: String,
+    pub minor: String,
+}
+
+pub fn read_theme_fonts(
+    archive: &mut ZipArchive<File>,
+) -> Result<Option<ThemeFonts>, SidecarError> {
+    let Some(xml) = read_optional_xml(archive, "xl/theme/theme1.xml")? else {
+        return Ok(None);
+    };
+    let document = parse_document(&xml, "theme1.xml")?;
+    let Some(scheme) = document
+        .descendants()
+        .find(|node| node.has_tag_name("fontScheme"))
+    else {
+        return Ok(None);
+    };
+    let latin = |name: &str| -> Option<String> {
+        scheme
+            .children()
+            .find(|child| child.has_tag_name(name))?
+            .children()
+            .find(|child| child.has_tag_name("latin"))?
+            .attribute("typeface")
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    };
+    Ok(match (latin("majorFont"), latin("minorFont")) {
+        (Some(major), Some(minor)) => Some(ThemeFonts { major, minor }),
+        _ => None,
+    })
+}
+
 pub fn read_styles(
     archive: &mut ZipArchive<File>,
     colors: &ColorContext,
+    theme_fonts: Option<&ThemeFonts>,
     locale: &str,
 ) -> Result<(Vec<CellStyle>, Vec<CellStyle>), SidecarError> {
     let Some(xml) = read_optional_xml(archive, "xl/styles.xml")? else {
         return Ok((vec![CellStyle::default()], Vec::new()));
     };
     let document = parse_document(&xml, "styles.xml")?;
+    // Only the top-level <numFmts> table: dxf-local <numFmt> entries reuse
+    // file-local ids that must not shadow builtin ids for cell xfs.
     let custom_formats = document
         .descendants()
+        .filter(|node| node.has_tag_name("numFmts"))
+        .flat_map(|node| node.children())
         .filter(|node| node.has_tag_name("numFmt"))
         .filter_map(|node| {
             Some((
@@ -342,10 +531,10 @@ pub fn read_styles(
                         .and_then(|index| fonts.get(index))
                         .cloned()
                         .unwrap_or_default();
-                    let fill_color = numeric_attribute(xf, "fillId")
+                    let fill = numeric_attribute(xf, "fillId")
                         .and_then(|index| fills.get(index))
                         .cloned()
-                        .flatten();
+                        .unwrap_or_default();
                     let border = numeric_attribute(xf, "borderId")
                         .and_then(|index| borders.get(index))
                         .cloned()
@@ -360,8 +549,15 @@ pub fn read_styles(
                                 })
                         });
                     let alignment = xf.children().find(|child| child.has_tag_name("alignment"));
+                    // Excel resolves scheme fonts against the theme; the
+                    // literal <name val> is only a cached copy.
+                    let font_family = match (font.scheme.as_deref(), theme_fonts) {
+                        (Some("major"), Some(fonts)) => Some(fonts.major.clone()),
+                        (Some("minor"), Some(fonts)) => Some(fonts.minor.clone()),
+                        _ => font.family,
+                    };
                     CellStyle {
-                        font_family: font.family,
+                        font_family,
                         font_size: font.size,
                         bold: font.bold,
                         italic: font.italic,
@@ -371,7 +567,12 @@ pub fn read_styles(
                             .and_then(|node| node.attribute("wrapText"))
                             .is_some_and(|value| value == "1" || value == "true"),
                         font_color: font.color,
-                        fill_color,
+                        fill_color: fill.color,
+                        font_color_theme: font.color_theme,
+                        font_color_tint: font.color_tint,
+                        fill_color_theme: fill.theme,
+                        fill_color_tint: fill.tint,
+                        font_scheme: font.scheme,
                         horizontal_alignment: alignment
                             .and_then(|node| node.attribute("horizontal"))
                             .map(ToOwned::to_owned),
@@ -382,6 +583,10 @@ pub fn read_styles(
                             .and_then(|node| node.attribute("indent"))
                             .and_then(|value| value.parse::<u32>().ok())
                             .filter(|steps| *steps > 0),
+                        text_rotation: alignment
+                            .and_then(|node| node.attribute("textRotation"))
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .filter(|degrees| (1..=180).contains(degrees) || *degrees == 255),
                         number_format,
                         border_top: border.top,
                         border_bottom: border.bottom,
@@ -443,6 +648,13 @@ fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         .find(|node| node.has_tag_name("border"))
         .map(|node| parse_border(node, colors))
         .unwrap_or_default();
+    // Unlike cell xfs, a dxf carries its format code inline.
+    let number_format = dxf
+        .children()
+        .find(|node| node.has_tag_name("numFmt"))
+        .and_then(|node| node.attribute("formatCode"))
+        .filter(|code| !code.is_empty() && *code != "General")
+        .map(ToOwned::to_owned);
     CellStyle {
         font_family: font.family,
         font_size: font.size,
@@ -453,10 +665,16 @@ fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         wrap_text: false,
         font_color: font.color,
         fill_color,
+        font_color_theme: None,
+        font_color_tint: None,
+        fill_color_theme: None,
+        fill_color_tint: None,
+        font_scheme: None,
         horizontal_alignment: None,
         vertical_alignment: None,
         indent: None,
-        number_format: None,
+        text_rotation: None,
+        number_format,
         border_top: border.top,
         border_bottom: border.bottom,
         border_left: border.left,
@@ -485,6 +703,7 @@ pub fn read_visual_objects(
             &sheet.worksheet_path,
             &drawing_relationship.target,
         )?;
+        let start = visuals.len();
         visuals.extend(read_drawing(
             archive,
             &drawing_path,
@@ -492,8 +711,53 @@ pub fn read_visual_objects(
             visuals.len(),
             colors,
         )?);
+        // OLE embeds keep a hidden drawing fallback shape; give it the
+        // object's progId as caption text so the placeholder reads as an
+        // embedded object instead of an empty rectangle.
+        let prog_ids = read_ole_prog_ids(archive, &sheet.worksheet_path)?;
+        if !prog_ids.is_empty() {
+            for visual in &mut visuals[start..] {
+                if visual.kind != "shape" || visual.text.is_some() {
+                    continue;
+                }
+                let Some(prog_id) = visual.nv_id.and_then(|id| prog_ids.get(&id)) else {
+                    continue;
+                };
+                visual.text = Some(prog_id.clone());
+            }
+        }
     }
     Ok(visuals)
+}
+
+/// Worksheet `<oleObject shapeId=… progId=…>` pairs (deduplicated — the
+/// mc:AlternateContent choice/fallback repeat the same object).
+fn read_ole_prog_ids(
+    archive: &mut ZipArchive<File>,
+    worksheet_path: &str,
+) -> Result<HashMap<u32, String>, SidecarError> {
+    let xml = read_xml(archive, worksheet_path)?;
+    let mut prog_ids = HashMap::new();
+    if !xml.contains("oleObject") {
+        return Ok(prog_ids);
+    }
+    let document = parse_document(&xml, worksheet_path)?;
+    for node in document
+        .descendants()
+        .filter(|node| node.has_tag_name("oleObject"))
+    {
+        let Some(shape_id) = node
+            .attribute("shapeId")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(prog_id) = node.attribute("progId") else {
+            continue;
+        };
+        prog_ids.entry(shape_id).or_insert_with(|| prog_id.to_owned());
+    }
+    Ok(prog_ids)
 }
 
 /// DrawingML solid fill: srgbClr, or schemeClr resolved via the theme palette.
@@ -512,7 +776,47 @@ fn drawing_fill_color(node: Node<'_, '_>, colors: &ColorContext) -> Option<Strin
     }
     let scheme = fill.descendants().find(|child| child.has_tag_name("schemeClr"))?;
     let base = scheme_color_rgb(scheme.attribute("val")?, colors)?;
-    Some(tint_to_hex(base, 0.0))
+    Some(apply_color_modifiers(scheme, base))
+}
+
+/// DrawingML child color transforms (a:lumMod/a:lumOff/a:tint/a:shade), the
+/// usual RGB approximations — enough for Excel's accent "40% lighter" dPt
+/// and legend variants.
+fn apply_color_modifiers(color_node: Node<'_, '_>, base: (u8, u8, u8)) -> String {
+    let factor = |node: Node<'_, '_>| {
+        node.attribute("val")
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|value| value / 100_000.0)
+    };
+    let mut channels = [f64::from(base.0), f64::from(base.1), f64::from(base.2)];
+    for child in color_node.children() {
+        let Some(value) = factor(child) else { continue };
+        match child.tag_name().name() {
+            "lumMod" | "shade" => {
+                for channel in &mut channels {
+                    *channel *= value;
+                }
+            }
+            "lumOff" => {
+                for channel in &mut channels {
+                    *channel += 255.0 * value;
+                }
+            }
+            "tint" => {
+                for channel in &mut channels {
+                    *channel = *channel * value + 255.0 * (1.0 - value);
+                }
+            }
+            _ => {}
+        }
+    }
+    let clamp = |value: f64| value.round().clamp(0.0, 255.0) as u8;
+    format!(
+        "#{:02X}{:02X}{:02X}",
+        clamp(channels[0]),
+        clamp(channels[1]),
+        clamp(channels[2])
+    )
 }
 
 fn scheme_color_rgb(name: &str, colors: &ColorContext) -> Option<(u8, u8, u8)> {
@@ -547,6 +851,59 @@ pub fn read_media(
         media_type: media_type.to_owned(),
         base64: base64::engine::general_purpose::STANDARD.encode(bytes),
     })
+}
+
+/// xdr:txBody paragraphs with per-run styling; a:br becomes a newline run.
+fn parse_text_paragraphs(body: Node<'_, '_>, colors: &ColorContext) -> Vec<ShapeParagraph> {
+    body.children()
+        .filter(|node| node.has_tag_name("p"))
+        .map(|paragraph| {
+            let align = direct_child(paragraph, "pPr")
+                .and_then(|node| node.attribute("algn"))
+                .map(ToOwned::to_owned);
+            let mut runs = Vec::new();
+            for child in paragraph.children() {
+                if child.has_tag_name("br") {
+                    runs.push(ShapeRun {
+                        text: "\n".into(),
+                        color: None,
+                        bold: false,
+                        italic: false,
+                        underline: false,
+                        size: None,
+                    });
+                    continue;
+                }
+                if !child.has_tag_name("r") {
+                    continue;
+                }
+                let text = direct_child(child, "t")
+                    .and_then(|node| node.text())
+                    .unwrap_or_default()
+                    .to_owned();
+                let properties = direct_child(child, "rPr");
+                let flag = |name: &str| {
+                    properties
+                        .and_then(|rpr| rpr.attribute(name))
+                        .is_some_and(|value| value == "1" || value == "true")
+                };
+                runs.push(ShapeRun {
+                    text,
+                    color: properties.and_then(|rpr| drawing_fill_color(rpr, colors)),
+                    bold: flag("b"),
+                    italic: flag("i"),
+                    underline: properties
+                        .and_then(|rpr| rpr.attribute("u"))
+                        .is_some_and(|value| value != "none"),
+                    size: properties
+                        .and_then(|rpr| rpr.attribute("sz"))
+                        .and_then(|value| value.parse::<f64>().ok())
+                        .map(|value| value / 100.0),
+                });
+            }
+            ShapeParagraph { align, runs }
+        })
+        .collect()
 }
 
 fn read_drawing(
@@ -593,8 +950,14 @@ fn read_drawing(
                 name: drawing_name(anchor_node),
                 shape_type: None,
                 fill_color: None,
+                line_color: None,
+                line_width: None,
+                text_color: None,
+                text_anchor: None,
+                paragraphs: None,
                 text: None,
                 rotation: None,
+                nv_id: None,
                 drawing_path: Some(drawing_path.to_owned()),
                 drawing_index: Some(index),
             });
@@ -620,8 +983,14 @@ fn read_drawing(
                 name: drawing_name(anchor_node),
                 shape_type: None,
                 fill_color: None,
+                line_color: None,
+                line_width: None,
+                text_color: None,
+                text_anchor: None,
+                paragraphs: None,
                 text: None,
                 rotation: None,
+                nv_id: None,
                 drawing_path: Some(drawing_path.to_owned()),
                 drawing_index: Some(index),
             });
@@ -633,26 +1002,82 @@ fn read_drawing(
                 .find(|node| node.has_tag_name("prstGeom"))
                 .and_then(|node| node.attribute("prst"))
                 .map(ToOwned::to_owned);
-            let fill_color = shape_node
-                .children()
-                .find(|node| node.has_tag_name("spPr"))
-                .and_then(|sppr| drawing_fill_color(sppr, colors));
+            let shape_sppr = shape_node.children().find(|node| node.has_tag_name("spPr"));
+            // An explicit <a:noFill/> directly under spPr means transparent —
+            // it must not fall through to the xdr:style fillRef theme color.
+            let has_no_fill = shape_sppr
+                .is_some_and(|sppr| sppr.children().any(|node| node.has_tag_name("noFill")));
+            let fill_color = if has_no_fill {
+                Some("none".into())
+            } else {
+                shape_sppr.and_then(|sppr| drawing_fill_color(sppr, colors))
+            };
             let rotation = shape_node
                 .descendants()
                 .find(|node| node.has_tag_name("xfrm"))
                 .and_then(|node| node.attribute("rot"))
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| value / 60_000.0);
-            let text = shape_node
+            let body = shape_node
                 .descendants()
-                .find(|node| node.has_tag_name("txBody"))
-                .map(|body| {
-                    body.descendants()
-                        .filter(|node| node.has_tag_name("t"))
-                        .filter_map(|node| node.text())
-                        .collect::<String>()
+                .find(|node| node.has_tag_name("txBody"));
+            let paragraphs = body
+                .map(|node| parse_text_paragraphs(node, colors))
+                .filter(|list| !list.is_empty());
+            let text = paragraphs.as_ref().map(|list| {
+                list.iter()
+                    .map(|paragraph| {
+                        paragraph
+                            .runs
+                            .iter()
+                            .map(|run| run.text.as_str())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            });
+            let text_anchor = body
+                .and_then(|node| direct_child(node, "bodyPr"))
+                .and_then(|node| node.attribute("anchor"))
+                .map(ToOwned::to_owned);
+            // xdr:style theme references are the fallback when spPr carries
+            // no explicit fill/line (Excel's default for inserted shapes).
+            let style_node = shape_node
+                .children()
+                .find(|node| node.has_tag_name("style"));
+            let style_color = |name: &str| {
+                let reference = style_node?
+                    .children()
+                    .find(|node| node.has_tag_name(name))?;
+                let scheme = reference
+                    .children()
+                    .find(|node| node.has_tag_name("schemeClr"))?;
+                let base = scheme_color_rgb(scheme.attribute("val")?, colors)?;
+                Some(apply_color_modifiers(scheme, base))
+            };
+            let fill_color = fill_color.or_else(|| style_color("fillRef"));
+            let line_node = shape_node
+                .children()
+                .find(|node| node.has_tag_name("spPr"))
+                .and_then(|sppr| sppr.children().find(|node| node.has_tag_name("ln")));
+            let line_color = line_node
+                .and_then(|ln| {
+                    if ln.children().any(|node| node.has_tag_name("noFill")) {
+                        return Some("none".into());
+                    }
+                    drawing_fill_color(ln, colors)
                 })
-                .filter(|value| !value.is_empty());
+                .or_else(|| style_color("lnRef"));
+            let line_width = line_node
+                .and_then(|ln| ln.attribute("w"))
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|emu| emu / 12_700.0);
+            let text_color = style_color("fontRef");
+            let nv_id = shape_node
+                .descendants()
+                .find(|node| node.has_tag_name("cNvPr"))
+                .and_then(|node| node.attribute("id"))
+                .and_then(|value| value.parse::<u32>().ok());
             visuals.push(VisualObject {
                 id: visual_id,
                 sheet_id: sheet_id.to_owned(),
@@ -665,8 +1090,14 @@ fn read_drawing(
                 name: drawing_name(anchor_node),
                 shape_type,
                 fill_color,
+                line_color,
+                line_width,
+                text_color,
+                text_anchor,
+                paragraphs,
                 text,
                 rotation,
+                nv_id,
                 drawing_path: Some(drawing_path.to_owned()),
                 drawing_index: Some(index),
             });
@@ -702,10 +1133,9 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
         .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     // Only the chart-level title — axes carry their own c:title deeper down.
-    let title = document
-        .descendants()
-        .find(|node| node.has_tag_name("chart"))
-        .and_then(|chart| direct_child(chart, "title"))
+    let chart_node = document.descendants().find(|node| node.has_tag_name("chart"));
+    let title_node = chart_node.and_then(|chart| direct_child(chart, "title"));
+    let explicit_title = title_node
         .map(|node| {
             let rich = node
                 .descendants()
@@ -722,8 +1152,11 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
                 .filter_map(|child| child.text())
                 .collect::<String>()
         })
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "Chart".into());
+        .filter(|value| !value.is_empty());
+    let auto_title_deleted = chart_node
+        .and_then(|chart| direct_child(chart, "autoTitleDeleted"))
+        .and_then(|node| node.attribute("val"))
+        .is_some_and(|value| value == "1" || value == "true");
     let bar_direction = document
         .descendants()
         .find(|node| node.has_tag_name("barDir"))
@@ -735,6 +1168,33 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
         .enumerate()
         .map(|(index, node)| parse_chart_series(node, index, colors))
         .collect::<Vec<_>>();
+    // Excel's title rules: explicit text wins; a deleted auto title (or no
+    // <c:title> at all) means no title; a present-but-empty <c:title> shows
+    // the auto title — the sole series' name, else the "Chart Title"
+    // placeholder. An empty string means "no title" on the wire.
+    let title = match explicit_title {
+        Some(text) => text,
+        None if auto_title_deleted || title_node.is_none() => String::new(),
+        None => match &series[..] {
+            [only] if only.name != "Series" => only.name.clone(),
+            _ => "Chart Title".into(),
+        },
+    };
+    let (x_axis, y_axis, secondary_y_axis) = axis_infos(document);
+    let title_style = title_node
+        .and_then(|node| direct_child(node, "txPr"))
+        .and_then(|txpr| {
+            txpr.descendants()
+                .find(|child| child.has_tag_name("defRPr"))
+        })
+        .map(|def| ChartTitleStyle {
+            size: def
+                .attribute("sz")
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|value| value / 100.0),
+            bold: def.attribute("b").map(|value| value == "1" || value == "true"),
+            color: drawing_fill_color(def, colors),
+        });
     ChartMetadata {
         chart_types,
         bar_direction,
@@ -750,8 +1210,103 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
         category_axis_format: category_axis_format(document),
         gap_width_pct: plot_val_attribute(document, "barChart", "gapWidth"),
         hole_size_pct: plot_val_attribute(document, "doughnutChart", "holeSize"),
+        x_axis,
+        y_axis,
+        scatter_style: document
+            .descendants()
+            .find(|node| node.has_tag_name("scatterStyle"))
+            .and_then(|node| node.attribute("val"))
+            .map(ToOwned::to_owned),
+        secondary_y_axis,
+        title_style,
         series,
     }
+}
+
+/// All plot axes keyed by side: axPos b/t → X, l/r → Y. Falls back to the
+/// element kind (catAx → X, valAx → Y) when axPos is missing.
+fn axis_infos(document: &Document<'_>) -> (Option<AxisInfo>, Option<AxisInfo>, Option<AxisInfo>) {
+    let mut x_axis = None;
+    let mut left_axes: Vec<AxisInfo> = Vec::new();
+    // (info, is value axis) — only value axes qualify as the secondary scale.
+    let mut right_axes: Vec<(AxisInfo, bool)> = Vec::new();
+    for axis in document.descendants().filter(|node| {
+        ["catAx", "dateAx", "valAx"]
+            .iter()
+            .any(|name| node.has_tag_name(*name))
+    }) {
+        let scaling = direct_child(axis, "scaling");
+        let bound = |name: &str| {
+            scaling
+                .and_then(|node| direct_child(node, name))
+                .and_then(|node| node.attribute("val"))
+                .and_then(|value| value.parse::<f64>().ok())
+        };
+        let info = AxisInfo {
+            // Rich text, else the cell-linked strCache <c:v>; a truly empty
+            // <c:title> is Excel's auto axis title — the "Axis Title"
+            // placeholder.
+            title: direct_child(axis, "title").map(|node| {
+                let rich = node
+                    .descendants()
+                    .filter(|child| child.has_tag_name("t"))
+                    .filter_map(|child| child.text())
+                    .collect::<String>();
+                if !rich.is_empty() {
+                    return rich;
+                }
+                let cached = node
+                    .descendants()
+                    .filter(|child| child.has_tag_name("v"))
+                    .filter_map(|child| child.text())
+                    .collect::<String>();
+                if cached.is_empty() {
+                    "Axis Title".into()
+                } else {
+                    cached
+                }
+            }),
+            min: bound("min"),
+            max: bound("max"),
+            major_unit: direct_child(axis, "majorUnit")
+                .and_then(|node| node.attribute("val"))
+                .and_then(|value| value.parse::<f64>().ok()),
+            num_fmt: direct_child(axis, "numFmt")
+                .and_then(|node| node.attribute("formatCode"))
+                .filter(|code| !code.is_empty() && *code != "General")
+                .map(ToOwned::to_owned),
+            major_gridlines: direct_child(axis, "majorGridlines").is_some(),
+            // CT_Boolean: a bare <c:delete/> means true.
+            hidden: direct_child(axis, "delete")
+                .is_some_and(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
+        };
+        let position = direct_child(axis, "axPos").and_then(|node| node.attribute("val"));
+        let is_x = match position {
+            Some("b") | Some("t") => true,
+            Some("l") | Some("r") => false,
+            _ => axis.has_tag_name("catAx") || axis.has_tag_name("dateAx"),
+        };
+        if is_x {
+            if x_axis.is_none() {
+                x_axis = Some(info);
+            }
+        } else if position == Some("l") {
+            left_axes.push(info);
+        } else {
+            right_axes.push((info, axis.has_tag_name("valAx")));
+        }
+    }
+    // The left axis is the primary scale regardless of document order; the
+    // secondary scale is the first remaining right VALUE axis.
+    let mut right_values = right_axes
+        .into_iter()
+        .filter(|(_, is_value)| *is_value)
+        .map(|(info, _)| info);
+    let (y_axis, secondary_y_axis) = match left_axes.into_iter().next() {
+        Some(left) => (Some(left), right_values.next()),
+        None => (right_values.next(), right_values.next()),
+    };
+    (x_axis, y_axis, secondary_y_axis)
 }
 
 /// Scatter plots carry two valAx (X on the bottom, Y on the left); the left
@@ -825,30 +1380,30 @@ fn data_labels_node<'a>(document: &'a Document<'a>) -> Option<Node<'a, 'a>> {
         })
 }
 
-fn data_labels(document: &Document<'_>) -> String {
-    let Some(labels) = data_labels_node(document) else {
-        return "none".into();
-    };
+fn data_labels(document: &Document<'_>) -> Option<String> {
+    let labels = data_labels_node(document)?;
     let shown = |name: &str| {
         direct_child(labels, name)
             .and_then(|node| node.attribute("val"))
             .is_some_and(|value| value == "1" || value == "true")
     };
     if shown("delete") {
-        return "none".into();
+        return Some("none".into());
     }
     if shown("showPercent") {
-        return if shown("showCatName") {
-            "category-percent"
-        } else {
-            "percent"
-        }
-        .into();
+        return Some(
+            if shown("showCatName") {
+                "category-percent"
+            } else {
+                "percent"
+            }
+            .into(),
+        );
     }
     if shown("showVal") {
-        return "value".into();
+        return Some("value".into());
     }
-    "none".into()
+    Some("none".into())
 }
 
 fn data_label_position(document: &Document<'_>) -> Option<String> {
@@ -957,6 +1512,21 @@ fn parse_chart_series(
             })
         })
         .collect::<Vec<_>>();
+    let line_color = direct_child(series, "spPr")
+        .and_then(|sppr| sppr.children().find(|node| node.has_tag_name("ln")))
+        .and_then(|ln| {
+            if ln.children().any(|node| node.has_tag_name("noFill")) {
+                return Some("none".into());
+            }
+            drawing_fill_color(ln, colors)
+        });
+    let smooth = direct_child(series, "smooth")
+        .and_then(|node| node.attribute("val"))
+        .map(|value| value == "1" || value == "true");
+    let marker = direct_child(series, "marker")
+        .and_then(|node| direct_child(node, "symbol"))
+        .and_then(|node| node.attribute("val"))
+        .map(ToOwned::to_owned);
     ChartSeries {
         name,
         categories,
@@ -970,6 +1540,9 @@ fn parse_chart_series(
         point_colors: (!point_colors.is_empty()).then_some(point_colors),
         explosion_pct,
         point_explosions: (!point_explosions.is_empty()).then_some(point_explosions),
+        line_color,
+        smooth,
+        marker,
     }
 }
 
@@ -1019,6 +1592,12 @@ fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
 }
 
 fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle {
+    let color_node = font.children().find(|node| node.has_tag_name("color"));
+    let color = color_node.and_then(|node| parse_color(node, colors));
+    let (color_theme, color_tint) = color_node
+        .filter(|_| color.is_some())
+        .map(|node| theme_provenance(node))
+        .unwrap_or((None, None));
     FontStyle {
         family: font
             .children()
@@ -1030,8 +1609,14 @@ fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle {
             .find(|node| node.has_tag_name("sz"))
             .and_then(|node| node.attribute("val"))
             .and_then(|value| value.parse::<f64>().ok()),
-        bold: font.children().any(|node| node.has_tag_name("b")),
-        italic: font.children().any(|node| node.has_tag_name("i")),
+        bold: font
+            .children()
+            .find(|node| node.has_tag_name("b"))
+            .is_some_and(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
+        italic: font
+            .children()
+            .find(|node| node.has_tag_name("i"))
+            .is_some_and(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
         underline: font
             .children()
             .find(|node| node.has_tag_name("u"))
@@ -1040,39 +1625,86 @@ fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle {
             .children()
             .find(|node| node.has_tag_name("strike"))
             .is_some_and(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
-        color: font
+        color,
+        color_theme,
+        color_tint,
+        scheme: font
             .children()
-            .find(|node| node.has_tag_name("color"))
-            .and_then(|node| parse_color(node, colors)),
+            .find(|node| node.has_tag_name("scheme"))
+            .and_then(|node| node.attribute("val"))
+            .filter(|value| *value == "major" || *value == "minor")
+            .map(ToOwned::to_owned),
     }
 }
 
-fn parse_fill(fill: Node<'_, '_>, colors: &ColorContext) -> Option<String> {
-    let pattern = fill
+/// Theme slot + tint of a color node, when the color resolves through the
+/// theme palette (rgb/indexed take precedence and carry no provenance).
+fn theme_provenance(node: Node<'_, '_>) -> (Option<usize>, Option<f64>) {
+    if node.attribute("rgb").is_some() || node.attribute("indexed").is_some() {
+        return (None, None);
+    }
+    let theme = node
+        .attribute("theme")
+        .and_then(|value| value.parse::<usize>().ok());
+    if theme.is_none() {
+        return (None, None);
+    }
+    // Clamped to the wire schema's [-1, 1]; apply_tint saturates the same
+    // way, so a clamped tint reproduces the baked color exactly.
+    let tint = node
+        .attribute("tint")
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(-1.0, 1.0))
+        .filter(|value| *value != 0.0);
+    (theme, tint)
+}
+
+#[derive(Clone, Default)]
+struct FillInfo {
+    color: Option<String>,
+    theme: Option<usize>,
+    tint: Option<f64>,
+}
+
+fn parse_fill(fill: Node<'_, '_>, colors: &ColorContext) -> FillInfo {
+    let Some(pattern) = fill
         .children()
-        .find(|node| node.has_tag_name("patternFill"))?;
+        .find(|node| node.has_tag_name("patternFill"))
+    else {
+        return FillInfo::default();
+    };
     let pattern_type = pattern.attribute("patternType");
     if pattern_type == Some("none") {
-        return None;
+        return FillInfo::default();
     }
-    let foreground = pattern
-        .children()
-        .find(|node| node.has_tag_name("fgColor"))
-        .and_then(|node| parse_color(node, colors));
-    let background = pattern
-        .children()
-        .find(|node| node.has_tag_name("bgColor"))
-        .and_then(|node| parse_color(node, colors));
+    let fg_node = pattern.children().find(|node| node.has_tag_name("fgColor"));
+    let bg_node = pattern.children().find(|node| node.has_tag_name("bgColor"));
+    let foreground = fg_node.and_then(|node| parse_color(node, colors));
+    let background = bg_node.and_then(|node| parse_color(node, colors));
     // Textured patterns (gray125, stripes, …) render as the per-channel blend
     // of both colors — the closest flat-color approximation of the texture.
+    // Blends carry no single theme provenance.
     if pattern_type.is_some_and(|value| value != "solid") {
         if let (Some(fg), Some(bg)) = (foreground.as_deref(), background.as_deref()) {
             if let Some(mixed) = mix_hex(fg, bg) {
-                return Some(mixed);
+                return FillInfo {
+                    color: Some(mixed),
+                    ..FillInfo::default()
+                };
             }
         }
     }
-    foreground.or(background)
+    let (color, node) = if foreground.is_some() {
+        (foreground, fg_node)
+    } else {
+        (background, bg_node)
+    };
+    let (theme, tint) = node
+        .filter(|_| color.is_some())
+        .map(theme_provenance)
+        .unwrap_or((None, None));
+    FillInfo { color, theme, tint }
 }
 
 fn mix_hex(first: &str, second: &str) -> Option<String> {
@@ -1176,6 +1808,11 @@ pub fn resolve_color(
 pub fn theme_accent(colors: &ColorContext, accent: usize) -> Option<(u8, u8, u8)> {
     // Effective palette order: [lt1, dk1, lt2, dk2, accent1-6, ...]
     colors.theme.get(3 + accent).copied()
+}
+
+/// Theme dk1 (neutral text) color as rgb, if the palette was loaded.
+pub fn theme_dark1(colors: &ColorContext) -> Option<(u8, u8, u8)> {
+    colors.theme.get(1).copied()
 }
 
 pub fn tint_to_hex(base: (u8, u8, u8), tint: f64) -> String {
@@ -1321,6 +1958,9 @@ pub struct PivotPartInfo {
     pub path: String,
     pub cache_path: Option<String>,
     pub output_ref: String,
+    pub style_name: Option<String>,
+    pub first_data_row: usize,
+    pub row_grand_totals: bool,
 }
 
 pub fn read_pivot_tables(
@@ -1338,13 +1978,29 @@ pub fn read_pivot_tables(
             continue;
         };
         let document = parse_document(&xml, &pivot_path)?;
-        let Some(output_ref) = document
+        let Some(location) = document
             .descendants()
             .find(|node| node.has_tag_name("location"))
-            .and_then(|node| node.attribute("ref"))
         else {
             continue;
         };
+        let Some(output_ref) = location.attribute("ref") else {
+            continue;
+        };
+        let first_data_row = location
+            .attribute("firstDataRow")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1);
+        let root = document.root_element();
+        let row_grand_totals = root
+            .attribute("rowGrandTotals")
+            .map(|value| value == "1" || value == "true")
+            .unwrap_or(true);
+        let style_name = document
+            .descendants()
+            .find(|node| node.has_tag_name("pivotTableStyleInfo"))
+            .and_then(|node| node.attribute("name"))
+            .map(str::to_owned);
         let cache_path = read_relationships(archive, &pivot_path)?
             .values()
             .find(|part| part.relationship_type.ends_with("/pivotCacheDefinition"))
@@ -1354,6 +2010,9 @@ pub fn read_pivot_tables(
             path: pivot_path,
             cache_path,
             output_ref: output_ref.to_owned(),
+            style_name,
+            first_data_row,
+            row_grand_totals,
         });
     }
     Ok(infos)
@@ -1632,6 +2291,10 @@ fn builtin_number_format(id: u32, locale: &str) -> Option<&'static str> {
         2 => Some("0.00"),
         3 => Some("#,##0"),
         4 => Some("#,##0.00"),
+        5 => Some(r##""$"#,##0_);("$"#,##0)"##),
+        6 => Some(r##""$"#,##0_);[Red]("$"#,##0)"##),
+        7 => Some(r##""$"#,##0.00_);("$"#,##0.00)"##),
+        8 => Some(r##""$"#,##0.00_);[Red]("$"#,##0.00)"##),
         9 => Some("0%"),
         10 => Some("0.00%"),
         11 => Some("0.00E+00"),
@@ -1743,32 +2406,36 @@ mod tests {
             format!("<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser>{labels}</c:pieChart></c:plotArea>")
         };
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:showVal val=\"1\"/></c:dLbls>")).data_labels,
-            "value"
+            metadata(&plot("<c:dLbls><c:showVal val=\"1\"/></c:dLbls>")).data_labels.as_deref(),
+            Some("value")
         );
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:showPercent val=\"1\"/></c:dLbls>")).data_labels,
-            "percent"
+            metadata(&plot("<c:dLbls><c:showPercent val=\"1\"/></c:dLbls>"))
+                .data_labels
+                .as_deref(),
+            Some("percent")
         );
         assert_eq!(
             metadata(&plot(
                 "<c:dLbls><c:showCatName val=\"1\"/><c:showPercent val=\"1\"/></c:dLbls>"
             ))
-            .data_labels,
-            "category-percent"
+            .data_labels
+            .as_deref(),
+            Some("category-percent")
         );
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:delete val=\"1\"/></c:dLbls>")).data_labels,
-            "none"
+            metadata(&plot("<c:dLbls><c:delete val=\"1\"/></c:dLbls>")).data_labels.as_deref(),
+            Some("none")
         );
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:showVal val=\"0\"/></c:dLbls>")).data_labels,
-            "none"
+            metadata(&plot("<c:dLbls><c:showVal val=\"0\"/></c:dLbls>")).data_labels.as_deref(),
+            Some("none")
         );
-        assert_eq!(metadata(&plot("")).data_labels, "none");
+        // No dLbls anywhere: absent, so renderer defaults may apply.
+        assert_eq!(metadata(&plot("")).data_labels, None);
         // Plot-level dLbls missing: fall back to the first series.
         let series_level = "<c:plotArea><c:barChart><c:ser><c:dLbls><c:showVal val=\"1\"/></c:dLbls></c:ser></c:barChart></c:plotArea>";
-        assert_eq!(metadata(series_level).data_labels, "value");
+        assert_eq!(metadata(series_level).data_labels.as_deref(), Some("value"));
     }
 
     #[test]

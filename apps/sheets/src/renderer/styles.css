@@ -380,6 +380,12 @@ textarea:disabled {
   user-select: none;
 }
 
+/* While a popover is open the row must deliver presses (drag regions swallow
+   them), so outside-press dismissal can see presses on the blank band */
+html.genoffice-popover-open .ribbon-tabs {
+  -webkit-app-region: no-drag;
+}
+
 /* standalone-window chrome insets; in a shell tab (mode=tab) the tab strip
    above owns the traffic lights / caption buttons */
 .ribbon-tabs-mac {
@@ -1184,6 +1190,44 @@ textarea:disabled {
   display: inline-flex;
   anchor-name: --menu-select;
   anchor-scope: --menu-select;
+}
+
+/* Anchor positioning for the shared Word-style color panel (@genoffice/ui
+   .gcp-palette draws the chrome; this only places it under its trigger). */
+.sheets-color-pop {
+  position: fixed;
+  position-anchor: --menu-select;
+  top: calc(anchor(bottom) + 4px);
+  left: anchor(left);
+  position-try-fallbacks:
+    flip-inline,
+    flip-block,
+    flip-inline flip-block;
+  position-visibility: anchors-visible;
+  z-index: 60;
+}
+
+/* body-portal variant for transformed/clipping hosts (Univer float DOM);
+   left/top are set inline against the trigger's viewport rect */
+.sheets-color-pop-portal {
+  position: fixed;
+  z-index: 960;
+}
+
+/* plain color-well trigger (dialog / task-pane color pickers); the current
+   color is painted as an inline background on the button */
+.color-well {
+  width: 48px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.color-well:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* invisible trigger stretched over the host tool (old cover-select markup) */
@@ -1995,6 +2039,31 @@ textarea:focus {
   overflow: hidden;
 }
 
+/* File text boxes carry their own paragraph alignment and run styling;
+   the flow column replaces the centered grid. */
+.xlsx-shape-drawn .shape-text-rich {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  text-align: initial;
+  padding: 4px 8px;
+}
+
+.xlsx-shape-drawn .shape-anchor-t {
+  justify-content: flex-start;
+}
+
+.xlsx-shape-drawn .shape-anchor-b {
+  justify-content: flex-end;
+}
+
+.shape-paragraph {
+  display: block;
+  white-space: pre-wrap;
+  line-height: 1.3;
+}
+
 .shape-editable {
   position: relative;
   width: 100%;
@@ -2153,6 +2222,85 @@ textarea:focus {
   display: block;
   overflow: visible;
   pointer-events: none;
+}
+
+.page-break-line {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.page-break-outline {
+  border: 2px solid var(--sheets-select-blue);
+}
+
+.page-break-row {
+  border-top: 2px dashed var(--sheets-select-blue);
+}
+
+.page-break-col {
+  border-left: 2px dashed var(--sheets-select-blue);
+}
+
+.page-break-row.manual {
+  border-top-style: solid;
+}
+
+.page-break-col.manual {
+  border-left-style: solid;
+}
+
+.allow-edit-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.allow-edit-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.allow-edit-list li:last-child {
+  border-bottom: none;
+}
+
+.allow-edit-name {
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.allow-edit-ref {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.dialog-actions-inline {
+  margin-top: 8px;
+}
+
+.page-break-watermark {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-muted);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
 }
 
 .pie-layout {
@@ -4669,4 +4817,112 @@ textarea:focus {
 #univer-container.sheet-shape-drawing,
 #univer-container.sheet-shape-drawing * {
   cursor: crosshair !important;
+}
+
+/* Watch Window: floating non-modal panel (Formulas > Watch Window) */
+.watch-window {
+  position: fixed;
+  right: 18px;
+  bottom: 64px;
+  width: 420px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--sheets-shadow-slicer);
+  overflow: hidden;
+  z-index: 60;
+}
+
+.watch-window header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 10px;
+  background: var(--accent);
+  color: var(--sheets-on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.watch-title {
+  flex: 1;
+}
+
+.watch-add,
+.watch-close {
+  border: none;
+  background: transparent;
+  color: var(--sheets-on-accent);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.watch-add:hover,
+.watch-close:hover {
+  background: var(--sheets-on-accent-hover);
+}
+
+.watch-empty {
+  margin: 0;
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.watch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  overflow-y: auto;
+}
+
+.watch-table th,
+.watch-table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.watch-formula {
+  font-family: ui-monospace, monospace;
+}
+
+.watch-gone td {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.watch-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.watch-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* View > Formula Bar toggle: an app-level setting (not in the file), hiding
+   Univer's formula-bar row; the flex workbench reflows the grid below. */
+#univer-container.formula-bar-hidden [data-u-comp='formula-bar'] {
+  display: none;
 }

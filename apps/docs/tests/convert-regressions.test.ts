@@ -56,6 +56,9 @@ describe('runsToInline image runs', () => {
           widthPx: 96,
           heightPx: null,
           xml: '<w:drawing/>',
+          wrap: null,
+          offsetXEmu: null,
+          offsetYEmu: null,
         },
       },
     ])
@@ -73,6 +76,9 @@ describe('runsToInline image runs', () => {
           widthPx: null,
           heightPx: null,
           xml: '<w:drawing/>',
+          wrap: null,
+          offsetXEmu: null,
+          offsetYEmu: null,
         },
       },
     ])

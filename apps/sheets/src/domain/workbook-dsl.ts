@@ -185,12 +185,13 @@ const editShapeSchema = z.object({
   anchorCell: cellAddressSchema.optional(),
 })
 
-// Inserts a local image file (PNG/JPEG/GIF, ≤20MB) the user pointed at.
+// Inserts an image (PNG/JPEG/GIF): a local file (≤20MB) the user pointed at,
+// or an https URL from image_search / generate_image.
 const addImageSchema = z.object({
   op: z.literal('add_image'),
   sheetId: z.string().min(1),
-  /** absolute path on this machine (~/ allowed) */
-  path: z.string().min(1).max(1024),
+  /** absolute path on this machine (~/ allowed) or an http(s) image URL */
+  path: z.string().min(1).max(2048),
   anchorCell: cellAddressSchema,
 })
 

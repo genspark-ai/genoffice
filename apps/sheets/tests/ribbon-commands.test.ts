@@ -132,3 +132,52 @@ describe('handleRibbonCommand number format', () => {
     expect(model.numberFormat).toBe('h:mm:ss AM/PM')
   })
 })
+
+describe('use-in-formula cell guard', () => {
+  function makeUseInFormulaHarness(cell: { formula?: string; value?: unknown }) {
+    const messages: string[] = []
+    const writes: unknown[] = []
+    const cellRange = {
+      getFormula: () => cell.formula ?? '',
+      getValue: () => (cell.value === undefined ? null : cell.value),
+      setValue: (value: unknown) => {
+        writes.push(value)
+      },
+    }
+    const active = { getRow: () => 0, getColumn: () => 0 }
+    const worksheet = { getRange: () => cellRange }
+    const workbook = { getActiveSheet: () => worksheet, getActiveRange: () => active }
+    const runtime = { univerAPI: { getActiveWorkbook: () => workbook } }
+    const setMessage = (message: string) => {
+      messages.push(message)
+    }
+    const ctx = {
+      univerRef: { current: runtime },
+      setMessage,
+      dataToolsContext: () => ({ univerRef: { current: runtime }, setMessage }),
+    } as unknown as RibbonCommandContext
+    return { ctx, writes, messages }
+  }
+
+  it('refuses to overwrite a cell holding a formula', () => {
+    const { ctx, writes, messages } = makeUseInFormulaHarness({
+      formula: '=SUM(A1:A3)*Rate',
+      value: 42,
+    })
+    handleRibbonCommand(ctx, 'use-in-formula:Revenue')
+    expect(writes).toHaveLength(0)
+    expect(messages).toHaveLength(1)
+  })
+
+  it('refuses to overwrite a header label', () => {
+    const { ctx, writes } = makeUseInFormulaHarness({ value: '销售额' })
+    handleRibbonCommand(ctx, 'use-in-formula:销售额')
+    expect(writes).toHaveLength(0)
+  })
+
+  it('writes the name into an empty cell', () => {
+    const { ctx, writes } = makeUseInFormulaHarness({})
+    handleRibbonCommand(ctx, 'use-in-formula:Revenue')
+    expect(writes).toEqual([{ f: '=Revenue' }])
+  })
+})

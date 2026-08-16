@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { installPopoverDismiss } from '@genoffice/ui'
 import { t } from '../i18n/locale'
 
 /**
@@ -82,9 +83,17 @@ function dragHandlePlugin(editor: Editor): Plugin {
         hoverPos = null
       }
 
+      // Unified dismissal (outside press / window blur / shell chrome press);
+      // installed on open, torn down here so it runs exactly once per open —
+      // every close path (item click, scroll, doc change, destroy, the
+      // installer's own close) funnels through hideMenu.
+      let offDismiss: (() => void) | null = null
+
       const hideMenu = () => {
         menu.style.display = 'none'
         menuPos = null
+        offDismiss?.()
+        offDismiss = null
       }
 
       const onMouseMove = (event: MouseEvent) => {
@@ -186,24 +195,21 @@ function dragHandlePlugin(editor: Editor): Plugin {
         menu.style.display = 'block'
         menu.style.top = `${parseFloat(handle.style.top) + 26}px`
         menu.style.left = handle.style.left
+        // presses inside the menu or the gutter are the popover's own; anything
+        // else closes it. Hiding the gutter too matches the old outside-press
+        // behavior — the editor's mousemove re-syncs it on the next hover.
+        offDismiss ??= installPopoverDismiss(
+          () => {
+            hideMenu()
+            hideHandle()
+          },
+          { inside: () => [menu, handle] },
+        )
       }
 
       const onGripClick = () => {
         if (menu.style.display === 'block') hideMenu()
         else openMenu()
-      }
-
-      const onDocMouseDown = (event: MouseEvent) => {
-        if (menu.style.display !== 'block') return
-        if (
-          event.target instanceof Node &&
-          (menu.contains(event.target) || handle.contains(event.target))
-        )
-          return
-        hideMenu()
-        // the open menu blocked the grace-period hide — don't leave the gutter
-        // stranded unless the pointer is back over the editor (hover re-syncs it)
-        if (!(event.target instanceof Node) || !view.dom.contains(event.target)) hideHandle()
       }
 
       const onScrollOrLeave = () => {
@@ -237,7 +243,6 @@ function dragHandlePlugin(editor: Editor): Plugin {
       grip.addEventListener('dragstart', onDragStart)
       grip.addEventListener('click', onGripClick)
       plus.addEventListener('click', onPlusClick)
-      document.addEventListener('mousedown', onDocMouseDown, true)
       document.addEventListener('scroll', onScrollOrLeave, true)
 
       return {
@@ -247,10 +252,10 @@ function dragHandlePlugin(editor: Editor): Plugin {
         },
         destroy() {
           cancelHide()
+          hideMenu() // also tears down the popover-dismiss listeners
           view.dom.removeEventListener('mousemove', onMouseMove)
           view.dom.removeEventListener('mouseenter', cancelHide)
           view.dom.removeEventListener('mouseleave', scheduleHide)
-          document.removeEventListener('mousedown', onDocMouseDown, true)
           document.removeEventListener('scroll', onScrollOrLeave, true)
           handle.remove()
           menu.remove()

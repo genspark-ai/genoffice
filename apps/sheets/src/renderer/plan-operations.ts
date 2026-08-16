@@ -22,7 +22,7 @@ import { t } from './i18n/locale'
 import { buildLazyChangePlan } from './lazy-plan'
 import {
   lazyCellEditable,
-  lazyCellReader,
+  lazyWorkbookCellReader,
   normalizeLinkTarget,
   protectSheetGuard,
 } from './univer-sync'
@@ -83,11 +83,24 @@ export function proposeOperations(
           }
         }
       }
-      const reader = lazyCellReader(worksheet)
       const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
-      for (const operation of expandToPrimitiveOps(batch.operations, (address) =>
-        reader(address),
-      )) {
+      if (!workbook) return { ok: false, error: 'No workbook is open.' }
+      const reader = lazyWorkbookCellReader(workbook)
+      for (const operation of expandToPrimitiveOps(batch.operations, reader)) {
+        // Every sheet-addressed op must reference an existing sheet BEFORE the
+        // batch starts applying: apply routes through sheetById and a mid-batch
+        // throw would leave earlier ops committed while the tool reports the
+        // workbook unchanged.
+        if (
+          'sheetId' in operation &&
+          typeof operation.sheetId === 'string' &&
+          !workbook.getSheetBySheetId(operation.sheetId)
+        ) {
+          return {
+            ok: false,
+            error: `Unknown sheet: ${operation.sheetId} (use an id from get_workbook_context)`,
+          }
+        }
         if (operation.op === 'edit_chart') {
           const visual = [...state.file.visuals, ...state.editJournal.visualAdds].find(
             (candidate) =>
@@ -193,10 +206,15 @@ export function proposeOperations(
           operation.op === 'add_shape' ||
           operation.op === 'add_image'
         ) {
-          if (operation.op === 'add_image' && !/\.(png|jpe?g|gif)$/i.test(operation.path)) {
+          if (
+            operation.op === 'add_image' &&
+            !/^https?:\/\//i.test(operation.path) &&
+            !/\.(png|jpe?g|gif)$/i.test(operation.path)
+          ) {
             return {
               ok: false,
-              error: 'Only PNG/JPEG/GIF images are supported (judged by extension).',
+              error:
+                'Only PNG/JPEG/GIF images are supported (judged by extension; URLs are validated on download).',
             }
           }
           const targetSheet = workbook?.getSheetBySheetId(operation.sheetId)
@@ -414,11 +432,15 @@ export function proposeOperations(
               'If the source data changed, recompute with refresh_pivot; for a new pivot analysis, build one in a blank area with add_pivot.',
           }
         }
-        if (!lazyCellEditable(state, sheetId, target.row, target.column)) {
+        if (!lazyCellEditable(state, operation.sheetId, target.row, target.column)) {
           return { ok: false, error: 'That cell is still streaming in — try again in a moment.' }
         }
       }
-      const plan = buildLazyChangePlan(batch, lazyCellReader(worksheet), worksheet.getSheetName())
+      const plan = buildLazyChangePlan(batch, reader, (id) => {
+        const sheet = workbook.getSheetBySheetId(id)
+        if (!sheet) throw new Error(`Unknown sheet: ${id}`)
+        return sheet.getSheetName()
+      })
       ctx.lazyPreviewRef.current = { sessionId: state.file.sessionId, sheetId, plan }
       ctx.setPreview(plan)
       // All plans auto-apply (undo covers them); the caller awaits `applied`
@@ -459,18 +481,17 @@ export function runDeterministicPlan(
   const state = ctx.lazyWorkbookRef.current
   if (state) {
     const runtime = ctx.univerRef.current
-    const worksheet = runtime?.univerAPI.getActiveWorkbook()?.getActiveSheet()
-    if (!runtime || !worksheet) return { text: t('appNoWorkbookOpen'), isError: true }
+    const workbook = runtime?.univerAPI.getActiveWorkbook()
+    const worksheet = workbook?.getActiveSheet()
+    if (!runtime || !workbook || !worksheet) return { text: t('appNoWorkbookOpen'), isError: true }
     try {
       const sheetId = worksheet.getSheetId()
       // AI output stays untrusted input: it must pass the DSL schema.
       const command = workbookCommandBatchSchema.parse(
         planPrompt(instruction, { revision: 0, sheetId }),
       )
-      const reader = lazyCellReader(worksheet)
-      for (const operation of expandToPrimitiveOps(command.operations, (address) =>
-        reader(address),
-      )) {
+      const reader = lazyWorkbookCellReader(workbook)
+      for (const operation of expandToPrimitiveOps(command.operations, reader)) {
         if (
           operation.op === 'rename_sheet' ||
           operation.op === 'format_range' ||
@@ -479,11 +500,15 @@ export function runDeterministicPlan(
         )
           continue
         const target = parseAddress(operation.address)
-        if (!lazyCellEditable(state, sheetId, target.row, target.column)) {
+        if (!lazyCellEditable(state, operation.sheetId, target.row, target.column)) {
           return { text: t('appCellStreaming'), isError: true }
         }
       }
-      const plan = buildLazyChangePlan(command, lazyCellReader(worksheet), worksheet.getSheetName())
+      const plan = buildLazyChangePlan(command, reader, (id) => {
+        const sheet = workbook.getSheetBySheetId(id)
+        if (!sheet) throw new Error(`Unknown sheet: ${id}`)
+        return sheet.getSheetName()
+      })
       ctx.lazyPreviewRef.current = { sessionId: state.file.sessionId, sheetId, plan }
       ctx.setPreview(plan)
       void ctx.autoApplySafePlan(plan)
@@ -497,9 +522,14 @@ export function runDeterministicPlan(
   }
   try {
     const snapshot = ctx.adapterRef.current.getSnapshot()
+    const activeId = ctx.univerRef.current?.univerAPI
+      .getActiveWorkbook()
+      ?.getActiveSheet()
+      ?.getSheetId()
     const command = planPrompt(instruction, {
       revision: snapshot.revision,
-      sheetId: snapshot.sheets[0]?.id ?? '',
+      sheetId:
+        snapshot.sheets.find((sheet) => sheet.id === activeId)?.id ?? snapshot.sheets[0]?.id ?? '',
     })
     const plan = ctx.adapterRef.current.plan(command)
     ctx.setPreview(plan)

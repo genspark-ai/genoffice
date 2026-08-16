@@ -77,7 +77,13 @@ import {
 } from './xlsx-defined-names'
 import { applyDvRules, type DvWireRule } from './xlsx-dv'
 import { applyPageSetupState, applyPrintAreas, type SheetPageSetupState } from './xlsx-page-setup'
-import { applySheetProtection } from './xlsx-protection'
+import {
+  applyProtectedRanges,
+  applySheetProtection,
+  applyWorkbookProtection,
+  type ProtectedRangeState,
+} from './xlsx-protection'
+import { applyThemeState, type WorkbookThemeState } from './xlsx-theme'
 import { applySheetNotes, type SheetNote } from './xlsx-notes'
 import {
   applySparklineAdditions,
@@ -146,6 +152,12 @@ export interface SheetDvState {
 export interface SheetProtectionState {
   readonly sheetName: string
   readonly protected: boolean
+}
+
+/// Full allow-edit-range snapshot for one sheet ([] removes the element).
+export interface SheetProtectedRangesState {
+  readonly sheetName: string
+  readonly ranges: readonly ProtectedRangeState[]
 }
 
 /// Recalculated cached values for formula cells: the engine already
@@ -589,6 +601,9 @@ export async function planCellEditsToXlsx(
   visualEdits: readonly WorkbookVisualEdit[] = [],
   sparklineAdditions: readonly SheetSparklineAddition[] = [],
   formulaValues: readonly SheetFormulaValues[] = [],
+  themeState: WorkbookThemeState | null = null,
+  workbookProtectionState: { readonly lockStructure: boolean } | null = null,
+  protectedRangeStates: readonly SheetProtectedRangesState[] = [],
 ): Promise<MutationPlan> {
   // A pending pivot pins final coordinates for its source and output; shifts
   // on either sheet, and sheet renames (worksheetSource@sheet), would desync
@@ -686,6 +701,7 @@ export async function planCellEditsToXlsx(
     ...dvStates.map((state) => state.sheetName),
     ...sheetProtections.map((state) => state.sheetName),
     ...pageSetupStates.map((state) => state.sheetName),
+    ...protectedRangeStates.map((state) => state.sheetName),
   ])
   const worksheetXmls = new Map<string, string>()
   const worksheetPaths = new Map<string, string>()
@@ -870,6 +886,13 @@ export async function planCellEditsToXlsx(
     worksheetXmls.set(state.sheetName, applySheetProtection(worksheetXml, state.protected))
   }
 
+  // Allow-edit ranges are declarative snapshots, like filters.
+  for (const state of protectedRangeStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(state.sheetName, applyProtectedRanges(worksheetXml, state.ranges))
+  }
+
   // Page Layout settings merge attribute-by-attribute; untouched print
   // settings in the file stay verbatim.
   for (const state of pageSetupStates) {
@@ -1038,6 +1061,19 @@ export async function planCellEditsToXlsx(
 
   if (definedNamesState !== null) {
     workbookXml = applyDefinedNamesState(workbookXml, definedNamesState)
+  }
+
+  if (workbookProtectionState !== null) {
+    workbookXml = applyWorkbookProtection(workbookXml, workbookProtectionState.lockStructure)
+  }
+
+  if (themeState !== null) {
+    const themePath = 'xl/theme/theme1.xml'
+    if (!(await pkg.has(themePath))) {
+      throw new Error('The workbook has no theme part — theme changes cannot be saved.')
+    }
+    pkg.write(themePath, applyThemeState(await pkg.readText(themePath), themeState))
+    touchedEntries.add(themePath)
   }
 
   // Print areas / title rows are sheet-scoped _xlnm names; they apply to the

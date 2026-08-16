@@ -1,5 +1,19 @@
 export { AiComposer } from './AiComposer'
+export {
+  ColorPicker,
+  THEME_COLORS,
+  THEME_COLOR_SHADES,
+  STANDARD_COLORS,
+  type ColorPickerProps,
+  type ColorPickerStrings,
+  type ColorSwatch,
+} from './color-picker'
 export { installScreenTips } from './screentip'
+export {
+  installPopoverDismiss,
+  useDismissablePopover,
+  type PopoverDismissOptions,
+} from './popover-dismiss'
 export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { isConnectorPreset, connectorPoints, presetPolygon, presetPath, isPillPreset } from '../src/preset-geometry'
+import {
+  isConnectorPreset,
+  connectorPoints,
+  presetPolygon,
+  presetPath,
+  isPillPreset,
+} from '../src/preset-geometry'
 
 describe('connectorPoints', () => {
   it('straight connector runs corner to corner; flip mirrors direction', () => {
@@ -14,7 +20,9 @@ describe('connectorPoints', () => {
   })
 
   it('bentConnector2 has one elbow', () => {
-    expect(connectorPoints('bentConnector2', 200, 100, false, false)).toEqual([0, 0, 200, 0, 200, 100])
+    expect(connectorPoints('bentConnector2', 200, 100, false, false)).toEqual([
+      0, 0, 200, 0, 200, 100,
+    ])
   })
 
   it('isConnectorPreset recognizes connector presets only', () => {
@@ -59,7 +67,16 @@ describe('presetPolygon', () => {
   })
 
   it('chevron / homePlate / hexagon / star5 stay within bounds', () => {
-    for (const p of ['chevron', 'homePlate', 'hexagon', 'star5', 'parallelogram', 'trapezoid', 'octagon', 'plus']) {
+    for (const p of [
+      'chevron',
+      'homePlate',
+      'hexagon',
+      'star5',
+      'parallelogram',
+      'trapezoid',
+      'octagon',
+      'plus',
+    ]) {
       const pts = presetPolygon(p, 120, 90)
       expect(pts, p).toBeTruthy()
       inBounds(pts!, 120, 90)
@@ -79,7 +96,9 @@ describe('presetPolygon', () => {
   })
 
   it('snip1Rect cuts top-right corner by adj fraction of short side', () => {
-    expect(presetPolygon('snip1Rect', 200, 100, { adj: 20000 })).toEqual([0, 0, 180, 0, 200, 20, 200, 100, 0, 100])
+    expect(presetPolygon('snip1Rect', 200, 100, { adj: 20000 })).toEqual([
+      0, 0, 180, 0, 200, 20, 200, 100, 0, 100,
+    ])
   })
 
   it('notchedRightArrow has tail notch at mid height', () => {
@@ -92,11 +111,30 @@ describe('presetPolygon', () => {
 
   it('new polygon presets stay in bounds and are non-trivial', () => {
     for (const p of [
-      'snip2SameRect', 'snip2DiagRect', 'halfFrame', 'corner', 'diagStripe', 'lightningBolt',
-      'flowChartPreparation', 'flowChartManualInput', 'flowChartManualOperation',
-      'flowChartOffpageConnector', 'flowChartExtract', 'flowChartMerge', 'flowChartCollate',
-      'gear6', 'funnel', 'quadArrow', 'bentArrow', 'irregularSeal1', 'irregularSeal2',
-      'star7', 'star10', 'star12', 'star16', 'star24', 'star32',
+      'snip2SameRect',
+      'snip2DiagRect',
+      'halfFrame',
+      'corner',
+      'diagStripe',
+      'lightningBolt',
+      'flowChartPreparation',
+      'flowChartManualInput',
+      'flowChartManualOperation',
+      'flowChartOffpageConnector',
+      'flowChartExtract',
+      'flowChartMerge',
+      'flowChartCollate',
+      'gear6',
+      'quadArrow',
+      'bentArrow',
+      'irregularSeal1',
+      'irregularSeal2',
+      'star7',
+      'star10',
+      'star12',
+      'star16',
+      'star24',
+      'star32',
     ]) {
       const pts = presetPolygon(p, 120, 90)
       expect(pts, p).toBeTruthy()
@@ -109,6 +147,21 @@ describe('presetPolygon', () => {
     expect(presetPolygon('star7', 100, 100)!.length).toBe(28)
   })
 
+  it('mathNotEqual is a 20-vertex polygon: two bars crossed by a slash', () => {
+    const pts = presetPolygon('mathNotEqual', 200, 100)!
+    expect(pts.length).toBe(40)
+    const xs = pts.filter((_, i) => i % 2 === 0)
+    const ys = pts.filter((_, i) => i % 2 === 1)
+    // bars span hc±36.745%w and y 20.6..79.4; slash tips reach y=0 and y=h
+    expect(Math.min(...xs)).toBeCloseTo(200 / 2 - 200 * 0.36745, 1)
+    expect(Math.min(...ys)).toBe(0)
+    expect(Math.max(...ys)).toBe(100)
+    // default 110° slash leans right at the top
+    const topXs = pts.filter((_, i) => i % 2 === 0 && pts[i + 1] === 0)
+    const botXs = pts.filter((_, i) => i % 2 === 0 && pts[i + 1] === 100)
+    expect(Math.min(...topXs)).toBeGreaterThan(Math.max(...botXs))
+  })
+
   it('wedgeRectCallout default puts tail on bottom edge toward tip', () => {
     const pts = presetPolygon('wedgeRectCallout', 100, 100)!
     // tip = (50-20.833, 50+62.5) = (29.17, 112.5): may exceed the box (tail tip)
@@ -118,7 +171,11 @@ describe('presetPolygon', () => {
 })
 
 describe('presetPath', () => {
-  const nums = (d: string) => d.split(' ').filter((t) => Number.isFinite(Number(t))).map(Number)
+  const nums = (d: string) =>
+    d
+      .split(' ')
+      .filter((t) => Number.isFinite(Number(t)))
+      .map(Number)
   const inBox = (d: string, w: number, h: number, slack = 0.01) => {
     const v = nums(d)
     for (let i = 0; i < v.length; i += 2) {
@@ -143,6 +200,26 @@ describe('presetPath', () => {
     expect(r.fillPath).toMatch(/Z$/)
   })
 
+  it('mathEqual is two horizontal bars centered on the box', () => {
+    const r = presetPath('mathEqual', 200, 100)!
+    expect(r.path!.match(/M /g)!.length).toBe(2)
+    expect(r.path!.match(/Z/g)!.length).toBe(2)
+    // bars span hc±36.745%w, thickness 23.52%h, half-gap 5.88%h
+    expect(r.path).toMatch(/^M 26.51 20.6 L 173.49 20.6 L 173.49 44.12 L 26.51 44.12 Z/)
+    expect(r.path).toMatch(/M 26.51 55.88 L 173.49 55.88 L 173.49 79.4 L 26.51 79.4 Z$/)
+  })
+
+  it('funnel has mouth ring hole + body reaching the stem bottom', () => {
+    const r = presetPath('funnel', 100, 100)!
+    expect(r.path!.match(/M /g)!.length).toBe(2)
+    const v = nums(r.path!)
+    const ys = v.filter((_, i) => i % 2 === 1)
+    expect(Math.max(...ys)).toBeGreaterThan(95) // stem bottom arc reaches ~h
+    expect(Math.min(...ys)).toBeLessThanOrEqual(0.01) // mouth top arc reaches y=0
+    inBox(r.path!, 100, 100)
+    expect(presetPolygon('funnel', 100, 100)).toBeNull()
+  })
+
   it('donut has two subpaths (outer + reversed hole)', () => {
     const r = presetPath('donut', 100, 100)!
     expect(r.path!.match(/M /g)!.length).toBe(2)
@@ -159,7 +236,14 @@ describe('presetPath', () => {
   })
 
   it('cube/can/bevel/foldedCorner carry decorative strokePath', () => {
-    for (const p of ['cube', 'can', 'bevel', 'foldedCorner', 'smileyFace', 'flowChartPredefinedProcess']) {
+    for (const p of [
+      'cube',
+      'can',
+      'bevel',
+      'foldedCorner',
+      'smileyFace',
+      'flowChartPredefinedProcess',
+    ]) {
       const r = presetPath(p, 120, 90)!
       expect(r.path, p).toMatch(/^M /)
       expect(r.strokePath, p).toMatch(/^M /)
@@ -169,12 +253,39 @@ describe('presetPath', () => {
 
   it('curved/blob presets stay near box', () => {
     for (const p of [
-      'heart', 'moon', 'sun', 'cloud', 'teardrop', 'plaque', 'noSmoking', 'ribbon', 'ribbon2',
-      'wave', 'doubleWave', 'uturnArrow', 'curvedRightArrow', 'stripedRightArrow', 'chord', 'blockArc',
-      'frame', 'round1Rect', 'round2SameRect', 'round2DiagRect', 'snipRoundRect',
-      'flowChartDocument', 'flowChartMultidocument', 'flowChartConnector', 'flowChartOr',
-      'flowChartSummingJunction', 'flowChartSort', 'flowChartDelay', 'flowChartDisplay',
-      'flowChartPunchedTape', 'flowChartMagneticDisk', 'flowChartMagneticDrum', 'flowChartInternalStorage',
+      'heart',
+      'moon',
+      'sun',
+      'cloud',
+      'teardrop',
+      'plaque',
+      'noSmoking',
+      'ribbon',
+      'ribbon2',
+      'wave',
+      'doubleWave',
+      'uturnArrow',
+      'curvedRightArrow',
+      'stripedRightArrow',
+      'chord',
+      'blockArc',
+      'frame',
+      'round1Rect',
+      'round2SameRect',
+      'round2DiagRect',
+      'snipRoundRect',
+      'flowChartDocument',
+      'flowChartMultidocument',
+      'flowChartConnector',
+      'flowChartOr',
+      'flowChartSummingJunction',
+      'flowChartSort',
+      'flowChartDelay',
+      'flowChartDisplay',
+      'flowChartPunchedTape',
+      'flowChartMagneticDisk',
+      'flowChartMagneticDrum',
+      'flowChartInternalStorage',
     ]) {
       const r = presetPath(p, 120, 90)
       expect(r, p).toBeTruthy()
@@ -204,5 +315,16 @@ describe('presetPath', () => {
     expect(presetPath('rect', 100, 100)).toBeNull()
     expect(presetPath('ellipse', 100, 100)).toBeNull()
     expect(presetPath(undefined, 100, 100)).toBeNull()
+  })
+})
+
+describe('circularArrow presets', () => {
+  it('returns a ring-with-arrowhead path instead of falling back to a filled rect', () => {
+    for (const preset of ['circularArrow', 'leftCircularArrow']) {
+      const r = presetPath(preset, 100, 100)
+      expect(r?.path).toBeTruthy()
+      // annular: the path contains two arc sweeps (many cubic segments), not a 4-corner box
+      expect((r!.path!.match(/C /g) ?? []).length).toBeGreaterThan(4)
+    }
   })
 })

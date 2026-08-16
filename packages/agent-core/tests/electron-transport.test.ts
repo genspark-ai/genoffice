@@ -13,6 +13,7 @@ interface FakeSettings {
 function setup(
   startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
   creditsErrorText?: () => string,
+  networkErrorText?: () => string,
 ) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
   const unsubscribe = vi.fn(() => {
@@ -34,6 +35,7 @@ function setup(
     unknownErrorText: () => 'unknown error',
     timeoutErrorText: () => 'timed out',
     ...(creditsErrorText ? { creditsErrorText } : {}),
+    ...(networkErrorText ? { networkErrorText } : {}),
   })
   const cb = {
     onDelta: vi.fn(),
@@ -111,6 +113,26 @@ describe('createIpcTransport', () => {
       errorCode: 'credits',
     })
     expect(cb.onError).toHaveBeenCalledWith('credits used up')
+  })
+
+  it('maps a network error code to the localized network message', () => {
+    const { cb, emit } = setup(undefined, undefined, () => 'network problem')
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('network problem')
+  })
+
+  it('a network error code without networkErrorText falls back to the carried text', () => {
+    const { cb, emit } = setup()
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('Claude fetch failed: fetch failed cause=ECONNRESET')
   })
 
   it('a credits error code without creditsErrorText falls back to the carried text', () => {

@@ -13,6 +13,7 @@ import React, {
 } from 'react'
 import type { AnimEffectKind, AnimTrigger, TransitionKind } from '../../shared/ipc'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
+import { useDismissablePopover } from '@genoffice/ui'
 import { ICON_COLORS } from '../insert-presets'
 import { THEME_PRESETS, type SlideThemePreset } from '../themes'
 import { restoreEditSelection } from '../TextEditOverlay'
@@ -75,6 +76,8 @@ import {
   IconPathDiagonal,
   IconPathCircle,
   IconPathZigzag,
+  IconShapeStyle,
+  IconFillColor,
 } from './icons'
 // brand-supplied Review AI icon art (44px = 22px @2x), color baked in
 import iconSpelling from '../assets/icon-spelling.png'
@@ -86,6 +89,8 @@ import {
   BIG,
   Group,
   RbCaret,
+  RIBBON_SHAPE_STYLES,
+  TEXT_COLORS,
   closeSiblingPanels,
   type Props,
   type RibbonPanelKey,
@@ -143,6 +148,7 @@ const TAB_LABEL: Record<MainTab | ContextTab, StringKey> = {
   tableDesign: 'ribbonTabTableDesign',
   chartDesign: 'ribbonTabChartDesign',
   pictureFormat: 'ribbonTabPictureFormat',
+  shapeFormat: 'ribbonTabShapeFormat',
 }
 
 // display names only — tp.name stays as written into theme*.xml
@@ -173,23 +179,6 @@ const TRANSLATE_TARGETS: StringKey[] = [
 
 /** One-time "AI rewrites the whole document" acknowledgement */
 const AI_REWRITE_ACK_KEY = 'slides-ai-rewrite-ack'
-
-/** Recently used custom font colors: persisted across sessions, newest first */
-const RECENT_TEXT_COLORS_KEY = 'slides-recent-text-colors'
-const RECENT_TEXT_COLORS_MAX = 5
-
-function loadRecentTextColors(): string[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(RECENT_TEXT_COLORS_KEY) ?? '[]')
-    return Array.isArray(raw)
-      ? raw
-          .filter((c): c is string => typeof c === 'string' && /^#[0-9A-F]{6}$/i.test(c))
-          .slice(0, RECENT_TEXT_COLORS_MAX)
-      : []
-  } catch {
-    return []
-  }
-}
 
 // Draw tab palettes/pen widths (same as apps/docs DrawTab)
 const INK_COLORS = [
@@ -752,7 +741,7 @@ export function Ribbon({
   onInsert,
   onPickShape,
   onInsertImage,
-  onBackground,
+  onFormatBackground,
   onApplyTheme,
   onAddSlide,
   onAddSlideWithLayout,
@@ -845,7 +834,6 @@ export function Ribbon({
   onInsertZoom,
   slideCount,
   currentSlide,
-  currentBgColor,
   onOpenHeaderFooter,
   onOpenEquation,
   onInsertMedia,
@@ -860,6 +848,8 @@ export function Ribbon({
   contextPictureCanCutout,
   contextPictureStroke,
   onPictureStroke,
+  onShapeStyle,
+  onShapeFill,
   onPictureCrop,
   cropActive,
   onPictureOpacity,
@@ -874,8 +864,8 @@ export function Ribbon({
   canDistribute,
 }: Props) {
   const { t } = useI18n()
-  // Text-bearing shapes keep picture-format commands available, but do not auto-activate
-  // that tab; ordinary shapes and multi-picture selections retain the existing behavior.
+  // Shapes get their own format tab; text-bearing shapes do not auto-activate it
+  // (users are usually after Home's text controls when selecting them).
   const contextTab = contextTabForElement(contextElementType ?? null)
   const autoContextTab = autoContextTabForElement(contextElementType ?? null)
 
@@ -890,6 +880,8 @@ export function Ribbon({
   const [slideSizeOpen, setSlideSizeOpen] = useState(false)
   const [transparencyOpen, setTransparencyOpen] = useState(false)
   const [pictureBorderOpen, setPictureBorderOpen] = useState(false)
+  const [shapeStyleOpen, setShapeStyleOpen] = useState(false)
+  const [shapeFillOpen, setShapeFillOpen] = useState(false)
   // Debounced picture-border commit: color drags fire repeatedly, and a pending
   // color commit must not clobber a width click landing meanwhile
   const pictureBorderTimer = useRef<number | null>(null)
@@ -922,8 +914,6 @@ export function Ribbon({
   const [sizeDraft, setSizeDraft] = useState<string | null>(null)
   // Font-family combobox draft: free-typed names cover weight variants absent from the list
   const [fontDraft, setFontDraft] = useState<string | null>(null)
-  // Custom font colors picked via the native picker, persisted for reuse
-  const [recentColors, setRecentColors] = useState<string[]>(loadRecentTextColors)
   const [tableOpen, setTableOpen] = useState(false)
   const [tableHover, setTableHover] = useState({ r: 0, c: 0 })
   const [tableCustom, setTableCustom] = useState({ r: 8, c: 5 })
@@ -968,6 +958,8 @@ export function Ribbon({
     if (!keep.includes('slideSize')) setSlideSizeOpen(false)
     if (!keep.includes('transparency')) setTransparencyOpen(false)
     if (!keep.includes('pictureBorder')) setPictureBorderOpen(false)
+    if (!keep.includes('shapeStyle')) setShapeStyleOpen(false)
+    if (!keep.includes('shapeFill')) setShapeFillOpen(false)
     if (!keep.includes('table')) setTableOpen(false)
     if (!keep.includes('layout')) setLayoutOpen(false)
     if (!keep.includes('translate')) setTranslateOpen(false)
@@ -995,45 +987,19 @@ export function Ribbon({
     slideShowOpen ||
     paraOpen ||
     pictureBorderOpen ||
+    shapeStyleOpen ||
+    shapeFillOpen ||
     layoutPickOpen ||
     slideSizeOpen ||
     transparencyOpen ||
     lineSpacingOpen ||
     collapseOpen != null
 
-  // Clicking elsewhere collapses the table picker (the font color palette uses onMouseDown without stealing focus, collapsing naturally when the edit commits)
-  useEffect(() => {
-    if (!anyPanelOpen) return
-    const close = () => {
-      setTableOpen(false)
-      setColorOpen(false)
-      setTranslateOpen(false)
-      setInsertDrop(null)
-      setFontOpen(false)
-      setSizeOpen(false)
-      setLayoutOpen(false)
-      setChartDrop(null)
-      setArrangeOpen(false)
-      setSlideShowOpen(false)
-      setParaOpen(false)
-      setPictureBorderOpen(false)
-      setLayoutPickOpen(false)
-      setSlideSizeOpen(false)
-      setTransparencyOpen(false)
-      setLineSpacingOpen(false)
-      setCollapseOpen(null)
-    }
-    window.addEventListener('mousedown', close)
-    // shell tab strip is a sibling WebContentsView: its presses reach us only
-    // via the app:chrome-pressed relay; blur covers app/window switching
-    window.addEventListener('blur', close)
-    const offChrome = window.slidesApi?.onChromePressed?.(close)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('blur', close)
-      offChrome?.()
-    }
-  }, [anyPanelOpen])
+  // Clicking elsewhere collapses every popup (the font color palette uses
+  // onMouseDown without stealing focus, collapsing naturally when the edit
+  // commits). The shared installer covers outside mousedown, window blur and
+  // the shell app:chrome-pressed relay; panels survive via stopPropagation.
+  useDismissablePopover(anyPanelOpen, closePanels)
 
   // ── Responsive collapse (PowerPoint model): the collapsed set is a pure
   // function of the current width, never of resize history — pick the fewest
@@ -1155,21 +1121,6 @@ export function Ribbon({
       )}
     </div>
   )
-  // Background color: the debounced picker only changes the current page; "apply to all" uses the most recently picked color
-  const bgInputRef = useRef<HTMLInputElement>(null)
-  const bgTimer = useRef<number | null>(null)
-  const [bgColor, setBgColor] = useState('#ffffff')
-  // Follow the current slide so the swatch and "apply to all" never fall back to a stale default white
-  useEffect(() => {
-    const hex = toPickerHex(currentBgColor)
-    if (hex) setBgColor(hex)
-  }, [currentBgColor])
-  const onBgChange = (value: string) => {
-    setBgColor(value)
-    if (bgTimer.current) window.clearTimeout(bgTimer.current)
-    bgTimer.current = window.setTimeout(() => onBackground(value, false), 200)
-  }
-
   // Apply a typed font size: any positive value, 0.5pt steps, clamped to 1-999.
   // While text-editing, restore the selection saved when the input took focus so the size applies
   // to the selection instead of element-level
@@ -1190,8 +1141,8 @@ export function Ribbon({
   }
 
   // Custom font color via the native picker: debounced (the picker fires onChange
-  // continuously while dragging), recorded into the recent-colors row. The picker steals focus,
-  // so while editing the saved selection is restored before each apply
+  // continuously while dragging). The picker steals focus, so while editing the
+  // saved selection is restored before each apply
   const customColorTimer = useRef<number | null>(null)
   const onCustomTextColor = (value: string) => {
     const hex = value.toUpperCase()
@@ -1202,15 +1153,6 @@ export function Ribbon({
         restoreEditSelection()
         onTextColor(hex)
       } else onElementTextColor(hex)
-      setRecentColors((prev) => {
-        const next = [hex, ...prev.filter((c) => c !== hex)].slice(0, RECENT_TEXT_COLORS_MAX)
-        try {
-          localStorage.setItem(RECENT_TEXT_COLORS_KEY, JSON.stringify(next))
-        } catch {
-          /* persistence is best-effort */
-        }
-        return next
-      })
     }, 200)
   }
 
@@ -1352,7 +1294,6 @@ export function Ribbon({
     onCustomBulletColor,
     onCustomTextColor,
     paraOpen,
-    recentColors,
     setArrangeOpen,
     setCollapseOpen,
     setColorOpen,
@@ -1744,43 +1685,13 @@ export function Ribbon({
               <button
                 className="rb-big"
                 disabled={!hasDoc}
-                onClick={() => {
-                  const el = bgInputRef.current
-                  if (!el) return
-                  armColorInput(el)
-                  el.click()
-                }}
-                data-tip={t('ribbonBgFillTip')}
-              >
-                <span className="rb-big-icon rb-big-icon-colored">
-                  <IconPageColor size={BIG} />
-                  <span className="rb-color-bar" style={{ background: bgColor }} />
-                </span>
-                <span>{t('ribbonBgFill')}</span>
-                <input
-                  ref={bgInputRef}
-                  type="color"
-                  value={bgColor}
-                  onChange={(e) => onBgChange(e.target.value)}
-                  style={{
-                    position: 'absolute',
-                    width: 0,
-                    height: 0,
-                    opacity: 0,
-                    pointerEvents: 'none',
-                  }}
-                />
-              </button>
-              <button
-                className="rb-big"
-                disabled={!hasDoc}
-                onClick={() => onBackground(bgColor, true)}
-                data-tip={t('ribbonBgApplyAllTip', { color: bgColor })}
+                onClick={onFormatBackground}
+                data-tip={t('ribbonFormatBackgroundTip')}
               >
                 <span className="rb-big-icon">
-                  <IconApplyAll size={BIG} />
+                  <IconPageColor size={BIG} />
                 </span>
-                <span>{t('ribbonApplyToAll')}</span>
+                <span>{t('ribbonFormatBackground')}</span>
               </button>
             </Group>
             <div className="ribbon-sep" />
@@ -2879,6 +2790,209 @@ export function Ribbon({
                 </span>
                 <span>{t('ribbonCrop')}</span>
               </button>
+            </Group>
+          </>
+        ) : tab === 'shapeFormat' ? (
+          <>
+            <Group label={t('ribbonGroupShapeStyle')}>
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big ${shapeStyleOpen ? 'active' : ''}`}
+                  disabled={!onShapeStyle}
+                  data-tip={t('ribbonShapeStyleTip')}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'shapeStyle')
+                  }}
+                  onClick={() => setShapeStyleOpen((v) => !v)}
+                >
+                  <span className="rb-big-icon">
+                    <IconShapeStyle size={BIG} />
+                    <RbCaret />
+                  </span>
+                  <span>{t('ribbonGroupShapeStyle')}</span>
+                </button>
+                {shapeStyleOpen && (
+                  <div
+                    className="rb-drop rb-menu ctx-style-grid"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    {RIBBON_SHAPE_STYLES.map((s, si) => (
+                      <button
+                        key={si}
+                        className="ctx-style-cell"
+                        style={{
+                          background: s.fill,
+                          borderColor: s.stroke,
+                          borderStyle: s.dash ? 'dashed' : 'solid',
+                        }}
+                        aria-label={`${s.fill} / ${s.stroke}${s.dash ? ` (${s.dash})` : ''}`}
+                        onClick={() => {
+                          setShapeStyleOpen(false)
+                          onShapeStyle?.(s)
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Group>
+            <div className="ribbon-sep" />
+            <Group label={t('paneFormatFill')}>
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big ${shapeFillOpen ? 'active' : ''}`}
+                  disabled={!onShapeFill}
+                  data-tip={t('paneFormatFill')}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'shapeFill')
+                  }}
+                  onClick={() => setShapeFillOpen((v) => !v)}
+                >
+                  <span className="rb-big-icon">
+                    <IconFillColor size={BIG} />
+                    <RbCaret />
+                  </span>
+                  <span>{t('paneFormatFill')}</span>
+                </button>
+                {shapeFillOpen && (
+                  <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
+                    <label className="rb-menu-input">
+                      {t('paneFormatSolidFill')}
+                      <input
+                        type="color"
+                        defaultValue="#ffffff"
+                        onPointerDown={(e) => armColorInput(e.currentTarget)}
+                        onChange={(e) => onShapeFill?.(e.target.value)}
+                      />
+                    </label>
+                    <div className="rb-menu-sep" />
+                    <div className="ctx-swatches-row">
+                      {TEXT_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          className="ctx-swatch"
+                          style={{ background: c }}
+                          data-tip={c}
+                          aria-label={c}
+                          onClick={() => {
+                            setShapeFillOpen(false)
+                            onShapeFill?.(c)
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="rb-menu-sep" />
+                    <button
+                      onClick={() => {
+                        setShapeFillOpen(false)
+                        onShapeFill?.('none')
+                      }}
+                    >
+                      {t('paneFormatNoFill')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Group>
+            <div className="ribbon-sep" />
+            <Group label={t('paneFormatOutline')}>
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big ${pictureBorderOpen ? 'active' : ''}`}
+                  disabled={!onPictureStroke}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'pictureBorder')
+                  }}
+                  onClick={() => {
+                    pictureBorderDraft.current = null
+                    setPictureBorderOpen((v) => !v)
+                  }}
+                  data-tip={t('paneFormatOutline')}
+                >
+                  <span className="rb-big-icon">
+                    <IconPageBorders size={BIG} />
+                    <RbCaret />
+                  </span>
+                  <span>{t('paneFormatOutline')}</span>
+                </button>
+                {pictureBorderOpen && (
+                  <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
+                    <label className="rb-menu-input">
+                      {t('paneFormatOutlineColor')}
+                      <input
+                        type="color"
+                        defaultValue={toPickerHex(contextPictureStroke?.color) ?? '#000000'}
+                        onPointerDown={(e) => armColorInput(e.currentTarget)}
+                        onChange={(e) => commitPictureBorder({ color: e.target.value })}
+                      />
+                    </label>
+                    <div className="rb-menu-sep" />
+                    {[0.5, 1, 1.5, 2.25, 3, 4.5, 6].map((pt) => (
+                      <button
+                        key={pt}
+                        className={contextPictureStroke?.widthPt === pt ? 'active' : ''}
+                        onClick={() => {
+                          setPictureBorderOpen(false)
+                          commitPictureBorder({ widthPt: pt }, true)
+                        }}
+                      >
+                        {pt} pt
+                      </button>
+                    ))}
+                    <div className="rb-menu-sep" />
+                    {(
+                      [
+                        ['solid', t('ribbonLineSolid')],
+                        ['dash', t('ribbonLineDash')],
+                        ['sysDot', t('ribbonLineDot')],
+                        ['dashDot', t('ribbonLineDashDot')],
+                      ] as const
+                    ).map(([dash, label]) => (
+                      <button
+                        key={dash}
+                        className={
+                          contextPictureStroke &&
+                          (dash === 'solid'
+                            ? !contextPictureStroke.dashPreset
+                            : contextPictureStroke.dashPreset === dash)
+                            ? 'active'
+                            : ''
+                        }
+                        onClick={() => {
+                          setPictureBorderOpen(false)
+                          onPictureStroke?.({
+                            color: toPickerHex(contextPictureStroke?.color) ?? '#000000',
+                            widthPt: contextPictureStroke?.widthPt ?? 1,
+                            dash,
+                          })
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <div className="rb-menu-sep" />
+                    <button
+                      className={!contextPictureStroke ? 'active' : ''}
+                      onClick={() => {
+                        setPictureBorderOpen(false)
+                        // A pending debounced color commit still holds the prior draft
+                        // in its closure and would re-apply the border after the clear
+                        if (pictureBorderTimer.current) {
+                          window.clearTimeout(pictureBorderTimer.current)
+                          pictureBorderTimer.current = null
+                        }
+                        pictureBorderDraft.current = null
+                        onPictureStroke?.(null)
+                      }}
+                    >
+                      {t('paneFormatNoOutline')}
+                    </button>
+                  </div>
+                )}
+              </div>
             </Group>
           </>
         ) : null}

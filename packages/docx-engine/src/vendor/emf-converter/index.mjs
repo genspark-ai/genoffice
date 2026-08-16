@@ -129,6 +129,7 @@ var EMR_BITBLT = 76;
 var EMR_STRETCHDIBITS = 81;
 var EMR_EXTCREATEFONTINDIRECTW = 82;
 var EMR_EXTTEXTOUTW = 84;
+var EMR_ALPHABLEND = 114;
 var EMR_POLYBEZIER16 = 85;
 var EMR_POLYGON16 = 86;
 var EMR_POLYLINE16 = 87;
@@ -222,6 +223,14 @@ var META_EXTTEXTOUT = 2610;
 var META_SAVEDC = 30;
 var META_RESTOREDC = 295;
 var META_POLYPOLYGON = 1336;
+var META_PATBLT = 1565;
+var META_DIBBITBLT = 2368;
+var META_DIBSTRETCHBLT = 2881;
+var META_STRETCHDIB = 3907;
+var META_DIBCREATEPATTERNBRUSH = 322;
+var META_CREATEPATTERNBRUSH = 505;
+var META_CREATEPALETTE = 247;
+var META_CREATEREGION = 1791;
 var emfLog = (...args) => {
 };
 var emfWarn = (...args) => {
@@ -432,6 +441,69 @@ function applyFont(ctx, state, scale = 1) {
   const family = mapFontFamily(state.fontFamily, state.fontFamilyMap);
   ctx.font = `${italic}${weightPart}${size}px ${family}`;
 }
+var SYMBOL_FONT_RE = /^(wingdings|webdings|symbol$|monotype sorts|zapf ?dingbats|marlett)/i;
+function mapSymbolText(family, text) {
+  if (!SYMBOL_FONT_RE.test((family || "").trim())) {
+    return text;
+  }
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    out += c >= 32 && c <= 255 ? String.fromCharCode(61440 + c) : text[i];
+  }
+  return out;
+}
+function dibAverageColor(view, off, end) {
+  try {
+    const hdrSize = view.getUint32(off, true);
+    const bitCount = view.getUint16(off + 14, true);
+    let r = 0, g = 0, b = 0, n = 0;
+    if (bitCount <= 8) {
+      const clrUsed = view.getUint32(off + 32, true) || 1 << bitCount;
+      let p = off + hdrSize;
+      for (let i = 0; i < clrUsed && p + 4 <= end; i++, p += 4) {
+        b += view.getUint8(p);
+        g += view.getUint8(p + 1);
+        r += view.getUint8(p + 2);
+        n++;
+      }
+    } else {
+      for (let p = off + hdrSize; p + 3 <= end && n < 1024; p += 3) {
+        b += view.getUint8(p);
+        g += view.getUint8(p + 1);
+        r += view.getUint8(p + 2);
+        n++;
+      }
+    }
+    if (!n) {
+      return "#c0c0c0";
+    }
+    const h = (v) => Math.round(v / n).toString(16).padStart(2, "0");
+    return `#${h(r)}${h(g)}${h(b)}`;
+  } catch {
+    return "#c0c0c0";
+  }
+}
+function drawWmfText(ctx, state, text, x, y) {
+  const mapped = mapSymbolText(state.fontFamily, text);
+  const align = state.textAlign || 0;
+  const prevAlign = ctx.textAlign;
+  const prevBaseline = ctx.textBaseline;
+  ctx.textAlign = (align & 6) === 6 ? "center" : align & 2 ? "right" : "left";
+  ctx.textBaseline = (align & 24) === 24 ? "alphabetic" : align & 8 ? "bottom" : "top";
+  const esc = state.fontEscapement || 0;
+  if (esc) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-esc / 10 * Math.PI / 180);
+    ctx.fillText(mapped, 0, 0);
+    ctx.restore();
+  } else {
+    ctx.fillText(mapped, x, y);
+  }
+  ctx.textAlign = prevAlign;
+  ctx.textBaseline = prevBaseline;
+}
 function drawTextDecorations(ctx, state, x, y, width, scale = 1) {
   if (!state.fontUnderline && !state.fontStrikeOut) {
     return;
@@ -572,6 +644,10 @@ function parseEmfHeader(view) {
   const frameBottom = view.getInt32(36, true);
   const frameW = frameRight - frameLeft;
   const frameH = frameBottom - frameTop;
+  const deviceCx = view.getInt32(72, true);
+  const deviceCy = view.getInt32(76, true);
+  const mmCx = view.getInt32(80, true);
+  const mmCy = view.getInt32(84, true);
   return {
     bounds: {
       left: boundsLeft,
@@ -579,9 +655,47 @@ function parseEmfHeader(view) {
       right: boundsRight,
       bottom: boundsBottom
     },
+    frameLeft,
+    frameTop,
     frameW,
-    frameH
+    frameH,
+    deviceCx,
+    deviceCy,
+    mmCx,
+    mmCy
   };
+}
+// Word maps rclFrame (0.01 mm) onto the declared picture extent; rclBounds is
+// just the drawn area. When the two clearly disagree (e.g. text in the left
+// third of a page-wide frame), a bounds-sized canvas is a tight crop that the
+// display box then stretches to the frame's aspect ratio — giant deformed
+// text. Convert the frame into the records' device space (szlDevice /
+// szlMillimeters) and replay against it instead.
+function emfFrameDeviceBounds(header) {
+  const { frameLeft, frameTop, frameW, frameH, deviceCx, deviceCy, mmCx, mmCy } = header;
+  if (!(frameW > 0 && frameH > 0 && deviceCx > 0 && deviceCy > 0 && mmCx > 0 && mmCy > 0)) {
+    return null;
+  }
+  const unitsPerDevX = mmCx * 100 / deviceCx;
+  const unitsPerDevY = mmCy * 100 / deviceCy;
+  return {
+    deviceRect: {
+      left: frameLeft / unitsPerDevX,
+      top: frameTop / unitsPerDevY,
+      right: (frameLeft + frameW) / unitsPerDevX,
+      bottom: (frameTop + frameH) / unitsPerDevY
+    },
+    // canvas size at 96 dpi (createCanvas applies dpiScale on top)
+    pxW: Math.max(1, Math.round(frameW / 2540 * 96)),
+    pxH: Math.max(1, Math.round(frameH / 2540 * 96))
+  };
+}
+// bounds match the frame within 5% per edge: keep the established bounds
+// mapping (identical result, no pixel churn on well-formed files)
+function emfBoundsCoverFrame(bounds, frameRect) {
+  const tolX = (frameRect.right - frameRect.left) * 0.05;
+  const tolY = (frameRect.bottom - frameRect.top) * 0.05;
+  return Math.abs(bounds.left - frameRect.left) <= tolX && Math.abs(bounds.right - frameRect.right) <= tolX && Math.abs(bounds.top - frameRect.top) <= tolY && Math.abs(bounds.bottom - frameRect.bottom) <= tolY;
 }
 function getRenderableEmfBounds(header) {
   const boundsW = header.bounds.right - header.bounds.left;
@@ -625,6 +739,34 @@ function parseWmfHeader(view) {
   }
   const headerSize = view.getUint16(headerOffset + 2, true) * 2;
   const maxRecordSize = view.getUint32(headerOffset + 8, true) * 2;
+  if (headerOffset === 0) {
+    // No placeable header: derive the logical bounds from the leading
+    // SETWINDOWORG/SETWINDOWEXT records instead of a fixed 800\xD7600 guess
+    // (which distorted aspect ratio and size for every such file).
+    let off = headerSize;
+    let org = null;
+    let ext = null;
+    for (let i = 0; i < 64 && off + 6 <= view.byteLength && (!org || !ext); i++) {
+      const sizeWords = view.getUint32(off, true);
+      const fn = view.getUint16(off + 4, true);
+      if (fn === META_EOF || sizeWords < 3 || off + sizeWords * 2 > view.byteLength) {
+        break;
+      }
+      if (fn === META_SETWINDOWORG && !org && sizeWords >= 5) {
+        org = { y: view.getInt16(off + 6, true), x: view.getInt16(off + 8, true) };
+      }
+      if (fn === META_SETWINDOWEXT && !ext && sizeWords >= 5) {
+        ext = { cy: view.getInt16(off + 6, true), cx: view.getInt16(off + 8, true) };
+      }
+      off += sizeWords * 2;
+    }
+    if (ext && ext.cx && ext.cy) {
+      boundsLeft = org ? org.x : 0;
+      boundsTop = org ? org.y : 0;
+      boundsRight = boundsLeft + Math.abs(ext.cx);
+      boundsBottom = boundsTop + Math.abs(ext.cy);
+    }
+  }
   return {
     headerSize: headerOffset + headerSize,
     maxRecordSize,
@@ -637,11 +779,18 @@ function parseWmfHeader(view) {
 }
 
 // src/emf-gdi-coord.ts
+// Window->viewport mapping yields coordinates in the file's reference-device
+// space; rclBounds is in that same device space, so the result must still be
+// normalized into canvas space ((dev - bounds) * s), exactly like the
+// non-mapping branch. Without this, files that SETVIEWPORTEXTEX draw at
+// device scale into a dpiScale-sized canvas (or fully off-canvas when the
+// bounds origin is non-zero).
 function gmx(r, x) {
   const wt = r.state.worldTransform;
   const px = wt[0] * x + wt[4];
   if (r.useMappingMode) {
-    return (px - r.windowOrg.x) / (r.windowExt.cx || 1) * (r.viewportExt.cx || 1) + r.viewportOrg.x;
+    const dev = (px - r.windowOrg.x) / (r.windowExt.cx || 1) * (r.viewportExt.cx || 1) + r.viewportOrg.x;
+    return (dev - r.bounds.left) * r.sx;
   }
   return (px - r.bounds.left) * r.sx;
 }
@@ -649,21 +798,22 @@ function gmy(r, y) {
   const wt = r.state.worldTransform;
   const py = wt[3] * y + wt[5];
   if (r.useMappingMode) {
-    return (py - r.windowOrg.y) / (r.windowExt.cy || 1) * (r.viewportExt.cy || 1) + r.viewportOrg.y;
+    const dev = (py - r.windowOrg.y) / (r.windowExt.cy || 1) * (r.viewportExt.cy || 1) + r.viewportOrg.y;
+    return (dev - r.bounds.top) * r.sy;
   }
   return (py - r.bounds.top) * r.sy;
 }
 function gmw(r, w) {
   const pw = r.state.worldTransform[0] * w;
   if (r.useMappingMode) {
-    return pw / (r.windowExt.cx || 1) * (r.viewportExt.cx || 1);
+    return pw / (r.windowExt.cx || 1) * (r.viewportExt.cx || 1) * r.sx;
   }
   return pw * r.sx;
 }
 function gmh(r, h) {
   const ph = r.state.worldTransform[3] * h;
   if (r.useMappingMode) {
-    return ph / (r.windowExt.cy || 1) * (r.viewportExt.cy || 1);
+    return ph / (r.windowExt.cy || 1) * (r.viewportExt.cy || 1) * r.sy;
   }
   return ph * r.sy;
 }
@@ -1228,7 +1378,7 @@ function parseBitfieldMasks(view, bmiOffset, headerSize, compression, bitCount) 
   }
   return { rMask, gMask, bMask, rShift, gShift, bShift, rMax, gMax, bMax };
 }
-function decodeUncompressedRows(view, bitsOffset, width, height, topDown, bitCount, colorTable, masks, out) {
+function decodeUncompressedRows(view, bitsOffset, width, height, topDown, bitCount, colorTable, masks, out, preserveAlpha = false) {
   const rowStride = Math.floor((bitCount * width + 31) / 32) * 4;
   const { rMask, gMask, bMask, rShift, gShift, bShift, rMax, gMax, bMax } = masks;
   for (let y = 0; y < height; y++) {
@@ -1286,14 +1436,14 @@ function decodeUncompressedRows(view, bitsOffset, width, height, topDown, bitCou
         out[dstPx] = rr;
         out[dstPx + 1] = gg;
         out[dstPx + 2] = bb;
-        out[dstPx + 3] = aa === 0 ? 255 : aa;
+        out[dstPx + 3] = preserveAlpha ? aa : aa === 0 ? 255 : aa;
       }
     }
   }
 }
 
 // src/emf-dib-decoder.ts
-function decodeDibToImageData(view, bmiOffset, bitsOffset, bitsSize) {
+function decodeDibToImageData(view, bmiOffset, bitsOffset, bitsSize, preserveAlpha = false) {
   if (bmiOffset < 0 || bitsOffset < 0 || bmiOffset + 40 > view.byteLength || bitsOffset + bitsSize > view.byteLength) {
     return null;
   }
@@ -1384,7 +1534,8 @@ function decodeDibToImageData(view, bmiOffset, bitsOffset, bitsSize) {
     bitCount,
     colorTable,
     masks,
-    out
+    out,
+    preserveAlpha
   );
   return new ImageData(out, width, height);
 }
@@ -1513,6 +1664,81 @@ function handleStretchDibits(rCtx, offset, dataOff, recSize) {
         }
       }
     }
+  }
+  return true;
+}
+var AC_SRC_ALPHA = 1;
+function handleAlphaBlend(rCtx, offset, dataOff, recSize) {
+  const { ctx, view } = rCtx;
+  if (recSize < 108) {
+    return true;
+  }
+  const dstX = view.getInt32(dataOff + 16, true);
+  const dstY = view.getInt32(dataOff + 20, true);
+  const dstW = view.getInt32(dataOff + 24, true);
+  const dstH = view.getInt32(dataOff + 28, true);
+  const srcConstantAlpha = view.getUint8(dataOff + 34);
+  const alphaFormat = view.getUint8(dataOff + 35);
+  const srcX = view.getInt32(dataOff + 36, true);
+  const srcY = view.getInt32(dataOff + 40, true);
+  const offBmiSrc = view.getUint32(dataOff + 76, true);
+  const cbBmiSrc = view.getUint32(dataOff + 80, true);
+  const offBitsSrc = view.getUint32(dataOff + 84, true);
+  const cbBitsSrc = view.getUint32(dataOff + 88, true);
+  const srcW = view.getInt32(dataOff + 92, true);
+  const srcH = view.getInt32(dataOff + 96, true);
+  if (offBmiSrc <= 0 || cbBmiSrc <= 0 || offBitsSrc <= 0 || cbBitsSrc <= 0 || srcW <= 0 || srcH <= 0) {
+    return true;
+  }
+  const imageData = decodeDibToImageData(
+    view,
+    offset + offBmiSrc,
+    offset + offBitsSrc,
+    cbBitsSrc,
+    (alphaFormat & AC_SRC_ALPHA) !== 0
+  );
+  if (!imageData) {
+    return true;
+  }
+  if (alphaFormat & AC_SRC_ALPHA) {
+    const px = imageData.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const a = px[i + 3];
+      if (a === 255) {
+        continue;
+      }
+      if (a === 0) {
+        px[i] = px[i + 1] = px[i + 2] = 0;
+        continue;
+      }
+      px[i] = Math.min(255, Math.round(px[i] * 255 / a));
+      px[i + 1] = Math.min(255, Math.round(px[i + 1] * 255 / a));
+      px[i + 2] = Math.min(255, Math.round(px[i + 2] * 255 / a));
+    }
+  }
+  const temp = createTempCanvas(imageData.width, imageData.height);
+  if (!temp) {
+    return true;
+  }
+  temp.ctx.putImageData(imageData, 0, 0);
+  const constAlpha = srcConstantAlpha / 255;
+  const prevAlpha = constAlpha < 1 ? ctx.globalAlpha : 1;
+  if (constAlpha < 1) {
+    ctx.globalAlpha = prevAlpha * constAlpha;
+  }
+  ctx.drawImage(
+    temp.canvas,
+    srcX,
+    srcY,
+    srcW,
+    srcH,
+    gmx(rCtx, dstX),
+    gmy(rCtx, dstY),
+    gmw(rCtx, dstW),
+    gmh(rCtx, dstH)
+  );
+  if (constAlpha < 1) {
+    ctx.globalAlpha = prevAlpha;
   }
   return true;
 }
@@ -1655,6 +1881,8 @@ function handleEmfGdiTextBitmapRecord(rCtx, recType, offset, dataOff, recSize) {
       return handleBitBlt(rCtx, offset, dataOff, recSize);
     case EMR_STRETCHDIBITS:
       return handleStretchDibits(rCtx, offset, dataOff, recSize);
+    case EMR_ALPHABLEND:
+      return handleAlphaBlend(rCtx, offset, dataOff, recSize);
     case EMR_INTERSECTCLIPRECT:
       return handleIntersectClipRect(rCtx, dataOff, recSize);
     case EMR_EXTSELECTCLIPRGN:
@@ -2248,6 +2476,7 @@ function defaultState() {
     fontFamily: "sans-serif",
     fontUnderline: false,
     fontStrikeOut: false,
+    fontEscapement: 0,
     rop2: 13,
     curX: 0,
     curY: 0,
@@ -4282,7 +4511,8 @@ var GDI_NAMES = {
   86: "EMR_POLYGON16",
   87: "EMR_POLYLINE16",
   88: "EMR_POLYBEZIERTO16",
-  91: "EMR_POLYPOLYGON16"
+  91: "EMR_POLYPOLYGON16",
+  114: "EMR_ALPHABLEND"
 };
 function replayEmfRecords(view, ctx, bounds, canvasW, canvasH, dpiScale = 1, replayOptions = {}) {
   emfLog(
@@ -4306,10 +4536,12 @@ function replayEmfRecords(view, ctx, bounds, canvasW, canvasH, dpiScale = 1, rep
     state: { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap },
     stateStack: [],
     inPath: false,
+    // Defaults form an identity window->viewport mapping in device space, so
+    // a file that only sets some of the four keeps the non-mapping behavior.
     windowOrg: { x: bounds.left, y: bounds.top },
     windowExt: { cx: logicalW, cy: logicalH },
-    viewportOrg: { x: 0, y: 0 },
-    viewportExt: { cx: canvasW, cy: canvasH },
+    viewportOrg: { x: bounds.left, y: bounds.top },
+    viewportExt: { cx: logicalW, cy: logicalH },
     useMappingMode: false,
     clipSaveDepth: 0,
     bounds,
@@ -4399,10 +4631,121 @@ function replayEmfRecords(view, ctx, bounds, canvasW, canvasH, dpiScale = 1, rep
 }
 
 // src/wmf-draw-handlers.ts
+// GDI ternary raster ops approximated with canvas composites; SRCAND/SRCPAINT/
+// SRCINVERT are the classic icon mask+image pairs and map well for the
+// black-outside / white-outside operands they are used with.
+function wmfRopComposite(rop) {
+  switch (rop) {
+    case 8913094:
+      return "multiply";
+    case 15597702:
+      return "lighter";
+    case 6684742:
+      return "difference";
+    default:
+      return "source-over";
+  }
+}
+function drawWmfDib(wCtx, rop, dibOff, dibEnd, xSrc, ySrc, srcW, srcH, xDst, yDst, dstW, dstH) {
+  const { view, ctx, coord } = wCtx;
+  if (dibOff + 40 > dibEnd || dibEnd > view.byteLength) {
+    return;
+  }
+  const hdrSize = view.getUint32(dibOff, true);
+  const bitCount = view.getUint16(dibOff + 14, true);
+  const compression = view.getUint32(dibOff + 16, true);
+  let paletteBytes = 0;
+  if (bitCount <= 8) {
+    const maxColors = 1 << bitCount;
+    paletteBytes = Math.min(view.getUint32(dibOff + 32, true) || maxColors, maxColors) * 4;
+  } else if (compression === 3 && hdrSize === 40) {
+    paletteBytes = 12;
+  }
+  const bitsOff = dibOff + hdrSize + paletteBytes;
+  if (bitsOff >= dibEnd) {
+    return;
+  }
+  const imageData = decodeDibToImageData(view, dibOff, bitsOff, dibEnd - bitsOff);
+  if (!imageData) {
+    return;
+  }
+  const temp = createTempCanvas(imageData.width, imageData.height);
+  if (!temp) {
+    return;
+  }
+  temp.ctx.putImageData(imageData, 0, 0);
+  // Icon DIBs may be double-height (stacked mask); the src rect crops the half
+  const sw = srcW > 0 ? srcW : imageData.width;
+  const sh = srcH > 0 ? srcH : imageData.height;
+  const prevGco = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = wmfRopComposite(rop);
+  ctx.drawImage(
+    temp.canvas,
+    xSrc,
+    ySrc,
+    sw,
+    sh,
+    coord.mx(xDst),
+    coord.my(yDst),
+    coord.mw(dstW || sw),
+    coord.mh(dstH || sh)
+  );
+  ctx.globalCompositeOperation = prevGco;
+}
 function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
   const { ctx, view, state, coord } = wCtx;
   const { mx, my, mw, mh } = coord;
   switch (recType) {
+    case META_DIBBITBLT:
+    case META_DIBSTRETCHBLT:
+    case META_STRETCHDIB: {
+      // Bitmap-less variant carries one reserved word instead of the DIB.
+      // MS-WMF 2.3.1.2/2.3.1.3: RecordSize (words, incl. the 3-word header)
+      // == (RecordFunction >> 8) + 3; recSize here is that value in bytes.
+      if (recSize === ((recType >> 8) + 3) * 2) {
+        return true;
+      }
+      const rop = view.getUint32(dataOff, true);
+      if (recType === META_DIBBITBLT) {
+        if (recSize >= 22) {
+          const ySrc = view.getInt16(dataOff + 4, true);
+          const xSrc = view.getInt16(dataOff + 6, true);
+          const h = view.getInt16(dataOff + 8, true);
+          const w = view.getInt16(dataOff + 10, true);
+          const yDst = view.getInt16(dataOff + 12, true);
+          const xDst = view.getInt16(dataOff + 14, true);
+          drawWmfDib(wCtx, rop, dataOff + 16, offset + recSize, xSrc, ySrc, w, h, xDst, yDst, w, h);
+        }
+        return true;
+      }
+      // META_DIBSTRETCHBLT / META_STRETCHDIB (extra ColorUsage word first)
+      const base = recType === META_STRETCHDIB ? dataOff + 6 : dataOff + 4;
+      if (base + 16 <= offset + recSize) {
+        const srcH = view.getInt16(base, true);
+        const srcW = view.getInt16(base + 2, true);
+        const ySrc = view.getInt16(base + 4, true);
+        const xSrc = view.getInt16(base + 6, true);
+        const dstH = view.getInt16(base + 8, true);
+        const dstW = view.getInt16(base + 10, true);
+        const yDst = view.getInt16(base + 12, true);
+        const xDst = view.getInt16(base + 14, true);
+        drawWmfDib(
+          wCtx,
+          rop,
+          base + 16,
+          offset + recSize,
+          xSrc,
+          ySrc,
+          srcW,
+          srcH,
+          xDst,
+          yDst,
+          dstW,
+          dstH
+        );
+      }
+      return true;
+    }
     case META_MOVETO:
       if (recSize >= 10) {
         state.curY = view.getInt16(dataOff, true);
@@ -4620,7 +4963,7 @@ function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
             const txCoord = view.getInt16(txOff + 2, true);
             applyFont(ctx, state, Math.abs(mh(1)));
             ctx.fillStyle = state.textColor;
-            ctx.fillText(text, mx(txCoord), my(ty2));
+            drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
           }
         }
       }
@@ -4643,8 +4986,29 @@ function handleWmfDrawRecord(wCtx, recType, offset, dataOff, recSize) {
           }
           applyFont(ctx, state, Math.abs(mh(1)));
           ctx.fillStyle = state.textColor;
-          ctx.fillText(text, mx(txCoord), my(ty2));
+          drawWmfText(ctx, state, text, mx(txCoord), my(ty2));
         }
+      }
+      return true;
+    case META_PATBLT:
+      if (recSize >= 18) {
+        // RasterOp(4) Height(2) Width(2) YLeft(2) XLeft(2)
+        const rop = view.getUint32(dataOff, true);
+        const rh2 = view.getInt16(dataOff + 4, true);
+        const rw2 = view.getInt16(dataOff + 6, true);
+        const ry = view.getInt16(dataOff + 8, true);
+        const rx = view.getInt16(dataOff + 10, true);
+        if (rop === 66) {
+          ctx.fillStyle = "#000000";
+        } else if (rop === 16711778) {
+          ctx.fillStyle = "#ffffff";
+        } else {
+          if (state.brushStyle === 1) {
+            return true;
+          }
+          applyBrush(ctx, state);
+        }
+        ctx.fillRect(mx(rx), my(ry), mw(rw2), mh(rh2));
       }
       return true;
     default:
@@ -4772,11 +5136,30 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
           });
         }
         break;
+      case META_DIBCREATEPATTERNBRUSH:
+        // Pattern brush approximated by the DIB's average color (solid); it must still
+        // claim an object slot so later SELECTOBJECT indices keep lining up
+        objectTable.set(allocObjectSlot(), {
+          kind: "brush",
+          style: 0,
+          color: recSize >= 14 ? dibAverageColor(view, dataOff + 4, offset + recSize) : "#c0c0c0"
+        });
+        break;
+      case META_CREATEPATTERNBRUSH:
+      case META_CREATEPALETTE:
+      case META_CREATEREGION:
+        // Unhandled object-creating records: hold the slot or every later
+        // SELECTOBJECT picks the wrong pen/brush/font
+        objectTable.set(allocObjectSlot(), { kind: "unsupported" });
+        break;
       case META_CREATEFONTINDIRECT:
         if (recSize >= 24) {
+          // LOGFONT16: Height(2) Width(2) Escapement(2) Orientation(2) Weight(2)
+          // Italic/Underline/StrikeOut/CharSet/OutPrec/ClipPrec/Quality/PitchAndFamily(1 each)
+          // FaceName at +18 (not +14, which lands in the precision/quality bytes)
           let family = "";
-          for (let i = 0; i < 32 && dataOff + 14 + i < offset + recSize; i++) {
-            const ch = view.getUint8(dataOff + 14 + i);
+          for (let i = 0; i < 32 && dataOff + 18 + i < offset + recSize; i++) {
+            const ch = view.getUint8(dataOff + 18 + i);
             if (ch === 0) {
               break;
             }
@@ -4786,6 +5169,7 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
           objectTable.set(slot, {
             kind: "font",
             height: Math.abs(view.getInt16(dataOff, true)),
+            escapement: view.getInt16(dataOff + 4, true),
             weight: view.getInt16(dataOff + 8, true),
             italic: view.getUint8(dataOff + 10) !== 0,
             underline: view.getUint8(dataOff + 11) !== 0,
@@ -4815,6 +5199,7 @@ function replayWmfRecords(view, ctx, header, canvasW, canvasH, replayOptions = {
                 state.fontUnderline = obj.underline;
                 state.fontStrikeOut = obj.strikeOut;
                 state.fontFamily = obj.family;
+                state.fontEscapement = obj.escapement || 0;
                 break;
             }
           }
@@ -4941,13 +5326,23 @@ async function convertEmfToDataUrl(buffer, options, recursionDepth = 0) {
       emfLog("convertEmfToDataUrl: parseEmfHeader returned null \u2014 returning null");
       return null;
     }
-    const renderBounds = getRenderableEmfBounds(header);
+    let renderBounds = getRenderableEmfBounds(header);
     if (!renderBounds) {
       emfLog("convertEmfToDataUrl: getRenderableEmfBounds returned null \u2014 returning null");
       return null;
     }
-    const logicalW = renderBounds.right - renderBounds.left;
-    const logicalH = renderBounds.bottom - renderBounds.top;
+    let logicalW = renderBounds.right - renderBounds.left;
+    let logicalH = renderBounds.bottom - renderBounds.top;
+    const boundsW = header.bounds.right - header.bounds.left;
+    const frameBounds = boundsW > 0 ? emfFrameDeviceBounds(header) : null;
+    if (frameBounds && !emfBoundsCoverFrame(renderBounds, frameBounds.deviceRect)) {
+      emfLog(
+        `convertEmfToDataUrl: bounds disagree with frame \u2014 replaying in frame space (${frameBounds.pxW}\xD7${frameBounds.pxH}px)`
+      );
+      renderBounds = frameBounds.deviceRect;
+      logicalW = frameBounds.pxW;
+      logicalH = frameBounds.pxH;
+    }
     emfLog(`convertEmfToDataUrl: logicalSize=${logicalW}\xD7${logicalH}`);
     const setup = createCanvas(
       logicalW,

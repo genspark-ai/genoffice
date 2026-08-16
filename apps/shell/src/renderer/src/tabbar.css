@@ -19,6 +19,12 @@
   z-index: 10;
 }
 
+/* While a Home popover is open the strip must deliver presses (drag regions
+   swallow them), so outside-press dismissal can see presses on the blank band */
+html.genoffice-popover-open .tab-bar {
+  -webkit-app-region: no-drag;
+}
+
 /* room for the macOS traffic lights (titleBarStyle: hiddenInset) */
 .tab-bar-drag-spacer {
   width: 78px;

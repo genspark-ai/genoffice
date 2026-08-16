@@ -13,6 +13,7 @@ import {
   cssGridLineBase,
   cssGridSpacingPt,
   cssLineHeight,
+  isCjk,
   isCjkFontName,
   lineHeightFactor,
   paraLineFactorCss,
@@ -20,7 +21,7 @@ import {
   textHasComplexScript,
   textHasHangul,
 } from '../line-metrics'
-import { shapeBackgroundCss } from './shape-svg'
+import { shapeBackgroundCss, shapeTextInsetsPx } from './shape-svg'
 import { t } from '../i18n/locale'
 import {
   type ChartDisplay,
@@ -201,6 +202,10 @@ interface ChartGeom {
 /** widest a chart draws at; the resize handle clamps to this too so mouseup never snaps back */
 export const CHART_MAX_WIDTH_PX = 660
 
+/** height of the title row above the plot SVG; heightPx = title row + plot,
+ * so the resize write-back must add it before storing the measured SVG height */
+export const CHART_TITLE_ROW_PX = 22
+
 /** draw the read-only SVG preview into the node's .doc-chart-canvas */
 export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void {
   const canvas = dom.querySelector<HTMLElement>('.doc-chart-canvas')
@@ -210,10 +215,22 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   // legend itself, like Word/LibreOffice output
   const legendNames = chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
   const showLegend = chart.series.length > 1 || chart.series.some((s) => s.name)
+  // the title row renders above the SVG but Word draws the title inside the
+  // drawing extent; shrink the plot so title + plot together fill heightPx,
+  // or pagination gains ~22px per titled chart and drifts
+  const titleRowPx = chart.title !== undefined ? CHART_TITLE_ROW_PX : 0
+  // horizontal bars put category labels on the y axis; reserve room for the
+  // longest one (10px axis font: CJK glyphs are ~1em wide, Latin ~0.7em)
+  const catLabelPx = (s: string) =>
+    [...s].reduce((w, ch) => w + (isCjk(ch.codePointAt(0) ?? 0) ? 10 : 7), 0)
+  const maxCatPx = Math.max(0, ...chart.categories.map(catLabelPx))
+  const width = Math.min(chart.widthPx ?? 560, CHART_MAX_WIDTH_PX)
   const geom: ChartGeom = {
-    width: Math.min(chart.widthPx ?? 560, CHART_MAX_WIDTH_PX),
-    height: chart.heightPx ?? 240,
-    left: 46,
+    width,
+    height: (chart.heightPx ?? 240) - titleRowPx,
+    // also capped against the chart's own width: resize allows 120px-wide
+    // charts, and a gutter wider than the plot would flip plotW negative
+    left: chart.kind === 'bar' && chart.horizontal ? Math.min(140, width * 0.4, 16 + maxCatPx) : 46,
     right: 12,
     top: 12,
     bottom: 26 + (showLegend ? 18 : 0),
@@ -225,6 +242,7 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   svg.style.height = `${geom.height}px`
 
   if (chart.kind === 'pie') drawPie(svg, chart, geom)
+  else if (chart.kind === 'bar' && chart.horizontal) drawAxesHorizontal(svg, chart, geom)
   else drawAxes(svg, chart, geom)
 
   if (showLegend) {
@@ -374,6 +392,82 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   }
 }
 
+/** horizontal bar charts (c:barDir="bar"): value axis on x, categories on y,
+ * first category in the bottom row and series 1 at the bottom of each group, like Word */
+function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
+  const rawMax = Math.max(0, ...values)
+  const rawMin = Math.min(0, ...values)
+  const step = niceStep((rawMax - rawMin) / 5 || 1)
+  const min = Math.floor(rawMin / step) * step
+  let max = Math.ceil(rawMax / step) * step || step
+  if (rawMax > 0 && max <= rawMax + 1e-9) max += step
+  const span = max - min || 1
+  const plotW = geom.width - geom.left - geom.right
+  const plotH = geom.height - geom.top - geom.bottom
+  const rows = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const xOf = (v: number) => geom.left + ((v - min) / span) * plotW
+  const slotH = plotH / rows
+
+  // vertical gridlines with value labels along the bottom
+  const steps = Math.max(1, Math.round(span / step))
+  for (let i = 0; i <= steps; i++) {
+    const v = min + step * i
+    const x = xOf(v)
+    svgEl(svg, 'line', {
+      x1: String(x),
+      y1: String(geom.top),
+      x2: String(x),
+      y2: String(geom.height - geom.bottom),
+      class: 'doc-chart-grid',
+    })
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(x),
+        y: String(geom.height - geom.bottom + 14),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'middle',
+      },
+      formatAxisValue(v),
+    )
+  }
+
+  chart.categories.forEach((cat, c) => {
+    if (c >= rows) return
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(geom.left - 6),
+        y: String(geom.top + plotH - slotH * c - slotH / 2 + 3),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'end',
+      },
+      cat,
+    )
+  })
+
+  const groupPad = slotH * 0.15
+  const barH = (slotH - groupPad * 2) / chart.series.length
+  chart.series.forEach((ser, s) => {
+    ser.values.forEach((value, c) => {
+      if (value === null) return
+      const y = geom.top + plotH - slotH * c - groupPad - barH * (s + 1)
+      const x0 = xOf(0)
+      const x1 = xOf(value)
+      svgEl(svg, 'rect', {
+        x: String(Math.min(x0, x1)),
+        y: String(y + barH * 0.08),
+        width: String(Math.max(1, Math.abs(x0 - x1))),
+        height: String(barH * 0.84),
+        fill: chartColor(s),
+      })
+    })
+  })
+}
+
 /** pie preview renders the first series only */
 function drawPie(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   const values = chart.series[0].values.map((v) => (v === null || v < 0 ? 0 : v))
@@ -493,20 +587,24 @@ for (const p of WORDART_PRESETS) {
 }
 
 export function textboxBoxStyle(box: TextboxDisplay): string {
-  const insetTop = box.insetTopPx ?? 4.8
-  const insetRight = box.insetRightPx ?? 9.6
-  const insetBottom = box.insetBottomPx ?? 4.8
-  const insetLeft = box.insetLeftPx ?? 9.6
+  const boxW = box.widthPx ?? 189
+  const boxH = box.heightPx ?? 113
+  // Word keeps shape text inside the preset's text rectangle (e.g. the
+  // ellipse's inscribed rect); bodyPr insets apply within that rect
+  const geomInset = box.prst ? shapeTextInsetsPx(box.prst, boxW, boxH) : null
+  const pad = (v: number, geom: number): number => Math.round((v + geom) * 100) / 100
+  const insetTop = pad(box.insetTopPx ?? 4.8, geomInset?.t ?? 0)
+  const insetRight = pad(box.insetRightPx ?? 9.6, geomInset?.r ?? 0)
+  const insetBottom = pad(box.insetBottomPx ?? 4.8, geomInset?.b ?? 0)
+  const insetLeft = pad(box.insetLeftPx ?? 9.6, geomInset?.l ?? 0)
   // preset geometry renders as an SVG background so the border follows the
   // outline (a clip-path would clip a CSS outline away with the box corners)
   const geomCss = box.prst
-    ? shapeBackgroundCss(
-        box.prst,
-        box.widthPx ?? 189,
-        box.heightPx ?? 113,
-        box.fill,
-        box.borderColor,
-      )
+    ? shapeBackgroundCss(box.prst, boxW, boxH, box.fill, box.borderColor, {
+        diag: box.lineDiag,
+        flipH: box.flipH,
+        flipV: box.flipV,
+      })
     : null
   const waStyle = box.wordArtId ? WORDART_CSS[box.wordArtId] : undefined
   // picture fill (photo boxes / a:blipFill): tiles repeat at natural size,
@@ -539,6 +637,19 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
       : '',
     waStyle?.color ? `-webkit-text-fill-color:${waStyle.color}` : '',
     waStyle?.stroke ? `-webkit-text-stroke:${waStyle.stroke}` : '',
+    // imported VML WordArt outline (document data, not chrome)
+    !waStyle?.stroke && box.textOutline
+      ? `-webkit-text-stroke:${box.textOutline.widthPx}px #${box.textOutline.colorHex}`
+      : '',
+    // WordArt strings never wrap; spill instead of clipping when the
+    // font-size approximation runs slightly wide
+    box.nowrap ? 'white-space:nowrap;overflow:visible' : '',
+    // wps:bodyPr anchor="ctr|b": text body hugs the box middle/bottom
+    box.vAlign && box.heightPx
+      ? `display:flex;flex-direction:column;justify-content:${
+          box.vAlign === 'bottom' ? 'flex-end' : 'center'
+        }`
+      : '',
     waStyle?.textShadow ? `text-shadow:${waStyle.textShadow}` : '',
   ]
     .filter(Boolean)
@@ -561,8 +672,23 @@ function padSegments(text: string): unknown[] {
   return out
 }
 
-/** run → styled <span> spec, shared by textbox and table-cell rendering */
-export function runSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
+/** run → styled <span> (+ inline <img>) specs, shared by textbox and table-cell rendering */
+export function runSpanSpecs(run: Run, autoSpace?: boolean): DomSpec[] {
+  const out: DomSpec[] = []
+  // a run can carry both w:t text and a w:drawing; the text renders before the
+  // image (generate.ts / the editable path keep the same order)
+  if (run.text !== '' || !run.image) out.push(textSpanSpec(run, autoSpace))
+  if (run.image) {
+    const attrs: Record<string, string> = { class: 'doc-inline-img', src: run.image.dataUrl }
+    const { widthPx, heightPx } = run.image
+    if (widthPx)
+      attrs.style = `width:${widthPx}px;${heightPx ? `height:${heightPx}px` : 'height:auto'}`
+    out.push(['img', attrs])
+  }
+  return out
+}
+
+function textSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
   const cs = run.csFont && textHasComplexScript(run.text) ? run.csFont : undefined
   const runStyle = [
     run.color ? `color:#${run.color}` : '',
@@ -587,6 +713,14 @@ export function runSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
     .filter(Boolean)
     .join(';')
   const content = autoSpace === false ? [run.text] : padSegments(run.text)
+  // hyperlink runs keep the editable path's look (.doc-link) and real href;
+  // App-level click handling prevents in-place navigation (jump on mod+click)
+  if (run.link?.href) {
+    const attrs: Record<string, string> = { class: 'doc-link', href: run.link.href }
+    if (run.link.tooltip) attrs.title = run.link.tooltip
+    if (runStyle) attrs.style = runStyle
+    return ['a', attrs, ...content]
+  }
   return runStyle ? ['span', { style: runStyle }, ...content] : ['span', {}, ...content]
 }
 
@@ -601,7 +735,7 @@ function runSpansWithPads(runs: Run[], autoSpace?: boolean): DomSpec[] {
       }
       prevText = run.text
     }
-    out.push(runSpanSpec(run, autoSpace))
+    out.push(...runSpanSpecs(run, autoSpace))
   }
   return out
 }
@@ -615,6 +749,8 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
     const spans: DomSpec[] = runSpansWithPads(para.runs, para.autoSpace)
     const pStyles = [
       para.align ? `text-align:${para.align}` : '',
+      // .doc-textbox-para's pre-wrap would still wrap a nowrap (WordArt) box
+      box.nowrap ? 'white-space:nowrap' : '',
       para.lineSpacing ? `line-height:${para.lineSpacing * 1.2}` : '',
       para.indentLeft ? `margin-left:${para.indentLeft / 20}pt` : '',
       para.indentRight ? `margin-right:${para.indentRight / 20}pt` : '',
@@ -627,6 +763,7 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
     const pAttrs: Record<string, string> = {
       class: `doc-textbox-para${spans.length === 0 ? ' doc-textbox-para-empty' : ''}`,
     }
+    if (para.styleId) pAttrs['data-style'] = para.styleId
     if (pStyles) pAttrs.style = pStyles
     // empty paragraphs hold a <br> so the caret can land on them while editing
     return spans.length > 0 ? ['div', pAttrs, ...spans] : ['div', pAttrs, ['br', {}]]
@@ -784,7 +921,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       if (rowSpan > 1) tdAttrs.rowspan = String(rowSpan)
       const paraBlocks: DomSpec[] = cell.richParas?.length
         ? cell.richParas.map((p) => {
-            const runs = p.runs.filter((run) => run.text !== '')
+            const runs = p.runs.filter((run) => run.text !== '' || run.image)
             return cellParaSpec(
               runSpansWithPads(runs, p.autoSpace),
               runs.map((r) => r.text).join(''),

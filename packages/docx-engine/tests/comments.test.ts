@@ -274,3 +274,50 @@ describe('comment replies/resolution (commentsExtended)', () => {
     expect(ct).toContain('commentsExtended+xml')
   })
 })
+
+describe('reference-only comments (bare w:commentReference, no range markers)', () => {
+  const refDocx = (bodyXml: string) =>
+    buildDocx({
+      bodyXml,
+      extraParts: [
+        {
+          path: 'word/comments.xml',
+          xml: COMMENTS_XML,
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+        },
+      ],
+    })
+
+  it('anchors on the preceding run', async () => {
+    const doc = await parseDocx(
+      await refDocx(
+        '<w:p><w:r><w:t>hello</w:t></w:r><w:r><w:commentReference w:id="1"/></w:r></w:p>',
+      ),
+    )
+    expect(doc.blocks[0].runs).toEqual([{ text: 'hello', commentIds: ['1'] }])
+  })
+
+  it('anchors a leading reference on the following run', async () => {
+    const doc = await parseDocx(
+      await refDocx(
+        '<w:p><w:r><w:commentReference w:id="1"/></w:r><w:r><w:t>after</w:t></w:r></w:p>',
+      ),
+    )
+    expect(doc.blocks[0].runs).toEqual([{ text: 'after', commentIds: ['1'] }])
+  })
+
+  it('keeps an empty paragraph with only a reference parseable (comment stays in the list)', async () => {
+    const doc = await parseDocx(
+      await refDocx('<w:p><w:r><w:commentReference w:id="1"/></w:r></w:p>'),
+    )
+    expect(doc.blocks[0].type).toBe('paragraph')
+    expect(doc.blocks[0].runs).toEqual([])
+    expect(doc.comments.map((c) => c.id)).toContain('1')
+  })
+
+  it('does not anchor a reference whose id has range markers elsewhere', async () => {
+    const doc = await parseDocx(await refDocx(CROSS_P_A + CROSS_P_B))
+    expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here' }])
+  })
+})

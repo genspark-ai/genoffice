@@ -35,6 +35,10 @@ export interface TabsApi {
    * a focus change, so the shell relays it for them to dismiss popovers.
    */
   notifyChromePressed(): void
+  /** the main-process broadcast that notifyChromePressed (and a window drag)
+   * triggers; the shell's own popovers subscribe so a title-bar drag — which
+   * produces no DOM event — still dismisses them */
+  onChromePressed(handler: () => void): () => void
 }
 
 export const TABS_CHANNELS = {

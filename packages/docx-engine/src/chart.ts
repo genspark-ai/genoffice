@@ -42,6 +42,7 @@ export function parseChartPartXml(xml: string, partPath: string): ChartDisplay |
   const plot = childrenOf(plotArea).find((c) => (nameOf(c) ?? '').endsWith('Chart'))
   if (!plot) return null
   const kind = CHART_KINDS[nameOf(plot) ?? ''] ?? 'other'
+  const horizontal = kind === 'bar' && attrsOf(findChild(plot, 'c:barDir') ?? {})['val'] === 'bar'
 
   let categories: string[] = []
   const series: ChartSeries[] = []
@@ -72,6 +73,7 @@ export function parseChartPartXml(xml: string, partPath: string): ChartDisplay |
   return {
     partPath,
     kind,
+    ...(horizontal ? { horizontal } : {}),
     ...(title !== undefined ? { title } : {}),
     categories,
     series,
@@ -231,7 +233,25 @@ function chartTitle(chart: XNode): string | undefined {
     }
   }
   walk(title)
-  return texts.join('')
+  let joined = texts.join('')
+  if (joined) return joined
+  // strRef titles carry the cached text in c:strCache c:v, not a:t
+  const walkV = (node: XNode) => {
+    for (const child of childrenOf(node)) {
+      if (nameOf(child) === 'c:v') texts.push(textOf(child))
+      else walkV(child)
+    }
+  }
+  walkV(title)
+  joined = texts.join('')
+  if (joined) return joined
+  // text-less c:title = auto title; Word renders the "Chart Title" placeholder
+  // unless the auto title was explicitly deleted (CT_Boolean: a val-less
+  // element and val="true" both mean true)
+  const del = findChild(chart, 'c:autoTitleDeleted')
+  const delVal = del ? attrsOf(del)['val'] : undefined
+  const deleted = del !== undefined && (delVal === undefined || delVal === '1' || delVal === 'true')
+  return deleted ? undefined : 'Chart Title'
 }
 
 const _XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -338,12 +358,47 @@ export interface ChartPatch {
  * these caches, but "Edit Data" will show the original sheet numbers.
  */
 export function patchChartPartXml(xml: string, patch: ChartPatch): string {
+  // a text-less title (auto title / strRef with no rich body) has no a:t to
+  // rewrite: give it one first, then patch it like any other title
+  if (patch.title !== undefined) {
+    const t = tagRange(xml, 'c:title')
+    if (
+      t &&
+      innerTextRanges(xml, 'a:t', t.start, t.end).length === 0 &&
+      innerTextRanges(xml, 'c:v', t.start, t.end).length === 0
+    ) {
+      const runXml = `<a:r><a:t>${escapeXmlText(patch.title)}</a:t></a:r>`
+      const tx = tagRange(xml, 'c:tx', t.start, t.end)
+      const p = tx ? tagRange(xml, 'a:p', tx.start, tx.end) : null
+      if (p) {
+        // Word auto titles carry an empty c:tx/c:rich paragraph (only
+        // a:endParaRPr); CT_Title allows one c:tx, so inject the run there,
+        // before a:endParaRPr per schema order
+        const endPr = xml.indexOf('<a:endParaRPr', p.start)
+        const at = endPr !== -1 && endPr < p.end ? endPr : p.end - '</a:p>'.length
+        xml = xml.slice(0, at) + runXml + xml.slice(at)
+      } else {
+        const rich = `<c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p>${runXml}</a:p></c:rich></c:tx>`
+        if (tx) {
+          // cache-less strRef tx (no a:p, no c:v): nothing to inject into —
+          // replace the whole c:tx with a rich body (CT_Tx is a choice)
+          xml = xml.slice(0, tx.start) + rich + xml.slice(tx.end)
+        } else {
+          const openEnd = xml.indexOf('>', t.start) + 1
+          xml = xml.slice(0, openEnd) + rich + xml.slice(openEnd)
+        }
+      }
+    }
+  }
+
   const edits: Array<{ start: number; end: number; text: string }> = []
 
   if (patch.title !== undefined) {
     const title = tagRange(xml, 'c:title')
     if (title) {
-      const texts = innerTextRanges(xml, 'a:t', title.start, title.end)
+      let texts = innerTextRanges(xml, 'a:t', title.start, title.end)
+      // strRef titles keep the text in the c:strCache c:v cache instead
+      if (texts.length === 0) texts = innerTextRanges(xml, 'c:v', title.start, title.end)
       // whole title into the first run, remaining runs blanked
       texts.forEach((range, i) => {
         edits.push({ ...range, text: i === 0 ? patch.title! : '' })

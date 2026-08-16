@@ -41,4 +41,17 @@ describe('linked (external) pictures', () => {
     // still protected: saving must keep the original field XML byte-identical
     expect(block.originalXml).toContain('INCLUDEPICTURE')
   })
+
+  it('keeps the text visible when INCLUDEPICTURE shares the paragraph with text', async () => {
+    const bodyXml = INCLUDEPICTURE_PARAGRAPH.replace(
+      '<w:p>',
+      '<w:p><w:r><w:t>Company logo: </w:t></w:r>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml, extraRels: IMAGE_REL }))
+    const block = doc.blocks[0]
+    // the field passthrough keeps the text instead of an image block dropping it
+    expect(block.type).toBe('passthrough')
+    expect(block.previewText).toContain('Company logo:')
+    expect(block.originalXml).toContain('INCLUDEPICTURE')
+  })
 })

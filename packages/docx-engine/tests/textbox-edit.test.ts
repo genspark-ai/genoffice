@@ -84,6 +84,36 @@ describe('textbox editing', () => {
     })
   })
 
+  it('extracts w:pStyle of textbox paragraphs so document style CSS reaches them', async () => {
+    const styled = TEXTBOX_PARAGRAPH.replace(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>',
+      '<w:p><w:pPr><w:pStyle w:val="KeyPoint"/><w:jc w:val="center"/></w:pPr>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: styled }))
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box?.paras[0].styleId).toBeUndefined()
+    expect(box?.paras[1].styleId).toBe('KeyPoint')
+  })
+
+  it('keeps the anchor paragraph text sharing its paragraph with a textbox as strayRuns', async () => {
+    const withHeading = TEXTBOX_PARAGRAPH.replace(
+      '<w:p><w:r><mc:AlternateContent',
+      '<w:p><w:pPr><w:pStyle w:val="SectionHeading"/></w:pPr><w:r><mc:AlternateContent',
+    ).replace(
+      '</mc:AlternateContent></w:r></w:p>',
+      '</mc:AlternateContent></w:r><w:r><w:t>Objective</w:t></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: withHeading }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.textboxes).toHaveLength(1)
+    expect(block.strayRuns?.map((r) => r.text).join('')).toBe('Objective')
+    expect(block.strayStyleId).toBe('SectionHeading')
+    expect(block.previewText).toContain('Objective')
+    // untouched block still saves its original bytes
+    expect(block.originalXml).toBe(withHeading)
+  })
+
   it('pins the height of an auto-fit box: drops spAutoFit and round-trips fixed', async () => {
     const autoFitXml = TEXTBOX_PARAGRAPH.replace(
       '<wps:txbx>',

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import type { RunStyle } from '@genoffice/pptx-render'
 
@@ -19,6 +20,9 @@ const style = (fontFamily: string, over: Partial<RunStyle> = {}): RunStyle => ({
 })
 
 const mac = process.platform === 'darwin'
+// With Office for Mac installed, its private DFonts (real Yu Gothic/Malgun/MingLiU…) win over
+// same-script substitution — the assertions accept either the real family or the substitute.
+const office = existsSync('/Applications/Microsoft PowerPoint.app/Contents/Resources/DFonts')
 
 describe.runIf(mac)(
   'Japanese/Korean/Traditional-Chinese font substitution (macOS system fonts)',
@@ -26,19 +30,29 @@ describe.runIf(mac)(
     const m = createSystemFontMetrics()
 
     it('missing Japanese fonts substitute to Hiragino (same family for metrics and rendering)', () => {
-      expect(m.displayFamily!(style('游ゴシック'))).toBe('Hiragino Sans')
-      expect(m.displayFamily!(style('Yu Gothic'))).toBe('Hiragino Sans')
-      expect(m.displayFamily!(style('メイリオ'))).toBe('Hiragino Sans')
-      expect(m.displayFamily!(style('ＭＳ Ｐゴシック'))).toBe('Hiragino Sans')
-      expect(m.displayFamily!(style('游明朝'))).toBe('Hiragino Mincho ProN')
-      expect(m.displayFamily!(style('MS Mincho'))).toBe('Hiragino Mincho ProN')
+      const yuSans = office ? /^Yu Gothic/ : /^Hiragino Sans$/
+      expect(m.displayFamily!(style('游ゴシック'))).toMatch(yuSans)
+      expect(m.displayFamily!(style('Yu Gothic'))).toMatch(yuSans)
+      expect(m.displayFamily!(style('メイリオ'))).toMatch(office ? /Meiryo/ : /^Hiragino Sans$/)
+      expect(m.displayFamily!(style('ＭＳ Ｐゴシック'))).toMatch(
+        office ? /MS P?Gothic|Hiragino Sans/ : /^Hiragino Sans$/,
+      )
+      expect(m.displayFamily!(style('游明朝'))).toMatch(
+        office ? /Yu Mincho|Hiragino Mincho/ : /^Hiragino Mincho ProN$/,
+      )
+      expect(m.displayFamily!(style('MS Mincho'))).toMatch(
+        office ? /MS Mincho|Hiragino Mincho/ : /^Hiragino Mincho ProN$/,
+      )
     })
 
     it('missing Korean/Traditional-Chinese fonts substitute to same-script fonts, not Arial/Simplified Chinese', () => {
-      expect(m.displayFamily!(style('맑은 고딕'))).toBe('Apple SD Gothic Neo')
-      expect(m.displayFamily!(style('Malgun Gothic'))).toBe('Apple SD Gothic Neo')
-      expect(m.displayFamily!(style('Microsoft JhengHei'))).toMatch(/Heiti|PingFang|Songti/)
-      expect(m.displayFamily!(style('PMingLiU'))).toMatch(/Songti/)
+      const ko = office ? /Malgun Gothic|Apple SD Gothic Neo/ : /^Apple SD Gothic Neo$/
+      expect(m.displayFamily!(style('맑은 고딕'))).toMatch(ko)
+      expect(m.displayFamily!(style('Malgun Gothic'))).toMatch(ko)
+      expect(m.displayFamily!(style('Microsoft JhengHei'))).toMatch(
+        office ? /JhengHei|Heiti|PingFang|Songti/ : /Heiti|PingFang|Songti/,
+      )
+      expect(m.displayFamily!(style('PMingLiU'))).toMatch(office ? /MingLiU|Songti/ : /Songti/)
     })
 
     it('ttc parsing yields real metrics: CJK full-width 1em, Latin non-heuristic', () => {
@@ -48,8 +62,10 @@ describe.runIf(mac)(
       expect(met.ascent).toBeGreaterThan(50)
     })
 
-    it('bold picks the matching face inside the ttc (Apple SD Gothic Neo Bold)', () => {
-      expect(m.displayFamily!(style('맑은 고딕', { bold: true }))).toBe('Apple SD Gothic Neo')
+    it('bold picks the matching face inside the ttc', () => {
+      expect(m.displayFamily!(style('맑은 고딕', { bold: true }))).toMatch(
+        office ? /Malgun Gothic|Apple SD Gothic Neo/ : /^Apple SD Gothic Neo$/,
+      )
       expect(m.measure('한', style('맑은 고딕', { bold: true }))).toBeGreaterThan(50)
     })
 

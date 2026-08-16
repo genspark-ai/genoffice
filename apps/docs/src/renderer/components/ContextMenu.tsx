@@ -1,5 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
+import type { Command } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection } from '@tiptap/pm/state'
+import {
+  CellSelection,
+  addColumnAfter,
+  addColumnBefore,
+  addRowAfter,
+  addRowBefore,
+  deleteColumn,
+  deleteRow,
+  deleteTable,
+  isInTable,
+  mergeCells,
+  selectedRect,
+  splitCell,
+} from '@tiptap/pm/tables'
 import { platformShortcuts } from '@genoffice/i18n'
 import { isSymbolFontFamily } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
@@ -97,16 +113,70 @@ export function EditorContextMenu({
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', onKey)
     window.addEventListener('blur', onClose)
+    // shell tab-strip presses never reach this document; the preload relays
+    // them (app:chrome-pressed) so the menu still dismisses
+    const offChrome = window.desktop?.onChromePressed?.(onClose)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('blur', onClose)
+      offChrome?.()
     }
   }, [onClose])
 
   const run = (action: () => void) => () => {
     onClose()
     action()
+  }
+
+  // ---- table section (shown when the cursor is inside a table, Word parity) ----
+  // the move handle selects the whole table as a NodeSelection, which isInTable
+  // does not treat as "inside" — the menu must still offer the table commands then
+  const tableSelected =
+    editor.state.selection instanceof NodeSelection &&
+    editor.state.selection.node.type.name === 'docTable'
+  const inTable = isInTable(editor.state) || tableSelected
+  /** cell commands can't run on a whole-table NodeSelection: drop the caret into the first cell */
+  const enterFirstCell = () => {
+    const sel = editor.state.selection
+    if (sel instanceof NodeSelection && sel.node.type.name === 'docTable') {
+      editor.view.dispatch(
+        editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(sel.from + 1))),
+      )
+    }
+  }
+  const runTable = (command: Command) => {
+    editor.view.focus()
+    enterFirstCell()
+    command(editor.state, editor.view.dispatch)
+  }
+  /** anchor cell of the current selection (top-left of a multi-cell selection) */
+  const anchorCellPos = (): number | null => {
+    if (!inTable) return null
+    enterFirstCell()
+    const rect = selectedRect(editor.state)
+    return rect.tableStart + rect.map.map[rect.top * rect.map.width + rect.left]
+  }
+  const selectRowOrColumn = (kind: 'row' | 'column') => {
+    const pos = anchorCellPos()
+    if (pos === null) return
+    const $cell = editor.state.doc.resolve(pos)
+    const selection =
+      kind === 'row' ? CellSelection.rowSelection($cell) : CellSelection.colSelection($cell)
+    editor.view.focus()
+    editor.view.dispatch(editor.state.tr.setSelection(selection))
+  }
+  const selectWholeTable = () => {
+    const { $from } = editor.state.selection
+    for (let depth = $from.depth; depth >= 1; depth--) {
+      if ($from.node(depth).type.name === 'docTable') {
+        editor.view.focus()
+        editor.view.dispatch(
+          editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, $from.before(depth))),
+        )
+        return
+      }
+    }
   }
 
   const protAttrs = editor.getAttributes('docProtected')
@@ -224,6 +294,80 @@ export function EditorContextMenu({
       <div className="ctx-sep" />
       {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
       {item(t('appParagraphMenu'), { key: '⌥⌘M', onClick: run(onParagraphDialog) })}
+      {inTable && (
+        <>
+          <div className="ctx-sep" />
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonInsert'), { submenuKey: 'tableInsert', disabled: !canEdit })}
+            {submenu === 'tableInsert' && canEdit && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['ribbonInsertAbove', addRowBefore],
+                    ['ribbonInsertBelow', addRowAfter],
+                    ['ribbonInsertLeft', addColumnBefore],
+                    ['ribbonInsertRight', addColumnAfter],
+                  ] as Array<[StringKey, Command]>
+                ).map(([labelKey, command]) => (
+                  <button
+                    key={labelKey}
+                    className="ctx-item"
+                    onClick={run(() => runTable(command))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonTableDeleteMenu'), { submenuKey: 'tableDelete', disabled: !canEdit })}
+            {submenu === 'tableDelete' && canEdit && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['ribbonDeleteRow', deleteRow],
+                    ['ribbonDeleteColumn', deleteColumn],
+                    ['ribbonDeleteTable', deleteTable],
+                  ] as Array<[StringKey, Command]>
+                ).map(([labelKey, command]) => (
+                  <button
+                    key={labelKey}
+                    className="ctx-item"
+                    onClick={run(() => runTable(command))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonSelect'), { submenuKey: 'tableSelect' })}
+            {submenu === 'tableSelect' && (
+              <div className="ctx-submenu">
+                <button className="ctx-item" onClick={run(() => selectRowOrColumn('row'))}>
+                  <span className="ctx-label">{t('ribbonSelectRow')}</span>
+                </button>
+                <button className="ctx-item" onClick={run(() => selectRowOrColumn('column'))}>
+                  <span className="ctx-label">{t('ribbonSelectColumn')}</span>
+                </button>
+                <button className="ctx-item" onClick={run(selectWholeTable)}>
+                  <span className="ctx-label">{t('ribbonSelectTable')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+          {item(t('ribbonMergeCells'), {
+            disabled: !canEdit || !mergeCells(editor.state),
+            onClick: run(() => runTable(mergeCells)),
+          })}
+          {item(t('ribbonSplitCells'), {
+            disabled: !canEdit || !splitCell(editor.state),
+            onClick: run(() => runTable(splitCell)),
+          })}
+        </>
+      )}
       {editor.isActive('instrField') && onUpdateFields && (
         <>
           <div className="ctx-sep" />

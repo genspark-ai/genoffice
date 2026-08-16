@@ -105,10 +105,25 @@ export function buildRenderSlide(
 ): RenderSlide {
   const vp = makeViewport(size, opts.fitWidthPx)
   const metrics = opts.metrics ?? new HeuristicMetrics()
-  const sub =
+  const subNum =
     opts.slideNo != null
       ? (el: SlideElement) => withSlideNum(el, opts.slideNo!)
       : (el: SlideElement) => el
+  // <p:sp useBgFill="1">: painted with the slide's effective background (gradient geometry is
+  // approximated in shape-local coords; such shapes are near-page-sized in practice)
+  const subBg = (e: SlideElement): SlideElement => {
+    if (e.type === 'group') {
+      const g = e as GroupElement
+      const children = g.children.map(subBg)
+      return children.some((c, i) => c !== g.children[i]) ? { ...g, children } : e
+    }
+    return (e.type === 'shape' || e.type === 'text') &&
+      (e as TextElement).useBgFill &&
+      slide.background
+      ? ({ ...e, fill: slide.background } as SlideElement)
+      : e
+  }
+  const sub = (el: SlideElement): SlideElement => subBg(subNum(el))
   const nodes: RenderNode[] = []
   // master/layout decoration layer: drawn at the bottom (above the background, below content), read-only
   for (const el of slide.decorations ?? []) {
@@ -144,6 +159,8 @@ export function buildRenderSlide(
     heightPx: vp.heightPx,
     scale: vp.scale,
     background: resolveFill(slide.background, vp, opts.media),
+    ...(slide.bgOwn ? { bgOwn: true } : {}),
+    ...(slide.masterSpHidden ? { bgGraphicsHidden: true } : {}),
     nodes,
     ...(hidden ? { hidden: true } : {}),
   }
@@ -183,6 +200,28 @@ function buildNode(
           const bg = resolveFill(chartEl.chart.bgFill, vp, media)
           if (bg.kind !== 'none') (node as import('./render-tree').ChartRenderNode).bgFill = bg
         }
+        if (chartEl.chart.border) {
+          ;(node as import('./render-tree').ChartRenderNode).border = {
+            color: chartEl.chart.border.color,
+            widthPx: emuToPx(chartEl.chart.border.widthEmu, vp.scale),
+          }
+        }
+        const plotRect = (node as import('./render-tree').ChartRenderNode).plotRect
+        if (plotRect && chartEl.chart.plotFill) {
+          const f = resolveFill(chartEl.chart.plotFill, vp, media)
+          if (f.kind !== 'none') plotRect.fill = f
+        }
+        // chartUserShapes line overlays: fractions of the chart frame, drawn over the plot
+        for (const ul of chartEl.chart.userLines ?? []) {
+          ;(node as import('./render-tree').ChartRenderNode).axisLines.push({
+            x1: ul.x1 * box.w,
+            y1: ul.y1 * box.h,
+            x2: ul.x2 * box.w,
+            y2: ul.y2 * box.h,
+            color: ul.color,
+            widthPx: Math.max(emuToPx(ul.widthEmu, vp.scale), 0.75),
+          })
+        }
       }
       return node
     }
@@ -191,20 +230,51 @@ function buildNode(
       // SmartArt read-only preview: pre-rendered drawing shapes rendered with group semantics
       // (diagram canvas coordinate size = frame ext, equivalent to chOff 0,0 / chExt ext)
       if (pt.previewShapes?.length) {
+        // The drawing part is a generation-time cache: when the frame was resized
+        // afterwards, its shapes keep the old coordinates. PowerPoint re-lays the diagram
+        // out into the frame; approximate that by mapping the child space to the drawing
+        // bounds so the group transform compresses the shapes into the frame.
+        const fx = pt.transform.offset.cx
+        const fy = pt.transform.offset.cy
+        let bx = 0
+        let by = 0
+        for (const sh of pt.previewShapes) {
+          const o = sh.transform?.offset
+          if (!o) continue
+          // rotation-aware visual bounds: a rotated box's raw offset can lie far outside
+          // the frame while the shape itself fits (90deg-rotated boxes swap their extents)
+          const th = (((sh.transform?.rot ?? 0) / 60000) * Math.PI) / 180
+          const hw = Math.abs((o.cx / 2) * Math.cos(th)) + Math.abs((o.cy / 2) * Math.sin(th))
+          const hh = Math.abs((o.cx / 2) * Math.sin(th)) + Math.abs((o.cy / 2) * Math.cos(th))
+          bx = Math.max(bx, o.x + o.cx / 2 + hw)
+          by = Math.max(by, o.y + o.cy / 2 + hh)
+        }
         const pseudo: GroupElement = {
           id: pt.id,
           type: 'group',
           anchor: pt.anchor,
           transform: pt.transform,
           children: pt.previewShapes,
-          childOffset: { x: 0, y: 0, cx: pt.transform.offset.cx, cy: pt.transform.offset.cy },
+          // Small overshoots are intentional bleed (rotated accent lines cross the frame
+          // edge; PowerPoint keeps them) - only a gross overflow marks a stale cache
+          // (tdf-style resized frames overflow 2x+)
+          childOffset: {
+            x: 0,
+            y: 0,
+            cx: bx > fx * 1.2 ? bx : fx,
+            cy: by > fy * 1.2 ? by : fy,
+          },
         }
         return buildGroup(pseudo, box, vp, metrics, media)
       }
-      // OLE read-only preview: the embedded preview image stretches to fill the frame (ignoring the pic's own xfrm)
+      // OLE read-only preview: the embedded preview image stretches to fill the frame (ignoring the
+      // pic's own xfrm) over an opaque white canvas (metafile previews are often transparent)
       if (pt.previewPicture) {
-        return buildPicture({ ...pt.previewPicture, id: pt.id }, box, vp, media)
+        const pic = buildPicture({ ...pt.previewPicture, id: pt.id }, box, vp, media)
+        if (pic?.type === 'picture') pic.bgColor = '#FFFFFF'
+        return pic
       }
+      if (pt.noChip) return null
       return buildChip(pt, box)
     }
     default:
@@ -260,6 +330,7 @@ function buildShape(
     box,
     sourceId: el.id,
     fill: resolveFill(el.fill, vp, media),
+    ...(el.fillOverlay ? { fillOverlay: resolveFill(el.fillOverlay, vp, media) } : {}),
     ...(el.placeholder ? { placeholder: el.placeholder } : {}),
     ...(el.presetGeometry ? { presetGeometry: el.presetGeometry } : {}),
   }
@@ -357,6 +428,10 @@ function buildPicture(
 ): PictureRenderNode {
   const dataUrl = el.dataUrl ?? (el.mediaRef ? media?.(el.mediaRef) : undefined)
   const clip = pictureClip(el.presetGeometry, box, el.adjust)
+  // GDI metafiles play back on an opaque white DC: PowerPoint shows a white panel for
+  // an EMF/WMF that never paints its background (PlanS academy banner, measured)
+  const isMetafile =
+    typeof dataUrl === 'string' && /^data:image\/(x-)?(emf|wmf|emz|wmz)[;,]/.test(dataUrl)
   const node: PictureRenderNode = {
     id: `r_${el.id}`,
     type: 'picture',
@@ -370,6 +445,10 @@ function buildPicture(
     ...(el.media ? { media: el.media.kind } : {}),
     ...(el.name ? { name: el.name } : {}),
     ...(el.descr ? { descr: el.descr } : {}),
+    ...(el.fill && el.fill.type !== 'none' ? { fill: resolveFill(el.fill, vp, media) } : {}),
+    ...(isMetafile ? { bgColor: '#FFFFFF' } : {}),
+    ...(el.duotone ? { duotone: el.duotone } : {}),
+    ...(el.clrChange ? { clrChange: el.clrChange } : {}),
   }
   const stroke = resolveStroke(el.stroke, vp)
   if (stroke) node.stroke = stroke
@@ -443,9 +522,10 @@ function buildTable(
   media: MediaResolver | undefined,
 ): TableRenderNode {
   const sumW = el.colWidths.reduce((a, b) => a + b, 0) || 1
-  const sumH = el.rowHeights.reduce((a, b) => a + b, 0) || 1
   const colPx = el.colWidths.map((w) => (w / sumW) * box.w)
-  const rowPx = el.rowHeights.map((h) => (h / sumH) * box.h)
+  // a:tr h is an absolute minimum height (h=0 → size to content); PowerPoint ignores a
+  // stale frame cy and recomputes the table height from the rows
+  const rowPx = el.rowHeights.map((h) => emuToPx(h, vp.scale))
   // Prefix sums → start of each column
   const colX: number[] = [0]
   for (const w of colPx) colX.push(colX[colX.length - 1]! + w)
@@ -468,7 +548,9 @@ function buildTable(
         vp,
         trimEdgeSpacing: true,
       })
-      const needed = probe.contentHeight + probe.insets.t + probe.insets.b
+      // PowerPoint sizes auto rows by the glyph extent (last baseline + descent), not
+      // the line-box sum — with explicit lnSpc the box extends below the ink (18pt probe)
+      const needed = (probe.inkBottom ?? probe.contentHeight) + probe.insets.t + probe.insets.b
       if (needed > (rowPx[r] ?? 0)) rowPx[r] = needed
     })
   })
@@ -527,6 +609,7 @@ function buildTable(
     box,
     sourceId: el.id,
     cells,
+    ...(el.bgFill ? { bgFill: resolveFill(el.bgFill, vp, media) } : {}),
     gridX: colX,
     gridY: rowY,
     ...(el.styleFlags ? { styleFlags: el.styleFlags } : {}),
@@ -550,7 +633,9 @@ function chartStyleInfo(m: ChartElement['chart']): import('./render-tree').Chart
           : m.pseudo3D
             ? 'pie3D'
             : 'pie'
-        : m.kind
+        : m.kind === 'funnel' || m.kind === 'sunburst'
+          ? 'unknown'
+          : m.kind
   return {
     kind,
     legendPos: m.legendPos == null ? 'none' : m.legendPos === 'tr' ? 'r' : m.legendPos,

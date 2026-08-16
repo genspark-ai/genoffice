@@ -18,6 +18,7 @@ import type {
   SheetDvState,
   SheetHyperlinkEdits,
   SheetNoteState,
+  SheetProtectedRangesState,
   SheetProtectionState,
   SheetPivotAddition,
   SheetSparklineAddition,
@@ -27,6 +28,7 @@ import type {
   SheetFormulaValues,
 } from './xlsx-gateway'
 import { planCellEditsToXlsx, syncFileBestEffort } from './xlsx-gateway'
+import type { WorkbookThemeState } from './xlsx-theme'
 import type { SheetEditPlan } from './xlsx-sheets'
 
 /// Mirrors the sidecar's per-entry extraction cap: only entries the gateway
@@ -100,6 +102,9 @@ export interface StreamingSaveRequest {
   readonly sparklineAdditions?: readonly SheetSparklineAddition[] | undefined
   /// Recalculated formula-cell values written into <v>
   readonly formulaValues?: readonly SheetFormulaValues[] | undefined
+  readonly themeState?: WorkbookThemeState | null | undefined
+  readonly workbookProtectionState?: { readonly lockStructure: boolean } | null | undefined
+  readonly protectedRangeStates?: readonly SheetProtectedRangesState[] | undefined
 }
 
 export interface StreamingSaveResult {
@@ -163,6 +168,9 @@ export async function saveWorkbookViaSidecar(
       request.visualEdits ?? [],
       request.sparklineAdditions ?? [],
       request.formulaValues ?? [],
+      request.themeState ?? null,
+      request.workbookProtectionState ?? null,
+      request.protectedRangeStates ?? [],
     )
 
     const replacements = await writePlanContents(workDir, 'replace', plan.replaced)

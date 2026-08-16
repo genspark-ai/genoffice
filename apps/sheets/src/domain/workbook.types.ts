@@ -92,6 +92,8 @@ export interface ChangePlan {
 export interface ApplyOutcome {
   readonly ok: boolean
   readonly reason?: string
+  /** the failure hit mid-batch: earlier operations were already committed */
+  readonly partiallyApplied?: boolean
 }
 
 export interface CommitReceipt {

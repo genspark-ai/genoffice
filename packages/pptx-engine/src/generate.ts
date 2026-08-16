@@ -95,7 +95,7 @@ function buildPPrGroup(p: Paragraph, group: 'lnSpc' | 'spcBef' | 'spcAft' | 'bul
       if (b.font) s += `<a:buFont typeface="${escapeXmlAttr(b.font)}"/>`
       s +=
         b.type === 'number'
-          ? `<a:buAutoNum type="${escapeXmlAttr(b.numType ?? 'arabicPeriod')}"/>`
+          ? `<a:buAutoNum type="${escapeXmlAttr(b.numType ?? 'arabicPeriod')}"${b.startAt != null ? ` startAt="${b.startAt}"` : ''}/>`
           : `<a:buChar char="${escapeXmlAttr(b.char ?? '•')}"/>`
       return s
     }
@@ -671,7 +671,7 @@ export function generateParagraphXml(p: Paragraph): string {
       if (b.font) kids += `<a:buFont typeface="${escapeXmlAttr(b.font)}"/>`
       kids +=
         b.type === 'number'
-          ? `<a:buAutoNum type="${escapeXmlAttr(b.numType ?? 'arabicPeriod')}"/>`
+          ? `<a:buAutoNum type="${escapeXmlAttr(b.numType ?? 'arabicPeriod')}"${b.startAt != null ? ` startAt="${b.startAt}"` : ''}/>`
           : `<a:buChar char="${escapeXmlAttr(b.char ?? '•')}"/>`
     }
   }
@@ -1095,13 +1095,30 @@ export function patchPictureSrcRect(
   return xmlInner.slice(0, insertAt) + srcRectXml + xmlInner.slice(insertAt)
 }
 
+/** Slide background image write-back parameters (the rel must already exist in the slide's rels). */
+export interface BackgroundImagePatch {
+  imageRid: string
+  /** Tile instead of stretch */
+  tile?: boolean
+}
+
+export type BackgroundFillPatch = string | GradientFillPatch | BackgroundImagePatch
+
 /**
  * In-place patch of a slide's bodyPrefix: replace/inject the <p:bg> under <p:cSld>
- * with a solid color. Returns the new bodyPrefix (the caller writes it back to
- * slide.bodyPrefix and flags a rebuild).
+ * with a solid color, gradient, or picture fill. Returns the new bodyPrefix (the
+ * caller writes it back to slide.bodyPrefix and flags a rebuild).
  */
-export function patchSlideBackgroundXml(bodyPrefix: string, color: string): string {
-  const bgXml = `<p:bg><p:bgPr><a:solidFill><a:srgbClr val="${hex6(color)}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>`
+export function patchSlideBackgroundXml(bodyPrefix: string, fill: BackgroundFillPatch): string {
+  const fillXml =
+    typeof fill === 'object' && 'imageRid' in fill
+      ? `<a:blipFill><a:blip r:embed="${fill.imageRid}"/>` +
+        (fill.tile
+          ? '<a:tile tx="0" ty="0" sx="100000" sy="100000" flip="none" algn="tl"/>'
+          : '<a:stretch><a:fillRect/></a:stretch>') +
+        '</a:blipFill>'
+      : buildFillXml(fill)
+  const bgXml = `<p:bg><p:bgPr>${fillXml}<a:effectLst/></p:bgPr></p:bg>`
   const existing = /<p:bg>[\s\S]*?<\/p:bg>|<p:bg\s[^>]*\/>/.exec(bodyPrefix)
   if (existing) {
     return (
@@ -1114,6 +1131,30 @@ export function patchSlideBackgroundXml(bodyPrefix: string, color: string): stri
   if (!cSld) return bodyPrefix
   const at = cSld.index + cSld[0].length
   return bodyPrefix.slice(0, at) + bgXml + bodyPrefix.slice(at)
+}
+
+/** Remove the slide's own <p:bg> override (background falls back to layout/master). */
+export function removeSlideBackgroundXml(bodyPrefix: string): string {
+  const existing = /<p:bg>[\s\S]*?<\/p:bg>|<p:bg\s[^>]*\/>/.exec(bodyPrefix)
+  if (!existing) return bodyPrefix
+  return bodyPrefix.slice(0, existing.index) + bodyPrefix.slice(existing.index + existing[0].length)
+}
+
+/**
+ * Toggle showMasterSp on the <p:sld> root ("hide background graphics").
+ * hidden=true writes showMasterSp="0"; hidden=false removes the attribute
+ * (default is shown).
+ */
+export function patchSlideShowMasterSpXml(bodyPrefix: string, hidden: boolean): string {
+  const open = /<p:sld((?:\s(?:"[^"]*"|'[^']*'|[^"'>])*?)?)>/.exec(bodyPrefix)
+  if (!open) return bodyPrefix
+  let attrs = (open[1] ?? '').replace(/\s+showMasterSp="[^"]*"/, '')
+  if (hidden) attrs += ' showMasterSp="0"'
+  return (
+    bodyPrefix.slice(0, open.index) +
+    `<p:sld${attrs}>` +
+    bodyPrefix.slice(open.index + open[0].length)
+  )
 }
 
 // ── Slide transition patch ──────────────────────────────────────────────

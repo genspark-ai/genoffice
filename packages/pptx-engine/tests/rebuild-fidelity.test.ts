@@ -65,7 +65,7 @@ describe('rebuild path: explicit paragraph properties written back', () => {
     )
     forceRebuild(el)
     const out = patchTextElementXml(el, el.anchor.originalXml)
-    expect(out).toContain('<a:buAutoNum type="romanLcPeriod"/>')
+    expect(out).toContain('<a:buAutoNum type="romanLcPeriod" startAt="3"/>')
   })
 
   it('buNone preserved (explicitly turning off the inherited bullet)', () => {

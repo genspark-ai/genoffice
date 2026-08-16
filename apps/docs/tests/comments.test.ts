@@ -3,6 +3,7 @@ import { parseDocx } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { hasUnanchoredComments } from '../src/renderer/file-actions'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -66,5 +67,46 @@ describe('comment marks in the editor', () => {
       { text: ' after!' },
     ])
     editor.destroy()
+  })
+})
+
+describe('unanchored comments open the panel on load', () => {
+  const withComments = (bodyXml: string) =>
+    buildDocx({
+      bodyXml,
+      extraParts: [
+        {
+          path: 'word/comments.xml',
+          xml: COMMENTS_XML,
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+        },
+      ],
+    })
+
+  it('false for a bare reference in an empty paragraph (the margin bubble anchors it to the block)', async () => {
+    const parsed = await parseDocx(
+      await withComments('<w:p><w:r><w:commentReference w:id="7"/></w:r></w:p>'),
+    )
+    expect(hasUnanchoredComments(parsed.comments, parsed.blocks)).toBe(false)
+  })
+
+  it('true when the comment id never appears in the body', async () => {
+    const parsed = await parseDocx(await withComments('<w:p><w:r><w:t>hi</w:t></w:r></w:p>'))
+    expect(hasUnanchoredComments(parsed.comments, parsed.blocks)).toBe(true)
+  })
+
+  it('false when the reference anchors on a text run', async () => {
+    const parsed = await parseDocx(
+      await withComments(
+        '<w:p><w:r><w:t>hi</w:t></w:r><w:r><w:commentReference w:id="7"/></w:r></w:p>',
+      ),
+    )
+    expect(hasUnanchoredComments(parsed.comments, parsed.blocks)).toBe(false)
+  })
+
+  it('false for a ranged comment', async () => {
+    const parsed = await parseDocx(await withComments(COMMENTED_P))
+    expect(hasUnanchoredComments(parsed.comments, parsed.blocks)).toBe(false)
   })
 })

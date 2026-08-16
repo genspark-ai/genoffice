@@ -5,6 +5,7 @@ export {
   computeListMarkerInfos,
   computeListMarkers,
   formatNumber,
+  markerTabAdvance,
   type ListItemRef,
   type ListMarkerInfo,
 } from '@genoffice/docx-engine'

@@ -233,6 +233,54 @@ describe('buildChartNode', () => {
     expect(nums[1]).not.toBeCloseTo(nums[8]!, 3)
   })
 
+  it('exploded 2D pie: wedge centers offset along mid-angles, radius shrunk to keep the footprint', () => {
+    const base: ChartModel = {
+      kind: 'pie',
+      categories: ['x', 'y'],
+      series: [{ values: [1, 1] }],
+    }
+    const plain = buildChartNode('r_e0', 'ele0', base, box, vp, metrics)!
+    const exploded = buildChartNode(
+      'r_e1',
+      'ele1',
+      { ...base, series: [{ values: [1, 1], explosionPct: 25 }] },
+      box,
+      vp,
+      metrics,
+    )!
+    const r0 = plain.wedges![0]!.outerR
+    const [w1, w2] = exploded.wedges!
+    // offset = 25% of diameter, radius / (1 + 2·25%)
+    expect(w1!.outerR).toBeCloseTo(r0 / 1.5, 5)
+    const off = 0.5 * w1!.outerR
+    // slice 1 sweeps [-90°, 90°] → mid-angle 0° (right); slice 2 mirrors left
+    expect(w1!.cx - plain.wedges![0]!.cx).toBeCloseTo(off, 5)
+    expect(w1!.cy).toBeCloseTo(plain.wedges![0]!.cy, 5)
+    expect(w2!.cx - plain.wedges![1]!.cx).toBeCloseTo(-off, 5)
+  })
+
+  it('exploded pseudo-3D pie: per-point explosion separates only that slice', () => {
+    const pie: ChartModel = {
+      kind: 'pie',
+      pseudo3D: true,
+      rotXDeg: 30,
+      categories: ['x', 'y'],
+      series: [{ values: [1, 1], pointExplosionPct: [25, undefined] }],
+    }
+    const node = buildChartNode('r_e2', 'ele2', pie, box, vp, metrics)!
+    const faces = node.paths!.filter((p) => p.stroke === '#ffffff')
+    expect(faces).toHaveLength(2)
+    // face path apex = wedge center: "M cx cy L …"
+    const apex = (d: string) =>
+      d
+        .match(/-?\d+(\.\d+)?/g)!
+        .slice(0, 2)
+        .map(Number)
+    const [a1, a2] = [apex(faces[0]!.d), apex(faces[1]!.d)]
+    expect(a1[0]).toBeGreaterThan(a2[0]!)
+    expect(a1[1]).toBeCloseTo(a2[1]!, 5)
+  })
+
   it('doughnut hole uses holePct of outer radius', () => {
     const dough: ChartModel = {
       kind: 'pie',
@@ -378,5 +426,176 @@ describe('chartSpace default text size reaches every label group', () => {
     const scale = vp.scale
     expect(sizes.has(Math.round(ptToPxAt(18) * scale))).toBe(true)
     expect(sizes.has(Math.round(ptToPxAt(10) * scale))).toBe(false)
+  })
+})
+
+describe('sunburst / funnel (chartEx)', () => {
+  it('merges a row ending at an ancestor with deeper rows sharing the path', () => {
+    // Row 0 ends at "Stem" (its own value); rows 1-2 are leaves under the same "Stem"
+    const model: ChartModel = {
+      kind: 'sunburst',
+      categories: ['', 'Leaf1', 'Leaf2'],
+      series: [{ values: [10, 20, 30] }],
+      sunburst: {
+        levels: [
+          ['', 'Leaf1', 'Leaf2'],
+          ['Stem', 'Stem', 'Stem'],
+        ],
+        sizes: [10, 20, 30],
+      },
+    }
+    const node = buildChartNode('r_1', 'el1', model, box, vp, metrics)!
+    const stemWedges = node.wedges!.filter(
+      (w) => w.innerR === Math.min(...node.wedges!.map((x) => x.innerR)),
+    )
+    // One merged "Stem" ring segment spanning the full circle, not two siblings
+    expect(stemWedges).toHaveLength(1)
+    expect(stemWedges[0]!.sweepDeg).toBeCloseTo(360)
+    // Two leaf segments on the outer ring (the ancestor's own 10 leaves a gap)
+    expect(node.wedges!.length).toBe(3)
+  })
+
+  it('funnel draws centered bars with category labels', () => {
+    const model: ChartModel = {
+      kind: 'funnel',
+      categories: ['A', 'B'],
+      series: [{ values: [50, 100] }],
+      gapWidthPct: 6,
+    }
+    const node = buildChartNode('r_1', 'el1', model, box, vp, metrics)!
+    expect(node.bars).toHaveLength(2)
+    // Widest bar is centered: symmetric margins
+    const b = node.bars[1]!
+    expect(Math.abs(b.x - (node.box.w - (b.x + b.w)))).toBeLessThan(30)
+    expect(node.bars[1]!.w).toBeCloseTo(node.bars[0]!.w * 2, 0)
+  })
+})
+
+describe('horizontal bar series order and labels (python-pptx barH sheets)', () => {
+  const barHModel: ChartModel = {
+    kind: 'bar',
+    barDir: 'bar',
+    categories: ['Foo', 'Bar'],
+    series: [
+      { name: 'Series 1', color: '#4472C4', values: [1.2, 2.3], dataLabels: true },
+      { name: 'Series 2', color: '#ED7D31', values: [4.5, 5.6], dataLabels: true },
+    ],
+    legendPos: 'r',
+    dataLabels: true,
+  } as any
+
+  it('series 1 sits nearest the category axis (bottom of each group)', () => {
+    const node = buildChartNode('r_1', 'el1', barHModel, box, vp, metrics)!
+    // two bars per category; within a group the series-1 bar has the LARGER y
+    const s1 = node.bars.filter((b) => b.color === '#4472C4')
+    const s2 = node.bars.filter((b) => b.color === '#ED7D31')
+    expect(s1[0]!.y).toBeGreaterThan(s2[0]!.y)
+  })
+
+  it('legend lists series in reverse (Series 2 first)', () => {
+    const node = buildChartNode('r_1', 'el1', barHModel, box, vp, metrics)!
+    const legendTexts = node.labels.filter((l) => l.text.startsWith('Series')).map((l) => l.text)
+    expect(legendTexts[0]).toBe('Series 2')
+  })
+})
+
+describe('composite data labels (c:showSerName/showCatName)', () => {
+  it('prepends series and category names to the value', () => {
+    const m: ChartModel = {
+      kind: 'bar',
+      barDir: 'bar',
+      categories: ['Category 1'],
+      series: [{ name: 'Series 2', color: '#ED7D31', values: [2.4], dataLabels: true }],
+      dataLabels: true,
+      dataLabelSerName: true,
+      dataLabelCatName: true,
+    } as any
+    const node = buildChartNode('r_1', 'el1', m, box, vp, metrics)!
+    expect(node.labels.some((l) => l.text === 'Series 2, Category 1, 2.4')).toBe(true)
+  })
+})
+
+describe('size-aware tick cap', () => {
+  const mk = (): ChartModel =>
+    ({
+      kind: 'bar',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', color: '#4472C4', values: [12.3, 8] }],
+    }) as any
+
+  it('a short chart steps the unit up the 1/2/5 ladder (range 13 -> unit 5)', () => {
+    const small = { ...box, h: 110 }
+    const node = buildChartNode('r_1', 'el1', mk(), small, vp, metrics)!
+    const ticks = node.labels.filter((l) => /^\d+$/.test(l.text)).map((l) => Number(l.text))
+    expect(Math.max(...ticks)).toBe(15)
+    expect(ticks).toContain(5)
+    expect(ticks).not.toContain(2)
+  })
+
+  it('a tall chart keeps the dense ratio-rule unit', () => {
+    const tall = { ...box, h: 900 }
+    const node = buildChartNode('r_1', 'el1', mk(), tall, vp, metrics)!
+    const ticks = node.labels.filter((l) => /^\d+$/.test(l.text)).map((l) => Number(l.text))
+    expect(ticks).toContain(2)
+  })
+})
+
+describe('chart wave2: palette idx colors, multi-level cats, barH hidden labels', () => {
+  it('automatic series colors key off paletteIdx, not document order', () => {
+    const m: ChartModel = {
+      kind: 'bar',
+      categories: ['A'],
+      series: [
+        { values: [1], paletteIdx: 2 },
+        { values: [2], paletteIdx: 0 },
+      ],
+      themePalette: ['#111111', '#222222', '#333333'],
+    } as any
+    const node = buildChartNode('r_1', 'el1', m, box, vp, metrics)!
+    const colors = node.bars.map((b) => b.color)
+    expect(colors[0]).toBe('#333333')
+    expect(colors[1]).toBe('#111111')
+  })
+
+  it('renders outer-level group labels centered under their spans', () => {
+    const m: ChartModel = {
+      kind: 'bar',
+      categories: ['SF', 'LA', 'NY', 'Albany'],
+      series: [{ values: [1, 2, 3, 4] }],
+      categoryGroups: [
+        { label: 'CA', start: 0 },
+        { label: 'NY2', start: 2 },
+      ],
+    } as any
+    const node = buildChartNode('r_1', 'el1', m, box, vp, metrics)!
+    const ca = node.labels.find((l) => l.text === 'CA')!
+    const ny = node.labels.find((l) => l.text === 'NY2')!
+    expect(ca).toBeTruthy()
+    expect(ny.x).toBeGreaterThan(ca.x)
+    // group row sits below the leaf category labels
+    const leaf = node.labels.find((l) => l.text === 'SF')!
+    expect(ca.y).toBeGreaterThan(leaf.y)
+  })
+
+  it('barH with tickLblPos none draws no category labels', () => {
+    const m: ChartModel = {
+      kind: 'bar',
+      barDir: 'bar',
+      categories: ['Category 1', 'Category 2'],
+      series: [{ values: [1, 2] }],
+      catAxis: { tickLblHidden: true },
+    } as any
+    const node = buildChartNode('r_1', 'el1', m, box, vp, metrics)!
+    expect(node.labels.some((l) => l.text.startsWith('Category'))).toBe(false)
+  })
+})
+
+describe('legend swatch metrics (PowerPoint ~0.5em squares)', () => {
+  it('side legend swatches are half-em and reserve a tight width', () => {
+    const node = buildChartNode('r_1', 'el1', lineModel, box, vp, metrics)!
+    for (const sw of node.swatches) {
+      expect(sw.w).toBeLessThan(20)
+      expect(Math.abs(sw.w - sw.h)).toBeLessThan(1)
+    }
   })
 })

@@ -65,6 +65,27 @@ describe('parseDocx with emf media', () => {
     expect(block.imageHeightPx).toBe(48)
   })
 
+  it('resolves an opaque .bin part via the [Content_Types].xml fallback', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: `<w:p><w:r>${DRAWING_XML}</w:r></w:p>`,
+        extraRels:
+          '<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.bin"/>',
+        binaryParts: [
+          {
+            path: 'word/media/image1.bin',
+            base64: EMF_BASE64,
+            extension: 'bin',
+            contentType: 'image/x-emf',
+          },
+        ],
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageDataUrl).toBe('data:image/png;base64,EMFPNG')
+  })
+
   it('converts an emf picture inside a table cell', async () => {
     const doc = await parseDocx(
       await buildDocx({

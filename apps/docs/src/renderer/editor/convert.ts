@@ -453,7 +453,7 @@ function blockToPmNode(
       }
     case 'table': {
       const table = block.table ?? { rows: [[{ paras: [''] }]] }
-      return tableModelToPmNode(
+      const node = tableModelToPmNode(
         table,
         block.docxIndex,
         block.blockRevision ?? null,
@@ -462,6 +462,9 @@ function blockToPmNode(
         budget?.fit ?? null,
         budget?.paper ?? null,
       )
+      // content-control member tables need the shell for chrome hit-testing
+      if (block.sdtShell) node.attrs = { ...node.attrs, sdtShell: JSON.stringify(block.sdtShell) }
+      return node
     }
     default:
       // image / passthrough: protected whole-unit blocks
@@ -499,6 +502,8 @@ function blockToPmNode(
           brokenImage: block.brokenImage ?? false,
           invisibleMarker: block.invisibleMarker ?? false,
           textboxes: block.textboxes ?? null,
+          strayRuns: block.strayRuns ?? null,
+          strayStyleId: block.strayStyleId ?? null,
           formulaDisplay: block.formulaDisplay ?? null,
           chartDisplay: block.chartDisplay ?? null,
         },
@@ -649,11 +654,13 @@ function cellContentNodes(cell: TableCell): PmNode[] {
         }))
   ).map((paragraph) => {
     const list = 'list' in paragraph ? paragraph.list : undefined
+    const styleId = ('styleId' in paragraph ? paragraph.styleId : undefined) ?? null
     return list
       ? {
           type: 'docListItem',
           attrs: {
             ...formatAttrs(paragraph),
+            styleId,
             kind: list.kind,
             numId: list.numId,
             ilvl: list.ilvl,
@@ -662,7 +669,7 @@ function cellContentNodes(cell: TableCell): PmNode[] {
         }
       : {
           type: 'docParagraph',
-          attrs: formatAttrs(paragraph),
+          attrs: { ...formatAttrs(paragraph), styleId },
           content: runsToInline(paragraph.runs),
         }
   })
@@ -673,6 +680,11 @@ function cellContentNodes(cell: TableCell): PmNode[] {
     const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraNodes.length, paraNodes.length)
     content.splice(at, 0, { type: 'docNestedTable', attrs: { model: nested[i] } })
   }
+  // anchored shapes/textboxes in the cell (display-only): a leading zero-width
+  // float strut, so the row height becomes max(text, boxes) exactly like Word
+  if (cell.anchoredBoxes?.length) {
+    content.unshift({ type: 'docCellBoxes', attrs: { boxes: cell.anchoredBoxes } })
+  }
   return content
 }
 
@@ -680,6 +692,7 @@ export function tableStructureSignature(table: PmNode): string {
   return JSON.stringify({
     widths: table.attrs?.colWidthsPct ?? null,
     tblStyle: table.attrs?.tblStyleId ?? null,
+    tblAlign: table.attrs?.tblAlign ?? null,
     rows: (table.content ?? []).map((row) => [
       row.attrs?.heightTwips ?? null,
       // accepting/rejecting revisions strips records from trPr/tcPr: include them in the signature to trigger regeneration (works for empty rows too)
@@ -804,11 +817,14 @@ export function pmTableToModel(table: PmNode): TableModel {
       const nestedModels: TableModel[] = []
       const nestedAnchors: number[] = []
       let paraCount = 0
+      let cellBoxes: TableCell['anchoredBoxes']
       for (const n of cellNode.content ?? []) {
         if (n.type === 'docParagraph' || n.type === 'docListItem') paraCount++
         else if (n.type === 'docNestedTable' && n.attrs?.model) {
           nestedModels.push(n.attrs.model as TableModel)
           nestedAnchors.push(paraCount)
+        } else if (n.type === 'docCellBoxes' && Array.isArray(n.attrs?.boxes)) {
+          cellBoxes = n.attrs.boxes as TableCell['anchoredBoxes']
         }
       }
       entries.push({
@@ -832,6 +848,7 @@ export function pmTableToModel(table: PmNode): TableModel {
           ...(nestedModels.length > 0
             ? { nestedTables: nestedModels, nestedTableAnchors: nestedAnchors }
             : {}),
+          ...(cellBoxes?.length ? { anchoredBoxes: cellBoxes } : {}),
           colSpan: colspan > 1 ? colspan : undefined,
           vMerge: rowspan > 1 ? 'restart' : undefined,
         },
@@ -872,6 +889,9 @@ export function pmTableToModel(table: PmNode): TableModel {
     ...(rowRevisions.some((revision) => revision !== null) ? { rowRevisions } : {}),
     // null (cleared) → '' removes explicitly; undefined leaves it alone
     ...(tblStyleAttr !== undefined ? { tblStyleId: tblStyleAttr ?? '' } : {}),
+    // explicit only when set ('left' = remove w:jc); null leaves the original
+    // tblPr untouched so unmapped w:jc values (e.g. 'start') survive rebuilds
+    ...(table.attrs?.tblAlign ? { align: table.attrs.tblAlign as TableModel['align'] } : {}),
   }
 }
 
@@ -951,6 +971,9 @@ export function runsToInline(runs: Run[]): PmNode[] {
           widthPx: run.image.widthPx ?? null,
           heightPx: run.image.heightPx ?? null,
           xml: run.image.xml,
+          wrap: run.image.wrap ?? null,
+          offsetXEmu: run.image.offsetXEmu ?? null,
+          offsetYEmu: run.image.offsetYEmu ?? null,
         },
       })
     }
@@ -974,7 +997,10 @@ function runMarks(run: Run): PmMark[] {
     })
   if (run.refField !== undefined) marks.push({ type: 'refField', attrs: { name: run.refField } })
   if (run.instrField !== undefined)
-    marks.push({ type: 'instrField', attrs: { instr: run.instrField } })
+    marks.push({
+      type: 'instrField',
+      attrs: { instr: run.instrField, beginXml: run.fldBeginXml ?? null },
+    })
   if (run.commentIds?.length)
     marks.push({ type: 'comment', attrs: { ids: run.commentIds.join(' ') } })
   if (run.ins) {
@@ -1012,6 +1038,7 @@ function runMarks(run: Run): PmMark[] {
     run.vertAlign ||
     run.em ||
     run.caps ||
+    run.cs ||
     run.styleId ||
     run.rawRPr
   ) {
@@ -1032,6 +1059,7 @@ function runMarks(run: Run): PmMark[] {
         vertAlign: run.vertAlign ?? null,
         em: run.em ?? null,
         caps: run.caps ?? null,
+        cs: run.cs ?? null,
         styleId: run.styleId ?? null,
         rawRPr: run.rawRPr ?? null,
       },
@@ -2089,6 +2117,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         run.refField = String(mark.attrs?.name ?? '')
       } else if (mark.type === 'instrField') {
         run.instrField = String(mark.attrs?.instr ?? '')
+        if (mark.attrs?.beginXml) run.fldBeginXml = String(mark.attrs.beginXml)
       } else if (mark.type === 'comment') {
         const ids = String(mark.attrs?.ids ?? '')
           .split(' ')
@@ -2113,6 +2142,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
           run.vertAlign = mark.attrs.vertAlign
         }
         if (mark.attrs?.em) run.em = mark.attrs.em as NonNullable<Run['em']>
+        if (mark.attrs?.cs) run.cs = true
         if (mark.attrs?.styleId) run.styleId = String(mark.attrs.styleId)
         if (mark.attrs?.rawRPr) run.rawRPr = String(mark.attrs.rawRPr)
       } else if (mark.type === 'rprChange') {
@@ -2135,15 +2165,18 @@ function mergeRuns(runs: Run[]): Run[] {
   const merged: Run[] = []
   for (const run of runs) {
     const prev = merged[merged.length - 1]
-    // reference markers / index entries / inline math are atomic and never merge
+    // reference markers / index entries / inline math / fields are atomic and
+    // never merge — two identical FORMCHECKBOX runs must stay two fields
     const atomic =
       run.noteRef ||
       run.xeTerm !== undefined ||
+      run.instrField !== undefined ||
       run.math ||
       run.ruby ||
       run.image ||
       prev?.noteRef ||
       prev?.xeTerm !== undefined ||
+      prev?.instrField !== undefined ||
       prev?.math ||
       prev?.ruby ||
       prev?.image
@@ -2176,6 +2209,7 @@ function runStyleKey(run: Run): string {
     run.xeTerm ?? null,
     run.refField ?? null,
     run.instrField ?? null,
+    run.fldBeginXml ?? null,
     run.math?.omml ?? null,
     run.ruby?.xml ?? null,
   ])
@@ -2217,6 +2251,7 @@ function normalizedRuns(runs: Run[]): unknown[] {
     r.xeTerm ?? null,
     r.refField ?? null,
     r.instrField ?? null,
+    r.fldBeginXml ?? null,
     r.math?.omml ?? null,
     r.ruby?.xml ?? null,
   ])

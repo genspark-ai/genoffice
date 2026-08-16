@@ -133,6 +133,7 @@ export type MenuCommand =
   | 'print'
   | 'export-pdf'
   | 'word-count'
+  | 'ai-proofread'
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -149,6 +150,9 @@ export interface DesktopApi {
   getTheme(): Promise<UiTheme>
   /** theme switched from the shell home page */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /** press on the shell chrome (tab strip is a sibling WebContentsView whose
+   *  clicks produce no DOM event here) — dismiss open popovers */
+  onChromePressed(handler: () => void): () => void
   openDocx(): Promise<OpenFileResult | null>
   openDocxPath(path: string): Promise<OpenFileResult | null>
   /** mark the renderer ready and consume a file passed by Finder/Explorer at launch */

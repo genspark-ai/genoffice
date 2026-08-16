@@ -73,6 +73,14 @@ function charAdvanceEm(code: number): number {
     return 1.0
   }
   if (code >= 0x1f000 || (code >= 0x2600 && code <= 0x27bf)) return 1.0
+  // Arabic joins cursively: isolated-form widths overshoot, so keep the estimate low
+  if (
+    (code >= 0x0600 && code <= 0x06ff) ||
+    (code >= 0x0750 && code <= 0x077f) ||
+    (code >= 0x08a0 && code <= 0x08ff)
+  ) {
+    return 0.35
+  }
   if ("iIlj.,:;'!|".includes(String.fromCharCode(code))) return 0.28
   if (' ftr'.includes(String.fromCharCode(code))) return 0.32
   if ('mwMW'.includes(String.fromCharCode(code))) return 0.82
@@ -171,8 +179,14 @@ export function lineHeightFactor(fontFamily: string): number {
   // Traditional Chinese sans/kai faces use the PingFang TC class.
   if (/jhenghei|正黑|標楷|biaukai|dfkai|kaiu/.test(f)) return 1.775
   // Arabic faces: Word for Mac substitutes missing naskh names with Times
-  // New Roman (probe 2026-08-13)
-  if (/naskh|kufi|arabic|amiri|scheherazade/.test(f)) return 1.1429
+  // New Roman (probe 2026-08-13); Iranian B/XB/IR faces (B Mitra, XB Zar…)
+  // all substitute the same way (probe 2026-08-13, factor 1.14)
+  if (
+    /naskh|kufi|arabic|amiri|scheherazade|\b(b|xb|ir)[ -]?(mitra|nazanin|titr|lotus|zar|yekan|koodak|roya|badr|homa|traffic|compset)\b|irlotus/.test(
+      f,
+    )
+  )
+    return 1.1429
   // Western single-line factors follow each font's hhea metrics (LO probe):
   // a 4% surplus per line cascades into whole-paragraph pagination drift,
   // so the big Office faces get their real values.
@@ -463,7 +477,10 @@ export function cssFontFamily(font: string): string {
   // serif Word substitutes. Unknown Arabic names default to the naskh chain.
   if (
     /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(font) ||
-    /naskh|kufi|arabic|urdu|geeza|amiri|scheherazade|lateef|harmattan|aldhabi|andalus|nastaliq|al bayan|baghdad|damascus|diwan|farisi|mishafi|nadeem|beirut/i.test(
+    // Iranian B/XB/IR faces (B Mitra, B Nazanin, XB Zar…): Word for Mac
+    // substitutes all of them with Times New Roman (probe 2026-08-13), so
+    // they take the naskh serif chain
+    /naskh|kufi|arabic|urdu|geeza|amiri|scheherazade|lateef|harmattan|aldhabi|andalus|nastaliq|al bayan|baghdad|damascus|diwan|farisi|mishafi|nadeem|beirut|\b(?:b|xb|ir)[ -]?(?:mitra|nazanin|titr|lotus|zar|yekan|koodak|roya|badr|homa|traffic|compset)\b|irlotus/i.test(
       nfkc,
     )
   ) {
@@ -475,10 +492,29 @@ export function cssFontFamily(font: string): string {
     // declared Noto Arabic names would resolve to the bundled unscaled subsets
     // (~13% wider than Word); the literal head must go so the 'W' alias wins
     const scaled = /^noto (naskh|sans) arabic$/i.test(nfkc.trim())
+    // Word substitutes missing naskh names wholesale with Times New Roman, so
+    // ASCII punctuation/digits must take Times shapes, not the Naskh subset's
+    // (sunken parens/hyphen). mac/Windows Times carries full Arabic, so on
+    // those platforms Arabic letters also resolve here — same face Word uses;
+    // the scaled subset below serves platforms without a system Times.
+    // Calibrated aliases (compact/scaled) stay as-is.
+    const missingSerif = !sans && !compact && !scaled && !isFontAvailable(font)
+    const latinHead = missingSerif ? ['Times New Roman', 'Liberation Serif'] : []
     const chainFor = sans
       ? [scaled ? 'Noto Sans Arabic W' : 'Noto Sans Arabic', 'Geeza Pro']
       : [
-          compact ? 'Noto Naskh Arabic TA' : scaled ? 'Noto Naskh Arabic W' : 'Noto Naskh Arabic',
+          ...latinHead,
+          // missing serif names: 90% TNR alias (subset shapes 1.125×/1.074×
+          // wider than Word's Times, M3 probe); Arabic-Indic digits unscaled
+          ...(missingSerif
+            ? ['Naskh Digits GO', 'Noto Naskh Arabic TNR']
+            : [
+                compact
+                  ? 'Noto Naskh Arabic TA'
+                  : scaled
+                    ? 'Noto Naskh Arabic W'
+                    : 'Noto Naskh Arabic',
+              ]),
           'Geeza Pro',
           'Al Bayan',
         ]
@@ -515,7 +551,13 @@ export function cssFontFamily(font: string): string {
               : TC_SANS
     // a bundled face at the chain head would win over the substitution; it stays only as the tail safety net
     const head = isBundledFont(font) ? [] : [font]
-    return `${chain(...head, ...chainFor)},${serif ? 'serif' : 'sans-serif'}`
+    // missing KR names: Word moves Latin/digits to the theme Latin face while
+    // hangul stays Batang (M3 probe sample 13); the alias claims printable
+    // ASCII only, everything else falls through per glyph. Installed names and
+    // Malgun/Batang declares keep the Latin-normalized subsets untouched.
+    const krLatin =
+      (region === 'kr' || region === 'k') && missingLocally() ? ['KR Theme Latin GO'] : []
+    return `${chain(...head, ...krLatin, ...chainFor)},${serif ? 'serif' : 'sans-serif'}`
   }
   if (
     /[぀-ヿ]|mincho|meiryo|hiragino|osaka|yugoth|yu (gothic|mincho)|ms (ui )?p?(gothic|mincho)|明朝|biz ud|kozuka|小塚/i.test(
@@ -531,7 +573,11 @@ export function cssFontFamily(font: string): string {
     )
   ) {
     // vendor faces (Nanum...) missing locally follow Word's Batang-ward substitution;
-    // Windows core faces (Malgun/Gulim/Dotum) map cleanly to the sans chain
+    // Windows core faces (Malgun/Gulim/Dotum) map cleanly to the sans chain.
+    // Installed Nanum resolves at the literal head (family name is 'NanumGothic',
+    // unspaced, matching the declared name); when missing, mac Word may still use
+    // the OS downloadable asset Chromium cannot see (M3 probe sample 19) — parity
+    // there needs a bundled Nanum-normalized face, not chain order.
     const knownCore = /malgun|맑은|gulim|굴림|dotum|돋움|apple (sd )?gothic/i.test(nfkc)
     const serif =
       /batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서/i.test(nfkc) ||
@@ -606,16 +652,25 @@ export function cssCsFontFamily(cs: string, ascii?: string, eastAsia?: string): 
     .filter((f) => !/^(serif|sans-serif|monospace)$/.test(f))
   const baseFams = base.split(',')
   const generic = /^(serif|sans-serif|monospace)$/
-  // Bundled Noto Arabic subsets have no Latin letters/parens; splice the run's
+  // Bundled Noto Arabic subsets have no Latin letters; splice the run's
   // Latin chain in right after them, before Geeza Pro whose Latin punctuation
   // sits on the Arabic baseline. Arabic glyphs resolve in the subset first, so
-  // shaping is unaffected.
+  // shaping is unaffected. Full Times entries must sit after the ascii chain
+  // (Latin letters belong to the ascii slot per Word; Times only backstops a
+  // missing ascii font), but ASCII punctuation/digits belong to the
+  // substituted cs font — the unicode-range 'Times Punct GO' alias claims
+  // just those ahead of the subset's sunken forms.
   const notoIdx = head.findIndex((f) => /noto (naskh|sans) arabic/i.test(f))
+  const latinSub = /times new roman|liberation serif/i
+  const pre = head.slice(0, notoIdx + 1)
+  const preKept = pre.filter((f) => !latinSub.test(f))
+  if (notoIdx >= 0 && pre.some((f) => latinSub.test(f))) preKept.splice(-1, 0, "'Times Punct GO'")
   const merged =
     notoIdx >= 0
       ? [
-          ...head.slice(0, notoIdx + 1),
+          ...preKept,
           ...baseFams.filter((f) => !generic.test(f)),
+          ...pre.filter((f) => latinSub.test(f)),
           ...head.slice(notoIdx + 1),
           ...baseFams.filter((f) => generic.test(f)),
         ]
@@ -733,7 +788,7 @@ export function snapSpacingToGrid(spacingTwips: number, _docGrid: DocGrid | unde
 
 // ─── CJK detection ───────────────────────────────────────────────────────────
 
-function isCjk(cp: number): boolean {
+export function isCjk(cp: number): boolean {
   return (
     isHangul(cp) ||
     (cp >= 0x3000 && cp <= 0x30ff) ||
@@ -1178,8 +1233,21 @@ export function computeLineMetrics(input: LineMetricsInput): LineMetricsResultEx
   // body paragraphs use the font-level cjkLineHFactor (PMingLiU→1.0, others→1.3), triggered via NaN
   const cjkFactor = input.cjkFactor ?? (tableCellMode ? 1.0 : CJK_LINE_HEIGHT_FACTOR)
 
-  // natural line height of an empty paragraph: use the font-level factor (no hard-coded 1.2)
-  const emptyNaturalH = defaultFontSizePx * lineHeightFactor(defaultFontFamily)
+  // an empty paragraph still occupies one line sized by its paragraph mark's
+  // font/size (Word rule); whitespace-only runs carry that style, defaults
+  // apply only when no run declares one
+  const markRuns = isEmpty ? runs.filter((r) => r.sizeHalfPoints || r.fontFamily) : []
+  const emptyNaturalH =
+    markRuns.length > 0
+      ? Math.max(
+          ...markRuns.map(
+            (r) =>
+              (r.sizeHalfPoints ? r.sizeHalfPoints / 2 : defaultFontSizePt) *
+              (96 / 72) *
+              lineHeightFactor(r.fontFamily ?? defaultFontFamily),
+          ),
+        )
+      : defaultFontSizePx * lineHeightFactor(defaultFontFamily)
 
   // simulate line breaking
   const lines =
@@ -1227,18 +1295,24 @@ export const FOOTNOTE_SEPARATOR_H = 16
  * Header/footer part height estimate (px): per-paragraph line-box model. Capacity
  * input for body push-down (body top = max(marginTop, headerDist + header height)).
  */
+interface HfRunLike {
+  text: string
+  font?: string
+  sizeHalfPoints?: number
+  bold?: boolean
+  italic?: boolean
+  /** inline image on a layout-table cell run; its height joins the line box */
+  image?: { heightPx?: number }
+}
+
 export function estimateHfHeight(
   part:
     | {
         text: string
         paras?: Array<{
-          runs: Array<{
-            text: string
-            font?: string
-            sizeHalfPoints?: number
-            bold?: boolean
-            italic?: boolean
-          }>
+          runs: HfRunLike[]
+          /** layout-table row: per-cell paragraph stacks (row height = tallest cell) */
+          cells?: Array<{ paras: HfRunLike[][] }>
           lineRule?: 'auto' | 'atLeast' | 'exact'
           lineRawTwips?: number
           lineSpacing?: number
@@ -1262,11 +1336,9 @@ export function estimateHfHeight(
     : part.text.trim()
       ? part.text.split('\n').map((t) => ({ runs: [{ text: t }] }))
       : []
-  let height = 0
-  for (const p of paras) {
-    const rich = p as NonNullable<typeof part.paras>[number]
-    height += computeLineMetrics({
-      runs: p.runs.map((r) => ({
+  const lineH = (runs: HfRunLike[], rich?: HfPara) =>
+    computeLineMetrics({
+      runs: runs.map((r) => ({
         text: r.text,
         ...(r.font ? { fontFamily: r.font } : {}),
         ...(r.sizeHalfPoints ? { sizeHalfPoints: r.sizeHalfPoints } : {}),
@@ -1274,17 +1346,33 @@ export function estimateHfHeight(
         ...(r.italic ? { italic: true } : {}),
       })),
       availWidthPx: contentWidthPx,
-      ...(rich.lineRule ? { lineRule: rich.lineRule } : {}),
-      ...(rich.lineRawTwips
+      ...(rich?.lineRule ? { lineRule: rich.lineRule } : {}),
+      ...(rich?.lineRawTwips
         ? { lineRawTwips: rich.lineRawTwips }
-        : rich.lineSpacing
+        : rich?.lineSpacing
           ? { lineRule: 'auto' as const, lineRawTwips: rich.lineSpacing * 240 }
           : {}),
-      ...(rich.spaceBefore ? { spaceBefore: rich.spaceBefore } : {}),
-      ...(rich.spaceAfter ? { spaceAfter: rich.spaceAfter } : {}),
+      ...(rich?.spaceBefore ? { spaceBefore: rich.spaceBefore } : {}),
+      ...(rich?.spaceAfter ? { spaceAfter: rich.spaceAfter } : {}),
       defaultFontSizePt: 10.5,
-      isEmpty: p.runs.every((r) => !r.text.trim()),
+      isEmpty: runs.every((r) => !r.text.trim()),
     }).totalHeight
+  let height = 0
+  for (const p of paras) {
+    if (p.cells?.length) {
+      // table row: the tallest cell's paragraph stack sets the row height;
+      // a cell-run image (logo) grows its line box like the display layer
+      height += Math.max(
+        ...p.cells.map((c) =>
+          (c.paras.length > 0 ? c.paras : [[]]).reduce((s, runs) => {
+            const imgH = Math.max(0, ...runs.map((r) => r.image?.heightPx ?? 0))
+            return s + Math.max(lineH(runs), imgH)
+          }, 0),
+        ),
+      )
+      continue
+    }
+    height += lineH(p.runs, p)
   }
   return height + imagesHeight
 }

@@ -23,6 +23,8 @@ const workspaceAlias = {
     '../../packages/pptx-render/src/preset-geometry.ts',
   ),
   '@genoffice/pptx-render': resolve(here, '../../packages/pptx-render/src/index.ts'),
+  // Metafile (EMF/WMF) rasterizer shared with the docs engine (renderer-only: needs canvas)
+  '@genoffice/docx-engine/metafile': resolve(here, '../../packages/docx-engine/src/metafile.ts'),
 }
 
 export default defineConfig({

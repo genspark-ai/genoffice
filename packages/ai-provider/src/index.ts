@@ -18,6 +18,7 @@ export {
 } from './providers'
 export { chatForProvider } from './chat'
 export { setRescueFetch } from './fetch'
+export { isAiNetworkError } from './network-error'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
 export {

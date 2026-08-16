@@ -35,16 +35,20 @@ import type { AiSettings, OpenFileResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
 import { AiPanel } from './ai/AiPanel'
 import { asianCharCount, countWords, nonAsianWordCount } from './word-count'
-import { toRoman } from './note-format'
 import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
 import { HeaderFooterArea } from './components/HeaderFooterArea'
+import { PageFootnotes, PageEndnotes } from './components/PageNoteAreas'
 import { PaginationPreview } from './components/PaginationPreview'
 import { PrintDialog } from './components/PrintDialog'
 import {
   appendEndnotesBlock,
+  appendFloatSpillBlock,
   assignSections,
+  bumpLineSampleFontEpoch,
+  endnotesAnchorY,
   effectiveHfRefs,
+  createLineRectsCache,
   lineStartAnchor,
   liveSections,
   nextLineAnchor,
@@ -72,8 +76,25 @@ import {
   type SectionHfHeights,
   type PageSlice,
 } from './pagination'
-import { GAP_BAND, setPageGaps, type PageGapSpec } from './editor/pagination-gaps'
-import { hfHasVisibleContent, makeGapHfEl } from './editor/hf-dom'
+import {
+  GAP_BAND,
+  clearFloatShifts,
+  setPageGaps,
+  syncCutOverlays,
+  syncFloatShifts,
+  type PageGapSpec,
+} from './editor/pagination-gaps'
+import {
+  MARKUP_AREA_W,
+  clearMarginAnnotations,
+  syncMarginAnnotations,
+} from './editor/margin-annotations'
+import {
+  hfHasVisibleContent,
+  makeGapHfEl,
+  makeHfFloatImgEl,
+  type HfFloatBox,
+} from './editor/hf-dom'
 import {
   estimateFootnoteHeight,
   estimateHfHeight,
@@ -90,11 +111,12 @@ import { computeFormatState } from './components/ribbon-format-state'
 import { IconRedo, IconSave, IconUndo } from './components/icons'
 import { ToastHost } from './components/toast'
 import {
+  AI_REWRITE_ACK_KEY,
   LinkInsertModal,
+  TableInsertModal,
   insertImageFromDataUrl,
   insertImageViaDialog,
   insertPageBreakAt,
-  insertTableAt,
   type InkPenSettings,
   type RevisionDisplayMode,
   type ViewMode,
@@ -528,6 +550,8 @@ export function App() {
   /** Footnote ids already shown in canvas page gaps (the end-of-document list skips them to avoid duplication) */
   const [gapNoteIds, setGapNoteIds] = useState<Set<string>>(new Set())
   const [endnotes, setEndnotes] = useState<NoteInfo[]>([])
+  /** Endnote-area anchor: measured flow-end Y (layout px from the page-wrap top); null until measured */
+  const [endnotesAreaTop, setEndnotesAreaTop] = useState<number | null>(null)
   const [notesDirty, setNotesDirty] = useState(false)
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [sourcesDirty, setSourcesDirty] = useState(false)
@@ -563,6 +587,7 @@ export function App() {
   const [liveDocCjk, setLiveDocCjk] = useState<boolean | null>(null)
   const [stats, setStats] = useState<DocStats | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
+  const [showTableModal, setShowTableModal] = useState(false)
   const [showEquationModal, setShowEquationModal] = useState(false)
   const [eqEditTarget, setEqEditTarget] = useState<{
     pos: number
@@ -1362,13 +1387,20 @@ export function App() {
 
   const revisionCount = editor && doc ? revisionCountOfDoc(editor.state.doc) : 0
 
+  // open comment threads add the markup column right of the paper: width-fit
+  // zoom must count it or the canvas overflows the pane
+  const markupExtra = useMemo(
+    () => (comments.some((c) => !c.parentId && !c.done) ? MARKUP_AREA_W : 0),
+    [comments],
+  )
+
   /** Uncapped width-fit ratio (%) from the scroller's measured size */
   const rawFitWidth = useCallback(() => {
     if (!section) return null
     const scroller = document.querySelector('.editor-scroll')
     if (!scroller) return null
-    return ((scroller.clientWidth - 48) / twipsToPx(section.pageWidth)) * 100
-  }, [section])
+    return ((scroller.clientWidth - 48) / (twipsToPx(section.pageWidth) + markupExtra)) * 100
+  }, [section, markupExtra])
 
   /** Last auto-fit: if current zoom still equals its value → "fit mode", re-fit on size changes */
   const lastFitRef = useRef<{ mode: 'width' | 'page'; value: number } | null>(null)
@@ -1384,7 +1416,8 @@ export function App() {
       const scroller = document.querySelector('.editor-scroll')
       if (!scroller) return
       const pad = 48
-      const wFit = ((scroller.clientWidth - pad) / twipsToPx(section.pageWidth)) * 100
+      const wFit =
+        ((scroller.clientWidth - pad) / (twipsToPx(section.pageWidth) + markupExtra)) * 100
       const hFit = ((scroller.clientHeight - pad) / twipsToPx(section.pageHeight)) * 100
       // whole page = the entire page visible, so it must fit both dimensions;
       // floor, not round: rounding up would push the page past the pane edge
@@ -1393,7 +1426,7 @@ export function App() {
       lastFitRef.current = { mode, value: applied }
       setZoom(applied)
     },
-    [section],
+    [section, markupExtra],
   )
 
   // On scroller size changes (window/AI-dock/nav-pane toggles): follow with a
@@ -1420,6 +1453,17 @@ export function App() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [doc, zoomFit, rawFitWidth])
+
+  // markup column appearing/disappearing changes the canvas width without a
+  // pane resize: apply the same follow/clamp rules as the ResizeObserver above
+  useEffect(() => {
+    if (!doc) return
+    const raw = rawFitWidth()
+    if (raw == null) return
+    const lf = lastFitRef.current
+    if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) zoomFit(lf.mode)
+    else if (zoomLiveRef.current > raw + 0.5) zoomFit('width')
+  }, [doc, markupExtra, rawFitWidth, zoomFit])
 
   // Read Mode opens at 1:1 — the same page size as the Page Preview — and the
   // user's zoom / fit mode is restored on exit (wheel zoom still works inside).
@@ -1523,7 +1567,10 @@ export function App() {
       if (!b) return undefined
       if (b.type === 'table') {
         if (!b.originalXml || !/tblHeader|cantSplit/.test(b.originalXml)) return undefined
-        return { tableRowFlags: tableRowFlags(b.originalXml) }
+        return {
+          tableRowFlags: tableRowFlags(b.originalXml),
+          ...((doc?.parsed.compatibilityMode ?? 0) >= 15 ? { modernTableHeaders: true } : {}),
+        }
       }
       const styleDisplay = b.styleId ? doc?.parsed.styles.get(b.styleId)?.display : undefined
       const keepNext = b.format?.keepNext ?? styleDisplay?.keepNext
@@ -1734,7 +1781,7 @@ export function App() {
       const measured = measureSingleFlow(pm, () => {
         const t0 = performance.now()
         const origin = pm.getBoundingClientRect().top + mTopPx * factor
-        const { blocks, totalHeight } = measureBlocks(pm, origin, factor)
+        const { blocks, totalHeight, floats } = measureBlocks(pm, origin, factor)
         tMeasure = performance.now() - t0
         // multi-section: assign blocks to sections by docxIndex; each section has its own content height / forced breaks.
         // liveSections: when a section-break block is deleted, that section merges into the next in real time (effective before saving)
@@ -1747,7 +1794,13 @@ export function App() {
           endnoteItems,
           FOOTNOTE_SEPARATOR_H,
         )
-        const flowH = withEndnotes?.totalHeight ?? totalHeight
+        // floating boxes below the flow end still need pages to land on
+        const flowWithFloats = appendFloatSpillBlock(
+          blocks,
+          withEndnotes?.totalHeight ?? totalHeight,
+          floats,
+        )
+        const flowH = flowWithFloats ?? withEndnotes?.totalHeight ?? totalHeight
         const hfHs = secList ? hfHeightsOf(secList) : null
         const t1 = performance.now()
         const s = secList
@@ -1766,9 +1819,9 @@ export function App() {
               blockMetaOf,
             )
         tSlice = performance.now() - t1
-        return { blocks, secList, hfHs, s }
+        return { blocks, secList, hfHs, s, floats }
       })
-      const { blocks, secList, hfHs } = measured
+      const { blocks, secList, hfHs, floats } = measured
       slices = measured.s
       // document-end footer shows the last page's displayed number, not the physical count
       if (slices.length > 0) {
@@ -1816,7 +1869,10 @@ export function App() {
       const tGaps0 = performance.now()
       if (editor) {
         const gaps: PageGapSpec[] = []
+        const overlayCutAnchors: LineAnchor[] = []
+        const lineRectsOf = createLineRectsCache()
         const gapIds = new Set<string>()
+        let firstPageFloats: { els: HTMLElement[]; key: string } | undefined
         if (viewMode === 'print' && !readMode) {
           const pmRect = pm.getBoundingClientRect()
           const pageNotes = pageFootnotesOf(blocks, slices)
@@ -1827,27 +1883,31 @@ export function App() {
           const firsts = sectionFirstPages(slices)
           const effRefs = secList ? effectiveHfRefs(secList) : null
           const parsed = doc.parsed
-          // floating shapes (watermarks) must not stack into the strip (mirrors PaginationPreview)
-          const stripImgs = (imgs?: HfImage[] | null) => imgs?.filter((img) => !img.floating)
+          // floating shapes (watermarks) must not stack into the strip (mirrors
+          // PaginationPreview); they render separately as per-page behind-text images
           const pageHfOf = (
             pageIdx: number,
             kind: 'header' | 'footer',
-          ): { value: HeaderFooter | null; images?: HfImage[] } => {
+          ): { value: HeaderFooter | null; images?: HfImage[]; floats: HfImage[] } => {
             const pageNo = nums[pageIdx]
+            const split = (imgs?: HfImage[] | null) => ({
+              images: imgs?.filter((img) => !img.floating),
+              floats: imgs?.filter((img) => img.floating) ?? [],
+            })
             if (!secList || secList.length <= 1) {
               if (titlePg && pageIdx === 0) {
                 return kind === 'header'
-                  ? { value: hfVariants.headerFirst, images: stripImgs(parsed.headerFirst?.images) }
-                  : { value: hfVariants.footerFirst, images: stripImgs(parsed.footerFirst?.images) }
+                  ? { value: hfVariants.headerFirst, ...split(parsed.headerFirst?.images) }
+                  : { value: hfVariants.footerFirst, ...split(parsed.footerFirst?.images) }
               }
               if (evenOddHf && pageNo % 2 === 0) {
                 return kind === 'header'
-                  ? { value: hfVariants.headerEven, images: stripImgs(parsed.headerEven?.images) }
-                  : { value: hfVariants.footerEven, images: stripImgs(parsed.footerEven?.images) }
+                  ? { value: hfVariants.headerEven, ...split(parsed.headerEven?.images) }
+                  : { value: hfVariants.footerEven, ...split(parsed.footerEven?.images) }
               }
               return kind === 'header'
-                ? { value: header, images: stripImgs(parsed.headerImages) }
-                : { value: footer, images: stripImgs(parsed.footerImages) }
+                ? { value: header, ...split(parsed.headerImages) }
+                : { value: footer, ...split(parsed.footerImages) }
             }
             const pageSlice = slices[pageIdx]
             const sec = secList[Math.min(pageSlice.section, secList.length - 1)]
@@ -1862,7 +1922,20 @@ export function App() {
             const rId = refs[kind][variant]
             return {
               value: ov ?? hfFromPart(rId ? parsed.hfParts?.[rId] : null),
-              images: stripImgs(rId ? parsed.hfParts?.[rId]?.images : undefined),
+              ...split(rId ? parsed.hfParts?.[rId]?.images : undefined),
+            }
+          }
+          /** page geometry a page's floating header images position against */
+          const floatBoxOf = (pageIdx: number): HfFloatBox => {
+            const s = secList?.[slices[pageIdx].section]?.settings ?? section
+            const hfH = hfHs?.[slices[pageIdx].section] ?? singleHfPx
+            return {
+              pageW: twipsToPx(s.pageWidth),
+              pageH: twipsToPx(s.pageHeight),
+              marginLeft: twipsToPx(s.marginLeft),
+              marginRight: twipsToPx(s.marginRight),
+              marginTop: effectiveTopPx(s, hfH.headerPx),
+              marginBottom: effectiveBottomPx(s, hfH.footerPx),
             }
           }
           const pageNoTextOf = (pageIdx: number) =>
@@ -1872,6 +1945,17 @@ export function App() {
             )
           const hfSig = (v: HeaderFooter | null | undefined) =>
             v ? `${v.text}·${v.pageNumber ? 1 : 0}·${v.paras?.length ?? 0}` : ''
+          // identity + placement of floating header images: widget keys must change
+          // when the watermark image or its position changes, not just its count
+          // (dataUrl hashed over the edges only — enough to tell images apart
+          // without walking megabytes of base64 per page per rebuild)
+          const floatSig = (imgs: HfImage[]) =>
+            imgs
+              .map(
+                (f) =>
+                  `${f.dataUrl.length}:${hashStr(f.dataUrl.slice(0, 1024) + f.dataUrl.slice(-1024))}:${f.posXPx ?? f.posH ?? ''}:${f.posYPx ?? f.posV ?? ''}:${f.posHRel ?? ''}${f.posVRel ?? ''}:${f.widthPx ?? ''}x${f.heightPx ?? ''}${f.washout ? ':w' : ''}`,
+              )
+              .join('|')
           const visiblePages = visiblePageCount(slices)
           // stopgap until per-section canvas geometry: a landscape section's header/footer
           // strip must not overflow the (portrait) canvas paper it is drawn on
@@ -1891,6 +1975,22 @@ export function App() {
               marginLeft: twipsToPx(nextSec.marginLeft),
               marginRight: twipsToPx(nextSec.marginRight),
             }
+            // a page ended early (explicit break / section break / keepNext) leaves unused
+            // content height; pad the gap so the canvas paints the full paper height and the
+            // footer stays at the paper bottom. Multi-column pages span columns × height, skip.
+            const prevContentH =
+              twipsToPx(prevSec.pageHeight) -
+              effectiveTopPx(prevSec, prevHf.headerPx) -
+              metrics.marginBottom
+            const used = slices[k].end - slices[k].start + (slices[k].repeatHeader?.height ?? 0)
+            const items = pageNotes[k] ?? []
+            const fnH =
+              items.length > 0 ? items.reduce((s, n) => s + n.height, 0) + FOOTNOTE_SEPARATOR_H : 0
+            const remaining = slices[k].regions ? 0 : Math.max(0, prevContentH - used)
+            // used excludes the reserved footnote height (footnoteExtraPx inflates capacity
+            // bookkeeping, not DOM coordinates), and the notes area already extends the gap
+            // by fnH: pad covers only the rest of the shortfall
+            const pad = Math.max(0, Math.round(remaining - fnH))
             // previous page's footer (bottom-margin band) + next page's header (top-margin
             // band), so the canvas shows headers/footers on every page like Word
             const gapFooter = pageHfOf(k, 'footer')
@@ -1924,23 +2024,27 @@ export function App() {
               el.style.width = `${Math.min(box.contentWidth, canvasPaperW)}px`
               hfEls.push(el)
             }
+            // next page's floating header images (picture watermarks): behind-text,
+            // positioned from that page's origin (the gap's bottom edge is marginTop
+            // above it), like PaginationPreview's per-page watermark layer
+            for (const img of gapHeader.floats) {
+              hfEls.push(makeHfFloatImgEl(img, floatBoxOf(k + 1), 'gap'))
+            }
             const hfProps =
               hfEls.length > 0
                 ? {
                     hfEls,
                     // key must cover everything baked into the widgets (both pages'
                     // formatted numbers + total count), or stale PAGE/NUMPAGES survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}`,
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
             // in-table gaps carry no footnote area (absolute positioning inside a table-row is unreliable); footnotes stay in the end-of-document list
-            const items = pageNotes[k] ?? []
             let notes: HTMLElement | undefined
             let notesKey: string | undefined
             let notesMetrics = metrics
             if (items.length > 0) {
-              const fnH = items.reduce((s, n) => s + n.height, 0) + FOOTNOTE_SEPARATOR_H
               const contentW = twipsToPx(
                 prevSec.pageWidth - prevSec.marginLeft - prevSec.marginRight,
               )
@@ -1958,9 +2062,14 @@ export function App() {
             const markShown = () => items.forEach((n) => gapIds.add(n.id))
             const i = blocks.findIndex((b) => Math.abs(b.top - slice.start) < 0.5)
             if (i >= 0 && blocks[i].el) {
+              // footnotes sit at the paper bottom (Word): shift past the padding
+              if (notes && pad > 0) notes.style.top = `${5 + pad}px`
               gaps.push({
                 el: blocks[i].el!,
-                metrics: notesMetrics,
+                metrics:
+                  pad > 0
+                    ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
+                    : notesMetrics,
                 ...(blocks[i].breakBefore || (i > 0 && blocks[i - 1].breakAfter)
                   ? { suppressLeadMt: true }
                   : {}),
@@ -1994,9 +2103,12 @@ export function App() {
                 const gapsAbove = gapRects.reduce((s, g) => (g.top <= trTop ? s + g.height : s), 0)
                 const off = (trTop - elTop - gapsAbove) / factor
                 // last real row starting at/above the cut = the row the cut falls inside
-                if (!tr.classList.contains('page-gap') && off <= slice.start - b.top + 0.5)
+                if (
+                  !tr.classList.contains('page-gap') &&
+                  off <= slice.start - b.top - (b.spaceBeforePx ?? 0) + 0.5
+                )
                   cutRow = tr
-                if (Math.abs(off - (slice.start - b.top)) < 1.5) {
+                if (Math.abs(off - (slice.start - b.top - (b.spaceBeforePx ?? 0))) < 1.5) {
                   matched = true
                   try {
                     const $pos = editor.view.state.doc.resolve(editor.view.posAtDOM(tr, 0))
@@ -2026,13 +2138,39 @@ export function App() {
                       }
                       if (els.length > 0) repeatHeaderEls = els
                     }
+                    // a table gap's strips live inside .page-gap-table-fill, whose
+                    // containing block is the spanning cell (origin = the table's
+                    // left edge, not the paper's): shift page-coordinate floating
+                    // images left by the table's offset from the paper edge
+                    let tableHfProps: typeof hfProps = hfProps
+                    if (hfProps.hfEls && hfProps.hfKey) {
+                      const floatEls = hfProps.hfEls.filter((e) =>
+                        e.classList.contains('page-hf-float-img'),
+                      )
+                      const tblLeft = tr.closest('table')?.getBoundingClientRect().left
+                      const off = tblLeft != null ? (tblLeft - pmRect.left) / factor : 0
+                      if (floatEls.length > 0 && Math.abs(off) > 0.5) {
+                        for (const e of floatEls)
+                          e.style.left = `${parseFloat(e.style.left) - off}px`
+                        // table position is baked into the DOM now: key must follow it
+                        tableHfProps = {
+                          hfEls: hfProps.hfEls,
+                          hfKey: `${hfProps.hfKey}·tx${Math.round(off)}`,
+                        }
+                      }
+                    }
                     for (let d = $pos.depth; d > 0; d--) {
                       if ($pos.node(d).type.name === 'docTableRow') {
+                        // no notes area in table gaps: pad the full remainder
+                        const tablePad = Math.round(remaining)
                         gaps.push({
                           pos: $pos.before(d),
                           kind: 'table',
-                          metrics,
-                          ...hfProps,
+                          metrics:
+                            tablePad > 0
+                              ? { ...metrics, marginBottom: metrics.marginBottom + tablePad }
+                              : metrics,
+                          ...tableHfProps,
                           ...(repeatHeaderEls
                             ? {
                                 repeatHeaderEls,
@@ -2053,10 +2191,22 @@ export function App() {
               }
               if (!matched) {
                 // in-row cut point (page break between a cell's lines): anchor at the first line after it
-                const anchor = nextLineAnchor(b.el, slice.start - b.top, factor)
-                const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
-                if (anchor == null || pos == null) return
-                const cutCell = singleCutCell(cutRow)
+                const anchor = nextLineAnchor(
+                  b.el,
+                  slice.start - b.top - (b.spaceBeforePx ?? 0),
+                  factor,
+                  lineRectsOf,
+                )
+                if (anchor == null) return
+                // anchors inside the read-only nested-table NodeView have no distinct PM
+                // position (posAtDOM collapses them all to the node start): overlay markers
+                if (anchor.node.parentElement?.closest('.doc-nested-table')) {
+                  overlayCutAnchors.push(anchor)
+                  return
+                }
+                const pos = posFromAnchor(editor.view, anchor)
+                if (pos == null) return
+                const cutCell = singleCutCell(cutRow, anchor)
                 if (cutCell) {
                   // single-column row: insert a real inline gap band; bleed to the paper
                   // edges from the anchor's block (the widget's containing block)
@@ -2081,9 +2231,26 @@ export function App() {
               }
               return
             }
-            const anchor = lineStartAnchor(b.el, slice.start - b.top, factor)
+            // fallback: font-load reflow can leave lineStartAnchor's exact-offset match
+            // just outside tolerance; the first line after the cut still gets the gap
+            const anchor =
+              lineStartAnchor(
+                b.el,
+                slice.start - b.top - (b.spaceBeforePx ?? 0),
+                factor,
+                lineRectsOf,
+              ) ??
+              nextLineAnchor(
+                b.el,
+                slice.start - b.top - (b.spaceBeforePx ?? 0),
+                factor,
+                lineRectsOf,
+              )
             const pos = anchor ? posFromAnchor(editor.view, anchor) : undefined
-            if (pos == null) return
+            if (pos == null) {
+              console.warn('[pagination] no line anchor at page boundary', slice.start)
+              return
+            }
             // fold the block's offset from the paper edge (page margin + indent) into negative margins so the gap spans exactly the paper width
             const elRect = b.el.getBoundingClientRect()
             gaps.push({
@@ -2098,6 +2265,24 @@ export function App() {
             })
             markShown()
           })
+          // first page has no gap widget; its floating header images ride a
+          // dedicated zero-height widget at the document start
+          if (slices.length > 0) {
+            const floats = pageHfOf(0, 'header').floats
+            if (floats.length > 0) {
+              const box = floatBoxOf(0)
+              firstPageFloats = {
+                els: floats.map((img) => makeHfFloatImgEl(img, box, 'lead')),
+                key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginTop)}`,
+              }
+            }
+          }
+          // silently dropped boundaries merge two pages into one giant page — surface them
+          const boundaries = slices.slice(1).filter((s, k) => s.start !== slices[k].start).length
+          if (gaps.length + overlayCutAnchors.length !== boundaries)
+            console.warn(
+              `[pagination] ${gaps.length + overlayCutAnchors.length} page gaps built for ${boundaries} boundaries`,
+            )
           // TOC page numbers: the file's cached PAGEREF results are stale (generators
           // write them against a layout that never matches; Word silently refreshes on
           // open, we never write back). Backfill the display from the live layout —
@@ -2126,7 +2311,17 @@ export function App() {
         }
         tGapsBuild = performance.now() - tGaps0
         const tSet0 = performance.now()
-        setPageGaps(editor.view, gaps)
+        setPageGaps(editor.view, gaps, firstPageFloats)
+        // after setPageGaps: widget insertion is synchronous, so anchor rects are final
+        syncFloatShifts(pm, floats, pm.getBoundingClientRect().top + mTopPx * factor, factor)
+        syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
+        syncMarginAnnotations(
+          (pm.closest('.page-wrap') as HTMLElement) ?? pm,
+          pm,
+          comments,
+          factor,
+          doc.parsed.blocks,
+        )
         tSetGaps = performance.now() - tSet0
         // suppression collapses the DOM after this pass sliced; one follow-up remeasure re-syncs (sig goes stable, no loop)
         const sig = gaps.reduce((s, g, n) => (g.suppressLeadMt ? `${s},${n}` : s), '')
@@ -2149,10 +2344,31 @@ export function App() {
         } else {
           pm.style.removeProperty('min-height')
         }
+        // endnote area: Word puts it right after the last body line, not at the page
+        // bottom — anchor it to the flow end measured in the final display state
+        setEndnotesAreaTop(
+          endnoteItems.length > 0
+            ? endnotesAnchorY(
+                pm,
+                (pm.closest('.page-wrap') ?? pm).getBoundingClientRect().top,
+                factor,
+              )
+            : null,
+        )
         // for real-device verification/troubleshooting: current slices and block geometry (read-only snapshot, no functional dependency)
         ;(window as unknown as Record<string, unknown>).__pageDebug = {
           slices,
           blocks: blocks.map((b) => ({ top: b.top, height: b.height, docxIndex: b.docxIndex })),
+          tableRows: blocks
+            .filter((b) => b.tableRows)
+            .map((b) => ({
+              top: b.top,
+              rows: b.tableRows!.map((r) => ({
+                h: Math.round(r.height),
+                cb: r.contentBottom === undefined ? null : Math.round(r.contentBottom),
+                cuts: r.cutYs?.map((c) => Math.round(c)) ?? null,
+              })),
+            })),
           remeasureMs: performance.now() - tStart,
           measureMs: tMeasure,
           sliceMs: tSlice,
@@ -2178,14 +2394,19 @@ export function App() {
       timer = window.setTimeout(remeasure, 300)
     }
     remeasure()
-    // async @font-face loading triggers a full reflow (line-break points change); pagination must be remeasured
-    document.fonts.ready.then(onUpdate).catch(() => {})
-    document.fonts.addEventListener('loadingdone', onUpdate)
+    // async @font-face loading triggers a full reflow (line-break points change); pagination
+    // must be remeasured, and cached line samples invalidated (block heights may not change)
+    const onFontsChanged = () => {
+      bumpLineSampleFontEpoch()
+      onUpdate()
+    }
+    document.fonts.ready.then(onFontsChanged).catch(() => {})
+    document.fonts.addEventListener('loadingdone', onFontsChanged)
     scroller.addEventListener('scroll', locate, { passive: true })
     editor?.on('update', onUpdate)
     return () => {
       if (timer) window.clearTimeout(timer)
-      document.fonts.removeEventListener('loadingdone', onUpdate)
+      document.fonts.removeEventListener('loadingdone', onFontsChanged)
       scroller.removeEventListener('scroll', locate)
       editor?.off('update', onUpdate)
     }
@@ -2213,6 +2434,10 @@ export function App() {
     titlePg,
     evenOddHf,
     sectionHfOverride,
+    comments,
+    // display-mode toggles reflow the text (No Markup hides deletions) and gate
+    // the change bars, but dispatch no doc change: remeasure must follow them
+    revisionDisplay,
   ])
 
   // section at the cursor: the target the Layout tab acts on
@@ -2472,7 +2697,8 @@ export function App() {
           setDarkCanvas((v) => !v)
           break
         case 'insert-table':
-          if (editor && doc) insertTableAt(editor, 3, 3)
+          // Word semantics: the menu opens the Insert Table dialog (custom rows/cols)
+          if (editor && doc) setShowTableModal(true)
           break
         case 'insert-image':
           if (editor && doc) void insertImageViaDialog(editor)
@@ -2501,6 +2727,20 @@ export function App() {
           break
         case 'word-count':
           if (doc) openStats()
+          break
+        case 'ai-proofread':
+          // Same flow as Review > Editor: one-time whole-document-rewrite ack,
+          // then auto-run the AI proofread preset
+          if (doc) {
+            if (
+              localStorage.getItem(AI_REWRITE_ACK_KEY) === '1' ||
+              window.confirm(t('ribbonAiRewriteConfirm'))
+            ) {
+              localStorage.setItem(AI_REWRITE_ACK_KEY, '1')
+              setShowAi(true)
+              setAiPreset({ text: t('ribbonEditorPrompt'), nonce: Date.now(), autoRun: true })
+            }
+          }
           break
         case 'bold':
           editor?.chain().focus().toggleMark('bold').run()
@@ -2560,6 +2800,14 @@ export function App() {
       if (commentSpan) {
         const ids = (commentSpan.dataset.commentIds ?? '').split(' ')
         if (comments.some((c) => !c.done && ids.includes(c.id))) setShowComments(true)
+      }
+      // read-only display anchors are outside contenteditable and would navigate
+      // the renderer in place; Word semantics instead: plain click no-op, mod+click opens
+      const a = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
+      if (a) {
+        e.preventDefault()
+        const href = a.getAttribute('href') ?? ''
+        if ((e.metaKey || e.ctrlKey) && /^https?:/i.test(href)) window.open(href)
       }
       if (!e.metaKey && !e.ctrlKey) return
       const line = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
@@ -2996,11 +3244,14 @@ export function App() {
                           )}
                         </div>
                       )}
-                      {(multiHf ||
+                      {/* Boolean(): a trailing 0 (empty non-floating image list) must not render as a literal "0" text node */}
+                      {Boolean(
+                        multiHf ||
                         (hfViewTouched && effHfView !== 'default') ||
                         shownHeader?.text ||
                         shownHeader?.paras?.length ||
-                        hfImagesOf('header')?.length) && (
+                        hfImagesOf('header')?.length,
+                      ) && (
                         <HeaderFooterArea
                           kind="header"
                           value={shownHeader ?? { text: '' }}
@@ -3011,69 +3262,27 @@ export function App() {
                         />
                       )}
                       <EditorContent editor={editor} />
-                      {footnotes.some((n) => !gapNoteIds.has(n.id)) && (
-                        <div className="page-notes">
-                          {/* footnotes already shown per page in page gaps aren't repeated at the end (last page's footnotes still live here) */}
-                          {footnotes
-                            .filter((n) => !gapNoteIds.has(n.id))
-                            .map((n) => (
-                              <div key={`f${n.id}`} className="page-note">
-                                <sup>{footnotes.indexOf(n) + 1}</sup>
-                                <span className="page-note-text">{n.text}</span>
-                                <button
-                                  className="page-note-btn"
-                                  data-tip={t('appEditFootnote')}
-                                  aria-label={t('appEditFootnote')}
-                                  onClick={() => editNote('footnote', n.id)}
-                                >
-                                  ✎
-                                </button>
-                                <button
-                                  className="page-note-btn"
-                                  data-tip={t('appDeleteFootnote')}
-                                  aria-label={t('appDeleteFootnote')}
-                                  onClick={() => deleteNote('footnote', n.id)}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                      {endnotes.length > 0 && (
-                        // endnotes live in their own document-end area, roman-numbered — never mixed into the footnote block
-                        <div className="page-notes page-endnotes">
-                          <div className="page-notes-label">{t('appEndnotesLabel')}</div>
-                          {endnotes.map((n, i) => (
-                            <div key={`e${n.id}`} className="page-note">
-                              <sup>{toRoman(i + 1)}</sup>
-                              <span className="page-note-text">{n.text}</span>
-                              <button
-                                className="page-note-btn"
-                                data-tip={t('appEditEndnote')}
-                                aria-label={t('appEditEndnote')}
-                                onClick={() => editNote('endnote', n.id)}
-                              >
-                                ✎
-                              </button>
-                              <button
-                                className="page-note-btn"
-                                data-tip={t('appDeleteEndnote')}
-                                aria-label={t('appDeleteEndnote')}
-                                onClick={() => deleteNote('endnote', n.id)}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {(multiHf ||
+                      {/* footnotes already shown per page in page gaps aren't repeated at the end (last page's footnotes still live here) */}
+                      <PageFootnotes
+                        notes={footnotes}
+                        skipIds={gapNoteIds}
+                        onEdit={(id) => editNote('footnote', id)}
+                        onDelete={(id) => deleteNote('footnote', id)}
+                      />
+                      <PageEndnotes
+                        notes={endnotes}
+                        top={endnotesAreaTop}
+                        onEdit={(id) => editNote('endnote', id)}
+                        onDelete={(id) => deleteNote('endnote', id)}
+                      />
+                      {Boolean(
+                        multiHf ||
                         (hfViewTouched && effHfView !== 'default') ||
                         shownFooter?.text ||
                         shownFooter?.pageNumber ||
                         shownFooter?.paras?.length ||
-                        hfImagesOf('footer')?.length) && (
+                        hfImagesOf('footer')?.length,
+                      ) && (
                         <HeaderFooterArea
                           kind="footer"
                           value={shownFooter ?? { text: '' }}
@@ -3202,6 +3411,9 @@ export function App() {
       </div>
 
       {showLinkModal && <LinkInsertModal editor={editor} onClose={() => setShowLinkModal(false)} />}
+      {showTableModal && (
+        <TableInsertModal editor={editor} onClose={() => setShowTableModal(false)} />
+      )}
       {showEquationModal && editor && (
         <EquationModal editor={editor} onClose={() => setShowEquationModal(false)} />
       )}
@@ -3290,13 +3502,18 @@ export function App() {
             },
           }}
           watermark={watermark}
-          pageColor={pageColor}
           blockMetaOf={blockMetaOf}
           pageFootnotesOf={pageFootnotesOf}
           endnoteItems={endnoteItems}
           sectionHfOverride={sectionHfOverride}
           clearPageGaps={() => {
             if (editor) setPageGaps(editor.view, [])
+            const wrap = document.querySelector('.editor-scroll .page-wrap')
+            if (wrap) {
+              syncCutOverlays(wrap as HTMLElement, [], 1)
+              clearMarginAnnotations(wrap as HTMLElement)
+              clearFloatShifts(wrap as HTMLElement)
+            }
           }}
           onExportPdf={() => void exportPdf()}
           onClose={() => setShowPagePreview(false)}

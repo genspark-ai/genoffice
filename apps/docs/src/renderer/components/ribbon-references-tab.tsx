@@ -533,7 +533,7 @@ export function ReferencesTab({
               <span>{t('ribbonCitation')}</span>
             </button>
             {dropdown === 'citation' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {sources.map((s) => (
                   <button key={s.tag} data-tip={s.title} onClick={() => insertCitation(s)}>
                     {citationText(s)} {s.title.slice(0, 12)}
@@ -586,7 +586,7 @@ export function ReferencesTab({
               <span>{t('ribbonIndex')}</span>
             </button>
             {dropdown === 'index' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   onClick={() => {
                     markIndexEntry()

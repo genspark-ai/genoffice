@@ -42,6 +42,10 @@ export interface TableStyleDef {
   /** First-row bottom edge / last-row top edge (header separator lines, used when the firstRow/lastRow flags are on) */
   firstRowBottom?: Stroke
   lastRowTop?: Stroke
+  /** <a:tblBg> direct fill: whole-table background under transparent/alpha cell fills */
+  tblBg?: Fill
+  /** <a:tblBg><a:fillRef>: theme fillStyleLst template ref (parse.ts instantiates it with phClr) */
+  tblBgRef?: { idx: number; phClr?: string }
 }
 
 /** Region toggles from a:tblPr. */
@@ -430,14 +434,30 @@ const tsParser = new XMLParser({
 function readColor(node: unknown, theme: Theme | undefined): string | undefined {
   if (!node || typeof node !== 'object') return undefined
   const n = asXmlNode(node)
-  const srgb = asXmlNode(n['a:srgbClr'])['@_val']
-  if (srgb) return '#' + String(srgb).toUpperCase()
+  // tint/shade/alpha child modifiers; alpha lands as an #RRGGBBAA suffix so
+  // banded fills composite over <a:tblBg> instead of collapsing to opaque
+  const withMods = (base: string, clr: XmlNode): string => {
+    let c = base
+    const t = asXmlNode(clr['a:tint'])['@_val']
+    if (t) c = tint(c, parseInt(String(t), 10) / 100000)
+    const sh = asXmlNode(clr['a:shade'])['@_val']
+    if (sh) c = shade(c, parseInt(String(sh), 10) / 100000)
+    const al = asXmlNode(clr['a:alpha'])['@_val']
+    if (al) {
+      const a = Math.max(0, Math.min(255, Math.round((parseInt(String(al), 10) / 100000) * 255)))
+      c = c + a.toString(16).padStart(2, '0').toUpperCase()
+    }
+    return c
+  }
+  if (n['a:srgbClr']) {
+    const srgb = asXmlNode(n['a:srgbClr'])
+    return withMods('#' + String(srgb['@_val']).toUpperCase(), srgb)
+  }
   if (n['a:schemeClr']) {
     const scheme = asXmlNode(n['a:schemeClr'])
     const base = resolveSchemeColor(String(scheme['@_val']), theme)
     if (!base) return undefined
-    const t = asXmlNode(scheme['a:tint'])['@_val']
-    return t ? tint(base, parseInt(String(t), 10) / 100000) : base
+    return withMods(base, scheme)
   }
   const prst = asXmlNode(n['a:prstClr'])['@_val']
   if (prst === 'black') return '#000000'
@@ -466,12 +486,26 @@ function readInside(
   theme: Theme | undefined,
 ): Stroke | undefined {
   const bdr = asXmlNode(asXmlNode(asXmlNode(part)['a:tcStyle'])['a:tcBdr'])
-  const lnRaw = asXmlNode(bdr[tag])['a:ln']
-  if (!lnRaw) return undefined
-  const ln = asXmlNode(lnRaw)
-  const c = readColor(ln['a:solidFill'], theme)
-  if (!c) return undefined
-  return line(c, parseInt(String(ln['@_w']), 10) || 12700)
+  const edge = asXmlNode(bdr[tag])
+  const lnRaw = edge['a:ln']
+  if (lnRaw) {
+    const ln = asXmlNode(lnRaw)
+    if ('a:noFill' in ln) return undefined
+    const c = readColor(ln['a:solidFill'], theme)
+    if (!c) return undefined
+    return line(c, parseInt(String(ln['@_w']), 10) || 12700)
+  }
+  // <a:lnRef idx>: theme lnStyleLst template; the ref's child color substitutes phClr
+  const refRaw = edge['a:lnRef']
+  if (refRaw) {
+    const ref = asXmlNode(refRaw)
+    const c = readColor(ref, theme)
+    if (!c) return undefined
+    const idx = parseInt(String(ref['@_idx'] ?? '0'), 10) || 0
+    const tplLn = asXmlNode(asXmlNode(theme?.lnStyles?.[idx - 1])['a:ln'])
+    return line(c, parseInt(String(tplLn['@_w']), 10) || 12700)
+  }
+  return undefined
 }
 
 function parseTableStylesXml(
@@ -489,6 +523,18 @@ function parseTableStylesXml(
   const style = xmlArray(list).find((s) => s['@_styleId'] === styleId)
   if (!style) return undefined
   const def: TableStyleDef = {}
+  const tblBgRaw = style['a:tblBg']
+  if (tblBgRaw) {
+    const bg = asXmlNode(tblBgRaw)
+    const direct = readColor(asXmlNode(bg['a:fill'])['a:solidFill'], theme)
+    if (direct) def.tblBg = solid(direct)
+    const refRaw = bg['a:fillRef']
+    if (refRaw) {
+      const ref = asXmlNode(refRaw)
+      const idx = parseInt(String(ref['@_idx'] ?? '0'), 10) || 0
+      if (idx > 0) def.tblBgRef = { idx, phClr: readColor(ref, theme) }
+    }
+  }
   for (const key of [
     'wholeTbl',
     'band1H',

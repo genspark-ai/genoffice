@@ -175,7 +175,7 @@ export function EquationGallery({
 }) {
   const { t } = useI18n()
   return (
-    <div className="equation-gallery">
+    <div data-rb-panel="" className="equation-gallery">
       {BUILTIN_EQUATIONS.map((eq) => {
         const preview = previewOf(eq.latex)
         return (

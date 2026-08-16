@@ -91,6 +91,30 @@ export async function handleSave(
     }),
   )
   const definedNamesState = collectDefinedNamesState(ctx.univerRef.current, state)
+  const workbookProtectionState =
+    state.editJournal.workbookProtection.desired === null
+      ? null
+      : { lockStructure: state.editJournal.workbookProtection.desired }
+  const protectedRangeStates = [...state.editJournal.protectedRangesDirty]
+    .filter((sheetId) => !isSheetRemoved(state.editJournal, sheetId))
+    .map((sheetId) => ({
+      sheetId,
+      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref }) => ({
+        name,
+        sqref,
+      })),
+    }))
+  const themeState =
+    state.editJournal.theme.colors === undefined && state.editJournal.theme.fonts === undefined
+      ? null
+      : {
+          ...(state.editJournal.theme.colors === undefined
+            ? {}
+            : { colors: state.editJournal.theme.colors }),
+          ...(state.editJournal.theme.fonts === undefined
+            ? {}
+            : { fonts: state.editJournal.theme.fonts }),
+        }
   // Recalculated formula results: the engine's values are on screen but
   // deliberately kept out of the journal (they must not become literals). Send them
   // separately so the save refreshes each formula cell's cached <v>, keeping its <f>.
@@ -144,11 +168,18 @@ export async function handleSave(
     pivotCacheRefreshPaths.length +
     sheetProtections.length +
     (definedNamesState === null ? 0 : 1) +
+    (workbookProtectionState === null ? 0 : 1) +
+    (themeState === null ? 0 : 1) +
+    protectedRangeStates.length +
     visualAdditions.length +
     visualEdits.length +
     tableAdditions.length +
     pivotAdditions.length
-  if (total === 0 && mode !== 'save-as') {
+  // A restored crash-recovery session carries its changes in the workbook
+  // bytes themselves, not the journal: a plain Save with nothing pending must
+  // still write back to the original file (and clear the recovery copy).
+  const restoreWriteBack = mode === 'save' && state.file.restoredFromRecovery === true
+  if (total === 0 && mode !== 'save-as' && !restoreWriteBack) {
     if (mode !== 'recovery') ctx.setMessage(t('appNoEditsToSave'))
     return
   }
@@ -192,6 +223,9 @@ export async function handleSave(
     sparklineAdditions: toSaveSparklineAdds(state.editJournal),
     formulaValues,
     definedNamesState,
+    themeState,
+    workbookProtectionState,
+    protectedRangeStates,
   }
   if (mode === 'recovery') {
     // Best-effort; a failure only means this tick's copy is skipped
@@ -203,6 +237,7 @@ export async function handleSave(
     const result = await window.desktopApi.saveWorkbookEdits({
       sessionId: state.file.sessionId,
       mode,
+      ...(restoreWriteBack ? { restoreWriteBack: true } : {}),
       edits,
       structuralOps,
       chartEdits,
@@ -224,6 +259,9 @@ export async function handleSave(
       sparklineAdditions: toSaveSparklineAdds(state.editJournal),
       formulaValues,
       definedNamesState: splitSave ? null : definedNamesState,
+      themeState,
+      workbookProtectionState,
+      protectedRangeStates,
     })
     if (ctx.lazyWorkbookRef.current !== state) return
     if (result.canceled) {
@@ -266,6 +304,9 @@ export async function handleSave(
         // The first phase already refreshed the cached values
         formulaValues: [],
         definedNamesState: heldNames,
+        themeState: null,
+        workbookProtectionState: null,
+        protectedRangeStates: [],
       })
       if (ctx.lazyWorkbookRef.current !== state) return
       if (second.canceled) {
@@ -287,11 +328,18 @@ export async function handleSave(
       if (!quiet) showToast(failed, 'error')
     }
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : ''
+    const message = stripIpcErrorWrapper(error instanceof Error ? error.message : '')
     const failed = localizeSaveError(message) ?? (message || t('appSaveFailed'))
     ctx.setMessage(failed)
     if (!quiet) showToast(failed, 'error')
   }
+}
+
+/// Errors thrown by main-process handlers arrive wrapped as
+/// "Error invoking remote method 'workbook:save': Error: <message>" —
+/// only <message> is meant for the user.
+export function stripIpcErrorWrapper(message: string): string {
+  return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')
 }
 
 /// Gateway save errors users can trigger through normal editing, keyed by a
@@ -306,7 +354,10 @@ const SAVE_ERROR_PATTERNS = [
   ['A new pivot cannot be saved together with row/column', 'appSaveErrPivotWithRowCol'],
   ['A new table cannot be saved together with row/column', 'appSaveErrTableWithRowCol'],
   ['Defined-name edits cannot be saved together', 'appSaveErrNamesWithStructural'],
-  ['The workbook changed on disk', 'appSaveErrChangedOnDisk'],
+  // Only the mid-save race from the gateway: the pre-save disk-changed error
+  // arrives from the main process already localized (and advises Save As,
+  // which stays usable), so it must pass through untouched.
+  ['The workbook changed on disk while saving', 'appSaveErrChangedOnDisk'],
   ['style edits cannot be saved', 'appSaveErrStylesheetLimited'],
   ['Saving would change the workbook package structure', 'appSaveErrPackageGuard'],
   ['charts support', 'appSaveErrChartUnsupported'],

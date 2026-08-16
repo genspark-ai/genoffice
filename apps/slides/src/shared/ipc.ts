@@ -338,12 +338,24 @@ export interface EditStrokeOp {
   groupId?: string
 }
 
-/** Solid page background; slideIndex=-1 applies to all pages. */
-export interface EditBackgroundOp {
+/**
+ * Page background edit; slideIndex=-1 applies to all pages.
+ * - solid/gradient: explicit fill
+ * - image: pick=true opens the system picker; pick=false reuses the current
+ *   image background of sourceSlideIndex (e.g. "apply to all" after picking)
+ * - reset: drop the slide's own <p:bg> (falls back to layout/master)
+ * - hideGraphics: toggle <p:sld showMasterSp> (hide master/layout decorations)
+ */
+export type EditBackgroundOp = {
   slideIndex: number
-  color: string
   fitWidthPx: number
-}
+} & (
+  | { kind: 'solid'; color: string }
+  | { kind: 'gradient'; from: string; to: string; angleDeg?: number; radial?: boolean }
+  | { kind: 'image'; mode: 'stretch' | 'tile'; pick?: boolean; sourceSlideIndex?: number }
+  | { kind: 'reset' }
+  | { kind: 'hideGraphics'; hidden: boolean }
+)
 
 /** Copy the selected elements to the in-app clipboard (any type, including tables/charts/groups). */
 export interface CopyElementsOp {
@@ -1028,6 +1040,13 @@ export interface SlidesApi {
   setShowFullScreen: (on: boolean) => Promise<void>
   openPptx: (fitWidthPx: number) => Promise<OpenResult | null>
   openPptxPath: (path: string, fitWidthPx: number) => Promise<OpenResult | null>
+  /** Office-private faces referenced by layouts so far; the renderer registers them as FontFaces
+   *  (files invisible to Chromium — DFonts/cloud fonts), so drawing uses the measuring font. */
+  privateFontFaces: () => Promise<
+    Array<{ id: string; family: string; bold: boolean; italic: boolean }>
+  >
+  /** Single-face sfnt bytes for one private face (null = gone/unreadable) */
+  privateFontData: (id: string) => Promise<ArrayBuffer | null>
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>

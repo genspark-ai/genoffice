@@ -20,6 +20,15 @@ function toLetters(value: number): string {
   return String.fromCharCode(64 + n).repeat(repeat)
 }
 
+function toGreek(value: number, base: number): string {
+  if (value < 1) return String(value)
+  // 24-letter alphabet (no final sigma); 25 -> αα, repeated like toLetters
+  const n = ((value - 1) % 24) + 1
+  const repeat = Math.floor((value - 1) / 24) + 1
+  // skip the final-sigma slot (ς / unassigned) between the 17th and 18th letters
+  return String.fromCharCode(base + n - 1 + (n >= 18 ? 1 : 0)).repeat(repeat)
+}
+
 const ROMAN: Array<[number, string]> = [
   [1000, 'M'],
   [900, 'CM'],
@@ -70,7 +79,19 @@ function toChinese(value: number): string {
   return out.replace(/^一十/, '十')
 }
 
-export function formatNumber(value: number, numFmt: string): string {
+/** w14 custom numFmt enumeration ("α, β, γ, ..."): comma-separated items, a trailing "..." marks continuation */
+export function customEnumItems(format: string): string[] | null {
+  const items = format.split(',').map((s) => s.trim())
+  while (items.length > 0 && /^(\.{3}|…)?$/.test(items[items.length - 1])) items.pop()
+  return items.length >= 2 && items.every(Boolean) ? items : null
+}
+
+export function formatNumber(value: number, numFmt: string, customFormat?: string): string {
+  if (numFmt === 'custom') {
+    const items = customFormat ? customEnumItems(customFormat) : null
+    // enumeration exhausted: cycle (best-effort; Word's continuation rules are undocumented)
+    return items && value >= 1 ? items[(value - 1) % items.length] : String(value)
+  }
   switch (numFmt) {
     case 'decimalZero':
       return value < 10 && value >= 0 ? `0${value}` : String(value)
@@ -82,6 +103,10 @@ export function formatNumber(value: number, numFmt: string): string {
       return toRoman(value).toLowerCase()
     case 'upperRoman':
       return toRoman(value)
+    case 'lowerGreek':
+      return toGreek(value, 0x3b1)
+    case 'upperGreek':
+      return toGreek(value, 0x391)
     case 'chineseCounting':
     case 'chineseCountingThousand':
     case 'japaneseCounting':
@@ -167,9 +192,12 @@ export function computeListMarkerInfos(
       const refLvl = Number(d) - 1
       const refDef = def.levels[refLvl]
       const value = c[refLvl] ?? refDef?.start ?? 1
-      return formatNumber(value, refDef?.numFmt ?? 'decimal')
+      return formatNumber(value, refDef?.numFmt ?? 'decimal', refDef?.customFormat)
     })
-    return marker ? { text: marker } : null
+    // numFmt "none": an explicit empty marker (Word shows nothing) so renderer
+    // counter fallbacks don't kick in on the null
+    if (!marker && level.numFmt !== 'none') return null
+    return { text: marker }
   })
 }
 
@@ -178,4 +206,23 @@ export function computeListMarkers(
   defs: Map<string, NumberingDef>,
 ): (string | null)[] {
   return computeListMarkerInfos(items, defs).map((m) => m?.text ?? null)
+}
+
+/**
+ * Word's default tab after a numbering marker: when the marker fits the hanging
+ * area the text starts at the text indent; otherwise it jumps to the next
+ * default-tab-grid stop past the marker end. All positions are twips relative
+ * to the text column edge. Returns the marker-box width (marker start -> text
+ * start), or null when the hanging area already fits.
+ */
+export function markerTabAdvance(
+  markerStart: number,
+  markerWidth: number,
+  textIndent: number,
+  defaultTab = 720,
+): number | null {
+  const end = markerStart + markerWidth
+  if (markerStart < textIndent && end <= textIndent) return null
+  const stop = (Math.floor(end / defaultTab) + 1) * defaultTab
+  return stop - markerStart
 }

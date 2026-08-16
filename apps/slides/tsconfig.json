@@ -12,7 +12,8 @@
       "@genoffice/pptx-engine/background-promote": [
         "../../packages/pptx-engine/src/background-promote.ts"
       ],
-      "@genoffice/pptx-render": ["../../packages/pptx-render/src/index.ts"]
+      "@genoffice/pptx-render": ["../../packages/pptx-render/src/index.ts"],
+      "@genoffice/docx-engine/metafile": ["../../packages/docx-engine/src/metafile.ts"]
     }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]

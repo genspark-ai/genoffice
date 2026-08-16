@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { parseDocx, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const DIAGRAM_DATA_XML =
@@ -102,5 +102,136 @@ describe('SmartArt / OLE visible degrade', () => {
     const block = parsed.blocks[0]
     expect(block.label).toBe('SmartArt')
     expect(block.previewText ?? '').toBe('')
+  })
+})
+
+const OLE_OBJECT_RUN =
+  '<w:r><w:object w:dxaOrig="4150" w:dyaOrig="310">' +
+  '<v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="_x0000_i1025" ' +
+  'style="width:207.75pt;height:15.75pt"><v:imagedata r:id="rId10" o:title=""/></v:shape>' +
+  '<o:OLEObject xmlns:o="urn:schemas-microsoft-com:office:office" Type="Embed" ' +
+  'ProgID="Excel.Sheet.8" ShapeID="_x0000_i1025" DrawAspect="Content" ObjectID="_1"/>' +
+  '</w:object></w:r>'
+
+describe('OLE embed sharing a paragraph with real text', () => {
+  const bodyXml =
+    '<w:p><w:r><w:rPr><w:color w:val="0000FF"/></w:rPr>' +
+    '<w:t xml:space="preserve">Состоится пресс-конференция </w:t></w:r>' +
+    '<w:r><w:rPr><w:b/><w:color w:val="FF0000"/></w:rPr><w:t>партнерств</w:t></w:r>' +
+    OLE_OBJECT_RUN +
+    '</w:p>'
+
+  it('stays an editable paragraph; the object becomes a run-level image', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect((block.runs ?? []).map((r) => r.text).join('')).toBe(
+      'Состоится пресс-конференция партнерств',
+    )
+    expect(block.runs?.[0].color).toBe('0000FF')
+    expect(block.runs?.[1].bold).toBe(true)
+    const imgRun = (block.runs ?? []).find((r) => r.image)
+    expect(imgRun?.image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(imgRun?.image?.xml).toContain('<o:OLEObject')
+    // declared v:shape size (207.75pt × 15.75pt)
+    expect(imgRun?.image?.widthPx).toBe(277)
+    expect(imgRun?.image?.heightPx).toBe(21)
+  })
+
+  it('run image size falls back to w:object dxaOrig/dyaOrig (twips)', async () => {
+    const noStyle = bodyXml.replace(' style="width:207.75pt;height:15.75pt"', '')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: noStyle, withImage: true }))
+    const imgRun = (parsed.blocks[0].runs ?? []).find((r) => r.image)
+    expect(imgRun?.image?.widthPx).toBe(277)
+    expect(imgRun?.image?.heightPx).toBe(21)
+  })
+
+  it('the w:object fragment round-trips through an edited save', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const runs = parsed.blocks[0].runs!
+    const saved = await saveDocx(parsed, [
+      { kind: 'generated', block: { type: 'paragraph', runs } },
+    ])
+    const reparsed = await parseDocx(saved)
+    const block = reparsed.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect((block.runs ?? []).map((r) => r.text).join('')).toBe(
+      'Состоится пресс-конференция партнерств',
+    )
+    const imgRun = (block.runs ?? []).find((r) => r.image)
+    expect(imgRun?.image?.xml).toContain('<o:OLEObject')
+  })
+
+  it('an unresolvable preview keeps the protected chip with the text visible', async () => {
+    // no withImage: rId10 has no relationship, the preview cannot resolve
+    const parsed = await parseDocx(await buildDocx({ bodyXml }))
+    const block = parsed.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.label).toBe('Embedded object')
+    expect(block.previewText).toContain('Состоится пресс-конференция')
+  })
+})
+
+function fieldOleParagraph(instr: string): string {
+  return (
+    '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    `<w:r><w:instrText xml:space="preserve">${instr}</w:instrText></w:r>` +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    OLE_OBJECT_RUN +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+  )
+}
+
+describe('field-form OLE (EMBED/LINK field around w:object)', () => {
+  it('EMBED field takes the OLE display path: preview picture, ProgID, declared size', async () => {
+    const bodyXml = fieldOleParagraph(' EMBED Excel.Sheet.8 ')
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.label).toBe('Embedded object')
+    expect(block.oleProgId).toBe('Excel.Sheet.8')
+    expect(block.imageDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(block.imageWidthPx).toBe(277)
+    expect(block.imageHeightPx).toBe(21)
+  })
+
+  it('LINK field (linked OLE) takes the same path', async () => {
+    const bodyXml = fieldOleParagraph(
+      ' LINK Excel.Sheet.8 "Book1.xlsx" "Sheet1!R1C1:R2C2" \\a \\p ',
+    ).replace('Type="Embed"', 'Type="Link"')
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.label).toBe('Embedded object')
+    expect(block.oleProgId).toBe('Excel.Sheet.8')
+    expect(block.imageDataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('a paragraph mixing EMBED with another field keeps the protected field chip', async () => {
+    const bodyXml = fieldOleParagraph(' EMBED Excel.Sheet.8 ').replace(
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> TOC \\o </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+    )
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.label).toBe('Field (EMBED)')
+    expect(block.imageDataUrl).toBeUndefined()
+  })
+
+  it('no edits -> byte-identical save (passthrough keeps the field XML)', async () => {
+    const bytes = await buildDocx({
+      bodyXml: fieldOleParagraph(' EMBED Excel.Sheet.8 '),
+      withImage: true,
+    })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((b) => !b.hidden)
+        .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
+    )
+    expect(saved).toBe(bytes)
   })
 })

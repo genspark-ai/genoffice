@@ -9,7 +9,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
@@ -39,6 +39,7 @@ import {
   appMenuLabels,
   configuredDefaultSaveDir,
   contextMenuLabels,
+  fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
@@ -53,6 +54,7 @@ import { ProjectStore } from '@genoffice/project-store'
 import {
   AiCreditsError,
   AiTimeoutError,
+  isAiNetworkError,
   chatForProvider,
   defaultAiSettings,
   resolveAiSettings,
@@ -73,6 +75,7 @@ import {
   setGskProxyUrl,
   webSearch,
   imageSearch,
+  gskGenerateImage,
 } from '@genoffice/ai-search'
 import { parseFileToText } from '@genoffice/file-parse'
 import type { CellEdit, SheetStructuralOps } from '../gateway/xlsx-gateway'
@@ -149,7 +152,8 @@ const tMain = createI18n({
     errImgBadType: '该文件不是 PNG/JPEG/GIF 图片。',
     errDiskChanged: '工作簿在打开后被磁盘上的改动覆盖——请改用另存为。',
     autosaveFoundTitle: '发现自动恢复版本',
-    autosaveFoundBody: '上次会话有未保存的更改。要恢复自动保存的版本吗?',
+    autosaveFoundBody:
+      '上次会话有未保存的更改。要恢复自动保存的版本吗?恢复后,保存将直接覆盖原文件。',
     autosaveRestore: '恢复',
     autosaveDiscard: '放弃',
     menuFile: '文件',
@@ -194,7 +198,7 @@ const tMain = createI18n({
     errDiskChanged: 'The workbook changed on disk after it was opened — use Save As instead.',
     autosaveFoundTitle: 'Recovered version found',
     autosaveFoundBody:
-      'There are unsaved changes from your last session. Restore the autosaved version?',
+      'There are unsaved changes from your last session. Restore the autosaved version? Saving after a restore overwrites the original file.',
     autosaveRestore: 'Restore',
     autosaveDiscard: 'Discard',
     menuFile: 'File',
@@ -240,7 +244,8 @@ const tMain = createI18n({
     errDiskChanged:
       'ブックを開いた後にディスク上で変更されています — 名前を付けて保存を使用してください。',
     autosaveFoundTitle: '自動回復バージョンがあります',
-    autosaveFoundBody: '前回のセッションに未保存の変更があります。自動保存版を復元しますか?',
+    autosaveFoundBody:
+      '前回のセッションに未保存の変更があります。自動保存版を復元しますか?復元後に保存すると、元のファイルは上書きされます。',
     autosaveRestore: '復元',
     autosaveDiscard: '破棄',
     menuFile: 'ファイル',
@@ -288,7 +293,7 @@ const tMain = createI18n({
       '통합 문서가 열린 후 디스크에서 변경되었습니다. 다른 이름으로 저장을 사용하세요.',
     autosaveFoundTitle: '자동 복구 버전 발견',
     autosaveFoundBody:
-      '마지막 세션에 저장되지 않은 변경 내용이 있습니다. 자동 저장 버전을 복원할까요?',
+      '마지막 세션에 저장되지 않은 변경 내용이 있습니다. 자동 저장 버전을 복원할까요? 복원 후 저장하면 원본 파일을 덮어씁니다.',
     autosaveRestore: '복원',
     autosaveDiscard: '취소',
     menuFile: '파일',
@@ -336,7 +341,7 @@ const tMain = createI18n({
       'Le classeur a été modifié sur le disque après son ouverture — utilisez Enregistrer sous.',
     autosaveFoundTitle: 'Version récupérée trouvée',
     autosaveFoundBody:
-      'Des modifications non enregistrées existent. Restaurer la version auto-enregistrée ?',
+      "Des modifications non enregistrées existent. Restaurer la version auto-enregistrée ? Après restauration, l'enregistrement remplacera le fichier d'origine.",
     autosaveRestore: 'Restaurer',
     autosaveDiscard: 'Ignorer',
     menuFile: 'Fichier',
@@ -384,7 +389,7 @@ const tMain = createI18n({
       'Die Arbeitsmappe wurde nach dem Öffnen auf dem Datenträger geändert — verwenden Sie stattdessen „Speichern unter“.',
     autosaveFoundTitle: 'Wiederhergestellte Version gefunden',
     autosaveFoundBody:
-      'Es gibt ungespeicherte Änderungen. Automatisch gespeicherte Version wiederherstellen?',
+      'Es gibt ungespeicherte Änderungen. Automatisch gespeicherte Version wiederherstellen? Nach der Wiederherstellung überschreibt Speichern die Originaldatei.',
     autosaveRestore: 'Wiederherstellen',
     autosaveDiscard: 'Verwerfen',
     menuFile: 'Datei',
@@ -431,7 +436,7 @@ const tMain = createI18n({
     errDiskChanged: 'El libro cambió en el disco después de abrirse; usa Guardar como en su lugar.',
     autosaveFoundTitle: 'Se encontró una versión recuperada',
     autosaveFoundBody:
-      'Hay cambios sin guardar de la última sesión. ¿Restaurar la versión autoguardada?',
+      'Hay cambios sin guardar de la última sesión. ¿Restaurar la versión autoguardada? Tras restaurar, guardar sobrescribirá el archivo original.',
     autosaveRestore: 'Restaurar',
     autosaveDiscard: 'Descartar',
     menuFile: 'Archivo',
@@ -477,7 +482,8 @@ const tMain = createI18n({
     errImgBadType: 'ไฟล์นี้ไม่ใช่รูปภาพ PNG/JPEG/GIF',
     errDiskChanged: 'เวิร์กบุ๊กถูกเปลี่ยนแปลงบนดิสก์หลังจากเปิด — โปรดใช้บันทึกเป็นแทน',
     autosaveFoundTitle: 'พบเวอร์ชันกู้คืนอัตโนมัติ',
-    autosaveFoundBody: 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึกจากครั้งก่อน ต้องการกู้คืนหรือไม่?',
+    autosaveFoundBody:
+      'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึกจากครั้งก่อน ต้องการกู้คืนหรือไม่? หลังกู้คืน การบันทึกจะเขียนทับไฟล์ต้นฉบับ',
     autosaveRestore: 'กู้คืน',
     autosaveDiscard: 'ละทิ้ง',
     menuFile: 'ไฟล์',
@@ -522,7 +528,7 @@ const tMain = createI18n({
     errDiskChanged: 'Buku kerja berubah di disk setelah dibuka — gunakan Simpan Sebagai.',
     autosaveFoundTitle: 'Versi pemulihan ditemukan',
     autosaveFoundBody:
-      'Ada perubahan yang belum disimpan dari sesi terakhir. Pulihkan versi tersimpan otomatis?',
+      'Ada perubahan yang belum disimpan dari sesi terakhir. Pulihkan versi tersimpan otomatis? Setelah dipulihkan, menyimpan akan menimpa file asli.',
     autosaveRestore: 'Pulihkan',
     autosaveDiscard: 'Buang',
     menuFile: 'File',
@@ -569,7 +575,7 @@ const tMain = createI18n({
     errDiskChanged: 'Книга была изменена на диске после открытия — используйте «Сохранить как».',
     autosaveFoundTitle: 'Найдена восстановленная версия',
     autosaveFoundBody:
-      'Есть несохранённые изменения из прошлого сеанса. Восстановить автосохранённую версию?',
+      'Есть несохранённые изменения из прошлого сеанса. Восстановить автосохранённую версию? После восстановления сохранение перезапишет исходный файл.',
     autosaveRestore: 'Восстановить',
     autosaveDiscard: 'Отклонить',
     menuFile: 'Файл',
@@ -615,7 +621,7 @@ const tMain = createI18n({
     errDiskChanged: 'تم تغيير المصنف على القرص بعد فتحه — استخدم «حفظ باسم» بدلاً من ذلك.',
     autosaveFoundTitle: 'تم العثور على نسخة مستردة',
     autosaveFoundBody:
-      'توجد تغييرات غير محفوظة من الجلسة الأخيرة. هل تريد استعادة النسخة المحفوظة تلقائيًا؟',
+      'توجد تغييرات غير محفوظة من الجلسة الأخيرة. هل تريد استعادة النسخة المحفوظة تلقائيًا؟ بعد الاستعادة، سيؤدي الحفظ إلى استبدال الملف الأصلي.',
     autosaveRestore: 'استعادة',
     autosaveDiscard: 'تجاهل',
     menuFile: 'ملف',
@@ -661,7 +667,7 @@ const tMain = createI18n({
     errDiskChanged: 'A pasta de trabalho foi alterada no disco após ser aberta — use Salvar Como.',
     autosaveFoundTitle: 'Versão recuperada encontrada',
     autosaveFoundBody:
-      'Há alterações não salvas da sua última sessão. Restaurar a versão salva automaticamente?',
+      'Há alterações não salvas da sua última sessão. Restaurar a versão salva automaticamente? Após restaurar, salvar sobrescreverá o arquivo original.',
     autosaveRestore: 'Restaurar',
     autosaveDiscard: 'Descartar',
     menuFile: 'Arquivo',
@@ -709,7 +715,7 @@ const tMain = createI18n({
       "La cartella di lavoro è stata modificata sul disco dopo l'apertura — usa Salva con nome.",
     autosaveFoundTitle: 'Trovata versione recuperata',
     autosaveFoundBody:
-      "Ci sono modifiche non salvate dall'ultima sessione. Ripristinare la versione salvata automaticamente?",
+      "Ci sono modifiche non salvate dall'ultima sessione. Ripristinare la versione salvata automaticamente? Dopo il ripristino, il salvataggio sovrascriverà il file originale.",
     autosaveRestore: 'Ripristina',
     autosaveDiscard: 'Ignora',
     menuFile: 'File',
@@ -756,7 +762,7 @@ const tMain = createI18n({
     errDiskChanged: 'Skoroszyt został zmieniony na dysku po otwarciu — użyj polecenia Zapisz jako.',
     autosaveFoundTitle: 'Znaleziono odzyskaną wersję',
     autosaveFoundBody:
-      'Istnieją niezapisane zmiany z ostatniej sesji. Przywrócić wersję zapisaną automatycznie?',
+      'Istnieją niezapisane zmiany z ostatniej sesji. Przywrócić wersję zapisaną automatycznie? Po przywróceniu zapisanie nadpisze oryginalny plik.',
     autosaveRestore: 'Przywróć',
     autosaveDiscard: 'Odrzuć',
     menuFile: 'Plik',
@@ -804,7 +810,7 @@ const tMain = createI18n({
       'De werkmap is op de schijf gewijzigd nadat deze was geopend — gebruik Opslaan als.',
     autosaveFoundTitle: 'Herstelde versie gevonden',
     autosaveFoundBody:
-      'Er zijn niet-opgeslagen wijzigingen van uw laatste sessie. De automatisch opgeslagen versie herstellen?',
+      'Er zijn niet-opgeslagen wijzigingen van uw laatste sessie. De automatisch opgeslagen versie herstellen? Na herstel overschrijft opslaan het originele bestand.',
     autosaveRestore: 'Herstellen',
     autosaveDiscard: 'Negeren',
     menuFile: 'Bestand',
@@ -850,7 +856,7 @@ const tMain = createI18n({
     errDiskChanged: 'Buku kerja telah diubah pada cakera selepas dibuka — gunakan Simpan Sebagai.',
     autosaveFoundTitle: 'Versi pulihan ditemui',
     autosaveFoundBody:
-      'Terdapat perubahan yang belum disimpan daripada sesi terakhir anda. Pulihkan versi yang disimpan secara automatik?',
+      'Terdapat perubahan yang belum disimpan daripada sesi terakhir anda. Pulihkan versi yang disimpan secara automatik? Selepas pemulihan, menyimpan akan menulis ganti fail asal.',
     autosaveRestore: 'Pulihkan',
     autosaveDiscard: 'Buang',
     menuFile: 'Fail',
@@ -894,7 +900,8 @@ const tMain = createI18n({
     errImgBadType: 'הקובץ אינו תמונת PNG/JPEG/GIF.',
     errDiskChanged: 'חוברת העבודה השתנתה בדיסק לאחר פתיחתה — השתמש בשמירה בשם.',
     autosaveFoundTitle: 'נמצאה גרסה משוחזרת',
-    autosaveFoundBody: 'קיימים שינויים שלא נשמרו מהפעלה הקודמת. לשחזר את הגרסה שנשמרה אוטומטית?',
+    autosaveFoundBody:
+      'קיימים שינויים שלא נשמרו מהפעלה הקודמת. לשחזר את הגרסה שנשמרה אוטומטית? לאחר השחזור, שמירה תדרוס את הקובץ המקורי.',
     autosaveRestore: 'שחזר',
     autosaveDiscard: 'התעלם',
     menuFile: 'קובץ',
@@ -940,7 +947,7 @@ const tMain = createI18n({
       'खोले जाने के बाद कार्यपुस्तिका डिस्क पर बदल गई — इसके बजाय इस रूप में सहेजें का उपयोग करें।',
     autosaveFoundTitle: 'पुनर्प्राप्त संस्करण मिला',
     autosaveFoundBody:
-      'आपके पिछले सत्र से सहेजे नहीं गए परिवर्तन हैं। स्वतः सहेजा गया संस्करण पुनर्स्थापित करें?',
+      'आपके पिछले सत्र से सहेजे नहीं गए परिवर्तन हैं। स्वतः सहेजा गया संस्करण पुनर्स्थापित करें? पुनर्स्थापना के बाद, सहेजने पर मूल फ़ाइल अधिलेखित हो जाएगी।',
     autosaveRestore: 'पुनर्स्थापित करें',
     autosaveDiscard: 'छोड़ें',
     menuFile: 'फ़ाइल',
@@ -984,7 +991,8 @@ const tMain = createI18n({
     errImgBadType: '該檔案不是 PNG/JPEG/GIF 圖片。',
     errDiskChanged: '活頁簿在開啟後被磁碟上的變更覆蓋——請改用另存新檔。',
     autosaveFoundTitle: '發現自動復原版本',
-    autosaveFoundBody: '上次工作階段有未儲存的變更。要復原自動儲存的版本嗎?',
+    autosaveFoundBody:
+      '上次工作階段有未儲存的變更。要復原自動儲存的版本嗎?復原後,儲存將直接覆寫原檔案。',
     autosaveRestore: '復原',
     autosaveDiscard: '放棄',
     menuFile: '檔案',
@@ -1009,6 +1017,12 @@ const tm = (key: Parameters<typeof tMain>[1], params?: Parameters<typeof tMain>[
 
 interface SessionInfo {
   readonly path: string
+  /// Byte-for-byte copy of the file as it was opened (in the OS temp dir).
+  /// Saves patch this snapshot rather than the live path, so an external
+  /// overwrite of the file can never corrupt the save base — and Save As
+  /// stays usable after one. Removed when the session closes.
+  readonly snapshotPath: string
+  /// Digest of the snapshot (== the file at open time).
   readonly sha256: string
   readonly sheetNames: ReadonlyMap<string, string>
   /// Set when the session opened a converted copy (.xls/.csv import): the
@@ -1017,6 +1031,14 @@ interface SessionInfo {
   /// The converted copy came from a CSV: the Save As dialog explains that
   /// formatting requires .xlsx (CSV keeps values only).
   readonly csvImport?: boolean
+  /// Set when the session opened a restored crash-recovery copy: the restore
+  /// prompt was the user's confirmation, so a plain Save silently writes back
+  /// to this original path (no Save As detour).
+  readonly restoreTarget?: string
+  /// Digest of the original file at restore time — guards the silent
+  /// write-back against external modification, mirroring the sha256 check on
+  /// the session's own path.
+  readonly restoreTargetSha?: string
 }
 
 // ---- runtime configuration (paths differ when bundled into the shell) ----
@@ -1061,6 +1083,9 @@ interface SheetsTabSession {
 /** per-tab session state, keyed by webContents.id — replaces the old single-window closures
  * that `registerIpcHandlers`/`validateSender` used to capture, which broke as soon as a second
  * tab (or a closed-then-reopened tab) registered and overwrote the previous closure. */
+/// Same ceiling as local add_image (readLocalImage's 20MB check)
+const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
+
 const sheetsTabs = new Map<number, SheetsTabSession>()
 let activeSheetsWebContents: WebContents | null = null
 
@@ -1621,6 +1646,30 @@ export function registerSheetsIpc(): void {
   if (coreIpcRegistered) return
   coreIpcRegistered = true
 
+  // Registered here (not in registerSheetsAiIpc, skipped in shell mode):
+  // slides' ai:generate-image only exists once a slides view opens, so sheets
+  // owns its channel the way pdf does.
+  ipcMain.handle(
+    IPC_CHANNELS.aiGenerateImage,
+    async (_event, op: { prompt?: unknown; aspectRatio?: unknown }) => {
+      if (!hasGskAuth())
+        return {
+          error: 'Genspark account is not logged in on this machine; ask the user to log in first',
+        }
+      const prompt = String(op?.prompt ?? '').trim()
+      if (!prompt) return { error: 'prompt must not be empty' }
+      try {
+        const r = await gskGenerateImage({
+          prompt,
+          ...(op?.aspectRatio ? { aspectRatio: String(op.aspectRatio) } : {}),
+        })
+        return { url: r.url }
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
   ipcMain.on(IPC_CHANNELS.pendingEditsChanged, (event, count: unknown) => {
     if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return
     const senderId = event.sender.id
@@ -1683,13 +1732,11 @@ export function registerSheetsIpc(): void {
       path = selection.filePaths[0]
     }
     const prepared = await prepareWorkbookForOpen(entry.client, path, dialogParent(event))
-    const result = await openWorkbookSession(
-      entry.client,
-      prepared.openPath,
-      entry.sessions,
-      prepared.suggestSaveAs,
-      prepared.csvImport,
-    )
+    const result = await openWorkbookSession(entry.client, prepared.openPath, entry.sessions, {
+      suggestSaveAs: prepared.suggestSaveAs,
+      csvImport: prepared.csvImport,
+      restoreTarget: prepared.restoreTarget,
+    })
     if (result) workbookOpenedHook?.(event.sender, path)
     return result
   })
@@ -1742,7 +1789,10 @@ export function registerSheetsIpc(): void {
     }
     const result = sidecarRecalcResultSchema.parse(
       await entry.client.recalcCells({
-        path: session.path,
+        // The snapshot, not the live path: recalculated values are painted on
+        // the session's grid (and saved into its formula cells), so they must
+        // come from the session's own bytes even if the file changed on disk.
+        path: session.snapshotPath,
         edits: request.edits.map((edit) => ({
           sheet: fileSheetName(edit.sheetId),
           row: edit.row,
@@ -1897,9 +1947,11 @@ export function registerSheetsIpc(): void {
     const request = workbookPivotRequestSchema.parse(input)
     const session = entry.sessions.get(request.sessionId)
     if (!session) throw new Error('Unknown workbook session.')
+    // Read from the session snapshot so the definition matches what the
+    // renderer shows even if the file on disk changed since open.
     const [pivotXml, cacheXml] = await Promise.all([
-      readArchiveEntryText(entry.client, session.path, request.path),
-      readArchiveEntryText(entry.client, session.path, request.cachePath),
+      readArchiveEntryText(entry.client, session.snapshotPath, request.path),
+      readArchiveEntryText(entry.client, session.snapshotPath, request.cachePath),
     ])
     return workbookPivotDefinitionSchema.parse(parsePivotDefinition(pivotXml, cacheXml))
   })
@@ -1922,7 +1974,7 @@ export function registerSheetsIpc(): void {
     // the first save always asks where the .xlsx should live.
     if (request.mode === 'save-as' || session.suggestSaveAs !== undefined) {
       const selection = await saveFileDialog(event, {
-        defaultPath: session.suggestSaveAs ?? session.path,
+        defaultPath: session.suggestSaveAs ?? session.restoreTarget ?? session.path,
         filters: [{ name: tm('filterXlsx'), extensions: ['xlsx'] }],
         // CSV import: explain why the save goes through .xlsx (CSV keeps values only)
         ...(session.csvImport
@@ -1933,10 +1985,26 @@ export function registerSheetsIpc(): void {
       targetPath = selection.filePath.endsWith('.xlsx')
         ? selection.filePath
         : `${selection.filePath}.xlsx`
-    }
-
-    if ((await sha256File(session.path)) !== session.sha256) {
-      throw new Error(tm('errDiskChanged'))
+    } else if (session.restoreTarget !== undefined) {
+      // Restored crash-recovery copy: the restore prompt was the confirmation,
+      // so Save writes straight back to the original — unless someone else
+      // changed it since the restore.
+      const currentSha = await sha256File(session.restoreTarget).catch(() => undefined)
+      if (currentSha !== undefined && currentSha !== session.restoreTargetSha) {
+        throw new Error(tm('errDiskChanged'))
+      }
+      targetPath = session.restoreTarget
+    } else {
+      // Plain in-place save: refuse to silently overwrite a file some other
+      // program changed after this session opened it. Save As (above) skips
+      // this guard on purpose — it patches the session snapshot, not the live
+      // file, and writes to a path the user just confirmed, so it stays
+      // usable as the escape hatch this error message points to. A file that
+      // was deleted on disk is fine: saving recreates it.
+      const currentSha = await sha256File(session.path).catch(() => undefined)
+      if (currentSha !== undefined && currentSha !== session.sha256) {
+        throw new Error(tm('errDiskChanged'))
+      }
     }
 
     const mutation = await writeWorkbookTo(client, session, request, targetPath)
@@ -1945,6 +2013,7 @@ export function registerSheetsIpc(): void {
     // fresh session over the saved file so future reads match the disk state.
     entry.sessions.delete(request.sessionId)
     await client.close(request.sessionId).catch(() => undefined)
+    void rm(session.snapshotPath, { force: true }).catch(() => undefined)
     const file = await openWorkbookSession(client, targetPath, entry.sessions)
     // Notify shell (if running) so it can update the tab title and record the
     // saved path in recent files (mirrors the open hook; covers Save As + first
@@ -1953,6 +2022,9 @@ export function registerSheetsIpc(): void {
     // The file on disk now carries these edits
     clearWorkbookRecovery(targetPath)
     if (session.suggestSaveAs !== undefined) clearWorkbookRecovery(session.suggestSaveAs)
+    // Restored session saved (possibly Save As elsewhere): the unsaved work is
+    // persisted, so the original's recovery copy must not re-offer it.
+    if (session.restoreTarget !== undefined) clearWorkbookRecovery(session.restoreTarget)
     return { canceled: false, file, touchedEntries: mutation.touchedEntries }
   })
 
@@ -1962,8 +2034,11 @@ export function registerSheetsIpc(): void {
     const entry = sessionFor(event)
     const request = workbookSaveRequestSchema.parse(input)
     const session = entry.sessions.get(request.sessionId)
-    // A converted import has no original file to recover into; its temp copy is enough
-    if (!session || session.suggestSaveAs !== undefined) return { ok: false }
+    // A converted import has no original file to recover into; a restored
+    // recovery session is backed by the recovery copy itself — writing over
+    // the file the sidecar streams from would corrupt the open session.
+    if (!session || session.suggestSaveAs !== undefined || session.restoreTarget !== undefined)
+      return { ok: false }
     try {
       await mkdir(recoveryDir(), { recursive: true })
       await writeWorkbookTo(entry.client, session, request, recoveryPathFor(session.path))
@@ -1977,8 +2052,16 @@ export function registerSheetsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.closeWorkbook, async (event, sessionId: unknown) => {
     const entry = sessionFor(event)
     const validatedSessionId = z.string().uuid().parse(sessionId)
+    const session = entry.sessions.get(validatedSessionId)
     if (!entry.sessions.delete(validatedSessionId)) return
-    await entry.client.close(validatedSessionId)
+    try {
+      // Close the sidecar session (it has the snapshot open) before removing it
+      await entry.client.close(validatedSessionId)
+    } finally {
+      // Best-effort either way: the session is already out of the map, so a
+      // failed close must not leave the temp snapshot behind forever.
+      if (session) void rm(session.snapshotPath, { force: true }).catch(() => undefined)
+    }
   })
 
   // Content-derived naming for AI-generated workbooks (sheets' analog of slides'
@@ -2230,7 +2313,9 @@ export function registerSheetsAiIpc(): void {
             ? { errorCode: 'timeout' as const }
             : err instanceof AiCreditsError
               ? { errorCode: 'credits' as const }
-              : {}),
+              : isAiNetworkError(err)
+                ? { errorCode: 'network' as const }
+                : {}),
         })
       }
     } finally {
@@ -2265,6 +2350,48 @@ export function registerSheetsAiIpc(): void {
       return { images: [], method: 'error', error: String(err) }
     }
   })
+
+  // Standalone parity with docs-main's shell-wide handler: AI-supplied URLs are
+  // prompt-injectable, so fetchRemoteImage refuses non-http schemes and
+  // private/link-local targets and validates every redirect hop. Size-capped to
+  // match the local add_image limit.
+  ipcMain.handle(
+    'ai:fetch-image',
+    async (_event, url: unknown): Promise<{ base64: string; mime: string } | null> => {
+      try {
+        const resp = await fetchRemoteImage(z.string().parse(url))
+        if (!resp || !resp.ok || !resp.body) return null
+        const declared = Number(resp.headers.get('content-length') ?? 0)
+        if (declared > MAX_REMOTE_IMAGE_BYTES) return null
+        // Stream with a running cap: a missing/understated Content-Length must
+        // not let a prompt-injected URL buffer unbounded bytes before a
+        // post-hoc size check
+        const reader = resp.body.getReader()
+        const chunks: Buffer[] = []
+        let received = 0
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          received += value.byteLength
+          if (received > MAX_REMOTE_IMAGE_BYTES) {
+            await reader.cancel()
+            return null
+          }
+          chunks.push(Buffer.from(value))
+        }
+        const buf = Buffer.concat(chunks)
+        const ct = resp.headers.get('content-type') ?? ''
+        const mime = ct.includes('png')
+          ? 'image/png'
+          : ct.includes('gif')
+            ? 'image/gif'
+            : 'image/jpeg'
+        return { base64: buf.toString('base64'), mime }
+      } catch {
+        return null
+      }
+    },
+  )
 }
 
 // ── project-store IPC (standalone mode) ────────────────────────────────────
@@ -2515,6 +2642,10 @@ async function writeWorkbookTo(
     sheetName: resolveSheetName(state.sheetId),
     protected: state.protected,
   }))
+  const protectedRangeStates = request.protectedRangeStates.map((state) => ({
+    sheetName: resolveSheetName(state.sheetId),
+    ranges: state.ranges,
+  }))
   const pageSetupStates = request.pageSetupStates.map(({ sheetId, ...state }) => ({
     sheetName: resolveSheetName(sheetId),
     ...state,
@@ -2583,7 +2714,10 @@ async function writeWorkbookTo(
   }))
   const mutation = await saveWorkbookViaSidecar({
     client,
-    sourcePath: session.path,
+    // The snapshot, not the live path: the save base must be the bytes this
+    // session's pending edits were made against, regardless of what other
+    // programs did to the file since.
+    sourcePath: session.snapshotPath,
     targetPath,
     edits,
     structuralOps,
@@ -2597,6 +2731,9 @@ async function writeWorkbookTo(
     dvStates,
     sheetProtections,
     definedNamesState: request.definedNamesState,
+    themeState: request.themeState,
+    workbookProtectionState: request.workbookProtectionState,
+    protectedRangeStates,
     visualAdditions,
     pageSetupStates,
     noteStates,
@@ -2624,31 +2761,67 @@ async function writeWorkbookTo(
   return mutation
 }
 
+/** Copies the workbook into the temp snapshot dir; the copy is the session's
+ * save base (see SessionInfo.snapshotPath). */
+async function snapshotWorkbook(path: string): Promise<string> {
+  const dir = join(app.getPath('temp'), 'genoffice-sheets-sessions')
+  await mkdir(dir, { recursive: true })
+  const snapshotPath = join(dir, `${randomUUID()}.xlsx`)
+  await copyFile(path, snapshotPath)
+  return snapshotPath
+}
+
 async function openWorkbookSession(
   client: XlsxSidecarClient,
   path: string,
   sessions: Map<string, SessionInfo>,
-  suggestSaveAs?: string,
-  csvImport?: boolean,
+  options?: {
+    suggestSaveAs?: string | undefined
+    csvImport?: boolean | undefined
+    restoreTarget?: string | undefined
+  },
 ): Promise<WorkbookFile> {
-  const [opened, digest] = await Promise.all([
-    client.open(path, getUiLang()).then((result) => sidecarOpenResultSchema.parse(result)),
-    sha256File(path),
-  ])
-  sessions.set(opened.sessionId, {
-    path,
-    sha256: digest,
-    sheetNames: new Map(opened.sheets.map((sheet) => [sheet.id, sheet.name])),
-    ...(suggestSaveAs === undefined ? {} : { suggestSaveAs }),
-    ...(csvImport ? { csvImport } : {}),
-  })
-  return workbookFileSchema.parse({
-    ...opened,
-    path,
-    sha256: digest,
-    readOnly: false,
-    needsSaveAs: suggestSaveAs !== undefined,
-  })
+  const { suggestSaveAs, csvImport, restoreTarget } = options ?? {}
+  // Snapshot first, then the sidecar opens the snapshot (not the live path):
+  // everything the session serves — cell reads, media, recalc, saves — comes
+  // from the same bytes, even if the file on disk changes right after the
+  // copy. The digest also describes exactly those bytes.
+  const snapshotPath = await snapshotWorkbook(path)
+  try {
+    const [opened, digest, restoreTargetSha] = await Promise.all([
+      client
+        .open(snapshotPath, getUiLang())
+        .then((result) => sidecarOpenResultSchema.parse(result)),
+      sha256File(snapshotPath),
+      // Missing original (deleted since the crash) is fine: the write-back recreates it.
+      restoreTarget === undefined
+        ? Promise.resolve(undefined)
+        : sha256File(restoreTarget).catch(() => undefined),
+    ])
+    sessions.set(opened.sessionId, {
+      path,
+      snapshotPath,
+      sha256: digest,
+      sheetNames: new Map(opened.sheets.map((sheet) => [sheet.id, sheet.name])),
+      ...(suggestSaveAs === undefined ? {} : { suggestSaveAs }),
+      ...(csvImport ? { csvImport } : {}),
+      ...(restoreTarget === undefined ? {} : { restoreTarget }),
+      ...(restoreTargetSha === undefined ? {} : { restoreTargetSha }),
+    })
+    return workbookFileSchema.parse({
+      ...opened,
+      // The renderer-facing path is what the user opened: for a restored
+      // recovery copy that is the original file, not the copy under userData.
+      path: restoreTarget ?? path,
+      sha256: digest,
+      readOnly: false,
+      needsSaveAs: suggestSaveAs !== undefined,
+      restoredFromRecovery: restoreTarget !== undefined,
+    })
+  } catch (error) {
+    void rm(snapshotPath, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 /** which legacy charset an Excel CSV most likely uses, judged by the UI language */
@@ -2668,12 +2841,18 @@ async function prepareWorkbookForOpen(
   client: XlsxSidecarClient,
   path: string,
   parent?: BrowserWindow | undefined,
-): Promise<{ openPath: string; suggestSaveAs?: string; csvImport?: boolean }> {
+): Promise<{
+  openPath: string
+  suggestSaveAs?: string
+  csvImport?: boolean
+  restoreTarget?: string
+}> {
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
   if (extension !== 'csv' && extension !== 'xls') {
     // Unsaved work from a lost session: offer the recovery copy. Restoring
-    // opens it with suggestSaveAs pointing back at the original, so the first save asks
-    // for confirmation instead of silently overwriting the file the user opened.
+    // opens it with restoreTarget pointing back at the original, so a plain
+    // Save writes straight back over the file the user opened — the restore
+    // prompt (which spells out the overwrite) was the confirmation.
     const recovery = pendingRecoveryFor(path)
     if (recovery) {
       const options = {
@@ -2687,7 +2866,7 @@ async function prepareWorkbookForOpen(
       const answer = parent
         ? await dialog.showMessageBox(parent, options)
         : await dialog.showMessageBox(options)
-      if (answer.response === 0) return { openPath: recovery, suggestSaveAs: path }
+      if (answer.response === 0) return { openPath: recovery, restoreTarget: path }
       clearWorkbookRecovery(path)
     }
     return { openPath: path }
@@ -2910,7 +3089,13 @@ async function closeAllSessions(entry: {
   client: XlsxSidecarClient
   sessions: Map<string, SessionInfo>
 }): Promise<void> {
-  const sessionIds = [...entry.sessions.keys()]
+  const sessions = [...entry.sessions.entries()]
   entry.sessions.clear()
-  await Promise.allSettled(sessionIds.map((sessionId) => entry.client.close(sessionId)))
+  await Promise.allSettled(
+    sessions.map(async ([sessionId, session]) => {
+      // Close before removing the snapshot the sidecar session has open
+      await entry.client.close(sessionId).catch(() => undefined)
+      await rm(session.snapshotPath, { force: true })
+    }),
+  )
 }

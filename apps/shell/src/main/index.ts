@@ -21,7 +21,7 @@ import {
   shell,
   webContents,
 } from 'electron'
-import type { MenuItemConstructorOptions, NativeImage } from 'electron'
+import type { MenuItemConstructorOptions, NativeImage, WebContents } from 'electron'
 import menuDocxIcon1x from './assets/menu-docx.png?asset'
 import menuDocxIcon2x from './assets/menu-docx@2x.png?asset'
 import menuXlsxIcon1x from './assets/menu-xlsx.png?asset'
@@ -1532,7 +1532,7 @@ function createShellWindow(): void {
   shellWindow = win
   // dragging the window by the tab strip's blank (draggable) area produces no
   // DOM event anywhere — will-move is the only signal to dismiss popovers
-  win.on('will-move', broadcastChromePressed)
+  win.on('will-move', () => broadcastChromePressed())
 
   const manager = new TabManager(
     win,
@@ -2241,13 +2241,20 @@ const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
 }
 
 // tab views see neither DOM events nor a focus change when the user clicks the
-// shell chrome — relay the press so open popovers in documents can dismiss
-function broadcastChromePressed(): void {
-  for (const wc of webContents.getAllWebContents()) wc.send('app:chrome-pressed')
+// shell chrome — relay the press so open popovers in documents can dismiss.
+// The pressed document must be excluded: it already dismissed (or is opening)
+// its own popovers via its local pointerdown listeners, and the async IPC
+// round-trip would otherwise close a popover that very press just opened
+// (home row menus died this way: pointerdown → broadcast → menu unmounts
+// before the click event ever reached the menu item).
+function broadcastChromePressed(exclude?: WebContents): void {
+  for (const wc of webContents.getAllWebContents()) {
+    if (wc !== exclude) wc.send('app:chrome-pressed')
+  }
 }
 
 function registerTabsIpc(): void {
-  ipcMain.on(TABS_CHANNELS.chromePressed, broadcastChromePressed)
+  ipcMain.on(TABS_CHANNELS.chromePressed, (event) => broadcastChromePressed(event.sender))
   ipcMain.handle(TABS_CHANNELS.list, () => tabManager?.list() ?? [])
   ipcMain.handle(TABS_CHANNELS.activate, (_event, id: string) => tabManager?.activateTab(id))
   ipcMain.handle(TABS_CHANNELS.close, (_event, id: string) => tabManager?.closeTab(id))

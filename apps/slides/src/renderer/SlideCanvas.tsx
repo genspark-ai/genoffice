@@ -456,18 +456,20 @@ export function SlideCanvas({
     return () => window.clearTimeout(t)
   }, [zoom, settledZoom])
 
-  // Bundled @font-face fonts (Carlito) may finish loading after the first draw; canvas
-  // text drawn with a fallback face must be redrawn once the real font is available.
+  // Bundled @font-face fonts (Carlito) and Office-private FontFaces (doc-fonts.ts) may finish
+  // loading after the first draw; canvas text drawn with a fallback face must be redrawn once
+  // the real font is available. 'loadingdone' covers faces added at any later point.
   useEffect(() => {
     let live = true
-    document.fonts?.ready
-      ?.then(() => {
-        if (!live) return
-        for (const l of stageRef.current?.getLayers() ?? []) l.batchDraw()
-      })
-      .catch(() => {})
+    const redraw = () => {
+      if (!live) return
+      for (const l of stageRef.current?.getLayers() ?? []) l.batchDraw()
+    }
+    document.fonts?.ready?.then(redraw).catch(() => {})
+    document.fonts?.addEventListener?.('loadingdone', redraw)
     return () => {
       live = false
+      document.fonts?.removeEventListener?.('loadingdone', redraw)
     }
   }, [])
 

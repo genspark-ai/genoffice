@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { localizeSaveError } from '../src/renderer/save-actions'
+import { localizeSaveError, stripIpcErrorWrapper } from '../src/renderer/save-actions'
 
 describe('localizeSaveError', () => {
   it('maps user-reachable gateway errors to localized messages', () => {
@@ -31,5 +31,29 @@ describe('localizeSaveError', () => {
   it('passes unknown messages through as null', () => {
     expect(localizeSaveError('Relationship rId9 not found.')).toBeNull()
     expect(localizeSaveError('')).toBeNull()
+  })
+
+  it('passes the pre-save disk-changed error through: main already localized it, and its Save As advice must survive', () => {
+    expect(
+      localizeSaveError('The workbook changed on disk after it was opened — use Save As instead.'),
+    ).toBeNull()
+    expect(localizeSaveError('工作簿在打开后被磁盘上的改动覆盖——请改用另存为。')).toBeNull()
+  })
+})
+
+describe('stripIpcErrorWrapper', () => {
+  it('unwraps Electron remote-method errors', () => {
+    expect(
+      stripIpcErrorWrapper(
+        "Error invoking remote method 'workbook:save': Error: 工作簿在打开后被磁盘上的改动覆盖——请改用另存为。",
+      ),
+    ).toBe('工作簿在打开后被磁盘上的改动覆盖——请改用另存为。')
+    expect(stripIpcErrorWrapper("Error invoking remote method 'workbook:save': boom")).toBe('boom')
+  })
+
+  it('leaves plain messages alone', () => {
+    expect(stripIpcErrorWrapper('The workbook changed on disk while saving — aborted.')).toBe(
+      'The workbook changed on disk while saving — aborted.',
+    )
   })
 })

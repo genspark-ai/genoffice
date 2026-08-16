@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
-    "./screentip.css": "./src/screentip.css"
+    "./screentip.css": "./src/screentip.css",
+    "./color-picker.css": "./src/color-picker.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -104,6 +104,19 @@ export interface NoteReplyTarget {
   contents: string
 }
 
+/** Rewrite the /Contents of a note (Text) annotation saved in the file, in place —
+    the object keeps its number so saved replies' /IRT chains stay intact (unlike
+    delete + re-add). Identity matches like NoteReplyTarget: rect + current contents,
+    with the object number as a tie-break hint. */
+export interface NoteEditInput {
+  pageIndex: number
+  objNum: number
+  rect: [number, number, number, number]
+  /** /Contents currently in the file (identity match) */
+  oldContents: string
+  contents: string
+}
+
 /** Drawing annotations (all coords in PDF user space, y up).
     One union member per kind; a union-literal kind would break TS narrowing. */
 interface DrawBase {
@@ -413,6 +426,9 @@ export interface SavePdfRequest {
   /** Saved markup annotations to remove (applied before every other stage) */
   annotDeletes?: AnnotDeleteInput[]
   drawings: DrawingInput[]
+  /** In-place content edits of saved note comments. Applied after `drawings`, so
+      replies in the same request still match their /IRT parent by its old contents. */
+  noteEdits?: NoteEditInput[]
   formValues: FormValueInput[]
   stamps: StampInput[]
   /** Applied to the source bytes before all annotation work — these rewrite page content streams */
@@ -680,6 +696,9 @@ export interface PdfApi {
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /** press on the shell chrome (tab strip is a sibling WebContentsView whose
+   *  clicks produce no DOM event here) — dismiss open popovers */
+  onChromePressed(handler: () => void): () => void
   getAiSettings(): Promise<AiSettings>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>

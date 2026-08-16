@@ -37,6 +37,7 @@ import { MasterView } from './MasterView'
 import { TextEditOverlay, firstFontFamily, liveAlign, liveBulletChar } from './TextEditOverlay'
 import { CropOverlay } from './CropOverlay'
 import { createImageLoader } from './image-loader'
+import { syncPrivateFonts } from './doc-fonts'
 import { InkOverlay } from './InkOverlay'
 import { inkNodesOf, type InkPenSettings, type InkStroke, type InkTool } from './ink'
 import type { SlideThemePreset } from './themes'
@@ -51,6 +52,7 @@ import { FindReplaceDialog } from './components/FindReplaceDialog'
 import { formatClock, type CustomShow } from './slideshow-utils'
 import { ContextMenu } from './components/ContextMenu'
 import { PasteOptionsFloater } from './components/PasteOptionsFloater'
+import { FormatBackgroundPane, type BgPaneOp } from './components/FormatBackgroundPane'
 import { FormatPane } from './components/FormatPane'
 import { CommentsPane } from './components/CommentsPane'
 import { AnimationPane } from './components/AnimationPane'
@@ -247,6 +249,10 @@ function collectAligns(node: RenderNode, out: Set<ParaAlign>) {
 export function App() {
   const { lang } = useI18n()
   const [slides, setSlides] = useState<RenderSlide[]>([])
+  // Layouts may reference Office-private fonts (resolved in main); register them as FontFaces
+  useEffect(() => {
+    if (slides.length) void syncPrivateFonts()
+  }, [slides])
   const [path, setPath] = useState<string | null>(null)
   /** AiPanel reset key: incremented only on applyOpen (open/new file), not on draft path updates */
   const [aiPanelKey, setAiPanelKey] = useState(0)
@@ -327,6 +333,7 @@ export function App() {
   }, [autoSave])
   const [showAi, setShowAi] = useState(() => localStorage.getItem('ai-slides-show-ai') !== '0')
   const [showFormat, setShowFormat] = useState(false)
+  const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
   const [aiPreset, setAiPreset] = useState<{
     text: string
@@ -369,6 +376,11 @@ export function App() {
   const [stageViewportSize, setStageViewportSize] = useState({ w: 0, h: 0 })
   // ── View tab: view mode + display toggles ─────────────────────────────
   const [viewMode, setViewMode] = useState<SlidesViewMode>('normal')
+  // Follow slide changes made outside the list (arrow keys, canvas paging); viewMode/showThumbs
+  // re-run it because the list remounts at scroll 0 when the normal view returns
+  useEffect(() => {
+    thumbsListRef.current?.querySelector('.thumb.active')?.scrollIntoView({ block: 'nearest' })
+  }, [current, showThumbs, viewMode])
   const [masterItems, setMasterItems] = useState<MasterPartItem[] | null>(null)
   // ── Slide show: when non-null, covers the whole window (startAt is the start page index;
   //    customOrder = custom show playback sequence; rehearse = rehearsal timing mode) ────────
@@ -1067,17 +1079,21 @@ export function App() {
   }, [])
   const insertImage = useCallback(() => insertActions.insertImage(ctxRef.current), [])
 
-  const onBackground = useCallback(
-    (color: string, allSlides: boolean) =>
-      styleActions.onBackground(ctxRef.current, color, allSlides),
-    [],
-  )
+  const onBackground = useCallback((op: BgPaneOp, allSlides?: boolean) => {
+    const cur = ctxRef.current.current
+    return styleActions.onBackground(ctxRef.current, {
+      ...op,
+      slideIndex: allSlides ? -1 : cur,
+      // Mode change / apply-to-all reuses the current slide's background image
+      ...(op.kind === 'image' && op.pick === false ? { sourceSlideIndex: cur } : {}),
+    })
+  }, [])
   const applyThemePreset = useCallback(
     (preset: SlideThemePreset) => styleActions.applyThemePreset(ctxRef.current, preset),
     [],
   )
   const onStroke = useCallback(
-    (sourceId: string, stroke: { color: string; widthPt: number } | null) =>
+    (sourceId: string, stroke: { color: string; widthPt: number; dash?: string } | null) =>
       styleActions.onStroke(ctxRef.current, sourceId, stroke),
     [],
   )
@@ -1356,10 +1372,19 @@ export function App() {
     setShowAnimPane((v) => {
       if (!v) {
         setShowFormat(false)
+        setShowBgFormat(false)
         setShowComments(false)
       }
       return !v
     })
+  }, [])
+
+  /** Open the format-background pane (Design tab button / canvas context menu) */
+  const openBgFormat = useCallback(() => {
+    setShowBgFormat(true)
+    setShowFormat(false)
+    setShowAnimPane(false)
+    setShowComments(false)
   }, [])
 
   // ── Slide show tab (show-actions.ts): start show / presenter view / hide slide ──
@@ -1512,6 +1537,7 @@ export function App() {
   const openComments = useCallback((focus: boolean) => {
     setShowComments(true)
     setShowFormat(false)
+    setShowBgFormat(false)
     setShowAnimPane(false)
     if (focus) setCommentsFocusNonce((n) => n + 1)
   }, [])
@@ -2138,14 +2164,16 @@ export function App() {
     if (selectedNode) {
       return contextElementTypeForNode(selectedNode)
     }
-    // Multi-select of shapes/pictures/groups keeps the picture-tools tab (as 'shape':
-    // outline applies to the whole selection, single-picture tools like crop stay disabled)
+    // Multi-select: all-shape selections get the shape-tools tab (styles/fill apply to
+    // each); selections spanning pictures/groups keep picture-tools as 'mixed', where
+    // outline applies to the whole selection and picture-only tools stay disabled
     if (selectedIds.length >= 2) {
       const nodes = selectedIds.map((id) => findNodeCtx(id)?.node)
+      if (nodes.every((n) => n?.type === 'shape')) return 'shape'
       if (
         nodes.every((n) => n && (n.type === 'shape' || n.type === 'picture' || n.type === 'group'))
       )
-        return 'shape'
+        return 'mixed'
     }
     return null
   }, [selectedNode, selectedIds, findNodeCtx])
@@ -2407,6 +2435,7 @@ export function App() {
     undo,
     redo,
     onTransform,
+    openBgFormat,
   }
 
   // Context menu items (context-menu-items.ts); the deps list covers all state the builder reads
@@ -2475,7 +2504,7 @@ export function App() {
         onInsert={(kind) => void insertElement(kind)}
         onPickShape={pickShape}
         onInsertImage={() => void insertImage()}
-        onBackground={(color, all) => void onBackground(color, all)}
+        onFormatBackground={openBgFormat}
         onApplyTheme={(preset) => void applyThemePreset(preset)}
         onAddSlide={() => void addSlide()}
         onAddSection={() => void addSectionAt(current)}
@@ -2485,7 +2514,10 @@ export function App() {
         formatOpen={showFormat}
         onToggleFormat={() =>
           setShowFormat((v) => {
-            if (!v) setShowAnimPane(false)
+            if (!v) {
+              setShowAnimPane(false)
+              setShowBgFormat(false)
+            }
             return !v
           })
         }
@@ -2602,7 +2634,6 @@ export function App() {
         onInsertZoom={(index) => void insertZoom(index)}
         slideCount={slides.length}
         currentSlide={current}
-        currentBgColor={slide?.background.kind === 'solid' ? slide.background.color : undefined}
         onOpenHeaderFooter={() => void openHeaderFooter()}
         onOpenEquation={() => setEqDialogOpen(true)}
         onInsertMedia={(kind) => void insertMediaFile(kind)}
@@ -2638,6 +2669,67 @@ export function App() {
               }
             }
           }
+        }}
+        onShapeStyle={(s) => {
+          // fill + outline together, applied to every selected shape (sequentially: both
+          // edits rewrite the same slide XML in the main process); a selected group
+          // pierces one level down to its shape members (PowerPoint semantics)
+          void (async () => {
+            const applyTo = async (shape: ShapeRenderNode, groupId?: string) => {
+              const st = shape.stroke
+              const stroke = { color: s.stroke, widthPt: st?.widthPt ?? 1, dash: s.dash ?? 'solid' }
+              if (groupId) {
+                const r1 = await window.slidesApi.editFill({
+                  slideIndex: current,
+                  sourceId: shape.sourceId,
+                  fill: s.fill,
+                  groupId,
+                })
+                if (r1) applySlide(current, r1)
+                const r2 = await window.slidesApi.editStroke({
+                  slideIndex: current,
+                  sourceId: shape.sourceId,
+                  stroke,
+                  groupId,
+                })
+                if (r2) applySlide(current, r2)
+              } else {
+                await onFill(shape.sourceId, s.fill)
+                await onStroke(shape.sourceId, stroke)
+              }
+            }
+            for (const id of selectedIds) {
+              const n = findNodeCtx(id)?.node
+              if (n?.type === 'shape') {
+                await applyTo(n as ShapeRenderNode)
+              } else if (n?.type === 'group') {
+                for (const c of (n as GroupRenderNode).children) {
+                  if (c.type === 'shape') await applyTo(c as ShapeRenderNode, n.sourceId)
+                }
+              }
+            }
+          })()
+        }}
+        onShapeFill={(fill) => {
+          void (async () => {
+            for (const id of selectedIds) {
+              const n = findNodeCtx(id)?.node
+              if (n?.type === 'shape') {
+                await onFill(id, fill)
+              } else if (n?.type === 'group') {
+                for (const c of (n as GroupRenderNode).children) {
+                  if (c.type !== 'shape') continue
+                  const r = await window.slidesApi.editFill({
+                    slideIndex: current,
+                    sourceId: c.sourceId,
+                    fill,
+                    groupId: n.sourceId,
+                  })
+                  if (r) applySlide(current, r)
+                }
+              }
+            }
+          })()
         }}
         onPictureCrop={startCrop}
         cropActive={cropTarget != null}
@@ -3368,7 +3460,14 @@ export function App() {
                     </div>
                   )}
                 </div>
-                {showFormat ? (
+                {showBgFormat ? (
+                  <FormatBackgroundPane
+                    key={current}
+                    slide={slide}
+                    onApply={(op, all) => void onBackground(op, all)}
+                    onCollapse={() => setShowBgFormat(false)}
+                  />
+                ) : showFormat ? (
                   <FormatPane
                     node={selectedNode}
                     onTransform={onTransform}

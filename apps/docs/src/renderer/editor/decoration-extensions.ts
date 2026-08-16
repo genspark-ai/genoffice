@@ -14,6 +14,7 @@ import { type TabStop } from '@genoffice/docx-engine'
 
 import { SearchHighlight } from './extensions'
 import { revisionDisplayState } from './marks'
+import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
 
 export const searchPluginKey = new PluginKey<DecorationSet>('docSearch')
 
@@ -501,9 +502,52 @@ export const DropCapExtension = Extension.create({
   },
 })
 
+// ---- adjacent-paragraph border merging (Word border groups) ----
+
+const paraBorderMergePluginKey = new PluginKey<DecorationSet>('paraBorderMerge')
+
+/**
+ * Word border groups (ECMA-376 §17.3.1.24): adjacent top-level paragraphs with
+ * identical borders/shading draw top/bottom lines only at the group edges.
+ * Display-only classes; the borders attrs still serialize unchanged on save.
+ */
+export const ParaBorderMergeExtension = Extension.create({
+  name: 'paraBorderMerge',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: paraBorderMergePluginKey,
+        props: {
+          decorations(state) {
+            const items: ParaBorderAttrs[] = []
+            const spans: Array<{ from: number; to: number }> = []
+            state.doc.forEach((node, offset) => {
+              // non-paragraph blocks (tables...) enter as border-less entries: they break adjacency
+              items.push(node.isTextblock ? (node.attrs as ParaBorderAttrs) : {})
+              spans.push({ from: offset, to: offset + node.nodeSize })
+            })
+            const decos: Decoration[] = []
+            borderMergeFlags(items).forEach((f, i) => {
+              if (!f.suppressTop && !f.suppressBottom) return
+              const cls = [
+                f.suppressTop ? 'pbdr-suppress-top' : '',
+                f.suppressBottom ? 'pbdr-suppress-bottom' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')
+              decos.push(Decoration.node(spans[i].from, spans[i].to, { class: cls }))
+            })
+            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+          },
+        },
+      }),
+    ]
+  },
+})
+
 // ---- SDT (structured document tag) rendering extension ----
 
-const sdtPluginKey = new PluginKey<DecorationSet>('sdt')
+const sdtPluginKey = new PluginKey<boolean>('sdt')
 
 export const SdtExtension = Extension.create({
   name: 'sdt',
@@ -511,27 +555,85 @@ export const SdtExtension = Extension.create({
     return [
       new Plugin({
         key: sdtPluginKey,
+        // plugin state = "editor focused"; decorations() can't reach the view,
+        // and focus changes don't dispatch transactions on their own
+        state: {
+          init: () => false,
+          apply: (tr, focused) => (tr.getMeta(sdtPluginKey) as boolean | undefined) ?? focused,
+        },
+        // after a ribbon click the editor's own blur already fired (with a
+        // relatedTarget), so a later alt-tab only blurs the ribbon control;
+        // the window blur is the reliable "chrome must disappear" signal
+        view: (editorView) => {
+          const onWindowBlur = () => {
+            if (sdtPluginKey.getState(editorView.state)) {
+              editorView.dispatch(editorView.state.tr.setMeta(sdtPluginKey, false))
+            }
+          }
+          window.addEventListener('blur', onWindowBlur)
+          return { destroy: () => window.removeEventListener('blur', onWindowBlur) }
+        },
         props: {
+          handleDOMEvents: {
+            focus: (view) => {
+              view.dispatch(view.state.tr.setMeta(sdtPluginKey, true))
+              return false
+            },
+            blur: (view, event) => {
+              // Word keeps control chrome while formatting from the toolbar:
+              // only clear when focus leaves the document (relatedTarget null —
+              // window switch / screenshot), not on ribbon clicks
+              if ((event as FocusEvent).relatedTarget) return false
+              view.dispatch(view.state.tr.setMeta(sdtPluginKey, false))
+              return false
+            },
+          },
           decorations(state) {
-            const decos: Decoration[] = []
+            // Word shows content-control chrome only while the editor has focus
+            // and the cursor is inside the control; a static document view
+            // (export, screenshot, unfocused window) renders the content alone.
+            // "Inside" means fully contained — a doc-wide selection (initial
+            // AllSelection, ctrl-A) must not light up every control.
+            if (!sdtPluginKey.getState(state)) return DecorationSet.empty
+            const { from, to } = state.selection
+            // A multi-paragraph control (blocks sharing sdtShell.group) is one
+            // control: the caret anywhere inside lights up every member block.
+            type Entry = { offset: number; end: number; alias: string; group?: number }
+            const entries: Entry[] = []
             state.doc.forEach((node, offset) => {
               const raw = node.attrs?.sdtShell as string | null
               if (!raw) return
               let alias = ''
+              let group: number | undefined
               try {
                 const parsed = JSON.parse(raw)
                 alias = parsed?.alias || parsed?.tag || t('editorContentControl')
+                if (typeof parsed?.group === 'number') group = parsed.group
               } catch {
                 /* ignore */
               }
-              decos.push(
-                Decoration.node(offset, offset + node.nodeSize, {
-                  'data-sdt-alias': alias,
-                  class: 'has-sdt',
-                }),
-              )
+              entries.push({ offset, end: offset + node.nodeSize, alias, group })
             })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+            const rangeOf = (e: Entry): [number, number] => {
+              if (e.group === undefined) return [e.offset, e.end]
+              const members = entries.filter((m) => m.group === e.group)
+              return [members[0].offset, members[members.length - 1].end]
+            }
+            const hit = entries.find((e) => {
+              const [start, end] = rangeOf(e)
+              return from >= start && to <= end
+            })
+            if (!hit) return DecorationSet.empty
+            const members =
+              hit.group === undefined ? [hit] : entries.filter((m) => m.group === hit.group)
+            const decos = members.map((m, i) =>
+              Decoration.node(m.offset, m.end, {
+                // one control-wide box: the alias tab renders once, on the first member
+                ...(i === 0 ? { 'data-sdt-alias': m.alias } : {}),
+                class: i === 0 ? 'has-sdt' : 'has-sdt has-sdt-follow',
+              }),
+            )
+            return DecorationSet.create(state.doc, decos)
           },
         },
       }),

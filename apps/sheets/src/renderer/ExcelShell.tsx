@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
-import { SHAPE_GALLERY_GROUPS, ShapePreview } from '@genoffice/ui'
+import { SHAPE_GALLERY_GROUPS, ShapePreview, useDismissablePopover } from '@genoffice/ui'
 
 import {
   CaretIcon,
@@ -11,8 +11,11 @@ import {
   UndoIcon,
 } from './ribbon-icons'
 
+import { ColorDropdown } from './ColorDropdown'
 import { FormatCellsDialog } from './FormatCellsDialog'
+import { AllowEditRangesDialog } from './AllowEditRangesDialog'
 import { GoToDialog } from './GoToDialog'
+import { COLOR_SCHEMES, FONT_SCHEMES, THEME_PRESETS } from './themes'
 import { useI18n, type StringKey } from './i18n/locale'
 import { NameManagerDialog, type DefinedNameAction, type DefinedNameRow } from './NameManagerDialog'
 import { categoryOptionForPattern, NUMBER_FORMAT_CATEGORIES } from './number-format'
@@ -29,6 +32,8 @@ import {
   type PivotField,
   type OoXmlPivotConfig,
 } from './PivotDialog'
+import type { GoalSeekResult } from './goal-seek'
+import { GoalSeekDialog } from './GoalSeekDialog'
 import { InsertFunctionDialog } from './InsertFunctionDialog'
 import { SubtotalDialog, type SubtotalConfig } from './SubtotalDialog'
 import { ConsolidateDialog } from './ConsolidateDialog'
@@ -100,6 +105,21 @@ const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /// Excel's grow/shrink font walks its size ladder, not ±1.
 const FONT_SIZE_LADDER = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 26, 28, 36, 48, 72]
 
+/// Review > Translate targets, shown in their native names (never localized).
+const TRANSLATE_LANGUAGES = [
+  'English',
+  '简体中文',
+  '繁體中文',
+  '日本語',
+  '한국어',
+  'Español',
+  'Français',
+  'Deutsch',
+  'Português',
+  'Русский',
+  'العربية',
+] as const
+
 function stepFontSize(current: number, direction: 1 | -1): number {
   if (direction === 1) {
     return FONT_SIZE_LADDER.find((size) => size > current) ?? FONT_SIZE_LADDER.at(-1) ?? current
@@ -169,10 +189,22 @@ interface ExcelShellProps {
   readonly onGetSortColumns: () => { label: string; colIndex: number }[]
   /// Effective protection of the active sheet (null = unknown / demo).
   readonly onGetSheetProtection: () => boolean | null
+  /// Effective workbook structure lock (null = no file open).
+  readonly onGetWorkbookProtection: () => boolean | null
+  readonly formulaBarVisible: boolean
+  /// Allow-edit ranges of the active sheet, read when the dialog opens.
+  readonly onGetProtectedRanges: () => {
+    ranges: readonly { name: string; sqref: string; hasPassword: boolean }[]
+    error: string | null
+  }
+  readonly onApplyProtectedRanges: (
+    ranges: readonly { name: string; sqref: string }[],
+  ) => string | null
   /// Name Manager data + actions (actions return an error message or null).
   readonly onGetDefinedNames: () => {
     names: DefinedNameRow[]
     sheets: { id: string; name: string }[]
+    activeSheetId: string | null
   }
   readonly onDefinedNameAction: (action: DefinedNameAction) => string | null
   /// Field choices for the Pivot dialog, read from the selection's header row.
@@ -204,6 +236,10 @@ interface ExcelShellProps {
   /// Session page-layout settings of the active sheet, echoed by the Page
   /// Layout tab's controls (untouched fields show the app default).
   readonly pageLayout: PageLayoutEcho
+  /// Manual-recalc mode echo for the Calculation Options menu.
+  readonly calcManual: boolean
+  /// Goal Seek solve; rejects with a user-facing Error message.
+  readonly onGoalSeek: (setCell: string, toValue: number, byCell: string) => Promise<GoalSeekResult>
 }
 
 export interface PageLayoutEcho {
@@ -216,10 +252,13 @@ export interface PageLayoutEcho {
   readonly printGridlines?: boolean | undefined
   readonly printHeadings?: boolean | undefined
   readonly showGridlines: boolean
+  readonly showHeadings: boolean
   readonly printArea?: string | null | undefined
   readonly printTitles?: string | null | undefined
   readonly header?: HeaderFooterParts | null | undefined
   readonly footer?: HeaderFooterParts | null | undefined
+  /// Page Break Preview overlay on for the active sheet (View tab echo).
+  readonly pageBreakPreview?: boolean | undefined
 }
 
 export function ExcelShell({
@@ -238,6 +277,10 @@ export function ExcelShell({
   onRemoveAttachment,
   onGetSortColumns,
   onGetSheetProtection,
+  onGetWorkbookProtection,
+  formulaBarVisible,
+  onGetProtectedRanges,
+  onApplyProtectedRanges,
   onGetDefinedNames,
   onDefinedNameAction,
   onGetPivotFields,
@@ -274,6 +317,8 @@ export function ExcelShell({
   onAutoSaveChange,
   selectedChart,
   pageLayout,
+  calcManual,
+  onGoalSeek,
 }: ExcelShellProps): React.JSX.Element {
   const { t } = useI18n()
   const [activeTab, setActiveTab] = useState<RibbonTab>('Home')
@@ -289,9 +334,11 @@ export function ExcelShell({
   /** null = closed; string = open on that catalog category ('All' for the plain button) */
   const [insertFunctionCat, setInsertFunctionCat] = useState<string | null>(null)
   const [showSubtotalDialog, setShowSubtotalDialog] = useState(false)
+  const [showGoalSeek, setShowGoalSeek] = useState(false)
   const [showConsolidateDialog, setShowConsolidateDialog] = useState(false)
   const [showGoTo, setShowGoTo] = useState(false)
   const [showHeaderFooter, setShowHeaderFooter] = useState(false)
+  const [showAllowEditRanges, setShowAllowEditRanges] = useState(false)
   /// Non-null while the Chart Design → Add Chart Element text prompt is open.
   const [chartTextTarget, setChartTextTarget] = useState<ChartTextTarget | null>(null)
   useEffect(() => {
@@ -392,8 +439,21 @@ export function ExcelShell({
           selectionFormat={selectionFormat}
           sheetHasContent={sheetHasContent}
           sheetProtected={onGetSheetProtection()}
+          workbookProtected={onGetWorkbookProtection()}
+          formulaBarVisible={formulaBarVisible}
           pageLayout={pageLayout}
           selectedChart={selectedChart}
+          onListNames={() => {
+            // Names scoped to another sheet resolve to #NAME? here; only
+            // workbook-scoped and active-sheet names are usable in a formula.
+            const data = onGetDefinedNames()
+            return data.names
+              .filter(
+                (entry) => entry.scopeSheetId === null || entry.scopeSheetId === data.activeSheetId,
+              )
+              .map((entry) => entry.name)
+          }}
+          calcManual={calcManual}
           onRefreshPivot={onRefreshPivot}
           onIsSelectionInPivot={onIsSelectionInPivot}
           onCommand={(command) => {
@@ -409,10 +469,12 @@ export function ExcelShell({
             else if (command === 'insert-function-open') setInsertFunctionCat('All')
             else if (command.startsWith('insert-function-open:'))
               setInsertFunctionCat(command.slice('insert-function-open:'.length))
+            else if (command === 'goal-seek-open') setShowGoalSeek(true)
             else if (command === 'subtotal-open') setShowSubtotalDialog(true)
             else if (command === 'consolidate-open') setShowConsolidateDialog(true)
             else if (command === 'goto-open') setShowGoTo(true)
             else if (command === 'header-footer-open') setShowHeaderFooter(true)
+            else if (command === 'allow-edit-ranges-open') setShowAllowEditRanges(true)
             else if (command === 'ai-open-panel') setIsCopilotOpen(true)
             else if (command === 'ai-toggle-panel') setIsCopilotOpen((v) => !v)
             else if (command === 'chart-element-title') setChartTextTarget('title')
@@ -581,6 +643,13 @@ export function ExcelShell({
           onClose={() => setPivotEditSeed(null)}
         />
       )}
+      {showGoalSeek && (
+        <GoalSeekDialog
+          initialSetCell={onGetActiveCell()}
+          onSolve={onGoalSeek}
+          onClose={() => setShowGoalSeek(false)}
+        />
+      )}
       {insertFunctionCat !== null && (
         <InsertFunctionDialog
           targetLabel={onGetActiveCell()}
@@ -611,6 +680,18 @@ export function ExcelShell({
           onClose={() => setShowGoTo(false)}
         />
       )}
+      {showAllowEditRanges &&
+        (() => {
+          const snapshot = onGetProtectedRanges()
+          return (
+            <AllowEditRangesDialog
+              ranges={snapshot.error === null ? snapshot.ranges : []}
+              defaultRef={activeCellA1}
+              onApply={(ranges) => snapshot.error ?? onApplyProtectedRanges(ranges)}
+              onClose={() => setShowAllowEditRanges(false)}
+            />
+          )
+        })()}
       {showHeaderFooter && (
         <HeaderFooterDialog
           initialHeader={pageLayout.header ?? null}
@@ -993,12 +1074,16 @@ function Ribbon({
   selectionFormat,
   sheetHasContent,
   sheetProtected,
+  workbookProtected,
+  formulaBarVisible,
   pageLayout,
   selectedChart,
   onCommand,
   onAiRun,
   aiOpen,
   onAiToggle,
+  onListNames,
+  calcManual,
   onRefreshPivot,
   onIsSelectionInPivot,
 }: {
@@ -1006,9 +1091,16 @@ function Ribbon({
   readonly selectionFormat: SelectionFormat | null
   readonly sheetHasContent: boolean
   readonly sheetProtected: boolean | null
+  readonly workbookProtected: boolean | null
+  /// View > Show echo for the formula bar toggle (app-level, not per sheet).
+  readonly formulaBarVisible: boolean
   readonly pageLayout: PageLayoutEcho
   readonly selectedChart: SelectedChartRibbon | null
   readonly onCommand: (command: string) => void
+  /** Defined names for the Use in Formula menu. */
+  readonly onListNames: () => readonly string[]
+  /** Manual-recalc mode echo for the Calculation Options menu. */
+  readonly calcManual: boolean
   /** Open the AI panel and immediately send the given prompt */
   readonly onAiRun: (prompt: string) => void
   /** AI side panel visibility (docs/slides parity: the entry button toggles it) */
@@ -1152,12 +1244,28 @@ function Ribbon({
           {canEditChart ? (
             largeMenu(t('appAddChartElement'), '📊', t('appAddChartElementTitle'), elementOptions)
           ) : (
-            <RibbonReserved large menu label={t('appAddChartElement')} symbol="📊" />
+            <RibbonButton
+              large
+              menu
+              label={t('appAddChartElement')}
+              detail={t('appSelectEditableChart')}
+              symbol="📊"
+              disabled
+              onClick={() => {}}
+            />
           )}
           {canEditChart ? (
             largeMenu(t('appQuickLayout'), '▦', t('appQuickLayoutTitle'), layoutOptions)
           ) : (
-            <RibbonReserved large menu label={t('appQuickLayout')} symbol="▦" />
+            <RibbonButton
+              large
+              menu
+              label={t('appQuickLayout')}
+              detail={t('appSelectEditableChart')}
+              symbol="▦"
+              disabled
+              onClick={() => {}}
+            />
           )}
           {canRecolor ? (
             largeMenu(
@@ -1274,9 +1382,6 @@ function Ribbon({
             onClick={() => onCommand('format-as-table')}
           />
         </RibbonGroup>
-        <RibbonGroup label={t('appGroupForms')}>
-          <RibbonReserved large menu label={t('appGroupForms')} symbol="🗒" />
-        </RibbonGroup>
         <RibbonGroup label={t('appGroupIllustrations')}>
           <RibbonButton
             large
@@ -1303,17 +1408,6 @@ function Ribbon({
               <ToolSymbol symbol="✧" />
               {t('appIcons')}
             </button>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
-              <ToolSymbol symbol="⬡" />
-              {t('app3dModels')}
-              <CaretIcon />
-            </span>
-          </div>
-          <div className="row-stack">
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
-              <ToolSymbol symbol="▤" />
-              SmartArt
-            </span>
             <button
               className="styles-row as-button"
               data-tip={t('appScreenshot')}
@@ -1406,7 +1500,6 @@ function Ribbon({
               <ToolSymbol symbol="𝄜" />
             </button>
           </div>
-          <RibbonReserved large label={t('appMaps')} symbol="🌐" />
           {largeMenu(
             t('appPivotChart'),
             '🗠',
@@ -1538,17 +1631,43 @@ function Ribbon({
     return (
       <div className="ribbon">
         <RibbonGroup label={t('appGroupThemes')}>
-          <RibbonReserved large menu label={t('appGroupThemes')} symbol="🎨" />
+          {largeMenu(
+            t('appGroupThemes'),
+            '🎨',
+            t('appThemesTitle'),
+            THEME_PRESETS.map((preset) => ({
+              value: `page-layout:theme:${preset.id}`,
+              label: preset.name,
+            })),
+          )}
           <div className="row-stack">
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
+            <span className="styles-row" data-tip={t('appThemeColorsTitle')}>
               <ToolSymbol symbol="▤" />
               {t('appColors')}
               <CaretIcon />
+              <MenuSelect
+                cover
+                label={t('appColors')}
+                options={COLOR_SCHEMES.map((scheme) => ({
+                  value: `page-layout:theme-colors:${scheme.id}`,
+                  label: scheme.name,
+                }))}
+                onPick={onCommand}
+              />
             </span>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
+            <span className="styles-row" data-tip={t('appThemeFontsTitle')}>
               <ToolSymbol symbol="A" />
               {t('appFonts')}
               <CaretIcon />
+              <MenuSelect
+                cover
+                label={t('appFonts')}
+                options={FONT_SCHEMES.map((scheme) => ({
+                  value: `page-layout:theme-fonts:${scheme.id}`,
+                  label: scheme.name,
+                }))}
+                onPick={onCommand}
+              />
             </span>
           </div>
         </RibbonGroup>
@@ -1598,8 +1717,11 @@ function Ribbon({
               { value: 'page-layout:print-area:clear', label: t('appClearPrintArea') },
             ],
           )}
-          <RibbonReserved large menu label={t('appBreaks')} symbol="┆" />
-          <RibbonReserved large label={t('appBackground')} symbol="🖼" />
+          {largeMenu(t('appBreaks'), '┆', t('appBreaksTitle'), [
+            { value: 'page-layout:breaks:insert', label: t('appInsertPageBreak') },
+            { value: 'page-layout:breaks:remove', label: t('appRemovePageBreak') },
+            { value: 'page-layout:breaks:reset', label: t('appResetAllPageBreaks') },
+          ])}
           {largeMenu(
             t('appPrintTitlesLabel'),
             '▤',
@@ -1649,10 +1771,14 @@ function Ribbon({
           </div>
           <div className="check-column">
             <span className="check-head">{t('appHeadings')}</span>
-            <span className="check-item reserved-check" data-tip={t('appNotAvailableYet')}>
-              <i className="check-box">✓</i>
+            <button
+              className="check-item"
+              data-tip={t('appHeadings')}
+              onClick={() => onCommand('toggle-headings')}
+            >
+              <i className="check-box">{pageLayout.showHeadings ? '✓' : ''}</i>
               {t('appViewCheck')}
-            </span>
+            </button>
             <button
               className="check-item"
               data-tip={t('appPrintHeadingsTitle')}
@@ -1670,6 +1796,7 @@ function Ribbon({
   }
 
   if (activeTab === 'Formulas') {
+    const definedNames = onListNames()
     // Category buttons all open the same catalog dialog; the per-category
     // menus funnel into Insert Function.
     // Each button opens the catalog filtered to its own category; 'All'
@@ -1742,14 +1869,34 @@ function Ribbon({
               {t('appDefineName')}
               <CaretIcon />
             </button>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
+            <span className="styles-row" data-tip={t('appUseInFormulaTitle')}>
               <ToolSymbol symbol="ƒ" />
               {t('appUseInFormula')}
               <CaretIcon />
+              <MenuSelect
+                cover
+                label={t('appUseInFormula')}
+                options={
+                  definedNames.length > 0
+                    ? definedNames.map((name) => ({ value: `use-in-formula:${name}`, label: name }))
+                    : [{ value: 'name-manager-open', label: t('appNoNamesYet') }]
+                }
+                onPick={onCommand}
+              />
             </span>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
+            <span className="styles-row" data-tip={t('appCreateFromSelectionTitle')}>
               <ToolSymbol symbol="⊞" />
               {t('appCreateFromSelection')}
+              <CaretIcon />
+              <MenuSelect
+                cover
+                label={t('appCreateFromSelection')}
+                options={[
+                  { value: 'create-names:top', label: t('appCreateNamesTopRow') },
+                  { value: 'create-names:left', label: t('appCreateNamesLeftCol') },
+                ]}
+                onPick={onCommand}
+              />
             </span>
           </div>
         </RibbonGroup>
@@ -1787,20 +1934,43 @@ function Ribbon({
             symbol="ƒ"
             onClick={() => onCommand('toggle-show-formulas')}
           />
-          <RibbonReserved large menu label={t('appErrorChecking')} symbol="⚠" />
-          <RibbonReserved large label={t('appWatchWindow')} symbol="👓" />
+          <RibbonButton
+            large
+            label={t('appErrorChecking')}
+            detail={t('appErrorCheckingDetail')}
+            symbol="⚠"
+            onClick={() => onCommand('error-checking')}
+          />
+          <RibbonButton
+            large
+            label={t('appWatchWindow')}
+            detail={t('appWatchWindowDetail')}
+            symbol="👓"
+            onClick={() => onCommand('watch-window')}
+          />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupCalculation')}>
-          <RibbonReserved large menu label={t('appCalculationOptions')} symbol="🧮" />
+          {largeMenu(t('appCalculationOptions'), '🧮', t('appCalculationOptionsTitle'), [
+            { value: 'calc-mode:auto', label: t('appCalcAuto') + (calcManual ? '' : ' ✓') },
+            { value: 'calc-mode:manual', label: t('appCalcManual') + (calcManual ? ' ✓' : '') },
+          ])}
           <div className="row-stack">
-            <span className="styles-row reserved" data-tip={t('appRecalcLiveTitle')}>
+            <button
+              className="styles-row as-button"
+              data-tip={t('appCalculateNowTitle')}
+              onClick={() => onCommand('calculate-now')}
+            >
               <ToolSymbol symbol="⟳" />
               {t('appCalculateNow')}
-            </span>
-            <span className="styles-row reserved" data-tip={t('appRecalcLiveTitle')}>
+            </button>
+            <button
+              className="styles-row as-button"
+              data-tip={t('appCalculateSheetTitle')}
+              onClick={() => onCommand('calculate-sheet')}
+            >
               <ToolSymbol symbol="▦" />
               {t('appCalculateSheet')}
-            </span>
+            </button>
           </div>
         </RibbonGroup>
       </div>
@@ -1830,7 +2000,6 @@ function Ribbon({
           />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupGetData')}>
-          <RibbonReserved large menu label={t('appGroupGetData')} symbol="🛢" />
           <div className="row-stack">
             <button
               className="styles-row as-button"
@@ -1840,11 +2009,14 @@ function Ribbon({
               <ToolSymbol symbol="🗎" />
               {t('appFromTextCsv')}
             </button>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
+            <button
+              className="styles-row as-button"
+              data-tip={t('appRefreshAllTitle')}
+              onClick={() => onCommand('refresh-all')}
+            >
               <ToolSymbol symbol="⟳" />
               {t('appRefreshAll')}
-              <CaretIcon />
-            </span>
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupSortFilter')}>
@@ -1869,10 +2041,14 @@ function Ribbon({
               <ToolSymbol symbol="⊘" />
               {t('appClear')}
             </button>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
+            <button
+              className="styles-row as-button"
+              data-tip={t('appReapplyTitle')}
+              onClick={() => onCommand('filter-reapply')}
+            >
               <ToolSymbol symbol="↻" />
               {t('appReapply')}
-            </span>
+            </button>
             <button
               className="styles-row as-button"
               data-tip={t('appAdvancedFilterTitle')}
@@ -1921,7 +2097,9 @@ function Ribbon({
           />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupForecast')}>
-          <RibbonReserved large menu label={t('appWhatIfAnalysis')} symbol="❔" />
+          {largeMenu(t('appWhatIfAnalysis'), '❔', t('appWhatIfTitle'), [
+            { value: 'goal-seek-open', label: t('appGoalSeek') },
+          ])}
         </RibbonGroup>
         <RibbonGroup label={t('appGroupOutline')}>
           {largeMenu(t('appOutlineGroup'), '⊟', t('appOutlineGroupTitle'), [
@@ -1952,16 +2130,26 @@ function Ribbon({
     return (
       <div className="ribbon">
         <RibbonGroup label={t('appGroupWorkbookViews')}>
-          <div className="ribbon-tool large is-current" data-tip={t('appCurrentViewTitle')}>
-            <span className="tool-icon-row">
-              <ToolSymbol symbol="▦" />
-            </span>
-            <span>
-              <strong>{t('appNormalView')}</strong>
-            </span>
-          </div>
-          <RibbonReserved large label={t('appTabPageLayout')} symbol="🗎" />
-          <RibbonReserved large label={t('appPageBreakPreview')} symbol="┆" />
+          <RibbonButton
+            large
+            label={t('appNormalView')}
+            detail={t('appCurrentViewTitle')}
+            symbol="▦"
+            active={pageLayout.pageBreakPreview !== true}
+            onClick={() => {
+              if (pageLayout.pageBreakPreview === true) onCommand('toggle-page-break-preview')
+            }}
+          />
+          <RibbonButton
+            large
+            label={t('appPageBreakPreview')}
+            detail={t('appPageBreakPreviewTitle')}
+            symbol="┆"
+            active={pageLayout.pageBreakPreview === true}
+            onClick={() => {
+              if (pageLayout.pageBreakPreview !== true) onCommand('toggle-page-break-preview')
+            }}
+          />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupShow')}>
           <div className="check-column">
@@ -1973,14 +2161,22 @@ function Ribbon({
               <i className="check-box">{pageLayout.showGridlines ? '✓' : ''}</i>
               {t('appGridlines')}
             </button>
-            <span className="check-item reserved-check">
-              <i className="check-box">✓</i>
+            <button
+              className="check-item"
+              data-tip={t('appFormulaBar')}
+              onClick={() => onCommand('toggle-formula-bar')}
+            >
+              <i className="check-box">{formulaBarVisible ? '✓' : ''}</i>
               {t('appFormulaBar')}
-            </span>
-            <span className="check-item reserved-check">
-              <i className="check-box">✓</i>
+            </button>
+            <button
+              className="check-item"
+              data-tip={t('appHeadings')}
+              onClick={() => onCommand('toggle-headings')}
+            >
+              <i className="check-box">{pageLayout.showHeadings ? '✓' : ''}</i>
               {t('appHeadings')}
-            </span>
+            </button>
           </div>
         </RibbonGroup>
         <RibbonGroup label={t('appZoomLabel')}>
@@ -1999,7 +2195,13 @@ function Ribbon({
             symbol="⊙"
             onClick={() => onCommand('zoom-reset')}
           />
-          <RibbonReserved large label={t('appZoomToSelection')} symbol="⌖" />
+          <RibbonButton
+            large
+            label={t('appZoomToSelection')}
+            detail={t('appZoomToSelectionDetail')}
+            symbol="⌖"
+            onClick={() => onCommand('zoom-to-selection')}
+          />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupWindow')}>
           {largeMenu(t('appFreezePanes'), '❄', t('appFreezeTitle'), [
@@ -2008,23 +2210,6 @@ function Ribbon({
             { value: 'freeze-first-col', label: t('appFreezeFirstCol') },
             { value: 'unfreeze', label: t('appUnfreeze') },
           ])}
-          <div className="row-stack">
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
-              <ToolSymbol symbol="🗔" />
-              {t('appNewWindow')}
-            </span>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
-              <ToolSymbol symbol="▦" />
-              {t('appArrangeAll')}
-            </span>
-            <span className="styles-row reserved" data-tip={t('appNotAvailableYet')}>
-              <ToolSymbol symbol="◫" />
-              {t('appSplit')}
-            </span>
-          </div>
-        </RibbonGroup>
-        <RibbonGroup label={t('appMacros')}>
-          <RibbonReserved large menu label={t('appMacros')} symbol="▶" />
         </RibbonGroup>
       </div>
     )
@@ -2034,8 +2219,6 @@ function Ribbon({
     return (
       <div className="ribbon">
         <RibbonGroup label={t('appGroupProofing')}>
-          <RibbonReserved large label={t('appSpelling')} symbol="abc" />
-          <RibbonReserved large label={t('appThesaurus')} symbol="🕮" />
           <RibbonButton
             large
             label={t('appWorkbookStatsLabel')}
@@ -2044,12 +2227,25 @@ function Ribbon({
             onClick={() => onCommand('workbook-statistics')}
           />
         </RibbonGroup>
-        <RibbonGroup label={t('appGroupAccessibility')}>
-          <RibbonReserved large menu label={t('appCheckAccessibility')} symbol="♿" />
-        </RibbonGroup>
-        <RibbonGroup label={t('appGroupInsights')}>
-          <RibbonReserved large label={t('appSmartLookup')} symbol="💡" />
-          <RibbonReserved large label={t('appTranslate')} symbol="文" />
+        <RibbonGroup label={t('appGroupLanguage')}>
+          <div className="ribbon-tool large" data-tip={t('appTranslateTitle')}>
+            <span className="tool-icon-row">
+              <ToolSymbol symbol="文" />
+              <CaretIcon />
+            </span>
+            <span>
+              <strong>{t('appTranslate')}</strong>
+            </span>
+            <MenuSelect
+              cover
+              label={t('appTranslate')}
+              options={TRANSLATE_LANGUAGES.map((language) => ({
+                value: language,
+                label: language,
+              }))}
+              onPick={(language) => onAiRun(t('appTranslatePrompt', { language }))}
+            />
+          </div>
         </RibbonGroup>
         <RibbonGroup label={t('appGroupComments')}>
           <RibbonButton
@@ -2111,11 +2307,20 @@ function Ribbon({
             symbol={sheetProtected ? '🔓' : '🔒'}
             onClick={() => onCommand('sheet-protect')}
           />
-          <RibbonReserved large label={t('appProtectWorkbook')} symbol="🔐" />
-          <RibbonReserved large label={t('appAllowEditRanges')} symbol="⬚" />
-        </RibbonGroup>
-        <RibbonGroup label={t('appGroupInk')}>
-          <RibbonReserved large menu label={t('appHideInk')} symbol="✒" />
+          <RibbonButton
+            large
+            label={t(workbookProtected ? 'appUnprotectWorkbook' : 'appProtectWorkbook')}
+            detail={t(workbookProtected === null ? 'appOpenFileFirst' : 'appProtectWorkbookTitle')}
+            symbol={workbookProtected ? '🔓' : '🔐'}
+            onClick={() => onCommand('workbook-protect')}
+          />
+          <RibbonButton
+            large
+            label={t('appAllowEditRanges')}
+            detail={t('appAllowEditRangesTitle')}
+            symbol="⬚"
+            onClick={() => onCommand('allow-edit-ranges-open')}
+          />
         </RibbonGroup>
       </div>
     )
@@ -2330,42 +2535,37 @@ function Ribbon({
             >
               <s>S</s>
             </button>
-            <label className="color-tool" data-tip={t('appFontColor')}>
-              <span className="swatch-letter">
-                A<i style={{ background: fontColor }} />
-              </span>
-              <input
-                type="color"
-                aria-label="Font color"
-                value={fontColor}
-                onChange={(event) => {
-                  setFontColor(event.target.value)
-                  onCommand(`font-color:${event.target.value}`)
-                }}
-              />
-            </label>
-            <label className="color-tool" data-tip={t('appFillColor')}>
-              <span className="swatch-letter">
-                <ToolSymbol symbol="◧" />
-                <i style={{ background: fillColor }} />
-              </span>
-              <input
-                type="color"
-                aria-label="Fill color"
-                value={fillColor}
-                onChange={(event) => {
-                  setFillColor(event.target.value)
-                  onCommand(`fill:${event.target.value}`)
-                }}
-              />
-            </label>
-            <button
-              data-tip={t('dlgFcNoFill')}
-              aria-label={t('dlgFcNoFill')}
-              onClick={() => onCommand('fill:none')}
-            >
-              <ToolSymbol symbol="∅" />
-            </button>
+            <ColorDropdown
+              label="Font color"
+              data-tip={t('appFontColor')}
+              display={
+                <span className="swatch-letter">
+                  A<i style={{ background: fontColor }} />
+                </span>
+              }
+              value={fontColor}
+              auto={t('appAutomaticColor')}
+              onPick={(hex) => {
+                setFontColor(hex ?? '#000000')
+                onCommand(hex ? `font-color:${hex}` : 'font-color:auto')
+              }}
+            />
+            <ColorDropdown
+              label="Fill color"
+              data-tip={t('appFillColor')}
+              display={
+                <span className="swatch-letter">
+                  <ToolSymbol symbol="◧" />
+                  <i style={{ background: fillColor }} />
+                </span>
+              }
+              value={fillColor}
+              auto={t('dlgFcNoFill')}
+              onPick={(hex) => {
+                if (hex) setFillColor(hex)
+                onCommand(hex ? `fill:${hex}` : 'fill:none')
+              }}
+            />
             <MenuSelect
               className="select-like compact"
               label="Borders"
@@ -2387,18 +2587,20 @@ function Ribbon({
               ]}
               onPick={(value) => onCommand(`border:${value}:${borderColor}`)}
             />
-            <label className="color-tool" data-tip={t('appBorderColor')}>
-              <span className="swatch-letter">
-                <ToolSymbol symbol="⊡" />
-                <i style={{ background: borderColor }} />
-              </span>
-              <input
-                type="color"
-                aria-label="Border color"
-                value={borderColor}
-                onChange={(event) => setBorderColor(event.target.value)}
-              />
-            </label>
+            <ColorDropdown
+              label="Border color"
+              data-tip={t('appBorderColor')}
+              display={
+                <span className="swatch-letter">
+                  <ToolSymbol symbol="⊡" />
+                  <i style={{ background: borderColor }} />
+                </span>
+              }
+              value={borderColor}
+              onPick={(hex) => {
+                if (hex) setBorderColor(hex)
+              }}
+            />
           </div>
         </div>
       </RibbonGroup>
@@ -2714,6 +2916,21 @@ function Ribbon({
   )
 }
 
+/// Escape-to-close for the ribbon dropdowns; outside-press / blur / shell
+/// chrome-press dismissal lives in the shared useDismissablePopover.
+function useEscapeClose(open: boolean, close: () => void): void {
+  const closeRef = useRef(close)
+  closeRef.current = close
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+}
+
 /// Custom ribbon dropdown replacing the native <select>: macOS pops the native
 /// menu over the control (covering ribbon content), while this panel is
 /// anchored below its trigger — same pattern as the slides ribbon's .rb-drop.
@@ -2743,30 +2960,9 @@ function MenuSelect({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent): void => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    const onBlur = (): void => setOpen(false)
-    // capture phase: the grid canvas stops mousedown propagation, so bubble-phase listeners never fire
-    window.addEventListener('pointerdown', onDown, true)
-    window.addEventListener('keydown', onKey)
-    // app switch (blur) or a press on the shell chrome — the tab strip is a
-    // sibling WebContentsView whose clicks produce no DOM event in this page,
-    // so the shell relays them (standalone dev renderers have no preload)
-    window.addEventListener('blur', onBlur)
-    const offChrome = window.desktopApi?.onChromePressed?.(() => setOpen(false))
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('blur', onBlur)
-      offChrome?.()
-    }
-  }, [open])
+  // outside press / window blur / shell chrome press — the shared hook
+  useDismissablePopover(open, () => setOpen(false), { inside: () => [wrapRef.current] })
+  useEscapeClose(open, () => setOpen(false))
   return (
     <div ref={wrapRef} className={`menu-select${cover ? ' menu-select-cover' : ''}`}>
       <button
@@ -2826,30 +3022,9 @@ function ShapeGallerySelect({
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent): void => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    const onBlur = (): void => setOpen(false)
-    // capture phase: the grid canvas stops mousedown propagation, so bubble-phase listeners never fire
-    window.addEventListener('pointerdown', onDown, true)
-    window.addEventListener('keydown', onKey)
-    // app switch (blur) or a press on the shell chrome — the tab strip is a
-    // sibling WebContentsView whose clicks produce no DOM event in this page,
-    // so the shell relays them (standalone dev renderers have no preload)
-    window.addEventListener('blur', onBlur)
-    const offChrome = window.desktopApi?.onChromePressed?.(() => setOpen(false))
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('blur', onBlur)
-      offChrome?.()
-    }
-  }, [open])
+  // outside press / window blur / shell chrome press — the shared hook
+  useDismissablePopover(open, () => setOpen(false), { inside: () => [wrapRef.current] })
+  useEscapeClose(open, () => setOpen(false))
   return (
     <div ref={wrapRef} className="menu-select menu-select-cover">
       <button
@@ -2924,30 +3099,9 @@ function EditableMenuSelect({
     setDraftState(next)
   }
   const wrapRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (event: MouseEvent): void => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    const onBlur = (): void => setOpen(false)
-    // capture phase: the grid canvas stops mousedown propagation, so bubble-phase listeners never fire
-    window.addEventListener('pointerdown', onDown, true)
-    window.addEventListener('keydown', onKey)
-    // app switch (blur) or a press on the shell chrome — the tab strip is a
-    // sibling WebContentsView whose clicks produce no DOM event in this page,
-    // so the shell relays them (standalone dev renderers have no preload)
-    window.addEventListener('blur', onBlur)
-    const offChrome = window.desktopApi?.onChromePressed?.(() => setOpen(false))
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('blur', onBlur)
-      offChrome?.()
-    }
-  }, [open])
+  // outside press / window blur / shell chrome press — the shared hook
+  useDismissablePopover(open, () => setOpen(false), { inside: () => [wrapRef.current] })
+  useEscapeClose(open, () => setOpen(false))
   const commitDraft = (): void => {
     const text = draftRef.current?.trim()
     if (text && text !== value) commit(text)
@@ -3127,42 +3281,5 @@ function RibbonButton({
         <small>{detail}</small>
       </span>
     </button>
-  )
-}
-
-/// A greyed placeholder item: reserves its ribbon slot, not built yet.
-function RibbonReserved({
-  label,
-  symbol,
-  menu = false,
-  large = false,
-}: {
-  readonly label: string
-  readonly symbol: string
-  readonly menu?: boolean
-  readonly large?: boolean
-}): React.JSX.Element {
-  const { t } = useI18n()
-  return (
-    <div
-      className={`ribbon-tool reserved ${large ? 'large' : ''}`}
-      data-tip={t('appNotAvailableYet')}
-    >
-      {large ? (
-        <span className="tool-icon-row">
-          <ToolSymbol symbol={symbol} />
-          {menu && <CaretIcon />}
-        </span>
-      ) : (
-        <ToolSymbol symbol={symbol} />
-      )}
-      <span>
-        <strong>
-          {label}
-          {!large && menu && <CaretIcon />}
-        </strong>
-        <small>{t('appComingSoon')}</small>
-      </span>
-    </div>
   )
 }

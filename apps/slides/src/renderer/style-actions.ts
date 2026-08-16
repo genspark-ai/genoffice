@@ -4,7 +4,12 @@
  * Functions read the latest App state through ActionCtx.
  */
 import type { ShapeRenderNode } from '@genoffice/pptx-render'
-import type { EditChartOp, EditTableStyleOp, GradientFillSpec } from '../shared/ipc'
+import type {
+  EditBackgroundOp,
+  EditChartOp,
+  EditTableStyleOp,
+  GradientFillSpec,
+} from '../shared/ipc'
 import type { ActionCtx } from './action-context'
 import { FIT_WIDTH } from './app-constants'
 import {
@@ -216,21 +221,22 @@ export async function onStroke(
   if (updated) ctx.applySlide(ctx.current, updated)
 }
 
+/** Omit that distributes over union members (plain Omit collapses the EditBackgroundOp union). */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+
 export async function onBackground(
   ctx: ActionCtx,
-  color: string,
-  allSlides: boolean,
+  op: DistributiveOmit<EditBackgroundOp, 'fitWidthPx'>,
 ): Promise<void> {
   if (!ctx.slide) return
   const r = await window.slidesApi.editBackground({
-    slideIndex: allSlides ? -1 : ctx.current,
-    color,
+    ...op,
     fitWidthPx: FIT_WIDTH,
-  })
+  } as EditBackgroundOp)
   if (r) {
     ctx.setSlides(r)
     ctx.setDirty(true)
-    ctx.setStatus(allSlides ? t('appStatusBgAppliedAll') : '')
+    ctx.setStatus(op.slideIndex === -1 ? t('appStatusBgAppliedAll') : '')
   }
 }
 

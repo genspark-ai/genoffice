@@ -41,7 +41,13 @@ export interface PendingNumbering {
 }
 
 export function hfFromPart(part: HfPartInfo | null | undefined): HeaderFooter | null {
-  if (!part || (!part.text && !part.hasPageNumber && part.paras.length === 0)) return null
+  // image-only parts (logo headers/footers) are not empty — the canvas path
+  // (hfHasVisibleContent) already counts images; keep both checks aligned
+  if (
+    !part ||
+    (!part.text && !part.hasPageNumber && part.paras.length === 0 && !part.images?.length)
+  )
+    return null
   return {
     text: part.text,
     pageNumber: part.hasPageNumber,

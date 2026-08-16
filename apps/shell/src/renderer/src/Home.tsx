@@ -15,6 +15,7 @@ import type {
   ProjectSummaryEntry,
   RecentEntry,
 } from '../../shared/home-api'
+import { useDismissablePopover } from '@genoffice/ui'
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
@@ -161,26 +162,25 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
   const [projMenu, setProjMenu] = useState<{ id: string; top: number; right: number } | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null)
   const newInputRef = useRef<HTMLInputElement>(null)
+  // wrap (… button + popup) of the row whose menu is open — the dismissal guard root
+  const projMenuWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (creating && newInputRef.current) newInputRef.current.focus()
   }, [creating])
 
-  // close the menu on outside click or any scroll (the fixed-position popup
-  // would otherwise detach from its row while the list scrolls)
+  // unified dismissal: outside press, window blur, chrome press (tab strip / window drag)
+  useDismissablePopover(projMenu !== null, () => setProjMenu(null), {
+    inside: () => [projMenuWrapRef.current],
+  })
+
+  // also close on any scroll (the fixed-position popup would otherwise detach
+  // from its row while the list scrolls)
   useEffect(() => {
     if (!projMenu) return
-    const handler = (e: PointerEvent) => {
-      const target = e.target as Element | null
-      if (!target?.closest?.('.proj-menu-wrap')) setProjMenu(null)
-    }
     const close = () => setProjMenu(null)
-    window.addEventListener('pointerdown', handler)
     window.addEventListener('scroll', close, true)
-    return () => {
-      window.removeEventListener('pointerdown', handler)
-      window.removeEventListener('scroll', close, true)
-    }
+    return () => window.removeEventListener('scroll', close, true)
   }, [projMenu])
 
   const commitCreate = async () => {
@@ -259,6 +259,9 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
             onChange={(e) => setNewName(e.target.value)}
             onBlur={() => void commitCreate()}
             onKeyDown={(e) => {
+              // IME (e.g. pinyin): Enter/Escape during composition only affects
+              // the composition, it must not commit or cancel the field
+              if (e.nativeEvent.isComposing) return
               if (e.key === 'Enter') void commitCreate()
               if (e.key === 'Escape') {
                 setCreating(false)
@@ -305,6 +308,7 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
                     onBlur={() => void commitRename()}
                     onKeyDown={(e) => {
                       e.stopPropagation()
+                      if (e.nativeEvent.isComposing) return
                       if (e.key === 'Enter') void commitRename()
                       if (e.key === 'Escape') setRenaming(null)
                     }}
@@ -320,7 +324,10 @@ function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPane
               </div>
 
               {!proj.isDefault && (
-                <div className="proj-menu-wrap">
+                <div
+                  className="proj-menu-wrap"
+                  ref={projMenu?.id === proj.id ? projMenuWrapRef : undefined}
+                >
                   <button
                     className="proj-more-btn"
                     aria-label={t('projMoreActions', { name: proj.name })}
@@ -740,14 +747,10 @@ function CloudProjectsView() {
     return off
   }, [])
 
-  useEffect(() => {
-    if (!sortMenuOpen) return
-    const handler = (e: PointerEvent) => {
-      if (!sortRef.current?.contains(e.target as Node)) setSortMenuOpen(false)
-    }
-    window.addEventListener('pointerdown', handler)
-    return () => window.removeEventListener('pointerdown', handler)
-  }, [sortMenuOpen])
+  // unified dismissal: outside press, window blur, chrome press (tab strip / window drag)
+  useDismissablePopover(sortMenuOpen, () => setSortMenuOpen(false), {
+    inside: () => [sortRef.current],
+  })
 
   const startLogin = () => {
     setLoginWaiting(true)
@@ -1009,6 +1012,8 @@ export function Home() {
   const [fileSortMenuOpen, setFileSortMenuOpen] = useState(false)
   const fileSortRef = useRef<HTMLDivElement>(null)
   const [rowMenu, setRowMenu] = useState<string | null>(null)
+  // actions cell (… button + menu) of the row whose menu is open — the dismissal guard root
+  const rowMenuWrapRef = useRef<HTMLSpanElement>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
@@ -1097,14 +1102,10 @@ export function Home() {
 
   const hasMore = entries.length < listTotal
 
-  useEffect(() => {
-    if (!fileSortMenuOpen) return
-    const handler = (e: PointerEvent) => {
-      if (!fileSortRef.current?.contains(e.target as Node)) setFileSortMenuOpen(false)
-    }
-    window.addEventListener('pointerdown', handler)
-    return () => window.removeEventListener('pointerdown', handler)
-  }, [fileSortMenuOpen])
+  // unified dismissal: outside press, window blur, chrome press (tab strip / window drag)
+  useDismissablePopover(fileSortMenuOpen, () => setFileSortMenuOpen(false), {
+    inside: () => [fileSortRef.current],
+  })
 
   const loadMore = () => {
     if (loadingMore || !hasMore) return
@@ -1145,24 +1146,22 @@ export function Home() {
     return () => observer.disconnect()
   }, [hasMore, entries.length])
 
+  // unified dismissal: outside press, window blur, chrome press (tab strip / window drag)
+  useDismissablePopover(rowMenu !== null, () => setRowMenu(null), {
+    inside: () => [rowMenuWrapRef.current],
+  })
+
+  // Escape closes the row menu and the delete-confirm dialog
   useEffect(() => {
     if (rowMenu === null && confirmDelete === null) return
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Element | null
-      if (rowMenu !== null && !target?.closest?.('.recent-actions')) setRowMenu(null)
-    }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setRowMenu(null)
         setConfirmDelete(null)
       }
     }
-    window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [rowMenu, confirmDelete])
 
   // ── Project files state ────────────────────────────────
@@ -1177,6 +1176,8 @@ export function Home() {
     open: null,
     close: null,
   })
+  // wrap (trigger + submenu) of the row whose move submenu is open — the dismissal guard root
+  const moveMenuWrapRef = useRef<HTMLDivElement>(null)
 
   const openMoveMenu = (path: string) => {
     setMoveMenuFlip(false)
@@ -1199,6 +1200,8 @@ export function Home() {
     }
   }
   const [bulkMoveMenu, setBulkMoveMenu] = useState(false)
+  // selection-bar wrap (trigger + menu) of the bulk move menu — the dismissal guard root
+  const bulkMoveWrapRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     if (!projectMode || !selectedProjectId) {
@@ -1227,33 +1230,22 @@ export function Home() {
     }
   }, [rowMenu])
 
-  // close the move-file menu
-  useEffect(() => {
-    if (!moveFileMenu) return
-    const handler = (e: PointerEvent) => {
-      const target = e.target as Element | null
-      if (!target?.closest?.('.move-menu-wrap')) setMoveFileMenu(null)
-    }
-    window.addEventListener('pointerdown', handler)
-    return () => window.removeEventListener('pointerdown', handler)
-  }, [moveFileMenu])
+  // move-file submenu: unified dismissal (outside press, window blur, chrome press)
+  useDismissablePopover(moveFileMenu !== null, () => setMoveFileMenu(null), {
+    inside: () => [moveMenuWrapRef.current],
+  })
 
-  // close the bulk move-to-project menu in the selection bar
+  // bulk move-to-project menu in the selection bar: unified dismissal, plus Escape
+  useDismissablePopover(bulkMoveMenu, () => setBulkMoveMenu(false), {
+    inside: () => [bulkMoveWrapRef.current],
+  })
   useEffect(() => {
     if (!bulkMoveMenu) return
-    const handler = (e: PointerEvent) => {
-      const target = e.target as Element | null
-      if (!target?.closest?.('.selection-move-wrap')) setBulkMoveMenu(false)
-    }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setBulkMoveMenu(false)
     }
-    window.addEventListener('pointerdown', handler)
     window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', handler)
-      window.removeEventListener('keydown', onKeyDown)
-    }
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [bulkMoveMenu])
 
   // WPS-style sortable "modified" column header, shared by both file tables
@@ -1519,6 +1511,7 @@ export function Home() {
               onBlur={() => commitRename(entry)}
               onKeyDown={(event) => {
                 event.stopPropagation()
+                if (event.nativeEvent.isComposing) return
                 if (event.key === 'Enter') commitRename(entry)
                 if (event.key === 'Escape') setRenaming(null)
               }}
@@ -1547,7 +1540,11 @@ export function Home() {
               />
             </svg>
           </button>
-          <span className="recent-actions" onClick={(event) => event.stopPropagation()}>
+          <span
+            className="recent-actions"
+            ref={rowMenu === entry.path ? rowMenuWrapRef : undefined}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               className="more-btn"
               aria-label={t('moreActions')}
@@ -1594,6 +1591,7 @@ export function Home() {
                     <div className="row-menu-divider" />
                     <div
                       className="move-menu-wrap"
+                      ref={moveFileMenu === entry.path ? moveMenuWrapRef : undefined}
                       onMouseEnter={() => {
                         clearMoveMenuTimer('close')
                         if (moveFileMenu === entry.path) return
@@ -1720,7 +1718,7 @@ export function Home() {
                   {t('selectedCount', { n: projSelectedPaths.length })}
                 </span>
                 {otherProjects.length > 0 && (
-                  <span className="selection-move-wrap">
+                  <span className="selection-move-wrap" ref={bulkMoveWrapRef}>
                     <button
                       className="selection-action"
                       aria-expanded={bulkMoveMenu}

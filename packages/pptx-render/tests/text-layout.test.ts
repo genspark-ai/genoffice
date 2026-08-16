@@ -54,6 +54,12 @@ describe('2.3 metrics', () => {
     const met = om.metrics(real)
     expect(met.ascent).toBeCloseTo(80, 4)
     expect(met.descent).toBeCloseTo(20, 4)
+    expect(met.lineHeight).toBeCloseTo(100, 4)
+    // hhea lineGap becomes external leading (advances lines, outside the line box)
+    const om2 = new OpentypeMetrics(() => ({ ...fakeFont, lineGap: 100 }))
+    const met2 = om2.metrics(real)
+    expect(met2.lineHeight).toBeCloseTo(100, 4)
+    expect(met2.externalLeading).toBeCloseTo(10, 4)
     // Unknown fonts fall back to the heuristic (no throw)
     const unknown = { fontFamily: 'Nope', fontSizePx: 100, bold: false, italic: false }
     expect(om.measure('ab', unknown)).toBeGreaterThan(0)
@@ -188,8 +194,29 @@ describe('2.3 text layout', () => {
       vp,
     })
     expect(spaced.contentHeight).toBeGreaterThan(single.contentHeight)
-    // Double line spacing + 12pt before + 6pt after
-    expect(spaced.lines[0]!.top).toBeGreaterThan(0) // spaceBefore pushed the line start down
+    // PowerPoint ignores space-before on the frame's first paragraph (0047 measured);
+    // the taller line comes from lineHeight/spaceAfter only
+    expect(spaced.lines[0]!.top).toBe(0)
+  })
+
+  it('space-before applies from the second paragraph on, never the first', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          { runs: [{ text: 'a', fontSize: 20 }], spaceBefore: 12 },
+          { runs: [{ text: 'b', fontSize: 20 }], spaceBefore: 12 },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 400,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines[0]!.top).toBe(0)
+    expect(layout.lines[1]!.top - (layout.lines[0]!.top + layout.lines[0]!.height)).toBeCloseTo(
+      (12 * 96) / 72,
+      1,
+    )
   })
 
   it('align=center centers each line horizontally (baked into run x)', () => {
@@ -774,8 +801,9 @@ describe('table cell edge spacing (trimEdgeSpacing)', () => {
       vp,
       trimEdgeSpacing: true,
     })
-    // 10pt before-first + 10pt after-last dropped (pt → px at scale 1: ×96/72)
-    expect(plain.contentHeight - trimmed.contentHeight).toBeCloseTo((20 * 96) / 72, 1)
+    // First-paragraph space-before is dropped in every body (PowerPoint semantics);
+    // trimEdgeSpacing additionally drops the last space-after (pt → px at scale 1: ×96/72)
+    expect(plain.contentHeight - trimmed.contentHeight).toBeCloseTo((10 * 96) / 72, 1)
     // inner spacing (after-first + before-last) is kept
     expect(trimmed.lines[1]!.top - (trimmed.lines[0]!.top + trimmed.lines[0]!.height)).toBeCloseTo(
       (20 * 96) / 72,
@@ -819,5 +847,132 @@ describe('autofit ignores trailing blank paragraphs', () => {
       vp,
     })
     expect(layout.fontScale).toBeLessThan(1)
+  })
+})
+
+describe('buAutoNum startAt', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 20, bold: false, italic: false }
+  const para = (text: string, startAt?: number) => ({
+    runs: [{ text, ...style, fontSize: 20 }],
+    bullet: { type: 'number' as const, ...(startAt != null ? { startAt } : {}) },
+    marL: 457200,
+    indent: -457200,
+  })
+
+  it('starts the sequence at startAt and continues from there', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [para('first', 3), para('second')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    })
+    const bullets = layout.lines
+      .map((l) => l.runs.find((r: any) => r.isBullet))
+      .filter(Boolean)
+      .map((r: any) => r.text)
+    expect(bullets).toEqual(['3.', '4.'])
+  })
+
+  it('defaults to 1 without startAt', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [para('only')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    })
+    const b = layout.lines[0]!.runs.find((r: any) => r.isBullet) as any
+    expect(b.text).toBe('1.')
+  })
+})
+
+describe('lnSpc > 100%: excess spacing sits above the glyphs', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Arial', fontSizePx: 20, bold: false, italic: false }
+  const para = (text: string, lineHeight?: number) => ({
+    runs: [{ text, ...style, fontSize: 20 }],
+    ...(lineHeight != null ? { lineHeight } : {}),
+  })
+
+  it('150% spacing pushes the first baseline down by the half-line excess', () => {
+    const single = layoutText({
+      body: body({ paragraphs: [para('watermark')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    const spaced = layoutText({
+      body: body({ paragraphs: [para('watermark', 150)] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    // PowerPoint model (48pt probe): explicit pct spacing places the baseline at
+    // 0.7333 x the line box, ignoring font metrics; single spacing bottom-anchors
+    // (box - descent). Heuristic metrics: descent 0.2em.
+    const b1 = single.lines[0]!.runs[0]!.baselineY
+    const b2 = spaced.lines[0]!.runs[0]!.baselineY
+    expect(single.lines[0]!.height).toBeCloseTo(spaced.lines[0]!.height / 1.5, 1)
+    expect(b1).toBeCloseTo(single.lines[0]!.height - 0.2 * (single.lines[0]!.height / 1.2), 1)
+    expect(b2).toBeCloseTo(spaced.lines[0]!.height * (0.88 / 1.2), 1)
+  })
+
+  it('sub-100% spacing shrinks the box and lifts the baseline with it (ink may poke above)', () => {
+    const tight = layoutText({
+      body: body({ paragraphs: [para('text', 70)] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    const single = layoutText({
+      body: body({ paragraphs: [para('text')] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    })
+    expect(tight.lines[0]!.height).toBeCloseTo(single.lines[0]!.height * 0.7, 1)
+    // generic law: baseline = 0.7333 x box — above the single-spacing baseline
+    expect(tight.lines[0]!.runs[0]!.baselineY).toBeCloseTo(tight.lines[0]!.height * (0.88 / 1.2), 1)
+    expect(tight.lines[0]!.runs[0]!.baselineY).toBeLessThan(single.lines[0]!.runs[0]!.baselineY)
+  })
+})
+
+describe('bodyPr numCol columns', () => {
+  it('flows lines into the next column when the box height is exceeded', () => {
+    const paras = Array.from({ length: 8 }, (_, i) => ({
+      runs: [{ text: `p${i}`, fontSize: 20 }],
+    }))
+    const layout = layoutText({
+      body: { ...body({ paragraphs: paras }), numCol: 2, spcCol: 0 },
+      boxWidthPx: 400,
+      boxHeightPx: 4 * 20 * (96 / 72) * 1.2 + 2, // fits 4 lines per column
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const xs = layout.lines.map((l) => l.runs[0]!.x)
+    // First 4 lines in column 1 (x < 200), rest shifted a full column stride right
+    expect(xs.slice(0, 4).every((x) => x < 200)).toBe(true)
+    expect(xs.slice(4).every((x) => x >= 200)).toBe(true)
+    // Column 2 restarts at the top, baselines rebased with the line tops
+    expect(layout.lines[4]!.top).toBe(0)
+    expect(layout.lines[4]!.runs[0]!.baselineY).toBeLessThan(layout.lines[3]!.runs[0]!.baselineY)
+    expect(layout.contentHeight).toBeCloseTo(layout.lines[3]!.top + layout.lines[3]!.height, 1)
+  })
+
+  it('single column behavior unchanged when numCol absent', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [{ runs: [{ text: 'x', fontSize: 20 }] }] }),
+      boxWidthPx: 400,
+      boxHeightPx: 100,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines.length).toBe(1)
   })
 })

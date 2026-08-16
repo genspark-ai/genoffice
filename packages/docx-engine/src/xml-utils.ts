@@ -3,14 +3,23 @@ import { XMLParser } from 'fast-xml-parser'
 /** preserveOrder node shape from fast-xml-parser */
 export type XNode = Record<string, unknown>
 
-export const xmlParser = new XMLParser({
+const parserOptions = {
   preserveOrder: true,
   ignoreAttributes: false,
   attributeNamePrefix: '',
   trimValues: false,
   parseTagValue: false,
   parseAttributeValue: false,
-})
+} as const
+
+export const xmlParser = new XMLParser(parserOptions)
+
+/**
+ * Table XML only: deep nesting is legitimate there (POI stress files nest 5000 table
+ * levels, far past the default 100-tag cap). fxp parses iteratively, but callers must
+ * cap their own recursion when walking the result.
+ */
+export const deepXmlParser = new XMLParser({ ...parserOptions, maxNestedTags: 100_000 })
 
 export function nameOf(node: XNode): string | undefined {
   return Object.keys(node).find((k) => k !== ':@' && k !== '#text')
