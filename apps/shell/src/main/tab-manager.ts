@@ -41,7 +41,7 @@ interface TabRecord {
 }
 
 /** must match the tab strip's rendered height (apps/shell/src/renderer/src/TabBar.tsx) */
-const TAB_STRIP_HEIGHT = 40
+const TAB_STRIP_HEIGHT = 80
 const HOME_ID = 'home'
 
 /**
@@ -96,7 +96,9 @@ export class TabManager {
     if (active?.view && this.bleedWcIds.has(active.view.webContents.id)) {
       return { x: 0, y: 0, width, height }
     }
-    return { x: 0, y: TAB_STRIP_HEIGHT, width, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
+    const isDocument = active && active.kind !== 'home'
+    const sidebarWidth = isDocument ? 52 : 232
+    return { x: sidebarWidth, y: TAB_STRIP_HEIGHT, width: width - sidebarWidth, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
   }
 
   /** Grow/restore a tab view over the tab strip on request (slides show fullscreen) */
@@ -229,8 +231,8 @@ export class TabManager {
     const target = this.tabs.find((t) => t.id === id)
     if (!target) return
     for (const t of this.tabs) t.view?.setVisible(t.id === id)
-    if (target.view) target.view.setBounds(this.contentBounds())
     this.activeId = id
+    if (target.view) target.view.setBounds(this.contentBounds())
     setActiveDocsResolver(target.kind === 'docs' ? () => target.view!.webContents : () => null)
     if (target.kind === 'sheets' && target.view) setActiveSheetsWebContents(target.view.webContents)
     if (target.kind === 'slides' && target.view) setActiveSlidesWebContents(target.view.webContents)

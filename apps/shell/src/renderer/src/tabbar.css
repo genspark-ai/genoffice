@@ -277,6 +277,29 @@ html.genoffice-popover-open .tab-bar {
   background: rgba(0, 0, 0, 0.08);
 }
 
+.menu-btn {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--tabstrip-text);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  width: auto;
+  padding: 0 12px;
+}
+
+.menu-btn:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
 .app-frame-content {
   padding-top: 40px;
 }
@@ -302,6 +325,10 @@ html.genoffice-popover-open .tab-bar {
   background: rgba(255, 255, 255, 0.12);
 }
 
+[data-theme='dark'] .menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 [data-theme='dark'] .tab-new-btn:hover,
 [data-theme='dark'] .tab-overflow-btn:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -319,6 +346,9 @@ html.genoffice-popover-open .tab-bar {
     background: var(--surface);
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .tab-item:not(.active):hover .tab-plate {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  :root:not([data-theme='light']):not([data-theme='dark']) .menu-btn:hover {
     background: rgba(255, 255, 255, 0.08);
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .tab-close:hover {

@@ -108,7 +108,7 @@ const KIND_ICON: Record<TabSummary['kind'], ReactElement> = {
   markdown: <MarkdownIcon />,
 }
 
-export function TabBar() {
+export function TabBar({ collapsed = false }: { collapsed?: boolean }) {
   const { t } = useI18n()
   const [tabs, setTabs] = useState<TabSummary[]>([])
   const stripRef = useRef<HTMLDivElement>(null)
@@ -217,8 +217,7 @@ export function TabBar() {
   }, [activeId])
 
   return (
-    <div className="tab-bar">
-      <div className="tab-bar-drag-spacer" />
+    <div className="tab-bar" style={{ top: '40px', left: collapsed ? '52px' : '232px', transition: 'left 0.2s ease' }}>
       <div className={dragVisual ? 'tab-strip dragging' : 'tab-strip'} ref={stripRef}>
         {tabs.map((tab, index) => {
           // live transforms: the grabbed tab tracks the pointer; tabs between

@@ -139,6 +139,11 @@ export interface HomeApi {
   starPromptAction(action: StarPromptAction): Promise<void>
   /** locally stored full cloud project list (instant; null when no store or logged out) */
   cloudProjectsCached(): Promise<CloudProjectsSnapshot | null>
+  
+  minimizeWindow?(): void
+  maximizeWindow?(): void
+  closeWindow?(): void
+  showAppMenu?(menuName: string, x: number, y: number): void
   /** sync the full list from Genspark and return it (1 request when nothing changed); null when the sync failed */
   cloudProjectsSync(): Promise<CloudProjectsSnapshot | null>
   /** open a cloud project (relative '/agents?id=...' URL) in the default browser */
@@ -249,6 +254,11 @@ export const HOME_CHANNELS = {
   statPaths: 'home:stat-paths',
   toggleStar: 'home:toggle-star',
   openPath: 'home:open-path',
+  
+  windowMinimize: 'window:minimize',
+  windowMaximize: 'window:maximize',
+  windowClose: 'window:close',
+  showAppMenu: 'window:show-app-menu',
   browse: 'home:browse',
   newDoc: 'home:new-doc',
   newSheet: 'home:new-sheet',

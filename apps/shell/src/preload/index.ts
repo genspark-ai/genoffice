@@ -208,6 +208,12 @@ const homeApi: HomeApi = {
     if (action !== 'starred' && action !== 'later') throw new Error('Invalid star prompt action.')
     await ipcRenderer.invoke(HOME_CHANNELS.starPromptAction, action)
   },
+
+  minimizeWindow: () => ipcRenderer.invoke(HOME_CHANNELS.windowMinimize),
+  maximizeWindow: () => ipcRenderer.invoke(HOME_CHANNELS.windowMaximize),
+  closeWindow: () => ipcRenderer.invoke(HOME_CHANNELS.windowClose),
+  showAppMenu: (menuName, x, y) => ipcRenderer.invoke(HOME_CHANNELS.showAppMenu, menuName, x, y),
+
   async cloudProjectsCached() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.cloudProjectsCached)
     return asCloudProjectsSnapshot(result)

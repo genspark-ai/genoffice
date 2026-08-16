@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import logoLockup from './assets/genoffice-logo.svg'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
@@ -434,8 +433,10 @@ const LOGIN_MAX_WAIT_MS = 300_000
 
 function AccountEntry({
   onStatusChange,
+  homeActive,
 }: {
   onStatusChange?: (status: AccountStatus | null) => void
+  homeActive?: boolean
 }) {
   const { t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
@@ -570,6 +571,7 @@ function AccountEntry({
       if (seq === statusSeq.current) setStatus(s)
     })
     setSettingsOpen(true)
+    if (homeActive === false) void window.aiOfficeTabs.activate('home')
   }
 
   return (
@@ -993,7 +995,7 @@ function CloudProjectsView() {
 
 // ── Main component ──────────────────────────────────────
 
-export function Home() {
+export function Home({ homeActive = true }: { homeActive?: boolean }) {
   const i18n = useI18n()
   const { t, lang } = i18n
   // ── Paged list state (rows loaded for the current view + filter) ──
@@ -1697,9 +1699,9 @@ export function Home() {
 
     return (
       <main className="content">
-        <section className="quick-start" aria-label={t('secQuickStart')}>
-          <div className="section-head">
-            <span className="section-label">{t('secQuickStart')}</span>
+        <section className="quick-start" aria-label={proj.isDefault ? t('defaultProject') : proj.name}>
+          <div className="home-hero">
+            <h1 className="hero-title">{proj.isDefault ? t('defaultProject') : proj.name}</h1>
           </div>
           {renderQuickCards()}
         </section>
@@ -1945,10 +1947,7 @@ export function Home() {
 
   return (
     <div className="home">
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
-        </div>
+      <aside className={`sidebar${!homeActive ? ' collapsed' : ''}`}>
 
         <nav className="sidebar-nav">
           <button
@@ -1957,6 +1956,7 @@ export function Home() {
               changeView('recent')
               setSelectedProjectId(null)
               setCloudMode(false)
+              if (!homeActive) void window.aiOfficeTabs.activate('home')
             }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1977,6 +1977,7 @@ export function Home() {
               changeView('starred')
               setSelectedProjectId(null)
               setCloudMode(false)
+              if (!homeActive) void window.aiOfficeTabs.activate('home')
             }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1998,6 +1999,7 @@ export function Home() {
                 setSelectedProjectId(null)
                 setSelected(new Set())
                 setRowMenu(null)
+                if (!homeActive) void window.aiOfficeTabs.activate('home')
               }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2042,22 +2044,25 @@ export function Home() {
                 // shared between the plain view and project views)
                 setSelected(new Set())
                 setRowMenu(null)
+                if (!homeActive) void window.aiOfficeTabs.activate('home')
               }}
               onRefresh={refresh}
             />
           </>
         )}
 
-        <AccountEntry onStatusChange={handleAccountStatus} />
+        <AccountEntry onStatusChange={handleAccountStatus} homeActive={homeActive} />
       </aside>
 
-      {selectedProjectId ? (
-        renderProjectContent()
-      ) : cloudMode ? (
-        <CloudProjectsView />
-      ) : (
-        renderGlobalContent()
-      )}
+      <div style={{ flex: 1, visibility: homeActive ? 'visible' : 'hidden', display: 'flex', minWidth: 0 }}>
+        {selectedProjectId ? (
+          renderProjectContent()
+        ) : cloudMode ? (
+          <CloudProjectsView />
+        ) : (
+          renderGlobalContent()
+        )}
+      </div>
 
       {confirmDelete && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
