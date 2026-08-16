@@ -2678,11 +2678,23 @@ export function App() {
                 open={showAi}
                 onExpand={toggleAi}
                 onCollapse={toggleAi}
+                onSettingsChange={setAiSettings}
                 onUndo={() => void undo()}
                 onPathChange={(p) => {
                   setPath(p)
                   setDirty(false)
                 }}
+                onSetSpeakerNotes={(i, text) =>
+                  flushNotes()
+                    .then(() => window.slidesApi.setNotes({ slideIndex: i, text }))
+                    .then((ok) => {
+                      if (ok) {
+                        setDirty(true)
+                        setAnnotationsNonce((n) => n + 1)
+                      }
+                      return ok
+                    })
+                }
                 currentFilePath={path}
               />
             ) : (

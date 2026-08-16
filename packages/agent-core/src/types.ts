@@ -34,7 +34,13 @@ export interface AgentImage {
 
 export type AgentMessage =
   | { role: 'user'; text: string; images?: AgentImage[] | undefined }
-  | { role: 'assistant'; text: string; toolCalls?: AgentToolCall[] | undefined }
+  | {
+      role: 'assistant'
+      text: string
+      toolCalls?: AgentToolCall[] | undefined
+      /** raw reasoning/thinking text (DeepSeek thinking mode); echoed back to the API on tool-call turns */
+      reasoning?: string | undefined
+    }
   | { role: 'tool'; results: AgentToolResult[] }
 
 /**
@@ -91,6 +97,8 @@ export interface AgentStreamRequest {
 
 export interface AgentStreamCallbacks {
   onDelta(text: string): void
+  /** raw reasoning/thinking deltas (DeepSeek thinking mode); stored in history so tool-call turns can echo reasoning_content back */
+  onReasoning?(text: string): void
   /** complete parsed tool call (arguments finished streaming) */
   onToolCall(call: AgentToolCall): void
   /** Phase changes within the model stream (thinking / responding / tool-input); older transports may omit this */

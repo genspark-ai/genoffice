@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { AiSettingsDialog } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -65,6 +66,7 @@ export function AiPanel({
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [phase, setPhase] = useState<Phase>('thinking')
   const chatRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
@@ -307,6 +309,26 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setShowSettings(true)}
+            title="AI Settings"
+            aria-label="AI Settings"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -400,6 +422,28 @@ export function AiPanel({
           onStop={stop}
         />
       </div>
+      {showSettings && settingsRef.current && (
+        <AiSettingsDialog
+          settings={settingsRef.current}
+          onClose={() => setShowSettings(false)}
+          onSave={(next) => {
+            setShowSettings(false)
+            settingsRef.current = next
+            void window.pdfApi.setAiSettings(next)
+          }}
+          labels={{
+            title: 'AI 设置',
+            provider: '模型服务商',
+            apiKey: 'API 密钥',
+            model: '模型',
+            baseUrl: 'Base URL（OpenAI 兼容）',
+            save: '保存',
+            cancel: '取消',
+            gensparkNote:
+              'Genspark 使用已登录的 Genspark 账号，无需 API 密钥。通过 Genspark 服务路由 Claude / GPT / Gemini。',
+          }}
+        />
+      )}
     </aside>
   )
 }

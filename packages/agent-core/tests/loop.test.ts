@@ -78,6 +78,21 @@ describe('AgentLoop', () => {
     expect(loop.messages[1]).toEqual({ role: 'assistant', text: 'Hello, world' })
   })
 
+  it('stores reasoning deltas on the assistant history message', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onReasoning?.('think ')
+        cb.onReasoning?.('hard')
+        cb.onDelta('answer')
+        cb.onDone()
+      },
+    ])
+    const loop = new AgentLoop({ transport, skill: makeSkill() })
+    loop.run('question')
+    await flush()
+    expect(loop.messages[1]).toEqual({ role: 'assistant', text: 'answer', reasoning: 'think hard' })
+  })
+
   it('attaches images to the user message (and omits the field without any)', async () => {
     const transport = scriptedTransport([
       (cb) => {

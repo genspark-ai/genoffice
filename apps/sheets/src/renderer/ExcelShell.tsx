@@ -22,6 +22,7 @@ import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
 import type { ChartSeriesVisualState } from '../domain/chart-visual'
 import type { ChangePlan } from '../domain/workbook.types'
 import type { AttachmentMeta } from '../shared/desktop-api'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import {
   PivotDialog,
@@ -124,6 +125,10 @@ interface ExcelShellProps {
   readonly prompt: string
   readonly preview: ChangePlan | null
   readonly selectionFormat: SelectionFormat | null
+  /// Current AI provider settings (for the in-panel settings dialog)
+  readonly aiSettings: AiSettings | null
+  /// Persist a new provider/API-key selection
+  readonly onAiSettingsChange: (next: AiSettings) => void
   /// True when the workbook has any cell content (the one-click AI action
   /// buttons are greyed out on an empty sheet).
   readonly sheetHasContent: boolean
@@ -263,6 +268,8 @@ export function ExcelShell({
   onNewChat,
   onUndo,
   onCommand,
+  aiSettings,
+  onAiSettingsChange,
   statusMessage,
   zoomPercent,
   canSave,
@@ -452,6 +459,8 @@ export function ExcelShell({
           onUndo={onUndo}
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
+          settings={aiSettings}
+          onSettingsChange={onAiSettingsChange}
         />
         <div className="sheet-main">
           {/* Excel's formula-bar row, Name Box only for now (fx bar TBD). */}

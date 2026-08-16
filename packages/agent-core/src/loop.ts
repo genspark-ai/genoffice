@@ -171,6 +171,8 @@ export class AgentLoop<TSnapshot = unknown> {
   private inputParseFails = 0
   private turnStopReason: string | null = null
   private turnText = ''
+  /** raw reasoning/thinking text of the in-flight turn (DeepSeek); undefined until the provider streams any */
+  private turnReasoning: string | undefined = undefined
   private toolCalls: AgentToolCall[] = []
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
@@ -459,6 +461,7 @@ export class AgentLoop<TSnapshot = unknown> {
   private startTurn(): void {
     const generation = this.generation
     this.turnText = ''
+    this.turnReasoning = undefined
     this.toolCalls = []
     this.turnStopReason = null
     // Some transports emit an extra onDone after cancel — this turn may finalize only once
@@ -474,6 +477,13 @@ export class AgentLoop<TSnapshot = unknown> {
           if (generation !== this.generation || settled) return
           this.turnText += text
           this.options.events?.onText?.(this.turnText)
+        },
+        onReasoning: (text) => {
+          if (generation !== this.generation || settled) return
+          // '' is meaningful: DeepSeek sometimes streams an empty reasoning
+          // delta on tool-call turns and still requires it back verbatim
+          if (this.turnReasoning === undefined) this.turnReasoning = ''
+          this.turnReasoning += text
         },
         onToolCall: (call) => {
           if (generation !== this.generation || settled) return
@@ -517,7 +527,11 @@ export class AgentLoop<TSnapshot = unknown> {
       // read-only empty turns poison follow-ups just the same. onDone still
       // reports the raw turn text so app UIs keep their localized fallbacks
       // instead of surfacing this English placeholder.
-      this.history.push({ role: 'assistant', text: this.turnText || COMPLETED_VIA_TOOLS_TEXT })
+      this.history.push({
+        role: 'assistant',
+        text: this.turnText || COMPLETED_VIA_TOOLS_TEXT,
+        ...(this.turnReasoning !== undefined ? { reasoning: this.turnReasoning } : {}),
+      })
       this.running = false
       this.runUserMsg = null
       events?.onDone?.({
@@ -530,7 +544,12 @@ export class AgentLoop<TSnapshot = unknown> {
       return
     }
 
-    this.history.push({ role: 'assistant', text: this.turnText, toolCalls })
+    this.history.push({
+      role: 'assistant',
+      text: this.turnText,
+      toolCalls,
+      ...(this.turnReasoning !== undefined ? { reasoning: this.turnReasoning } : {}),
+    })
     const generation = this.generation
     const results: AgentToolResult[] = []
     for (const call of toolCalls) {

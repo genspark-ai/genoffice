@@ -14,8 +14,10 @@ import type {
 export interface IpcStreamChunk {
   requestId: string
   /** 'ping' = wire-level keepalive; re-arms the silence watchdog and carries no payload */
-  type: 'delta' | 'tool-call' | 'done' | 'error' | 'ping'
+  type: 'delta' | 'tool-call' | 'done' | 'error' | 'ping' | 'reasoning'
   text?: string
+  /** raw reasoning/thinking delta (DeepSeek thinking mode); not rendered, but echoed back on tool-call turns */
+  reasoning?: string
   toolCall?: AgentToolCall
   error?: string
   /** machine-readable error cause; maps to the localized timeout/credits message */
@@ -93,6 +95,9 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
         } else if (chunk.type === 'delta') {
           armSilence()
           cb.onDelta(chunk.text ?? '')
+        } else if (chunk.type === 'reasoning') {
+          armSilence()
+          cb.onReasoning?.(chunk.reasoning ?? '')
         } else if (chunk.type === 'tool-call') {
           armSilence()
           if (chunk.toolCall) cb.onToolCall(chunk.toolCall)

@@ -29,6 +29,8 @@ export async function* sseLines(
 
 export interface StreamCallbacks {
   onDelta: (text: string) => void
+  /** raw reasoning/thinking deltas (DeepSeek thinking mode); captured so tool-call turns can echo reasoning_content back */
+  onReasoning?: (text: string) => void
   onToolCall: (call: AgentToolCall) => void
   /** normalized stop reason ('max_tokens' when the output was cut off by the token limit) */
   onStopReason?: (reason: string) => void
@@ -637,6 +639,11 @@ function openAiMessages(system: string, messages: AgentMessage[]): unknown[] {
               })),
             }
           : {}),
+        // DeepSeek thinking mode requires the assistant's reasoning_content to be
+        // passed back verbatim on every subsequent request once tools were used
+        // (otherwise the API rejects the follow-up with a 400). Only present when
+        // the provider itself streamed reasoning deltas.
+        ...(m.reasoning !== undefined ? { reasoning_content: m.reasoning } : {}),
       })
     } else {
       for (const r of m.results) {
@@ -699,10 +706,18 @@ export async function streamOpenAiCompatible(
   tools: AgentToolDef[],
   maxTokens: number,
   cb: StreamCallbacks,
+  /**
+   * DeepSeek thinking mode occasionally answers HTTP 200 with finish_reason=stop
+   * and zero output (reasoning-only final answers, or completely empty turns
+   * after tool results are fed back). Those turns are retried once before
+   * failing; other OpenAI-compatible providers keep the legacy behaviour where
+   * a stop+empty turn is a legal closing turn.
+   */
+  deepseek = false,
 ): Promise<void> {
   const wd = createStreamWatchdog(cb.signal)
   return wd.guard(() =>
-    openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd),
+    openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, deepseek),
   )
 }
 
@@ -715,127 +730,169 @@ async function openAiCompatibleTurn(
   maxTokens: number,
   cb: StreamCallbacks,
   wd: StreamWatchdog,
+  deepseek: boolean,
 ): Promise<void> {
   const onBytes = () => {
     wd.touch()
     cb.onActivity?.()
   }
-  const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    signal: wd.signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-      ...gensparkAttributionHeaders(baseUrl),
-    },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: maxTokens,
-      messages: openAiMessages(system, messages),
-      ...(tools.length > 0
-        ? {
-            tools: tools.map((t) => ({
-              type: 'function',
-              function: { name: t.name, description: t.description, parameters: t.inputSchema },
-            })),
-          }
-        : {}),
-      temperature: 0.3,
-      stream: true,
-    }),
-  })
-  // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
-  onBytes()
-  if (!response.ok || !response.body) {
-    throw new Error(`HTTP ${response.status}: ${httpBodyDetail(await response.text())}`)
-  }
-  const jsonBody = await jsonBodyInsteadOfSse(response)
-  if (jsonBody !== null) {
-    throwIfCreditsNotice(jsonBody)
-    return emitOpenAiJsonMessage(jsonBody, cb)
-  }
-  // tool call arguments stream in fragments keyed by index
-  const pendingTools = new Map<number, { id: string; name: string; json: string }>()
-  let stopReason: string | undefined
-  let abnormalFinish: string | undefined
-  let sawFinish = false
-  let emitted = false
-  const flushTools = () => {
-    const entries = [...pendingTools.entries()].sort(([a], [b]) => a - b)
-    const lastIndex = entries.at(-1)?.[0]
-    for (const [index, pending] of entries) {
-      if (pending.name) {
-        const { input, error } = parseToolInput(pending.json)
-        emitted = true
-        cb.onToolCall({
-          id: pending.id,
-          name: pending.name,
-          input,
-          inputError: error,
-          // a 'length' finish cuts off the last streaming tool's arguments
-          ...(stopReason === 'max_tokens' && index === lastIndex ? { truncated: true } : {}),
-        })
-      }
+  /**
+   * One fetch + SSE pass. Returns the collected stream state; throws on HTTP
+   * errors, gateway error events, abnormal empty finishes, and streams with no
+   * message framing at all. The silent empty case (normal stop framing with
+   * zero output) is returned so the caller can retry it for DeepSeek.
+   */
+  const runTurn = async (): Promise<{
+    emitted: boolean
+    abnormalFinish: string | undefined
+    stopReason: string | undefined
+  }> => {
+    const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      signal: wd.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+        ...gensparkAttributionHeaders(baseUrl),
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: maxTokens,
+        messages: openAiMessages(system, messages),
+        ...(tools.length > 0
+          ? {
+              tools: tools.map((t) => ({
+                type: 'function',
+                function: { name: t.name, description: t.description, parameters: t.inputSchema },
+              })),
+            }
+          : {}),
+        temperature: 0.3,
+        stream: true,
+      }),
+    })
+    // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
+    onBytes()
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP ${response.status}: ${httpBodyDetail(await response.text())}`)
     }
-    pendingTools.clear()
-  }
-  for await (const line of sseLines(response.body, onBytes)) {
-    if (!line.startsWith('data:')) continue
-    const payload = line.slice(5).trim()
-    if (!payload) continue
-    if (payload === '[DONE]') break
-    const event = JSON.parse(payload) as {
-      choices?: Array<{
-        delta?: {
-          content?: string
-          tool_calls?: Array<{
-            index: number
-            id?: string
-            function?: { name?: string; arguments?: string }
-          }>
+    const jsonBody = await jsonBodyInsteadOfSse(response)
+    if (jsonBody !== null) {
+      throwIfCreditsNotice(jsonBody)
+      // emitOpenAiJsonMessage throws on empty/error bodies and emits everything
+      // synchronously; the turn is complete once it returns
+      emitOpenAiJsonMessage(jsonBody, cb)
+      return { emitted: true, abnormalFinish: undefined, stopReason: undefined }
+    }
+    // tool call arguments stream in fragments keyed by index
+    const pendingTools = new Map<number, { id: string; name: string; json: string }>()
+    let stopReason: string | undefined
+    let abnormalFinish: string | undefined
+    let sawFinish = false
+    let emitted = false
+    const flushTools = () => {
+      const entries = [...pendingTools.entries()].sort(([a], [b]) => a - b)
+      const lastIndex = entries.at(-1)?.[0]
+      for (const [index, pending] of entries) {
+        if (pending.name) {
+          const { input, error } = parseToolInput(pending.json)
+          emitted = true
+          cb.onToolCall({
+            id: pending.id,
+            name: pending.name,
+            input,
+            inputError: error,
+            // a 'length' finish cuts off the last streaming tool's arguments
+            ...(stopReason === 'max_tokens' && index === lastIndex ? { truncated: true } : {}),
+          })
         }
-        finish_reason?: string | null
-      }>
-      error?: { message?: string } | string
-    }
-    if (event.error) throw new Error(sseErrorText(event.error, 'Model stream error'))
-    const choice = event.choices?.[0]
-    if (!choice) continue
-    if (choice.delta?.content) {
-      emitted = true
-      cb.onDelta(choice.delta.content)
-    }
-    for (const tc of choice.delta?.tool_calls ?? []) {
-      const pending = pendingTools.get(tc.index) ?? {
-        id: tc.id ?? crypto.randomUUID(),
-        name: '',
-        json: '',
       }
-      if (tc.id) pending.id = tc.id
-      if (tc.function?.name) pending.name += tc.function.name
-      if (tc.function?.arguments) pending.json += tc.function.arguments
-      pendingTools.set(tc.index, pending)
+      pendingTools.clear()
     }
-    if (choice.finish_reason) {
-      sawFinish = true
-      if (choice.finish_reason === 'length') stopReason = 'max_tokens'
-      else if (choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls') {
-        abnormalFinish = choice.finish_reason
+    for await (const line of sseLines(response.body, onBytes)) {
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (!payload) continue
+      if (payload === '[DONE]') break
+      const event = JSON.parse(payload) as {
+        choices?: Array<{
+          delta?: {
+            content?: string
+            reasoning_content?: string
+            tool_calls?: Array<{
+              index: number
+              id?: string
+              function?: { name?: string; arguments?: string }
+            }>
+          }
+          finish_reason?: string | null
+        }>
+        error?: { message?: string } | string
       }
-      flushTools()
+      if (event.error) throw new Error(sseErrorText(event.error, 'Model stream error'))
+      const choice = event.choices?.[0]
+      if (!choice) continue
+      if (choice.delta?.content) {
+        emitted = true
+        cb.onDelta(choice.delta.content)
+      }
+      // DeepSeek streams thinking before the answer; capture it even when it is an
+      // empty string (the API still requires it back on tool-call turns).
+      if (
+        choice.delta?.reasoning_content !== undefined &&
+        choice.delta.reasoning_content !== null
+      ) {
+        cb.onReasoning?.(choice.delta.reasoning_content)
+      }
+      for (const tc of choice.delta?.tool_calls ?? []) {
+        const pending = pendingTools.get(tc.index) ?? {
+          id: tc.id ?? crypto.randomUUID(),
+          name: '',
+          json: '',
+        }
+        if (tc.id) pending.id = tc.id
+        if (tc.function?.name) pending.name += tc.function.name
+        if (tc.function?.arguments) pending.json += tc.function.arguments
+        pendingTools.set(tc.index, pending)
+      }
+      if (choice.finish_reason) {
+        sawFinish = true
+        if (choice.finish_reason === 'length') stopReason = 'max_tokens'
+        else if (choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls') {
+          abnormalFinish = choice.finish_reason
+        }
+        flushTools()
+      }
     }
+    flushTools()
+    // e.g. finish_reason=content_filter with no output, or a stream with no
+    // message framing at all (gateway soft-failure) — surface both instead of an
+    // empty success; a genuine empty turn still carries finish_reason=stop
+    if (!emitted && abnormalFinish) {
+      throw new Error(`The model returned no content (finish_reason=${abnormalFinish})`)
+    }
+    if (!emitted && !sawFinish) {
+      throw new Error('The model returned no content (empty stream)')
+    }
+    return { emitted, abnormalFinish, stopReason }
   }
-  flushTools()
-  // e.g. finish_reason=content_filter with no output, or a stream with no
-  // message framing at all (gateway soft-failure) — surface both instead of an
-  // empty success; a genuine empty turn still carries finish_reason=stop
-  if (!emitted && abnormalFinish) {
-    throw new Error(`The model returned no content (finish_reason=${abnormalFinish})`)
+
+  // DeepSeek's empty turns are intermittent (thinking-only final answers, and
+  // post-tool responses with completion_tokens=0); one retry usually recovers a
+  // real answer. Other providers keep the legacy behaviour: a stop+empty turn is
+  // a legal closing turn.
+  const attempts = deepseek ? 2 : 1
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const { emitted, abnormalFinish, stopReason } = await runTurn()
+    if (emitted || abnormalFinish) {
+      if (stopReason) cb.onStopReason?.(stopReason)
+      return
+    }
+    if (deepseek && attempt < attempts - 1) continue
+    if (stopReason) cb.onStopReason?.(stopReason)
+    if (deepseek) throw new Error('The model returned no content (empty stream)')
+    return
   }
-  if (!emitted && !sawFinish) {
-    throw new Error('The model returned no content (empty stream)')
-  }
-  if (stopReason) cb.onStopReason?.(stopReason)
 }
 
 const OPENAI_COMPATIBLE_BASE_URLS: Partial<Record<AiProviderId, string>> = {
@@ -893,6 +950,16 @@ export async function streamForProvider(
     case 'gemini':
       return streamGemini(config, system, messages, tools, maxTokens, cb)
     case 'deepseek':
+      return streamOpenAiCompatible(
+        OPENAI_COMPATIBLE_BASE_URLS[provider]!,
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        cb,
+        true,
+      )
     case 'openai':
       return streamOpenAiCompatible(
         OPENAI_COMPATIBLE_BASE_URLS[provider]!,
@@ -905,7 +972,17 @@ export async function streamForProvider(
       )
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')
-      return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb)
+      // a custom endpoint pointed at DeepSeek has the same empty-turn behaviour
+      return streamOpenAiCompatible(
+        config.baseUrl,
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        cb,
+        config.baseUrl.includes('deepseek.com'),
+      )
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

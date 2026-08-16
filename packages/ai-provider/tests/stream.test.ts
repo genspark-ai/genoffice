@@ -679,6 +679,141 @@ describe('streamForProvider: openai-compatible', () => {
   })
 })
 
+describe('streamForProvider: deepseek empty turns and reasoning', () => {
+  it('retries a stop+empty turn once and succeeds when the second attempt returns content', async () => {
+    const empty = okResponse(
+      sseStream(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}', 'data: [DONE]']),
+    )
+    const withContent = okResponse(
+      sseStream([
+        'data: {"choices":[{"delta":{"content":"finally"}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        'data: [DONE]',
+      ]),
+    )
+    const fetchMock = vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce(withContent)
+    vi.stubGlobal('fetch', fetchMock)
+    const { deltas, cb } = collector()
+    await streamForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-flash' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(deltas.join('')).toBe('finally')
+  })
+
+  it('fails with an empty-stream error after two consecutive empty turns', async () => {
+    const empty = () =>
+      okResponse(
+        sseStream(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}', 'data: [DONE]']),
+      )
+    // fresh Response per call: a consumed SSE body stream cannot be re-read
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(empty()))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await expect(
+      streamForProvider(
+        'deepseek',
+        { apiKey: 'k', model: 'deepseek-v4-flash' },
+        'sys',
+        [],
+        [],
+        100,
+        cb,
+      ),
+    ).rejects.toThrow(/no content \(empty stream\)/)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry when the first attempt produced content', async () => {
+    const withContent = okResponse(
+      sseStream([
+        'data: {"choices":[{"delta":{"content":"ok"}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        'data: [DONE]',
+      ]),
+    )
+    const fetchMock = vi.fn().mockResolvedValue(withContent)
+    vi.stubGlobal('fetch', fetchMock)
+    const { deltas, cb } = collector()
+    await streamForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-flash' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(deltas.join('')).toBe('ok')
+  })
+
+  it('captures reasoning_content deltas and echoes them back on follow-up requests', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse(
+          sseStream([
+            'data: {"choices":[{"delta":{"reasoning_content":"think "}}]}',
+            'data: {"choices":[{"delta":{"reasoning_content":"hard"}}]}',
+            'data: {"choices":[{"delta":{"content":"answer"}}]}',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+            'data: [DONE]',
+          ]),
+        ),
+      )
+      .mockResolvedValueOnce(
+        okResponse(
+          sseStream([
+            'data: {"choices":[{"delta":{"content":"ok"}}]}',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+            'data: [DONE]',
+          ]),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const { deltas, cb } = collector()
+    const reasoning: string[] = []
+    const cbWithReasoning = { ...cb, onReasoning: (text: string) => reasoning.push(text) }
+    await streamForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-flash' },
+      'sys',
+      [],
+      [],
+      100,
+      cbWithReasoning,
+    )
+    expect(deltas.join('')).toBe('answer')
+    expect(reasoning.join('')).toBe('think hard')
+
+    // follow-up request echoes reasoning_content on the assistant turn
+    await streamForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-flash' },
+      'sys',
+      [
+        { role: 'user', text: 'next' },
+        { role: 'assistant', text: 'answer', reasoning: 'think hard' },
+      ],
+      [],
+      100,
+      cbWithReasoning,
+    )
+    const body = JSON.parse(fetchMock.mock.calls[1]![1].body as string) as {
+      messages: Array<{ role: string; reasoning_content?: string }>
+    }
+    const assistant = body.messages.find((m) => m.role === 'assistant')
+    expect(assistant?.reasoning_content).toBe('think hard')
+  })
+})
+
 describe('streamForProvider: genspark', () => {
   it('routes claude models to the Anthropic-compatible proxy endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream([])))

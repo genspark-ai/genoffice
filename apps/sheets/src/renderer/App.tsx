@@ -3219,6 +3219,8 @@ export function App(): React.JSX.Element {
         onUndo={handleUndo}
         canUndo={lazyWorkbookRef.current ? univerHist.canUndo : adapterRef.current.canUndo}
         canRedo={univerHist.canRedo}
+        aiSettings={aiSettings}
+        onAiSettingsChange={setAiSettingsState}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}
         canSave={pendingEdits > 0}

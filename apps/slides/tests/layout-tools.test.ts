@@ -190,6 +190,13 @@ describe('auditSlideLayout', () => {
     expect(issues.some((s) => s.includes('Text overflow'))).toBe(true)
   })
 
+  it('detects text overflow (laid-out line wider than the box inner width)', () => {
+    // Box width 200, insets 8 left/right -> inner width 184; run x=8 width 20*12=240 -> exceeds by 64px
+    const slide = slideOf([textNode('t1', box(80, 60, 200, 100), 'x'.repeat(20))])
+    const issues = auditSlideLayout(slide)
+    expect(issues.some((s) => s.includes('Text overflow (width)') && s.includes('64px'))).toBe(true)
+  })
+
   it('decoration layers and large background blocks are excluded', () => {
     const bg = textNode('bg', box(0, 0, 1280, 720), 'Background watermark')
     const deco = { ...textNode('deco', box(100, 100, 400, 200), 'Decoration'), decoration: true }
