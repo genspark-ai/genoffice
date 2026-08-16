@@ -26,6 +26,14 @@ electron-builder.env
 /*.zip
 /windows/
 
+# Ad-hoc electron-builder output dirs (not the default release/)
+release_build/
+/release2/
+*.blockmap
+
+# daily-reflection skill state (personal cross-session data)
+.daily_reflection/
+
 # Playwright artifacts
 /test-results/
 
