@@ -371,6 +371,24 @@ export function AiPanel({
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [chat, setChat] = useState<ChatEntry[]>([])
+  // Cross-app persistence (#33): the transcript lives in the main-process store,
+  // so tab switches and restarts keep the conversation.
+  useEffect(() => {
+    let alive = true
+    void window.slidesApi.aiChatLoad('slides').then((entries) => {
+      if (alive && entries.length > 0) {
+        setChat((entries as ChatEntry[]).filter((e) => !e.streaming))
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (chat.length === 0) return
+    const timer = setTimeout(() => void window.slidesApi.aiChatSave('slides', chat), 500)
+    return () => clearTimeout(timer)
+  }, [chat])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)

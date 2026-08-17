@@ -1810,7 +1810,6 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Poprzedniki {address}',
     aiToolTraceDependents: 'Śledź zależności',
     aiToolTraceDependentsOf: 'Zależności {address} ({count})',
-    aiToolWebSearchDone: 'Wyszukano „{query}" ({count} wyników)',
     aiUnsupportedPrompt: 'Spróbuj np. "set A1 to 42", "formula B1 = SUM(A1:A10)" lub "rename sheet to Budget".',
     aiSettingsProvider: 'Dostawca AI',
     aiSettingsApiKey: 'Klucz API',

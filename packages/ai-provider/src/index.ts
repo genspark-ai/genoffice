@@ -20,6 +20,17 @@ export {
   resolveAiSettings,
 } from './providers'
 export { listOllamaModels, type OllamaModelsResult } from './ollama'
+export {
+  chunkText,
+  cosineSimilarity,
+  embedWithOllama,
+  ollamaApiRoot,
+  pickEmbeddingModel,
+  searchChunks,
+  type WorkspaceIndexHit,
+  type WorkspaceIndexResult,
+  type WorkspaceSearchResult,
+} from './embed'
 export { testProviderConnection } from './connection'
 export type {
   AiConnectionStatus,

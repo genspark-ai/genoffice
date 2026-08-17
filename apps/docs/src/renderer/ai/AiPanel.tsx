@@ -11,6 +11,7 @@ import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
+import { createWorkspaceSkill } from './workspace-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { isProviderConfigured } from '@genoffice/ai-provider'
@@ -286,6 +287,24 @@ export function AiPanel({
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
   const [chat, setChat] = useState<ChatEntry[]>([])
+  // Cross-app persistence (#33): the transcript lives in the main-process store,
+  // so tab switches and restarts keep the conversation.
+  useEffect(() => {
+    let alive = true
+    void window.desktop.aiChatLoad('docs').then((entries) => {
+      if (alive && entries.length > 0) {
+        setChat((entries as ChatEntry[]).filter((e) => !e.streaming))
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (chat.length === 0) return
+    const timer = setTimeout(() => void window.desktop.aiChatSave('docs', chat), 500)
+    return () => clearTimeout(timer)
+  }, [chat])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
   const [trackChanges, setTrackChanges] = useState(
@@ -558,6 +577,7 @@ export function AiPanel({
           () => (trackChangesRef.current ? { author: AI_REVISION_AUTHOR } : undefined),
         ),
         createFilesSkill(availableAttachments),
+        createWorkspaceSkill(),
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {

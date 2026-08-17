@@ -425,6 +425,10 @@ const desktopApi: DesktopApi = {
     }
     return result as { base64: string; mime: string }
   },
+  aiChatLoad: (appId: string) => ipcRenderer.invoke(IPC_CHANNELS.aiChatLoad, appId),
+  aiChatSave: (appId: string, entries: unknown[]) => ipcRenderer.invoke(IPC_CHANNELS.aiChatSave, appId, entries),
+  workspaceIndex: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceIndex),
+  workspaceSearch: (query: string, k?: number) => ipcRenderer.invoke(IPC_CHANNELS.workspaceSearch, query, k),
   onAiStream(callback) {
     const listener = (_event: unknown, chunk: unknown): void => {
       if (

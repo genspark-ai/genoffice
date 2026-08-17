@@ -70,6 +70,24 @@ export function AiPanel({
 }): ReactElement {
   const { lang, t } = useI18n()
   const [chat, setChat] = useState<ChatEntry[]>([])
+  // Cross-app persistence (#33): the transcript lives in the main-process store,
+  // so tab switches and restarts keep the conversation.
+  useEffect(() => {
+    let alive = true
+    void window.pdfApi.aiChatLoad('pdf').then((entries) => {
+      if (alive && entries.length > 0) {
+        setChat((entries as ChatEntry[]).filter((e) => !e.streaming))
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (chat.length === 0) return
+    const timer = setTimeout(() => void window.pdfApi.aiChatSave('pdf', chat), 500)
+    return () => clearTimeout(timer)
+  }, [chat])
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>('thinking')
