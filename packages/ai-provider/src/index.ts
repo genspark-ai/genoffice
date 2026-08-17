@@ -15,10 +15,17 @@ export {
   GENSPARK_LLM_BASE_URLS,
   OLLAMA_DEFAULT_BASE_URL,
   defaultAiSettings,
+  isProviderConfigured,
   providerRequiresApiKey,
   resolveAiSettings,
 } from './providers'
 export { listOllamaModels, type OllamaModelsResult } from './ollama'
+export { testProviderConnection } from './connection'
+export type {
+  AiConnectionStatus,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
+} from './connection'
 export { chatForProvider } from './chat'
 export { setRescueFetch } from './fetch'
 export { isAiNetworkError } from './network-error'

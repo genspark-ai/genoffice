@@ -62,6 +62,9 @@ import {
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
+  testProviderConnection,
+  type AiConnectionTestInput,
+  type AiProviderConfig,
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
@@ -2414,6 +2417,21 @@ export function registerSheetsAiIpc(): void {
       }
     },
   )
+
+  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
+    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
+    const provider = raw.provider
+    if (!provider) return { ok: false as const, status: 'unknown' as const }
+    let config: AiProviderConfig = {
+      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
+      model: typeof raw.model === 'string' ? raw.model : '',
+      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
+    }
+    if (provider === 'genspark' && !config.apiKey) {
+      config = { ...config, apiKey: gskApiKey() }
+    }
+    return testProviderConnection(provider, config)
+  })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
     sessionFor(event)

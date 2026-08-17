@@ -168,9 +168,57 @@
 
 .ai-settings-dialog-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 0 20px 16px;
+}
+
+.ai-settings-dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-settings-test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ai-settings-test-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-settings-test-btn:hover {
+  background: var(--hover);
+}
+
+.ai-settings-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-settings-test-status {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-settings-test-status--ok {
+  color: var(--accent);
+}
+
+.ai-settings-test-status--fail {
+  color: var(--error);
 }
 
 .ai-settings-dialog-cancel {

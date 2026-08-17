@@ -5,6 +5,8 @@ import { ADDABLE_SHAPE_TYPES } from './shape-types'
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
@@ -2331,6 +2333,8 @@ export interface DesktopApi {
   aiGskLogin(): Promise<void>
   /// List locally-available Ollama models (Ollama's /api/tags endpoint)
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
+  /// Lightweight provider connection test (never returns stack traces)
+  aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
   /// Web search (main-process Serper/DuckDuckGo, shared with docs/slides)
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
   /// Image search (same shared main-process channel as docs/slides)

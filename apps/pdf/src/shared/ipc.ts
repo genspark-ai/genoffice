@@ -1,5 +1,12 @@
 import type { Lang } from '@genoffice/i18n'
-import type { AiSettings, AiStreamChunk, AiStreamRequest, OllamaModelsResult } from '@genoffice/ai-provider'
+import type {
+  AiConnectionTestInput,
+  AiConnectionTestResult,
+  AiSettings,
+  AiStreamChunk,
+  AiStreamRequest,
+  OllamaModelsResult,
+} from '@genoffice/ai-provider'
 
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
@@ -620,6 +627,7 @@ export const AI_CHANNELS = {
   imageSearch: 'ai:image-search',
   fetchImage: 'ai:fetch-image',
   ollamaModels: 'ai:ollama-models',
+  testConnection: 'ai:test-connection',
 } as const
 
 export interface ImageSearchResponse {
@@ -727,4 +735,5 @@ export interface PdfApi {
   aiStreamCancel(requestId: string): Promise<void>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
+  aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
 }

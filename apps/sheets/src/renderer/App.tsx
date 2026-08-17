@@ -115,7 +115,7 @@ import {
   composeSkills,
   type AgentImage,
 } from '@genoffice/agent-core'
-import { defaultAiSettings, type AiSettings } from '@genoffice/ai-provider'
+import { defaultAiSettings, isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
 import {
   copyTargetBounds,
   replaceOccurrences,
@@ -1090,14 +1090,11 @@ export function App(): React.JSX.Element {
   }
 
   function isAgentConfigured(): boolean {
-    const settings = aiSettingsRef.current
-    if (!settings) return false
-    const config = settings.providers[settings.provider]
-    if (!config?.model) return false
-    // Genspark's key never lands in the settings file; the main process injects
-    // it from the gsk login state. When logged out, requests return an error
-    // guiding sign-in — not intercepted here.
-    return settings.provider === 'genspark' || !!config.apiKey
+    // Shared readiness check: key-optional providers (local Ollama) count as
+    // configured once a model is selected; Genspark counts as configured and
+    // login errors guide sign-in at request time (the key is injected by the
+    // main process from the gsk login state).
+    return isProviderConfigured(aiSettingsRef.current)
   }
 
   /** Image attachments read as base64 and sent multimodal with this user message

@@ -46,7 +46,10 @@ import {
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
+  testProviderConnection,
   type AiChatRequest,
+  type AiConnectionTestInput,
+  type AiProviderConfig,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
@@ -2571,6 +2574,22 @@ export function registerAiIpc(): void {
       }
     },
   )
+
+  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
+    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
+    const provider = raw.provider
+    if (!provider) return { ok: false as const, status: 'unknown' as const }
+    let config: AiProviderConfig = {
+      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
+      model: typeof raw.model === 'string' ? raw.model : '',
+      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
+    }
+    // the genspark key lives in the gsk login state, never the settings file
+    if (provider === 'genspark' && !config.apiKey) {
+      config = { ...config, apiKey: gskApiKey() }
+    }
+    return testProviderConnection(provider, config)
+  })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, settings, system, messages } = request
