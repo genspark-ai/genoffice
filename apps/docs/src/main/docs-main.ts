@@ -10,7 +10,17 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, net, shell } from 'electron'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  dialog,
+  ipcMain,
+  net,
+  shell,
+  webContents,
+} from 'electron'
 import {
   appMenuLabels,
   configuredDefaultSaveDir,
@@ -36,20 +46,15 @@ import type {
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
 import {
-  AiCreditsError,
-  AiTimeoutError,
-  isAiNetworkError,
+  AiMainRuntime,
   chatForProvider,
-  defaultAiSettings,
-  resolveAiSettings,
   setRescueFetch,
-  streamForProvider,
   type AiChatRequest,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
-  type LegacyAiSettings,
+  sanitizeAiSettings,
 } from '@genoffice/ai-provider'
 import {
   ensureGenofficeLogin,
@@ -70,6 +75,7 @@ import type {
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { findDocxPath } from '../shared/open-file'
+import { getCodexAuth } from './codex-auth-main'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { initDocsAutoUpdater } from './updater'
@@ -2458,7 +2464,10 @@ const TWIPS_PER_INCH = 1440
 
 const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
-const activeAiStreams = new Map<string, AbortController>()
+const aiRuntime = new AiMainRuntime({
+  auth: getCodexAuth(),
+  getGensparkApiKey: gskApiKey,
+})
 
 /**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
@@ -2467,11 +2476,8 @@ const activeAiStreams = new Map<string, AbortController>()
  */
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    const stored = readJson<unknown>(SETTINGS_PATH(), {})
+    return sanitizeAiSettings(stored)
   })
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
@@ -2489,81 +2495,47 @@ export function registerAiIpc(): void {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
+  ipcMain.handle('ai:codex-status', async () => {
+    return aiRuntime.codexStatus()
+  })
+
+  ipcMain.handle('ai:codex-login', async () => {
+    return aiRuntime.codexLogin()
+  })
+
+  ipcMain.handle('ai:codex-cancel-login', () => {
+    aiRuntime.codexCancelLogin()
+  })
+
+  ipcMain.handle('ai:codex-logout', async () => {
+    return aiRuntime.codexLogout()
+  })
+
+  ipcMain.handle('ai:codex-capabilities', async () => {
+    return aiRuntime.codexCapabilities()
+  })
+
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(SETTINGS_PATH(), settings)
+    const sanitized = sanitizeAiSettings(settings)
+    writeJson(SETTINGS_PATH(), sanitized)
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send('ai:settings-changed', sanitized)
+    }
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
-    const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
-    const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // the genspark key never enters the settings file; requests take it from the gsk login state
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    const send = (chunk: AiStreamChunk) => {
+    const send = (chunk: AiStreamChunk): void => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
-      send({
-        requestId,
-        type: 'error',
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
-      })
-      return
-    }
-    if (!config.model) {
-      send({ requestId, type: 'error', error: tm('errNoModel') })
-      return
-    }
-    const controller = new AbortController()
-    activeAiStreams.set(requestId, controller)
-    // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
-    let lastPing = 0
-    const ping = () => {
-      const now = Date.now()
-      if (now - lastPing < 5_000) return
-      lastPing = now
-      send({ requestId, type: 'ping' })
-    }
-    try {
-      let stopReason: string | undefined
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
-        signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
-        onActivity: ping,
-        onStopReason: (reason) => {
-          stopReason = reason
-        },
-      })
-      send({ requestId, type: 'done', stopReason })
-    } catch (err) {
-      if (controller.signal.aborted) {
-        send({ requestId, type: 'done' })
-      } else {
-        send({
-          requestId,
-          type: 'error',
-          error: err instanceof Error ? err.message : String(err),
-          ...(err instanceof AiTimeoutError
-            ? { errorCode: 'timeout' as const }
-            : err instanceof AiCreditsError
-              ? { errorCode: 'credits' as const }
-              : isAiNetworkError(err)
-                ? { errorCode: 'network' as const }
-                : {}),
-        })
-      }
-    } finally {
-      activeAiStreams.delete(requestId)
-    }
+    await aiRuntime.stream(request, send, {
+      noGensparkApiKey: tm('errGskNotLoggedIn'),
+      noApiKey: (provider) => tm('errNoApiKey', { provider }),
+      noModel: tm('errNoModel'),
+    })
   })
 
   ipcMain.handle('ai:stream-cancel', (_event, requestId: string) => {
-    activeAiStreams.get(requestId)?.abort()
+    aiRuntime.cancel(requestId)
   })
 
   // shared search tools (content + images): Serper with DuckDuckGo fallback (same source as slides/sheets)
@@ -2610,6 +2582,9 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
     const { settings, system, user } = request
     const provider = settings.provider
+    if (provider === 'openai-codex') {
+      return { ok: false, error: 'ChatGPT Codex is available through streaming chats only.' }
+    }
     let config = settings.providers?.[provider]
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }

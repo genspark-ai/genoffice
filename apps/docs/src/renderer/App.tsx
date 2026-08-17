@@ -324,11 +324,18 @@ interface DocStats {
 }
 
 const DEFAULT_SETTINGS: AiSettings = {
-  provider: 'anthropic',
+  provider: 'genspark',
   providers: Object.fromEntries(
     AI_PROVIDERS.map((p) => [
       p.id,
-      { apiKey: '', model: p.defaultModel, baseUrl: p.needsBaseUrl ? '' : undefined },
+      {
+        apiKey: '',
+        model: p.defaultModel,
+        baseUrl: p.needsBaseUrl ? '' : undefined,
+        ...(p.id === 'openai-codex'
+          ? { reasoningEffort: 'none' as const, serviceTier: 'default' }
+          : {}),
+      },
     ]),
   ) as AiSettings['providers'],
 }
@@ -727,6 +734,13 @@ export function App() {
     void window.desktop.getRecentFiles().then(setRecent)
     void window.desktop.getAiSettings().then(setSettings)
   }, [])
+
+  useEffect(() => window.desktop.onAiSettingsChanged(setSettings), [])
+
+  const updateAiSettings = (next: AiSettings) => {
+    setSettings(next)
+    void window.desktop.setAiSettings(next)
+  }
 
   useEffect(() => {
     localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
@@ -3150,6 +3164,7 @@ export function App() {
               editor={editor}
               blocks={doc.parsed.blocks}
               settings={settings}
+              onSettingsChange={updateAiSettings}
               docEmpty={wordCount === 0}
               numIdFallback={
                 doc.isBlank ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID } : null

@@ -22,6 +22,9 @@ import type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexErrorCode,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
@@ -37,9 +40,19 @@ export type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexModelCapability,
+  CodexReasoningEffort,
+  CodexServiceTier,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
+
+/** Main-process validated Codex model catalog; failures cross IPC as codes. */
+export interface CodexCapabilitiesResult extends CodexCapabilities {
+  errorCode?: CodexErrorCode
+}
 
 // ---- agent protocol: canonical types live in @genoffice/agent-core ----
 
@@ -190,6 +203,7 @@ export interface DesktopApi {
   fontMetrics(family: string): Promise<FaceVerticalMetrics | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   /** system print dialog for the current window; ok=false without error = canceled */
   print(): Promise<{ ok: boolean; error?: string }>
   /** render the document to PDF and ask where to save; size in twips.
@@ -220,6 +234,12 @@ export interface DesktopApi {
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */
   aiGskLogin(): Promise<void>
+  /** Redacted ChatGPT Codex account state; credentials never cross preload. */
+  aiCodexStatus(): Promise<CodexAccountStatus>
+  aiCodexLogin(): Promise<CodexAccountStatus>
+  aiCodexCancelLogin(): Promise<void>
+  aiCodexLogout(): Promise<CodexAccountStatus>
+  aiCodexCapabilities(): Promise<CodexCapabilitiesResult>
   webSearch(
     query: string,
     maxResults?: number,

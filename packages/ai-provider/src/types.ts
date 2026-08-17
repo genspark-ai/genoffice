@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
-export type AiProviderId = 'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
+export type AiProviderId =
+  'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'openai-codex' | 'custom'
 
 /** Genspark account status (gsk login state; the sole auth source for AI features) */
 export interface GenSparkAccountStatus {
@@ -11,8 +12,64 @@ export interface GenSparkAccountStatus {
 export interface AiProviderConfig {
   apiKey: string
   model: string
+  /** Codex-only Responses reasoning setting; `none` omits the request field. */
+  reasoningEffort?: CodexReasoningEffort
+  /** Codex-only Responses service tier; `default` omits the request field. */
+  serviceTier?: string
   /** only used by the custom (OpenAI-compatible) provider */
   baseUrl?: string | undefined
+}
+
+export type CodexReasoningEffort =
+  'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+
+export type CodexErrorCode =
+  | 'auth-required'
+  | 'auth-expired'
+  | 'auth-temporary'
+  | 'timeout'
+  | 'capabilities-unavailable'
+  | 'rate-limit'
+  | 'request-rejected'
+  | 'invalid-stream'
+  | 'invalid-tool-call'
+  | 'provider-failure'
+
+export type AiErrorCode = CodexErrorCode | 'credits' | 'network'
+
+export class CodexError extends Error {
+  constructor(
+    readonly code: CodexErrorCode,
+    options: { status?: number; diagnosticCode?: string } = {},
+  ) {
+    super(code)
+    this.name = 'CodexError'
+    if (options.status !== undefined) this.status = options.status
+    if (options.diagnosticCode !== undefined) this.diagnosticCode = options.diagnosticCode
+  }
+
+  readonly status?: number
+  readonly diagnosticCode?: string
+}
+
+/** Renderer-safe, account-specific Codex model capabilities. */
+export interface CodexServiceTier {
+  id: string
+  name: string
+  description?: string
+}
+
+export interface CodexModelCapability {
+  id: string
+  /** Codex display copy, normalized from the catalog's `display_name`. */
+  name?: string
+  reasoningEfforts: CodexReasoningEffort[]
+  serviceTiers?: CodexServiceTier[]
+  defaultServiceTier?: string
+}
+
+export interface CodexCapabilities {
+  models: CodexModelCapability[]
 }
 
 export interface AiProviderMeta {
@@ -21,7 +78,34 @@ export interface AiProviderMeta {
   models: string[]
   defaultModel: string
   keyPlaceholder: string
+  /** false when this provider receives main-process account credentials instead of a settings API key */
+  requiresApiKey?: boolean
   needsBaseUrl?: boolean
+}
+
+/**
+ * Account credentials injected by the main process for one Codex request.
+ * Never persist this in AiSettings or forward it over renderer IPC.
+ */
+export interface CodexAuthContext {
+  accessToken: string
+  accountId: string
+  expiresAt: number
+}
+
+/** Narrow provider boundary; app code owns prompts, history, and tool execution. */
+export interface CodexAdapterRequest {
+  auth: CodexAuthContext
+  instructions: string
+  messages: AgentMessage[]
+  tools: AgentToolDef[]
+  model: string
+  reasoningEffort?: CodexReasoningEffort
+  serviceTier?: string
+  signal: AbortSignal
+  onDelta: (text: string) => void
+  onToolCall: (call: AgentToolCall) => void
+  onActivity?: () => void
 }
 
 export interface AiSettings {
@@ -65,8 +149,8 @@ export interface AiStreamChunk {
   /** complete parsed tool call (emitted once its arguments finish streaming) */
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause ('timeout', exhausted 'credits', 'network' connectivity failure); lets the renderer localize the message */
-  errorCode?: 'timeout' | 'credits' | 'network'
+  /** machine-readable error cause; lets the renderer localize the message */
+  errorCode?: AiErrorCode
   /** normalized stop reason carried on 'done' ('max_tokens' = output cut off by the token limit) */
   stopReason?: string
 }

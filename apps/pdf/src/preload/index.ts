@@ -1,8 +1,50 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
-import type { AiStreamChunk } from '@genoffice/ai-provider'
+import type { AiSettings, AiStreamChunk } from '@genoffice/ai-provider'
 import { AI_CHANNELS, PDF_CHANNELS } from '../shared/ipc'
-import type { PdfApi, UiTheme } from '../shared/ipc'
+import type { CodexCapabilitiesResult, PdfApi, UiTheme } from '../shared/ipc'
+import type { CodexAccountStatus } from '@genoffice/ai-provider'
+
+const CODEX_ERROR_CODES = new Set([
+  'auth-required',
+  'auth-expired',
+  'auth-temporary',
+  'timeout',
+  'capabilities-unavailable',
+  'rate-limit',
+  'request-rejected',
+  'invalid-stream',
+  'invalid-tool-call',
+  'provider-failure',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseCodexAccountStatus(value: unknown): CodexAccountStatus {
+  if (
+    !isRecord(value) ||
+    typeof value.loggedIn !== 'boolean' ||
+    (value.errorCode !== undefined &&
+      (typeof value.errorCode !== 'string' || !CODEX_ERROR_CODES.has(value.errorCode)))
+  ) {
+    throw new Error('Invalid Codex account status response.')
+  }
+  return value as unknown as CodexAccountStatus
+}
+
+function parseCodexCapabilities(value: unknown): CodexCapabilitiesResult {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.models) ||
+    (value.errorCode !== undefined &&
+      (typeof value.errorCode !== 'string' || !CODEX_ERROR_CODES.has(value.errorCode)))
+  ) {
+    throw new Error('Invalid Codex capabilities response.')
+  }
+  return value as unknown as CodexCapabilitiesResult
+}
 
 const api: PdfApi = {
   consumePending: () => ipcRenderer.invoke(PDF_CHANNELS.consumePending),
@@ -74,8 +116,27 @@ const api: PdfApi = {
     return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
   },
   getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  setAiSettings: (settings: AiSettings) => ipcRenderer.invoke(AI_CHANNELS.setSettings, settings),
+  onAiSettingsChanged: (handler) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (!isRecord(value) || typeof value.provider !== 'string' || !isRecord(value.providers))
+        return
+      handler(value as unknown as AiSettings)
+    }
+    ipcRenderer.on(AI_CHANNELS.settingsChanged, listener)
+    return () => ipcRenderer.removeListener(AI_CHANNELS.settingsChanged, listener)
+  },
   aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
   aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),
+  aiCodexStatus: async () =>
+    parseCodexAccountStatus(await ipcRenderer.invoke(AI_CHANNELS.codexStatus)),
+  aiCodexLogin: async () =>
+    parseCodexAccountStatus(await ipcRenderer.invoke(AI_CHANNELS.codexLogin)),
+  aiCodexCancelLogin: () => ipcRenderer.invoke(AI_CHANNELS.codexCancelLogin),
+  aiCodexLogout: async () =>
+    parseCodexAccountStatus(await ipcRenderer.invoke(AI_CHANNELS.codexLogout)),
+  aiCodexCapabilities: async () =>
+    parseCodexCapabilities(await ipcRenderer.invoke(AI_CHANNELS.codexCapabilities)),
   onAiStream: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, chunk: AiStreamChunk) => handler(chunk)
     ipcRenderer.on(AI_CHANNELS.streamChunk, listener)

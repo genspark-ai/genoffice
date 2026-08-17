@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { defaultAiSettings, getCodexUiLabels, type AiSettings } from '@genoffice/ai-provider'
+import {
+  AiCodexModelControl,
+  AiComposer,
+  AiProviderAuthBanner,
+  AiProviderSelect,
+  AiTypingIndicator,
+  useAiProviderControls,
+} from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -82,11 +89,45 @@ export function AiPanel({
     const dock = asideRef.current?.closest('.ai-dock') as HTMLElement | null
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
   }, [panelWidth])
+  const [settings, setSettings] = useState<AiSettings | null>(null)
   const settingsRef = useRef<AiSettings | null>(null)
   const langRef = useRef(lang)
   langRef.current = lang
   const apiRef = useRef(api)
   apiRef.current = api
+
+  const updateSettings = (next: AiSettings): void => {
+    settingsRef.current = next
+    setSettings(next)
+    void window.pdfApi.setAiSettings(next)
+  }
+
+  useEffect(() => {
+    let active = true
+    void window.pdfApi.getAiSettings().then((next) => {
+      if (!active) return
+      settingsRef.current = next
+      setSettings(next)
+    })
+    const unsubscribe = window.pdfApi.onAiSettingsChanged((next) => {
+      if (!active) return
+      settingsRef.current = next
+      setSettings(next)
+    })
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
+
+  const effectiveSettings = settings ?? defaultAiSettings()
+  const labels = getCodexUiLabels(lang)
+  const providerControls = useAiProviderControls({
+    settings: effectiveSettings,
+    onSettingsChange: updateSettings,
+    api: window.pdfApi,
+    positionKey: panelWidth,
+  })
 
   const patchLast = (patch: Partial<ChatEntry> | ((last: ChatEntry) => Partial<ChatEntry>)) => {
     setChat((prev) => {
@@ -206,7 +247,7 @@ export function AiPanel({
   const send = (text: string): void => {
     const instruction = text.trim()
     const loop = loopRef.current
-    if (!instruction || !loop || loop.busy) return
+    if (!instruction || !loop || loop.busy || !settings || providerControls.sendDisabled) return
     stickToBottomRef.current = true
     setChat((prev) => [
       ...prev,
@@ -218,7 +259,7 @@ export function AiPanel({
     setPhase('thinking')
     void (async () => {
       try {
-        settingsRef.current = await window.pdfApi.getAiSettings()
+        if (!settingsRef.current) settingsRef.current = await window.pdfApi.getAiSettings()
         await loop.run(instruction)
       } catch (err) {
         patchLast({
@@ -307,6 +348,11 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <AiProviderSelect
+            settings={effectiveSettings}
+            labels={labels}
+            controls={providerControls}
+          />
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -332,6 +378,12 @@ export function AiPanel({
           </button>
         </div>
       </header>
+
+      <AiProviderAuthBanner
+        settings={effectiveSettings}
+        labels={labels}
+        controls={providerControls}
+      />
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {chat.length === 0 && (
@@ -395,6 +447,14 @@ export function AiPanel({
           sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
           sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
           stopIcon={<img src={sendStop} alt="" aria-hidden />}
+          sendDisabled={!settings || providerControls.sendDisabled}
+          footerStart={
+            <AiCodexModelControl
+              settings={effectiveSettings}
+              labels={labels}
+              controls={providerControls}
+            />
+          }
           onChange={setPrompt}
           onSend={() => send(prompt)}
           onStop={stop}

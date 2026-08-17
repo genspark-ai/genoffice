@@ -54,6 +54,7 @@
   --color-border-brand: #0f7fff;
   --color-error: #ef4444;
   --color-error-hover: #dc2626;
+  --color-success: #16a34a;
 
   /* non-color */
   --radius-6: 6px;
@@ -111,6 +112,7 @@
   --color-border-default: #3a3a3a;
   --color-border-strong: #555;
   --color-border-brand: #4a9eff;
+  --color-success: #4ade80;
 
   color-scheme: dark;
 }
@@ -158,6 +160,7 @@
     --color-border-default: #3a3a3a;
     --color-border-strong: #555;
     --color-border-brand: #4a9eff;
+    --color-success: #4ade80;
 
     color-scheme: dark;
   }

@@ -11,6 +11,32 @@ import type {
  * identical to ai-provider's AiStreamChunk; declared here so this package
  * stays dependency-free.
  */
+export type IpcErrorCode =
+  | 'timeout'
+  | 'credits'
+  | 'auth-required'
+  | 'auth-expired'
+  | 'auth-temporary'
+  | 'capabilities-unavailable'
+  | 'rate-limit'
+  | 'request-rejected'
+  | 'invalid-stream'
+  | 'invalid-tool-call'
+  | 'network'
+  | 'provider-failure'
+
+export type IpcErrorMessages = Readonly<Record<IpcErrorCode, string>> & {
+  unknown: string
+}
+
+/** Resolve an IPC error code without exposing main-process/provider text. */
+export function resolveIpcErrorCode(
+  code: IpcErrorCode | string | undefined,
+  messages: IpcErrorMessages,
+): string {
+  return (code && messages[code as IpcErrorCode]) || messages.unknown
+}
+
 export interface IpcStreamChunk {
   requestId: string
   /** 'ping' = wire-level keepalive; re-arms the silence watchdog and carries no payload */
@@ -18,8 +44,8 @@ export interface IpcStreamChunk {
   text?: string
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause; maps to the localized timeout/credits/network message */
-  errorCode?: 'timeout' | 'credits' | 'network'
+  /** machine-readable error cause; maps to renderer-localized text */
+  errorCode?: IpcErrorCode
   /** normalized stop reason on 'done' ('max_tokens' = cut off by the token limit) */
   stopReason?: string
 }
@@ -55,6 +81,8 @@ export interface IpcTransportOptions<S> {
   timeoutErrorText?(): string
   /** localized message for exhausted credits (errorCode 'credits') */
   creditsErrorText?(): string
+  /** resolve a machine-readable error code; when supplied, raw main-process text is ignored */
+  resolveErrorCode?(code: IpcErrorCode | undefined): string | undefined
   /** localized message for network connectivity failures (errorCode 'network') */
   networkErrorText?(): string
 }
@@ -104,14 +132,20 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
           cb.onDone()
         } else {
           settle()
+          const resolved = options.resolveErrorCode?.(chunk.errorCode)
           cb.onError(
-            chunk.errorCode === 'timeout'
-              ? timeoutText()
-              : chunk.errorCode === 'credits'
-                ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                : chunk.errorCode === 'network'
+            resolved ??
+              (options.resolveErrorCode
+                ? chunk.errorCode === 'network'
                   ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                  : (chunk.error ?? options.unknownErrorText()),
+                  : options.unknownErrorText()
+                : chunk.errorCode === 'timeout'
+                  ? timeoutText()
+                  : chunk.errorCode === 'credits'
+                    ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                    : chunk.errorCode === 'network'
+                      ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                      : (chunk.error ?? options.unknownErrorText())),
           )
         }
       })

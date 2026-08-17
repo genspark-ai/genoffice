@@ -1,8 +1,10 @@
 import { defineStrings } from '@genoffice/i18n'
+import { codexStrings } from '@genoffice/ai-provider'
 
 /** User-visible strings for the ai/ panel and tool feedback (LLM prompts are not here) */
 export const aiStrings = defineStrings({
   zh: {
+    ...codexStrings.zh,
     aiEmptyDraftTitle: '让 AI 帮你从零起草',
     aiEmptyDraftBody1: '描述主题、要点或粘贴参考素材,',
     aiEmptyDraftBody2: 'AI 直接为你写出初稿。',
@@ -20,7 +22,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI 排版',
     aiTidyPrompt:
       '整理全文排版,例如修正标题层级、统一列表格式、去除多余的加粗和斜体、为正文补齐首行缩进等;只调整格式,不要改动任何文字内容',
-    aiSwitchModelTitle: '切换 AI 模型',
     aiNewChatTitle: '新对话',
     aiCollapseTitle: '收起面板',
     aiHistorySep: '—— 以上是历史对话 ——',
@@ -107,6 +108,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: '(跳过 {count} 个受保护块)',
   },
   en: {
+    ...codexStrings.en,
     aiEmptyDraftTitle: 'Let AI draft this document for you',
     aiEmptyDraftBody1: 'Describe the topic and key points, or paste reference material;',
     aiEmptyDraftBody2: 'AI writes the first draft right onto the page.',
@@ -124,7 +126,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI Format',
     aiTidyPrompt:
       'Tidy up the document formatting — for example fix heading levels, unify list formatting, remove unnecessary bold and italics, and make paragraph indentation consistent. Adjust formatting only — do not change any text content',
-    aiSwitchModelTitle: 'Switch AI model',
     aiNewChatTitle: 'New chat',
     aiCollapseTitle: 'Collapse panel',
     aiHistorySep: '—— Earlier conversation ——',
@@ -217,6 +218,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} protected block(s) skipped)',
   },
   ja: {
+    ...codexStrings.ja,
     aiEmptyDraftTitle: 'AI にドキュメントの下書きを任せる',
     aiEmptyDraftBody1: 'テーマや要点を伝えるか、参考資料を貼り付けると',
     aiEmptyDraftBody2: 'AI がそのまま初稿を書き上げます。',
@@ -234,7 +236,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI 書式整理',
     aiTidyPrompt:
       '文書全体の書式を整えてください。例えば見出しレベルの修正、リスト形式の統一、不要な太字・斜体の削除、本文段落の字下げの調整など。書式のみを変更し、本文の文字は一切変更しないでください',
-    aiSwitchModelTitle: 'AI モデルを切り替え',
     aiNewChatTitle: '新しいチャット',
     aiCollapseTitle: 'パネルを折りたたむ',
     aiHistorySep: '―― ここまでは過去の会話 ――',
@@ -328,6 +329,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: '({count} 個の保護されたブロックをスキップ)',
   },
   ko: {
+    ...codexStrings.ko,
     aiEmptyDraftTitle: 'AI에게 초안 작성을 맡기세요',
     aiEmptyDraftBody1: '주제와 요점을 설명하거나 참고 자료를 붙여넣으면',
     aiEmptyDraftBody2: 'AI가 바로 초안을 작성합니다.',
@@ -345,7 +347,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI 서식 정리',
     aiTidyPrompt:
       '문서 전체 서식을 정리해 주세요. 예를 들어 제목 수준 수정, 목록 형식 통일, 불필요한 굵게/기울임 제거, 본문 단락 들여쓰기 정리 등. 서식만 조정하고 본문 텍스트는 절대 변경하지 마세요',
-    aiSwitchModelTitle: 'AI 모델 전환',
     aiNewChatTitle: '새 대화',
     aiCollapseTitle: '패널 접기',
     aiHistorySep: '―― 이전 대화 내용 ――',
@@ -438,6 +439,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' (보호된 블록 {count}개 건너뜀)',
   },
   fr: {
+    ...codexStrings.fr,
     aiEmptyDraftTitle: "Laissez l'IA rédiger ce document pour vous",
     aiEmptyDraftBody1: 'Décrivez le sujet et les points clés, ou collez vos références ;',
     aiEmptyDraftBody2: "l'IA écrit le premier jet directement sur la page.",
@@ -456,7 +458,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Mise en forme IA',
     aiTidyPrompt:
       "Mettez en ordre la mise en forme du document — par exemple corrigez les niveaux de titres, uniformisez les listes, supprimez les gras et italiques superflus et harmonisez l'indentation des paragraphes. Ne modifiez que la mise en forme, sans changer le texte",
-    aiSwitchModelTitle: "Changer de modèle d'IA",
     aiNewChatTitle: 'Nouvelle conversation',
     aiCollapseTitle: 'Réduire le panneau',
     aiHistorySep: '—— Conversation précédente ——',
@@ -552,6 +553,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} bloc(s) protégé(s) ignoré(s))',
   },
   de: {
+    ...codexStrings.de,
     aiEmptyDraftTitle: 'Lass die KI dieses Dokument für dich entwerfen',
     aiEmptyDraftBody1: 'Beschreibe Thema und Kernpunkte oder füge Referenzmaterial ein;',
     aiEmptyDraftBody2: 'die KI schreibt den ersten Entwurf direkt auf die Seite.',
@@ -569,7 +571,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'KI-Formatierung',
     aiTidyPrompt:
       'Bringe die Formatierung des gesamten Dokuments in Ordnung – zum Beispiel Überschriftenebenen korrigieren, Listen vereinheitlichen, überflüssige Fett- und Kursivauszeichnungen entfernen, Absatzeinzüge angleichen. Passe nur die Formatierung an, ohne den Text zu verändern',
-    aiSwitchModelTitle: 'KI-Modell wechseln',
     aiNewChatTitle: 'Neuer Chat',
     aiCollapseTitle: 'Bereich einklappen',
     aiHistorySep: '—— Bisherige Unterhaltung ——',
@@ -665,6 +666,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} geschützte Blöcke übersprungen)',
   },
   es: {
+    ...codexStrings.es,
     aiEmptyDraftTitle: 'Deja que la IA redacte este documento por ti',
     aiEmptyDraftBody1: 'Describe el tema y los puntos clave, o pega material de referencia;',
     aiEmptyDraftBody2: 'la IA escribe el primer borrador directamente en la página.',
@@ -682,7 +684,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Formato IA',
     aiTidyPrompt:
       'Ordena el formato de todo el documento; por ejemplo, corrige los niveles de título, unifica las listas, elimina negritas y cursivas innecesarias y homogeneiza la sangría de los párrafos. Ajusta solo el formato, sin cambiar el texto',
-    aiSwitchModelTitle: 'Cambiar modelo de IA',
     aiNewChatTitle: 'Nueva conversación',
     aiCollapseTitle: 'Contraer panel',
     aiHistorySep: '—— Conversación anterior ——',
@@ -777,6 +778,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} bloque(s) protegido(s) omitido(s))',
   },
   th: {
+    ...codexStrings.th,
     aiEmptyDraftTitle: 'ให้ AI ร่างเอกสารนี้ให้คุณ',
     aiEmptyDraftBody1: 'อธิบายหัวข้อและประเด็นสำคัญ หรือวางเอกสารอ้างอิง',
     aiEmptyDraftBody2: 'AI จะเขียนร่างแรกลงหน้ากระดาษให้ทันที',
@@ -794,7 +796,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'จัดรูปแบบด้วย AI',
     aiTidyPrompt:
       'จัดระเบียบรูปแบบทั้งเอกสาร เช่น แก้ไขระดับหัวข้อ ปรับรูปแบบรายการให้สอดคล้องกัน ลบตัวหนาตัวเอียงที่ไม่จำเป็น และปรับการเยื้องย่อหน้าให้สม่ำเสมอ เป็นต้น ปรับเฉพาะรูปแบบเท่านั้น ห้ามแก้ไขข้อความ',
-    aiSwitchModelTitle: 'สลับโมเดล AI',
     aiNewChatTitle: 'การสนทนาใหม่',
     aiCollapseTitle: 'ยุบแผง',
     aiHistorySep: '—— ด้านบนคือการสนทนาก่อนหน้า ——',
@@ -887,6 +888,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' (ข้ามบล็อกที่ได้รับการป้องกัน {count} บล็อก)',
   },
   id: {
+    ...codexStrings.id,
     aiEmptyDraftTitle: 'Biarkan AI menyusun draf dokumen ini untuk Anda',
     aiEmptyDraftBody1: 'Jelaskan topik dan poin utama, atau tempel materi referensi;',
     aiEmptyDraftBody2: 'AI langsung menulis draf pertama ke halaman.',
@@ -904,7 +906,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Format AI',
     aiTidyPrompt:
       'Rapikan format seluruh dokumen, misalnya perbaiki level judul, seragamkan format daftar, hapus cetak tebal/miring yang tidak perlu, dan samakan indentasi paragraf. Ubah format saja, jangan mengubah teks apa pun',
-    aiSwitchModelTitle: 'Ganti model AI',
     aiNewChatTitle: 'Obrolan baru',
     aiCollapseTitle: 'Ciutkan panel',
     aiHistorySep: '—— Percakapan sebelumnya ——',
@@ -997,6 +998,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} blok terlindungi dilewati)',
   },
   ru: {
+    ...codexStrings.ru,
     aiEmptyDraftTitle: 'Пусть ИИ набросает этот документ за вас',
     aiEmptyDraftBody1: 'Опишите тему и ключевые пункты или вставьте материалы;',
     aiEmptyDraftBody2: 'ИИ сразу напишет черновик на странице.',
@@ -1014,7 +1016,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'ИИ-форматирование',
     aiTidyPrompt:
       'Приведите в порядок форматирование всего документа — например, исправьте уровни заголовков, унифицируйте списки, уберите лишнее выделение жирным и курсивом, выровняйте отступы абзацев. Меняйте только форматирование, не изменяя текст',
-    aiSwitchModelTitle: 'Сменить модель ИИ',
     aiNewChatTitle: 'Новый чат',
     aiCollapseTitle: 'Свернуть панель',
     aiHistorySep: '—— Предыдущий разговор ——',
@@ -1108,6 +1109,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' (пропущено защищенных блоков: {count})',
   },
   ar: {
+    ...codexStrings.ar,
     aiEmptyDraftTitle: 'دع الذكاء الاصطناعي يكتب مسودة هذا المستند لك',
     aiEmptyDraftBody1: 'صف الموضوع والنقاط الرئيسية أو الصق مادة مرجعية؛',
     aiEmptyDraftBody2: 'يكتب الذكاء الاصطناعي المسودة الأولى مباشرة على الصفحة.',
@@ -1125,7 +1127,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'تنسيق AI',
     aiTidyPrompt:
       'رتّب تنسيق المستند بأكمله، مثل تصحيح مستويات العناوين، وتوحيد تنسيق القوائم، وإزالة الخط الغامق والمائل غير الضروري، وتوحيد المسافات البادئة للفقرات وغيرها. عدّل التنسيق فقط دون تغيير أي نص',
-    aiSwitchModelTitle: 'تبديل نموذج الذكاء الاصطناعي',
     aiNewChatTitle: 'محادثة جديدة',
     aiCollapseTitle: 'طي اللوحة',
     aiHistorySep: '—— المحادثة السابقة ——',
@@ -1218,6 +1219,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' (تم تخطي {count} كتلة محمية)',
   },
   pt: {
+    ...codexStrings.pt,
     aiEmptyDraftTitle: 'Deixe a IA rascunhar este documento para você',
     aiEmptyDraftBody1: 'Descreva o tema e os pontos principais, ou cole material de referência;',
     aiEmptyDraftBody2: 'a IA escreve o primeiro rascunho direto na página.',
@@ -1235,7 +1237,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Formatação IA',
     aiTidyPrompt:
       'Organize a formatação de todo o documento — por exemplo, corrija os níveis de título, uniformize as listas, remova negritos e itálicos desnecessários e padronize o recuo dos parágrafos. Ajuste apenas a formatação, sem alterar o texto',
-    aiSwitchModelTitle: 'Trocar modelo de IA',
     aiNewChatTitle: 'Nova conversa',
     aiCollapseTitle: 'Recolher painel',
     aiHistorySep: '—— Conversa anterior ——',
@@ -1329,6 +1330,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} bloco(s) protegido(s) ignorado(s))',
   },
   it: {
+    ...codexStrings.it,
     aiEmptyDraftTitle: "Lascia che l'IA scriva la bozza di questo documento",
     aiEmptyDraftBody1:
       "Descrivi l'argomento e i punti chiave, o incolla il materiale di riferimento;",
@@ -1347,7 +1349,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Formattazione IA',
     aiTidyPrompt:
       'Sistema la formattazione di tutto il documento — ad esempio correggi i livelli dei titoli, uniforma gli elenchi, rimuovi grassetti e corsivi superflui e uniforma i rientri dei paragrafi. Modifica solo la formattazione, senza cambiare il testo',
-    aiSwitchModelTitle: 'Cambia modello IA',
     aiNewChatTitle: 'Nuova conversazione',
     aiCollapseTitle: 'Comprimi pannello',
     aiHistorySep: '—— Conversazione precedente ——',
@@ -1444,6 +1445,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} blocco/i protetto/i ignorato/i)',
   },
   pl: {
+    ...codexStrings.pl,
     aiEmptyDraftTitle: 'Pozwól AI napisać szkic tego dokumentu',
     aiEmptyDraftBody1: 'Opisz temat i kluczowe punkty albo wklej materiały;',
     aiEmptyDraftBody2: 'AI napisze pierwszy szkic prosto na stronie.',
@@ -1461,7 +1463,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Formatowanie AI',
     aiTidyPrompt:
       'Uporządkuj formatowanie całego dokumentu — na przykład popraw poziomy nagłówków, ujednolić listy, usuń zbędne pogrubienia i kursywę, wyrównaj wcięcia akapitów. Zmieniaj tylko formatowanie, nie zmieniając tekstu',
-    aiSwitchModelTitle: 'Przełącz model AI',
     aiNewChatTitle: 'Nowa rozmowa',
     aiCollapseTitle: 'Zwiń panel',
     aiHistorySep: '—— Wcześniejsza rozmowa ——',
@@ -1555,6 +1556,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' (pominięto chronione bloki: {count})',
   },
   nl: {
+    ...codexStrings.nl,
     aiEmptyDraftTitle: 'Laat AI dit document voor je opstellen',
     aiEmptyDraftBody1: 'Beschrijf het onderwerp en de kernpunten, of plak referentiemateriaal;',
     aiEmptyDraftBody2: 'AI schrijft de eerste versie direct op de pagina.',
@@ -1572,7 +1574,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI-opmaak',
     aiTidyPrompt:
       'Ruim de opmaak van het hele document op — bijvoorbeeld kopniveaus corrigeren, lijsten uniform maken, overbodige vet- en cursiefopmaak verwijderen en alinea-inspringingen consistent maken. Pas alleen de opmaak aan, verander de tekst niet',
-    aiSwitchModelTitle: 'AI-model wisselen',
     aiNewChatTitle: 'Nieuw gesprek',
     aiCollapseTitle: 'Paneel samenvouwen',
     aiHistorySep: '—— Eerder gesprek ——',
@@ -1666,6 +1667,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} beveiligde blok(ken) overgeslagen)',
   },
   ms: {
+    ...codexStrings.ms,
     aiEmptyDraftTitle: 'Biarkan AI merangka dokumen ini untuk anda',
     aiEmptyDraftBody1: 'Terangkan topik dan perkara utama, atau tampal bahan rujukan;',
     aiEmptyDraftBody2: 'AI terus menulis draf pertama pada halaman.',
@@ -1683,7 +1685,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'Format AI',
     aiTidyPrompt:
       'Kemaskan format keseluruhan dokumen, contohnya betulkan tahap tajuk, seragamkan format senarai, buang huruf tebal/condong yang tidak perlu, dan selaraskan inden perenggan. Laraskan format sahaja, jangan ubah sebarang teks',
-    aiSwitchModelTitle: 'Tukar model AI',
     aiNewChatTitle: 'Perbualan baharu',
     aiCollapseTitle: 'Runtuhkan panel',
     aiHistorySep: '—— Perbualan terdahulu ——',
@@ -1776,6 +1777,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} blok dilindungi dilangkau)',
   },
   he: {
+    ...codexStrings.he,
     aiEmptyDraftTitle: 'תנו ל-AI לנסח את המסמך הזה עבורכם',
     aiEmptyDraftBody1: 'תארו את הנושא והנקודות המרכזיות, או הדביקו חומר עזר;',
     aiEmptyDraftBody2: 'ה-AI כותב את הטיוטה הראשונה ישירות על העמוד.',
@@ -1793,7 +1795,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'עיצוב AI',
     aiTidyPrompt:
       'סדר את העיצוב של המסמך כולו — למשל תקן רמות כותרות, אחד את עיצוב הרשימות, הסר הדגשות והטיות מיותרות ויישר את הזחות הפסקאות. שנה רק את העיצוב, בלי לשנות את הטקסט',
-    aiSwitchModelTitle: 'החלפת מודל AI',
     aiNewChatTitle: 'שיחה חדשה',
     aiCollapseTitle: 'כיווץ החלונית',
     aiHistorySep: '—— שיחה קודמת ——',
@@ -1883,6 +1884,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' (דולגו {count} בלוקים מוגנים)',
   },
   hi: {
+    ...codexStrings.hi,
     aiEmptyDraftTitle: 'AI को यह दस्तावेज़ ड्राफ़्ट करने दें',
     aiEmptyDraftBody1: 'विषय और मुख्य बिंदु बताएँ, या संदर्भ सामग्री पेस्ट करें;',
     aiEmptyDraftBody2: 'AI सीधे पेज पर पहला ड्राफ़्ट लिख देता है।',
@@ -1900,7 +1902,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI स्वरूपण',
     aiTidyPrompt:
       'पूरे दस्तावेज़ का स्वरूपण व्यवस्थित करें — उदाहरण के लिए शीर्षक स्तर ठीक करें, सूचियों का प्रारूप एकरूप करें, अनावश्यक बोल्ड/इटैलिक हटाएँ और अनुच्छेदों का इंडेंट एकसमान करें। केवल स्वरूपण बदलें, पाठ में कोई बदलाव न करें',
-    aiSwitchModelTitle: 'AI मॉडल बदलें',
     aiNewChatTitle: 'नई बातचीत',
     aiCollapseTitle: 'पैनल संक्षिप्त करें',
     aiHistorySep: '—— पिछली बातचीत ——',
@@ -1993,6 +1994,7 @@ export const aiStrings = defineStrings({
     aiCmdSkipped: ' ({count} सुरक्षित ब्लॉक छोड़े गए)',
   },
   'zh-TW': {
+    ...codexStrings['zh-TW'],
     aiEmptyDraftTitle: '讓 AI 幫你從零起草',
     aiEmptyDraftBody1: '描述主題、要點或貼上參考素材,',
     aiEmptyDraftBody2: 'AI 直接為你寫出初稿。',
@@ -2010,7 +2012,6 @@ export const aiStrings = defineStrings({
     aiTidyBtn: 'AI 排版',
     aiTidyPrompt:
       '整理全文排版,例如修正標題層級、統一列表格式、移除多餘的粗體和斜體、為內文補齊首行縮排等;只調整格式,不要改動任何文字內容',
-    aiSwitchModelTitle: '切換 AI 模型',
     aiNewChatTitle: '新對話',
     aiCollapseTitle: '收合面板',
     aiHistorySep: '—— 以上是歷史對話 ——',

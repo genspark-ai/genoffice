@@ -78,6 +78,14 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'openai-codex',
+    label: 'ChatGPT Codex',
+    models: ['gpt-5.5'],
+    defaultModel: 'gpt-5.5',
+    keyPlaceholder: 'Sign in to ChatGPT',
+    requiresApiKey: false,
+  },
+  {
     id: 'custom',
     label: 'Custom',
     models: [],
@@ -101,6 +109,9 @@ export function defaultAiSettings(
     providers[meta.id] = {
       apiKey: defaultApiKeys?.[meta.id] ?? '',
       model: meta.defaultModel,
+      ...(meta.id === 'openai-codex'
+        ? { reasoningEffort: 'none' as const, serviceTier: 'default' }
+        : {}),
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }

@@ -7,8 +7,15 @@ import type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexErrorCode,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
+
+export interface CodexCapabilitiesResult extends CodexCapabilities {
+  errorCode?: CodexErrorCode
+}
 
 const MAX_RANGE_CELLS = 20_000
 const cellScalarSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
@@ -1936,6 +1943,13 @@ const aiProviderConfigSchema = z
   .object({
     apiKey: z.string(),
     model: z.string(),
+    reasoningEffort: z
+      .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+      .optional(),
+    serviceTier: z
+      .string()
+      .regex(/^[a-zA-Z0-9._-]{1,64}$/)
+      .optional(),
     baseUrl: z.string().optional(),
   })
   .strict()
@@ -2166,6 +2180,7 @@ export interface DesktopApi {
   hasQueuedWorkbook(): Promise<boolean>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>
@@ -2176,6 +2191,11 @@ export interface DesktopApi {
   /// Opens the browser to sign in to Genspark (fire-and-forget; aiGskStatus
   /// becomes signed-in on completion)
   aiGskLogin(): Promise<void>
+  aiCodexStatus(): Promise<CodexAccountStatus>
+  aiCodexLogin(): Promise<CodexAccountStatus>
+  aiCodexCancelLogin(): Promise<void>
+  aiCodexLogout(): Promise<CodexAccountStatus>
+  aiCodexCapabilities(): Promise<CodexCapabilitiesResult>
   /// Web search (main-process Serper/DuckDuckGo, shared with docs/slides)
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
   /// Image search (same shared main-process channel as docs/slides)

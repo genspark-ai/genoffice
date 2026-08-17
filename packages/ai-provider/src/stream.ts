@@ -1,8 +1,9 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
+import { streamCodexResponse } from './codex'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
-import type { AiProviderConfig, AiProviderId } from './types'
+import type { AiProviderConfig, AiProviderId, CodexAuthContext } from './types'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
 // ---- streaming (SSE line splitting shared by all providers) ----
@@ -852,6 +853,7 @@ export async function streamForProvider(
   tools: AgentToolDef[],
   maxTokens: number,
   cb: StreamCallbacks,
+  codexAuth?: CodexAuthContext,
 ): Promise<void> {
   switch (provider) {
     case 'genspark':
@@ -903,6 +905,21 @@ export async function streamForProvider(
         maxTokens,
         cb,
       )
+    case 'openai-codex':
+      if (!codexAuth) throw new Error('ChatGPT Codex sign-in required')
+      return streamCodexResponse({
+        auth: codexAuth,
+        instructions: system,
+        messages,
+        tools,
+        model: config.model,
+        ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
+        ...(config.serviceTier ? { serviceTier: config.serviceTier } : {}),
+        signal: cb.signal,
+        onDelta: cb.onDelta,
+        onToolCall: cb.onToolCall,
+        ...(cb.onActivity ? { onActivity: cb.onActivity } : {}),
+      })
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')
       return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb)

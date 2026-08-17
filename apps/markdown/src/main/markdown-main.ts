@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
@@ -12,6 +12,7 @@ import {
   net,
   protocol,
   shell,
+  webContents,
 } from 'electron'
 import type { WebContents } from 'electron'
 import {
@@ -24,8 +25,17 @@ import {
   showSaveDialogWithMemory,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
+import { gskApiKey, webSearch } from '@genoffice/ai-search'
+import {
+  AiMainRuntime,
+  sanitizeAiSettings,
+  setRescueFetch,
+  type AiSettings,
+  type AiStreamChunk,
+  type AiStreamRequest,
+} from '@genoffice/ai-provider'
 import { atomicWriteFile } from './atomic-write'
-import { MARKDOWN_CHANNELS } from '../shared/ipc'
+import { AI_CHANNELS, MARKDOWN_CHANNELS } from '../shared/ipc'
 import type {
   ExportDocxRequest,
   ExportFormat,
@@ -36,6 +46,7 @@ import type {
   SaveMarkdownResult,
   SaveMode,
 } from '../shared/ipc'
+import { getCodexAuth } from './codex-auth-main'
 
 const tDlg = createI18n({
   zh: {
@@ -484,6 +495,67 @@ function registerImageProtocol(): void {
 }
 
 let ipcRegistered = false
+const markdownAiRuntime = new AiMainRuntime({
+  auth: getCodexAuth(),
+  getGensparkApiKey: gskApiKey,
+})
+let standaloneAiIpcRegistered = false
+
+const aiSettingsPath = () => join(app.getPath('userData'), 'ai-settings.json')
+
+function readAiSettings(): unknown {
+  try {
+    return JSON.parse(readFileSync(aiSettingsPath(), 'utf8')) as unknown
+  } catch {
+    return {}
+  }
+}
+
+function writeAiSettings(settings: AiSettings): void {
+  const path = aiSettingsPath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify(settings, null, 2))
+}
+
+function registerStandaloneAiIpc(): void {
+  if (standaloneAiIpcRegistered) return
+  standaloneAiIpcRegistered = true
+  setRescueFetch((url, init) => net.fetch(url, init))
+
+  ipcMain.handle(AI_CHANNELS.getSettings, (): AiSettings => sanitizeAiSettings(readAiSettings()))
+  ipcMain.handle(AI_CHANNELS.setSettings, (_event, settings: AiSettings) => {
+    const sanitized = sanitizeAiSettings(settings)
+    writeAiSettings(sanitized)
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send(AI_CHANNELS.settingsChanged, sanitized)
+    }
+  })
+  ipcMain.handle(AI_CHANNELS.codexStatus, () => markdownAiRuntime.codexStatus())
+  ipcMain.handle(AI_CHANNELS.codexLogin, () => markdownAiRuntime.codexLogin())
+  ipcMain.handle(AI_CHANNELS.codexCancelLogin, () => markdownAiRuntime.codexCancelLogin())
+  ipcMain.handle(AI_CHANNELS.codexLogout, () => markdownAiRuntime.codexLogout())
+  ipcMain.handle(AI_CHANNELS.codexCapabilities, () => markdownAiRuntime.codexCapabilities())
+  ipcMain.handle(AI_CHANNELS.stream, async (event, request: AiStreamRequest) => {
+    const send = (chunk: AiStreamChunk): void => {
+      if (!event.sender.isDestroyed()) event.sender.send(AI_CHANNELS.streamChunk, chunk)
+    }
+    await markdownAiRuntime.stream(request, send, {
+      noGensparkApiKey: 'Genspark account is not logged in on this machine.',
+      noApiKey: (provider) => `No API key configured for ${provider}.`,
+      noModel: 'No model name configured.',
+    })
+  })
+  ipcMain.handle(AI_CHANNELS.streamCancel, (_event, requestId: string) =>
+    markdownAiRuntime.cancel(requestId),
+  )
+  ipcMain.handle(AI_CHANNELS.webSearch, async (_event, query: string, maxResults?: number) => {
+    try {
+      return await webSearch(String(query), typeof maxResults === 'number' ? maxResults : 6)
+    } catch (error) {
+      return { results: [], method: 'error', error: String(error) }
+    }
+  })
+}
 
 function registerMarkdownIpc(): void {
   if (ipcRegistered) return
@@ -770,6 +842,7 @@ export function startMarkdownStandalone(): void {
   })
   void app.whenReady().then(() => {
     registerMarkdownIpc()
+    registerStandaloneAiIpc()
     const win = new BrowserWindow({
       width: 1200,
       height: 850,

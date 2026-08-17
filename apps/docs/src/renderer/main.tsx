@@ -7,6 +7,7 @@ import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
 import '@genoffice/ui/color-picker.css'
 import './styles.css'
+import '@genoffice/ui/ai-provider-controls.css'
 import './fonts/fonts.css'
 import { installScreenTips } from '@genoffice/ui'
 

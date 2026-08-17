@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
+import { defaultAiSettings, getCodexUiLabels, type AiSettings } from '@genoffice/ai-provider'
+import {
+  AiCodexModelControl,
+  AiComposer,
+  AiProviderAuthBanner,
+  AiProviderSelect,
+  AiTypingIndicator,
+  Markdown,
+  useAiProviderControls,
+} from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -110,6 +118,7 @@ export function AiPanel({
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
   }, [panelWidth])
 
+  const [settings, setSettings] = useState<AiSettings | null>(null)
   const settingsRef = useRef<AiSettings | null>(null)
   const langRef = useRef(lang)
   langRef.current = lang
@@ -126,6 +135,39 @@ export function AiPanel({
   const pendingPersistRef = useRef<
     Array<{ role: 'user' | 'assistant'; text: string; tools?: ToolActivity[] }>
   >([])
+
+  const updateSettings = (next: AiSettings): void => {
+    settingsRef.current = next
+    setSettings(next)
+    void window.markdownApi.setAiSettings(next)
+  }
+
+  useEffect(() => {
+    let active = true
+    void window.markdownApi.getAiSettings().then((next) => {
+      if (!active) return
+      settingsRef.current = next
+      setSettings(next)
+    })
+    const unsubscribe = window.markdownApi.onAiSettingsChanged((next) => {
+      if (!active) return
+      settingsRef.current = next
+      setSettings(next)
+    })
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
+
+  const effectiveSettings = settings ?? defaultAiSettings()
+  const labels = getCodexUiLabels(lang)
+  const providerControls = useAiProviderControls({
+    settings: effectiveSettings,
+    onSettingsChange: updateSettings,
+    api: window.markdownApi,
+    positionKey: panelWidth,
+  })
 
   const patchLast = (patch: Partial<ChatEntry> | ((last: ChatEntry) => Partial<ChatEntry>)) => {
     setChat((prev) => {
@@ -326,7 +368,7 @@ export function AiPanel({
   const send = (text: string): void => {
     const instruction = text.trim()
     const loop = loopRef.current
-    if (!instruction || !loop || loop.busy) return
+    if (!instruction || !loop || loop.busy || !settings || providerControls.sendDisabled) return
     stickToBottomRef.current = true
     runInstructionRef.current = instruction
     runMutatedRef.current = false
@@ -341,7 +383,7 @@ export function AiPanel({
     persistMessage('user', instruction)
     void (async () => {
       try {
-        settingsRef.current = await window.markdownApi.getAiSettings()
+        if (!settingsRef.current) settingsRef.current = await window.markdownApi.getAiSettings()
         await loop.run(instruction)
       } catch (err) {
         patchLast({
@@ -444,6 +486,11 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <AiProviderSelect
+            settings={effectiveSettings}
+            labels={labels}
+            controls={providerControls}
+          />
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -469,6 +516,12 @@ export function AiPanel({
           </button>
         </div>
       </header>
+
+      <AiProviderAuthBanner
+        settings={effectiveSettings}
+        labels={labels}
+        controls={providerControls}
+      />
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {chat.length === 0 && (
@@ -630,6 +683,14 @@ export function AiPanel({
           sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
           stopIcon={<img src={sendStop} alt="" aria-hidden />}
           textareaRef={inputRef}
+          sendDisabled={!settings || providerControls.sendDisabled}
+          footerStart={
+            <AiCodexModelControl
+              settings={effectiveSettings}
+              labels={labels}
+              controls={providerControls}
+            />
+          }
           onChange={setPrompt}
           onSend={() => send(prompt)}
           onStop={stop}

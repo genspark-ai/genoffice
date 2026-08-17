@@ -1,6 +1,6 @@
 import { createIpcTransport, type AgentTransport } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
-import { t } from '../i18n/locale'
+import { resolveCodexError, type AiSettings } from '@genoffice/ai-provider'
+import { getLang, t } from '../i18n/locale'
 
 /** The shared IPC transport wired to the sheets preload bridge (window.desktopApi). */
 export function createElectronTransport(getSettings: () => AiSettings): AgentTransport {
@@ -9,9 +9,11 @@ export function createElectronTransport(getSettings: () => AiSettings): AgentTra
     start: (request) => window.desktopApi.aiStream(request),
     cancel: (requestId) => void window.desktopApi.aiStreamCancel(requestId),
     getSettings,
-    unknownErrorText: () => t('aiUnknownError'),
-    timeoutErrorText: () => t('aiTimeoutError'),
-    creditsErrorText: () => t('aiCreditsExhausted'),
+    unknownErrorText: () => resolveCodexError(undefined, getLang()),
+    timeoutErrorText: () => resolveCodexError('timeout', getLang()),
+    creditsErrorText: () => resolveCodexError('credits', getLang()),
+    resolveErrorCode: (code) =>
+      code === 'network' ? undefined : resolveCodexError(code, getLang()),
     networkErrorText: () => t('aiNetworkError'),
   })
 }

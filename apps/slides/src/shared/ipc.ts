@@ -13,6 +13,9 @@ import type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexErrorCode,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 
@@ -26,10 +29,19 @@ export type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexModelCapability,
+  CodexReasoningEffort,
+  CodexServiceTier,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
+
+export interface CodexCapabilitiesResult extends CodexCapabilities {
+  errorCode?: CodexErrorCode
+}
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -1347,12 +1359,18 @@ export interface SlidesApi {
   onRenamed: (handler: (newPath: string) => void) => () => void
   getAiSettings: () => Promise<AiSettings>
   setAiSettings: (settings: AiSettings) => Promise<void>
+  onAiSettingsChanged: (handler: (settings: AiSettings) => void) => () => void
   aiStream: (request: AiStreamRequest) => Promise<void>
   aiStreamCancel: (requestId: string) => Promise<void>
   /** Genspark account status (gsk login state); with withEmail also fetches the email (needs a network request, slower) */
   aiGskStatus: (withEmail?: boolean) => Promise<GenSparkAccountStatus>
   /** Open the browser to log into Genspark (fire-and-forget; aiGskStatus turns logged-in once done) */
   aiGskLogin: () => Promise<void>
+  aiCodexStatus: () => Promise<CodexAccountStatus>
+  aiCodexLogin: () => Promise<CodexAccountStatus>
+  aiCodexCancelLogin: () => Promise<void>
+  aiCodexLogout: () => Promise<CodexAccountStatus>
+  aiCodexCapabilities: () => Promise<CodexCapabilitiesResult>
   webSearch: (
     query: string,
     maxResults?: number,

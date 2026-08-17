@@ -1,5 +1,16 @@
 import type { Lang } from '@genoffice/i18n'
-import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
+import type {
+  AiSettings,
+  AiStreamChunk,
+  AiStreamRequest,
+  CodexAccountStatus,
+  CodexCapabilities,
+  CodexErrorCode,
+} from '@genoffice/ai-provider'
+
+export interface CodexCapabilitiesResult extends CodexCapabilities {
+  errorCode?: CodexErrorCode
+}
 
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
@@ -603,9 +614,17 @@ export type ExportImagesResult =
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
+  setSettings: 'ai:set-settings',
+  settingsChanged: 'ai:settings-changed',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
+  codexStatus: 'ai:codex-status',
+  codexLogin: 'ai:codex-login',
+  codexCancelLogin: 'ai:codex-cancel-login',
+  codexLogout: 'ai:codex-logout',
+  codexCapabilities: 'ai:codex-capabilities',
+  webSearch: 'ai:web-search',
   imageSearch: 'ai:image-search',
   fetchImage: 'ai:fetch-image',
 } as const
@@ -700,7 +719,14 @@ export interface PdfApi {
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void
   getAiSettings(): Promise<AiSettings>
+  setAiSettings(settings: AiSettings): Promise<void>
+  onAiSettingsChanged(handler: (settings: AiSettings) => void): () => void
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
+  aiCodexStatus(): Promise<CodexAccountStatus>
+  aiCodexLogin(): Promise<CodexAccountStatus>
+  aiCodexCancelLogin(): Promise<void>
+  aiCodexLogout(): Promise<CodexAccountStatus>
+  aiCodexCapabilities(): Promise<CodexCapabilitiesResult>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
 }

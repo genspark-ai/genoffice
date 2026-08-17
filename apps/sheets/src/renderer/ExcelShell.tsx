@@ -24,6 +24,7 @@ import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
 
 import type { ChartSeriesVisualState } from '../domain/chart-visual'
 import type { ChangePlan } from '../domain/workbook.types'
+import type { AiSettings } from '@genoffice/ai-provider'
 import type { AttachmentMeta } from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import {
@@ -155,6 +156,8 @@ interface ExcelShellProps {
   /// docs/slides AI panels.
   readonly attachments: readonly AttachmentMeta[]
   readonly attachNotice: string | null
+  readonly aiSettings: AiSettings | null
+  readonly onAiSettingsChange: (settings: AiSettings) => void
   readonly onPickAttachments: () => void
   readonly onAddAttachmentPaths: (paths: readonly string[]) => void
   readonly onAddPastedImage: (data: ArrayBuffer, ext: string) => void
@@ -271,6 +274,8 @@ export function ExcelShell({
   historicChat,
   attachments,
   attachNotice,
+  aiSettings,
+  onAiSettingsChange,
   onPickAttachments,
   onAddAttachmentPaths,
   onAddPastedImage,
@@ -500,6 +505,8 @@ export function ExcelShell({
           {...(historicChat !== undefined ? { historicChat } : {})}
           attachments={attachments}
           attachNotice={attachNotice}
+          settings={aiSettings}
+          onSettingsChange={onAiSettingsChange}
           onPickAttachments={onPickAttachments}
           onAddAttachmentPaths={onAddAttachmentPaths}
           onAddPastedImage={onAddPastedImage}

@@ -4,6 +4,7 @@ import type {
   AiChatResponse,
   AiSettings,
   AiStreamChunk,
+  CodexAccountStatus,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
@@ -12,6 +13,7 @@ import type {
   AttachmentImageResult,
   AttachmentMeta,
   AttachmentReadResult,
+  CodexCapabilitiesResult,
   DesktopApi,
   ScreenCaptureResult,
   ScreenSourcesResult,
@@ -265,6 +267,15 @@ const desktopApi: DesktopApi = {
   async setAiSettings(settings) {
     await ipcRenderer.invoke(IPC_CHANNELS.aiSetSettings, settings)
   },
+  onAiSettingsChanged(callback) {
+    const listener = (_event: unknown, input: unknown): void => {
+      if (!isRecord(input) || typeof input.provider !== 'string' || !isRecord(input.providers))
+        return
+      callback(input as unknown as AiSettings)
+    }
+    ipcRenderer.on(IPC_CHANNELS.aiSettingsChanged, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.aiSettingsChanged, listener)
+  },
   async aiChat(request) {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiChat, request)
     if (!isRecord(result) || typeof result.ok !== 'boolean') {
@@ -288,6 +299,25 @@ const desktopApi: DesktopApi = {
   },
   async aiGskLogin() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiGskLogin)
+  },
+  async aiCodexStatus() {
+    return parseCodexAccountStatus(await ipcRenderer.invoke(IPC_CHANNELS.aiCodexStatus))
+  },
+  async aiCodexLogin() {
+    return parseCodexAccountStatus(await ipcRenderer.invoke(IPC_CHANNELS.aiCodexLogin))
+  },
+  async aiCodexCancelLogin() {
+    await ipcRenderer.invoke(IPC_CHANNELS.aiCodexCancelLogin)
+  },
+  async aiCodexLogout() {
+    return parseCodexAccountStatus(await ipcRenderer.invoke(IPC_CHANNELS.aiCodexLogout))
+  },
+  async aiCodexCapabilities() {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiCodexCapabilities)
+    if (!isRecord(result) || !Array.isArray(result.models)) {
+      throw new Error('Invalid Codex capabilities response.')
+    }
+    return result as unknown as CodexCapabilitiesResult
   },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {
@@ -426,6 +456,30 @@ const desktopApi: DesktopApi = {
   getPathForFile(file) {
     return webUtils.getPathForFile(file)
   },
+}
+
+function parseCodexAccountStatus(input: unknown): CodexAccountStatus {
+  if (
+    !isRecord(input) ||
+    typeof input.loggedIn !== 'boolean' ||
+    !isOptionalString(input.email) ||
+    (input.errorCode !== undefined &&
+      ![
+        'auth-required',
+        'auth-expired',
+        'auth-temporary',
+        'timeout',
+        'capabilities-unavailable',
+        'rate-limit',
+        'request-rejected',
+        'invalid-stream',
+        'invalid-tool-call',
+        'provider-failure',
+      ].includes(input.errorCode as string))
+  ) {
+    throw new Error('Invalid Codex account status response.')
+  }
+  return input as unknown as CodexAccountStatus
 }
 
 function parseAttachmentAddResult(input: unknown): AttachmentAddResult {

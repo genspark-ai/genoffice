@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
-import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
+import { type AiSettings, type AttachmentAddResult, type AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { findNumId, type NumIds } from './protocol'
@@ -13,13 +13,22 @@ import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { getCodexUiLabels } from '@genoffice/ai-provider'
+import {
+  AiCodexModelControl,
+  AiComposer,
+  Markdown,
+  AiProviderAuthBanner,
+  AiProviderSelect,
+  AiTypingIndicator,
+  useAiProviderControls,
+} from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import attachIcon from '../assets/attach-icon.png'
+import { IconNewChat, IconSidebarCollapse } from '../components/icons'
 import filePdfIcon from '../assets/file-pdf.png'
 import fileWordIcon from '../assets/file-word.png'
 import fileExcelIcon from '../assets/file-excel.png'
@@ -29,7 +38,6 @@ import fileVideoIcon from '../assets/file-video.png'
 import fileVoiceIcon from '../assets/file-voice.png'
 import fileDocumentIcon from '../assets/file-document.png'
 import fileGeneralIcon from '../assets/file-general.png'
-import { IconNewChat, IconSidebarCollapse } from '../components/icons'
 
 interface ToolActivity {
   name: string
@@ -65,7 +73,7 @@ interface ChatEntry {
   turnLimit?: boolean
   /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
-  /** the run failed because Genspark is signed out — render an inline sign-in button */
+  /** Genspark account was signed out — render its existing inline sign-in action */
   loginRequired?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
@@ -92,7 +100,6 @@ const EDIT_STARTER_PROMPTS: StringKey[] = [
 const PANEL_WIDTH_KEY = 'docs-ai-panel-width'
 const PANEL_WIDTH_DEFAULT = 360
 const PANEL_WIDTH_MIN = 280
-
 function maxPanelWidth(): number {
   // The viewport can be transiently tiny (a WebContentsView is 0×0 until the
   // shell lays it out), so never let the ceiling drop below the minimum
@@ -248,6 +255,7 @@ interface AiPanelProps {
   editor: Editor
   blocks: Block[]
   settings: AiSettings
+  onSettingsChange?: (settings: AiSettings) => void
   /** the document has no text yet — the empty-state copy offers drafting instead of editing */
   docEmpty?: boolean
   /** fallback numbering ids for documents created from the blank template */
@@ -268,6 +276,7 @@ export function AiPanel({
   editor,
   blocks,
   settings,
+  onSettingsChange,
   docEmpty,
   numIdFallback,
   preset,
@@ -276,7 +285,8 @@ export function AiPanel({
   onCollapse,
   filePath,
 }: AiPanelProps) {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
+  const labels = getCodexUiLabels(lang)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   /** Wall-clock start of the current run, drives the elapsed badge */
@@ -378,6 +388,12 @@ export function AiPanel({
   editorRef.current = editor
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  const providerControls = useAiProviderControls({
+    settings,
+    onSettingsChange,
+    api: window.desktop,
+    positionKey: panelWidth,
+  })
   const blocksRef = useRef(blocks)
   blocksRef.current = blocks
   const numIdFallbackRef = useRef(numIdFallback)
@@ -654,17 +670,25 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktop
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
+          const provider = settingsRef.current.provider
+          const status =
+            provider === 'openai-codex'
+              ? undefined
+              : provider === 'genspark'
+                ? window.desktop.aiGskStatus()
+                : undefined
+          if (provider === 'openai-codex') providerControls.refreshStatus()
+          void status
+            ?.then((account) => {
+              if (account.loggedIn) return
               setChat((prev) => {
                 const next = [...prev]
                 const last = next.at(-1)
                 if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
+                  next[next.length - 1] = {
+                    ...last,
+                    loginRequired: true,
+                  }
                 }
                 return next
               })
@@ -742,6 +766,12 @@ export function AiPanel({
     displayInstruction = instruction,
     attachmentsOverride?: AttachmentMeta[],
   ) => {
+    if (
+      settingsRef.current.provider === 'openai-codex' &&
+      providerControls.accountRef.current?.loggedIn !== true
+    ) {
+      return
+    }
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return
     setInput('')
@@ -788,6 +818,8 @@ export function AiPanel({
 
   const retry = () =>
     runWith(lastInstructionRef.current, lastInstructionRef.current, lastAttachmentsRef.current)
+
+  const startGskLogin = () => void window.desktop.aiGskLogin()
 
   const continueRun = () => runWith(DOCS_CONTINUE_INSTRUCTION, t('aiContinue'))
 
@@ -953,6 +985,7 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <AiProviderSelect settings={settings} controls={providerControls} labels={labels} />
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -975,6 +1008,13 @@ export function AiPanel({
           )}
         </div>
       </div>
+
+      <AiProviderAuthBanner
+        settings={settings}
+        controls={providerControls}
+        notice={attachNotice}
+        labels={labels}
+      />
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* past conversation (read-only transcript, not fed to the model), shown continuously with the current turn */}
@@ -1066,7 +1106,7 @@ export function AiPanel({
                 <div className="ai-msg-error">{t('aiErrorPrefix', { error: entry.error })}</div>
               )}
               {entry.loginRequired && (
-                <button className="ai-login-btn" onClick={() => void window.desktop.aiGskLogin()}>
+                <button className="ai-login-btn" onClick={startGskLogin}>
                   {t('aiGskLoginBtn')}
                 </button>
               )}
@@ -1152,7 +1192,6 @@ export function AiPanel({
       </div>
 
       <div className="ai-composer">
-        {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
           header={
             attachments.length > 0 && (
@@ -1217,6 +1256,7 @@ export function AiPanel({
           }
           value={input}
           busy={busy}
+          sendDisabled={providerControls.sendDisabled}
           placeholder={t('aiInputPlaceholder')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}
@@ -1233,7 +1273,7 @@ export function AiPanel({
           onStop={cancel}
           onPasteFiles={(files) => void onPasteFiles(files)}
           footerStart={
-            <>
+            <div className="ai-composer-footer-actions">
               <button
                 className="ai-attach-btn"
                 onClick={pickAttachments}
@@ -1250,7 +1290,12 @@ export function AiPanel({
                 <span className="ai-track-dot" aria-hidden />
                 {t('aiTrackChanges')}
               </button>
-            </>
+              <AiCodexModelControl
+                settings={settings}
+                controls={providerControls}
+                labels={labels}
+              />
+            </div>
           }
         />
       </div>

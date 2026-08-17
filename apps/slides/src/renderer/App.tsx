@@ -1013,6 +1013,12 @@ export function App() {
 
   useEffect(() => {
     void window.slidesApi.getAiSettings().then(setAiSettings)
+    return window.slidesApi.onAiSettingsChanged(setAiSettings)
+  }, [])
+
+  const updateAiSettings = useCallback((next: AiSettings): void => {
+    setAiSettings(next)
+    void window.slidesApi.setAiSettings(next)
   }, [])
 
   // Recent files for the start screen
@@ -2766,6 +2772,7 @@ export function App() {
                 applyDeck={applyDeck}
                 fitWidthPx={FIT_WIDTH}
                 settings={aiSettings}
+                onSettingsChange={updateAiSettings}
                 preset={aiPreset}
                 open={showAi}
                 onExpand={toggleAi}

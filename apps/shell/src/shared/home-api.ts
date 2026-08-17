@@ -1,4 +1,7 @@
 import type { UpdateChannel } from './update-api'
+import type { CodexAccountStatus } from '@genoffice/ai-provider'
+
+export type { CodexAccountStatus }
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
 export type UiLanguage =
@@ -108,6 +111,14 @@ export interface HomeApi {
   openLoginUrl(): Promise<void>
   /** log out (clears the saved API key; the login state is shared globally with the gsk CLI) */
   accountLogout(): Promise<void>
+  /** redacted ChatGPT Codex account state; credentials never cross preload */
+  codexStatus(): Promise<CodexAccountStatus>
+  /** start ChatGPT Codex OAuth in the system browser */
+  codexLogin(): Promise<CodexAccountStatus>
+  /** cancel an in-flight ChatGPT Codex OAuth attempt */
+  codexCancelLogin(): Promise<void>
+  /** clear the saved ChatGPT Codex credentials */
+  codexLogout(): Promise<CodexAccountStatus>
   /** app version (from package.json / electron app.getVersion) */
   getAppVersion(): Promise<string>
   /** whether the first-run onboarding has been completed or skipped (persisted in userData/app-settings.json) */
@@ -269,6 +280,10 @@ export const HOME_CHANNELS = {
   accountLoginEvent: 'home:account-login-event',
   accountLoginOpenUrl: 'home:account-login-open-url',
   accountLogout: 'home:account-logout',
+  codexStatus: 'home:codex-status',
+  codexLogin: 'home:codex-login',
+  codexCancelLogin: 'home:codex-cancel-login',
+  codexLogout: 'home:codex-logout',
   getAppVersion: 'home:get-app-version',
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',

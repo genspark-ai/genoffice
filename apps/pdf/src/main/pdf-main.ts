@@ -1,8 +1,17 @@
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
-import { join } from 'node:path'
-import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
+import { dirname, join } from 'node:path'
+import {
+  BrowserWindow,
+  WebContentsView,
+  app,
+  dialog,
+  ipcMain,
+  net,
+  shell,
+  webContents,
+} from 'electron'
 import type { WebContents } from 'electron'
 import {
   configuredDefaultSaveDir,
@@ -10,11 +19,26 @@ import {
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
+  fetchRemoteImage,
   showOpenDialogWithMemory,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
-import { gskGenerateImage, hasGskAuth } from '@genoffice/ai-search'
-import { PDF_CHANNELS } from '../shared/ipc'
+import {
+  gskApiKey,
+  gskGenerateImage,
+  hasGskAuth,
+  imageSearch,
+  webSearch,
+} from '@genoffice/ai-search'
+import {
+  AiMainRuntime,
+  sanitizeAiSettings,
+  setRescueFetch,
+  type AiSettings,
+  type AiStreamChunk,
+  type AiStreamRequest,
+} from '@genoffice/ai-provider'
+import { AI_CHANNELS, PDF_CHANNELS } from '../shared/ipc'
 import type {
   ExportImagesRequest,
   ExportImagesResult,
@@ -67,6 +91,7 @@ import {
   saveSignatures,
 } from './signature-store'
 import { uniqueGeneratedPdfPath } from './generated-output'
+import { getCodexAuth } from './codex-auth-main'
 
 const tDlg = createI18n({
   zh: {
@@ -454,6 +479,90 @@ const saveAsTargetByWc = new Map<number, string>()
 
 export function pdfIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
+}
+
+const AI_SETTINGS_PATH = () => join(app.getPath('userData'), 'ai-settings.json')
+const pdfAiRuntime = new AiMainRuntime({
+  auth: getCodexAuth(),
+  getGensparkApiKey: gskApiKey,
+})
+let standaloneAiIpcRegistered = false
+
+function readAiSettings(): unknown {
+  try {
+    return JSON.parse(readFileSync(AI_SETTINGS_PATH(), 'utf8')) as unknown
+  } catch {
+    return {}
+  }
+}
+
+function writeAiSettings(settings: AiSettings): void {
+  const path = AI_SETTINGS_PATH()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify(settings, null, 2))
+}
+
+function registerStandaloneAiIpc(): void {
+  if (standaloneAiIpcRegistered) return
+  standaloneAiIpcRegistered = true
+  setRescueFetch((url, init) => net.fetch(url, init))
+
+  ipcMain.handle(AI_CHANNELS.getSettings, (): AiSettings => sanitizeAiSettings(readAiSettings()))
+  ipcMain.handle(AI_CHANNELS.setSettings, (_event, settings: AiSettings) => {
+    const sanitized = sanitizeAiSettings(settings)
+    writeAiSettings(sanitized)
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send(AI_CHANNELS.settingsChanged, sanitized)
+    }
+  })
+  ipcMain.handle(AI_CHANNELS.codexStatus, () => pdfAiRuntime.codexStatus())
+  ipcMain.handle(AI_CHANNELS.codexLogin, () => pdfAiRuntime.codexLogin())
+  ipcMain.handle(AI_CHANNELS.codexCancelLogin, () => pdfAiRuntime.codexCancelLogin())
+  ipcMain.handle(AI_CHANNELS.codexLogout, () => pdfAiRuntime.codexLogout())
+  ipcMain.handle(AI_CHANNELS.codexCapabilities, () => pdfAiRuntime.codexCapabilities())
+  ipcMain.handle(AI_CHANNELS.stream, async (event, request: AiStreamRequest) => {
+    const send = (chunk: AiStreamChunk): void => {
+      if (!event.sender.isDestroyed()) event.sender.send(AI_CHANNELS.streamChunk, chunk)
+    }
+    await pdfAiRuntime.stream(request, send, {
+      noGensparkApiKey: 'Genspark account is not logged in on this machine.',
+      noApiKey: (provider) => `No API key configured for ${provider}.`,
+      noModel: 'No model name configured.',
+    })
+  })
+  ipcMain.handle(AI_CHANNELS.streamCancel, (_event, requestId: string) =>
+    pdfAiRuntime.cancel(requestId),
+  )
+  ipcMain.handle(AI_CHANNELS.webSearch, async (_event, query: string, maxResults?: number) => {
+    try {
+      return await webSearch(String(query), typeof maxResults === 'number' ? maxResults : 6)
+    } catch (error) {
+      return { results: [], method: 'error', error: String(error) }
+    }
+  })
+  ipcMain.handle(AI_CHANNELS.imageSearch, async (_event, query: string, maxResults?: number) => {
+    try {
+      return await imageSearch(String(query), typeof maxResults === 'number' ? maxResults : 8)
+    } catch (error) {
+      return { images: [], method: 'error', error: String(error) }
+    }
+  })
+  ipcMain.handle(AI_CHANNELS.fetchImage, async (_event, url: string) => {
+    try {
+      const response = await fetchRemoteImage(String(url))
+      if (!response?.ok) return null
+      const bytes = Buffer.from(await response.arrayBuffer())
+      const contentType = response.headers.get('content-type') ?? ''
+      const mime = contentType.includes('png')
+        ? 'image/png'
+        : contentType.includes('gif')
+          ? 'image/gif'
+          : 'image/jpeg'
+      return { base64: bytes.toString('base64'), mime }
+    } catch {
+      return null
+    }
+  })
 }
 
 /**
@@ -1136,6 +1245,7 @@ export function startPdfStandalone(): void {
   })
   void app.whenReady().then(() => {
     registerPdfIpc()
+    registerStandaloneAiIpc()
     const win = new BrowserWindow({
       width: 1200,
       height: 850,

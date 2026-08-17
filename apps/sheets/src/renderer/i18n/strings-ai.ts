@@ -1,8 +1,10 @@
 import { defineStrings } from '@genoffice/i18n'
+import { codexStrings } from '@genoffice/ai-provider'
 
 /** User-visible copy for the ai/ panel and tool feedback (LLM prompts excluded) */
 export const aiStrings = defineStrings({
   zh: {
+    ...codexStrings.zh,
     aiComposerPlaceholderBuild: '描述要生成的表格、数据或图表…',
     aiEmptyBuildTitle: '让 AI 帮你从零建表',
     aiEmptyBuildBody: '描述想要的表格、数据或图表，AI 直接生成。',
@@ -100,6 +102,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: '追踪 {address} 的引用者（{count} 处）',
   },
   en: {
+    ...codexStrings.en,
     aiComposerPlaceholderBuild: 'Describe the table, data, or chart to create…',
     aiEmptyBuildTitle: 'Let AI build this workbook for you',
     aiEmptyBuildBody: 'Describe the table, data, or chart you need — AI creates it in place.',
@@ -204,6 +207,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Traced dependents of {address} ({count})',
   },
   ja: {
+    ...codexStrings.ja,
     aiComposerPlaceholderBuild: '作りたい表・データ・グラフを入力…',
     aiEmptyBuildTitle: 'AI にシート作りを任せる',
     aiEmptyBuildBody: '欲しい表・データ・グラフを伝えると、AI がその場で作成します。',
@@ -307,6 +311,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: '{address} の参照先をトレース（{count} 件）',
   },
   ko: {
+    ...codexStrings.ko,
     aiComposerPlaceholderBuild: '만들 표, 데이터, 차트를 설명하세요…',
     aiEmptyBuildTitle: 'AI에게 시트 작성을 맡기세요',
     aiEmptyBuildBody: '원하는 표, 데이터, 차트를 설명하면 AI가 바로 만들어 줍니다.',
@@ -409,6 +414,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: '{address}의 참조하는 셀 추적({count}개)',
   },
   fr: {
+    ...codexStrings.fr,
     aiComposerPlaceholderBuild: 'Décrivez le tableau, les données ou le graphique à créer…',
     aiEmptyBuildTitle: "Laissez l'IA construire ce classeur pour vous",
     aiEmptyBuildBody:
@@ -515,6 +521,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Dépendants de {address} ({count})',
   },
   de: {
+    ...codexStrings.de,
     aiComposerPlaceholderBuild: 'Beschreibe die zu erstellende Tabelle, Daten oder Diagramme…',
     aiEmptyBuildTitle: 'Lass die KI diese Arbeitsmappe für dich aufbauen',
     aiEmptyBuildBody:
@@ -621,6 +628,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Nachfolger von {address} ({count})',
   },
   es: {
+    ...codexStrings.es,
     aiComposerPlaceholderBuild: 'Describe la tabla, los datos o el gráfico a crear…',
     aiEmptyBuildTitle: 'Deja que la IA construya este libro por ti',
     aiEmptyBuildBody:
@@ -726,6 +734,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Dependientes de {address} ({count})',
   },
   th: {
+    ...codexStrings.th,
     aiComposerPlaceholderBuild: 'อธิบายตาราง ข้อมูล หรือแผนภูมิที่จะสร้าง…',
     aiEmptyBuildTitle: 'ให้ AI สร้างเวิร์กบุ๊กนี้ให้คุณ',
     aiEmptyBuildBody: 'อธิบายตาราง ข้อมูล หรือแผนภูมิที่ต้องการ แล้ว AI จะสร้างให้ทันที',
@@ -828,6 +837,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'เซลล์ปลายทางของ {address} ({count} รายการ)',
   },
   id: {
+    ...codexStrings.id,
     aiComposerPlaceholderBuild: 'Jelaskan tabel, data, atau bagan yang akan dibuat…',
     aiEmptyBuildTitle: 'Biarkan AI membangun buku kerja ini untuk Anda',
     aiEmptyBuildBody:
@@ -932,6 +942,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Dependen dari {address} ({count})',
   },
   ru: {
+    ...codexStrings.ru,
     aiComposerPlaceholderBuild: 'Опишите таблицу, данные или диаграмму для создания…',
     aiEmptyBuildTitle: 'Пусть ИИ построит эту книгу за вас',
     aiEmptyBuildBody: 'Опишите нужную таблицу, данные или диаграмму — ИИ создаст их на месте.',
@@ -1036,6 +1047,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Зависимые ячейки для {address} ({count})',
   },
   ar: {
+    ...codexStrings.ar,
     aiComposerPlaceholderBuild: 'صف الجدول أو البيانات أو المخطط المطلوب إنشاؤه…',
     aiEmptyBuildTitle: 'دع الذكاء الاصطناعي ينشئ هذا المصنف لك',
     aiEmptyBuildBody: 'صف الجدول أو البيانات أو المخطط الذي تريده — ينشئه الذكاء الاصطناعي مباشرة.',
@@ -1137,6 +1149,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'الخلايا التابعة لـ {address} ({count})',
   },
   pt: {
+    ...codexStrings.pt,
     aiComposerPlaceholderBuild: 'Descreva a tabela, os dados ou o gráfico a criar…',
     aiEmptyBuildTitle: 'Deixe a IA montar esta pasta de trabalho para você',
     aiEmptyBuildBody: 'Descreva a tabela, os dados ou o gráfico que precisa — a IA cria na hora.',
@@ -1241,6 +1254,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Dependentes de {address} ({count})',
   },
   it: {
+    ...codexStrings.it,
     aiComposerPlaceholderBuild: 'Descrivi la tabella, i dati o il grafico da creare…',
     aiEmptyBuildTitle: "Lascia che l'IA costruisca questa cartella di lavoro",
     aiEmptyBuildBody:
@@ -1346,6 +1360,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Dipendenti di {address} ({count})',
   },
   pl: {
+    ...codexStrings.pl,
     aiComposerPlaceholderBuild: 'Opisz tabelę, dane lub wykres do utworzenia…',
     aiEmptyBuildTitle: 'Pozwól AI zbudować ten skoroszyt',
     aiEmptyBuildBody: 'Opisz potrzebną tabelę, dane lub wykres — AI utworzy je od razu.',
@@ -1450,6 +1465,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Zależności {address} ({count})',
   },
   nl: {
+    ...codexStrings.nl,
     aiComposerPlaceholderBuild: 'Beschrijf de tabel, gegevens of grafiek om te maken…',
     aiEmptyBuildTitle: 'Laat AI deze werkmap voor je opbouwen',
     aiEmptyBuildBody:
@@ -1555,6 +1571,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Doelcellen van {address} ({count})',
   },
   ms: {
+    ...codexStrings.ms,
     aiComposerPlaceholderBuild: 'Terangkan jadual, data atau carta untuk dijana…',
     aiEmptyBuildTitle: 'Biarkan AI membina buku kerja ini untuk anda',
     aiEmptyBuildBody:
@@ -1660,6 +1677,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'Dependen {address} ({count})',
   },
   he: {
+    ...codexStrings.he,
     aiComposerPlaceholderBuild: 'תארו את הטבלה, הנתונים או התרשים ליצירה…',
     aiEmptyBuildTitle: 'תנו ל-AI לבנות את חוברת העבודה הזו עבורכם',
     aiEmptyBuildBody: 'תארו את הטבלה, הנתונים או התרשים הדרושים — ה-AI יוצר אותם במקום.',
@@ -1758,6 +1776,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: 'תלויות של {address} ({count})',
   },
   hi: {
+    ...codexStrings.hi,
     aiComposerPlaceholderBuild: 'बनाने के लिए तालिका, डेटा या चार्ट बताएँ…',
     aiEmptyBuildTitle: 'AI से यह वर्कबुक बनवाएँ',
     aiEmptyBuildBody: 'जो तालिका, डेटा या चार्ट चाहिए बताएँ — AI उसे तुरंत बना देता है।',
@@ -1861,6 +1880,7 @@ export const aiStrings = defineStrings({
     aiToolTraceDependentsOf: '{address} के आश्रित ({count})',
   },
   'zh-TW': {
+    ...codexStrings['zh-TW'],
     aiComposerPlaceholderBuild: '描述要生成的表格、資料或圖表…',
     aiEmptyBuildTitle: '讓 AI 幫你從零建表',
     aiEmptyBuildBody: '描述想要的表格、資料或圖表，AI 直接生成。',

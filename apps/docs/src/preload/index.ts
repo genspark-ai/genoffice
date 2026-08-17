@@ -77,11 +77,21 @@ const api: DesktopApi = {
     ipcRenderer.invoke('docs:save-merged-pdf', defaultName, base64Parts, outPath),
   getAiSettings: () => ipcRenderer.invoke('ai:get-settings'),
   setAiSettings: (settings: AiSettings) => ipcRenderer.invoke('ai:set-settings', settings),
+  onAiSettingsChanged: (handler) => {
+    const listener = (_event: IpcRendererEvent, settings: AiSettings) => handler(settings)
+    ipcRenderer.on('ai:settings-changed', listener)
+    return () => ipcRenderer.removeListener('ai:settings-changed', listener)
+  },
   aiChat: (request: AiChatRequest) => ipcRenderer.invoke('ai:chat', request),
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
+  aiCodexStatus: () => ipcRenderer.invoke('ai:codex-status'),
+  aiCodexLogin: () => ipcRenderer.invoke('ai:codex-login'),
+  aiCodexCancelLogin: () => ipcRenderer.invoke('ai:codex-cancel-login'),
+  aiCodexLogout: () => ipcRenderer.invoke('ai:codex-logout'),
+  aiCodexCapabilities: () => ipcRenderer.invoke('ai:codex-capabilities'),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),
   imageSearch: (query: string, maxResults?: number) =>

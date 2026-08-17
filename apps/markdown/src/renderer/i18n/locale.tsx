@@ -39,6 +39,7 @@ const LocaleContext = createContext<Lang>('zh')
 
 /** Module-level current language: for code outliving render closures, kept in sync with the Provider */
 let moduleLang: Lang = 'zh'
+export const getLang = (): Lang => moduleLang
 
 export function t(key: StringKey, params?: Params): string {
   return translate(moduleLang, key, params)
