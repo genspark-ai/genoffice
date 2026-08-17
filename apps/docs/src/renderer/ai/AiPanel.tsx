@@ -962,8 +962,8 @@ export function AiPanel({
           <button
             className="ai-header-btn"
             onClick={() => setSettingsOpen(true)}
-            data-tip="AI Settings"
-            aria-label="AI Settings"
+            data-tip={t('aiSettingsTitle')}
+            aria-label={t('aiSettingsTitle')}
           >
             <IconSettings size={15} />
           </button>
@@ -1272,21 +1272,21 @@ export function AiPanel({
         <AiSettingsDialog
           settings={settings}
           strings={{
-            aiSettingsProvider: 'AI Provider',
-            aiSettingsApiKey: 'API Key',
-            aiSettingsApiKeyHint: 'Ollama does not require an API key',
-            aiSettingsBaseUrl: 'Base URL',
-            aiSettingsDetectedModels: 'Detected Models',
-            aiSettingsRefresh: 'Refresh',
-            aiSettingsNoModel: 'No models detected',
-            aiSettingsTestFail: 'Connection failed',
-            aiSettingsCancel: 'Cancel',
-            aiSettingsSave: 'Save',
-            aiSettingsModel: 'Model',
-            aiSettingsGensparkLogin: 'Log in',
-            aiSettingsGensparkConnected: 'Connected',
-            aiSettingsGensparkDisconnected: 'Not connected',
-            aiSettingsOllamaBaseUrlHint: 'Ollama must be running locally',
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
           }}
           listOllamaModels={(baseUrl) => window.desktop.aiOllamaModels(baseUrl).then((r) => r.models)}
           onSettingsChange={(next) => onSettingsChange?.(next)}

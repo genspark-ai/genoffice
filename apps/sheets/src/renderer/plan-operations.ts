@@ -5,7 +5,7 @@
  * preview plan; runDeterministicPlan does the same for the regex planner.
  * Extracted from App.tsx; App-scope state comes in through PlanContext.
  */
-import { planPrompt } from '../ai/deterministic-planner'
+import { planPrompt, UnsupportedPromptError } from '../ai/deterministic-planner'
 import { parseAddress, parseRange, rangeCellCount } from '../domain/cell-address'
 import { CHART_EDIT_TYPES, chartDataFromValues } from '../domain/chart-visual'
 import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
@@ -490,7 +490,12 @@ export function runDeterministicPlan(
       return { text: t('appPreviewCreated') }
     } catch (error: unknown) {
       return {
-        text: error instanceof Error ? error.message : t('appPreviewFailed'),
+        text:
+          error instanceof UnsupportedPromptError
+            ? t('aiUnsupportedPrompt')
+            : error instanceof Error
+              ? error.message
+              : t('appPreviewFailed'),
         isError: true,
       }
     }
@@ -507,7 +512,12 @@ export function runDeterministicPlan(
     return { text: t('appPreviewCreatedDemo') }
   } catch (error: unknown) {
     return {
-      text: error instanceof Error ? error.message : t('appPreviewFailed'),
+      text:
+        error instanceof UnsupportedPromptError
+          ? t('aiUnsupportedPrompt')
+          : error instanceof Error
+            ? error.message
+            : t('appPreviewFailed'),
       isError: true,
     }
   }

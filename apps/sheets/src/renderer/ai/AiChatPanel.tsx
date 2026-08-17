@@ -475,8 +475,8 @@ export function AiChatPanel({
           <button
             className="ai-header-btn"
             onClick={() => setSettingsOpen(true)}
-            data-tip="AI Settings"
-            aria-label="AI Settings"
+            data-tip={t('aiSettingsTitle')}
+            aria-label={t('aiSettingsTitle')}
           >
             <IconSettings size={15} />
           </button>
