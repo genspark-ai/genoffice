@@ -11,6 +11,8 @@ import type {
   AiStreamRequest,
   GenSparkAccountStatus,
   OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
 } from '@genoffice/ai-provider'
 
 const MAX_RANGE_CELLS = 20_000
@@ -1979,6 +1981,14 @@ export interface DesktopApi {
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
   /// Lightweight provider connection test (never returns stack traces)
   aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
+  /// Load the persisted AI chat transcript for this app (main-process store, cross-tab persistence)
+  aiChatLoad(appId: string): Promise<unknown[]>
+  /// Persist the AI chat transcript for this app (main-process store)
+  aiChatSave(appId: string, entries: unknown[]): Promise<void>
+  /// Build/refresh the local Workspace Q&A index over saved documents (Ollama embeddings)
+  workspaceIndex(): Promise<WorkspaceIndexResult>
+  /// Semantic search over the Workspace Q&A index
+  workspaceSearch(query: string, k?: number): Promise<WorkspaceSearchResult>
   /// Web search (main-process Serper/DuckDuckGo, shared with docs/slides)
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void

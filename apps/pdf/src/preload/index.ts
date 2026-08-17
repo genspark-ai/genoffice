@@ -79,6 +79,10 @@ const api: PdfApi = {
   },
   aiOllamaModels: (baseUrl?: string) => ipcRenderer.invoke(AI_CHANNELS.ollamaModels, baseUrl),
   aiTestConnection: (input: AiConnectionTestInput) => ipcRenderer.invoke(AI_CHANNELS.testConnection, input),
+  aiChatLoad: (appId: string) => ipcRenderer.invoke(AI_CHANNELS.chatLoad, appId),
+  aiChatSave: (appId: string, entries: unknown[]) => ipcRenderer.invoke(AI_CHANNELS.chatSave, appId, entries),
+  workspaceIndex: () => ipcRenderer.invoke(AI_CHANNELS.workspaceIndex),
+  workspaceSearch: (query: string, k?: number) => ipcRenderer.invoke(AI_CHANNELS.workspaceSearch, query, k),
 }
 
 contextBridge.exposeInMainWorld('pdfApi', api)

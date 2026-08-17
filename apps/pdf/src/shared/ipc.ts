@@ -6,6 +6,8 @@ import type {
   AiStreamChunk,
   AiStreamRequest,
   OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
 } from '@genoffice/ai-provider'
 
 export const PDF_CHANNELS = {
@@ -602,6 +604,10 @@ export const AI_CHANNELS = {
   fetchImage: 'ai:fetch-image',
   ollamaModels: 'ai:ollama-models',
   testConnection: 'ai:test-connection',
+  chatLoad: 'ai:chat-load',
+  chatSave: 'ai:chat-save',
+  workspaceIndex: 'workspace:index',
+  workspaceSearch: 'workspace:search',
 } as const
 
 export interface ImageSearchResponse {
@@ -697,4 +703,8 @@ export interface PdfApi {
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
   aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
+  aiChatLoad(appId: string): Promise<unknown[]>
+  aiChatSave(appId: string, entries: unknown[]): Promise<void>
+  workspaceIndex(): Promise<WorkspaceIndexResult>
+  workspaceSearch(query: string, k?: number): Promise<WorkspaceSearchResult>
 }

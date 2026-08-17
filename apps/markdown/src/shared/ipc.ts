@@ -6,6 +6,8 @@ import type {
   AiStreamChunk,
   AiStreamRequest,
   OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
 } from '@genoffice/ai-provider'
 
 export const MARKDOWN_CHANNELS = {
@@ -60,6 +62,10 @@ export const AI_CHANNELS = {
   webSearch: 'ai:web-search',
   ollamaModels: 'ai:ollama-models',
   testConnection: 'ai:test-connection',
+  chatLoad: 'ai:chat-load',
+  chatSave: 'ai:chat-save',
+  workspaceIndex: 'workspace:index',
+  workspaceSearch: 'workspace:search',
 } as const
 
 export interface WebSearchResult {
@@ -148,6 +154,10 @@ export interface MarkdownApi {
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
   aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
+  aiChatLoad(appId: string): Promise<unknown[]>
+  aiChatSave(appId: string, entries: unknown[]): Promise<void>
+  workspaceIndex(): Promise<WorkspaceIndexResult>
+  workspaceSearch(query: string, k?: number): Promise<WorkspaceSearchResult>
   /** Main-process web search (Serper/DuckDuckGo via the shared ai:web-search handler) */
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
 }

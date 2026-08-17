@@ -294,6 +294,10 @@ const api: SlidesApi = {
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
   aiOllamaModels: (baseUrl?: string) => ipcRenderer.invoke('ai:ollama-models', baseUrl),
   aiTestConnection: (input: AiConnectionTestInput) => ipcRenderer.invoke('ai:test-connection', input),
+  aiChatLoad: (appId: string) => ipcRenderer.invoke('ai:chat-load', appId),
+  aiChatSave: (appId: string, entries: unknown[]) => ipcRenderer.invoke('ai:chat-save', appId, entries),
+  workspaceIndex: () => ipcRenderer.invoke('workspace:index'),
+  workspaceSearch: (query: string, k?: number) => ipcRenderer.invoke('workspace:search', query, k),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),
   imageSearch: (query: string, maxResults?: number) =>

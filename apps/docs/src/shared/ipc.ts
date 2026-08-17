@@ -26,6 +26,8 @@ import type {
   AiStreamRequest,
   GenSparkAccountStatus,
   OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
 } from '@genoffice/ai-provider'
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
 
@@ -223,6 +225,14 @@ export interface DesktopApi {
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
   /** Lightweight provider connection test (never returns stack traces) */
   aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
+  /** Load the persisted AI chat transcript for this app (main-process store, cross-tab persistence) */
+  aiChatLoad(appId: string): Promise<unknown[]>
+  /** Persist the AI chat transcript for this app (main-process store) */
+  aiChatSave(appId: string, entries: unknown[]): Promise<void>
+  /** Build/refresh the local Workspace Q&A index over saved documents (Ollama embeddings) */
+  workspaceIndex(): Promise<WorkspaceIndexResult>
+  /** Semantic search over the Workspace Q&A index */
+  workspaceSearch(query: string, k?: number): Promise<WorkspaceSearchResult>
   webSearch(
     query: string,
     maxResults?: number,

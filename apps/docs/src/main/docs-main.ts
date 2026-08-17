@@ -35,6 +35,7 @@ import type {
   WebContents,
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
+import { registerWorkspaceIpc } from './ai-workspace'
 import {
   AiCreditsError,
   AiTimeoutError,
@@ -2512,6 +2513,24 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
     writeJson(SETTINGS_PATH(), settings)
+  })
+
+  // ── Cross-app AI panel state (issue #33): per-app chat transcripts live in
+  // the main process so switching tabs / restarting keeps each conversation. ──
+  ipcMain.handle('ai:chat-load', (_event, appId: unknown): unknown[] => {
+    if (typeof appId !== 'string' || !/^[a-z0-9-]+$/.test(appId)) return []
+    return readJson<unknown[]>(join(userDataPath('ai-chat'), `${appId}.json`), [])
+  })
+  ipcMain.handle('ai:chat-save', (_event, appId: unknown, entries: unknown): void => {
+    if (typeof appId !== 'string' || !/^[a-z0-9-]+$/.test(appId) || !Array.isArray(entries)) return
+    writeJson(join(userDataPath('ai-chat'), `${appId}.json`), entries)
+  })
+
+  // ── Workspace Q&A: local RAG over saved documents (Ollama embeddings) ──
+  registerWorkspaceIpc({
+    settingsPath: SETTINGS_PATH,
+    userDataPath,
+    saveDir: defaultSaveDir,
   })
 
   ipcMain.handle(
