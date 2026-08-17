@@ -1,7 +1,7 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
-import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
+import { GENSPARK_LLM_BASE_URLS, OLLAMA_DEFAULT_BASE_URL, gensparkAttributionHeaders } from './providers'
 import type { AiProviderConfig, AiProviderId } from './types'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
@@ -725,7 +725,8 @@ async function openAiCompatibleTurn(
     signal: wd.signal,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      // only send auth when a key actually exists (e.g. a remote Ollama server with a key)
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       ...gensparkAttributionHeaders(baseUrl),
     },
     body: JSON.stringify({
@@ -906,6 +907,17 @@ export async function streamForProvider(
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')
       return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb)
+    case 'ollama':
+      // local (or user-configured) Ollama server; reuse the OpenAI-compatible transport
+      return streamOpenAiCompatible(
+        config.baseUrl ?? OLLAMA_DEFAULT_BASE_URL,
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        cb,
+      )
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

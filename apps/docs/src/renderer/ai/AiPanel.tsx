@@ -13,7 +13,7 @@ import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, AiSettingsDialog, IconSettings } from '@genoffice/ui'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -262,6 +262,8 @@ interface AiPanelProps {
   onCollapse?: () => void
   /** Absolute path of the currently open file (used for chat-history persistence) */
   filePath?: string | null
+  /** Persist updated AI settings (called when the user saves changes in the settings dialog) */
+  onSettingsChange?: (next: AiSettings) => void
 }
 
 export function AiPanel({
@@ -275,6 +277,7 @@ export function AiPanel({
   onExpand,
   onCollapse,
   filePath,
+  onSettingsChange,
 }: AiPanelProps) {
   const { t } = useI18n()
   const [input, setInput] = useState('')
@@ -298,6 +301,8 @@ export function AiPanel({
       files skill must keep reading them mid-run and in follow-up turns. Deduped by path
       against the live composer list. */
   const sentAttachmentsRef = useRef<AttachmentMeta[]>([])
+  /** AI settings dialog open/closed */
+  const [settingsOpen, setSettingsOpen] = useState(false)
   useEffect(() => {
     // previews cover the composer plus every image echoed on a sent/history message
     // (history chips re-read the file by its stored path; a deleted file keeps the placeholder)
@@ -654,22 +659,23 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktop
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
-              setChat((prev) => {
-                const next = [...prev]
-                const last = next.at(-1)
-                if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
-                }
-                return next
+          // Signed-out failures get an inline sign-in button; only relevant for genspark provider
+          if (settingsRef.current.provider === 'genspark') {
+            void window.desktop
+              .aiGskStatus()
+              .then((status) => {
+                if (status.loggedIn) return
+                setChat((prev) => {
+                  const next = [...prev]
+                  const last = next.at(-1)
+                  if (last?.role === 'assistant' && last.error) {
+                    next[next.length - 1] = { ...last, loginRequired: true }
+                  }
+                  return next
+                })
               })
-            })
-            .catch(() => {})
+              .catch(() => {})
+          }
           setBusy(false)
         },
       },
@@ -953,6 +959,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setSettingsOpen(true)}
+            data-tip="AI Settings"
+            aria-label="AI Settings"
+          >
+            <IconSettings size={15} />
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -1254,6 +1268,31 @@ export function AiPanel({
           }
         />
       </div>
+      {settingsOpen && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: 'AI Provider',
+            aiSettingsApiKey: 'API Key',
+            aiSettingsApiKeyHint: 'Ollama does not require an API key',
+            aiSettingsBaseUrl: 'Base URL',
+            aiSettingsDetectedModels: 'Detected Models',
+            aiSettingsRefresh: 'Refresh',
+            aiSettingsNoModel: 'No models detected',
+            aiSettingsTestFail: 'Connection failed',
+            aiSettingsCancel: 'Cancel',
+            aiSettingsSave: 'Save',
+            aiSettingsModel: 'Model',
+            aiSettingsGensparkLogin: 'Log in',
+            aiSettingsGensparkConnected: 'Connected',
+            aiSettingsGensparkDisconnected: 'Not connected',
+            aiSettingsOllamaBaseUrlHint: 'Ollama must be running locally',
+          }}
+          listOllamaModels={(baseUrl) => window.desktop.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </aside>
   )
 }

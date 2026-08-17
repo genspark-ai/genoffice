@@ -6,6 +6,7 @@ import type { UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
 import '@genoffice/ui/color-picker.css'
+import '@genoffice/ui/ai-settings.css'
 import './styles.css'
 import './fonts/fonts.css'
 import { installScreenTips } from '@genoffice/ui'
@@ -21,8 +22,6 @@ async function bootstrap(): Promise<void> {
   let lang: Lang = 'zh'
   let theme: UiTheme = 'system'
   try {
-    // per-promise catch: standalone runs have no app:get-theme handler, and
-    // that rejection must not drop a resolved language
     ;[lang, theme] = await Promise.all([
       window.desktop.getLanguage().catch(() => 'zh' as const),
       window.desktop.getTheme().catch(() => 'system' as const),

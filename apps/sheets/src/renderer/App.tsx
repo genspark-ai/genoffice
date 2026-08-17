@@ -115,7 +115,7 @@ import {
   composeSkills,
   type AgentImage,
 } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
+import { defaultAiSettings, type AiSettings } from '@genoffice/ai-provider'
 import {
   copyTargetBounds,
   replaceOccurrences,
@@ -676,8 +676,8 @@ export function App(): React.JSX.Element {
 
   // ---- AI: real LLM agent (falls back to the deterministic planner above
   // when no provider is configured — see isAgentConfigured/handleSend) ----
-  const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
-  const aiSettingsRef = useRef<AiSettings | null>(null)
+  const [aiSettings, setAiSettingsState] = useState<AiSettings>(defaultAiSettings)
+  const aiSettingsRef = useRef<AiSettings>(aiSettings)
   aiSettingsRef.current = aiSettings
   const [aiBusy, setAiBusy] = useState(false)
   // Display history survives restarts via localStorage; the AgentLoop's model
@@ -4241,6 +4241,11 @@ export function App(): React.JSX.Element {
         onCreateConsolidate={(config) => handleCreateConsolidateImpl(dataToolsContext(), config)}
         onGetConsolidateDefault={() => consolidateDefaultReferenceImpl(dataToolsContext())}
         onApplyHeaderFooter={(result) => handleApplyHeaderFooterImpl(pageLayoutContext(), result)}
+        settings={aiSettings}
+        onSettingsChange={(next) => {
+          setAiSettingsState(next)
+          void window.desktopApi.setAiSettings(next)
+        }}
       />
       {advancedFilterColumns !== null && (
         <AdvancedFilterDialog

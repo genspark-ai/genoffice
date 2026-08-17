@@ -22,7 +22,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, AiSettingsDialog, IconSettings } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -261,6 +261,7 @@ interface AiPanelProps {
   applyDeck: (slides: RenderSlide[], goTo?: number) => void
   fitWidthPx: number
   settings: AiSettings
+  onSettingsChange?: (next: AiSettings) => void
   /** Preset instruction pushed from the ribbon/start screen; sent immediately when autoRun. When displayText exists the chat bubble shows only it while the full text still goes to the model.
       attachments are local files added in the start-screen input, taking effect with the first message.
       slideShot attaches a rendering of the current slide so the model sees what it's editing (AI Beautify) */
@@ -356,6 +357,7 @@ export function AiPanel({
   applyDeck,
   fitWidthPx,
   settings,
+  onSettingsChange,
   preset,
   open = true,
   onExpand,
@@ -424,6 +426,7 @@ export function AiPanel({
     attachScrollFadeRef.current = window.setTimeout(() => el.classList.remove('is-scrolling'), 800)
   }
   const [dragOver, setDragOver] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // preferred = the user's chosen width (session only); panelWidth = what fits
   // the current window. Deriving the display width from the preference means a
   // transiently small window never permanently shrinks the panel.
@@ -1697,6 +1700,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setSettingsOpen(true)}
+            data-tip="AI Settings"
+            aria-label="AI Settings"
+          >
+            <IconSettings size={15} />
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -2051,6 +2062,31 @@ export function AiPanel({
             </div>
           </div>
         </div>
+      )}
+      {settingsOpen && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+          }}
+          listOllamaModels={(baseUrl) => window.slidesApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
     </aside>
   )

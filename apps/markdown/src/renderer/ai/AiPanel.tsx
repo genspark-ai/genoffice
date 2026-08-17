@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
+import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings, Markdown } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -82,11 +82,15 @@ export function AiPanel({
   filePath,
   preset,
   onCollapse,
+  settings,
+  onSettingsChange,
 }: {
   deps: MarkdownAiDeps
   filePath: string | null
   preset?: AiPreset | null
   onCollapse: () => void
+  settings?: AiSettings
+  onSettingsChange?: (next: AiSettings) => void
 }): ReactElement {
   const { lang, t } = useI18n()
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -103,6 +107,7 @@ export function AiPanel({
   const preferredWidthRef = useRef(loadPanelWidth())
   const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
   const [resizing, setResizing] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
   const mountedRef = useRef(true)
 
@@ -457,6 +462,14 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setSettingsOpen(true)}
+            data-tip="AI Settings"
+            aria-label="AI Settings"
+          >
+            <IconSettings />
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -648,6 +661,31 @@ export function AiPanel({
           onStop={stop}
         />
       </div>
+      {settingsOpen && settings && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+          }}
+          listOllamaModels={(baseUrl) => window.markdownApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </aside>
   )
 }

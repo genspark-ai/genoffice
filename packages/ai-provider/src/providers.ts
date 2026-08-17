@@ -24,6 +24,14 @@ export function gensparkAttributionHeaders(baseUrl?: string): Record<string, str
     : {}
 }
 
+/**
+ * Default Ollama endpoint (OpenAI-compatible). Requests never go through a
+ * cloud provider; a user-configured base URL (e.g. a remote Ollama server)
+ * is respected as-is. Never assume a model is installed — discovery is a
+ * separate concern.
+ */
+export const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434/v1'
+
 export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'genspark',
@@ -85,7 +93,28 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'API Key',
     needsBaseUrl: true,
   },
+  {
+    id: 'ollama',
+    label: 'Ollama',
+    // never hard-code an installed model; /api/tags discovery is the source of truth
+    models: [],
+    defaultModel: '',
+    keyPlaceholder: 'Optional - not required for a local server',
+    needsBaseUrl: true,
+    defaultBaseUrl: OLLAMA_DEFAULT_BASE_URL,
+  },
 ]
+
+/**
+ * Providers that can run without an API key. Ollama talks to a local (or
+ * user-configured) server that needs no auth by default. Anything not listed
+ * here requires a key — including an unknown provider id (fail closed).
+ */
+const API_KEY_OPTIONAL_PROVIDERS: ReadonlySet<string> = new Set(['ollama'])
+
+export function providerRequiresApiKey(provider: AiProviderId): boolean {
+  return !API_KEY_OPTIONAL_PROVIDERS.has(provider)
+}
 
 /**
  * Fresh settings with every provider's default model and an empty key,
@@ -101,7 +130,7 @@ export function defaultAiSettings(
     providers[meta.id] = {
       apiKey: defaultApiKeys?.[meta.id] ?? '',
       model: meta.defaultModel,
-      baseUrl: meta.needsBaseUrl ? '' : undefined,
+      baseUrl: meta.defaultBaseUrl ?? (meta.needsBaseUrl ? '' : undefined),
     }
   }
   return { provider: 'genspark', providers }

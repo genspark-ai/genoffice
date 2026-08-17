@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -56,6 +56,8 @@ export function AiPanel({
   onCollapse,
   preset,
   onRunDone,
+  settings,
+  onSettingsChange,
 }: {
   api: PdfAiDeps
   onCollapse: () => void
@@ -63,6 +65,8 @@ export function AiPanel({
   preset?: { text: string; nonce: number } | null
   /** Fired when a run that mutated the document finishes (drives the untitled-blank auto-save) */
   onRunDone?: () => void
+  settings?: AiSettings
+  onSettingsChange?: (next: AiSettings) => void
 }): ReactElement {
   const { lang, t } = useI18n()
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -77,6 +81,7 @@ export function AiPanel({
   const preferredWidthRef = useRef(loadPanelWidth())
   const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
   const [resizing, setResizing] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
 
   // The .ai-dock wrapper owns the animated width (docs-style 180ms slide);
@@ -321,6 +326,16 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          {settings && (
+            <button
+              className="ai-header-btn"
+              onClick={() => setSettingsOpen(true)}
+              data-tip="AI Settings"
+              aria-label="AI Settings"
+            >
+              <IconSettings />
+            </button>
+          )}
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -414,6 +429,31 @@ export function AiPanel({
           onStop={stop}
         />
       </div>
+      {settingsOpen && settings && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+          }}
+          listOllamaModels={(baseUrl) => window.pdfApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </aside>
   )
 }

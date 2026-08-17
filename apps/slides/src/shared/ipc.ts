@@ -14,6 +14,7 @@ import type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 
 export type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
@@ -27,6 +28,7 @@ export type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
@@ -1384,6 +1386,8 @@ export interface SlidesApi {
   aiGskStatus: (withEmail?: boolean) => Promise<GenSparkAccountStatus>
   /** Open the browser to log into Genspark (fire-and-forget; aiGskStatus turns logged-in once done) */
   aiGskLogin: () => Promise<void>
+  /** List locally-available Ollama models (Ollama's /api/tags endpoint) */
+  aiOllamaModels: (baseUrl?: string) => Promise<OllamaModelsResult>
   webSearch: (
     query: string,
     maxResults?: number,

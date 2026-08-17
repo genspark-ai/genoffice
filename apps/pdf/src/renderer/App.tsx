@@ -5,6 +5,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
 import type { PdfAiDeps } from './ai/tools'
 import {
@@ -310,6 +311,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('genoffice-pdf-show-ai', aiCollapsed ? '0' : '1')
   }, [aiCollapsed])
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
   /** One-shot prompt pushed by the ribbon AI buttons; the panel auto-runs it (docs preset pattern) */
   const [aiPreset, setAiPreset] = useState<{ text: string; nonce: number } | null>(null)
   const [ribbonTab, setRibbonTab] = useState<RibbonTab>('home')
@@ -331,6 +333,9 @@ export default function App() {
   const [noteAuthor, setNoteAuthor] = useState('')
   useEffect(() => {
     window.pdfApi.getUsername().then(setNoteAuthor, () => {})
+  }, [])
+  useEffect(() => {
+    void window.pdfApi.getAiSettings().then(setAiSettings)
   }, [])
   const [highlightColor, setHighlightColor] = useState<[number, number, number]>(
     MARKUP_COLORS.highlight,
@@ -6015,6 +6020,11 @@ export default function App() {
             preset={aiPreset}
             onCollapse={() => setAiCollapsed(true)}
             onRunDone={() => void autoSaveAfterAiRun()}
+            settings={aiSettings ?? undefined}
+            onSettingsChange={(next) => {
+              setAiSettings(next)
+              void window.pdfApi.setAiSettings(next)
+            }}
           />
         </div>
         <div className="app-content">

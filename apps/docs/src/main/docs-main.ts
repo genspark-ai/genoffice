@@ -41,6 +41,8 @@ import {
   isAiNetworkError,
   chatForProvider,
   defaultAiSettings,
+  listOllamaModels,
+  providerRequiresApiKey,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
@@ -50,6 +52,7 @@ import {
   type AiStreamRequest,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
+  type OllamaModelsResult,
 } from '@genoffice/ai-provider'
 import {
   ensureGenofficeLogin,
@@ -2536,10 +2539,7 @@ const activeAiStreams = new Map<string, AbortController>()
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return resolveAiSettings(stored, defaultAiSettings())
   })
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
@@ -2561,6 +2561,17 @@ export function registerAiIpc(): void {
     writeJson(SETTINGS_PATH(), settings)
   })
 
+  ipcMain.handle(
+    'ai:ollama-models',
+    async (_event, baseUrl?: string): Promise<OllamaModelsResult> => {
+      try {
+        return await listOllamaModels(baseUrl)
+      } catch (err) {
+        return { models: [], error: String(err) }
+      }
+    },
+  )
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, settings, system, messages } = request
     const tools = request.tools ?? []
@@ -2574,7 +2585,7 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (providerRequiresApiKey(provider) && !config?.apiKey) {
       send({
         requestId,
         type: 'error',
@@ -2682,7 +2693,7 @@ export function registerAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (providerRequiresApiKey(provider) && !config?.apiKey) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
