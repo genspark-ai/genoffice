@@ -12,8 +12,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: '润色全文,使语气更专业',
     aiStarterContinue: '接着现有内容往下写',
     aiGskLoginBtn: '登录 Genspark',
-    aiUndelivered: '未送达,本条不会生效',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: '未发送成功',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: '打开 AI 助手',
     aiSummarizeBtn: 'AI 总结',
     aiSummarizePrompt: '总结这篇文档的主要内容和要点',
@@ -65,6 +65,7 @@ export const aiStrings = defineStrings({
     aiTooManyImages: '图片最多随消息发送 {max} 张,多余的已忽略',
     aiUnknownError: '未知错误',
     aiTimeoutError: 'AI 请求超时：网络长时间无响应，已停止。请检查网络后重试',
+    aiNetworkError: '网络有问题，无法连接 AI 服务。请检查网络后重试',
     aiCreditsExhausted: 'Genspark 积分已用完，请前往 genspark.ai/pricing 充值后重试',
     aiSumReadAttachment: '读取附件',
     aiSumImageAttachment: '图片附件 {name}',
@@ -115,8 +116,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Polish the whole document for a more professional tone',
     aiStarterContinue: 'Continue writing from where the document leaves off',
     aiGskLoginBtn: 'Sign in to Genspark',
-    aiUndelivered: 'Not delivered — this message had no effect',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Not sent',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Open AI assistant',
     aiSummarizeBtn: 'AI Summarize',
     aiSummarizePrompt: 'Summarize the main content and key points of this document',
@@ -172,6 +173,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Unknown error',
     aiTimeoutError:
       'AI request timed out: no response from the network, so the run was stopped. Check your connection and try again',
+    aiNetworkError:
+      'Network problem: could not reach the AI service. Check your connection and try again',
     aiCreditsExhausted:
       'Your Genspark credits have run out. Visit genspark.ai/pricing to top up, then try again',
     aiSumReadAttachment: 'Read attachment',
@@ -223,8 +226,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: '全文を推敲してよりプロフェッショナルな文体に',
     aiStarterContinue: '今の内容の続きを書いて',
     aiGskLoginBtn: 'Genspark にサインイン',
-    aiUndelivered: '未送信 — このメッセージは反映されていません',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: '送信できませんでした',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'AI アシスタントを開く',
     aiSummarizeBtn: 'AI 要約',
     aiSummarizePrompt: 'この文書の主な内容と要点を要約してください',
@@ -281,6 +284,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: '不明なエラー',
     aiTimeoutError:
       'AIリクエストがタイムアウトしました：ネットワークからの応答がないため中断しました。接続を確認して再試行してください',
+    aiNetworkError:
+      'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
     aiCreditsExhausted:
       'Gensparkクレジットを使い切りました。genspark.ai/pricing でチャージしてから再試行してください',
     aiSumReadAttachment: '添付ファイルを読み取り',
@@ -332,8 +337,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: '전체 문서를 더 전문적인 어조로 다듬어 줘',
     aiStarterContinue: '지금 내용에 이어서 계속 써 줘',
     aiGskLoginBtn: 'Genspark 로그인',
-    aiUndelivered: '전송되지 않음 — 이 메시지는 적용되지 않았습니다',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: '전송되지 않았습니다',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'AI 도우미 열기',
     aiSummarizeBtn: 'AI 요약',
     aiSummarizePrompt: '이 문서의 주요 내용과 핵심 사항을 요약해 주세요',
@@ -389,6 +394,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: '알 수 없는 오류',
     aiTimeoutError:
       'AI 요청 시간 초과: 네트워크 응답이 없어 중단되었습니다. 연결을 확인한 후 다시 시도해 주세요',
+    aiNetworkError:
+      '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
     aiCreditsExhausted:
       'Genspark 크레딧을 모두 사용했습니다. genspark.ai/pricing에서 충전한 후 다시 시도해 주세요',
     aiSumReadAttachment: '첨부 파일 읽기',
@@ -440,8 +447,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Peaufiner tout le document pour un ton plus professionnel',
     aiStarterContinue: 'Continuer la rédaction là où le document s’arrête',
     aiGskLoginBtn: 'Se connecter à Genspark',
-    aiUndelivered: 'Non envoyé — ce message n’a pas été pris en compte',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Non envoyé',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: "Ouvrir l'assistant IA",
     aiSummarizeBtn: 'Résumé IA',
     aiSummarizePrompt: 'Résumez le contenu principal et les points clés de ce document',
@@ -501,6 +508,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Erreur inconnue',
     aiTimeoutError:
       "Délai de la requête IA dépassé : aucune réponse du réseau, l'exécution a été interrompue. Vérifiez votre connexion et réessayez",
+    aiNetworkError:
+      'Problème réseau : impossible de joindre le service IA. Vérifiez votre connexion et réessayez',
     aiCreditsExhausted:
       'Vos crédits Genspark sont épuisés. Rechargez sur genspark.ai/pricing puis réessayez',
     aiSumReadAttachment: 'Lire la pièce jointe',
@@ -552,8 +561,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Das ganze Dokument für einen professionelleren Ton überarbeiten',
     aiStarterContinue: 'Dort weiterschreiben, wo das Dokument aufhört',
     aiGskLoginBtn: 'Bei Genspark anmelden',
-    aiUndelivered: 'Nicht zugestellt — diese Nachricht wurde nicht verarbeitet',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Nicht gesendet',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'KI-Assistenten öffnen',
     aiSummarizeBtn: 'KI-Zusammenfassung',
     aiSummarizePrompt: 'Fasse den Hauptinhalt und die Kernpunkte dieses Dokuments zusammen',
@@ -612,6 +621,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Unbekannter Fehler',
     aiTimeoutError:
       'Zeitüberschreitung der KI-Anfrage: keine Antwort vom Netzwerk, der Vorgang wurde abgebrochen. Prüfe deine Verbindung und versuche es erneut',
+    aiNetworkError:
+      'Netzwerkproblem: Der KI-Dienst ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut',
     aiCreditsExhausted:
       'Deine Genspark-Credits sind aufgebraucht. Lade unter genspark.ai/pricing auf und versuche es erneut',
     aiSumReadAttachment: 'Anlage lesen',
@@ -663,8 +674,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Pulir todo el documento para un tono más profesional',
     aiStarterContinue: 'Continúa escribiendo desde donde termina el documento',
     aiGskLoginBtn: 'Iniciar sesión en Genspark',
-    aiUndelivered: 'No entregado: este mensaje no tuvo efecto',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'No enviado',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Abrir el asistente de IA',
     aiSummarizeBtn: 'Resumen IA',
     aiSummarizePrompt: 'Resume el contenido principal y los puntos clave de este documento',
@@ -722,6 +733,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Error desconocido',
     aiTimeoutError:
       'La solicitud de IA agotó el tiempo de espera: no hubo respuesta de la red y se detuvo. Comprueba tu conexión e inténtalo de nuevo',
+    aiNetworkError:
+      'Problema de red: no se pudo conectar con el servicio de IA. Comprueba tu conexión e inténtalo de nuevo',
     aiCreditsExhausted:
       'Tus créditos de Genspark se han agotado. Recarga en genspark.ai/pricing e inténtalo de nuevo',
     aiSumReadAttachment: 'Leer dato adjunto',
@@ -773,8 +786,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'ขัดเกลาทั้งเอกสารให้น้ำเสียงเป็นมืออาชีพยิ่งขึ้น',
     aiStarterContinue: 'เขียนต่อจากเนื้อหาที่มีอยู่',
     aiGskLoginBtn: 'ลงชื่อเข้าใช้ Genspark',
-    aiUndelivered: 'ส่งไม่สำเร็จ — ข้อความนี้ไม่มีผล',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'ส่งไม่สำเร็จ',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'เปิดผู้ช่วย AI',
     aiSummarizeBtn: 'สรุปด้วย AI',
     aiSummarizePrompt: 'สรุปเนื้อหาหลักและประเด็นสำคัญของเอกสารนี้',
@@ -830,6 +843,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'ข้อผิดพลาดที่ไม่รู้จัก',
     aiTimeoutError:
       'คำขอ AI หมดเวลา: เครือข่ายไม่ตอบสนอง จึงหยุดการทำงาน โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
+    aiNetworkError:
+      'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
     aiCreditsExhausted:
       'เครดิต Genspark ของคุณหมดแล้ว โปรดเติมเครดิตที่ genspark.ai/pricing แล้วลองใหม่',
     aiSumReadAttachment: 'อ่านสิ่งที่แนบ',
@@ -881,8 +896,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Perhalus seluruh dokumen agar nadanya lebih profesional',
     aiStarterContinue: 'Lanjutkan menulis dari bagian akhir dokumen',
     aiGskLoginBtn: 'Masuk ke Genspark',
-    aiUndelivered: 'Tidak terkirim — pesan ini tidak diproses',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Tidak terkirim',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Buka asisten AI',
     aiSummarizeBtn: 'Ringkasan AI',
     aiSummarizePrompt: 'Ringkas isi utama dan poin-poin penting dokumen ini',
@@ -938,6 +953,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Kesalahan tidak dikenal',
     aiTimeoutError:
       'Permintaan AI habis waktu: jaringan tidak merespons sehingga proses dihentikan. Periksa koneksi Anda lalu coba lagi',
+    aiNetworkError:
+      'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',
     aiCreditsExhausted:
       'Kredit Genspark Anda telah habis. Isi ulang di genspark.ai/pricing lalu coba lagi',
     aiSumReadAttachment: 'Baca lampiran',
@@ -989,8 +1006,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Отшлифуй весь документ, сделав тон более профессиональным',
     aiStarterContinue: 'Продолжи текст с того места, где он обрывается',
     aiGskLoginBtn: 'Войти в Genspark',
-    aiUndelivered: 'Не доставлено — это сообщение не было обработано',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Не отправлено',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Открыть ИИ-помощника',
     aiSummarizeBtn: 'ИИ-резюме',
     aiSummarizePrompt: 'Кратко изложите основное содержание и ключевые моменты этого документа',
@@ -1047,6 +1064,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Неизвестная ошибка',
     aiTimeoutError:
       'Тайм-аут запроса ИИ: сеть не отвечает, выполнение остановлено. Проверьте подключение и повторите попытку',
+    aiNetworkError:
+      'Проблема с сетью: не удалось подключиться к сервису ИИ. Проверьте подключение и повторите попытку',
     aiCreditsExhausted:
       'Кредиты Genspark исчерпаны. Пополните баланс на genspark.ai/pricing и повторите попытку',
     aiSumReadAttachment: 'Чтение вложения',
@@ -1098,8 +1117,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'حسّن صياغة المستند كاملًا بنبرة أكثر احترافية',
     aiStarterContinue: 'تابع الكتابة من حيث انتهى المستند',
     aiGskLoginBtn: 'تسجيل الدخول إلى Genspark',
-    aiUndelivered: 'لم يتم الإرسال — لم يُعالَج هذا الطلب',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'لم يتم الإرسال',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'فتح مساعد الذكاء الاصطناعي',
     aiSummarizeBtn: 'تلخيص AI',
     aiSummarizePrompt: 'لخّص المحتوى الرئيسي والنقاط الأساسية لهذا المستند',
@@ -1155,6 +1174,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'خطأ غير معروف',
     aiTimeoutError:
       'انتهت مهلة طلب الذكاء الاصطناعي: لا توجد استجابة من الشبكة وتم الإيقاف. تحقق من الاتصال وحاول مجددًا',
+    aiNetworkError:
+      'مشكلة في الشبكة: تعذّر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مجددًا',
     aiCreditsExhausted:
       'نفدت أرصدة Genspark لديك. يرجى إعادة الشحن عبر genspark.ai/pricing ثم المحاولة مجددًا',
     aiSumReadAttachment: 'قراءة المرفق',
@@ -1206,8 +1227,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Aprimore o documento inteiro com um tom mais profissional',
     aiStarterContinue: 'Continue escrevendo de onde o documento parou',
     aiGskLoginBtn: 'Entrar no Genspark',
-    aiUndelivered: 'Não entregue — esta mensagem não teve efeito',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Não enviado',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Abrir assistente de IA',
     aiSummarizeBtn: 'Resumo IA',
     aiSummarizePrompt: 'Resuma o conteúdo principal e os pontos-chave deste documento',
@@ -1264,6 +1285,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Erro desconhecido',
     aiTimeoutError:
       'A solicitação de IA expirou: sem resposta da rede, a execução foi interrompida. Verifique sua conexão e tente novamente',
+    aiNetworkError:
+      'Problema de rede: não foi possível conectar ao serviço de IA. Verifique sua conexão e tente novamente',
     aiCreditsExhausted:
       'Seus créditos Genspark acabaram. Recarregue em genspark.ai/pricing e tente novamente',
     aiSumReadAttachment: 'Ler anexo',
@@ -1316,8 +1339,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: "Rifinisci l'intero documento con un tono più professionale",
     aiStarterContinue: 'Continua a scrivere da dove il documento si interrompe',
     aiGskLoginBtn: 'Accedi a Genspark',
-    aiUndelivered: 'Non recapitato — questo messaggio non ha avuto effetto',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Non inviato',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: "Apri l'assistente IA",
     aiSummarizeBtn: 'Riassunto IA',
     aiSummarizePrompt: 'Riassumi il contenuto principale e i punti chiave di questo documento',
@@ -1377,6 +1400,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Errore sconosciuto',
     aiTimeoutError:
       'Richiesta IA scaduta: nessuna risposta dalla rete, esecuzione interrotta. Controlla la connessione e riprova',
+    aiNetworkError:
+      'Problema di rete: impossibile raggiungere il servizio IA. Controlla la connessione e riprova',
     aiCreditsExhausted:
       'I tuoi crediti Genspark sono esauriti. Ricarica su genspark.ai/pricing e riprova',
     aiSumReadAttachment: 'Lettura allegato',
@@ -1428,8 +1453,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Dopracuj cały dokument, nadając mu bardziej profesjonalny ton',
     aiStarterContinue: 'Kontynuuj pisanie od miejsca, w którym kończy się dokument',
     aiGskLoginBtn: 'Zaloguj się do Genspark',
-    aiUndelivered: 'Niedostarczone — ta wiadomość nie została przetworzona',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Nie wysłano',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Otwórz asystenta AI',
     aiSummarizeBtn: 'Podsumowanie AI',
     aiSummarizePrompt: 'Podsumuj główną treść i kluczowe punkty tego dokumentu',
@@ -1486,6 +1511,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Nieznany błąd',
     aiTimeoutError:
       'Przekroczono limit czasu żądania AI: brak odpowiedzi sieci, przerwano. Sprawdź połączenie i spróbuj ponownie',
+    aiNetworkError:
+      'Problem z siecią: nie można połączyć się z usługą AI. Sprawdź połączenie i spróbuj ponownie',
     aiCreditsExhausted:
       'Twoje kredyty Genspark wyczerpały się. Doładuj konto na genspark.ai/pricing i spróbuj ponownie',
     aiSumReadAttachment: 'Odczyt załącznika',
@@ -1537,8 +1564,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Werk het hele document bij naar een professionelere toon',
     aiStarterContinue: 'Schrijf verder waar het document ophoudt',
     aiGskLoginBtn: 'Aanmelden bij Genspark',
-    aiUndelivered: 'Niet afgeleverd — dit bericht is niet verwerkt',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Niet verzonden',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'AI-assistent openen',
     aiSummarizeBtn: 'AI-samenvatting',
     aiSummarizePrompt: 'Vat de hoofdinhoud en kernpunten van dit document samen',
@@ -1595,6 +1622,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Onbekende fout',
     aiTimeoutError:
       'AI-verzoek verlopen: geen reactie van het netwerk, uitvoering gestopt. Controleer je verbinding en probeer het opnieuw',
+    aiNetworkError:
+      'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
     aiCreditsExhausted:
       'Je Genspark-credits zijn op. Waardeer op via genspark.ai/pricing en probeer het opnieuw',
     aiSumReadAttachment: 'Bijlage lezen',
@@ -1646,8 +1675,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'Perhalusi keseluruhan dokumen dengan nada lebih profesional',
     aiStarterContinue: 'Teruskan menulis dari bahagian akhir dokumen',
     aiGskLoginBtn: 'Log masuk ke Genspark',
-    aiUndelivered: 'Tidak dihantar — mesej ini tidak diproses',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'Tidak dihantar',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'Buka pembantu AI',
     aiSummarizeBtn: 'Ringkasan AI',
     aiSummarizePrompt: 'Ringkaskan kandungan utama dan perkara penting dokumen ini',
@@ -1703,6 +1732,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Ralat tidak diketahui',
     aiTimeoutError:
       'Permintaan AI tamat masa: rangkaian tidak memberi respons, proses dihentikan. Semak sambungan anda dan cuba lagi',
+    aiNetworkError:
+      'Masalah rangkaian: tidak dapat menghubungi perkhidmatan AI. Semak sambungan anda dan cuba lagi',
     aiCreditsExhausted:
       'Kredit Genspark anda telah habis. Tambah nilai di genspark.ai/pricing dan cuba lagi',
     aiSumReadAttachment: 'Baca lampiran',
@@ -1754,8 +1785,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'לטש את כל המסמך לטון מקצועי יותר',
     aiStarterContinue: 'המשך לכתוב מהנקודה שבה המסמך נעצר',
     aiGskLoginBtn: 'התחבר ל-Genspark',
-    aiUndelivered: 'לא נמסר — הודעה זו לא עובדה',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'לא נשלח',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'פתיחת עוזר ה-AI',
     aiSummarizeBtn: 'סיכום AI',
     aiSummarizePrompt: 'סכם את התוכן העיקרי ואת הנקודות המרכזיות של מסמך זה',
@@ -1810,6 +1841,7 @@ export const aiStrings = defineStrings({
     aiTooManyImages: 'עד {max} תמונות בהודעה; הנוספות לא נכללו',
     aiUnknownError: 'שגיאה לא ידועה',
     aiTimeoutError: 'תם הזמן לבקשת ה-AI: אין תגובה מהרשת וההרצה הופסקה. בדוק את החיבור ונסה שוב',
+    aiNetworkError: 'בעיית רשת: לא ניתן להתחבר לשירות ה-AI. בדוק את החיבור ונסה שוב',
     aiCreditsExhausted: 'קרדיטי Genspark שלך אזלו. טען מחדש ב-genspark.ai/pricing ונסה שוב',
     aiSumReadAttachment: 'קריאת קובץ מצורף',
     aiSumImageAttachment: 'תמונה מצורפת {name}',
@@ -1860,8 +1892,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: 'पूरे दस्तावेज़ को अधिक पेशेवर लहजे में निखारें',
     aiStarterContinue: 'दस्तावेज़ जहाँ रुका है वहाँ से आगे लिखें',
     aiGskLoginBtn: 'Genspark में साइन इन करें',
-    aiUndelivered: 'नहीं भेजा गया — इस संदेश का कोई प्रभाव नहीं पड़ा',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: 'भेजा नहीं गया',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: 'AI सहायक खोलें',
     aiSummarizeBtn: 'AI सारांश',
     aiSummarizePrompt: 'इस दस्तावेज़ की मुख्य सामग्री और प्रमुख बिंदुओं का सारांश दें',
@@ -1917,6 +1949,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'अज्ञात त्रुटि',
     aiTimeoutError:
       'AI अनुरोध का समय समाप्त: नेटवर्क से कोई प्रतिक्रिया नहीं मिली, इसलिए रोक दिया गया। कनेक्शन जांचें और फिर से प्रयास करें',
+    aiNetworkError:
+      'नेटवर्क समस्या: AI सेवा से कनेक्ट नहीं हो सका। कनेक्शन जांचें और फिर से प्रयास करें',
     aiCreditsExhausted:
       'आपके Genspark क्रेडिट समाप्त हो गए हैं। genspark.ai/pricing पर रिचार्ज करें और फिर से प्रयास करें',
     aiSumReadAttachment: 'अनुलग्नक पढ़ें',
@@ -1968,8 +2002,8 @@ export const aiStrings = defineStrings({
     aiStarterPolishAll: '潤飾全文,使語氣更專業',
     aiStarterContinue: '接著現有內容往下寫',
     aiGskLoginBtn: '登入 Genspark',
-    aiUndelivered: '未送達,本則不會生效',
-    aiPanelTitle: 'GenSpark AI',
+    aiUndelivered: '未傳送成功',
+    aiPanelTitle: 'Genspark',
     aiOpenAssistant: '開啟 AI 助手',
     aiSummarizeBtn: 'AI 總結',
     aiSummarizePrompt: '總結這篇文件的主要內容和要點',
@@ -2022,6 +2056,7 @@ export const aiStrings = defineStrings({
     aiTooManyImages: '圖片最多隨訊息傳送 {max} 張,多餘的已忽略',
     aiUnknownError: '未知錯誤',
     aiTimeoutError: 'AI 請求逾時：網路長時間無回應，已停止。請檢查網路後重試',
+    aiNetworkError: '網路有問題，無法連接 AI 服務。請檢查網路後重試',
     aiCreditsExhausted: 'Genspark 點數已用完，請前往 genspark.ai/pricing 儲值後重試',
     aiSumReadAttachment: '讀取附件',
     aiSumImageAttachment: '圖片附件 {name}',

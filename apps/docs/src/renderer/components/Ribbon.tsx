@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import type { Command } from '@tiptap/pm/state'
-import type { Node as PMNode } from '@tiptap/pm/model'
+import type { Mark, Node as PMNode, ResolvedPos } from '@tiptap/pm/model'
 import {
   addColumnAfter,
   addColumnBefore,
@@ -29,7 +29,7 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
-import { isSymbolFontFamily } from '@genoffice/ui'
+import { ColorPicker, isSymbolFontFamily, useDismissablePopover } from '@genoffice/ui'
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
 import { stepParagraphIndent } from '../editor/indent'
@@ -89,7 +89,6 @@ import {
   IconLineSpacing,
   IconMergeCells,
   IconNumbered,
-  IconPalette,
   IconPaste,
   IconPilcrow,
   IconFlipH,
@@ -102,9 +101,13 @@ import {
   IconRowInsertAbove,
   IconRowInsertBelow,
   IconShading,
+  IconChangeCase,
+  IconFontColorA,
   IconShrinkFont,
   IconSort,
   IconSplitCells,
+  IconSubscript,
+  IconSuperscript,
   IconTableDelete,
 } from './icons'
 interface RibbonProps {
@@ -219,7 +222,43 @@ interface RibbonProps {
 
 interface PainterState {
   marks: Array<{ type: string; attrs: Record<string, unknown> }>
-  para: Record<string, unknown>
+  /** source paragraph's node type + formatting attrs (null when the caret is not in a paintable block) */
+  block: { type: string; attrs: Record<string, unknown> } | null
+}
+
+/** Character-formatting marks the painter transfers; semantic marks (links,
+ *  comments, revisions, fields) are neither picked up nor stripped from the target. */
+const PAINTER_MARK_TYPES = ['bold', 'italic', 'underline', 'strike', 'docTextStyle']
+
+/** Paragraph-formatting attrs the painter transfers. Identity/anchor attrs
+ *  (docxIndex, bookmarks, comment ranges, revisions, sdtShell…) stay with the target. */
+const PAINTER_PARA_KEYS = [
+  'styleId',
+  'align',
+  'lineSpacing',
+  'lineRule',
+  'lineRawTwips',
+  'snapToGrid',
+  'indentLeft',
+  'indentRight',
+  'indentFirstLine',
+  'spaceBefore',
+  'spaceAfter',
+  'pageBreakBefore',
+  'bidi',
+  'autoSpace',
+  'shadingFill',
+  'emptyRunSize',
+  'borders',
+  'borderLines',
+  'tabStops',
+]
+
+/** Per-block-type attrs that define the block's identity as formatting (heading level, list numbering) */
+const PAINTER_BLOCK_EXTRA: Record<string, string[]> = {
+  docParagraph: [],
+  docHeading: ['level'],
+  docListItem: ['kind', 'numId', 'ilvl'],
 }
 
 function transformCase(s: string, mode: 'upper' | 'lower' | 'title' | 'sentence'): string {
@@ -309,69 +348,6 @@ const THEME_COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorLightGreenAlt', hex: '4EA72E' },
 ]
 
-const THEME_COLOR_SHADES = [
-  [
-    'F2F2F2',
-    '7F7F7F',
-    'D0CECE',
-    'DDEBF7',
-    'DDEBF7',
-    'FCE4D6',
-    'E2F0D9',
-    'DDEBF7',
-    'E4DFEC',
-    'E2F0D9',
-  ],
-  [
-    'D9D9D9',
-    '595959',
-    'AEAAAA',
-    'BDD7EE',
-    '9DC3E6',
-    'F8CBAD',
-    'C6E0B4',
-    '9DC3E6',
-    'D9E1F2',
-    'C6E0B4',
-  ],
-  [
-    'BFBFBF',
-    '3F3F3F',
-    '757171',
-    '8EA9DB',
-    '5B9BD5',
-    'F4B084',
-    'A9D18E',
-    '5B9BD5',
-    'B4C6E7',
-    'A9D18E',
-  ],
-  [
-    'A6A6A6',
-    '262626',
-    '3A3838',
-    '4472C4',
-    '2E75B6',
-    'C65911',
-    '70AD47',
-    '00B0F0',
-    '8064A2',
-    '70AD47',
-  ],
-  [
-    '808080',
-    '0D0D0D',
-    '171616',
-    '203864',
-    '1F4E78',
-    '843C0C',
-    '375623',
-    '0070C0',
-    '5B315E',
-    '385723',
-  ],
-]
-
 /** Word standard colors */
 const COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorDarkRed', hex: 'C00000' },
@@ -386,7 +362,12 @@ const COLORS: Array<{ nameKey: StringKey; hex: string }> = [
   { nameKey: 'ribbonColorPurple', hex: '7030A0' },
 ]
 
-/** Theme + standard color palette for shape fill/outline (Shape Format tab) */
+/** Translated tooltip names for the shared picker's named swatches */
+const COLOR_NAME_KEYS: Record<string, StringKey> = Object.fromEntries(
+  [...THEME_COLORS, ...COLORS].map((c) => [c.hex, c.nameKey]),
+)
+
+/** Word-style theme + standard color palette (shared panel, docs anchor positioning) */
 function ShapeColorPalette({
   current,
   noneLabel,
@@ -397,65 +378,27 @@ function ShapeColorPalette({
   onPick: (hex: string | null) => void
 }) {
   const { t } = useI18n()
+  // data-rb-panel marks the picker as "inside" for the unified dismissal
+  // guard; display:contents keeps the wrapper out of layout so the panel's
+  // anchor positioning still resolves against the trigger wrap.
   return (
-    <div className="color-palette color-palette-word">
-      <button
-        className={`color-automatic ${!current ? 'selected' : ''}`}
-        onClick={() => onPick(null)}
-      >
-        {noneLabel}
-      </button>
-      <div className="color-section-title">{t('ribbonThemeColorsSection')}</div>
-      <div className="color-theme-base">
-        {THEME_COLORS.map((c) => (
-          <button
-            key={c.hex}
-            className={`color-swatch color-swatch-large ${current === c.hex ? 'selected' : ''}`}
-            data-tip={t(c.nameKey)}
-            aria-label={t(c.nameKey)}
-            style={{ background: `#${c.hex}` }}
-            onClick={() => onPick(c.hex)}
-          />
-        ))}
-      </div>
-      <div className="color-theme-shades">
-        {THEME_COLOR_SHADES.flatMap((row, rowIndex) =>
-          row.map((hex, columnIndex) => (
-            <button
-              key={`${rowIndex}-${columnIndex}-${hex}`}
-              className={`color-swatch color-swatch-large ${current === hex ? 'selected' : ''}`}
-              data-tip={t('ribbonThemeColorShadeTip', { r: rowIndex + 1, c: columnIndex + 1 })}
-              aria-label={t('ribbonThemeColorShadeTip', { r: rowIndex + 1, c: columnIndex + 1 })}
-              style={{ background: `#${hex}` }}
-              onClick={() => onPick(hex)}
-            />
-          )),
-        )}
-      </div>
-      <div className="color-section-title color-standard-title">{t('ribbonStandardColors')}</div>
-      <div className="color-standard-row">
-        {COLORS.map((c) => (
-          <button
-            key={c.hex}
-            className={`color-swatch color-swatch-large ${current === c.hex ? 'selected' : ''}`}
-            data-tip={t(c.nameKey)}
-            aria-label={t(c.nameKey)}
-            style={{ background: `#${c.hex}` }}
-            onClick={() => onPick(c.hex)}
-          />
-        ))}
-      </div>
-      <label className="color-more">
-        <span className="color-more-icon">
-          <IconPalette size={16} />
-        </span>
-        {t('ribbonMoreColors')}
-        <input
-          type="color"
-          value={`#${current ?? '4472C4'}`}
-          onChange={(e) => onPick(e.target.value.slice(1).toUpperCase())}
-        />
-      </label>
+    <div data-rb-panel="" style={{ display: 'contents' }}>
+      <ColorPicker
+        className="docs-color-pop"
+        value={current ? `#${current}` : null}
+        strings={{
+          auto: noneLabel,
+          themeColors: t('ribbonThemeColorsSection'),
+          standardColors: t('ribbonStandardColors'),
+          moreColors: t('ribbonMoreColors'),
+          shadeTip: (r, c) => t('ribbonThemeColorShadeTip', { r, c }),
+          colorName: (s) => {
+            const key = COLOR_NAME_KEYS[s.hex]
+            return key ? t(key) : s.name
+          },
+        }}
+        onPick={(hex) => onPick(hex ? hex.slice(1) : null)}
+      />
     </div>
   )
 }
@@ -683,7 +626,6 @@ function RibbonInner({
   const [penColor, setPenColor] = useState('C00000')
   const [penHighlight, setPenHighlight] = useState('yellow')
   const [painter, setPainter] = useState<PainterState | null>(null)
-  const ribbonRef = useRef<HTMLDivElement>(null)
   const fontStepRef = useRef<{
     pending: number | null
     applied: number | null
@@ -709,13 +651,19 @@ function RibbonInner({
     }
   }, [tabRequest])
 
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (ribbonRef.current && !ribbonRef.current.contains(e.target as Node)) setDropdown(null)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [])
+  // Unified dismissal: a press anywhere outside the open panel closes it (plus
+  // window blur / shell chrome presses). The [data-rb-panel] element exists in
+  // the DOM only while a dropdown is open, and its parent element is the wrap
+  // that also holds the trigger button — so a press on the open dropdown's own
+  // trigger counts as "inside" and falls through to the trigger's onClick
+  // toggle (closing it) instead of being treated as an outside press.
+  useDismissablePopover(dropdown != null, () => setDropdown(null), {
+    inside: () =>
+      Array.from(document.querySelectorAll('[data-rb-panel]')).flatMap((panel) => [
+        panel,
+        panel.parentElement,
+      ]),
+  })
 
   // leaving the Draw tab always drops back to text editing, so the drawing
   // overlay never swallows clicks while its controls are off-screen
@@ -1253,6 +1201,12 @@ function RibbonInner({
     chain().setNode('docListItem', { kind, numId, ilvl: 0 }).run()
   }
 
+  /** the gallery "None" card: drop list formatting, back to a plain paragraph */
+  const clearList = () => {
+    if (sub) return
+    if (editor.isActive('docListItem')) chain().setNode('docParagraph').run()
+  }
+
   /** Custom levels picked in the gallery/dialog → create a definition and apply it to the current paragraph */
   const applyListPreset = (levels: CustomNumberingLevel[]) => {
     if (sub) return
@@ -1337,63 +1291,236 @@ function RibbonInner({
       return
     }
     if (!canEdit) return
-    const marks = editor.state.selection.$head
-      .marks()
-      .map((m) => ({ type: m.type.name, attrs: { ...m.attrs } }))
-    setPainter({
-      marks,
-      para: {
-        align: fs.align,
-        lineSpacing: fs.lineSpacing,
-        shadingFill: fs.shadingFill,
-        borders: fs.paraBorders ?? null,
-        bidi: fs.bidi,
-      },
-    })
+    const { state } = editor
+    const { $from, $head, from, to, empty } = state.selection
+    // Word picks up the FIRST character's formatting of a range selection (a
+    // triple-clicked paragraph whose last run is plain must still pick up the
+    // leading run's look); a collapsed caret reads the marks at the caret.
+    const picked: Mark[] = []
+    if (empty) {
+      picked.push(...$head.marks())
+    } else {
+      let found = false
+      state.doc.nodesBetween(from, to, (node) => {
+        if (found) return false
+        if (node.isText) {
+          found = true
+          picked.push(...node.marks)
+          return false
+        }
+        return true
+      })
+    }
+    // Paragraph formatting is picked up per Word's ¶-mark rule: a caret pickup
+    // or a cross-paragraph selection carries the block identity (heading
+    // level / list numbering / styleId) — which then applies to whole target
+    // paragraphs. ANY in-paragraph drag selection copies character formatting
+    // only (in Word a within-paragraph drag can never include the ¶ mark, even
+    // when it covers every visible character), so brushing selected text never
+    // restyles the target's entire paragraph.
+    const { $to } = state.selection
+    const includesParaMark = empty || !$from.sameParent($to)
+    const marks = picked
+      .filter((m) => PAINTER_MARK_TYPES.includes(m.type.name) && m.type.name !== 'docTextStyle')
+      .map((m) => ({ type: m.type.name, attrs: { ...m.attrs } as Record<string, unknown> }))
+    const tsMark = picked.find((m) => m.type.name === 'docTextStyle')
+    const ts: Record<string, unknown> = { ...(tsMark?.attrs ?? {}) }
+    // raw rPr pass-through belongs to the source run; stamping it on foreign
+    // runs would smuggle unmodeled properties across the document
+    delete ts.rawRPr
+    if (!includesParaMark) {
+      // Char-only brush: resolve the EFFECTIVE character formatting (direct
+      // marks → character style → paragraph style → docDefaults) and record it
+      // as direct formatting, so the brush reproduces what the source LOOKS
+      // like even when that look comes from a style. Without this, picking up
+      // plain body text (no marks at all) and brushing heading-styled text
+      // changes nothing. When the block travels (¶ pickup) it carries the
+      // style itself, so no resolved values are stamped there.
+      const styleDisplayOf = (id: unknown) =>
+        typeof id === 'string' && id ? styles?.get(id)?.display : undefined
+      const charStyle = styleDisplayOf(tsMark?.attrs.styleId)
+      const paraStyle = styleDisplayOf($from.parent.attrs.styleId)
+      for (const t of ['bold', 'italic', 'underline', 'strike'] as const) {
+        const styleFlag =
+          charStyle?.[t] ??
+          paraStyle?.[t] ??
+          (t === 'bold' ? docDefaults?.bold : t === 'italic' ? docDefaults?.italic : undefined)
+        if (styleFlag && !picked.some((m) => m.type.name === t)) marks.push({ type: t, attrs: {} })
+      }
+      ts.sizeHalfPoints ??=
+        charStyle?.sizeHalfPoints ??
+        paraStyle?.sizeHalfPoints ??
+        docDefaults?.sizeHalfPoints ??
+        null
+      ts.color ??= charStyle?.color ?? paraStyle?.color ?? docDefaults?.color ?? null
+      ts.fontAscii ??=
+        charStyle?.fontAscii ?? paraStyle?.fontAscii ?? docDefaults?.asciiFont ?? null
+      if (ts.font == null) {
+        // an empty-EA-theme-slot backfill face is not a document font choice — don't stamp it
+        if (charStyle?.font && !charStyle.eaSlotEmpty) ts.font = charStyle.font
+        else if (paraStyle?.font && !paraStyle.eaSlotEmpty) ts.font = paraStyle.font
+        else if (docDefaults?.eastAsiaFont && !docDefaults.eaSlotEmpty)
+          ts.font = docDefaults.eastAsiaFont
+      }
+      ts.csFont ??= charStyle?.csFont ?? paraStyle?.csFont ?? null
+      ts.charSpacingTwips ??= charStyle?.charSpacingTwips ?? paraStyle?.charSpacingTwips ?? null
+    }
+    if (Object.values(ts).some((v) => v != null)) marks.push({ type: 'docTextStyle', attrs: ts })
+    const para = $from.parent
+    let block: PainterState['block'] = null
+    const extra = PAINTER_BLOCK_EXTRA[para.type.name]
+    if (includesParaMark && extra) {
+      const attrs: Record<string, unknown> = {}
+      for (const k of [...PAINTER_PARA_KEYS, ...extra]) attrs[k] = para.attrs[k]
+      block = { type: para.type.name, attrs }
+    }
+    setPainter({ marks, block })
   }
 
   useEffect(() => {
     if (!painter) return
     let selectingWithMouse = false
+    let downAt: { x: number; y: number } | null = null
     let finished = false
     let keyboardTimer: ReturnType<typeof setTimeout> | null = null
 
-    const applyFinalSelection = () => {
+    /** the sentence containing the clicked position (a painter click brushes
+     *  that sentence; a drag brushes the selection) */
+    const sentenceRangeAt = ($pos: ResolvedPos): { from: number; to: number } | null => {
+      const para = $pos.parent
+      if (!para.isTextblock) return null
+      // leaf nodes (images, breaks) become one placeholder char so offsets line up
+      const text = para.textBetween(0, para.content.size, undefined, '￼')
+      const END = /[。．！？!?…]/
+      const CLOSE = /[”』」）)》〉】'"]/
+      // '.' ends a sentence unless a digit follows (1.5, 3.14 stay intact)
+      const at = (k: number) =>
+        END.test(text[k]) || (text[k] === '.' && !/\d/.test(text[k + 1] ?? ''))
+      // A straight quote is ambiguous: it counts as a CLOSING quote only when
+      // it directly follows a terminator (or another closer, `…。”"`) — so the
+      // opening quote of `"Hi…` / `。 "next sentence` stays inside the brushed
+      // range.
+      // The CJK/paired closers are unambiguous.
+      const closingAt = (k: number): boolean => {
+        const ch = text[k] ?? ''
+        if (!CLOSE.test(ch)) return false
+        if (!/['"]/.test(ch)) return true
+        return at(k - 1) || (k > 0 && closingAt(k - 1))
+      }
+      // A click landing in a sentence's trailing closers/spaces (`…。」▏ next`)
+      // belongs to THAT sentence, not the next one: re-anchor on its terminator
+      let anchor = $pos.parentOffset
+      {
+        let j = anchor
+        while (j > 0 && (closingAt(j) || /[ \t]/.test(text[j] ?? ''))) j--
+        if (j < anchor && at(j)) anchor = j
+      }
+      let start = anchor
+      while (start > 0 && !at(start - 1)) start--
+      while (start < text.length && closingAt(start)) start++
+      // Word convention: the trailing space belongs to the sentence, the
+      // leading one to the previous sentence
+      while (start < text.length && /\s/.test(text[start])) start++
+      let end = anchor
+      while (end < text.length && !at(end)) end++
+      if (end < text.length) end++
+      while (end < text.length && closingAt(end)) end++
+      while (end < text.length && /[ \t]/.test(text[end])) end++
+      if (start >= end) {
+        // clicked in the empty tail after the final delimiter (or an empty
+        // paragraph): nothing to mark, but the paragraph format still applies
+        start = end = $pos.parentOffset
+      }
+      const base = $pos.start()
+      return { from: base + start, to: base + end }
+    }
+
+    const applyRange = (from: number, to: number, caretAfter: number | null) => {
       if (finished || !editor.isEditable) return
-      const { from, to } = editor.state.selection
-      if (from === to) return
       finished = true
       if (keyboardTimer) clearTimeout(keyboardTimer)
       setPainter(null)
-      let c = editor.chain().focus().unsetAllMarks()
-      for (const m of painter.marks) c = c.setMark(m.type, m.attrs)
-      c.updateAttributes('docParagraph', painter.para)
-        .updateAttributes('docHeading', painter.para)
-        .updateAttributes('docListItem', painter.para)
-        .run()
+      let c = editor.chain().focus().setTextSelection({ from, to })
+      if (to > from) {
+        // strip only formatting marks, then re-add the picked-up ones: semantic
+        // marks on the target (links, comments, revisions) survive the brush
+        for (const t of PAINTER_MARK_TYPES) c = c.unsetMark(t)
+        for (const m of painter.marks) c = c.setMark(m.type, m.attrs)
+      }
+      c = c.command(({ tr }) => {
+        const block = painter.block
+        if (!block) return true
+        const type = editor.schema.nodes[block.type]
+        if (!type) return true
+        const sel = tr.selection
+        const jobs: Array<{ pos: number; attrs: Record<string, unknown> }> = []
+        tr.doc.nodesBetween(sel.from, sel.to, (node, pos) => {
+          if (!(node.type.name in PAINTER_BLOCK_EXTRA)) return true
+          // keep the target's identity attrs, overwrite every formatting attr
+          // (explicit nulls in block.attrs reset what the source didn't set)
+          jobs.push({ pos, attrs: { ...node.attrs, ...block.attrs } })
+          return false
+        })
+        for (const job of jobs) tr.setNodeMarkup(job.pos, type, job.attrs)
+        return true
+      })
+      if (caretAfter != null) c = c.setTextSelection(caretAfter)
+      c.run()
     }
 
     const onMouseDown = (event: MouseEvent) => {
       if (!editor.view.dom.contains(event.target as globalThis.Node)) return
       selectingWithMouse = true
+      downAt = { x: event.clientX, y: event.clientY }
       if (keyboardTimer) clearTimeout(keyboardTimer)
     }
-    const onMouseUp = () => {
-      if (!selectingWithMouse) return
+    const onMouseUp = (event: MouseEvent) => {
+      if (!selectingWithMouse || !downAt) return
       selectingWithMouse = false
-      requestAnimationFrame(applyFinalSelection)
+      const press = downAt
+      downAt = null
+      const dist = Math.abs(event.clientX - press.x) + Math.abs(event.clientY - press.y)
+      requestAnimationFrame(() => {
+        if (finished || !editor.isEditable) return
+        const { from, to } = editor.state.selection
+        const moved = from !== initial.from || to !== initial.to
+        if (from !== to && moved) {
+          applyRange(from, to, null)
+          return
+        }
+        if (dist >= 5) return
+        // A plain click brushes the clicked sentence. The position comes from
+        // the press coordinates, not the selection: a fast click into a blurred
+        // editor can reach this frame before ProseMirror has placed the caret,
+        // and reading the stale selection here used to brush the source itself.
+        const hit = editor.view.posAtCoords({ left: press.x, top: press.y })
+        if (!hit) return
+        const sentence = sentenceRangeAt(editor.state.doc.resolve(hit.pos))
+        if (sentence) applyRange(sentence.from, sentence.to, hit.pos)
+      })
     }
+    // The pickup selection is still live when the painter is armed; only a
+    // selection that has since MOVED is a target gesture (without this, any
+    // stray selectionUpdate right after arming brushes the source itself)
+    const initial = { from: editor.state.selection.from, to: editor.state.selection.to }
     const onSelectionUpdate = () => {
       if (selectingWithMouse || finished) return
       if (keyboardTimer) clearTimeout(keyboardTimer)
-      keyboardTimer = setTimeout(applyFinalSelection, 180)
+      keyboardTimer = setTimeout(() => {
+        const { from, to } = editor.state.selection
+        if (from === initial.from && to === initial.to) return
+        if (from !== to) applyRange(from, to, null)
+      }, 180)
     }
 
+    // Word-style paintbrush cursor over the text area while the painter is armed
+    editor.view.dom.classList.add('doc-painter-cursor')
     editor.view.dom.addEventListener('mousedown', onMouseDown)
     window.addEventListener('mouseup', onMouseUp)
     editor.on('selectionUpdate', onSelectionUpdate)
     return () => {
       if (keyboardTimer) clearTimeout(keyboardTimer)
+      editor.view.dom.classList.remove('doc-painter-cursor')
       editor.view.dom.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mouseup', onMouseUp)
       editor.off('selectionUpdate', onSelectionUpdate)
@@ -1451,7 +1578,7 @@ function RibbonInner({
   )
 
   return (
-    <div className="ribbon" ref={ribbonRef}>
+    <div className="ribbon">
       <div
         className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}`}
       >
@@ -1464,7 +1591,7 @@ function RibbonInner({
               {t('ribbonTabFile')}
             </button>
             {dropdown === 'file' && (
-              <div className="file-menu">
+              <div data-rb-panel="" className="file-menu">
                 <button
                   onClick={() => {
                     setDropdown(null)
@@ -2043,6 +2170,34 @@ function RibbonInner({
             </div>
             <div className="ribbon-sep" />
             <div className="table-tool-group">
+              <div className="table-tool-row">
+                {(
+                  [
+                    ['left', t('appAlignLeft'), IconAlignLeft],
+                    ['center', t('appAlignCenter'), IconAlignCenter],
+                    ['right', t('appAlignRight'), IconAlignRight],
+                  ] as const
+                ).map(([v, label, Icon]) => (
+                  <button
+                    key={v}
+                    className={
+                      (editor.getAttributes('docTable').tblAlign ?? 'left') === v
+                        ? 'table-tool-button active'
+                        : 'table-tool-button'
+                    }
+                    title={label}
+                    // explicit 'left' (not null): the save path must strip an existing w:jc
+                    onClick={() => chain().updateAttributes('docTable', { tblAlign: v }).run()}
+                  >
+                    <Icon />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="ribbon-group-label">{t('ribbonGroupTableAlign')}</div>
+            </div>
+            <div className="ribbon-sep" />
+            <div className="table-tool-group">
               <div
                 className="table-tool-row table-size-inputs"
                 key={activeCellInfo?.key ?? 'nosel'}
@@ -2306,7 +2461,7 @@ function RibbonInner({
                       <IconCaret />
                     </button>
                     {dropdown === 'fontFamily' && (
-                      <div className="spacing-menu rb-font-family-menu">
+                      <div data-rb-panel="" className="spacing-menu rb-font-family-menu">
                         <button
                           className={!currentFont ? 'active' : ''}
                           style={{ fontFamily: cssFontFamily(bodyFontName) }}
@@ -2383,7 +2538,7 @@ function RibbonInner({
                       <IconCaret />
                     </button>
                     {dropdown === 'fontSize' && (
-                      <div className="spacing-menu rb-font-size-menu">
+                      <div data-rb-panel="" className="spacing-menu rb-font-size-menu">
                         {FONT_SIZES.map((s) => (
                           <button
                             key={s}
@@ -2424,13 +2579,13 @@ function RibbonInner({
                       data-tip={t('ribbonChangeCase')}
                       onClick={() => setDropdown((v) => (v === 'case' ? null : 'case'))}
                     >
-                      Aa
+                      <IconChangeCase />
                       <span className="rb-caret-inline">
                         <IconCaret />
                       </span>
                     </button>
                     {dropdown === 'case' && (
-                      <div className="spacing-menu case-menu">
+                      <div data-rb-panel="" className="spacing-menu case-menu">
                         <button onClick={() => changeCase('sentence')}>
                           {t('ribbonCaseSentence')}
                         </button>
@@ -2456,20 +2611,20 @@ function RibbonInner({
                   {markBtn('underline', fs.underline, t('ribbonUnderlineTip'), <u>U</u>)}
                   {markBtn('strike', fs.strike, t('ribbonStrikethrough'), <s>ab</s>)}
                   <button
-                    className={`rb-icon rb-script ${fs.vertAlign === 'subscript' ? 'active' : ''}`}
+                    className={`rb-icon ${fs.vertAlign === 'subscript' ? 'active' : ''}`}
                     disabled={!canEdit}
                     data-tip={t('ribbonSubscript')}
                     onClick={() => toggleVertAlign('subscript')}
                   >
-                    x<sub>2</sub>
+                    <IconSubscript />
                   </button>
                   <button
-                    className={`rb-icon rb-script ${fs.vertAlign === 'superscript' ? 'active' : ''}`}
+                    className={`rb-icon ${fs.vertAlign === 'superscript' ? 'active' : ''}`}
                     disabled={!canEdit}
                     data-tip={t('ribbonSuperscript')}
                     onClick={() => toggleVertAlign('superscript')}
                   >
-                    x<sup>2</sup>
+                    <IconSuperscript />
                   </button>
                   <span className="rb-mini-sep" />
                   {/* highlight: main button applies pen color, caret opens palette */}
@@ -2485,21 +2640,26 @@ function RibbonInner({
                         })
                       }
                     >
-                      <IconHighlight />
-                      <span
-                        className="rb-color-bar"
-                        style={{ background: HIGHLIGHT_CSS[penHighlight] }}
-                      />
+                      <span className="rb-color-glyph rb-color-glyph-svg">
+                        <IconHighlight />
+                        <span
+                          className="rb-color-bar"
+                          style={{ background: HIGHLIGHT_CSS[penHighlight] }}
+                        />
+                      </span>
                     </button>
                     <button
-                      className="rb-caret rb-color-caret"
+                      className={`rb-caret rb-color-caret${dropdown === 'highlight' ? ' active' : ''}`}
                       disabled={!canEdit}
                       onClick={() => setDropdown((v) => (v === 'highlight' ? null : 'highlight'))}
                     >
                       <IconCaret />
                     </button>
                     {dropdown === 'highlight' && (
-                      <div className="color-palette color-palette-highlight color-palette-highlight-word">
+                      <div
+                        data-rb-panel=""
+                        className="color-palette color-palette-highlight color-palette-highlight-word"
+                      >
                         <div className="color-section-title color-highlight-title">
                           {t('ribbonHighlightColors')}
                         </div>
@@ -2537,100 +2697,32 @@ function RibbonInner({
                         setTextStyle({ color: penColor === '000000' ? null : penColor })
                       }
                     >
-                      <span className="rb-color-a">A</span>
-                      <span className="rb-color-bar" style={{ background: `#${penColor}` }} />
+                      <span className="rb-color-glyph rb-color-glyph-svg">
+                        <IconFontColorA />
+                        <span className="rb-color-bar" style={{ background: `#${penColor}` }} />
+                      </span>
                     </button>
                     <button
-                      className="rb-caret rb-color-caret"
+                      className={`rb-caret rb-color-caret${dropdown === 'color' ? ' active' : ''}`}
                       disabled={!canEdit}
                       onClick={() => setDropdown((v) => (v === 'color' ? null : 'color'))}
                     >
                       <IconCaret />
                     </button>
                     {dropdown === 'color' && (
-                      <div className="color-palette color-palette-word">
-                        <button
-                          className={`color-automatic ${!fs.textColor ? 'selected' : ''}`}
-                          onClick={() => {
+                      <ShapeColorPalette
+                        current={fs.textColor}
+                        noneLabel={t('ribbonAutomatic')}
+                        onPick={(hex) => {
+                          if (!hex) {
                             setPenColor('000000')
                             setTextStyle({ color: null })
-                          }}
-                        >
-                          {t('ribbonAutomatic')}
-                        </button>
-                        <div className="color-section-title">{t('ribbonThemeColorsSection')}</div>
-                        <div className="color-theme-base">
-                          {THEME_COLORS.map((c) => (
-                            <button
-                              key={c.hex}
-                              className={`color-swatch color-swatch-large ${fs.textColor === c.hex ? 'selected' : ''}`}
-                              data-tip={t(c.nameKey)}
-                              aria-label={t(c.nameKey)}
-                              style={{ background: `#${c.hex}` }}
-                              onClick={() => {
-                                setPenColor(c.hex)
-                                setTextStyle({ color: c.hex === '000000' ? null : c.hex })
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <div className="color-theme-shades">
-                          {THEME_COLOR_SHADES.flatMap((row, rowIndex) =>
-                            row.map((hex, columnIndex) => (
-                              <button
-                                key={`${rowIndex}-${columnIndex}-${hex}`}
-                                className={`color-swatch color-swatch-large ${fs.textColor === hex ? 'selected' : ''}`}
-                                data-tip={t('ribbonThemeColorShadeTip', {
-                                  r: rowIndex + 1,
-                                  c: columnIndex + 1,
-                                })}
-                                aria-label={t('ribbonThemeColorShadeTip', {
-                                  r: rowIndex + 1,
-                                  c: columnIndex + 1,
-                                })}
-                                style={{ background: `#${hex}` }}
-                                onClick={() => {
-                                  setPenColor(hex)
-                                  setTextStyle({ color: hex })
-                                }}
-                              />
-                            )),
-                          )}
-                        </div>
-                        <div className="color-section-title color-standard-title">
-                          {t('ribbonStandardColors')}
-                        </div>
-                        <div className="color-standard-row">
-                          {COLORS.map((c) => (
-                            <button
-                              key={c.hex}
-                              className={`color-swatch color-swatch-large ${fs.textColor === c.hex ? 'selected' : ''}`}
-                              data-tip={t(c.nameKey)}
-                              aria-label={t(c.nameKey)}
-                              style={{ background: `#${c.hex}` }}
-                              onClick={() => {
-                                setPenColor(c.hex)
-                                setTextStyle({ color: c.hex })
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <label className="color-more">
-                          <span className="color-more-icon">
-                            <IconPalette size={16} />
-                          </span>
-                          {t('ribbonMoreColors')}
-                          <input
-                            type="color"
-                            value={`#${penColor}`}
-                            onChange={(event) => {
-                              const hex = event.currentTarget.value.slice(1).toUpperCase()
-                              setPenColor(hex)
-                              setTextStyle({ color: hex })
-                            }}
-                          />
-                        </label>
-                      </div>
+                          } else {
+                            setPenColor(hex)
+                            setTextStyle({ color: hex === '000000' ? null : hex })
+                          }
+                        }}
+                      />
                     )}
                   </div>
                 </div>
@@ -2655,7 +2747,7 @@ function RibbonInner({
                       <IconBullets />
                     </button>
                     <button
-                      className="rb-caret"
+                      className={`rb-caret${dropdown === 'bulletLib' ? ' active' : ''}`}
                       disabled={!canEdit || !!sub}
                       data-tip={t('ribbonBullets')}
                       aria-label={t('ribbonBullets')}
@@ -2664,11 +2756,21 @@ function RibbonInner({
                       <IconCaret />
                     </button>
                     {dropdown === 'bulletLib' && (
-                      <div className="layout-menu list-gallery">
+                      <div data-rb-panel="" className="layout-menu list-gallery list-gallery-word">
+                        <div className="list-gallery-title">{t('ribbonBulletLibTitle')}</div>
+                        <button
+                          className={`list-gallery-card list-gallery-none${!fs.listBullet && !fs.listOrdered ? ' selected' : ''}`}
+                          onClick={() => {
+                            clearList()
+                            setDropdown(null)
+                          }}
+                        >
+                          {t('ribbonListNone')}
+                        </button>
                         {BULLET_LIBRARY.map((glyph) => (
                           <button
                             key={glyph}
-                            className="list-gallery-card"
+                            className="list-gallery-card list-gallery-glyph"
                             onClick={() => {
                               applyListPreset(bulletPresetLevels(glyph))
                               setDropdown(null)
@@ -2677,6 +2779,15 @@ function RibbonInner({
                             {glyph}
                           </button>
                         ))}
+                        <button
+                          className="list-gallery-define"
+                          onClick={() => {
+                            setListDialog(true)
+                            setDropdown(null)
+                          }}
+                        >
+                          {t('ribbonDefineNewBullet')}…
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2691,7 +2802,7 @@ function RibbonInner({
                       <IconNumbered />
                     </button>
                     <button
-                      className="rb-caret"
+                      className={`rb-caret${dropdown === 'numberLib' ? ' active' : ''}`}
                       disabled={!canEdit || !!sub}
                       data-tip={t('ribbonNumbering')}
                       aria-label={t('ribbonNumbering')}
@@ -2700,24 +2811,48 @@ function RibbonInner({
                       <IconCaret />
                     </button>
                     {dropdown === 'numberLib' && (
-                      <div className="layout-menu list-gallery">
+                      <div data-rb-panel="" className="layout-menu list-gallery list-gallery-word">
+                        <div className="list-gallery-title">{t('ribbonNumberLibTitle')}</div>
+                        <button
+                          className={`list-gallery-card list-gallery-none${!fs.listBullet && !fs.listOrdered ? ' selected' : ''}`}
+                          onClick={() => {
+                            clearList()
+                            setDropdown(null)
+                          }}
+                        >
+                          {t('ribbonListNone')}
+                        </button>
                         {NUMBER_LIBRARY.map((n, i) => {
                           const levels = numberPresetLevels(n.numFmt, n.pattern)
                           return (
                             <button
                               key={i}
-                              className="list-gallery-card"
+                              className="list-gallery-card list-gallery-preview"
                               onClick={() => {
                                 applyListPreset(levels)
                                 setDropdown(null)
                               }}
                             >
-                              {[1, 2, 3]
-                                .map((v) => n.pattern.replace('%1', formatNumber(v, n.numFmt)))
-                                .join(' ')}
+                              {[1, 2, 3].map((v) => (
+                                <span key={v} className="list-gallery-preview-row">
+                                  <span className="list-gallery-preview-prefix">
+                                    {n.pattern.replace('%1', formatNumber(v, n.numFmt))}
+                                  </span>
+                                  <span className="list-gallery-preview-line" />
+                                </span>
+                              ))}
                             </button>
                           )
                         })}
+                        <button
+                          className="list-gallery-define"
+                          onClick={() => {
+                            setListDialog(true)
+                            setDropdown(null)
+                          }}
+                        >
+                          {t('ribbonDefineNewNumber')}…
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2732,7 +2867,7 @@ function RibbonInner({
                       <IconMultilevel />
                     </button>
                     {dropdown === 'multiLib' && (
-                      <div className="layout-menu list-gallery list-gallery-multi">
+                      <div data-rb-panel="" className="layout-menu list-gallery list-gallery-multi">
                         {MULTILEVEL_LIBRARY.map((levels, i) => (
                           <button
                             key={i}
@@ -2870,7 +3005,7 @@ function RibbonInner({
                       </span>
                     </button>
                     {dropdown === 'spacing' && (
-                      <div className="spacing-menu">
+                      <div data-rb-panel="" className="spacing-menu">
                         {LINE_SPACINGS.map((s) => (
                           <button
                             key={s}
@@ -2917,7 +3052,7 @@ function RibbonInner({
                       </span>
                     </button>
                     {dropdown === 'shading' && (
-                      <div className="color-palette">
+                      <div data-rb-panel="" className="color-palette">
                         {COLORS.map((c) => (
                           <button
                             key={c.hex}
@@ -2951,7 +3086,7 @@ function RibbonInner({
                       </span>
                     </button>
                     {dropdown === 'borders' && (
-                      <div className="spacing-menu borders-menu">
+                      <div data-rb-panel="" className="spacing-menu borders-menu">
                         <button onClick={() => setParaAttr({ borders: 'b' })}>
                           {t('ribbonBorderBottom')}
                         </button>
@@ -3001,7 +3136,9 @@ function RibbonInner({
                   </button>
                 )}
                 {dropdown === 'styleGallery' && (
-                  <div className="style-gallery-menu">{renderStyleCards(true)}</div>
+                  <div data-rb-panel="" className="style-gallery-menu">
+                    {renderStyleCards(true)}
+                  </div>
                 )}
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupStyles')}</div>

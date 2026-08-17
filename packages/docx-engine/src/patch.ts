@@ -23,6 +23,7 @@ import {
   stripInkRuns,
 } from './ink'
 import { assertZipWithinLimits, type ParseExtras } from './parse'
+import { loadDocxZip } from './zip-load'
 import { BLANK_NUMBERING_XML, abstractNumXml, type CustomNumberingLevel } from './blank'
 import { applyPageNumType, applySectionSettings, applySectionStartType } from './section'
 import {
@@ -290,7 +291,7 @@ export async function findChartWorkbookPath(
   chartPath: string,
 ): Promise<string | null> {
   try {
-    const zip = await JSZip.loadAsync(docxBytes)
+    const zip = await loadDocxZip(docxBytes)
     // chart path: word/charts/chart1.xml → rels: word/charts/_rels/chart1.xml.rels
     const dir = chartPath.substring(0, chartPath.lastIndexOf('/'))
     const file = chartPath.substring(chartPath.lastIndexOf('/') + 1)
@@ -319,7 +320,7 @@ export async function readDocxPartBase64(
   path: string,
 ): Promise<string | null> {
   try {
-    const zip = await JSZip.loadAsync(docxBytes)
+    const zip = await loadDocxZip(docxBytes)
     const file = zip.file(path)
     if (!file) return null
     const bytes = await file.async('uint8array')
@@ -405,7 +406,7 @@ export async function saveDocx(
     (options.partBinary === undefined || Object.keys(options.partBinary).length === 0)
   if (isUnchanged) return originalBytes
 
-  const zip = await JSZip.loadAsync(originalBytes)
+  const zip = await loadDocxZip(originalBytes)
   assertZipWithinLimits(zip)
 
   // Relationship allocation for newly created hyperlinks and images.
@@ -586,9 +587,12 @@ export async function saveDocx(
   ) => {
     if (hf === undefined) return
     const refs = trailingSectPr.match(new RegExp(`<w:${kind}Reference[^>]*/>`, 'g')) ?? []
+    // non-schema w:type="odd" and untyped references count as default (mirrors parse)
     const existing =
       refs.find((r) => r.includes(`w:type="${hfType}"`)) ??
-      (hfType === 'default' ? refs.find((r) => !/w:type="/.test(r)) : undefined)
+      (hfType === 'default'
+        ? (refs.find((r) => r.includes('w:type="odd"')) ?? refs.find((r) => !/w:type="/.test(r)))
+        : undefined)
     const rId = existing ? /r:id="([^"]+)"/.exec(existing)?.[1] : undefined
     const target = rId ? relTargets.get(rId) : undefined
     if (target) {
@@ -652,7 +656,9 @@ export async function saveDocx(
       block?.originalXml?.match(/<w:sectPr[^>]*\/>|<w:sectPr[\s\S]*?<\/w:sectPr>/)?.[0] ?? ''
     const refs = sectPr.match(new RegExp(`<w:${edit.kind}Reference[^>]*/>`, 'g')) ?? []
     const existing =
-      refs.find((r) => r.includes('w:type="default"')) ?? refs.find((r) => !/w:type="/.test(r))
+      refs.find((r) => r.includes('w:type="default"')) ??
+      refs.find((r) => r.includes('w:type="odd"')) ??
+      refs.find((r) => !/w:type="/.test(r))
     const rId = existing ? /r:id="([^"]+)"/.exec(existing)?.[1] : undefined
     const target = rId ? relTargets.get(rId) : undefined
     if (target) {
@@ -1292,7 +1298,7 @@ function headerFooterPartXml(
     // user-typed '#' stand in (first occurrence only — literal '#' text in a
     // part that has real marks must stay literal).
     const hasPageMark = hf.paras.some((p) =>
-      [p.runs, ...(p.cells?.map((c) => c.runs) ?? [])].some((rs) =>
+      [p.runs, ...(p.cells?.flatMap((c) => c.paras) ?? [])].some((rs) =>
         rs.some((r) => r.text.includes(PAGE_MARK)),
       ),
     )

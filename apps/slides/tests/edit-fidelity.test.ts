@@ -422,14 +422,14 @@ describe('edit-mode vertical metrics: line/paragraph spacing derived back from l
     div.remove()
   })
 
-  it('first paragraph spcBef also applies (measured from root padding)', () => {
+  it('first paragraph spcBef is dropped (PowerPoint ignores it at the frame top)', () => {
     const paras: Paragraph[] = [{ runs: [{ text: 'x', fontSize: 20 }], spaceBefore: 9 }]
     const out = layout(paras)
     const div = document.createElement('div')
     document.body.appendChild(div)
     populateEditorDom(div, out.lines)
-    expect(parseFloat((div.firstElementChild as HTMLElement).style.marginTop)).toBeCloseTo(12, 1)
-    expect(out.lines[0]!.top).toBeCloseTo(12, 1)
+    expect((div.firstElementChild as HTMLElement).style.marginTop || '0').toBe('0')
+    expect(out.lines[0]!.top).toBe(0)
     div.remove()
   })
 

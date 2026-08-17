@@ -51,7 +51,18 @@ export function scanBody(documentXml: string): BodyScan {
 
     if (isClosing) {
       if (depth === 0) {
-        if (name === 'w:body') break
+        if (name === 'w:body') {
+          // Word tolerates multiple sibling <w:body> elements (POI
+          // MultipleBodyBug.docx) and renders their contents concatenated;
+          // keep scanning any later body. Patch-save splices all elements
+          // back into the first body, which matches Word's own normalization.
+          const nextBody = /<w:body(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?>/g
+          nextBody.lastIndex = match.index + tag.length
+          const nb = nextBody.exec(documentXml)
+          if (!nb) break
+          TAG_RE.lastIndex = nb.index + nb[0].length
+          continue
+        }
         throw new Error(`unexpected closing tag </${name}> at body level`)
       }
       depth--

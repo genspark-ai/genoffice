@@ -4,7 +4,7 @@
  * to avoid renderer CORS), search tools, and the slides-only ai:* channels
  * (image generation, media analysis, style templates).
  */
-import { app, ipcMain, net, shell, webContents } from 'electron'
+import { app, ipcMain, nativeImage, net, shell, webContents } from 'electron'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -27,7 +27,8 @@ import {
   gskLoginInfo,
   hasGskAuth,
 } from '@genoffice/ai-search'
-import { addPicture, replacePictureBytes } from '@genoffice/pptx-engine'
+import { addPicture, editPictureSrcRect, replacePictureBytes } from '@genoffice/pptx-engine'
+import { coverCropFractions } from '../shared/cover-crop'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { getCodexAuth } from './codex-auth-main'
 import { tm } from './i18n-main'
@@ -225,6 +226,12 @@ export function registerSlidesOnlyAiIpc(): void {
           scheduleHistoryNotify(session)
           return null
         }
+        // The requested frame rarely matches the image's aspect ratio; never
+        // stretch — fill the frame and center-crop the overflow (object-fit:
+        // cover) so the layout box stays exactly where the model placed it.
+        const natural = nativeImage.createFromBuffer(buf).getSize()
+        const crop = coverCropFractions(natural.width, natural.height, op.wPx, op.hPx)
+        if (crop) editPictureSrcRect(slide, el.id, crop)
         session.fitWidthPx = op.fitWidthPx
         const rebuilt = rebuildSlide(session, op.slideIndex)
         return rebuilt ? { slide: rebuilt, sourceId: el.id } : null
@@ -262,6 +269,19 @@ export function registerSlidesOnlyAiIpc(): void {
           session.undoStack.pop()
           scheduleHistoryNotify(session)
           return null
+        }
+        // A replacement with a different aspect ratio would be stretched into
+        // the surviving frame — center-crop it to cover the frame instead.
+        if (!op.keepSrcRect) {
+          const pic = slide.elements.find(
+            (el) => el.id === String(op.sourceId) && el.type === 'picture',
+          )
+          const frame = pic?.transform?.offset
+          if (frame) {
+            const natural = nativeImage.createFromBuffer(buf).getSize()
+            const crop = coverCropFractions(natural.width, natural.height, frame.cx, frame.cy)
+            if (crop) editPictureSrcRect(slide, String(op.sourceId), crop)
+          }
         }
         return rebuildSlide(session, op.slideIndex)
       } catch {

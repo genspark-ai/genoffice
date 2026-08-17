@@ -3059,14 +3059,61 @@ body.vib .slide-list {
   font-size: 12px;
 }
 
-.fp-color {
+/* Color well trigger + shared palette popover in the format pane. The popover
+   is fixed + anchored so it escapes the pane's scroll clip; it right-aligns to
+   the well and opens leftwards (the pane hugs the window's right edge). */
+.fp-color-well-wrap {
+  position: relative;
+  display: inline-flex;
+  anchor-name: --fp-color-well;
+  anchor-scope: --fp-color-well;
+}
+
+.fp-color-well {
   width: 44px;
   height: 28px;
-  padding: 2px;
+  padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: var(--surface);
   cursor: pointer;
+}
+
+.fp-color-pop {
+  position: fixed;
+  position-anchor: --fp-color-well;
+  top: calc(anchor(bottom) + 4px);
+  right: anchor(right);
+  position-try-fallbacks: flip-block;
+  position-visibility: anchors-visible;
+  z-index: 80;
+}
+
+/* Format-background pane: fill-type buttons wrap their two-word labels */
+.fp-btn.fp-btn-wrap {
+  flex: 1;
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+/* Format-background pane: hide-background-graphics checkbox + picture preview */
+.fp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fp-bg-preview {
+  max-width: 100%;
+  max-height: 90px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  object-fit: contain;
 }
 
 .fp-btn {
@@ -3363,15 +3410,6 @@ body.vib .slide-list {
     --ribbon-accent-warm: #f0a05c;
   }
 }
-.rb-icon .rb-accent {
-  color: var(--ribbon-accent);
-}
-.rb-icon sup,
-.rb-icon sub {
-  font-size: 9px;
-  line-height: 1;
-}
-
 /* collapsed Paragraph group (MS-style): big button opens a two-row tool panel */
 .rb-para-drop {
   padding: 12px 14px;
@@ -3424,10 +3462,16 @@ body.vib .slide-list {
   border-radius: 1px;
 }
 
-.rb-color-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 18px);
-  gap: 5px;
+/* Anchor positioning for the shared Word-style color panel (@genoffice/ui
+   .gcp-palette draws the chrome; this wrapper only places it under the trigger). */
+.rb-color-pop {
+  position: fixed;
+  position-anchor: --rb-drop-wrap;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
+  z-index: 60;
 }
 
 .rb-swatch {
@@ -3935,6 +3979,27 @@ body.vib .slide-list {
 
 .ctx-swatch-none {
   background: var(--surface);
+}
+
+/* Shape style preset grid (fill+stroke combos; colors are document data, set inline) — used by the Shape Tools ribbon gallery */
+.ctx-style-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 20px);
+  gap: 4px;
+}
+
+.ctx-style-cell {
+  width: 20px;
+  height: 15px;
+  border: 1.5px solid;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ctx-style-cell:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ---- Draw (freehand ink) ---- */

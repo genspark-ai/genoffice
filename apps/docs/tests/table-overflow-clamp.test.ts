@@ -99,10 +99,10 @@ describe('clampTableColWidths', () => {
 })
 
 describe('expandAutofitColWidths', () => {
-  // 'الموقف البيئي' at the default 12pt: 6 chars x 0.52em x 16px = 49.92px word
-  // -> ceil(748.8) + 2 x 108 default margins = 965 twips min-content
+  // 'الموقف البيئي' at the default 12pt: 6 chars x 0.35em x 16px = 33.6px word
+  // -> ceil(504) + 2 x 108 default margins = 720 twips min-content
   const ARABIC_HEADER = 'الموقف البيئي'
-  const MIN_ARABIC_COL = 965
+  const MIN_ARABIC_COL = 720
 
   it('widens an autofit column to its widest unbreakable word', () => {
     const model: TableModel = {
@@ -140,7 +140,7 @@ describe('expandAutofitColWidths', () => {
     }
     const expanded = expandAutofitColWidths(model, 10772, 9638)
     expect(expanded.colWidthsTwips![0]).toBe(MIN_ARABIC_COL)
-    // growth (+398) comes out of the wide column; total stays at the declared/fit width
+    // growth (+153) comes out of the wide column; total stays at the declared/fit width
     expect(expanded.colWidthsTwips!.reduce((a, b) => a + b, 0)).toBe(9638)
   })
 
@@ -205,7 +205,7 @@ describe('autofit expansion wiring', () => {
     expect(table.colWidthsTwips).toEqual([567, 9071])
     const pm = blocksToPmDoc(parsed.blocks, readSections(parsed)).content![0]
     const colwidth = pm.content![0].content![0].attrs!.colwidth as number[]
-    expect(colwidth[0]).toBeGreaterThanOrEqual(Math.floor(965 / 15))
+    expect(colwidth[0]).toBeGreaterThanOrEqual(Math.floor(720 / 15))
   })
 
   it('parse does not flag fixed-layout or pct tables', async () => {

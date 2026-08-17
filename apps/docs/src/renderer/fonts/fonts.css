@@ -174,6 +174,20 @@
   font-style: normal;
 }
 
+/* Missing KR font names (Noto/Source Han KR variants): Word keeps hangul on
+ * Batang but renders Latin/digits with the theme Latin face (M3 probe sample
+ * 13: Batang-metric Latin measures 1.13–1.19× Cambria/Calibri). Claims
+ * printable ASCII only — U+0020 stays on the Batang-normalized KR subsets so
+ * hangul word spacing is untouched. Serif class only: the missing-KR chain is
+ * always Batang-ward (cssFontFamily). */
+@font-face {
+  font-family: 'KR Theme Latin GO';
+  src: local('Cambria'), url('./Caladea-Regular.ttf');
+  unicode-range: U+0021-007E;
+  font-weight: normal;
+  font-style: normal;
+}
+
 /*
  * Arabic fallback: unmodified Noto Naskh/Sans Arabic subsets (Arabic blocks +
  * presentation forms + digits/punctuation). Without them, missing Arabic fonts
@@ -218,6 +232,42 @@
   font-family: 'Noto Sans Arabic W';
   src: url('./NotoSansArabic-Regular-subset.woff2') format('woff2');
   size-adjust: 87%;
+  font-weight: normal;
+  font-style: normal;
+}
+/* Missing Arabic serif names (incl. Persian B/XB/IR faces) substitute wholesale
+ * to Times New Roman in Word; the bundled Naskh subset shapes 1.125× (Arabic) /
+ * 1.074× (Persian) wider than Times (M3 probe 2026-08-14, whole-sentence shaped
+ * R). 90% splits the difference; same value as the TA alias above but from a
+ * different calibration source, so they stay separate (like the W alias). */
+@font-face {
+  font-family: 'Noto Naskh Arabic TNR';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 90%;
+  font-weight: normal;
+  font-style: normal;
+}
+/* Arabic-Indic digits already run narrower than Times' (R≈0.855, same probe);
+ * scaling them another 10% would overshoot, so they stay unscaled ahead of the
+ * TNR alias in the missing-serif chain. */
+@font-face {
+  font-family: 'Naskh Digits GO';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  unicode-range: U+0660-0669, U+06F0-06F9;
+  font-weight: normal;
+  font-style: normal;
+}
+/* cs runs with a missing naskh font route ASCII punctuation/digits to the
+ * substituted Times shapes (Word renders them there after wholesale TNR
+ * substitution; the Naskh subset's forms sit sunken on the Arabic baseline).
+ * Only non-letter ASCII is claimed, so Latin letters keep resolving in the
+ * run's ascii slot and Arabic in the Naskh subset behind this alias.
+ * local() needs the PostScript name in Chromium; the bundled Liberation file
+ * backstops hosts without a system Times. */
+@font-face {
+  font-family: 'Times Punct GO';
+  src: local('TimesNewRomanPSMT'), local('Times New Roman'), url('./LiberationSerif-Regular.ttf');
+  unicode-range: U+0020-0040, U+005B-0060, U+007B-007E;
   font-weight: normal;
   font-style: normal;
 }

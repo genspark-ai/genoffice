@@ -977,12 +977,12 @@ export function AiPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Genspark"
+        aria-label={t('aiPanelTitle')}
       />
       <div className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
-          Genspark
+          {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
           <AiProviderSelect settings={settings} controls={providerControls} labels={labels} />

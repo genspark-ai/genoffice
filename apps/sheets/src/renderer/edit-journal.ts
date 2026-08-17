@@ -35,6 +35,15 @@ export interface JournalEntry {
   readonly styleReset?: boolean
 }
 
+/// alignment/@textRotation → Univer tr: 1-90 counter-clockwise, 91-180
+/// encodes clockwise as 90+deg, 255 is vertically stacked; 0 clears.
+export function ooxmlTextRotationToUniver(value: number): { a: number; v?: number } | null {
+  if (value === 255) return { a: 0, v: 1 }
+  if (value > 180) return null
+  if (value > 90) return { a: 90 - value }
+  return value > 0 ? { a: value } : null
+}
+
 export type StructuralJournalOp =
   | {
       readonly kind: 'insert-rows' | 'remove-rows' | 'insert-cols' | 'remove-cols'
@@ -130,6 +139,16 @@ export interface EditJournal {
   readonly dvDirty: Set<string>
   /// Desired sheet-protection state (dropped when toggled back to original).
   readonly sheetProtection: Map<string, boolean>
+  /// Desired workbook structure-protection state (null = untouched).
+  readonly workbookProtection: { desired: boolean | null }
+  /// Sheets whose allow-edit-range set changed; the save snapshots the live
+  /// set (same recipe as filters).
+  readonly protectedRangesDirty: Set<string>
+  /// Document theme change; only the halves the user touched are present.
+  readonly theme: {
+    colors?: { name: string; values: string[] }
+    fonts?: { name: string; major: string; minor: string }
+  }
   /// The defined-name set changed; the save snapshots the full model.
   readonly definedNames: { dirty: boolean }
   /// sheetId → "row:column" → link target ('#Sheet!A1' internal, URL
@@ -185,6 +204,8 @@ export interface PageSetupJournalState {
   showGridlines?: boolean
   /// sheetView/@showFormulas: the sheet renders formulas instead of values.
   showFormulas?: boolean
+  /// sheetView/@showRowColHeaders: row/column heading strips.
+  showHeadings?: boolean
   /// A1 range to print, or null to clear the print area.
   printArea?: string | null
   /// Rows repeated at the top of every page ("1:2"), or null to clear.
@@ -195,6 +216,10 @@ export interface PageSetupJournalState {
   /// Printed header/footer, or null to clear; saved as <headerFooter>.
   header?: HeaderFooterParts | null
   footer?: HeaderFooterParts | null
+  /// Manual page breaks (0-based index of the row/column after the break).
+  /// Presence replaces the sheet's break set; [] clears all manual breaks.
+  rowBreaks?: number[]
+  colBreaks?: number[]
 }
 
 interface CellRange {
@@ -225,6 +250,9 @@ export function createEditJournal(): EditJournal {
     cfDirty: new Set(),
     dvDirty: new Set(),
     sheetProtection: new Map(),
+    workbookProtection: { desired: null },
+    protectedRangesDirty: new Set(),
+    theme: {},
     definedNames: { dirty: false },
     hyperlinks: new Map(),
     pageSetup: new Map(),
@@ -279,6 +307,35 @@ export function toSavePageSetupStates(
 
 export function recordDefinedNamesChange(journal: EditJournal): void {
   journal.definedNames.dirty = true
+}
+
+export function recordWorkbookProtection(
+  journal: EditJournal,
+  desired: boolean,
+  original: boolean,
+): void {
+  journal.workbookProtection.desired = desired === original ? null : desired
+}
+
+export function recordProtectedRangesChange(journal: EditJournal, sheetId: string): void {
+  journal.protectedRangesDirty.add(sheetId)
+}
+
+export function recordThemeColors(
+  journal: EditJournal,
+  name: string,
+  values: readonly string[],
+): void {
+  journal.theme.colors = { name, values: [...values] }
+}
+
+export function recordThemeFonts(
+  journal: EditJournal,
+  name: string,
+  major: string,
+  minor: string,
+): void {
+  journal.theme.fonts = { name, major, minor }
 }
 
 export function recordSheetProtection(
@@ -1097,6 +1154,21 @@ export function recordStructuralOp(
     }
     journal.hyperlinks.set(sheetId, shiftedLinks)
   }
+  // Journaled manual page breaks are a screen-space replacement set; a break
+  // sitting on a deleted line disappears with it.
+  const pageSetup = journal.pageSetup.get(sheetId)
+  const breaksKey = axis === 'row' ? 'rowBreaks' : 'colBreaks'
+  const breaks = pageSetup?.[breaksKey]
+  if (pageSetup && breaks !== undefined) {
+    const moved = [
+      ...new Set(
+        breaks
+          .map(movePosition)
+          .filter((position): position is number => position !== null && position > 0),
+      ),
+    ].sort((a, b) => a - b)
+    journal.pageSetup.set(sheetId, { ...pageSetup, [breaksKey]: moved })
+  }
   // Session visuals and pending chart edits follow the same shift: the save
   // appends/applies them after the file's own structural pass, so they must
   // already live in post-operation coordinates.
@@ -1590,14 +1662,7 @@ export function fromNeutralStyle(style: WorkbookStyleEdit): Record<string, unkno
   }
   if (style.wrapText !== undefined) s.tb = style.wrapText ? 3 : null
   if (style.textRotation !== undefined) {
-    s.tr =
-      style.textRotation === 0
-        ? null
-        : style.textRotation === 255
-          ? { a: 0, v: 1 }
-          : style.textRotation > 90
-            ? { a: 90 - style.textRotation }
-            : { a: style.textRotation }
+    s.tr = ooxmlTextRotationToUniver(style.textRotation)
   }
   if (style.numberFormat !== undefined) s.n = { pattern: style.numberFormat }
   if (style.indent !== undefined) {
@@ -1674,6 +1739,12 @@ export function journalSize(journal: EditJournal): number {
     if (!isSheetRemoved(journal, sheetId)) total += 1
   }
   if (journal.definedNames.dirty) total += 1
+  if (journal.workbookProtection.desired !== null) total += 1
+  for (const sheetId of journal.protectedRangesDirty) {
+    if (!isSheetRemoved(journal, sheetId)) total += 1
+  }
+  if (journal.theme.colors !== undefined) total += 1
+  if (journal.theme.fonts !== undefined) total += 1
   for (const [sheetId, state] of journal.pageSetup) {
     if (!isSheetRemoved(journal, sheetId) && Object.keys(state).length > 0) total += 1
   }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
+import { useDismissablePopover } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import type { StringKey } from '../i18n/locale'
 import { GensparkMark } from '../ai/AiPanel'
@@ -194,15 +195,9 @@ export function Ribbon({
     if (linkOpen) linkInputRef.current?.focus()
   }, [linkOpen])
 
-  useEffect(() => {
-    if (!linkOpen) return
-    const close = (e: MouseEvent) => {
-      if (linkAnchorRef.current && !linkAnchorRef.current.contains(e.target as Node))
-        setLinkOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [linkOpen])
+  useDismissablePopover(linkOpen, () => setLinkOpen(false), {
+    inside: () => [linkAnchorRef.current],
+  })
 
   const off = disabled || !editor || !state
 

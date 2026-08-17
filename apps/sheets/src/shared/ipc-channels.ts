@@ -32,6 +32,10 @@ export const IPC_CHANNELS = {
   aiCodexCancelLogin: 'ai:codex-cancel-login',
   aiCodexLogout: 'ai:codex-logout',
   aiCodexCapabilities: 'ai:codex-capabilities',
+  aiImageSearch: 'ai:image-search',
+  aiFetchImage: 'ai:fetch-image',
+  // sheets: prefix — slides' ai:generate-image only registers once a slides view exists
+  aiGenerateImage: 'sheets:ai-generate-image',
   // Chat attachments (sheets: prefix — docs already registers global files:* in
   // the shell; avoids collisions)
   captureScreenSources: 'sheets:capture-screen-sources',

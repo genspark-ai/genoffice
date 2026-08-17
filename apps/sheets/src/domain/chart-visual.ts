@@ -46,6 +46,23 @@ export interface ChartSeriesVisualState {
   explosionPct?: number | undefined
   /// Pie: per-slice `c:dPt/c:explosion` overrides.
   pointExplosions?: { index: number; pct: number }[] | undefined
+  /// spPr/a:ln color; "none" = explicit no line.
+  lineColor?: string | undefined
+  smooth?: boolean | undefined
+  /// c:marker symbol; "none" hides scatter/line markers.
+  marker?: string | undefined
+}
+
+/// One plot axis keyed by its side (b/t → x, l/r → y).
+export interface ChartAxisInfoState {
+  title?: string | undefined
+  min?: number | undefined
+  max?: number | undefined
+  majorUnit?: number | undefined
+  numFmt?: string | undefined
+  majorGridlines: boolean
+  /// c:delete — scales its series but is not drawn.
+  hidden: boolean
 }
 
 export interface ChartVisualState {
@@ -70,6 +87,16 @@ export interface ChartVisualState {
   gapWidthPct?: number | undefined
   /// Doughnut `c:holeSize`.
   holeSizePct?: number | undefined
+  xAxis?: ChartAxisInfoState | undefined
+  yAxis?: ChartAxisInfoState | undefined
+  /// Second left/right value axis (combo charts).
+  secondaryYAxis?: ChartAxisInfoState | undefined
+  /// c:scatterStyle — whether scatter points connect with lines.
+  scatterStyle?: string | undefined
+  /// c:title/c:txPr//a:defRPr shorthand.
+  titleStyle?:
+    | { size?: number | undefined; bold?: boolean | undefined; color?: string | undefined }
+    | undefined
 }
 
 /// Numeric category labels (date serials, percents) render through their
@@ -107,7 +134,7 @@ export interface ScatterAxis {
 /// nice-step ceiling. Ticks are 5 evenly spaced values.
 export function scatterAxisBounds(
   values: readonly number[],
-  explicit?: { min?: number | undefined; max?: number | undefined },
+  explicit?: { min?: number | undefined; max?: number | undefined; majorUnit?: number | undefined },
 ): ScatterAxis {
   const finite = values.filter((value) => Number.isFinite(value))
   const dataMin = finite.length > 0 ? Math.min(...finite) : 0
@@ -115,8 +142,51 @@ export function scatterAxisBounds(
   const min = explicit?.min ?? (dataMin >= 0 ? 0 : -niceCeiling(-dataMin))
   let max = explicit?.max ?? (dataMax <= 0 ? 0 : niceCeiling(dataMax))
   if (!(max > min)) max = min + 1
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => min + fraction * (max - min))
+  const ticks = explicit?.majorUnit
+    ? unitTicks(min, max, explicit.majorUnit)
+    : [0, 0.25, 0.5, 0.75, 1].map((fraction) => min + fraction * (max - min))
   return { min, max, ticks }
+}
+
+/// Excel-like value-axis scale. Explicit bounds/unit win; the auto unit is
+/// the smallest 1/2/5×10^n giving at most 8 intervals, and the max rounds
+/// up to a unit multiple (11162 → 0..12000 step 2000; 3750 → 0..4000 step
+/// 500; 13 → 0..14 step 2 — matching Excel's defaults on the run5 corpus).
+export function valueAxisScale(
+  dataMax: number,
+  explicit?: { min?: number | undefined; max?: number | undefined; majorUnit?: number | undefined },
+): { min: number; max: number; ticks: number[] } {
+  const min = explicit?.min ?? 0
+  const target = explicit?.max ?? Math.max(dataMax, min)
+  const span = target - min
+  if (!(span > 0)) {
+    return { min, max: min + 1, ticks: [min, min + 0.5, min + 1] }
+  }
+  const unit = explicit?.majorUnit ?? autoAxisUnit(span)
+  const max = explicit?.max ?? min + Math.ceil(span / unit - 1e-9) * unit
+  return { min, max: max > min ? max : min + unit, ticks: unitTicks(min, max, unit) }
+}
+
+function autoAxisUnit(span: number): number {
+  let exponent = Math.floor(Math.log10(span)) - 1
+  for (let guard = 0; guard < 6; guard += 1) {
+    for (const base of [1, 2, 5]) {
+      const unit = base * 10 ** exponent
+      if (span / unit <= 8 + 1e-9) return unit
+    }
+    exponent += 1
+  }
+  return 10 ** Math.ceil(Math.log10(span))
+}
+
+function unitTicks(min: number, max: number, unit: number): number[] {
+  const ticks: number[] = []
+  for (let index = 0; index < 25; index += 1) {
+    const tick = min + index * unit
+    if (tick > max + unit * 1e-6) break
+    ticks.push(Number(tick.toPrecision(12)))
+  }
+  return ticks.length >= 2 ? ticks : [min, max]
 }
 
 /// Smallest 1/2/2.5/5×10^n step whose multiple covers `value` within 9
@@ -144,7 +214,9 @@ export function withDefaultBarLabels(chart: ChartVisualState): ChartVisualState 
     chart.series.length === 1 &&
     chart.grouping !== 'stacked' &&
     chart.grouping !== 'percentStacked' &&
-    (chart.dataLabels === undefined || chart.dataLabels === 'none')
+    // Only when the file carries no dLbls at all — an explicit
+    // showVal="0" must stay off (fidelity beats the product default).
+    chart.dataLabels === undefined
   return upgradable ? { ...chart, dataLabels: 'value' } : chart
 }
 

@@ -93,6 +93,40 @@ describe('tableStyles.xml custom styles', () => {
     expect(resolveTableStyle('{DEAD-BEEF}', xml, theme)).toBeUndefined()
     expect(resolveTableStyle(undefined, xml, theme)).toBeUndefined()
   })
+
+  it('tblBg fillRef + alpha band fills + lnRef borders (bnc480256)', () => {
+    const themed = {
+      ...theme,
+      fillStyles: [
+        {},
+        {},
+        { 'a:gradFill': {} }, // placeholder; parse.ts instantiates the ref, table-style only records it
+      ],
+      lnStyles: [
+        { 'a:ln': { '@_w': '25400', 'a:solidFill': { 'a:schemeClr': { '@_val': 'phClr' } } } },
+      ],
+    } as unknown as Theme
+    const bgXml =
+      '<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="{Y}">' +
+      '<a:tblStyle styleId="{Y}" styleName="Bg">' +
+      '<a:tblBg><a:fillRef idx="3"><a:schemeClr val="accent1"/></a:fillRef></a:tblBg>' +
+      '<a:wholeTbl><a:tcStyle><a:tcBdr>' +
+      '<a:insideH><a:lnRef idx="1"><a:schemeClr val="accent1"><a:tint val="50000"/></a:schemeClr></a:lnRef></a:insideH>' +
+      '<a:insideV><a:ln><a:noFill/></a:ln></a:insideV>' +
+      '</a:tcBdr><a:fill><a:noFill/></a:fill></a:tcStyle></a:wholeTbl>' +
+      '<a:band1H><a:tcStyle><a:tcBdr/><a:fill><a:solidFill>' +
+      '<a:schemeClr val="lt1"><a:alpha val="20000"/></a:schemeClr>' +
+      '</a:solidFill></a:fill></a:tcStyle></a:band1H>' +
+      '</a:tblStyle></a:tblStyleLst>'
+    const def = resolveTableStyle('{Y}', bgXml, themed)!
+    expect(def.tblBgRef).toEqual({ idx: 3, phClr: '#4472C4' })
+    // alpha 20% → #RRGGBBAA suffix (composites over tblBg at render time)
+    expect(def.band1H?.fill).toEqual({ type: 'solid', color: '#FFFFFF33' })
+    // lnRef: phClr from the ref child (tint 50% of accent1), width from the theme lnStyle template
+    expect(def.insideH).toEqual({ fill: { type: 'solid', color: '#A2B9E2' }, width: 25400 })
+    // explicit <a:ln><a:noFill/> → no inside-vertical line
+    expect(def.insideV).toBeUndefined()
+  })
 })
 
 describe('built-in style family expansion (full GUID table)', () => {

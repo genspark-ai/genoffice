@@ -35,7 +35,7 @@ export type CodexErrorCode =
   | 'invalid-tool-call'
   | 'provider-failure'
 
-export type AiErrorCode = CodexErrorCode | 'credits'
+export type AiErrorCode = CodexErrorCode | 'credits' | 'network'
 
 export class CodexError extends Error {
   constructor(

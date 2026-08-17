@@ -26,6 +26,23 @@ export function ChartBody({
           {...fillToKonva(chart.bgFill, chart.box.w, chart.box.h, images)}
         />
       )}
+      {chart.plotRect && (
+        <Rect
+          x={chart.plotRect.x}
+          y={chart.plotRect.y}
+          width={chart.plotRect.w}
+          height={chart.plotRect.h}
+          {...(chart.plotRect.fill
+            ? fillToKonva(chart.plotRect.fill, chart.plotRect.w, chart.plotRect.h, images)
+            : {})}
+          {...(chart.plotRect.borderColor
+            ? {
+                stroke: chart.plotRect.borderColor,
+                strokeWidth: chart.plotRect.borderWidthPx ?? 1,
+              }
+            : {})}
+        />
+      )}
       {(chart.wedges ?? []).map((wd, i) => (
         <Arc
           key={`w${i}`}
@@ -45,7 +62,7 @@ export function ChartBody({
           key={`g${i}`}
           points={[g.x1, g.y1, g.x2, g.y2]}
           stroke={g.color}
-          strokeWidth={1}
+          strokeWidth={g.widthPx ?? 1}
           {...(g.dash ? { dash: g.dash } : {})}
         />
       ))}
@@ -80,6 +97,7 @@ export function ChartBody({
           tension={smoothTension(p.smooth)}
           {...(p.closed ? { closed: true } : {})}
           {...(p.fill ? { fill: p.fill } : {})}
+          {...(p.dash ? { dash: p.dash } : {})}
         />
       ))}
       {chart.markers.map((m, i) => (
@@ -109,6 +127,16 @@ export function ChartBody({
           {...(l.rotationDeg ? { rotation: l.rotationDeg } : {})}
         />
       ))}
+      {chart.border && (
+        <Rect
+          x={chart.border.widthPx / 2}
+          y={chart.border.widthPx / 2}
+          width={chart.box.w - chart.border.widthPx}
+          height={chart.box.h - chart.border.widthPx}
+          stroke={chart.border.color}
+          strokeWidth={chart.border.widthPx}
+        />
+      )}
     </>
   )
 }

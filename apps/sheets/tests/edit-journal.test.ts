@@ -7,8 +7,13 @@ import {
   fromNeutralStyle,
   journalEntriesInRange,
   journalSize,
+  recordPageSetup,
+  recordProtectedRangesChange,
   recordSetNumfmt,
   recordSetRangeValues,
+  recordThemeColors,
+  recordThemeFonts,
+  recordWorkbookProtection,
   recordSheetDuplicate,
   recordSheetHidden,
   recordSheetInsert,
@@ -847,5 +852,66 @@ describe('recordStructuralOp move-rows', () => {
     const restored = journal.cells.get('sheet-1')
     expect(restored?.get('1:0')?.value).toBe('moved')
     expect(restored?.get('3:0')?.value).toBe('displaced')
+  })
+})
+
+describe('workbook protection / theme / protected-range journaling', () => {
+  it('workbook protection drops when toggled back to the original', () => {
+    const journal = createEditJournal()
+    recordWorkbookProtection(journal, true, false)
+    expect(journal.workbookProtection.desired).toBe(true)
+    expect(journalSize(journal)).toBe(1)
+    recordWorkbookProtection(journal, false, false)
+    expect(journal.workbookProtection.desired).toBeNull()
+    expect(journalSize(journal)).toBe(0)
+  })
+
+  it('theme colors and fonts count once each and overwrite on re-pick', () => {
+    const journal = createEditJournal()
+    recordThemeColors(
+      journal,
+      'Indigo',
+      Array.from({ length: 12 }, () => '#111111'),
+    )
+    recordThemeFonts(journal, 'Georgia', 'Georgia', 'Georgia')
+    expect(journalSize(journal)).toBe(2)
+    recordThemeColors(
+      journal,
+      'Forest',
+      Array.from({ length: 12 }, () => '#222222'),
+    )
+    expect(journal.theme.colors?.name).toBe('Forest')
+    expect(journalSize(journal)).toBe(2)
+  })
+
+  it('protected-range dirt skips removed sheets in the size count', () => {
+    const journal = createEditJournal()
+    recordProtectedRangesChange(journal, 'sheet-1')
+    recordProtectedRangesChange(journal, 'sheet-2')
+    expect(journalSize(journal)).toBe(2)
+    recordSheetRemove(journal, 'sheet-2')
+    expect(journalSize(journal)).toBe(2) // sheet-2's dirt swaps for the removal op
+  })
+})
+
+describe('recordStructuralOp page-break remapping', () => {
+  it('shifts journaled breaks through inserts and drops deleted ones', () => {
+    const journal = createEditJournal()
+    recordPageSetup(journal, 'sheet-1', { rowBreaks: [3, 8], colBreaks: [2] })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 5, count: 2 })
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([3, 10])
+    expect(journal.pageSetup.get('sheet-1')?.colBreaks).toEqual([2])
+    recordStructuralOp(journal, 'sheet-1', { kind: 'remove-rows', index: 2, count: 3 })
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([7])
+  })
+
+  it('undo (the inverse op) restores the shifted break set', () => {
+    const journal = createEditJournal()
+    recordPageSetup(journal, 'sheet-1', { rowBreaks: [6] })
+    recordStructuralOp(journal, 'sheet-1', { kind: 'insert-rows', index: 0, count: 4 })
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([10])
+    recordStructuralOp(journal, 'sheet-1', { kind: 'remove-rows', index: 0, count: 4 })
+    expect(journal.structuralOps.get('sheet-1')).toBeUndefined()
+    expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([6])
   })
 })

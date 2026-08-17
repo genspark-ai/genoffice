@@ -8,7 +8,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
 import type { GradientFillSpec, LinkTargetOp } from '../../shared/ipc'
 import { useI18n } from '../i18n/locale'
-import { armColorInput } from '../color-input'
+import { ColorWell } from './ColorWell'
 import { IconSidebarCollapse } from './icons'
 
 interface Props {
@@ -266,16 +266,10 @@ export function FormatPane({
             <>
               <div className="fp-section">{t('paneFormatFill')}</div>
               <div className="fp-row">
-                <input
-                  key={`${node.sourceId}:${fillColor ?? 'none'}`}
-                  type="color"
-                  className="fp-color"
-                  defaultValue={fillColor ?? '#ffffff'}
-                  onPointerDown={(e) => armColorInput(e.currentTarget)}
-                  onChange={(e) =>
-                    debouncedFill(node.sourceId, fillValue(e.target.value, fillTransparency))
-                  }
-                  title={t('paneFormatSolidFill')}
+                <ColorWell
+                  value={fillColor ?? '#ffffff'}
+                  label={t('paneFormatSolidFill')}
+                  onPick={(hex) => debouncedFill(node.sourceId, fillValue(hex, fillTransparency))}
                 />
                 <button
                   className={`fp-btn ${shape.fill.kind === 'none' ? 'active' : ''}`}
@@ -338,20 +332,12 @@ export function FormatPane({
               )}
               <div className="fp-section">{t('paneFormatGradient')}</div>
               <div className="fp-row">
-                <input
-                  type="color"
-                  className="fp-color"
+                <ColorWell
                   value={gradFrom}
-                  onChange={(e) => setGradFrom(e.target.value)}
-                  data-tip={t('paneFormatGradientFrom')}
+                  label={t('paneFormatGradientFrom')}
+                  onPick={setGradFrom}
                 />
-                <input
-                  type="color"
-                  className="fp-color"
-                  value={gradTo}
-                  onChange={(e) => setGradTo(e.target.value)}
-                  data-tip={t('paneFormatGradientTo')}
-                />
+                <ColorWell value={gradTo} label={t('paneFormatGradientTo')} onPick={setGradTo} />
                 {(
                   [
                     ['→', 0, false],
@@ -387,14 +373,10 @@ export function FormatPane({
             <>
               <div className="fp-section">{t('paneFormatOutline')}</div>
               <div className="fp-row">
-                <input
-                  key={`${node.sourceId}:s:${strokeColor}`}
-                  type="color"
-                  className="fp-color"
-                  defaultValue={strokeColor}
-                  onPointerDown={(e) => armColorInput(e.currentTarget)}
-                  onChange={(e) => commitStroke(node.sourceId, { color: e.target.value })}
-                  data-tip={t('paneFormatOutlineColor')}
+                <ColorWell
+                  value={strokeColor}
+                  label={t('paneFormatOutlineColor')}
+                  onPick={(hex) => commitStroke(node.sourceId, { color: hex })}
                 />
                 <label className="fp-field" style={{ flex: 1 }}>
                   <span>{t('paneFormatPt')}</span>
@@ -455,9 +437,7 @@ export function FormatPane({
                   )}
                   {s.values.map((_, pi) => (
                     <div className="fp-row fp-chart-point" key={pi}>
-                      <input
-                        className="fp-color"
-                        type="color"
+                      <ColorWell
                         value={toHex6(
                           chartData.pointColors[si]?.[pi] ??
                             (chartData.kind === 'pie'
@@ -465,8 +445,8 @@ export function FormatPane({
                               : (chartData.seriesColors[si] ??
                                 CHART_PALETTE[si % CHART_PALETTE.length]!)),
                         )}
-                        onPointerDown={(e) => armColorInput(e.currentTarget)}
-                        onChange={(e) => debouncedPointColor(si, pi, e.target.value)}
+                        label={chartData.categories[pi] || `#${pi + 1}`}
+                        onPick={(hex) => debouncedPointColor(si, pi, hex)}
                       />
                       <span className="fp-chart-point-label">
                         {chartData.categories[pi] || `#${pi + 1}`}

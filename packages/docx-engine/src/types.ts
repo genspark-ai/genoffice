@@ -47,7 +47,8 @@ export interface Run {
   highlight?: string
   /** character shading fill, hex without '#' (w:shd w:fill, non-auto); highlight wins when both are set */
   shading?: string
-  /** bold/italic/size were read from the Cs twins (w:bCs/w:iCs/w:szCs): w:rtl run or complex-script text */
+  /** rtl run (explicit w:rtl, or inherited from its style chain): bold/italic/size
+   * were read from the Cs twins (w:bCs/w:iCs/w:szCs) */
   cs?: boolean
   /** superscript / subscript (w:vertAlign) */
   vertAlign?: 'superscript' | 'subscript'
@@ -85,6 +86,9 @@ export interface Run {
   refInstr?: string
   /** Generic inline field (DATE/TIME/NUMPAGES/FILENAME etc.): full instruction text; run text is the cached result */
   instrField?: string
+  /** Original field-begin run XML (w:fldChar + w:ffData), written back verbatim so form-field
+   * definitions survive; when set, the run text is a synthesized glyph (☐/☒), not a cached result */
+  fldBeginXml?: string
   /**
    * Run-level formatting revision (w:rPrChange): records the review info and the modeled
    * subset of the pre-revision formatting. Accept = keep the current formatting and clear
@@ -120,11 +124,21 @@ export interface Run {
    */
   ruby?: { rt: string; xml: string }
   /**
-   * Inline picture in a table cell. `dataUrl` is for display; `xml` is the
-   * exact <w:drawing> fragment, re-wrapped in a w:r and emitted verbatim
-   * when the cell regenerates.
+   * Picture carried by this run (table cell, or a paragraph mixing text and
+   * pictures). `dataUrl` is for display; `xml` is the exact <w:drawing>
+   * fragment, re-wrapped in a w:r and emitted verbatim on regeneration.
+   * `wrap`/offsets are display-only anchor geometry of a floating picture
+   * (wp:anchor); absent = inline.
    */
-  image?: { dataUrl: string; widthPx?: number; heightPx?: number; xml: string }
+  image?: {
+    dataUrl: string
+    widthPx?: number
+    heightPx?: number
+    xml: string
+    wrap?: ImageWrap
+    offsetXEmu?: number
+    offsetYEmu?: number
+  }
 }
 
 /** One comment from word/comments.xml (read-only display model). */
@@ -326,6 +340,9 @@ export interface SectionInfo {
 
 /** one rich paragraph of a header / footer part */
 export interface HfParagraph extends ParaFormat {
+  /** w:framePr w:xAlign — text frame floated at the margin edge; the line
+   *  overlays the following paragraph's flow line instead of stacking (Word) */
+  frameXAlign?: 'left' | 'center' | 'right'
   /** w:ptab alignments indexed by overall tab order (regular w:tab slots are undefined); margin-relative, ignores tab stops */
   ptabAligns?: Array<'left' | 'center' | 'right' | undefined>
   runs: Run[]
@@ -336,7 +353,8 @@ export interface HfParagraph extends ParaFormat {
 
 /** one cell of a header/footer layout-table row */
 export interface HfTableCell {
-  runs: Run[]
+  /** cell paragraphs, each rendered as its own block line (Word stacks them) */
+  paras: Run[][]
   align?: ParaAlign
   /** column width as % of the row (w:tcW, falling back to tblGrid) */
   widthPct?: number
@@ -348,14 +366,20 @@ export interface HfTableCell {
 export interface NumberingLevel {
   /** w:numFmt, e.g. "decimal" | "bullet" | "lowerLetter" | "upperRoman" | "chineseCountingThousand" */
   numFmt: string
+  /** w14 custom numFmt enumeration (numFmt "custom"), e.g. "α, β, γ, ..." */
+  customFormat?: string
   /** w:lvlText, e.g. "%1." or "%1.%2" (placeholders %n = counter of level n-1) or a bullet glyph */
   lvlText: string
   /** w:start, default 1 */
   start: number
+  /** w:suff — what follows the marker (Word default: tab up to the hanging edge) */
+  suff?: 'tab' | 'space' | 'nothing'
   /** w:pPr/w:ind left (twips); fallback geometry for items without their own w:ind */
   indentLeft?: number
   /** w:pPr/w:ind hanging (twips): width reserved for the number/bullet marker */
   hanging?: number
+  /** w:pPr/w:ind positive firstLine (twips): the marker starts right of the text indent */
+  firstLine?: number
   /** w:rPr/w:sz of the marker itself (half-points) */
   szHalfPoints?: number
   /** w:rPr/w:rFonts of the marker (bullet glyphs in Symbol/Wingdings need decoding) */
@@ -399,12 +423,20 @@ export interface HfImage {
   heightPx?: number
   /** wp:anchor floating / VML position:absolute (otherwise inline) */
   floating?: boolean
-  /** behind body text (negative VML z-index): picture watermarks */
+  /** behind body text (negative VML z-index / wp:anchor behindDoc): picture watermarks */
   behind?: boolean
-  /** VML mso-position-horizontal (margin/page relative) */
+  /** VML mso-position-horizontal / wp:positionH wp:align */
   posH?: 'left' | 'center' | 'right'
-  /** VML mso-position-vertical (margin/page relative) */
+  /** VML mso-position-vertical / wp:positionV wp:align */
   posV?: 'top' | 'center' | 'bottom'
+  /** wp:positionH wp:posOffset (px); origin per posHRel */
+  posXPx?: number
+  /** wp:positionV wp:posOffset (px); origin per posVRel */
+  posYPx?: number
+  /** wp:positionH relativeFrom: offsets measure from the page edge or the margin box */
+  posHRel?: 'page' | 'margin'
+  /** wp:positionV relativeFrom */
+  posVRel?: 'page' | 'margin'
   /** v:imagedata gain/blacklevel present (Word watermark washout preset) */
   washout?: boolean
   /** w:jc of the containing paragraph (inline images follow paragraph alignment) */
@@ -489,6 +521,8 @@ export interface ChartDisplay {
   /** zip path of the chart part this model was read from */
   partPath: string
   kind: 'bar' | 'line' | 'pie' | 'area' | 'other'
+  /** bar charts: c:barDir="bar" (horizontal bars); default is column direction */
+  horizontal?: boolean
   /** chart title; undefined when the chart has no title part (then not editable) */
   title?: string
   categories: string[]
@@ -546,6 +580,8 @@ export interface NewChart {
 /** Editable interchange model of one table cell (type === 'table' blocks). */
 export interface TableParagraph extends ParaFormat {
   runs: Run[]
+  /** w:pStyle of the cell paragraph (style CSS: fonts/spacing reach cell content) */
+  styleId?: string
   /** list paragraph inside the cell (w:numPr) */
   list?: { kind: 'bullet' | 'ordered'; numId: string; ilvl: number }
 }
@@ -590,6 +626,8 @@ export interface TableCell {
   cellMarTwips?: CellMargins
   /** nested tables inside this cell (shown as read-only sub-tables; bytes kept faithful by the outer table) */
   nestedTables?: TableModel[]
+  /** anchored shapes/textboxes inside cell paragraphs (display-only; Word grows the row to hold them) */
+  anchoredBoxes?: TextboxDisplay[]
   /** per nested table: how many cell paragraphs precede it (reading-order anchor); absent = after all paragraphs */
   nestedTableAnchors?: number[]
   colSpan?: number
@@ -818,6 +856,10 @@ export interface Block {
   invisibleMarker?: boolean
   /** display-only content of anchored textboxes (code boxes, callouts) */
   textboxes?: TextboxDisplay[]
+  /** the anchor paragraph's own text runs next to content textboxes (display-only) */
+  strayRuns?: Run[]
+  /** w:pStyle of the anchor paragraph; styles strayRuns via data-style */
+  strayStyleId?: string
   /** text tokens of an OMML formula, in document order */
   formulaDisplay?: FormulaDisplay
   /** display/edit model of an embedded chart (set on chart-labeled blocks) */
@@ -860,6 +902,8 @@ export interface Block {
 
 /** one paragraph inside an anchored textbox */
 export interface TextboxParaDisplay extends ParaFormat {
+  /** w:pStyle id, rendered as data-style so the document style CSS applies */
+  styleId?: string
   runs: Run[]
 }
 
@@ -897,6 +941,12 @@ export interface TextboxDisplay {
    * This field is display-only; it is never written to OOXML.
    */
   wordArtId?: string
+  /** text outline of imported VML WordArt (v:textpath strokecolor), display-only */
+  textOutline?: { colorHex: string; widthPx: number }
+  /** single-line content (WordArt strings never wrap) */
+  nowrap?: boolean
+  /** vertical anchoring of the text body (wps:bodyPr anchor="ctr|b"), display-only */
+  vAlign?: 'center' | 'bottom'
   /**
    * Content holds tables / content controls flattened into display lines, so
    * paras do not map 1:1 onto the w:txbxContent w:p children the patch-save
@@ -924,6 +974,12 @@ export interface TextboxDisplay {
   fillImageDataUrl?: string
   /** tile the picture fill (a:tile) instead of stretching it */
   fillTile?: boolean
+  /** straight connector with a real vertical extent: drawn corner-to-corner
+   *  instead of as a level rule (flips pick the diagonal) */
+  lineDiag?: boolean
+  /** a:xfrm flipH/flipV (connector direction) */
+  flipH?: boolean
+  flipV?: boolean
 }
 
 /** Final body content decided by the editor at save time. */
@@ -970,6 +1026,13 @@ export interface StyleDisplay {
   color?: string
   bold?: boolean
   italic?: boolean
+  /** Cs twins (w:bCs/w:iCs/w:szCs): the set rtl runs read instead of bold/italic/
+   * sizeHalfPoints (probed, no cross-fallback) — select via styleRunFormat */
+  boldCs?: boolean
+  italicCs?: boolean
+  sizeCsHalfPoints?: number
+  /** style rPr w:rtl: inherited rtl for runs without their own flag */
+  rtl?: boolean
   underline?: boolean
   strike?: boolean
   font?: string
@@ -1009,6 +1072,8 @@ export interface StyleDisplay {
   align?: 'left' | 'center' | 'right' | 'justify'
   /** CJK-Latin/digit auto spacing from the style pPr (w:autoSpaceDE/DN) */
   autoSpace?: boolean
+  /** style-level w:vanish (hidden text, e.g. z-TopofForm/z-BottomofForm HTML form markers) */
+  vanish?: boolean
 }
 
 /** display-only formatting a table style contributes (fills applied per tblLook flags) */
@@ -1057,8 +1122,9 @@ export interface StyleInfo {
   display?: StyleDisplay
   /** table-style rendering hints (type === 'table') */
   tableDisplay?: TableStyleDisplay
-  /** w:pPr/w:numPr on the style — list numbering referenced via pStyle (ListBullet/ListNumber) */
-  numPr?: { numId: string; ilvl: number }
+  /** w:pPr/w:numPr on the style — list numbering referenced via pStyle (ListBullet/ListNumber);
+   *  'none' = explicit w:numId 0 (cancels numbering inherited via basedOn) */
+  numPr?: { numId: string; ilvl: number } | 'none'
   /** w:default="1" — Word applies this style to every paragraph without a w:pStyle */
   isDefault?: boolean
 }
@@ -1194,6 +1260,8 @@ export interface ParsedDoc {
   titlePg?: boolean
   /** "different odd & even pages" (settings.xml w:evenAndOddHeaders) */
   evenAndOddHeaders?: boolean
+  /** settings.xml compatSetting compatibilityMode (0 when absent; >=15 = Word 2013+ layout) */
+  compatibilityMode?: number
   /** first-page header/footer parts (w:type="first"), null when absent */
   headerFirst?: HfPartInfo | null
   footerFirst?: HfPartInfo | null

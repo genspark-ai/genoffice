@@ -53,6 +53,17 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
   }
   lines.push(`Status: ${status.join(', ')}`)
 
+  // AutoFilter/DV install from the file only once the sheet finishes
+  // indexing (captureSheetFileState marks that by filling sheetProtections),
+  // so until then the grid-backed sections below under-report.
+  if (fileMeta && state && !state.sheetProtections.has(sheetId)) {
+    lines.push(
+      '⚠️ This sheet is still indexing: the AutoFilter / conditional formatting / data validation ' +
+        'sections below may be missing rules that exist in the file. Do NOT modify or clear those ' +
+        'features based on this read — retry after indexing completes.',
+    )
+  }
+
   if (fileMeta && fileMeta.pivotTables.length > 0) {
     lines.push(
       `Pivot tables: ${fileMeta.pivotTables.length} (output region read-only; recompute from source data with refresh_pivot):`,
@@ -214,8 +225,11 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
 export function readFormats(
   ctx: WorkbookReadContext,
   addresses: readonly string[],
+  sheetId?: string,
 ): Record<string, CellFormatState> {
-  const worksheet = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const worksheet =
+    sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
   if (!worksheet) return {}
   const result: Record<string, CellFormatState> = {}
   for (const address of addresses) {
@@ -301,7 +315,10 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
     }
   }
   const snapshot = ctx.adapterRef.current.getSnapshot()
-  const sheet = snapshot.sheets[0]
+  // The adapter has no active-sheet notion — resolve it from the grid (demo
+  // Univer sheets reuse the snapshot ids), falling back to the first sheet.
+  const activeId = workbook?.getActiveSheet()?.getSheetId()
+  const sheet = snapshot.sheets.find((entry) => entry.id === activeId) ?? snapshot.sheets[0]
   if (!sheet) return { mode: 'none', sheetId: '', sheetName: '', knownAddresses: [], sheets: [] }
   return {
     mode: 'demo',
@@ -339,11 +356,14 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
 export function readCells(
   ctx: WorkbookReadContext,
   addresses: readonly string[],
+  sheetId?: string,
 ): Record<string, { value: CellScalar; formula?: string }> {
   const result: Record<string, { value: CellScalar; formula?: string }> = {}
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
   const state = ctx.lazyWorkbookRef.current
   if (state) {
-    const worksheet = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    const worksheet =
+      sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
     if (!worksheet) return result
     const reader = lazyCellReader(worksheet)
     for (const address of addresses) {
@@ -354,11 +374,15 @@ export function readCells(
     }
     return result
   }
-  const sheet = ctx.adapterRef.current.getSnapshot().sheets[0]
+  const sheets = ctx.adapterRef.current.getSnapshot().sheets
+  const targetId = sheetId ?? workbook?.getActiveSheet()?.getSheetId()
+  const sheet =
+    sheets.find((s) => s.id === targetId) ?? (sheetId === undefined ? sheets[0] : undefined)
   if (!sheet) return result
   // The in-memory model stores only value:null for formula cells; computed
   // values live in Univer's formula engine, backfilled by reading the grid
-  const worksheet = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  const worksheet =
+    sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
   for (const address of addresses) {
     const cell = sheet.cells[address] ?? { value: null }
     if (cell.formula) {

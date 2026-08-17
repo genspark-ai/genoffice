@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { fixFormattedValue, formatGeneral, generalCharBudget } from '../src/renderer/numfmt-fix'
+import {
+  decimalRoundForPattern,
+  fixFormattedValue,
+  formatGeneral,
+  generalCharBudget,
+} from '../src/renderer/numfmt-fix'
 
 const NBSP = ' '
 
@@ -90,5 +95,32 @@ describe('formatGeneral', () => {
   it('never crashes on degenerate budgets', () => {
     expect(generalCharBudget(0)).toBe(1)
     expect(typeof formatGeneral(0.326882822311, 1)).toBe('string')
+  })
+})
+
+describe('decimal half-way rounding (Excel rounds the decimal literal)', () => {
+  it('rounds 1.005 up under 0.00 like Excel', () => {
+    expect(fixFormattedValue('0.00_ ', 1.005, `1.00${NBSP}`)).toBe(`1.01${NBSP}`)
+  })
+
+  it('leaves non-half-way values alone', () => {
+    expect(fixFormattedValue('0.00_ ', 1.004, `1.00${NBSP}`)).toBeNull()
+    expect(decimalRoundForPattern('0.00', 1.23)).toBe(1.23)
+  })
+
+  it('rounds negatives away from zero', () => {
+    expect(decimalRoundForPattern('0', -2.5)).toBe(-3)
+    expect(decimalRoundForPattern('0.00', -1.005)).toBe(-1.01)
+  })
+
+  it('pre-scales percent patterns', () => {
+    expect(decimalRoundForPattern('0.00%', 0.12345)).toBeCloseTo(0.1235, 10)
+  })
+
+  it('skips multi-section, date, fraction and scientific patterns', () => {
+    expect(decimalRoundForPattern('#,##0.0;(#,##0.00)', 1.005)).toBeNull()
+    expect(decimalRoundForPattern('yyyy-mm-dd', 1.005)).toBeNull()
+    expect(decimalRoundForPattern('# ?/?', 1.005)).toBeNull()
+    expect(decimalRoundForPattern('0.00E+00', 1.005)).toBeNull()
   })
 })

@@ -337,6 +337,19 @@ describe('computeLineMetrics', () => {
     expect(result.totalHeight).toBeGreaterThan(0)
   })
 
+  it('empty paragraph line height follows its mark run size/font (Word rule)', () => {
+    const base = { availWidthPx: 400, isEmpty: true, defaultFontSizePt: 10.5 }
+    const def = computeLineMetrics({ ...base, runs: [] })
+    expect(def.totalHeight).toBeCloseTo(10.5 * (96 / 72) * 1.22, 3)
+    const sized = computeLineMetrics({ ...base, runs: [{ text: '', sizeHalfPoints: 28 }] })
+    expect(sized.totalHeight).toBeCloseTo(14 * (96 / 72) * 1.22, 3)
+    const kr = computeLineMetrics({ ...base, runs: [{ text: ' ', fontFamily: 'Malgun Gothic' }] })
+    expect(kr.totalHeight).toBeCloseTo(10.5 * (96 / 72) * 1.7371, 3)
+    // unstyled whitespace runs keep the document default
+    const plain = computeLineMetrics({ ...base, runs: [{ text: ' ' }] })
+    expect(plain.totalHeight).toBeCloseTo(def.totalHeight, 3)
+  })
+
   it('space before/after counts toward totalHeight', () => {
     const result = computeLineMetrics({
       runs: [{ text: 'test', sizeHalfPoints: 24 }],
@@ -490,6 +503,22 @@ describe('cssLineHeight', () => {
   })
 })
 
+/** canvas stub for isFontAvailable: listed families measure differently from the generic fallbacks */
+function stubCanvas(availableFamilies: string[]) {
+  const known = new Set(availableFamilies)
+  let width = 50
+  const fake = {
+    set font(spec: string) {
+      const family = /"([^"]+)"/.exec(spec)?.[1]
+      width = family !== undefined && known.has(family) ? 100 : 50
+    },
+    measureText: () => ({ width }),
+  }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+    fake as unknown as CanvasRenderingContext2D,
+  )
+}
+
 describe('cssFontFamily', () => {
   it('common Word fonts → metric-compatible fallback + CJK safety net', () => {
     expect(cssFontFamily('Calibri')).toBe("'Calibri','Carlito GO','Noto Sans CJK SC',sans-serif")
@@ -565,21 +594,6 @@ describe('cssFontFamily', () => {
   })
 
   describe('SC-variant declares (Word substitutes missing East Asian fonts with a serif)', () => {
-    function stubCanvas(availableFamilies: string[]) {
-      const known = new Set(availableFamilies)
-      let width = 50
-      const fake = {
-        set font(spec: string) {
-          const family = /"([^"]+)"/.exec(spec)?.[1]
-          width = family !== undefined && known.has(family) ? 100 : 50
-        },
-        measureText: () => ({ width }),
-      }
-      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
-        fake as unknown as CanvasRenderingContext2D,
-      )
-    }
-
     afterEach(() => vi.restoreAllMocks())
 
     it('missing SC sans routes to the SimSun-class serif chain', () => {
@@ -615,7 +629,7 @@ describe('cssFontFamily', () => {
         "'Noto Sans CJK JP','Yu Mincho','GenOffice Hiragino Mincho','GenOffice MS Mincho','Noto Serif JP',serif",
       )
       expect(cssFontFamily('Source Han Sans K')).toBe(
-        "'Source Han Sans K','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+        "'Source Han Sans K','KR Theme Latin GO','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
       )
       expect(cssFontFamily('Noto Sans CJK TC')).toBe(
         "'Noto Sans CJK TC','GenOffice MingLiU','GenOffice Fullwidth TC','Songti TC','Noto Serif TC',serif",
@@ -636,6 +650,41 @@ describe('cssFontFamily', () => {
     expect(cssFontFamily('新細明體')).toBe(
       "'新細明體','GenOffice MingLiU','GenOffice Fullwidth TC','Songti TC','Noto Serif TC',serif",
     )
+  })
+
+  describe('KR chains (M3 probe: theme Latin head, real Nanum)', () => {
+    afterEach(() => vi.restoreAllMocks())
+
+    it('missing KR variant gets the theme Latin head ahead of the Batang chain', () => {
+      expect(cssFontFamily('Noto Sans CJK KR')).toBe(
+        "'Noto Sans CJK KR','KR Theme Latin GO','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+      )
+    })
+
+    it('installed KR variant keeps its chain without the theme Latin head', () => {
+      stubCanvas(['Noto Serif CJK KR'])
+      expect(cssFontFamily('Noto Serif CJK KR')).toBe(
+        "'Noto Serif CJK KR','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+      )
+    })
+
+    it('Malgun/Batang declares keep their Latin-normalized subsets (no theme head)', () => {
+      expect(cssFontFamily('Malgun Gothic')).not.toContain("'KR Theme Latin GO'")
+      expect(cssFontFamily('Batang')).not.toContain("'KR Theme Latin GO'")
+    })
+
+    it('installed NanumGothic resolves at the literal head of the sans chain', () => {
+      stubCanvas(['NanumGothic'])
+      expect(cssFontFamily('NanumGothic')).toBe(
+        "'NanumGothic','Malgun Gothic','GenOffice Sans KR','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+      )
+    })
+
+    it('missing Nanum names keep the Batang-normalized serif chain', () => {
+      expect(cssFontFamily('NanumBarunGothic')).toBe(
+        "'NanumBarunGothic','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+      )
+    })
   })
 })
 
@@ -852,28 +901,39 @@ describe('autospacePadBetween', () => {
 // ─── Arabic fidelity ────────────────────────────────────────────────────────
 
 describe('cssFontFamily Arabic', () => {
-  it('naskh/serif-class names get the bundled Naskh chain', () => {
+  it('missing naskh/serif-class names get a Times Latin head and the 90% TNR alias', () => {
     expect(cssFontFamily('Noto Naskh Arabic')).toBe(
       "'Noto Naskh Arabic W','Geeza Pro','Al Bayan',serif",
     )
     expect(cssFontFamily('Arabic Typesetting')).toBe(
-      "'Arabic Typesetting','Noto Naskh Arabic','Geeza Pro','Al Bayan',serif",
+      "'Arabic Typesetting','Times New Roman','Liberation Serif','Naskh Digits GO','Noto Naskh Arabic TNR','Geeza Pro','Al Bayan',serif",
     )
-    expect(cssFontFamily('Amiri')).toContain("'Noto Naskh Arabic'")
-    expect(cssFontFamily('Scheherazade New')).toContain("'Noto Naskh Arabic'")
+    expect(cssFontFamily('Amiri')).toContain("'Noto Naskh Arabic TNR'")
+    expect(cssFontFamily('Scheherazade New')).toContain("'Noto Naskh Arabic TNR'")
   })
 
-  it('Traditional/Simplified Arabic map to the size-adjusted alias', () => {
+  it('unscaled digits alias precedes the TNR alias only in missing-serif chains', () => {
+    const missing = cssFontFamily('Arabic Typesetting')
+    expect(missing.indexOf("'Naskh Digits GO'")).toBeLessThan(
+      missing.indexOf("'Noto Naskh Arabic TNR'"),
+    )
+    expect(cssFontFamily('Traditional Arabic')).not.toContain("'Naskh Digits GO'")
+    expect(cssFontFamily('Noto Naskh Arabic')).not.toContain("'Naskh Digits GO'")
+    expect(cssFontFamily('Noto Kufi Arabic')).not.toContain("'Naskh Digits GO'")
+  })
+
+  it('Traditional/Simplified Arabic map to the size-adjusted alias (no Times head)', () => {
     expect(cssFontFamily('Traditional Arabic')).toBe(
       "'Traditional Arabic','Noto Naskh Arabic TA','Geeza Pro','Al Bayan',serif",
     )
+    expect(cssFontFamily('Traditional Arabic')).not.toContain("'Times New Roman'")
     expect(cssFontFamily('Simplified Arabic')).toContain("'Noto Naskh Arabic TA'")
-    // other naskh-class names keep the unscaled subset
+    // other missing naskh-class names take the TNR calibration, not TA
     expect(cssFontFamily('Amiri')).not.toContain("'Noto Naskh Arabic TA'")
     expect(cssFontFamily('Arabic Typesetting')).not.toContain("'Noto Naskh Arabic TA'")
   })
 
-  it('kufi/sans-class names get the Sans Arabic chain', () => {
+  it('kufi/sans-class names get the Sans Arabic chain (no Times head)', () => {
     expect(cssFontFamily('Noto Sans Arabic')).toBe("'Noto Sans Arabic W','Geeza Pro',sans-serif")
     expect(cssFontFamily('Noto Kufi Arabic')).toBe(
       "'Noto Kufi Arabic','Noto Sans Arabic','Geeza Pro',sans-serif",
@@ -882,9 +942,23 @@ describe('cssFontFamily Arabic', () => {
 
   it('unknown Arabic names (by script in the name) default to the naskh chain', () => {
     expect(cssFontFamily('الخط الديواني')).toBe(
-      "'الخط الديواني','Noto Naskh Arabic','Geeza Pro','Al Bayan',serif",
+      "'الخط الديواني','Times New Roman','Liberation Serif','Naskh Digits GO','Noto Naskh Arabic TNR','Geeza Pro','Al Bayan',serif",
     )
-    expect(cssFontFamily('Urdu Typesetting')).toContain("'Noto Naskh Arabic'")
+    expect(cssFontFamily('Urdu Typesetting')).toContain("'Noto Naskh Arabic TNR'")
+  })
+
+  it('Iranian B/XB/IR faces take the naskh chain and factor (Word substitutes Times New Roman)', () => {
+    for (const name of ['B Mitra', 'B Nazanin', 'B Titr', 'XB Zar', 'IRLotus', 'B Yekan']) {
+      const chain = cssFontFamily(name)
+      // Times before the subset: ASCII punctuation/digits take Times shapes as in Word
+      expect(chain).toContain("'Times New Roman'")
+      expect(chain).toContain("'Noto Naskh Arabic TNR'")
+      expect(chain.indexOf("'Times New Roman'")).toBeLessThan(
+        chain.indexOf("'Noto Naskh Arabic TNR'"),
+      )
+      expect(chain).toMatch(/,serif$/)
+      expect(lineHeightFactor(name)).toBe(1.1429)
+    }
   })
 
   it('does not capture CJK or Latin families', () => {
@@ -892,6 +966,8 @@ describe('cssFontFamily Arabic', () => {
     expect(cssFontFamily('Calibri')).not.toContain('Arabic')
     expect(cssFontFamily('Batang')).not.toContain('Arabic')
     expect(cssFontFamily('SomeCustomFont')).not.toContain('Arabic')
+    expect(cssFontFamily('Bahnschrift')).not.toContain('Arabic')
+    expect(lineHeightFactor('Bahnschrift')).toBe(1.2)
   })
 })
 
@@ -916,9 +992,9 @@ describe('textHasComplexScript', () => {
 })
 
 describe('cssCsFontFamily', () => {
-  it('cs chain leads; base Latin chain slots in after the bundled Naskh subset (no Latin coverage) and before Geeza Pro', () => {
+  it('cs chain leads; punct alias then subset, ascii chain wins Latin letters, Times backstops', () => {
     expect(cssCsFontFamily('Arabic Typesetting', 'Calibri', 'Calibri')).toBe(
-      "'Arabic Typesetting','Noto Naskh Arabic','Calibri','Carlito GO','Noto Sans CJK SC','Geeza Pro','Al Bayan',sans-serif",
+      "'Arabic Typesetting','Naskh Digits GO','Times Punct GO','Noto Naskh Arabic TNR','Calibri','Carlito GO','Noto Sans CJK SC','Times New Roman','Liberation Serif','Geeza Pro','Al Bayan',sans-serif",
     )
   })
 
@@ -932,7 +1008,11 @@ describe('cssCsFontFamily', () => {
 
   it('keeps a dual-slot base after the cs chain', () => {
     const chain = cssCsFontFamily('Amiri', 'Times New Roman', 'SimSun')
-    expect(chain.startsWith("'Amiri','Noto Naskh Arabic'")).toBe(true)
+    expect(
+      chain.startsWith(
+        "'Amiri','Naskh Digits GO','Times Punct GO','Noto Naskh Arabic TNR','Times New Roman'",
+      ),
+    ).toBe(true)
     expect(chain).toContain("'Times New Roman'")
     expect(chain).toContain("'SimSun'")
     expect(chain.indexOf("'Times New Roman'")).toBeLessThan(chain.indexOf("'Geeza Pro'"))

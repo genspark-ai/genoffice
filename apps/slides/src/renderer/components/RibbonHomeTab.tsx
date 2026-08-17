@@ -1,7 +1,7 @@
 /** Home tab of the slides ribbon. Extracted from Ribbon.tsx. */
 import { useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
-import { isSymbolFontFamily } from '@genoffice/ui'
+import { ColorPicker, isSymbolFontFamily } from '@genoffice/ui'
 import { saveEditSelection } from '../TextEditOverlay'
 import { armColorInput } from '../color-input'
 import { displayFontFamily } from '../konva-adapter'
@@ -44,6 +44,8 @@ import {
   IconSection,
   IconShrinkFont,
   IconSlideLayout,
+  IconSubscript,
+  IconSuperscript,
 } from './icons'
 import {
   BIG,
@@ -126,7 +128,6 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     onCustomBulletColor,
     onCustomTextColor,
     paraOpen,
-    recentColors,
     setArrangeOpen,
     setCollapseOpen,
     setColorOpen,
@@ -703,20 +704,8 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
             >
               <s>ab</s>
             </button>
-            {fmtBtn(
-              'superscript',
-              <span>
-                x<sup className="rb-accent">2</sup>
-              </span>,
-              t('ribbonSuperscript'),
-            )}
-            {fmtBtn(
-              'subscript',
-              <span>
-                x<sub className="rb-accent">2</sub>
-              </span>,
-              t('ribbonSubscript'),
-            )}
+            {fmtBtn('superscript', <IconSuperscript size={18} />, t('ribbonSuperscript'))}
+            {fmtBtn('subscript', <IconSubscript size={18} />, t('ribbonSubscript'))}
             <span className="rb-mini-sep" />
             <div className="rb-drop-wrap">
               <button
@@ -740,44 +729,37 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                 </span>
               </button>
               {colorOpen && (
-                <div className="rb-drop rb-color-grid" onMouseDown={(e) => e.stopPropagation()}>
-                  {[...TEXT_COLORS, ...recentColors.filter((c) => !TEXT_COLORS.includes(c))].map(
-                    (c) => (
-                      <button
-                        key={c}
-                        className="rb-swatch"
-                        style={{ background: c }}
-                        data-tip={c}
-                        aria-label={c}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setLastColor(c)
-                          if (editing) onTextColor(c)
-                          else onElementTextColor(c)
-                          setColorOpen(false)
-                        }}
-                      />
-                    ),
-                  )}
-                  {/* Any-color entry: native picker, same as the shape-fill input in the Format pane.
-                            data-keep-edit: opening it doesn't commit the text edit */}
-                  <label
-                    className="rb-color-more"
-                    data-keep-edit=""
-                    data-tip={t('ribbonMoreColors')}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="color"
-                      value={lastColor}
-                      onPointerDown={(e) => {
+                /* data-keep-edit: interacting with the palette (incl. the native
+                   More Colors picker) must not commit the text edit */
+                <div
+                  className="rb-color-pop"
+                  data-keep-edit=""
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <ColorPicker
+                    value={lastColor}
+                    strings={{
+                      themeColors: t('ribbonThemeColorsSection'),
+                      standardColors: t('ribbonStandardColors'),
+                      moreColors: t('ribbonMoreColors'),
+                    }}
+                    onPick={(hex) => {
+                      if (!hex) return
+                      setLastColor(hex)
+                      if (editing) onTextColor(hex)
+                      else onElementTextColor(hex)
+                      setColorOpen(false)
+                    }}
+                    moreInputProps={{
+                      onPointerDown: (e) => {
                         armColorInput(e.currentTarget)
                         if (editing) saveEditSelection()
-                      }}
-                      onChange={(e) => onCustomTextColor(e.target.value)}
-                    />
-                    {t('ribbonMoreColors')}
-                  </label>
+                      },
+                      // debounced apply + selection restore (native picker fires
+                      // onChange continuously while dragging)
+                      onChange: (e) => onCustomTextColor(e.currentTarget.value),
+                    }}
+                  />
                 </div>
               )}
             </div>

@@ -918,6 +918,22 @@ export async function applySaveRequest(
     if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)
     else addDrawing(pdfDoc, page, d, noteRefs)
   }
+  // Note content edits go after the drawings: replies added above locate their /IRT
+  // parent by its old contents, which an earlier in-place rewrite would break. An
+  // unmatched edit is a silent no-op (same degradation as an unresolvable reply).
+  for (const e of request.noteEdits ?? []) {
+    const page = pages[e.pageIndex]
+    if (!page) continue
+    const ref = findNoteAnnotRef(pdfDoc, page, {
+      objNum: e.objNum,
+      rect: e.rect,
+      contents: e.oldContents,
+    })
+    const dict = ref ? pdfDoc.context.lookupMaybe(ref, PDFDict) : null
+    if (!dict) continue
+    dict.set(PDFName.of('Contents'), PDFHexString.fromText(e.contents))
+    dict.set(PDFName.of('M'), PDFString.of(pdfDateString(Date.now())))
+  }
   for (const s of request.stamps ?? []) {
     const page = pages[s.pageIndex]
     if (!page) continue

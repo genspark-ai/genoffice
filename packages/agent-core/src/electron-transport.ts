@@ -22,6 +22,7 @@ export type IpcErrorCode =
   | 'request-rejected'
   | 'invalid-stream'
   | 'invalid-tool-call'
+  | 'network'
   | 'provider-failure'
 
 export type IpcErrorMessages = Readonly<Record<IpcErrorCode, string>> & {
@@ -82,6 +83,8 @@ export interface IpcTransportOptions<S> {
   creditsErrorText?(): string
   /** resolve a machine-readable error code; when supplied, raw main-process text is ignored */
   resolveErrorCode?(code: IpcErrorCode | undefined): string | undefined
+  /** localized message for network connectivity failures (errorCode 'network') */
+  networkErrorText?(): string
 }
 
 /**
@@ -133,12 +136,16 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
           cb.onError(
             resolved ??
               (options.resolveErrorCode
-                ? options.unknownErrorText()
+                ? chunk.errorCode === 'network'
+                  ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                  : options.unknownErrorText()
                 : chunk.errorCode === 'timeout'
                   ? timeoutText()
                   : chunk.errorCode === 'credits'
                     ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                    : (chunk.error ?? options.unknownErrorText())),
+                    : chunk.errorCode === 'network'
+                      ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                      : (chunk.error ?? options.unknownErrorText())),
           )
         }
       })

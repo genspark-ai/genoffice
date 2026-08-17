@@ -191,4 +191,6 @@ export interface ActionCtx {
     preview?: boolean,
     groupId?: string,
   ) => Promise<void>
+  /** Open the format-background pane (canvas context menu entry) */
+  openBgFormat: () => void
 }

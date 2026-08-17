@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PAGE_MARK, TOTAL_PAGES_MARK, type HeaderFooter } from '@genoffice/docx-engine'
 import { hfHasPageField, hfWithoutPageMarks, makeGapHfEl } from '../src/renderer/editor/hf-dom'
-import { restingHfAreaVariant } from '../src/renderer/doc-state'
+import { hfFromPart, restingHfAreaVariant } from '../src/renderer/doc-state'
 
 describe('page-number substitution (PAGE_MARK)', () => {
   it('fills the PAGE field position and keeps a literal # intact', () => {
@@ -289,8 +289,8 @@ describe('hfWithoutPageMarks (ribbon Remove Page Numbers)', () => {
 
   it('layout-table rows survive removal untouched (display-only; save keeps the w:tbl bytes)', () => {
     const cells = [
-      { runs: [{ text: 'ACME Corp' }], widthPct: 50 },
-      { runs: [{ text: `Page ${PAGE_MARK}` }], widthPct: 50 },
+      { paras: [[{ text: 'ACME Corp' }]], widthPct: 50 },
+      { paras: [[{ text: `Page ${PAGE_MARK}` }]], widthPct: 50 },
     ]
     const value: HeaderFooter = {
       text: `ACME CorpPage ${PAGE_MARK}`,
@@ -304,7 +304,7 @@ describe('hfWithoutPageMarks (ribbon Remove Page Numbers)', () => {
   })
 
   it('mixed part: the dedicated page paragraph goes, the table row stays', () => {
-    const row = { runs: [], cells: [{ runs: [{ text: 'Logo | Title' }] }] }
+    const row = { runs: [], cells: [{ paras: [[{ text: 'Logo | Title' }]] }] }
     const value: HeaderFooter = {
       text: `Logo | Title${PAGE_MARK}`,
       pageNumber: true,
@@ -321,5 +321,19 @@ describe('hfWithoutPageMarks (ribbon Remove Page Numbers)', () => {
     expect(hfHasPageField({ text: 'Item #5', pageNumber: false })).toBe(false)
     expect(hfHasPageField({ text: `p ${PAGE_MARK}`, pageNumber: true })).toBe(true)
     expect(hfHasPageField(null)).toBe(false)
+  })
+})
+
+describe('hfFromPart emptiness', () => {
+  it('keeps an image-only part (logo footer) instead of dropping it', () => {
+    const part = {
+      text: '',
+      hasPageNumber: false,
+      paras: [],
+      images: [{ dataUrl: 'data:image/png;base64,x' }],
+    }
+    expect(hfFromPart(part)).toEqual({ text: '', pageNumber: false, paras: undefined })
+    expect(hfFromPart({ text: '', hasPageNumber: false, paras: [] })).toBeNull()
+    expect(hfFromPart(null)).toBeNull()
   })
 })

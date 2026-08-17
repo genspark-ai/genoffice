@@ -18,7 +18,7 @@ beforeEach(() => {
   }
 })
 
-function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean }): {
+function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean; restoredFromRecovery?: boolean }): {
   ctx: SaveContext
   messages: string[]
 } {
@@ -42,6 +42,7 @@ function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean }): {
           file: {
             sessionId: '11111111-1111-4111-8111-111111111111',
             needsSaveAs: !!opts.needsSaveAs,
+            restoredFromRecovery: !!opts.restoredFromRecovery,
           },
         },
       } as never,
@@ -86,5 +87,31 @@ describe('handleSave recovery mode', () => {
     const { ctx, messages } = ctxWith({ dirty: true })
     await expect(handleSave(ctx, 'recovery')).resolves.toBeUndefined()
     expect(messages).toEqual([])
+  })
+})
+
+describe('handleSave restored-recovery write-back', () => {
+  it('a clean restored session still saves: the workbook bytes are the change', async () => {
+    const { ctx } = ctxWith({ dirty: false, restoredFromRecovery: true })
+    await handleSave(ctx, 'save')
+    expect(saveWorkbookEdits).toHaveBeenCalledTimes(1)
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as Record<string, unknown>
+    expect(payload.mode).toBe('save')
+    expect(payload.restoreWriteBack).toBe(true)
+  })
+
+  it('a clean ordinary session still refuses a pointless save', async () => {
+    const { ctx, messages } = ctxWith({ dirty: false })
+    await handleSave(ctx, 'save')
+    expect(saveWorkbookEdits).not.toHaveBeenCalled()
+    expect(messages.length).toBe(1)
+  })
+
+  it('never flags recovery-mode writes as a restore write-back', async () => {
+    const { ctx } = ctxWith({ dirty: true, restoredFromRecovery: true })
+    await handleSave(ctx, 'recovery')
+    expect(writeWorkbookRecovery).toHaveBeenCalledTimes(1)
+    const payload = writeWorkbookRecovery.mock.calls[0]![0] as Record<string, unknown>
+    expect(payload.restoreWriteBack).toBeUndefined()
   })
 })

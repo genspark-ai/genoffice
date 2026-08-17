@@ -94,6 +94,7 @@ describe('native editable tables', () => {
           vertAlign: null,
           em: null,
           caps: null,
+          cs: null,
           styleId: null,
           rawRPr:
             '<w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="Calibri"/><w:b/><w:color w:val="1F4E78"/></w:rPr>',
@@ -186,6 +187,23 @@ describe('native editable tables', () => {
       color: '1F4E78',
       font: 'Calibri',
     })
+    expect(reparsed.blocks[0].originalXml).toContain('<w:tblStyle w:val="TableGrid"/>')
+    editor.destroy()
+  })
+
+  it('persists a table alignment change (tblAlign → w:jc) through save and reload', async () => {
+    const { editor, parsed } = await openTable()
+    const table = editor.state.doc.firstChild!
+    // the Table Layout ribbon sets tblAlign via updateAttributes('docTable', …)
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, { ...table.attrs, tblAlign: 'center' }),
+    )
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(1)
+    const reparsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    expect(reparsed.blocks[0].table?.align).toBe('center')
+    expect(reparsed.blocks[0].originalXml).toContain('<w:jc w:val="center"/>')
     expect(reparsed.blocks[0].originalXml).toContain('<w:tblStyle w:val="TableGrid"/>')
     editor.destroy()
   })

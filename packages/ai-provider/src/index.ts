@@ -48,6 +48,7 @@ export {
   type AiRuntimeRequest,
   type AiRuntimeSender,
 } from './main-runtime'
+export { isAiNetworkError } from './network-error'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
 export {

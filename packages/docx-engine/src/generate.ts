@@ -7,7 +7,7 @@ import type {
   TableCell,
   TableModel,
 } from './types'
-import { escapeXmlAttr, escapeXmlText, textHasComplexScript } from './xml-utils'
+import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 
 export interface GenerateContext {
   /** heading level -> styleId existing in the original styles.xml */
@@ -1630,6 +1630,21 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       }
     }
   }
+  // Table alignment (w:jc): explicit align replaces/removes the original;
+  // undefined keeps whatever the original tblPr carried
+  if (model.align) {
+    tblPr = tblPr.replace(/<w:jc[^>]*\/>/, '')
+    if (model.align !== 'left') {
+      const tag = `<w:jc w:val="${model.align}"/>`
+      // schema order puts w:jc right after w:tblW (after w:tblStyle when there is no tblW)
+      if (/<w:tblW[^>]*\/>/.test(tblPr)) tblPr = tblPr.replace(/(<w:tblW[^>]*\/>)/, `$1${tag}`)
+      else if (/<w:tblStyle[^>]*\/>/.test(tblPr))
+        tblPr = tblPr.replace(/(<w:tblStyle[^>]*\/>)/, `$1${tag}`)
+      else if (/<w:tblPr\/>/.test(tblPr))
+        tblPr = tblPr.replace('<w:tblPr/>', `<w:tblPr>${tag}</w:tblPr>`)
+      else tblPr = tblPr.replace(/(<w:tblPr(?:\s[^>]*)?>)/, `$1${tag}`)
+    }
+  }
   return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
 }
 
@@ -1918,13 +1933,54 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
     )
   }
   if (run.instrField !== undefined) {
-    // Generic inline field: run text is the cached result; the instruction is written back verbatim
+    // Generic inline field: run text is the cached result; the instruction is written back verbatim.
+    // A preserved begin run (form fields: w:ffData) replaces the bare begin, and the run text is a
+    // synthesized glyph Word must not see as a cached result — Word draws the box from ffData.
+    const instrXml =
+      `<w:r><w:instrText xml:space="preserve"> ${escapeXmlText(run.instrField)} </w:instrText></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+    const endXml = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    if (run.fldBeginXml) {
+      // Adjacent identical checkboxes merge into one text node in the editor
+      // (equal marks), so each ☐/☒ glyph in the run is one field sharing the
+      // same ffData; characters typed beside them survive as plain text runs.
+      // The glyph is the source of truth for the checked state: an in-editor
+      // ☐↔☒ edit must land in w:checked or Word keeps the old state.
+      const syncedField = (checked: boolean): string => {
+        const val = `<w:checked w:val="${checked ? '1' : '0'}"/>`
+        let begin = run.fldBeginXml!.replace(/<w:checked(?:\s[^>]*)?\/>/g, '')
+        if (begin.includes('</w:checkBox>'))
+          begin = begin.replace('</w:checkBox>', `${val}</w:checkBox>`)
+        else
+          begin = begin.replace(/<w:checkBox((?:\s[^>]*)?)\/>/, `<w:checkBox$1>${val}</w:checkBox>`)
+        return begin + instrXml + endXml
+      }
+      let out = ''
+      let plain = ''
+      const flush = () => {
+        if (!plain) return
+        out += generateRunXml(
+          { ...run, text: plain, instrField: undefined, fldBeginXml: undefined },
+          insideLink,
+        )
+        plain = ''
+      }
+      for (const ch of run.text) {
+        if (ch === '☐' || ch === '☒') {
+          flush()
+          out += syncedField(ch === '☒')
+        } else plain += ch
+      }
+      flush()
+      // no glyph left = the user typed over / deleted the checkbox; Word also
+      // removes the form field then, so only the replacement text survives
+      return out
+    }
     return (
       '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-      `<w:r><w:instrText xml:space="preserve"> ${escapeXmlText(run.instrField)} </w:instrText></w:r>` +
-      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      instrXml +
       generateRunXml({ ...run, instrField: undefined }, insideLink) +
-      '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+      endXml
     )
   }
   let xml = run.text === '' ? '' : generateRunXml(run, insideLink)
@@ -2132,9 +2188,11 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
   const inner = rawRPr.slice(open.length, rawRPr.length - '</w:rPr>'.length)
   const rawChildren = splitXmlChildren(inner)
   const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
-  // complex-script runs decode bold/italic/size from the Cs twins on the parse side;
-  // compare against the same elements or every untouched cs run would get "rebuilt"
-  const cs = run.cs ?? textHasComplexScript(run.text)
+  // rtl runs decode bold/italic/size from the Cs twins on the parse side;
+  // compare against the same elements or every untouched rtl run would get "rebuilt".
+  // run.cs can be dropped by round-trips that rebuild the Run (editor marks), so an
+  // explicit raw w:rtl re-selects the Cs set on its own.
+  const cs = !!run.cs || rawBool(rawOf('w:rtl'))
 
   // Compare model vs raw-encoded values group by group; equal → keep the original bytes
   // (drop the group from fresh)

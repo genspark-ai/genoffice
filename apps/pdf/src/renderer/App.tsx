@@ -35,7 +35,13 @@ import { ColorPickerPopover } from './ColorPicker'
 import type { DrawTool, LocalDrawing, SavedNotePin } from './DrawLayer'
 import { NoteMarginColumn } from './NoteMargin'
 import type { NoteMarginDraft, NoteMarginThread } from './NoteMargin'
-import { buildNoteThreads, pendingNoteKey, threadSubtree, toSavedNote } from './note-threads'
+import {
+  buildNoteThreads,
+  flattenThread,
+  pendingNoteKey,
+  threadSubtree,
+  toSavedNote,
+} from './note-threads'
 import type { NoteInput, NoteThreadItem, PdfJsAnnotData, SavedNoteAnnot } from './note-threads'
 import { FormLayer } from './FormLayer'
 import {
@@ -96,6 +102,7 @@ import {
 } from './color-runs'
 import type { CharStyle } from './color-runs'
 import { platformShortcuts } from '@genoffice/i18n'
+import { useDismissablePopover } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
 import { EDIT_FONTS } from '../shared/ipc'
@@ -108,6 +115,7 @@ import type {
   ImageLayer,
   MarkupType,
   MetadataInput,
+  NoteEditInput,
   PageImageRef,
   StaticFormFillRecord,
   StampInput,
@@ -765,10 +773,9 @@ const IconRedo = () => (
 )
 const IconSave = () => (
   <IconRatio>
-    <path d="M3 4.5C3 3.67158 3.67158 3 4.5 3H17.1407L21 6.60325V19.5C21 20.3285 20.3285 21 19.5 21H4.5C3.67158 21 3 20.3285 3 19.5V4.5Z" />
-    <path d="M12.0042 3L12 6.6923C12 6.86225 11.7761 7 11.5 7H7.5C7.22385 7 7 6.86225 7 6.6923V3H12.0042Z" />
-    <path d="M7 13H17" />
-    <path d="M7 17H12.0042" />
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <path d="M17 21v-8H7v8" />
+    <path d="M7 3v5h8V3" />
   </IconRatio>
 )
 
@@ -1386,9 +1393,18 @@ interface LocalAnnotDelete {
   annot: SavedMarkupAnnot | SavedNoteAnnot
 }
 
+/** Pending in-place content edit of a note comment saved in the file.
+    `annot.contents` stays the on-disk text — the save path matches by it. */
+interface LocalNoteEdit {
+  id: string
+  annot: SavedNoteAnnot
+  contents: string
+}
+
 interface EditSnapshot {
   markups: LocalMarkup[]
   annotDeletes: LocalAnnotDelete[]
+  noteEdits: LocalNoteEdit[]
   drawings: LocalDrawing[]
   textEdits: LocalTextEdit[]
   textInserts: LocalTextInsert[]
@@ -1407,6 +1423,11 @@ interface EditSnapshot {
 interface SavedSnapshot {
   markupIds: Set<string>
   annotDeleteIds: Set<string>
+  noteEditIds: Set<string>
+  /** objNum → /Contents this save wrote via noteEdits. A re-edit of the same note made
+      while the write was in flight still carries the pre-save on-disk text as its match
+      key; the post-save subtraction retargets it to what the file now says. */
+  noteEditWritten: Map<number, string>
   drawingIds: Set<string>
   textEditIds: Set<string>
   textInsertIds: Set<string>
@@ -1598,6 +1619,8 @@ export default function App() {
   const [markups, setMarkups] = useState<LocalMarkup[]>([])
   /** Pending deletions of markup annotations already saved in the file */
   const [annotDeletes, setAnnotDeletes] = useState<LocalAnnotDelete[]>([])
+  /** Pending content rewrites of saved note comments (one entry per note, latest text) */
+  const [noteEdits, setNoteEdits] = useState<LocalNoteEdit[]>([])
   /** Saved markup annotations per original page index, loaded lazily for visible pages (keyed to `doc`) */
   const [savedMarkups, setSavedMarkups] = useState<Map<number, SavedMarkupAnnot[]>>(new Map())
   /** Saved note (Text) comments per original page index, loaded in the same pass */
@@ -1877,6 +1900,19 @@ export default function App() {
   const [colorOpen, setColorOpen] = useState(false)
   /** Note just placed with the note tool; its content is typed into a margin draft card */
   const [noteDraft, setNoteDraft] = useState<{ origIdx: number; at: [number, number] } | null>(null)
+  /** In-progress rewrite of an existing comment. Hoisted out of the margin card so a
+      save can fold it in before the post-save reload tears the edit box down. */
+  const [noteEditDraft, setNoteEditDraft] = useState<{
+    origIdx: number
+    rootKey: string
+    itemKey: string
+    text: string
+  } | null>(null)
+  // Deactivating the thread (close button, click elsewhere, another card) discards an
+  // open comment edit — the same outcome as pressing Escape in the edit box
+  useEffect(() => {
+    if (noteEditDraft && activeNote?.rootKey !== noteEditDraft.rootKey) setNoteEditDraft(null)
+  }, [activeNote, noteEditDraft])
   const [stampCfg, setStampCfg] = useState<StampConfig | null>(null)
   /** User-defined page order (original page indices); null means unreordered */
   const [order, setOrder] = useState<number[] | null>(null)
@@ -2122,6 +2158,7 @@ export default function App() {
       if (!saved) {
         setMarkups([])
         setAnnotDeletes([])
+        setNoteEdits([])
         setDrawings([])
         setTextEdits([])
         setTextInserts([])
@@ -2155,6 +2192,21 @@ export default function App() {
             // The object number may be stale after the rewrite; the save path's
             // subtype+rect fallback still finds the annotation
             return [ni === d.annot.pageIndex ? d : { ...d, annot: { ...d.annot, pageIndex: ni } }]
+          }),
+        )
+        setNoteEdits((prev) =>
+          prev.flatMap((e) => {
+            if (saved.noteEditIds.has(e.id)) return []
+            const ni = remap.get(e.annot.pageIndex)
+            if (ni === undefined) return []
+            // An edit made while the write was in flight targets a note this save just
+            // rewrote: match on the new on-disk contents, and drop the edit entirely if
+            // it now says exactly what the file says
+            const written = saved.noteEditWritten.get(e.annot.objNum)
+            if (written !== undefined && e.contents === written) return []
+            const contents = written ?? e.annot.contents
+            if (ni === e.annot.pageIndex && contents === e.annot.contents) return [e]
+            return [{ ...e, annot: { ...e.annot, pageIndex: ni, contents } }]
           }),
         )
         setDrawings((prev) =>
@@ -2536,6 +2588,7 @@ export default function App() {
   const dirty =
     markups.length > 0 ||
     annotDeletes.length > 0 ||
+    noteEdits.length > 0 ||
     drawings.length > 0 ||
     textEdits.length > 0 ||
     textInserts.length > 0 ||
@@ -2578,6 +2631,7 @@ export default function App() {
   const snapshot = (): EditSnapshot => ({
     markups,
     annotDeletes,
+    noteEdits,
     drawings,
     textEdits,
     textInserts,
@@ -2605,11 +2659,15 @@ export default function App() {
   const applySnapshot = (s: EditSnapshot) => {
     setMarkups(s.markups)
     setAnnotDeletes(s.annotDeletes)
+    setNoteEdits(s.noteEdits)
     setDrawings(s.drawings)
     setTextEdits(s.textEdits)
     setTextInserts(s.textInserts)
     setImageEdits(s.imageEdits)
     setTextDraft(null)
+    // The comment being rewritten may not exist in the restored snapshot; confirming a
+    // stale edit box would reapply text that undo just reverted
+    setNoteEditDraft(null)
     setStampCfg(s.stampCfg)
     setFormEdits(s.formEdits)
     setRotations(s.rotations)
@@ -4111,8 +4169,13 @@ export default function App() {
     showNotice(t('textInsertSkipped', { pages }))
   }
 
-  /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As */
-  const editsPayload = (edits: LocalTextEdit[] = textEdits) => ({
+  /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As.
+      `noteFlush` carries the drawings/noteEdits returned by commitNoteEdit — the
+      state values in this closure predate that flush. */
+  const editsPayload = (
+    edits: LocalTextEdit[] = textEdits,
+    noteFlush?: { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] },
+  ) => ({
     markups: markups.map(({ id: _id, ...rest }) => rest),
     annotDeletes: annotDeletes.map((d): AnnotDeleteInput => ({
       pageIndex: d.annot.pageIndex,
@@ -4122,7 +4185,14 @@ export default function App() {
       // A note thread's comments all share the root's rect; contents disambiguates
       ...(d.annot.type === 'note' ? { contents: d.annot.contents } : {}),
     })),
-    drawings: drawings.map((d) => d.input),
+    noteEdits: (noteFlush?.noteEdits ?? noteEdits).map((e): NoteEditInput => ({
+      pageIndex: e.annot.pageIndex,
+      objNum: e.annot.objNum,
+      rect: e.annot.rect,
+      oldContents: e.annot.contents,
+      contents: e.contents,
+    })),
+    drawings: (noteFlush?.drawings ?? drawings).map((d) => d.input),
     textEdits: edits.map((e) => e.input),
     textInserts: textInserts.map((insert) => insert.input),
     imageEdits: imageEdits.map((e) => e.input),
@@ -4137,6 +4207,13 @@ export default function App() {
 
   /** Resolved when the running save() lands; queued saves and Save As serialize behind it */
   const saveInFlightRef = useRef<Promise<boolean> | null>(null)
+  /** objNum → /Contents the in-flight save is writing via noteEdits. appliedNoteEdit
+      consults it so a re-edit during the write compares against what the file is about
+      to say, not the pre-save text (dropping on the wrong compare loses the edit). */
+  const inFlightNoteWritesRef = useRef<Map<number, string>>(new Map())
+  /** The in-flight save's page remap (old original index → index in the saved file);
+      Save As addresses late note edits through it once that save has rewritten pages */
+  const inFlightPageMapRef = useRef<Map<number, number> | null>(null)
   /** Saves requested while another save was writing, drained by an effect after the
       post-save reload has committed. Running the follow-up straight off the completion
       promise would reuse the pre-reload render's closure — dirty still true, the saved
@@ -4156,7 +4233,13 @@ export default function App() {
     // mid-typing, and the post-save reload closes the editor — without this the
     // in-progress replacement would be silently dropped
     const edits = commitTextDraft()
-    const anythingToSave = dirty || edits !== textEdits
+    // Same for an open comment-edit box in the notes margin
+    const noteFlush = commitNoteEdit()
+    const anythingToSave =
+      dirty ||
+      edits !== textEdits ||
+      noteFlush.drawings !== drawings ||
+      noteFlush.noteEdits !== noteEdits
     if (!anythingToSave || !filePath) return Promise.resolve(!anythingToSave)
     // An explicit save opts this file into autosave
     if (!autosave) savedOnceRef.current = true
@@ -4165,7 +4248,9 @@ export default function App() {
     const snapshot: SavedSnapshot = {
       markupIds: new Set(markups.map((mk) => mk.id)),
       annotDeleteIds: new Set(annotDeletes.map((d) => d.id)),
-      drawingIds: new Set(drawings.map((dr) => dr.id)),
+      noteEditIds: new Set(noteFlush.noteEdits.map((e) => e.id)),
+      noteEditWritten: new Map(noteFlush.noteEdits.map((e) => [e.annot.objNum, e.contents])),
+      drawingIds: new Set(noteFlush.drawings.map((dr) => dr.id)),
       textEditIds: new Set(edits.map((te) => te.id)),
       textInsertIds: new Set(textInserts.map((insert) => insert.id)),
       imageEditIds: new Set(imageEdits.map((ie) => ie.id)),
@@ -4175,9 +4260,11 @@ export default function App() {
       metadata,
       pageMap: new Map(visList.map((origIdx, i) => [origIdx, i])),
     }
+    inFlightNoteWritesRef.current = snapshot.noteEditWritten
+    inFlightPageMapRef.current = snapshot.pageMap
     const run = (async (): Promise<boolean> => {
       setSaveState('saving')
-      const result = await window.pdfApi.save({ path: filePath, ...editsPayload(edits) })
+      const result = await window.pdfApi.save({ path: filePath, ...editsPayload(edits, noteFlush) })
       if (!result.ok) {
         opFailed(result.error)
         return false
@@ -4213,7 +4300,11 @@ export default function App() {
       return true
     })()
     const tracked = run.finally(() => {
-      if (saveInFlightRef.current === tracked) saveInFlightRef.current = null
+      if (saveInFlightRef.current === tracked) {
+        saveInFlightRef.current = null
+        inFlightNoteWritesRef.current = new Map()
+        inFlightPageMapRef.current = null
+      }
     })
     saveInFlightRef.current = tracked
     return tracked
@@ -4240,14 +4331,43 @@ export default function App() {
    */
   const saveAsTo = async (targetPath: string): Promise<boolean> => {
     if (!filePath) return false
-    // The copy must contain what the user sees, including an open floating-editor draft
+    // The copy must contain what the user sees, including an open floating-editor
+    // draft and an open comment-edit box
     const draftEdits = commitTextDraft()
+    const noteFlush = commitNoteEdit()
     // A save already in flight (autosave that started before the dialog opened) lands
     // first. If it succeeded, every edit that was pending is now part of the source
     // bytes, so the copy applies nothing on top — deriving this from the save result
     // (instead of re-reading state) avoids racing React's render of the cleared edits.
     const inFlight = saveInFlightRef.current
+    // What that save is writing per note, and its page remap — captured now, the
+    // refs clear when it lands
+    const inFlightWrites = new Map(inFlightNoteWritesRef.current)
+    const inFlightPageMap = inFlightPageMapRef.current ? new Map(inFlightPageMapRef.current) : null
     const flushed = inFlight ? await inFlight.catch(() => false) : false
+    // The comment edit committed by commitNoteEdit above started after the in-flight
+    // save built its payload, so "everything was flushed" never covers it: the copy
+    // still needs that rewrite, matched against what the flushed save left on disk.
+    const preFlushIds = new Set(noteEdits.map((e) => e.id))
+    const lateNoteEdits = flushed
+      ? noteFlush.noteEdits
+          .filter((e) => !preFlushIds.has(e.id))
+          .flatMap((e): NoteEditInput[] => {
+            // The flushed save may have deleted or reordered pages: address the note
+            // by its index in the rewritten file; its page being gone drops the edit
+            const ni = inFlightPageMap ? inFlightPageMap.get(e.annot.pageIndex) : e.annot.pageIndex
+            if (ni === undefined) return []
+            return [
+              {
+                pageIndex: ni,
+                objNum: e.annot.objNum,
+                rect: e.annot.rect,
+                oldContents: inFlightWrites.get(e.annot.objNum) ?? e.annot.contents,
+                contents: e.contents,
+              },
+            ]
+          })
+      : []
     const edits = flushed
       ? {
           markups: [],
@@ -4257,8 +4377,9 @@ export default function App() {
           textEdits: [],
           textInserts: [],
           imageEdits: [],
+          ...(lateNoteEdits.length > 0 ? { noteEdits: lateNoteEdits } : {}),
         }
-      : editsPayload(draftEdits)
+      : editsPayload(draftEdits, noteFlush)
     setSaveState('saving')
     const result = await window.pdfApi.save({ path: filePath, targetPath, ...edits })
     if (!result.ok) {
@@ -5379,11 +5500,25 @@ export default function App() {
         : [],
     )
 
-  /** Threads for a page, with notes pending deletion filtered out */
+  /** Threads for a page, with notes pending deletion filtered out and pending content
+      edits overlaid. Only `item.contents` is overlaid — `item.saved` keeps the on-disk
+      text, which replies and the edits themselves need for identity matching at save. */
   const noteThreadsOn = (origIdx: number): NoteThreadItem[] => {
     const pendingDeleted = new Set(annotDeletes.map((d) => d.annot.objNum))
     const saved = (savedNotes.get(origIdx) ?? []).filter((a) => !pendingDeleted.has(a.objNum))
-    return buildNoteThreads(saved, pendingNotesOn(origIdx))
+    const roots = buildNoteThreads(saved, pendingNotesOn(origIdx))
+    const edited = new Map(
+      noteEdits.filter((e) => e.annot.pageIndex === origIdx).map((e) => [e.annot.objNum, e]),
+    )
+    if (edited.size > 0) {
+      for (const root of roots) {
+        for (const { item } of flattenThread(root)) {
+          const e = item.saved ? edited.get(item.saved.objNum) : undefined
+          if (e) item.contents = e.contents
+        }
+      }
+    }
+    return roots
   }
 
   /** Root pins DrawLayer renders for saved threads (pending roots render from drawings) */
@@ -5427,12 +5562,87 @@ export default function App() {
     ])
   }
 
+  /** Next drawings/noteEdits after rewriting one comment's text: pending notes mutate
+      the drawing in place; saved notes queue an in-place /Contents edit (keyed by
+      note, later edits replace it). Null when nothing changes. */
+  const appliedNoteEdit = (
+    item: NoteThreadItem,
+    trimmed: string,
+  ): { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] } | null => {
+    if (!trimmed || trimmed === item.contents) return null
+    if (item.pendingId !== null) {
+      const id = item.pendingId
+      return {
+        drawings: drawings.map((d) =>
+          d.id === id && d.input.kind === 'note'
+            ? { ...d, input: { ...d.input, contents: trimmed } }
+            : d,
+        ),
+        noteEdits,
+      }
+    }
+    if (item.saved) {
+      const annot = item.saved
+      // Drop the entry only when the file provably holds this exact text. A save in
+      // flight for this note is unconfirmed — keep the entry: if the write lands, the
+      // post-save subtraction drops entries matching it; if it fails, the entry still
+      // targets the unchanged on-disk text.
+      const unconfirmed = inFlightNoteWritesRef.current.has(annot.objNum)
+      return {
+        drawings,
+        noteEdits: [
+          ...noteEdits.filter(
+            (e) => e.annot.objNum !== annot.objNum || e.annot.pageIndex !== annot.pageIndex,
+          ),
+          ...(trimmed === annot.contents && !unconfirmed
+            ? []
+            : [{ id: newId(), annot, contents: trimmed }]),
+        ],
+      }
+    }
+    return null
+  }
+
+  /** Confirm the comment-edit box (OK button / Cmd+Enter) */
+  const editNoteItem = (item: NoteThreadItem, text: string) => {
+    const next = appliedNoteEdit(item, text.trim())
+    if (!next) return
+    pushUndo()
+    setDrawings(next.drawings)
+    setNoteEdits(next.noteEdits)
+  }
+
+  /** Fold an open comment-edit box into pending state (cf. commitTextDraft: a save can
+      land mid-typing and the post-save reload tears the edit box down, dropping the
+      typed text). Returns the arrays the save must write — the setState calls here
+      won't be visible to the caller's closure. */
+  const commitNoteEdit = (): { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] } => {
+    const unchanged = { drawings, noteEdits }
+    const draft = noteEditDraft
+    if (!draft) return unchanged
+    setNoteEditDraft(null)
+    const item = noteThreadsOn(draft.origIdx)
+      .flatMap((root) => flattenThread(root))
+      .map(({ item: it }) => it)
+      .find((it) => it.key === draft.itemKey)
+    const next = item ? appliedNoteEdit(item, draft.text.trim()) : null
+    if (!next) return unchanged
+    pushUndo()
+    setDrawings(next.drawings)
+    setNoteEdits(next.noteEdits)
+    return next
+  }
+
   /** Delete a comment and everything under it (saved → pending annotDeletes; pending → dropped) */
   const deleteNoteItem = (item: NoteThreadItem) => {
     pushUndo()
     const { saved, pendingIds } = threadSubtree(item)
-    if (saved.length > 0)
+    if (saved.length > 0) {
       setAnnotDeletes((prev) => [...prev, ...saved.map((annot) => ({ id: newId(), annot }))])
+      // A pending content edit of a deleted note has nothing to apply to anymore
+      const gone = new Set(saved.map((a) => a.objNum))
+      setNoteEdits((prev) => prev.filter((e) => !gone.has(e.annot.objNum)))
+    }
     if (pendingIds.length > 0) {
       const drop = new Set(pendingIds)
       setDrawings((prev) => prev.filter((d) => !drop.has(d.id)))
@@ -5833,50 +6043,52 @@ export default function App() {
 
   const curOrigIdx = visList[currentPage - 1] ?? -1
 
-  // Clicking elsewhere closes the thumbnail context menu
-  useEffect(() => {
-    if (!thumbMenu) return
-    const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.thumb-menu')) setThumbMenu(null)
-    }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [thumbMenu])
+  // ── unified popover dismissal: a press outside the guard roots, a window
+  // blur, or a press on the shell tab strip closes each popover ──
 
-  // Clicking elsewhere closes the draw-color palette
-  useEffect(() => {
-    if (!colorOpen) return
-    const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.rb-drop-wrap')) setColorOpen(false)
-    }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [colorOpen])
+  /** Guard roots (popover panel + its trigger) for the dismissal hooks below */
+  const thumbMenuRef = useRef<HTMLDivElement | null>(null)
+  const drawColorWrapRef = useRef<HTMLDivElement | null>(null)
+  const draftColorWrapRef = useRef<HTMLSpanElement | null>(null)
+  const highlightWrapRef = useRef<HTMLDivElement | null>(null)
+  const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
+  const opacityMenuRef = useRef<HTMLDivElement | null>(null)
+  const staticColorFieldRef = useRef<HTMLDivElement | null>(null)
 
-  // Text-edit color popover follows its draft: closes with the draft and on
-  // any pointer press outside the picker
+  // Thumbnail context menu
+  useDismissablePopover(thumbMenu != null, () => setThumbMenu(null), {
+    inside: () => [thumbMenuRef.current],
+  })
+
+  // Draw-color palette (Annotate tab). Guarded by its own wrap ref — the
+  // generic `.rb-drop-wrap` class is shared with the highlight split button,
+  // which used to keep this popover open when that button was pressed.
+  useDismissablePopover(colorOpen, () => setColorOpen(false), {
+    inside: () => [drawColorWrapRef.current],
+  })
+
+  // Text-edit color popover follows its draft: closes with the draft
   useEffect(() => {
     if (!textDraft) setDraftColorOpen(false)
   }, [textDraft])
-  useEffect(() => {
-    if (!draftColorOpen) return
-    const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.pdf-textedit-colorwrap'))
-        setDraftColorOpen(false)
-    }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [draftColorOpen])
+  useDismissablePopover(draftColorOpen, () => setDraftColorOpen(false), {
+    inside: () => [draftColorWrapRef.current],
+  })
 
-  useEffect(() => {
-    if (!highlightColorOpen) return
-    const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.rb-highlight-drop-wrap'))
-        setHighlightColorOpen(false)
-    }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [highlightColorOpen])
+  // Highlight split-button color popover
+  useDismissablePopover(highlightColorOpen, () => setHighlightColorOpen(false), {
+    inside: () => [highlightWrapRef.current],
+  })
+
+  // Transparency presets fold-out inside the image selection popup
+  useDismissablePopover(opacityMenu, () => setOpacityMenu(false), {
+    inside: () => [opacityBtnRef.current, opacityMenuRef.current],
+  })
+
+  // Color popover inside the static-text dialog (the dialog itself stays open)
+  useDismissablePopover(staticTextColorOpen, () => setStaticTextColorOpen(false), {
+    inside: () => [staticColorFieldRef.current],
+  })
 
   // Main process picked "Save" in the close prompt → save and report the result
   useEffect(() => {
@@ -6058,7 +6270,10 @@ export default function App() {
   const markupGroup = (
     <div className="ribbon-group" onMouseDown={(e) => e.preventDefault()}>
       <div className="ribbon-group-items">
-        <div className="rb-drop-wrap rb-highlight-drop-wrap rb-highlight-split">
+        <div
+          ref={highlightWrapRef}
+          className="rb-drop-wrap rb-highlight-drop-wrap rb-highlight-split"
+        >
           <button
             className="rb-big rb-highlight-main"
             disabled={readOnly}
@@ -6494,7 +6709,7 @@ export default function App() {
                     </span>
                     {t('sign')}
                   </button>
-                  <div className="rb-drop-wrap">
+                  <div ref={drawColorWrapRef} className="rb-drop-wrap">
                     <button
                       className={`rb-big${colorOpen ? ' active' : ''}`}
                       disabled={readOnly}
@@ -7811,7 +8026,10 @@ export default function App() {
                                           >
                                             I
                                           </button>
-                                          <span className="pdf-textedit-colorwrap">
+                                          <span
+                                            ref={draftColorWrapRef}
+                                            className="pdf-textedit-colorwrap"
+                                          >
                                             <button
                                               className="pdf-textedit-swatch"
                                               style={{
@@ -8212,6 +8430,24 @@ export default function App() {
                           setActiveNote({ origIdx: th.origIdx, rootKey: th.root.key })
                         }}
                         onReply={(th, text) => replyToNote(th.origIdx, th.root, text)}
+                        editingKey={noteEditDraft?.itemKey ?? null}
+                        editingText={noteEditDraft?.text ?? ''}
+                        onEditStart={(th, item) =>
+                          setNoteEditDraft({
+                            origIdx: th.origIdx,
+                            rootKey: th.root.key,
+                            itemKey: item.key,
+                            text: item.contents,
+                          })
+                        }
+                        onEditChange={(text) =>
+                          setNoteEditDraft((prev) => (prev ? { ...prev, text } : prev))
+                        }
+                        onEditCancel={() => setNoteEditDraft(null)}
+                        onEditSubmit={(_th, item) => {
+                          if (noteEditDraft) editNoteItem(item, noteEditDraft.text)
+                          setNoteEditDraft(null)
+                        }}
                         onDeleteItem={(_th, item) => deleteNoteItem(item)}
                         onClose={() => setActiveNote(null)}
                         onDraftConfirm={confirmNoteDraft}
@@ -8384,6 +8620,7 @@ export default function App() {
                       <IconCutout />
                     </button>
                     <button
+                      ref={opacityBtnRef}
                       type="button"
                       data-tip={t('imageOpacity')}
                       aria-label={t('imageOpacity')}
@@ -8400,7 +8637,7 @@ export default function App() {
                       <IconSwapImage />
                     </button>
                     {opacityMenu && (
-                      <div className="pdf-opacity-menu">
+                      <div ref={opacityMenuRef} className="pdf-opacity-menu">
                         {[0, 15, 30, 50, 65, 80, 95].map((p) => (
                           <button
                             key={p}
@@ -8462,7 +8699,11 @@ export default function App() {
               </div>
             )}
             {thumbMenu && (
-              <div className="thumb-menu file-menu" style={{ left: thumbMenu.x, top: thumbMenu.y }}>
+              <div
+                ref={thumbMenuRef}
+                className="thumb-menu file-menu"
+                style={{ left: thumbMenu.x, top: thumbMenu.y }}
+              >
                 <button
                   onClick={() => {
                     rotatePage(menuOrig, -90)
@@ -8613,7 +8854,7 @@ export default function App() {
                     />
                   </label>
                   <div className="pdf-field-grid">
-                    <div className="pdf-field pdf-color-field">
+                    <div ref={staticColorFieldRef} className="pdf-field pdf-color-field">
                       <span>{t('formTextColor')}</span>
                       <button
                         type="button"

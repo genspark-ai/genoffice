@@ -1,5 +1,5 @@
 export * from './types'
-export { parseDocx, type ParseExtras } from './parse'
+export { parseDocx, styleRunFormat, type ParseExtras } from './parse'
 export {
   saveDocx,
   findChartWorkbookPath,
@@ -98,7 +98,9 @@ export {
   bulletMarkerScale,
   computeListMarkerInfos,
   computeListMarkers,
+  customEnumItems,
   formatNumber,
+  markerTabAdvance,
   type ListItemRef,
   type ListMarkerInfo,
 } from './list-markers'

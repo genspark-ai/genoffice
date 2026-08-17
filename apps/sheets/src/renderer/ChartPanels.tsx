@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { transposeChartSeries, type ChartVisualState } from '../domain/chart-visual'
+import { ColorDropdown } from './ColorDropdown'
 import { useI18n, type StringKey, type TFunc } from './i18n/locale'
 import type { ChartEditData, ChartElementRef, ChartVectorRead } from './WorkbookVisuals'
 
@@ -159,10 +160,9 @@ export function ChartFormatPane({
           <strong>{element.kind === 'series' ? t('appSeries') : t('appDataPoint')}</strong>
           <label>
             {t('appFillColor')}
-            <input
-              type="color"
-              key={`${element.kind}-${element.seriesIndex}-${element.kind === 'point' ? element.pointIndex : 'ser'}`}
-              defaultValue={
+            <ColorDropdown
+              label={t('appFillColor')}
+              value={
                 (element.kind === 'point'
                   ? chart.series[element.seriesIndex]?.pointColors?.find(
                       (entry) => entry.index === element.pointIndex,
@@ -171,8 +171,8 @@ export function ChartFormatPane({
                 chart.series[element.seriesIndex]?.color ??
                 '#4472c4'
               }
-              onChange={(event) => {
-                const color = event.target.value
+              onPick={(color) => {
+                if (!color) return
                 if (element.kind === 'series') {
                   onEdit({ seriesColors: { [String(element.seriesIndex)]: color } })
                 } else {

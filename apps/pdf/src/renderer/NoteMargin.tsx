@@ -7,6 +7,19 @@ import { flattenThread } from './note-threads'
 import type { NoteThreadItem } from './note-threads'
 import { CARD_PIN_ALIGN, layoutMarginCards } from './note-margin-layout'
 
+/** Pencil glyph for rewriting an already-confirmed comment */
+const IconPencil = (): ReactElement => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path
+      d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 7.5l2 2"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
 /** Small trash-can glyph so the per-comment delete cannot be mistaken for a close button */
 const IconTrash = (): ReactElement => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -82,6 +95,12 @@ function NoteCard({
   setEl,
   onActivate,
   onReply,
+  editingKey,
+  editingText,
+  onEditStart,
+  onEditChange,
+  onEditCancel,
+  onEditSubmit,
   onDeleteItem,
   onClose,
 }: {
@@ -94,6 +113,14 @@ function NoteCard({
   setEl: (el: HTMLDivElement | null) => void
   onActivate: () => void
   onReply: (text: string) => void
+  /** Key of the comment whose body is an edit box; state lives in App so a save can
+      fold the in-progress text in before the post-save reload unmounts this card */
+  editingKey: string | null
+  editingText: string
+  onEditStart: (item: NoteThreadItem) => void
+  onEditChange: (text: string) => void
+  onEditCancel: () => void
+  onEditSubmit: (item: NoteThreadItem) => void
   onDeleteItem: (item: NoteThreadItem) => void
   onClose: () => void
 }): ReactElement {
@@ -142,22 +169,68 @@ function NoteCard({
               <span className="pdf-note-time">
                 {item.timeMs !== null ? timeFmt.format(item.timeMs) : ''}
               </span>
-              {active && !readOnly && (
-                <button
-                  type="button"
-                  className="pdf-note-comment-del"
-                  data-tip={t('deleteAnnotation')}
-                  aria-label={t('deleteAnnotation')}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDeleteItem(item)
-                  }}
-                >
-                  <IconTrash />
-                </button>
+              {active && !readOnly && editingKey !== item.key && (
+                <span className="pdf-note-comment-actions">
+                  <button
+                    type="button"
+                    className="pdf-note-comment-edit"
+                    data-tip={t('noteEdit')}
+                    aria-label={t('noteEdit')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onEditStart(item)
+                    }}
+                  >
+                    <IconPencil />
+                  </button>
+                  <button
+                    type="button"
+                    className="pdf-note-comment-del"
+                    data-tip={t('deleteAnnotation')}
+                    aria-label={t('deleteAnnotation')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteItem(item)
+                    }}
+                  >
+                    <IconTrash />
+                  </button>
+                </span>
               )}
             </div>
-            <div className="pdf-note-comment-body">{item.contents}</div>
+            {active && !readOnly && editingKey === item.key ? (
+              <div className="pdf-note-edit-box">
+                <textarea
+                  rows={3}
+                  value={editingText}
+                  autoFocus
+                  onChange={(e) => onEditChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      if (editingText.trim()) onEditSubmit(item)
+                    } else if (e.key === 'Escape') {
+                      e.stopPropagation()
+                      onEditCancel()
+                    }
+                  }}
+                />
+                <div className="pdf-note-draft-actions">
+                  <button type="button" className="pdf-modal-btn" onClick={onEditCancel}>
+                    {t('cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="pdf-modal-btn primary"
+                    disabled={!editingText.trim()}
+                    onClick={() => onEditSubmit(item)}
+                  >
+                    {t('ok')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="pdf-note-comment-body">{item.contents}</div>
+            )}
           </div>
         ))}
       </div>
@@ -279,6 +352,12 @@ export function NoteMarginColumn({
   t,
   onActivate,
   onReply,
+  editingKey,
+  editingText,
+  onEditStart,
+  onEditChange,
+  onEditCancel,
+  onEditSubmit,
   onDeleteItem,
   onClose,
   onDraftConfirm,
@@ -296,6 +375,13 @@ export function NoteMarginColumn({
   t: TFunc
   onActivate: (thread: NoteMarginThread) => void
   onReply: (thread: NoteMarginThread, text: string) => void
+  /** Comment currently being rewritten (App-held so saves can flush it) */
+  editingKey: string | null
+  editingText: string
+  onEditStart: (thread: NoteMarginThread, item: NoteThreadItem) => void
+  onEditChange: (text: string) => void
+  onEditCancel: () => void
+  onEditSubmit: (thread: NoteMarginThread, item: NoteThreadItem) => void
   onDeleteItem: (thread: NoteMarginThread, item: NoteThreadItem) => void
   onClose: () => void
   onDraftConfirm: (text: string) => void
@@ -379,6 +465,12 @@ export function NoteMarginColumn({
           setEl={setEl(th.root.key)}
           onActivate={() => onActivate(th)}
           onReply={(text) => onReply(th, text)}
+          editingKey={editingKey}
+          editingText={editingText}
+          onEditStart={(item) => onEditStart(th, item)}
+          onEditChange={onEditChange}
+          onEditCancel={onEditCancel}
+          onEditSubmit={(item) => onEditSubmit(th, item)}
           onDeleteItem={(item) => onDeleteItem(th, item)}
           onClose={onClose}
         />

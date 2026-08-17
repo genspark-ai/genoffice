@@ -95,6 +95,16 @@ export function readSectionSettings(parsed: ParsedDoc): SectionSettings {
 
 const SECT_PR_RE = /<w:sectPr[^>]*\/>|<w:sectPr[\s\S]*?<\/w:sectPr>/
 
+/** On/off flag element (w:titlePg, w:evenAndOddHeaders, …) present and not switched
+ *  off: matches self-closing and paired forms, w:val="0|false|off" counts as off. */
+export function xmlFlagOn(xml: string, tag: string): boolean {
+  for (const m of xml.matchAll(new RegExp(`<${tag}(?=[\\s/>])[^>]*>`, 'g'))) {
+    const val = /w:val="([^"]*)"/.exec(m[0])?.[1]
+    if (val === undefined || !/^(?:0|false|off)$/.test(val)) return true
+  }
+  return false
+}
+
 function hfRefs(
   xml: string,
   kind: 'header' | 'footer',
@@ -126,7 +136,7 @@ function sectionFromSectPr(
     firstBlockIndex,
     lastBlockIndex,
     sectPrXml,
-    titlePg: /<w:titlePg\s*\/>/.test(sectPrXml),
+    titlePg: xmlFlagOn(sectPrXml, 'w:titlePg'),
     ...(pgNumStart !== undefined ? { pageNumberStart: parseInt(pgNumStart, 10) } : {}),
     ...(pgNumFmt !== undefined ? { pageNumberFmt: pgNumFmt } : {}),
     headerRefs: hfRefs(sectPrXml, 'header'),

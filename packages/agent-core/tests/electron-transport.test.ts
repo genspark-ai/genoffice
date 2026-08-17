@@ -19,6 +19,7 @@ const errorMessages = {
   'request-rejected': 'request-rejected',
   'invalid-stream': 'invalid-stream',
   'invalid-tool-call': 'invalid-tool-call',
+  network: 'network',
   'provider-failure': 'provider-failure',
   unknown: 'unknown',
 } as const
@@ -30,6 +31,7 @@ interface FakeSettings {
 function setup(
   startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
   creditsErrorText?: () => string,
+  networkErrorText?: () => string,
   resolveErrorCode?: (code: IpcErrorCode | undefined) => string | undefined,
 ) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
@@ -52,6 +54,7 @@ function setup(
     unknownErrorText: () => 'unknown error',
     timeoutErrorText: () => 'timed out',
     ...(creditsErrorText ? { creditsErrorText } : {}),
+    ...(networkErrorText ? { networkErrorText } : {}),
     ...(resolveErrorCode ? { resolveErrorCode } : {}),
   })
   const cb = {
@@ -153,6 +156,26 @@ describe('createIpcTransport', () => {
     expect(cb.onError).toHaveBeenCalledWith('credits used up')
   })
 
+  it('maps a network error code to the localized network message', () => {
+    const { cb, emit } = setup(undefined, undefined, () => 'network problem')
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('network problem')
+  })
+
+  it('a network error code without networkErrorText falls back to the carried text', () => {
+    const { cb, emit } = setup()
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('Claude fetch failed: fetch failed cause=ECONNRESET')
+  })
+
   it('a credits error code without creditsErrorText falls back to the carried text', () => {
     const { cb, emit } = setup()
     emit({
@@ -166,11 +189,11 @@ describe('createIpcTransport', () => {
   it('resolves known codes locally and hides raw text for unknown or missing codes', () => {
     const resolveErrorCode = (code: IpcErrorCode | undefined) =>
       code === 'provider-failure' ? 'safe provider error' : undefined
-    const known = setup(undefined, undefined, resolveErrorCode)
+    const known = setup(undefined, undefined, undefined, resolveErrorCode)
     known.emit({ type: 'error', error: 'raw provider payload', errorCode: 'provider-failure' })
     expect(known.cb.onError).toHaveBeenCalledWith('safe provider error')
 
-    const unknown = setup(undefined, undefined, resolveErrorCode)
+    const unknown = setup(undefined, undefined, undefined, resolveErrorCode)
     unknown.emit({ type: 'error', error: 'raw provider payload' })
     expect(unknown.cb.onError).toHaveBeenCalledWith('unknown error')
   })

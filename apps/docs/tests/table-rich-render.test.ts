@@ -111,6 +111,41 @@ describe('renderTableSpec rich cell content', () => {
     expect(latin).not.toContain('Traditional Arabic')
   })
 
+  it('renders both the text and the picture of a text+drawing run', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            ['label'],
+            [
+              {
+                runs: [
+                  {
+                    text: 'label',
+                    bold: true,
+                    image: {
+                      dataUrl: 'data:image/png;base64,AA==',
+                      widthPx: 24,
+                      xml: '<w:drawing/>',
+                    },
+                  },
+                ],
+              },
+            ],
+          ),
+        ],
+      ],
+    }
+    const td = renderTable(model).querySelector('td')!
+    const span = td.querySelector('span')!
+    expect(span.textContent).toBe('label')
+    expect(span.getAttribute('style')).toMatch(/font-weight:\s*700/)
+    const img = td.querySelector('img.doc-inline-img')!
+    expect(img.getAttribute('src')).toBe('data:image/png;base64,AA==')
+    // text precedes the drawing (generate.ts / editable-path order)
+    expect(span.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('cell-level color/bold stay as td-level fallback', () => {
     const model: TableModel = {
       rows: [

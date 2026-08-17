@@ -114,7 +114,7 @@ function parasOf(value: HeaderFooter): HfParagraph[] {
 
 /** parsed parts carry PAGE fields as PAGE_MARK; only mark-free values fall back to the user-typed '#' (mirrors HeaderFooterArea) */
 function paraHasPageMark(p: HfParagraph): boolean {
-  return [p.runs, ...(p.cells?.map((c) => c.runs) ?? [])].some((rs) =>
+  return [p.runs, ...(p.cells?.flatMap((c) => c.paras) ?? [])].some((rs) =>
     rs.some((r) => r.text.includes(PAGE_MARK)),
   )
 }
@@ -155,7 +155,9 @@ export function hfWithoutPageMarks(value: HeaderFooter): HeaderFooter {
     // dedicated page-number paragraphs go away entirely; table rows and user-typed blank lines stay
     .filter((p, i) => p.cells != null || p.runs.length > 0 || value.paras![i].runs.length === 0)
   const text = paras
-    .map((p) => [...p.runs, ...(p.cells?.flatMap((c) => c.runs) ?? [])].map((r) => r.text).join(''))
+    .map((p) =>
+      [...p.runs, ...(p.cells?.flatMap((c) => c.paras.flat()) ?? [])].map((r) => r.text).join(''),
+    )
     .join('')
   if (!text) return { ...value, text: '', paras: undefined, pageNumber: false }
   return { ...value, text, paras, pageNumber: false }
@@ -172,6 +174,86 @@ export function hfHasVisibleContent(
     value.pageNumber ||
     value.paras?.some((p) => p.runs.length > 0 || p.cells?.length),
   )
+}
+
+/** page (paper) geometry a floating header image positions against, px */
+export interface HfFloatBox {
+  pageW: number
+  pageH: number
+  marginLeft: number
+  marginRight: number
+  /** effective top margin after header push-down (mirrors the strip layout) */
+  marginTop: number
+  marginBottom: number
+}
+
+/**
+ * Position of a floating header image in page coordinates (px from the page's
+ * top-left corner), with the translate that resolves center/right/bottom
+ * anchors without knowing the image's natural size. wp:posOffset offsets win;
+ * alignment fields reproduce the legacy VML placement (margin-box corners).
+ */
+export function hfFloatPagePos(
+  img: HfImage,
+  box: HfFloatBox,
+): { x: number; y: number; translateX: 0 | -50 | -100; translateY: 0 | -50 | -100 } {
+  let x: number
+  let translateX: 0 | -50 | -100 = 0
+  if (img.posXPx != null) {
+    x = img.posHRel === 'page' ? img.posXPx : box.marginLeft + img.posXPx
+  } else if (img.posH === 'center') {
+    x = box.pageW / 2
+    translateX = -50
+  } else if (img.posH === 'right') {
+    x = box.pageW - box.marginRight
+    translateX = -100
+  } else {
+    x = box.marginLeft
+  }
+  let y: number
+  let translateY: 0 | -50 | -100 = 0
+  if (img.posYPx != null) {
+    y = img.posVRel === 'page' ? img.posYPx : box.marginTop + img.posYPx
+  } else if (img.posV === 'center') {
+    y = box.pageH / 2
+    translateY = -50
+  } else if (img.posV === 'bottom') {
+    y = box.pageH - box.marginBottom
+    translateY = -100
+  } else {
+    y = box.marginTop
+  }
+  return { x, y, translateX, translateY }
+}
+
+/**
+ * Floating header image (picture watermark) for the canvas print view, drawn
+ * once per page behind the body text (z-index -1; .view-print .doc-page
+ * isolates). host 'gap': anchored in a page gap, whose bottom edge sits
+ * marginTop above the next page's content. host 'lead': anchored in the
+ * zero-height first-page widget at the content-box origin.
+ */
+export function makeHfFloatImgEl(img: HfImage, box: HfFloatBox, host: 'gap' | 'lead'): HTMLElement {
+  const el = document.createElement('img')
+  el.className = 'page-hf-float-img'
+  el.src = img.dataUrl
+  el.alt = ''
+  el.draggable = false
+  const p = hfFloatPagePos(img, box)
+  if (host === 'gap') {
+    el.style.left = `${p.x}px`
+    el.style.top = `calc(100% + ${p.y - box.marginTop}px)`
+  } else {
+    el.style.left = `${p.x - box.marginLeft}px`
+    el.style.top = `${p.y - box.marginTop}px`
+  }
+  if (p.translateX || p.translateY) {
+    el.style.transform = `translate(${p.translateX}%, ${p.translateY}%)`
+  }
+  if (img.widthPx) el.style.width = `${img.widthPx}px`
+  if (img.heightPx) el.style.height = `${img.heightPx}px`
+  if (img.washout) el.style.filter = 'brightness(1.6) contrast(0.35)'
+  return el
 }
 
 export function makeGapHfEl(opts: {
@@ -228,12 +310,30 @@ export function makeGapHfEl(opts: {
               ? cell.align
               : 'justify'
         }
-        if (cell.runs.length === 0) cellEl.textContent = ' '
-        for (const run of cell.runs) {
-          const span = document.createElement('span')
-          span.textContent = display(run.text)
-          applyRunStyle(span, run)
-          cellEl.append(span)
+        // one block line per cell paragraph (Word stacks them; a lone empty
+        // paragraph still reserves its line inside a shaded cell)
+        for (const runs of cell.paras.length > 0 ? cell.paras : [[]]) {
+          const paraEl = document.createElement('div')
+          paraEl.className = 'page-hf-cell-para'
+          if (runs.length === 0) paraEl.textContent = ' '
+          for (const run of runs) {
+            if (run.image) {
+              const im = document.createElement('img')
+              im.className = 'page-hf-cell-img'
+              im.src = run.image.dataUrl
+              im.alt = ''
+              im.draggable = false
+              if (run.image.widthPx) im.style.width = `${run.image.widthPx}px`
+              if (run.image.heightPx) im.style.height = `${run.image.heightPx}px`
+              paraEl.append(im)
+              if (!run.text) continue
+            }
+            const span = document.createElement('span')
+            span.textContent = display(run.text)
+            applyRunStyle(span, run)
+            paraEl.append(span)
+          }
+          cellEl.append(paraEl)
         }
         p.append(cellEl)
       }
@@ -246,6 +346,12 @@ export function makeGapHfEl(opts: {
         para.align === 'left' || para.align === 'center' || para.align === 'right'
           ? para.align
           : 'justify'
+    }
+    // frame placement wins over the paragraph's own jc (the frame is narrower
+    // than the column; its x position is what the reader sees)
+    if (para.frameXAlign) {
+      p.classList.add('page-hf-frame')
+      p.style.textAlign = para.frameXAlign
     }
     /* document content colors (w:shd / w:pBdr), theme-independent; mirrors the body paragraph path */
     if (para.shadingFill) p.style.backgroundColor = `#${para.shadingFill}`

@@ -58,8 +58,22 @@ interface Token {
   blShift?: number
   /** Text outline (<a:rPr><a:ln>, commonly used by WordArt) */
   outline?: { color: string; widthPx: number }
+  /** Run outer shadow (px, offset resolved from dist/dir) */
+  shadow?: { color: string; blurPx: number; offsetX: number; offsetY: number }
   /** Run hyperlink (TextRun.hyperlink encoding) */
   link?: string
+}
+
+/** Alpha of a #RRGGBB(AA) color as 0..1 (1 when opaque or unset). */
+function hexAlpha(hex: string | undefined): number {
+  return hex && hex.length === 9 ? parseInt(hex.slice(7), 16) / 255 : 1
+}
+
+/** Multiply a #RRGGBB(AA) color's alpha by factor → #RRGGBBAA. */
+function scaleHexAlpha(hex: string, factor: number): string {
+  if (factor >= 1) return hex
+  const a = Math.round(hexAlpha(hex) * factor * 255)
+  return hex.slice(0, 7) + Math.max(0, Math.min(255, a)).toString(16).padStart(2, '0').toUpperCase()
 }
 
 function runStyle(run: TextRun, scale: number, fontScale: number): RunStyle {
@@ -88,6 +102,158 @@ function applyCap(text: string, cap: string | undefined): string {
   for (const ch of text) {
     const u = ch.toUpperCase()
     out += [...u].length === 1 ? u : ch
+  }
+  return out
+}
+
+/**
+ * Adobe Symbol encoding → Unicode (the differing positions; digits/punctuation are identity).
+ * Symbol-font runs store legacy byte codes ('m' = μ): PowerPoint draws them through the
+ * font's symbol cmap, but macOS's Symbol.ttf (and every fallback) is Unicode-encoded, so both
+ * measuring and drawing need the real code points. Exotic bracket-piece glyphs stay unmapped.
+ */
+const SYMBOL_TO_UNICODE: Record<number, number> = {
+  0x22: 0x2200,
+  0x24: 0x2203,
+  0x27: 0x220b,
+  0x2a: 0x2217,
+  0x2d: 0x2212,
+  0x40: 0x2245,
+  0x41: 0x0391,
+  0x42: 0x0392,
+  0x43: 0x03a7,
+  0x44: 0x0394,
+  0x45: 0x0395,
+  0x46: 0x03a6,
+  0x47: 0x0393,
+  0x48: 0x0397,
+  0x49: 0x0399,
+  0x4a: 0x03d1,
+  0x4b: 0x039a,
+  0x4c: 0x039b,
+  0x4d: 0x039c,
+  0x4e: 0x039d,
+  0x4f: 0x039f,
+  0x50: 0x03a0,
+  0x51: 0x0398,
+  0x52: 0x03a1,
+  0x53: 0x03a3,
+  0x54: 0x03a4,
+  0x55: 0x03a5,
+  0x56: 0x03c2,
+  0x57: 0x03a9,
+  0x58: 0x039e,
+  0x59: 0x03a8,
+  0x5a: 0x0396,
+  0x5c: 0x2234,
+  0x5e: 0x22a5,
+  0x60: 0x203e,
+  0x61: 0x03b1,
+  0x62: 0x03b2,
+  0x63: 0x03c7,
+  0x64: 0x03b4,
+  0x65: 0x03b5,
+  0x66: 0x03c6,
+  0x67: 0x03b3,
+  0x68: 0x03b7,
+  0x69: 0x03b9,
+  0x6a: 0x03d5,
+  0x6b: 0x03ba,
+  0x6c: 0x03bb,
+  0x6d: 0x03bc,
+  0x6e: 0x03bd,
+  0x6f: 0x03bf,
+  0x70: 0x03c0,
+  0x71: 0x03b8,
+  0x72: 0x03c1,
+  0x73: 0x03c3,
+  0x74: 0x03c4,
+  0x75: 0x03c5,
+  0x76: 0x03d6,
+  0x77: 0x03c9,
+  0x78: 0x03be,
+  0x79: 0x03c8,
+  0x7a: 0x03b6,
+  0x7e: 0x223c,
+  0xa1: 0x03d2,
+  0xa2: 0x2032,
+  0xa3: 0x2264,
+  0xa4: 0x2044,
+  0xa5: 0x221e,
+  0xa6: 0x0192,
+  0xa7: 0x2663,
+  0xa8: 0x2666,
+  0xa9: 0x2665,
+  0xaa: 0x2660,
+  0xab: 0x2194,
+  0xac: 0x2190,
+  0xad: 0x2191,
+  0xae: 0x2192,
+  0xaf: 0x2193,
+  0xb0: 0x00b0,
+  0xb1: 0x00b1,
+  0xb2: 0x2033,
+  0xb3: 0x2265,
+  0xb4: 0x00d7,
+  0xb5: 0x221d,
+  0xb6: 0x2202,
+  0xb7: 0x2022,
+  0xb8: 0x00f7,
+  0xb9: 0x2260,
+  0xba: 0x2261,
+  0xbb: 0x2248,
+  0xbc: 0x2026,
+  0xbf: 0x21b5,
+  0xc0: 0x2135,
+  0xc1: 0x2111,
+  0xc2: 0x211c,
+  0xc3: 0x2118,
+  0xc4: 0x2297,
+  0xc5: 0x2295,
+  0xc6: 0x2205,
+  0xc7: 0x2229,
+  0xc8: 0x222a,
+  0xc9: 0x2283,
+  0xca: 0x2287,
+  0xcb: 0x2284,
+  0xcc: 0x2282,
+  0xcd: 0x2286,
+  0xce: 0x2208,
+  0xcf: 0x2209,
+  0xd0: 0x2220,
+  0xd1: 0x2207,
+  0xd2: 0x00ae,
+  0xd3: 0x00a9,
+  0xd4: 0x2122,
+  0xd5: 0x220f,
+  0xd6: 0x221a,
+  0xd7: 0x22c5,
+  0xd8: 0x00ac,
+  0xd9: 0x2227,
+  0xda: 0x2228,
+  0xdb: 0x21d4,
+  0xdc: 0x21d0,
+  0xdd: 0x21d1,
+  0xde: 0x21d2,
+  0xdf: 0x21d3,
+  0xe0: 0x25ca,
+  0xe1: 0x2329,
+  0xe5: 0x2211,
+  0xf1: 0x232a,
+  0xf2: 0x222b,
+}
+const SYMBOL_FONT_RE = /^symbol$/i
+/** Translate a Symbol-encoded run to Unicode (accepts both raw bytes and F0xx PUA storage). */
+function symbolRunText(text: string): string {
+  let out = ''
+  for (const ch of text) {
+    let cp = ch.codePointAt(0) ?? 0
+    if (cp >= 0xf000 && cp <= 0xf0ff) cp -= 0xf000
+    // Unmapped positions: ASCII identity slots (digits/punctuation) use the stripped code
+    // even when stored as PUA; high unmapped slots (bracket pieces) keep the original char
+    // (stripping would fabricate Latin-1 letters like U+00E6).
+    const fallback = cp >= 0x20 && cp <= 0x7f ? cp : (ch.codePointAt(0) ?? 0)
+    out += String.fromCodePoint(SYMBOL_TO_UNICODE[cp] ?? fallback)
   }
   return out
 }
@@ -122,6 +288,24 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
             },
           }
         : {}),
+      ...(run.shadow
+        ? {
+            shadow: {
+              // A translucent fill dims its own shadow (PowerPoint-observed): scale the
+              // shadow alpha by the text fill alpha
+              color: scaleHexAlpha(run.shadow.color, hexAlpha(run.color)),
+              blurPx: emuToPx(run.shadow.blurRad, scale) * fontScale,
+              offsetX:
+                emuToPx(run.shadow.dist, scale) *
+                fontScale *
+                Math.cos((run.shadow.dirDeg * Math.PI) / 180),
+              offsetY:
+                emuToPx(run.shadow.dist, scale) *
+                fontScale *
+                Math.sin((run.shadow.dirDeg * Math.PI) / 180),
+            },
+          }
+        : {}),
     }
     let buf = ''
     const flushWord = () => {
@@ -136,8 +320,12 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
       }
       buf = ''
     }
+    // Symbol-encoded runs become Unicode before cap/segmentation (cap would uppercase μ→Μ)
+    const runText = SYMBOL_FONT_RE.test(style.fontFamily)
+      ? symbolRunText(run.text)
+      : applyCap(run.text, run.cap)
     // Per grapheme cluster: combining marks / ZWJ emoji always share a token with their base char, never split by wrapping
-    for (const ch of graphemes(applyCap(run.text, run.cap))) {
+    for (const ch of graphemes(runText)) {
       const cp = ch.codePointAt(0) ?? 0
       if (ch === '\n' || ch === '\v') {
         flushWord()
@@ -145,6 +333,11 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
       } else if (ch === ' ' || ch === '\t') {
         flushWord()
         tokens.push({ ...base, text: ch, breakable: true, isSpace: true })
+      } else if (ch === ' ') {
+        // NBSP: glues neighbors into one token but draws/measures at plain-space
+        // width (fonts like Carlito have no U+00A0 glyph → the missing-glyph
+        // fallback would badly over-measure it)
+        buf += ' '
       } else if (isWideChar(cp)) {
         flushWord()
         tokens.push({ ...base, text: ch, breakable: true, isSpace: false })
@@ -155,6 +348,19 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
     flushWord()
   })
   return tokens
+}
+
+/**
+ * Legacy symbol-font bullets (<a:buFont> Wingdings/Webdings): the glyph must be drawn
+ * with that font, and ASCII bullet codes normalized into the font's F0xx PUA range
+ * (files carry either encoding; the shipped fonts map the PUA).
+ */
+const SYMBOL_BULLET_RE = /^(wingdings|webdings)/i
+function symbolBulletText(font: string | undefined, char: string): string | undefined {
+  if (!font || !SYMBOL_BULLET_RE.test(font)) return undefined
+  const cp = char.codePointAt(0) ?? 0
+  if (cp >= 0xf000 && cp <= 0xf0ff) return char
+  return cp >= 0x20 && cp <= 0xff ? String.fromCodePoint(0xf000 + cp) : char
 }
 
 /** Southeast Asian scripts without spaces (Thai/Burmese/Khmer/Lao); word boundaries need ICU dictionary segmentation. */
@@ -246,6 +452,10 @@ interface LaidLine {
   descent: number
   /** Single line height (without lnSpc multiplier/reduction; the basis for spcPct paragraph spacing) */
   singleH: number
+  /** Baseline offset minus the line's max ascent (signed): baseline = top + leadAbove + ascent.
+   *  Positive when the box is taller than the glyphs (lnSpc>100%), negative when shorter (lnSpc<100%
+   *  or fonts whose ascent+descent exceed the 1.2em box). */
+  leadAbove?: number
   /** Trailing whitespace was swallowed when wrapping (tells the editor to re-add a space when joining lines) */
   trailingSpace?: boolean
   /** The line ends at a soft-break sentinel; value = the sentinel run's model index */
@@ -294,6 +504,8 @@ function layoutParagraph(
             italic: false,
           }
       const m = metrics.metrics(st)
+      const box = lineH(p, st.fontSizePx, scale, lnSpcRed)
+      const leadAbove = baselineOff(p, box, m.descent) - m.ascent
       lines.push({
         runs: src
           ? [
@@ -314,10 +526,11 @@ function layoutParagraph(
               },
             ]
           : [],
-        height: lineH(p, m, scale, lnSpcRed),
+        height: box,
+        ...(leadAbove ? { leadAbove } : {}),
         ascent: m.ascent,
         descent: m.descent,
-        singleH: Math.max(m.lineHeight, m.ascent + m.descent),
+        singleH: PPT_SINGLE * st.fontSizePx,
         ...(trailingSpace ? { trailingSpace } : {}),
       })
       return
@@ -327,6 +540,7 @@ function layoutParagraph(
     lines.push(line)
   }
 
+  let endedWithBreak = false
   for (const tok of tokens) {
     // <a:br/> forced break: breaks regardless of wrap; record the sentinel run index for editor round-trips
     if (tok.isBreak) {
@@ -334,8 +548,10 @@ function layoutParagraph(
       lines[lines.length - 1]!.softBreakAfter = tok.srcRun
       cur = []
       curW = 0
+      endedWithBreak = true
       continue
     }
+    endedWithBreak = false
     const w = tokenWidth(tok, metrics)
     // The first line loses firstLineShrinkPx to the overflowing bullet glyph; evaluated
     // lazily because the soft wrap right below can end line 0 for this same token
@@ -356,6 +572,8 @@ function layoutParagraph(
     curW += w
   }
   if (cur.length) pushLine(cur)
+  // A trailing <a:br/> shows an empty last line (PowerPoint counts it when anchoring)
+  else if (endedWithBreak) pushLine([])
   if (!lines.length) pushLine([])
   return lines
 }
@@ -387,14 +605,14 @@ function buildLine(
   let x = 0
   let ascent = 0
   let descent = 0
-  let lineHM = 0
+  let sizeM = 0
   const runs: GlyphRun[] = []
   // Lines with RTL levels are reordered into visual order before laying out x (break in logical order → draw in visual order)
   for (const tok of visualOrder(toks)) {
     const m = metrics.metrics(tok.style)
     ascent = Math.max(ascent, m.ascent)
     descent = Math.max(descent, m.descent)
-    lineHM = Math.max(lineHM, m.lineHeight)
+    sizeM = Math.max(sizeM, tok.style.fontSizePx)
     const w = tokenWidth(tok, metrics)
     runs.push({
       text: tok.text,
@@ -413,6 +631,7 @@ function buildLine(
       widthPx: w,
       ...(tok.ls ? { letterSpacingPx: tok.ls } : {}),
       ...(tok.outline ? { outline: tok.outline } : {}),
+      ...(tok.shadow ? { shadow: tok.shadow } : {}),
       ...(tok.blShift ? { baselineShiftPx: tok.blShift } : {}),
       ...(tok.blPct ? { baselinePct: tok.blPct } : {}),
       ...(tok.level != null && tok.level % 2 === 1 ? { rtl: true } : {}),
@@ -423,37 +642,46 @@ function buildLine(
     })
     x += w
   }
-  const height = lineH(
-    p,
-    { ascent, descent, lineHeight: lineHM || ascent + descent },
-    scale,
-    lnSpcRed,
-  )
+  const box = lineH(p, sizeM, scale, lnSpcRed)
+  const leadAbove = baselineOff(p, box, descent) - ascent
   return {
     runs,
-    height,
+    height: box,
+    ...(leadAbove ? { leadAbove } : {}),
     ascent,
     descent,
-    singleH: Math.max(lineHM || ascent + descent, ascent + descent),
+    singleH: PPT_SINGLE * sizeM,
   }
 }
 
 /**
- * Computes line height with the paragraph's line-spacing settings. Single spacing =
- * the font's suggested line height (opentype: hhea ascent+descent; heuristic: 1.2em)
- * — with no extra ×1.2 on top (the earlier double scaling made large-size
- * title spacing ~20% too tall).
+ * PowerPoint line model (mac PPT, 48pt probe deck, 2026-08-16 — font-independent):
+ *   - default / explicit 100%: line box = 1.2 × fontSize (regardless of font metrics);
+ *     the baseline is BOTTOM-anchored: box − the font's real descent.
+ *   - explicit spcPct ≠ 100 (incl. <100) and spcPts: box = pct × 1.2em (or the absolute
+ *     points), and the baseline sits at 0.7333 × box (a generic 0.88/0.32 em split scaled
+ *     with the box) — real ascent/descent are NOT consulted, so at 70% the ink pokes
+ *     above the box top exactly like PowerPoint.
+ * All ten probed fonts (incl. MS PGothic 1.0em and Malgun 1.32em hhea) pace at 1.2em.
  */
-function lineH(
-  p: Paragraph,
-  m: { ascent: number; descent: number; lineHeight: number },
-  scale: number,
-  lnSpcRed = 0,
-): number {
-  const single = Math.max(m.lineHeight, m.ascent + m.descent)
+const PPT_SINGLE = 1.2
+const PPT_BASELINE_FRAC = 0.88 / 1.2
+
+function lineH(p: Paragraph, sizePx: number, scale: number, lnSpcRed = 0): number {
   if (p.lineExact != null) return ptToPx(p.lineExact, scale) // exact line spacing is unaffected by autofit spacing reduction
+  const single = PPT_SINGLE * sizePx
   const base = p.lineHeight != null ? single * (p.lineHeight / 100) : single
   return base * (1 - lnSpcRed)
+}
+
+/** Baseline offset from the line-box top (see the model above). */
+function baselineOff(p: Paragraph, box: number, descent: number): number {
+  // Explicit spacing (spcPct != 100 and spcPts at every size — 36..120pt probed): the
+  // generic 0.7333 split; only default/100% consults the font's real descent.
+  if (p.lineExact != null || (p.lineHeight != null && p.lineHeight !== 100)) {
+    return PPT_BASELINE_FRAC * box
+  }
+  return box - descent
 }
 
 export interface TextLayoutInput {
@@ -465,6 +693,44 @@ export interface TextLayoutInput {
   /** Table cells: PowerPoint drops the first paragraph's space-before and the last
       paragraph's space-after (rows stay at their minimum height regardless of them). */
   trimEdgeSpacing?: boolean
+}
+
+/**
+ * bodyPr numCol: distribute a single laid-out line stream into columns. PowerPoint fills
+ * a column to the box height, then continues at the top of the next (no balancing); a line
+ * never splits across the boundary. Lines are rebased to the column top and shifted right
+ * by whole column strides; the last column keeps any overflow.
+ */
+function flowIntoColumns(
+  result: { lines: TextLine[]; contentHeight: number },
+  availHeight: number,
+  numCol: number,
+  stride: number,
+): { lines: TextLine[]; contentHeight: number } {
+  const out: TextLine[] = []
+  let col = 0
+  let colTop = 0 // original-stream top of the current column's first line
+  let maxBottom = 0
+  for (const ln of result.lines) {
+    let top = ln.top - colTop
+    if (col < numCol - 1 && top > 0 && top + ln.height > availHeight) {
+      col += 1
+      colTop = ln.top
+      top = 0
+    }
+    const dx = col * stride
+    const dy = top - ln.top
+    out.push({
+      ...ln,
+      top,
+      runs:
+        dx || dy
+          ? ln.runs.map((r) => ({ ...r, x: r.x + dx, baselineY: r.baselineY + dy }))
+          : ln.runs,
+    })
+    maxBottom = Math.max(maxBottom, top + ln.height)
+  }
+  return { lines: out, contentHeight: maxBottom }
 }
 
 /** Main entry: TextBody → RenderTextLayout (including autofit shrink stepping). */
@@ -492,8 +758,14 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
       vp.scale,
     )
 
+  // bodyPr numCol: paragraphs wrap at the column width and fill column after column
+  const numCol = body.numCol && body.numCol > 1 ? Math.floor(body.numCol) : 1
+  const colGapPx = numCol > 1 ? emuToPx(body.spcCol ?? 0, vp.scale) : 0
+  const colWidth =
+    numCol > 1 ? Math.max((availWidth - (numCol - 1) * colGapPx) / numCol, 1) : availWidth
+
   const build = (fontScale: number, lnSpcRed: number) =>
-    layoutAll(body, availWidth, wrap, metrics, vp.scale, fontScale, lnSpcRed, input.trimEdgeSpacing)
+    layoutAll(body, colWidth, wrap, metrics, vp.scale, fontScale, lnSpcRed, input.trimEdgeSpacing)
 
   // PowerPoint's stored shrink ratio takes priority (files with shrunk text render
   // as-is; we don't scale back up per our own metrics). Only if content still
@@ -504,18 +776,23 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
   let fontScale = storedScale
   let lnSpcReduction = storedRed
   let result = build(fontScale, lnSpcReduction)
-  // PowerPoint's autofit ignores trailing blank paragraphs (files where the stored
-  // ratio only fits when they are excluded), so overflow is judged by the bottom of
-  // the last non-blank line — plus 3% slack for residual metric drift, since
-  // PowerPoint renders the authored scale as-is.
-  const fitBottom = (r: { lines: TextLine[]; contentHeight: number }): number => {
-    for (let i = r.lines.length - 1; i >= 0; i--) {
-      const ln = r.lines[i]!
-      if (ln.runs.some((run) => run.text.trim())) return ln.top + ln.height
+  // PowerPoint's autofit ignores blank lines on both ends (files where the stored
+  // ratio only fits when they are excluded), so overflow is judged by the span from
+  // the first to the last non-blank line — plus 3% slack for residual metric drift,
+  // since PowerPoint renders the authored scale as-is.
+  const fitSpan = (r: { lines: TextLine[]; contentHeight: number }): number => {
+    let top: number | undefined
+    let bottom: number | undefined
+    for (const ln of r.lines) {
+      if (!ln.runs.some((run) => run.text.trim())) continue
+      top ??= ln.top
+      bottom = ln.top + ln.height
     }
-    return r.contentHeight
+    return bottom === undefined ? r.contentHeight : bottom - (top ?? 0)
   }
-  if (body.autofit === 'shrink' && fitBottom(result) > availHeight * 1.03) {
+  // With columns, the single-stream span may spread over numCol columns of availHeight
+  const fitTarget = availHeight * numCol
+  if (body.autofit === 'shrink' && fitSpan(result) > fitTarget * 1.03) {
     for (const [fs, red] of SHRINK_STEPS) {
       if (fs >= storedScale - 1e-6) continue
       const effRed = Math.max(red, storedRed)
@@ -523,16 +800,20 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
       fontScale = fs
       lnSpcReduction = effRed
       result = r
-      if (fitBottom(r) <= availHeight) break
+      if (fitSpan(r) <= fitTarget) break
       // Still doesn't fit after all steps → stop at 25% (overflow allowed)
     }
   }
+  if (numCol > 1) result = flowIntoColumns(result, availHeight, numCol, colWidth + colGapPx)
 
   // Vertical anchor: middle/bottom shift everything down (negative offsets allowed
   // when content is too tall → overflow upward/on both sides),
   // baked straight into line coordinates so the renderer draws as-is.
   const anchor = body.anchor ?? 'top'
-  const extraH = availHeight - result.contentHeight
+  // Anchor against the glyph extent: with explicit lnSpc the line box extends below the
+  // ink, and rows/boxes sized to the ink (auto table rows) would otherwise get a negative
+  // offset that clips the top. Equal to contentHeight under single spacing.
+  const extraH = availHeight - (result.inkBottom ?? result.contentHeight)
   const dy = anchor === 'middle' ? extraH / 2 : anchor === 'bottom' ? extraH : 0
   const lines = dy
     ? result.lines.map((ln) => ({
@@ -549,6 +830,7 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
     fontScale,
     ...(lnSpcReduction ? { lnSpcReduction } : {}),
     contentHeight: result.contentHeight,
+    ...(result.inkBottom ? { inkBottom: result.inkBottom } : {}),
     wrap,
   }
 }
@@ -620,24 +902,16 @@ function layoutTextVertical(
     const paraCols: Col[] = []
     let cur: GlyphRun[] = []
     let curH = 0
-    let agg = { ascent: 0, descent: 0, lineHeight: 0 }
+    let agg = { ascent: 0, descent: 0, size: 0 }
 
     const finishCol = (soft?: number) => {
-      let m = agg
-      if (!cur.length) {
-        const st: RunStyle = {
-          fontFamily: DEFAULT_FONT,
-          fontSizePx: ptToPx(DEFAULT_SIZE_PT, scale) * fontScale,
-          bold: false,
-          italic: false,
-        }
-        m = metrics.metrics(st)
-      }
+      let size = agg.size
+      if (!cur.length) size = ptToPx(DEFAULT_SIZE_PT, scale) * fontScale
       paraCols.push({
         runs: cur,
         usedH: curH,
-        // Line height maps to column width: the column's max metrics × the paragraph line-spacing setting
-        colW: lineH(p, { ...m, lineHeight: m.lineHeight || m.ascent + m.descent }, scale, 0),
+        // Line height maps to column width: 1.2em of the column's max font size × the paragraph line-spacing setting
+        colW: lineH(p, size, scale, 0),
         paraStart: false,
         ...(soft != null ? { softBreakAfter: soft } : {}),
         gapBefore: 0,
@@ -645,7 +919,7 @@ function layoutTextVertical(
       })
       cur = []
       curH = 0
-      agg = { ascent: 0, descent: 0, lineHeight: 0 }
+      agg = { ascent: 0, descent: 0, size: 0 }
     }
 
     const pushCell = (tok: Token, g: string, isBullet = false) => {
@@ -656,7 +930,7 @@ function layoutTextVertical(
       agg = {
         ascent: Math.max(agg.ascent, m.ascent),
         descent: Math.max(agg.descent, m.descent),
-        lineHeight: Math.max(agg.lineHeight, m.lineHeight),
+        size: Math.max(agg.size, tok.style.fontSizePx),
       }
       cur.push({
         text: g,
@@ -672,6 +946,7 @@ function layoutTextVertical(
         ...(tok.strike ? { strike: true } : {}),
         ...(tok.highlight ? { highlight: tok.highlight } : {}),
         ...(tok.outline ? { outline: tok.outline } : {}),
+        ...(tok.shadow ? { shadow: tok.shadow } : {}),
         widthPx: metrics.measure(g, tok.style),
         ...(tok.blPct ? { baselinePct: tok.blPct } : {}),
         ...(isBullet ? { isBullet: true } : { srcRunIdx: tok.srcRun }),
@@ -689,7 +964,7 @@ function layoutTextVertical(
       agg = {
         ascent: Math.max(agg.ascent, m.ascent),
         descent: Math.max(agg.descent, m.descent),
-        lineHeight: Math.max(agg.lineHeight, m.lineHeight),
+        size: Math.max(agg.size, tok.style.fontSizePx),
       }
       cur.push({
         text: tok.text,
@@ -705,6 +980,7 @@ function layoutTextVertical(
         ...(tok.strike ? { strike: true } : {}),
         ...(tok.highlight ? { highlight: tok.highlight } : {}),
         ...(tok.outline ? { outline: tok.outline } : {}),
+        ...(tok.shadow ? { shadow: tok.shadow } : {}),
         widthPx: adv,
         rotate90: true,
         srcRunIdx: tok.srcRun,
@@ -717,15 +993,22 @@ function layoutTextVertical(
     const hasText = p.runs.some((r) => r.text.trim())
     const bulletType = p.bullet?.type
     const hasBullet = hasText && (bulletType === 'char' || bulletType === 'number')
-    if (bulletType === 'number' && hasText) autoNum += 1
+    if (bulletType === 'number' && hasText)
+      autoNum = autoNum === 0 ? (p.bullet?.startAt ?? 1) : autoNum + 1
     else if (bulletType !== 'number') autoNum = 0
     if (hasBullet && p.runs[0]) {
       const base = runStyle(p.runs[0], scale, fontScale)
       // <a:buSzPct>: bullet glyph size as a percentage of the first run's size
-      const st =
+      let st =
         p.bullet?.sizePct != null
           ? { ...base, fontSizePx: base.fontSizePx * (p.bullet.sizePct / 100) }
           : base
+      let glyph = bulletType === 'char' ? (p.bullet?.char ?? '•') : `${autoNum}.`
+      const sym = bulletType === 'char' ? symbolBulletText(p.bullet?.font, glyph) : undefined
+      if (sym) {
+        glyph = sym
+        st = { ...st, fontFamily: p.bullet!.font! }
+      }
       pushCell(
         {
           text: '',
@@ -737,7 +1020,7 @@ function layoutTextVertical(
           isSpace: false,
           srcRun: 0,
         },
-        bulletType === 'char' ? (p.bullet?.char ?? '•') : `${autoNum}.`,
+        glyph,
         true,
       )
     }
@@ -825,22 +1108,29 @@ function layoutAll(
   fontScale: number,
   lnSpcRed: number,
   trimEdgeSpacing?: boolean,
-): { lines: TextLine[]; contentHeight: number } {
+): { lines: TextLine[]; contentHeight: number; inkBottom?: number } {
   const outLines: TextLine[] = []
+  // Glyph-extent bottom (last baseline + descent): PowerPoint sizes auto table rows by ink,
+  // not by line-box sum (18pt probe: lnSpc 115% single-line row = 0.7333x box + descent)
+  let inkBottom = 0
   let y = 0
   let autoNum = 0 // buAutoNum sequential numbering (reset on a non-numbered paragraph)
   for (const [pIdx, p] of body.paragraphs.entries()) {
     // Indent and bullets (body lines start at marL; the bullet
     // draws at marL+indent, negative indent = hanging indent; without a bullet the
-    // first line starts at marL+indent)
-    const marLPx = emuToPx(p.marL ?? 0, scale)
+    // first line starts at marL+indent). When no layer of the style chain defines
+    // marL, PowerPoint's built-in default indents each level by 0.5" (457200 EMU).
+    const marLPx = emuToPx(p.marL ?? (p.level ? p.level * 457200 : 0), scale)
     const indentPx = emuToPx(p.indent ?? 0, scale)
     const hasText = p.runs.some((r) => r.text.trim())
     const bulletType = p.bullet?.type
     const hasBullet = hasText && (bulletType === 'char' || bulletType === 'number')
-    if (bulletType === 'number' && hasText) autoNum += 1
+    if (bulletType === 'number' && hasText)
+      autoNum = autoNum === 0 ? (p.bullet?.startAt ?? 1) : autoNum + 1
     else if (bulletType !== 'number') autoNum = 0
-    const bulletText = bulletType === 'char' ? (p.bullet?.char ?? '•') : `${autoNum}.`
+    let bulletText = bulletType === 'char' ? (p.bullet?.char ?? '•') : `${autoNum}.`
+    const symText = bulletType === 'char' ? symbolBulletText(p.bullet?.font, bulletText) : undefined
+    if (symText) bulletText = symText
 
     const textX = marLPx
     const avail = Math.max(availWidth - textX, 1)
@@ -860,6 +1150,7 @@ function layoutAll(
         p.bullet?.sizePct != null
           ? { ...base, fontSizePx: base.fontSizePx * (p.bullet.sizePct / 100) }
           : base
+      if (symText) bulletSt = { ...bulletSt, fontFamily: p.bullet!.font! }
       bulletW = metrics.measure(bulletText, bulletSt)
     }
     const bulletX = Math.max(marLPx + indentPx, 0)
@@ -876,14 +1167,17 @@ function layoutAll(
       lnSpcRed,
       bulletOverflowPx,
     )
-    // Space before/after: spcPts is absolute pt; spcPct is a percentage of the paragraph's single line height (100 = one line)
+    // Space before/after: spcPts is absolute pt; spcPct is a percentage of the paragraph's single line height (100 = one line).
+    // PowerPoint ignores space-before on a text frame's FIRST paragraph in every body
+    // (0047 measured: defaultTextStyle spcBef 50% shifted no first line), not just table cells.
     const singleH = laid[0]?.singleH ?? 0
-    if (!(trimEdgeSpacing && pIdx === 0))
+    if (pIdx !== 0)
       y +=
         ptToPx(p.spaceBefore ?? 0, scale) +
         (p.spaceBeforePct ? singleH * (p.spaceBeforePct / 100) : 0)
     laid.forEach((ln, li) => {
-      const baseline = y + ln.ascent
+      const baseline = y + (ln.leadAbove ?? 0) + ln.ascent
+      inkBottom = Math.max(inkBottom, baseline + ln.descent)
       const lineWidth = ln.runs.reduce((acc, r) => acc + r.widthPx, 0)
       // Without a bullet the first line adds indent (positive or negative); with a bullet
       // the body starts at marL, pushed right when the glyph overflows the hanging indent
@@ -947,6 +1241,7 @@ function layoutAll(
         runs,
         top: y,
         height: ln.height,
+        ...(ln.leadAbove ? { leadAbove: ln.leadAbove } : {}),
         paraStart: li === 0,
         ...(ln.trailingSpace ? { trailingSpace: true } : {}),
         ...(ln.softBreakAfter != null ? { softBreakAfter: ln.softBreakAfter } : {}),
@@ -961,5 +1256,5 @@ function layoutAll(
       y +=
         ptToPx(p.spaceAfter ?? 0, scale) + (p.spaceAfterPct ? singleH * (p.spaceAfterPct / 100) : 0)
   }
-  return { lines: outLines, contentHeight: y }
+  return { lines: outLines, contentHeight: y, inkBottom }
 }

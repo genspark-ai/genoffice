@@ -50,7 +50,21 @@ export type RenderFill =
       /** Radial focus center as width/height fractions (from <a:fillToRect>; default 0.5/0.5) */
       center?: { x: number; y: number }
     }
-  | { kind: 'image'; dataUrl?: string; mode: 'stretch' | 'tile' }
+  | {
+      kind: 'image'
+      dataUrl?: string
+      mode: 'stretch' | 'tile'
+      /** Translucent picture fill (alphaModFix, 0-1) */
+      alpha?: number
+      /** Image maps into this inset subrect of the shape (stretch fillRect, fractions) */
+      fillRect?: { l: number; t: number; r: number; b: number }
+      /** [dark, light] duotone colors mapped over image luminance */
+      duotone?: [string, string]
+      /** clrChange: pixels matching `from` become `to` (#RRGGBB or #RRGGBBAA) */
+      clrChange?: { from: string; to: string }
+      /** Tile grid: scale in px-per-image-px, anchor offsets in px, and the algn anchor */
+      tile?: { scaleX: number; scaleY: number; txPx: number; tyPx: number; algn: string }
+    }
 
 export interface RenderStroke {
   color: string
@@ -107,6 +121,8 @@ export interface GlyphRun {
   letterSpacingPx?: number
   /** Text outline (<a:rPr><a:ln>, commonly used by WordArt) */
   outline?: { color: string; widthPx: number }
+  /** Run outer shadow (px), drawn via canvas shadow props */
+  shadow?: { color: string; blurPx: number; offsetX: number; offsetY: number }
   /** Extra per-char spacing spread in by justify alignment (px); draw-only, the editor ignores it and doesn't store it */
   justifyExtraPx?: number
   /** Super/subscript baseline shift (px, positive = up; <a:rPr baseline>), already baked into baselineY */
@@ -131,6 +147,9 @@ export interface TextLine {
   /** Line top y (px relative to the text box top-left) */
   top: number
   height: number
+  /** Legacy: line advance when it exceeded height (external leading). The 1.2em
+   *  PowerPoint line model folds everything into height; kept for stored decks. */
+  advance?: number
   /** This line starts a model paragraph (false/absent = auto-wrap continuation of the previous one; the editor splits paragraphs on it) */
   paraStart?: boolean
   /** Trailing whitespace swallowed when wrapping (the editor re-adds a space when joining lines; hard breaks/CJK wrapping don't set it) */
@@ -145,6 +164,9 @@ export interface TextLine {
   marLPx?: number
   /** First-line indent in px (editor display; only applies when the paragraph has no bullet) */
   indentPx?: number
+  /** Baseline offset minus the line's ascent, signed (canvas baseline = top + leadAbove + ascent;
+   *  positive when the line box is taller than the glyphs, negative when shorter — the editor overlay compensates) */
+  leadAbove?: number
 }
 
 export interface RenderTextLayout {
@@ -159,6 +181,8 @@ export interface RenderTextLayout {
   lnSpcReduction?: number
   /** Total content height after layout (px), used for vertical alignment positioning */
   contentHeight: number
+  /** Ink bottom (last baseline + descent, px): PowerPoint's basis for auto table row heights */
+  inkBottom?: number
   /** bodyPr wrap (false = no wrapping, overflows the box; the editor also doesn't wrap) */
   wrap: boolean
   /** bodyPr vert: vertical column layout (lines = columns, right→left); vert/vert270/wordArtVert degrade to eaVert */
@@ -199,6 +223,8 @@ export interface ShapeRenderNode extends RenderNodeBase {
     tailEnd?: ArrowEndRender
   }
   fill: RenderFill
+  /** <a:fillOverlay>: second fill drawn over the base with multiply blending */
+  fillOverlay?: RenderFill
   stroke?: RenderStroke
   shadow?: RenderShadow
   glow?: RenderGlow
@@ -208,6 +234,14 @@ export interface ShapeRenderNode extends RenderNodeBase {
 export interface PictureRenderNode extends RenderNodeBase {
   type: 'picture'
   dataUrl?: string
+  /** Opaque backdrop behind the image (OLE previews render on a white canvas; metafiles are often transparent) */
+  bgColor?: string
+  /** Shape fill from the pic's own spPr, always drawn behind the (possibly translucent) image */
+  fill?: RenderFill
+  /** [dark, light] duotone colors applied to the picture pixels */
+  duotone?: [string, string]
+  /** clrChange applied to the picture pixels before duotone */
+  clrChange?: { from: string; to: string }
   /** Picture shape-geometry clip (picture styles): three channels matching shape geometry; clip when any is set */
   clip?: { cornerRadiusPx?: number; polygonPoints?: number[]; pathData?: string }
   /** Source image crop ratios (0..1, how much each side is cropped) */
@@ -267,6 +301,8 @@ export interface TableCellRender {
 export interface TableRenderNode extends RenderNodeBase {
   type: 'table'
   cells: TableCellRender[]
+  /** Table-style <a:tblBg>: drawn under the cells (alpha band fills composite over it) */
+  bgFill?: TableCellRender['fill']
   /** Grid line offsets relative to the box (px): gridX has nCols+1 entries, gridY nRows+1 */
   gridX: number[]
   gridY: number[]
@@ -319,6 +355,18 @@ export interface ChartRenderNode extends RenderNodeBase {
   styleInfo?: ChartStyleInfo
   /** Whole-chart background (chartSpace spPr, e.g. picture fill) drawn under all primitives */
   bgFill?: RenderFill
+  /** Whole-chart frame border (chartSpace spPr ln) drawn over all primitives */
+  border?: { color: string; widthPx: number }
+  /** Plot-area fill/border rectangle, drawn under the gridlines */
+  plotRect?: {
+    x: number
+    y: number
+    w: number
+    h: number
+    fill?: RenderFill
+    borderColor?: string
+    borderWidthPx?: number
+  }
   /** Gridlines / axis lines */
   gridLines: Array<{
     x1: number
@@ -327,6 +375,7 @@ export interface ChartRenderNode extends RenderNodeBase {
     y2: number
     color: string
     dash?: number[]
+    widthPx?: number
   }>
   axisLines: Array<{
     x1: number
@@ -348,6 +397,7 @@ export interface ChartRenderNode extends RenderNodeBase {
     smooth?: boolean
     closed?: boolean
     fill?: string
+    dash?: number[]
   }>
   /** Data-point markers (circles) */
   markers: Array<{ x: number; y: number; r: number; color: string }>
@@ -381,6 +431,10 @@ export interface RenderSlide {
   /** Viewport scale (fitWidthPx / slide baseline px width) — geometry coordinates already include it */
   scale: number
   background: RenderFill
+  /** The slide carries its own <p:bg> override (enables "reset background") */
+  bgOwn?: boolean
+  /** <p:sld showMasterSp="0">: master/layout background graphics hidden on this slide */
+  bgGraphicsHidden?: boolean
   nodes: RenderNode[]
   /** Hidden slide (<p:sld show="0">): thumbnails get a badge, skipped during presentation */
   hidden?: boolean

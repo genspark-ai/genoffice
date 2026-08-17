@@ -5,6 +5,7 @@ import {
   buildChartWorkbookXlsxBase64,
   parseChartPartXml,
   parseDocx,
+  patchChartPartXml,
   patchChartWorkbookXlsxBase64,
   saveDocx,
 } from '../src/index'
@@ -136,9 +137,11 @@ describe('chart embedded workbook', () => {
       ['Q1', 'Q2'],
       [{ name: '华东', values: [100, 200] }],
     )
-    const patched = await patchChartWorkbookXlsxBase64(original, ['A', 'B'], [
-      { name: '华东', values: [999, 888] },
-    ])
+    const patched = await patchChartWorkbookXlsxBase64(
+      original,
+      ['A', 'B'],
+      [{ name: '华东', values: [999, 888] }],
+    )
     expect(patched).toBeTruthy()
     const binaryStr = atob(patched!)
     const bytes = new Uint8Array(binaryStr.length)
@@ -147,5 +150,84 @@ describe('chart embedded workbook', () => {
     const sheet = await xlsx.file('xl/worksheets/sheet1.xml')!.async('string')
     expect(sheet).toContain('999')
     expect(sheet).toContain('888')
+  })
+})
+
+describe('parseChartPartXml direction and auto title', () => {
+  const chartSpace = (inner: string) =>
+    '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+    `<c:chart>${inner}</c:chart></c:chartSpace>`
+  const barPlot = (dir: string) =>
+    `<c:plotArea><c:barChart><c:barDir val="${dir}"/><c:ser><c:idx val="0"/>` +
+    '<c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val>' +
+    '</c:ser></c:barChart></c:plotArea>'
+
+  it('c:barDir="bar" marks the chart as horizontal', () => {
+    const display = parseChartPartXml(chartSpace(barPlot('bar')), 'word/charts/chart1.xml')!
+    expect(display.kind).toBe('bar')
+    expect(display.horizontal).toBe(true)
+    expect(parseChartPartXml(chartSpace(barPlot('col')), 'p')!.horizontal).toBeUndefined()
+  })
+
+  it('text-less c:title renders the Word auto-title placeholder unless deleted', () => {
+    const title = '<c:title><c:overlay val="0"/></c:title>'
+    const kept = parseChartPartXml(
+      chartSpace(`${title}<c:autoTitleDeleted val="0"/>${barPlot('col')}`),
+      'p',
+    )!
+    expect(kept.title).toBe('Chart Title')
+    const deleted = parseChartPartXml(
+      chartSpace(`${title}<c:autoTitleDeleted val="1"/>${barPlot('col')}`),
+      'p',
+    )!
+    expect(deleted.title).toBeUndefined()
+    // CT_Boolean: a val-less element and val="true" also mean deleted
+    for (const form of ['<c:autoTitleDeleted/>', '<c:autoTitleDeleted val="true"/>']) {
+      const d = parseChartPartXml(chartSpace(`${title}${form}${barPlot('col')}`), 'p')!
+      expect(d.title).toBeUndefined()
+    }
+  })
+
+  it('title patches reach strRef caches and synthesize rich bodies for auto titles', () => {
+    const strRefTitle =
+      '<c:title><c:tx><c:strRef><c:f>Sheet1!$A$1</c:f>' +
+      '<c:strCache><c:pt idx="0"><c:v>old</c:v></c:pt></c:strCache></c:strRef></c:tx></c:title>'
+    const strRefXml = chartSpace(`${strRefTitle}${barPlot('col')}`)
+    const patchedStrRef = patchChartPartXml(strRefXml, { title: 'new title' })
+    expect(patchedStrRef).toContain('<c:v>new title</c:v>')
+    const autoXml = chartSpace(`<c:title><c:overlay val="0"/></c:title>${barPlot('col')}`)
+    const patchedAuto = patchChartPartXml(autoXml, { title: 'typed title' })
+    expect(patchedAuto).toContain('<a:t>typed title</a:t>')
+    expect(parseChartPartXml(patchedAuto, 'p')!.title).toBe('typed title')
+    // Word auto titles already carry an empty c:tx/c:rich paragraph — the run
+    // must land in it (CT_Title allows a single c:tx)
+    const emptyTx =
+      '<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p>' +
+      '<a:endParaRPr lang="en-US"/></a:p></c:rich></c:tx></c:title>'
+    const patchedEmptyTx = patchChartPartXml(chartSpace(`${emptyTx}${barPlot('col')}`), {
+      title: 'kept single tx',
+    })
+    expect(patchedEmptyTx.match(/<c:tx>/g)).toHaveLength(1)
+    // cache-less strRef tx: replaced wholesale by a rich body (CT_Tx choice)
+    const bareStrRef = '<c:title><c:tx><c:strRef><c:f>Sheet1!$A$1</c:f></c:strRef></c:tx></c:title>'
+    const patchedBare = patchChartPartXml(chartSpace(`${bareStrRef}${barPlot('col')}`), {
+      title: 'from bare strRef',
+    })
+    expect(patchedBare.match(/<c:tx>/g)).toHaveLength(1)
+    expect(patchedBare).not.toContain('<c:strRef>')
+    expect(parseChartPartXml(patchedBare, 'p')!.title).toBe('from bare strRef')
+    expect(/<a:r><a:t>kept single tx<\/a:t><\/a:r><a:endParaRPr/.test(patchedEmptyTx)).toBe(true)
+  })
+
+  it('strRef titles read the cached c:v text, not the placeholder', () => {
+    const title =
+      '<c:title><c:tx><c:strRef><c:f>Sheet1!$A$1</c:f>' +
+      '<c:strCache><c:pt idx="0"><c:v>销售汇总</c:v></c:pt></c:strCache></c:strRef></c:tx></c:title>'
+    const display = parseChartPartXml(
+      chartSpace(`${title}<c:autoTitleDeleted val="0"/>${barPlot('col')}`),
+      'p',
+    )!
+    expect(display.title).toBe('销售汇总')
   })
 })

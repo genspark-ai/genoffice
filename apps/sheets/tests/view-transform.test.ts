@@ -116,6 +116,9 @@ describe('mapRangeResultToScreen', () => {
       autoFilter: null,
       dataValidations: [],
       sheetProtection: null,
+      rowBreaks: [],
+      colBreaks: [],
+      protectedRanges: [],
       indexedThroughRow: null,
       indexingComplete: true,
     })

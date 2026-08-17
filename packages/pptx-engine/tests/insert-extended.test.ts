@@ -494,22 +494,21 @@ describe('addMedia / addModel3d', () => {
 })
 
 describe('unsupported chart kinds', () => {
-  // Classic-namespace chart type the model doesn't support (same bucket as stock/surface;
-  // chartex parts like waterfall/funnel never even reach parseChartXml)
-  const BUBBLE_CHART = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>
-<c:bubbleChart><c:ser><c:idx val="0"/>
-  <c:xVal><c:numRef><c:f>x</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:xVal>
-  <c:yVal><c:numRef><c:f>y</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:yVal>
-  <c:bubbleSize><c:numRef><c:f>s</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>5</c:v></c:pt><c:pt idx="1"><c:v>9</c:v></c:pt></c:numCache></c:numRef></c:bubbleSize>
-</c:ser></c:bubbleChart>
+  // Classic-namespace chart type the model doesn't support (surface; chartex parts
+  // like waterfall/funnel never even reach parseChartXml)
+  const SURFACE_CHART = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>
+<c:surface3DChart><c:ser><c:idx val="0"/>
+  <c:cat><c:strRef><c:f>c</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strCache></c:strRef></c:cat>
+  <c:val><c:numRef><c:f>v</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:val>
+</c:ser></c:surface3DChart>
 </c:plotArea></c:chart></c:chartSpace>`
 
-  it('parseChartXml returns null for a bubble chart (no recognizable plot)', () => {
-    expect(parseChartXml(BUBBLE_CHART)).toBeNull()
+  it('parseChartXml returns null for a surface chart (no recognizable plot)', () => {
+    expect(parseChartXml(SURFACE_CHART)).toBeNull()
   })
 
   it('an unsupported chart degrades to a passthrough element and survives an unrelated edit + save byte-for-byte', async () => {
-    // Build a deck with a chart, then swap its part for a bubble chart on disk
+    // Build a deck with a chart, then swap its part for a surface chart on disk
     const opened = await openPptx(fx('01_standard_business.pptx'))
     addChart(opened, 0, {
       kind: 'bar',
@@ -521,7 +520,7 @@ describe('unsupported chart kinds', () => {
     const chartPart = [...staged.archive.entries.keys()].find((p) =>
       /^ppt\/charts\/chart\d+\.xml$/.test(p),
     )!
-    staged.archive.entries.set(chartPart, Buffer.from(BUBBLE_CHART, 'utf8'))
+    staged.archive.entries.set(chartPart, Buffer.from(SURFACE_CHART, 'utf8'))
     const buf = await savePptx(staged)
 
     // Reopen: the graphicFrame no longer parses as a chart — it must become a passthrough chip, not vanish
@@ -538,7 +537,7 @@ describe('unsupported chart kinds', () => {
     const saved = await openPptx(await savePptx(reopened))
 
     // The chart part and the graphicFrame bytes are untouched
-    expect(saved.archive.readText(chartPart)).toBe(BUBBLE_CHART)
+    expect(saved.archive.readText(chartPart)).toBe(SURFACE_CHART)
     const pt2 = saved.deck.slides[0]!.elements.find(
       (e) => e.type === 'passthrough',
     ) as PassthroughElement

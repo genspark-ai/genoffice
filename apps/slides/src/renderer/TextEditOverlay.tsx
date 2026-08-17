@@ -180,10 +180,12 @@ export function populateEditorDom(
     p.dataset.srcPara = String(pi)
     const first = paraLines[0]!
     const last = paraLines[paraLines.length - 1]!
-    p.style.lineHeight = `${first.height}px`
+    p.style.lineHeight = `${first.advance ?? first.height}px`
     const gap = first.top - prevEnd
     if (Math.abs(gap) > 0.01) p.style.marginTop = `${gap}px`
-    prevEnd = last.top + last.height
+    // The DOM block ends one advance below the last line top (external leading renders
+    // inside the block, unlike the canvas) — margins of following paragraphs compensate
+    prevEnd = last.top + (last.advance ?? last.height)
     // RTL paragraphs (Arabic/Hebrew) align in editing as on canvas: the browser sets direction by the first strong character
     p.dir = 'auto'
     const align = paraLines[0]?.align
@@ -219,7 +221,8 @@ export function populateEditorDom(
           dominant.italic,
         )
       : 0
-    const canvasBaseline = engineAscent + drop
+    // lnSpc>100%: the canvas pins glyphs to the slot bottom (leadAbove below the line top)
+    const canvasBaseline = (first.leadAbove ?? 0) + engineAscent + drop
     const participants: Array<{ family: string; size: number; bold?: boolean; italic?: boolean }> =
       first.runs.map((r) => ({
         family: displayFontFamily(r.fontFamily ?? ''),
@@ -228,11 +231,14 @@ export function populateEditorDom(
         italic: r.italic,
       }))
     if (strutFont) participants.push({ family: strutFont.family, size: strutFont.size })
+    // Half-leading distributes over the CSS line-height, which is the advance
+    // (box + external leading) when the font has an hhea lineGap
+    const cssLineH = first.advance ?? first.height
     for (const f of participants) {
       if (!f.family || !f.size) continue
       const m = browserFontBox(f.family, f.size, f.bold, f.italic)
       if (!m.height) continue
-      domBaseline = Math.max(domBaseline, (first.height - m.height) / 2 + m.ascent)
+      domBaseline = Math.max(domBaseline, (cssLineH - m.height) / 2 + m.ascent)
     }
     const dyFix = canvasBaseline > 0 && domBaseline > 0 ? canvasBaseline - domBaseline : 0
     // Horizontal: nowrap overflow — the canvas centers/right-aligns within the box and
@@ -438,8 +444,11 @@ export function TextEditOverlay({
     const div = ref.current
     if (!div) return
     div.dataset.norm = String(norm) // The ribbon helpers for font size increase/decrease/set take the conversion factor from here
-    // Same anchor offset as the engine (the dy text-layout bakes into line tops), removed back during populate
-    const extraH = Math.max(box.h - insets.t - insets.b, 1) - (node.text?.contentHeight ?? 0)
+    // Same anchor offset as the engine (the dy text-layout bakes into line tops), removed back
+    // during populate — the engine anchors against the glyph extent (inkBottom), so mirror it
+    const extraH =
+      Math.max(box.h - insets.t - insets.b, 1) -
+      (node.text?.inkBottom ?? node.text?.contentHeight ?? 0)
     const anchorDy = anchor === 'middle' ? extraH / 2 : anchor === 'bottom' ? extraH : 0
     populateEditorDom(div, node.text?.lines ?? [], anchorDy, box.w - insets.l - insets.r)
     initialRef.current = JSON.stringify(extractParagraphs(div, norm))

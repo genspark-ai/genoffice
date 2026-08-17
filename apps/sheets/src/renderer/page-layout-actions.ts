@@ -10,10 +10,15 @@ import {
   isSheetRemoved,
   journalSize,
   recordPageSetup,
+  recordThemeColors,
+  recordThemeFonts,
   type PageSetupJournalState,
 } from './edit-journal'
 import type { HeaderFooterResult } from './HeaderFooterDialog'
 import { t } from './i18n/locale'
+import { effectivePageBreaks } from './page-break-preview'
+import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './themes'
+import { loadVisibleRange } from './univer-sync'
 import { buildSheetPrintPayload, type PrintWorksheet } from './print-html'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 
@@ -30,9 +35,13 @@ const PAPER_NAMES: Record<string, string> = {
 /** The App refs/state the page-layout actions need; built fresh per call. */
 export interface PageLayoutContext {
   univerRef: { readonly current: UniverRuntime | null }
-  lazyWorkbookRef: { readonly current: LazyWorkbookState | null }
+  /// The App's live ref (not a snapshot): loadVisibleRange's staleness
+  /// guards compare against `.current` after awaits.
+  lazyWorkbookRef: { current: LazyWorkbookState | null }
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
+  /// Re-renders the Page Break Preview overlay when page geometry changed.
+  refreshPageBreakPreview?: () => void
 }
 
 export function handlePageLayoutCommand(ctx: PageLayoutContext, rest: string): void {
@@ -50,6 +59,7 @@ export function handlePageLayoutCommand(ctx: PageLayoutContext, rest: string): v
     recordPageSetup(state.editJournal, sheetId, patch)
     ctx.setPendingEdits(journalSize(state.editJournal))
     ctx.setMessage(t('appPageSetupRecorded', { note }))
+    ctx.refreshPageBreakPreview?.()
   }
   const separator = rest.indexOf(':')
   const key = separator === -1 ? rest : rest.slice(0, separator)
@@ -133,6 +143,105 @@ export function handlePageLayoutCommand(ctx: PageLayoutContext, rest: string): v
         `${columnLabel(startColumn)}${startRow + 1}` +
         `:${columnLabel(startColumn + range.getWidth() - 1)}${startRow + range.getHeight()}`
       record({ printArea: area }, t('appPrintAreaNote', { area }))
+      return
+    }
+    case 'theme':
+    case 'theme-colors':
+    case 'theme-fonts': {
+      if (!state.file.themeColors || (key === 'theme-fonts' && !state.file.themeFonts)) {
+        ctx.setMessage(t('appThemeNeedsThemePart'))
+        return
+      }
+      const colors =
+        key === 'theme-fonts' ? undefined : COLOR_SCHEMES.find((entry) => entry.id === value)
+      // A theme without a rewritable fontScheme keeps its fonts: journaling
+      // one would poison every subsequent save.
+      const fonts =
+        key === 'theme-colors' || !state.file.themeFonts
+          ? undefined
+          : key === 'theme'
+            ? THEME_PRESETS.find((entry) => entry.id === value)?.fonts
+            : FONT_SCHEMES.find((entry) => entry.id === value)
+      if (colors === undefined && fonts === undefined) return
+      if (colors !== undefined) {
+        recordThemeColors(state.editJournal, colors.name, colors.values)
+        state.file.themeColors = [...colors.values]
+      }
+      if (fonts !== undefined) {
+        recordThemeFonts(state.editJournal, fonts.name, fonts.major, fonts.minor)
+        state.file.themeFonts = { major: fonts.major, minor: fonts.minor }
+      }
+      // Live re-resolution: styles carrying theme provenance recolor now;
+      // charts/CF colors follow on the save's reopen (which reparses the
+      // rewritten theme part).
+      state.file.styles = rethemeStyles(
+        state.file.styles,
+        state.file.themeColors,
+        state.file.themeFonts ?? null,
+      )
+      for (const loadedSheetId of [...state.loadedRanges.keys()]) {
+        state.loadedRanges.delete(loadedSheetId)
+        state.appliedRowKeys.delete(loadedSheetId)
+      }
+      ctx.setPendingEdits(journalSize(state.editJournal))
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+      if (active) {
+        // Silent repaint: this reload only re-applies the re-themed styles;
+        // its async streaming progress would otherwise land after (and wipe)
+        // the theme confirmation below.
+        void loadVisibleRange(runtime, ctx.lazyWorkbookRef, active, () => undefined)
+      }
+      ctx.setMessage(t('appThemeApplied', { name: (colors ?? fonts)?.name ?? value }))
+      return
+    }
+    case 'breaks': {
+      if (value !== 'insert' && value !== 'remove' && value !== 'reset') return
+      const current = effectivePageBreaks(state, sheetId)
+      if (current === null) {
+        ctx.setMessage(t('appBreaksNeedIndexed'))
+        return
+      }
+      if (value === 'reset') {
+        record({ rowBreaks: [], colBreaks: [] }, t('appBreaksReset'))
+        return
+      }
+      const range = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()
+      if (!range || !worksheet) {
+        ctx.setMessage(t('appBreaksNeedCell'))
+        return
+      }
+      const row = range.getRow()
+      const column = range.getColumn()
+      // Excel: a full-row selection places only the horizontal break, a
+      // full-column selection only the vertical one; a cell places both.
+      const fullRow = range.getWidth() >= worksheet.getMaxColumns()
+      const fullColumn = range.getHeight() >= worksheet.getMaxRows()
+      const wantRow = !fullColumn && row > 0
+      const wantColumn = !fullRow && column > 0
+      if (value === 'insert') {
+        if (!wantRow && !wantColumn) {
+          ctx.setMessage(t('appBreaksNeedCell'))
+          return
+        }
+        const rowBreaks = wantRow
+          ? [...new Set([...current.rowBreaks, row])].sort((a, b) => a - b)
+          : current.rowBreaks
+        const colBreaks = wantColumn
+          ? [...new Set([...current.colBreaks, column])].sort((a, b) => a - b)
+          : current.colBreaks
+        record({ rowBreaks, colBreaks }, t('appBreakInserted'))
+        return
+      }
+      const rowBreaks = current.rowBreaks.filter((id) => !(wantRow && id === row))
+      const colBreaks = current.colBreaks.filter((id) => !(wantColumn && id === column))
+      if (
+        rowBreaks.length === current.rowBreaks.length &&
+        colBreaks.length === current.colBreaks.length
+      ) {
+        ctx.setMessage(t('appBreakNoneHere'))
+        return
+      }
+      record({ rowBreaks, colBreaks }, t('appBreakRemoved'))
       return
     }
     case 'print-titles': {

@@ -73,8 +73,9 @@ export const MERGE_MUTATIONS: Record<string, 'merge-cells' | 'unmerge-cells'> = 
 }
 // Row/column sizing and visibility journal as ordered ops and replay into
 // row/cols attributes at save time. (`set-worksheet-row-auto-height` is
-// derived layout — it fires during rendering and must NOT journal; the user
-// command is `set-worksheet-row-is-auto-height`.)
+// derived layout — it fires during rendering and must NOT journal; the
+// user-intent mutation is `set-worksheet-row-is-auto-height`, dispatched by
+// the `sheet.command.set-row-is-auto-height` command.)
 export const AXIS_ATTR_MUTATIONS: Record<
   string,
   { kind: 'size' | 'hidden' | 'auto-size'; axis: 'row' | 'column'; hidden?: boolean }
@@ -161,6 +162,18 @@ export const MOVE_ROWS_MUTATION = 'sheet.mutation.move-rows'
 // Sheet duplication clones the worksheet part file-side; the journal records
 // the source so the save seeds the new part from it.
 export const COPY_SHEET_COMMAND = 'sheet.command.copy-sheet'
+
+/// Sheet-structure commands blocked while the workbook structure is locked
+/// (Review > Protect Workbook): add/remove/rename/reorder/duplicate/hide.
+export const STRUCTURE_LOCK_COMMANDS = new Set([
+  'sheet.command.insert-sheet',
+  'sheet.command.remove-sheet',
+  'sheet.command.set-worksheet-name',
+  'sheet.command.set-worksheet-order',
+  'sheet.command.copy-sheet',
+  'sheet.command.set-worksheet-hidden',
+  'sheet.command.set-worksheet-show',
+])
 // Autofill lands as plain value mutations (journal-friendly), but dragging
 // into an unstreamed region would overwrite data the user never saw.
 export const AUTO_FILL_COMMAND = 'sheet.command.auto-fill'

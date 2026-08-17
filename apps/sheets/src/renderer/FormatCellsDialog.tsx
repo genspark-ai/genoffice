@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { ColorDropdown } from './ColorDropdown'
 import { draftFromSelection, formatCellsCommands, type FormatCellsDraft } from './format-cells'
 import { useI18n, type StringKey } from './i18n/locale'
 import {
@@ -464,10 +465,12 @@ export function FormatCellsDialog({
               ))}
               <label>
                 {t('dlgFcColor')}
-                <input
-                  type="color"
+                <ColorDropdown
+                  label={t('dlgFcColor')}
                   value={draft.fontColor || '#000000'}
-                  onChange={(e) => set('fontColor', e.target.value)}
+                  onPick={(hex) => {
+                    if (hex) set('fontColor', hex)
+                  }}
                 />
               </label>
             </div>
@@ -500,10 +503,12 @@ export function FormatCellsDialog({
               </label>
               <label>
                 {t('dlgFcColor')}
-                <input
-                  type="color"
+                <ColorDropdown
+                  label={t('dlgFcColor')}
                   value={draft.borderColor}
-                  onChange={(e) => set('borderColor', e.target.value)}
+                  onPick={(hex) => {
+                    if (hex) set('borderColor', hex)
+                  }}
                 />
               </label>
             </div>
@@ -512,18 +517,13 @@ export function FormatCellsDialog({
             <div className="dialog-grid">
               <label>
                 {t('dlgFcBackground')}
-                <input
-                  type="color"
+                <ColorDropdown
+                  label={t('dlgFcBackground')}
                   value={draft.fill || '#ffffff'}
                   disabled={draft.noFill}
-                  // An unset fill already displays as white, so picking white
-                  // never fires a change event. Seed the draft when the user
-                  // opens the picker: that turns the displayed white into an
-                  // explicit choice, distinguishable from "no fill".
-                  onClick={() => {
-                    if (!draft.fill) set('fill', '#ffffff')
+                  onPick={(hex) => {
+                    if (hex) set('fill', hex)
                   }}
-                  onChange={(e) => set('fill', e.target.value)}
                 />
               </label>
               <label className="dialog-check">

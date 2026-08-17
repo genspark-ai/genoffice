@@ -737,7 +737,7 @@ const reasoningKeys: Record<CodexReasoningEffort, CodexStringKey> = {
   ultra: 'aiCodexReasoningUltra',
 }
 
-const errorKeys: Record<IpcErrorCode, CodexStringKey> = {
+const errorKeys: Partial<Record<IpcErrorCode, CodexStringKey>> = {
   timeout: 'aiCodexTimeout',
   credits: 'aiCodexCreditsExhausted',
   'auth-required': 'aiCodexAuthRequired',

@@ -46,19 +46,29 @@ import {
   patchMathTokens,
   type ChartDisplay,
   type DiagramDisplay,
+  type DocDefaults,
   type FieldDisplay,
   type FormulaDisplay,
   type NewChart,
   type NumberingDef,
+  type Run,
+  type StyleDisplay,
+  type StyleInfo,
   type TableCell,
   type TableModel,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
-import { bulletMarkerScale, computeListMarkerInfos, type ListItemRef } from './numbering'
+import {
+  bulletMarkerScale,
+  computeListMarkerInfos,
+  markerTabAdvance,
+  type ListItemRef,
+} from './numbering'
 import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
 import { paraBorderCss } from './hf-dom'
 import { PaginationGapsExtension } from './pagination-gaps'
+import { TableHandle } from './table-handle'
 import { TrackChangesExtension } from './revisions'
 import { inlineToRuns, runsToInline, textboxParaSignature, type PmNode as PmJson } from './convert'
 import { constrainTableWidthAtCell } from './table-sizing'
@@ -71,12 +81,14 @@ import { constrainTableWidthAtCell } from './table-sizing'
 
 import {
   CHART_MAX_WIDTH_PX,
+  CHART_TITLE_ROW_PX,
   drawChartSvg,
   renderChartSpec,
   renderFieldSpec,
   renderFormulaSpec,
   renderTableSpec,
   renderTextboxSpec,
+  runSpanSpecs,
   textboxBoxStyle,
   wireChartEditing,
 } from './protected-render'
@@ -100,6 +112,7 @@ import {
   DropCapExtension,
   MoveRevisionExtension,
   PPrChangeExtension,
+  ParaBorderMergeExtension,
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,
   SdtExtension,
@@ -512,6 +525,10 @@ export const DocInlineImage = Node.create({
       widthPx: { default: null as number | null },
       heightPx: { default: null as number | null },
       xml: { default: '' },
+      /** floating (wp:anchor) picture: wrap kind + anchor offsets (display only) */
+      wrap: { default: null as string | null },
+      offsetXEmu: { default: null as number | null },
+      offsetYEmu: { default: null as number | null },
     }
   },
   parseHTML() {
@@ -526,6 +543,26 @@ export const DocInlineImage = Node.create({
     const w = Number(node.attrs.widthPx)
     const h = Number(node.attrs.heightPx)
     if (w > 0) attrs.style = `width:${w}px;${h > 0 ? `height:${h}px` : 'height:auto'}`
+    const wrap = node.attrs.wrap as string | null
+    if (wrap === 'front' || wrap === 'behind') {
+      // no-wrap / behind-text anchor: absolute overlay at the anchor offset from
+      // the run position (zero flow footprint, like Word); behind approximated
+      // by reduced opacity — the flowing canvas has no z layer under the text
+      const left = Number(node.attrs.offsetXEmu ?? 0) / EMU_PER_PX
+      const top = Number(node.attrs.offsetYEmu ?? 0) / EMU_PER_PX
+      attrs.style =
+        `${attrs.style ?? ''};position:absolute;left:${left.toFixed(1)}px;` +
+        `top:${top.toFixed(1)}px;max-width:none`
+      if (wrap === 'behind') attrs.class += ' doc-inline-img--behind'
+      return [
+        'span',
+        { class: 'doc-inline-img-anchor', 'data-inline-image-anchor': '1' },
+        ['img', attrs],
+      ]
+    }
+    // square/tight/through wrap → real CSS float so the surrounding text wraps;
+    // topBottom → block line of its own
+    if (wrap) attrs.class += ` doc-inline-img--wrap-${wrap}`
     return ['img', attrs]
   },
 })
@@ -771,6 +808,10 @@ interface DocListCommands {
 export interface ListNumberingStorage {
   /** numId -> definition, from the open document's numbering.xml */
   defs: Map<string, NumberingDef>
+  /** style/docDefaults display info: marker measurement reads the same font
+   *  chain the ::before inherits (data-style rule -> .doc-page baseline) */
+  styles?: Map<string, StyleInfo>
+  docDefaults?: DocDefaults
 }
 
 declare module '@tiptap/core' {
@@ -956,6 +997,59 @@ function firstRunSizeHalfPoints(node: PmNode): number | null {
   return sz
 }
 
+/** the font the ::before marker actually inherits: the item's [data-style] rule,
+ *  else the .doc-page baseline (Normal / docDefaults) — same chain as doc-style-css */
+function markerParagraphFont(
+  styleId: unknown,
+  storage: ListNumberingStorage,
+): { family: string; sizeHalf: number; bold: boolean } {
+  const style = typeof styleId === 'string' ? storage.styles?.get(styleId)?.display : undefined
+  let normal: StyleDisplay | undefined
+  for (const info of storage.styles?.values() ?? []) {
+    if (info.isDefault && info.type === 'paragraph' && info.display) {
+      normal = info.display
+      break
+    }
+  }
+  const dd = storage.docDefaults
+  return {
+    // ascii slot first: dual-slot font-family rules put the Latin face first,
+    // and markers are Latin/digit text
+    family:
+      style?.fontAscii ??
+      style?.font ??
+      normal?.fontAscii ??
+      dd?.asciiFont ??
+      normal?.font ??
+      dd?.eastAsiaFont ??
+      'Calibri',
+    sizeHalf: style?.sizeHalfPoints ?? normal?.sizeHalfPoints ?? dd?.sizeHalfPoints ?? 22,
+    bold: style?.bold ?? normal?.bold ?? dd?.bold ?? false,
+  }
+}
+
+let markerMeasureCtx: CanvasRenderingContext2D | null | undefined
+/** marker advance in twips via canvas metrics; null in DOM-less test envs */
+function measureMarkerTwips(
+  text: string,
+  family: string,
+  sizePt: number,
+  bold: boolean,
+): number | null {
+  if (markerMeasureCtx === undefined) {
+    try {
+      markerMeasureCtx = document.createElement('canvas').getContext('2d')
+    } catch {
+      markerMeasureCtx = null
+    }
+  }
+  if (!markerMeasureCtx) return null
+  const weight = bold ? '600 ' : ''
+  markerMeasureCtx.font = `${weight}${(sizePt * 4) / 3}px "${family.replaceAll('"', '')}", Calibri, sans-serif`
+  const w = markerMeasureCtx.measureText(text).width
+  return Number.isFinite(w) && w > 0 ? Math.round(w * 15) : null
+}
+
 export const ListNumberingExtension = Extension.create<object, ListNumberingStorage>({
   name: 'listNumbering',
   addStorage() {
@@ -1010,8 +1104,40 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
           if (!nodeAttrs.indentFirstLine && level.hanging) {
             styles.push(`--li-hang:${level.hanging / 20}pt`)
           }
-          const szHalf = level.szHalfPoints ?? firstRunSizeHalfPoints(nodes[i].node)
+          const szHalf = level.szHalfPoints ?? firstRunSizeHalfPoints(nodes[i].node) ?? undefined
           if (szHalf) styles.push(`--li-marker-size:${szHalf / 2}pt`)
+          if (level.suff === 'space' || level.suff === 'nothing') attrs['data-suff'] = level.suff
+
+          // Word's default tab after the marker: a marker that escapes the hanging
+          // area (or a level with positive w:firstLine) pushes first-line text to
+          // the next default tab stop, not right up against the marker
+          if (level.suff === undefined || level.suff === 'tab') {
+            const leftTw = Number(nodeAttrs.indentLeft) || level.indentLeft || 0
+            const nodeFirst = Number(nodeAttrs.indentFirstLine) || 0
+            if (leftTw > 0 && nodeFirst <= 0 && text) {
+              const hangTw =
+                nodeFirst < 0
+                  ? -nodeFirst
+                  : level.firstLine
+                    ? -level.firstLine
+                    : (level.hanging ?? 360)
+              // no level/run size -> the marker renders at the li's 1em; family always
+              // inherits from the li (level.font only applies to symbol bullets)
+              const para = markerParagraphFont(nodeAttrs.styleId, storage)
+              const widthTw = measureMarkerTwips(
+                text,
+                para.family,
+                (szHalf ?? para.sizeHalf) / 2,
+                para.bold,
+              )
+              const adv =
+                widthTw !== null ? markerTabAdvance(leftTw - hangTw, widthTw, leftTw) : null
+              if (adv !== null) {
+                if (hangTw < 0) styles.push(`--li-hang:${hangTw / 20}pt`)
+                styles.push(`--li-tab:${adv / 20}pt`)
+              }
+            }
+          }
         }
         if (styles.length > 0) attrs.style = styles.join(';')
         decos.push(Decoration.node(nodes[i].pos, nodes[i].pos + nodes[i].node.nodeSize, attrs))
@@ -1217,6 +1343,8 @@ export const DocTable = Node.create({
       tblAlign: { default: null as string | null },
       indentTwips: { default: null as number | null },
       tblStyleId: { default: null as string | null },
+      /** SDT shell JSON when the table is a content-control member (chrome hit-testing) */
+      sdtShell: { default: null as string | null },
       /** RTL table (tblPr w:bidiVisual): columns right to left */
       bidiVisual: { default: false },
       originalStructure: { default: null as string | null },
@@ -1336,7 +1464,7 @@ export const DocTableRow = Node.create({
 
 export const DocTableCell = Node.create({
   name: 'docTableCell',
-  content: '(docParagraph | docListItem | docNestedTable)+',
+  content: '(docParagraph | docListItem | docNestedTable | docCellBoxes)+',
   isolating: true,
   addAttributes() {
     return tableCellAttrs
@@ -1351,7 +1479,7 @@ export const DocTableCell = Node.create({
 
 export const DocTableHeader = Node.create({
   name: 'docTableHeader',
-  content: '(docParagraph | docListItem | docNestedTable)+',
+  content: '(docParagraph | docListItem | docNestedTable | docCellBoxes)+',
   isolating: true,
   addAttributes() {
     return tableCellAttrs
@@ -1361,6 +1489,55 @@ export const DocTableHeader = Node.create({
   },
   renderHTML({ node }) {
     return tableCellSpec('th', node)
+  },
+})
+
+/** Anchored shapes/textboxes inside a table cell (display-only): Word renders them
+ *  in the cell and grows the row to hold them, so the wrapper takes the boxes'
+ *  bottom extent as in-flow height (pagination then pushes the row like Word) */
+export const DocCellBoxes = Node.create({
+  name: 'docCellBoxes',
+  atom: true,
+  selectable: false,
+  addAttributes() {
+    return { boxes: { default: null as TextboxDisplay[] | null } }
+  },
+  parseHTML() {
+    return []
+  },
+  renderHTML({ node }) {
+    const boxes = (node.attrs.boxes as TextboxDisplay[] | null) ?? []
+    if (boxes.length === 0) return ['div', { class: 'doc-cell-boxes' }]
+    let bottom = 0
+    for (const b of boxes) {
+      bottom = Math.max(
+        bottom,
+        (b.offsetYEmu ?? 0) / EMU_PER_PX + (b.heightPx ?? b.minHeightPx ?? 0),
+      )
+    }
+    return [
+      'div',
+      {
+        class: 'doc-cell-boxes',
+        contenteditable: 'false',
+        // zero-width leading float: the cell (a BFC) grows to max(text, boxes)
+        // like Word, without displacing the cell's own text
+        style: bottom > 0 ? `height:${bottom.toFixed(1)}px` : '',
+      },
+      // floating boxes self-position from their anchor offsets; in-flow boxes get
+      // the same offsets via a positioned wrapper (Word places both in the cell)
+      ...boxes.map((b): DomSpec => {
+        const spec = renderTextboxSpec(b)
+        if (b.floating) return spec
+        const left = (b.offsetXEmu ?? 0) / EMU_PER_PX
+        const top = (b.offsetYEmu ?? 0) / EMU_PER_PX
+        return [
+          'div',
+          { style: `position:absolute;left:${left.toFixed(1)}px;top:${top.toFixed(1)}px` },
+          spec,
+        ]
+      }),
+    ]
   },
 })
 
@@ -1629,6 +1806,9 @@ export const DocProtected = Node.create({
       invisibleMarker: { default: false },
       /** display-only anchored textboxes (code boxes, callout cards) */
       textboxes: { default: null as TextboxDisplay[] | null },
+      /** the anchor paragraph's own runs next to content textboxes (display-only) */
+      strayRuns: { default: null as Run[] | null },
+      strayStyleId: { default: null as string | null },
       /** editable OMML leaf tokens; formula structure remains protected */
       formulaDisplay: { default: null as FormulaDisplay | null },
       /** embedded chart data model; cached texts/numbers editable, structure protected */
@@ -1843,27 +2023,55 @@ function protectedDomSpec(node: PmNode): DomSpec {
   }
   if (Array.isArray(textboxes) && textboxes.length > 0) {
     attrs.class += ' doc-protected-textboxes'
+    // paragraph justification centers inline shapes (WordArt) like Word
+    const boxAlign = node.attrs.imageAlign
+    if (boxAlign === 'center' || boxAlign === 'right') {
+      attrs.class += ` doc-protected-boxes-${boxAlign}`
+    }
     const boxes = textboxes as TextboxDisplay[]
     const diagram = node.attrs.diagramDisplay as DiagramDisplay | null
     // every box floats at its own anchor offset (wrapNone / multi-drawing
     // paragraphs): the wrapper leaves the flow like Word instead of stacking
     const allFloating = boxes.every((b) => b.floating) && (!diagram || diagram.floating)
+    const strayRuns = node.attrs.strayRuns as Run[] | null
+    let strayStyle = ''
     if (allFloating) {
       attrs.class += ' doc-protected-floating'
+      // stray text keeps the anchor paragraph's flow line in Word, so the
+      // wrapper must not collapse to height 0 (next block would overlap it)
+      if (strayRuns?.length) attrs.class += ' doc-protected-floating-stray'
     } else {
       const offsetX = node.attrs.imageOffsetXEmu
       const offsetY = node.attrs.imageOffsetYEmu
       if (offsetX != null || offsetY != null) {
-        attrs.style =
-          `transform:translate(${Number(offsetX ?? 0) / EMU_PER_PX}px,` +
-          `${Number(offsetY ?? 0) / EMU_PER_PX}px)`
+        const dx = Number(offsetX ?? 0) / EMU_PER_PX
+        const dy = Number(offsetY ?? 0) / EMU_PER_PX
+        attrs.style = `transform:translate(${dx}px,${dy}px)`
+        // the drawing offset moves the boxes only; stray text stays put
+        strayStyle = `transform:translate(${-dx}px,${-dy}px)`
       }
     }
     const children: DomSpec[] = boxes.map(renderTextboxSpec)
+    // the anchor paragraph's own text (e.g. a heading sharing its paragraph
+    // with a sidebar box) renders as a display-only line before the boxes
+    if (strayRuns?.length) {
+      const strayAttrs: Record<string, string> = { class: 'doc-textbox-stray' }
+      if (strayStyle) strayAttrs.style = strayStyle
+      if (node.attrs.strayStyleId) strayAttrs['data-style'] = String(node.attrs.strayStyleId)
+      children.unshift(['div', strayAttrs, ...strayRuns.flatMap((run) => runSpanSpecs(run))])
+    }
     if (diagram?.shapes?.length) children.push(diagramSpecOf(diagram))
     // corner resize handle; multi-box nodes keep per-box autogrow semantics only
     if (boxes.length === 1 && !diagram) {
       children.push(['span', { class: 'box-resize-handle', contenteditable: 'false' }])
+    }
+    // page-type w:br the anchor paragraph carries next to the boxes: Word keeps
+    // the anchor's flow line, so render the break chip as a stray line (nonzero
+    // height — a zero-height carrier cannot advance the pagination Y coordinate)
+    if ((fieldDisplay as FieldDisplay | null)?.kind === 'pageBreak') {
+      attrs.class += ' doc-protected-floating-stray'
+      const spec = renderFieldSpec(fieldDisplay as FieldDisplay)
+      if (spec) children.push(spec)
     }
     return ['div', attrs, moveHandleSpec(t('editorMoveTextbox')), ...children]
   }
@@ -2452,6 +2660,7 @@ function textboxDocJson(box: TextboxDisplay): Record<string, unknown> {
   const paras = box.paras.map((para) => ({
     type: 'docParagraph',
     attrs: {
+      styleId: para.styleId ?? null,
       align: para.align ?? null,
       lineSpacing: para.lineSpacing ?? null,
       indentLeft: para.indentLeft ?? null,
@@ -2473,6 +2682,7 @@ function subEditorParas(sub: Editor): TextboxPara[] {
     const para: TextboxPara = { runs: inlineToRuns(p.content ?? []) }
     const attrs = p.attrs ?? {}
     const keys = [
+      'styleId',
       'align',
       'lineSpacing',
       'indentLeft',
@@ -2702,7 +2912,9 @@ function imageResizePlugin(): Plugin {
                     chartDisplay: {
                       ...display,
                       widthPx: Math.round(w),
-                      heightPx: Math.round(h),
+                      // the handle measures the plot SVG; heightPx spans title row + plot
+                      heightPx:
+                        Math.round(h) + (display.title !== undefined ? CHART_TITLE_ROW_PX : 0),
                     },
                   }),
                 )
@@ -2951,6 +3163,7 @@ const TextboxParagraph = Node.create({
   content: 'inline*',
   addAttributes() {
     return {
+      styleId: { default: null as string | null },
       align: { default: null as string | null },
       lineSpacing: { default: null as number | null },
       indentLeft: { default: null as number | null },
@@ -2969,6 +3182,7 @@ const TextboxParagraph = Node.create({
     const attrs: Record<string, string> = {
       class: `doc-textbox-para${node.content.size === 0 ? ' doc-textbox-para-empty' : ''}`,
     }
+    if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
     const styles = [
       node.attrs.align
         ? `text-align:${node.attrs.align === 'distribute' ? 'justify' : node.attrs.align}`
@@ -3032,6 +3246,7 @@ export const editorExtensions = [
   DocTableCell,
   DocTableHeader,
   DocNestedTable,
+  DocCellBoxes,
   DocProtected,
   BoldMark,
   ItalicMark,
@@ -3050,12 +3265,14 @@ export const editorExtensions = [
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,
   NativeTableSupport,
+  TableHandle,
   TrackChangesExtension,
   LineFactorExtension,
   ListNumberingExtension,
   PaginationGapsExtension,
   TabStopExtension,
   DropCapExtension,
+  ParaBorderMergeExtension,
   SdtExtension,
   MoveRevisionExtension,
   PPrChangeExtension,

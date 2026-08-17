@@ -557,7 +557,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_web_image',
     description:
-      'Download an image URL obtained from image_search or generate_image and insert it into a page (pixel coordinates).',
+      'Download an image URL obtained from image_search or generate_image and insert it into a page (pixel coordinates). w×h is a layout frame, not a stretch target: the image keeps its aspect ratio, fills the frame, and the overflow is center-cropped (object-fit: cover) — pick the frame for the layout freely.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -605,7 +605,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'replace_image',
     description:
-      'Swap a picture\'s source image for a URL (from image_search or generate_image) in place — position, size, z-order, border and effects all survive. This is the tool for "change/AI-edit this image" flows: e.g. run generate_image with referenceImageUrls for background removal/upscaling/editing, then replace_image with the returned URL. keepCrop keeps the existing crop window and is only correct when the new image has the same pixel geometry as the old one (e.g. background removal output).',
+      'Swap a picture\'s source image for a URL (from image_search or generate_image) in place — position, size, z-order, border and effects all survive. This is the tool for "change/AI-edit this image" flows: e.g. run generate_image with referenceImageUrls for background removal/upscaling/editing, then replace_image with the returned URL. A new image with a different aspect ratio is never stretched: it fills the frame and is center-cropped (object-fit: cover). keepCrop keeps the existing crop window and is only correct when the new image has the same pixel geometry as the old one (e.g. background removal output).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -3327,6 +3327,7 @@ async function executeTool(
         return fail(t('aiFailBackground'), 'color must be #RRGGBB')
       const r = await window.slidesApi.editBackground({
         slideIndex: idx,
+        kind: 'solid',
         color: color.startsWith('#') ? color : `#${color}`,
         fitWidthPx: access.fitWidthPx,
       })

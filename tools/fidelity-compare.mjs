@@ -16,6 +16,7 @@
 import { _electron as electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { PNG } from 'pngjs'
 import pixelmatch from 'pixelmatch'
@@ -118,6 +119,11 @@ function exportPdfViaPowerPoint(pptx, outPdf) {
   const pdf = path.join(box, 'out.pdf')
   fs.copyFileSync(pptx, src)
   fs.rmSync(pdf, { force: true })
+  // Stale Office owner-lock files (~$in.pptx, left by a killed save) make every
+  // subsequent open fail with -9074 until removed
+  for (const f of fs.readdirSync(path.dirname(src))) {
+    if (f.startsWith('~$')) fs.rmSync(path.join(path.dirname(src), f), { force: true })
+  }
   const script = `
     tell application "Microsoft PowerPoint"
       open (POSIX file "${src}")
@@ -147,9 +153,14 @@ function exportPdfViaPowerPoint(pptx, outPdf) {
  */
 async function shootOurs(pptx, dir, thumbIndexes) {
   fs.mkdirSync(dir, { recursive: true })
+  // Own userData → own single-instance lock: a dev run or the installed app must not kill the eval instance
+  const userData =
+    process.env.GENOFFICE_USER_DATA ?? path.join(os.tmpdir(), 'genoffice-fidelity-userdata')
+  fs.mkdirSync(userData, { recursive: true })
   const app = await electron.launch({
     executablePath: ELECTRON_BIN,
     args: [APP_DIR, pptx],
+    env: { ...process.env, GENOFFICE_USER_DATA: userData },
     timeout: 30_000,
   })
   try {
@@ -176,6 +187,13 @@ async function shootOurs(pptx, dir, thumbIndexes) {
         thumbs[i]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       }, idx)
       await sleep(600) // wait for image decode / repaint
+      // Office-private FontFaces (doc-fonts.ts) may still be loading on first pages:
+      // wait for the renderer's sync flag (bounded), then for the face loads it started
+      for (let i = 0; i < 20; i++) {
+        if (await page.evaluate(() => window.__genofficeDocFontsSynced !== false)) break
+        await sleep(150)
+      }
+      await page.evaluate(() => document.fonts.ready).catch(() => {})
       const dataUrl = await page.evaluate(() => {
         const stage = document.querySelector('.stage-rel')
         if (!stage) return null

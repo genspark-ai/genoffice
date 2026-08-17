@@ -161,6 +161,31 @@ describe('generateTableModelXml', () => {
       sizeHalfPoints: 30,
     })
   })
+
+  it('writes w:jc after w:tblW for an explicit alignment and round-trips it', async () => {
+    const xml = generateTableModelXml({
+      align: 'center',
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+    })
+    expect(xml).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/>/)
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(parsed.blocks[0].table!.align).toBe('center')
+  })
+
+  it("align 'left' strips the original w:jc; undefined keeps it", () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/><w:jc w:val="right"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const model = { rows: [[{ paras: ['New'] }]] }
+    expect(generateTableModelXml({ ...model, align: 'left' as const }, template)).not.toContain(
+      '<w:jc',
+    )
+    expect(generateTableModelXml(model, template)).toContain('<w:jc w:val="right"/>')
+    expect(generateTableModelXml({ ...model, align: 'center' as const }, template)).toContain(
+      '<w:jc w:val="center"/>',
+    )
+  })
 })
 
 describe('tcPr/trPr fidelity and new attributes', () => {

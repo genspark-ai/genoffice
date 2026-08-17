@@ -164,6 +164,35 @@ describe('rich header / footer', () => {
     ])
   })
 
+  it('w:framePr xAlign surfaces as frameXAlign (POI WordWithAttachments page number frame)', async () => {
+    const HEADER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:pPr><w:framePr w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right" w:y="1"/></w:pPr>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve">PAGE  </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>' +
+      '<w:p><w:r><w:t>Страница 1</w:t></w:r></w:p>' +
+      '</w:hdr>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: HEADER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId61"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.headerParas![0].frameXAlign).toBe('right')
+    expect(parsed.headerParas![0].runs.map((r) => r.text).join('')).toBe(PAGE_MARK)
+    expect(parsed.headerParas![1].frameXAlign).toBeUndefined()
+  })
+
   it('w:ptab absolute tabs surface as \\t runs with their alignments (POI ThreeColHead)', async () => {
     const HEADER =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
@@ -376,14 +405,48 @@ describe('surgical header rewrite (real Word headers carry tables/logos)', () =>
     expect(paras).toHaveLength(2)
     const row = paras[0]
     expect(row.cells).toHaveLength(2)
-    expect(row.cells![0].runs[0]).toMatchObject({ text: 'ACME 公司', bold: true })
-    expect(row.cells![1].runs[0]).toMatchObject({ text: 'Logo 占位' })
+    expect(row.cells![0].paras).toHaveLength(1)
+    expect(row.cells![0].paras[0][0]).toMatchObject({ text: 'ACME 公司', bold: true })
+    expect(row.cells![1].paras[0][0]).toMatchObject({ text: 'Logo 占位' })
     expect(row.cells!.map((c) => Math.round(c.widthPct!))).toEqual([50, 50])
     expect(row.cells![0].fill).toBe('1F3864')
     expect(row.cells![1].fill).toBeUndefined()
     expect(paras[1].runs[0].text).toBe('公司内部资料')
     // legacy plain text separates cell texts instead of gluing them
     expect(parsed.headerText).toBe('ACME 公司 Logo 占位 公司内部资料')
+  })
+
+  it('keeps every cell paragraph as its own line (two-paragraph title cell, empty shaded cell)', async () => {
+    const twoParaTbl = HEADER_TBL.replace(
+      '<w:p><w:r><w:t>Logo 占位</w:t></w:r></w:p>',
+      '<w:p><w:r><w:t>Title line 1</w:t></w:r></w:p><w:p><w:r><w:t>Title line 2</w:t></w:r></w:p>',
+    ).replace('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>ACME 公司</w:t></w:r></w:p>', '<w:p/>')
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>正文</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId60" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml:
+            XML_DECL +
+            '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+            ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+            twoParaTbl +
+            '</w:hdr>',
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId60"/>',
+    })
+    const row = (await parseDocx(bytes)).headerParas![0]
+    // the shaded cell keeps its empty paragraph (it must still reserve a line/fill)
+    expect(row.cells![0].paras).toEqual([[]])
+    expect(row.cells![0].fill).toBe('1F3864')
+    expect(row.cells![1].paras.map((rs) => rs.map((r) => r.text).join(''))).toEqual([
+      'Title line 1',
+      'Title line 2',
+    ])
   })
 
   it('saving paras that include a cells paragraph keeps the table bytes and never duplicates them', async () => {

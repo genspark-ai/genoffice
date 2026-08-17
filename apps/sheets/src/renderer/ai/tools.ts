@@ -66,15 +66,110 @@ export interface ActiveSheetInfo {
   readonly charts?: readonly ChartRef[] | undefined
 }
 
+export interface FindCellsOptions {
+  /** empty only when errorsOnly is set */
+  readonly query: string
+  readonly regex: boolean
+  readonly lookIn: 'values' | 'formulas' | 'both'
+  readonly errorsOnly: boolean
+  readonly sheetId?: string | undefined
+  readonly maxResults: number
+}
+
+export interface FindCellsMatch {
+  readonly sheetName: string
+  readonly address: string
+  readonly value: CellScalar
+  readonly formula?: string | undefined
+}
+
+export interface FindCellsOutcome {
+  readonly matches: readonly FindCellsMatch[]
+  /** the scan stopped at maxResults or the scan budget; more matches may exist */
+  readonly truncated: boolean
+  /** sheets whose background indexing hasn't finished — results there may be partial */
+  readonly incompleteSheets: readonly string[]
+  readonly error?: string
+}
+
+export interface SelectRangeOutcome {
+  readonly ok: boolean
+  readonly sheetName?: string
+  readonly error?: string
+}
+
+export interface TraceCellSample {
+  readonly address: string
+  readonly value: CellScalar
+  readonly formula?: string | undefined
+}
+
+export interface TraceRefInfo {
+  /** display label like "B2:B9" or "Data!A1" */
+  readonly label: string
+  readonly cellCount: number
+  readonly samples: readonly TraceCellSample[]
+  /** some sampled value is a formula error (#REF!, #DIV/0!, …) */
+  readonly hasError: boolean
+  /** qualifier didn't match any sheet — external workbook or unresolvable */
+  readonly external?: boolean
+}
+
+export interface TracePrecedentsOutcome {
+  readonly formula?: string | undefined
+  readonly value?: CellScalar
+  readonly refs: readonly TraceRefInfo[]
+  /** the formula had more references than the tracer reports */
+  readonly truncatedRefs?: boolean
+  /** formula also uses defined names / identifiers the tracer cannot resolve */
+  readonly usesNames?: boolean
+  readonly error?: string
+}
+
+export interface TraceDependentInfo {
+  readonly sheetName: string
+  readonly address: string
+  readonly formula: string
+  readonly value: CellScalar
+}
+
+export interface TraceDependentsOutcome {
+  readonly dependents: readonly TraceDependentInfo[]
+  readonly truncated: boolean
+  readonly incompleteSheets: readonly string[]
+  readonly error?: string
+}
+
 export interface SheetsSkillDeps {
   getActiveSheetInfo(): ActiveSheetInfo
   /** Ensure a lazy workbook range is present in Univer before reading it. */
-  ensureRangeLoaded?(range: RangeBounds): boolean | Promise<boolean>
-  readCells(addresses: readonly string[]): Record<string, { value: CellScalar; formula?: string }>
-  /** per-cell explicit formatting of the active sheet; cells with no explicit format are omitted */
-  readFormats(addresses: readonly string[]): Record<string, CellFormatState>
+  ensureRangeLoaded?(range: RangeBounds, sheetId?: string): boolean | Promise<boolean>
+  /** cell values/formulas; reads the active sheet unless sheetId targets another */
+  readCells(
+    addresses: readonly string[],
+    sheetId?: string,
+  ): Record<string, { value: CellScalar; formula?: string }>
+  /** per-cell explicit formatting; cells with no explicit format are omitted */
+  readFormats(addresses: readonly string[], sheetId?: string): Record<string, CellFormatState>
   /** formatted report of a sheet's feature state (filters, CF, DV, names, visuals, …) */
   readSheetFeatures(sheetId?: string): string
+  /** workbook-wide value/formula search (ai/workbook-search.ts) */
+  findCells(options: FindCellsOptions): FindCellsOutcome | Promise<FindCellsOutcome>
+  /** activate a sheet, select a range, and scroll it into view */
+  selectRange(
+    sheetId: string | undefined,
+    bounds: RangeBounds,
+  ): SelectRangeOutcome | Promise<SelectRangeOutcome>
+  /** formula audit: what a formula reads (ai/formula-audit.ts) */
+  tracePrecedents(
+    sheetId: string | undefined,
+    address: string,
+  ): TracePrecedentsOutcome | Promise<TracePrecedentsOutcome>
+  /** formula audit: which formulas read a cell (ai/formula-audit.ts) */
+  traceDependents(
+    sheetId: string | undefined,
+    address: string,
+  ): TraceDependentsOutcome | Promise<TraceDependentsOutcome>
   /** `applied` resolves with the real apply result (the lazy path applies async);
    * the tool awaits it so the model never hears "applied" for a batch that failed */
   proposeOperations(
@@ -84,12 +179,15 @@ export interface SheetsSkillDeps {
 }
 
 const MAX_READ_ADDRESSES = 100
-const MAX_READ_RANGE_CELLS = 2000
+/** Max cells per streamed block; the App's ensureRangeLoaded enforces it too. */
+export const MAX_READ_RANGE_CELLS = 2000
 /** Read-back after write: max number of formula cells whose results are read back */
 const MAX_READBACK_FORMULAS = 10
 /** Read-back after write: wait time (ms) for Univer's async formula recalc */
 const FORMULA_RECALC_DELAY_MS = 300
 const MAX_READ_FORMAT_CELLS = 200
+const MAX_FIND_RESULTS = 200
+const DEFAULT_FIND_RESULTS = 50
 
 export const WORKBOOK_TOOLS: AgentToolDef[] = [
   {
@@ -111,6 +209,11 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
         range: {
           type: 'string',
           description: 'Range like "A1:D20"; a single cell like "B2" is also accepted',
+        },
+        sheetId: {
+          type: 'string',
+          description:
+            'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
         },
       },
       required: ['range'],
@@ -142,6 +245,11 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       type: 'object',
       properties: {
         range: { type: 'string', description: 'Range like "A1:D20"' },
+        sheetId: {
+          type: 'string',
+          description:
+            'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
+        },
       },
       required: ['range'],
     },
@@ -175,8 +283,106 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
           items: { type: 'string' },
           description: 'List of cell addresses, e.g. ["A1","B2"], max 100',
         },
+        sheetId: {
+          type: 'string',
+          description:
+            'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
+        },
       },
       required: ['addresses'],
+    },
+  },
+  {
+    name: 'find_cells',
+    description:
+      'Search the whole workbook (or one sheet) for cells whose value or formula matches a query; returns Sheet!Address with the cell content. ' +
+      'Plain text matches as a case-insensitive substring; regex=true treats the query as a case-insensitive JavaScript regex; ' +
+      'errors_only=true finds formula error cells (#REF!, #DIV/0!, #VALUE!, #NAME?, #N/A, #NUM!, #NULL!) and query may then be omitted. ' +
+      'For formula cells the matched value is the last calculated value. Prefer this over paging read_range when locating data or auditing errors.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Text or regex to find; may be omitted only when errors_only=true',
+        },
+        regex: {
+          type: 'boolean',
+          description: 'Treat query as a JavaScript regex (default false)',
+        },
+        look_in: {
+          type: 'string',
+          enum: ['values', 'formulas', 'both'],
+          description: 'What to match against (default both)',
+        },
+        sheetId: {
+          type: 'string',
+          description: 'Restrict the search to one sheet; searches every sheet when omitted',
+        },
+        errors_only: {
+          type: 'boolean',
+          description: 'Find cells whose calculated value is a formula error (default false)',
+        },
+        max_results: {
+          type: 'integer',
+          description: `Maximum matches returned, default ${DEFAULT_FIND_RESULTS}, max ${MAX_FIND_RESULTS}`,
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'select_range',
+    description:
+      "Select a range in the grid and scroll the user's view to it, activating its sheet. " +
+      'Use when pointing the user at a location ("the issue is in C42") so the spot is visible on screen. ' +
+      'Pure view navigation — changes no data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: {
+          type: 'string',
+          description: 'Range like "A1:D20"; a single cell is also accepted',
+        },
+        sheetId: { type: 'string', description: 'Target sheet id; defaults to the active sheet' },
+      },
+      required: ['range'],
+    },
+  },
+  {
+    name: 'trace_precedents',
+    description:
+      'List the cells/ranges a formula reads (its precedents) with their current values, flagging any precedent that itself holds an error value — ' +
+      'the first step when diagnosing a broken formula ("why is C10 #DIV/0!?"). Depth 1; call again on a suspect precedent to walk further up the chain. ' +
+      'Defined names are not expanded — resolve them via read_sheet_features and trace their ranges directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Formula cell to audit, e.g. "C10"' },
+        sheetId: {
+          type: 'string',
+          description: 'Sheet the cell lives on; defaults to the active sheet',
+        },
+      },
+      required: ['address'],
+    },
+  },
+  {
+    name: 'trace_dependents',
+    description:
+      'Find every formula in the workbook (all sheets) that reads a given cell — its dependents. ' +
+      'Use before changing or deleting a cell to see what would break, or to follow how an error value propagates downstream. ' +
+      'Dependents that reach the cell only through a defined name are not detected.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Target cell, e.g. "B2"' },
+        sheetId: {
+          type: 'string',
+          description: 'Sheet the cell lives on; defaults to the active sheet',
+        },
+      },
+      required: ['address'],
     },
   },
   {
@@ -226,6 +432,64 @@ const fail = (summary: string, output: string): ToolExecution => ({
   mutated: false,
   summary,
 })
+
+/** Optional sheetId input shared by the read tools: validated against the
+ * workbook's sheet list so a bad id fails with a clear message instead of
+ * silently reading empty cells. */
+function parseReadSheetId(
+  input: Record<string, unknown>,
+  info: ActiveSheetInfo,
+  summary: string,
+): { sheetId: string | undefined } | { fail: ToolExecution } {
+  const raw = input.sheetId
+  if (raw === undefined || raw === null) return { sheetId: undefined }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { fail: fail(summary, 'sheetId must be a non-empty string when given') }
+  }
+  const sheetId = raw.trim()
+  if (!info.sheets.some((sheet) => sheet.id === sheetId)) {
+    return {
+      fail: fail(summary, `Unknown sheet: ${sheetId} (use an id from get_workbook_context)`),
+    }
+  }
+  return { sheetId }
+}
+
+/** Clamp a range to the sheet's data extent before a streaming ensure; null
+ * when the range lies entirely outside it (nothing to stream — cells there
+ * are empty by definition). Sheets without a known extent pass through. */
+function clampToExtent(bounds: RangeBounds, sheet: SheetRef | undefined): RangeBounds | null {
+  if (!sheet?.rows || !sheet.columns) return bounds
+  const endRow = Math.min(bounds.endRow, sheet.rows - 1)
+  const endColumn = Math.min(bounds.endColumn, sheet.columns - 1)
+  if (endRow < bounds.startRow || endColumn < bounds.startColumn) return null
+  return { startRow: bounds.startRow, startColumn: bounds.startColumn, endRow, endColumn }
+}
+
+const RANGE_NOT_LOADED =
+  'The requested cells could not be fully loaded; retry after workbook indexing completes.'
+
+/** Shared input validation for the two formula-audit tools. */
+function parseAuditAddress(
+  input: Record<string, unknown>,
+  summary: string,
+): { address: string; sheetId: string | undefined } | { fail: ToolExecution } {
+  const raw = input.address
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { fail: fail(summary, 'address must be a non-empty string') }
+  }
+  const address = raw.trim().toUpperCase().replace(/\$/g, '')
+  if (!/^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(address)) {
+    return {
+      fail: fail(summary, `Cannot parse cell address: ${raw} (expected a single cell like "C10")`),
+    }
+  }
+  const sheetIdRaw = input.sheetId
+  return {
+    address,
+    sheetId: typeof sheetIdRaw === 'string' && sheetIdRaw.trim() ? sheetIdRaw.trim() : undefined,
+  }
+}
 
 export function buildWorkbookContext(deps: SheetsSkillDeps): string {
   const info = deps.getActiveSheetInfo()
@@ -386,22 +650,25 @@ export function executeWorkbookTool(
         )
       }
       const info = deps.getActiveSheetInfo()
-      const active = info.sheets.find((sheet) => sheet.id === info.sheetId)
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolReadRange'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
       if (
-        active?.rows !== undefined &&
-        active.columns !== undefined &&
-        (bounds.endRow >= active.rows || bounds.endColumn >= active.columns)
+        target?.rows !== undefined &&
+        target.columns !== undefined &&
+        (bounds.endRow >= target.rows || bounds.endColumn >= target.columns)
       ) {
         return fail(
           t('aiToolReadRange'),
-          `The requested range is outside the worksheet data extent A1:${columnLabel(active.columns - 1)}${active.rows}.`,
+          `The requested range is outside the worksheet data extent A1:${columnLabel(target.columns - 1)}${target.rows}.`,
         )
       }
       const executeRead = (): ToolExecution => {
         const normalizedRange = `${formatAddress(bounds.startRow, bounds.startColumn)}:${formatAddress(bounds.endRow, bounds.endColumn)}`
         const metadata =
-          active?.rows && active.columns
-            ? `Read metadata: requested range ${normalizedRange}; authoritative worksheet data extent A1:${columnLabel(active.columns - 1)}${active.rows} (${active.rows} worksheet rows including any header). Do not infer total rows or records from the requested range.`
+          target?.rows && target.columns
+            ? `Read metadata: requested range ${normalizedRange}; authoritative worksheet data extent A1:${columnLabel(target.columns - 1)}${target.rows} (${target.rows} worksheet rows including any header). Do not infer total rows or records from the requested range.`
             : `Read metadata: requested range ${normalizedRange}; worksheet data extent is unknown. Do not infer total rows or records from the requested range.`
         const addresses: string[] = []
         for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
@@ -409,7 +676,7 @@ export function executeWorkbookTool(
             addresses.push(formatAddress(row, column))
           }
         }
-        const cells = deps.readCells(addresses)
+        const cells = deps.readCells(addresses, sheetId)
         const header = [
           '',
           ...Array.from({ length: bounds.endColumn - bounds.startColumn + 1 }, (_, offset) =>
@@ -437,7 +704,7 @@ export function executeWorkbookTool(
           summary: t('aiToolReadRangeOf', { range: raw.trim().toUpperCase() }),
         }
       }
-      const loading = deps.ensureRangeLoaded?.(bounds)
+      const loading = deps.ensureRangeLoaded?.(bounds, sheetId)
       if (loading instanceof Promise) {
         return loading.then((loaded) =>
           loaded
@@ -486,48 +753,292 @@ export function executeWorkbookTool(
           `The range contains more than ${MAX_READ_FORMAT_CELLS} cells; read it in multiple calls`,
         )
       }
-      const addresses: string[] = []
-      for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
-        for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
-          addresses.push(formatAddress(row, column))
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolReadFormats'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const executeRead = (): ToolExecution => {
+        const addresses: string[] = []
+        for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
+          for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
+            addresses.push(formatAddress(row, column))
+          }
+        }
+        const formats = deps.readFormats(addresses, sheetId)
+        const lines = Object.entries(formats).map(
+          ([address, format]) => `${address}: ${describeFormatState(format)}`,
+        )
+        return {
+          output: lines.length > 0 ? lines.join('\n') : 'No explicit formats in this range.',
+          mutated: false,
+          summary: t('aiToolReadFormatsOf', { range: raw.trim().toUpperCase() }),
         }
       }
-      const formats = deps.readFormats(addresses)
-      const lines = Object.entries(formats).map(
-        ([address, format]) => `${address}: ${describeFormatState(format)}`,
-      )
-      return {
-        output: lines.length > 0 ? lines.join('\n') : 'No explicit formats in this range.',
-        mutated: false,
-        summary: t('aiToolReadFormatsOf', { range: raw.trim().toUpperCase() }),
+      const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
+      const ensureBounds = clampToExtent(bounds, target)
+      const loading = ensureBounds ? deps.ensureRangeLoaded?.(ensureBounds, sheetId) : true
+      if (loading instanceof Promise) {
+        return loading.then((loaded) =>
+          loaded ? executeRead() : fail(t('aiToolReadFormats'), RANGE_NOT_LOADED),
+        )
       }
+      if (loading === false) return fail(t('aiToolReadFormats'), RANGE_NOT_LOADED)
+      return executeRead()
     }
 
     case 'read_sheet_features': {
-      const raw = call.input.sheetId
-      const sheetId = typeof raw === 'string' && raw.trim() ? raw.trim() : undefined
-      return {
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolSheetFeatures'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const executeRead = (): ToolExecution => ({
         output: deps.readSheetFeatures(sheetId),
         mutated: false,
         summary: t('aiToolSheetFeatures'),
+      })
+      // Filter/CF/validation/freeze models install on a sheet's first
+      // stream-in; reading a never-loaded sheet would report false "none"s.
+      const loading = deps.ensureRangeLoaded?.(
+        { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 },
+        sheetId,
+      )
+      if (loading instanceof Promise) {
+        return loading.then((loaded) =>
+          loaded ? executeRead() : fail(t('aiToolSheetFeatures'), RANGE_NOT_LOADED),
+        )
       }
+      if (loading === false) return fail(t('aiToolSheetFeatures'), RANGE_NOT_LOADED)
+      return executeRead()
     }
 
     case 'read_cells': {
       const raw = call.input.addresses
       if (!Array.isArray(raw) || raw.length === 0)
         return fail(t('aiToolReadCells'), 'addresses must be a non-empty array')
+      const info = deps.getActiveSheetInfo()
+      const parsedSheet = parseReadSheetId(call.input, info, t('aiToolReadCells'))
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
       const addresses = raw.slice(0, MAX_READ_ADDRESSES).map(String)
-      const cells = deps.readCells(addresses)
-      const lines = addresses.map((addr) => {
-        const cell = cells[addr]
-        return `${addr}: ${cell ? formatCellScalar(cell) : '(unknown)'}`
-      })
-      return {
-        output: lines.join('\n'),
-        mutated: false,
-        summary: t('aiToolReadCellsCount', { count: addresses.length }),
+      const executeRead = (): ToolExecution => {
+        const cells = deps.readCells(addresses, sheetId)
+        const lines = addresses.map((addr) => {
+          const cell = cells[addr]
+          return `${addr}: ${cell ? formatCellScalar(cell) : '(unknown)'}`
+        })
+        return {
+          output: lines.join('\n'),
+          mutated: false,
+          summary: t('aiToolReadCellsCount', { count: addresses.length }),
+        }
       }
+      const ensure = deps.ensureRangeLoaded
+      if (!ensure) return executeRead()
+      // Unstreamed cells read as empty, so the covering box of the addresses
+      // is loaded first. Per-address fallback loads are NOT an option: the
+      // loaded-range bookkeeping is a single rectangle per sheet, so each
+      // load would evict the previous one and just-read cells would drop out
+      // of the editable region again.
+      let box: RangeBounds | null = null
+      for (const addr of addresses) {
+        let cell: RangeBounds
+        try {
+          cell = parseRange(addr.trim().toUpperCase())
+        } catch {
+          continue
+        }
+        box =
+          box === null
+            ? cell
+            : {
+                startRow: Math.min(box.startRow, cell.startRow),
+                endRow: Math.max(box.endRow, cell.endRow),
+                startColumn: Math.min(box.startColumn, cell.startColumn),
+                endColumn: Math.max(box.endColumn, cell.endColumn),
+              }
+      }
+      const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
+      const boundsBox = box === null ? null : clampToExtent(box, target)
+      if (boundsBox === null) return executeRead()
+      // Whether the box needs streaming at all (demo workbook, fully preloaded
+      // import, session-added sheet) is the callback's call — it also rejects
+      // boxes too large to stream as one block.
+      return (async (): Promise<ToolExecution> => {
+        if (!(await ensure(boundsBox, sheetId))) {
+          return fail(
+            t('aiToolReadCells'),
+            'The requested cells could not be fully loaded — retry after workbook indexing completes; ' +
+              `on streamed workbooks a scatter spanning more than ${MAX_READ_RANGE_CELLS} cells must be split into closer-together read_cells calls.`,
+          )
+        }
+        return executeRead()
+      })()
+    }
+
+    case 'find_cells': {
+      const errorsOnly = call.input.errors_only === true
+      const query = typeof call.input.query === 'string' ? call.input.query.trim() : ''
+      if (!errorsOnly && !query) {
+        return fail(
+          t('aiToolFindCells'),
+          'query must be a non-empty string (or set errors_only=true)',
+        )
+      }
+      const lookInRaw = call.input.look_in
+      const maxRaw = Number(call.input.max_results)
+      const sheetIdRaw = call.input.sheetId
+      const options: FindCellsOptions = {
+        query,
+        regex: call.input.regex === true,
+        lookIn: lookInRaw === 'values' || lookInRaw === 'formulas' ? lookInRaw : 'both',
+        errorsOnly,
+        sheetId:
+          typeof sheetIdRaw === 'string' && sheetIdRaw.trim() ? sheetIdRaw.trim() : undefined,
+        maxResults:
+          Number.isFinite(maxRaw) && maxRaw >= 1
+            ? Math.min(Math.floor(maxRaw), MAX_FIND_RESULTS)
+            : DEFAULT_FIND_RESULTS,
+      }
+      const finish = (result: FindCellsOutcome): ToolExecution => {
+        if (result.error) return fail(t('aiToolFindCells'), result.error)
+        const lines = result.matches.map(
+          (match) => `${match.sheetName}!${match.address}: ${formatCellScalar(match)}`,
+        )
+        const header =
+          result.matches.length === 0
+            ? result.truncated
+              ? 'No matching cells found in the scanned region, but the search stopped at the scan budget before covering the whole workbook — do NOT conclude there are no matches; narrow the query or scope with sheetId and retry.'
+              : 'No matching cells found.'
+            : `${result.matches.length} matching cell(s)` +
+              (result.truncated
+                ? ' (search stopped at the cap — more may exist; narrow the query or scope with sheetId):'
+                : ':')
+        if (result.incompleteSheets.length > 0) {
+          lines.push(
+            `Note: background indexing has not finished on ${result.incompleteSheets.join(', ')} — matches there may be missing; retry later if something expected is absent.`,
+          )
+        }
+        return {
+          output: [header, ...lines].join('\n'),
+          mutated: false,
+          summary: errorsOnly
+            ? t('aiToolFindErrors', { count: result.matches.length })
+            : t('aiToolFindCellsOf', { query, count: result.matches.length }),
+        }
+      }
+      const outcome = deps.findCells(options)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'select_range': {
+      const raw = call.input.range
+      if (typeof raw !== 'string' || !raw.trim())
+        return fail(t('aiToolSelectRange'), 'range must be a non-empty string')
+      let bounds: RangeBounds
+      try {
+        bounds = parseRange(raw.trim().toUpperCase().replace(/\$/g, ''))
+      } catch {
+        return fail(t('aiToolSelectRange'), `Cannot parse range: ${raw}`)
+      }
+      const sheetIdRaw = call.input.sheetId
+      const sheetId =
+        typeof sheetIdRaw === 'string' && sheetIdRaw.trim() ? sheetIdRaw.trim() : undefined
+      const normalized =
+        bounds.startRow === bounds.endRow && bounds.startColumn === bounds.endColumn
+          ? formatAddress(bounds.startRow, bounds.startColumn)
+          : `${formatAddress(bounds.startRow, bounds.startColumn)}:${formatAddress(bounds.endRow, bounds.endColumn)}`
+      const finish = (result: SelectRangeOutcome): ToolExecution => {
+        if (!result.ok) return fail(t('aiToolSelectRange'), result.error ?? 'Selection failed')
+        const label = `${result.sheetName ?? ''}!${normalized}`
+        return {
+          output: `Selected ${label} and scrolled it into view.`,
+          mutated: false,
+          summary: t('aiToolSelectRangeOf', { range: label }),
+        }
+      }
+      const outcome = deps.selectRange(sheetId, bounds)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'trace_precedents': {
+      const parsed = parseAuditAddress(call.input, t('aiToolTracePrecedents'))
+      if ('fail' in parsed) return parsed.fail
+      const finish = (result: TracePrecedentsOutcome): ToolExecution => {
+        if (result.error) return fail(t('aiToolTracePrecedents'), result.error)
+        const summary = t('aiToolTracePrecedentsOf', { address: parsed.address })
+        if (!result.formula) {
+          return {
+            output: `${parsed.address} is not a formula cell; value: ${formatCellScalar({ value: result.value ?? null })}. Nothing to trace upstream — use trace_dependents to see what reads it.`,
+            mutated: false,
+            summary,
+          }
+        }
+        const lines = [
+          `${parsed.address} = ${formatCellScalar({ value: result.value ?? null, formula: result.formula })}`,
+          `Reads ${result.refs.length}${result.truncatedRefs ? '+' : ''} reference(s):`,
+        ]
+        for (const ref of result.refs) {
+          if (ref.external) {
+            lines.push(
+              `- ${ref.label}: external/unresolved reference (another workbook or unknown sheet)`,
+            )
+            continue
+          }
+          const shown = ref.samples
+            .map((sample) => `${sample.address}=${formatCellScalar(sample)}`)
+            .join('; ')
+          const rest = ref.cellCount - ref.samples.length
+          lines.push(
+            `- ${ref.label} (${ref.cellCount} cell(s))${ref.hasError ? ' ⚠️ contains error values' : ''}: ${shown}${rest > 0 ? `; …${rest} more` : ''}`,
+          )
+        }
+        if (result.truncatedRefs) {
+          lines.push('Note: the formula has more references than shown here.')
+        }
+        if (result.usesNames) {
+          lines.push(
+            'Note: the formula also uses defined names — list them with read_sheet_features and trace their ranges directly.',
+          )
+        }
+        return { output: lines.join('\n'), mutated: false, summary }
+      }
+      const outcome = deps.tracePrecedents(parsed.sheetId, parsed.address)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
+    }
+
+    case 'trace_dependents': {
+      const parsed = parseAuditAddress(call.input, t('aiToolTraceDependents'))
+      if ('fail' in parsed) return parsed.fail
+      const finish = (result: TraceDependentsOutcome): ToolExecution => {
+        if (result.error) return fail(t('aiToolTraceDependents'), result.error)
+        const summary = t('aiToolTraceDependentsOf', {
+          address: parsed.address,
+          count: result.dependents.length,
+        })
+        const lines =
+          result.dependents.length === 0
+            ? [
+                `No formulas read ${parsed.address}. (Dependents that reach it only through a defined name are not detected.)`,
+              ]
+            : [
+                `${result.dependents.length}${result.truncated ? '+' : ''} formula cell(s) read ${parsed.address}:`,
+                ...result.dependents.map(
+                  (dep) =>
+                    `- ${dep.sheetName}!${dep.address} = ${formatCellScalar({ value: dep.value, formula: dep.formula })}`,
+                ),
+              ]
+        if (result.truncated) {
+          lines.push('Note: stopped at the result cap — more dependents exist.')
+        }
+        if (result.incompleteSheets.length > 0) {
+          lines.push(
+            `Note: background indexing has not finished on ${result.incompleteSheets.join(', ')} — dependents there may be missing.`,
+          )
+        }
+        return { output: lines.join('\n'), mutated: false, summary }
+      }
+      const outcome = deps.traceDependents(parsed.sheetId, parsed.address)
+      return outcome instanceof Promise ? outcome.then(finish) : finish(outcome)
     }
 
     case 'propose_operations': {
@@ -560,21 +1071,34 @@ export function executeWorkbookTool(
         // Read-back after write (write → verify): formula cells fetch their
         // computed values after the async recalc, so the AI sees real results and
         // errors like #REF!/#DIV/0! instead of just what it wrote.
-        const formulaAddrs = outcome.plan.cellChanges
-          .filter((c) => c.after.formula)
-          .map((c) => c.address)
-        if (formulaAddrs.length === 0) {
+        const formulaCells = outcome.plan.cellChanges.filter((c) => c.after.formula)
+        if (formulaCells.length === 0) {
           return { output: base, mutated: true, summary }
         }
         return (async (): Promise<ToolExecution> => {
           await new Promise((resolve) => setTimeout(resolve, FORMULA_RECALC_DELAY_MS))
-          const shown = formulaAddrs.slice(0, MAX_READBACK_FORMULAS)
-          const cells = deps.readCells(shown)
-          const lines = shown.map((addr) => {
-            const v = cells[addr]?.value
-            return `${addr} = ${v === null || v === undefined ? '(still computing; verify with read_cells)' : String(v)}`
-          })
-          const rest = formulaAddrs.length - shown.length
+          const shown = formulaCells.slice(0, MAX_READBACK_FORMULAS)
+          // Cells are read per target sheet (operations may span sheets);
+          // addresses are prefixed with the sheet name only when they do.
+          const bySheet = new Map<string, string[]>()
+          for (const cell of shown) {
+            bySheet.set(cell.sheetId, [...(bySheet.get(cell.sheetId) ?? []), cell.address])
+          }
+          const sheetNames = new Map(
+            deps.getActiveSheetInfo().sheets.map((sheet) => [sheet.id, sheet.name]),
+          )
+          const lines: string[] = []
+          for (const [cellSheetId, addresses] of bySheet) {
+            const cells = deps.readCells(addresses, cellSheetId)
+            const prefix = bySheet.size > 1 ? `${sheetNames.get(cellSheetId) ?? cellSheetId}!` : ''
+            for (const addr of addresses) {
+              const v = cells[addr]?.value
+              lines.push(
+                `${prefix}${addr} = ${v === null || v === undefined ? '(still computing; verify with read_cells)' : String(v)}`,
+              )
+            }
+          }
+          const rest = formulaCells.length - shown.length
           const hasError = lines.some((l) =>
             /#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!)/.test(l),
           )
@@ -590,15 +1114,18 @@ export function executeWorkbookTool(
         })()
       }
       if (!outcome.applied) return finish()
-      return outcome.applied.then((applied) =>
-        applied.ok
-          ? finish()
-          : fail(
-              t('aiToolPropose'),
-              `Apply failed — the workbook is UNCHANGED: ${applied.reason ?? 'unknown reason'}. ` +
+      return outcome.applied.then((applied) => {
+        if (applied.ok) return finish()
+        const reason = applied.reason ?? 'unknown reason'
+        return fail(
+          t('aiToolPropose'),
+          applied.partiallyApplied
+            ? `Apply failed MID-BATCH — operations before the failing one were already committed: ${reason}. ` +
+                'Read the affected ranges to see the current state before continuing; the whole partial batch is one undo step (⌘Z / [Undo]).'
+            : `Apply failed — the workbook is UNCHANGED: ${reason}. ` +
                 'Do not tell the user the changes were made; adjust the operations and retry, or explain the failure.',
-            ),
-      )
+        )
+      })
     }
 
     default:

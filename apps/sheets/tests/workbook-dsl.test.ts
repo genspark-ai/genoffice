@@ -238,6 +238,12 @@ describe('extended operations', () => {
       { op: 'edit_shape', visualId: 'added-shape-abc-1', text: 'New text', fillColor: '#DDEBF7' },
       { op: 'edit_shape', visualId: 'added-shape-abc-1', anchorCell: 'H4' },
       { op: 'add_image', sheetId: 's', path: '~/logo.png', anchorCell: 'B2' },
+      {
+        op: 'add_image',
+        sheetId: 's',
+        path: 'https://cdn.example.com/gen/img-1',
+        anchorCell: 'B9',
+      },
       { op: 'add_table', sheetId: 's', range: 'A1:D10' },
       {
         op: 'add_table',

@@ -133,6 +133,9 @@ import {
   setElementParagraphFormat,
   setGroupChildParagraphFormat,
   setSlideBackground,
+  setSlideBackgroundImage,
+  resetSlideBackground,
+  setSlideBgGraphicsHidden,
   setSlideAdvanceTime,
   setSlideHidden,
   setSlideNotes,
@@ -258,6 +261,7 @@ import {
   type Session,
 } from './session-state'
 import { registerAiIpc, registerSlidesOnlyAiIpc } from './ai-ipc'
+import { listPrivateFontFaces, getPrivateFontData } from './fonts'
 
 /** One slide, copied from any deck open in this process, waiting to be pasted into another. */
 let slideClipboard: { bundle: SlideBundle; png?: string } | null = null
@@ -961,6 +965,9 @@ export function registerSlidesIpc(): void {
       /* Older Electron lacks this API: the screen-record button will get no stream and report failure */
     }
   })
+
+  ipcMain.handle('slides:private-font-faces', () => listPrivateFontFaces())
+  ipcMain.handle('slides:private-font-data', (_e, id: string) => getPrivateFontData(id))
 
   ipcMain.handle('slides:open', async (e, fitWidthPx: number) => {
     const parent = dialogParent()
@@ -1778,11 +1785,20 @@ export function registerSlidesIpc(): void {
 
   // Full-page "backdrop" rectangles: design templates often use a text-free solid rectangle
   // covering the whole page as background; changing only the page background would be hidden
-  // behind them — so recolor such rectangles along with the background.
-  const recolorFullBleedBackdrops = (
+  // behind them — so repaint such rectangles along with the background (solid/gradient), or
+  // make them transparent when the new background is a picture.
+  const repaintFullBleedBackdrops = (
     slide: Slide,
     size: { cx: number; cy: number },
-    color: string,
+    fill:
+      | { type: 'solid'; color: string }
+      | {
+          type: 'gradient'
+          stops: Array<{ pos: number; color: string }>
+          angle?: number
+          path?: 'circle'
+        }
+      | { type: 'none' },
   ) => {
     for (const el of slide.elements) {
       if (el.type !== 'shape' && el.type !== 'text') continue
@@ -1794,21 +1810,93 @@ export function registerSlidesIpc(): void {
       const coversX = x <= size.cx * 0.05 && x + cx >= size.cx * 0.95
       const coversY = y <= size.cy * 0.05 && y + cy >= size.cy * 0.95
       if (!coversX || !coversY) continue
-      shaped.fill = { type: 'solid', color }
+      shaped.fill = fill
       shaped.dirtyFill = true
     }
   }
 
-  ipcMain.handle('slides:edit-background', (e, op: EditBackgroundOp) => {
+  ipcMain.handle('slides:edit-background', async (e, op: EditBackgroundOp) => {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     const slides = session.opened.deck.slides
     const targets = op.slideIndex === -1 ? slides : [slides[op.slideIndex]].filter(Boolean)
     if (targets.length === 0) return null
-    pushHistory(session)
-    for (const s of targets) {
-      setSlideBackground(s!, op.color)
-      recolorFullBleedBackdrops(s!, session.opened.deck.size, op.color)
+
+    if (op.kind === 'image') {
+      let source: { bytes: Uint8Array; ext: string } | { mediaPath: string }
+      if (op.pick !== false) {
+        const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
+          title: tm('dlgInsertImage'),
+          properties: ['openFile' as const],
+          filters: [
+            {
+              name: tm('filterImages'),
+              extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff'],
+            },
+          ],
+        })
+        if (r.canceled || !r.filePaths[0]) return null
+        const bytes = await readFile(r.filePaths[0])
+        source = {
+          bytes: new Uint8Array(bytes),
+          ext: r.filePaths[0].split('.').pop()!.toLowerCase(),
+        }
+      } else {
+        // Reuse an already-landed background image (mode change / apply-to-all)
+        const src = slides[op.sourceSlideIndex ?? op.slideIndex]
+        if (src?.background?.type !== 'image') return null
+        source = { mediaPath: src.background.mediaRef }
+      }
+      pushHistory(session)
+      // The picked bytes land as one media part; further slides only add a rel to it
+      let landed: string | null = null
+      for (const s of targets) {
+        const used = setSlideBackgroundImage(
+          session.opened,
+          s!,
+          landed ? { mediaPath: landed } : source,
+          op.mode === 'tile',
+        )
+        if (used) {
+          landed = used
+          repaintFullBleedBackdrops(s!, session.opened.deck.size, { type: 'none' })
+        }
+      }
+      if (!landed) {
+        session.undoStack.pop()
+        return null
+      }
+    } else if (op.kind === 'solid') {
+      pushHistory(session)
+      for (const s of targets) {
+        setSlideBackground(s!, op.color)
+        repaintFullBleedBackdrops(s!, session.opened.deck.size, {
+          type: 'solid',
+          color: op.color,
+        })
+      }
+    } else if (op.kind === 'gradient') {
+      pushHistory(session)
+      const stops = [
+        { pos: 0, color: op.from },
+        { pos: 1, color: op.to },
+      ]
+      const angle = Math.round((op.angleDeg ?? 0) * 60000)
+      const patch = { stops, ...(op.radial ? { radial: true } : { angle }) }
+      for (const s of targets) {
+        setSlideBackground(s!, patch)
+        repaintFullBleedBackdrops(s!, session.opened.deck.size, {
+          type: 'gradient',
+          stops,
+          ...(op.radial ? { path: 'circle' as const } : { angle }),
+        })
+      }
+    } else if (op.kind === 'reset') {
+      pushHistory(session)
+      for (const s of targets) resetSlideBackground(session.opened, s!)
+    } else {
+      pushHistory(session)
+      for (const s of targets) setSlideBgGraphicsHidden(session.opened, s!, op.hidden)
     }
     session.fitWidthPx = op.fitWidthPx
     return buildAllRenderSlides(session.opened, op.fitWidthPx)

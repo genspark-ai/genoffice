@@ -12,7 +12,10 @@ import {
   editPictureSrcRect,
   patchElementStroke,
   replacePictureBytes,
+  resetSlideBackground,
   setSlideBackground,
+  setSlideBackgroundImage,
+  setSlideBgGraphicsHidden,
 } from '../src/index'
 import type { PictureElement, TextElement } from '../src/types'
 
@@ -299,5 +302,90 @@ describe('setSlideBackground', () => {
 
     const reopened = await openPptx(await savePptx(opened))
     expect(reopened.deck.slides[0]!.background).toEqual({ type: 'solid', color: '#222222' })
+  })
+
+  it('gradient background round-trips through save → reopen', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    setSlideBackground(slide, {
+      stops: [
+        { pos: 0, color: '#FF0000' },
+        { pos: 1, color: '#0000FF' },
+      ],
+      angle: 90 * 60000,
+    })
+    expect(slide.background?.type).toBe('gradient')
+    expect(slide.bgOwn).toBe(true)
+
+    const reopened = await openPptx(await savePptx(opened))
+    const bg = reopened.deck.slides[0]!.background
+    expect(bg?.type).toBe('gradient')
+    if (bg?.type === 'gradient') {
+      expect(bg.stops.map((s) => s.color)).toEqual(['#FF0000', '#0000FF'])
+      expect(bg.angle).toBe(90 * 60000)
+    }
+    expect(reopened.deck.slides[0]!.bgOwn).toBe(true)
+  })
+
+  it('image background lands media + rel and round-trips', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const used = setSlideBackgroundImage(opened, slide, { bytes: PNG_1PX, ext: 'png' })
+    expect(used).toBe('ppt/media/image1.png')
+    expect(slide.background).toEqual({
+      type: 'image',
+      mediaRef: 'ppt/media/image1.png',
+      mode: 'stretch',
+    })
+
+    const reopened = await openPptx(await savePptx(opened))
+    expect(reopened.deck.slides[0]!.background).toEqual({
+      type: 'image',
+      mediaRef: 'ppt/media/image1.png',
+      mode: 'stretch',
+    })
+  })
+
+  it('re-applying an existing media path adds no new media part (tile mode)', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    setSlideBackgroundImage(opened, slide, { bytes: PNG_1PX, ext: 'png' })
+    const used = setSlideBackgroundImage(opened, slide, { mediaPath: 'ppt/media/image1.png' }, true)
+    expect(used).toBe('ppt/media/image1.png')
+    const mediaParts = [...opened.archive.entries.keys()].filter((p) => p.startsWith('ppt/media/'))
+    expect(mediaParts).toEqual(['ppt/media/image1.png'])
+
+    const reopened = await openPptx(await savePptx(opened))
+    const bg = reopened.deck.slides[0]!.background
+    expect(bg?.type === 'image' && bg.mode).toBe('tile')
+  })
+
+  it('resetSlideBackground removes the override', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    setSlideBackground(slide, '#112233')
+    resetSlideBackground(opened, slide)
+    expect(slide.bgOwn).toBeUndefined()
+    expect(slide.bodyPrefix).not.toContain('<p:bg>')
+
+    const reopened = await openPptx(await savePptx(opened))
+    expect(reopened.deck.slides[0]!.bgOwn).toBeUndefined()
+    expect(reopened.deck.slides[0]!.originalXml).not.toContain('<p:bg>')
+  })
+
+  it('hide background graphics toggles <p:sld showMasterSp>', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    setSlideBgGraphicsHidden(opened, opened.deck.slides[0]!, true)
+    expect(opened.deck.slides[0]!.masterSpHidden).toBe(true)
+
+    const reopened = await openPptx(await savePptx(opened))
+    const slide = reopened.deck.slides[0]!
+    expect(slide.masterSpHidden).toBe(true)
+
+    setSlideBgGraphicsHidden(reopened, slide, false)
+    expect(slide.masterSpHidden).toBeUndefined()
+    expect(slide.bodyPrefix).not.toContain('showMasterSp')
+    const reopened2 = await openPptx(await savePptx(reopened))
+    expect(reopened2.deck.slides[0]!.masterSpHidden).toBeUndefined()
   })
 })

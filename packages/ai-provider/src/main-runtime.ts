@@ -15,6 +15,7 @@ import type {
 } from './types'
 import { AiCreditsError, streamForProvider } from './stream'
 import { AiTimeoutError } from './watchdog'
+import { isAiNetworkError } from './network-error'
 import { AI_PROVIDERS, defaultAiSettings, resolveAiSettings } from './providers'
 
 export interface AiRuntimeAuth {
@@ -285,7 +286,9 @@ export class AiMainRuntime {
             ? { errorCode: 'timeout' as const }
             : error instanceof AiCreditsError
               ? { errorCode: 'credits' as const }
-              : {}),
+              : isAiNetworkError(error)
+                ? { errorCode: 'network' as const }
+                : {}),
         })
       }
     } finally {

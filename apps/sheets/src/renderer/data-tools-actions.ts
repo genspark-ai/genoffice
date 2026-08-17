@@ -23,6 +23,8 @@ import { resolveGoToRef, type GoToNameEntry } from './goto'
 import { getLang, t } from './i18n/locale'
 import { appendSymbol } from './SymbolDialog'
 import {
+  a1RangeRef,
+  a1RowRangeRef,
   advancedFilterColumnOptions,
   applyFilterCriteria,
   columnLetter,
@@ -205,6 +207,100 @@ export function handleApplyFormula(ctx: DataToolsContext, formula: string): stri
   }
   ctx.setMessage(t('appFormulaSet', { cell: activeCellLabel(ctx) }))
   return null
+}
+
+/// A label turned into a legal defined name, Excel-style: illegal characters
+/// become underscores, and anything that could read as a cell reference gets
+/// an underscore prefix.
+function definedNameFromLabel(label: string): string | null {
+  const cleaned = label.trim().replace(/[^\p{L}\p{N}_.]/gu, '_')
+  if (!cleaned || /^\.+$/.test(cleaned)) return null
+  const named = /^[\p{L}_]/u.test(cleaned) ? cleaned : `_${cleaned}`
+  const cellLike = /^[A-Za-z]{1,3}\d+$/.test(named) || /^[Rr]\d*([Cc]\d*)?$/.test(named)
+  return cellLike ? `_${named}` : named
+}
+
+/// Formulas → Create from Selection: one defined name per column (labels in
+/// the selection's top row) or per row (labels in its left column). The
+/// defined-name mutation listener journals each insert.
+export function handleCreateNamesFromSelection(ctx: DataToolsContext, mode: 'top' | 'left'): void {
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const worksheet = workbook?.getActiveSheet()
+  const selection = workbook?.getActiveRange()?.getRange()
+  if (!workbook || !worksheet || !selection) {
+    ctx.setMessage(t('appSelectCellFirst'))
+    return
+  }
+  const { startRow, endRow, startColumn, endColumn } = selection
+  if (mode === 'top' ? endRow <= startRow : endColumn <= startColumn) {
+    ctx.setMessage(t('appCreateNamesNeedsData'))
+    return
+  }
+  const sheetName = worksheet.getSheetName()
+  // Names span the full selection like Excel (empty data rows included),
+  // but labels past the data extent are blank and would be skipped one by
+  // one — stop the label walk there so a whole-column selection doesn't
+  // read a million empty cells. File cells stream into Univer lazily, so
+  // getLastRow/getLastColumn alone can undercount; the file's used range is
+  // the floor.
+  const fileSheet = ctx.lazyWorkbookRef.current?.file.sheets.find(
+    (sheet) => sheet.id === worksheet.getSheetId(),
+  )
+  const labelEndRow = Math.min(
+    endRow,
+    Math.max(worksheet.getLastRow(), (fileSheet?.rowCount ?? 0) - 1),
+  )
+  const labelEndColumn = Math.min(
+    endColumn,
+    Math.max(worksheet.getLastColumn(), (fileSheet?.columnCount ?? 0) - 1),
+  )
+  // Labels come from the formatted display text — a date header must name
+  // like "Jan_2023", not its raw serial.
+  const entries: { label: string; ref: string }[] = []
+  if (mode === 'top') {
+    for (let column = startColumn; column <= labelEndColumn; column += 1) {
+      entries.push({
+        label: worksheet.getRange(startRow, column, 1, 1).getDisplayValue() ?? '',
+        ref: a1RangeRef(sheetName, column, startRow + 1, endRow),
+      })
+    }
+  } else {
+    for (let row = startRow; row <= labelEndRow; row += 1) {
+      entries.push({
+        label: worksheet.getRange(row, startColumn, 1, 1).getDisplayValue() ?? '',
+        ref: a1RowRangeRef(sheetName, row, startColumn + 1, endColumn),
+      })
+    }
+  }
+  // insertDefinedName keys entries by internal id and accepts duplicates
+  // without error; a second entry with the same name fails the next save.
+  // Dedupe here — against existing names and within the batch, both
+  // case-insensitive like Excel.
+  const taken = new Set(
+    univerDefinedNames(ctx.univerRef.current).map((defined) => defined.getName().toLowerCase()),
+  )
+  let created = 0
+  let skipped = 0
+  for (const entry of entries) {
+    const name = definedNameFromLabel(entry.label)
+    if (!name || taken.has(name.toLowerCase())) {
+      skipped += 1
+      continue
+    }
+    try {
+      workbook.insertDefinedName(name, entry.ref)
+      taken.add(name.toLowerCase())
+      created += 1
+    } catch {
+      // Reserved or otherwise rejected name — Excel prompts here; we skip.
+      skipped += 1
+    }
+  }
+  ctx.setMessage(
+    skipped > 0
+      ? t('appNamesCreatedSkipped', { count: created, skipped })
+      : t('appNamesCreated', { count: created }),
+  )
 }
 
 /// The Symbol dialog's click: appends the picked character to the active

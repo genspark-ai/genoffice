@@ -235,14 +235,31 @@ async function appendAnchor(
   anchor: DrawingAnchor,
   buildInner: (shapeId: number) => string,
 ): Promise<void> {
-  const xml = await pkg.readText(drawingPath)
-  const closeAt = xml.lastIndexOf('</xdr:wsDr>')
+  let xml = await pkg.readText(drawingPath)
+  // Other producers write the wsDr root with any prefix and self-close it
+  // when the drawing is empty (Google Sheets exports do); normalize before
+  // appending, and declare our prefixes locally when the root lacks them.
+  const root = /<(?:([A-Za-z_][\w.-]*):)?wsDr(?=[\s/>])([^>]*)>/.exec(xml)
+  if (!root) throw new VisualAddError(`${drawingPath} is not a spreadsheet drawing part.`)
+  const closeTag = `</${root[1] === undefined ? '' : `${root[1]}:`}wsDr>`
+  if ((root[2] ?? '').trimEnd().endsWith('/')) {
+    const openTag = root[0].replace(/\/\s*>$/, '>')
+    xml = xml.slice(0, root.index) + openTag + closeTag + xml.slice(root.index + root[0].length)
+  }
+  const closeAt = xml.lastIndexOf(closeTag)
   if (closeAt < 0) throw new VisualAddError(`${drawingPath} is not a spreadsheet drawing part.`)
+  const namespaceFix =
+    (root[0].includes('xmlns:xdr=')
+      ? ''
+      : ' xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"') +
+    (root[0].includes('xmlns:a=')
+      ? ''
+      : ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"')
   const marker = (row: number, column: number, rowOffset: number, columnOffset: number) =>
     `<xdr:col>${column}</xdr:col><xdr:colOff>${columnOffset}</xdr:colOff>` +
     `<xdr:row>${row}</xdr:row><xdr:rowOff>${rowOffset}</xdr:rowOff>`
   const element =
-    '<xdr:twoCellAnchor>' +
+    `<xdr:twoCellAnchor${namespaceFix}>` +
     `<xdr:from>${marker(anchor.fromRow, anchor.fromColumn, anchor.fromRowOffset, anchor.fromColumnOffset)}</xdr:from>` +
     `<xdr:to>${marker(anchor.toRow, anchor.toColumn, anchor.toRowOffset, anchor.toColumnOffset)}</xdr:to>` +
     buildInner(nextShapeId(xml)) +
@@ -322,7 +339,7 @@ function shapeXml(shapeId: number, shape: ShapeAdd): string {
 
 function nextShapeId(drawingXml: string): number {
   let max = 1
-  for (const match of drawingXml.matchAll(/<xdr:cNvPr [^>]*id="(\d+)"/g)) {
+  for (const match of drawingXml.matchAll(/<(?:[\w.-]+:)?cNvPr [^>]*id="(\d+)"/g)) {
     max = Math.max(max, Number(match[1]))
   }
   return max + 1

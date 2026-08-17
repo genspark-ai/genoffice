@@ -51,7 +51,12 @@ export function connectorPoints(
  * - bentConnector4: 3 elbows, adj1 = first-segment x fraction, adj2 = second-segment y fraction (default 50% each)
  * - bentConnector5: 4 elbows, adj1/adj2/adj3 by analogy
  */
-function bentConnectorPts(preset: string, w: number, h: number, adjust?: Record<string, number>): number[] {
+function bentConnectorPts(
+  preset: string,
+  w: number,
+  h: number,
+  adjust?: Record<string, number>,
+): number[] {
   const n = parseInt(preset.slice(-1), 10) || 2
   const clamp = (v: number, lo = -2, hi = 3) => Math.min(Math.max(v, lo), hi)
   const adj = (name: string, dflt: number) =>
@@ -180,6 +185,51 @@ export function presetPolygon(
       // prettier-ignore
       return [x1, y2, x2, y2, x2, y1, x3, y1, x3, y2, x4, y2, x4, y3, x3, y3, x3, y4, x2, y4, x2, y3, x1, y3]
     }
+    case 'mathNotEqual': {
+      // ECMA-376 formulas; the slash may overflow the box on extreme aspect ratios (spec behavior)
+      const a1 = Math.min(frac('adj1', 23520), 0.5)
+      const crAng = Math.min(Math.max(adjust?.adj2 ?? 6600000, 4200000), 6600000)
+      const a3 = Math.min(frac('adj3', 11760), 1 - 2 * a1)
+      const dy1 = h * a1
+      const dy2 = (h * a3) / 2
+      const dx1 = (w * 73490) / 200000
+      const hc = w / 2
+      const vc = h / 2
+      const hd2 = h / 2
+      const x1 = hc - dx1
+      const x8 = hc + dx1
+      const y2 = vc - dy2
+      const y3 = vc + dy2
+      const y1 = y2 - dy1
+      const y4 = y3 + dy1
+      const cadj2 = (crAng - 5400000) / 60000
+      const xadj2 = hd2 * Math.tan(cadj2 * D2R)
+      const len = Math.hypot(xadj2, hd2)
+      const bhw = (len * dy1) / hd2
+      const x7 = hc + xadj2 - bhw / 2
+      const x6 = x7 - (xadj2 * y1) / hd2
+      const x5 = x7 - (xadj2 * y2) / hd2
+      const x4 = x7 - (xadj2 * y3) / hd2
+      const x3 = x7 - (xadj2 * y4) / hd2
+      const rx6 = x6 + bhw
+      const rx5 = x5 + bhw
+      const rx4 = x4 + bhw
+      const rx3 = x3 + bhw
+      const rx7 = x7 + bhw
+      const dx7 = (dy1 * hd2) / len
+      const dy3 = (dy1 * xadj2) / len
+      const rx = cadj2 > 0 ? x7 + dx7 : rx7
+      const lx = cadj2 > 0 ? x7 : rx7 - dx7
+      const ry = cadj2 > 0 ? dy3 : 0
+      const ly = cadj2 > 0 ? 0 : -dy3
+      const dlx = w - rx
+      const drx = w - lx
+      const dly = h - ry
+      const dry = h - ly
+      // prettier-ignore
+      return [x1, y1, x6, y1, lx, ly, rx, ry, rx6, y1, x8, y1, x8, y2, rx5, y2, rx4, y3, x8, y3,
+        x8, y4, rx3, y4, drx, dry, dlx, dly, x3, y4, x1, y4, x1, y3, x4, y3, x5, y2, x1, y2]
+    }
     case 'plus': {
       const a = ss * frac('adj', 25000)
       const x1 = a
@@ -187,7 +237,32 @@ export function presetPolygon(
       const y1 = a
       const y2 = h - a
       // Cross: vertical arm positioned by height, horizontal arm by width
-      return [x1, 0, x2, 0, x2, y1, w, y1, w, y2, x2, y2, x2, h, x1, h, x1, y2, 0, y2, 0, y1, x1, y1]
+      return [
+        x1,
+        0,
+        x2,
+        0,
+        x2,
+        y1,
+        w,
+        y1,
+        w,
+        y2,
+        x2,
+        y2,
+        x2,
+        h,
+        x1,
+        h,
+        x1,
+        y2,
+        0,
+        y2,
+        0,
+        y1,
+        x1,
+        y1,
+      ]
     }
     case 'rightArrow': {
       const thick = h * frac('adj1', 50000)
@@ -235,8 +310,26 @@ export function presetPolygon(
       const y1 = (h - thick) / 2
       const y2 = (h + thick) / 2
       return [
-        0, h / 2, head, 0, head, y1, w - head, y1, w - head, 0, w, h / 2,
-        w - head, h, w - head, y2, head, y2, head, h,
+        0,
+        h / 2,
+        head,
+        0,
+        head,
+        y1,
+        w - head,
+        y1,
+        w - head,
+        0,
+        w,
+        h / 2,
+        w - head,
+        h,
+        w - head,
+        y2,
+        head,
+        y2,
+        head,
+        h,
       ]
     }
     case 'upDownArrow': {
@@ -245,8 +338,26 @@ export function presetPolygon(
       const x1 = (w - thick) / 2
       const x2 = (w + thick) / 2
       return [
-        w / 2, 0, w, head, x2, head, x2, h - head, w, h - head, w / 2, h,
-        0, h - head, x1, h - head, x1, head, 0, head,
+        w / 2,
+        0,
+        w,
+        head,
+        x2,
+        head,
+        x2,
+        h - head,
+        w,
+        h - head,
+        w / 2,
+        h,
+        0,
+        h - head,
+        x1,
+        h - head,
+        x1,
+        head,
+        0,
+        head,
       ]
     }
     case 'chevron': {
@@ -289,8 +400,10 @@ export function presetPolygon(
     }
     case 'lightningBolt': {
       // Fixed points from ECMA presetShapeDefinitions (21600 coordinate system)
-      const u = [8472, 0, 12860, 6672, 11050, 6672, 16577, 12007, 14767, 12007,
-        21600, 21600, 10800, 14387, 12377, 14387, 5333, 6667, 7778, 6667]
+      const u = [
+        8472, 0, 12860, 6672, 11050, 6672, 16577, 12007, 14767, 12007, 21600, 21600, 10800, 14387,
+        12377, 14387, 5333, 6667, 7778, 6667,
+      ]
       return u.map((v, i) => (v / 21600) * (i % 2 === 0 ? w : h))
     }
     case 'flowChartPreparation':
@@ -312,8 +425,6 @@ export function presetPolygon(
       const depth = Math.min(frac('adj1', 15000) * 2, 0.6)
       return gearPoints(6, w, h, 1 - depth)
     }
-    case 'funnel':
-      return [0, 0, w, 0, w * 0.62, h * 0.62, w * 0.62, h, w * 0.38, h, w * 0.38, h * 0.62]
     case 'quadArrow': {
       const sw2 = (ss * frac('adj1', 22500)) / 2
       const hw = ss * frac('adj2', 22500)
@@ -321,10 +432,54 @@ export function presetPolygon(
       const cx = w / 2
       const cy = h / 2
       return [
-        cx, 0, cx + hw, hl, cx + sw2, hl, cx + sw2, cy - sw2, w - hl, cy - sw2, w - hl, cy - hw,
-        w, cy, w - hl, cy + hw, w - hl, cy + sw2, cx + sw2, cy + sw2, cx + sw2, h - hl, cx + hw, h - hl,
-        cx, h, cx - hw, h - hl, cx - sw2, h - hl, cx - sw2, cy + sw2, hl, cy + sw2, hl, cy + hw,
-        0, cy, hl, cy - hw, hl, cy - sw2, cx - sw2, cy - sw2, cx - sw2, hl, cx - hw, hl,
+        cx,
+        0,
+        cx + hw,
+        hl,
+        cx + sw2,
+        hl,
+        cx + sw2,
+        cy - sw2,
+        w - hl,
+        cy - sw2,
+        w - hl,
+        cy - hw,
+        w,
+        cy,
+        w - hl,
+        cy + hw,
+        w - hl,
+        cy + sw2,
+        cx + sw2,
+        cy + sw2,
+        cx + sw2,
+        h - hl,
+        cx + hw,
+        h - hl,
+        cx,
+        h,
+        cx - hw,
+        h - hl,
+        cx - sw2,
+        h - hl,
+        cx - sw2,
+        cy + sw2,
+        hl,
+        cy + sw2,
+        hl,
+        cy + hw,
+        0,
+        cy,
+        hl,
+        cy - hw,
+        hl,
+        cy - sw2,
+        cx - sw2,
+        cy - sw2,
+        cx - sw2,
+        hl,
+        cx - hw,
+        hl,
       ]
     }
     case 'bentArrow': {
@@ -333,8 +488,24 @@ export function presetPolygon(
       const hl = ss * frac('adj3', 25000)
       const yc = Math.max(hw, t / 2)
       return [
-        0, h, 0, yc - t / 2, w - hl, yc - t / 2, w - hl, yc - hw, w, yc,
-        w - hl, yc + hw, w - hl, yc + t / 2, t, yc + t / 2, t, h,
+        0,
+        h,
+        0,
+        yc - t / 2,
+        w - hl,
+        yc - t / 2,
+        w - hl,
+        yc - hw,
+        w,
+        yc,
+        w - hl,
+        yc + hw,
+        w - hl,
+        yc + t / 2,
+        t,
+        yc + t / 2,
+        t,
+        h,
       ]
     }
     case 'wedgeRectCallout': {
@@ -403,7 +574,12 @@ function gearPoints(teeth: number, w: number, h: number, innerR: number): number
   const pts: number[] = []
   for (let i = 0; i < teeth; i++) {
     const c = -90 + i * pitch
-    for (const [off, r] of [[-rootHalf, innerR], [-tipHalf, 1], [tipHalf, 1], [rootHalf, innerR]] as const) {
+    for (const [off, r] of [
+      [-rootHalf, innerR],
+      [-tipHalf, 1],
+      [tipHalf, 1],
+      [rootHalf, innerR],
+    ] as const) {
       const a = ((c + off) * Math.PI) / 180
       pts.push(cx + Math.cos(a) * cx * r, cy + Math.sin(a) * cy * r)
     }
@@ -447,17 +623,36 @@ const D2R = Math.PI / 180
 /** SVG path builder (local px); elliptical arcs are split into ≤90° parametric segments as cubics. */
 class PathB {
   private parts: string[] = []
-  M(x: number, y: number) { this.parts.push(`M ${R2(x)} ${R2(y)}`); return this }
-  L(x: number, y: number) { this.parts.push(`L ${R2(x)} ${R2(y)}`); return this }
+  M(x: number, y: number) {
+    this.parts.push(`M ${R2(x)} ${R2(y)}`)
+    return this
+  }
+  L(x: number, y: number) {
+    this.parts.push(`L ${R2(x)} ${R2(y)}`)
+    return this
+  }
   Q(x1: number, y1: number, x: number, y: number) {
-    this.parts.push(`Q ${R2(x1)} ${R2(y1)} ${R2(x)} ${R2(y)}`); return this
+    this.parts.push(`Q ${R2(x1)} ${R2(y1)} ${R2(x)} ${R2(y)}`)
+    return this
   }
   C(x1: number, y1: number, x2: number, y2: number, x: number, y: number) {
-    this.parts.push(`C ${R2(x1)} ${R2(y1)} ${R2(x2)} ${R2(y2)} ${R2(x)} ${R2(y)}`); return this
+    this.parts.push(`C ${R2(x1)} ${R2(y1)} ${R2(x2)} ${R2(y2)} ${R2(x)} ${R2(y)}`)
+    return this
   }
-  Z() { this.parts.push('Z'); return this }
+  Z() {
+    this.parts.push('Z')
+    return this
+  }
   /** Parametric angles (degrees, y-down clockwise positive); move says whether to M/L to the arc start first */
-  arc(cx: number, cy: number, rx: number, ry: number, startDeg: number, sweepDeg: number, move?: 'M' | 'L') {
+  arc(
+    cx: number,
+    cy: number,
+    rx: number,
+    ry: number,
+    startDeg: number,
+    sweepDeg: number,
+    move?: 'M' | 'L',
+  ) {
     const st = startDeg * D2R
     const sw = sweepDeg * D2R
     const sx = cx + rx * Math.cos(st)
@@ -475,12 +670,20 @@ class PathB {
       const y1 = cy + ry * Math.sin(a1)
       const x2 = cx + rx * Math.cos(a2)
       const y2 = cy + ry * Math.sin(a2)
-      this.C(x1 - k * rx * Math.sin(a1), y1 + k * ry * Math.cos(a1),
-        x2 + k * rx * Math.sin(a2), y2 - k * ry * Math.cos(a2), x2, y2)
+      this.C(
+        x1 - k * rx * Math.sin(a1),
+        y1 + k * ry * Math.cos(a1),
+        x2 + k * rx * Math.sin(a2),
+        y2 - k * ry * Math.cos(a2),
+        x2,
+        y2,
+      )
     }
     return this
   }
-  d() { return this.parts.join(' ') }
+  d() {
+    return this.parts.join(' ')
+  }
 }
 
 /** Single-anchor ellipse subpath (full circle). */
@@ -489,7 +692,12 @@ function ellipseSub(b: PathB, cx: number, cy: number, rx: number, ry: number, cc
 }
 
 /** Rectangle with mixed round/snip corners (corner order TL/TR/BR/BL). */
-function mixedCornerRect(w: number, h: number, sizes: number[], kinds: Array<'none' | 'round' | 'snip'>): string {
+function mixedCornerRect(
+  w: number,
+  h: number,
+  sizes: number[],
+  kinds: Array<'none' | 'round' | 'snip'>,
+): string {
   const [tl, tr, br, bl] = sizes as [number, number, number, number]
   const b = new PathB()
   b.M(tl, 0).L(w - tr, 0)
@@ -511,15 +719,48 @@ function mixedCornerRect(w: number, h: number, sizes: number[], kinds: Array<'no
 function cloudBlob(w: number, h: number): PathB {
   const b = new PathB()
   const u: Array<[number, number]> = [
-    [0.2, 0.85], [0.06, 0.86], [0, 0.72], [0.02, 0.59], [0.03, 0.47], [0.11, 0.39], [0.2, 0.42],
-    [0.19, 0.26], [0.29, 0.14], [0.4, 0.2], [0.45, 0.07], [0.6, 0.04], [0.67, 0.14],
-    [0.76, 0.04], [0.91, 0.1], [0.92, 0.26], [0.99, 0.31], [1, 0.46], [0.97, 0.56],
-    [1, 0.69], [0.94, 0.81], [0.85, 0.82], [0.83, 0.94], [0.72, 0.98], [0.65, 0.91],
-    [0.58, 1], [0.45, 1], [0.39, 0.91], [0.33, 0.98], [0.23, 0.95], [0.2, 0.85],
+    [0.2, 0.85],
+    [0.06, 0.86],
+    [0, 0.72],
+    [0.02, 0.59],
+    [0.03, 0.47],
+    [0.11, 0.39],
+    [0.2, 0.42],
+    [0.19, 0.26],
+    [0.29, 0.14],
+    [0.4, 0.2],
+    [0.45, 0.07],
+    [0.6, 0.04],
+    [0.67, 0.14],
+    [0.76, 0.04],
+    [0.91, 0.1],
+    [0.92, 0.26],
+    [0.99, 0.31],
+    [1, 0.46],
+    [0.97, 0.56],
+    [1, 0.69],
+    [0.94, 0.81],
+    [0.85, 0.82],
+    [0.83, 0.94],
+    [0.72, 0.98],
+    [0.65, 0.91],
+    [0.58, 1],
+    [0.45, 1],
+    [0.39, 0.91],
+    [0.33, 0.98],
+    [0.23, 0.95],
+    [0.2, 0.85],
   ]
   b.M(u[0]![0] * w, u[0]![1] * h)
   for (let i = 1; i + 2 < u.length + 1; i += 3) {
-    b.C(u[i]![0] * w, u[i]![1] * h, u[i + 1]![0] * w, u[i + 1]![1] * h, u[i + 2]![0] * w, u[i + 2]![1] * h)
+    b.C(
+      u[i]![0] * w,
+      u[i]![1] * h,
+      u[i + 1]![0] * w,
+      u[i + 1]![1] * h,
+      u[i + 2]![0] * w,
+      u[i + 2]![1] * h,
+    )
   }
   return b.Z()
 }
@@ -543,7 +784,7 @@ export function presetPath(
     Math.min(Math.max((adjust?.[name] ?? dflt) / 100000, 0), 1)
   /** Angular adjusts: 1/60000 degree → degrees */
   const ang = (name: string, dflt: number) => (adjust?.[name] ?? dflt) / 60000
-  const sweepCW = (a1: number, a2: number) => ((a2 - a1) % 360 + 360) % 360
+  const sweepCW = (a1: number, a2: number) => (((a2 - a1) % 360) + 360) % 360
 
   switch (preset) {
     case 'arc': {
@@ -558,12 +799,23 @@ export function presetPath(
     case 'chord': {
       const a1 = ang('adj1', 2700000)
       const a2 = ang('adj2', 16200000)
-      return { path: new PathB().arc(cx, cy, cx, cy, a1, sweepCW(a1, a2) || 180, 'M').Z().d() }
+      return {
+        path: new PathB()
+          .arc(cx, cy, cx, cy, a1, sweepCW(a1, a2) || 180, 'M')
+          .Z()
+          .d(),
+      }
     }
     case 'pie': {
       const a1 = ang('adj1', 0)
       const a2 = ang('adj2', 16200000)
-      return { path: new PathB().M(cx, cy).arc(cx, cy, cx, cy, a1, sweepCW(a1, a2) || 270, 'L').Z().d() }
+      return {
+        path: new PathB()
+          .M(cx, cy)
+          .arc(cx, cy, cx, cy, a1, sweepCW(a1, a2) || 270, 'L')
+          .Z()
+          .d(),
+      }
     }
     case 'blockArc': {
       const a1 = ang('adj1', 10800000)
@@ -574,6 +826,33 @@ export function presetPath(
       const ryI = Math.max(cy - t, 0)
       const b = new PathB().arc(cx, cy, cx, cy, a1, sw, 'M')
       b.arc(cx, cy, rxI, ryI, a1 + sw, -sw, 'L').Z()
+      return { path: b.d() }
+    }
+    case 'circularArrow':
+    case 'leftCircularArrow': {
+      // Approximation of the ECMA geometry: an annular band plus a triangular arrowhead
+      // at the sweep end; the left variant mirrors the winding direction
+      const left = preset === 'leftCircularArrow'
+      const t = ss * frac('adj1', 12500)
+      const headR = t * 0.9
+      const rxO = Math.max(cx - headR, 0)
+      const ryO = Math.max(cy - headR, 0)
+      const rxI = Math.max(rxO - t, 0)
+      const ryI = Math.max(ryO - t, 0)
+      const rxM = (rxO + rxI) / 2
+      const ryM = (ryO + ryI) / 2
+      const start = left ? 115 : 65
+      const sweep = left ? -250 : 250
+      const end = start + sweep
+      const headAng = left ? -32 : 32
+      const pt = (deg: number, rx: number, ry: number) =>
+        [cx + rx * Math.cos(deg * D2R), cy + ry * Math.sin(deg * D2R)] as const
+      const b = new PathB().arc(cx, cy, rxO, ryO, start, sweep, 'M')
+      const [hx1, hy1] = pt(end, rxO + headR, ryO + headR)
+      const [tx, ty] = pt(end + headAng, rxM, ryM)
+      const [hx2, hy2] = pt(end, Math.max(rxI - headR, 0), Math.max(ryI - headR, 0))
+      b.L(hx1, hy1).L(tx, ty).L(hx2, hy2)
+      b.arc(cx, cy, rxI, ryI, end, -sweep, 'L').Z()
       return { path: b.d() }
     }
     case 'donut': {
@@ -587,7 +866,11 @@ export function presetPath(
     case 'frame': {
       const t = ss * frac('adj1', 12500)
       const b = new PathB().M(0, 0).L(w, 0).L(w, h).L(0, h).Z()
-      b.M(t, t).L(t, h - t).L(w - t, h - t).L(w - t, t).Z()
+      b.M(t, t)
+        .L(t, h - t)
+        .L(w - t, h - t)
+        .L(w - t, t)
+        .Z()
       return { path: b.d() }
     }
     case 'round1Rect': {
@@ -608,6 +891,40 @@ export function presetPath(
       const r1 = ss * frac('adj1', 16667)
       const r2 = ss * frac('adj2', 16667)
       return { path: mixedCornerRect(w, h, [r1, r2, 0, 0], ['round', 'snip', 'none', 'none']) }
+    }
+    case 'mathEqual': {
+      const a1 = Math.min(frac('adj1', 23520), 0.36745)
+      const a2 = Math.min(frac('adj2', 11760), 1 - 2 * a1)
+      const dy1 = h * a1
+      const dy2 = (h * a2) / 2
+      const dx1 = (w * 73490) / 200000
+      const x1 = cx - dx1
+      const x2 = cx + dx1
+      const y2 = cy - dy2
+      const y3 = cy + dy2
+      const y1 = y2 - dy1
+      const y4 = y3 + dy1
+      const b = new PathB().M(x1, y1).L(x2, y1).L(x2, y2).L(x1, y2).Z()
+      b.M(x1, y3).L(x2, y3).L(x2, y4).L(x1, y4).Z()
+      return { path: b.d() }
+    }
+    case 'funnel': {
+      const d = ss / 20
+      const hd4 = h / 4
+      const rw3 = cx / 4
+      const rh3 = hd4 / 4
+      // ECMA arcTo angles are ray angles; convert to PathB's parametric (both ellipses share the cx:hd4 aspect)
+      const par = (deg: number) =>
+        Math.atan2(cx * Math.sin(deg * D2R), hd4 * Math.cos(deg * D2R)) / D2R
+      const da = Math.atan2(hd4 * Math.sin(8 * D2R), cx * Math.cos(8 * D2R)) / D2R
+      const t0 = par(180 - da)
+      const t3 = par(da)
+      const b = new PathB()
+      b.arc(cx, hd4, cx, hd4, t0, t3 + 360 - t0, 'M')
+      b.arc(cx, h - rh3, rw3, rh3, t3, par(180 - da) - t3, 'L').Z()
+      // Mouth interior: inner ellipse reverse-wound punches the hole
+      b.arc(cx, hd4, Math.max(cx - d, 0), Math.max(hd4 - d, 0), 180, -360, 'M').Z()
+      return { path: b.d() }
     }
     case 'heart': {
       const b = new PathB().M(0.5 * w, 0.3 * h)
@@ -653,7 +970,10 @@ export function presetPath(
       const tipY = cy + h * adjRaw(adjust, 'adj2', 62500)
       const b = cloudBlob(w, h)
       // Tail: two small bubbles toward the tip
-      for (const [t, r] of [[0.72, 0.075], [0.92, 0.045]] as const) {
+      for (const [t, r] of [
+        [0.72, 0.075],
+        [0.92, 0.045],
+      ] as const) {
         ellipseSub(b, cx + (tipX - cx) * t, cy + (tipY - cy) * t, ss * r, ss * r)
       }
       return { path: b.d() }
@@ -677,8 +997,22 @@ export function presetPath(
     }
     case 'cube': {
       const d = ss * frac('adj', 25000)
-      const path = new PathB().M(0, d).L(d, 0).L(w, 0).L(w, h - d).L(w - d, h).L(0, h).Z().d()
-      const inner = new PathB().M(0, d).L(w - d, d).L(w, 0).M(w - d, d).L(w - d, h).d()
+      const path = new PathB()
+        .M(0, d)
+        .L(d, 0)
+        .L(w, 0)
+        .L(w, h - d)
+        .L(w - d, h)
+        .L(0, h)
+        .Z()
+        .d()
+      const inner = new PathB()
+        .M(0, d)
+        .L(w - d, d)
+        .L(w, 0)
+        .M(w - d, d)
+        .L(w - d, h)
+        .d()
       return { path, strokePath: inner }
     }
     case 'can': {
@@ -708,14 +1042,36 @@ export function presetPath(
       const t = ss * frac('adj', 12500)
       const path = new PathB().M(0, 0).L(w, 0).L(w, h).L(0, h).Z().d()
       const inner = new PathB()
-        .M(t, t).L(w - t, t).L(w - t, h - t).L(t, h - t).Z()
-        .M(0, 0).L(t, t).M(w, 0).L(w - t, t).M(w, h).L(w - t, h - t).M(0, h).L(t, h - t)
+        .M(t, t)
+        .L(w - t, t)
+        .L(w - t, h - t)
+        .L(t, h - t)
+        .Z()
+        .M(0, 0)
+        .L(t, t)
+        .M(w, 0)
+        .L(w - t, t)
+        .M(w, h)
+        .L(w - t, h - t)
+        .M(0, h)
+        .L(t, h - t)
       return { path, strokePath: inner.d() }
     }
     case 'foldedCorner': {
       const f = ss * frac('adj', 16667)
-      const path = new PathB().M(0, 0).L(w, 0).L(w, h - f).L(w - f, h).L(0, h).Z().d()
-      const fold = new PathB().M(w - f, h).L(w - 0.8 * f, h - 0.8 * f).L(w, h - f).d()
+      const path = new PathB()
+        .M(0, 0)
+        .L(w, 0)
+        .L(w, h - f)
+        .L(w - f, h)
+        .L(0, h)
+        .Z()
+        .d()
+      const fold = new PathB()
+        .M(w - f, h)
+        .L(w - 0.8 * f, h - 0.8 * f)
+        .L(w, h - f)
+        .d()
       return { path, strokePath: fold }
     }
     case 'smileyFace': {
@@ -725,7 +1081,9 @@ export function presetPath(
       const face = new PathB()
       ellipseSub(face, 0.35 * w, 0.37 * h, 0.05 * w, 0.05 * h)
       ellipseSub(face, 0.65 * w, 0.37 * h, 0.05 * w, 0.05 * h)
-      face.M(0.3 * w, 0.67 * h).Q(cx, h * Math.min(Math.max(0.67 + 4 * g, 0.4), 0.95), 0.7 * w, 0.67 * h)
+      face
+        .M(0.3 * w, 0.67 * h)
+        .Q(cx, h * Math.min(Math.max(0.67 + 4 * g, 0.4), 0.95), 0.7 * w, 0.67 * h)
       return { path: b.d(), strokePath: face.d() }
     }
     case 'noSmoking': {
@@ -743,21 +1101,53 @@ export function presetPath(
       const len = Math.hypot(p2x - p1x, p2y - p1y) || 1
       const nx = (-(p2y - p1y) / len) * (t / 2)
       const ny = ((p2x - p1x) / len) * (t / 2)
-      b.M(p1x + nx, p1y + ny).L(p2x + nx, p2y + ny).L(p2x - nx, p2y - ny).L(p1x - nx, p1y - ny).Z()
+      b.M(p1x + nx, p1y + ny)
+        .L(p2x + nx, p2y + ny)
+        .L(p2x - nx, p2y - ny)
+        .L(p1x - nx, p1y - ny)
+        .Z()
       return { path: b.d() }
     }
     case 'ribbon': {
       const b = new PathB()
-      b.M(0, 0.25 * h).L(0.25 * w, 0.25 * h).L(0.25 * w, h).L(0, h).L(0.0833 * w, 0.625 * h).Z()
-      b.M(w, 0.25 * h).L(0.75 * w, 0.25 * h).L(0.75 * w, h).L(w, h).L(0.9167 * w, 0.625 * h).Z()
-      b.M(0.125 * w, 0).L(0.875 * w, 0).L(0.875 * w, 0.75 * h).L(0.125 * w, 0.75 * h).Z()
+      b.M(0, 0.25 * h)
+        .L(0.25 * w, 0.25 * h)
+        .L(0.25 * w, h)
+        .L(0, h)
+        .L(0.0833 * w, 0.625 * h)
+        .Z()
+      b.M(w, 0.25 * h)
+        .L(0.75 * w, 0.25 * h)
+        .L(0.75 * w, h)
+        .L(w, h)
+        .L(0.9167 * w, 0.625 * h)
+        .Z()
+      b.M(0.125 * w, 0)
+        .L(0.875 * w, 0)
+        .L(0.875 * w, 0.75 * h)
+        .L(0.125 * w, 0.75 * h)
+        .Z()
       return { path: b.d() }
     }
     case 'ribbon2': {
       const b = new PathB()
-      b.M(0, 0.75 * h).L(0.25 * w, 0.75 * h).L(0.25 * w, 0).L(0, 0).L(0.0833 * w, 0.375 * h).Z()
-      b.M(w, 0.75 * h).L(0.75 * w, 0.75 * h).L(0.75 * w, 0).L(w, 0).L(0.9167 * w, 0.375 * h).Z()
-      b.M(0.125 * w, h).L(0.875 * w, h).L(0.875 * w, 0.25 * h).L(0.125 * w, 0.25 * h).Z()
+      b.M(0, 0.75 * h)
+        .L(0.25 * w, 0.75 * h)
+        .L(0.25 * w, 0)
+        .L(0, 0)
+        .L(0.0833 * w, 0.375 * h)
+        .Z()
+      b.M(w, 0.75 * h)
+        .L(0.75 * w, 0.75 * h)
+        .L(0.75 * w, 0)
+        .L(w, 0)
+        .L(0.9167 * w, 0.375 * h)
+        .Z()
+      b.M(0.125 * w, h)
+        .L(0.875 * w, h)
+        .L(0.875 * w, 0.25 * h)
+        .L(0.125 * w, 0.25 * h)
+        .Z()
       return { path: b.d() }
     }
     case 'wave': {
@@ -765,16 +1155,37 @@ export function presetPath(
       const b = new PathB().M(0, a)
       b.C(w / 6, 0, w / 3, 0, w / 2, a).C((2 * w) / 3, 2 * a, (5 * w) / 6, 2 * a, w, a)
       b.L(w, h - a)
-      b.C((5 * w) / 6, h, (2 * w) / 3, h, w / 2, h - a).C(w / 3, h - 2 * a, w / 6, h - 2 * a, 0, h - a)
+      b.C((5 * w) / 6, h, (2 * w) / 3, h, w / 2, h - a).C(
+        w / 3,
+        h - 2 * a,
+        w / 6,
+        h - 2 * a,
+        0,
+        h - a,
+      )
       return { path: b.Z().d() }
     }
     case 'doubleWave': {
       const a = h * Math.min(frac('adj1', 6250), 0.2)
       const b = new PathB().M(0, a)
       b.C(w / 12, 0, w / 6, 0, w / 4, a).C(w / 3, 2 * a, (5 * w) / 12, 2 * a, w / 2, a)
-      b.C((7 * w) / 12, 0, (2 * w) / 3, 0, (3 * w) / 4, a).C((5 * w) / 6, 2 * a, (11 * w) / 12, 2 * a, w, a)
+      b.C((7 * w) / 12, 0, (2 * w) / 3, 0, (3 * w) / 4, a).C(
+        (5 * w) / 6,
+        2 * a,
+        (11 * w) / 12,
+        2 * a,
+        w,
+        a,
+      )
       b.L(w, h - a)
-      b.C((11 * w) / 12, h, (5 * w) / 6, h, (3 * w) / 4, h - a).C((2 * w) / 3, h - 2 * a, (7 * w) / 12, h - 2 * a, w / 2, h - a)
+      b.C((11 * w) / 12, h, (5 * w) / 6, h, (3 * w) / 4, h - a).C(
+        (2 * w) / 3,
+        h - 2 * a,
+        (7 * w) / 12,
+        h - 2 * a,
+        w / 2,
+        h - a,
+      )
       b.C((5 * w) / 12, h, w / 3, h, w / 4, h - a).C(w / 6, h - 2 * a, w / 12, h - 2 * a, 0, h - a)
       return { path: b.Z().d() }
     }
@@ -788,7 +1199,12 @@ export function presetPath(
       const b = new PathB().M(0, h).L(0, ryO)
       b.arc(rxO, ryO, rxO, ryO, 180, 180)
       const yh = h - hl
-      b.L(xrc + t / 2, yh).L(xrc + hw, yh).L(xrc, h).L(xrc - hw, yh).L(xrc - t / 2, yh).L(xrc - t / 2, ryO)
+      b.L(xrc + t / 2, yh)
+        .L(xrc + hw, yh)
+        .L(xrc, h)
+        .L(xrc - hw, yh)
+        .L(xrc - t / 2, yh)
+        .L(xrc - t / 2, ryO)
       b.arc(rxO, ryO, Math.max(rxO - t, 0), Math.max(ryO - t, ryO * 0.2), 0, -180)
       b.L(t, h).Z()
       return { path: b.d() }
@@ -798,7 +1214,9 @@ export function presetPath(
       const b = new PathB().M(0, 0)
       b.arc(0, cy, w, cy, 270, 90)
       const bi = Math.max(w - 1.5 * t, 0)
-      b.L((w + bi) / 2, Math.min(h, cy + 1.2 * t)).L(bi, cy).L(w - t, cy)
+      b.L((w + bi) / 2, Math.min(h, cy + 1.2 * t))
+        .L(bi, cy)
+        .L(w - t, cy)
       b.arc(0, cy, Math.max(w - t, 0), Math.max(cy - t, 0), 0, -90)
       b.L(0, 0).Z()
       return { path: b.d() }
@@ -812,8 +1230,16 @@ export function presetPath(
       const bs = (ss * 5) / 32
       const b = new PathB()
       b.M(bs, y1).L(xh, y1).L(xh, 0).L(w, cy).L(xh, h).L(xh, y2).L(bs, y2).Z()
-      b.M(0, y1).L(ss / 32, y1).L(ss / 32, y2).L(0, y2).Z()
-      b.M(ss / 16, y1).L(ss / 8, y1).L(ss / 8, y2).L(ss / 16, y2).Z()
+      b.M(0, y1)
+        .L(ss / 32, y1)
+        .L(ss / 32, y2)
+        .L(0, y2)
+        .Z()
+      b.M(ss / 16, y1)
+        .L(ss / 8, y1)
+        .L(ss / 8, y2)
+        .L(ss / 16, y2)
+        .Z()
       return { path: b.d() }
     }
     case 'wedgeRoundRectCallout': {
@@ -821,8 +1247,14 @@ export function presetPath(
       const tipX = cx + w * adjRaw(adjust, 'adj1', -20833)
       const tipY = cy + h * adjRaw(adjust, 'adj2', 62500)
       const b = new PathB()
-      b.M(r, 0).L(w - r, 0).arc(w - r, r, r, r, 270, 90).L(w, h - r)
-      b.arc(w - r, h - r, r, r, 0, 90).L(r, h).arc(r, h - r, r, r, 90, 90).L(0, r)
+      b.M(r, 0)
+        .L(w - r, 0)
+        .arc(w - r, r, r, r, 270, 90)
+        .L(w, h - r)
+      b.arc(w - r, h - r, r, r, 0, 90)
+        .L(r, h)
+        .arc(r, h - r, r, r, 90, 90)
+        .L(0, r)
       b.arc(r, r, r, r, 180, 90).Z()
       appendWedgeTail(b, w, h, tipX, tipY)
       return { path: b.d() }
@@ -841,28 +1273,50 @@ export function presetPath(
     }
     case 'flowChartPredefinedProcess': {
       const path = new PathB().M(0, 0).L(w, 0).L(w, h).L(0, h).Z().d()
-      const lines = new PathB().M(w / 8, 0).L(w / 8, h).M((7 * w) / 8, 0).L((7 * w) / 8, h).d()
+      const lines = new PathB()
+        .M(w / 8, 0)
+        .L(w / 8, h)
+        .M((7 * w) / 8, 0)
+        .L((7 * w) / 8, h)
+        .d()
       return { path, strokePath: lines }
     }
     case 'flowChartInternalStorage': {
       const path = new PathB().M(0, 0).L(w, 0).L(w, h).L(0, h).Z().d()
-      const lines = new PathB().M(w / 8, 0).L(w / 8, h).M(0, h / 8).L(w, h / 8).d()
+      const lines = new PathB()
+        .M(w / 8, 0)
+        .L(w / 8, h)
+        .M(0, h / 8)
+        .L(w, h / 8)
+        .d()
       return { path, strokePath: lines }
     }
     case 'flowChartDocument': {
-      const b = new PathB().M(0, 0).L(w, 0).L(w, 0.83 * h)
+      const b = new PathB()
+        .M(0, 0)
+        .L(w, 0)
+        .L(w, 0.83 * h)
       b.C(0.75 * w, 0.72 * h, 0.58 * w, 0.72 * h, 0.5 * w, 0.83 * h)
       b.C(0.42 * w, 0.94 * h, 0.25 * w, 0.94 * h, 0, 0.83 * h)
       return { path: b.Z().d() }
     }
     case 'flowChartMultidocument': {
-      const b = new PathB().M(0, 0.12 * h).L(0.88 * w, 0.12 * h).L(0.88 * w, 0.85 * h)
+      const b = new PathB()
+        .M(0, 0.12 * h)
+        .L(0.88 * w, 0.12 * h)
+        .L(0.88 * w, 0.85 * h)
       b.C(0.66 * w, 0.74 * h, 0.51 * w, 0.74 * h, 0.44 * w, 0.85 * h)
       b.C(0.37 * w, 0.96 * h, 0.22 * w, 0.96 * h, 0, 0.85 * h)
       b.Z()
       const backs = new PathB()
-        .M(0.06 * w, 0.12 * h).L(0.06 * w, 0.06 * h).L(0.94 * w, 0.06 * h).L(0.94 * w, 0.6 * h)
-        .M(0.12 * w, 0.06 * h).L(0.12 * w, 0).L(w, 0).L(w, 0.53 * h)
+        .M(0.06 * w, 0.12 * h)
+        .L(0.06 * w, 0.06 * h)
+        .L(0.94 * w, 0.06 * h)
+        .L(0.94 * w, 0.6 * h)
+        .M(0.12 * w, 0.06 * h)
+        .L(0.12 * w, 0)
+        .L(w, 0)
+        .L(w, 0.53 * h)
       return { path: b.d(), strokePath: backs.d() }
     }
     case 'flowChartConnector': {
@@ -882,7 +1336,11 @@ export function presetPath(
       const dx = cx * Math.SQRT1_2
       const dy = cy * Math.SQRT1_2
       const lines = new PathB()
-        .M(cx - dx, cy - dy).L(cx + dx, cy + dy).M(cx + dx, cy - dy).L(cx - dx, cy + dy).d()
+        .M(cx - dx, cy - dy)
+        .L(cx + dx, cy + dy)
+        .M(cx + dx, cy - dy)
+        .L(cx - dx, cy + dy)
+        .d()
       return { path: b.d(), strokePath: lines }
     }
     case 'flowChartSort': {
@@ -895,8 +1353,13 @@ export function presetPath(
       return { path: b.d() }
     }
     case 'flowChartDisplay': {
-      const b = new PathB().M(0, cy).L(w / 6, 0).L((5 * w) / 6, 0)
-      b.arc((5 * w) / 6, cy, w / 6, cy, 270, 180).L(w / 6, h).Z()
+      const b = new PathB()
+        .M(0, cy)
+        .L(w / 6, 0)
+        .L((5 * w) / 6, 0)
+      b.arc((5 * w) / 6, cy, w / 6, cy, 270, 180)
+        .L(w / 6, h)
+        .Z()
       return { path: b.d() }
     }
     case 'flowChartPunchedTape': {
@@ -910,12 +1373,18 @@ export function presetPath(
     }
     case 'leftBracket': {
       const r = Math.min(h / 2, ss * frac('adj', 8333))
-      const b = new PathB().arc(w, r, w, r, 270, -90, 'M').L(0, h - r).arc(w, h - r, w, r, 180, -90)
+      const b = new PathB()
+        .arc(w, r, w, r, 270, -90, 'M')
+        .L(0, h - r)
+        .arc(w, h - r, w, r, 180, -90)
       return { strokePath: b.d() }
     }
     case 'rightBracket': {
       const r = Math.min(h / 2, ss * frac('adj', 8333))
-      const b = new PathB().arc(0, r, w, r, 270, 90, 'M').L(w, h - r).arc(0, h - r, w, r, 0, 90)
+      const b = new PathB()
+        .arc(0, r, w, r, 270, 90, 'M')
+        .L(w, h - r)
+        .arc(0, h - r, w, r, 0, 90)
       return { strokePath: b.d() }
     }
     case 'leftBrace': {
@@ -923,7 +1392,9 @@ export function presetPath(
       const mid = h * frac('adj2', 50000)
       const xm = w / 2
       const b = new PathB().arc(w, r, xm, r, 270, -90, 'M').L(xm, mid - r)
-      b.arc(0, mid - r, xm, r, 0, 90).arc(0, mid + r, xm, r, 270, 90).L(xm, h - r)
+      b.arc(0, mid - r, xm, r, 0, 90)
+        .arc(0, mid + r, xm, r, 270, 90)
+        .L(xm, h - r)
       b.arc(w, h - r, xm, r, 180, -90)
       return { strokePath: b.d() }
     }
@@ -932,7 +1403,9 @@ export function presetPath(
       const mid = h * frac('adj2', 50000)
       const xm = w / 2
       const b = new PathB().arc(0, r, xm, r, 270, 90, 'M').L(xm, mid - r)
-      b.arc(w, mid - r, xm, r, 180, -90).arc(w, mid + r, xm, r, 270, -90).L(xm, h - r)
+      b.arc(w, mid - r, xm, r, 180, -90)
+        .arc(w, mid + r, xm, r, 270, -90)
+        .L(xm, h - r)
       b.arc(0, h - r, xm, r, 0, 90)
       return { strokePath: b.d() }
     }
@@ -950,11 +1423,16 @@ function appendWedgeTail(b: PathB, w: number, h: number, tipX: number, tipY: num
   if (Math.abs(ny) >= Math.abs(nx)) {
     const bx = clamp(tipX, 2 * g, w - 2 * g)
     const ey = ny >= 0 ? h : 0
-    b.M(bx - g, ey).L(tipX, tipY).L(bx + g, ey).Z()
+    b.M(bx - g, ey)
+      .L(tipX, tipY)
+      .L(bx + g, ey)
+      .Z()
   } else {
     const by = clamp(tipY, 2 * g, h - 2 * g)
     const ex = nx >= 0 ? w : 0
-    b.M(ex, by - g).L(tipX, tipY).L(ex, by + g).Z()
+    b.M(ex, by - g)
+      .L(tipX, tipY)
+      .L(ex, by + g)
+      .Z()
   }
 }
-
