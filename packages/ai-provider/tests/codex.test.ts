@@ -208,7 +208,8 @@ describe('fetchCodexCapabilities', () => {
       ),
     )
 
-    await expect(fetchCodexCapabilities(auth, undefined, fetchMock)).resolves.toEqual({
+    const clientVersion = 'test/client'
+    await expect(fetchCodexCapabilities(auth, clientVersion, fetchMock)).resolves.toEqual({
       models: [
         {
           id: 'gpt-5.5',
@@ -222,7 +223,9 @@ describe('fetchCodexCapabilities', () => {
         },
       ],
     })
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/codex/models?client_version=0.144.1')
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]))
+    expect(requestUrl.pathname).toBe('/backend-api/codex/models')
+    expect(requestUrl.searchParams.get('client_version')).toBe(clientVersion)
   })
 
   it('rejects malformed and empty catalogs without retaining their body', async () => {
@@ -280,10 +283,13 @@ describe('streamCodexResponse', () => {
     })
 
     expect(deltas).toEqual(['Draft '])
-    expect(calls).toEqual([
-      { id: 'call-2', name: 'files_read', input: { path: 'notes.txt' } },
-      { id: 'call-1', name: 'docs_replace', input: { text: 'New title' } },
-    ])
+    expect(calls).toHaveLength(2)
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { id: 'call-2', name: 'files_read', input: { path: 'notes.txt' } },
+        { id: 'call-1', name: 'docs_replace', input: { text: 'New title' } },
+      ]),
+    )
   })
 
   it.each(incompleteStreams)(

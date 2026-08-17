@@ -43,10 +43,11 @@ async function closeServer(server: ReturnType<typeof createServer>): Promise<voi
   )
 }
 
-async function freePort(): Promise<number> {
-  const reserved = await openPort()
-  await closeServer(reserved.server)
-  return reserved.port
+async function startCallback(state: string) {
+  const handle = beginCodexCallback(state, 0)
+  await handle.ready
+  if (!handle.port) throw new Error('callback server did not expose a port')
+  return { handle, port: handle.port }
 }
 
 beforeEach(() => {
@@ -127,9 +128,7 @@ describe('codexCredentialStore', () => {
 
 describe('beginCodexCallback', () => {
   it('keeps listening after an invalid callback and completes a later valid callback', async () => {
-    const port = await freePort()
-    const handle = beginCodexCallback('valid-state', port)
-    await handle.ready
+    const { handle, port } = await startCallback('valid-state')
 
     const invalid = await fetch(`http://127.0.0.1:${port}/auth/callback?state=wrong&code=code`)
     expect(invalid.status).toBe(400)
@@ -154,9 +153,7 @@ describe('beginCodexCallback', () => {
   })
 
   it('does not replace the first valid callback response', async () => {
-    const port = await freePort()
-    const handle = beginCodexCallback('valid-state', port)
-    await handle.ready
+    const { handle, port } = await startCallback('valid-state')
 
     const firstResponse = fetch(
       `http://127.0.0.1:${port}/auth/callback?state=valid-state&code=first-code`,
@@ -183,9 +180,7 @@ describe('beginCodexCallback', () => {
   })
 
   it('cancels and closes the callback server once', async () => {
-    const port = await freePort()
-    const handle = beginCodexCallback('state', port)
-    await handle.ready
+    const { handle, port } = await startCallback('state')
 
     const wait = handle.wait.catch((error: unknown) => error)
     handle.cancel()
@@ -197,9 +192,7 @@ describe('beginCodexCallback', () => {
   it('times out and closes the callback server', async () => {
     vi.useFakeTimers()
     try {
-      const port = await freePort()
-      const handle = beginCodexCallback('state', port)
-      await handle.ready
+      const { handle, port } = await startCallback('state')
 
       const result = expect(handle.wait).rejects.toThrow('ChatGPT sign-in timed out')
       await vi.advanceTimersByTimeAsync(5 * 60_000)

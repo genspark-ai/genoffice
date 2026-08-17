@@ -32,6 +32,8 @@ export interface CodexLoginCallback {
 export interface CodexCallbackHandle {
   /** Resolves only after the callback transport is listening. */
   ready: Promise<void>
+  /** Bound localhost port; useful when a caller requests an ephemeral port. */
+  readonly port?: number
   wait: Promise<CodexLoginCallback>
   cancel(): void
   /** Complete browser response after exchange/storage; false renders safe failure. */

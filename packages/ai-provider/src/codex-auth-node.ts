@@ -150,6 +150,7 @@ export function beginCodexCallback(
   port = CODEX_CALLBACK_PORT,
 ): CodexCallbackHandle {
   let server: ReturnType<typeof createServer> | undefined
+  let callbackPort = port
   let pendingResponse: ServerResponse | undefined
   let finish: ((result: { state: string; code: string }) => void) | undefined
   let fail: ((error: Error) => void) | undefined
@@ -218,7 +219,7 @@ export function beginCodexCallback(
     finish = resolve
     fail = rejectWait
     server = createServer((request, response) => {
-      const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`)
+      const url = new URL(request.url ?? '/', `http://127.0.0.1:${callbackPort}`)
       if (url.pathname !== '/auth/callback') {
         response.writeHead(404).end('Not found')
         return
@@ -238,7 +239,11 @@ export function beginCodexCallback(
       pendingResponse = response
       settle({ state, code })
     })
-    server.once('listening', markReady)
+    server.once('listening', () => {
+      const address = server?.address()
+      if (address && typeof address !== 'string') callbackPort = address.port
+      markReady()
+    })
     server.once('error', () => reject(new Error('ChatGPT sign-in callback unavailable')))
     server.listen(port, '127.0.0.1')
   })
@@ -249,6 +254,9 @@ export function beginCodexCallback(
   timeout.unref()
   return {
     ready,
+    get port() {
+      return callbackPort
+    },
     wait,
     cancel: () => reject(new Error('ChatGPT sign-in cancelled')),
     complete,

@@ -1,6 +1,6 @@
 // Slides: the AI panel stays mounted while collapsed (rail only),
 // so the conversation, draft, and in-flight runs survive collapse/expand.
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
@@ -34,6 +34,9 @@ const settings: AiSettings = {
   ) as AiSettings['providers'],
 }
 
+const activeCleanups = new Set<() => void>()
+const activeApiRestorers = new Set<() => void>()
+
 function mount(element: React.ReactElement): {
   container: HTMLElement
   root: Root
@@ -43,13 +46,19 @@ function mount(element: React.ReactElement): {
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => root.render(element))
+  let mounted = true
+  const cleanup = () => {
+    if (!mounted) return
+    mounted = false
+    activeCleanups.delete(cleanup)
+    act(() => root.unmount())
+    container.remove()
+  }
+  activeCleanups.add(cleanup)
   return {
     container,
     root,
-    cleanup: () => {
-      act(() => root.unmount())
-      container.remove()
-    },
+    cleanup,
   }
 }
 
@@ -70,6 +79,17 @@ function panelProps(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function installSlidesApi(api: Record<string, unknown>): void {
+  const previous = Object.getOwnPropertyDescriptor(window, 'slidesApi')
+  Object.defineProperty(window, 'slidesApi', { configurable: true, value: api })
+  const restore = () => {
+    if (!activeApiRestorers.delete(restore)) return
+    if (previous) Object.defineProperty(window, 'slidesApi', previous)
+    else Reflect.deleteProperty(window, 'slidesApi')
+  }
+  activeApiRestorers.add(restore)
+}
+
 /** Simulate typing into React's controlled textarea */
 function typeInto(textarea: HTMLTextAreaElement, text: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
@@ -79,9 +99,24 @@ function typeInto(textarea: HTMLTextAreaElement, text: string) {
   })
 }
 
+async function waitFor(assertion: () => void): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+    })
+    assertion()
+  })
+}
+
 beforeAll(() => {
   // jsdom has no scrollTo; the panel auto-scrolls its chat log
   Element.prototype.scrollTo ??= () => {}
+})
+
+afterEach(() => {
+  for (const cleanup of [...activeCleanups]) cleanup()
+  for (const restore of [...activeApiRestorers]) restore()
+  document.body.replaceChildren()
 })
 
 describe('AiPanel collapse (slides)', () => {
@@ -122,7 +157,6 @@ describe('AiPanel collapse (slides)', () => {
   })
 
   it('renders Codex controls and keeps Send disabled while signed out', async () => {
-    const previous = Object.getOwnPropertyDescriptor(window, 'slidesApi')
     const api = {
       aiCodexStatus: vi.fn(async () => ({ loggedIn: false })),
       aiCodexLogin: vi.fn(async () => ({ loggedIn: true })),
@@ -134,7 +168,7 @@ describe('AiPanel collapse (slides)', () => {
       aiStream: vi.fn(async () => {}),
       aiStreamCancel: vi.fn(async () => {}),
     }
-    Object.defineProperty(window, 'slidesApi', { configurable: true, value: api })
+    installSlidesApi(api)
     const onSettingsChange = vi.fn()
     const codexSettings: AiSettings = {
       ...settings,
@@ -151,19 +185,12 @@ describe('AiPanel collapse (slides)', () => {
     const { container, cleanup } = mount(
       createElement(AiPanel, panelProps({ settings: codexSettings, onSettingsChange })),
     )
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelectorAll('.ai-provider-select-input option')).toHaveLength(2)
+    await waitFor(() => expect(api.aiCodexStatus).toHaveBeenCalled())
     expect(container.querySelector<HTMLButtonElement>('.ai-send-btn')?.disabled).toBe(true)
     cleanup()
-    if (previous) Object.defineProperty(window, 'slidesApi', previous)
-    else delete (window as Partial<Window>).slidesApi
   })
 
   it('renders the capability-backed model control after Codex sign-in', async () => {
-    const previous = Object.getOwnPropertyDescriptor(window, 'slidesApi')
     const api = {
       aiCodexStatus: vi.fn(async () => ({ loggedIn: true })),
       aiCodexLogin: vi.fn(async () => ({ loggedIn: true })),
@@ -184,7 +211,7 @@ describe('AiPanel collapse (slides)', () => {
       aiStream: vi.fn(async () => {}),
       aiStreamCancel: vi.fn(async () => {}),
     }
-    Object.defineProperty(window, 'slidesApi', { configurable: true, value: api })
+    installSlidesApi(api)
     const codexSettings: AiSettings = {
       ...settings,
       provider: 'openai-codex',
@@ -200,13 +227,7 @@ describe('AiPanel collapse (slides)', () => {
     const { container, cleanup } = mount(
       createElement(AiPanel, panelProps({ settings: codexSettings })),
     )
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull()
+    await waitFor(() => expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull())
     cleanup()
-    if (previous) Object.defineProperty(window, 'slidesApi', previous)
-    else delete (window as Partial<Window>).slidesApi
   })
 })

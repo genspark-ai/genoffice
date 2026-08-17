@@ -1,6 +1,6 @@
 // The AI panel stays mounted while collapsed (rail only),
 // so the conversation, draft, and in-flight runs survive collapse/expand.
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Editor } from '@tiptap/core'
@@ -14,6 +14,9 @@ const settings: AiSettings = {
     AI_PROVIDERS.map((p) => [p.id, { apiKey: '', model: p.defaultModel }]),
   ) as AiSettings['providers'],
 }
+
+const activeCleanups = new Set<() => void>()
+const activeDesktopRestorers = new Set<() => void>()
 
 function createEditor(): Editor {
   return new Editor({
@@ -41,13 +44,19 @@ function mount(element: React.ReactElement): {
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => root.render(element))
+  let mounted = true
+  const cleanup = () => {
+    if (!mounted) return
+    mounted = false
+    activeCleanups.delete(cleanup)
+    act(() => root.unmount())
+    container.remove()
+  }
+  activeCleanups.add(cleanup)
   return {
     container,
     root,
-    cleanup: () => {
-      act(() => root.unmount())
-      container.remove()
-    },
+    cleanup,
   }
 }
 
@@ -80,13 +89,25 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+async function waitFor(assertion: () => void): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+    })
+    assertion()
+  })
+}
+
 function installDesktop(desktop: Record<string, unknown>) {
   const previous = Object.getOwnPropertyDescriptor(window, 'desktop')
   Object.defineProperty(window, 'desktop', { configurable: true, value: desktop })
-  return () => {
+  const restore = () => {
+    if (!activeDesktopRestorers.delete(restore)) return
     if (previous) Object.defineProperty(window, 'desktop', previous)
-    else delete (window as Partial<Window>).desktop
+    else Reflect.deleteProperty(window, 'desktop')
   }
+  activeDesktopRestorers.add(restore)
+  return restore
 }
 
 beforeAll(() => {
@@ -94,50 +115,51 @@ beforeAll(() => {
   Element.prototype.scrollTo ??= () => {}
 })
 
+afterEach(() => {
+  for (const cleanup of [...activeCleanups]) cleanup()
+  for (const restore of [...activeDesktopRestorers]) restore()
+  Reflect.deleteProperty(window, 'desktop')
+  document.body.replaceChildren()
+})
+
 describe('AiPanel collapse', () => {
   it('updates settings when selecting Codex model, reasoning, and service tier', async () => {
     const editor = createEditor()
     let streamListener:
       ((chunk: { requestId: string; type: 'error'; error: string }) => void) | undefined
-    const previousDesktop = Object.getOwnPropertyDescriptor(window, 'desktop')
     const onSettingsChange = vi.fn()
-    Object.defineProperty(window, 'desktop', {
-      configurable: true,
-      value: {
-        onAiStream: (listener: typeof streamListener) => {
-          streamListener = listener
-          return () => {}
-        },
-        aiStream: vi.fn().mockResolvedValue(undefined),
-        aiStreamCancel: vi.fn().mockResolvedValue(undefined),
-        aiCodexCapabilities: vi.fn().mockResolvedValue({
-          models: [
-            {
-              id: 'gpt-5.5',
-              reasoningEfforts: ['none', 'low', 'high'],
-              serviceTiers: [
-                { id: 'default', name: 'Standard' },
-                { id: 'priority', name: 'Fast' },
-              ],
-            },
-            {
-              id: 'gpt-5.4',
-              reasoningEfforts: ['none', 'medium'],
-              serviceTiers: [{ id: 'default', name: 'Standard' }],
-            },
-          ],
-        }),
-        aiCodexStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
+    const restoreDesktop = installDesktop({
+      onAiStream: (listener: typeof streamListener) => {
+        streamListener = listener
+        return () => {}
       },
+      aiStream: vi.fn().mockResolvedValue(undefined),
+      aiStreamCancel: vi.fn().mockResolvedValue(undefined),
+      aiCodexCapabilities: vi.fn().mockResolvedValue({
+        models: [
+          {
+            id: 'gpt-5.5',
+            reasoningEfforts: ['none', 'low', 'high'],
+            serviceTiers: [
+              { id: 'default', name: 'Standard' },
+              { id: 'priority', name: 'Fast' },
+            ],
+          },
+          {
+            id: 'gpt-5.4',
+            reasoningEfforts: ['none', 'medium'],
+            serviceTiers: [{ id: 'default', name: 'Standard' }],
+          },
+        ],
+      }),
+      aiCodexStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
     })
     const codexSettings: AiSettings = { ...settings, provider: 'openai-codex' }
     const { container, cleanup } = mount(
       createElement(AiPanel, panelProps(editor, { settings: codexSettings, onSettingsChange })),
     )
 
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull())
 
     expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull()
 
@@ -180,8 +202,7 @@ describe('AiPanel collapse', () => {
     )
 
     cleanup()
-    if (previousDesktop) Object.defineProperty(window, 'desktop', previousDesktop)
-    else delete (window as Partial<Window>).desktop
+    restoreDesktop()
     editor.destroy()
     void streamListener
   })
@@ -215,10 +236,7 @@ describe('AiPanel collapse', () => {
     expect(aiCodexCapabilities).not.toHaveBeenCalled()
 
     status.resolve({ loggedIn: false })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull())
 
     expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull()
     expect(container.querySelector<HTMLButtonElement>('.ai-send-btn')!.disabled).toBe(true)
@@ -248,10 +266,7 @@ describe('AiPanel collapse', () => {
       createElement(AiPanel, panelProps(editor, { settings: codexSettings })),
     )
 
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-auth-login')).not.toBeNull())
     const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
     typeInto(textarea, 'Keep this draft')
     const loginButton = container.querySelector<HTMLButtonElement>('.ai-codex-auth-login')!
@@ -264,10 +279,9 @@ describe('AiPanel collapse', () => {
     expect(aiCodexLogin).toHaveBeenCalledTimes(1)
 
     login.resolve({ loggedIn: true })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
+    await waitFor(() => {
+      expect(container.querySelector('.ai-codex-auth-banner')).toBeNull()
+      expect(aiCodexCapabilities).toHaveBeenCalledTimes(1)
     })
     expect(container.querySelector('.ai-codex-auth-banner')).toBeNull()
     expect(container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!.value).toBe(
@@ -300,18 +314,12 @@ describe('AiPanel collapse', () => {
       createElement(AiPanel, panelProps(editor, { settings: codexSettings })),
     )
 
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-auth-login')).not.toBeNull())
     const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
     typeInto(textarea, 'Draft survives failure')
     const loginButton = container.querySelector<HTMLButtonElement>('.ai-codex-auth-login')!
     act(() => loginButton.click())
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull())
     expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull()
     expect(container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!.value).toBe(
       'Draft survives failure',
@@ -319,10 +327,7 @@ describe('AiPanel collapse', () => {
     expect(container.querySelector<HTMLButtonElement>('.ai-codex-auth-login')!.disabled).toBe(false)
 
     act(() => container.querySelector<HTMLButtonElement>('.ai-codex-auth-login')!.click())
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(aiCodexLogin).toHaveBeenCalledTimes(2))
     expect(aiCodexLogin).toHaveBeenCalledTimes(2)
 
     cleanup()
@@ -349,10 +354,7 @@ describe('AiPanel collapse', () => {
       createElement(AiPanel, panelProps(editor, { settings: codexSettings })),
     )
 
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-auth-login')).not.toBeNull())
     act(() => container.querySelector<HTMLButtonElement>('.ai-codex-auth-login')!.click())
     const anthropicSettings: AiSettings = { ...settings, provider: 'anthropic' }
     act(() =>
@@ -363,25 +365,18 @@ describe('AiPanel collapse', () => {
     const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
     typeInto(textarea, 'Anthropic draft')
     act(() => container.querySelector<HTMLButtonElement>('.ai-send-btn')!.click())
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(aiStream).toHaveBeenCalledTimes(1))
     expect(aiStream).toHaveBeenCalledTimes(1)
 
     login.resolve({ loggedIn: true })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-auth-banner')).toBeNull())
     expect(container.querySelector('.ai-codex-auth-banner')).toBeNull()
 
     act(() => root.render(createElement(AiPanel, panelProps(editor, { settings: codexSettings }))))
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
+    await waitFor(() => {
+      expect(aiCodexStatus).toHaveBeenCalledTimes(2)
+      expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull()
     })
-    expect(aiCodexStatus).toHaveBeenCalledTimes(2)
-    expect(container.querySelector('.ai-codex-auth-banner')).not.toBeNull()
 
     cleanup()
     restoreDesktop()
@@ -428,17 +423,11 @@ describe('AiPanel collapse', () => {
       createElement(AiPanel, panelProps(editor, { settings: codexSettings, onSettingsChange })),
     )
 
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull())
     const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
     typeInto(textarea, 'Summarize this document')
     act(() => container.querySelector<HTMLButtonElement>('.ai-send-btn')!.click())
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    await waitFor(() => expect(container.querySelector('.ai-msg-error')).not.toBeNull())
 
     expect(container.querySelector('.ai-msg-error')).not.toBeNull()
     expect(container.querySelector('.ai-login-btn')).toBeNull()

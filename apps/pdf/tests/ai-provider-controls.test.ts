@@ -5,6 +5,9 @@ import { defaultAiSettings, type AiSettings } from '@genoffice/ai-provider'
 import { AiPanel } from '../src/renderer/ai/AiPanel'
 import type { PdfAiDeps } from '../src/renderer/ai/tools'
 
+const activeCleanups = new Set<() => void>()
+const activeApiRestorers = new Set<() => void>()
+
 function mount(element: React.ReactElement): {
   container: HTMLElement
   root: Root
@@ -14,13 +17,19 @@ function mount(element: React.ReactElement): {
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => root.render(element))
+  let mounted = true
+  const cleanup = () => {
+    if (!mounted) return
+    mounted = false
+    activeCleanups.delete(cleanup)
+    act(() => root.unmount())
+    container.remove()
+  }
+  activeCleanups.add(cleanup)
   return {
     container,
     root,
-    cleanup: () => {
-      act(() => root.unmount())
-      container.remove()
-    },
+    cleanup,
   }
 }
 
@@ -88,7 +97,14 @@ function installApi(initial: AiSettings, loggedIn = false) {
     aiStream: vi.fn(async () => {}),
     aiStreamCancel: vi.fn(async () => {}),
   }
+  const previous = Object.getOwnPropertyDescriptor(window, 'pdfApi')
   Object.defineProperty(window, 'pdfApi', { configurable: true, value: api })
+  const restore = () => {
+    if (!activeApiRestorers.delete(restore)) return
+    if (previous) Object.defineProperty(window, 'pdfApi', previous)
+    else Reflect.deleteProperty(window, 'pdfApi')
+  }
+  activeApiRestorers.add(restore)
   return {
     api,
     emit(next: AiSettings) {
@@ -97,11 +113,22 @@ function installApi(initial: AiSettings, loggedIn = false) {
   }
 }
 
+async function waitFor(assertion: () => void): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+    })
+    assertion()
+  })
+}
+
 beforeAll(() => {
   Element.prototype.scrollTo ??= () => {}
 })
 
 afterEach(() => {
+  for (const cleanup of [...activeCleanups]) cleanup()
+  for (const restore of [...activeApiRestorers]) restore()
   document.body.replaceChildren()
 })
 
@@ -112,11 +139,7 @@ describe('PDF Codex provider wiring', () => {
     const { container, cleanup } = mount(
       createElement(AiPanel, { api: deps(), onCollapse: () => {} }),
     )
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelector('.ai-provider-select-input')).not.toBeNull()
+    await waitFor(() => expect(container.querySelector('.ai-provider-select-input')).not.toBeNull())
     expect(container.querySelector<HTMLButtonElement>('.ai-send-btn')?.disabled).toBe(true)
     const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
@@ -135,17 +158,12 @@ describe('PDF Codex provider wiring', () => {
     const { container, cleanup } = mount(
       createElement(AiPanel, { api: deps(), onCollapse: () => {} }),
     )
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull()
+    await waitFor(() => expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull())
     installed.emit(settings('genspark'))
-    await act(async () => {
-      await Promise.resolve()
-    })
-    expect(container.querySelector<HTMLSelectElement>('.ai-provider-select-input')?.value).toBe(
-      'genspark',
+    await waitFor(() =>
+      expect(container.querySelector<HTMLSelectElement>('.ai-provider-select-input')?.value).toBe(
+        'genspark',
+      ),
     )
     expect(installed.api.setAiSettings).not.toHaveBeenCalled()
     cleanup()

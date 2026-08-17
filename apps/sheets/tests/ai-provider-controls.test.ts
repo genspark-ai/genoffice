@@ -5,6 +5,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { defaultAiSettings, type AiSettings } from '@genoffice/ai-provider'
 import { AiChatPanel } from '../src/renderer/ai/AiChatPanel'
 
+const activeCleanups = new Set<() => void>()
+const activeApiRestorers = new Set<() => void>()
+
 function mount(element: React.ReactElement): {
   container: HTMLElement
   root: Root
@@ -14,13 +17,19 @@ function mount(element: React.ReactElement): {
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => root.render(element))
+  let mounted = true
+  const cleanup = () => {
+    if (!mounted) return
+    mounted = false
+    activeCleanups.delete(cleanup)
+    act(() => root.unmount())
+    container.remove()
+  }
+  activeCleanups.add(cleanup)
   return {
     container,
     root,
-    cleanup: () => {
-      act(() => root.unmount())
-      container.remove()
-    },
+    cleanup,
   }
 }
 
@@ -51,8 +60,24 @@ function installApi({ loggedIn = false, capabilities = false } = {}) {
     setAiSettings: vi.fn(async () => {}),
     readAttachmentImage: vi.fn(async () => ({ ok: false })),
   }
+  const previous = Object.getOwnPropertyDescriptor(window, 'desktopApi')
   Object.defineProperty(window, 'desktopApi', { configurable: true, value: api })
+  const restore = () => {
+    if (!activeApiRestorers.delete(restore)) return
+    if (previous) Object.defineProperty(window, 'desktopApi', previous)
+    else Reflect.deleteProperty(window, 'desktopApi')
+  }
+  activeApiRestorers.add(restore)
   return api
+}
+
+async function waitFor(assertion: () => void): Promise<void> {
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+    })
+    assertion()
+  })
 }
 
 function props(overrides: Record<string, unknown> = {}) {
@@ -84,6 +109,8 @@ function props(overrides: Record<string, unknown> = {}) {
 }
 
 afterEach(() => {
+  for (const cleanup of [...activeCleanups]) cleanup()
+  for (const restore of [...activeApiRestorers]) restore()
   document.body.replaceChildren()
 })
 
@@ -112,14 +139,12 @@ describe('Sheets Codex provider wiring', () => {
   })
 
   it('keeps the draft editable while signed-out Codex disables Send', async () => {
-    installApi()
+    const api = installApi()
     const onPromptChange = vi.fn()
     const { container, cleanup } = mount(
       createElement(AiChatPanel, props({ settings: settings('openai-codex'), onPromptChange })),
     )
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await waitFor(() => expect(api.aiCodexStatus).toHaveBeenCalled())
     const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
     act(() => {
@@ -136,11 +161,7 @@ describe('Sheets Codex provider wiring', () => {
     const { container, root, cleanup } = mount(
       createElement(AiChatPanel, props({ settings: settings('openai-codex') })),
     )
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull()
+    await waitFor(() => expect(container.querySelector('.ai-codex-model-trigger')).not.toBeNull())
     const next = settings('genspark')
     act(() => root.render(createElement(AiChatPanel, props({ settings: next }))))
     expect(container.querySelector<HTMLSelectElement>('.ai-provider-select-input')?.value).toBe(
