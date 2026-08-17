@@ -23,6 +23,7 @@ import type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
 
@@ -216,6 +217,8 @@ export interface DesktopApi {
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */
   aiGskLogin(): Promise<void>
+  /** List locally-available Ollama models (Ollama's /api/tags endpoint) */
+  aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
   webSearch(
     query: string,
     maxResults?: number,

@@ -8,6 +8,7 @@ import type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 
 const MAX_RANGE_CELLS = 20_000
@@ -1972,6 +1973,8 @@ export interface DesktopApi {
   /// Opens the browser to sign in to Genspark (fire-and-forget; aiGskStatus
   /// becomes signed-in on completion)
   aiGskLogin(): Promise<void>
+  /// List locally-available Ollama models (Ollama's /api/tags endpoint)
+  aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
   /// Web search (main-process Serper/DuckDuckGo, shared with docs/slides)
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void

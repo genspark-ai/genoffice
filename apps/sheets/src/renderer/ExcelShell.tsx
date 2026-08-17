@@ -22,6 +22,7 @@ import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
 import type { ChartSeriesVisualState } from '../domain/chart-visual'
 import type { ChangePlan } from '../domain/workbook.types'
 import type { AttachmentMeta } from '../shared/desktop-api'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import {
   PivotDialog,
@@ -147,6 +148,8 @@ interface ExcelShellProps {
   readonly onNewChat: () => void
   readonly onUndo: () => void
   readonly onCommand: (command: string) => void
+  readonly settings: AiSettings
+  readonly onSettingsChange: (next: AiSettings) => void
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
@@ -264,6 +267,8 @@ export function ExcelShell({
   onUndo,
   onCommand,
   statusMessage,
+  settings,
+  onSettingsChange,
   zoomPercent,
   canSave,
   onSave,
@@ -452,6 +457,8 @@ export function ExcelShell({
           onUndo={onUndo}
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
+          settings={settings}
+          onSettingsChange={onSettingsChange}
         />
         <div className="sheet-main">
           {/* Excel's formula-bar row, Name Box only for now (fx bar TBD). */}

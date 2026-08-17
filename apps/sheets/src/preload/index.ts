@@ -5,6 +5,7 @@ import type {
   AiSettings,
   AiStreamChunk,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import type {
@@ -286,6 +287,13 @@ const desktopApi: DesktopApi = {
   },
   async aiGskLogin() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiGskLogin)
+  },
+  async aiOllamaModels(baseUrl?) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiOllamaModels, baseUrl)
+    if (!isRecord(result) || !Array.isArray(result.models)) {
+      throw new Error('Invalid Ollama models response.')
+    }
+    return result as unknown as OllamaModelsResult
   },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {

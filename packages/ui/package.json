@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
-    "./screentip.css": "./src/screentip.css"
+    "./screentip.css": "./src/screentip.css",
+    "./ai-settings.css": "./src/ai-settings.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -17,6 +18,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@genoffice/ai-provider": "*",
     "@types/react": "^19.2.14",
     "typescript": "^5.9.3"
   },

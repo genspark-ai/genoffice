@@ -1,8 +1,9 @@
 export { AiComposer } from './AiComposer'
 export { installScreenTips } from './screentip'
 export { AiTypingIndicator } from './AiTypingIndicator'
-export { IconSend, IconStop, type IconProps } from './icons'
+export { IconSend, IconStop, IconSettings, type IconProps } from './icons'
 export { Markdown } from './Markdown'
+export { AiSettingsDialog, type AiSettingsDialogProps, type AiSettingsDialogStrings } from './AiSettingsDialog'
 export { isSymbolFontFamily } from './symbol-fonts'
 export {
   WORDART_PRESETS,

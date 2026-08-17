@@ -56,5 +56,11 @@
     "pngjs": "^7.0.0",
     "prettier": "^3.9.6",
     "typescript-eslint": "^8.65.0"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "protobufjs@7.6.5": true
   }
 }

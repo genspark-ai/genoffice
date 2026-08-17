@@ -1,5 +1,5 @@
 import type { Lang } from '@genoffice/i18n'
-import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
+import type { AiSettings, AiStreamChunk, AiStreamRequest, OllamaModelsResult } from '@genoffice/ai-provider'
 
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
@@ -587,11 +587,13 @@ export type ExportImagesResult =
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
+  setSettings: 'ai:set-settings',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
   imageSearch: 'ai:image-search',
   fetchImage: 'ai:fetch-image',
+  ollamaModels: 'ai:ollama-models',
 } as const
 
 export interface ImageSearchResponse {
@@ -681,7 +683,9 @@ export interface PdfApi {
   getTheme(): Promise<UiTheme>
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
   getAiSettings(): Promise<AiSettings>
+  setAiSettings(settings: AiSettings): Promise<void>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
+  aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
 }

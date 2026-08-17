@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings } from '@genoffice/ui'
+import type { AiSettingsDialogStrings } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -214,6 +216,8 @@ export function AiChatPanel({
   onUndo,
   onExpand,
   onCollapse,
+  settings,
+  onSettingsChange,
 }: {
   readonly isOpen: boolean
   /** the workbook has cells with content — empty workbooks get "build me a sheet" copy instead */
@@ -242,12 +246,15 @@ export function AiChatPanel({
   readonly onUndo: () => void
   readonly onExpand: () => void
   readonly onCollapse: () => void
+  readonly settings: AiSettings
+  readonly onSettingsChange?: (next: AiSettings) => void
 }): React.JSX.Element {
   const { t } = useI18n()
   const chatRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const stickToBottomRef = useRef(true)
   const [dragOver, setDragOver] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const asideRef = useRef<HTMLElement | null>(null)
   const [resizing, setResizing] = useState(false)
   /** data-URL previews for image attachments, keyed by path (Genspark composer thumbnails) */
@@ -465,6 +472,14 @@ export function AiChatPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setSettingsOpen(true)}
+            data-tip="AI Settings"
+            aria-label="AI Settings"
+          >
+            <IconSettings size={15} />
+          </button>
           {(chat.length > 0 || historicChat.length > 0) && (
             <button
               className="ai-header-btn"
@@ -727,6 +742,31 @@ export function AiChatPanel({
           onPasteFiles={onPasteFiles}
         />
       </div>
+      {settingsOpen && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+          }}
+          listOllamaModels={(baseUrl) => window.desktopApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </aside>
   )
 }

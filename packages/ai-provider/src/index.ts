@@ -13,9 +13,12 @@ export type {
 export {
   AI_PROVIDERS,
   GENSPARK_LLM_BASE_URLS,
+  OLLAMA_DEFAULT_BASE_URL,
   defaultAiSettings,
+  providerRequiresApiKey,
   resolveAiSettings,
 } from './providers'
+export { listOllamaModels, type OllamaModelsResult } from './ollama'
 export { chatForProvider } from './chat'
 export { setRescueFetch } from './fetch'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'

@@ -145,4 +145,65 @@ describe('chatForProvider', () => {
     )
     expect(result).toEqual({ ok: false, error: 'AI returned an empty response' })
   })
+
+  it('ollama: uses the default local endpoint', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'hi from ollama' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'ollama',
+      { apiKey: '', model: 'llama3.2' },
+      'sys',
+      'hi',
+    )
+    expect(result).toEqual({ ok: true, content: 'hi from ollama' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:11434/v1/chat/completions',
+      expect.anything(),
+    )
+  })
+
+  it('ollama: uses a custom base URL when configured', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'remote' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider(
+      'ollama',
+      { apiKey: '', model: 'llama3.2', baseUrl: 'http://192.168.1.10:11434/v1' },
+      'sys',
+      'hi',
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://192.168.1.10:11434/v1/chat/completions',
+      expect.anything(),
+    )
+  })
+
+  it('ollama: omits Authorization header when no API key is set', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider('ollama', { apiKey: '', model: 'llama3.2' }, 'sys', 'hi')
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
+    expect(headers['Authorization']).toBeUndefined()
+    expect(headers['X-Agent-Type']).toBeUndefined()
+  })
+
+  it('ollama: sends Authorization when a key is configured (remote server)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider(
+      'ollama',
+      { apiKey: 'my-token', model: 'llama3.2' },
+      'sys',
+      'hi',
+    )
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
+    expect(headers['Authorization']).toBe('Bearer my-token')
+  })
 })

@@ -22,6 +22,7 @@ import { AiPanel, GensparkMark, type AiPreset, type MarkdownAiDeps } from './ai/
 import { DOCX_MAX_IMAGE_PX, exportDocxBytes } from './export/docxExport'
 import { buildPrintHtml } from './export/printHtml'
 import { resolveImageSrc } from './editor/localImage'
+import type { AiSettings } from '@genoffice/ai-provider'
 import type { ExportFormat, SaveMode } from '../shared/ipc'
 
 type LoadStatus = 'loading' | 'ready' | 'error'
@@ -87,8 +88,13 @@ export default function App() {
   const [fmText, setFmText] = useState('')
   const [aiOpen, setAiOpen] = useState(true)
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('mdapp.autoSave') === '1')
   const [zoom, setZoom] = useState(100)
+
+  useEffect(() => {
+    void window.markdownApi.getAiSettings().then(setAiSettings)
+  }, [])
 
   const statusRef = useRef<LoadStatus>('loading')
   const dirtyRef = useRef(false)
@@ -494,6 +500,11 @@ export default function App() {
               filePath={filePath}
               preset={aiPreset}
               onCollapse={() => setAiOpen(false)}
+              settings={aiSettings ?? undefined}
+              onSettingsChange={(next) => {
+                setAiSettings(next)
+                void window.markdownApi.setAiSettings(next)
+              }}
             />
           )}
         </div>

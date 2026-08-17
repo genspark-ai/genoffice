@@ -1,6 +1,10 @@
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
-import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
+import {
+  GENSPARK_LLM_BASE_URLS,
+  OLLAMA_DEFAULT_BASE_URL,
+  gensparkAttributionHeaders,
+} from './providers'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog, type StreamWatchdog } from './watchdog'
 
@@ -94,7 +98,8 @@ async function chatOpenAiCompatible(
     signal: wd.signal,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      // only send auth when a key actually exists (e.g. a remote Ollama server with a key)
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       ...gensparkAttributionHeaders(baseUrl),
     },
     body: JSON.stringify({
@@ -162,6 +167,9 @@ export async function chatForProvider(
             error: 'A custom provider requires a Base URL',
           })
         return chatOpenAiCompatible(wd, config.baseUrl, config, system, user)
+      case 'ollama':
+        // local (or user-configured) Ollama server; reuse the OpenAI-compatible transport
+        return chatOpenAiCompatible(wd, config.baseUrl ?? OLLAMA_DEFAULT_BASE_URL, config, system, user)
       default:
         return Promise.resolve({ ok: false as const, error: `Unknown provider: ${provider}` })
     }
