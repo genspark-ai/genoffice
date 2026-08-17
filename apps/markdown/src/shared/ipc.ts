@@ -1,5 +1,12 @@
 import type { Lang } from '@genoffice/i18n'
-import type { AiSettings, AiStreamChunk, AiStreamRequest, OllamaModelsResult } from '@genoffice/ai-provider'
+import type {
+  AiConnectionTestInput,
+  AiConnectionTestResult,
+  AiSettings,
+  AiStreamChunk,
+  AiStreamRequest,
+  OllamaModelsResult,
+} from '@genoffice/ai-provider'
 
 export const MARKDOWN_CHANNELS = {
   consumePending: 'markdown:consume-pending',
@@ -52,6 +59,7 @@ export const AI_CHANNELS = {
   streamCancel: 'ai:stream-cancel',
   webSearch: 'ai:web-search',
   ollamaModels: 'ai:ollama-models',
+  testConnection: 'ai:test-connection',
 } as const
 
 export interface WebSearchResult {
@@ -139,6 +147,7 @@ export interface MarkdownApi {
   aiStreamCancel(requestId: string): Promise<void>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
+  aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
   /** Main-process web search (Serper/DuckDuckGo via the shared ai:web-search handler) */
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
 }

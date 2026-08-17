@@ -27,6 +27,7 @@ export const IPC_CHANNELS = {
   aiGskStatus: 'ai:gsk-status',
   aiGskLogin: 'ai:gsk-login',
   aiOllamaModels: 'ai:ollama-models',
+  aiTestConnection: 'ai:test-connection',
   // Chat attachments (sheets: prefix — docs already registers global files:* in
   // the shell; avoids collisions)
   captureScreenSources: 'sheets:capture-screen-sources',

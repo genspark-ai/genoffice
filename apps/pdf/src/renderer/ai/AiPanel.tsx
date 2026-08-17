@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
+import { isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
@@ -348,6 +348,11 @@ export function AiPanel({
         </div>
       </header>
 
+      {settings && !isProviderConfigured(settings) && (
+        <div className="ai-not-configured" role="status">
+          {t('aiNotConfigured')}
+        </div>
+      )}
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {chat.length === 0 && (
           <div className="ai-chat-empty">
@@ -434,8 +439,17 @@ export function AiPanel({
             aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
             aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
             aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+            aiSettingsTestButton: t('aiSettingsTestButton'),
+            aiSettingsTestConnected: t('aiSettingsTestConnected'),
+            aiSettingsTestNotRunning: t('aiSettingsTestNotRunning'),
+            aiSettingsTestRefused: t('aiSettingsTestRefused'),
+            aiSettingsTestInvalid: t('aiSettingsTestInvalid'),
+            aiSettingsTestAuth: t('aiSettingsTestAuth'),
+            aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
+            aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
           listOllamaModels={(baseUrl) => window.pdfApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onTestConnection={(provider, input) => window.pdfApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}
         />

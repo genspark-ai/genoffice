@@ -73,6 +73,7 @@ import type {
   ExportImagesOp,
   ExportPdfOp,
   PrintSlidesOp,
+  AiConnectionTestInput,
   MenuCommand,
   OpenResult,
   SlidesApi,
@@ -292,6 +293,7 @@ const api: SlidesApi = {
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
   aiOllamaModels: (baseUrl?: string) => ipcRenderer.invoke('ai:ollama-models', baseUrl),
+  aiTestConnection: (input: AiConnectionTestInput) => ipcRenderer.invoke('ai:test-connection', input),
   webSearch: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('ai:web-search', query, maxResults),
   imageSearch: (query: string, maxResults?: number) =>

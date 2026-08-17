@@ -10,6 +10,8 @@
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
 import type {
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
@@ -21,6 +23,9 @@ export type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
 
 // Canonical definitions of AI-related types live in @genoffice/ai-provider / @genoffice/agent-core (shared with docs)
 export type {
+  AiConnectionStatus,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiProviderConfig,
   AiProviderId,
   AiProviderMeta,
@@ -1338,6 +1343,8 @@ export interface SlidesApi {
   aiGskLogin: () => Promise<void>
   /** List locally-available Ollama models (Ollama's /api/tags endpoint) */
   aiOllamaModels: (baseUrl?: string) => Promise<OllamaModelsResult>
+  /** Lightweight provider connection test (never returns stack traces) */
+  aiTestConnection: (input: AiConnectionTestInput) => Promise<AiConnectionTestResult>
   webSearch: (
     query: string,
     maxResults?: number,

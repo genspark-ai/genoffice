@@ -117,6 +117,23 @@ export function providerRequiresApiKey(provider: AiProviderId): boolean {
 }
 
 /**
+ * Renderer-side readiness check: does the currently selected provider have
+ * everything needed to run the agent?
+ * - Key-optional providers (local Ollama) count as configured once a model
+ *   is selected, even with a blank API key.
+ * - Genspark's key never lands in settings (the main process injects it from
+ *   the gsk login state), so it counts as configured; a missing login
+ *   surfaces as a sign-in error at request time, not here.
+ */
+export function isProviderConfigured(settings: AiSettings): boolean {
+  const config = settings.providers[settings.provider]
+  if (!config?.model) return false
+  if (settings.provider === 'genspark') return true
+  if (!providerRequiresApiKey(settings.provider)) return true
+  return !!config.apiKey
+}
+
+/**
  * Fresh settings with every provider's default model and an empty key,
  * except providers listed in `defaultApiKeys` (e.g. an app-specific
  * preconfigured Anthropic key). Callers own that policy; this package

@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
   AiChatResponse,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   GenSparkAccountStatus,
@@ -294,6 +296,17 @@ const desktopApi: DesktopApi = {
       throw new Error('Invalid Ollama models response.')
     }
     return result as unknown as OllamaModelsResult
+  },
+  async aiTestConnection(input: AiConnectionTestInput) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiTestConnection, input)
+    if (
+      !isRecord(result) ||
+      typeof result.ok !== 'boolean' ||
+      typeof result.status !== 'string'
+    ) {
+      throw new Error('Invalid connection test response.')
+    }
+    return result as unknown as AiConnectionTestResult
   },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {

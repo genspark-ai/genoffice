@@ -7,6 +7,7 @@ import {
   type ToolDisplay,
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
+import { isProviderConfigured } from '@genoffice/ai-provider'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import {
@@ -1731,6 +1732,11 @@ export function AiPanel({
         </div>
       </div>
 
+      {!isProviderConfigured(settings) && (
+        <div className="ai-not-configured" role="status">
+          {t('aiNotConfigured')}
+        </div>
+      )}
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* Past conversation (read-only transcript, not fed to the model), displayed continuously with the current turn */}
         {historicChat.length > 0 && (
@@ -2082,8 +2088,17 @@ export function AiPanel({
             aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
             aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
             aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+            aiSettingsTestButton: t('aiSettingsTestButton'),
+            aiSettingsTestConnected: t('aiSettingsTestConnected'),
+            aiSettingsTestNotRunning: t('aiSettingsTestNotRunning'),
+            aiSettingsTestRefused: t('aiSettingsTestRefused'),
+            aiSettingsTestInvalid: t('aiSettingsTestInvalid'),
+            aiSettingsTestAuth: t('aiSettingsTestAuth'),
+            aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
+            aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
           listOllamaModels={(baseUrl) => window.slidesApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onTestConnection={(provider, input) => window.slidesApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}
         />

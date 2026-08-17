@@ -3192,6 +3192,16 @@ button {
   user-select: none;
 }
 
+.ai-not-configured {
+  padding: 8px 12px;
+  margin: 8px 10px 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .ai-panel-header {
   display: flex;
   justify-content: space-between;

@@ -4,7 +4,7 @@ import type { AiSettingsDialogStrings } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
-import type { AiSettings } from '@genoffice/ai-provider'
+import { isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -501,6 +501,11 @@ export function AiChatPanel({
         </div>
       </header>
 
+      {!isProviderConfigured(settings) && (
+        <div className="ai-not-configured" role="status">
+          {t('aiNotConfigured')}
+        </div>
+      )}
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
         {/* Past conversation (read-only transcript), shown continuously with the current turn */}
         {historicChat.length > 0 && (
@@ -761,8 +766,17 @@ export function AiChatPanel({
             aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
             aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
             aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+            aiSettingsTestButton: t('aiSettingsTestButton'),
+            aiSettingsTestConnected: t('aiSettingsTestConnected'),
+            aiSettingsTestNotRunning: t('aiSettingsTestNotRunning'),
+            aiSettingsTestRefused: t('aiSettingsTestRefused'),
+            aiSettingsTestInvalid: t('aiSettingsTestInvalid'),
+            aiSettingsTestAuth: t('aiSettingsTestAuth'),
+            aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
+            aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
           listOllamaModels={(baseUrl) => window.desktopApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onTestConnection={(provider, input) => window.desktopApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}
         />

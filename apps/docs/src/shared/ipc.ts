@@ -19,6 +19,8 @@ export interface PickImageResult {
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
@@ -219,6 +221,8 @@ export interface DesktopApi {
   aiGskLogin(): Promise<void>
   /** List locally-available Ollama models (Ollama's /api/tags endpoint) */
   aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
+  /** Lightweight provider connection test (never returns stack traces) */
+  aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
   webSearch(
     query: string,
     maxResults?: number,

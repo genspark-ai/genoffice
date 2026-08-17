@@ -1,5 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
-import type { AiSettings, AiProviderId, AiProviderMeta } from '@genoffice/ai-provider'
+import type {
+  AiConnectionStatus,
+  AiConnectionTestResult,
+  AiSettings,
+  AiProviderId,
+  AiProviderMeta,
+} from '@genoffice/ai-provider'
 import { AI_PROVIDERS } from '@genoffice/ai-provider'
 
 export interface OllamaModel {
@@ -24,6 +30,14 @@ export interface AiSettingsDialogStrings {
   aiSettingsGensparkConnected: string
   aiSettingsGensparkDisconnected: string
   aiSettingsOllamaBaseUrlHint: string
+  aiSettingsTestButton: string
+  aiSettingsTestConnected: string
+  aiSettingsTestNotRunning: string
+  aiSettingsTestRefused: string
+  aiSettingsTestInvalid: string
+  aiSettingsTestAuth: string
+  aiSettingsTestTimeout: string
+  aiSettingsTestFailed: string
 }
 
 export interface AiSettingsDialogProps {
@@ -32,6 +46,10 @@ export interface AiSettingsDialogProps {
   gskStatus?: { loggedIn: boolean; email?: string } | null
   onGskLogin?: () => void
   listOllamaModels?: (baseUrl: string) => Promise<OllamaModel[]>
+  onTestConnection?: (
+    provider: AiProviderId,
+    input: { baseUrl?: string; apiKey?: string; model?: string },
+  ) => Promise<AiConnectionTestResult>
   onSettingsChange: (next: AiSettings) => void
   onClose: () => void
 }
@@ -45,6 +63,7 @@ export function AiSettingsDialog({
   gskStatus,
   onGskLogin,
   listOllamaModels,
+  onTestConnection,
   onSettingsChange,
   onClose,
 }: AiSettingsDialogProps) {
@@ -55,6 +74,8 @@ export function AiSettingsDialog({
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
   const [ollamaLoading, setOllamaLoading] = useState(false)
   const [ollamaError, setOllamaError] = useState<string | null>(null)
+  const [testState, setTestState] = useState<AiConnectionTestResult | null>(null)
+  const [testing, setTesting] = useState(false)
 
   const meta = AI_PROVIDERS.find((p) => p.id === provider) ?? null
 
@@ -129,6 +150,31 @@ export function AiSettingsDialog({
   const isOllama = provider === 'ollama'
   const isGenspark = provider === 'genspark'
   const isCustom = provider === 'custom'
+  const statusText: Record<AiConnectionStatus, string> = {
+    connected: strings.aiSettingsTestConnected,
+    'not-running': strings.aiSettingsTestNotRunning,
+    refused: strings.aiSettingsTestRefused,
+    invalid: strings.aiSettingsTestInvalid,
+    auth: strings.aiSettingsTestAuth,
+    timeout: strings.aiSettingsTestTimeout,
+    unknown: strings.aiSettingsTestFailed,
+  }
+  const handleTestConnection = async () => {
+    if (!onTestConnection || testing) return
+    setTesting(true)
+    setTestState(null)
+    try {
+      const input: { baseUrl?: string; apiKey?: string; model?: string } = {}
+      if (baseUrl) input.baseUrl = baseUrl
+      if (apiKey) input.apiKey = apiKey
+      if (model) input.model = model
+      setTestState(await onTestConnection(provider, input))
+    } catch {
+      setTestState({ ok: false, status: 'unknown' })
+    } finally {
+      setTesting(false)
+    }
+  }
   const showApiKey = !isGenspark
   const showModel = !isGenspark
   const showBaseUrl = isCustom || isOllama
@@ -297,12 +343,34 @@ export function AiSettingsDialog({
         </div>
 
         <div className="ai-settings-dialog-footer">
-          <button className="ai-settings-dialog-cancel" onClick={onClose}>
-            {strings.aiSettingsCancel}
-          </button>
-          <button className="ai-settings-dialog-save" onClick={handleSave}>
-            {strings.aiSettingsSave}
-          </button>
+          {onTestConnection && (
+            <div className="ai-settings-test-row">
+              <button
+                className="ai-settings-test-btn"
+                onClick={handleTestConnection}
+                disabled={testing}
+              >
+                {testing ? strings.aiSettingsTestButton + '…' : strings.aiSettingsTestButton}
+              </button>
+              {testState && (
+                <span
+                  className={`ai-settings-test-status ${
+                    testState.ok ? 'ai-settings-test-status--ok' : 'ai-settings-test-status--fail'
+                  }`}
+                >
+                  {statusText[testState.status]}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="ai-settings-dialog-actions">
+            <button className="ai-settings-dialog-cancel" onClick={onClose}>
+              {strings.aiSettingsCancel}
+            </button>
+            <button className="ai-settings-dialog-save" onClick={handleSave}>
+              {strings.aiSettingsSave}
+            </button>
+          </div>
         </div>
       </div>
     </div>

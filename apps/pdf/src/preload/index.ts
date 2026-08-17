@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
-import type { AiStreamChunk } from '@genoffice/ai-provider'
+import type { AiConnectionTestInput, AiStreamChunk } from '@genoffice/ai-provider'
 import { AI_CHANNELS, PDF_CHANNELS } from '../shared/ipc'
 import type { PdfApi, UiTheme } from '../shared/ipc'
 
@@ -78,6 +78,7 @@ const api: PdfApi = {
     return () => ipcRenderer.removeListener(AI_CHANNELS.streamChunk, listener)
   },
   aiOllamaModels: (baseUrl?: string) => ipcRenderer.invoke(AI_CHANNELS.ollamaModels, baseUrl),
+  aiTestConnection: (input: AiConnectionTestInput) => ipcRenderer.invoke(AI_CHANNELS.testConnection, input),
 }
 
 contextBridge.exposeInMainWorld('pdfApi', api)
