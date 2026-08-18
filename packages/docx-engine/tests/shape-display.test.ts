@@ -88,6 +88,29 @@ describe('textless preset shapes render as display boxes', () => {
   })
 })
 
+describe('pattern-filled rectangles (dml-shape-fillpattern)', () => {
+  it('a textless full-height rect with a:pattFill renders with its foreground color', async () => {
+    const patt =
+      '<a:pattFill prst="ltHorz"><a:fgClr><a:srgbClr val="9BFF66"/></a:fgClr>' +
+      '<a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: anchorParagraph(wsp({ prst: 'rect', cx: 1905000, cy: 794520, ln: patt })),
+      }),
+    )
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box).toBeTruthy()
+    expect(box!.fill).toBe('9BFF66')
+  })
+
+  it('a near-flat textless rect stays on the decorative thin-rule path', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: anchorParagraph(wsp({ prst: 'rect', cx: 1905000, cy: 9525 })) }),
+    )
+    expect(doc.blocks[0].textboxes).toBeUndefined()
+  })
+})
+
 describe('anchored connectors', () => {
   it('a flipV straightConnector with a tail arrow renders as a diagonal lineArrow', async () => {
     const doc = await parseDocx(

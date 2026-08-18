@@ -177,6 +177,35 @@ in to a Genspark account and need a network connection.
 Yes — real PDF text and image editing that rewrites the page content stream
 with the original fonts preserved, not cover-up annotations.
 
+**Does GenOffice collect any data?**
+Official builds send anonymous usage statistics (event name, app version,
+platform, UI language — e.g. "a .docx file was opened") tied to a random
+install id. Document contents, file names, paths, and account identity are
+never collected, and you can turn reporting off in Settings → General.
+Builds compiled from source have no analytics credentials and never send
+anything. See [Privacy](#privacy) below.
+
+## Privacy
+
+Official GenOffice builds report anonymous usage events through the Google
+Analytics 4 Measurement Protocol so we can see which features matter and
+where releases regress. What is sent:
+
+- the event name (e.g. `app_launch`, `file_open`, `file_new`), the app
+  version, OS platform/version, and UI language
+- a file's extension for open/new events (`docx`, `xlsx`, …) — **never** the
+  file name, path, or any document content
+- a random install identifier (a UUID generated on first launch) — **never**
+  your Genspark account or email
+
+You can disable reporting at any time in **Settings → General → Send
+anonymous usage statistics**.
+
+The analytics credentials are injected at package time from CI secrets and
+are not part of this repository: if you build GenOffice from source (or ship
+a fork), the app contains no keys, analytics is disabled entirely, and every
+feature works exactly the same.
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) for the process security posture (renderer

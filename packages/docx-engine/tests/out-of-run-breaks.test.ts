@@ -54,3 +54,20 @@ describe('w:br outside a w:r (Word honors these; tdf108714 family)', () => {
     expect(box.fieldDisplay?.kind).toBe('pageBreak')
   })
 })
+
+describe('column breaks (w:br w:type="column")', () => {
+  it('parses to \\v and round-trips through save (fdo#74153)', async () => {
+    const { saveDocx } = await import('../src/index')
+    const source = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>col one</w:t><w:br w:type="column"/><w:t>col two</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(source)
+    expect(doc.blocks[0].runs?.[0].text).toBe('col one\vcol two')
+    const saved = await saveDocx(doc, [
+      { kind: 'generated', block: { type: 'paragraph', runs: doc.blocks[0].runs! } },
+    ])
+    const { loadDocxZip } = await import('../src/zip-load')
+    const xml = await (await loadDocxZip(saved)).file('word/document.xml')!.async('string')
+    expect(xml).toContain('<w:br w:type="column"/>')
+  })
+})

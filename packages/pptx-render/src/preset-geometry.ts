@@ -304,6 +304,54 @@ export function presetPolygon(
       const yh = h - head
       return [x1, 0, x1, yh, 0, yh, w / 2, h, w, yh, x2, yh, x2, 0]
     }
+    // Arrow callouts: a callout box on one side with an arrow (shaft + head) growing
+    // out of the opposite side (ECMA guide formulas; adj4 = box extent)
+    case 'upArrowCallout':
+    case 'downArrowCallout': {
+      // Adjusts may exceed 100000 up to the ECMA maxAdj bounds (h/ss etc. on
+      // non-square boxes), so clamp against those instead of frac's 0..1
+      const fracU = (name: string, dflt: number) => Math.max((adjust?.[name] ?? dflt) / 100000, 0)
+      const a2 = Math.min(fracU('adj2', 25000), (0.5 * w) / ss)
+      const a1 = Math.min(fracU('adj1', 25000), a2 * 2)
+      const a3 = Math.min(fracU('adj3', 25000), h / ss)
+      const a4 = Math.min(fracU('adj4', 64977), 1 - (a3 * ss) / h)
+      const headHalf = ss * a2
+      const shaftHalf = (ss * a1) / 2
+      const x1 = w / 2 - headHalf
+      const x2 = w / 2 - shaftHalf
+      const x3 = w / 2 + shaftHalf
+      const x4 = w / 2 + headHalf
+      if (preset === 'upArrowCallout') {
+        const y1 = ss * a3 // arrowhead base
+        const y2 = h - h * a4 // callout-box top
+        return [0, y2, x2, y2, x2, y1, x1, y1, w / 2, 0, x4, y1, x3, y1, x3, y2, w, y2, w, h, 0, h]
+      }
+      const y1 = h - ss * a3
+      const y2 = h * a4 // callout-box bottom
+      return [0, y2, x2, y2, x2, y1, x1, y1, w / 2, h, x4, y1, x3, y1, x3, y2, w, y2, w, 0, 0, 0]
+    }
+    case 'leftArrowCallout':
+    case 'rightArrowCallout': {
+      const fracU = (name: string, dflt: number) => Math.max((adjust?.[name] ?? dflt) / 100000, 0)
+      const a2 = Math.min(fracU('adj2', 25000), (0.5 * h) / ss)
+      const a1 = Math.min(fracU('adj1', 25000), a2 * 2)
+      const a3 = Math.min(fracU('adj3', 25000), w / ss)
+      const a4 = Math.min(fracU('adj4', 64977), 1 - (a3 * ss) / w)
+      const headHalf = ss * a2
+      const shaftHalf = (ss * a1) / 2
+      const y1 = h / 2 - headHalf
+      const y2 = h / 2 - shaftHalf
+      const y3 = h / 2 + shaftHalf
+      const y4 = h / 2 + headHalf
+      if (preset === 'leftArrowCallout') {
+        const x1 = ss * a3
+        const x2 = w - w * a4
+        return [x2, 0, x2, y2, x1, y2, x1, y1, 0, h / 2, x1, y4, x1, y3, x2, y3, x2, h, w, h, w, 0]
+      }
+      const x1 = w - ss * a3
+      const x2 = w * a4
+      return [x2, 0, x2, y2, x1, y2, x1, y1, w, h / 2, x1, y4, x1, y3, x2, y3, x2, h, 0, h, 0, 0]
+    }
     case 'leftRightArrow': {
       const thick = h * frac('adj1', 50000)
       const head = Math.min(w / 2, ss * frac('adj2', 50000))
@@ -424,6 +472,10 @@ export function presetPolygon(
       // Tooth depth from adj1; tooth shape approximated: 4 points per tooth (two at root, two at tip)
       const depth = Math.min(frac('adj1', 15000) * 2, 0.6)
       return gearPoints(6, w, h, 1 - depth)
+    }
+    case 'gear9': {
+      const depth = Math.min(frac('adj1', 10000) * 2, 0.6)
+      return gearPoints(9, w, h, 1 - depth)
     }
     case 'quadArrow': {
       const sw2 = (ss * frac('adj1', 22500)) / 2
@@ -830,29 +882,33 @@ export function presetPath(
     }
     case 'circularArrow':
     case 'leftCircularArrow': {
-      // Approximation of the ECMA geometry: an annular band plus a triangular arrowhead
-      // at the sweep end; the left variant mirrors the winding direction
+      // Approximation of the ECMA geometry: an annular band from adj3 to adj4 plus a
+      // triangular head spanning the last adj2 degrees; the left variant winds CCW
       const left = preset === 'leftCircularArrow'
       const t = ss * frac('adj1', 12500)
-      const headR = t * 0.9
+      const headSpan = Math.min(ang('adj2', 1142319), 90)
+      // adj4 = start angle, adj3 = head-tip angle (ECMA circularArrow)
+      const end = ang('adj3', left ? 1142319 : 20457681)
+      const start = ang('adj4', 10800000)
+      const headR = Math.max(ss * frac('adj5', 12500), t * 0.75)
       const rxO = Math.max(cx - headR, 0)
       const ryO = Math.max(cy - headR, 0)
       const rxI = Math.max(rxO - t, 0)
       const ryI = Math.max(ryO - t, 0)
       const rxM = (rxO + rxI) / 2
       const ryM = (ryO + ryI) / 2
-      const start = left ? 115 : 65
-      const sweep = left ? -250 : 250
-      const end = start + sweep
-      const headAng = left ? -32 : 32
+      const total = left ? -(sweepCW(end, start) || 250) : sweepCW(start, end) || 250
+      const headAng = left ? -headSpan : headSpan
+      const sweep = total - headAng
+      const bodyEnd = start + sweep
       const pt = (deg: number, rx: number, ry: number) =>
         [cx + rx * Math.cos(deg * D2R), cy + ry * Math.sin(deg * D2R)] as const
       const b = new PathB().arc(cx, cy, rxO, ryO, start, sweep, 'M')
-      const [hx1, hy1] = pt(end, rxO + headR, ryO + headR)
-      const [tx, ty] = pt(end + headAng, rxM, ryM)
-      const [hx2, hy2] = pt(end, Math.max(rxI - headR, 0), Math.max(ryI - headR, 0))
+      const [hx1, hy1] = pt(bodyEnd, rxM + headR, ryM + headR)
+      const [tx, ty] = pt(bodyEnd + headAng, rxM, ryM)
+      const [hx2, hy2] = pt(bodyEnd, Math.max(rxM - headR, 0), Math.max(ryM - headR, 0))
       b.L(hx1, hy1).L(tx, ty).L(hx2, hy2)
-      b.arc(cx, cy, rxI, ryI, end, -sweep, 'L').Z()
+      b.arc(cx, cy, rxI, ryI, bodyEnd, -sweep, 'L').Z()
       return { path: b.d() }
     }
     case 'donut': {

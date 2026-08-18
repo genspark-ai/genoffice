@@ -4,6 +4,7 @@ import { Suggestion } from '@tiptap/suggestion'
 import type { SuggestionProps } from '@tiptap/suggestion'
 import type { StringKey } from '../i18n/locale'
 import { t } from '../i18n/locale'
+import { openMathCreate } from './mathEdit'
 
 export interface SlashItem {
   id: string
@@ -122,6 +123,15 @@ export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem
       labelKey: 'insertHr',
       keywords: ['divider', 'rule', '---'],
       run: (e, r) => void blockChain(e, r).setHorizontalRule().run(),
+    },
+    {
+      id: 'math',
+      labelKey: 'insertMath',
+      keywords: ['formula', 'equation', 'latex', 'katex', '$$'],
+      run: (e, r) => {
+        blockChain(e, r).run()
+        openMathCreate(e)
+      },
     },
   ]
   if (extra?.insertImage) {

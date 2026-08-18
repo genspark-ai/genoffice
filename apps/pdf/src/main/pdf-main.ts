@@ -1,7 +1,7 @@
-import { existsSync } from 'node:fs'
+import { existsSync, renameSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import {
@@ -18,6 +18,7 @@ import { PDF_CHANNELS } from '../shared/ipc'
 import type {
   ExportImagesRequest,
   ExportImagesResult,
+  PdfAutoRenameResult,
   ExtractPagesRequest,
   ExtractPagesResult,
   InsertBlankPageRequest,
@@ -456,6 +457,37 @@ export function pdfIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
 }
 
+// ── Content-derived auto-naming (pdf's analog of sheets' autoRenameWorkbook) ──
+
+/** Paths of shell-created blank PDFs still carrying their untitled name; only these may auto-rename */
+const untitledPdfPaths = new Set<string>()
+/** Shell hook fired after an auto-rename so the tab title / recents / project mapping follow the file */
+let pdfRenamedHook: ((wc: WebContents, oldPath: string, newPath: string) => void) | null = null
+
+/** Called by the shell right after "New PDF" writes the blank file to disk */
+export function markPdfUntitledPath(path: string): void {
+  untitledPdfPaths.add(path)
+}
+
+export function setPdfRenamedHook(
+  hook: (wc: WebContents, oldPath: string, newPath: string) => void,
+): void {
+  pdfRenamedHook = hook
+}
+
+/** Sanitize a proposed base name into a safe filename: strip illegal path chars, collapse whitespace, cap length; null if nothing survives. (Mirrors docs' deriveAutoFileName.) */
+function sanitizeAutoRenameBase(raw: string): string | null {
+  const cleaned = raw
+    // eslint-disable-next-line no-control-regex -- stripping control chars is the point here
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+    .trim()
+  if (!cleaned) return null
+  return cleaned.length > 40 ? cleaned.slice(0, 40).trim() : cleaned
+}
+
 /**
  * Close guard for the pdf renderer: true means proceed with closing.
  * Clean → true; dirty → Save / Don't Save / Cancel. On Save, ask the renderer to
@@ -611,6 +643,45 @@ function registerPdfIpc(): void {
     }
   })
 
+  ipcMain.handle(PDF_CHANNELS.isUntitled, (e, path: unknown): boolean => {
+    return (
+      typeof path === 'string' &&
+      !!allowedByWc.get(e.sender.id)?.has(path) &&
+      untitledPdfPaths.has(path)
+    )
+  })
+
+  ipcMain.handle(
+    PDF_CHANNELS.autoRename,
+    (e, path: unknown, baseName: unknown): PdfAutoRenameResult => {
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { renamed: false }
+      }
+      // Only shell-created blanks still carrying their untitled name; user-chosen names never move
+      if (!untitledPdfPaths.has(path)) return { renamed: false }
+      if (typeof baseName !== 'string') return { renamed: false }
+      const base = sanitizeAutoRenameBase(baseName)
+      if (!base) return { renamed: false }
+      const dir = dirname(path)
+      let target = join(dir, `${base}.pdf`)
+      for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${base}-${i}.pdf`)
+      if (existsSync(target) || target === path) return { renamed: false }
+      try {
+        renameSync(path, target)
+      } catch (err) {
+        console.warn('[pdf] auto-rename failed:', err)
+        return { renamed: false }
+      }
+      untitledPdfPaths.delete(path)
+      // The view keeps working on the file under its new path: grant it and
+      // repoint the reload bookkeeping (View > Reload re-consumes the open path)
+      allowedByWc.get(e.sender.id)?.add(target)
+      if (openPathByWc.get(e.sender.id) === path) openPathByWc.set(e.sender.id, target)
+      pdfRenamedHook?.(e.sender, path, target)
+      return { renamed: true, path: target, name: basename(target) }
+    },
+  )
+
   ipcMain.handle(PDF_CHANNELS.listPageImages, async (e, path: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
       throw new Error('pdf: path not granted to this view')
@@ -703,6 +774,20 @@ function registerPdfIpc(): void {
     const { listEditFonts } = await import('./text-edit')
     return listEditFonts()
   })
+
+  ipcMain.handle(
+    PDF_CHANNELS.canDrawText,
+    async (_e, text: unknown, font: unknown, bold: unknown, italic: unknown): Promise<boolean> => {
+      if (typeof text !== 'string') return false
+      const { canDrawText } = await import('./text-edit')
+      return canDrawText(
+        text,
+        typeof font === 'string' ? font : undefined,
+        bold === true,
+        italic === true,
+      )
+    },
+  )
 
   ipcMain.handle(
     PDF_CHANNELS.extractPages,

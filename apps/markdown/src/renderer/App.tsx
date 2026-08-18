@@ -85,7 +85,8 @@ export default function App() {
   const [slashState, setSlashState] = useState<SlashMenuState | null>(null)
   const [fmOpen, setFmOpen] = useState(false)
   const [fmText, setFmText] = useState('')
-  const [aiOpen, setAiOpen] = useState(true)
+  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem('mdapp.showAi') !== '0')
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('mdapp.autoSave') === '1')
   const [zoom, setZoom] = useState(100)
@@ -398,6 +399,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('mdapp.autoSave', autoSave ? '1' : '0')
   }, [autoSave])
+
+  useEffect(() => {
+    localStorage.setItem('mdapp.showAi', aiOpen ? '1' : '0')
+  }, [aiOpen])
 
   // autosave: every 30s and on window blur, silently persist pending changes
   // (same policy as the docs app; untitled documents are skipped — the first

@@ -1,5 +1,6 @@
 import type { AgentSkill } from '@genoffice/agent-core'
 import basePrompt from './prompts/base.md?raw'
+import { verifySheetsResponse } from './response-verify'
 import {
   WORKBOOK_TOOLS,
   buildWorkbookContext,
@@ -24,5 +25,6 @@ export function createWorkbookSkill(deps: SheetsSkillDeps): AgentSkill {
     tools: WORKBOOK_TOOLS,
     buildContext: () => buildWorkbookContext(deps),
     executeTool: (call) => executeWorkbookTool(call, deps),
+    verifyResponse: verifySheetsResponse,
   }
 }

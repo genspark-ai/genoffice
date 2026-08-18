@@ -205,7 +205,13 @@ interface RibbonProps {
   onRejectRevision: (all: boolean) => void
   onGotoRevision: (dir: 1 | -1) => void
   isProtected: boolean
-  onToggleProtection: () => void
+  /** comments restriction: adding comments stays allowed although the body is read-only */
+  commentsAllowed: boolean
+  /** trackedChanges restriction: the recorder is forced on (toggle and accept/reject disabled) */
+  trackChangesForced: boolean
+  /** any protection is configured (highlights the Protect Document button) */
+  protectActive: boolean
+  onProtectDoc: () => void
   onCompare: () => void
   /** current document path (View → New Window opens it in another window) */
   filePath: string | null
@@ -605,7 +611,10 @@ function RibbonInner({
   onRejectRevision,
   onGotoRevision,
   isProtected,
-  onToggleProtection,
+  commentsAllowed,
+  trackChangesForced,
+  protectActive,
+  onProtectDoc,
   onCompare,
   filePath,
   viewMode,
@@ -3234,7 +3243,10 @@ function RibbonInner({
             onRejectRevision={onRejectRevision}
             onGotoRevision={onGotoRevision}
             isProtected={isProtected}
-            onToggleProtection={onToggleProtection}
+            commentsAllowed={commentsAllowed}
+            trackChangesForced={trackChangesForced}
+            protectActive={protectActive}
+            onProtectDoc={onProtectDoc}
             onCompare={onCompare}
           />
         ) : (

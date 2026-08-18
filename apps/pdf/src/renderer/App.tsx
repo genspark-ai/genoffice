@@ -61,6 +61,8 @@ import type { CropFractions } from './image-bake'
 import type { PixelImage } from './cutout'
 import { navAction } from './keyNav'
 import { rowOfVisIdx, spreadRows, stepPage } from './spread'
+import { captureViewState, loadViewState, saveViewState } from './view-state'
+import type { PdfViewState } from './view-state'
 import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import type { OutlineNode } from './OutlinePanel'
@@ -1609,7 +1611,13 @@ export default function App() {
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
-  const [aiCollapsed, setAiCollapsed] = useState(false)
+  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const [aiCollapsed, setAiCollapsed] = useState(
+    () => localStorage.getItem('genoffice-pdf-show-ai') === '0',
+  )
+  useEffect(() => {
+    localStorage.setItem('genoffice-pdf-show-ai', aiCollapsed ? '0' : '1')
+  }, [aiCollapsed])
   /** One-shot prompt pushed by the ribbon AI buttons; the panel auto-runs it (docs preset pattern) */
   const [aiPreset, setAiPreset] = useState<{ text: string; nonce: number } | null>(null)
   const [ribbonTab, setRibbonTab] = useState<RibbonTab>('home')
@@ -1989,6 +1997,8 @@ export default function App() {
   const coalesceKeyRef = useRef<string | null>(null)
   const passwordRef = useRef<string | undefined>(undefined)
   const fitModeRef = useRef<FitMode>('width')
+  /** Reading position saved when this file was last viewed; applied once after open */
+  const pendingViewRestoreRef = useRef<PdfViewState | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const thumbsRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -2322,6 +2332,16 @@ export default function App() {
         // A newly opened file starts outside the autosave gate
         savedOnceRef.current = false
         await loadDoc(path, null)
+        // Silently restore the last reading position (WPS-style). A saved custom
+        // zoom (fitMode null) must be applied before 'ready', or the initial
+        // fit-width recompute would take over; fit modes are recomputed anyway.
+        const savedView = loadViewState(path)
+        if (savedView) {
+          pendingViewRestoreRef.current = savedView
+          fitModeRef.current = savedView.fitMode
+          if (savedView.fitMode === null)
+            setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedView.scale)))
+        }
         setStatus('ready')
       } catch (err) {
         if ((err as Error | null)?.name === 'PasswordException') {
@@ -2461,6 +2481,75 @@ export default function App() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [status, recomputeFit])
+
+  /** Apply the restored reading position once the doc is ready. Positions via the
+   *  row's DOM offset two frames later: the initial fit recompute (effect above)
+   *  and its anchored scroll write (layout effect on scale) must land first, or
+   *  they would clobber this write. */
+  useEffect(() => {
+    if (status !== 'ready' || rows.length === 0) return
+    const savedView = pendingViewRestoreRef.current
+    if (!savedView) return
+    const page = Math.min(Math.max(1, savedView.page), pageCount)
+    if (page <= 1 && savedView.frac === 0) {
+      pendingViewRestoreRef.current = null
+      return
+    }
+    const rowIdx = rowOfVis(page - 1)
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        // Cleared here, not at schedule time: the persist guard must keep blocking
+        // saves until this write lands (or is abandoned) — a slow first paint could
+        // otherwise let a debounced save overwrite the stored spot with the top
+        pendingViewRestoreRef.current = null
+        const el = scrollRef.current
+        const rowEl = el?.querySelector<HTMLElement>(`.pdf-row[data-idx="${rowIdx}"]`)
+        if (!el || !rowEl) return
+        const rowTopPx =
+          rowEl.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+        el.scrollTop = rowTopPx + savedView.frac * rowEl.offsetHeight
+      }),
+    )
+  }, [status, rows, pageCount, rowOfVis])
+
+  /** Persist the reading position (debounced) so reopening the file returns here.
+   *  Listens to scroll directly — currentPage only changes per page, not per pixel. */
+  useEffect(() => {
+    if (status !== 'ready' || !filePath || rows.length === 0) return
+    const el = scrollRef.current
+    if (!el) return
+    let timer = 0
+    const saveNow = () => {
+      window.clearTimeout(timer)
+      // Not yet positioned — saving now would overwrite the stored spot with page 1
+      if (pendingViewRestoreRef.current) return
+      const visPos = new Map(visList.map((origIdx, i) => [origIdx, i]))
+      saveViewState(
+        filePath,
+        captureViewState({
+          scrollTop: el.scrollTop,
+          rowHeights: rows.map((row) => rowSize(row).height * scale),
+          rowPages: rows.map((row) => (visPos.get(row[0]!) ?? 0) + 1),
+          gap: PAGE_GAP,
+          scale,
+          fitMode: fitModeRef.current,
+        }),
+      )
+    }
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(saveNow, 300)
+    }
+    el.addEventListener('scroll', schedule, { passive: true })
+    // Closing faster than the debounce would drop the last update; flush on teardown
+    window.addEventListener('pagehide', saveNow)
+    schedule()
+    return () => {
+      el.removeEventListener('scroll', schedule)
+      window.removeEventListener('pagehide', saveNow)
+      window.clearTimeout(timer)
+    }
+  }, [status, filePath, rows, rowSize, visList, scale])
 
   /** Page-top offset of a visible position (used for search positioning) */
   const pageTop = useCallback((visIdx: number) => rowTop(rowOfVis(visIdx)), [rowTop, rowOfVis])
@@ -4152,21 +4241,28 @@ export default function App() {
     showNotice(`${t('saveFailed')}: ${friendly}`)
   }
 
+  /** Engine skip reasons are internal English strings; append the first one raw so a
+      failure is diagnosable from the toast alone (page numbers never explain WHY) */
+  const skipDetail = (skipped: { reason: string }[]): string => {
+    const reason = skipped.find((s) => s.reason)?.reason
+    return reason ? ` — ${reason}` : ''
+  }
+
   /** Skipped text edits are dropped from the file and from the pending list — surface
       which pages lost an edit instead of silently succeeding */
   const noticeSkippedEdits = (skipped: TextEditFailure[]) => {
     const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(t('textEditSkipped', { pages }))
+    showNotice(`${t('textEditSkipped', { pages })}${skipDetail(skipped)}`)
   }
 
   const noticeSkippedImages = (skipped: ImageEditFailure[]) => {
     const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(t('imageEditSkipped', { pages }))
+    showNotice(`${t('imageEditSkipped', { pages })}${skipDetail(skipped)}`)
   }
 
   const noticeSkippedTextInserts = (skipped: TextInsertFailure[]) => {
     const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(t('textInsertSkipped', { pages }))
+    showNotice(`${t('textInsertSkipped', { pages })}${skipDetail(skipped)}`)
   }
 
   /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As.
@@ -4294,6 +4390,24 @@ export default function App() {
         })
       } catch {
         /* Save already succeeded; a reload failure doesn't block (takes effect on next open) */
+      }
+      // Content-derived naming (docs/sheets analog): a shell-created blank still
+      // carrying its untitled name takes its file name from the topmost text this
+      // save inserted; the main process no-ops for every other file, so
+      // user-chosen names are never touched.
+      const nameCandidate = [...textInserts]
+        .sort(
+          (a, b) => a.input.pageIndex - b.input.pageIndex || b.input.origin[1] - a.input.origin[1],
+        )[0]
+        ?.input.text.split('\n')[0]
+        ?.trim()
+      if (nameCandidate) {
+        try {
+          const renamed = await window.pdfApi.autoRename(filePath, nameCandidate)
+          if (renamed.renamed && renamed.path) setFilePath(renamed.path)
+        } catch {
+          /* naming is best-effort; the save itself already succeeded */
+        }
       }
       setSaveState('saved')
       setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 2000)
@@ -4632,36 +4746,56 @@ export default function App() {
       .map((line) => measureTextWidth(line, font) * (align === 'center' ? -0.5 : -1))
   }
 
-  const confirmTextInsert = () => {
+  /** Re-entry guard: the dialog stays open (and its OK stays clickable) while the
+      canDrawText round-trip runs — a second click must not run the confirm again
+      (double pushUndo / duplicate insert) */
+  const textInsertConfirmBusy = useRef(false)
+
+  const confirmTextInsert = async () => {
     const text = staticText.trim()
     if (!text) return
-    const config: Omit<TextInsertInput, 'pageIndex' | 'origin'> = {
-      text,
-      fontSize: staticTextSize,
-      color: hexTo255(staticTextColor),
-      lineLeading: staticTextSize * 1.2,
-      lineXOffsets: textInsertOffsets(text, staticTextSize, staticTextAlign),
-      align: staticTextAlign,
+    if (textInsertConfirmBusy.current) return
+    textInsertConfirmBusy.current = true
+    try {
+      // The dialog preview renders with the browser's per-char font fallback, which
+      // proves nothing about save: gate on an embeddable face NOW, keeping the dialog
+      // open, instead of failing at save time ("could not be saved" long after typing).
+      // An IPC error must not block inserting — the save path re-checks anyway.
+      const drawable = await window.pdfApi.canDrawText(text).catch(() => true)
+      if (!drawable) {
+        showNotice(t('textInsertNoFont'))
+        return
+      }
+      const config: Omit<TextInsertInput, 'pageIndex' | 'origin'> = {
+        text,
+        fontSize: staticTextSize,
+        color: hexTo255(staticTextColor),
+        lineLeading: staticTextSize * 1.2,
+        lineXOffsets: textInsertOffsets(text, staticTextSize, staticTextAlign),
+        align: staticTextAlign,
+      }
+      setStaticTextDialog(false)
+      if (textInsertEditId) {
+        pushUndo()
+        setTextInserts((prev) =>
+          prev.map((insert) =>
+            insert.id === textInsertEditId
+              ? { ...insert, input: { ...insert.input, ...config } }
+              : insert,
+          ),
+        )
+        setTextInsertEditId(null)
+        return
+      }
+      setPendingTextInsert(config)
+    } finally {
+      textInsertConfirmBusy.current = false
     }
-    setStaticTextDialog(false)
-    if (textInsertEditId) {
-      pushUndo()
-      setTextInserts((prev) =>
-        prev.map((insert) =>
-          insert.id === textInsertEditId
-            ? { ...insert, input: { ...insert.input, ...config } }
-            : insert,
-        ),
-      )
-      setTextInsertEditId(null)
-      return
-    }
-    setPendingTextInsert(config)
   }
 
   const confirmStaticFormText = () => {
     if (staticTextPurpose === 'insert') {
-      confirmTextInsert()
+      void confirmTextInsert()
       return
     }
     const image = renderStaticFormText(staticText, staticTextSize, staticTextColor, staticTextAlign)
@@ -5959,6 +6093,10 @@ export default function App() {
       setTextEdits((prev) => [...prev, { id: newId(), input, cover }])
       return null
     },
+    insertText: (input) => {
+      pushUndoRef.current()
+      setTextInserts((prev) => [...prev, { id: newId(), input }])
+    },
     editFonts: () => editFonts,
     formEdits: () => formEdits,
     applyFormEdit: (v) => {
@@ -6021,6 +6159,25 @@ export default function App() {
         return null
       }
     },
+  }
+
+  /**
+   * After an AI run that mutated a shell-created blank still carrying its untitled
+   * name, silently save once: the save's auto-rename then derives the file name from
+   * the inserted text — mirrors docs/sheets, where AI generation names the draft.
+   * PDFs the user merely opened keep the pending-until-⌘S contract (isUntitled is
+   * false for them, and the main process would refuse the rename anyway).
+   */
+  const autoSaveAfterAiRun = async () => {
+    if (!filePath || readOnly) return
+    try {
+      if (!(await window.pdfApi.isUntitled(filePath))) return
+    } catch {
+      return
+    }
+    // A file we created ourselves is safe to keep autosaving from here on
+    savedOnceRef.current = true
+    void save(true)
   }
 
   /** Internal destination of a Link annotation → jump to that page */
@@ -6429,6 +6586,37 @@ export default function App() {
     </button>
   )
 
+  const insertTextBtn = (
+    <button
+      className={`rb-big${pendingTextInsert ? ' active' : ''}`}
+      disabled={readOnly}
+      data-tip={t('insertTextHint')}
+      onClick={() => {
+        if (pendingTextInsert) {
+          setPendingTextInsert(null)
+          return
+        }
+        setEditTextMode(false)
+        setTextDraft(null)
+        setDrawTool(null)
+        setPendingSign(null)
+        setSignatureTarget(null)
+        setImagePick(null)
+        setPendingStaticFill(null)
+        setEditImageMode(false)
+        setTextInsertEditId(null)
+        setStaticTextPurpose('insert')
+        setStaticText('')
+        setStaticTextDialog(true)
+      }}
+    >
+      <span className="rb-big-icon">
+        <IconFormText />
+      </span>
+      {t('insertText')}
+    </button>
+  )
+
   const activeFormWidget = activeFormIndex >= 0 ? formWidgets[activeFormIndex]! : null
   const formWidgetSigned = (widget: FormWidget): boolean =>
     widget.signed || signedFormWidgetIds.has(widget.id)
@@ -6621,10 +6809,11 @@ export default function App() {
               <div className="ribbon-sep" />
               {markupGroup}
               <div className="ribbon-sep" />
+              {/* Edit entries lead; Search moved after page/zoom (⌘F is the common path) */}
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
-                  {searchBtn}
                   {editTextBtn}
+                  {insertTextBtn}
                 </div>
               </div>
               <div className="ribbon-sep" />
@@ -6632,6 +6821,7 @@ export default function App() {
               <div className="ribbon-sep" />
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
+                  {searchBtn}
                   <button
                     className="rb-big"
                     data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
@@ -6746,34 +6936,7 @@ export default function App() {
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
                   {editTextBtn}
-                  <button
-                    className={`rb-big${pendingTextInsert ? ' active' : ''}`}
-                    disabled={readOnly}
-                    data-tip={t('insertTextHint')}
-                    onClick={() => {
-                      if (pendingTextInsert) {
-                        setPendingTextInsert(null)
-                        return
-                      }
-                      setEditTextMode(false)
-                      setTextDraft(null)
-                      setDrawTool(null)
-                      setPendingSign(null)
-                      setSignatureTarget(null)
-                      setImagePick(null)
-                      setPendingStaticFill(null)
-                      setEditImageMode(false)
-                      setTextInsertEditId(null)
-                      setStaticTextPurpose('insert')
-                      setStaticText('')
-                      setStaticTextDialog(true)
-                    }}
-                  >
-                    <span className="rb-big-icon">
-                      <IconFormText />
-                    </span>
-                    {t('insertText')}
-                  </button>
+                  {insertTextBtn}
                   <button
                     className={`rb-big${imagePick && !pendingStaticFill ? ' active' : ''}`}
                     disabled={readOnly}
@@ -7155,7 +7318,12 @@ export default function App() {
               <GensparkMark size={22} />
             </button>
           )}
-          <AiPanel api={aiApi} preset={aiPreset} onCollapse={() => setAiCollapsed(true)} />
+          <AiPanel
+            api={aiApi}
+            preset={aiPreset}
+            onCollapse={() => setAiCollapsed(true)}
+            onRunDone={() => void autoSaveAfterAiRun()}
+          />
         </div>
         <div className="app-content">
           <div className="pdf-body">

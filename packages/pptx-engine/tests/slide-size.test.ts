@@ -139,7 +139,7 @@ describe('setElementImageFill', () => {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       'base64',
     )
-    const mediaPath = setElementImageFill(opened, slide, r.id, png, 'png')
+    const mediaPath = setElementImageFill(opened, slide, r.id, { bytes: png, ext: 'png' })
     expect(mediaPath).toMatch(/^ppt\/media\/image\d+\.png$/)
     const el = slide.elements.find((e) => e.id === r.id)!
     expect(el.anchor.originalXml).toContain('<a:blipFill rotWithShape="1"><a:blip r:embed="rId')
@@ -151,5 +151,56 @@ describe('setElementImageFill', () => {
     // Save and reopen: media part exists, blipFill parses back to a picture fill
     const reopened = await openPptx(await savePptx(opened))
     expect(reopened.archive.entries.has(mediaPath!)).toBe(true)
+  })
+
+  it('tile mode + landed-media reuse: second shape adds no media part, both tile', async () => {
+    const { setElementImageFill } = await import('../src/index')
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const a = addElement(slide, {
+      kind: 'rect',
+      offset: { x: 0, y: 0, cx: 1000, cy: 1000 },
+      fillColor: '#FF0000',
+    })
+    const b = addElement(slide, {
+      kind: 'rect',
+      offset: { x: 2000, y: 0, cx: 1000, cy: 1000 },
+      fillColor: '#00FF00',
+    })
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    const mediaCount = () =>
+      [...opened.archive.entries.keys()].filter((p) => p.startsWith('ppt/media/')).length
+    const before = mediaCount()
+    const landed = setElementImageFill(
+      opened,
+      slide,
+      a.id,
+      { bytes: png, ext: 'png' },
+      {
+        tile: true,
+      },
+    )
+    expect(landed).toMatch(/^ppt\/media\/image\d+\.png$/)
+    expect(mediaCount()).toBe(before + 1)
+    // second target reuses the landed part: only a fill swap, no new media
+    const reused = setElementImageFill(opened, slide, b.id, { mediaPath: landed! }, { tile: true })
+    expect(reused).toBe(landed)
+    expect(mediaCount()).toBe(before + 1)
+    for (const id of [a.id, b.id]) {
+      const el = slide.elements.find((e) => e.id === id)!
+      expect(el.anchor.originalXml).toContain('<a:tile')
+      // tile metrics mirror what parse restores, so pre-save render scales tiles correctly
+      expect((el as import('../src/types').TextElement).fill).toMatchObject({
+        type: 'image',
+        mode: 'tile',
+        tile: { tx: 0, ty: 0, sx: 1, sy: 1, algn: 'tl' },
+      })
+    }
+    // a failed lookup must not land an orphaned media part
+    expect(setElementImageFill(opened, slide, 'no-such-id', { bytes: png, ext: 'png' })).toBeNull()
+    expect(mediaCount()).toBe(before + 1)
   })
 })

@@ -102,6 +102,8 @@ export function FormatPane({
   // The two gradient edit colors (stashed locally before applying)
   const [gradFrom, setGradFrom] = useState('#4472C4')
   const [gradTo, setGradTo] = useState('#FFFFFF')
+  // PPT-style "Shape Options" / "Text Options" tabs; text tab only exists for text-bearing shapes
+  const [paneTab, setPaneTab] = useState<'shape' | 'text'>('shape')
 
   const box = node?.box
   const canTransform = !!node && TRANSFORMABLE.has(node.type)
@@ -174,7 +176,7 @@ export function FormatPane({
   }
 
   const numField = (label: string, value: number, apply: (v: number) => void, min?: number) => (
-    <label className="fp-field" key={label}>
+    <label className="fp-prow" key={label}>
       <span>{label}</span>
       <input
         key={`${node?.sourceId}:${value}`}
@@ -192,10 +194,29 @@ export function FormatPane({
     </label>
   )
 
+  const typeName = !node
+    ? null
+    : node.type === 'picture'
+      ? t('paneFormatPicture')
+      : node.type === 'group'
+        ? t('paneFormatGroup')
+        : node.type === 'text'
+          ? t('paneFormatTextBox')
+          : node.type === 'table'
+            ? t('ribbonGroupTable')
+            : node.type === 'chart'
+              ? t('ribbonChart')
+              : t('paneFormatShape')
+
+  const hasTextTab = !!(shape?.text && onTextAnchor)
+  const effTab = hasTextTab ? paneTab : 'shape'
+
   return (
     <aside className="format-pane">
       <div className="ai-panel-header">
-        <span className="ai-panel-title">{t('paneFormatTitle')}</span>
+        <span className="ai-panel-title">
+          {typeName ? t('paneFormatTitleTyped', { type: typeName }) : t('paneFormatTitle')}
+        </span>
         <div className="ai-panel-header-actions">
           <button
             className="ai-header-btn"
@@ -208,45 +229,46 @@ export function FormatPane({
         </div>
       </div>
 
+      {node && hasTextTab && (
+        <div className="fp-tabs">
+          <button
+            type="button"
+            className={`fp-tab ${effTab === 'shape' ? 'active' : ''}`}
+            onClick={() => setPaneTab('shape')}
+          >
+            {t('paneFormatTabShape')}
+          </button>
+          <button
+            type="button"
+            className={`fp-tab ${effTab === 'text' ? 'active' : ''}`}
+            onClick={() => setPaneTab('text')}
+          >
+            {t('paneFormatTabText')}
+          </button>
+        </div>
+      )}
+
       {!node ? (
         <div className="fp-empty">{t('paneFormatEmpty')}</div>
       ) : (
         <div className="fp-body">
-          <div className="fp-section-title">
-            {node.type === 'picture'
-              ? t('paneFormatPicture')
-              : node.type === 'group'
-                ? t('paneFormatGroup')
-                : node.type === 'text'
-                  ? t('paneFormatTextBox')
-                  : node.type === 'table'
-                    ? t('ribbonGroupTable')
-                    : node.type === 'chart'
-                      ? t('ribbonChart')
-                      : t('paneFormatShape')}
-          </div>
-
-          {canTransform && box && (
+          {effTab === 'shape' && canTransform && box && (
             <>
               <div className="fp-section">{t('paneFormatPosSize')}</div>
-              <div className="fp-grid">
-                {numField('X', box.x, (v) => commit({ x: v }))}
-                {numField('Y', box.y, (v) => commit({ y: v }))}
-                {numField(t('paneFormatW'), box.w, (v) => commit({ w: v }), 1)}
-                {numField(t('paneFormatH'), box.h, (v) => commit({ h: v }), 1)}
-              </div>
-              <div className="fp-grid">
-                {numField(t('paneFormatRotation'), box.rotationDeg, (v) =>
-                  commit({ rotationDeg: v }),
-                )}
-              </div>
+              {numField('X', box.x, (v) => commit({ x: v }))}
+              {numField('Y', box.y, (v) => commit({ y: v }))}
+              {numField(t('paneFormatW'), box.w, (v) => commit({ w: v }), 1)}
+              {numField(t('paneFormatH'), box.h, (v) => commit({ h: v }), 1)}
+              {numField(t('paneFormatRotation'), box.rotationDeg, (v) =>
+                commit({ rotationDeg: v }),
+              )}
             </>
           )}
 
-          {node.type === 'picture' && (
+          {effTab === 'shape' && node.type === 'picture' && (
             <>
               <div className="fp-section">{t('paneFormatPicture')}</div>
-              <div className="fp-row">
+              <div className="fp-prow fp-prow-end">
                 <button className="fp-btn" onClick={() => onPictureCrop?.()}>
                   {t('paneFormatCrop')}
                 </button>
@@ -262,15 +284,38 @@ export function FormatPane({
             </>
           )}
 
-          {shape && (
+          {effTab === 'shape' && shape && (
             <>
               <div className="fp-section">{t('paneFormatFill')}</div>
-              <div className="fp-row">
+              <div className="fp-prow">
+                <span>{t('paneFormatSolidFill')}</span>
                 <ColorWell
                   value={fillColor ?? '#ffffff'}
                   label={t('paneFormatSolidFill')}
                   onPick={(hex) => debouncedFill(node.sourceId, fillValue(hex, fillTransparency))}
                 />
+              </div>
+              <label className="fp-prow">
+                <span>{t('ribbonTransparency')}</span>
+                <select
+                  key={`${node.sourceId}:fa:${fillTransparency}`}
+                  defaultValue={fillTransparency}
+                  disabled={shape.fill.kind !== 'solid'}
+                  onChange={(e) =>
+                    onFill(node.sourceId, fillValue(fillColor ?? '#ffffff', Number(e.target.value)))
+                  }
+                >
+                  {!TRANSPARENCY_PRESETS.includes(fillTransparency) && (
+                    <option value={fillTransparency}>{fillTransparency}%</option>
+                  )}
+                  {TRANSPARENCY_PRESETS.map((pct) => (
+                    <option key={pct} value={pct}>
+                      {pct}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="fp-prow fp-prow-end">
                 <button
                   className={`fp-btn ${shape.fill.kind === 'none' ? 'active' : ''}`}
                   onClick={() => onFill(node.sourceId, 'none')}
@@ -283,61 +328,20 @@ export function FormatPane({
                   </button>
                 )}
               </div>
-              <div className="fp-row">
-                <label className="fp-field" style={{ flex: 1 }}>
-                  <span>{t('ribbonTransparency')}</span>
-                  <select
-                    key={`${node.sourceId}:fa:${fillTransparency}`}
-                    defaultValue={fillTransparency}
-                    disabled={shape.fill.kind !== 'solid'}
-                    onChange={(e) =>
-                      onFill(
-                        node.sourceId,
-                        fillValue(fillColor ?? '#ffffff', Number(e.target.value)),
-                      )
-                    }
-                  >
-                    {!TRANSPARENCY_PRESETS.includes(fillTransparency) && (
-                      <option value={fillTransparency}>{fillTransparency}%</option>
-                    )}
-                    {TRANSPARENCY_PRESETS.map((pct) => (
-                      <option key={pct} value={pct}>
-                        {pct}%
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {shape.text && onTextAnchor && (
-                <>
-                  <div className="fp-section">{t('paneFormatTextAnchor')}</div>
-                  <div className="fp-row">
-                    {(
-                      [
-                        ['top', t('paneFormatAnchorTop')],
-                        ['middle', t('paneFormatAnchorMiddle')],
-                        ['bottom', t('paneFormatAnchorBottom')],
-                      ] as const
-                    ).map(([k, label]) => (
-                      <button
-                        key={k}
-                        className={`fp-btn ${(shape.text?.anchor ?? 'top') === k ? 'active' : ''}`}
-                        onClick={() => onTextAnchor(node.sourceId, k)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
               <div className="fp-section">{t('paneFormatGradient')}</div>
-              <div className="fp-row">
+              <div className="fp-prow">
+                <span>{t('paneFormatGradientFrom')}</span>
                 <ColorWell
                   value={gradFrom}
                   label={t('paneFormatGradientFrom')}
                   onPick={setGradFrom}
                 />
+              </div>
+              <div className="fp-prow">
+                <span>{t('paneFormatGradientTo')}</span>
                 <ColorWell value={gradTo} label={t('paneFormatGradientTo')} onPick={setGradTo} />
+              </div>
+              <div className="fp-prow fp-prow-end">
                 {(
                   [
                     ['→', 0, false],
@@ -369,33 +373,75 @@ export function FormatPane({
             </>
           )}
 
-          {(shape || pic) && (
+          {effTab === 'text' && shape?.text && onTextAnchor && (
+            <>
+              <div className="fp-section">{t('paneFormatTextAnchor')}</div>
+              <div className="fp-row">
+                {(
+                  [
+                    ['top', t('paneFormatAnchorTop')],
+                    ['middle', t('paneFormatAnchorMiddle')],
+                    ['bottom', t('paneFormatAnchorBottom')],
+                  ] as const
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    className={`fp-btn ${(shape.text?.anchor ?? 'top') === k ? 'active' : ''}`}
+                    onClick={() => onTextAnchor(node.sourceId, k)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {effTab === 'shape' && (shape || pic) && (
             <>
               <div className="fp-section">{t('paneFormatOutline')}</div>
-              <div className="fp-row">
+              <div className="fp-prow">
+                <span>{t('paneFormatOutlineColor')}</span>
                 <ColorWell
                   value={strokeColor}
                   label={t('paneFormatOutlineColor')}
                   onPick={(hex) => commitStroke(node.sourceId, { color: hex })}
                 />
-                <label className="fp-field" style={{ flex: 1 }}>
-                  <span>{t('paneFormatPt')}</span>
-                  <input
-                    key={`${node.sourceId}:sw:${strokeWidthPt}`}
-                    type="number"
-                    step={0.5}
-                    min={0.5}
-                    defaultValue={strokeWidthPt}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                    }}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value)
-                      if (!Number.isNaN(v) && v > 0)
-                        commitStroke(node.sourceId, { widthPt: v }, true)
-                    }}
-                  />
-                </label>
+              </div>
+              <label className="fp-prow">
+                <span>{t('paneFormatPt')}</span>
+                <input
+                  key={`${node.sourceId}:sw:${strokeWidthPt}`}
+                  type="number"
+                  step={0.5}
+                  min={0.5}
+                  defaultValue={strokeWidthPt}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                  onBlur={(e) => {
+                    const v = Number(e.target.value)
+                    if (!Number.isNaN(v) && v > 0) commitStroke(node.sourceId, { widthPt: v }, true)
+                  }}
+                />
+              </label>
+              <label className="fp-prow">
+                <span>{t('paneFormatDashStyle')}</span>
+                <select
+                  key={`${node.sourceId}:sd:${strokeDash}`}
+                  defaultValue={strokeDash}
+                  onChange={(e) => commitStroke(node.sourceId, { dash: e.target.value }, true)}
+                >
+                  {!DASH_PRESETS.some(([k]) => k === strokeDash) && (
+                    <option value={strokeDash}>{strokeDash}</option>
+                  )}
+                  {DASH_PRESETS.map(([k, glyph]) => (
+                    <option key={k} value={k}>
+                      {glyph}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="fp-prow fp-prow-end">
                 <button
                   className={`fp-btn ${!stroke ? 'active' : ''}`}
                   onClick={() => clearStroke(node.sourceId)}
@@ -403,29 +449,10 @@ export function FormatPane({
                   {t('paneFormatNoOutline')}
                 </button>
               </div>
-              <div className="fp-row">
-                <label className="fp-field" style={{ flex: 1 }}>
-                  <span>{t('paneFormatDashStyle')}</span>
-                  <select
-                    key={`${node.sourceId}:sd:${strokeDash}`}
-                    defaultValue={strokeDash}
-                    onChange={(e) => commitStroke(node.sourceId, { dash: e.target.value }, true)}
-                  >
-                    {!DASH_PRESETS.some(([k]) => k === strokeDash) && (
-                      <option value={strokeDash}>{strokeDash}</option>
-                    )}
-                    {DASH_PRESETS.map(([k, glyph]) => (
-                      <option key={k} value={k}>
-                        {glyph}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
             </>
           )}
 
-          {node.type === 'chart' && chartData && onChartPointColor && (
+          {effTab === 'shape' && node.type === 'chart' && chartData && onChartPointColor && (
             <>
               <div className="fp-section">{t('paneFormatChartPoints')}</div>
               {chartData.series.map((s, si) => (
@@ -458,7 +485,7 @@ export function FormatPane({
             </>
           )}
 
-          {onOpenLink && (
+          {effTab === 'shape' && onOpenLink && (
             <>
               <div className="fp-section">{t('paneFormatLink')}</div>
               <div className="fp-row">
@@ -473,16 +500,24 @@ export function FormatPane({
                     : t('paneFormatLinkNone')}
                 </span>
               </div>
-              <button className="fp-btn" onClick={onOpenLink}>
-                {t('paneFormatLinkSet')}
-              </button>
+              <div className="fp-prow fp-prow-end">
+                <button className="fp-btn" onClick={onOpenLink}>
+                  {t('paneFormatLinkSet')}
+                </button>
+              </div>
             </>
           )}
 
-          <div className="fp-section">{t('paneFormatActions')}</div>
-          <button className="fp-btn fp-danger" onClick={() => onDelete(node.sourceId)}>
-            {t('paneFormatDelete')}
-          </button>
+          {effTab === 'shape' && (
+            <>
+              <div className="fp-section">{t('paneFormatActions')}</div>
+              <div className="fp-prow fp-prow-end">
+                <button className="fp-btn fp-danger" onClick={() => onDelete(node.sourceId)}>
+                  {t('paneFormatDelete')}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </aside>

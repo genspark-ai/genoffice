@@ -106,6 +106,40 @@ describe('fill / color-mod / background parsing', () => {
     expect(el.fill.angle).toBe(2700000)
   })
 
+  it('gradFill with no a:lin/a:path defaults to a vertical ramp (PowerPoint-measured)', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FFC000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="FFFFD5"/></a:gs>' +
+      '</a:gsLst></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.type).toBe('gradient')
+    expect(el.fill.angle).toBe(5400000)
+    expect(el.fill.path).toBeUndefined()
+  })
+
+  it('an explicit a:lin without ang keeps the schema default 0', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="00FF00"/></a:gs>' +
+      '</a:gsLst><a:lin scaled="1"/></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.angle).toBe(0)
+  })
+
   it('themed schemeClr with lumMod/lumOff modifier', () => {
     const sp =
       '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm>' +

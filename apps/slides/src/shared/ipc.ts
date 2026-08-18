@@ -329,6 +329,19 @@ export interface EditFillOp {
   groupId?: string
 }
 
+/**
+ * Picture/texture fill: the main process shows the system image picker once and
+ * applies the pick to every target (one media part, one rel per slide).
+ * mode 'tile' = texture-style repeat at natural size, 'stretch' = fit bounds.
+ */
+export interface EditFillImageOp {
+  slideIndex: number
+  targets: Array<{ sourceId: string; groupId?: string }>
+  mode: 'stretch' | 'tile'
+  /** Inline image bytes (bundled texture presets); when set, no picker dialog is shown */
+  source?: { base64: string; ext: string }
+}
+
 /** Stroke edit: null = no stroke; widthPt is the line width (points); dash is an OOXML prstDash preset ('solid' clears it, undefined keeps the file's value). */
 export interface EditStrokeOp {
   slideIndex: number
@@ -1110,7 +1123,13 @@ export interface SlidesApi {
   /** Whole-picture opacity */
   editPictureOpacity: (op: EditPictureOpacityOp) => Promise<RenderSlide | null>
   /** Shape picture fill (the main process shows the image picker dialog; cancel returns null) */
-  editImageFill: (op: { slideIndex: number; sourceId: string }) => Promise<RenderSlide | null>
+  editImageFill: (op: EditFillImageOp) => Promise<RenderSlide | null>
+  /** Change a shape's preset geometry (keeps transform/fill/outline/text); returns the updated page */
+  changeShape: (op: {
+    slideIndex: number
+    sourceId: string
+    prst: string
+  }) => Promise<RenderSlide | null>
   /** Text box vertical alignment */
   setTextAnchor: (op: {
     slideIndex: number

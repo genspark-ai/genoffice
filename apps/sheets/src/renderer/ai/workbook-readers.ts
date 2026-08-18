@@ -10,7 +10,7 @@ import type { InMemoryWorkbookAdapter } from '../../domain/in-memory-workbook'
 import type { CellFormatState, CellScalar } from '../../domain/workbook.types'
 import { toSelectionFormat } from '../selection-format'
 import { lazyCellReader } from '../univer-sync'
-import type { LazyWorkbookState, UniverRuntime } from '../univer-state'
+import { lazySheetScreenExtent, type LazyWorkbookState, type UniverRuntime } from '../univer-state'
 import type { ActiveSheetInfo } from './tools'
 
 /** The App refs the readers need; passed per call so they never go stale. */
@@ -293,11 +293,11 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
       knownAddresses: [],
       loadedRange,
       sheets: workbook.getSheets().map((sheet) => {
-        const meta = state.file.sheets.find((entry) => entry.id === sheet.getSheetId())
+        const extent = lazySheetScreenExtent(state, sheet.getSheetId())
         return {
           id: sheet.getSheetId(),
           name: sheet.getSheetName(),
-          ...(meta ? { rows: meta.rowCount, columns: meta.columnCount } : {}),
+          ...(extent ? { rows: extent.rows, columns: extent.columns } : {}),
         }
       }),
       selection,

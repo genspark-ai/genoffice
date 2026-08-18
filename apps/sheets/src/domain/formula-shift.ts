@@ -90,6 +90,87 @@ export interface FormulaShiftResult {
  *        on the sheet the structural op targets (bare refs are rewritten)
  * @param opSheetName name of the op's target sheet (matches explicit prefixes)
  */
+/// Excel grid bounds — copy/fill references pushed past them become #REF!.
+const MAX_GRID_ROWS = 1_048_576
+const MAX_GRID_COLUMNS = 16_384
+
+function offsetRefPart(part: RefPart, rowDelta: number, columnDelta: number): RefPart | null {
+  const row = part.rowAbs === '$' ? part.row : part.row + rowDelta
+  const col = part.colAbs === '$' ? part.col : part.col + columnDelta
+  if (row < 0 || row >= MAX_GRID_ROWS || col < 0 || col >= MAX_GRID_COLUMNS) return null
+  return { ...part, row, col }
+}
+
+// Whole-column spans (B:D) — REF_RE only matches refs with a row component,
+// so these need their own pass (fill-right must shift =SUM(B:B) to =SUM(C:C)).
+// The `:` in the lookbehind stops the second column of one span (or the end
+// cell of B2:D4) from starting a new match.
+const COLUMN_SPAN_RE =
+  /(?<![A-Za-z0-9_.$!:])(?:(?:'([^']+)'|([A-Za-z0-9_.]+))!)?(\$?)([A-Z]{1,3}):(\$?)([A-Z]{1,3})(?![A-Za-z0-9($!:])/g
+
+/**
+ * Rewrites A1-style references for COPY/FILL semantics (Excel's fill handle):
+ * relative axes shift by the cell's offset from its source cell, `$`-anchored
+ * axes stay pinned, and references pushed off the grid become #REF!.
+ * Sheet-qualified refs shift too (as in Excel), string literals are skipped,
+ * whole-row spans (3:5) are left unchanged.
+ */
+export function offsetFormulaRefs(formula: string, rowDelta: number, columnDelta: number): string {
+  if (rowDelta === 0 && columnDelta === 0) return formula
+  const segments = formula.split(/("(?:[^"]|"")*")/)
+  const rewritten = segments.map((segment, index) => {
+    if (index % 2 === 1) return segment
+    let out = segment.replace(
+      REF_RE,
+      (match, quoted, bare, aAbsC, aCol, aAbsR, aRow, bAbsC, bCol, bAbsR, bRow) => {
+        const prefix = quoted !== undefined ? `'${quoted}'!` : bare !== undefined ? `${bare}!` : ''
+        const first = offsetRefPart(
+          {
+            colAbs: aAbsC as string,
+            col: columnIndex(aCol as string),
+            rowAbs: aAbsR as string,
+            row: Number(aRow) - 1,
+          },
+          rowDelta,
+          columnDelta,
+        )
+        if (bCol === undefined) {
+          return first ? `${prefix}${formatRef(first)}` : `${prefix}#REF!`
+        }
+        const second = offsetRefPart(
+          {
+            colAbs: bAbsC as string,
+            col: columnIndex(bCol as string),
+            rowAbs: bAbsR as string,
+            row: Number(bRow) - 1,
+          },
+          rowDelta,
+          columnDelta,
+        )
+        if (!first || !second) return `${prefix}#REF!`
+        return `${prefix}${formatRef(first)}:${formatRef(second)}`
+      },
+    )
+    if (columnDelta !== 0) {
+      out = out.replace(COLUMN_SPAN_RE, (match, quoted, bare, aAbs, aCol, bAbs, bCol) => {
+        const prefix = quoted !== undefined ? `'${quoted}'!` : bare !== undefined ? `${bare}!` : ''
+        // Returns the full component including its anchor ("$B" stays "$B").
+        const shift = (abs: string, letters: string): string | null => {
+          if (abs === '$') return `$${letters}`
+          const shifted = columnIndex(letters) + columnDelta
+          return shifted < 0 || shifted >= MAX_GRID_COLUMNS ? null : columnLabel(shifted)
+        }
+        const first = shift(aAbs as string, aCol as string)
+        const second = shift(bAbs as string, bCol as string)
+        if (first === null || second === null) return `${prefix}#REF!`
+        return `${prefix}${first}:${second}`
+      })
+    }
+    return out
+  })
+  return rewritten.join('')
+}
+
 export function shiftFormulaRefs(
   formula: string,
   op: StructuralOperation,

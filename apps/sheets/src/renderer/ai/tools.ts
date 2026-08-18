@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
-import { workbookOperationSchema, type WorkbookOperation } from '../../domain/workbook-dsl'
+import {
+  copyTargetBounds,
+  workbookOperationSchema,
+  type WorkbookOperation,
+} from '../../domain/workbook-dsl'
 import {
   columnLabel,
   parseRange,
@@ -15,6 +19,7 @@ import type {
   ChangePlan,
 } from '../../domain/workbook.types'
 import { t } from '../i18n/locale'
+import { formatRangeAggregate, type RangeAggregate } from './aggregate'
 import { guideCatalogSummary, loadGuides } from './guides'
 
 /**
@@ -170,6 +175,13 @@ export interface SheetsSkillDeps {
     sheetId: string | undefined,
     address: string,
   ): TraceDependentsOutcome | Promise<TraceDependentsOutcome>
+  /** Batched statistics over a large range (lazy mode streams it through the
+   * sidecar without loading the grid) — the supported path for distinct
+   * counts / frequency questions that must never become COUNTIF formulas. */
+  aggregateRange?(
+    sheetId: string | undefined,
+    range: RangeBounds,
+  ): Promise<{ ok: true; aggregate: RangeAggregate } | { ok: false; error: string }>
   /** `applied` resolves with the real apply result (the lazy path applies async);
    * the tool awaits it so the model never hears "applied" for a batch that failed */
   proposeOperations(
@@ -181,6 +193,9 @@ export interface SheetsSkillDeps {
 const MAX_READ_ADDRESSES = 100
 /** Max cells per streamed block; the App's ensureRangeLoaded enforces it too. */
 export const MAX_READ_RANGE_CELLS = 2000
+const MAX_AGGREGATE_CELLS = 1_000_000
+const MAX_AGGREGATE_TOP_VALUES = 50
+const DEFAULT_AGGREGATE_TOP_VALUES = 10
 /** Read-back after write: max number of formula cells whose results are read back */
 const MAX_READBACK_FORMULAS = 10
 /** Read-back after write: wait time (ms) for Univer's async formula recalc */
@@ -214,6 +229,33 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
           type: 'string',
           description:
             'Sheet to read from (id from get_workbook_context); reads the active sheet when omitted',
+        },
+      },
+      required: ['range'],
+    },
+  },
+  {
+    name: 'aggregate_range',
+    description:
+      'Compute statistics for a range without reading or modifying it cell by cell: non-empty count, distinct-value count, ' +
+      'numeric sum/average/min/max, and the most frequent values. Handles very large ranges (up to 1,000,000 cells) efficiently. ' +
+      'ALWAYS use this for questions like "how many distinct suppliers/customers", value distributions, or column totals on large sheets — ' +
+      'never loop read_range over big data and never write COUNTIF/SUMPRODUCT distinct-count formulas (they are rejected as too expensive). ' +
+      'Aggregate one column at a time for meaningful distinct counts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        range: {
+          type: 'string',
+          description: 'Range like "D2:D88588" (typically one column, excluding the header)',
+        },
+        sheetId: {
+          type: 'string',
+          description: 'Target sheet id; the active sheet when omitted',
+        },
+        topValues: {
+          type: 'number',
+          description: 'How many most-frequent values to return (0-50, default 10)',
         },
       },
       required: ['range'],
@@ -392,7 +434,7 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       '{op:"set_cell",sheetId,address,value} | {op:"set_formula",sheetId,address,formula(starts with =)} | ' +
       '{op:"clear_cell",sheetId,address} | {op:"rename_sheet",sheetId,name}. ' +
       'Field definitions for the remaining operations live in the guides — load_guide before using them: ' +
-      'writing(set_range/clear_range/find_replace) | formatting(format_range) | ' +
+      'writing(set_range/fill_range/copy_range/convert_to_values/clear_range/find_replace) | formatting(format_range) | ' +
       'layout(sort_range/merge_cells/unmerge_cells/set_row_height/set_col_width/set_rows_hidden/set_cols_hidden/set_freeze/set_page_setup) | ' +
       'structure(insert_rows/delete_rows/insert_cols/delete_cols/add_sheet/delete_sheet/' +
       'duplicate_sheet/set_sheet_hidden/move_sheet/protect_sheet) | ' +
@@ -401,7 +443,10 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       'table(add_table/add_table_row/add_table_column/delete_table_row/delete_table_column/delete_table) | ' +
       'data(set_hyperlink/set_filter/clear_filter/set_filter_criteria/add_conditional_format/' +
       'clear_conditional_formats/set_data_validation/set_note/add_defined_name/delete_defined_name). ' +
-      'Limits: structural operations (row/column insert-delete, sheet add/delete/duplicate/move/hide) cannot share a batch with other classes; at most 2000 expanded cell changes; ' +
+      'Limits: structural operations (row/column insert-delete, sheet add/delete/duplicate/move/hide) cannot share a batch with other classes; at most 2000 expanded cell changes — ' +
+      'except the range-level bulk ops fill_range / copy_range / convert_to_values / clear_range / find_replace / format_range, which handle up to 200,000 cells in one op ' +
+      '(use fill_range to fill a formula or pattern down a whole column instead of huge set_range batches, ' +
+      'copy_range to duplicate a large block once, convert_to_values to freeze formulas into their computed values); ' +
       'sheetId must be an id returned by get_workbook_context.',
     inputSchema: {
       type: 'object',
@@ -459,7 +504,7 @@ function parseReadSheetId(
  * when the range lies entirely outside it (nothing to stream — cells there
  * are empty by definition). Sheets without a known extent pass through. */
 function clampToExtent(bounds: RangeBounds, sheet: SheetRef | undefined): RangeBounds | null {
-  if (!sheet?.rows || !sheet.columns) return bounds
+  if (sheet?.rows === undefined || sheet.columns === undefined) return bounds
   const endRow = Math.min(bounds.endRow, sheet.rows - 1)
   const endColumn = Math.min(bounds.endColumn, sheet.columns - 1)
   if (endRow < bounds.startRow || endColumn < bounds.startColumn) return null
@@ -494,10 +539,11 @@ function parseAuditAddress(
 export function buildWorkbookContext(deps: SheetsSkillDeps): string {
   const info = deps.getActiveSheetInfo()
   if (info.mode === 'none') return 'No workbook is currently open.'
-  const dims = (sheet: SheetRef): string =>
-    sheet.rows && sheet.columns
-      ? `, data extent about ${sheet.rows} rows × ${sheet.columns} columns`
-      : ''
+  const dims = (sheet: SheetRef): string => {
+    if (sheet.rows === undefined || sheet.columns === undefined) return ''
+    if (sheet.rows === 0 || sheet.columns === 0) return ', no data (empty sheet)'
+    return `, data extent about ${sheet.rows} rows × ${sheet.columns} columns`
+  }
   const active = info.sheets.find((sheet) => sheet.id === info.sheetId)
   const lines = [
     `Active sheet: ${info.sheetName} (id=${info.sheetId}${active ? dims(active) : ''})`,
@@ -654,15 +700,16 @@ export function executeWorkbookTool(
       if ('fail' in parsedSheet) return parsedSheet.fail
       const sheetId = parsedSheet.sheetId
       const target = info.sheets.find((sheet) => sheet.id === (sheetId ?? info.sheetId))
-      if (
-        target?.rows !== undefined &&
-        target.columns !== undefined &&
-        (bounds.endRow >= target.rows || bounds.endColumn >= target.columns)
-      ) {
-        return fail(
-          t('aiToolReadRange'),
-          `The requested range is outside the worksheet data extent A1:${columnLabel(target.columns - 1)}${target.rows}.`,
-        )
+      if (target?.rows !== undefined && target.columns !== undefined) {
+        if (target.rows === 0 || target.columns === 0) {
+          return fail(t('aiToolReadRange'), 'The worksheet has no data (empty extent).')
+        }
+        if (bounds.endRow >= target.rows || bounds.endColumn >= target.columns) {
+          return fail(
+            t('aiToolReadRange'),
+            `The requested range is outside the worksheet data extent A1:${columnLabel(target.columns - 1)}${target.rows}.`,
+          )
+        }
       }
       const executeRead = (): ToolExecution => {
         const normalizedRange = `${formatAddress(bounds.startRow, bounds.startColumn)}:${formatAddress(bounds.endRow, bounds.endColumn)}`
@@ -722,6 +769,49 @@ export function executeWorkbookTool(
         )
       }
       return executeRead()
+    }
+
+    case 'aggregate_range': {
+      const raw = call.input.range
+      if (typeof raw !== 'string' || !raw.trim())
+        return fail(t('aiToolAggregate'), 'range must be a non-empty string')
+      const rangeLabel = raw.trim().toUpperCase()
+      let bounds
+      try {
+        bounds = parseRange(rangeLabel)
+      } catch {
+        return fail(t('aiToolAggregate'), `Cannot parse range: ${raw}`)
+      }
+      if (rangeCellCount(bounds) > MAX_AGGREGATE_CELLS) {
+        return fail(
+          t('aiToolAggregate'),
+          `The range contains more than ${MAX_AGGREGATE_CELLS.toLocaleString('en-US')} cells; aggregate one column (or a smaller block) at a time.`,
+        )
+      }
+      if (!deps.aggregateRange) {
+        return fail(t('aiToolAggregate'), 'aggregate_range is not available in this context.')
+      }
+      const parsedSheet = parseReadSheetId(
+        call.input,
+        deps.getActiveSheetInfo(),
+        t('aiToolAggregate'),
+      )
+      if ('fail' in parsedSheet) return parsedSheet.fail
+      const sheetId = parsedSheet.sheetId
+      const topRaw = call.input.topValues
+      const topValues =
+        typeof topRaw === 'number' && Number.isFinite(topRaw)
+          ? Math.min(Math.max(Math.floor(topRaw), 0), MAX_AGGREGATE_TOP_VALUES)
+          : DEFAULT_AGGREGATE_TOP_VALUES
+      return deps.aggregateRange(sheetId, bounds).then((outcome) =>
+        outcome.ok
+          ? {
+              output: formatRangeAggregate(rangeLabel, outcome.aggregate, topValues),
+              mutated: false,
+              summary: t('aiToolAggregateOf', { range: rangeLabel }),
+            }
+          : fail(t('aiToolAggregate'), outcome.error),
+      )
     }
 
     case 'load_guide': {
@@ -1071,7 +1161,20 @@ export function executeWorkbookTool(
         // Read-back after write (write → verify): formula cells fetch their
         // computed values after the async recalc, so the AI sees real results and
         // errors like #REF!/#DIV/0! instead of just what it wrote.
-        const formulaCells = outcome.plan.cellChanges.filter((c) => c.after.formula)
+        const formulaCells: { sheetId: string; address: string }[] = outcome.plan.cellChanges
+          .filter((c) => c.after.formula)
+          .map((c) => ({ sheetId: c.sheetId, address: c.address }))
+        // fill_range / copy_range apply as range-level bulk writes (no
+        // per-cell plan entries), so read back each target's corners to
+        // confirm the write actually landed and its shifted formulas compute.
+        for (const op of operations) {
+          if (op.op !== 'fill_range' && op.op !== 'copy_range') continue
+          const bounds = op.op === 'fill_range' ? parseRange(op.target) : copyTargetBounds(op)
+          const first = formatAddress(bounds.startRow, bounds.startColumn)
+          const last = formatAddress(bounds.endRow, bounds.endColumn)
+          formulaCells.push({ sheetId: op.sheetId, address: first })
+          if (last !== first) formulaCells.push({ sheetId: op.sheetId, address: last })
+        }
         if (formulaCells.length === 0) {
           return { output: base, mutated: true, summary }
         }

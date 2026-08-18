@@ -24,7 +24,17 @@ describe('image text wrap (wp:anchor)', () => {
   })
 
   it('parses behind / topAndBottom / front variants', async () => {
-    const behind = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"')
+    // behind = behindDoc with NO wrap element; an explicit wrap element wins
+    // (Word draws behindDoc+wrapSquare behind the text and still wraps around it)
+    const behind = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"').replace(
+      '<wp:wrapSquare wrapText="bothSides"/>',
+      '<wp:wrapNone/>',
+    )
+    const behindWithWrap = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"')
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: behindWithWrap, withImage: true }))).blocks[0]
+        .imageWrap,
+    ).toBe('square-right')
     const topBottom = ANCHOR_SQUARE_RIGHT_XML.replace(
       '<wp:wrapSquare wrapText="bothSides"/>',
       '<wp:wrapTopAndBottom/>',
@@ -45,6 +55,46 @@ describe('image text wrap (wp:anchor)', () => {
       await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }),
     )
     expect(inline.blocks[0].imageWrap).toBeUndefined()
+  })
+
+  it('derives the float side from wrapText and far posOffset (tdf#97090)', async () => {
+    const withPosH = (posH: string, wrapText = 'bothSides') =>
+      ANCHOR_SQUARE_RIGHT_XML.replace(
+        '<wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>',
+        posH,
+      ).replace('wrapText="bothSides"', `wrapText="${wrapText}"`)
+    const cases: Array<[string, string, string]> = [
+      // text on the left only -> object floats right
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>',
+        'left',
+        'square-right',
+      ],
+      // text on the right only -> object floats left even with a far offset
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>5000000</wp:posOffset></wp:positionH>',
+        'right',
+        'square-left',
+      ],
+      // bothSides + absolute X past mid-body -> right
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>3187064</wp:posOffset></wp:positionH>',
+        'bothSides',
+        'square-right',
+      ],
+      // bothSides + near X -> left
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>100000</wp:posOffset></wp:positionH>',
+        'bothSides',
+        'square-left',
+      ],
+    ]
+    for (const [posH, wrapText, expected] of cases) {
+      const doc = await parseDocx(
+        await buildDocx({ bodyXml: withPosH(posH, wrapText), withImage: true }),
+      )
+      expect(doc.blocks[0].imageWrap, `${wrapText} ${posH}`).toBe(expected)
+    }
   })
 
   it('converts inline -> square anchor with position and wrap elements', () => {

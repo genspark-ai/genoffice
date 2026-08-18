@@ -121,9 +121,9 @@ export function ChartBody({
           y={l.y}
           text={l.text}
           fontSize={l.fontSizePx}
-          fontFamily="Arial"
+          fontFamily="Calibri, Carlito, Arial, sans-serif"
           fill={l.color}
-          fontStyle={l.bold ? 'bold' : 'normal'}
+          fontStyle={[l.italic && 'italic', l.bold && 'bold'].filter(Boolean).join(' ') || 'normal'}
           {...(l.rotationDeg ? { rotation: l.rotationDeg } : {})}
         />
       ))}

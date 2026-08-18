@@ -237,7 +237,7 @@ export const appStrings = defineStrings({
     appSaveHeldStranded:
       '透视表/表格与新建工作表 + 行列变更没法一次保存——先保存一次结构，再添加透视表/表格。',
     appSaveSecondCanceled: '第二段保存被取消——结构已保存，透视表/表格/命名区域还未写入。',
-    appSavedTwoPhase: '已保存（分两段：先结构变更，再透视表/表格/命名区域）。',
+    appSavedTwoPhase: '已保存。',
     appSaveSecondFailed: '结构已保存，但第二段（透视表/表格/命名区域）失败：{reason}',
     // AI session / status bar
     appReadyInitial: '就绪——可使用本地确定性 AI 命令。',
@@ -253,6 +253,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: '该区域还在流式加载——稍后再试。',
     appFormulaRecordedPartial:
       '公式已记录——会保存进文件，但这个大工作簿是部分流式加载的，屏幕上的结果可能不完整。',
+    appFormulaTooExpensive:
+      '该公式要对大区间做逐元素统计，计算量过大会导致界面卡死——已取消。请缩小引用区间后重试。',
     appPivotSheetNoStructural: '该工作表含数据透视表——暂不支持结构变更。',
     appIconSetUnsupported: '该图标组合无法保存为 xlsx 文件，请换用其他图标集。',
     appChartCacheEmpty: '图表数据缓存为空。',
@@ -283,6 +285,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: '撤销已提交（第 {revision} 版）。',
     appUndoFailed: '无法撤销。',
     appAutoFilterCreateFailed: '无法创建自动筛选。',
+    appAutoFilterRemoveFailed: '无法移除自动筛选。',
     // Insert chart
     appSelectDataRangeFirst: '请先选中数据区域。',
     appUnsupportedChartType: '不支持的图表类型：{kind}。',
@@ -462,7 +465,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: '无法读取工作表顺序——请重试。',
     appSavingEdits: '正在保存 {count} 处编辑…',
     appSaveCanceled: '保存已取消。',
-    appSaved: '已保存：重写了 {total} 个包条目中的 {touched} 个，其余逐字节保留。',
+    appSaved: '已保存。',
     appSaveFailed: '无法保存工作簿。',
     appCfRuleUnsaveable: '这种条件格式规则无法保存到 xlsx——请换用其他规则类型。',
     appSaveErrX14Dv: '这个工作表带有扩展(x14)数据验证，暂不支持编辑它的验证规则。',
@@ -1504,8 +1507,7 @@ export const appStrings = defineStrings({
       'PivotTables/tables cannot be saved together with new sheets plus row/column changes — save the structure first, then add the PivotTables/tables.',
     appSaveSecondCanceled:
       'The second save phase was canceled — the structure is saved; PivotTables/tables/defined names are not written yet.',
-    appSavedTwoPhase:
-      'Saved (two phases: structural changes first, then PivotTables/tables/defined names).',
+    appSavedTwoPhase: 'Saved.',
     appSaveSecondFailed:
       'The structure is saved, but the second phase (PivotTables/tables/defined names) failed: {reason}',
     appReadyInitial: 'Ready for a local, deterministic AI command.',
@@ -1521,6 +1523,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'That area is still streaming in — try editing it again in a moment.',
     appFormulaRecordedPartial:
       'Formula recorded — it saves to the file, but the on-screen result may be incomplete because this large workbook streams partially.',
+    appFormulaTooExpensive:
+      'This formula evaluates a large range once per element — the computation would freeze the app, so it was cancelled. Narrow the referenced range and try again.',
     appPivotSheetNoStructural:
       'This sheet contains a PivotTable — structural changes are not supported yet.',
     appIconSetUnsupported:
@@ -1558,6 +1562,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Undo committed as revision {revision}.',
     appUndoFailed: 'Unable to undo.',
     appAutoFilterCreateFailed: 'Unable to create the auto-filter.',
+    appAutoFilterRemoveFailed: 'Unable to remove the auto-filter.',
     appSelectDataRangeFirst: 'Select the data range first.',
     appUnsupportedChartType: 'Unsupported chart type: {kind}.',
     appChartInsertedDemo:
@@ -1741,8 +1746,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Unable to read the sheet order — try again.',
     appSavingEdits: 'Saving {count} edit(s)…',
     appSaveCanceled: 'Save canceled.',
-    appSaved:
-      'Saved: rewrote {touched} of {total} package entries, the rest preserved byte-identical.',
+    appSaved: 'Saved.',
     appSaveFailed: 'Unable to save the workbook.',
     appCfRuleUnsaveable:
       'This conditional formatting rule cannot be saved to xlsx — switch to another rule type.',
@@ -2800,8 +2804,7 @@ export const appStrings = defineStrings({
       'ピボットテーブル/テーブルは、新規シートと行列の変更と同時には保存できません。先に構造を一度保存してから、ピボットテーブル/テーブルを追加してください。',
     appSaveSecondCanceled:
       '2 段階目の保存がキャンセルされました。構造は保存済みですが、ピボットテーブル/テーブル/名前付き範囲はまだ書き込まれていません。',
-    appSavedTwoPhase:
-      '保存しました（2 段階：先に構造の変更、次にピボットテーブル/テーブル/名前付き範囲）。',
+    appSavedTwoPhase: '保存しました。',
     appSaveSecondFailed:
       '構造は保存されましたが、2 段階目（ピボットテーブル/テーブル/名前付き範囲）に失敗しました：{reason}',
     // AI session / status bar
@@ -2820,6 +2823,8 @@ export const appStrings = defineStrings({
       'この範囲はまだストリーミング読み込み中です — しばらくしてからお試しください。',
     appFormulaRecordedPartial:
       '数式を記録しました — ファイルには保存されますが、この大きなブックは部分的なストリーミング読み込みのため、画面上の結果は不完全な場合があります。',
+    appFormulaTooExpensive:
+      'この数式は大きな範囲を要素ごとに評価するため、計算でアプリがフリーズします — キャンセルしました。参照範囲を狭めて再試行してください。',
     appPivotSheetNoStructural:
       'このシートにはピボットテーブルが含まれています — 構造の変更には未対応です。',
     appIconSetUnsupported:
@@ -2861,6 +2866,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: '元に戻す操作をコミットしました（リビジョン {revision}）。',
     appUndoFailed: '元に戻せません。',
     appAutoFilterCreateFailed: 'オートフィルターを作成できません。',
+    appAutoFilterRemoveFailed: 'オートフィルターを削除できません。',
     // Insert chart
     appSelectDataRangeFirst: '先にデータ範囲を選択してください。',
     appUnsupportedChartType: 'サポートされていないグラフの種類：{kind}。',
@@ -3069,8 +3075,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'シートの順序を読み取れません — もう一度お試しください。',
     appSavingEdits: '{count} 件の編集を保存中…',
     appSaveCanceled: '保存をキャンセルしました。',
-    appSaved:
-      '保存しました：{total} 個のパッケージエントリのうち {touched} 個を書き換え、残りはバイト単位でそのまま保持しました。',
+    appSaved: '保存しました。',
     appSaveFailed: 'ブックを保存できません。',
     appCfRuleUnsaveable:
       'この条件付き書式ルールは xlsx に保存できません — 別のルールの種類をお使いください。',
@@ -4140,7 +4145,7 @@ export const appStrings = defineStrings({
       '피벗 테이블/표는 새 시트 및 행/열 변경과 한 번에 저장할 수 없습니다. 먼저 구조를 저장한 후 피벗 테이블/표를 추가하십시오.',
     appSaveSecondCanceled:
       '두 번째 저장 단계가 취소되었습니다. 구조는 저장되었지만 피벗 테이블/표/이름 범위는 아직 기록되지 않았습니다.',
-    appSavedTwoPhase: '저장했습니다(2단계: 먼저 구조 변경, 그다음 피벗 테이블/표/이름 범위).',
+    appSavedTwoPhase: '저장했습니다.',
     appSaveSecondFailed:
       '구조는 저장되었지만 두 번째 단계(피벗 테이블/표/이름 범위)가 실패했습니다: {reason}',
     // AI session / status bar
@@ -4159,6 +4164,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: '이 영역은 아직 스트리밍 로드 중입니다 — 잠시 후 다시 시도하십시오.',
     appFormulaRecordedPartial:
       '수식을 기록했습니다 — 파일에는 저장되지만, 이 큰 통합 문서는 부분 스트리밍 방식으로 로드되어 화면의 결과가 불완전할 수 있습니다.',
+    appFormulaTooExpensive:
+      '이 수식은 큰 범위를 요소마다 평가하므로 계산으로 앱이 멈춥니다 — 취소되었습니다. 참조 범위를 줄인 뒤 다시 시도하세요.',
     appPivotSheetNoStructural: '이 시트에는 피벗 테이블이 있어 아직 구조 변경을 지원하지 않습니다.',
     appIconSetUnsupported:
       '이 아이콘 조합은 xlsx로 저장할 수 없습니다. 다른 아이콘 집합을 선택하세요.',
@@ -4195,6 +4202,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: '실행 취소를 커밋했습니다(리비전 {revision}).',
     appUndoFailed: '실행 취소할 수 없습니다.',
     appAutoFilterCreateFailed: '자동 필터를 만들 수 없습니다.',
+    appAutoFilterRemoveFailed: '자동 필터를 제거할 수 없습니다.',
     // Insert chart
     appSelectDataRangeFirst: '먼저 데이터 범위를 선택하십시오.',
     appUnsupportedChartType: '지원되지 않는 차트 종류: {kind}.',
@@ -4389,8 +4397,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: '시트 순서를 읽을 수 없습니다 — 다시 시도하십시오.',
     appSavingEdits: '편집 {count}개를 저장하는 중…',
     appSaveCanceled: '저장을 취소했습니다.',
-    appSaved:
-      '저장했습니다: 패키지 항목 {total}개 중 {touched}개를 다시 썼으며, 나머지는 바이트 그대로 유지했습니다.',
+    appSaved: '저장했습니다.',
     appSaveFailed: '통합 문서를 저장할 수 없습니다.',
     appCfRuleUnsaveable:
       '이 조건부 서식 규칙은 xlsx로 저장할 수 없습니다 — 다른 규칙 유형을 사용하십시오.',
@@ -5478,8 +5485,7 @@ export const appStrings = defineStrings({
       "Les tableaux croisés dynamiques/tableaux ne peuvent pas être enregistrés en même temps que de nouvelles feuilles plus des modifications de lignes/colonnes — enregistrez d'abord la structure, puis ajoutez-les.",
     appSaveSecondCanceled:
       "La deuxième phase d'enregistrement a été annulée — la structure est enregistrée ; les tableaux croisés dynamiques/tableaux/noms définis ne sont pas encore écrits.",
-    appSavedTwoPhase:
-      "Enregistré (en deux phases : d'abord les modifications structurelles, puis les tableaux croisés dynamiques/tableaux/noms définis).",
+    appSavedTwoPhase: 'Enregistré.',
     appSaveSecondFailed:
       'La structure est enregistrée, mais la deuxième phase (tableaux croisés dynamiques/tableaux/noms définis) a échoué : {reason}',
     appReadyInitial: 'Prêt pour une commande IA locale et déterministe.',
@@ -5497,6 +5503,8 @@ export const appStrings = defineStrings({
       'Cette zone est encore en cours de chargement en flux — réessayez dans un instant.',
     appFormulaRecordedPartial:
       "Formule enregistrée — elle sera sauvegardée dans le fichier, mais le résultat à l'écran peut être incomplet, car ce grand classeur est chargé partiellement en flux.",
+    appFormulaTooExpensive:
+      "Cette formule évalue une grande plage élément par élément — le calcul figerait l'application, elle a donc été annulée. Réduisez la plage référencée et réessayez.",
     appPivotSheetNoStructural:
       'Cette feuille contient un tableau croisé dynamique — les modifications structurelles ne sont pas encore prises en charge.',
     appIconSetUnsupported:
@@ -5537,6 +5545,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Annulation validée (révision {revision}).',
     appUndoFailed: "Impossible d'annuler.",
     appAutoFilterCreateFailed: 'Impossible de créer le filtre automatique.',
+    appAutoFilterRemoveFailed: 'Impossible de supprimer le filtre automatique.',
     appSelectDataRangeFirst: "Sélectionnez d'abord la plage de données.",
     appUnsupportedChartType: 'Type de graphique non pris en charge : {kind}.',
     appChartInsertedDemo:
@@ -5750,8 +5759,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: "Impossible de lire l'ordre des feuilles — réessayez.",
     appSavingEdits: 'Enregistrement de {count} modification(s)…',
     appSaveCanceled: 'Enregistrement annulé.',
-    appSaved:
-      "Enregistré : {touched} entrées de package réécrites sur {total}, le reste préservé à l'identique.",
+    appSaved: 'Enregistré.',
     appSaveFailed: "Impossible d'enregistrer le classeur.",
     appCfRuleUnsaveable:
       'Cette règle de mise en forme conditionnelle ne peut pas être enregistrée en xlsx — utilisez un autre type de règle.',
@@ -6828,8 +6836,7 @@ export const appStrings = defineStrings({
       'PivotTables/Tabellen können nicht zusammen mit neuen Blättern plus Zeilen-/Spaltenänderungen gespeichert werden — speichern Sie zuerst die Struktur und fügen Sie sie dann hinzu.',
     appSaveSecondCanceled:
       'Die zweite Speicherphase wurde abgebrochen — die Struktur ist gespeichert; PivotTables/Tabellen/definierte Namen sind noch nicht geschrieben.',
-    appSavedTwoPhase:
-      'Gespeichert (in zwei Phasen: zuerst Strukturänderungen, dann PivotTables/Tabellen/definierte Namen).',
+    appSavedTwoPhase: 'Gespeichert.',
     appSaveSecondFailed:
       'Die Struktur ist gespeichert, aber die zweite Phase (PivotTables/Tabellen/definierte Namen) ist fehlgeschlagen: {reason}',
     appReadyInitial: 'Bereit für einen lokalen, deterministischen KI-Befehl.',
@@ -6848,6 +6855,8 @@ export const appStrings = defineStrings({
       'Dieser Bereich wird noch per Streaming geladen — versuchen Sie es gleich noch einmal.',
     appFormulaRecordedPartial:
       'Formel aufgezeichnet — sie wird in die Datei gespeichert, aber das Ergebnis auf dem Bildschirm kann unvollständig sein, da diese große Arbeitsmappe teilweise per Streaming geladen wird.',
+    appFormulaTooExpensive:
+      'Diese Formel wertet einen großen Bereich pro Element aus — die Berechnung würde die App einfrieren, daher wurde sie abgebrochen. Verkleinern Sie den referenzierten Bereich und versuchen Sie es erneut.',
     appPivotSheetNoStructural:
       'Dieses Blatt enthält eine PivotTable — Strukturänderungen werden noch nicht unterstützt.',
     appIconSetUnsupported:
@@ -6890,6 +6899,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Rückgängig übernommen (Revision {revision}).',
     appUndoFailed: 'Rückgängigmachen nicht möglich.',
     appAutoFilterCreateFailed: 'AutoFilter kann nicht erstellt werden.',
+    appAutoFilterRemoveFailed: 'AutoFilter kann nicht entfernt werden.',
     appSelectDataRangeFirst: 'Wählen Sie zuerst den Datenbereich aus.',
     appUnsupportedChartType: 'Nicht unterstützter Diagrammtyp: {kind}.',
     appChartInsertedDemo:
@@ -7097,8 +7107,7 @@ export const appStrings = defineStrings({
       'Die Blattreihenfolge kann nicht gelesen werden — versuchen Sie es erneut.',
     appSavingEdits: '{count} Bearbeitung(en) werden gespeichert…',
     appSaveCanceled: 'Speichern abgebrochen.',
-    appSaved:
-      'Gespeichert: {touched} von {total} Paketeinträgen neu geschrieben, der Rest byteidentisch erhalten.',
+    appSaved: 'Gespeichert.',
     appSaveFailed: 'Die Arbeitsmappe kann nicht gespeichert werden.',
     appCfRuleUnsaveable:
       'Diese Regel für bedingte Formatierung kann nicht in xlsx gespeichert werden — verwenden Sie einen anderen Regeltyp.',
@@ -8171,8 +8180,7 @@ export const appStrings = defineStrings({
       'Las tablas dinámicas/tablas no se pueden guardar junto con hojas nuevas más cambios de filas/columnas — guarde primero la estructura y luego agréguelas.',
     appSaveSecondCanceled:
       'La segunda fase de guardado se canceló — la estructura está guardada; las tablas dinámicas/tablas/nombres definidos aún no se escribieron.',
-    appSavedTwoPhase:
-      'Guardado (en dos fases: primero los cambios estructurales y luego las tablas dinámicas/tablas/nombres definidos).',
+    appSavedTwoPhase: 'Guardado.',
     appSaveSecondFailed:
       'La estructura está guardada, pero la segunda fase (tablas dinámicas/tablas/nombres definidos) falló: {reason}',
     appReadyInitial: 'Listo para un comando de IA local y determinista.',
@@ -8191,6 +8199,8 @@ export const appStrings = defineStrings({
       'Esa área todavía se está cargando por streaming — inténtelo de nuevo en un momento.',
     appFormulaRecordedPartial:
       'Fórmula registrada — se guardará en el archivo, pero el resultado en pantalla puede estar incompleto porque este libro grande se carga parcialmente por streaming.',
+    appFormulaTooExpensive:
+      'Esta fórmula evalúa un rango grande elemento por elemento — el cálculo congelaría la aplicación, así que se canceló. Reduzca el rango referenciado y vuelva a intentarlo.',
     appPivotSheetNoStructural:
       'Esta hoja contiene una tabla dinámica — los cambios estructurales aún no se admiten.',
     appIconSetUnsupported:
@@ -8230,6 +8240,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Deshacer confirmado (revisión {revision}).',
     appUndoFailed: 'No se puede deshacer.',
     appAutoFilterCreateFailed: 'No se puede crear el autofiltro.',
+    appAutoFilterRemoveFailed: 'No se puede quitar el autofiltro.',
     appSelectDataRangeFirst: 'Seleccione primero el rango de datos.',
     appUnsupportedChartType: 'Tipo de gráfico no admitido: {kind}.',
     appChartInsertedDemo:
@@ -8435,8 +8446,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'No se puede leer el orden de las hojas — inténtelo de nuevo.',
     appSavingEdits: 'Guardando {count} edición(es)…',
     appSaveCanceled: 'Guardado cancelado.',
-    appSaved:
-      'Guardado: se reescribieron {touched} de {total} entradas del paquete; el resto se conservó byte a byte.',
+    appSaved: 'Guardado.',
     appSaveFailed: 'No se puede guardar el libro.',
     appCfRuleUnsaveable:
       'Esta regla de formato condicional no se puede guardar en xlsx — use otro tipo de regla.',
@@ -9483,8 +9493,7 @@ export const appStrings = defineStrings({
       'บันทึก PivotTable/ตารางพร้อมกับแผ่นงานใหม่บวกการเปลี่ยนแถว/คอลัมน์ในครั้งเดียวไม่ได้ — บันทึกโครงสร้างก่อน แล้วจึงเพิ่ม PivotTable/ตาราง',
     appSaveSecondCanceled:
       'การบันทึกช่วงที่สองถูกยกเลิก — โครงสร้างถูกบันทึกแล้ว แต่ PivotTable/ตาราง/ชื่อที่กำหนดยังไม่ถูกเขียน',
-    appSavedTwoPhase:
-      'บันทึกแล้ว (สองช่วง: เปลี่ยนโครงสร้างก่อน แล้วจึง PivotTable/ตาราง/ชื่อที่กำหนด)',
+    appSavedTwoPhase: 'บันทึกแล้ว',
     appSaveSecondFailed:
       'โครงสร้างถูกบันทึกแล้ว แต่ช่วงที่สอง (PivotTable/ตาราง/ชื่อที่กำหนด) ล้มเหลว: {reason}',
     appReadyInitial: 'พร้อมสำหรับคำสั่ง AI แบบระบุแน่นอนที่ทำงานในเครื่อง',
@@ -9500,6 +9509,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'พื้นที่นั้นกำลังโหลดแบบสตรีมอยู่ — ลองใหม่อีกสักครู่',
     appFormulaRecordedPartial:
       'บันทึกสูตรแล้ว — จะถูกบันทึกลงไฟล์ แต่ผลลัพธ์บนหน้าจออาจไม่สมบูรณ์ เพราะเวิร์กบุ๊กขนาดใหญ่นี้โหลดแบบสตรีมบางส่วน',
+    appFormulaTooExpensive:
+      'สูตรนี้ประเมินช่วงข้อมูลขนาดใหญ่ทีละองค์ประกอบ — การคำนวณจะทำให้แอปค้าง จึงถูกยกเลิก โปรดย่อช่วงที่อ้างอิงแล้วลองอีกครั้ง',
     appPivotSheetNoStructural: 'แผ่นงานนี้มี PivotTable — ยังไม่รองรับการเปลี่ยนโครงสร้าง',
     appIconSetUnsupported: 'ชุดไอคอนนี้ไม่สามารถบันทึกเป็น xlsx ได้ โปรดเลือกชุดไอคอนอื่น',
     appChartCacheEmpty: 'แคชข้อมูลแผนภูมิว่างเปล่า',
@@ -9532,6 +9543,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'ยืนยันการเลิกทำแล้ว (รุ่นที่ {revision})',
     appUndoFailed: 'เลิกทำไม่ได้',
     appAutoFilterCreateFailed: 'สร้างตัวกรองอัตโนมัติไม่ได้',
+    appAutoFilterRemoveFailed: 'นำตัวกรองอัตโนมัติออกไม่ได้',
     appSelectDataRangeFirst: 'เลือกช่วงข้อมูลก่อน',
     appUnsupportedChartType: 'ชนิดแผนภูมิที่ไม่รองรับ: {kind}',
     appChartInsertedDemo:
@@ -9714,8 +9726,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'อ่านลำดับแผ่นงานไม่ได้ — ลองอีกครั้ง',
     appSavingEdits: 'กำลังบันทึกการแก้ไข {count} รายการ…',
     appSaveCanceled: 'ยกเลิกการบันทึกแล้ว',
-    appSaved:
-      'บันทึกแล้ว: เขียนใหม่ {touched} จาก {total} รายการในแพ็กเกจ ส่วนที่เหลือคงเดิมทุกไบต์',
+    appSaved: 'บันทึกแล้ว',
     appSaveFailed: 'บันทึกเวิร์กบุ๊กไม่ได้',
     appCfRuleUnsaveable:
       'กฎการจัดรูปแบบตามเงื่อนไขนี้ไม่สามารถบันทึกเป็น xlsx ได้ — โปรดใช้กฎประเภทอื่น',
@@ -10755,8 +10766,7 @@ export const appStrings = defineStrings({
       'PivotTable/tabel tidak dapat disimpan bersama lembar baru plus perubahan baris/kolom — simpan strukturnya dahulu, lalu tambahkan PivotTable/tabel.',
     appSaveSecondCanceled:
       'Fase penyimpanan kedua dibatalkan — struktur sudah tersimpan; PivotTable/tabel/nama yang ditentukan belum ditulis.',
-    appSavedTwoPhase:
-      'Disimpan (dua fase: perubahan struktur dahulu, lalu PivotTable/tabel/nama yang ditentukan).',
+    appSavedTwoPhase: 'Disimpan.',
     appSaveSecondFailed:
       'Struktur sudah tersimpan, tetapi fase kedua (PivotTable/tabel/nama yang ditentukan) gagal: {reason}',
     appReadyInitial: 'Siap untuk perintah AI lokal yang deterministik.',
@@ -10773,6 +10783,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'Area itu masih dimuat secara streaming — coba lagi sebentar lagi.',
     appFormulaRecordedPartial:
       'Rumus direkam — akan disimpan ke file, tetapi hasil di layar mungkin tidak lengkap karena buku kerja besar ini dimuat sebagian secara streaming.',
+    appFormulaTooExpensive:
+      'Rumus ini mengevaluasi rentang besar per elemen — perhitungannya akan membekukan aplikasi, jadi dibatalkan. Persempit rentang yang dirujuk lalu coba lagi.',
     appPivotSheetNoStructural: 'Lembar ini berisi PivotTable — perubahan struktur belum didukung.',
     appIconSetUnsupported: 'Kombinasi ikon ini tidak dapat disimpan ke xlsx — pilih set ikon lain.',
     appChartCacheEmpty: 'Cache data bagan kosong.',
@@ -10806,6 +10818,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Pengurungan dikomit (revisi {revision}).',
     appUndoFailed: 'Tidak dapat mengurungkan.',
     appAutoFilterCreateFailed: 'Tidak dapat membuat FilterOtomatis.',
+    appAutoFilterRemoveFailed: 'Tidak dapat menghapus FilterOtomatis.',
     appSelectDataRangeFirst: 'Pilih rentang data dahulu.',
     appUnsupportedChartType: 'Jenis bagan tidak didukung: {kind}.',
     appChartInsertedDemo:
@@ -10998,8 +11011,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Tidak dapat membaca urutan lembar — coba lagi.',
     appSavingEdits: 'Menyimpan {count} pengeditan…',
     appSaveCanceled: 'Penyimpanan dibatalkan.',
-    appSaved:
-      'Disimpan: menulis ulang {touched} dari {total} entri paket, sisanya dipertahankan identik per byte.',
+    appSaved: 'Disimpan.',
     appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
     appCfRuleUnsaveable:
       'Aturan pemformatan bersyarat ini tidak dapat disimpan ke xlsx — gunakan jenis aturan lain.',
@@ -12057,8 +12069,7 @@ export const appStrings = defineStrings({
       'Сводные таблицы/таблицы нельзя сохранить вместе с новыми листами плюс изменениями строк/столбцов — сначала сохраните структуру, затем добавьте их.',
     appSaveSecondCanceled:
       'Вторая фаза сохранения отменена — структура сохранена; сводные таблицы/таблицы/определённые имена ещё не записаны.',
-    appSavedTwoPhase:
-      'Сохранено (в две фазы: сначала структурные изменения, затем сводные таблицы/таблицы/определённые имена).',
+    appSavedTwoPhase: 'Сохранено.',
     appSaveSecondFailed:
       'Структура сохранена, но вторая фаза (сводные таблицы/таблицы/определённые имена) не удалась: {reason}',
     appReadyInitial: 'Готов к локальной детерминированной команде ИИ.',
@@ -12076,6 +12087,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'Эта область ещё загружается потоково — повторите попытку чуть позже.',
     appFormulaRecordedPartial:
       'Формула записана — она сохранится в файл, но результат на экране может быть неполным, поскольку эта большая книга загружается потоково частично.',
+    appFormulaTooExpensive:
+      'Эта формула вычисляет большой диапазон поэлементно — расчёт заморозил бы приложение, поэтому он отменён. Сузьте диапазон и попробуйте снова.',
     appPivotSheetNoStructural:
       'Этот лист содержит сводную таблицу — структурные изменения пока не поддерживаются.',
     appIconSetUnsupported:
@@ -12117,6 +12130,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Отмена зафиксирована (версия {revision}).',
     appUndoFailed: 'Не удаётся отменить.',
     appAutoFilterCreateFailed: 'Не удаётся создать автофильтр.',
+    appAutoFilterRemoveFailed: 'Не удаётся удалить автофильтр.',
     appSelectDataRangeFirst: 'Сначала выделите диапазон данных.',
     appUnsupportedChartType: 'Неподдерживаемый тип диаграммы: {kind}.',
     appChartInsertedDemo:
@@ -12310,8 +12324,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Не удаётся прочитать порядок листов — повторите попытку.',
     appSavingEdits: 'Сохранение изменений: {count}…',
     appSaveCanceled: 'Сохранение отменено.',
-    appSaved:
-      'Сохранено: перезаписано {touched} из {total} элементов пакета, остальные сохранены байт в байт.',
+    appSaved: 'Сохранено.',
     appSaveFailed: 'Не удаётся сохранить книгу.',
     appCfRuleUnsaveable:
       'Это правило условного форматирования нельзя сохранить в xlsx — выберите другой тип правила.',
@@ -13360,8 +13373,7 @@ export const appStrings = defineStrings({
       'لا يمكن حفظ الجداول المحورية/الجداول مع أوراق جديدة وتغييرات صفوف/أعمدة معًا — احفظ البنية أولاً ثم أضفها.',
     appSaveSecondCanceled:
       'أُلغيت مرحلة الحفظ الثانية — حُفظت البنية؛ لم تُكتب الجداول المحورية/الجداول/الأسماء المعرفة بعد.',
-    appSavedTwoPhase:
-      'تم الحفظ (على مرحلتين: التغييرات الهيكلية أولاً، ثم الجداول المحورية/الجداول/الأسماء المعرفة).',
+    appSavedTwoPhase: 'تم الحفظ.',
     appSaveSecondFailed:
       'حُفظت البنية لكن المرحلة الثانية (الجداول المحورية/الجداول/الأسماء المعرفة) فشلت: {reason}',
     appReadyInitial: 'جاهز لأوامر الذكاء الاصطناعي المحلية الحتمية.',
@@ -13377,6 +13389,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'ما زالت هذه الناحية قيد التحميل بالبث — أعد المحاولة لاحقًا.',
     appFormulaRecordedPartial:
       'تم تسجيل الصيغة — ستُحفظ في الملف، لكن النتيجة على الشاشة قد تكون غير مكتملة لأن هذا المصنف الكبير محمّل جزئيًا بالبث.',
+    appFormulaTooExpensive:
+      'هذه الصيغة تقيّم نطاقًا كبيرًا لكل عنصر — الحساب سيجمّد التطبيق، لذا تم إلغاؤها. ضيّق النطاق المُشار إليه وحاول مرة أخرى.',
     appPivotSheetNoStructural:
       'تحتوي هذه الورقة على جدول محوري — التغييرات الهيكلية غير مدعومة بعد.',
     appIconSetUnsupported:
@@ -13411,6 +13425,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'تم تثبيت التراجع (الإصدار {revision}).',
     appUndoFailed: 'يتعذر التراجع.',
     appAutoFilterCreateFailed: 'يتعذر إنشاء التصفية التلقائية.',
+    appAutoFilterRemoveFailed: 'يتعذر إزالة التصفية التلقائية.',
     appSelectDataRangeFirst: 'حدد نطاق بيانات أولاً.',
     appUnsupportedChartType: 'نوع مخطط غير مدعوم: {kind}.',
     appChartInsertedDemo:
@@ -13591,8 +13606,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'يتعذر قراءة ترتيب الأوراق — أعد المحاولة.',
     appSavingEdits: 'جارٍ حفظ {count} من التعديلات…',
     appSaveCanceled: 'أُلغي الحفظ.',
-    appSaved:
-      'تم الحفظ: أُعيدت كتابة {touched} من أصل {total} من إدخالات الحزمة، وبقي الباقي كما هو بايتًا ببايت.',
+    appSaved: 'تم الحفظ.',
     appSaveFailed: 'يتعذر حفظ المصنف.',
     appCfRuleUnsaveable: 'لا يمكن حفظ قاعدة التنسيق الشرطي هذه في xlsx — استخدم نوع قاعدة آخر.',
     appSaveErrX14Dv:
@@ -14648,8 +14662,7 @@ export const appStrings = defineStrings({
       'Tabelas Dinâmicas/tabelas não podem ser salvas junto com novas planilhas e alterações de linhas/colunas — salve a estrutura primeiro e depois adicione as Tabelas Dinâmicas/tabelas.',
     appSaveSecondCanceled:
       'A segunda fase de salvamento foi cancelada — a estrutura foi salva; Tabelas Dinâmicas/tabelas/nomes definidos ainda não foram gravados.',
-    appSavedTwoPhase:
-      'Salvo (duas fases: primeiro as alterações estruturais, depois Tabelas Dinâmicas/tabelas/nomes definidos).',
+    appSavedTwoPhase: 'Salvo.',
     appSaveSecondFailed:
       'A estrutura foi salva, mas a segunda fase (Tabelas Dinâmicas/tabelas/nomes definidos) falhou: {reason}',
     appReadyInitial: 'Pronto para um comando de IA local e determinístico.',
@@ -14667,6 +14680,8 @@ export const appStrings = defineStrings({
       'Essa área ainda está sendo carregada por streaming — tente editar novamente em instantes.',
     appFormulaRecordedPartial:
       'Fórmula registrada — será salva no arquivo, mas o resultado na tela pode estar incompleto porque esta pasta de trabalho grande é carregada parcialmente por streaming.',
+    appFormulaTooExpensive:
+      'Esta fórmula avalia um intervalo grande elemento por elemento — o cálculo congelaria o aplicativo, então foi cancelada. Reduza o intervalo referenciado e tente novamente.',
     appPivotSheetNoStructural:
       'Esta planilha contém uma Tabela Dinâmica — alterações estruturais ainda não são suportadas.',
     appIconSetUnsupported:
@@ -14707,6 +14722,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Desfazer confirmado como revisão {revision}.',
     appUndoFailed: 'Não foi possível desfazer.',
     appAutoFilterCreateFailed: 'Não foi possível criar o AutoFiltro.',
+    appAutoFilterRemoveFailed: 'Não foi possível remover o AutoFiltro.',
     appSelectDataRangeFirst: 'Selecione o intervalo de dados primeiro.',
     appUnsupportedChartType: 'Tipo de gráfico não suportado: {kind}.',
     appChartInsertedDemo:
@@ -14908,8 +14924,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Não foi possível ler a ordem das planilhas — tente novamente.',
     appSavingEdits: 'Salvando {count} edição(ões)…',
     appSaveCanceled: 'Salvamento cancelado.',
-    appSaved:
-      'Salvo: {touched} de {total} entradas do pacote regravadas, o restante preservado byte a byte.',
+    appSaved: 'Salvo.',
     appSaveFailed: 'Não foi possível salvar a pasta de trabalho.',
     appCfRuleUnsaveable:
       'Esta regra de formatação condicional não pode ser salva em xlsx — use outro tipo de regra.',
@@ -15978,8 +15993,7 @@ export const appStrings = defineStrings({
       'Le tabelle pivot/tabelle non possono essere salvate insieme a nuovi fogli e a modifiche di righe/colonne — salva prima la struttura, poi aggiungi le tabelle pivot/tabelle.',
     appSaveSecondCanceled:
       'La seconda fase di salvataggio è stata annullata — la struttura è salvata; tabelle pivot/tabelle/nomi definiti non sono ancora stati scritti.',
-    appSavedTwoPhase:
-      'Salvato (due fasi: prima le modifiche strutturali, poi tabelle pivot/tabelle/nomi definiti).',
+    appSavedTwoPhase: 'Salvato.',
     appSaveSecondFailed:
       'La struttura è salvata, ma la seconda fase (tabelle pivot/tabelle/nomi definiti) non è riuscita: {reason}',
     appReadyInitial: 'Pronto per un comando IA locale e deterministico.',
@@ -15997,6 +16011,8 @@ export const appStrings = defineStrings({
       "Quell'area è ancora in caricamento streaming — riprova a modificarla tra poco.",
     appFormulaRecordedPartial:
       'Formula registrata — verrà salvata nel file, ma il risultato sullo schermo potrebbe essere incompleto perché questa cartella di lavoro di grandi dimensioni viene caricata parzialmente in streaming.',
+    appFormulaTooExpensive:
+      "Questa formula valuta un intervallo grande elemento per elemento — il calcolo bloccherebbe l'app, quindi è stata annullata. Riduci l'intervallo referenziato e riprova.",
     appPivotSheetNoStructural:
       'Questo foglio contiene una tabella pivot — le modifiche strutturali non sono ancora supportate.',
     appIconSetUnsupported:
@@ -16037,6 +16053,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Annullamento confermato come revisione {revision}.',
     appUndoFailed: 'Impossibile annullare.',
     appAutoFilterCreateFailed: 'Impossibile creare il filtro automatico.',
+    appAutoFilterRemoveFailed: 'Impossibile rimuovere il filtro automatico.',
     appSelectDataRangeFirst: "Seleziona prima l'intervallo di dati.",
     appUnsupportedChartType: 'Tipo di grafico non supportato: {kind}.',
     appChartInsertedDemo:
@@ -16234,8 +16251,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: "Impossibile leggere l'ordine dei fogli — riprova.",
     appSavingEdits: 'Salvataggio di {count} modifica/e…',
     appSaveCanceled: 'Salvataggio annullato.',
-    appSaved:
-      'Salvato: riscritte {touched} voci del pacchetto su {total}, il resto preservato byte per byte.',
+    appSaved: 'Salvato.',
     appSaveFailed: 'Impossibile salvare la cartella di lavoro.',
     appCfRuleUnsaveable:
       'Questa regola di formattazione condizionale non può essere salvata in xlsx — usa un altro tipo di regola.',
@@ -17303,8 +17319,7 @@ export const appStrings = defineStrings({
       'Tabel przestawnych/tabel nie można zapisać razem z nowymi arkuszami i zmianami wierszy/kolumn — najpierw zapisz strukturę, a potem dodaj tabele przestawne/tabele.',
     appSaveSecondCanceled:
       'Druga faza zapisu została anulowana — struktura jest zapisana; tabele przestawne/tabele/zdefiniowane nazwy nie zostały jeszcze zapisane.',
-    appSavedTwoPhase:
-      'Zapisano (dwie fazy: najpierw zmiany strukturalne, potem tabele przestawne/tabele/zdefiniowane nazwy).',
+    appSavedTwoPhase: 'Zapisano.',
     appSaveSecondFailed:
       'Struktura została zapisana, ale druga faza (tabele przestawne/tabele/zdefiniowane nazwy) nie powiodła się: {reason}',
     appReadyInitial: 'Gotowe na lokalne, deterministyczne polecenie AI.',
@@ -17323,6 +17338,8 @@ export const appStrings = defineStrings({
       'Ten obszar jest wciąż ładowany strumieniowo — spróbuj edytować ponownie za chwilę.',
     appFormulaRecordedPartial:
       'Formuła zarejestrowana — zostanie zapisana w pliku, ale wynik na ekranie może być niekompletny, ponieważ ten duży skoroszyt jest ładowany częściowo strumieniowo.',
+    appFormulaTooExpensive:
+      'Ta formuła ocenia duży zakres element po elemencie — obliczenia zawiesiłyby aplikację, więc ją anulowano. Zawęź zakres odwołań i spróbuj ponownie.',
     appPivotSheetNoStructural:
       'Ten arkusz zawiera tabelę przestawną — zmiany strukturalne nie są jeszcze obsługiwane.',
     appIconSetUnsupported:
@@ -17362,6 +17379,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Cofnięcie zatwierdzone jako wersja {revision}.',
     appUndoFailed: 'Nie można cofnąć.',
     appAutoFilterCreateFailed: 'Nie można utworzyć Autofiltru.',
+    appAutoFilterRemoveFailed: 'Nie można usunąć Autofiltru.',
     appSelectDataRangeFirst: 'Najpierw zaznacz zakres danych.',
     appUnsupportedChartType: 'Nieobsługiwany typ wykresu: {kind}.',
     appChartInsertedDemo:
@@ -17558,8 +17576,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Nie można odczytać kolejności arkuszy — spróbuj ponownie.',
     appSavingEdits: 'Zapisywanie {count} zmian(y)…',
     appSaveCanceled: 'Anulowano zapisywanie.',
-    appSaved:
-      'Zapisano: przepisano {touched} z {total} wpisów pakietu, resztę zachowano bajt po bajcie.',
+    appSaved: 'Zapisano.',
     appSaveFailed: 'Nie można zapisać skoroszytu.',
     appCfRuleUnsaveable:
       'Tej reguły formatowania warunkowego nie można zapisać w xlsx — użyj innego typu reguły.',
@@ -18627,8 +18644,7 @@ export const appStrings = defineStrings({
       'Draaitabellen/tabellen kunnen niet samen met nieuwe werkbladen plus rij-/kolomwijzigingen worden opgeslagen — sla eerst de structuur op en voeg daarna de draaitabellen/tabellen toe.',
     appSaveSecondCanceled:
       'De tweede opslagfase is geannuleerd — de structuur is opgeslagen; draaitabellen/tabellen/gedefinieerde namen zijn nog niet geschreven.',
-    appSavedTwoPhase:
-      'Opgeslagen (twee fasen: eerst structuurwijzigingen, daarna draaitabellen/tabellen/gedefinieerde namen).',
+    appSavedTwoPhase: 'Opgeslagen.',
     appSaveSecondFailed:
       'De structuur is opgeslagen, maar de tweede fase (draaitabellen/tabellen/gedefinieerde namen) is mislukt: {reason}',
     appReadyInitial: 'Gereed voor een lokale, deterministische AI-opdracht.',
@@ -18647,6 +18663,8 @@ export const appStrings = defineStrings({
       'Dat gebied wordt nog streamend geladen — probeer het zo opnieuw te bewerken.',
     appFormulaRecordedPartial:
       'Formule vastgelegd — wordt in het bestand opgeslagen, maar het resultaat op het scherm kan onvolledig zijn omdat deze grote werkmap gedeeltelijk streamend wordt geladen.',
+    appFormulaTooExpensive:
+      'Deze formule evalueert een groot bereik per element — de berekening zou de app laten vastlopen, dus is deze geannuleerd. Verklein het bereik en probeer het opnieuw.',
     appPivotSheetNoStructural:
       'Dit werkblad bevat een draaitabel — structuurwijzigingen worden nog niet ondersteund.',
     appIconSetUnsupported:
@@ -18688,6 +18706,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Ongedaan maken doorgevoerd als revisie {revision}.',
     appUndoFailed: 'Kan niet ongedaan maken.',
     appAutoFilterCreateFailed: 'Kan het AutoFilter niet maken.',
+    appAutoFilterRemoveFailed: 'Kan het AutoFilter niet verwijderen.',
     appSelectDataRangeFirst: 'Selecteer eerst het gegevensbereik.',
     appUnsupportedChartType: 'Niet-ondersteund grafiektype: {kind}.',
     appChartInsertedDemo:
@@ -18890,8 +18909,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Kan de werkbladvolgorde niet lezen — probeer het opnieuw.',
     appSavingEdits: '{count} bewerking(en) opslaan…',
     appSaveCanceled: 'Opslaan geannuleerd.',
-    appSaved:
-      'Opgeslagen: {touched} van {total} pakketitems herschreven, de rest byte-voor-byte behouden.',
+    appSaved: 'Opgeslagen.',
     appSaveFailed: 'Kan de werkmap niet opslaan.',
     appCfRuleUnsaveable:
       'Deze regel voor voorwaardelijke opmaak kan niet in xlsx worden opgeslagen — gebruik een ander regeltype.',
@@ -19949,8 +19967,7 @@ export const appStrings = defineStrings({
       'Jadual Pangsi/jadual tidak boleh disimpan bersama helaian baharu serta perubahan baris/lajur — simpan struktur dahulu, kemudian tambah Jadual Pangsi/jadual.',
     appSaveSecondCanceled:
       'Fasa simpanan kedua dibatalkan — struktur telah disimpan; Jadual Pangsi/jadual/nama tertakrif belum ditulis.',
-    appSavedTwoPhase:
-      'Disimpan (dua fasa: perubahan struktur dahulu, kemudian Jadual Pangsi/jadual/nama tertakrif).',
+    appSavedTwoPhase: 'Disimpan.',
     appSaveSecondFailed:
       'Struktur telah disimpan, tetapi fasa kedua (Jadual Pangsi/jadual/nama tertakrif) gagal: {reason}',
     appReadyInitial: 'Sedia untuk perintah AI setempat yang berketentuan.',
@@ -19967,6 +19984,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'Kawasan itu masih dimuatkan secara penstriman — cuba edit lagi sebentar.',
     appFormulaRecordedPartial:
       'Formula direkodkan — ia disimpan ke fail, tetapi hasil pada skrin mungkin tidak lengkap kerana buku kerja besar ini distrim sebahagian.',
+    appFormulaTooExpensive:
+      'Formula ini menilai julat besar bagi setiap elemen — pengiraan akan membekukan aplikasi, jadi ia dibatalkan. Kecilkan julat yang dirujuk dan cuba lagi.',
     appPivotSheetNoStructural:
       'Helaian ini mengandungi Jadual Pangsi — perubahan struktur belum disokong.',
     appIconSetUnsupported: 'Gabungan ikon ini tidak boleh disimpan ke xlsx — pilih set ikon lain.',
@@ -20002,6 +20021,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'Buat asal disahkan sebagai semakan {revision}.',
     appUndoFailed: 'Tidak dapat membuat asal.',
     appAutoFilterCreateFailed: 'Tidak dapat mencipta AutoPenapis.',
+    appAutoFilterRemoveFailed: 'Tidak dapat mengalih keluar AutoPenapis.',
     appSelectDataRangeFirst: 'Pilih julat data dahulu.',
     appUnsupportedChartType: 'Jenis carta tidak disokong: {kind}.',
     appChartInsertedDemo:
@@ -20191,8 +20211,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'Tidak dapat membaca susunan helaian — cuba lagi.',
     appSavingEdits: 'Menyimpan {count} suntingan…',
     appSaveCanceled: 'Penyimpanan dibatalkan.',
-    appSaved:
-      'Disimpan: {touched} daripada {total} entri pakej ditulis semula, selebihnya dikekalkan bait demi bait.',
+    appSaved: 'Disimpan.',
     appSaveFailed: 'Tidak dapat menyimpan buku kerja.',
     appCfRuleUnsaveable:
       'Peraturan pemformatan bersyarat ini tidak boleh disimpan ke xlsx — gunakan jenis peraturan lain.',
@@ -21227,7 +21246,7 @@ export const appStrings = defineStrings({
       'לא ניתן לשמור טבלאות ציר/טבלאות יחד עם גיליונות חדשים ושינויי שורות/עמודות — שמור תחילה את המבנה, ואז הוסף את טבלאות הציר/הטבלאות.',
     appSaveSecondCanceled:
       'שלב השמירה השני בוטל — המבנה נשמר; טבלאות ציר/טבלאות/שמות מוגדרים טרם נכתבו.',
-    appSavedTwoPhase: 'נשמר (שני שלבים: תחילה שינויי מבנה, ואז טבלאות ציר/טבלאות/שמות מוגדרים).',
+    appSavedTwoPhase: 'נשמר.',
     appSaveSecondFailed: 'המבנה נשמר, אך השלב השני (טבלאות ציר/טבלאות/שמות מוגדרים) נכשל: {reason}',
     appReadyInitial: 'מוכן לפקודת AI מקומית ודטרמיניסטית.',
     appAiThinking: 'ה-AI חושב…',
@@ -21242,6 +21261,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: 'אזור זה עדיין נטען בהזרמה — נסה לערוך אותו שוב בעוד רגע.',
     appFormulaRecordedPartial:
       'הנוסחה נרשמה — היא תישמר לקובץ, אך התוצאה על המסך עשויה להיות חלקית מכיוון שחוברת עבודה גדולה זו נטענת בהזרמה חלקית.',
+    appFormulaTooExpensive:
+      'נוסחה זו מחשבת טווח גדול עבור כל רכיב — החישוב היה מקפיא את היישום, ולכן בוטלה. צמצמו את הטווח ונסו שוב.',
     appPivotSheetNoStructural: 'גיליון זה מכיל טבלת ציר — שינויי מבנה אינם נתמכים עדיין.',
     appIconSetUnsupported: 'לא ניתן לשמור שילוב אייקונים זה בקובץ xlsx — בחרו ערכת אייקונים אחרת.',
     appChartCacheEmpty: 'מטמון נתוני התרשים ריק.',
@@ -21275,6 +21296,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'הביטול בוצע כגרסה {revision}.',
     appUndoFailed: 'לא ניתן לבטל.',
     appAutoFilterCreateFailed: 'לא ניתן ליצור את הסינון האוטומטי.',
+    appAutoFilterRemoveFailed: 'לא ניתן להסיר את הסינון האוטומטי.',
     appSelectDataRangeFirst: 'בחר תחילה את טווח הנתונים.',
     appUnsupportedChartType: 'סוג תרשים לא נתמך: {kind}.',
     appChartInsertedDemo:
@@ -21450,7 +21472,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'לא ניתן לקרוא את סדר הגיליונות — נסה שוב.',
     appSavingEdits: 'שומר {count} עריכות…',
     appSaveCanceled: 'השמירה בוטלה.',
-    appSaved: 'נשמר: {touched} מתוך {total} רשומות חבילה נכתבו מחדש, השאר נשמרו בייט אחר בייט.',
+    appSaved: 'נשמר.',
     appSaveFailed: 'לא ניתן לשמור את חוברת העבודה.',
     appCfRuleUnsaveable: 'לא ניתן לשמור כלל עיצוב מותנה זה בקובץ xlsx — השתמשו בסוג כלל אחר.',
     appSaveErrX14Dv:
@@ -22489,8 +22511,7 @@ export const appStrings = defineStrings({
       'पिवट टेबल/तालिकाएँ नई शीट और पंक्ति/स्तंभ परिवर्तनों के साथ एक बार में सहेजी नहीं जा सकतीं — पहले संरचना सहेजें, फिर पिवट टेबल/तालिकाएँ जोड़ें।',
     appSaveSecondCanceled:
       'दूसरा सहेजन चरण रद्द किया गया — संरचना सहेजी गई; पिवट टेबल/तालिकाएँ/परिभाषित नाम अभी नहीं लिखे गए।',
-    appSavedTwoPhase:
-      'सहेजा गया (दो चरण: पहले संरचनात्मक परिवर्तन, फिर पिवट टेबल/तालिकाएँ/परिभाषित नाम)।',
+    appSavedTwoPhase: 'सहेजा गया।',
     appSaveSecondFailed:
       'संरचना सहेजी गई, लेकिन दूसरा चरण (पिवट टेबल/तालिकाएँ/परिभाषित नाम) विफल रहा: {reason}',
     appReadyInitial: 'स्थानीय, नियतात्मक AI कमांड के लिए तैयार।',
@@ -22508,6 +22529,8 @@ export const appStrings = defineStrings({
       'वह क्षेत्र अभी स्ट्रीम होकर लोड हो रहा है — थोड़ी देर बाद फिर से संपादित करने का प्रयास करें।',
     appFormulaRecordedPartial:
       'सूत्र दर्ज किया गया — यह फ़ाइल में सहेजा जाएगा, लेकिन स्क्रीन पर परिणाम अधूरा हो सकता है क्योंकि यह बड़ी कार्यपुस्तिका आंशिक रूप से स्ट्रीम होती है।',
+    appFormulaTooExpensive:
+      'यह सूत्र बड़ी रेंज का प्रति-तत्व मूल्यांकन करता है — गणना से ऐप फ़्रीज़ हो जाता, इसलिए इसे रद्द किया गया। संदर्भित रेंज छोटी करके पुनः प्रयास करें।',
     appPivotSheetNoStructural:
       'इस शीट में पिवट टेबल है — संरचनात्मक परिवर्तन अभी समर्थित नहीं हैं।',
     appIconSetUnsupported:
@@ -22546,6 +22569,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: 'पूर्ववत करना संशोधन {revision} के रूप में प्रतिबद्ध हुआ।',
     appUndoFailed: 'पूर्ववत नहीं किया जा सका।',
     appAutoFilterCreateFailed: 'ऑटोफ़िल्टर नहीं बनाया जा सका।',
+    appAutoFilterRemoveFailed: 'ऑटोफ़िल्टर हटाया नहीं जा सका।',
     appSelectDataRangeFirst: 'पहले डेटा श्रेणी चुनें।',
     appUnsupportedChartType: 'असमर्थित चार्ट प्रकार: {kind}।',
     appChartInsertedDemo:
@@ -22733,8 +22757,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: 'शीट क्रम पढ़ा नहीं जा सका — फिर प्रयास करें।',
     appSavingEdits: '{count} संपादन सहेजे जा रहे हैं…',
     appSaveCanceled: 'सहेजना रद्द किया गया।',
-    appSaved:
-      'सहेजा गया: {total} पैकेज प्रविष्टियों में से {touched} फिर से लिखी गईं, शेष बाइट-दर-बाइट संरक्षित।',
+    appSaved: 'सहेजा गया।',
     appSaveFailed: 'कार्यपुस्तिका सहेजी नहीं जा सकी।',
     appCfRuleUnsaveable:
       'यह सशर्त स्वरूपण नियम xlsx में सहेजा नहीं जा सकता — कृपया दूसरा नियम प्रकार चुनें।',
@@ -23753,7 +23776,7 @@ export const appStrings = defineStrings({
     appSaveHeldStranded:
       '樞紐分析表/表格與新增工作表 + 列欄變更沒辦法一次儲存——先儲存一次結構，再新增樞紐分析表/表格。',
     appSaveSecondCanceled: '第二段儲存被取消——結構已儲存，樞紐分析表/表格/已定義名稱尚未寫入。',
-    appSavedTwoPhase: '已儲存（分兩段：先結構變更，再樞紐分析表/表格/已定義名稱）。',
+    appSavedTwoPhase: '已儲存。',
     appSaveSecondFailed: '結構已儲存，但第二段（樞紐分析表/表格/已定義名稱）失敗：{reason}',
     appReadyInitial: '就緒——可使用本機確定性 AI 命令。',
     appAiThinking: 'AI 思考中…',
@@ -23767,6 +23790,8 @@ export const appStrings = defineStrings({
     appAreaStreaming: '該範圍還在串流載入——請稍後再試。',
     appFormulaRecordedPartial:
       '公式已記錄——會儲存進檔案，但這個大活頁簿是部分串流載入的，畫面上的結果可能不完整。',
+    appFormulaTooExpensive:
+      '該公式要對大範圍做逐元素統計，計算量過大會導致介面卡死——已取消。請縮小引用範圍後重試。',
     appPivotSheetNoStructural: '該工作表含樞紐分析表——暫不支援結構變更。',
     appIconSetUnsupported: '該圖示組合無法儲存為 xlsx 檔案，請改用其他圖示集。',
     appChartCacheEmpty: '圖表資料快取為空。',
@@ -23796,6 +23821,7 @@ export const appStrings = defineStrings({
     appUndoCommitted: '復原已提交（第 {revision} 版）。',
     appUndoFailed: '無法復原。',
     appAutoFilterCreateFailed: '無法建立自動篩選。',
+    appAutoFilterRemoveFailed: '無法移除自動篩選。',
     appSelectDataRangeFirst: '請先選取資料範圍。',
     appUnsupportedChartType: '不支援的圖表類型：{kind}。',
     appChartInsertedDemo:
@@ -23968,7 +23994,7 @@ export const appStrings = defineStrings({
     appSheetOrderReadFailed: '無法讀取工作表順序——請重試。',
     appSavingEdits: '正在儲存 {count} 處編輯…',
     appSaveCanceled: '儲存已取消。',
-    appSaved: '已儲存：重寫了 {total} 個封裝項目中的 {touched} 個，其餘逐位元組保留。',
+    appSaved: '已儲存。',
     appSaveFailed: '無法儲存活頁簿。',
     appCfRuleUnsaveable: '這種設定格式化的條件規則無法儲存到 xlsx——請改用其他規則類型。',
     appSaveErrX14Dv: '這個工作表帶有擴充(x14)資料驗證，暫不支援編輯它的驗證規則。',

@@ -524,9 +524,15 @@ interface ReviewTabProps extends TabProps {
   onAcceptRevision: (all: boolean) => void
   onRejectRevision: (all: boolean) => void
   onGotoRevision: (dir: 1 | -1) => void
-  /** Restrict Editing (read-only) is enforced */
+  /** an editing restriction or write lock makes the body read-only */
   isProtected: boolean
-  onToggleProtection: () => void
+  /** comments restriction: adding comments stays allowed although the body is read-only */
+  commentsAllowed: boolean
+  /** trackedChanges restriction: the recorder is forced on (toggle and accept/reject disabled) */
+  trackChangesForced: boolean
+  /** any protection is configured (highlights the Protect Document button) */
+  protectActive: boolean
+  onProtectDoc: () => void
   onCompare: () => void
 }
 
@@ -548,7 +554,10 @@ export function ReviewTab({
   onRejectRevision,
   onGotoRevision,
   isProtected,
-  onToggleProtection,
+  commentsAllowed,
+  trackChangesForced,
+  protectActive,
+  onProtectDoc,
   onCompare,
 }: ReviewTabProps) {
   const { t } = useI18n()
@@ -632,7 +641,7 @@ export function ReviewTab({
         <div className="ribbon-group-items">
           <button
             className="rb-big"
-            disabled={!hasDoc || !canComment || isProtected}
+            disabled={!hasDoc || !canComment || (isProtected && !commentsAllowed)}
             data-tip={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
             onClick={onNewComment}
           >
@@ -662,7 +671,7 @@ export function ReviewTab({
         <div className="ribbon-group-items">
           <button
             className={`rb-big ${trackChanges ? 'active' : ''}`}
-            disabled={!hasDoc || isProtected}
+            disabled={!hasDoc || isProtected || trackChangesForced}
             data-tip={t('ribbonTrackChangesTip')}
             onClick={() => onTrackChanges(!trackChanges)}
           >
@@ -710,7 +719,7 @@ export function ReviewTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || revisionCount === 0 || isProtected}
+              disabled={!hasDoc || revisionCount === 0 || isProtected || trackChangesForced}
               data-tip={t('ribbonAcceptTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'acceptRev')}
             >
@@ -744,7 +753,7 @@ export function ReviewTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || revisionCount === 0 || isProtected}
+              disabled={!hasDoc || revisionCount === 0 || isProtected || trackChangesForced}
               data-tip={t('ribbonRejectTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'rejectRev')}
             >
@@ -825,15 +834,15 @@ export function ReviewTab({
       <div className="ribbon-group">
         <div className="ribbon-group-items">
           <button
-            className={`rb-big ${isProtected ? 'active' : ''}`}
+            className={`rb-big ${protectActive ? 'active' : ''}`}
             disabled={!hasDoc}
-            data-tip={isProtected ? t('ribbonStopProtectionTip') : t('ribbonRestrictEditingTip')}
-            onClick={onToggleProtection}
+            title={t('ribbonProtectDocTip')}
+            onClick={onProtectDoc}
           >
             <span className="rb-big-icon">
               <IconLock size={BIG} />
             </span>
-            <span>{t('ribbonRestrictEditing')}</span>
+            <span>{t('ribbonProtectDoc')}</span>
           </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupProtect')}</div>

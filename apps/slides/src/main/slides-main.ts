@@ -127,6 +127,7 @@ import {
   updateConnectorsForMoved,
   setElementImageFill,
   setElementTextAnchor,
+  setShapePresetGeometry,
   setTableRowHeight,
   resizeTable,
   setTableCellAnchor,
@@ -182,6 +183,7 @@ import type {
   DeleteElementOp,
   EditBackgroundOp,
   EditFillOp,
+  EditFillImageOp,
   EditStrokeOp,
   FlipElementOp,
   EditPictureSrcRectOp,
@@ -1902,15 +1904,19 @@ export function registerSlidesIpc(): void {
     return buildAllRenderSlides(session.opened, op.fitWidthPx)
   })
 
-  ipcMain.handle(
-    'slides:edit-image-fill',
-    async (e, op: { slideIndex: number; sourceId: string }) => {
-      const session = sessions.get(e.sender.id)
-      if (!session) return null
-      const slide = session.opened.deck.slides[op.slideIndex]
-      if (!slide) return null
-      const parent = dialogParent()
-      const options = {
+  ipcMain.handle('slides:edit-image-fill', async (e, op: EditFillImageOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session) return null
+    const slide = session.opened.deck.slides[op.slideIndex]
+    if (!slide || op.targets.length === 0) return null
+    let bytes: Uint8Array
+    let ext: string
+    if (op.source) {
+      // bundled texture preset: bytes shipped inline, no picker
+      bytes = new Uint8Array(Buffer.from(op.source.base64, 'base64'))
+      ext = op.source.ext.toLowerCase()
+    } else {
+      const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
         title: tm('dlgInsertImage'),
         properties: ['openFile' as const],
         filters: [
@@ -1919,19 +1925,30 @@ export function registerSlidesIpc(): void {
             extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff'],
           },
         ],
-      }
-      const r = await showOpenDialogWithMemory(dialog, parent, options)
+      })
       if (r.canceled || !r.filePaths[0]) return null
-      const bytes = await readFile(r.filePaths[0])
-      const ext = r.filePaths[0].split('.').pop()!.toLowerCase()
-      pushHistory(session)
-      if (!setElementImageFill(session.opened, slide, op.sourceId, bytes, ext)) {
-        session.undoStack.pop()
-        return null
-      }
-      return rebuildSlide(session, op.slideIndex)
-    },
-  )
+      bytes = new Uint8Array(await readFile(r.filePaths[0]))
+      ext = r.filePaths[0].split('.').pop()!.toLowerCase()
+    }
+    pushHistory(session)
+    // The picked bytes land as one media part; further targets only add rels to it
+    let landed: string | null = null
+    for (const target of op.targets) {
+      const used = setElementImageFill(
+        session.opened,
+        slide,
+        target.sourceId,
+        landed ? { mediaPath: landed } : { bytes, ext },
+        { tile: op.mode === 'tile', ...(target.groupId ? { groupId: target.groupId } : {}) },
+      )
+      if (used) landed = used
+    }
+    if (!landed) {
+      session.undoStack.pop()
+      return null
+    }
+    return rebuildSlide(session, op.slideIndex)
+  })
 
   ipcMain.handle('slides:insert-image', async (e, slideIndex: number, fitWidthPx: number) => {
     const session = sessions.get(e.sender.id)
@@ -2666,6 +2683,22 @@ export function registerSlidesIpc(): void {
     }
     return rebuildSlide(session, op.slideIndex)
   })
+
+  ipcMain.handle(
+    'slides:change-shape',
+    (e, op: { slideIndex: number; sourceId: string; prst: string }) => {
+      const session = sessions.get(e.sender.id)
+      if (!session) return null
+      const slide = session.opened.deck.slides[op.slideIndex]
+      if (!slide) return null
+      pushHistory(session)
+      if (!setShapePresetGeometry(slide, op.sourceId, op.prst)) {
+        session.undoStack.pop()
+        return null
+      }
+      return rebuildSlide(session, op.slideIndex)
+    },
+  )
 
   ipcMain.handle(
     'slides:set-text-anchor',

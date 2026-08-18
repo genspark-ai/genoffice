@@ -17,6 +17,7 @@ import {
   liveSections,
   measureBlocks,
   pageNumbers,
+  sectionBidi,
   sectionColGeom,
   sectionFirstPages,
   sectionGeoms,
@@ -141,6 +142,7 @@ export function PaginationPreview({
   sections,
   hfParts,
   colFlow,
+  colMode,
   zoom,
   hf,
   watermark,
@@ -161,6 +163,8 @@ export function PaginationPreview({
   hfParts: Record<string, HfPartInfo>
   /** Canvas column-flow geometry (non-null when the canvas column CSS is active): shared by the measuring state / clone wrap width */
   colFlow: { cols: number; colWidthPx: number; gapPx: number } | null
+  /** canvas column mode: 'uniform' = whole-page CSS multicol, 'mixed' = per-block layout decorations */
+  colMode: 'none' | 'uniform' | 'mixed'
   zoom: number
   hf: HfSet
   watermark: string | null
@@ -213,12 +217,13 @@ export function PaginationPreview({
     if (!pm) return
     clearPageGaps?.()
     const factor = zoom / 100
-    // switch the columned canvas to the single-flow measuring state (CSS columns off, width = column width), matching engine column-flow coordinates
-    if (colFlow) pm.classList.add('measuring-columns')
+    // switch the columned canvas to the single-flow measuring state (uniform: CSS columns
+    // off, width = column width; mixed: block translates off), matching engine column-flow coordinates
+    if (colMode !== 'none') pm.classList.add('measuring-columns')
     try {
       const origin = pm.getBoundingClientRect().top + canvasMTop * factor
-      const { blocks, totalHeight, floats } = measureBlocks(pm, origin, factor)
-      const live = liveSections(sections, blocks)
+      const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(pm, origin, factor)
+      const live = liveSections(sections, blocks, sectBreaks)
       setSecs(live)
       if (live.length > 0) assignSections(blocks, live)
       const withEndnotes = appendEndnotesBlock(
@@ -264,8 +269,8 @@ export function PaginationPreview({
           }
         })
         const geoms = sectionGeoms(live, hfHs)
-        // when the canvas column CSS is inactive, measure as full-width single flow; the geometry drops column flow to match
-        if (!colFlow) for (const g of geoms) if (g.cols) g.cols = undefined
+        // when the canvas column layout is inactive, measure as full-width single flow; the geometry drops column flow to match
+        if (colMode === 'none') for (const g of geoms) if (g.cols) g.cols = undefined
         computed = sliceWithLineSplit(blocks, geoms, flowH, factor, blockMetaOf)
       } else {
         const contentH =
@@ -324,7 +329,7 @@ export function PaginationPreview({
         setHtml(Array.from(pm.children, (c) => cloneBlockHtml(c as HTMLElement)).join(''))
       }
     } finally {
-      if (colFlow) pm.classList.remove('measuring-columns')
+      if (colMode !== 'none') pm.classList.remove('measuring-columns')
     }
     // snapshot: measure once on open; deps intentionally empty
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -564,17 +569,32 @@ export function PaginationPreview({
                       ? slice.regions![ri + 1].top - region.top
                       : undefined
                   const multi = rg.cols > 1
+                  const rtl = multi && rSec != null && sectionBidi(rSec)
+                  const geo = rg as Partial<{ widths: number[]; gaps: number[] }> & typeof rg
+                  // per-column width/gap (w:equalWidth="0" lists differ per column);
+                  // gaps ride the columns as margins so unequal spaces work too
+                  const widthOf = (ci: number) =>
+                    multi ? (geo.widths?.[ci] ?? rg.colWidthPx) : undefined
+                  const gapAfter = (ci: number) =>
+                    multi && ci < region.columns.length - 1 ? (geo.gaps?.[ci] ?? rg.gapPx) : 0
                   return (
                     <div
                       key={ri}
                       className="pv-region"
-                      style={{ gap: rg.gapPx, ...(extent !== undefined ? { height: extent } : {}) }}
+                      style={{
+                        ...(extent !== undefined ? { height: extent } : {}),
+                        // RTL section (w:bidi): columns fill right-to-left
+                        ...(rtl ? { flexDirection: 'row-reverse' as const } : {}),
+                      }}
                     >
                       {region.columns.map((col, ci) => (
                         <div
                           key={ci}
                           className="pv-col"
-                          style={{ width: multi ? rg.colWidthPx : undefined }}
+                          style={{
+                            width: widthOf(ci),
+                            ...(rtl ? { marginLeft: gapAfter(ci) } : { marginRight: gapAfter(ci) }),
+                          }}
                         >
                           {col.repeatHeader && (
                             <div className="pv-clip" style={{ height: col.repeatHeader.height }}>

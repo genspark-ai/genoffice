@@ -68,6 +68,7 @@ import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
 import { paraBorderCss } from './hf-dom'
 import { PaginationGapsExtension } from './pagination-gaps'
+import { ColumnLayoutExtension } from './column-layout'
 import { TableHandle } from './table-handle'
 import { TrackChangesExtension } from './revisions'
 import { inlineToRuns, runsToInline, textboxParaSignature, type PmNode as PmJson } from './convert'
@@ -118,6 +119,7 @@ import {
   SdtExtension,
   SearchHighlightExtension,
   TabStopExtension,
+  WsRunLineHeightExtension,
 } from './decoration-extensions'
 import { AutoDirectionExtension } from './direction'
 export * from './marks'
@@ -654,13 +656,23 @@ export const DocHardBreak = Node.create({
     return {
       // in-paragraph page break (w:br w:type="page"): the pagination engine breaks after the containing block
       pageBreak: { default: false },
+      // column break (w:br w:type="column"): next column, or next page in a single-column section
+      colBreak: { default: false },
     }
   },
   parseHTML() {
-    return [{ tag: 'br.doc-page-br', attrs: { pageBreak: true } }, { tag: 'br' }]
+    return [
+      { tag: 'br.doc-page-br', attrs: { pageBreak: true } },
+      { tag: 'br.doc-col-br', attrs: { colBreak: true } },
+      { tag: 'br' },
+    ]
   },
   renderHTML({ node }) {
-    return node.attrs.pageBreak ? ['br', { class: 'doc-page-br' }] : ['br']
+    return node.attrs.pageBreak
+      ? ['br', { class: 'doc-page-br' }]
+      : node.attrs.colBreak
+        ? ['br', { class: 'doc-col-br' }]
+        : ['br']
   },
   addKeyboardShortcuts() {
     return {
@@ -1341,6 +1353,7 @@ export const DocTable = Node.create({
       cellMar: { default: null as Record<string, number> | null },
       borders: { default: null as Record<string, unknown> | null },
       tblAlign: { default: null as string | null },
+      tblFloat: { default: null as string | null },
       indentTwips: { default: null as number | null },
       tblStyleId: { default: null as string | null },
       /** SDT shell JSON when the table is a content-control member (chrome hit-testing) */
@@ -1359,6 +1372,8 @@ export const DocTable = Node.create({
     const attrs: Record<string, string> = { class: 'doc-table' }
     if (node.attrs.docxIndex !== null) attrs['data-idx'] = String(node.attrs.docxIndex)
     if (node.attrs.tblStyleId) attrs['data-tbl-style'] = String(node.attrs.tblStyleId)
+    const tblFloated = node.attrs.tblFloat === 'left' || node.attrs.tblFloat === 'right'
+    if (tblFloated) attrs.class += ` doc-table-float-${node.attrs.tblFloat}`
     if (node.attrs.bidiVisual) attrs.dir = 'rtl'
     const styles: string[] = []
     let centerMargin: string | null = null
@@ -1371,13 +1386,14 @@ export const DocTable = Node.create({
     // left-aligned ones spill right; indent comes out of the spill allowance
     else if (node.attrs.widthPx) {
       const widthPx = Number(node.attrs.widthPx)
-      if (node.attrs.tblAlign === 'center') {
+      if (node.attrs.tblAlign === 'center' && !tblFloated) {
         const paper =
           'calc(100% + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
         styles.push(`width:min(${widthPx}px,${paper})`)
         centerMargin = `margin-left:calc((100% - min(${widthPx}px,${paper}))/2)`
       } else {
-        const indented = node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips) > 0
+        const indented =
+          !tblFloated && node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips) > 0
         const indentPx = indented ? Number(node.attrs.indentTwips) / 15 : 0
         const spill = indentPx
           ? `calc(100% + var(--doc-margin-right,0px) - ${indentPx.toFixed(1)}px)`
@@ -1388,7 +1404,11 @@ export const DocTable = Node.create({
     const pad = cellPadCss(node.attrs.cellMar as Record<string, number> | null)
     if (pad) styles.push(`--doc-cell-pad:${pad}`)
     styles.push(...tableBordersCss(node.attrs.borders as TableBordersAttr | null))
-    if (node.attrs.tblAlign === 'center') {
+    // w:tblpPr positioning supersedes w:jc / w:tblInd: alignment or indent
+    // margins would override the float stylesheet's wrap gaps
+    if (tblFloated) {
+      // no alignment/indent margins
+    } else if (node.attrs.tblAlign === 'center') {
       if (centerMargin) styles.push(centerMargin)
       else styles.push('margin-left:auto', 'margin-right:auto')
     } else if (node.attrs.tblAlign === 'right') styles.push('margin-left:auto')
@@ -2106,23 +2126,31 @@ function protectedDomSpec(node: PmNode): DomSpec {
       attrs['style'] = `text-align:${imageAlign}`
     }
     if (imageWrap) attrs.class += ` img-wrap-${String(imageWrap)}`
-    // no-wrap / behind-text floats: approximate the anchor position — margin
-    // alignment via text-align, numeric posOffset via a transform on the INNER
-    // wrap (the outer block's rect feeds pagination measurement, which must
-    // stay at the flow position; transforms leak into getBoundingClientRect)
+    // no-wrap / behind-text anchors leave the flow like floating textboxes:
+    // zero-height wrapper (doc-img-float), absolutely positioned inner wrap
+    // (Word overlays them on the text instead of reserving a line)
     let imgWrapTransform = ''
+    let imgFloatPos = ''
     if (imageWrap === 'front' || imageWrap === 'behind') {
+      attrs.class += ' doc-img-float'
       const posH = node.attrs.imagePosH
-      if ((posH === 'center' || posH === 'right') && !attrs['style']) {
-        attrs['style'] = `text-align:${String(posH)}`
-      }
       const tx =
         node.attrs.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) / EMU_PER_PX : 0
       const ty =
         node.attrs.imageOffsetYEmu != null ? Number(node.attrs.imageOffsetYEmu) / EMU_PER_PX : 0
-      if (tx !== 0 || ty !== 0) {
-        imgWrapTransform = `transform:translate(${tx.toFixed(1)}px,${ty.toFixed(1)}px)`
+      if (posH === 'center') {
+        imgFloatPos = `left:50%;top:${ty.toFixed(1)}px`
+        imgWrapTransform = 'transform:translateX(-50%)'
+      } else if (posH === 'right') {
+        imgFloatPos = `right:0;top:${ty.toFixed(1)}px`
+      } else {
+        imgFloatPos = `left:${tx.toFixed(1)}px;top:${ty.toFixed(1)}px`
       }
+    } else if (imageWrap && node.attrs.imageOffsetYEmu != null) {
+      // wrapped floats keep their flow slot, but a negative vertical anchor
+      // offset lifts the image (Word: logo above its anchor line must not push)
+      const ty = Number(node.attrs.imageOffsetYEmu) / EMU_PER_PX
+      if (ty < 0) imgWrapTransform = `margin-top:${ty.toFixed(1)}px`
     }
     const imgAttrs: Record<string, string> = {
       src: String(imageDataUrl),
@@ -2170,7 +2198,9 @@ function protectedDomSpec(node: PmNode): DomSpec {
         `width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;max-width:none`
       // rot/flip turn the whole crop window, not the source inside it
       const wrapXf = [
-        ...(imgWrapTransform ? [imgWrapTransform.slice('transform:'.length)] : []),
+        ...(imgWrapTransform.startsWith('transform:')
+          ? [imgWrapTransform.slice('transform:'.length)]
+          : []),
         ...xf,
       ]
       return [
@@ -2181,7 +2211,7 @@ function protectedDomSpec(node: PmNode): DomSpec {
           'span',
           {
             class: 'doc-img-wrap doc-img-crop',
-            style: `position:relative;display:inline-block;overflow:hidden;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}`,
+            style: `position:${imgFloatPos ? `absolute;${imgFloatPos}` : 'relative'};display:inline-block;overflow:hidden;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}${imgWrapTransform && !imgWrapTransform.startsWith('transform:') ? `;${imgWrapTransform}` : ''}`,
           },
           ['img', imgAttrs],
           ['span', { class: 'img-resize-handle' }],
@@ -2200,7 +2230,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
         'span',
         {
           class: 'doc-img-wrap',
-          ...(imgWrapTransform ? { style: `display:inline-block;${imgWrapTransform}` } : {}),
+          ...(imgFloatPos || imgWrapTransform
+            ? {
+                style: `${imgFloatPos ? `position:absolute;${imgFloatPos};` : ''}display:inline-block${imgWrapTransform ? `;${imgWrapTransform}` : ''}`,
+              }
+            : {}),
         },
         ['img', imgAttrs],
         ['span', { class: 'img-resize-handle' }],
@@ -3270,7 +3304,9 @@ export const editorExtensions = [
   LineFactorExtension,
   ListNumberingExtension,
   PaginationGapsExtension,
+  ColumnLayoutExtension,
   TabStopExtension,
+  WsRunLineHeightExtension,
   DropCapExtension,
   ParaBorderMergeExtension,
   SdtExtension,

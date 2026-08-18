@@ -71,7 +71,7 @@ describe('symbol runs in document.xml', () => {
     const bytes = await buildDocx({
       bodyXml:
         '<w:p><w:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr><w:t>&#xF0B7;</w:t></w:r>' +
-        '<w:r><w:t> 后文</w:t></w:r></w:p>',
+        '<w:r><w:t xml:space="preserve"> 后文</w:t></w:r></w:p>',
     })
     const doc = await parseDocx(bytes)
     const run = doc.blocks[0].runs![0]

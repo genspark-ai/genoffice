@@ -24,6 +24,8 @@ export interface DocState {
   hash: string
   /** created from the built-in blank template (its numbering ids are known) */
   isBlank?: boolean
+  /** open password is set (file encrypts on save); toggled via Review > Protect */
+  encrypted?: boolean
 }
 
 /** Pending numbering definitions to append (saved via SaveOptions.numbering) */

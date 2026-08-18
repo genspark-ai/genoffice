@@ -82,6 +82,12 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # PR-time mirror of the sync script's English-only guard: Chinese in
+      # code comments or docs would abort the next public-repo sync, so fail
+      # the PR that introduces it instead.
+      - name: Check comments/docs are English-only
+        run: npm run check:english-comments
+
       - name: Lint
         run: npm run lint
 

@@ -75,6 +75,31 @@ describe('docx export', () => {
     expect(table?.table?.rows[1]?.[1]?.paras.join('')).toBe('1')
   })
 
+  it('block math becomes a native OMML equation', async () => {
+    const editor = createEditor('$$\n\\frac{a}{b}\n$$')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    const xml = mapping.blocks.find((b) => b.kind === 'xml')
+    expect(xml && 'xml' in xml && xml.xml).toContain('<m:oMath>')
+  })
+
+  it('block math outside the OMML subset keeps its LaTeX source visible', async () => {
+    const editor = createEditor('$$\n\\notacommand{x}\n$$')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    const texts = mapping.blocks.map((b) =>
+      b.kind === 'generated' ? (b.block.runs ?? []).map((r) => r.text).join('') : '',
+    )
+    expect(texts.join('\n')).toContain('$$\\notacommand{x}$$')
+  })
+
+  it('inline math keeps its LaTeX in the run text', async () => {
+    const editor = createEditor('value $x_{1}$ end')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    const texts = mapping.blocks.map((b) =>
+      b.kind === 'generated' ? (b.block.runs ?? []).map((r) => r.text).join('') : '',
+    )
+    expect(texts.join('\n')).toContain('$x_{1}$')
+  })
+
   it('task lists render checkbox glyphs', async () => {
     const parsed = await exportAndParse('- [x] done\n- [ ] open')
     const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))

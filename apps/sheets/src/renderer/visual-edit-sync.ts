@@ -15,12 +15,7 @@ import {
 } from '../domain/chart-visual'
 import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
 import type { WorkbookVisualObject } from '../shared/desktop-api'
-import {
-  recordChartEdit,
-  recordVisualEdit,
-  removeVisualAdd,
-  updateVisualAdd,
-} from './edit-journal'
+import { recordChartEdit, recordVisualEdit, removeVisualAdd, updateVisualAdd } from './edit-journal'
 import { t } from './i18n/locale'
 import {
   captureVisualJournal,
@@ -350,7 +345,15 @@ export function applyShapeEdit(
   if (!runtime) return
   if (!state) {
     const applied = applyDemoVisualChange(ctx, visualId, (before) =>
-      changes.remove ? null : { ...before, ...(changes.anchor ? { anchor: changes.anchor } : {}) },
+      changes.remove
+        ? null
+        : {
+            ...before,
+            ...(changes.anchor ? { anchor: changes.anchor } : {}),
+            ...(changes.frameSize
+              ? { frameWidth: changes.frameSize.width, frameHeight: changes.frameSize.height }
+              : {}),
+          },
     )
     if (changes.remove) clearVisualSelection(visualId)
     ctx.setMessage(
@@ -385,7 +388,13 @@ export function applyShapeEdit(
       ctx.setMessage(t('appFileVisualMoveDeleteOnly'))
       return
     }
-    if (!visual || !recordVisualEdit(state.editJournal, visual, { anchor: changes.anchor })) {
+    if (
+      !visual ||
+      !recordVisualEdit(state.editJournal, visual, {
+        anchor: changes.anchor,
+        ...(changes.frameSize ? { frameSize: changes.frameSize } : {}),
+      })
+    ) {
       ctx.setMessage(t('appVisualNoMove'))
       return
     }

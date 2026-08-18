@@ -16,6 +16,7 @@ import type {
   WorkbookStyleEdit,
   WorkbookVisualEdit,
 } from '../shared/desktop-api'
+import { withFutureFunctionMarkers } from './future-functions'
 import { applyChartEdit } from './xlsx-chart'
 import { applyVisualEdits } from './xlsx-drawing-edit'
 import {
@@ -811,37 +812,33 @@ export async function planCellEditsToXlsx(
     stylesheet = new StylesheetEditor(await pkg.readText(stylesPath))
   }
   for (const [sheetName, sheetEdits] of editsBySheet) {
-    let worksheetXml = worksheetXmls.get(sheetName) ?? ''
-    for (const edit of sheetEdits) {
-      const address = toA1Address(edit.row, edit.column)
-      let styleOverride: number | undefined
-      if (edit.styleReset) {
-        styleOverride = edit.style && stylesheet ? stylesheet.resolveStyle(0, edit.style) : 0
-      } else if (edit.style && stylesheet) {
-        const baseIndex = readCellStyleIndex(worksheetXml, address) ?? 0
-        styleOverride = stylesheet.resolveStyle(baseIndex, edit.style)
-      }
-      worksheetXml = edit.writeValue
-        ? patchCellKeepingStyle(worksheetXml, address, edit.cell, styleOverride, edit.rich)
-        : patchCellStyleOnly(worksheetXml, address, styleOverride)
-    }
-    worksheetXmls.set(sheetName, expandWorksheetDimensionToCells(worksheetXml))
+    const worksheetXml = worksheetXmls.get(sheetName) ?? ''
+    const edited = transformWorksheetCells(
+      worksheetXml,
+      groupEditsByCell(sheetEdits),
+      (cellXml, rowNumber, column, item) =>
+        applyCellEdits(cellXml, rowNumber, column, item, stylesheet),
+      true,
+    )
+    worksheetXmls.set(sheetName, expandWorksheetDimensionToCells(edited))
   }
   // Recalculated formula results: refresh each formula cell's cached
   // <v> while leaving its <f> alone. Applied after the value edits so a cell the
   // user turned into a literal keeps that literal.
   for (const sheet of formulaValues) {
     if (sheet.cells.length === 0) continue
-    let worksheetXml = worksheetXmls.get(sheet.sheetName)
+    const worksheetXml = worksheetXmls.get(sheet.sheetName)
     if (worksheetXml === undefined) continue
-    for (const cell of sheet.cells) {
-      worksheetXml = patchFormulaCachedValue(
+    worksheetXmls.set(
+      sheet.sheetName,
+      transformWorksheetCells(
         worksheetXml,
-        toA1Address(cell.row, cell.column),
-        cell.value,
-      )
-    }
-    worksheetXmls.set(sheet.sheetName, worksheetXml)
+        groupFormulaValuesByCell(sheet.cells),
+        (cellXml, rowNumber, column, value) =>
+          patchFormulaCachedValue(cellXml, toA1Address(rowNumber - 1, column), value),
+        false,
+      ),
+    )
   }
   // Hyperlink edits carry final coordinates, so they apply after the
   // structural replay; the rels sibling is created or rewritten alongside.
@@ -1779,6 +1776,263 @@ function patchFormulaCachedValue(
   return worksheetXml.replace(cellPattern, () => replacement)
 }
 
+/// Row number (1-based, as in <row r=…>) → column (0-based) → the pending
+/// item for that cell (edits, a cached formula value, …). One applier
+/// function per sheet consumes the items — deliberately not a closure per
+/// cell, which at millions of edits costs more memory than the edits
+/// themselves. '' in = the cell does not exist; '' out = the cell is removed
+/// (or stays absent).
+type SheetCellItems<T> = Map<number, Map<number, T>>
+type CellItemApply<T> = (cellXml: string, rowNumber: number, column: number, item: T) => string
+
+/// One journaled edit applied to a single cell's XML — the same
+/// patchCellKeepingStyle / patchCellStyleOnly semantics the save path always
+/// had, minus the whole-worksheet rescan per edit.
+function applyEditToCellXml(
+  cellXml: string,
+  address: string,
+  edit: CellEdit,
+  stylesheet: StylesheetEditor | null,
+): string {
+  let styleOverride: number | undefined
+  if (edit.styleReset) {
+    styleOverride = edit.style && stylesheet ? stylesheet.resolveStyle(0, edit.style) : 0
+  } else if (edit.style && stylesheet) {
+    const baseIndex = (cellXml === '' ? undefined : readCellStyleIndex(cellXml, address)) ?? 0
+    styleOverride = stylesheet.resolveStyle(baseIndex, edit.style)
+  }
+  if (edit.writeValue) {
+    if (cellXml !== '') {
+      return patchCellKeepingStyle(cellXml, address, edit.cell, styleOverride, edit.rich)
+    }
+    const styleIndex = styleOverride === undefined ? undefined : String(styleOverride)
+    return serializeStyledCell(address, edit.cell, styleIndex, edit.rich)
+  }
+  if (styleOverride === undefined) return cellXml
+  if (cellXml === '') return `<c r="${address}" s="${styleOverride}"/>`
+  return patchCellStyleOnly(cellXml, address, styleOverride)
+}
+
+/// Multiple edits can target one cell; they apply in journal order. The
+/// single-edit case (nearly all cells in a bulk save) stays a bare CellEdit
+/// so millions of cells do not each allocate a one-element array.
+function groupEditsByCell(sheetEdits: readonly CellEdit[]): SheetCellItems<CellEdit | CellEdit[]> {
+  const editsByCell: SheetCellItems<CellEdit | CellEdit[]> = new Map()
+  for (const edit of sheetEdits) {
+    const rowNumber = edit.row + 1
+    let columns = editsByCell.get(rowNumber)
+    if (columns === undefined) {
+      columns = new Map()
+      editsByCell.set(rowNumber, columns)
+    }
+    const existing = columns.get(edit.column)
+    if (existing === undefined) {
+      columns.set(edit.column, edit)
+    } else if (Array.isArray(existing)) {
+      existing.push(edit)
+    } else {
+      columns.set(edit.column, [existing, edit])
+    }
+  }
+  return editsByCell
+}
+
+function applyCellEdits(
+  cellXml: string,
+  rowNumber: number,
+  column: number,
+  item: CellEdit | CellEdit[],
+  stylesheet: StylesheetEditor | null,
+): string {
+  const address = toA1Address(rowNumber - 1, column)
+  if (!Array.isArray(item)) return applyEditToCellXml(cellXml, address, item, stylesheet)
+  return item.reduce(
+    (current, edit) => applyEditToCellXml(current, address, edit, stylesheet),
+    cellXml,
+  )
+}
+
+function groupFormulaValuesByCell(
+  cells: SheetFormulaValues['cells'],
+): SheetCellItems<SheetFormulaValues['cells'][number]['value']> {
+  const valuesByCell: SheetCellItems<SheetFormulaValues['cells'][number]['value']> = new Map()
+  for (const cell of cells) {
+    const rowNumber = cell.row + 1
+    let columns = valuesByCell.get(rowNumber)
+    if (columns === undefined) {
+      columns = new Map()
+      valuesByCell.set(rowNumber, columns)
+    }
+    columns.set(cell.column, cell.value)
+  }
+  return valuesByCell
+}
+
+/// Applies all cell transforms to a worksheet in one pass over <sheetData>,
+/// instead of one whole-XML rewrite per cell (which made large saves
+/// O(edits × sheet size)). Rows and cells are assumed to carry r attributes
+/// in ascending order, as Excel and this gateway write them. With
+/// insertMissing, transforms for absent rows/cells run against '' and any
+/// non-empty result is inserted in document order.
+function transformWorksheetCells<T>(
+  worksheetXml: string,
+  cellItems: SheetCellItems<T>,
+  applyItem: CellItemApply<T>,
+  insertMissing: boolean,
+): string {
+  if (cellItems.size === 0) return worksheetXml
+  const remainingRows = new Map(cellItems)
+  const targetRows = [...cellItems.keys()].sort((left, right) => left - right)
+  const buildRow = (rowNumber: number): string => {
+    const rowItems = remainingRows.get(rowNumber)
+    if (!rowItems) return ''
+    remainingRows.delete(rowNumber)
+    const cells = [...rowItems.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map(([column, item]) => applyItem('', rowNumber, column, item))
+      .filter((cellXml) => cellXml !== '')
+    return cells.length === 0 ? '' : `<row r="${rowNumber}">${cells.join('')}</row>`
+  }
+
+  const openIndex = worksheetXml.indexOf('<sheetData')
+  const emptySheetData = /<sheetData\s*\/>/.exec(worksheetXml)
+  if (emptySheetData || openIndex === -1) {
+    if (!insertMissing) return worksheetXml
+    const rowsXml = targetRows.map(buildRow).join('')
+    if (rowsXml === '') return worksheetXml
+    if (emptySheetData) {
+      return worksheetXml.replace(/<sheetData\s*\/>/, () => `<sheetData>${rowsXml}</sheetData>`)
+    }
+    throw new Error('Worksheet has no sheetData element.')
+  }
+  const closeIndex = worksheetXml.lastIndexOf('</sheetData>')
+  if (closeIndex === -1) throw new Error('Worksheet has no sheetData element.')
+  const bodyStart = worksheetXml.indexOf('>', openIndex) + 1
+  const body = worksheetXml.slice(bodyStart, closeIndex)
+
+  const parts: string[] = [worksheetXml.slice(0, bodyStart)]
+  let cursor = 0
+  let pendingIndex = 0
+  const rowOpenPattern = /<row\b[^>]*>/g
+  let openMatch: RegExpExecArray | null
+  while ((openMatch = rowOpenPattern.exec(body)) !== null) {
+    const openTag = openMatch[0]
+    let rowEnd: number
+    if (openTag.endsWith('/>')) {
+      rowEnd = openMatch.index + openTag.length
+    } else {
+      const closePosition = body.indexOf('</row>', openMatch.index + openTag.length)
+      if (closePosition === -1) break
+      rowEnd = closePosition + '</row>'.length
+    }
+    const rowXml = body.slice(openMatch.index, rowEnd)
+    parts.push(body.slice(cursor, openMatch.index))
+    cursor = rowEnd
+    rowOpenPattern.lastIndex = rowEnd
+    const rowNumber = Number(/\br="([1-9][0-9]*)"/.exec(openTag)?.[1])
+    if (!Number.isFinite(rowNumber)) {
+      parts.push(rowXml)
+      continue
+    }
+    if (insertMissing) {
+      while (pendingIndex < targetRows.length && (targetRows[pendingIndex] ?? 0) < rowNumber) {
+        parts.push(buildRow(targetRows[pendingIndex] ?? 0))
+        pendingIndex += 1
+      }
+      if (targetRows[pendingIndex] === rowNumber) pendingIndex += 1
+    }
+    const rowItems = remainingRows.get(rowNumber)
+    if (rowItems === undefined) {
+      parts.push(rowXml)
+      continue
+    }
+    remainingRows.delete(rowNumber)
+    parts.push(transformRowCells(rowXml, rowNumber, rowItems, applyItem, insertMissing))
+  }
+  parts.push(body.slice(cursor))
+  if (insertMissing) {
+    while (pendingIndex < targetRows.length) {
+      parts.push(buildRow(targetRows[pendingIndex] ?? 0))
+      pendingIndex += 1
+    }
+  }
+  parts.push(worksheetXml.slice(closeIndex))
+  return parts.join('')
+}
+
+/// One row's share of transformWorksheetCells: walk the row's cells once,
+/// transforming matches and (with insertMissing) splicing new cells in
+/// column order.
+function transformRowCells<T>(
+  rowXml: string,
+  rowNumber: number,
+  rowItems: ReadonlyMap<number, T>,
+  applyItem: CellItemApply<T>,
+  insertMissing: boolean,
+): string {
+  const openEnd = rowXml.indexOf('>') + 1
+  const selfClosing = rowXml.slice(0, openEnd).endsWith('/>')
+  const openTag = selfClosing ? `${rowXml.slice(0, openEnd - 2)}>` : rowXml.slice(0, openEnd)
+  const body = selfClosing ? '' : rowXml.slice(openEnd, rowXml.length - '</row>'.length)
+  const remaining = new Map(rowItems)
+  const targetColumns = [...rowItems.keys()].sort((left, right) => left - right)
+  const insertColumn = (column: number): string => {
+    const item = remaining.get(column)
+    if (item === undefined) return ''
+    remaining.delete(column)
+    return applyItem('', rowNumber, column, item)
+  }
+
+  const parts: string[] = []
+  let cursor = 0
+  let pendingIndex = 0
+  const cellOpenPattern = /<c\b[^>]*>/g
+  let openMatch: RegExpExecArray | null
+  while ((openMatch = cellOpenPattern.exec(body)) !== null) {
+    const openCell = openMatch[0]
+    let cellEnd: number
+    if (openCell.endsWith('/>')) {
+      cellEnd = openMatch.index + openCell.length
+    } else {
+      const closePosition = body.indexOf('</c>', openMatch.index + openCell.length)
+      if (closePosition === -1) break
+      cellEnd = closePosition + '</c>'.length
+    }
+    const cellXml = body.slice(openMatch.index, cellEnd)
+    parts.push(body.slice(cursor, openMatch.index))
+    cursor = cellEnd
+    cellOpenPattern.lastIndex = cellEnd
+    const letters = /\br="([A-Z]{1,3})[1-9][0-9]*"/.exec(openCell)?.[1]
+    const column = letters === undefined ? undefined : lettersToColumn(letters)
+    if (column === undefined) {
+      parts.push(cellXml)
+      continue
+    }
+    if (insertMissing) {
+      while (pendingIndex < targetColumns.length && (targetColumns[pendingIndex] ?? 0) < column) {
+        parts.push(insertColumn(targetColumns[pendingIndex] ?? 0))
+        pendingIndex += 1
+      }
+      if (targetColumns[pendingIndex] === column) pendingIndex += 1
+    }
+    const item = remaining.get(column)
+    if (item === undefined) {
+      parts.push(cellXml)
+      continue
+    }
+    remaining.delete(column)
+    parts.push(applyItem(cellXml, rowNumber, column, item))
+  }
+  parts.push(body.slice(cursor))
+  if (insertMissing) {
+    while (pendingIndex < targetColumns.length) {
+      parts.push(insertColumn(targetColumns[pendingIndex] ?? 0))
+      pendingIndex += 1
+    }
+  }
+  return `${openTag}${parts.join('')}</row>`
+}
+
 function insertMissingCell(worksheetXml: string, address: string, cellXml: string): string {
   const rowNumber = Number(/[1-9][0-9]*$/.exec(address)?.[0])
   if (!Number.isFinite(rowNumber)) throw new Error(`Invalid cell address: ${address}`)
@@ -1867,7 +2121,7 @@ function serializeStyledCell(
 ): string {
   const style = styleIndex === undefined ? '' : ` s="${styleIndex}"`
   if (cell.formula) {
-    return `<c r="${address}"${style}><f>${escapeXmlText(cell.formula.replace(/^=/, ''))}</f></c>`
+    return `<c r="${address}"${style}><f>${escapeXmlText(withFutureFunctionMarkers(cell.formula.replace(/^=/, '')))}</f></c>`
   }
   if (cell.value === null) {
     // A cleared cell keeps its formatting only if it keeps a style index.
@@ -1942,7 +2196,7 @@ function lettersToColumn(letters: string): number {
 
 function serializeCell(address: string, cell: CellState): string {
   if (cell.formula) {
-    return `<c r="${address}"><f>${escapeXmlText(cell.formula.slice(1))}</f></c>`
+    return `<c r="${address}"><f>${escapeXmlText(withFutureFunctionMarkers(cell.formula.slice(1)))}</f></c>`
   }
   if (cell.value === null) return ''
   if (typeof cell.value === 'string') {

@@ -273,6 +273,30 @@ describe('native editable tables', () => {
     editor.destroy()
   })
 
+  it('a floating table (w:tblpPr) drops alignment/indent margins for the float gaps', async () => {
+    const { editor } = await openTable()
+    const table = editor.state.doc.firstChild!
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        widthPx: 400,
+        tblFloat: 'right',
+        tblAlign: 'center',
+        indentTwips: 1450,
+      }),
+    )
+    const spec = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(spec[1].class).toContain('doc-table-float-right')
+    expect(spec[1].style ?? '').not.toContain('margin-left:')
+    expect(spec[1].style ?? '').not.toContain('margin-right:')
+    // the indent must not shrink the float width either
+    expect(spec[1].style ?? '').not.toContain('96.7px')
+    editor.destroy()
+  })
+
   it('clamps a drag-committed grid without any selection inside the table', async () => {
     const { editor } = await openTable()
     // the resize handle sets no selection; a table NodeSelection is not "in table" either

@@ -14,6 +14,8 @@ import {
   HorizontalAlign,
   ICommandService,
   IUndoRedoService,
+  LifecycleService,
+  LifecycleStages,
   VerticalAlign,
   WrapStrategy,
   type ICellData,
@@ -71,6 +73,9 @@ import {
   recalcReadRanges,
   type ClosureSheetInput,
 } from './formula-closure'
+import { degradeQuadraticFormulaCells } from './formula-cost'
+import { DEFAULT_SHORT_DATE, setSystemShortDate } from '../shared/short-date'
+import { getWorkbookMdw, setWorkbookMdw } from './app-constants'
 import { t } from './i18n/locale'
 import { mapProtectedRanges } from './protected-ranges'
 import { INDENT_STEP_PX } from './selection-format'
@@ -80,6 +85,7 @@ import {
   mapRangeResultToScreen,
   netAxisDelta,
   screenRangeToFileRange,
+  screenToFile,
 } from './view-transform'
 import {
   buildCustomFilters,
@@ -96,10 +102,12 @@ import {
   type ShapeEditChanges,
   type SparklineGroupState,
 } from './WorkbookVisuals'
+import { VISUAL_UNDO_COMMAND_ID } from './undo-carry'
 import {
   BORDER_COMMAND_TYPES,
   CLOSURE_MAX_CELLS,
   journalSuppression,
+  lazySheetScreenExtent,
   type ActiveWorkbook,
   type LazyWorkbookState,
   type PinnedClosureCell,
@@ -330,6 +338,9 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
   // A load starts from a clean history even when the unitId was used before
   // (reopening the same unchanged file reuses `file-<sha>`).
   clearUnitUndoHistory(runtime, `file-${file.sha256}`)
+  clearPendingAutoHeight()
+  setWorkbookMdw(measureNormalFontMdw(file))
+  setSystemShortDate(file.shortDateFormat ?? DEFAULT_SHORT_DATE)
   const created = runtime.univerAPI.createWorkbook({
     id: `file-${file.sha256}`,
     name: file.name,
@@ -401,7 +412,29 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
 }
 
 export function characterWidthToPixels(width: number): number {
-  return width === 0 ? 0 : Math.floor(((256 * width + Math.floor(128 / 7)) / 256) * 7) + 5
+  const mdw = getWorkbookMdw()
+  return width === 0 ? 0 : Math.floor(((256 * width + Math.floor(128 / mdw)) / 256) * mdw) + 5
+}
+
+/// Excel's column-width unit is the Normal font's max digit width (MDW).
+/// The hardcoded 7 only holds for Calibri 11; e.g. Verdana 10 workbooks use
+/// MDW 8, and trusting 7 renders every column ~11% narrower than Excel,
+/// wrapping text a line early.
+export function measureNormalFontMdw(file: WorkbookFile): number {
+  const normal = file.styles?.[0]
+  const family = normal?.fontFamily ?? 'Calibri'
+  const size = normal?.fontSize ?? 11
+  if (family === 'Calibri' && size === 11) return 7
+  if (typeof document === 'undefined') return 7
+  try {
+    const context = document.createElement('canvas').getContext('2d')
+    if (!context) return 7
+    context.font = `${(size * 96) / 72}px ${family}`
+    const width = context.measureText('0').width
+    return width > 0 ? Math.max(4, Math.min(30, Math.round(width))) : 7
+  } catch {
+    return 7
+  }
 }
 
 /// Normalizes dialog input into the wire target format: '#Sheet!A1' for
@@ -822,6 +855,25 @@ export async function loadVisibleRange(
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
 }
 
+/// Over-budget file formulas never reach the engine (a foreign xlsx with a
+/// distinct-count COUNTIF over 40k rows would freeze on open); the cell keeps
+/// the file's cached value, like cache-only defined-name cells.
+function degradeCostlyFormulas(
+  state: LazyWorkbookState,
+  sheetName: string,
+  cells: WorkbookRangeResult['cells'],
+): WorkbookRangeResult['cells'] {
+  return degradeQuadraticFormulaCells(
+    cells,
+    sheetName,
+    state.file.sheets.map((sheet) => ({
+      name: sheet.name,
+      rows: sheet.rowCount,
+      columns: sheet.columnCount,
+    })),
+  )
+}
+
 /// Streams every sheet's formula list, computes the dependency closure, and
 /// — when it fits the budget — installs and pins the closure cells so the
 /// formula engine recalculates them live while the workbook keeps streaming.
@@ -895,8 +947,9 @@ export async function activateFormulaClosure(
         return giveUp()
       }
       if (lazyWorkbookRef.current !== state) return
-      const wanted = result.cells.filter((cell) => cells.has(cellKey(cell.row, cell.column)))
-      recordCachedFormulaValues(state, sheetId, wanted)
+      const picked = result.cells.filter((cell) => cells.has(cellKey(cell.row, cell.column)))
+      recordCachedFormulaValues(state, sheetId, picked)
+      const wanted = degradeCostlyFormulas(state, sheetMeta.name, picked)
       patchWorksheetRange(
         worksheet,
         undefined,
@@ -1012,7 +1065,9 @@ interface VisualUndoStep {
   redo(): void
 }
 
-const VISUAL_UNDO_COMMAND_ID = 'sheets.mutation.visual-edit-step'
+// The command id lives in undo-carry.ts: cross-save carrying must truncate
+// at these steps (their params are registry tokens resolving to closures
+// over the pre-save session state).
 const visualUndoRegistry = new Map<number, VisualUndoStep>()
 let visualUndoSequence = 0
 const visualUndoRuntimes = new WeakSet<object>()
@@ -1488,7 +1543,9 @@ async function loadFrozenColumnStrip(
       worksheet,
       undefined,
       { ...stripRange, endRow: availableEndRow },
-      mapped.screen.cells,
+      state.formulaMode
+        ? degradeCostlyFormulas(state, sheet.name, mapped.screen.cells)
+        : mapped.screen.cells,
       state.file.styles,
       mapped.screen.hyperlinks,
       sheet.tables,
@@ -1534,7 +1591,16 @@ async function loadRange(
       return
     }
     if (!mapped) {
-      // The whole range is journal-owned (inserted this session).
+      // The whole range is journal-owned (inserted this session): nothing
+      // streams into it, but cells written there may have been evicted by an
+      // earlier window move — replay them from the journal, or reads see
+      // ghosts of empty cells where this session's edits live.
+      journalSuppression.active = true
+      try {
+        keepActiveSheet(worksheet, () => applyJournalOverlay(worksheet, state.editJournal, range))
+      } finally {
+        journalSuppression.active = false
+      }
       state.loadedRanges.set(sheetId, range)
       return
     }
@@ -1551,7 +1617,9 @@ async function loadRange(
           worksheet,
           alreadyLoaded,
           availableRange,
-          mapped.screen.cells,
+          state.formulaMode
+            ? degradeCostlyFormulas(state, sheetMeta.name, mapped.screen.cells)
+            : mapped.screen.cells,
           state.file.styles,
           mapped.screen.hyperlinks,
           sheetMeta.tables,
@@ -1662,15 +1730,13 @@ export async function ensureLazyRangeLoaded(
 ): Promise<boolean> {
   const initialState = lazyWorkbookRef.current
   if (!initialState) return false
-  const sheet = initialState.file.sheets.find(
-    (candidate) => candidate.id === worksheet.getSheetId(),
-  )
+  const extent = lazySheetScreenExtent(initialState, worksheet.getSheetId())
   if (
-    !sheet ||
+    !extent ||
     range.startRow < 0 ||
     range.startColumn < 0 ||
-    range.endRow >= sheet.rowCount ||
-    range.endColumn >= sheet.columnCount
+    range.endRow >= extent.rows ||
+    range.endColumn >= extent.columns
   ) {
     return false
   }
@@ -1678,6 +1744,95 @@ export async function ensureLazyRangeLoaded(
   const state = lazyWorkbookRef.current
   const loaded = state?.loadedRanges.get(worksheet.getSheetId())
   return state === initialState && loaded !== undefined && containsRange(loaded, range)
+}
+
+/// readWorkbookRange's protocol cap (MAX_RANGE_CELLS in desktop-api.ts).
+const SIDECAR_RANGE_CELL_LIMIT = 20_000
+
+/**
+ * Applies a bulk edit (fill / large clear) over a possibly-unloaded range of
+ * a streamed workbook in sidecar-request-sized chunks: each chunk is loaded
+ * into the grid first — so the edit lands on real cells, goes through the
+ * normal undoable commands, and the edit journal records it — then edited.
+ * Loading a chunk evicts the previous window, but the already-written chunks
+ * live in the journal and re-apply whenever their region streams back in.
+ * Fully-preloaded workbooks take a single unchunked pass.
+ */
+export async function applyRangeInLoadedChunks(
+  runtime: UniverRuntime,
+  lazyWorkbookRef: { current: LazyWorkbookState | null },
+  worksheet: UniverWorksheet,
+  bounds: IRange,
+  applyChunk: (chunk: IRange) => void,
+  setMessage: (message: string) => void,
+): Promise<void> {
+  const state = lazyWorkbookRef.current
+  if (!state) throw new Error('No workbook is open.')
+  const sheetId = worksheet.getSheetId()
+  // Extents are screen-space: chunk coordinates already sit in the current
+  // session's shifted space, so the clamp must too (a file-space clamp would
+  // cut off / overshoot the last rows and columns after insert/delete ops).
+  const extent = lazySheetScreenExtent(state, sheetId)
+  const width = bounds.endColumn - bounds.startColumn + 1
+  // Load full-extent-width strips (not just the target columns) so filled
+  // formulas with row-local references (=B2*2 in column A) compute against
+  // real neighbor values; degenerate ultra-wide sheets fall back to the
+  // target columns to keep the chunk count bounded.
+  const fullWidth = extent !== null && extent.columns <= 200
+  const loadStartColumn = fullWidth ? 0 : bounds.startColumn
+  const loadEndColumn = fullWidth && extent !== null ? extent.columns - 1 : bounds.endColumn
+  const loadWidth = Math.max(width, loadEndColumn - loadStartColumn + 1)
+  const chunkRows = state.flags.preloadComplete
+    ? bounds.endRow - bounds.startRow + 1
+    : Math.max(1, Math.floor(SIDECAR_RANGE_CELL_LIMIT / loadWidth))
+  try {
+    for (let startRow = bounds.startRow; startRow <= bounds.endRow; startRow += chunkRows) {
+      const chunk: IRange = {
+        startRow,
+        endRow: Math.min(bounds.endRow, startRow + chunkRows - 1),
+        startColumn: bounds.startColumn,
+        endColumn: bounds.endColumn,
+      }
+      if (!state.flags.preloadComplete && extent) {
+        // Clamp the load to the data extent — rows/columns beyond it have
+        // nothing to stream in and ensureLazyRangeLoaded would reject them.
+        const load: IRange = {
+          startRow: chunk.startRow,
+          endRow: Math.min(chunk.endRow, extent.rows - 1),
+          startColumn: loadStartColumn,
+          endColumn: Math.min(loadEndColumn, extent.columns - 1),
+        }
+        const inExtent = load.startRow <= load.endRow && load.startColumn <= load.endColumn
+        const loaded = state.loadedRanges.get(sheetId)
+        if (inExtent && (!loaded || !containsRange(loaded, load))) {
+          const ok = await ensureLazyRangeLoaded(
+            runtime,
+            lazyWorkbookRef,
+            worksheet,
+            load,
+            setMessage,
+          )
+          if (!ok) {
+            throw new Error(
+              'Part of the target range could not be loaded — retry after the workbook finishes indexing.',
+            )
+          }
+        }
+      }
+      applyChunk(chunk)
+    }
+  } finally {
+    // The chunked loads walked the streaming window strip by strip and left
+    // it wherever the last chunk (or the failure) happened to be — the cells
+    // the user is looking at were evicted along the way. Refetch the
+    // viewport so the grid does not sit blank after a bulk edit.
+    if (!state.flags.preloadComplete && lazyWorkbookRef.current === state) {
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+      if (active?.getSheetId() === sheetId) {
+        void loadVisibleRange(runtime, lazyWorkbookRef, active, setMessage)
+      }
+    }
+  }
 }
 
 /// One text line at the sheet's default font — the smallest height an Excel
@@ -1688,6 +1843,99 @@ export async function ensureLazyRangeLoaded(
 function defaultRowHeightPx(state: LazyWorkbookState, sheetId: string): number {
   const points = state.file.sheets.find((sheet) => sheet.id === sheetId)?.defaultRowHeight ?? 15
   return Math.round((points * 96) / 72)
+}
+
+/// Auto-height measurement needs the sheet skeleton, which does not exist
+/// yet while cold-boot patches run — the command would set ia=1 but never
+/// compute ah. Defer the calls past the first paint (double rAF) so the
+/// skeleton exists and in-view rows measure immediately.
+const pendingAutoHeight: Array<{
+  worksheet: UniverWorksheet
+  start: number
+  count: number
+  /// false = sweep entry: honors the row lock present at flush time, so a
+  /// customHeight force that lands after queueing wins. true = explicit
+  /// re-enable queued right after a forced fallback height.
+  force: boolean
+}> = []
+let autoHeightFlushScheduled = false
+let autoHeightFlushRetries = 0
+
+/// A new workbook load disposes the previous unit; drop its queued rows so a
+/// flush never targets disposed worksheets.
+export function clearPendingAutoHeight(): void {
+  pendingAutoHeight.length = 0
+}
+
+/// AutoHeightController only registers its measurement interceptor at
+/// lifecycle Rendered; before that the command sets ia=1 but silently drops
+/// the measurement (and the skeleton already existing rules out the lazy
+/// re-measure path). True when the flush must wait.
+function autoHeightNotReady(worksheet: UniverWorksheet): boolean {
+  try {
+    const injector = (
+      worksheet as unknown as { _injector?: { get(token: unknown): { stage: number } } }
+    )._injector
+    const lifecycle = injector?.get(LifecycleService)
+    return lifecycle !== undefined && lifecycle.stage < LifecycleStages.Rendered
+  } catch {
+    return false
+  }
+}
+
+function queueRowAutoHeight(
+  worksheet: UniverWorksheet,
+  start: number,
+  count: number,
+  force = false,
+): void {
+  pendingAutoHeight.push({ worksheet, start, count, force })
+  if (autoHeightFlushScheduled) return
+  autoHeightFlushScheduled = true
+  const flush = () => {
+    const head = pendingAutoHeight[0]
+    if (head && autoHeightNotReady(head.worksheet) && autoHeightFlushRetries < 200) {
+      autoHeightFlushRetries += 1
+      setTimeout(flush, 50)
+      return
+    }
+    autoHeightFlushScheduled = false
+    autoHeightFlushRetries = 0
+    const batch = pendingAutoHeight.splice(0)
+    journalSuppression.active = true
+    try {
+      for (const item of batch) {
+        // A disposed unit (workbook switched mid-defer) must not abort the
+        // rest of the batch.
+        try {
+          if (item.force) {
+            item.worksheet.setRowAutoHeight(item.start, item.count)
+            continue
+          }
+          const rowManager = item.worksheet.getSheet().getRowManager()
+          let runStart = -1
+          for (let offset = 0; offset <= item.count; offset += 1) {
+            const row = item.start + offset
+            const open = offset < item.count && rowManager.getRow(row)?.ia !== BooleanNumber.FALSE
+            if (open && runStart === -1) runStart = row
+            if (!open && runStart !== -1) {
+              item.worksheet.setRowAutoHeight(runStart, row - runStart)
+              runStart = -1
+            }
+          }
+        } catch {
+          // Disposed worksheet or torn-down services: skip this entry.
+        }
+      }
+    } finally {
+      journalSuppression.active = false
+    }
+  }
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => requestAnimationFrame(flush))
+  } else {
+    setTimeout(flush, 0)
+  }
 }
 
 export function applyRowProperties(
@@ -1734,10 +1982,13 @@ export function applyRowProperties(
         } else if (px >= defaultRowHeightPx(state, sheetId)) {
           // Without customHeight, ht is only Excel's last auto-fit result;
           // wrapped content may need more room than the stored value (our
-          // fonts measure differently — wrapped CJK rows clipped on
-          // Windows). setRowHeights keeps ht as a floor but re-enables
-          // auto-height when the measured content is taller.
-          worksheet.setRowHeights(row.row, 1, px)
+          // fonts measure differently). The facade setRowHeights path locks
+          // rows at ia=0 whenever the auto-height interceptor ran before the
+          // skeleton existed (cold boot), so set the stored height as the
+          // fallback and explicitly re-enable auto-height: the command flips
+          // ia=1 immediately and lazily re-measures once rendered.
+          worksheet.setRowHeightsForced(row.row, 1, px)
+          queueRowAutoHeight(worksheet, row.row, 1, true)
         } else {
           // Sub-default heights are spacer rows in print-style layouts, not
           // auto-fit results — no content fits them. setRowHeights would
@@ -2025,6 +2276,18 @@ function applyJournalOverlay(
 /// or blank while the engine races the name installation on open — Excel
 /// shows the cached value instantly. Keep such cells cache-only (the formula
 /// text still reaches the formula bar via formulaText).
+const EXCEL_ERROR_LITERALS = new Set([
+  '#NULL!',
+  '#DIV/0!',
+  '#VALUE!',
+  '#REF!',
+  '#NAME?',
+  '#NUM!',
+  '#N/A',
+  '#SPILL!',
+  '#CALC!',
+])
+
 const keepsCacheMemo = new Map<string, boolean>()
 function formulaKeepsCache(formula: string): boolean {
   let cached = keepsCacheMemo.get(formula)
@@ -2101,8 +2364,13 @@ function patchWorksheetRangeInner(
           ? { p: toRichTextDocument(displayValue, cell.rich) }
           : useFormulas && cell.formula && !keepsCache
             ? // No cached value: leave v unset so the engine computes instead
-              // of showing the formula text as a literal.
-              cell.value === null || cell.value === undefined
+              // of showing the formula text as a literal. An error-literal
+              // cache means the last writer could not evaluate the formula
+              // (LibreOffice caches #NAME? for functions it lacks) — drop it
+              // too, so the engine recomputes like Excel does on open.
+              cell.value === null ||
+              cell.value === undefined ||
+              (typeof cell.value === 'string' && EXCEL_ERROR_LITERALS.has(cell.value))
               ? { f: cell.formula }
               : { f: cell.formula, v: cell.value }
             : typeof displayValue === 'string' && multiline
@@ -2129,6 +2397,30 @@ function patchWorksheetRangeInner(
   applyTableBanding(matrix, range, tables)
   applyPivotStyling(matrix, range, pivotTables)
   worksheet.getRange(range.startRow, range.startColumn, rows, columns).setValues(matrix)
+  // Rows holding wrapped cells need a computed auto-height (ah): the
+  // SetRangeValues auto-height interceptor silently no-ops when the sheet
+  // skeleton doesn't exist yet (cold boot / background preload), leaving
+  // wrapped rows one line tall. Rows the file marks customHeight are forced
+  // back afterwards by applyRowProperties, which runs after each patch.
+  const rowManager = worksheet.getSheet().getRowManager()
+  let runStart = -1
+  for (let offset = 0; offset <= rows; offset += 1) {
+    // ia=0 rows are height-locked (file customHeight or a manual user
+    // resize) — never re-enable auto-height on them.
+    const locked = rowManager.getRow(range.startRow + offset)?.ia === BooleanNumber.FALSE
+    const wraps =
+      offset < rows &&
+      !locked &&
+      (matrix[offset]?.some(
+        (cell) => (cell.s as IStyleData | undefined)?.tb === WrapStrategy.WRAP,
+      ) ??
+        false)
+    if (wraps && runStart === -1) runStart = offset
+    if (!wraps && runStart !== -1) {
+      queueRowAutoHeight(worksheet, range.startRow + runStart, offset - runStart)
+      runStart = -1
+    }
+  }
 }
 
 /// Approximates Excel table styles (header band + row stripes) for cells that
@@ -2153,7 +2445,9 @@ function applyTableBanding(
     // dxfs; the literals are a last-resort fallback.
     const headerFill = table.headerFill
     const headerFont = table.headerFontColor ?? '#FFFFFF'
-    const stripeFill = table.stripeFill ?? '#D9E1F2'
+    // No stripe color means the style genuinely has none (custom styles
+    // without band dxfs, Light 8-14) — a fallback would invent banding.
+    const stripeFill = table.stripeFill
     const dataStartRow = table.range.startRow + table.headerRowCount
     const totalsStartRow = table.range.endRow - (table.totalsRowCount ?? 0) + 1
     for (let row = rowStart; row <= rowEnd; row += 1) {
@@ -2171,16 +2465,29 @@ function applyTableBanding(
         const cell = matrix[row - range.startRow]?.[column - range.startColumn]
         if (!cell) continue
         let style = (cell.s ?? {}) as IStyleData
-        if (table.borderColor) {
+        if (table.borderColor || (isTotals && table.totalRowBorderColor)) {
           const edges: IStyleData['bd'] = {}
-          if (row === table.range.startRow) {
-            edges.t = { s: BorderStyleTypes.MEDIUM, cl: { rgb: table.borderColor } }
+          if (table.borderColor) {
+            if (row === table.range.startRow) {
+              edges.t = { s: BorderStyleTypes.MEDIUM, cl: { rgb: table.borderColor } }
+            }
+            if (isHeader && row === dataStartRow - 1) {
+              edges.b = { s: BorderStyleTypes.THIN, cl: { rgb: table.borderColor } }
+            }
+            if (row === table.range.endRow) {
+              edges.b = { s: BorderStyleTypes.MEDIUM, cl: { rgb: table.borderColor } }
+            }
           }
-          if (isHeader && row === dataStartRow - 1) {
-            edges.b = { s: BorderStyleTypes.THIN, cl: { rgb: table.borderColor } }
-          }
-          if (row === table.range.endRow) {
-            edges.b = { s: BorderStyleTypes.MEDIUM, cl: { rgb: table.borderColor } }
+          if (isTotals && row === totalsStartRow && table.totalRowBorderColor) {
+            edges.t = {
+              s:
+                table.totalRowBorderStyle === 'double'
+                  ? BorderStyleTypes.DOUBLE
+                  : table.totalRowBorderStyle === 'medium'
+                    ? BorderStyleTypes.MEDIUM
+                    : BorderStyleTypes.THIN,
+              cl: { rgb: table.totalRowBorderColor },
+            }
           }
           if (edges.t || edges.b) {
             cell.s = { ...style, bd: { ...(style.bd ?? {}), ...edges } }
@@ -2204,10 +2511,13 @@ function applyTableBanding(
             }
             continue
           }
+          // An explicit non-automatic cell font color survives the table
+          // style (Book1_custom's red "Names" header).
+          const explicitFont = (style.cl as { rgb?: string } | undefined)?.rgb
           cell.s = {
             ...style,
             ...(headerFill ? { bg: { rgb: headerFill } } : {}),
-            cl: { rgb: fontColor },
+            ...(explicitFont && explicitFont !== '#000000' ? {} : { cl: { rgb: fontColor } }),
             bl: BooleanNumber.TRUE,
           }
           continue
@@ -2235,10 +2545,20 @@ function applyTableBanding(
           ? table.firstColumnFill
           : isLastColumn
             ? table.lastColumnFill
-            : isStripe
-              ? stripeFill
-              : (secondStripeFill ?? columnStripeFill ?? table.wholeTableFill)
-        if (fill) cell.s = { ...style, bg: { rgb: fill } }
+            : ((isStripe ? stripeFill : undefined) ??
+              secondStripeFill ??
+              columnStripeFill ??
+              table.wholeTableFill)
+        if (fill) {
+          // Dark families set a body text color; a default-black font yields
+          // to it (explicit cell colors survive, mirroring the header rule).
+          const cellFont = (style.cl as { rgb?: string } | undefined)?.rgb
+          const fontPatch =
+            table.bodyFontColor && (!cellFont || cellFont === '#000000')
+              ? { cl: { rgb: table.bodyFontColor } }
+              : {}
+          cell.s = { ...style, bg: { rgb: fill }, ...fontPatch }
+        }
       }
     }
   }
@@ -2406,13 +2726,14 @@ export async function preloadEntireWorkbook(
       const screenRange = ops.length === 0 ? range : fileRangeToScreenRange(ops, range)
       if (screenRange === null) continue
       const screen = ops.length === 0 ? result : mapRangeResultToScreen(ops, result)
-      collectArrayFollowers(arrayFollowers, screen.cells, ops)
       recordCachedFormulaValues(state, sheetId, screen.cells)
+      const installable = degradeCostlyFormulas(state, sheet.name, screen.cells)
+      collectArrayFollowers(arrayFollowers, installable, ops)
       patchWorksheetRange(
         worksheet,
         undefined,
         screenRange,
-        screen.cells,
+        installable,
         state.file.styles,
         screen.hyperlinks,
         sheet.tables,
@@ -3006,7 +3327,10 @@ export function toUniverDvRule(
     allowBlank: rule.allowBlank,
     ...(rule.operator === undefined ? {} : { operator: rule.operator }),
     ...(formula1 === undefined ? {} : { formula1 }),
-    ...(formula2 === undefined ? {} : { formula2 }),
+    // Univer overloads a list rule's formula2 as its per-item color list;
+    // file list rules may carry a junk formula2 (LibreOffice writes "0"),
+    // which would paint validated cells with that "color" (black).
+    ...(formula2 === undefined || type === 'list' ? {} : { formula2 }),
     ...(type === 'list'
       ? {
           showDropDown: !rule.suppressDropdown,
@@ -3025,6 +3349,38 @@ export function toUniverDvRule(
   }
 }
 
+/// Excel paints only the highest-precedence rule of a "paint-once" type
+/// (colorScale / dataBar / iconSet) on a cell; stacked rules of the same
+/// type do not blend. Univer keeps whichever it evaluates last, so a
+/// lower-precedence duplicate could win. Drop a rule whose every range is
+/// fully covered by a higher-precedence same-type rule — the common shape
+/// (tdf105272 carries three identical stacked scales plus the real one).
+const PAINT_ONCE_TYPES = new Set(['colorScale', 'dataBar', 'iconSet'])
+
+export function dropShadowedPaintOnceRules(
+  rules: WorkbookRangeResult['conditionalRules'],
+): WorkbookRangeResult['conditionalRules'] {
+  const covers = (
+    outer: (typeof rules)[number]['ranges'][number],
+    inner: (typeof rules)[number]['ranges'][number],
+  ): boolean =>
+    outer.startRow <= inner.startRow &&
+    outer.endRow >= inner.endRow &&
+    outer.startColumn <= inner.startColumn &&
+    outer.endColumn >= inner.endColumn
+  return rules.filter(
+    (rule) =>
+      !PAINT_ONCE_TYPES.has(rule.ruleType) ||
+      !rules.some(
+        (other) =>
+          other !== rule &&
+          other.ruleType === rule.ruleType &&
+          other.priority < rule.priority &&
+          rule.ranges.every((range) => other.ranges.some((cover) => covers(cover, range))),
+      ),
+  )
+}
+
 async function applyConditionalRules(
   worksheet: UniverWorksheet,
   state: LazyWorkbookState,
@@ -3033,16 +3389,17 @@ async function applyConditionalRules(
 ): Promise<void> {
   if (rules.length === 0 || state.appliedCfSheets.has(sheetId)) return
   state.appliedCfSheets.add(sheetId)
-  // Lower xlsx priority number = higher precedence; Univer applies rules in
-  // insertion order, so add the most important rules first. Installing the
-  // file's own rules must not mark the sheet's CF as edited.
-  const ordered = [...rules].sort((a, b) => a.priority - b.priority)
+  // Lower xlsx priority number = higher precedence; Univer's addRule
+  // unshifts, so the rule added LAST sits first and wins conflicts — add in
+  // descending priority. Installing the file's own rules must not mark the
+  // sheet's CF as edited.
+  const ordered = [...dropShadowedPaintOnceRules(rules)].sort((a, b) => b.priority - a.priority)
   // Resolve name/reference cfvos to numbers BEFORE the suppression window —
   // the sidecar round-trips must not sit inside journalSuppression.
   const prepared = []
   for (const rule of ordered) {
     try {
-      prepared.push(await resolveRuleCfvos(state, rule))
+      prepared.push(await resolveAutoBounds(state, sheetId, await resolveRuleCfvos(state, rule)))
     } catch {
       // Resolution is best-effort: an odd reference must not cost the
       // sheet its conditional formatting (this sheet is already marked
@@ -3063,6 +3420,59 @@ async function applyConditionalRules(
   } finally {
     journalSuppression.active = false
   }
+}
+
+/// x14 autoMin/autoMax anchor the bar scale at zero for one-signed data
+/// (Excel: autoMin = min(0, data min), autoMax = max(0, data max)); Univer's
+/// min/max types use the raw data extremes, drawing the smallest value as a
+/// zero-length bar. Resolve them to concrete numbers from the cached cells.
+async function resolveAutoBounds(
+  state: LazyWorkbookState,
+  sheetId: string,
+  rule: WorkbookRangeResult['conditionalRules'][number],
+): Promise<WorkbookRangeResult['conditionalRules'][number]> {
+  if (
+    rule.ruleType !== 'dataBar' ||
+    !rule.cfvos.some((cfvo) => cfvo.kind === 'autoMin' || cfvo.kind === 'autoMax')
+  ) {
+    return rule
+  }
+  const totalCells = rule.ranges.reduce(
+    (sum, area) =>
+      sum + (area.endRow - area.startRow + 1) * (area.endColumn - area.startColumn + 1),
+    0,
+  )
+  if (totalCells > CF_AUTO_BOUNDS_CELL_CAP) return rule
+  let dataMin = Number.POSITIVE_INFINITY
+  let dataMax = Number.NEGATIVE_INFINITY
+  for (const area of rule.ranges) {
+    // The preload rejects reads above MAX_RANGE_CELLS — chunk by rows.
+    const columns = area.endColumn - area.startColumn + 1
+    const rowsPerChunk = Math.max(1, Math.floor(20_000 / columns))
+    for (let startRow = area.startRow; startRow <= area.endRow; startRow += rowsPerChunk) {
+      const cells = await readCachedRange(state, sheetId, {
+        startRow,
+        endRow: Math.min(area.endRow, startRow + rowsPerChunk - 1),
+        startColumn: area.startColumn,
+        endColumn: area.endColumn,
+      })
+      if (cells === null) return rule
+      for (const value of cells) {
+        if (!Number.isFinite(value)) continue
+        dataMin = Math.min(dataMin, value)
+        dataMax = Math.max(dataMax, value)
+      }
+    }
+  }
+  if (!Number.isFinite(dataMin)) return rule
+  const cfvos = rule.cfvos.map((cfvo) =>
+    cfvo.kind === 'autoMin'
+      ? { ...cfvo, kind: 'num', value: String(Math.min(0, dataMin)) }
+      : cfvo.kind === 'autoMax'
+        ? { ...cfvo, kind: 'num', value: String(Math.max(0, dataMax)) }
+        : cfvo,
+  )
+  return { ...rule, cfvos }
 }
 
 /// Scale cfvos (dataBar/colorScale/iconSet) whose value is a defined name or
@@ -3155,6 +3565,19 @@ async function readCachedCells(
   endRow: number,
   column: number,
 ): Promise<number[] | null> {
+  return readCachedRange(state, sheetId, {
+    startRow,
+    endRow,
+    startColumn: column,
+    endColumn: column,
+  })
+}
+
+async function readCachedRange(
+  state: LazyWorkbookState,
+  sheetId: string,
+  range: { startRow: number; endRow: number; startColumn: number; endColumn: number },
+): Promise<number[] | null> {
   // The referenced sheet may still be streaming when the rule's own sheet
   // renders (the budget's bar on sheet 1 sums a table on sheet 2) — an
   // incomplete read yields empty cells and a broken zero scale, so wait for
@@ -3165,13 +3588,13 @@ async function readCachedCells(
       const result = await window.desktopApi.readWorkbookRange({
         sessionId: state.file.sessionId,
         sheetId,
-        range: { startRow, endRow, startColumn: column, endColumn: column },
+        range,
       })
       // Row coverage is enough — matching how the streaming loader treats a
       // range as ready — so big sheets don't stall on full indexing.
       if (
         result.indexingComplete ||
-        (result.indexedThroughRow !== null && result.indexedThroughRow >= endRow)
+        (result.indexedThroughRow !== null && result.indexedThroughRow >= range.endRow)
       ) {
         return result.cells.map((cell) => {
           const value = typeof cell.value === 'number' ? cell.value : Number(cell.value)
@@ -3322,6 +3745,9 @@ function toCfFormula(body: string): string {
 /// Formula CF costs one dependency tree per covered cell; above this, huge
 /// (e.g. whole-column) rules keep the cheaper native condition.
 const CELLIS_FORMULA_CELL_LIMIT = 20_000
+/// Above this, auto dataBar bounds fall back to Univer's raw data extremes
+/// instead of paying a chunked full-range read on open.
+const CF_AUTO_BOUNDS_CELL_CAP = 512_000
 
 /// Excel evaluates numeric cellIs rules on blank cells as 0; Univer's native
 /// number conditions skip blanks (matching only notEqual/notBetween). True
@@ -3558,7 +3984,9 @@ export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
     it: style.italic ? BooleanNumber.TRUE : BooleanNumber.FALSE,
     ...(style.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
     ...(style.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
-    ...(style.wrapText ? { tb: WrapStrategy.WRAP } : {}),
+    // xf alignment is fully resolved in the file: an explicit non-wrap cell
+    // must override a WRAP column/row style at compose time.
+    tb: style.wrapText ? WrapStrategy.WRAP : WrapStrategy.OVERFLOW,
     ...(style.fontColor ? { cl: { rgb: style.fontColor } } : {}),
     ...(style.fillColor ? { bg: { rgb: style.fillColor } } : {}),
     ...(style.numberFormat ? { n: { pattern: style.numberFormat } } : {}),
@@ -3763,8 +4191,17 @@ export function queueVisualInstall(
         : state.file.visuals
             .filter((visual) => !visualEdits.get(visual.id)?.remove)
             .map((visual) => {
-              const anchor = visualEdits.get(visual.id)?.anchor
-              return anchor ? { ...visual, anchor } : visual
+              const edit = visualEdits.get(visual.id)
+              if (!edit?.anchor && !edit?.frameSize) return visual
+              return {
+                ...visual,
+                ...(edit.anchor ? { anchor: edit.anchor } : {}),
+                // A resized rotated shape carries its new true frame; the
+                // install's AABB re-anchoring must not rebuild the old one.
+                ...(edit.frameSize
+                  ? { frameWidth: edit.frameSize.width, frameHeight: edit.frameSize.height }
+                  : {}),
+              }
             })
     const file =
       addedVisuals.length > 0 || fileVisuals !== state.file.visuals
@@ -3868,6 +4305,55 @@ export function lazyWorkbookCellReader(
   }
 }
 
+/// Range-level variant of lazyCellEditable for bulk ops (fill_range / large
+/// clear_range): checking the four corners is not enough because a range can
+/// straddle the loaded region and the beyond-extent area with unloaded rows
+/// in between — clamp to the file extent first, then require containment.
+export function lazyRangeEditable(
+  state: LazyWorkbookState,
+  sheetId: string,
+  bounds: { startRow: number; endRow: number; startColumn: number; endColumn: number },
+): boolean {
+  if (state.flags.preloadComplete) return true
+  const extent = lazySheetScreenExtent(state, sheetId)
+  if (!extent) return true
+  const inExtentEndRow = Math.min(bounds.endRow, extent.rows - 1)
+  const inExtentEndColumn = Math.min(bounds.endColumn, extent.columns - 1)
+  // Entirely beyond the data extent: nothing left to stream in.
+  if (inExtentEndRow < bounds.startRow || inExtentEndColumn < bounds.startColumn) return true
+  // Rows/columns inserted this session are journal-owned — nothing streams
+  // into them, so only the file-backed remainder needs the loaded window.
+  // (A range fully inside an inserted column, like a fill source written
+  // this session, is editable regardless of where the window sits.)
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  const fileBackedSpan = (
+    axis: 'row' | 'column',
+    start: number,
+    end: number,
+  ): { start: number; end: number } | null => {
+    if (ops.length === 0) return { start, end }
+    let first = -1
+    let last = -1
+    for (let position = start; position <= end; position += 1) {
+      if (screenToFile(ops, axis, position) === null) continue
+      if (first === -1) first = position
+      last = position
+    }
+    return first === -1 ? null : { start: first, end: last }
+  }
+  const rows = fileBackedSpan('row', bounds.startRow, inExtentEndRow)
+  const columns = fileBackedSpan('column', bounds.startColumn, inExtentEndColumn)
+  if (rows === null || columns === null) return true
+  const loaded = state.loadedRanges.get(sheetId)
+  return (
+    loaded !== undefined &&
+    rows.start >= loaded.startRow &&
+    rows.end <= loaded.endRow &&
+    columns.start >= loaded.startColumn &&
+    columns.end <= loaded.endColumn
+  )
+}
+
 /// Mirrors the BeforeSheetEditStart streaming guard for AI-planned cells.
 export function lazyCellEditable(
   state: LazyWorkbookState,
@@ -3876,9 +4362,14 @@ export function lazyCellEditable(
   column: number,
 ): boolean {
   if (state.flags.preloadComplete) return true
-  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
-  if (!sheet) return true
-  if (row >= sheet.rowCount || column >= sheet.columnCount) return true
+  const extent = lazySheetScreenExtent(state, sheetId)
+  if (!extent) return true
+  if (row >= extent.rows || column >= extent.columns) return true
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  const journalOwned =
+    ops.length > 0 &&
+    (screenToFile(ops, 'row', row) === null || screenToFile(ops, 'column', column) === null)
+  if (journalOwned) return true
   const loaded = state.loadedRanges.get(sheetId)
   return (
     loaded !== undefined &&

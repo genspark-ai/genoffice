@@ -677,6 +677,8 @@ export interface VisualEditEntry {
   readonly drawingIndex: number
   readonly remove?: true
   readonly anchor?: WorkbookVisualObject['anchor']
+  /// New xfrm ext in EMU (a rotated shape resized through its AABB).
+  readonly frameSize?: { readonly width: number; readonly height: number }
 }
 
 /// Records a move/resize or removal of a visual that already lives in the
@@ -685,19 +687,25 @@ export interface VisualEditEntry {
 export function recordVisualEdit(
   journal: EditJournal,
   visual: WorkbookVisualObject,
-  changes: { remove?: true; anchor?: WorkbookVisualObject['anchor'] },
+  changes: {
+    remove?: true
+    anchor?: WorkbookVisualObject['anchor']
+    frameSize?: { width: number; height: number }
+  },
 ): boolean {
   if (visual.drawingPath === undefined || visual.drawingIndex === undefined) return false
   const previous = journal.visualEdits.get(visual.id)
   // A removal wins over any earlier move; a later move revives nothing.
   const remove = changes.remove ?? previous?.remove
   const anchor = changes.anchor ?? previous?.anchor
+  const frameSize = changes.frameSize ?? previous?.frameSize
   journal.visualEdits.set(visual.id, {
     sheetId: visual.sheetId,
     drawingPath: visual.drawingPath,
     drawingIndex: visual.drawingIndex,
     ...(remove ? { remove: true as const } : {}),
     ...(anchor ? { anchor } : {}),
+    ...(frameSize ? { frameSize } : {}),
   })
   return true
 }
@@ -746,6 +754,7 @@ export function toSaveVisualEdits(journal: EditJournal): WorkbookVisualEdit[] {
       drawingIndex: entry.drawingIndex,
       ...(entry.remove ? { remove: true as const } : {}),
       ...(entry.anchor ? { anchor: entry.anchor } : {}),
+      ...(entry.frameSize ? { frameSize: entry.frameSize } : {}),
     })
   }
   return edits

@@ -1,4 +1,5 @@
 import type { WorkbookStyleEdit } from '../shared/desktop-api'
+import { shortDateNumFmtId } from '../shared/short-date'
 
 /// Copy-on-write editor for xl/styles.xml. Existing entries are never
 /// modified — every changed cell gets a new cellXfs entry (deduped) derived
@@ -184,7 +185,7 @@ export class StylesheetEditor {
   }
 
   private internNumberFormat(pattern: string): number {
-    const builtin = BUILTIN_NUMBER_FORMATS.get(pattern)
+    const builtin = BUILTIN_NUMBER_FORMATS.get(pattern) ?? shortDateNumFmtId(pattern)
     if (builtin !== undefined) return builtin
     for (const entry of this.numFmts) {
       if (readAttribute(entry, 'formatCode') === escapeXmlAttribute(pattern)) {

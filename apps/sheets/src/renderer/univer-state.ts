@@ -9,6 +9,7 @@ import { BorderType, LocalUndoRedoService, type IRange } from '@univerjs/core'
 import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
 import type { createUniver } from './create-univer'
 import type { EditJournal } from './edit-journal'
+import { netAxisDelta } from './view-transform'
 
 export type UniverRuntime = ReturnType<typeof createUniver>
 export type ActiveWorkbook = NonNullable<
@@ -99,6 +100,21 @@ export interface LazyWorkbookState {
 export interface PinnedClosureCell {
   readonly f?: string
   readonly v?: string | number | boolean | null
+}
+
+/// Data extent in screen coordinates: the file extent shifted by this
+/// session's structural row/column ops. Null when the sheet is unknown.
+export function lazySheetScreenExtent(
+  state: LazyWorkbookState,
+  sheetId: string,
+): { rows: number; columns: number } | null {
+  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
+  if (!sheet) return null
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  return {
+    rows: Math.max(sheet.rowCount + netAxisDelta(ops, 'row'), 0),
+    columns: Math.max(sheet.columnCount + netAxisDelta(ops, 'column'), 0),
+  }
 }
 
 /// Budget for closure mode: formula cells plus every precedent they read.

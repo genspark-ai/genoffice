@@ -71,6 +71,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     rotatePage: vi.fn(),
     deletePage: vi.fn(() => true),
     editText: vi.fn(async () => null),
+    insertText: vi.fn(),
     editFonts: () => ['arial', 'times', 'courier'],
     pageGeom: () => ({ pw: 600, ph: 800, rot: 0 }),
     listImages: vi.fn(async () => PAGE_IMAGES),
@@ -346,6 +347,123 @@ describe('edit_text', () => {
     )
     expect(result.isError).toBe(true)
     expect(result.output).toContain('no match')
+  })
+})
+
+describe('insert_text', () => {
+  it('queues a new text block at explicit coordinates with defaults', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('insert_text', { page: 1, text: 'Hello\nWorld', x: 100, y: 72 }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(result.mutated).toBe(true)
+    expect(deps.insertText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageIndex: 0,
+        // baseline of the first line: y 72 + default 14 pt → PDF y = 800 - 86
+        origin: [100, 714],
+        text: 'Hello\nWorld',
+        fontSize: 14,
+        color: [0, 0, 0],
+        lineLeading: 14 * 1.2,
+        lineXOffsets: undefined,
+        align: undefined,
+        rotate: 0,
+      }),
+    )
+    expect(deps.gotoPage).toHaveBeenCalledWith(1)
+  })
+
+  it('passes style overrides through and validates the font', async () => {
+    const deps = makeDeps()
+    await executePdfTool(
+      deps,
+      call('insert_text', {
+        page: 1,
+        text: 'Hi',
+        x: 0,
+        y: 0,
+        font_size: 20,
+        color: '#ff8000',
+        font: 'times',
+        bold: true,
+      }),
+    )
+    expect(deps.insertText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fontSize: 20,
+        color: [255, 128, 0],
+        font: 'times',
+        bold: true,
+        italic: undefined,
+      }),
+    )
+
+    const bad = await executePdfTool(
+      makeDeps({ editFonts: () => ['arial'] }),
+      call('insert_text', { page: 1, text: 'Hi', font: 'times' }),
+    )
+    expect(bad.isError).toBe(true)
+    expect(bad.output).toContain('arial')
+  })
+
+  it('centers lines within the widest line for align=center', async () => {
+    const deps = makeDeps()
+    await executePdfTool(
+      deps,
+      call('insert_text', { page: 1, text: 'aaaa\naa', x: 50, y: 100, align: 'center' }),
+    )
+    const input = vi.mocked(deps.insertText).mock.calls[0]![0]
+    expect(input.align).toBe('center')
+    // widest line sits flush at the origin; the shorter one is shifted right
+    expect(input.lineXOffsets![0]).toBe(0)
+    expect(input.lineXOffsets![1]).toBeGreaterThan(0)
+  })
+
+  it('wraps paragraphs to max_width', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('insert_text', {
+        page: 1,
+        text: 'aaa bbb ccc',
+        x: 0,
+        y: 0,
+        font_size: 10,
+        max_width: 20,
+      }),
+    )
+    expect(result.isError).toBeUndefined()
+    const input = vi.mocked(deps.insertText).mock.calls[0]![0]
+    expect(input.text.split('\n').length).toBeGreaterThan(1)
+  })
+
+  it('carries the page rotation into the insert', async () => {
+    const deps = makeDeps({ pageGeom: () => ({ pw: 600, ph: 800, rot: 90 }) })
+    await executePdfTool(deps, call('insert_text', { page: 1, text: 'Hi', x: 10, y: 10 }))
+    expect(deps.insertText).toHaveBeenCalledWith(expect.objectContaining({ rotate: 90 }))
+  })
+
+  it('rejects empty text, bad colors, bad pages, and read-only documents', async () => {
+    const empty = await executePdfTool(makeDeps(), call('insert_text', { page: 1, text: '  ' }))
+    expect(empty.isError).toBe(true)
+
+    const badColor = await executePdfTool(
+      makeDeps(),
+      call('insert_text', { page: 1, text: 'Hi', color: 'red' }),
+    )
+    expect(badColor.isError).toBe(true)
+
+    const badPage = await executePdfTool(makeDeps(), call('insert_text', { page: 9, text: 'Hi' }))
+    expect(badPage.isError).toBe(true)
+
+    const deps = makeDeps({ readOnly: () => true })
+    const ro = await executePdfTool(deps, call('insert_text', { page: 1, text: 'Hi' }))
+    expect(ro.isError).toBe(true)
+    expect(ro.output).toContain('read-only')
+    expect(deps.insertText).not.toHaveBeenCalled()
   })
 })
 

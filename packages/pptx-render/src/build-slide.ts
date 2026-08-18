@@ -49,6 +49,13 @@ import {
   presetPolygon,
   presetPath,
 } from './preset-geometry'
+import {
+  buildExtrusion,
+  inPlaneRotationDeg,
+  flattenSvgPath,
+  ellipseRing,
+  roundRectRing,
+} from './scene3d'
 
 export interface BuildOptions {
   /** Target canvas width (px); height follows the slide aspect ratio. */
@@ -381,6 +388,7 @@ function buildShape(
   if (shadow) node.shadow = shadow
   const glow = resolveGlow(el.glow, vp)
   if (glow) node.glow = glow
+  if (el.scene3d) applyScene3D(el, node, vp)
   if (el.text && el.text.paragraphs.length) {
     node.text = layoutText({
       body: el.text,
@@ -391,6 +399,54 @@ function buildShape(
     })
   }
   return node
+}
+
+/**
+ * scene3d/sp3d: a camera with only an in-plane revolution spins the flat shape;
+ * anything with a real 3D rotation or extrusion depth gets meshed, projected and
+ * shaded (see scene3d.ts) — depth 0 projects just the tilted front cap.
+ */
+function applyScene3D(el: TextElement, node: ShapeRenderNode, vp: Viewport): void {
+  if (node.line) return // connectors keep their polyline rendering
+  const scene = el.scene3d!
+  const spin = inPlaneRotationDeg(scene)
+  if (spin != null) {
+    if (spin !== 0) node.box = { ...node.box, rotationDeg: node.box.rotationDeg + spin }
+    return
+  }
+  const depthPx = emuToPx(scene.extrusionEmu ?? 0, vp.scale)
+  const box = node.box
+  let rings: number[][] | undefined
+  if (node.pathData ?? node.fillPathData)
+    rings = flattenSvgPath((node.pathData ?? node.fillPathData)!)
+  else if (node.polygonPoints) rings = [node.polygonPoints]
+  else if (node.presetGeometry === 'ellipse' || node.presetGeometry === 'circle')
+    rings = [ellipseRing(box.w, box.h)]
+  else if (node.cornerRadiusPx != null) rings = [roundRectRing(box.w, box.h, node.cornerRadiusPx)]
+  else rings = [[0, 0, box.w, 0, box.w, box.h, 0, box.h]]
+  if (!rings.length) return
+  const fill = node.fill
+  const frontSolid = fill.kind === 'solid' ? fill.color : undefined
+  const gradientMid =
+    fill.kind === 'gradient' && fill.stops.length
+      ? fill.stops[Math.floor(fill.stops.length / 2)]!.color
+      : undefined
+  const frontColor = frontSolid ?? gradientMid ?? '#FFFFFF'
+  // PowerPoint colors the extruded walls with the outline color when one exists, else the fill.
+  const sideColor = scene.extrusionColor ?? node.stroke?.color ?? frontColor
+  const ext = buildExtrusion({
+    rings,
+    w: box.w,
+    h: box.h,
+    depthPx,
+    zPx: emuToPx(scene.zEmu ?? 0, vp.scale),
+    scene,
+    frontColor,
+    sideColor,
+    ...(node.stroke ? { strokeColor: node.stroke.color, strokeWidthPx: node.stroke.widthPx } : {}),
+    ...(fill.kind !== 'solid' ? { frontUsesFill: true } : {}),
+  })
+  if (ext) node.extrusion = ext
 }
 
 /** Picture shape geometry -> three clip channels (same preset implementation as shape geometry). */

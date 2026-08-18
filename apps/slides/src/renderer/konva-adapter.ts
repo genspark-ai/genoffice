@@ -102,6 +102,63 @@ export function fillImageUrl(fill: RenderFill): string | undefined {
   return fill.kind === 'image' ? fill.dataUrl : undefined
 }
 
+// ── Gradient ramp interpolation ──────────────────────────────────────────────
+// PowerPoint blends gradient ramps in linear sRGB (measured on tdf105739's
+// FF0000→00B050 background: the midpoint renders (188,129,55), matching the
+// linear-light mix; canvas gradients blend raw sRGB, which gives a muddy
+// (128,88,40)). Subdivide each stop pair with linear-mixed intermediate stops
+// so the canvas ramp tracks PowerPoint's.
+const srgbToLin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+const linToSrgb = (v: number) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)
+
+function parseStopColor(c: string): [number, number, number, number] | null {
+  const n = normalizeColor(c)
+  const hex = /^#([0-9A-Fa-f]{6})$/.exec(n)
+  if (hex) {
+    const h = hex[1]!
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+      1,
+    ]
+  }
+  const rgba = /^rgba\((\d+),(\d+),(\d+),([0-9.]+)\)$/.exec(n)
+  if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])]
+  return null
+}
+
+const SUBDIVISIONS = 8
+
+/** Konva colorStops array with linear-sRGB interpolated midpoints between each stop pair. */
+function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<number | string> {
+  const sorted = [...stops].sort((a, b) => a.pos - b.pos)
+  const out: Array<number | string> = []
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i]!
+    out.push(cur.pos, normalizeColor(cur.color))
+    const next = sorted[i + 1]
+    if (!next || next.color === cur.color || next.pos - cur.pos < 0.02) continue
+    const a = parseStopColor(cur.color)
+    const b = parseStopColor(next.color)
+    if (!a || !b) continue
+    const [lr, lg, lb] = [srgbToLin(a[0] / 255), srgbToLin(a[1] / 255), srgbToLin(a[2] / 255)]
+    const [mr, mg, mb] = [srgbToLin(b[0] / 255), srgbToLin(b[1] / 255), srgbToLin(b[2] / 255)]
+    for (let k = 1; k < SUBDIVISIONS; k++) {
+      const t = k / SUBDIVISIONS
+      const r = Math.round(linToSrgb(lr + (mr - lr) * t) * 255)
+      const g = Math.round(linToSrgb(lg + (mg - lg) * t) * 255)
+      const bl = Math.round(linToSrgb(lb + (mb - lb) * t) * 255)
+      const al = a[3] + (b[3] - a[3]) * t
+      out.push(
+        cur.pos + (next.pos - cur.pos) * t,
+        al >= 1 ? `rgb(${r},${g},${bl})` : `rgba(${r},${g},${bl},${al.toFixed(3)})`,
+      )
+    }
+  }
+  return out
+}
+
 export function fillToKonva(
   fill: RenderFill,
   w: number,
@@ -129,10 +186,9 @@ export function fillToKonva(
           fillRadialGradientEndPoint: { x: cx, y: cy },
           fillRadialGradientStartRadius: 0,
           fillRadialGradientEndRadius: far * 1.0,
-          fillRadialGradientColorStops: fill.stops.flatMap((s) => [s.pos, normalizeColor(s.color)]),
+          fillRadialGradientColorStops: linearRampStops(fill.stops),
         }
       }
-      const sorted = [...fill.stops].sort((a, b) => a.pos - b.pos)
       const rad = (fill.angleDeg * Math.PI) / 180
       const dx = Math.cos(rad)
       const dy = Math.sin(rad)
@@ -144,7 +200,7 @@ export function fillToKonva(
       return {
         fillLinearGradientStartPoint: { x: cx - (dx * len) / 2, y: cy - (dy * len) / 2 },
         fillLinearGradientEndPoint: { x: cx + (dx * len) / 2, y: cy + (dy * len) / 2 },
-        fillLinearGradientColorStops: sorted.flatMap((s) => [s.pos, normalizeColor(s.color)]),
+        fillLinearGradientColorStops: linearRampStops(fill.stops),
       }
     }
     case 'image': {
@@ -625,6 +681,13 @@ export interface GlyphDraw {
   shadowOffsetX?: number
   shadowOffsetY?: number
   shadowEnabled?: boolean
+  /** WordArt gradient text fill (mapped to Konva's linear-gradient fill over the run box) */
+  fillPriority?: 'linear-gradient'
+  fillLinearGradientStartPoint?: { x: number; y: number }
+  fillLinearGradientEndPoint?: { x: number; y: number }
+  fillLinearGradientColorStops?: Array<number | string>
+  /** Run reflection: the renderer draws a faded mirrored copy below the text */
+  reflection?: boolean
 }
 
 // Same-script fallback chains for Japanese/Korean/Traditional Chinese (win/mac family names back each other up); shared by FONT_STACK and the unknown-font fallback
@@ -763,7 +826,35 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
           shadowOffsetY: run.shadow.offsetY,
           shadowEnabled: true,
         }
+      : run.glow
+        ? {
+            shadowColor: normalizeColor(run.glow.color),
+            shadowBlur: run.glow.blurPx,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+            shadowEnabled: true,
+          }
+        : {}),
+    ...(run.gradient
+      ? (() => {
+          // Gradient in Text-node-local coords (origin = glyph top-left); 90° = top→bottom
+          // across the em box, 0° = left→right across the run width
+          const rad = (run.gradient.angleDeg * Math.PI) / 180
+          const gx = Math.cos(rad)
+          const gy = Math.sin(rad)
+          const cx = run.widthPx / 2
+          const cy = run.fontSizePx * 0.5
+          // Same projection as shape fills: ramp length = the box's projection onto the direction
+          const len = Math.abs(gx) * run.widthPx + Math.abs(gy) * run.fontSizePx
+          return {
+            fillPriority: 'linear-gradient' as const,
+            fillLinearGradientStartPoint: { x: cx - (gx * len) / 2, y: cy - (gy * len) / 2 },
+            fillLinearGradientEndPoint: { x: cx + (gx * len) / 2, y: cy + (gy * len) / 2 },
+            fillLinearGradientColorStops: linearRampStops(run.gradient.stops),
+          }
+        })()
       : {}),
+    ...(run.reflection ? { reflection: true } : {}),
   }
 }
 

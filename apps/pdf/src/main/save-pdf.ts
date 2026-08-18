@@ -886,12 +886,18 @@ export async function applySaveRequest(
     const applied = await applyTextEdits(bytes, request.textEdits)
     bytes = applied.bytes
     skippedTextEdits = applied.skipped
+    for (const s of skippedTextEdits) {
+      console.warn(`[pdf] text edit skipped on page ${s.pageIndex + 1}: ${s.reason}`)
+    }
   }
   if (request.textInserts && request.textInserts.length > 0) {
     const { applyTextInserts } = await import('./text-edit')
     const applied = await applyTextInserts(bytes, request.textInserts)
     bytes = applied.bytes
     skippedTextInserts = applied.skipped
+    for (const s of skippedTextInserts) {
+      console.warn(`[pdf] text insert skipped on page ${s.pageIndex + 1}: ${s.reason}`)
+    }
   }
   if (request.imageEdits && request.imageEdits.length > 0) {
     const { applyImageEdits } = await import('./image-edit')

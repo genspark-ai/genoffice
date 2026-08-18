@@ -63,19 +63,42 @@ describe('layoutDiagramFallback', () => {
 <dgm:cxn modelId="c3" srcId="n1" destId="n3" srcOrd="1" destOrd="0"/>
 </dgm:cxnLst></dgm:dataModel>`
 
-  it('orgChart hangs a branch whose children are all leaves (rows below, trunk + stubs)', () => {
+  it('orgChart keeps root children side by side (hang never fires at the root row)', () => {
     const shapes = layoutDiagramFallback(HIER_DATA, {}, 9144000, 6858000, 'orgChart1')
-    // 3 boxes + trunk + 2 stubs
-    expect(shapes.length).toBe(6)
     const boxes = shapes.filter((sp: any) => sp.text)
     expect(boxes).toHaveLength(3)
     const [a, b1, b2] = boxes as any[]
     expect(a.transform.offset.y).toBeLessThan(b1.transform.offset.y)
-    // hanging: B2 on its own row below B1
+    // PowerPoint measured (smartart-org-chart): a root's leaf children stay on one row
+    expect(b2.transform.offset.y).toBe(b1.transform.offset.y)
+    expect(b2.transform.offset.x).toBeGreaterThan(b1.transform.offset.x)
+  })
+
+  it('orgChart hangs an all-leaves branch on tall charts (std depth ≥ 4, PPT measured)', () => {
+    // R → n1(B1,B2 leaves) + a 4-row sibling chain n4→n5→n6: n1's leaves hang
+    const deep = HIER_DATA.replace('srcId="doc" destId="n1"', 'srcId="doc" destId="n0"')
+      .replace(
+        '<dgm:pt modelId="n1">',
+        '<dgm:pt modelId="n0"><dgm:t><a:bodyPr/><a:p><a:r><a:t>R</a:t></a:r></a:p></dgm:t></dgm:pt>' +
+          '<dgm:pt modelId="n4"/><dgm:pt modelId="n5"/><dgm:pt modelId="n6"/><dgm:pt modelId="n1">',
+      )
+      .replace(
+        '</dgm:cxnLst>',
+        '<dgm:cxn modelId="c0" srcId="n0" destId="n1" srcOrd="0" destOrd="0"/>' +
+          '<dgm:cxn modelId="c7" srcId="n0" destId="n4" srcOrd="1" destOrd="0"/>' +
+          '<dgm:cxn modelId="c8" srcId="n4" destId="n5" srcOrd="0" destOrd="0"/>' +
+          '<dgm:cxn modelId="c9" srcId="n5" destId="n6" srcOrd="0" destOrd="0"/></dgm:cxnLst>',
+      )
+    const shapes = layoutDiagramFallback(deep, {}, 9144000, 6858000, 'orgChart1')
+    const boxes = shapes.filter((sp: any) => sp.text) as any[]
+    // n1's leaf children (B1, B2) hang on separate rows
+    const texts = boxes.map((b) => JSON.stringify(b))
+    const b1 = boxes[texts.findIndex((t) => t.includes('B1'))]!
+    const b2 = boxes[texts.findIndex((t) => t.includes('B2'))]!
     expect(b2.transform.offset.y).toBeGreaterThan(b1.transform.offset.y)
   })
 
-  it('orgChart hangs a branch whose children are all leaves when nested deeper', () => {
+  it('orgChart keeps an all-leaves branch side by side on short charts (recursion measured)', () => {
     const deep = HIER_DATA.replace('srcId="doc" destId="n1"', 'srcId="doc" destId="n0"')
       .replace(
         '<dgm:pt modelId="n1">',
@@ -88,9 +111,8 @@ describe('layoutDiagramFallback', () => {
     const shapes = layoutDiagramFallback(deep, {}, 9144000, 6858000, 'orgChart1')
     const boxes = shapes.filter((sp: any) => sp.text) as any[]
     expect(boxes).toHaveLength(4)
-    // hanging children of n1 (B1, B2 leaves) stack on separate rows
     const [, , b1, b2] = boxes
-    expect(b2.transform.offset.y).toBeGreaterThan(b1.transform.offset.y)
+    expect(b2.transform.offset.y).toBe(b1.transform.offset.y)
   })
 
   it('chevron layout puts all nodes on one horizontal band of chevrons', () => {
@@ -268,5 +290,150 @@ describe('flatGrid centering and tile text autofit (napierone 0005)', () => {
     const runSize = el.text.paragraphs[0].runs[0].fontSize
     expect(runSize).toBeLessThan(20)
     expect(runSize).toBeGreaterThan(10)
+  })
+})
+
+describe('lProcess column process family (napierone 0005 p8)', () => {
+  const LPROC_DATA = `<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" xmlns:a="a">
+<dgm:ptLst>
+<dgm:pt modelId="doc" type="doc"/>
+<dgm:pt modelId="h1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Engage</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="h2"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Identify</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="k1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Departments</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="k2"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Controls</a:t></a:r></a:p></dgm:t></dgm:pt>
+</dgm:ptLst>
+<dgm:cxnLst>
+<dgm:cxn modelId="c1" srcId="doc" destId="h1" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c2" srcId="doc" destId="h2" srcOrd="1" destOrd="0"/>
+<dgm:cxn modelId="c3" srcId="h1" destId="k1" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c4" srcId="h2" destId="k2" srcOrd="0" destOrd="0"/>
+</dgm:cxnLst></dgm:dataModel>`
+
+  it('renders one column per top node: header, connector dot, tinted child block', () => {
+    const shapes = layoutDiagramFallback(LPROC_DATA, {}, 9144000, 3000000, 'lProcess1')
+    // 2 columns × (header + dot + child) = 6 shapes
+    expect(shapes).toHaveLength(6)
+    const [h1, dot, kid] = shapes as any[]
+    expect(JSON.stringify(h1)).toContain('Engage')
+    expect(JSON.stringify(kid)).toContain('Departments')
+    // dot is a small ellipse centered between header bottom and child top
+    expect(JSON.stringify(dot)).toContain('ellipse')
+    expect(dot.transform.offset.cx).toBeLessThan(h1.transform.offset.cx / 4)
+    expect(dot.transform.offset.y).toBeGreaterThan(h1.transform.offset.y + h1.transform.offset.cy)
+    expect(kid.transform.offset.y).toBeGreaterThan(dot.transform.offset.y)
+    // both columns share the header y; second column sits right of the first
+    const h2 = shapes[3] as any
+    expect(h2.transform.offset.y).toBe(h1.transform.offset.y)
+    expect(h2.transform.offset.x).toBeGreaterThan(h1.transform.offset.x)
+  })
+
+  it('childless lProcess2 nodes render as a large tinted top-anchored panel', () => {
+    const single = LPROC_DATA.replace(/<dgm:cxn modelId="c3".*destOrd="0"\/>/, '')
+      .replace(/<dgm:cxn modelId="c4".*destOrd="0"\/>/, '')
+      .replace(/<dgm:pt modelId="k1">.*?<\/dgm:pt>/, '')
+      .replace(/<dgm:pt modelId="k2">.*?<\/dgm:pt>/, '')
+    const shapes = layoutDiagramFallback(single, {}, 9144000, 3000000, 'lProcess2')
+    expect(shapes).toHaveLength(2)
+    const p = shapes[0] as any
+    // tall panel, not a slim header bar
+    expect(p.transform.offset.cy).toBeGreaterThan(3000000 * 0.7)
+    expect(JSON.stringify(p)).toContain('roundRect')
+  })
+})
+
+describe('arrow5 ring of inward arrows (smartart-autoTxRot / smartart-rotation)', () => {
+  it("places downArrows on a ring, first at 12 o'clock pointing down, clockwise", () => {
+    const shapes = layoutDiagramFallback(DATA, {}, 9144000, 6858000, 'arrow5')
+    expect(shapes).toHaveLength(5)
+    const geo = JSON.stringify(shapes[0])
+    expect(geo).toContain('downArrow')
+    // First node: centered horizontally, at the ring top, unrotated (points at the center)
+    const t0 = shapes[0]!.transform.offset
+    expect(t0.x + t0.cx / 2).toBeCloseTo(9144000 / 2, -4)
+    expect(shapes[0]!.transform.rot).toBe(0)
+    // Second node (clockwise) sits right of center and is rotated by 360/5 degrees
+    const t1 = shapes[1]!.transform.offset
+    expect(t1.x + t1.cx / 2).toBeGreaterThan(9144000 / 2)
+    expect(shapes[1]!.transform.rot).toBe(72 * 60000)
+  })
+
+  it('modified layout copies (arrow5#1) dispatch to the same family', () => {
+    const shapes = layoutDiagramFallback(DATA, {}, 9144000, 6858000, 'arrow5#1')
+    expect(JSON.stringify(shapes[0])).toContain('downArrow')
+  })
+})
+
+describe('orgChart assistants (dgm:pt type="asst")', () => {
+  const ASST = HIER_ASST()
+  function HIER_ASST() {
+    return `<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" xmlns:a="a">
+<dgm:ptLst>
+<dgm:pt modelId="doc" type="doc"/>
+<dgm:pt modelId="n1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Boss</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="as" type="asst"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Asst</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n2"><dgm:t><a:bodyPr/><a:p><a:r><a:t>E1</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n3"><dgm:t><a:bodyPr/><a:p><a:r><a:t>E2</a:t></a:r></a:p></dgm:t></dgm:pt>
+</dgm:ptLst>
+<dgm:cxnLst>
+<dgm:cxn modelId="c1" srcId="doc" destId="n1" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c2" srcId="n1" destId="n2" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c3" srcId="n1" destId="n3" srcOrd="1" destOrd="0"/>
+<dgm:cxn modelId="c4" srcId="n1" destId="as" srcOrd="2" destOrd="0"/>
+</dgm:cxnLst></dgm:dataModel>`
+  }
+  it('a childless assistant gets its own row between parent and children, left of the trunk', () => {
+    const shapes = layoutDiagramFallback(ASST, {}, 9144000, 6858000, 'orgChart1')
+    const boxes = shapes.filter((sp: any) => sp.text) as any[]
+    expect(boxes).toHaveLength(4)
+    const texts = boxes.map((b) => JSON.stringify(b))
+    const at = (name: string) => boxes[texts.findIndex((t) => t.includes(name))]!
+    const boss = at('Boss')
+    const asst = at('Asst')
+    const e1 = at('E1')
+    // Own row: below the boss, above the employees
+    expect(asst.transform.offset.y).toBeGreaterThan(boss.transform.offset.y)
+    expect(asst.transform.offset.y).toBeLessThan(e1.transform.offset.y)
+    // Tucked left of the boss's trunk
+    const bossCx = boss.transform.offset.x + boss.transform.offset.cx / 2
+    expect(asst.transform.offset.x + asst.transform.offset.cx).toBeLessThan(bossCx)
+    // Employees stay side by side (root children never hang)
+    expect(at('E2').transform.offset.y).toBe(e1.transform.offset.y)
+  })
+})
+
+describe('cycleMatrix family (cycle4)', () => {
+  const CM_DATA = `<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" xmlns:a="a">
+<dgm:ptLst>
+<dgm:pt modelId="doc" type="doc"><dgm:prSet/></dgm:pt>
+<dgm:pt modelId="n1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>A1</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n2"><dgm:spPr><a:solidFill><a:srgbClr val="ED7D31"/></a:solidFill></dgm:spPr><dgm:t><a:bodyPr/><a:p><a:r><a:t>B1</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n3"><dgm:t><a:bodyPr/><a:p><a:r><a:t>C1</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n4"><dgm:t><a:bodyPr/><a:p><a:r><a:t>D1</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="k1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>A2</a:t></a:r></a:p></dgm:t></dgm:pt>
+</dgm:ptLst>
+<dgm:cxnLst>
+<dgm:cxn modelId="c1" srcId="doc" destId="n1" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c2" srcId="doc" destId="n2" srcOrd="1" destOrd="0"/>
+<dgm:cxn modelId="c3" srcId="doc" destId="n3" srcOrd="2" destOrd="0"/>
+<dgm:cxn modelId="c4" srcId="doc" destId="n4" srcOrd="3" destOrd="0"/>
+<dgm:cxn modelId="c5" srcId="n1" destId="k1" srcOrd="0" destOrd="0"/>
+</dgm:cxnLst></dgm:dataModel>`
+
+  it('emits four corner cards behind four pie quadrants with a center hub', () => {
+    const shapes = layoutDiagramFallback(CM_DATA, {}, 6096000, 4064000, 'cycle4') as any[]
+    const pies = shapes.filter((s) => s.presetGeometry === 'pie')
+    const cards = shapes.filter((s) => s.presetGeometry === 'roundRect')
+    const hub = shapes.filter((s) => s.presetGeometry === 'donut')
+    expect(pies).toHaveLength(4)
+    expect(cards).toHaveLength(4)
+    expect(hub).toHaveLength(1)
+    // Cards precede the wedges (PowerPoint tucks them behind the circle)
+    expect(shapes.indexOf(cards[0])).toBeLessThan(shapes.indexOf(pies[0]))
+    // Second node's explicit dgm:spPr fill carries through
+    expect(JSON.stringify(pies[1])).toContain('ED7D31')
+    // The first card carries the child bullet
+    expect(JSON.stringify(cards[0])).toContain('A2')
+    // The custom-filled node's card stroke follows its wedge color
+    expect(JSON.stringify(cards[1])).toContain('ED7D31')
   })
 })

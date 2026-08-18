@@ -23,6 +23,7 @@ import type {
   DiagramShape,
   DocDefaults,
   DocProtection,
+  WriteProtection,
   FieldDisplay,
   InkInfo,
   NoteInfo,
@@ -103,6 +104,9 @@ export function assertZipWithinLimits(zip: JSZip): void {
   }
 }
 
+/** w:br w:type → run-text control char (\f page, \v column; else soft \n) */
+const BREAK_CHAR: Record<string, string> = { page: '\f', column: '\v' }
+
 const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -180,9 +184,14 @@ export interface ParseExtras {
 export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras: ParseExtras }> {
   const zip = await loadDocxZip(bytes)
   assertZipWithinLimits(zip)
-  const docFile = zip.file('word/document.xml')
-  if (!docFile) throw new Error('not a docx: missing word/document.xml')
-  const documentXml = await docFile.async('string')
+  const docPath = await resolveMainDocumentPath(zip)
+  if (!docPath) {
+    const mime = (await zip.file('mimetype')?.async('string'))?.trim()
+    if (mime?.startsWith('application/vnd.oasis.opendocument'))
+      throw new Error(`OpenDocument file (${mime}), not OOXML — save as .docx to open`)
+    throw new Error('not a docx: missing word/document.xml')
+  }
+  const documentXml = await zip.file(docPath)!.async('string')
 
   const theme = await parseTheme(zip)
   const { styles, docDefaults } = await parseStyles(zip, theme.colors, theme.fonts)
@@ -197,10 +206,12 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     }
   }
 
-  const rels = await parseRels(zip, 'word/_rels/document.xml.rels')
+  const rels = await parseRels(zip, docPath.replace(/([^/]+)$/, '_rels/$1.rels'))
   const { formats: numFormats, defs: numbering } = await parseNumbering(zip)
   const comments = await parseComments(zip)
   const protection = await parseProtection(zip)
+  const writeProtection = await parseWriteProtection(zip)
+  const removePersonalInfo = await parseRemovePersonalInfo(zip)
   const footnotes = await parseNotesPart(zip, 'footnote')
   const endnotes = await parseNotesPart(zip, 'endnote')
   const sources = await parseSources(zip)
@@ -343,6 +354,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
   const titlePg = xmlFlagOn(documentXml, 'w:titlePg')
   const evenAndOddHeaders = await parseEvenAndOddHeaders(zip)
   const compatibilityMode = await parseCompatibilityMode(zip)
+  const layoutSettings = await parseLayoutSettings(zip)
   const hfParts = await parseAllHfParts(zip, rels, styles, theme.colors)
 
   // ink annotations (freehand strokes): our own anchored floating pictures, restored
@@ -367,6 +379,8 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     blocks,
     comments,
     protection,
+    writeProtection,
+    removePersonalInfo,
     footnotes,
     endnotes,
     sources,
@@ -385,6 +399,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     titlePg,
     evenAndOddHeaders,
     compatibilityMode,
+    ...layoutSettings,
     headerFirst: hfPartInfo(headerFirst),
     footerFirst: hfPartInfo(footerFirst),
     headerEven: hfPartInfo(headerEven),
@@ -455,6 +470,11 @@ function listKindOf(ctx: BuildContext, numId: string, ilvl: number): 'bullet' | 
   return ctx.numFormats.get(numId) ?? 'bullet'
 }
 
+/** hex color value tolerance: Word/LO accept a leading '#' (tdf#57589) */
+function stripHash(v: string): string {
+  return v.startsWith('#') ? v.slice(1) : v
+}
+
 /** w:color -> display hex; w:themeColor resolves against the live palette (beats stale w:val) */
 function colorFrom(container: XNode | undefined, theme?: ThemeColors | null): string | undefined {
   if (!container) return undefined
@@ -469,7 +489,7 @@ function colorFrom(container: XNode | undefined, theme?: ThemeColors | null): st
     if (resolved) return resolved
   }
   const val = a['w:val']
-  return val && val !== 'auto' ? val : undefined
+  return val && val !== 'auto' ? stripHash(val) : undefined
 }
 
 /**
@@ -725,7 +745,7 @@ async function buildBlock(
     // A content-less sdt (w:sdtPr only, or empty sdtContent) renders as nothing
     // in Word, so it must not produce a visible placeholder chip.
     const sdtPreview = plainText(xml)
-    if (!sdtPreview.trim() && !xml.includes('<w:drawing') && !xml.includes('<w:pict')) {
+    if (!sdtPreview.trim() && !xml.includes('<w:drawing') && !/<w:pict[\s>]/.test(xml)) {
       return { ...base, type: 'passthrough', label: 'Content control', invisibleMarker: true }
     }
     return { ...base, type: 'passthrough', label: 'Content control', previewText: sdtPreview }
@@ -765,12 +785,16 @@ async function buildBlock(
   // Regenerating them would silently drop structure (section breaks, fields,
   // footnote anchors...), which is exactly the kind of damage patch-save exists
   // to prevent.
-  if (detect.includes('<w:sectPr')) {
+  // Only a content-less section-break paragraph is protected: one with visible
+  // text renders as a normal paragraph (Word shows its content on the section's
+  // last page); its w:sectPr rides along in rawPPr, which mergePPrFormat keeps
+  // verbatim on edits, so the section survives regeneration.
+  if (detect.includes('<w:sectPr') && !plainText(detect).trim()) {
     return {
       ...base,
       type: 'passthrough',
       label: 'Section break paragraph',
-      previewText: plainText(detect),
+      previewText: '',
     }
   }
   // Field chars inside textbox content don't make the paragraph itself a field
@@ -885,7 +909,7 @@ async function buildBlock(
       },
     }
   }
-  if (detect.includes('<w:object') || detect.includes('<w:pict')) {
+  if (detect.includes('<w:object') || /<w:pict[\s>]/.test(detect)) {
     // Legacy VML textboxes (v:shape/v:textbox) and WordArt (v:textpath) in
     // w:pict: extract the structured display model instead of flattening every
     // nested paragraph and table into one unreadable run — or degrading the
@@ -2361,16 +2385,25 @@ function extractTextboxes(
           : null
       }
       if (hasLineShapes && !opts?.shapes) return null
-      // textless preset shape (star/arrow/…): visible geometry, no text body.
-      // rect stays on its existing paths (thin rules, background boxes)
-      if (!opts?.shapes || !prstOf || prstOf === 'rect') return null
+      if (!opts?.shapes || !prstOf) return null
+      if (prstOf === 'rect') {
+        // near-flat rects stay on the decorative thin-rule path; a real
+        // rectangle (pattern/solid-filled swatch, tdf dml-shape-fillpattern)
+        // renders like any other textless preset shape
+        const xfrm = findChild(spPr ?? {}, 'a:xfrm')
+        const cy = parseInt(attrsOf(findChild(xfrm ?? {}, 'a:ext') ?? {})['cy'] ?? '', 10)
+        if (!Number.isFinite(cy) || cy <= 130000) return null
+      }
     }
     const box: TextboxDisplay = { paras: [] }
     if (spPr) {
       if (!findChild(spPr, 'a:noFill')) {
+        // a:pattFill approximates to its foreground color (same tradeoff as gradFill)
+        const pattFill = findChild(spPr, 'a:pattFill')
         const fill =
           colorNodeHex(findChild(spPr, 'a:solidFill'), ctx.themeColors) ??
-          gradFillApproxHex(spPr, ctx.themeColors)
+          gradFillApproxHex(spPr, ctx.themeColors) ??
+          (pattFill ? colorNodeHex(findChild(pattFill, 'a:fgClr'), ctx.themeColors) : undefined)
         if (fill) box.fill = fill
         const blipFill = findChild(spPr, 'a:blipFill')
         if (blipFill) {
@@ -2586,6 +2619,16 @@ function extractTextboxes(
       if (stroke && shapeAttrs['stroked'] !== 'f') box.borderColor = stroke
       // canvas textboxes: VML strokes default to on/black, and Word draws them
       else if (!stroke && shapeAttrs['stroked'] !== 'f' && scale) box.borderColor = '000000'
+      // absolutely positioned VML shape: leaves the flow like a wp:anchor box
+      // (page banners stack at full height otherwise, tdf 1194 family).
+      // Canvas (v:group) children use unitless group coordinates — not ours to float.
+      if (!scale && /position:absolute/.test(style)) {
+        box.floating = true
+        const mx = parseFloat(/margin-left:(-?[\d.]+)pt/.exec(style)?.[1] ?? '')
+        const my = parseFloat(/margin-top:(-?[\d.]+)pt/.exec(style)?.[1] ?? '')
+        if (Number.isFinite(mx)) box.offsetXEmu = Math.round(mx * EMU_PER_PT)
+        if (Number.isFinite(my)) box.offsetYEmu = Math.round(my * EMU_PER_PT)
+      }
       for (const content of contents) box.paras.push(...txbxContentParas(content, ctx))
       if (contents.some(txbxHasStructuredContent)) box.readOnly = true
       if (box.paras.some((p) => p.runs.length > 0)) out.push(box)
@@ -2764,7 +2807,11 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
     if (hanging > 0) format.indentFirstLine = -hanging
     else if (firstLine > 0) format.indentFirstLine = firstLine
   }
-  if (boolProp(pPr, 'w:pageBreakBefore')) format.pageBreakBefore = true
+  {
+    // tri-state: an explicit w:val="0" must override a style-chain true
+    const pbb = onOffOf(pPr, 'w:pageBreakBefore')
+    if (pbb !== undefined) format.pageBreakBefore = pbb
+  }
   if (boolProp(pPr, 'w:keepNext')) format.keepNext = true
   if (boolProp(pPr, 'w:keepLines')) format.keepLines = true
   // snapToGrid: default ON; only store when explicitly set to OFF
@@ -2786,7 +2833,7 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
   const shd = findChild(pPr, 'w:shd')
   if (shd) {
     const fill = attrsOf(shd)['w:fill']
-    if (fill && fill !== 'auto') format.shadingFill = fill
+    if (fill && fill !== 'auto') format.shadingFill = stripHash(fill)
   }
   const pBdrs = findChildren(pPr, 'w:pBdr')
   if (pBdrs.length > 0) {
@@ -2808,7 +2855,8 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
       if (!el || val === 'none' || val === 'nil') continue
       borders += ch
       const line: import('./types').ParaBorderLine = {}
-      if (attrs?.['w:color'] && attrs['w:color'] !== 'auto') line.color = attrs['w:color']
+      if (attrs?.['w:color'] && attrs['w:color'] !== 'auto')
+        line.color = stripHash(attrs['w:color'])
       const sz = parseInt(attrs?.['w:sz'] ?? '', 10)
       if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
       if (line.color !== undefined || line.szPt !== undefined) lines[ch] = line
@@ -3140,7 +3188,7 @@ function extractRuns(
         walk(childrenOf(node), link, rev)
       } else if (name === 'w:br') {
         // Word honors a <w:br> sitting outside any <w:r> (direct child of w:p / w:ins)
-        pushRun({ text: attrsOf(node)['w:type'] === 'page' ? '\f' : '\n' }, rev)
+        pushRun({ text: BREAK_CHAR[attrsOf(node)['w:type'] ?? ''] ?? '\n' }, rev)
       }
     }
   }
@@ -3247,10 +3295,17 @@ function buildRun(
   let text = ''
   for (const child of childrenOf(rNode)) {
     const name = nameOf(child)
-    if (name === 'w:t' || name === 'w:delText') text += decodeNumericCharRefs(textOf(child))
-    else if (name === 'w:tab' || name === 'w:ptab') text += '\t'
+    if (name === 'w:t' || name === 'w:delText') {
+      const raw = decodeNumericCharRefs(textOf(child))
+      // without xml:space="preserve" Word drops the element's leading/trailing
+      // XML whitespace (pretty-printed documents carry literal newlines + tabs)
+      text +=
+        attrsOf(child)['xml:space'] === 'preserve'
+          ? raw
+          : raw.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
+    } else if (name === 'w:tab' || name === 'w:ptab') text += '\t'
     // In-paragraph page breaks (w:br w:type="page") are encoded as \f and preserved; column/soft breaks become \n
-    else if (name === 'w:br') text += attrsOf(child)['w:type'] === 'page' ? '\f' : '\n'
+    else if (name === 'w:br') text += BREAK_CHAR[attrsOf(child)['w:type'] ?? ''] ?? '\n'
     else if (name === 'w:cr') text += '\n'
     else if (name === 'w:noBreakHyphen') text += '\u2011'
     else if (name === 'w:sym') {
@@ -3361,7 +3416,7 @@ function buildRun(
     const highlight = attrsOf(findChild(rPr, 'w:highlight') ?? {})['w:val']
     if (highlight && highlight !== 'none') run.highlight = highlight
     const shdFill = attrsOf(findChild(rPr, 'w:shd') ?? {})['w:fill']
-    if (shdFill && shdFill !== 'auto') run.shading = shdFill
+    if (shdFill && shdFill !== 'auto') run.shading = stripHash(shdFill)
     const vertAlign = attrsOf(findChild(rPr, 'w:vertAlign') ?? {})['w:val']
     if (vertAlign === 'superscript' || vertAlign === 'subscript') run.vertAlign = vertAlign
     const em = attrsOf(findChild(rPr, 'w:em') ?? {})['w:val']
@@ -3612,6 +3667,17 @@ function extractTableModel(tbl: XNode, ctx: BuildContext, depth = 1): TableModel
     tblJc === 'center' ? 'center' : tblJc === 'right' || tblJc === 'end' ? 'right' : undefined
   const tblInd = attrsOf(findChild(tblPrNode ?? {}, 'w:tblInd') ?? {})
   const tblIndTwips = !tblInd['w:type'] || tblInd['w:type'] === 'dxa' ? Number(tblInd['w:w']) : NaN
+  const tblpPr = attrsOf(findChild(tblPrNode ?? {}, 'w:tblpPr') ?? {})
+  let floatSide: TableModel['floatSide']
+  if (Object.keys(tblpPr).length > 0) {
+    const xSpec = tblpPr['w:tblpXSpec']
+    // no alignment keyword: an absolute X past mid-body (~9360 twips of usable
+    // width on Letter/A4) means the table hugs the right side
+    floatSide =
+      xSpec === 'right' || xSpec === 'outside' || (!xSpec && Number(tblpPr['w:tblpX']) > 4680)
+        ? 'right'
+        : 'left'
+  }
 
   const rows: TableCell[][] = []
   const rowHeightsTwips: Array<number | null> = []
@@ -3662,6 +3728,7 @@ function extractTableModel(tbl: XNode, ctx: BuildContext, depth = 1): TableModel
   if (effCellMar) model.cellMarTwips = effCellMar
   if (effBorders) model.borders = effBorders
   if (tblAlign) model.align = tblAlign
+  if (floatSide) model.floatSide = floatSide
   if (Number.isFinite(tblIndTwips) && tblIndTwips !== 0) model.indentTwips = tblIndTwips
   const tblStyle = attrsOf(findChild(findChild(tbl, 'w:tblPr') ?? {}, 'w:tblStyle') ?? {})['w:val']
   if (tblStyle) model.tblStyleId = tblStyle
@@ -3804,7 +3871,7 @@ function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorde
     borders[side] = {
       style: a['w:val'],
       ...(a['w:sz'] ? { szEighths: Number(a['w:sz']) || undefined } : {}),
-      ...(a['w:color'] ? { color: a['w:color'] } : {}),
+      ...(a['w:color'] ? { color: stripHash(a['w:color']) } : {}),
     }
   }
   return Object.keys(borders).length > 0 ? borders : undefined
@@ -3880,7 +3947,7 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number): TableCell {
       cell.vMerge = attrsOf(vMerge)['w:val'] === 'restart' ? 'restart' : 'continue'
     }
     const fill = attrsOf(findChild(tcPr, 'w:shd') ?? {})['w:fill']
-    if (fill && fill !== 'auto') cell.fill = fill
+    if (fill && fill !== 'auto') cell.fill = stripHash(fill)
     const vAlign = attrsOf(findChild(tcPr, 'w:vAlign') ?? {})['w:val']
     if (vAlign === 'center' || vAlign === 'bottom' || vAlign === 'top') cell.vAlign = vAlign
     const tcMar = cellMarginsOf(findChild(tcPr, 'w:tcMar'))
@@ -3938,7 +4005,7 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number): TableCell {
       const pXml = rawPXml.includes('<mc:Fallback')
         ? rawPXml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, '')
         : rawPXml
-      if (pXml.includes('<wp:anchor') || pXml.includes('<w:pict')) {
+      if (pXml.includes('<wp:anchor') || /<w:pict[\s>]/.test(pXml)) {
         const boxes = extractTextboxes(pXml, ctx, { shapes: true })
         if (boxes.length > 0) {
           cell.anchoredBoxes = [...(cell.anchoredBoxes ?? []), ...boxes]
@@ -4203,6 +4270,20 @@ async function parseCompatibilityMode(zip: JSZip): Promise<number> {
   const xml = await file.async('string')
   const m = /<w:compatSetting[^>]*w:name="compatibilityMode"[^>]*w:val="(\d+)"/.exec(xml)
   return m ? parseInt(m[1], 10) : 0
+}
+
+/** settings.xml w:autoHyphenation + w:defaultTabStop (absent = Word's 720 twips) */
+async function parseLayoutSettings(
+  zip: JSZip,
+): Promise<{ autoHyphenation?: boolean; defaultTabStopTwips?: number }> {
+  const file = zip.file('word/settings.xml')
+  if (!file) return {}
+  const xml = await file.async('string')
+  const tab = /<w:defaultTabStop[^>]*w:val="(-?\d+)"/.exec(xml)
+  return {
+    ...(xmlFlagOn(xml, 'w:autoHyphenation') ? { autoHyphenation: true } : {}),
+    ...(tab ? { defaultTabStopTwips: parseInt(tab[1], 10) } : {}),
+  }
 }
 
 /** settings.xml <w:evenAndOddHeaders/> (w:val="0|false" counts as off) */
@@ -4509,7 +4590,7 @@ function hfCellContent(
   const paras: Run[][] = []
   let align: HfTableCell['align']
   const shd = attrsOf(findChild(findChild(tc, 'w:tcPr') ?? {}, 'w:shd') ?? {})['w:fill']
-  let fill = shd && shd !== 'auto' ? shd : undefined
+  let fill = shd && shd !== 'auto' ? stripHash(shd) : undefined
   let sawNested = false
   for (const node of childrenThroughSdt(tc, ['w:p', 'w:tbl'])) {
     if (nameOf(node) === 'w:tbl') {
@@ -4837,13 +4918,25 @@ function imageMeta(xml: string): ImageMeta {
   }
   const anchor = /<wp:anchor[^>]*>/.exec(xml)?.[0]
   if (anchor) {
-    if (/behindDoc="1"/.test(anchor)) meta.imageWrap = 'behind'
+    // an explicit wrap element wins over behindDoc: Word draws a
+    // behindDoc+wrapTight object behind the text and still wraps around it
+    if (/behindDoc="1"/.test(anchor) && !/<wp:wrap(Square|Tight|Through|TopAndBottom)/.test(xml))
+      meta.imageWrap = 'behind'
     else if (/<wp:wrapTopAndBottom/.test(xml)) meta.imageWrap = 'topBottom'
     else if (/<wp:wrap(Square|Tight|Through)/.test(xml)) {
       const kind = /<wp:wrap(Square|Tight|Through)/.exec(xml)![1]
       const alignRight =
         /<wp:positionH[^>]*>(?:(?!<\/wp:positionH>)[\s\S])*?<wp:align>right<\/wp:align>/.test(xml)
-      const side = alignRight ? 'right' : 'left'
+      // wrapText names the side the text goes on — the object floats opposite;
+      // with bothSides, an absolute X past mid-body (~4680 twips usable half on
+      // Letter/A4) means the object hugs the right side
+      const wrapText = /<wp:wrap(?:Square|Tight|Through)[^>]*wrapText="([^"]+)"/.exec(xml)?.[1]
+      const posH = /<wp:positionH[^>]*>([\s\S]*?)<\/wp:positionH>/.exec(xml)?.[1] ?? ''
+      const offX = Number(/<wp:posOffset>(-?\d+)<\/wp:posOffset>/.exec(posH)?.[1] ?? NaN)
+      const side =
+        alignRight || wrapText === 'left' || (wrapText !== 'right' && offX > 4680 * 635)
+          ? 'right'
+          : 'left'
       meta.imageWrap =
         kind === 'Tight'
           ? `tight-${side}`
@@ -5502,6 +5595,8 @@ async function parseStyles(
       if (onFlag('w:i')) dd.italic = true
       const color = colorFrom(rPr, theme)
       if (color) dd.color = color
+      const lang = attrsOf(findChild(rPr, 'w:lang') ?? {})['w:val']
+      if (lang) dd.lang = lang
     }
     const pPr = findChild(findChild(defaultsNode, 'w:pPrDefault') ?? {}, 'w:pPr')
     const spacingAttrs = pPr ? attrsOf(findChild(pPr, 'w:spacing') ?? {}) : {}
@@ -5583,6 +5678,19 @@ async function parseStyles(
       numPr,
       isDefault: attrs['w:default'] === '1' || attrs['w:default'] === 'true' ? true : undefined,
     })
+  }
+
+  // Word's effective default per style type (ECMA-376 §17.7.4.17): the last
+  // w:default="1" wins; a type declaring none defaults to its first style
+  {
+    const firstOfType = new Map<string, StyleInfo>()
+    const declared = new Map<string, StyleInfo>()
+    for (const info of styles.values()) {
+      if (!firstOfType.has(info.type)) firstOfType.set(info.type, info)
+      if (info.isDefault) declared.set(info.type, info)
+      info.isDefault = undefined
+    }
+    for (const [type, first] of firstOfType) (declared.get(type) ?? first).isDefault = true
   }
 
   // resolve basedOn chains: a style inherits every display prop it doesn't set itself
@@ -5681,16 +5789,23 @@ function tableStyleDisplayOf(
   const display: TableStyleDisplay = {}
   const shdFill = (node: XNode | undefined): string | undefined => {
     const fill = node ? attrsOf(findChild(node, 'w:shd') ?? {})['w:fill'] : undefined
-    return fill && fill !== 'auto' ? fill : undefined
+    return fill && fill !== 'auto' ? stripHash(fill) : undefined
   }
   const baseFill = shdFill(findChild(styleNode, 'w:tcPr'))
   if (baseFill) display.fill = baseFill
+  const szHalfOf = (rPr: XNode | undefined): number | undefined => {
+    const val = parseInt(attrsOf(findChild(rPr ?? {}, 'w:sz') ?? {})['w:val'] ?? '', 10)
+    return val > 0 ? val : undefined
+  }
   const styleRPr = findChild(styleNode, 'w:rPr')
   if (styleRPr) {
     const wholeTable: NonNullable<TableStyleDisplay['wholeTable']> = {}
     const color = colorFrom(styleRPr, theme)
     if (color) wholeTable.color = color
     if (boolProp(styleRPr, 'w:b')) wholeTable.bold = true
+    if (boolProp(styleRPr, 'w:i')) wholeTable.italic = true
+    const sz = szHalfOf(styleRPr)
+    if (sz) wholeTable.sizeHalfPoints = sz
     if (Object.keys(wholeTable).length > 0) display.wholeTable = wholeTable
   }
   for (const cond of findChildren(styleNode, 'w:tblStylePr')) {
@@ -5704,6 +5819,8 @@ function tableStyleDisplayOf(
       if (rPr && boolProp(rPr, 'w:b')) fmt.bold = true
       const color = colorFrom(rPr, theme)
       if (color) fmt.color = color
+      const sz = szHalfOf(rPr)
+      if (sz) fmt.sizeHalfPoints = sz
       if (Object.keys(fmt).length > 0) display[type] = fmt
     } else if (type === 'band1Horz' && fill) {
       display.band1Fill = fill
@@ -5716,7 +5833,10 @@ function tableStyleDisplayOf(
   if (borders) display.borders = borders
   const cellMar = cellMarginsOf(findChild(styleTblPr ?? {}, 'w:tblCellMar'))
   if (cellMar) display.cellMarTwips = cellMar
-  const stylePPrSpacing = findChild(findChild(styleNode, 'w:pPr') ?? {}, 'w:spacing')
+  const stylePPr = findChild(styleNode, 'w:pPr')
+  const jc = attrsOf(findChild(stylePPr ?? {}, 'w:jc') ?? {})['w:val']
+  if (jc) display.paraJc = jc
+  const stylePPrSpacing = findChild(stylePPr ?? {}, 'w:spacing')
   if (stylePPrSpacing) {
     const a = attrsOf(stylePPrSpacing)
     const ps: NonNullable<TableStyleDisplay['paraSpacing']> = {}
@@ -5818,13 +5938,18 @@ function styleDisplayOf(
     }
     if (boolProp(pPr, 'w:keepNext')) display.keepNext = true
     if (boolProp(pPr, 'w:keepLines')) display.keepLines = true
-    if (boolProp(pPr, 'w:pageBreakBefore')) display.pageBreakBefore = true
+    {
+      const pbb = onOffOf(pPr, 'w:pageBreakBefore')
+      if (pbb !== undefined) display.pageBreakBefore = pbb
+    }
     if (boolProp(pPr, 'w:contextualSpacing')) display.contextualSpacing = true
     const autoSpace = autoSpaceOf(pPr)
     if (autoSpace !== undefined) display.autoSpace = autoSpace
     const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
     if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
     else if (jc === 'both' || jc === 'distribute') display.align = 'justify'
+    const shdFill = attrsOf(findChild(pPr, 'w:shd') ?? {})['w:fill']
+    if (shdFill && shdFill !== 'auto') display.shadingFill = stripHash(shdFill)
     const stops = tabStopsOf(pPr)
     if (stops) display.tabStops = stops
     const ind = findChild(pPr, 'w:ind')
@@ -5841,6 +5966,21 @@ function styleDisplayOf(
     }
   }
   return Object.keys(display).length > 0 ? display : undefined
+}
+
+/**
+ * Main document part: word/document.xml when present, else the package-level
+ * officeDocument relationship target (LO corpus has e.g. word/trial.xml).
+ */
+export async function resolveMainDocumentPath(zip: JSZip): Promise<string | null> {
+  if (zip.file('word/document.xml')) return 'word/document.xml'
+  const rels = await parseRels(zip, '_rels/.rels')
+  for (const rel of rels.values()) {
+    if (!/\/officeDocument$/.test(rel.type) || rel.targetMode === 'External') continue
+    const target = rel.target.replace(/^\//, '')
+    if (zip.file(target)) return target
+  }
+  return null
 }
 
 async function parseRels(zip: JSZip, path: string): Promise<Map<string, RelInfo>> {
@@ -5927,6 +6067,35 @@ async function parseProtection(zip: JSZip): Promise<DocProtection | null> {
     ...(spin ? { spinCount: parseInt(spin, 10) } : {}),
     ...(sid ? { algorithmSid: parseInt(sid, 10) } : {}),
   }
+}
+
+/** w:writeProtection from word/settings.xml (password to modify / read-only recommended) */
+async function parseWriteProtection(zip: JSZip): Promise<WriteProtection | null> {
+  const file = zip.file('word/settings.xml')
+  if (!file) return null
+  const tag = /<w:writeProtection[^>]*\/>/.exec(await file.async('string'))?.[0]
+  if (!tag) return null
+  const recommended = /w:recommended="(?:1|true|on)"/.test(tag)
+  const hash = /w:hash="([^"]+)"/.exec(tag)?.[1]
+  const salt = /w:salt="([^"]+)"/.exec(tag)?.[1]
+  const spin = /w:cryptSpinCount="(\d+)"/.exec(tag)?.[1]
+  const sid = /w:cryptAlgorithmSid="(\d+)"/.exec(tag)?.[1]
+  if (!recommended && !hash) return null
+  return {
+    ...(recommended ? { recommended } : {}),
+    ...(hash ? { hash } : {}),
+    ...(salt ? { salt } : {}),
+    ...(spin ? { spinCount: parseInt(spin, 10) } : {}),
+    ...(sid ? { algorithmSid: parseInt(sid, 10) } : {}),
+  }
+}
+
+/** settings.xml <w:removePersonalInformation/> (w:val="0|false" counts as off) */
+async function parseRemovePersonalInfo(zip: JSZip): Promise<boolean> {
+  const file = zip.file('word/settings.xml')
+  if (!file) return false
+  const m = /<w:removePersonalInformation[^>]*\/>/.exec(await file.async('string'))
+  return m !== null && !/w:val="(?:0|false)"/.test(m[0])
 }
 
 /** w:numFmt of a w:lvl, including w14 custom formats hidden in mc:AlternateContent

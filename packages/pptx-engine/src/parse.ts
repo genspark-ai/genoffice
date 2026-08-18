@@ -126,6 +126,8 @@ export interface ParseContext {
   themeMediaRels?: Map<string, string>
   /** Chart rId → that chart part's own image rels (for chart background picture fills) */
   chartMediaRels?: Map<string, Map<string, string>>
+  /** Chart rIds whose part has a Microsoft chartStyle companion (modern gray label defaults) */
+  chartStyleRels?: Set<string>
   /** Diagram data rId → the drawing part's own image rels (SmartArt picture fills) */
   diagramMediaRels?: Map<string, Map<string, string>>
   /** ppt/tableStyles.xml source (table style definitions, read-only) */
@@ -372,6 +374,7 @@ function parseSpShape(
   let stroke = parseStroke(spPr, ctx)
   let shadow = parseShadow(spPr, ctx)
   let glow = parseGlow(spPr, ctx)
+  const scene3d = parseScene3D(spPr, ctx)
   // <a:fillOverlay> holds a second fill element directly (a:gradFill/…), so parseFill reads it like an spPr
   const overlayNode = spPr?.['a:effectLst']?.['a:fillOverlay']
   const fillOverlay = overlayNode ? parseFill(overlayNode, ctx) : undefined
@@ -452,6 +455,7 @@ function parseSpShape(
     ...(stroke ? { stroke } : {}),
     ...(shadow ? { shadow } : {}),
     ...(glow ? { glow } : {}),
+    ...(scene3d ? { scene3d } : {}),
     text,
   }
   return el
@@ -597,6 +601,39 @@ function parseShadow(spPr: any, ctx: ParseContext): ShadowEffect | undefined {
     blurRad: intOr(shdw['@_blurRad'], 0),
     dist: intOr(shdw['@_dist'], 0),
     dirDeg: intOr(shdw['@_dir'], 0) / 60000,
+  }
+}
+
+/** <a:scene3d> (camera + light rig) and <a:sp3d> (extrusion). Only attached when a camera exists. */
+function parseScene3D(spPr: any, ctx: ParseContext): import('./types').Scene3D | undefined {
+  const s3 = spPr?.['a:scene3d']
+  const camera = s3?.['a:camera']
+  const cameraPreset = camera?.['@_prst']
+  if (!cameraPreset) return undefined
+  const sp3d = spPr?.['a:sp3d']
+  const rot = (node: any): { lat: number; lon: number; rev: number } | undefined => {
+    const r = node?.['a:rot']
+    if (!r || typeof r !== 'object') return undefined
+    return { lat: intOr(r['@_lat'], 0), lon: intOr(r['@_lon'], 0), rev: intOr(r['@_rev'], 0) }
+  }
+  const rig = s3['a:lightRig']
+  const extrusionClr = sp3d?.['a:extrusionClr']
+  const extrusionColor =
+    extrusionClr && typeof extrusionClr === 'object'
+      ? resolveColorNode(extrusionClr, ctx)
+      : undefined
+  const cameraRot = rot(camera)
+  const lightRot = rot(rig)
+  return {
+    cameraPreset,
+    ...(cameraRot ? { cameraRot } : {}),
+    ...(rig?.['@_rig'] ? { lightRig: rig['@_rig'] } : {}),
+    ...(rig?.['@_dir'] ? { lightDir: rig['@_dir'] } : {}),
+    ...(lightRot ? { lightRot } : {}),
+    ...(sp3d?.['@_extrusionH'] != null ? { extrusionEmu: intOr(sp3d['@_extrusionH'], 0) } : {}),
+    ...(sp3d?.['@_z'] != null ? { zEmu: intOr(sp3d['@_z'], 0) } : {}),
+    ...(extrusionColor ? { extrusionColor } : {}),
+    ...(sp3d?.['@_prstMaterial'] ? { material: sp3d['@_prstMaterial'] } : {}),
   }
 }
 
@@ -957,6 +994,7 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
     const model = chartXml
       ? parseChartXml(chartXml, ctx.theme, (spPr) => parseFill(spPr, chartFillCtx))
       : null
+    if (model && ctx.chartStyleRels?.has(String(rid))) model.hasStylePart = true
     if (model) {
       const usXml = rid ? ctx.chartUserShapes?.get(String(rid)) : undefined
       if (usXml) {
@@ -998,9 +1036,18 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
     if (drawingXml) {
       // Picture-fill rIds inside the drawing resolve against the drawing part's own rels
       const drawingRels = dm ? ctx.diagramMediaRels?.get(String(dm)) : undefined
+      // PowerPoint re-renders SmartArt from data+colors, so the drawing part's cached
+      // text color can be stale — resolve the truth per modelId from the color part
+      const csRel = data?.['dgm:relIds']?.['@_r:cs']
+      const txColors = diagramTextColors(
+        dm ? ctx.diagramDatas?.get(String(dm)) : undefined,
+        csRel ? ctx.diagramColors?.get(String(csRel)) : undefined,
+        ctx,
+      )
       const shapes = parseDiagramDrawing(
         drawingXml,
         drawingRels ? { ...ctx, mediaRels: drawingRels } : ctx,
+        txColors,
       )
       // A single text-less shape is a stub (writers emit just a background rect);
       // fall through to the layout fallback instead of drawing one giant block
@@ -1066,7 +1113,43 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
  * references). Coordinate system: the diagram canvas (origin 0,0, size ≈
  * graphicFrame ext).
  */
-function parseDiagramDrawing(drawingXml: string, ctx: ParseContext): SlideElement[] {
+/**
+ * dsp text-color truth: map dsp modelId → diagram-colors styleLbl txFillClrLst color,
+ * via the data part's presentation points (presStyleLbl). PowerPoint resolves SmartArt
+ * text from these, ignoring the drawing part's cached (possibly stale) fontRef color.
+ */
+function diagramTextColors(
+  dataXml: string | undefined,
+  colorsXml: string | undefined,
+  ctx: ParseContext,
+): Map<string, string> {
+  const out = new Map<string, string>()
+  if (!dataXml || !colorsXml) return out
+  const lblColor = new Map<string, string>()
+  for (const m of colorsXml.matchAll(/<dgm:styleLbl name="([^"]+)">([\s\S]*?)<\/dgm:styleLbl>/g)) {
+    const lst = /<dgm:txFillClrLst[^>]*>([\s\S]*?)<\/dgm:txFillClrLst>/.exec(m[2]!)?.[1]
+    if (!lst) continue
+    const cm = /<a:schemeClr val="([^"]+)"|<a:srgbClr val="([^"]+)"/.exec(lst)
+    if (!cm) continue
+    const c = cm[1]
+      ? resolveColorNode({ 'a:schemeClr': { '@_val': cm[1] } }, ctx)
+      : '#' + String(cm[2]).toUpperCase()
+    if (c) lblColor.set(m[1]!, c)
+  }
+  if (!lblColor.size) return out
+  for (const m of dataXml.matchAll(/<dgm:pt modelId="([^"]+)" type="pres"[\s\S]*?<\/dgm:pt>/g)) {
+    const lbl = /presStyleLbl="([^"]+)"/.exec(m[0])?.[1]
+    const c = lbl ? lblColor.get(lbl) : undefined
+    if (c) out.set(m[1]!, c)
+  }
+  return out
+}
+
+function parseDiagramDrawing(
+  drawingXml: string,
+  ctx: ParseContext,
+  txColors?: Map<string, string>,
+): SlideElement[] {
   const xml = drawingXml.replace(/<(\/?)dsp:/g, '<$1p:')
   let doc: any
   try {
@@ -1079,9 +1162,21 @@ function parseDiagramDrawing(drawingXml: string, ctx: ParseContext): SlideElemen
   const spsRaw = spTree['p:sp']
   const sps: any[] = Array.isArray(spsRaw) ? spsRaw : spsRaw ? [spsRaw] : []
   const out: SlideElement[] = []
-  for (const sp of sps) {
+  for (let sp of sps) {
     // The preview layer has no byte fidelity (never written back); the anchor is a placeholder
     const anchor: ByteAnchor = { spIndex: -1, originalXml: '', range: [0, 0] }
+    // Text color truth comes from the color part (see diagramTextColors); explicit run
+    // colors in the txBody still win since the fontRef is only the inherited fallback
+    const txC = txColors?.get(String(sp['@_modelId'] ?? ''))
+    if (txC && sp['p:txBody']) {
+      sp = {
+        ...sp,
+        'p:style': {
+          ...(sp['p:style'] ?? {}),
+          'a:fontRef': { '@_idx': 'minor', 'a:srgbClr': { '@_val': txC.replace('#', '') } },
+        },
+      }
+    }
     // dsp:txXfrm gives the text its own frame; split text off the shape so both
     // render with their proper transforms (text rotation is shape rot + txXfrm rot)
     const txXfrm = sp['p:txXfrm']
@@ -1133,6 +1228,10 @@ interface DgmTreeNode {
   texts: string[]
   spPr?: any
   children: DgmTreeNode[]
+  /** dgm:pt type="asst": org-chart assistant (own row, hangs left of the trunk) */
+  asst?: boolean
+  /** Explicit ST_HierBranchStyle from the presentation point ('hang'/'l'/'r'/'std'; init omitted) */
+  hierBranch?: string
 }
 
 /** Depth-first bullet lines of a node's descendants (lvl 1 = direct child). */
@@ -1179,6 +1278,8 @@ function dgmSp(
     stroke?: string
     noFill?: boolean
     adj?: number
+    /** Named adjust values (multi-adj presets like downArrow adj1/adj2) */
+    adjs?: Array<{ name: string; val: number }>
     /** xfrm rotation (60000ths of a degree) */
     rot?: number
   } = {},
@@ -1197,9 +1298,20 @@ function dgmSp(
       },
       'a:prstGeom': {
         '@_prst': opts.prst ?? 'rect',
-        ...(opts.adj != null
-          ? { 'a:avLst': { 'a:gd': { '@_name': 'adj', '@_fmla': 'val ' + Math.round(opts.adj) } } }
-          : {}),
+        ...(opts.adjs?.length
+          ? {
+              'a:avLst': {
+                'a:gd': opts.adjs.map((a) => ({
+                  '@_name': a.name,
+                  '@_fmla': 'val ' + Math.round(a.val),
+                })),
+              },
+            }
+          : opts.adj != null
+            ? {
+                'a:avLst': { 'a:gd': { '@_name': 'adj', '@_fmla': 'val ' + Math.round(opts.adj) } },
+              }
+            : {}),
       },
       ...fillNode,
       ...(opts.stroke
@@ -1285,10 +1397,23 @@ export function layoutDiagramFallback(
   // dgm:pt type defaults to 'node'; some writers emit it explicitly
   const nodePts = new Map(
     pts
-      .filter((p) => p?.['@_type'] == null || p?.['@_type'] === 'node')
+      .filter((p) => p?.['@_type'] == null || p?.['@_type'] === 'node' || p?.['@_type'] === 'asst')
       .map((p) => [String(p['@_modelId']), p]),
   )
   // Plain parent-child connections (type absent or parOf), grouped by parent, ordered by srcOrd
+  // Node → explicit hierBranch (on its presentation point, via presOf): 'hang'/'l'/'r'
+  // force a hanging branch, 'std' forces side-by-side, 'init' leaves it to the heuristic
+  const presPts = new Map(
+    pts.filter((p) => p?.['@_type'] === 'pres').map((p) => [String(p['@_modelId']), p]),
+  )
+  const hierBranchOf = new Map<string, string>()
+  for (const pres of presPts.values()) {
+    const prSet = pres?.['dgm:prSet']
+    const hb = prSet?.['dgm:presLayoutVars']?.['dgm:hierBranch']?.['@_val']
+    const assoc = prSet?.['@_presAssocID']
+    if (hb && hb !== 'init' && assoc && !hierBranchOf.has(String(assoc)))
+      hierBranchOf.set(String(assoc), String(hb))
+  }
   const bySrc = new Map<string, any[]>()
   for (const c of cxns) {
     const t = c?.['@_type']
@@ -1311,6 +1436,8 @@ export function layoutDiagramFallback(
           id: d,
           texts: collectDgmTexts(pt),
           ...(pt?.['dgm:spPr']?.['a:solidFill'] ? { spPr: pt['dgm:spPr'] } : {}),
+          ...(pt?.['@_type'] === 'asst' ? { asst: true } : {}),
+          ...(hierBranchOf.has(d) ? { hierBranch: hierBranchOf.get(d) } : {}),
           children: build(d),
         }
       })
@@ -1346,44 +1473,50 @@ export function layoutDiagramFallback(
     }
     return Math.max(6, s)
   }
-  // Layouts our families still model worse than the neutral placeholder chip
-  if (layoutId === 'cycle4') return []
   const byLayout =
-    layoutId === 'hList1' || layoutId === 'hList2'
-      ? 'columns'
-      : layoutId === 'hList3'
-        ? 'tableList'
-        : layoutId != null && /^pList/.test(layoutId)
-          ? 'pictureList'
-          : layoutId != null && /^list/.test(layoutId)
-            ? 'boxList'
-            : layoutId === 'vList5' || (layoutId != null && /^Bracket/.test(layoutId))
-              ? 'sideList'
-              : layoutId === 'vProcess5'
-                ? 'stepped'
-                : layoutId != null && /^(vList|vProcess)/.test(layoutId)
-                  ? 'stacked'
-                  : layoutId != null && /^bList/.test(layoutId)
-                    ? 'cards'
-                    : layoutId != null && /^(process|hProcess|bProcess)/.test(layoutId)
-                      ? 'procCards'
-                      : layoutId != null && /^equation/.test(layoutId)
-                        ? 'equation'
-                        : layoutId != null && /^pyramid/.test(layoutId)
-                          ? 'pyramid'
-                          : layoutId != null && /^Picture/.test(layoutId)
-                            ? 'strips'
-                            : layoutId === 'chevron2'
-                              ? 'chevronList'
-                              : layoutId != null && /^chevron/.test(layoutId)
-                                ? 'chevronRow'
-                                : layoutId != null && /^(cycle[127]|radial)/.test(layoutId)
-                                  ? 'cycle'
-                                  : layoutId != null && /orgchart/i.test(layoutId)
-                                    ? 'orgChart'
-                                    : layoutId != null && /^hierarchy/.test(layoutId)
-                                      ? 'hierarchy'
-                                      : 'blocks'
+    layoutId === 'cycle4'
+      ? 'cycleMatrix'
+      : layoutId != null && /^arrow5/.test(layoutId)
+        ? 'arrowRing'
+        : layoutId != null && /^hProcess3(#|$)/.test(layoutId)
+          ? 'ruleArrow'
+          : layoutId === 'hList1' || layoutId === 'hList2'
+            ? 'columns'
+            : layoutId === 'hList3'
+              ? 'tableList'
+              : layoutId != null && /^pList/.test(layoutId)
+                ? 'pictureList'
+                : layoutId != null && /^list/.test(layoutId)
+                  ? 'boxList'
+                  : layoutId === 'vList5' || (layoutId != null && /^Bracket/.test(layoutId))
+                    ? 'sideList'
+                    : layoutId === 'vProcess5'
+                      ? 'stepped'
+                      : layoutId != null && /^(vList|vProcess)/.test(layoutId)
+                        ? 'stacked'
+                        : layoutId != null && /^bList/.test(layoutId)
+                          ? 'cards'
+                          : layoutId != null && /^(process|hProcess|bProcess)/.test(layoutId)
+                            ? 'procCards'
+                            : layoutId != null && /^lProcess/.test(layoutId)
+                              ? 'colProcess'
+                              : layoutId != null && /^equation/.test(layoutId)
+                                ? 'equation'
+                                : layoutId != null && /^pyramid/.test(layoutId)
+                                  ? 'pyramid'
+                                  : layoutId != null && /^Picture/.test(layoutId)
+                                    ? 'strips'
+                                    : layoutId === 'chevron2'
+                                      ? 'chevronList'
+                                      : layoutId != null && /^chevron/.test(layoutId)
+                                        ? 'chevronRow'
+                                        : layoutId != null && /^(cycle[127]|radial)/.test(layoutId)
+                                          ? 'cycle'
+                                          : layoutId != null && /orgchart/i.test(layoutId)
+                                            ? 'orgChart'
+                                            : layoutId != null && /^hierarchy/.test(layoutId)
+                                              ? 'hierarchy'
+                                              : 'blocks'
   const family = byLayout === 'blocks' && !hasHierarchy ? 'flatGrid' : byLayout
 
   if (family === 'flatGrid') {
@@ -1466,6 +1599,68 @@ export function layoutDiagramFallback(
           ),
         )
       }
+    })
+  } else if (family === 'colProcess') {
+    // lProcess1-style linear process: one column per top node — a colored header
+    // block, then each child in its own tinted block, with a small connector dot
+    // in every gap (all proportions measured against PowerPoint, napierone 0005 p8)
+    const n = roots.length
+    const gap = frameCx * 0.045
+    const cw = (frameCx - gap * (n - 1)) / n
+    const kMax = Math.max(...roots.map((r) => r.children.length), 1)
+    // Columns fill ~78% of the frame height, roughly centered (napierone 0005 p8)
+    const usedCy = frameCy * 0.78
+    const yTop = (frameCy - usedCy) * 0.55
+    const bh = usedCy / (1 + 1.48 * kMax) // header ≈ child-block height, gaps 0.48×
+    const vGap = bh * 0.48
+    roots.forEach((node, i) => {
+      const x = i * (cw + gap)
+      const base = colorOf(node, i)
+      const baseHex = typeof base === 'string' ? base : undefined
+      if (!roots.some((r) => r.children.length)) {
+        // Childless nodes render as the layout's background shape: a large tinted
+        // rounded panel with dark top-anchored text (lProcess2 bgShp look)
+        const pw = Math.min(cw, frameCy * 1.5)
+        const pt = fitSizeW(frameCy * 0.25, pw, node.texts, 22)
+        sps.push(
+          dgmSp(
+            { x: x + (cw - pw) / 2, y: frameCy * 0.06, cx: pw, cy: frameCy * 0.88 },
+            baseHex ? dgmTint(baseHex, 0.22) : base,
+            node.texts.map((tx) => ({ text: tx, lvl: 0, sizePt: pt })),
+            { textColor: '#000000', anchor: 't', prst: 'roundRect', adj: 10000 },
+          ),
+        )
+        return
+      }
+      const t = fitSizeW(bh * 0.9, cw, node.texts, 26)
+      sps.push(
+        dgmSp(
+          { x, y: yTop, cx: cw, cy: bh },
+          base,
+          node.texts.map((tx) => ({ text: tx, lvl: 0, sizePt: t })),
+        ),
+      )
+      node.children.forEach((kid, k) => {
+        const y = yTop + bh + k * (vGap + bh)
+        const dotD = bh * 0.14
+        sps.push(
+          dgmSp(
+            { x: x + cw / 2 - dotD / 2, y: y + vGap / 2 - dotD / 2, cx: dotD, cy: dotD },
+            base,
+            [],
+            { prst: 'ellipse' },
+          ),
+        )
+        const kt = fitSizeW(bh * 0.7, cw, kid.texts, 17)
+        sps.push(
+          dgmSp(
+            { x, y: y + vGap, cx: cw, cy: bh },
+            baseHex ? dgmTint(baseHex, 0.25) : base,
+            kid.texts.map((tx) => ({ text: tx, lvl: 0, sizePt: kt })),
+            { textColor: '#404040', prst: 'roundRect', adj: 8000 },
+          ),
+        )
+      })
     })
   } else if (family === 'columns') {
     // Per top node: colored header (title) + tinted body (descendant bullets);
@@ -1744,6 +1939,126 @@ export function layoutDiagramFallback(
         ),
       )
     })
+  } else if (family === 'arrowRing') {
+    // arrow5 (cycle alg, rotPath=alongPath): downArrows on a ring all pointing at the
+    // center, first at 12 o'clock going clockwise, tails on the ring's outer edge.
+    // Sizes calibrated against PowerPoint at n=3 (box 209×185 px in a 213px-radius ring)
+    // and n=16 (62×99): length = R·min(0.98, 4.66/n), aspect widens as the ring crowds.
+    const n = Math.max(roots.length, 1)
+    const R = Math.min(frameCx, frameCy) / 2
+    const bh = R * Math.min(0.98, 4.66 / n)
+    const aspect = Math.min(1.8, Math.max(0.8, 0.885 + (n - 3) * 0.055))
+    const bw = bh * aspect
+    const rc = R - bh / 2
+    const cxr = frameCx / 2
+    const cyr = frameCy / 2
+    const sizePt = Math.max(5, Math.min(20, 2 + (bh / 12700) * 0.08))
+    roots.forEach((node, i) => {
+      const ang = -Math.PI / 2 + (i * 2 * Math.PI) / n
+      const x = cxr + Math.cos(ang) * rc
+      const y = cyr + Math.sin(ang) * rc
+      sps.push(
+        dgmSp(
+          { x: x - bw / 2, y: y - bh / 2, cx: bw, cy: bh },
+          colorOf(node, i),
+          node.texts.map((tx) => ({ text: tx, lvl: 0, sizePt })),
+          {
+            prst: 'downArrow',
+            // Head shorter than the preset default (measured 29-36% of ss vs 50%)
+            adjs: [
+              { name: 'adj1', val: 50000 },
+              { name: 'adj2', val: 32000 },
+            ],
+            rot: Math.round(((ang * 180) / Math.PI + 90) * 60000),
+          },
+        ),
+      )
+    })
+  } else if (family === 'cycleMatrix') {
+    // Cycle Matrix (cycle4): four quadrant wedges around the center, one corner child
+    // card per quadrant, clockwise from top-left (geometry measured against PowerPoint:
+    // R = 0.44 x frame height, cross gap ~3% of H, cards 0.333W x 0.316H inset 6.4% x)
+    const nodes = roots.slice(0, 4)
+    const cxr = frameCx / 2
+    const cyr = frameCy / 2
+    const R = frameCy * 0.44
+    const gap = frameCy * 0.015
+    const bw = frameCx * 0.333
+    const bh = frameCy * 0.316
+    const bx = frameCx * 0.064
+    const quads = [
+      { a1: 10800000, dx: -1, dy: -1, bxy: { x: bx, y: 0 } },
+      { a1: 16200000, dx: 1, dy: -1, bxy: { x: frameCx - bx - bw, y: 0 } },
+      { a1: 0, dx: 1, dy: 1, bxy: { x: frameCx - bx - bw, y: frameCy - bh } },
+      { a1: 5400000, dx: -1, dy: 1, bxy: { x: bx, y: frameCy - bh } },
+    ]
+    const labelPt = Math.max(10, Math.min(24, (R / 12700) * 0.115))
+    // Corner cards first: PowerPoint tucks them behind the wedge circle
+    nodes.forEach((node, i) => {
+      const q = quads[i]!
+      const bullets = dgmBulletLines(node)
+      const strokeColor = node.spPr
+        ? (resolveColorNode(node.spPr['a:solidFill'], ctx) ?? colors[0]!)
+        : colors[0]!
+      sps.push(
+        dgmSp(
+          { x: q.bxy.x, y: q.bxy.y, cx: bw, cy: bh },
+          '#FFFFFF',
+          bullets.map((b) => ({
+            text: b.text,
+            lvl: b.lvl,
+            sizePt: Math.max(8, Math.min(12, labelPt * 0.45)),
+          })),
+          {
+            prst: 'roundRect',
+            adj: 9000,
+            stroke: strokeColor,
+            align: 'l',
+            anchor: 't',
+            textColor: '#000000',
+          },
+        ),
+      )
+    })
+    nodes.forEach((node, i) => {
+      const q = quads[i]!
+      const fill: string | { spPr: any } = node.spPr ? { spPr: node.spPr } : colors[0]!
+      const wcx = cxr + q.dx * gap
+      const wcy = cyr + q.dy * gap
+      sps.push(
+        dgmSp({ x: wcx - R, y: wcy - R, cx: 2 * R, cy: 2 * R }, fill, [], {
+          prst: 'pie',
+          adjs: [
+            { name: 'adj1', val: q.a1 },
+            { name: 'adj2', val: q.a1 + 5400000 },
+          ],
+        }),
+      )
+      // Quadrant label sits halfway out along the quadrant diagonal
+      const lw = R * 0.9
+      const lh = labelPt * 12700 * 1.6
+      sps.push(
+        dgmSp(
+          {
+            x: wcx + q.dx * R * 0.5 - lw / 2,
+            y: wcy + q.dy * R * 0.5 - lh / 2,
+            cx: lw,
+            cy: lh,
+          },
+          '#FFFFFF',
+          node.texts.filter(Boolean).map((t) => ({ text: t, lvl: 0, sizePt: labelPt })),
+          { noFill: true },
+        ),
+      )
+    })
+    // Center hub: white ring (stand-in for PowerPoint's circular-arrows glyph)
+    const r0 = frameCy * 0.07
+    sps.push(
+      dgmSp({ x: cxr - r0, y: cyr - r0, cx: 2 * r0, cy: 2 * r0 }, '#FFFFFF', [], {
+        prst: 'donut',
+        adj: 28000,
+      }),
+    )
   } else if (family === 'cycle') {
     // Nodes on a circle; radial* = big center circle with satellite circles touching it
     const central = layoutId != null && /^radial/.test(layoutId)
@@ -1805,31 +2120,62 @@ export function layoutDiagramFallback(
       })
     }
   } else if (family === 'orgChart') {
-    // Tidy-ish org tree: leaf-count spans, one row per depth
-    // hierBranch 'init': PowerPoint hangs a branch when all its children are leaves (>=2)
-    const hangs = (node: DgmTreeNode): boolean =>
-      node.children.length >= 2 && node.children.every((c) => !c.children.length)
-    const leaves = (node: DgmTreeNode): number =>
-      hangs(node) || !node.children.length
-        ? node.children.length
-          ? 1.5
-          : 1
-        : node.children.reduce((a, c) => a + leaves(c), 0)
-    const depthOf = (node: DgmTreeNode): number =>
-      hangs(node)
-        ? 1 + node.children.length
-        : node.children.length
-          ? 1 + Math.max(...node.children.map(depthOf))
-          : 1
-    const totalLeaves = roots.reduce((a, r) => a + leaves(r), 0)
-    const depth = Math.max(...roots.map(depthOf))
-    const rowCy = frameCy / depth
-    const bh = Math.min(rowCy * 0.66, frameCy * 0.2)
+    // Tidy-ish org tree: leaf-count spans, one row per depth.
+    // PowerPoint measured (smartart-org-chart/-org-chart2/SmartArt_OrgChart1):
+    // - a branch whose children are all leaves (>=2) hangs, but never at the root row
+    // - a childless assistant (dgm:pt type="asst") gets its own row tucked left of the
+    //   trunk; an assistant WITH children flows like a regular child
+    const isLeafAsst = (c: DgmTreeNode) => !!c.asst && !c.children.length
+    const kidsOf = (node: DgmTreeNode) => node.children.filter((c) => !isLeafAsst(c))
+    const asstsOf = (node: DgmTreeNode) => node.children.filter(isLeafAsst)
+    // Whole-tree row count with every branch laid out standard (incl. assistant rows):
+    // PowerPoint's 'init' hang heuristic only kicks in on tall charts (measured: 4+ rows)
+    const stdDepthOf = (node: DgmTreeNode): number => {
+      const kids = kidsOf(node)
+      const asstRows = asstsOf(node).length ? 1 : 0
+      return kids.length ? 1 + asstRows + Math.max(...kids.map(stdDepthOf)) : 1 + asstRows
+    }
+    const stdDepth = Math.max(...roots.map(stdDepthOf))
+    const hangs = (node: DgmTreeNode, d: number): boolean => {
+      const kids = kidsOf(node)
+      if (!kids.length) return false
+      // Only true leaves may hang — a hung row never recurses, so a branch with
+      // grandchildren (or leaf assistants) falls back to the standard flow
+      const allLeaves = kids.every((c) => !c.children.length)
+      const hb = node.hierBranch
+      if (hb === 'hang' || hb === 'l' || hb === 'r') return allLeaves
+      if (hb === 'std') return false
+      return stdDepth >= 4 && d >= 1 && kids.length >= 2 && allLeaves
+    }
+    const leaves = (node: DgmTreeNode, d: number): number => {
+      const kids = kidsOf(node)
+      if (hangs(node, d) || !kids.length) return kids.length ? 1.5 : 1
+      const kd = d + 1 + (asstsOf(node).length ? 1 : 0)
+      return kids.reduce((a, c) => a + leaves(c, kd), 0)
+    }
+    const depthOf = (node: DgmTreeNode, d: number): number => {
+      const kids = kidsOf(node)
+      const asstRows = asstsOf(node).length ? 1 : 0
+      if (hangs(node, d)) return 1 + asstRows + kids.length
+      return kids.length
+        ? 1 + asstRows + Math.max(...kids.map((c) => depthOf(c, d + 1 + asstRows)))
+        : 1 + asstRows
+    }
+    const totalLeaves = roots.reduce((a, r) => a + leaves(r, 0), 0)
+    const depth = Math.max(...roots.map((r) => depthOf(r, 0)))
     const slotW = frameCx / Math.max(totalLeaves, 1)
-    const bw = Math.min(slotW * 0.94, frameCx / 5.5)
+    // Box proportions measured: width ≈ the leaf slot (capped for shallow charts),
+    // height ≈ 0.49·width, rows spread so the last row bottom-aligns with the frame
+    const bw = Math.min(slotW * 0.92, frameCx / 3.5)
+    const rowCy = frameCy / depth
+    const bh = Math.min(bw * 0.46, rowCy * 0.72)
+    // Rows spread to bottom-fill; two-row charts keep the child row near the parent
+    // (PowerPoint measured: shallow charts don't stretch to the frame bottom)
+    const rowPitch =
+      depth > 1 ? Math.min((frameCy - bh) / (depth - 1), depth === 2 ? bh * 2 : Infinity) : 0
     const lineW = Math.max(frameCx * 0.0012, 9525)
     const lineColor = typeof colors[0] === 'string' ? colors[0]! : '#4472C4'
-    const rowY = (d: number) => d * rowCy + (rowCy - bh) / 2
+    const rowY = (d: number) => (depth > 1 ? d * rowPitch : (frameCy - bh) / 2)
     const vline = (x: number, y1: number, y2: number) =>
       sps.push(dgmSp({ x: x - lineW / 2, y: y1, cx: lineW, cy: y2 - y1 }, lineColor, []))
     const hline = (x1: number, x2: number, y: number) =>
@@ -1853,34 +2199,52 @@ export function layoutDiagramFallback(
           node.texts.map((tx) => ({
             text: tx,
             lvl: 0,
-            sizePt: fitSize(bh, Math.max(node.texts.length, 1), 20),
+            sizePt: fitSizeW(bh, bw, node.texts, 26),
           })),
         ),
       )
     const place = (node: DgmTreeNode, slot0: number, d: number): number => {
-      const span = leaves(node)
+      const span = leaves(node, d)
+      const kids = kidsOf(node)
+      const assts = asstsOf(node)
       const cx = (slot0 + span / 2) * slotW
       box(node, cx, d)
-      if (hangs(node)) {
-        // Hanging branch: children stack in rows below, trunk at the parent's left third
-        const trunkX = cx - bw * 0.3
-        vline(trunkX, rowY(d) + bh, rowY(d + node.children.length) + bh / 2)
-        node.children.forEach((c, j) => {
-          const cy0 = rowY(d + 1 + j)
-          const ccx = cx + bw * 0.14
-          hline(trunkX, ccx - bw / 2, cy0 + bh / 2)
-          box(c, ccx, d + 1 + j)
+      const kidRow = d + 1 + (assts.length ? 1 : 0)
+      if (assts.length) {
+        // Childless assistant: box tucked left of the trunk (right edge 0.12·bw from it),
+        // elbow from the trunk at the assistant row's middle
+        const asstMid = rowY(d + 1) + bh / 2
+        vline(cx, rowY(d) + bh, kids.length ? asstMid : asstMid)
+        assts.forEach((a, j) => {
+          const acx = cx - bw * 0.62 - j * bw * 1.24
+          box(a, acx, d + 1)
+          hline(acx + bw / 2, cx, asstMid)
         })
-      } else {
+      }
+      if (hangs(node, d)) {
+        // Hanging branch: children stack in rows below, trunk at the parent's left third
+        // (hierBranch 'l' mirrors: trunk right, children tucked to the left)
+        const mir = node.hierBranch === 'l' ? -1 : 1
+        const trunkX = cx - mir * bw * 0.3
+        vline(trunkX, rowY(d) + bh, rowY(kidRow - 1 + kids.length) + bh / 2)
+        kids.forEach((c, j) => {
+          const cy0 = rowY(kidRow + j)
+          const ccx = cx + mir * bw * 0.14
+          hline(trunkX, ccx - (mir * bw) / 2, cy0 + bh / 2)
+          box(c, ccx, kidRow + j)
+        })
+      } else if (kids.length) {
         let sNext = slot0
-        for (const c of node.children) {
-          const cSpan = leaves(c)
+        const busTop = assts.length ? rowY(d + 1) + bh / 2 : rowY(d) + bh
+        for (const c of kids) {
+          const cSpan = leaves(c, kidRow)
           const ccx = (sNext + cSpan / 2) * slotW
-          const midY = (rowY(d) + bh + rowY(d + 1)) / 2
-          vline(cx, rowY(d) + bh, midY)
+          const midY = (rowY(kidRow - 1) + bh + rowY(kidRow)) / 2
+          vline(cx, busTop, midY)
           hline(cx, ccx, midY)
-          vline(ccx, midY, rowY(d + 1))
-          sNext += place(c, sNext, d + 1)
+          vline(ccx, midY, rowY(kidRow))
+          place(c, sNext, kidRow)
+          sNext += cSpan
         }
       }
       return span
@@ -2103,33 +2467,69 @@ export function layoutDiagramFallback(
         ),
       )
     })
-  } else if (family === 'boxList') {
-    // Vertical Box List: per item a rounded title box upper-left + a light body panel below
-    const n = roots.length
-    const gap = frameCy * 0.05
-    const ih = (frameCy - gap * (n - 1)) / n
+  } else if (family === 'ruleArrow') {
+    // hProcess3 (linear rule): one big frame-wide rightArrow, top-node texts spread
+    // across the shaft (PowerPoint measured: arrow 90% of frame height centered,
+    // shaft 40% of the arrow box, head ≈ 25% of the width)
+    const n = Math.max(roots.length, 1)
+    const ah = frameCy * 0.9
+    const ay = (frameCy - ah) / 2
+    const headLen = Math.min(frameCx * 0.255, ah * 0.554)
+    sps.push(
+      dgmSp({ x: 0, y: ay, cx: frameCx, cy: ah }, colorOf(roots[0]!, 0), [], {
+        prst: 'rightArrow',
+        adjs: [
+          { name: 'adj1', val: 40400 },
+          { name: 'adj2', val: Math.round((headLen / Math.min(frameCx, ah)) * 100000) },
+        ],
+      }),
+    )
+    const bodyW = frameCx - headLen
+    const slot = bodyW / n
+    const shaftH = ah * 0.404
     roots.forEach((node, i) => {
-      const y = i * (ih + gap)
-      const base = colorOf(node, i)
-      const baseHex = typeof base === 'string' ? base : undefined
-      const titleCy = ih * 0.45
       sps.push(
         dgmSp(
-          { x: frameCx * 0.03, y, cx: frameCx * 0.55, cy: titleCy },
+          { x: i * slot, y: ay + (ah - shaftH) / 2, cx: slot, cy: shaftH },
+          '#FFFFFF',
+          node.texts.map((tx) => ({
+            text: tx,
+            lvl: 0,
+            sizePt: fitSize(shaftH, Math.max(node.texts.length, 1), 26),
+            bold: true,
+          })),
+          { noFill: true },
+        ),
+      )
+    })
+  } else if (family === 'boxList') {
+    // Vertical Box List (PowerPoint measured on smartart-linear-rule-vert): per item a
+    // rounded title pill (69% width, inset 5.3%) over a full-width outlined body panel
+    // that starts at the pill's vertical middle and runs to just above the next pill
+    const n = roots.length
+    const pitch = frameCy / Math.max(n, 1)
+    roots.forEach((node, i) => {
+      const y = i * pitch + pitch * 0.04
+      const base = colorOf(node, i)
+      const baseHex = typeof base === 'string' ? base : undefined
+      const titleCy = pitch * 0.7
+      sps.push(
+        dgmSp(
+          { x: frameCx * 0.053, y, cx: frameCx * 0.692, cy: titleCy },
           base,
           node.texts.map((tx) => ({
             text: tx,
             lvl: 0,
-            sizePt: fitSize(titleCy, Math.max(node.texts.length, 1), 20),
+            sizePt: fitSize(titleCy, Math.max(node.texts.length, 1) * 2, 14),
           })),
           { prst: 'roundRect', align: 'l' },
         ),
       )
       const bullets = dgmBulletLines(node)
-      const bodyCy = ih - titleCy * 0.55
+      const bodyCy = titleCy * 0.9
       sps.push(
         dgmSp(
-          { x: 0, y: y + titleCy * 0.55, cx: frameCx * 0.72, cy: bodyCy },
+          { x: 0, y: y + titleCy * 0.5, cx: frameCx, cy: bodyCy },
           base,
           bullets.map((l) => ({
             text: l.text,
@@ -2416,7 +2816,8 @@ function parseXfrm(xfrm: any): Transform {
 /** <a:duotone>: two colors mapping image luminance dark→light (theme texture backgrounds). */
 function parseDuotone(blipNode: any, ctx: ParseContext): [string, string] | undefined {
   const duoRaw = blipNode?.['a:duotone']
-  if (!duoRaw) return undefined
+  // <a:grayscl/>: luminance-only rendering — exactly a black→white duotone ramp
+  if (!duoRaw) return blipNode?.['a:grayscl'] !== undefined ? ['#000000', '#FFFFFF'] : undefined
   const clrs: Array<{ c: string; tag: string }> = []
   for (const tag of ['a:schemeClr', 'a:srgbClr', 'a:prstClr', 'a:sysClr']) {
     const raw = duoRaw[tag]
@@ -2530,10 +2931,14 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
     })
     .filter((s: any): s is { pos: number; color: string } => !!s)
   if (!stops.length) return undefined
-  // Linear gradient angle: <a:lin ang=""> (unit 1/60000 degree); radial etc. get the default angle for now
-  const ang = grad['a:lin']?.['@_ang']
-  const angle = ang != null ? parseInt(ang, 10) || 0 : undefined
+  // Linear gradient angle: <a:lin ang=""> (unit 1/60000 degree). A gradFill with neither
+  // a:lin nor a:path renders top→bottom in PowerPoint (tdf104788 measured), not the spec's 0°
+  const lin = grad['a:lin']
   const pathType = grad['a:path']?.['@_path']
+  // An explicit a:lin without ang keeps the schema default 0; only a fully
+  // directionless gradFill gets the measured vertical default
+  const angle =
+    lin != null ? parseInt(lin['@_ang'], 10) || 0 : grad['a:path'] == null ? 5400000 : undefined
   const ftr = grad['a:path']?.['a:fillToRect']
   // Omitted fillToRect attributes default to 0 (whole tile rect), not to a centered inset
   const frac = (v: unknown) => (v != null ? (parseInt(String(v), 10) || 0) / 100000 : 0)
@@ -2597,6 +3002,24 @@ function parseTextBody(txBody: any, ctx: ParseContext, phChain: TextStyleLevels[
       ? vertRaw
       : undefined
 
+  // WordArt text extrusion: bodyPr-level sp3d depth + camera tilt decide the offset direction
+  let extrusion3d: TextBody['extrusion3d']
+  const bodySp3d = bodyPr['a:sp3d']
+  const depthEmu = bodySp3d ? intOr(bodySp3d['@_extrusionH'], 0) : 0
+  if (depthEmu > 0) {
+    const extClr = bodySp3d['a:extrusionClr']
+    const color =
+      (extClr && typeof extClr === 'object' ? resolveColorNode(extClr, ctx) : undefined) ??
+      '#808080'
+    const rot = bodyPr['a:scene3d']?.['a:camera']?.['a:rot']
+    extrusion3d = {
+      color,
+      depthEmu,
+      latDeg: intOr(rot?.['@_lat'], 0) / 60000,
+      lonDeg: intOr(rot?.['@_lon'], 0) / 60000,
+    }
+  }
+
   return {
     paragraphs,
     anchor: bodyPr['@_anchor'] ? anchorMap[bodyPr['@_anchor']] : undefined,
@@ -2614,6 +3037,7 @@ function parseTextBody(txBody: any, ctx: ParseContext, phChain: TextStyleLevels[
     ...(intOr(bodyPr['@_numCol'], 1) > 1
       ? { numCol: intOr(bodyPr['@_numCol'], 1), spcCol: intOr(bodyPr['@_spcCol'], 0) }
       : {}),
+    ...(extrusion3d ? { extrusion3d } : {}),
   }
 }
 
@@ -2765,9 +3189,18 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const hlink = rPr['a:hlinkClick']
   const hlinkTarget = hlink?.['@_r:id'] ? ctx.hlinkRels?.get(String(hlink['@_r:id'])) : undefined
   const fill = rPr['a:solidFill']
+  // WordArt gradient text fill: resolved stops for display, mid-stop as the flat fallback color
+  let gradient: TextRun['gradient']
+  if (rPr['a:gradFill'] && typeof rPr['a:gradFill'] === 'object') {
+    const g = parseFill(rPr, ctx)
+    if (g?.type === 'gradient' && g.stops.length) {
+      gradient = { stops: g.stops, ...(g.angle != null ? { angle: g.angle } : {}) }
+    }
+  }
   // PowerPoint styles linked runs with the theme hlink color unless the run has an explicit fill
   const color =
     (fill ? resolveColorNode(fill, ctx) : undefined) ??
+    gradient?.stops[Math.floor(gradient.stops.length / 2)]?.color ??
     (hlinkTarget ? ctx.theme?.colors?.hlink : undefined) ??
     dflt?.color
   // Whether the color is display-only: from schemeClr/inheritance (not an explicit run srgbClr).
@@ -2798,6 +3231,8 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     }
   }
   const runShadow = parseShadow(rPr, ctx) ?? dflt?.shadow
+  const runGlow = parseGlow(rPr, ctx)
+  const reflection = rPr['a:effectLst']?.['a:reflection'] != null
   const uAttr = rPr['@_u']
   const strikeAttr = rPr['@_strike']
   const hasStrike = strikeAttr !== undefined && strikeAttr !== 'noStrike'
@@ -2833,6 +3268,9 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(highlight ? { highlight } : {}),
     ...(outline ? { outline } : {}),
     ...(runShadow ? { shadow: runShadow } : {}),
+    ...(gradient ? { gradient } : {}),
+    ...(runGlow ? { glow: runGlow } : {}),
+    ...(reflection ? { reflection: true } : {}),
     ...(hlink?.['@_r:id']
       ? {
           hyperlinkRId: String(hlink['@_r:id']),

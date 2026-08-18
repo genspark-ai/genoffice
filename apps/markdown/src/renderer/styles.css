@@ -2170,3 +2170,120 @@ html.genoffice-popover-open .ribbon-tabs {
 .md-block-menu-item.danger:hover {
   background: var(--danger-bg);
 }
+
+/* ---- math (KaTeX) nodes & LaTeX edit popover ---- */
+
+.tiptap-mathematics-render {
+  border-radius: 5px;
+}
+
+span.tiptap-mathematics-render {
+  display: inline-block;
+  padding: 0 2px;
+}
+
+div.tiptap-mathematics-render {
+  padding: 8px 12px;
+  margin: 0.5em 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.tiptap-mathematics-render--editable {
+  cursor: pointer;
+}
+
+.tiptap-mathematics-render--editable:hover {
+  background: var(--hover);
+}
+
+.tiptap-mathematics-render.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* KaTeX parse failure: show the raw source in the code font */
+.tiptap-mathematics-render.block-math-error,
+.tiptap-mathematics-render.inline-math-error {
+  color: var(--danger);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+
+.md-math-pop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 400px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px var(--md-shadow-color);
+}
+
+.md-math-input {
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 8px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.md-math-input:focus {
+  border-color: var(--accent);
+}
+
+.md-math-preview {
+  display: flex;
+  /* `safe` keeps the start edge reachable when a tall formula scrolls */
+  align-items: safe center;
+  justify-content: safe center;
+  min-height: 36px;
+  max-height: 40vh;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--hover);
+  overflow: auto;
+}
+
+.md-math-preview-empty {
+  display: none;
+}
+
+.md-math-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.md-math-actions button {
+  height: 26px;
+  border: none;
+  border-radius: 5px;
+  font-size: 12.5px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.md-math-apply {
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+}
+
+.md-math-delete {
+  background: transparent;
+  color: var(--danger);
+}
+
+.md-math-delete:hover {
+  background: var(--danger-bg);
+}

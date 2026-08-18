@@ -2576,6 +2576,9 @@ function generateRunXml(run: Run, insideLink: boolean): string {
     } else if (ch === '\f') {
       flush()
       segments.push('<w:br w:type="page"/>')
+    } else if (ch === '\v') {
+      flush()
+      segments.push('<w:br w:type="column"/>')
     } else {
       buffer += ch
     }

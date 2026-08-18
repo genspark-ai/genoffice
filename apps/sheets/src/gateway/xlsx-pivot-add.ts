@@ -1,4 +1,5 @@
 import { columnLabel } from '../domain/cell-address'
+import { shortDateNumFmtId } from '../shared/short-date'
 import { isValidPivotFilter, type PivotFilterDef } from '../domain/pivot-filters'
 import { formatPivotFormula, parsePivotFormula } from '../domain/pivot-formula'
 import { groupLabel, isValidGrouping, type PivotFieldGrouping } from '../domain/pivot-grouping'
@@ -917,6 +918,8 @@ function buildGroupingExtLst(addition: PivotAddition): string {
 /// Returns 0 (General) for unrecognised patterns.
 function resolveNumFmtId(numFmt: string): number {
   const fmt = numFmt.trim()
+  const shortDate = shortDateNumFmtId(fmt)
+  if (shortDate !== undefined) return shortDate
   const knownFormats: Record<string, number> = {
     '0': 1,
     '0.00': 2,

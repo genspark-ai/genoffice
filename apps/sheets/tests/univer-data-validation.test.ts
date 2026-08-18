@@ -23,6 +23,26 @@ describe('toUniverDvRule', () => {
       renderMode: DataValidationRenderMode.TEXT,
     })
   })
+
+  it('drops a list rule formula2 — Univer reads it as per-item chip colors', () => {
+    // LibreOffice writes junk formula2 ("0") on list validations; passing it
+    // through painted validated cells black.
+    const rule = toUniverDvRule(
+      { ...listRule, formulas: ['Hitab!$K$1:$K$4', '0'] },
+      'file-dv-sheet-1-0',
+    )
+    expect(rule).not.toHaveProperty('formula2')
+    expect(rule).toMatchObject({ formula1: '=Hitab!$K$1:$K$4' })
+  })
+
+  it('keeps formula2 on non-list rules', () => {
+    expect(
+      toUniverDvRule(
+        { ...listRule, ruleType: 'whole', formulas: ['1', '10'], operator: 'between' },
+        'file-dv-sheet-1-0',
+      ),
+    ).toMatchObject({ formula1: '1', formula2: '10' })
+  })
 })
 
 describe('installPopulatedDataValidationArrow', () => {

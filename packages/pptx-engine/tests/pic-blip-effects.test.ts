@@ -72,3 +72,21 @@ describe('buAutoNum startAt (PlanS numbered headings)', () => {
     })
   })
 })
+
+describe('a:grayscl (tdf112209 grayscale picture fill)', () => {
+  it('maps grayscl to a black-to-white duotone ramp on a pic blip', () => {
+    const xml = slideWith(pic('<a:grayscl/>'))
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: xml, ctx: {} })
+    const el = slide.elements[0] as any
+    expect(el.duotone).toEqual(['#000000', '#FFFFFF'])
+  })
+
+  it('an explicit duotone wins over grayscl', () => {
+    const xml = slideWith(
+      pic('<a:grayscl/><a:duotone><a:srgbClr val="112233"/><a:srgbClr val="AABBCC"/></a:duotone>'),
+    )
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: xml, ctx: {} })
+    const el = slide.elements[0] as any
+    expect(el.duotone).toEqual(['#112233', '#AABBCC'])
+  })
+})

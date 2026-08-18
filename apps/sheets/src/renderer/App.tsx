@@ -9,6 +9,7 @@ import {
   applyFormatPatchToRange,
   applyWorkbookNotes,
   cellValueBounds,
+  applyRangeInLoadedChunks,
   clearLazyState,
   columnLetter,
   disposeVisuals,
@@ -50,11 +51,13 @@ import {
   renameChartRefsForSheet,
 } from './workbook-ops'
 import {
+  lazyGateError,
   proposeOperations as proposeOperationsImpl,
   runDeterministicPlan as runDeterministicPlanImpl,
   type PlanContext,
 } from './plan-operations'
 import { isNumericIdentifierText } from './cell-warning'
+import { consumePendingUndoCarry } from './undo-carry'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import {
@@ -110,14 +113,22 @@ import {
   type AgentImage,
 } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { type WorkbookOperation } from '../domain/workbook-dsl'
+import {
+  copyTargetBounds,
+  replaceOccurrences,
+  type WorkbookOperation,
+} from '../domain/workbook-dsl'
+import { offsetFormulaRefs } from '../domain/formula-shift'
 import {
   columnIndex,
   columnLabel,
+  formatAddress,
   parseAddress,
   parseRange,
   rangeCellCount,
 } from '../domain/cell-address'
+import { aggregateWorkbookRange } from './ai/aggregate-range'
+import { collectCellFormulaTexts, quadraticFormulaError } from './formula-cost'
 import {
   applyChartStateEdit,
   chartSupportsDataLabels,
@@ -142,6 +153,7 @@ import type {
   AttachmentAddResult,
   AttachmentMeta,
   MenuAction,
+  RecoveryPromptPayload,
   WorkbookFile,
   WorkbookVisualObject,
 } from '../shared/desktop-api'
@@ -178,6 +190,7 @@ import {
   SET_NUMFMT_MUTATION,
   TOGGLE_GRIDLINES_MUTATION,
   SET_RANGE_VALUES_MUTATION,
+  SET_RANGE_VALUES_COMMAND,
   SHEET_LIFECYCLE_MUTATIONS,
   SORT_COMMAND_PATTERN,
   STRUCTURAL_EDIT_COMMAND_PATTERN,
@@ -310,6 +323,7 @@ import { planStillMatches } from './lazy-plan'
 import { netAxisDelta, screenToFile } from './view-transform'
 import { selectionFormatEquals, toSelectionFormat, type SelectionFormat } from './selection-format'
 import { ExcelShell } from './ExcelShell'
+import { RecoveryDialog } from './RecoveryDialog'
 import { ToastHost } from './toast'
 import { AdvancedFilterDialog, type AdvancedFilterColumn } from './AdvancedFilterDialog'
 import { EquationDialog } from './EquationDialog'
@@ -469,6 +483,11 @@ export function App(): React.JSX.Element {
     const id = window.setInterval(tick, 30_000)
     return () => window.clearInterval(id)
   }, [])
+  const [recoveryPrompt, setRecoveryPrompt] = useState<RecoveryPromptPayload | null>(null)
+  useEffect(
+    () => window.desktopApi?.onRecoveryPrompt?.((prompt) => setRecoveryPrompt(prompt)) ?? undefined,
+    [],
+  )
   const [message, setMessage] = useState(t('appReadyInitial'))
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
   const [zoomPercent, setZoomPercent] = useState(100)
@@ -1156,6 +1175,7 @@ export function App(): React.JSX.Element {
   function sheetsSkillDeps(): SheetsSkillDeps {
     return {
       getActiveSheetInfo,
+      aggregateRange: (sheetId, bounds) => aggregateWorkbookRange(readContext(), sheetId, bounds),
       ensureRangeLoaded: async (range, sheetId) => {
         const state = lazyWorkbookRef.current
         if (!state) return true
@@ -1974,6 +1994,41 @@ export function App(): React.JSX.Element {
       (event) => {
         const state = lazyWorkbookRef.current
         if (journalSuppression.active || !state) return
+        if (event.id === SET_RANGE_VALUES_COMMAND || event.id === SET_RANGE_VALUES_MUTATION) {
+          // Quadratic array-criteria formulas (distinct-count COUNTIF idioms
+          // over 80k+ rows) freeze the main-thread formula engine for
+          // minutes; block them at the edit gate. The AI path is rejected
+          // earlier with a model-facing message — this covers typing, and the
+          // mutation id covers paste/autofill, which apply mutations directly.
+          // Engine-derived mutations (result apply, reference rewrites) carry
+          // fromFormula and only restate formulas that already passed.
+          const options = event.options as { fromFormula?: boolean } | undefined
+          if (options?.fromFormula) return
+          const params = event.params as
+            { subUnitId?: string; value?: unknown; cellValue?: unknown } | undefined
+          const formulas = collectCellFormulaTexts(params?.value ?? params?.cellValue)
+          if (formulas.length > 0) {
+            const subUnitId =
+              params?.subUnitId ??
+              runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
+            const hostName =
+              state.file.sheets.find((candidate) => candidate.id === subUnitId)?.name ?? ''
+            const costSheets = state.file.sheets.map((candidate) => ({
+              name: candidate.name,
+              rows: candidate.rowCount,
+              columns: candidate.columnCount,
+            }))
+            if (
+              formulas.some(
+                (formula) => quadraticFormulaError(formula, hostName, costSheets) !== null,
+              )
+            ) {
+              event.cancel = true
+              setMessage(t('appFormulaTooExpensive'))
+            }
+          }
+          return
+        }
         if (CF_RULE_COMMAND_PATTERN.test(event.id)) {
           // The Univer panel offers rules base OOXML cannot hold (x14-only
           // icon sets, date-occurring, equal/notEqual average, …); block them
@@ -2625,6 +2680,10 @@ export function App(): React.JSX.Element {
       }
       for (const structural of stored.plan.structuralChanges) {
         const op = structural.op
+        // BeforeCommandExecute gates cancel commands silently; re-check them
+        // here so a gated op fails loud instead of reporting success.
+        const gateError = lazyGateError(state, op)
+        if (gateError) throw new Error(gateError)
         if (op.op === 'insert_rows') sheetById(op.sheetId).insertRowsBefore(op.row - 1, op.count)
         else if (op.op === 'delete_rows') sheetById(op.sheetId).deleteRows(op.row - 1, op.count)
         else if (op.op === 'insert_cols')
@@ -2742,13 +2801,20 @@ export function App(): React.JSX.Element {
           const existing = target.getFilter()
           if (existing) {
             existing.remove()
+            // Only count a verified removal — the remove command can be
+            // cancelled by an edit gate.
+            if (target.getFilter()) throw new Error(t('appAutoFilterRemoveFailed'))
             anyApplied = true
           }
           if (!target.getRange(op.range).createFilter()) {
             throw new Error(t('appAutoFilterCreateFailed'))
           }
         } else if (op.op === 'clear_filter') {
-          sheetById(op.sheetId).getFilter()?.remove()
+          const target = sheetById(op.sheetId)
+          target.getFilter()?.remove()
+          if (target.getFilter()) {
+            throw new Error(t('appAutoFilterRemoveFailed'))
+          }
         } else if (op.op === 'set_filter_criteria') {
           applyFilterCriteria(
             sheetById(op.sheetId),
@@ -2809,6 +2875,263 @@ export function App(): React.JSX.Element {
           }
         } else if (op.op === 'refresh_pivot') {
           refreshPivotTablesImpl(pivotContext(), op.sheetId)
+        } else if (op.op === 'clear_range') {
+          // Range-level clear (>2000 cells). On streamed workbooks each chunk
+          // is loaded first so the clear lands on real cells and the edit
+          // journal records it; preloaded workbooks clear in one command.
+          const targetSheet = sheetById(op.sheetId)
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            targetSheet,
+            parseRange(op.range),
+            (chunk) => {
+              targetSheet
+                .getRange(
+                  chunk.startRow,
+                  chunk.startColumn,
+                  chunk.endRow - chunk.startRow + 1,
+                  chunk.endColumn - chunk.startColumn + 1,
+                )
+                .clearContent()
+            },
+            setMessage,
+          )
+        } else if (op.op === 'fill_range') {
+          // Fill/copy: tile the source block across the target with bulk
+          // setValues (chunked on streamed workbooks). Relative formula
+          // references shift per copy, exactly like Excel's fill handle;
+          // validation (geometry, source loaded, cost) ran at propose time.
+          const targetSheet = sheetById(op.sheetId)
+          const sourceSheet = sheetById(op.sourceSheetId ?? op.sheetId)
+          const src = parseRange(op.source)
+          const dst = parseRange(op.target)
+          const sourceRows = src.endRow - src.startRow + 1
+          const sourceColumns = src.endColumn - src.startColumn + 1
+          type FillSourceCell = {
+            value: string | number | boolean | null
+            formula: string | null
+          }
+          // Source contents are captured up front: chunk loading evicts the
+          // current window, so later reads from the grid could see blanks.
+          const sourceCells: FillSourceCell[][] = []
+          for (let row = 0; row < sourceRows; row += 1) {
+            const rowCells: FillSourceCell[] = []
+            for (let column = 0; column < sourceColumns; column += 1) {
+              const cell = sourceSheet.getRange(
+                formatAddress(src.startRow + row, src.startColumn + column),
+              )
+              rowCells.push({
+                value: (cell.getValue() ?? null) as FillSourceCell['value'],
+                formula: cell.getFormula() || null,
+              })
+            }
+            sourceCells.push(rowCells)
+          }
+          type FillMatrixCell = {
+            v: string | number | boolean | null
+            f: string | null
+            si: null
+          }
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            targetSheet,
+            dst,
+            (chunk) => {
+              const matrix: FillMatrixCell[][] = []
+              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                const matrixRow: FillMatrixCell[] = []
+                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                  const sourceRowOffset = (row - dst.startRow) % sourceRows
+                  const sourceColumnOffset = (column - dst.startColumn) % sourceColumns
+                  const source = sourceCells[sourceRowOffset]?.[sourceColumnOffset]
+                  if (source?.formula) {
+                    const rowDelta = row - (src.startRow + sourceRowOffset)
+                    const columnDelta = column - (src.startColumn + sourceColumnOffset)
+                    matrixRow.push({
+                      v: null,
+                      f: offsetFormulaRefs(source.formula, rowDelta, columnDelta),
+                      si: null,
+                    })
+                  } else {
+                    matrixRow.push({ v: source?.value ?? null, f: null, si: null })
+                  }
+                }
+                matrix.push(matrixRow)
+              }
+              targetSheet
+                .getRange(
+                  chunk.startRow,
+                  chunk.startColumn,
+                  chunk.endRow - chunk.startRow + 1,
+                  chunk.endColumn - chunk.startColumn + 1,
+                )
+                .setValues(matrix)
+            },
+            setMessage,
+          )
+        } else if (op.op === 'copy_range') {
+          // Copy one block once: the source is read chunk by chunk (loading
+          // streamed regions first, so cached file values are real), then the
+          // target is written the same way. Relative formula references shift
+          // by the block offset, exactly like Excel paste; geometry/overlap
+          // were validated at propose time, so read-then-write is safe.
+          const targetSheet = sheetById(op.sheetId)
+          const sourceSheet = sheetById(op.sourceSheetId ?? op.sheetId)
+          const src = parseRange(op.source)
+          const dst = copyTargetBounds(op)
+          const rowDelta = dst.startRow - src.startRow
+          const columnDelta = dst.startColumn - src.startColumn
+          type CopyCell = { v: string | number | boolean | null; f: string | null }
+          const sourceCells: CopyCell[][] = []
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            sourceSheet,
+            src,
+            (chunk) => {
+              const chunkRange = sourceSheet.getRange(
+                chunk.startRow,
+                chunk.startColumn,
+                chunk.endRow - chunk.startRow + 1,
+                chunk.endColumn - chunk.startColumn + 1,
+              )
+              const values = chunkRange.getValues() as (string | number | boolean | null)[][]
+              const formulas = chunkRange.getFormulas()
+              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                const rowCells: CopyCell[] = []
+                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                  rowCells.push({
+                    v: values[row - chunk.startRow]?.[column - chunk.startColumn] ?? null,
+                    f: formulas[row - chunk.startRow]?.[column - chunk.startColumn] || null,
+                  })
+                }
+                sourceCells[row - src.startRow] = rowCells
+              }
+            },
+            setMessage,
+          )
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            targetSheet,
+            { ...dst },
+            (chunk) => {
+              const matrix: {
+                v: string | number | boolean | null
+                f: string | null
+                si: null
+              }[][] = []
+              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                const matrixRow: (typeof matrix)[number] = []
+                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                  const cell = sourceCells[row - dst.startRow]?.[column - dst.startColumn]
+                  if (cell?.f) {
+                    matrixRow.push({
+                      v: null,
+                      f: offsetFormulaRefs(cell.f, rowDelta, columnDelta),
+                      si: null,
+                    })
+                  } else {
+                    matrixRow.push({ v: cell?.v ?? null, f: null, si: null })
+                  }
+                }
+                matrix.push(matrixRow)
+              }
+              targetSheet
+                .getRange(
+                  chunk.startRow,
+                  chunk.startColumn,
+                  chunk.endRow - chunk.startRow + 1,
+                  chunk.endColumn - chunk.startColumn + 1,
+                )
+                .setValues(matrix)
+            },
+            setMessage,
+          )
+        } else if (op.op === 'convert_to_values') {
+          // Freeze formulas into their computed values, chunk by chunk. The
+          // write is a sparse object matrix (absolute row/column keys) with
+          // only the formula cells, one command per chunk — non-formula
+          // cells, including rich text, are never touched.
+          const targetSheet = sheetById(op.sheetId)
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            targetSheet,
+            parseRange(op.range),
+            (chunk) => {
+              const chunkRange = targetSheet.getRange(
+                chunk.startRow,
+                chunk.startColumn,
+                chunk.endRow - chunk.startRow + 1,
+                chunk.endColumn - chunk.startColumn + 1,
+              )
+              const values = chunkRange.getValues() as (string | number | boolean | null)[][]
+              const formulas = chunkRange.getFormulas()
+              const updates: Record<
+                number,
+                Record<number, { v: string | number | boolean | null; f: null; si: null }>
+              > = {}
+              let touched = 0
+              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                  if (!formulas[row - chunk.startRow]?.[column - chunk.startColumn]) continue
+                  const value = values[row - chunk.startRow]?.[column - chunk.startColumn] ?? null
+                  ;(updates[row] ??= {})[column] = { v: value, f: null, si: null }
+                  touched += 1
+                }
+              }
+              if (touched > 0) chunkRange.setValues(updates)
+            },
+            setMessage,
+          )
+        } else if (op.op === 'find_replace') {
+          // Range-level replace (>MAX_EXPANDED_CELL_OPS cells): scan loaded
+          // chunks and rewrite only the matching text cells with a sparse
+          // object-matrix write (one command per chunk). Formula cells and
+          // non-string values are skipped, matching the per-cell path.
+          const targetSheet = sheetById(op.sheetId)
+          const matchCase = op.matchCase ?? false
+          const needle = matchCase ? op.find : op.find.toLowerCase()
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            targetSheet,
+            parseRange(op.range),
+            (chunk) => {
+              const chunkRange = targetSheet.getRange(
+                chunk.startRow,
+                chunk.startColumn,
+                chunk.endRow - chunk.startRow + 1,
+                chunk.endColumn - chunk.startColumn + 1,
+              )
+              const values = chunkRange.getValues() as (string | number | boolean | null)[][]
+              const formulas = chunkRange.getFormulas()
+              const updates: Record<number, Record<number, { v: string; f: null; si: null }>> = {}
+              let touched = 0
+              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                  if (formulas[row - chunk.startRow]?.[column - chunk.startColumn]) continue
+                  const value = values[row - chunk.startRow]?.[column - chunk.startColumn]
+                  if (typeof value !== 'string') continue
+                  const haystack = matchCase ? value : value.toLowerCase()
+                  let next: string | null = null
+                  if (op.wholeCell) {
+                    if (haystack === needle) next = op.replace
+                  } else if (haystack.includes(needle)) {
+                    next = replaceOccurrences(value, op.find, op.replace, matchCase)
+                  }
+                  if (next === null || next === value) continue
+                  ;(updates[row] ??= {})[column] = { v: next, f: null, si: null }
+                  touched += 1
+                }
+              }
+              if (touched > 0) chunkRange.setValues(updates)
+            },
+            setMessage,
+          )
         } else if (op.op === 'set_note') {
           const target = sheetById(op.sheetId)
           const noteRange = target.getRange(op.address)
@@ -3273,6 +3596,7 @@ export function App(): React.JSX.Element {
         // Register existing file tables so Univer renders filter dropdowns
         // and banding. This is visual-only (the journal is empty for file
         // tables), so failures are swallowed — the data is still usable.
+        const tableInstalls: Promise<unknown>[] = []
         for (const sheet of selected.sheets) {
           if (sheet.tables.length === 0) continue
           const ws = workbook.getSheetBySheetId(sheet.id)
@@ -3290,22 +3614,34 @@ export function App(): React.JSX.Element {
               // Univer paints its own lavender default table theme over the
               // cells; file tables carry Excel's real banding in the cell
               // fills (applyTableBanding), so mute the theme to plain.
-              void (added as Promise<unknown>)?.then?.(() => {
-                try {
-                  ;(
-                    ws as unknown as {
-                      addTableTheme(id: string, theme: { name: string }): unknown
-                    }
-                  ).addTableTheme(tableId, { name: `plain-${tableId}` })
-                } catch {
+              tableInstalls.push(
+                Promise.resolve(added)
+                  .then(() =>
+                    (
+                      ws as unknown as {
+                        addTableTheme(id: string, theme: { name: string }): unknown
+                      }
+                    ).addTableTheme(tableId, { name: `plain-${tableId}` }),
+                  )
                   // Theme muting is cosmetic; the table itself is registered.
-                }
-              })
+                  .catch(() => undefined),
+              )
             } catch {
               // Best-effort: skip if Univer rejects (e.g. overlapping ranges)
             }
           }
         }
+        // Post-save reopen: swap the load-time decoration's undo entries
+        // (table/note/name installs are load artifacts, not edits) for the
+        // pre-save user history carried across the session swap. Table
+        // registration is async and pushes its undo entries (each push also
+        // clears the redo stack) only when its command settles — consume
+        // strictly after every install, or the artifacts would land on top
+        // of the carried history and wipe the carried redos.
+        void Promise.allSettled(tableInstalls).then(() => {
+          if (lazyWorkbookRef.current !== state) return
+          consumePendingUndoCarry(runtime, workbook.getId())
+        })
         const worksheet = workbook.getActiveSheet()
         if (!worksheet) return
         // apply the opening sheet's formula view (sheetView/@showFormulas)
@@ -3537,6 +3873,15 @@ export function App(): React.JSX.Element {
   return (
     <>
       <ToastHost />
+      {recoveryPrompt && (
+        <RecoveryDialog
+          prompt={recoveryPrompt}
+          onChoose={(restore) => {
+            setRecoveryPrompt(null)
+            window.desktopApi?.replyRecoveryPrompt?.(restore)
+          }}
+        />
+      )}
       {chartDialog && chartDialogTarget && chartDialog.kind === 'format' && (
         <ChartFormatPane
           chart={chartDialogTarget.chart}

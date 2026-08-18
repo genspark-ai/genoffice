@@ -5,7 +5,24 @@ export interface OpenFileResult {
   data: ArrayBuffer
   /** sha256 of the original file; original archived under this hash */
   hash: string
+  /** the on-disk file is password protected (opened via decrypt; saves re-encrypt) */
+  encrypted?: boolean
 }
+
+/** Password-protected (ECMA-376 encrypted) docx: the renderer prompts for the
+ *  open password and retries via openDocxDecrypt. */
+export interface OpenFileNeedsPassword {
+  needsPassword: true
+  path: string
+  name: string
+}
+
+export type OpenDocxResult = OpenFileResult | OpenFileNeedsPassword | null
+
+/** result of an openDocxDecrypt attempt; wrong-password keeps the prompt open */
+export type DecryptOpenResult =
+  | { ok: true; result: OpenFileResult }
+  | { ok: false; reason: 'wrong-password' | 'unsupported' | 'error'; error?: string }
 
 export interface PickImageResult {
   /** raw image bytes, base64 encoded */
@@ -153,14 +170,19 @@ export interface DesktopApi {
   /** press on the shell chrome (tab strip is a sibling WebContentsView whose
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void
-  openDocx(): Promise<OpenFileResult | null>
-  openDocxPath(path: string): Promise<OpenFileResult | null>
+  openDocx(): Promise<OpenDocxResult>
+  openDocxPath(path: string): Promise<OpenDocxResult>
+  /** decrypt-and-open a password-protected docx (path from a needsPassword result) */
+  openDocxDecrypt(path: string, password: string): Promise<DecryptOpenResult>
+  /** Review > Protect: set (or clear with null) the document's open password;
+   *  filePath null = document not saved yet, applied on its first save */
+  setDocPassword(filePath: string | null, password: string | null): Promise<{ ok: boolean }>
   /** mark the renderer ready and consume a file passed by Finder/Explorer at launch */
-  consumePendingOpenDocx(): Promise<OpenFileResult | null>
+  consumePendingOpenDocx(): Promise<OpenDocxResult>
   /** returns true when this tab was created via "New Document" and should start blank */
   consumeNewBlankDoc(): Promise<boolean>
   /** receive documents opened from Finder/Explorer while the app is running */
-  onOpenDocx(handler: (result: OpenFileResult) => void): () => void
+  onOpenDocx(handler: (result: Exclude<OpenDocxResult, null>) => void): () => void
   /** File was renamed externally (renamed in the shell Home list) — pushes old and new paths; renderer syncs its save path and title bar */
   onRenamedDocx(handler: (paths: { oldPath: string; newPath: string }) => void): () => void
   /** auto=true marks an autosave: an externally modified file then fails with
@@ -175,9 +197,12 @@ export interface DesktopApi {
   writeRecoveryCopy(path: string, data: ArrayBuffer): Promise<{ ok: boolean }>
   /** tab closed but webContents kept alive (shell freeze workaround) — stop background timers */
   onTeardown(handler: () => void): () => void
+  /** sourcePath: the document's current path — Save As of a password-protected
+   *  document re-encrypts with the same password at the new path (Word behavior) */
   saveDocxAs(
     defaultName: string,
     data: ArrayBuffer,
+    sourcePath?: string | null,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   /** first save of a new document: silently writes into the default folder, no dialog */
   saveDocxNew(

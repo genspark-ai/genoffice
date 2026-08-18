@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { PDFDict, PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib'
 import { fontCoversText } from './font-cmap'
-import { findSystemFont, isTruetype } from './font-locate'
+import { findFontCovering, findSystemFont, isTruetype } from './font-locate'
 import { identityCffCharset, subsetTtf } from './font-subset'
 import { pdfiumWasmPath } from './wasm-path'
 import type {
@@ -144,29 +144,67 @@ export function loadPdfium(): Promise<Pdfium> {
   return pdfiumPromise
 }
 
-/** Fallback fonts for rebuilt runs, first readable file wins; must be single-face sfnt (no .ttc) */
-const FALLBACK_FONTS = [
+/** Fallback font files for rebuilt runs, tried first; must be single-face sfnt (no .ttc).
+    arialuni.ttf only exists where legacy Office installed it — modern Windows relies on
+    the system-face lookup below (inserted text has no original font to inherit, so a
+    missing fallback used to fail EVERY Insert Text save on Windows). */
+const FALLBACK_FONT_PATHS = [
   '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
   'C:\\Windows\\Fonts\\arialuni.ttf',
   '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
 ]
 
-let fallbackFontBytes: Buffer | null | undefined
+/** [PostScript name, family] fallbacks resolved through the installed-font index
+    (which extracts single faces from .ttc collections). Latin faces lead so plain
+    Latin text keeps a neutral look; CJK/Hangul faces follow and win only when the
+    text needs their coverage (each candidate is coverage-gated). */
+const FALLBACK_SYSTEM_FACES: readonly (readonly [string, string])[] = [
+  ['ArialMT', 'Arial'],
+  ['SegoeUI', 'Segoe UI'],
+  ['Helvetica', 'Helvetica'],
+  ['MicrosoftYaHei', 'Microsoft YaHei'],
+  ['SimSun', 'SimSun'],
+  ['PingFangSC-Regular', 'PingFang SC'],
+  ['HiraginoSans-W3', 'Hiragino Sans'],
+  ['YuGothic-Regular', 'Yu Gothic'],
+  ['MSGothic', 'MS Gothic'],
+  ['MalgunGothic', 'Malgun Gothic'],
+  ['AppleSDGothicNeo-Regular', 'Apple SD Gothic Neo'],
+  ['NotoSansCJKsc-Regular', 'Noto Sans CJK SC'],
+  ['DejaVuSans', 'DejaVu Sans'],
+  ['LiberationSans-Regular', 'Liberation Sans'],
+]
 
-function loadFallbackFont(): Buffer {
-  if (fallbackFontBytes === undefined) {
-    fallbackFontBytes = null
-    for (const p of FALLBACK_FONTS) {
-      try {
-        fallbackFontBytes = readFileSync(p)
-        break
-      } catch {
-        /* try next */
-      }
+const fallbackPathCache = new Map<string, Buffer | null>()
+
+function readFallbackPath(p: string): Buffer | null {
+  let bytes = fallbackPathCache.get(p)
+  if (bytes === undefined) {
+    try {
+      bytes = readFileSync(p)
+    } catch {
+      bytes = null
     }
+    fallbackPathCache.set(p, bytes)
   }
-  if (!fallbackFontBytes) throw new Error('no fallback font available for text editing')
-  return fallbackFontBytes
+  return bytes
+}
+
+/** First fallback face whose cmap covers `drawn`; when no curated candidate does,
+    scan the whole installed-font index — the browser preview resolves per-char
+    fallback across every installed font, so text the user already SEES must find
+    an embeddable face too. Null only when nothing monochrome covers the text
+    (color-emoji faces display but cannot embed as PDF text). */
+export function fallbackFontFor(drawn: string): Buffer | null {
+  for (const p of FALLBACK_FONT_PATHS) {
+    const bytes = readFallbackPath(p)
+    if (bytes && fontCoversText(bytes, drawn)) return bytes
+  }
+  for (const [ps, family] of FALLBACK_SYSTEM_FACES) {
+    const bytes = findSystemFont(ps, family)
+    if (bytes && fontCoversText(bytes, drawn)) return bytes
+  }
+  return findFontCovering(drawn)
 }
 
 export type EditFontStyle = 'regular' | 'bold' | 'italic' | 'bolditalic'
@@ -265,6 +303,22 @@ function loadEditFont(id: string, style: EditFontStyle = 'regular'): Buffer | nu
 /** Edit-font ids that resolve to a readable font file on this machine */
 export function listEditFonts(): string[] {
   return Object.keys(EDIT_FONT_PATHS).filter((id) => loadEditFont(id) !== null)
+}
+
+/** Can this machine draw `text` into the PDF at all? Mirrors rebuildFontBytes'
+    resolution for an insert (the chosen edit font, else any fallback face), so the
+    renderer can reject an undrawable insert at confirm time instead of at save. */
+export function canDrawText(text: string, font?: string, bold = false, italic = false): boolean {
+  const drawn = text.replace(/\n/g, '')
+  if (font) {
+    const style: EditFontStyle =
+      bold && italic ? 'bolditalic' : bold ? 'bold' : italic ? 'italic' : 'regular'
+    for (const s of style === 'regular' ? (['regular'] as const) : ([style, 'regular'] as const)) {
+      const bytes = loadEditFont(font, s)
+      if (bytes && fontCoversText(bytes, drawn)) return true
+    }
+  }
+  return fallbackFontFor(drawn) !== null
 }
 
 /** Whitespace-insensitive, radical- and NFKC-folded comparison key. pdf.js and pdfium
@@ -971,14 +1025,27 @@ async function rebuildFontBytes(
       }
     }
   }
-  const fallback = loadFallbackFont()
-  // Chars beyond even the fallback face (emoji, rare CJK extensions) would embed as
-  // missing glyphs and then fail read-back verification, blocking the whole save —
-  // reject this one edit instead (it is reported as skipped, everything else saves)
-  if (!fontCoversText(fallback, drawn)) {
+  const fallback = fallbackFontFor(drawn)
+  // No face covers the text (emoji, rare CJK extensions — or a machine with none of
+  // the fallback fonts): embedding missing glyphs would fail read-back verification
+  // and block the whole save — reject this one edit instead (it is reported as
+  // skipped with this reason, everything else saves)
+  if (!fallback) {
     throw new Error('the replacement contains characters no available font can draw')
   }
-  return subsetTtf(fallback, drawn)
+  const sub = await subsetTtf(fallback, drawn)
+  try {
+    // CFF-flavored fallbacks (e.g. PingFang) need the charset rewrite for viewer
+    // compat; a no-op for TrueType faces
+    return identityCffCharset(sub)
+  } catch {
+    // TrueType subsets never needed the rewrite, so the raw subset is safe. A CFF
+    // subset without it can save fine yet render BLANK in viewers that resolve CID
+    // through the charset (Acrobat) — reject this edit (reported as skipped with
+    // this reason) instead of embedding bytes that look saved but display nothing.
+    if (isTruetype(sub)) return sub
+    throw new Error('the fallback font for this text could not be embedded')
+  }
 }
 
 /** Extra leading between stacked lines, multiple of the font size (matches the preview CSS) */

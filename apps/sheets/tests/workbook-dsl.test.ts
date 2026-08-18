@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAX_EXPANDED_CELL_OPS,
   expandToPrimitiveOps,
   structuralOpLabel,
   workbookCommandBatchSchema,
@@ -165,9 +164,22 @@ describe('expandToPrimitiveOps', () => {
   })
 
   it('rejects batches that expand past the cell-op ceiling', () => {
+    // clear_range above the ceiling stays range-level (covered by
+    // fill-range.test.ts); set_range still expands per cell and must reject.
     expect(() =>
       expandToPrimitiveOps([
-        { op: 'clear_range', sheetId: 's', range: `A1:C${MAX_EXPANDED_CELL_OPS}` },
+        {
+          op: 'set_range',
+          sheetId: 's',
+          start: 'A1',
+          values: Array.from({ length: 500 }, () => Array.from({ length: 100 }, () => 1)),
+        },
+        {
+          op: 'set_range',
+          sheetId: 's',
+          start: 'A501',
+          values: Array.from({ length: 500 }, () => Array.from({ length: 100 }, () => 1)),
+        },
       ]),
     ).toThrow(/2000/)
   })
@@ -625,13 +637,27 @@ describe('find_replace expansion', () => {
         },
       ]),
     ).toThrow(/needs the current cell contents/)
+    // Above the per-cell expansion cap the op passes through range-level
+    // (the executor scans loaded chunks itself, no reader needed) …
+    const rangeLevel = expandToPrimitiveOps([
+      {
+        op: 'find_replace',
+        sheetId: 's',
+        range: 'A1:Z1000',
+        find: 'a',
+        replace: 'b',
+      },
+    ])
+    expect(rangeLevel).toHaveLength(1)
+    expect(rangeLevel[0]?.op).toBe('find_replace')
+    // … up to the range-op cap.
     expect(() =>
       expandToPrimitiveOps(
         [
           {
             op: 'find_replace',
             sheetId: 's',
-            range: 'A1:Z1000',
+            range: 'A1:C100000',
             find: 'a',
             replace: 'b',
           },

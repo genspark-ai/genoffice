@@ -19,12 +19,12 @@ const COMMENTS_XML =
 
 /** paragraph with an in-paragraph comment range over its middle run */
 const COMMENTED_P =
-  '<w:p><w:r><w:t>before </w:t></w:r>' +
+  '<w:p><w:r><w:t xml:space="preserve">before </w:t></w:r>' +
   '<w:commentRangeStart w:id="1"/>' +
   '<w:r><w:t>marked</w:t></w:r>' +
   '<w:commentRangeEnd w:id="1"/>' +
   '<w:r><w:commentReference w:id="1"/></w:r>' +
-  '<w:r><w:t> after</w:t></w:r></w:p>'
+  '<w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p>'
 
 /** comment 2 spans two paragraphs: start in one, end in the next */
 const CROSS_P_A = '<w:p><w:commentRangeStart w:id="2"/><w:r><w:t>range opens here</w:t></w:r></w:p>'

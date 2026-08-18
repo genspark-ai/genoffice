@@ -111,12 +111,17 @@ import {
   workbookExportPdfRequestSchema,
   workbookRangeRequestSchema,
   workbookRangeResultSchema,
+  workbookSaveEditsAbortSchema,
+  workbookSaveEditsBeginSchema,
+  workbookSaveEditsChunkSchema,
   workbookSaveRequestSchema,
   type WorkbookSaveRequest,
 } from '../shared/desktop-api'
 import { IPC_CHANNELS } from '../shared/ipc-channels'
 import { closeGuardDecision } from './close-guard'
+import { SaveEditsTransferStore } from './save-edits-transfer'
 import { exportPdf } from './pdf-export'
+import { setSystemShortDate, shortDatePatternForSystemLocale } from '../shared/short-date'
 import { XlsxSidecarClient } from './xlsx-sidecar-client'
 
 /**
@@ -1078,6 +1083,8 @@ interface SheetsTabSession {
   readonly client: XlsxSidecarClient
   readonly sessions: Map<string, SessionInfo>
   readonly aiStreams: Map<string, AbortController>
+  /// Chunked uploads of large saves' cell edits, pending their save request.
+  readonly saveTransfers: SaveEditsTransferStore
 }
 
 /** per-tab session state, keyed by webContents.id — replaces the old single-window closures
@@ -1093,6 +1100,18 @@ function sessionFor(event: IpcMainInvokeEvent): SheetsTabSession {
   const entry = sheetsTabs.get(event.sender.id)
   if (!entry) throw new Error('Untrusted IPC sender.')
   return entry
+}
+
+/// A save request referencing a chunked edit transfer gets the accumulated
+/// edits spliced back in; the transfer is consumed either way.
+function resolveTransferredEdits(
+  entry: SheetsTabSession,
+  request: WorkbookSaveRequest,
+): WorkbookSaveRequest {
+  if (request.editsTransferId === undefined) return request
+  if (request.edits.length > 0) throw new Error('Save request mixes inline and transferred edits.')
+  const edits = entry.saveTransfers.take(request.editsTransferId, request.sessionId)
+  return { ...request, edits }
 }
 
 function dialogParent(event: IpcMainInvokeEvent): BrowserWindow | undefined {
@@ -1116,12 +1135,23 @@ async function saveFileDialog(event: IpcMainInvokeEvent, options: SaveDialogOpti
 
 /** register a tab's webContents/client pair and wire up cleanup on teardown */
 function registerSheetsSession(webContents: WebContents, client: XlsxSidecarClient): void {
-  sheetsTabs.set(webContents.id, { webContents, client, sessions: new Map(), aiStreams: new Map() })
+  sheetsTabs.set(webContents.id, {
+    webContents,
+    client,
+    sessions: new Map(),
+    aiStreams: new Map(),
+    saveTransfers: new SaveEditsTransferStore(),
+  })
   activeSheetsWebContents = webContents
   webContents.once('destroyed', () => {
     const entry = sheetsTabs.get(webContents.id)
     sheetsTabs.delete(webContents.id)
-    if (entry) void closeAllSessions(entry)
+    if (entry) {
+      // Free pending chunked-save uploads with the tab (the sweep timer's
+      // closure would otherwise keep them reachable until the idle expiry).
+      entry.saveTransfers.dispose()
+      void closeAllSessions(entry)
+    }
     if (activeSheetsWebContents === webContents) activeSheetsWebContents = null
   })
 }
@@ -1215,6 +1245,64 @@ function clearWorkbookRecovery(filePath: string): void {
   } catch {
     /* nothing to clean */
   }
+}
+
+/// Restore/Discard choice for a pending recovery copy. Rendered as a styled
+/// in-app dialog by the renderer (the native message box looks dated,
+/// especially on Windows); strings ship pre-localized in the payload.
+/// 'dismissed' (renderer gone before answering) opens the original file and
+/// keeps the copy, so the offer repeats on the next open.
+type RecoveryChoice = 'restore' | 'discard' | 'dismissed'
+
+const recoveryPromptWaiters = new Map<number, (choice: RecoveryChoice) => void>()
+
+function promptRecoveryRestore(
+  contents: WebContents,
+  filePath: string,
+  recoveryPath: string,
+): Promise<RecoveryChoice> {
+  return new Promise((resolve) => {
+    let savedAtMs = Date.now()
+    try {
+      savedAtMs = statSync(recoveryPath).mtimeMs
+    } catch {
+      /* copy vanished: the prompt still works, just without a precise time */
+    }
+    const settle = (choice: RecoveryChoice): void => {
+      recoveryPromptWaiters.delete(contents.id)
+      contents.removeListener('destroyed', onDestroyed)
+      resolve(choice)
+    }
+    const onDestroyed = (): void => settle('dismissed')
+    recoveryPromptWaiters.set(contents.id, settle)
+    contents.once('destroyed', onDestroyed)
+    contents.send(IPC_CHANNELS.recoveryPrompt, {
+      title: tm('autosaveFoundTitle'),
+      body: tm('autosaveFoundBody'),
+      restoreLabel: tm('autosaveRestore'),
+      discardLabel: tm('autosaveDiscard'),
+      fileName: basename(filePath),
+      savedAtMs,
+    })
+  })
+}
+
+/** Native message-box fallback for the rare open with no live renderer to draw the prompt. */
+async function promptRecoveryRestoreNative(
+  parent?: BrowserWindow | undefined,
+): Promise<RecoveryChoice> {
+  const options = {
+    type: 'question' as const,
+    buttons: [tm('autosaveRestore'), tm('autosaveDiscard')],
+    defaultId: 0,
+    cancelId: 1,
+    message: tm('autosaveFoundTitle'),
+    detail: tm('autosaveFoundBody'),
+  }
+  const answer = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options)
+  return answer.response === 0 ? 'restore' : 'discard'
 }
 
 /** Recovery copy newer than the file itself, i.e. unsaved work from a lost session. */
@@ -1670,6 +1758,10 @@ export function registerSheetsIpc(): void {
     },
   )
 
+  ipcMain.on(IPC_CHANNELS.recoveryPromptReply, (event, restore: unknown) => {
+    recoveryPromptWaiters.get(event.sender.id)?.(restore === true ? 'restore' : 'discard')
+  })
+
   ipcMain.on(IPC_CHANNELS.pendingEditsChanged, (event, count: unknown) => {
     if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return
     const senderId = event.sender.id
@@ -1731,7 +1823,17 @@ export function registerSheetsIpc(): void {
       if (selection.canceled || !selection.filePaths[0]) return null
       path = selection.filePaths[0]
     }
-    const prepared = await prepareWorkbookForOpen(entry.client, path, dialogParent(event))
+    const prepared = await prepareWorkbookForOpen(
+      entry.client,
+      path,
+      event.sender,
+      dialogParent(event),
+    )
+    // The recovery prompt (or the file dialog / import conversion) can outlive
+    // the tab: once the renderer is destroyed, its 'destroyed' handler has
+    // already run closeAllSessions and dropped the tab entry, so a session
+    // opened now would never be closed and its snapshot would leak.
+    if (event.sender.isDestroyed()) return null
     const result = await openWorkbookSession(entry.client, prepared.openPath, entry.sessions, {
       suggestSaveAs: prepared.suggestSaveAs,
       csvImport: prepared.csvImport,
@@ -1965,7 +2067,7 @@ export function registerSheetsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.saveWorkbook, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const client = entry.client
-    const request = workbookSaveRequestSchema.parse(input)
+    const request = resolveTransferredEdits(entry, workbookSaveRequestSchema.parse(input))
     const session = entry.sessions.get(request.sessionId)
     if (!session) throw new Error('Unknown workbook session.')
 
@@ -2028,11 +2130,35 @@ export function registerSheetsIpc(): void {
     return { canceled: false, file, touchedEntries: mutation.touchedEntries }
   })
 
+  // Chunked upload for edit sets too large to inline in one save request:
+  // the renderer opens a transfer, streams ordered slices, then references
+  // the transfer id from the save (or recovery) request that follows.
+  ipcMain.handle(IPC_CHANNELS.saveEditsBegin, (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookSaveEditsBeginSchema.parse(input)
+    if (!entry.sessions.has(request.sessionId)) throw new Error('Unknown workbook session.')
+    entry.saveTransfers.begin(request)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.saveEditsChunk, (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookSaveEditsChunkSchema.parse(input)
+    entry.saveTransfers.addChunk(request)
+  })
+
+  // Best-effort cleanup from renderer failure paths; a no-op if the transfer
+  // was already consumed or expired.
+  ipcMain.handle(IPC_CHANNELS.saveEditsAbort, (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookSaveEditsAbortSchema.parse(input)
+    entry.saveTransfers.discard(request.transferId, request.sessionId)
+  })
+
   // Crash-recovery copy of a dirty workbook: the same save pipeline with a
   // userData target, no session swap and no dialogs — best-effort, silent on failure.
   ipcMain.handle(IPC_CHANNELS.writeWorkbookRecovery, async (event, input: unknown) => {
     const entry = sessionFor(event)
-    const request = workbookSaveRequestSchema.parse(input)
+    const request = resolveTransferredEdits(entry, workbookSaveRequestSchema.parse(input))
     const session = entry.sessions.get(request.sessionId)
     // A converted import has no original file to recover into; a restored
     // recovery session is backed by the recovery copy itself — writing over
@@ -2052,6 +2178,7 @@ export function registerSheetsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.closeWorkbook, async (event, sessionId: unknown) => {
     const entry = sessionFor(event)
     const validatedSessionId = z.string().uuid().parse(sessionId)
+    entry.saveTransfers.discardSession(validatedSessionId)
     const session = entry.sessions.get(validatedSessionId)
     if (!entry.sessions.delete(validatedSessionId)) return
     try {
@@ -2771,6 +2898,18 @@ async function snapshotWorkbook(path: string): Promise<string> {
   return snapshotPath
 }
 
+let cachedShortDate: string | undefined
+
+/// Derived from the OS region (not the UI language) and shared with the
+/// gateway's save-side numFmtId mapping via setSystemShortDate.
+function systemShortDate(): string {
+  if (cachedShortDate === undefined) {
+    cachedShortDate = shortDatePatternForSystemLocale(app.getSystemLocale())
+    setSystemShortDate(cachedShortDate)
+  }
+  return cachedShortDate
+}
+
 async function openWorkbookSession(
   client: XlsxSidecarClient,
   path: string,
@@ -2790,7 +2929,7 @@ async function openWorkbookSession(
   try {
     const [opened, digest, restoreTargetSha] = await Promise.all([
       client
-        .open(snapshotPath, getUiLang())
+        .open(snapshotPath, getUiLang(), systemShortDate())
         .then((result) => sidecarOpenResultSchema.parse(result)),
       sha256File(snapshotPath),
       // Missing original (deleted since the crash) is fine: the write-back recreates it.
@@ -2840,6 +2979,7 @@ function legacyCsvCharset(): string | undefined {
 async function prepareWorkbookForOpen(
   client: XlsxSidecarClient,
   path: string,
+  contents?: WebContents | undefined,
   parent?: BrowserWindow | undefined,
 ): Promise<{
   openPath: string
@@ -2855,19 +2995,12 @@ async function prepareWorkbookForOpen(
     // prompt (which spells out the overwrite) was the confirmation.
     const recovery = pendingRecoveryFor(path)
     if (recovery) {
-      const options = {
-        type: 'question' as const,
-        buttons: [tm('autosaveRestore'), tm('autosaveDiscard')],
-        defaultId: 0,
-        cancelId: 1,
-        message: tm('autosaveFoundTitle'),
-        detail: tm('autosaveFoundBody'),
-      }
-      const answer = parent
-        ? await dialog.showMessageBox(parent, options)
-        : await dialog.showMessageBox(options)
-      if (answer.response === 0) return { openPath: recovery, restoreTarget: path }
-      clearWorkbookRecovery(path)
+      const choice =
+        contents && !contents.isDestroyed()
+          ? await promptRecoveryRestore(contents, path, recovery)
+          : await promptRecoveryRestoreNative(parent)
+      if (choice === 'restore') return { openPath: recovery, restoreTarget: path }
+      if (choice === 'discard') clearWorkbookRecovery(path)
     }
     return { openPath: path }
   }

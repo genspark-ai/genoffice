@@ -108,6 +108,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: '应用',
 
     paneFormatTitle: '格式',
+    paneFormatTitleTyped: '设置{type}格式',
+    paneFormatTabShape: '形状选项',
+    paneFormatTabText: '文本选项',
     paneFormatClose: '关闭格式窗格',
     paneBgTitle: '设置背景格式',
     paneBgEmpty: '打开演示文稿后可设置页面背景',
@@ -290,6 +293,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Apply',
 
     paneFormatTitle: 'Format',
+    paneFormatTitleTyped: 'Format {type}',
+    paneFormatTabShape: 'Shape Options',
+    paneFormatTabText: 'Text Options',
     paneFormatClose: 'Close Format Pane',
     paneBgTitle: 'Format Background',
     paneBgEmpty: 'Open a presentation to set the slide background',
@@ -474,6 +480,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: '適用',
 
     paneFormatTitle: '書式',
+    paneFormatTitleTyped: '{type}の書式設定',
+    paneFormatTabShape: '図形のオプション',
+    paneFormatTabText: '文字のオプション',
     paneFormatClose: '書式ウィンドウを閉じる',
     paneBgTitle: '背景の書式設定',
     paneBgEmpty: 'プレゼンテーションを開くと背景を設定できます',
@@ -657,6 +666,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: '적용',
 
     paneFormatTitle: '서식',
+    paneFormatTitleTyped: '{type} 서식 지정',
+    paneFormatTabShape: '도형 옵션',
+    paneFormatTabText: '텍스트 옵션',
     paneFormatClose: '서식 창 닫기',
     paneBgTitle: '배경 서식',
     paneBgEmpty: '프레젠테이션을 열면 배경을 설정할 수 있습니다',
@@ -840,6 +852,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Appliquer',
 
     paneFormatTitle: 'Format',
+    paneFormatTitleTyped: 'Format de {type}',
+    paneFormatTabShape: 'Options de forme',
+    paneFormatTabText: 'Options de texte',
     paneFormatClose: 'Fermer le volet Format',
     paneBgTitle: 'Mise en forme de l’arrière-plan',
     paneBgEmpty: 'Ouvrez une présentation pour définir l’arrière-plan',
@@ -1028,6 +1043,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Anwenden',
 
     paneFormatTitle: 'Format',
+    paneFormatTitleTyped: '{type} formatieren',
+    paneFormatTabShape: 'Formoptionen',
+    paneFormatTabText: 'Textoptionen',
     paneFormatClose: 'Formatbereich schließen',
     paneBgTitle: 'Hintergrund formatieren',
     paneBgEmpty: 'Öffnen Sie eine Präsentation, um den Hintergrund festzulegen',
@@ -1216,6 +1234,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Aplicar',
 
     paneFormatTitle: 'Formato',
+    paneFormatTitleTyped: 'Formato de {type}',
+    paneFormatTabShape: 'Opciones de forma',
+    paneFormatTabText: 'Opciones de texto',
     paneFormatClose: 'Cerrar el panel de formato',
     paneBgTitle: 'Formato del fondo',
     paneBgEmpty: 'Abra una presentación para configurar el fondo',
@@ -1403,6 +1424,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'นำไปใช้',
 
     paneFormatTitle: 'รูปแบบ',
+    paneFormatTitleTyped: 'จัดรูปแบบ{type}',
+    paneFormatTabShape: 'ตัวเลือกรูปร่าง',
+    paneFormatTabText: 'ตัวเลือกข้อความ',
     paneFormatClose: 'ปิดบานหน้าต่างรูปแบบ',
     paneBgTitle: 'จัดรูปแบบพื้นหลัง',
     paneBgEmpty: 'เปิดงานนำเสนอเพื่อตั้งค่าพื้นหลัง',
@@ -1586,6 +1610,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Terapkan',
 
     paneFormatTitle: 'Format',
+    paneFormatTitleTyped: 'Format {type}',
+    paneFormatTabShape: 'Opsi Bentuk',
+    paneFormatTabText: 'Opsi Teks',
     paneFormatClose: 'Tutup Panel Format',
     paneBgTitle: 'Format Latar Belakang',
     paneBgEmpty: 'Buka presentasi untuk mengatur latar belakang',
@@ -1771,6 +1798,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Применить',
 
     paneFormatTitle: 'Формат',
+    paneFormatTitleTyped: 'Формат: {type}',
+    paneFormatTabShape: 'Параметры фигуры',
+    paneFormatTabText: 'Параметры текста',
     paneFormatClose: 'Закрыть область формата',
     paneBgTitle: 'Формат фона',
     paneBgEmpty: 'Откройте презентацию, чтобы настроить фон',
@@ -1953,6 +1983,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'تطبيق',
 
     paneFormatTitle: 'التنسيق',
+    paneFormatTitleTyped: 'تنسيق {type}',
+    paneFormatTabShape: 'خيارات الشكل',
+    paneFormatTabText: 'خيارات النص',
     paneFormatClose: 'إغلاق جزء التنسيق',
     paneBgTitle: 'تنسيق الخلفية',
     paneBgEmpty: 'افتح عرضًا تقديميًا لتعيين الخلفية',
@@ -2136,6 +2169,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Aplicar',
 
     paneFormatTitle: 'Formatar',
+    paneFormatTitleTyped: 'Formatar {type}',
+    paneFormatTabShape: 'Opções de Forma',
+    paneFormatTabText: 'Opções de Texto',
     paneFormatClose: 'Fechar o Painel de Formatação',
     paneBgTitle: 'Formatar Plano de Fundo',
     paneBgEmpty: 'Abra uma apresentação para definir o plano de fundo',
@@ -2324,6 +2360,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Applica',
 
     paneFormatTitle: 'Formato',
+    paneFormatTitleTyped: 'Formato {type}',
+    paneFormatTabShape: 'Opzioni forma',
+    paneFormatTabText: 'Opzioni testo',
     paneFormatClose: 'Chiudi il riquadro Formato',
     paneBgTitle: 'Formato sfondo',
     paneBgEmpty: 'Apri una presentazione per impostare lo sfondo',
@@ -2511,6 +2550,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Zastosuj',
 
     paneFormatTitle: 'Formatowanie',
+    paneFormatTitleTyped: 'Formatowanie: {type}',
+    paneFormatTabShape: 'Opcje kształtu',
+    paneFormatTabText: 'Opcje tekstu',
     paneFormatClose: 'Zamknij okienko formatowania',
     paneBgTitle: 'Formatowanie tła',
     paneBgEmpty: 'Otwórz prezentację, aby ustawić tło',
@@ -2696,6 +2738,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Toepassen',
 
     paneFormatTitle: 'Opmaak',
+    paneFormatTitleTyped: '{type} opmaken',
+    paneFormatTabShape: 'Vormopties',
+    paneFormatTabText: 'Tekstopties',
     paneFormatClose: 'Deelvenster Opmaak sluiten',
     paneBgTitle: 'Achtergrond opmaken',
     paneBgEmpty: 'Open een presentatie om de achtergrond in te stellen',
@@ -2883,6 +2928,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'Guna',
 
     paneFormatTitle: 'Format',
+    paneFormatTitleTyped: 'Format {type}',
+    paneFormatTabShape: 'Pilihan Bentuk',
+    paneFormatTabText: 'Pilihan Teks',
     paneFormatClose: 'Tutup Anak Tetingkap Format',
     paneBgTitle: 'Format Latar Belakang',
     paneBgEmpty: 'Buka persembahan untuk menetapkan latar belakang',
@@ -3069,6 +3117,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'החל',
 
     paneFormatTitle: 'עיצוב',
+    paneFormatTitleTyped: 'עיצוב {type}',
+    paneFormatTabShape: 'אפשרויות צורה',
+    paneFormatTabText: 'אפשרויות טקסט',
     paneFormatClose: 'סגור את חלונית העיצוב',
     paneBgTitle: 'עיצוב רקע',
     paneBgEmpty: 'פתח מצגת כדי להגדיר את הרקע',
@@ -3251,6 +3302,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: 'लागू करें',
 
     paneFormatTitle: 'स्वरूप',
+    paneFormatTitleTyped: '{type} स्वरूपित करें',
+    paneFormatTabShape: 'आकृति विकल्प',
+    paneFormatTabText: 'पाठ विकल्प',
     paneFormatClose: 'स्वरूप फलक बंद करें',
     paneBgTitle: 'पृष्ठभूमि स्वरूपित करें',
     paneBgEmpty: 'पृष्ठभूमि सेट करने के लिए प्रस्तुति खोलें',
@@ -3434,6 +3488,9 @@ export const paneStrings = defineStrings({
     paneCutoutApply: '套用',
 
     paneFormatTitle: '格式',
+    paneFormatTitleTyped: '設定{type}格式',
+    paneFormatTabShape: '圖案選項',
+    paneFormatTabText: '文字選項',
     paneFormatClose: '關閉格式窗格',
     paneBgTitle: '設定背景格式',
     paneBgEmpty: '開啟簡報後即可設定頁面背景',

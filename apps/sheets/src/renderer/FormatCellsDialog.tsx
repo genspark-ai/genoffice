@@ -6,7 +6,7 @@ import { useI18n, type StringKey } from './i18n/locale'
 import {
   clampDecimals,
   CURRENCY_SYMBOLS,
-  DATE_PATTERNS,
+  datePatterns,
   FRACTION_PATTERNS,
   NEGATIVE_STYLES,
   NUMFMT_CATEGORIES,
@@ -296,7 +296,7 @@ export function FormatCellsDialog({
                   <div className="numfmt-field">
                     {t('dlgFcTypeLabel')}
                     <div className="numfmt-list" role="listbox" aria-label={t('dlgFcTypeLabel')}>
-                      {(numOptions.category === 'date' ? DATE_PATTERNS : TIME_PATTERNS).map(
+                      {(numOptions.category === 'date' ? datePatterns() : TIME_PATTERNS).map(
                         (candidate) => {
                           const key = numOptions.category === 'date' ? 'datePattern' : 'timePattern'
                           return (

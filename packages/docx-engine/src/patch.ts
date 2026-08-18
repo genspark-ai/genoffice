@@ -22,7 +22,7 @@ import {
   injectInkRunsIntoParagraph,
   stripInkRuns,
 } from './ink'
-import { assertZipWithinLimits, type ParseExtras } from './parse'
+import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
 import { loadDocxZip } from './zip-load'
 import { BLANK_NUMBERING_XML, abstractNumXml, type CustomNumberingLevel } from './blank'
 import { applyPageNumType, applySectionSettings, applySectionStartType } from './section'
@@ -44,6 +44,7 @@ import { buildChartPartXml, buildChartWorkbookXlsxBase64, CHART_WORKBOOK_REL_TYP
 import type {
   CommentInfo,
   DocProtection,
+  WriteProtection,
   GeneratedBlock,
   HeaderFooter,
   NewChart,
@@ -93,7 +94,7 @@ export interface SaveOptions {
   /** rewrite page size / margins in the trailing w:sectPr */
   section?: SectionSettings
   /** last-section start type (w:type); rewrites the trailing sectPr when inserting a continuous section break; undefined = keep */
-  sectionStartType?: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'
+  sectionStartType?: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn'
   /** last-section page numbering (w:pgNumType): both fmt/start unset = remove the tag; undefined = keep */
   pgNumType?: { fmt?: string; start?: number }
   /** page color: hex without '#' to set, null to remove, undefined to keep as-is */
@@ -160,6 +161,14 @@ export interface SaveOptions {
   comments?: CommentInfo[]
   /** editing restriction; null removes w:documentProtection, undefined keeps */
   protection?: DocProtection | null
+  /** password to modify / read-only recommended; null removes w:writeProtection, undefined keeps */
+  writeProtection?: WriteProtection | null
+  /**
+   * settings.xml w:removePersonalInformation flag; undefined keeps the current value.
+   * Whenever the flag is effective (set here or already in the document), the save
+   * anonymizes revision/comment authors and clears creator/lastModifiedBy in core.xml.
+   */
+  removePersonalInfo?: boolean
   /**
    * Full desired footnote / endnote lists; the part is regenerated from them
    * (separator entries preserved). undefined = keep byte-identical.
@@ -339,13 +348,22 @@ const CORE_PROPS_PATH = 'docProps/core.xml'
  * all other fields stay as-is. Missing tags are not injected (avoids touching the root
  * element namespaces); returns null = no change.
  */
-function patchCoreProps(xml: string, savedAt?: string): string | null {
+function patchCoreProps(
+  xml: string,
+  savedAt?: string,
+  removePersonalInfo?: boolean,
+): string | null {
   const iso = (savedAt ?? new Date().toISOString()).replace(/\.\d{3}Z$/, 'Z')
   let out = xml.replace(/(<dcterms:modified[^>]*>)[^<]*(<\/dcterms:modified>)/, `$1${iso}$2`)
   out = out.replace(/(<cp:revision>)(\d+)(<\/cp:revision>)/, (_m, open, n, close) => {
     const next = parseInt(n, 10) + 1
     return Number.isFinite(next) ? `${open}${next}${close}` : `${open}${n}${close}`
   })
+  if (removePersonalInfo) {
+    out = out
+      .replace(/(<dc:creator[^>]*>)[^<]*(<\/dc:creator>)/, '$1$2')
+      .replace(/(<cp:lastModifiedBy[^>]*>)[^<]*(<\/cp:lastModifiedBy>)/, '$1$2')
+  }
   return out === xml ? null : out
 }
 
@@ -395,6 +413,8 @@ export async function saveDocx(
     options.evenAndOddHeaders === undefined &&
     options.comments === undefined &&
     options.protection === undefined &&
+    options.writeProtection === undefined &&
+    options.removePersonalInfo === undefined &&
     options.footnotes === undefined &&
     options.endnotes === undefined &&
     options.watermark === undefined &&
@@ -408,9 +428,10 @@ export async function saveDocx(
 
   const zip = await loadDocxZip(originalBytes)
   assertZipWithinLimits(zip)
+  const docPath = (await resolveMainDocumentPath(zip)) ?? 'word/document.xml'
 
   // Relationship allocation for newly created hyperlinks and images.
-  const relsPath = 'word/_rels/document.xml.rels'
+  const relsPath = docPath.replace(/([^/]+)$/, '_rels/$1.rels')
   const relsFile = zip.file(relsPath)
   // fall back to an empty part so newly allocated rIds are never dangling
   let relsXml = relsFile
@@ -981,12 +1002,27 @@ export async function saveDocx(
     newDocumentXml = applyPageColor(newDocumentXml, options.pageColor)
   }
 
+  // "remove personal information on save": with the flag effective (newly set or
+  // already in the document), revision/comment authors are anonymized — including
+  // comment parts that are otherwise copied through untouched
+  const scrubPersonalInfo = options.removePersonalInfo ?? parsed.removePersonalInfo ?? false
+  if (scrubPersonalInfo) {
+    newDocumentXml = scrubAuthorAttrs(newDocumentXml)
+    if (commentsXml === null) {
+      const existingComments = zip.file(commentsPath)
+      if (existingComments) commentsXml = await existingComments.async('string')
+    }
+    if (commentsXml !== null) commentsXml = scrubAuthorAttrs(commentsXml)
+  }
+
   const settingsPath = 'word/settings.xml'
   let settingsXml: string | null = null
   let settingsIsNew = false
   if (
     options.pageColor ||
     options.protection !== undefined ||
+    options.writeProtection !== undefined ||
+    options.removePersonalInfo !== undefined ||
     options.evenAndOddHeaders !== undefined
   ) {
     const file = zip.file(settingsPath)
@@ -1012,8 +1048,19 @@ export async function saveDocx(
       xml = xml.replace(/(<w:settings[^>]*>)/, '$1<w:displayBackgroundShape/>')
       touched = true
     }
+    // Each apply* inserts right after the settings root, so run them in reverse
+    // schema order — the final order becomes writeProtection, removePersonalInformation,
+    // documentProtection (CT_Settings sequence).
     if (options.protection !== undefined) {
       xml = applyProtection(xml, options.protection)
+      touched = true
+    }
+    if (options.removePersonalInfo !== undefined) {
+      xml = applyRemovePersonalInfo(xml, options.removePersonalInfo)
+      touched = true
+    }
+    if (options.writeProtection !== undefined) {
+      xml = applyWriteProtection(xml, options.writeProtection)
       touched = true
     }
     if (options.evenAndOddHeaders !== undefined) {
@@ -1125,7 +1172,7 @@ export async function saveDocx(
 
   const coreEntry = zip.file(CORE_PROPS_PATH)
   const coreXmlOut = coreEntry
-    ? patchCoreProps(await coreEntry.async('string'), options.savedAt)
+    ? patchCoreProps(await coreEntry.async('string'), options.savedAt, scrubPersonalInfo)
     : null
 
   const out = new JSZip()
@@ -1137,7 +1184,7 @@ export async function saveDocx(
     // old ink PNGs are re-emitted from options.inks; don't carry orphans over
     if (options.inks !== undefined && INK_MEDIA_PATH_RE.test(name)) continue
     const hfPart = hfParts.find((p) => p.path === name)
-    if (name === 'word/document.xml') {
+    if (name === docPath) {
       out.file(name, newDocumentXml, { date: entry.date })
     } else if (hfPart) {
       out.file(name, hfPart.xml, { date: entry.date })
@@ -1520,6 +1567,40 @@ function applyProtection(xml: string, protection: DocProtection | null): string 
     out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
   }
   return out
+}
+
+/** set or remove <w:writeProtection> (password to modify) right after the settings root opens */
+function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
+  let out = xml.replace(/<w:writeProtection[^>]*\/>/, '')
+  if (wp && (wp.recommended || wp.hash)) {
+    const crypt = wp.hash
+      ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
+        ` w:cryptAlgorithmSid="${wp.algorithmSid ?? 14}"` +
+        ` w:cryptSpinCount="${wp.spinCount ?? 100000}"` +
+        ` w:hash="${escapeXmlAttr(wp.hash)}"` +
+        (wp.salt ? ` w:salt="${escapeXmlAttr(wp.salt)}"` : '')
+      : ''
+    const tag = `<w:writeProtection${wp.recommended ? ' w:recommended="1"' : ''}${crypt}/>`
+    out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
+  }
+  return out
+}
+
+/** set or remove <w:removePersonalInformation/> right after the settings root opens */
+function applyRemovePersonalInfo(xml: string, on: boolean): string {
+  const out = xml.replace(/<w:removePersonalInformation[^>]*\/>/, '')
+  if (!on) return out
+  return out.replace(/(<w:settings[^>]*>)/, '$1<w:removePersonalInformation/>')
+}
+
+/**
+ * "Remove personal information on save": anonymize the author identity carried by
+ * revision markers and comments (Word replaces names with "Author").
+ */
+function scrubAuthorAttrs(xml: string): string {
+  return xml
+    .replace(/w:author="[^"]*"/g, 'w:author="Author"')
+    .replace(/w:initials="[^"]*"/g, 'w:initials="A"')
 }
 
 /** set or remove <w:titlePg/> ("different first page"), before w:docGrid per schema order */

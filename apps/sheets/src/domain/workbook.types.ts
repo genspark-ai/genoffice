@@ -1,6 +1,11 @@
 import type {
   BorderPatch,
   CellFormatPatch,
+  ClearRangeOperation,
+  ConvertToValuesOperation,
+  CopyRangeOperation,
+  FillRangeOperation,
+  FindReplaceOperation,
   LayoutOperation,
   StructuralOperation,
 } from './workbook-dsl'
@@ -67,7 +72,17 @@ export interface SheetRename {
 }
 
 export interface StructuralChange {
-  readonly op: StructuralOperation | LayoutOperation
+  /** range-level bulk ops (fill_range, copy_range, convert_to_values, large
+   * clear_range / find_replace) ride here too: applied by the executors,
+   * like layout ops (no per-cell before-state) */
+  readonly op:
+    | StructuralOperation
+    | LayoutOperation
+    | FillRangeOperation
+    | CopyRangeOperation
+    | ConvertToValuesOperation
+    | ClearRangeOperation
+    | FindReplaceOperation
   readonly label: string
 }
 

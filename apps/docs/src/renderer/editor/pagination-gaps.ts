@@ -107,6 +107,9 @@ export type PageGapSpec = {
   /** page forced by an explicit break (w:br page / pageBreakBefore): Word drops the
    *  lead block's space-before, so a node decoration zeroes its margin-top */
   suppressLeadMt?: boolean
+  /** mixed-column page above: pull the gap (and everything below) up over the
+   *  vacated stacked-column space (negative margin-top, neutralized while measuring) */
+  pullUp?: number
 } & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
@@ -161,12 +164,16 @@ export function setPageGaps(
       pos = gap.pos
       kind = gap.kind ?? 'inline'
     }
-    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight}`
+    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)}`
     decos.push(
       Decoration.widget(
         pos,
         () => {
           const el = makeGapEl(metrics, kind)
+          // margins don't apply to table-rows and cuts are zero-height markers;
+          // tables inside mixed-column regions are out of scope anyway (v1)
+          if (gap.pullUp && kind !== 'cut' && kind !== 'table')
+            el.style.marginTop = `-${gap.pullUp}px`
           if (notes) el.appendChild(notes)
           if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
             for (const hf of hfEls) el.appendChild(hf)
