@@ -24,7 +24,17 @@ describe('image text wrap (wp:anchor)', () => {
   })
 
   it('parses behind / topAndBottom / front variants', async () => {
-    const behind = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"')
+    // behind = behindDoc with NO wrap element; an explicit wrap element wins
+    // (Word draws behindDoc+wrapSquare behind the text and still wraps around it)
+    const behind = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"').replace(
+      '<wp:wrapSquare wrapText="bothSides"/>',
+      '<wp:wrapNone/>',
+    )
+    const behindWithWrap = ANCHOR_SQUARE_RIGHT_XML.replace('behindDoc="0"', 'behindDoc="1"')
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: behindWithWrap, withImage: true }))).blocks[0]
+        .imageWrap,
+    ).toBe('square-right')
     const topBottom = ANCHOR_SQUARE_RIGHT_XML.replace(
       '<wp:wrapSquare wrapText="bothSides"/>',
       '<wp:wrapTopAndBottom/>',
@@ -45,6 +55,64 @@ describe('image text wrap (wp:anchor)', () => {
       await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }),
     )
     expect(inline.blocks[0].imageWrap).toBeUndefined()
+  })
+
+  it('parses the picture outline (pic:spPr a:ln solid fill, tdf#162551)', async () => {
+    const withLn = ANCHOR_SQUARE_RIGHT_XML.replace(
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>',
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>' +
+        '<pic:spPr><a:ln w="28575"><a:solidFill><a:srgbClr val="FFD428"/></a:solidFill></a:ln></pic:spPr></pic:pic>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: withLn, withImage: true }))
+    expect(doc.blocks[0].imageBorder).toEqual({ color: 'FFD428', widthPt: 2.25 })
+    const noFill = withLn.replace(
+      '<a:solidFill><a:srgbClr val="FFD428"/></a:solidFill>',
+      '<a:noFill/>',
+    )
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: noFill, withImage: true }))).blocks[0]
+        .imageBorder,
+    ).toBeUndefined()
+  })
+
+  it('derives the float side from wrapText and far posOffset (tdf#97090)', async () => {
+    const withPosH = (posH: string, wrapText = 'bothSides') =>
+      ANCHOR_SQUARE_RIGHT_XML.replace(
+        '<wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>',
+        posH,
+      ).replace('wrapText="bothSides"', `wrapText="${wrapText}"`)
+    const cases: Array<[string, string, string]> = [
+      // text on the left only -> object floats right
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>',
+        'left',
+        'square-right',
+      ],
+      // text on the right only -> object floats left even with a far offset
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>5000000</wp:posOffset></wp:positionH>',
+        'right',
+        'square-left',
+      ],
+      // bothSides + absolute X past mid-body -> right
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>3187064</wp:posOffset></wp:positionH>',
+        'bothSides',
+        'square-right',
+      ],
+      // bothSides + near X -> left
+      [
+        '<wp:positionH relativeFrom="column"><wp:posOffset>100000</wp:posOffset></wp:positionH>',
+        'bothSides',
+        'square-left',
+      ],
+    ]
+    for (const [posH, wrapText, expected] of cases) {
+      const doc = await parseDocx(
+        await buildDocx({ bodyXml: withPosH(posH, wrapText), withImage: true }),
+      )
+      expect(doc.blocks[0].imageWrap, `${wrapText} ${posH}`).toBe(expected)
+    }
   })
 
   it('converts inline -> square anchor with position and wrap elements', () => {
@@ -188,6 +256,34 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     const out = applyImageWrap(tightXml, 'square-left')
     expect(out).toContain('<wp:wrapSquare wrapText="bothSides"/>')
     expect(out).not.toContain('wp:wrapTight')
+  })
+
+  it('displaces an allowOverlap="0" anchor colliding with a sibling (tdf#134114)', async () => {
+    const anchorPic = (attrs: string, cx: number, cy: number) =>
+      '<w:r><w:drawing>' +
+      `<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" ${attrs}>` +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>180340</wp:posOffset></wp:positionV>' +
+      `<wp:extent cx="${cx}" cy="${cy}"/>` +
+      '<wp:wrapSquare wrapText="bothSides"/>' +
+      '<wp:docPr id="1" name="p"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const body =
+      '<w:p>' +
+      anchorPic('allowOverlap="1"', 802800, 1198800) +
+      anchorPic('allowOverlap="0"', 1432800, 1076400) +
+      '<w:r><w:t>No overlap in the frames, please.</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, withImage: true }))
+    const imgs = (doc.blocks[0].runs ?? []).filter((r) => r.image)
+    expect(imgs).toHaveLength(2)
+    expect(imgs[0].image!.wrap).toBe('square-left')
+    // the colliding allowOverlap="0" picture leaves the flow as a front overlay
+    // under the collider's box
+    expect(imgs[1].image!.wrap).toBe('front')
+    expect(imgs[1].image!.offsetYEmu).toBe((126 + 2) * 9525)
   })
 
   it('tight wrap round-trips through save + reparse', async () => {

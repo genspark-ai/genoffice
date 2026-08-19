@@ -382,6 +382,8 @@ describe('XLSX Rust sidecar', () => {
           headerFill: '#4472C4',
           headerFontColor: '#FFFFFF',
           stripeFill: '#DAE3F3',
+          totalRowBorderColor: '#4472C4',
+          totalRowBorderStyle: 'double',
         },
       ])
       expect(opened.styles[1]).toMatchObject({
@@ -467,7 +469,8 @@ describe('XLSX Rust sidecar', () => {
       expect(result.conditionalRules[1]).toMatchObject({
         ruleType: 'dataBar',
         priority: 2,
-        cfvos: [{ kind: 'min' }, { kind: 'max' }],
+        // The x14 twin's autoMin/autoMax refine the 2006 min/max cfvos.
+        cfvos: [{ kind: 'autoMin' }, { kind: 'autoMax' }],
         colors: ['#638EC6'],
         showValue: false,
         negativeColor: '#FF0000',

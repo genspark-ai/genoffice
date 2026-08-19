@@ -162,6 +162,39 @@
   color: var(--onb-text-tertiary);
 }
 
+.onb-consent {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--onb-border-default);
+  border-radius: 12px;
+  background: var(--onb-bg-subtle);
+}
+
+.onb-consent-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.onb-consent-title {
+  color: var(--onb-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.onb-consent-desc {
+  color: var(--onb-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* slide 3's star ask: same panel treatment as the offer, but low-key — a
  * one-line hint plus an outline CTA that opens the GitHub repo */
 .onb-star {
@@ -316,6 +349,14 @@
   color: var(--onb-text-secondary);
 }
 
+.onb-skip:disabled,
+.onb-back:disabled,
+.onb-next:disabled,
+.onb-consent-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .onb-back {
   min-width: 76px;
   padding: 11px 21px;
@@ -359,6 +400,7 @@
 .onb-skip:focus,
 .onb-join:focus,
 .onb-star-btn:focus,
+.onb-consent-switch:focus,
 .onb-dot:focus {
   outline: none;
 }
@@ -368,6 +410,7 @@
 .onb-skip:focus-visible,
 .onb-join:focus-visible,
 .onb-star-btn:focus-visible,
+.onb-consent-switch:focus-visible,
 .onb-dot:focus-visible {
   outline: 2px solid var(--onb-brand);
   outline-offset: 2px;

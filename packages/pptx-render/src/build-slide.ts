@@ -49,6 +49,13 @@ import {
   presetPolygon,
   presetPath,
 } from './preset-geometry'
+import {
+  buildExtrusion,
+  inPlaneRotationDeg,
+  flattenSvgPath,
+  ellipseRing,
+  roundRectRing,
+} from './scene3d'
 
 export interface BuildOptions {
   /** Target canvas width (px); height follows the slide aspect ratio. */
@@ -96,6 +103,18 @@ const CHIP_LABEL: Record<string, string> = {
   connector: 'Connector',
   media: 'Media',
   unknown: 'Unsupported element',
+}
+
+/** White-DC backing for a metafile picture, after any clrChange keyed to that white. */
+function metafileDcColor(
+  isMetafile: boolean,
+  cc: { from: string; to: string } | undefined,
+): { bgColor: string } | undefined {
+  if (!isMetafile) return undefined
+  if (!cc || !cc.from.toUpperCase().startsWith('#FFFFFF')) return { bgColor: '#FFFFFF' }
+  const alpha = cc.to.length >= 9 ? parseInt(cc.to.slice(7, 9), 16) : 255
+  // Keep the target's alpha: a semi-transparent recolor backs with a translucent panel
+  return alpha > 0 ? { bgColor: cc.to } : undefined
 }
 
 export function buildRenderSlide(
@@ -381,6 +400,7 @@ function buildShape(
   if (shadow) node.shadow = shadow
   const glow = resolveGlow(el.glow, vp)
   if (glow) node.glow = glow
+  if (el.scene3d) applyScene3D(el, node, vp)
   if (el.text && el.text.paragraphs.length) {
     node.text = layoutText({
       body: el.text,
@@ -391,6 +411,54 @@ function buildShape(
     })
   }
   return node
+}
+
+/**
+ * scene3d/sp3d: a camera with only an in-plane revolution spins the flat shape;
+ * anything with a real 3D rotation or extrusion depth gets meshed, projected and
+ * shaded (see scene3d.ts) — depth 0 projects just the tilted front cap.
+ */
+function applyScene3D(el: TextElement, node: ShapeRenderNode, vp: Viewport): void {
+  if (node.line) return // connectors keep their polyline rendering
+  const scene = el.scene3d!
+  const spin = inPlaneRotationDeg(scene)
+  if (spin != null) {
+    if (spin !== 0) node.box = { ...node.box, rotationDeg: node.box.rotationDeg + spin }
+    return
+  }
+  const depthPx = emuToPx(scene.extrusionEmu ?? 0, vp.scale)
+  const box = node.box
+  let rings: number[][] | undefined
+  if (node.pathData ?? node.fillPathData)
+    rings = flattenSvgPath((node.pathData ?? node.fillPathData)!)
+  else if (node.polygonPoints) rings = [node.polygonPoints]
+  else if (node.presetGeometry === 'ellipse' || node.presetGeometry === 'circle')
+    rings = [ellipseRing(box.w, box.h)]
+  else if (node.cornerRadiusPx != null) rings = [roundRectRing(box.w, box.h, node.cornerRadiusPx)]
+  else rings = [[0, 0, box.w, 0, box.w, box.h, 0, box.h]]
+  if (!rings.length) return
+  const fill = node.fill
+  const frontSolid = fill.kind === 'solid' ? fill.color : undefined
+  const gradientMid =
+    fill.kind === 'gradient' && fill.stops.length
+      ? fill.stops[Math.floor(fill.stops.length / 2)]!.color
+      : undefined
+  const frontColor = frontSolid ?? gradientMid ?? '#FFFFFF'
+  // PowerPoint colors the extruded walls with the outline color when one exists, else the fill.
+  const sideColor = scene.extrusionColor ?? node.stroke?.color ?? frontColor
+  const ext = buildExtrusion({
+    rings,
+    w: box.w,
+    h: box.h,
+    depthPx,
+    zPx: emuToPx(scene.zEmu ?? 0, vp.scale),
+    scene,
+    frontColor,
+    sideColor,
+    ...(node.stroke ? { strokeColor: node.stroke.color, strokeWidthPx: node.stroke.widthPx } : {}),
+    ...(fill.kind !== 'solid' ? { frontUsesFill: true } : {}),
+  })
+  if (ext) node.extrusion = ext
 }
 
 /** Picture shape geometry -> three clip channels (same preset implementation as shape geometry). */
@@ -446,7 +514,10 @@ function buildPicture(
     ...(el.name ? { name: el.name } : {}),
     ...(el.descr ? { descr: el.descr } : {}),
     ...(el.fill && el.fill.type !== 'none' ? { fill: resolveFill(el.fill, vp, media) } : {}),
-    ...(isMetafile ? { bgColor: '#FFFFFF' } : {}),
+    // clrChange applies to the metafile playback result including that white DC:
+    // a clrChange keyed to white recolors the backing (an alpha-0 target drops it —
+    // tdf113163's black master bg shows through); other keys leave the DC white
+    ...(metafileDcColor(isMetafile, el.clrChange) ?? {}),
     ...(el.duotone ? { duotone: el.duotone } : {}),
     ...(el.clrChange ? { clrChange: el.clrChange } : {}),
   }
@@ -510,9 +581,9 @@ function buildGroup(
 
 /**
  * Table → TableRenderNode. Cell coordinates are relative to the table's top-left (px).
- * Column widths/row heights are distributed by EMU ratio over the frame's actual px size.
- * Row height is a minimum in PPT: rows whose wrapped cell text needs more space grow to
- * fit it, and the node box grows with the total so nothing is clipped.
+ * Columns and rows render at their EMU sizes (the grid is authoritative; the frame ext
+ * is often stale). Row height is a minimum in PPT: rows whose wrapped cell text needs
+ * more space grow to fit it, and the node box grows with the total so nothing is clipped.
  */
 function buildTable(
   el: TableElement,
@@ -521,14 +592,24 @@ function buildTable(
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
 ): TableRenderNode {
-  const sumW = el.colWidths.reduce((a, b) => a + b, 0) || 1
-  const colPx = el.colWidths.map((w) => (w / sumW) * box.w)
+  // a:gridCol w is authoritative in PowerPoint: a stale frame cx (generator tools write
+  // placeholder exts) never squeezes the columns — the table renders at its grid width,
+  // just like rows ignore a stale cy below. Group placement bakes ext/chExt scaling into
+  // the box, so recover that factor from box vs the element's own ext (1 outside groups,
+  // where box comes from the same ext — a stale ext still cancels out).
+  const extWpx = emuToPx(el.transform?.offset.cx ?? 0, vp.scale)
+  const extHpx = emuToPx(el.transform?.offset.cy ?? 0, vp.scale)
+  const groupScaleX = extWpx > 0 ? box.w / extWpx : 1
+  const groupScaleY = extHpx > 0 ? box.h / extHpx : 1
+  const colPx = el.colWidths.map((w) => emuToPx(w, vp.scale) * groupScaleX)
   // a:tr h is an absolute minimum height (h=0 → size to content); PowerPoint ignores a
   // stale frame cy and recomputes the table height from the rows
-  const rowPx = el.rowHeights.map((h) => emuToPx(h, vp.scale))
+  const rowPx = el.rowHeights.map((h) => emuToPx(h, vp.scale) * groupScaleY)
   // Prefix sums → start of each column
   const colX: number[] = [0]
   for (const w of colPx) colX.push(colX[colX.length - 1]! + w)
+  const totalW = colX[colX.length - 1]!
+  if (Math.abs(totalW - box.w) > 0.5) box = { ...box, w: totalW }
 
   // Measure pass: grow any row whose cell content wraps taller than the stored height
   // (rowSpan cells are skipped — their height is ambiguous to attribute to one row).

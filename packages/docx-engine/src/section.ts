@@ -130,9 +130,7 @@ function sectionFromSectPr(
   const pgNumFmt = /<w:pgNumType[^>]*w:fmt="([^"]+)"/.exec(sectPrXml)?.[1]
   return {
     settings: sectionSettingsFromXml(sectPrXml),
-    // nextColumn is rare; treat it as continuous (no forced page break)
-    startType:
-      type === 'nextColumn' ? 'continuous' : ((type as SectionInfo['startType']) ?? 'nextPage'),
+    startType: (type as SectionInfo['startType']) ?? 'nextPage',
     firstBlockIndex,
     lastBlockIndex,
     sectPrXml,
@@ -260,7 +258,7 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
  */
 export function applySectionStartType(
   sectPrXml: string,
-  type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage',
+  type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn',
 ): string {
   let xml = sectPrXml.replace(/<w:type[^>]*\/>/, '')
   if (type === 'nextPage') return xml

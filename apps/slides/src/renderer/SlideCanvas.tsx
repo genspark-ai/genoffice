@@ -1411,6 +1411,26 @@ function NodeView({
   /** Node position captured on every transform event: boxPivotProps derives Konva x/y from
    * box.w/h, so a live-preview re-render would otherwise teleport the node mid-gesture. */
   const gesturePosRef = useRef<{ x: number; y: number } | null>(null)
+  // Option+drag ghost: while Alt is held mid-drag, the dragged node becomes the semi-transparent
+  // "copy" (dashed frame) and a static render of the original stays at the source position.
+  const [altDragging, setAltDragging] = useState(false)
+  const altDraggingRef = useRef(false)
+  const setAltDrag = (on: boolean) => {
+    if (altDraggingRef.current === on) return
+    altDraggingRef.current = on
+    setAltDragging(on)
+  }
+  /** Window key listeners active during a drag, so pressing/releasing Alt with a still pointer
+   * still toggles the ghost (drop semantics keep reading Alt from the mouse event on release). */
+  const altKeyCleanupRef = useRef<(() => void) | null>(null)
+  /** Live drag position: the ghost toggle re-renders mid-drag, and the controlled x/y from
+   * boxPivotProps must not teleport the node back to the model position (same idea as gesturePosRef). */
+  const dragPosRef = useRef<{ x: number; y: number } | null>(null)
+  useLayoutEffect(() => {
+    const g = groupRef.current
+    if (g && dragPosRef.current && g.isDragging()) g.position(dragPosRef.current)
+  })
+  useEffect(() => () => altKeyCleanupRef.current?.(), [])
 
   // The Transformer's frame/scale basis defaults to getClientRect() (content bounding box). When text
   // overflows the shape box (autofit off and content too tall), overflowing glyphs inflate the bounding
@@ -1480,7 +1500,22 @@ function NodeView({
       onSelect(node.sourceId, e.evt.shiftKey || e.evt.metaKey)
     },
     onTap: () => onSelect(node.sourceId),
+    onDragStart: () => {
+      dragPosRef.current = null
+      if (!(onDuplicateTo && !multiDrag && !insideGroupId)) return
+      const onKey = (ev: KeyboardEvent) => setAltDrag(ev.altKey)
+      window.addEventListener('keydown', onKey)
+      window.addEventListener('keyup', onKey)
+      altKeyCleanupRef.current = () => {
+        window.removeEventListener('keydown', onKey)
+        window.removeEventListener('keyup', onKey)
+        altKeyCleanupRef.current = null
+      }
+    },
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
+      // Alt held mid-drag = duplicate gesture: show the ghost (Alt can be pressed/released at any time during the drag)
+      setAltDrag(!!(e.evt?.altKey && onDuplicateTo && !multiDrag && !insideGroupId))
+      dragPosRef.current = { x: e.target.x(), y: e.target.y() }
       // Children in in-group editing use a different coordinate system from page snap targets; don't snap
       if (insideGroupId) {
         onDragGuides([])
@@ -1528,9 +1563,13 @@ function NodeView({
       }
       if (fx != null) t.x(raw.x + (fx - bb.x) + box.w / 2)
       if (fy != null) t.y(raw.y + (fy - bb.y) + box.h / 2)
+      dragPosRef.current = { x: t.x(), y: t.y() }
       onDragGuides(snap.guides, indicators)
     },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
+      altKeyCleanupRef.current?.()
+      dragPosRef.current = null
+      setAltDrag(false)
       onDragGuides([])
       const dropX = e.target.x() - box.w / 2
       const dropY = e.target.y() - box.h / 2
@@ -1711,67 +1750,85 @@ function NodeView({
     )
   })()
   return (
-    <Group
-      ref={groupRef}
-      {...common}
-      {...(editable
-        ? {
-            onDblClick: (e: Konva.KonvaEventObject<MouseEvent>) =>
-              onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY }),
-            onDblTap: () => onEditText(node.sourceId),
+    <>
+      {/* Option+drag: the original stays rendered at the source position while the dragged ghost travels */}
+      {altDragging && <StaticNode key="ghost-src" node={node} images={images} />}
+      <Group
+        key="node"
+        ref={groupRef}
+        opacity={altDragging ? 0.5 : 1}
+        {...common}
+        {...(editable
+          ? {
+              onDblClick: (e: Konva.KonvaEventObject<MouseEvent>) =>
+                onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY }),
+              onDblTap: () => onEditText(node.sourceId),
+            }
+          : node.type === 'group' && !insideGroupId && onEnterGroup
+            ? { onDblClick: onGroupDblClick, onDblTap: onGroupDblClick }
+            : node.type === 'table' && !insideGroupId
+              ? { onDblClick: onTableDblClick, onDblTap: onTableDblClick }
+              : isMedia && !insideGroupId
+                ? {
+                    onDblClick: () => onPlayMedia!(node.sourceId),
+                    onDblTap: () => onPlayMedia!(node.sourceId),
+                  }
+                : {})}
+      >
+        {/* group children don't take hits (listening=false); add a transparent hit area so the whole group can be selected/dragged */}
+        {node.type === 'group' && <Rect width={box.w} height={box.h} fill="transparent" />}
+        <NodeBody
+          node={node}
+          images={images}
+          hideText={!!editingText && editingText.sourceId === node.sourceId && !editingText.cell}
+          hideCellText={
+            editingText && editingText.sourceId === node.sourceId ? editingText.cell : undefined
           }
-        : node.type === 'group' && !insideGroupId && onEnterGroup
-          ? { onDblClick: onGroupDblClick, onDblTap: onGroupDblClick }
-          : node.type === 'table' && !insideGroupId
-            ? { onDblClick: onTableDblClick, onDblTap: onTableDblClick }
-            : isMedia && !insideGroupId
-              ? {
-                  onDblClick: () => onPlayMedia!(node.sourceId),
-                  onDblTap: () => onPlayMedia!(node.sourceId),
-                }
-              : {})}
-    >
-      {/* group children don't take hits (listening=false); add a transparent hit area so the whole group can be selected/dragged */}
-      {node.type === 'group' && <Rect width={box.w} height={box.h} fill="transparent" />}
-      <NodeBody
-        node={node}
-        images={images}
-        hideText={!!editingText && editingText.sourceId === node.sourceId && !editingText.cell}
-        hideCellText={
-          editingText && editingText.sourceId === node.sourceId ? editingText.cell : undefined
-        }
-      />
-      {/* Multi-select: PowerPoint-style per-element border so every selected element is visibly selected
-          (the shared Transformer only draws one combined box). Lives inside the node group so it follows drags/transforms. */}
-      {multiDrag && !isConnectorNode(node) && (
-        <Rect
-          width={box.w}
-          height={box.h}
-          stroke={selStroke}
-          strokeWidth={selHairline ?? chromeHairline(zoom)}
-          strokeScaleEnabled={false}
-          listening={false}
         />
-      )}
-      {phPrompt &&
-        (() => {
-          const sh = node as ShapeRenderNode
-          const ins = sh.text?.insets ?? { l: 8, t: 4, r: 8, b: 4 }
-          return (
-            <Text
-              text={phPrompt}
-              x={ins.l}
-              y={ins.t}
-              width={Math.max(box.w - ins.l - ins.r, 20)}
-              height={Math.max(box.h - ins.t - ins.b, 16)}
-              align={sh.placeholder === 'body' ? 'left' : 'center'}
-              verticalAlign={sh.text?.anchor ?? (sh.placeholder === 'body' ? 'top' : 'middle')}
-              fontSize={Math.min(28, Math.max(14, box.h * 0.22))}
-              fill="#8e8e93"
-            />
-          )
-        })()}
-    </Group>
+        {/* Multi-select: PowerPoint-style per-element border so every selected element is visibly selected
+          (the shared Transformer only draws one combined box). Lives inside the node group so it follows drags/transforms. */}
+        {multiDrag && !isConnectorNode(node) && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            stroke={selStroke}
+            strokeWidth={selHairline ?? chromeHairline(zoom)}
+            strokeScaleEnabled={false}
+            listening={false}
+          />
+        )}
+        {/* Option+drag ghost: dashed frame marks the travelling copy */}
+        {altDragging && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            stroke={selStroke}
+            strokeWidth={selHairline ?? chromeHairline(zoom)}
+            strokeScaleEnabled={false}
+            dash={[4, 4]}
+            listening={false}
+          />
+        )}
+        {phPrompt &&
+          (() => {
+            const sh = node as ShapeRenderNode
+            const ins = sh.text?.insets ?? { l: 8, t: 4, r: 8, b: 4 }
+            return (
+              <Text
+                text={phPrompt}
+                x={ins.l}
+                y={ins.t}
+                width={Math.max(box.w - ins.l - ins.r, 20)}
+                height={Math.max(box.h - ins.t - ins.b, 16)}
+                align={sh.placeholder === 'body' ? 'left' : 'center'}
+                verticalAlign={sh.text?.anchor ?? (sh.placeholder === 'body' ? 'top' : 'middle')}
+                fontSize={Math.min(28, Math.max(14, box.h * 0.22))}
+                fill="#8e8e93"
+              />
+            )
+          })()}
+      </Group>
+    </>
   )
 }
 

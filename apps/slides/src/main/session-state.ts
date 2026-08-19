@@ -16,6 +16,7 @@ import {
 import { createSystemFontMetrics } from './fonts'
 import { tiffToPng } from './tiff-decode'
 import { neutralizeJpegOrientation } from './jpeg-orientation'
+import { displayMime } from './media-mime'
 
 export interface RuntimePaths {
   preloadPath: string
@@ -273,21 +274,10 @@ export function buildAllRenderSlides(opened: OpenedPptx, fitWidthPx: number): Re
   )
 }
 
-const DISPLAY_MIME: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  bmp: 'image/bmp',
-  webp: 'image/webp',
-  svg: 'image/svg+xml',
-  // Metafiles keep their real mime so the renderer's image loader rasterizes them
-  emf: 'image/x-emf',
-  wmf: 'image/x-wmf',
-}
-
 /** Image mediaRef -> dataUrl (lazily decoded). TIFF is transcoded to PNG for display
-    (Chromium can't decode it); the archive keeps the original bytes for save fidelity. */
+    (Chromium can't decode it); the archive keeps the original bytes for save fidelity.
+    The mime comes from magic-byte sniffing first (legacy decks mislabel media — a PNG
+    stored as .emf must not enter the EMF parser), extension second. */
 export function makeMediaResolver(opened: OpenedPptx) {
   const cache = new Map<string, string | undefined>()
   return (mediaRef: string): string | undefined => {
@@ -295,12 +285,11 @@ export function makeMediaResolver(opened: OpenedPptx) {
     const bytes = opened.archive.readBytes(mediaRef)
     let url: string | undefined
     if (bytes) {
-      const ext = mediaRef.split('.').pop()?.toLowerCase() ?? 'png'
-      if (ext === 'tif' || ext === 'tiff') {
+      const mime = displayMime(mediaRef, bytes)
+      if (mime === 'image/tiff') {
         const decoded = tiffToPng(bytes)
         if (decoded) url = `data:image/png;base64,${Buffer.from(decoded.png).toString('base64')}`
       } else {
-        const mime = DISPLAY_MIME[ext] ?? 'image/png'
         // PowerPoint ignores EXIF orientation; Chromium applies it on decode — neutralize
         // the flag so rotated-pixel JPEGs with a shape-level rot don't double-rotate
         const served = mime === 'image/jpeg' ? neutralizeJpegOrientation(bytes) : bytes

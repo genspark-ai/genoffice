@@ -33,6 +33,22 @@ describe('2.2 fill/stroke resolution', () => {
     }
   })
 
+  it('tile scale maps image pixels at 144dpi (PowerPoint measured), x sx/sy', () => {
+    const f: Fill = {
+      type: 'image',
+      mediaRef: 'ppt/media/t.png',
+      mode: 'tile',
+      tile: { tx: 0, ty: 0, sx: 0.5, sy: 1, algn: 'tl' },
+    }
+    const r = resolveFill(f, vp, () => 'data:img')
+    expect(r.kind).toBe('image')
+    if (r.kind === 'image') {
+      // vp.scale = 1 → one image px = 96/144 = 2/3 of a canvas px, halved again by sx
+      expect(r.tile?.scaleX).toBeCloseTo((96 / 144) * 0.5)
+      expect(r.tile?.scaleY).toBeCloseTo(96 / 144)
+    }
+  })
+
   it('image fill resolves dataUrl via media resolver', () => {
     const f: Fill = { type: 'image', mediaRef: 'ppt/media/image1.png', mode: 'stretch' }
     const r = resolveFill(f, vp, (ref) => (ref.includes('image1') ? 'data:img' : undefined))

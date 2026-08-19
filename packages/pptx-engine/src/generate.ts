@@ -827,30 +827,51 @@ export interface GradientFillPatch {
   stops: Array<{ pos: number; color: string }>
   /** 1/60000 degree (for linear) */
   angle?: number
-  /** Radial (circle path, center outward) */
+  /** Radial (alias for path: 'circle') */
   radial?: boolean
+  /** <a:path path> kind (PPT: radial/rectangular/path); linear when absent */
+  path?: 'circle' | 'rect' | 'shape'
+  /** <a:fillToRect> focus insets as fractions (default: centered 0.5 each) */
+  fillTo?: { l: number; t: number; r: number; b: number }
 }
 
 type FillPatch = 'none' | string | GradientFillPatch | { rawFillXml: string }
 
 function gsLstXml(stops: GradientFillPatch['stops']): string {
+  // srgbClrXml keeps an #RRGGBBAA stop's alpha as <a:alpha>
   return `<a:gsLst>${stops
     .map(
       (s) =>
-        `<a:gs pos="${Math.round(Math.max(0, Math.min(1, s.pos)) * 100000)}"><a:srgbClr val="${hex6(s.color)}"/></a:gs>`,
+        `<a:gs pos="${Math.round(Math.max(0, Math.min(1, s.pos)) * 100000)}">${srgbClrXml(s.color)}</a:gs>`,
     )
     .join('')}</a:gsLst>`
 }
 
-const RADIAL_PATH_XML =
-  '<a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>'
+/** Path gradient (circle/rect/shape) focused on fillTo (default: centered) */
+function gradPathXml(
+  kind: 'circle' | 'rect' | 'shape',
+  fillTo?: { l: number; t: number; r: number; b: number },
+): string {
+  const pct = (v: number) => Math.round(v * 100000)
+  const ftr = fillTo ?? { l: 0.5, t: 0.5, r: 0.5, b: 0.5 }
+  return `<a:path path="${kind}"><a:fillToRect l="${pct(ftr.l)}" t="${pct(ftr.t)}" r="${pct(ftr.r)}" b="${pct(ftr.b)}"/></a:path>`
+}
+
+/** Requested path kind of a gradient patch (radial is a legacy alias for circle). */
+function gradPathKind(patch: GradientFillPatch): 'circle' | 'rect' | 'shape' | undefined {
+  return patch.path ?? (patch.radial ? 'circle' : undefined)
+}
 
 function buildFillXml(fill: FillPatch): string {
   if (typeof fill === 'object' && 'rawFillXml' in fill) return fill.rawFillXml
-  if (typeof fill === 'object')
+  if (typeof fill === 'object') {
+    const kind = gradPathKind(fill)
     return `<a:gradFill rotWithShape="1">${gsLstXml(fill.stops)}${
-      fill.radial ? RADIAL_PATH_XML : `<a:lin ang="${Math.round(fill.angle ?? 0)}" scaled="1"/>`
+      kind
+        ? gradPathXml(kind, fill.fillTo)
+        : `<a:lin ang="${Math.round(fill.angle ?? 0)}" scaled="1"/>`
     }</a:gradFill>`
+  }
   if (fill === 'none') return '<a:noFill/>'
   return `<a:solidFill>${srgbClrXml(fill)}</a:solidFill>`
 }
@@ -895,9 +916,14 @@ function patchGradFillXml(gradXml: string, patch: GradientFillPatch): string {
       gsIdx = parts.length
       parts.push(gsLstXml(patch.stops))
     } else if (c.name === 'a:lin' || c.name === 'a:path') {
-      if (patch.radial) {
+      const kind = gradPathKind(patch)
+      if (kind) {
         if (c.name === 'a:path') {
-          parts.push(seg) // keep the original path (off-center fillToRect etc.)
+          const existingKind = /path="([^"]*)"/.exec(seg)?.[1]
+          // The same (or legacy radial's unspecified) path kind keeps the original node
+          // (off-center fillToRect etc.); an explicit kind change or focus change replaces it.
+          const keep = patch.path ? existingKind === patch.path && !patch.fillTo : !patch.fillTo
+          parts.push(keep ? seg : gradPathXml(patch.path ?? kind, patch.fillTo))
           hasShade = true
         }
       } else if (c.name === 'a:lin') {
@@ -911,8 +937,9 @@ function patchGradFillXml(gradXml: string, patch: GradientFillPatch): string {
   }
   if (gsIdx < 0) return buildFillXml(patch)
   if (!hasShade) {
-    const shade = patch.radial
-      ? RADIAL_PATH_XML
+    const kind = gradPathKind(patch)
+    const shade = kind
+      ? gradPathXml(kind, patch.fillTo)
       : `<a:lin ang="${Math.round(patch.angle ?? 0)}" scaled="1"/>`
     parts.splice(gsIdx + 1, 0, shade) // in the lin/path sequence it immediately follows gsLst
   }

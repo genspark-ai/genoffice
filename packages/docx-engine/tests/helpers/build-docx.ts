@@ -9,6 +9,8 @@ export interface BuildDocxOptions {
   bodyXml: string
   /** extra <w:style> entries appended to the default styles.xml */
   extraStylesXml?: string
+  /** full word/styles.xml content, replacing the default (extraStylesXml ignored) */
+  stylesXml?: string
   withNumbering?: boolean
   /** full word/numbering.xml content (implies withNumbering) */
   numberingXml?: string
@@ -101,7 +103,10 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${docRels}</Relationships>`,
   )
 
-  zip.file('word/styles.xml', `${STYLES_XML_OPEN}${options.extraStylesXml ?? ''}</w:styles>`)
+  zip.file(
+    'word/styles.xml',
+    options.stylesXml ?? `${STYLES_XML_OPEN}${options.extraStylesXml ?? ''}</w:styles>`,
+  )
   if (withNumbering) zip.file('word/numbering.xml', options.numberingXml ?? NUMBERING_XML)
   if (options.withImage) zip.file('word/media/image1.png', TINY_PNG_BASE64, { base64: true })
   for (const part of options.extraParts ?? []) zip.file(part.path, part.xml)

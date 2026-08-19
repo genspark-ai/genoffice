@@ -1,5 +1,10 @@
 import {
+  clearRangeOpLabel,
+  convertToValuesOpLabel,
+  copyOpLabel,
   expandToPrimitiveOps,
+  fillOpLabel,
+  findReplaceOpLabel,
   formatOpLabel,
   isLayoutOp,
   isStructuralOp,
@@ -27,7 +32,21 @@ export function buildLazyChangePlan(
   const structuralChanges: ChangePlan['structuralChanges'][number][] = []
   const formatChanges: ChangePlan['formatChanges'][number][] = []
   for (const operation of expandToPrimitiveOps(batch.operations, readCell)) {
-    if (operation.op === 'format_range') {
+    if (operation.op === 'fill_range') {
+      // Range-level bulk op: no per-cell before-state (like layout ops);
+      // the apply executor performs one setValues over the target.
+      structuralChanges.push({ op: operation, label: fillOpLabel(operation) })
+    } else if (operation.op === 'copy_range') {
+      structuralChanges.push({ op: operation, label: copyOpLabel(operation) })
+    } else if (operation.op === 'convert_to_values') {
+      structuralChanges.push({ op: operation, label: convertToValuesOpLabel(operation) })
+    } else if (operation.op === 'clear_range') {
+      structuralChanges.push({ op: operation, label: clearRangeOpLabel(operation) })
+    } else if (operation.op === 'find_replace') {
+      // Only >MAX_EXPANDED_CELL_OPS ranges arrive range-level; smaller ones
+      // were expanded into ordinary per-cell changes above.
+      structuralChanges.push({ op: operation, label: findReplaceOpLabel(operation) })
+    } else if (operation.op === 'format_range') {
       formatChanges.push({
         sheetId: operation.sheetId,
         range: operation.range,

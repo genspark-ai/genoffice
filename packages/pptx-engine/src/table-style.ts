@@ -390,6 +390,11 @@ export function resolveTableStyle(
     const def = parseTableStylesXml(tableStylesXml, styleId, theme)
     if (def) return def
   }
+  // A tableStyles part that defines explicit styles but not this id renders unstyled in
+  // PowerPoint — the built-in gallery only backs an empty part (def-id only). Measured on
+  // prod imports: same undefined Medium2/Accent1 id styled with an empty part, transparent
+  // with a populated one (decorative shapes behind the table show through).
+  if (tableStylesXml && /<a:tblStyle[\s>]/.test(tableStylesXml)) return undefined
   const builtin = BUILTIN[styleId]
   if (builtin) return builtinStyle(builtin.family, builtin.accent, theme)
   if (styleId === LEGACY_NO_STYLE) return {}

@@ -2974,10 +2974,71 @@ body.vib .slide-list {
   overflow-y: auto;
 }
 
-.fp-section-title {
+/* 形状选项 / 文本选项 primary tabs under the pane header (Genspark style:
+   left-aligned text tabs, active = bold + text-colored underline) */
+.fp-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 18px;
+  padding: 2px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fp-tab {
+  min-width: 0;
+  padding: 7px 1px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--text-dim);
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 4px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-tab:hover {
+  color: var(--text);
+}
+
+.fp-tab.active {
+  color: var(--accent);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
+}
+
+/* Second-level tabs (填充与线条 / 效果 / 大小与属性 …): Genspark segmented pill track —
+   pills sit in one rounded gray track; active = accent-filled pill */
+.fp-subtabs {
+  display: flex;
+  flex-shrink: 0;
+  width: fit-content;
+  margin: 10px 6px 0;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--hover);
+}
+
+.fp-subtab {
+  padding: 8px 15px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-subtab:hover:not(.active) {
+  background: var(--active-bg);
+}
+
+.fp-subtab.active {
+  background: var(--accent);
+  color: var(--slides-on-accent);
 }
 
 .fp-section {
@@ -2989,29 +3050,279 @@ body.vib .slide-list {
   border-bottom: 1px solid var(--border);
 }
 
-.fp-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 10px;
-  margin-bottom: 6px;
-}
-
-.fp-field {
+/* Collapsible PPT-style section header (填充 / 线条): chevron + label over a divider */
+.fp-sec {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  margin: 14px 0 6px;
+  padding: 0 0 3px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fp-sec:hover {
+  color: var(--accent);
+}
+
+.fp-sec-caret {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* PPT-style fill/line mode radio list */
+.fp-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 6px 0 10px;
+}
+
+.fp-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fp-radio input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.fp-btnrow {
+  display: flex;
+  gap: 6px;
+}
+
+/* 预设渐变 tiles (gradients themselves are document fill previews, painted inline) */
+.fp-gpreset {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.fp-gpreset:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.fp-gpreset.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 角度 row: rotation dial + −/value°/+ stepper (PPT Mac style) */
+.fp-angle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fp-angle.off {
+  opacity: 0.45;
+}
+
+.fp-dial {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.fp-dial:disabled {
+  cursor: default;
+}
+
+/* hollow ring indicator orbiting the dial center at the current angle */
+.fp-dial-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border: 1.5px solid var(--text);
+  border-radius: 50%;
+  background: none;
+  pointer-events: none;
+}
+
+/* one seamless rounded box: − | value° (centered) | + */
+.fp-stepper {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  min-width: 128px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.fp-stepper button {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fp-stepper button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.fp-stepper button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+/* beat the generic .fp-prow input box (declared later in this file) */
+.fp-prow .fp-stepper input {
+  width: 5ch; /* fallback; the component sets width to fit the value */
+  height: auto;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.fp-stepper input::-webkit-outer-spin-button,
+.fp-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.fp-stepper-deg {
+  margin-right: auto;
+  padding: 3px 0 0 2px;
+  align-self: flex-start;
+  color: var(--text);
+  font-size: 10px;
+}
+
+/* Focus popover, anchored under the 射线/矩形 style tile */
+.fp-dirwrap {
+  position: relative;
+}
+
+.fp-dir-pop {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--slides-shadow-popup);
+}
+
+/* 渐变光圈 stop strip: gradient bar + selectable stop markers straddling its bottom edge */
+.fp-gstops {
+  position: relative;
+  margin: 8px 0 16px;
+  padding-bottom: 8px;
+}
+
+.fp-gstops-bar {
+  height: 22px;
+  border: 1px solid var(--border-strong);
+}
+
+.fp-gstop {
+  position: absolute;
+  top: 15px;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  cursor: pointer;
+}
+
+.fp-gstop.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Per-stop transparency slider */
+.fp-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 150px;
+}
+
+.fp-slider input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.fp-slider-val {
+  min-width: 32px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* PPT-style property row: label on the left, control right-aligned */
+.fp-prow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
   font-size: 12px;
   color: var(--text-dim);
 }
 
-.fp-field span {
-  width: 30px;
+.fp-prow > span {
   flex-shrink: 0;
-  text-align: right;
+  text-align: left;
+  white-space: nowrap;
 }
 
-.fp-field input {
-  width: 100%;
+/* label-less rows (button clusters, gradient directions) hug the right edge */
+.fp-prow-end {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.fp-prow input,
+.fp-prow select {
+  box-sizing: border-box;
+  width: 120px;
   min-width: 0;
   height: 26px;
   border: 1px solid var(--border-strong);
@@ -3022,7 +3333,8 @@ body.vib .slide-list {
   outline: none;
 }
 
-.fp-field input:focus {
+.fp-prow input:focus,
+.fp-prow select:focus {
   border-color: var(--accent);
 }
 
@@ -3030,6 +3342,11 @@ body.vib .slide-list {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* breathing room between stacked rows in one section (fill swatches ↔ 透明度, stroke ↔ 虚线样式) */
+.fp-row + .fp-row {
+  margin-top: 10px;
 }
 
 .fp-link-target {
@@ -3903,6 +4220,10 @@ body.vib .slide-list {
   padding: 4px;
 }
 
+.shape-gallery-pop {
+  padding: 8px;
+}
+
 .ctx-item {
   display: flex;
   justify-content: space-between;
@@ -3985,7 +4306,8 @@ body.vib .slide-list {
 .ctx-style-grid {
   display: grid;
   grid-template-columns: repeat(8, 20px);
-  gap: 4px;
+  /* hover outline (2px + 1px offset) extends 3px per side — keep clearance */
+  gap: 8px;
 }
 
 .ctx-style-cell {
@@ -4000,6 +4322,208 @@ body.vib .slide-list {
 .ctx-style-cell:hover {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* PowerPoint-style shape fill popup (Shape Tools > Fill): color sections reuse
+   the shared gcp-* picker styles (the root carries .gcp-palette) but at the
+   ribbon dropdown scale (12.5px text / 20px swatches, matching .rb-menu); the
+   action rows below (more colors / picture / texture) are full-bleed menu rows. */
+.gcp-palette.rb-fill-menu {
+  width: 260px;
+  max-height: calc(100vh - 140px);
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.gcp-palette.rb-fill-menu .gcp-auto {
+  height: 28px;
+  font-size: 12.5px;
+}
+
+.gcp-palette.rb-fill-menu .gcp-section-title {
+  margin: 12px 0 6px;
+  font-size: 12.5px;
+}
+
+.gcp-palette.rb-fill-menu .gcp-theme-base,
+.gcp-palette.rb-fill-menu .gcp-theme-shades,
+.gcp-palette.rb-fill-menu .gcp-standard-row {
+  grid-template-columns: repeat(10, 20px);
+  column-gap: 4px;
+}
+
+.gcp-palette.rb-fill-menu .gcp-theme-base {
+  margin-bottom: 8px;
+}
+
+.gcp-palette.rb-fill-menu .gcp-swatch {
+  width: 20px;
+  height: 20px;
+}
+
+.rb-fill-menu .rbf-actions {
+  margin: 10px -12px 0;
+  padding: 3px 0;
+}
+
+/* inset separator above each action block (same look as .rb-menu-sep, not full-bleed) */
+.rb-fill-menu .rbf-actions::before {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: 0 12px 3px;
+  background: var(--border);
+}
+
+.rb-fill-menu .rbf-actions + .gcp-section-title {
+  margin-top: 8px;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  height: auto;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 400;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-row:hover {
+  background: var(--hover);
+}
+
+.rb-fill-menu .rbf-row input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Gradient 变体 tiles (light/dark rows × 3 directions + radial); the gradients
+   themselves are document fill previews, painted inline. */
+.rb-fill-menu .rbf-gradients {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-gradient-tile {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-gradient-tile:hover {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Bundled texture preset tiles (the texture bitmaps are document fill data, referenced inline) */
+.rb-fill-menu .rbf-textures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-texture-tile {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-texture-tile:hover {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the menu's bottom action block bleeds into the panel's rounded bottom */
+.rb-fill-menu > .rbf-actions {
+  margin-bottom: -10px;
+  padding-bottom: 6px;
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-row-sub {
+  justify-content: space-between;
+}
+
+.rbf-sub-caret {
+  color: var(--text-dim);
+}
+
+/* Gradient/texture hover flyout: fixed so it escapes the menu's overflow clip */
+.rb-fill-menu .rbf-flyout {
+  position: fixed;
+  z-index: 70;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--slides-shadow-popup);
+}
+
+.rb-fill-menu .rbf-flyout .rbf-textures {
+  grid-template-columns: repeat(4, 56px);
+}
+
+/* PowerPoint's variant gallery uses square tiles */
+.rb-fill-menu .rbf-flyout .rbf-gradients {
+  grid-template-columns: repeat(4, 32px);
+}
+
+.rb-fill-menu .rbf-flyout .rbf-gradient-tile {
+  height: 32px;
+}
+
+.rb-fill-menu .rbf-flyout .rbf-actions {
+  margin: 8px -10px -10px;
+  padding: 3px 0 4px;
+}
+
+.rb-fill-menu .rbf-flyout .rbf-actions::before {
+  margin: 0 10px 3px;
+}
+
+/* flyout's leading row (无渐变): bleeds to the top rounding, no separator line */
+.rb-fill-menu .rbf-flyout .rbf-actions-top {
+  margin: -10px -10px 0;
+  padding: 4px 0 3px;
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+}
+
+.rb-fill-menu .rbf-flyout .rbf-actions-top::before {
+  display: none;
+}
+
+.rb-fill-menu.rb-fill-menu .rbf-flyout .rbf-row {
+  padding: 6px 12px;
 }
 
 /* ---- Draw (freehand ink) ---- */

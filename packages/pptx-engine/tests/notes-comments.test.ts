@@ -12,6 +12,7 @@ import {
   savePptx,
   setSlideNotes,
 } from '../src/index'
+import { relsPathFor, resolveTarget } from '../src/zip'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -99,5 +100,26 @@ describe('slide comments', () => {
     expect(
       getSlideComments(reopened.archive, reopened.deck.slides[1]!.path).map((c) => c.text),
     ).toEqual(['second slide'])
+  })
+
+  it('removes the empty comment part, slide relationship, and override after the last delete', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const comment = addSlideComment(opened, 0, { author: 'Carol', text: 'Remove me' })!
+    const relationship = [...opened.archive.readRels(slide.path).values()].find((rel) =>
+      rel.type.endsWith('/comments'),
+    )!
+    const partPath = resolveTarget(slide.path, relationship.target)
+
+    expect(opened.archive.entries.has(partPath)).toBe(true)
+    expect(deleteSlideComment(opened, 0, comment)).toBe(true)
+    expect(opened.archive.entries.has(partPath)).toBe(false)
+    expect(opened.archive.readText(relsPathFor(slide.path))).not.toContain(
+      `Id="${relationship.id}"`,
+    )
+    expect(opened.archive.readText('[Content_Types].xml')).not.toContain(`PartName="/${partPath}"`)
+
+    const reopened = await openPptx(await savePptx(opened))
+    expect(getSlideComments(reopened.archive, reopened.deck.slides[0]!.path)).toEqual([])
   })
 })

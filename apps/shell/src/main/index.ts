@@ -48,7 +48,15 @@ import {
   showSaveDialogWithMemory,
   windowMenuTemplate,
 } from '@genoffice/electron-utils'
-import { readAppSettings, writeAppSetting } from './app-settings'
+import { readAppSettings, writeAppSetting, writeAppSettings } from './app-settings'
+import {
+  ANALYTICS_ENABLED_KEY,
+  analyticsEnabledFrom,
+  createAnalytics,
+  ensureAnalyticsClientId,
+  extractPackagedAnalyticsKeys,
+} from './analytics'
+import type { Analytics, AnalyticsKeys } from './analytics'
 import {
   LAST_RUN_VERSION_KEY,
   STAR_PROMPT_KEY,
@@ -101,11 +109,13 @@ import {
   projectFileRenamed,
   setDocsShellWindow,
   setDocsFileSavedHook,
+  setDocsFileOpenedHook,
   setSessionPathResolver,
   defaultSaveDir,
   uniquePathIn,
 } from '../../../docs/src/main/docs-main'
 import { blankXlsxBuffer } from '../../../sheets/src/gateway/csv-import'
+import { blankPdfBuffer } from '../../../pdf/src/main/blank-pdf'
 import {
   configureSheetsRuntime,
   hasQueuedWorkbook,
@@ -139,10 +149,12 @@ import {
 import {
   configurePdfRuntime,
   flushPdfSave,
+  markPdfUntitledPath,
   pdfIsDirty,
   requestPdfClose,
   requestPdfSaveAs,
   sendPdfPrintRequest,
+  setPdfRenamedHook,
   setPdfSaveAsInFlight,
 } from '../../../pdf/src/main/pdf-main'
 import {
@@ -298,6 +310,66 @@ function currentTheme(): UiTheme {
   return cachedTheme
 }
 
+// ---- anonymous usage analytics (see src/main/analytics.ts) ----
+// Stays a no-op until initAnalytics() runs at startup; keyless builds
+// (source/forks) keep the no-op forever, so every track() call is safe.
+
+let analytics: Analytics = { active: false, track: () => {} }
+
+let cachedAnalyticsEnabled: boolean | null = null
+
+function analyticsEnabled(): boolean {
+  cachedAnalyticsEnabled ??= analyticsEnabledFrom(readAppSettings(APP_SETTINGS_PATH()))
+  return cachedAnalyticsEnabled
+}
+
+function resolveAnalyticsKeys(): AnalyticsKeys | null {
+  // Only packaged extraMetadata is authoritative. Source/dev runs never read
+  // runtime credentials and therefore remain a strict no-op.
+  if (!app.isPackaged) return null
+  try {
+    return extractPackagedAnalyticsKeys(
+      JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')),
+      app.isPackaged,
+    )
+  } catch {
+    return null
+  }
+}
+
+function persistAnalyticsPreference(enabled: boolean): boolean {
+  const previous = cachedAnalyticsEnabled
+  // Change the in-memory gate before touching disk. The synchronous atomic
+  // write prevents another event from being handled in between.
+  cachedAnalyticsEnabled = enabled
+  try {
+    writeAppSettings(APP_SETTINGS_PATH(), { [ANALYTICS_ENABLED_KEY]: enabled })
+    return true
+  } catch (error) {
+    cachedAnalyticsEnabled = previous
+    throw error
+  }
+}
+
+function initAnalytics(): void {
+  try {
+    analytics = createAnalytics({
+      keys: resolveAnalyticsKeys(),
+      getClientId: () => ensureAnalyticsClientId(APP_SETTINGS_PATH()),
+      isEnabled: analyticsEnabled,
+      // evaluated per event: ui_lang follows live language switches
+      baseParams: () => ({
+        app_version: app.getVersion(),
+        platform: process.platform,
+        os_version: process.getSystemVersion(),
+        ui_lang: currentLang(),
+      }),
+    })
+  } catch {
+    // analytics must never block startup
+  }
+}
+
 // ---- first-run onboarding ----
 // The GenTeam community page opened from the onboarding's second slide.
 // Stable short link served by the genoffice.ai site; it 302s to the tokened
@@ -368,8 +440,10 @@ const tMain = createI18n({
     untitledDoc: '未命名文档',
     untitledDeck: '未命名演示文稿',
     untitledMarkdown: '未命名 Markdown',
+    untitledPdf: '未命名 PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: '导出为 PDF…',
     menuOpenInDocs: '转换为 Docs 文档并打开',
     menuPrint: '打印…',
@@ -422,8 +496,10 @@ const tMain = createI18n({
     untitledDoc: 'Untitled Document',
     untitledDeck: 'Untitled Presentation',
     untitledMarkdown: 'Untitled Markdown',
+    untitledPdf: 'Untitled PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Export as PDF…',
     menuOpenInDocs: 'Convert and Open in Docs',
     menuPrint: 'Print…',
@@ -480,8 +556,10 @@ const tMain = createI18n({
     untitledDoc: '無題のドキュメント',
     untitledDeck: '無題のプレゼンテーション',
     untitledMarkdown: '無題の Markdown',
+    untitledPdf: '無題の PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'PDF として書き出す…',
     menuOpenInDocs: 'Docs 文書に変換して開く',
     menuPrint: '印刷…',
@@ -538,8 +616,10 @@ const tMain = createI18n({
     untitledDoc: '제목 없는 문서',
     untitledDeck: '제목 없는 프레젠테이션',
     untitledMarkdown: '제목 없는 Markdown',
+    untitledPdf: '제목 없는 PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'PDF로 내보내기…',
     menuOpenInDocs: 'Docs 문서로 변환하여 열기',
     menuPrint: '인쇄…',
@@ -595,8 +675,10 @@ const tMain = createI18n({
     untitledDoc: 'Document sans titre',
     untitledDeck: 'Présentation sans titre',
     untitledMarkdown: 'Markdown sans titre',
+    untitledPdf: 'PDF sans titre',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exporter en PDF…',
     menuOpenInDocs: 'Convertir et ouvrir dans Docs',
     menuPrint: 'Imprimer…',
@@ -653,8 +735,10 @@ const tMain = createI18n({
     untitledDoc: 'Unbenanntes Dokument',
     untitledDeck: 'Unbenannte Präsentation',
     untitledMarkdown: 'Unbenanntes Markdown',
+    untitledPdf: 'Unbenanntes PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Als PDF exportieren…',
     menuOpenInDocs: 'In Docs umwandeln und öffnen',
     menuPrint: 'Drucken…',
@@ -711,8 +795,10 @@ const tMain = createI18n({
     untitledDoc: 'Documento sin título',
     untitledDeck: 'Presentación sin título',
     untitledMarkdown: 'Markdown sin título',
+    untitledPdf: 'PDF sin título',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exportar como PDF…',
     menuOpenInDocs: 'Convertir y abrir en Docs',
     menuPrint: 'Imprimir…',
@@ -769,8 +855,10 @@ const tMain = createI18n({
     untitledDoc: 'เอกสารไม่มีชื่อ',
     untitledDeck: 'งานนำเสนอไม่มีชื่อ',
     untitledMarkdown: 'Markdown ไม่มีชื่อ',
+    untitledPdf: 'PDF ไม่มีชื่อ',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'ส่งออกเป็น PDF…',
     menuOpenInDocs: 'แปลงและเปิดใน Docs',
     menuPrint: 'พิมพ์…',
@@ -825,8 +913,10 @@ const tMain = createI18n({
     untitledDoc: 'Dokumen tanpa judul',
     untitledDeck: 'Presentasi tanpa judul',
     untitledMarkdown: 'Markdown tanpa judul',
+    untitledPdf: 'PDF tanpa judul',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Ekspor sebagai PDF…',
     menuOpenInDocs: 'Konversi dan buka di Docs',
     menuPrint: 'Cetak…',
@@ -883,8 +973,10 @@ const tMain = createI18n({
     untitledDoc: 'Документ без названия',
     untitledDeck: 'Презентация без названия',
     untitledMarkdown: 'Markdown без названия',
+    untitledPdf: 'PDF без названия',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Экспортировать в PDF…',
     menuOpenInDocs: 'Преобразовать и открыть в Docs',
     menuPrint: 'Печать…',
@@ -941,8 +1033,10 @@ const tMain = createI18n({
     untitledDoc: 'مستند بدون عنوان',
     untitledDeck: 'عرض تقديمي بدون عنوان',
     untitledMarkdown: 'Markdown بدون عنوان',
+    untitledPdf: 'PDF بدون عنوان',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'تصدير بتنسيق PDF…',
     menuOpenInDocs: 'التحويل والفتح في Docs',
     menuPrint: 'طباعة…',
@@ -997,8 +1091,10 @@ const tMain = createI18n({
     untitledDoc: 'Documento sem título',
     untitledDeck: 'Apresentação sem título',
     untitledMarkdown: 'Markdown sem título',
+    untitledPdf: 'PDF sem título',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exportar como PDF…',
     menuOpenInDocs: 'Converter e abrir no Docs',
     menuPrint: 'Imprimir…',
@@ -1055,8 +1151,10 @@ const tMain = createI18n({
     untitledDoc: 'Documento senza titolo',
     untitledDeck: 'Presentazione senza titolo',
     untitledMarkdown: 'Markdown senza titolo',
+    untitledPdf: 'PDF senza titolo',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Esporta come PDF…',
     menuOpenInDocs: 'Converti e apri in Docs',
     menuPrint: 'Stampa…',
@@ -1113,8 +1211,10 @@ const tMain = createI18n({
     untitledDoc: 'Dokument bez tytułu',
     untitledDeck: 'Prezentacja bez tytułu',
     untitledMarkdown: 'Markdown bez tytułu',
+    untitledPdf: 'PDF bez tytułu',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Eksportuj jako PDF…',
     menuOpenInDocs: 'Konwertuj i otwórz w Docs',
     menuPrint: 'Drukuj…',
@@ -1171,8 +1271,10 @@ const tMain = createI18n({
     untitledDoc: 'Naamloos document',
     untitledDeck: 'Naamloze presentatie',
     untitledMarkdown: 'Naamloos Markdown',
+    untitledPdf: 'Naamloze PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exporteren als PDF…',
     menuOpenInDocs: 'Converteren en openen in Docs',
     menuPrint: 'Afdrukken…',
@@ -1229,8 +1331,10 @@ const tMain = createI18n({
     untitledDoc: 'Dokumen tanpa tajuk',
     untitledDeck: 'Persembahan tanpa tajuk',
     untitledMarkdown: 'Markdown tanpa tajuk',
+    untitledPdf: 'PDF tanpa tajuk',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'Eksport sebagai PDF…',
     menuOpenInDocs: 'Tukar dan buka dalam Docs',
     menuPrint: 'Cetak…',
@@ -1287,8 +1391,10 @@ const tMain = createI18n({
     untitledDoc: 'מסמך ללא שם',
     untitledDeck: 'מצגת ללא שם',
     untitledMarkdown: 'Markdown ללא שם',
+    untitledPdf: 'PDF ללא שם',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'ייצוא כ-PDF…',
     menuOpenInDocs: 'המרה ופתיחה ב-Docs',
     menuPrint: 'הדפסה…',
@@ -1342,8 +1448,10 @@ const tMain = createI18n({
     untitledDoc: 'बिना शीर्षक दस्तावेज़',
     untitledDeck: 'बिना शीर्षक प्रस्तुति',
     untitledMarkdown: 'अनाम Markdown',
+    untitledPdf: 'अनाम PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: 'PDF के रूप में निर्यात…',
     menuOpenInDocs: 'Docs में बदलें और खोलें',
     menuPrint: 'प्रिंट करें…',
@@ -1400,8 +1508,10 @@ const tMain = createI18n({
     untitledDoc: '未命名文件',
     untitledDeck: '未命名簡報',
     untitledMarkdown: '未命名 Markdown',
+    untitledPdf: '未命名 PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewPdf: 'AI PDF',
     menuExportPdf: '匯出為 PDF…',
     menuOpenInDocs: '轉換為 Docs 文件並開啟',
     menuPrint: '列印…',
@@ -1474,6 +1584,7 @@ function applyPendingProject(filePath: string): void {
   else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') key = 'sheet'
   else if (ext === 'pptx') key = 'slide'
   else if (ext === 'md' || ext === 'markdown') key = 'markdown'
+  else if (ext === 'pdf') key = 'pdf'
   if (!key) return
   const projectId = pendingNewFileProject.get(key)
   if (!projectId) return
@@ -1588,11 +1699,25 @@ function createShellWindow(): void {
     recordRecentFile(path)
     applyPendingProject(path)
   })
+  // ⌘O / open-path inside a docs tab: sync the tab title immediately, same
+  // contract as the sheets/slides opened hooks (a plain save to the original
+  // path never renames the tab, so the open must — r115)
+  setDocsFileOpenedHook((wcId, path) => {
+    manager.setTabFileFor(wcId, path)
+    recordRecentFile(path)
+    applyPendingProject(path)
+  })
   // markdown untitled first save / Save As lands on a new path
   setMarkdownFileSavedHook((wc, path) => {
     manager.setTabFileFor(wc.id, path)
     recordRecentFile(path)
     applyPendingProject(path)
+  })
+  // pdf content-derived auto-rename: the file moved on disk, follow it everywhere
+  setPdfRenamedHook((wc, oldPath, newPath) => {
+    manager.setTabFileFor(wc.id, newPath)
+    replaceRecentFile(oldPath, newPath)
+    projectFileRenamed(oldPath, newPath)
   })
   // markdown "convert & open in Docs" → route the fresh .docx to a docs tab
   setMarkdownDocxExportedHook((path) => {
@@ -1721,7 +1846,11 @@ function notifyUnsupportedFile(filePath: string): void {
 /** the single router: extension decides which module owns the file; false = nothing opened */
 function openDocumentPath(filePath: string): boolean {
   const opened = routeDocumentPath(filePath)
-  if (opened) recordStarPromptDocOpen()
+  if (opened) {
+    recordStarPromptDocOpen()
+    // extension only — never the file name or path
+    analytics.track('file_open', { ext: extname(filePath).slice(1).toLowerCase() })
+  }
   return opened
 }
 
@@ -1787,7 +1916,10 @@ async function newSheetTab(): Promise<void> {
     writeFileSync(filePath, await blankXlsxBuffer())
     // eligible for content-derived auto-rename after the first AI generation
     markSheetsUntitledPath(filePath)
-    openDocumentPath(filePath)
+    // route directly (not via openDocumentPath) so creating a sheet emits
+    // only file_new — the file_open event is reserved for opening existing files
+    if (routeDocumentPath(filePath)) recordStarPromptDocOpen()
+    analytics.track('file_new', { kind: 'xlsx' })
   } catch (err) {
     console.warn('[shell] blank workbook create failed, opening in-memory blank tab:', err)
     try {
@@ -1814,6 +1946,7 @@ function newDocTab(): void {
     tabManager?.openDocsTab(undefined, { newBlank: true })
     // creating a document is as much a value moment as opening one
     recordStarPromptDocOpen()
+    analytics.track('file_new', { kind: 'docx' })
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1823,6 +1956,7 @@ function newSlideTab(): void {
   try {
     tabManager?.openSlidesTab()
     recordStarPromptDocOpen()
+    analytics.track('file_new', { kind: 'pptx' })
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1832,6 +1966,29 @@ function newMarkdownTab(): void {
   try {
     tabManager?.openMarkdownTab()
     recordStarPromptDocOpen()
+    analytics.track('file_new', { kind: 'md' })
+  } catch (err) {
+    surfaceNewTabError(err)
+  }
+}
+
+/**
+ * "New PDF" creates a blank single-page .pdf in the default folder up front and
+ * opens it as a regular file tab — the PDF module has no in-memory blank mode
+ * (openPdfTab requires a path), same pattern as the blank workbook above.
+ */
+async function newPdfTab(): Promise<void> {
+  try {
+    const filePath = uniquePathIn(defaultSaveDir(), `${tm('untitledPdf')}.pdf`)
+    writeFileSync(filePath, await blankPdfBuffer())
+    // Opt the file into content-derived auto-naming on its first save
+    markPdfUntitledPath(filePath)
+    // PDF has no opened/saved shell hook — assign the pending project right here
+    applyPendingProject(filePath)
+    // route directly (not via openDocumentPath) so creating a pdf emits only
+    // file_new and counts one doc-open — same as the blank workbook above
+    if (routeDocumentPath(filePath)) recordStarPromptDocOpen()
+    analytics.track('file_new', { kind: 'pdf' })
   } catch (err) {
     surfaceNewTabError(err)
   }
@@ -1881,6 +2038,7 @@ function registerHomeIpc(): void {
   // kept main-side so the "open manually" rescue never opens a renderer-supplied URL
   let pendingLoginUrl = ''
   ipcMain.handle(HOME_CHANNELS.accountLogin, async (event) => {
+    analytics.track('login_click')
     const sender = event.sender
     pendingLoginUrl = ''
     await proxyBootstrap
@@ -1897,6 +2055,7 @@ function registerHomeIpc(): void {
           void shell.openExternal(progress.url)
         }
       }
+      if (progress.phase === 'success') analytics.track('login_success')
       send(progress)
     })
     if (launched) send({ phase: 'launched' })
@@ -1987,6 +2146,13 @@ function registerHomeIpc(): void {
       pendingNewFileProject.set('markdown', opts.projectId)
     }
     newMarkdownTab()
+  })
+
+  ipcMain.handle(HOME_CHANNELS.newPdf, (_event, opts?: { projectId?: string }) => {
+    if (opts?.projectId && opts.projectId !== 'default') {
+      pendingNewFileProject.set('pdf', opts.projectId)
+    }
+    void newPdfTab()
   })
 
   ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
@@ -2092,8 +2258,13 @@ function registerHomeIpc(): void {
     (): boolean => readAppSettings(APP_SETTINGS_PATH()).onboardingSeen === true,
   )
 
-  ipcMain.handle(HOME_CHANNELS.setOnboardingSeen, () => {
-    writeAppSetting(APP_SETTINGS_PATH(), 'onboardingSeen', true)
+  ipcMain.handle(HOME_CHANNELS.setOnboardingSeen, (): boolean => {
+    try {
+      writeAppSetting(APP_SETTINGS_PATH(), 'onboardingSeen', true)
+      return true
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
@@ -2107,6 +2278,13 @@ function registerHomeIpc(): void {
     writeAppSetting(APP_SETTINGS_PATH(), 'theme', theme)
     nativeTheme.themeSource = theme
     for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
+  })
+
+  ipcMain.handle(HOME_CHANNELS.getAnalyticsEnabled, (): boolean => analyticsEnabled())
+
+  ipcMain.handle(HOME_CHANNELS.setAnalyticsEnabled, (_event, enabled: unknown): boolean => {
+    if (typeof enabled !== 'boolean') return false
+    return persistAnalyticsPreference(enabled)
   })
 
   // effective folder where new/untitled files land; the editor mains resolve
@@ -2308,6 +2486,11 @@ function registerTabsIpc(): void {
         icon: menuIcons().md,
         click: () => newMarkdownTab(),
       },
+      {
+        label: tm('menuNewPdf'),
+        icon: menuIcons().pdf,
+        click: () => void newPdfTab(),
+      },
       { type: 'separator' },
       { label: tm('menuOpen'), click: () => void openFileViaDialog() },
     ])
@@ -2351,6 +2534,7 @@ function buildHomeMenu(): void {
         },
         { label: tm('menuNewSlide'), click: () => newSlideTab() },
         { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
+        { label: tm('menuNewPdf'), click: () => void newPdfTab() },
         { type: 'separator' },
         {
           label: tm('menuOpen'),
@@ -2700,6 +2884,7 @@ function installDockMenu(): void {
       },
       { label: tm('menuNewSlide'), click: () => newSlideTab() },
       { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
+      { label: tm('menuNewPdf'), click: () => void newPdfTab() },
     ]),
   )
 }
@@ -2866,6 +3051,8 @@ app.whenReady().then(async () => {
   } catch {
     // settings write failures must never block startup
   }
+  initAnalytics()
+  analytics.track('app_launch')
   startSheetsCaptureServer()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()

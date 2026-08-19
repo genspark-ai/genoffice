@@ -26,6 +26,11 @@ const para = (...content: JsonNode[]): JsonNode => ({
   attrs: { docxIndex: null },
   content,
 })
+const paraWithAttrs = (attrs: Record<string, unknown>, ...content: JsonNode[]): JsonNode => ({
+  type: 'docParagraph',
+  attrs: { docxIndex: null, ...attrs },
+  content,
+})
 
 function createEditor(content: JsonNode[]): Editor {
   return new Editor({
@@ -74,7 +79,9 @@ describe('addCommentToSelection', () => {
   })
 
   it('merges with an existing overlapping comment', () => {
-    const editor = createEditor([para(text('ab'), text('cd', [{ type: 'comment', attrs: { ids: '1' } }]))])
+    const editor = createEditor([
+      para(text('ab'), text('cd', [{ type: 'comment', attrs: { ids: '1' } }])),
+    ])
     select(editor, 1, 5) // covers ab + cd
     addCommentToSelection(editor, '2')
     expect(commentIdsPerNode(editor)).toEqual(['2', '1 2'])
@@ -91,7 +98,9 @@ describe('addCommentToSelection', () => {
 
 describe('removeCommentFromDoc', () => {
   it('removes the mark when the id was the last one', () => {
-    const editor = createEditor([para(text('x'), text('marked', [{ type: 'comment', attrs: { ids: '1' } }]))])
+    const editor = createEditor([
+      para(text('x'), text('marked', [{ type: 'comment', attrs: { ids: '1' } }])),
+    ])
     removeCommentFromDoc(editor, '1')
     expect(commentIdsPerNode(editor)).toEqual([null])
     editor.destroy()
@@ -103,6 +112,19 @@ describe('removeCommentFromDoc', () => {
     ])
     removeCommentFromDoc(editor, '1')
     expect(commentIdsPerNode(editor)).toEqual(['2'])
+    editor.destroy()
+  })
+
+  it('clears cross-paragraph endpoint attrs while retaining other comment ids', () => {
+    const editor = createEditor([
+      paraWithAttrs({ commentStarts: ['1', '2'] }, text('range starts')),
+      paraWithAttrs({ commentEnds: ['1'] }, text('range ends')),
+    ])
+    removeCommentFromDoc(editor, '1')
+    expect(editor.state.doc.child(0).attrs.commentStarts).toEqual(['2'])
+    expect(editor.state.doc.child(0).attrs.commentEnds).toBeNull()
+    expect(editor.state.doc.child(1).attrs.commentStarts).toBeNull()
+    expect(editor.state.doc.child(1).attrs.commentEnds).toBeNull()
     editor.destroy()
   })
 })

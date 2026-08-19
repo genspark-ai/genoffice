@@ -15,12 +15,12 @@ const COMMENTS_XML =
   '</w:comments>'
 
 const COMMENTED_P =
-  '<w:p><w:r><w:t>before </w:t></w:r>' +
+  '<w:p><w:r><w:t xml:space="preserve">before </w:t></w:r>' +
   '<w:commentRangeStart w:id="7"/>' +
   '<w:r><w:t>marked</w:t></w:r>' +
   '<w:commentRangeEnd w:id="7"/>' +
   '<w:r><w:commentReference w:id="7"/></w:r>' +
-  '<w:r><w:t> after</w:t></w:r></w:p>'
+  '<w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p>'
 
 async function loadEditor() {
   const bytes = await buildDocx({

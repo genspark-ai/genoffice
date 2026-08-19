@@ -652,7 +652,7 @@ describe('cssFontFamily', () => {
     )
   })
 
-  describe('KR chains (M3 probe: theme Latin head, real Nanum)', () => {
+  describe('KR chains (M3 probe: theme Latin head, downloadable source face)', () => {
     afterEach(() => vi.restoreAllMocks())
 
     it('missing KR variant gets the theme Latin head ahead of the Batang chain', () => {
@@ -673,16 +673,31 @@ describe('cssFontFamily', () => {
       expect(cssFontFamily('Batang')).not.toContain("'KR Theme Latin GO'")
     })
 
-    it('installed NanumGothic resolves at the literal head of the sans chain', () => {
+    it('the matching source family leads the bundled real-metric face', () => {
       stubCanvas(['NanumGothic'])
       expect(cssFontFamily('NanumGothic')).toBe(
-        "'NanumGothic','Malgun Gothic','GenOffice Sans KR','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+        "'NanumGothic','GenOffice Gothic KR','Malgun Gothic','GenOffice Sans KR','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
       )
     })
 
-    it('missing Nanum names keep the Batang-normalized serif chain', () => {
+    it('the localized source name takes the bundled face when missing', () => {
+      expect(cssFontFamily('나눔고딕')).toBe(
+        "'나눔고딕','GenOffice Gothic KR','Malgun Gothic','GenOffice Sans KR','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+      )
+    })
+
+    it('other source-vendor families keep the Batang-normalized serif chain', () => {
       expect(cssFontFamily('NanumBarunGothic')).toBe(
         "'NanumBarunGothic','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+      )
+    })
+
+    it('Tamil declares lead the bundled Latha-metric face', () => {
+      expect(cssFontFamily('Latha')).toBe(
+        "'Latha','GenOffice Tamil','InaiMathi','Tamil MN','Tamil Sangam MN',sans-serif",
+      )
+      expect(cssFontFamily('Noto Sans Tamil')).toBe(
+        "'Noto Sans Tamil','GenOffice Tamil','InaiMathi','Tamil MN','Tamil Sangam MN',sans-serif",
       )
     })
   })
@@ -718,6 +733,8 @@ describe('Korean line metrics', () => {
     expect(lineHeightFactor('Gulim')).toBe(1.3029)
     expect(lineHeightFactor('Dotum')).toBe(1.3029)
     expect(lineHeightFactor('NanumMyeongjo')).toBe(1.3029)
+    expect(lineHeightFactor('NanumGothic')).toBe(1.495)
+    expect(lineHeightFactor('나눔고딕')).toBe(1.495)
     expect(lineHeightFactor('Malgun Gothic')).toBe(1.7371)
     expect(lineHeightFactor('맑은 고딕')).toBe(1.7371)
     expect(lineHeightFactor('Noto Sans CJK KR')).toBe(1.3029)

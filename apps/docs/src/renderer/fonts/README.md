@@ -69,6 +69,42 @@ Renamed because OFL reserves the "Noto" name
 for unmodified builds. Conjoining jamo keep native advances (shaping). Word
 counterpart line factors live in `lineHeightFactor()` of `line-metrics.ts`.
 
+### GenOffice Gothic KR
+
+| Font                               | Role                                            |
+| ---------------------------------- | ----------------------------------------------- |
+| GenOffice Gothic KR (subset woff2) | real-metric face for NanumGothic-declaring docs |
+
+Source: NanumGothic Regular from [google/fonts](https://github.com/google/fonts/tree/main/ofl/nanumgothic)
+(SIL OFL 1.1). Word for Mac renders NanumGothic documents with the OS
+_downloadable_ Nanum asset (FontServices subset Chromium cannot see): hangul
+0.94em, space 0.28em, digits 0.606em (M3 probe 2026-08-14), while the
+Batang-normalized subset above ships 1.0/0.333/0.596 — +6.4% per hangul line.
+Subset to the same ranges as the KR fallbacks (KS X 1001 syllables + jamo +
+Basic Latin/punctuation/fullwidth forms), advances **unmodified**
+(`tools/build-gothic-kr-font.py`) and checked in as
+`GenOfficeGothicKR-Regular-subset.woff2`. Renamed per OFL (the upstream
+Reserved Font Names include "Nanum" and "NanumGothic"; subsetting is a
+modification). The exact NHN copyright/Reserved Font Name notice and the full
+OFL 1.1 text are in `LICENSE-OFL.txt`.
+
+## Tamil fallback
+
+| Font                    | Role                                     |
+| ----------------------- | ---------------------------------------- |
+| GenOffice Tamil (woff2) | Latha-metric stand-in for Tamil families |
+
+Source: Noto Sans Tamil Regular from [notofonts](https://github.com/notofonts/notofonts.github.io)
+(SIL OFL 1.1). Word substitutes missing Tamil families with Latha; Chromium's
+macOS fallback (Tamil Sangam MN) shapes ~27% narrower (M3 probe: sentence R
+0.728, space 0.39×), far past what size-adjust can fix without inflating glyph
+ink (137%). Advances are rewritten to Latha's: the 109 cmap-shared codepoints
+exactly, remaining glyphs (GSUB conjunct/matra outputs) by the median
+Tamil-letter ratio (`tools/build-tamil-font.py`; shaped sentence R vs Latha
+0.994, every probe sentence within ±2.3%). The face ships no Latin letters
+(upstream Noto Sans Tamil has none); Latin falls through the chain. Renamed
+per OFL ("Noto" is a Reserved Font Name; advances are modified).
+
 ## Arabic fallback
 
 | Font                             | Role                                                     |

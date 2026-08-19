@@ -5,8 +5,11 @@ export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
   save: 'pdf:save',
+  autoRename: 'pdf:auto-rename',
+  isUntitled: 'pdf:is-untitled',
   validateTextEdits: 'pdf:validate-text-edits',
   listEditFonts: 'pdf:list-edit-fonts',
+  canDrawText: 'pdf:can-draw-text',
   listPageImages: 'pdf:list-page-images',
   listStaticFormFills: 'pdf:list-static-form-fills',
   pageImagePng: 'pdf:page-image-png',
@@ -461,6 +464,13 @@ export interface TextInsertFailure {
   reason: string
 }
 
+/** Answer to autoRename; `path`/`name` present when renamed */
+export interface PdfAutoRenameResult {
+  renamed: boolean
+  path?: string
+  name?: string
+}
+
 export type SavePdfResult =
   | {
       ok: true
@@ -632,10 +642,20 @@ export interface PdfApi {
   readFile(path: string): Promise<ArrayBuffer>
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
   save(request: SavePdfRequest): Promise<SavePdfResult>
+  /** Content-derived naming (docs/sheets analog): propose a file base name after a save.
+      The main process renames only while the file still carries the shell's auto-created
+      untitled name, so user-chosen names are never touched. */
+  autoRename(path: string, baseName: string): Promise<PdfAutoRenameResult>
+  /** Whether the file is a shell-created blank still carrying its untitled name
+      (gates the after-AI-run silent save; a PDF the user merely opened must never auto-write) */
+  isUntitled(path: string): Promise<boolean>
   /** Dry-run match of pending text edits against the file: reason null = would apply */
   validateTextEdits(request: ValidateTextEditsRequest): Promise<TextEditValidation[]>
   /** EDIT_FONTS ids whose font file exists on this machine */
   listEditFonts(): Promise<string[]>
+  /** Whether any embeddable font on this machine can draw `text` (insert-time gate:
+      the preview renders with browser fallback, which proves nothing about save) */
+  canDrawText(text: string, font?: string, bold?: boolean, italic?: boolean): Promise<boolean>
   /** Enumerate the content-stream images of every page (for image edit mode) */
   listPageImages(path: string): Promise<PageImageRef[]>
   /** Read GenOffice static-fill metadata stored inside the PDF. */

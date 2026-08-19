@@ -3,6 +3,8 @@
 /// built-ins, hidden names, and names it failed to install (`preserveNames`)
 /// — stay byte-verbatim.
 
+import { withFutureFunctionMarkers } from './future-functions'
+
 export class DefinedNameError extends Error {}
 
 export interface DefinedNameEntry {
@@ -64,7 +66,7 @@ export function applyDefinedNamesState(workbookXml: string, state: DefinedNamesS
       (entry) =>
         `<definedName name="${escapeXmlAttribute(entry.name)}"` +
         (entry.sheetIndex === undefined ? '' : ` localSheetId="${entry.sheetIndex}"`) +
-        `>${escapeXmlText(entry.formula.replace(/^=/, ''))}</definedName>`,
+        `>${escapeXmlText(withFutureFunctionMarkers(entry.formula.replace(/^=/, '')))}</definedName>`,
     )
     .join('')
 

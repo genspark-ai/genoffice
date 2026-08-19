@@ -407,6 +407,7 @@ function blockToPmNode(
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+          paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format),
         },
@@ -427,6 +428,7 @@ function blockToPmNode(
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+          paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format),
         },
@@ -446,6 +448,7 @@ function blockToPmNode(
           sdtShell: block.sdtShell ? JSON.stringify(block.sdtShell) : null,
           moveRevision: block.moveRevision ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+          paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format),
         },
@@ -492,6 +495,7 @@ function blockToPmNode(
           imageRotDeg: block.imageRotDeg ?? null,
           imageFlipH: block.imageFlipH ?? false,
           imageFlipV: block.imageFlipV ?? false,
+          imageBorder: block.imageBorder ?? null,
           table: displayTable(block.table ?? null, rowCapTwips, budget),
           fieldDisplay: block.fieldDisplay ?? null,
           diagramDisplay: block.diagramDisplay ?? null,
@@ -580,6 +584,16 @@ export function tableModelToPmNode(
     : model.colWidthsPct?.map((width) => Math.max(24, Math.round(width * 6.24)))
   const hasHeaderRow =
     model.rows.length > 1 && model.rows[0].every((cell) => cell.bold || cell.fill !== undefined)
+  // w:tblpPr tables taller than any single page cannot float: Word flows/splits
+  // them across pages, while the zero-flow-height float model collapses the
+  // whole document to one page (137-row glossary, LO batch2 sample 0219).
+  // Minimum height = one 12pt line per row; 12960 twips ≈ the shortest common
+  // usable page (Letter, 1in margins).
+  const minHeightTwips = model.rows.reduce(
+    (sum, _row, i) => sum + Math.max(model.rowHeightsTwips?.[i] ?? 0, 240),
+    0,
+  )
+  const tblFloat = minHeightTwips > 12960 ? null : (model.floatSide ?? null)
   const table: PmNode = {
     type: 'docTable',
     attrs: {
@@ -594,6 +608,7 @@ export function tableModelToPmNode(
       cellMar: model.cellMarTwips ?? null,
       borders: model.borders ?? null,
       tblAlign: model.align ?? null,
+      tblFloat,
       indentTwips: model.indentTwips ?? null,
       tblStyleId: model.tblStyleId ?? null,
       bidiVisual: model.bidiVisual ?? false,
@@ -953,10 +968,11 @@ export function runsToInline(runs: Run[]): PmNode[] {
       continue
     }
     const marks = runMarks(run)
-    // \n = soft line break, \f = in-paragraph page break (w:br w:type="page")
-    for (const segment of run.text.split(/([\n\f])/)) {
+    // \n = soft line break, \f = in-paragraph page break, \v = column break
+    for (const segment of run.text.split(/([\n\f\v])/)) {
       if (segment === '\n') nodes.push({ type: 'hardBreak' })
       else if (segment === '\f') nodes.push({ type: 'hardBreak', attrs: { pageBreak: true } })
+      else if (segment === '\v') nodes.push({ type: 'hardBreak', attrs: { colBreak: true } })
       else if (segment !== '') {
         nodes.push({ type: 'text', text: segment, ...(marks.length > 0 ? { marks } : {}) })
       }
@@ -974,6 +990,8 @@ export function runsToInline(runs: Run[]): PmNode[] {
           wrap: run.image.wrap ?? null,
           offsetXEmu: run.image.offsetXEmu ?? null,
           offsetYEmu: run.image.offsetYEmu ?? null,
+          border: run.image.border ?? null,
+          lineCenterV: run.image.lineCenterV ?? false,
         },
       })
     }
@@ -2047,7 +2065,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
   const runs: Run[] = []
   for (const node of content) {
     if (node.type === 'hardBreak') {
-      const ch = node.attrs?.pageBreak ? '\f' : '\n'
+      const ch = node.attrs?.pageBreak ? '\f' : node.attrs?.colBreak ? '\v' : '\n'
       const prev = runs[runs.length - 1]
       const prevAtomic =
         prev && (prev.noteRef || prev.xeTerm !== undefined || prev.math || prev.ruby || prev.image)

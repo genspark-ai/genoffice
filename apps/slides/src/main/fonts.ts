@@ -133,6 +133,9 @@ const ALIASES: Record<string, string[]> = {
   游明朝: [...YU_MINCHO, ...HIRAGINO_MINCHO],
   meiryo: [...MEIRYO, ...HIRAGINO_SANS],
   メイリオ: [...MEIRYO, ...HIRAGINO_SANS],
+  // Meiryo UI is a face inside meiryo.ttc/meiryob.ttc (narrower kana than Meiryo); the
+  // origKey bonus in rankFaces picks the UI face out of the alias target's collection
+  'meiryo ui': [...MEIRYO, ...HIRAGINO_SANS],
   'ms gothic': [...MS_GOTHIC, ...HIRAGINO_SANS],
   'ms pgothic': [...MS_GOTHIC, ...HIRAGINO_SANS],
   'ms ui gothic': [...MS_GOTHIC, ...HIRAGINO_SANS],
@@ -314,23 +317,41 @@ function readFaceDir(buf: Buffer): FaceInfo[] {
   })
 }
 
+/** OpenType layout tables — droppable for metrics-only parsing when opentype.js rejects them. */
+const LAYOUT_TABLES: ReadonlySet<string> = new Set(['GSUB', 'GPOS', 'GDEF'])
+
 /** Extract a single face from a ttc into a standalone sfnt (rewrite the table directory, copy table data by original offset). */
-function extractFace(buf: Buffer, offset: number): ArrayBuffer {
-  if (buf.toString('ascii', 0, 4) !== 'ttcf') {
+function extractFace(buf: Buffer, offset: number, drop?: ReadonlySet<string>): ArrayBuffer {
+  const isTtc = buf.toString('ascii', 0, 4) === 'ttcf'
+  if (!isTtc && !drop) {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
   }
-  const numTables = buf.readUInt16BE(offset + 4)
-  let total = 12 + 16 * numTables
+  const faceOff = isTtc ? offset : 0
+  const numTables = buf.readUInt16BE(faceOff + 4)
   const entries: Array<{ dirPos: number; tOff: number; tLen: number; newOff: number }> = []
   for (let t = 0; t < numTables; t++) {
-    const e = offset + 12 + 16 * t
-    const tLen = buf.readUInt32BE(e + 12)
-    entries.push({ dirPos: e, tOff: buf.readUInt32BE(e + 8), tLen, newOff: total })
-    total += (tLen + 3) & ~3
+    const e = faceOff + 12 + 16 * t
+    if (drop?.has(buf.toString('ascii', e, e + 4))) continue
+    entries.push({
+      dirPos: e,
+      tOff: buf.readUInt32BE(e + 8),
+      tLen: buf.readUInt32BE(e + 12),
+      newOff: 0,
+    })
+  }
+  let total = 12 + 16 * entries.length
+  for (const e of entries) {
+    e.newOff = total
+    total += (e.tLen + 3) & ~3
   }
   const out = Buffer.alloc(total)
-  buf.copy(out, 0, offset, offset + 12)
-  for (let t = 0; t < numTables; t++) {
+  buf.copy(out, 0, faceOff, faceOff + 4)
+  out.writeUInt16BE(entries.length, 4)
+  const pow = 2 ** Math.floor(Math.log2(entries.length || 1))
+  out.writeUInt16BE(pow * 16, 6)
+  out.writeUInt16BE(Math.log2(pow), 8)
+  out.writeUInt16BE(entries.length * 16 - pow * 16, 10)
+  for (let t = 0; t < entries.length; t++) {
     const e = entries[t]!
     buf.copy(out, 12 + 16 * t, e.dirPos, e.dirPos + 8)
     out.writeUInt32BE(e.newOff, 12 + 16 * t + 8)
@@ -340,7 +361,12 @@ function extractFace(buf: Buffer, offset: number): ArrayBuffer {
   return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer
 }
 
-function rankFaces(faces: FaceInfo[], wantKey: string, style: RunStyle): FaceInfo[] {
+function rankFaces(
+  faces: FaceInfo[],
+  wantKey: string,
+  style: RunStyle,
+  origKey?: string,
+): FaceInfo[] {
   const styleKeys =
     style.bold && style.italic
       ? ['bolditalic']
@@ -349,8 +375,14 @@ function rankFaces(faces: FaceInfo[], wantKey: string, style: RunStyle): FaceInf
         : style.italic
           ? ['italic', 'oblique']
           : ['regular', 'w3', 'medium']
+  // origKey: an alias candidate may open a ttc that also carries the exact requested face
+  // (request "Meiryo UI" -> alias "Meiryo" -> meiryo.ttc, which has both) — exact match wins.
+  // Sub-family faces (Poppins Light) still match exactly through their typographic family
+  // (name 16 = "Poppins"), so a famKey extending origKey costs a point and the plain face wins.
   const score = (f: FaceInfo) =>
     (f.display.startsWith('.') ? -4 : 0) +
+    (origKey && f.famKeys.some((k) => k === origKey) ? 4 : 0) -
+    (origKey && f.famKeys.some((k) => k !== origKey && k.startsWith(origKey)) ? 1 : 0) +
     (f.famKeys.some((k) => k === wantKey || k.startsWith(wantKey)) ? 2 : 0) +
     (styleKeys.some((s) => f.styleText.includes(s)) ? 1 : 0)
   return [...faces].sort((a, b) => score(b) - score(a))
@@ -450,7 +482,16 @@ class FontRegistry {
     if (cached !== undefined) return cached
     let font: OpentypeFontLike | null
     try {
-      font = opentype.parse(extractFace(readFileSync(path), offset)) as unknown as OpentypeFontLike
+      const buf = readFileSync(path)
+      try {
+        font = opentype.parse(extractFace(buf, offset)) as unknown as OpentypeFontLike
+      } catch {
+        // Legacy CJK fonts (gulim/batang) carry GSUB versions opentype.js rejects; advances
+        // only need cmap/hmtx/kern, so retry without the OpenType layout tables
+        font = opentype.parse(
+          extractFace(buf, offset, LAYOUT_TABLES),
+        ) as unknown as OpentypeFontLike
+      }
     } catch {
       font = null
     }
@@ -462,8 +503,9 @@ class FontRegistry {
     path: string,
     wantKey: string,
     style: RunStyle,
+    origKey?: string,
   ): { font: OpentypeFontLike; family: string; path: string; offset: number } | undefined {
-    for (const face of rankFaces(this.facesOf(path), wantKey, style)) {
+    for (const face of rankFaces(this.facesOf(path), wantKey, style, origKey)) {
       const font = this.parseFace(path, face.offset)
       if (font) return { font, family: face.display, path, offset: face.offset }
     }
@@ -475,12 +517,14 @@ class FontRegistry {
     paths: string[],
     wantKey: string,
     style: RunStyle,
+    origKey?: string,
   ): { font: OpentypeFontLike; family: string; path: string; offset: number } | undefined {
     const all = paths.flatMap((p) => this.facesOf(p).map((face) => ({ path: p, face })))
     const ranked = rankFaces(
       all.map((x) => x.face),
       wantKey,
       style,
+      origKey,
     )
     for (const face of ranked) {
       const path = all.find((x) => x.face === face)!.path
@@ -511,6 +555,9 @@ class FontRegistry {
     }
     push(style.fontFamily)
     for (const a of aliasesOf(style.fontFamily)) push(a)
+    // Candidates after this index are same-script/class substitutes, not the requested
+    // family — the sub-family cloud fallback below must run before them
+    const substituteStart = candidates.length
     for (const s of substitutesFor(style.fontFamily)) {
       push(s)
       for (const a of aliasesOf(s)) push(a)
@@ -527,20 +574,45 @@ class FontRegistry {
           : style.italic
             ? ['italic', 'it', 'i', 'oblique']
             : ['', 'regular', 'w4', 'w3']
-    for (const family of candidates) {
+    const origKey = norm(style.fontFamily)
+    const tryFamily = (family: string) => {
       const base = norm(family)
       // Try style-variant files first, then fall back to regular (approximate widths still far better than heuristics)
       for (const suf of [...suffixes, '', 'regular']) {
         const path = this.index.get(base + norm(suf))
         if (!path) continue
-        const hit = this.loadBest(path, base, style)
+        const hit = this.loadBest(path, base, style, origKey)
         if (hit) return { ...hit, family: hit.family || family }
       }
       const cloudPaths = this.cloud.get(base)
       if (cloudPaths) {
-        const hit = this.loadBestCloud(cloudPaths, base, style)
+        const hit = this.loadBestCloud(cloudPaths, base, style, origKey)
         if (hit) return { ...hit, family: hit.family || family }
       }
+      return undefined
+    }
+    for (const family of candidates.slice(0, substituteStart)) {
+      const hit = tryFamily(family)
+      if (hit) return hit
+    }
+    // Before falling to substitutes: a sub-family request lives inside the base family's
+    // cloud dir (Poppins Light -> CloudFonts/Poppins). Requires a face whose family name
+    // matches the request exactly, so a shorter dir can never hijack a different family
+    // (Noto Sans JP must not bind to Latin-only Noto Sans).
+    let bestKey = ''
+    for (const k of this.cloud.keys()) {
+      if (origKey.startsWith(k) && k.length > bestKey.length) bestKey = k
+    }
+    if (bestKey) {
+      const paths = this.cloud.get(bestKey)!
+      if (paths.some((p) => this.facesOf(p).some((f) => f.famKeys.includes(origKey)))) {
+        const hit = this.loadBestCloud(paths, origKey, style, origKey)
+        if (hit) return { ...hit, family: hit.family || style.fontFamily }
+      }
+    }
+    for (const family of candidates.slice(substituteStart)) {
+      const hit = tryFamily(family)
+      if (hit) return hit
     }
     return undefined
   }

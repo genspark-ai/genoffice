@@ -12,6 +12,7 @@
  */
 import type { Fill, Stroke } from '@genoffice/pptx-engine'
 import type { PlacedBox } from './coords'
+import type { ExtrusionFaceRender } from './scene3d'
 
 export type RenderNodeType =
   | 'shape' // vector shape (may contain text)
@@ -47,6 +48,8 @@ export type RenderFill =
       stops: Array<{ pos: number; color: string }>
       angleDeg: number
       radial?: boolean
+      /** Actual <a:path path> kind (circle/rect/shape); rendering approximates all as radial */
+      path?: 'circle' | 'rect' | 'shape'
       /** Radial focus center as width/height fractions (from <a:fillToRect>; default 0.5/0.5) */
       center?: { x: number; y: number }
     }
@@ -64,6 +67,15 @@ export type RenderFill =
       clrChange?: { from: string; to: string }
       /** Tile grid: scale in px-per-image-px, anchor offsets in px, and the algn anchor */
       tile?: { scaleX: number; scaleY: number; txPx: number; tyPx: number; algn: string }
+    }
+  | {
+      kind: 'pattern'
+      /** ST_PresetPatternVal (pct50, ltDnDiag, ...) */
+      preset: string
+      fg: string
+      bg: string
+      /** Pattern cell edge in canvas px (8 mask pixels at 96dpi, viewport-scaled) */
+      cellPx: number
     }
 
 export interface RenderStroke {
@@ -123,6 +135,12 @@ export interface GlyphRun {
   outline?: { color: string; widthPx: number }
   /** Run outer shadow (px), drawn via canvas shadow props */
   shadow?: { color: string; blurPx: number; offsetX: number; offsetY: number }
+  /** WordArt gradient text fill (resolved stops; angleDeg 0 = left→right, 90 = top→bottom) */
+  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+  /** Run glow (zero-offset canvas shadow) */
+  glow?: { color: string; blurPx: number }
+  /** Run reflection: the renderer draws a faded mirrored copy below the baseline */
+  reflection?: boolean
   /** Extra per-char spacing spread in by justify alignment (px); draw-only, the editor ignores it and doesn't store it */
   justifyExtraPx?: number
   /** Super/subscript baseline shift (px, positive = up; <a:rPr baseline>), already baked into baselineY */
@@ -187,6 +205,8 @@ export interface RenderTextLayout {
   wrap: boolean
   /** bodyPr vert: vertical column layout (lines = columns, right→left); vert/vert270/wordArtVert degrade to eaVert */
   vert?: 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+  /** WordArt text extrusion: glyphs get offset copies in this color behind them (px) */
+  extrusion?: { color: string; dx: number; dy: number }
 }
 
 /** Connector/line endpoint arrow description (for rendering, sizes converted to px). */
@@ -228,6 +248,8 @@ export interface ShapeRenderNode extends RenderNodeBase {
   stroke?: RenderStroke
   shadow?: RenderShadow
   glow?: RenderGlow
+  /** scene3d+sp3d extrusion: pre-projected shaded faces (painter order) replacing the flat geometry */
+  extrusion?: { faces: ExtrusionFaceRender[]; wireframe?: boolean }
   text?: RenderTextLayout
 }
 
@@ -320,6 +342,7 @@ export interface ChartLabel {
   fontSizePx: number
   color: string
   bold?: boolean
+  italic?: boolean
   /** Rotation angle (e.g. -90 for a value-axis title) */
   rotationDeg?: number
 }

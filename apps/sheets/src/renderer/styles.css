@@ -174,18 +174,23 @@
 
 /* Cell-content font aliases (document data, theme-independent): without these,
  * Office sans families the OS lacks silently fall back to Chromium's serif
- * default on the grid canvas; local() keeps the real font first if installed. */
+ * default on the grid canvas. local() keeps a real installed font first; the
+ * bundled Carlito (metric-compatible with Calibri) guarantees Excel-matching
+ * widths before the Helvetica/Arial approximations. Canvas fillText never
+ * triggers @font-face downloads, so main.tsx loads these explicitly. */
 @font-face {
   font-family: Aptos;
-  src: local('Aptos'), local('Calibri'), local('Carlito'), local('Helvetica Neue'), local('Arial');
+  src:
+    local('Aptos'), local('Calibri'), local('Carlito'), url('./fonts/Carlito-Regular.ttf'),
+    local('Helvetica Neue'), local('Arial');
 }
 
 @font-face {
   font-family: Aptos;
   font-weight: bold;
   src:
-    local('Aptos Bold'), local('Calibri Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'),
-    local('Arial Bold');
+    local('Aptos Bold'), local('Calibri Bold'), local('Carlito Bold'),
+    url('./fonts/Carlito-Bold.ttf'), local('Helvetica Neue Bold'), local('Arial Bold');
 }
 
 @font-face {
@@ -193,7 +198,7 @@
   font-style: italic;
   src:
     local('Aptos Italic'), local('Calibri Italic'), local('Carlito Italic'),
-    local('Helvetica Neue Italic'), local('Arial Italic');
+    url('./fonts/Carlito-Italic.ttf'), local('Helvetica Neue Italic'), local('Arial Italic');
 }
 
 @font-face {
@@ -202,36 +207,72 @@
   font-style: italic;
   src:
     local('Aptos Bold Italic'), local('Calibri Bold Italic'), local('Carlito Bold Italic'),
-    local('Helvetica Neue Bold Italic'), local('Arial Bold Italic');
-}
-
-@font-face {
-  font-family: Calibri;
-  src: local('Calibri'), local('Carlito'), local('Helvetica Neue'), local('Arial');
-}
-
-@font-face {
-  font-family: Calibri;
-  font-weight: bold;
-  src:
-    local('Calibri Bold'), local('Carlito Bold'), local('Helvetica Neue Bold'), local('Arial Bold');
-}
-
-@font-face {
-  font-family: Calibri;
-  font-style: italic;
-  src:
-    local('Calibri Italic'), local('Carlito Italic'), local('Helvetica Neue Italic'),
-    local('Arial Italic');
-}
-
-@font-face {
-  font-family: Calibri;
-  font-weight: bold;
-  font-style: italic;
-  src:
-    local('Calibri Bold Italic'), local('Carlito Bold Italic'), local('Helvetica Neue Bold Italic'),
+    url('./fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
     local('Arial Bold Italic');
+}
+
+@font-face {
+  font-family: Calibri;
+  src:
+    local('Calibri'), local('Carlito'), url('./fonts/Carlito-Regular.ttf'), local('Helvetica Neue'),
+    local('Arial');
+}
+
+@font-face {
+  font-family: Calibri;
+  font-weight: bold;
+  src:
+    local('Calibri Bold'), local('Carlito Bold'), url('./fonts/Carlito-Bold.ttf'),
+    local('Helvetica Neue Bold'), local('Arial Bold');
+}
+
+@font-face {
+  font-family: Calibri;
+  font-style: italic;
+  src:
+    local('Calibri Italic'), local('Carlito Italic'), url('./fonts/Carlito-Italic.ttf'),
+    local('Helvetica Neue Italic'), local('Arial Italic');
+}
+
+@font-face {
+  font-family: Calibri;
+  font-weight: bold;
+  font-style: italic;
+  src:
+    local('Calibri Bold Italic'), local('Carlito Bold Italic'),
+    url('./fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
+    local('Arial Bold Italic');
+}
+
+/* Localized CJK cell-font aliases (document data): Korean-produced workbooks
+ * name fonts in Hangul; without these the canvas family is unresolvable and
+ * Hangul falls back through Chromium's serif default. */
+@font-face {
+  font-family: '맑은 고딕';
+  src: local('Malgun Gothic'), local('Apple SD Gothic Neo'), local('AppleGothic');
+}
+
+@font-face {
+  font-family: '맑은 고딕';
+  font-weight: bold;
+  src:
+    local('Malgun Gothic Bold'), local('MalgunGothicBold'), local('Apple SD Gothic Neo Bold'),
+    local('AppleSDGothicNeo-Bold'), local('AppleGothic');
+}
+
+@font-face {
+  font-family: '돋움';
+  src: local('Dotum'), local('AppleGothic'), local('Apple SD Gothic Neo');
+}
+
+/* Korean faces ship no italics; only weight needs a rule (font-synthesis is
+ * off for DOM surfaces — the grid canvas synthesizes on its own). */
+@font-face {
+  font-family: '돋움';
+  font-weight: bold;
+  src:
+    local('Dotum Bold'), local('Apple SD Gothic Neo Bold'), local('AppleSDGothicNeo-Bold'),
+    local('AppleGothic');
 }
 
 * {
@@ -2027,6 +2068,19 @@ textarea:focus {
   display: block;
 }
 
+/* Rotated shape: the anchor box stores rotated bounds; the inner box
+   restores the true frame (sized in cq units by the component), centered
+   on the anchor center before the rotate. */
+.xlsx-shape-rotated {
+  container-type: size;
+}
+
+.xlsx-shape-rotated-inner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
 .xlsx-shape-drawn .shape-text {
   position: absolute;
   inset: 0;
@@ -2753,6 +2807,99 @@ textarea:focus {
   align-items: center;
   gap: 6px;
   align-self: end;
+}
+
+/* Autosave-recovery prompt (styled replacement for the native message box) */
+.recovery-dialog {
+  /* 400px was enough on macOS; Windows fonts/DPI plus a long filename
+     blew the implicit grid column past the card, so Restore sat outside. */
+  width: min(480px, calc(100vw - 32px));
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.recovery-dialog .dialog-body,
+.recovery-dialog .dialog-actions {
+  min-width: 0;
+}
+
+.recovery-dialog .dialog-actions {
+  flex-wrap: wrap;
+}
+
+.recovery-dialog .dialog-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.recovery-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recovery-heading h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.recovery-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+}
+
+.recovery-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.recovery-body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.recovery-file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  padding: 8px 10px;
+  background: var(--surface-subtle);
+  font-size: 12px;
+}
+
+.recovery-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.recovery-file-time {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
 }
 
 /* Format Cells → Number tab */

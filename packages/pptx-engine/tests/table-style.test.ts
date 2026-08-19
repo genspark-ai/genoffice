@@ -94,6 +94,20 @@ describe('tableStyles.xml custom styles', () => {
     expect(resolveTableStyle(undefined, xml, theme)).toBeUndefined()
   })
 
+  it('a populated part without the referenced built-in id renders unstyled; an empty part keeps the built-in', () => {
+    // PowerPoint-measured: the built-in gallery only backs a def-id-only part
+    expect(resolveTableStyle(MEDIUM2_A1, xml, theme)).toBeUndefined()
+    const emptyPart = `<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="${MEDIUM2_A1}"/>`
+    expect(resolveTableStyle(MEDIUM2_A1, emptyPart, theme)?.firstRow?.fill).toEqual({
+      type: 'solid',
+      color: '#4472C4',
+    })
+    expect(resolveTableStyle(MEDIUM2_A1, undefined, theme)?.firstRow?.fill).toEqual({
+      type: 'solid',
+      color: '#4472C4',
+    })
+  })
+
   it('tblBg fillRef + alpha band fills + lnRef borders (bnc480256)', () => {
     const themed = {
       ...theme,

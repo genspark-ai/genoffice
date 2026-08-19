@@ -11,6 +11,7 @@ import type {
   EditChartOp,
   EditTableStyleOp,
   GetLayoutsResult,
+  GradientFillSpec,
   InsertKind,
   TransitionKind,
 } from '../../shared/ipc'
@@ -238,6 +239,7 @@ export type RibbonPanelKey =
   | 'slideSize'
   | 'transparency'
   | 'pictureBorder'
+  | 'changeShape'
   | 'shapeStyle'
   | 'shapeFill'
   | 'table'
@@ -555,10 +557,17 @@ export interface Props {
   contextPictureStroke?: { color: string; widthPt: number; dashPreset?: string } | null
   /** Picture border (null clears it) */
   onPictureStroke?: (stroke: { color: string; widthPt: number; dash?: string } | null) => void
+  /** Replace the selected shape's preset geometry while preserving its formatting and text */
+  onChangeShape?: (prst: string) => void
   /** Shape style preset: fill + outline applied together (dash absent = solid) */
   onShapeStyle?: (style: ShapeStylePreset) => void
-  /** Shape fill color ('none' clears the fill) */
-  onShapeFill?: (fill: string) => void
+  /** Shape fill: color ('none' clears the fill) or gradient */
+  onShapeFill?: (fill: string | GradientFillSpec) => void
+  /** Shape picture/texture fill: stretch or tile onto the selection; source = bundled
+      texture preset bytes (base64), absent = system picker */
+  onShapeFillImage?: (mode: 'stretch' | 'tile', source?: { base64: string; ext: string }) => void
+  /** Selected shape's current solid fill (#RRGGBB, null = none/non-solid): picker highlight + gradient preset base */
+  contextShapeFill?: string | null
   /** Execute a table style operation */
   onEditTableStyle?: (op: Omit<EditTableStyleOp, 'slideIndex' | 'sourceId'>) => void
   /** Selected table's header-row/banded-rows current state (toggle display) */

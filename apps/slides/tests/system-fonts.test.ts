@@ -73,5 +73,20 @@ describe.runIf(mac)(
       expect(m.displayFamily!(style('Arial'))).toBe('Arial')
       expect(m.measure('Hello', style('Arial'))).toBeGreaterThan(100)
     })
+
+    it.runIf(office)('Meiryo UI picks the UI face out of meiryo.ttc, not plain Meiryo', () => {
+      expect(m.displayFamily!(style('Meiryo UI'))).toBe('Meiryo UI')
+      expect(m.displayFamily!(style('Meiryo UI', { bold: true }))).toBe('Meiryo UI')
+      // The UI face's narrow kana are the whole point — matching PowerPoint's wrap positions
+      const ui = m.measure('アイウエオかきくけこ', style('Meiryo UI'))
+      const plain = m.measure('アイウエオかきくけこ', style('Meiryo'))
+      expect(ui).toBeLessThan(plain * 0.85)
+    })
+
+    it.runIf(office)('legacy Korean fonts (Gulim/Batang) parse via layout-table strip', () => {
+      expect(m.displayFamily!(style('굴림'))).toMatch(/Gulim/)
+      expect(m.displayFamily!(style('바탕'))).toMatch(/Batang/)
+      expect(m.measure('한글', style('굴림'))).toBeCloseTo(200, 0)
+    })
   },
 )

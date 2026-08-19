@@ -164,6 +164,60 @@
   word-break: break-all;
 }
 
+/* stacked label + secondary description (analytics toggle row) */
+.set-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.set-field-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* on/off switch (analytics toggle) */
+.set-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 11px;
+  background: var(--bg-hover-strong);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.set-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal-strong);
+  transition: left 0.15s ease;
+}
+
+.set-switch[aria-checked='true'] {
+  background: var(--color-btn-primary);
+}
+
+.set-switch[aria-checked='true']::after {
+  left: 20px;
+}
+
+.set-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* GenMail-style select pill: the visible layer is just the current value +
    chevron (width hugs the content); the real <select> sits on top invisibly
    and only supplies the click target and the native popup. */

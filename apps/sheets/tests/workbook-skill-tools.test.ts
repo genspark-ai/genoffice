@@ -7,6 +7,7 @@ import {
   type SheetsSkillDeps,
   type ToolExecution,
 } from '../src/renderer/ai/tools'
+import { getActiveSheetInfo } from '../src/renderer/ai/workbook-readers'
 import type { ChangePlan } from '../src/domain/workbook.types'
 
 function call(name: string, input: Record<string, unknown>) {
@@ -141,6 +142,148 @@ describe('buildWorkbookContext', () => {
     expect(text).toContain('Budget')
     expect(text).toContain('streaming in')
     expect(text).toContain('Currently loaded viewport: A80:E160 (not the worksheet data extent)')
+  })
+})
+
+describe('getActiveSheetInfo: lazy extents after structural ops', () => {
+  function lazyReadContext(
+    structuralOps: Map<string, unknown[]>,
+  ): Parameters<typeof getActiveSheetInfo>[0] {
+    const worksheet = {
+      getSheetId: () => 'sh1',
+      getSheetName: () => 'Data',
+      getMergedRanges: () => [],
+    }
+    return {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({
+              getActiveRange: () => null,
+              getActiveSheet: () => worksheet,
+              getSheets: () => [worksheet],
+            }),
+          },
+        },
+      },
+      lazyWorkbookRef: {
+        current: {
+          file: {
+            sessionId: 'session-1',
+            visuals: [],
+            sheets: [{ id: 'sh1', name: 'Data', rowCount: 100, columnCount: 8 }],
+          },
+          loadedRanges: new Map(),
+          editJournal: { visualAdds: [], structuralOps },
+        },
+      },
+      adapterRef: { current: { getSnapshot: () => ({ revision: 0, sheets: [] }) } },
+    } as unknown as Parameters<typeof getActiveSheetInfo>[0]
+  }
+
+  it('reports the screen extent, not the stale file extent', () => {
+    const info = getActiveSheetInfo(
+      lazyReadContext(
+        new Map([
+          [
+            'sh1',
+            [
+              { kind: 'insert-rows', index: 10, count: 5 },
+              { kind: 'remove-cols', index: 0, count: 2 },
+            ],
+          ],
+        ]),
+      ),
+    )
+    expect(info.sheets[0]).toMatchObject({ id: 'sh1', rows: 105, columns: 6 })
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('A1:F105')
+  })
+
+  it('reports a zero extent as empty, not unknown', () => {
+    const info = getActiveSheetInfo(
+      lazyReadContext(new Map([['sh1', [{ kind: 'remove-rows', index: 0, count: 100 }]]])),
+    )
+    expect(info.sheets[0]).toMatchObject({ id: 'sh1', rows: 0, columns: 8 })
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('no data (empty sheet)')
+    expect(text).not.toContain('data extent about')
+  })
+
+  it('matches the file extent when no structural ops ran', () => {
+    const info = getActiveSheetInfo(lazyReadContext(new Map()))
+    expect(info.sheets[0]).toMatchObject({ id: 'sh1', rows: 100, columns: 8 })
+  })
+})
+
+describe('executeWorkbookTool: aggregate_range', () => {
+  it('rejects a missing/unparsable range and oversize ranges', async () => {
+    const deps = fakeDeps({ aggregateRange: vi.fn() })
+    expect((await executeWorkbookTool(call('aggregate_range', {}), deps)).isError).toBe(true)
+    expect(
+      (await executeWorkbookTool(call('aggregate_range', { range: 'nope' }), deps)).isError,
+    ).toBe(true)
+    const oversize = await executeWorkbookTool(
+      call('aggregate_range', { range: 'A1:ZZ99999' }),
+      deps,
+    )
+    expect(oversize.isError).toBe(true)
+    expect(oversize.output).toContain('one column')
+    expect(deps.aggregateRange).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown sheetId instead of falling back to another sheet', async () => {
+    const deps = fakeDeps({ aggregateRange: vi.fn() })
+    const result = await executeWorkbookTool(
+      call('aggregate_range', { range: 'A1:A10', sheetId: 'sheet-9' }),
+      deps,
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Unknown sheet: sheet-9')
+    expect(deps.aggregateRange).not.toHaveBeenCalled()
+  })
+
+  it('formats the aggregate returned by the dep', async () => {
+    const aggregateRange = vi.fn().mockResolvedValue({
+      ok: true,
+      aggregate: {
+        cells: 88_587,
+        nonEmpty: 88_587,
+        distinct: 312,
+        numericCount: 0,
+        sum: 0,
+        min: null,
+        max: null,
+        average: null,
+        topValues: [
+          { value: '供应商A', count: 900 },
+          { value: '供应商B', count: 800 },
+        ],
+      },
+    })
+    const result = await executeWorkbookTool(
+      call('aggregate_range', { range: 'D2:D88588', sheetId: 'sheet-1', topValues: 1 }),
+      fakeDeps({ aggregateRange }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(aggregateRange).toHaveBeenCalledWith(
+      'sheet-1',
+      expect.objectContaining({ startRow: 1, endRow: 88_587, startColumn: 3, endColumn: 3 }),
+    )
+    expect(result.output).toContain('distinct values: 312')
+    expect(result.output).toContain('供应商A: 900')
+    expect(result.output).not.toContain('供应商B')
+  })
+
+  it('propagates dep errors as tool errors', async () => {
+    const result = await executeWorkbookTool(
+      call('aggregate_range', { range: 'D2:D10' }),
+      fakeDeps({
+        aggregateRange: vi.fn().mockResolvedValue({ ok: false, error: 'still indexing' }),
+      }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('still indexing')
   })
 })
 

@@ -42,4 +42,12 @@ describe('workbookSaveRequestSchema', () => {
   it('still rejects an empty ordinary save', () => {
     expect(() => workbookSaveRequestSchema.parse(emptyRequest('save'))).toThrow(/at least one edit/)
   })
+
+  it('accepts a save whose edits arrive via a chunked transfer', () => {
+    const request = {
+      ...emptyRequest('save'),
+      editsTransferId: '0f9e8d7c-6b5a-4c3d-8e2f-1a0b9c8d7e6f',
+    }
+    expect(() => workbookSaveRequestSchema.parse(request)).not.toThrow()
+  })
 })

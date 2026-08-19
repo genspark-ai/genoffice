@@ -13,6 +13,7 @@ import { generateParagraphXml, generateXfrmXml } from './generate'
 import { escapeXmlAttr } from './xml-utils'
 import { relsPathFor } from './zip'
 import type { OpenedPptx } from './index'
+import { cleanupDeletedElementResources } from './resource-cleanup'
 
 /**
  * 'textbox' is a special value (plain text box without prstGeom); anything else is
@@ -323,12 +324,18 @@ export function addPicture(
   return el
 }
 
-/** Delete by element id; returns whether anything was removed. */
-export function deleteElement(slide: Slide, elementId: string): boolean {
+/**
+ * Delete by element id and collect relationships/resources no longer used by any
+ * retained package part. The OpenedPptx context is required because media may be
+ * shared by other objects or slides.
+ */
+export function deleteElement(opened: OpenedPptx, slide: Slide, elementId: string): boolean {
   const idx = slide.elements.findIndex((e) => e.id === elementId)
   if (idx < 0) return false
+  const removedXml = slide.elements[idx]!.anchor.originalXml
   slide.elements.splice(idx, 1)
   slide.structureDirty = true
+  cleanupDeletedElementResources(opened, slide, removedXml)
   return true
 }
 

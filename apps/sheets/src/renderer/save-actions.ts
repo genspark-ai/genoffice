@@ -9,6 +9,7 @@ import type { WorkbookFile, WorkbookFilterState } from '../shared/desktop-api'
 import {
   isSheetRemoved,
   toSaveChartEdits,
+  toSaveBulkConstantFills,
   toSaveEdits,
   toSaveHyperlinkEdits,
   toSavePageSetupStates,
@@ -21,7 +22,9 @@ import {
   toSaveVisualEdits,
 } from './edit-journal'
 import { t } from './i18n/locale'
+import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
 import { showToast } from './toast-bus'
+import { captureUndoCarry, hasPendingUndoCarry, stashUndoCarry } from './undo-carry'
 import {
   collectCfStates,
   collectDefinedNamesState,
@@ -37,6 +40,20 @@ export interface SaveContext {
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null }
   setMessage: (message: string) => void
   openLazyWorkbook: (opened: WorkbookFile) => void
+  /** Saving swaps the session and reinstalls the workbook, which resets the
+      view to the first sheet's A1 — stash where the user was so the
+      reinstall lands there instead. `viewRow`/`viewColumn` is the viewport's
+      top-left (scrollToCell scrolls its target to the top-left corner, so
+      restoring the selection cell would shift the whole view). */
+  stashViewRestore: (
+    view: {
+      sheetId: string
+      row: number
+      column: number
+      viewRow: number
+      viewColumn: number
+    } | null,
+  ) => void
 }
 
 /**
@@ -50,11 +67,38 @@ export async function handleSave(
   quiet = false,
 ): Promise<void> {
   const state = ctx.lazyWorkbookRef.current
+  // Captured at save start (the Ctrl+S moment): the post-save session swap
+  // reinstalls the workbook and would otherwise bounce the view to A1.
+  const viewAtSave = (() => {
+    const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+    const sheet = workbook?.getActiveSheet()
+    if (!workbook || !sheet) return null
+    const range = workbook.getActiveRange()
+    // Visible-range start = the viewport's top-left cell; restoring through
+    // scrollToCell(viewRow, viewColumn) reproduces the original scroll
+    // instead of yanking the selection cell to the corner.
+    let viewStart: { startRow?: number; startColumn?: number } | null = null
+    try {
+      viewStart = sheet.getVisibleRange()
+    } catch {
+      // No scroll render controller yet — fall back to the selection cell.
+    }
+    const row = range?.getRow() ?? 0
+    const column = range?.getColumn() ?? 0
+    return {
+      sheetId: sheet.getSheetId(),
+      row,
+      column,
+      viewRow: viewStart?.startRow ?? row,
+      viewColumn: viewStart?.startColumn ?? column,
+    }
+  })()
   if (!state) {
     if (mode !== 'recovery') ctx.setMessage(t('appDemoNoSave'))
     return
   }
   const edits = toSaveEdits(state.editJournal)
+  const bulkConstantFills = toSaveBulkConstantFills(state.editJournal)
   const structuralOps = toSaveStructuralOps(state.editJournal)
   const chartEdits = toSaveChartEdits(state.editJournal)
   const visualEdits = toSaveVisualEdits(state.editJournal)
@@ -118,11 +162,14 @@ export async function handleSave(
   // Recalculated formula results: the engine's values are on screen but
   // deliberately kept out of the journal (they must not become literals). Send them
   // separately so the save refreshes each formula cell's cached <v>, keeping its <f>.
+  // A journaled formula is excluded: the overlay may still hold the previous
+  // formula's result when the user saves immediately after entering a replacement.
   const formulaValues = [...(state.recalc?.overlay ?? [])].flatMap(([sheetId, cells]) =>
     isSheetRemoved(state.editJournal, sheetId)
       ? []
       : [...cells].flatMap(([key, cell]) => {
           if (cell.v === undefined) return []
+          if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
           const [row, column] = key.split(':').map(Number)
           if (row === undefined || column === undefined) return []
           return [{ sheetId, row, column, value: cell.v }]
@@ -156,6 +203,7 @@ export async function handleSave(
   }
   const total =
     edits.length +
+    bulkConstantFills.length +
     structuralOps.length +
     chartEdits.length +
     sheetOps.length +
@@ -199,10 +247,25 @@ export async function handleSave(
     }
     return
   }
+  // Edit sets above the inline IPC cap are uploaded to the main process in
+  // chunks first; the request then references the transfer instead.
+  let staged: StagedEdits
+  try {
+    staged = await stageEditsForSave(window.desktopApi, state.file.sessionId, edits)
+  } catch (error: unknown) {
+    if (mode === 'recovery') return
+    const message = stripIpcErrorWrapper(error instanceof Error ? error.message : '')
+    const failed = message || t('appSaveFailed')
+    ctx.setMessage(failed)
+    if (!quiet) showToast(failed, 'error')
+    return
+  }
   const payload = {
     sessionId: state.file.sessionId,
     mode: mode === 'recovery' ? ('save' as const) : mode,
-    edits,
+    edits: staged.edits,
+    bulkConstantFills,
+    ...(staged.editsTransferId === undefined ? {} : { editsTransferId: staged.editsTransferId }),
     structuralOps,
     chartEdits,
     visualEdits,
@@ -228,8 +291,16 @@ export async function handleSave(
     protectedRangeStates,
   }
   if (mode === 'recovery') {
-    // Best-effort; a failure only means this tick's copy is skipped
-    await window.desktopApi.writeWorkbookRecovery(payload).catch(() => ({ ok: false }))
+    // Best-effort; a failure only means this tick's copy is skipped — but an
+    // unconsumed transfer must not sit in main-process memory until expiry.
+    await window.desktopApi.writeWorkbookRecovery(payload).catch(async () => {
+      await abortStagedEditsTransfer(
+        window.desktopApi,
+        state.file.sessionId,
+        staged.editsTransferId,
+      )
+      return { ok: false }
+    })
     return
   }
   try {
@@ -238,7 +309,9 @@ export async function handleSave(
       sessionId: state.file.sessionId,
       mode,
       ...(restoreWriteBack ? { restoreWriteBack: true } : {}),
-      edits,
+      edits: staged.edits,
+      bulkConstantFills,
+      ...(staged.editsTransferId === undefined ? {} : { editsTransferId: staged.editsTransferId }),
       structuralOps,
       chartEdits,
       visualEdits,
@@ -269,20 +342,33 @@ export async function handleSave(
       return
     }
     if (!splitSave) {
+      // Cross-save undo: carry the Univer undo stack over the session swap.
+      // Saves with sheet add/remove/rename ops opt out — sheets created this
+      // session get their real ids assigned by the gateway, so carried
+      // mutations could address the wrong sheet after the reopen. A still
+      // pending stash means the previous reopen has not finished its undo
+      // bookkeeping, so the stack is not capturable yet either.
+      stashUndoCarry(
+        sheetOps.length === 0 && !hasPendingUndoCarry()
+          ? captureUndoCarry(ctx.univerRef.current, result.file.sha256)
+          : null,
+      )
+      ctx.stashViewRestore(viewAtSave)
       ctx.openLazyWorkbook(result.file)
-      const saved = t('appSaved', {
-        touched: result.touchedEntries.length,
-        total: result.file.entryCount,
-      })
+      const saved = t('appSaved')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
       return
     }
+    // Two-phase saves reopen twice with structural entanglement; v1 does not
+    // carry undo history across them (and clears any stale stash).
+    stashUndoCarry(null)
     try {
       const second = await window.desktopApi.saveWorkbookEdits({
         sessionId: result.file.sessionId,
         mode: 'save',
         edits: [],
+        bulkConstantFills: [],
         structuralOps: [],
         chartEdits: [],
         visualEdits: [],
@@ -310,16 +396,19 @@ export async function handleSave(
       })
       if (ctx.lazyWorkbookRef.current !== state) return
       if (second.canceled) {
+        ctx.stashViewRestore(viewAtSave)
         ctx.openLazyWorkbook(result.file)
         ctx.setMessage(t('appSaveSecondCanceled'))
         return
       }
+      ctx.stashViewRestore(viewAtSave)
       ctx.openLazyWorkbook(second.file)
       const saved = t('appSavedTwoPhase')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
     } catch (error: unknown) {
       if (ctx.lazyWorkbookRef.current !== state) return
+      ctx.stashViewRestore(viewAtSave)
       ctx.openLazyWorkbook(result.file)
       const failed = t('appSaveSecondFailed', {
         reason: error instanceof Error ? error.message : String(error),
@@ -328,6 +417,9 @@ export async function handleSave(
       if (!quiet) showToast(failed, 'error')
     }
   } catch (error: unknown) {
+    // The save may have failed before consuming the chunked transfer (e.g.
+    // request validation); freeing it is a no-op when it was consumed.
+    await abortStagedEditsTransfer(window.desktopApi, state.file.sessionId, staged.editsTransferId)
     const message = stripIpcErrorWrapper(error instanceof Error ? error.message : '')
     const failed = localizeSaveError(message) ?? (message || t('appSaveFailed'))
     ctx.setMessage(failed)

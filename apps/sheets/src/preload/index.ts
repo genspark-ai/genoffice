@@ -13,6 +13,7 @@ import type {
   AttachmentMeta,
   AttachmentReadResult,
   DesktopApi,
+  RecoveryPromptPayload,
   ScreenCaptureResult,
   ScreenSourcesResult,
   UiTheme,
@@ -37,7 +38,12 @@ import type {
   ImageSearchResponse,
   GenerateImageResult,
 } from '../shared/desktop-api'
-import { IPC_CHANNELS } from '../shared/ipc-channels'
+import {
+  IPC_CHANNELS,
+  MAX_SAVE_EDITS,
+  MAX_SAVE_EDITS_TOTAL,
+  SAVE_EDITS_CHUNK_MAX,
+} from '../shared/ipc-channels'
 
 const desktopApi: DesktopApi = {
   getLanguage: () => ipcRenderer.invoke('app:get-language'),
@@ -158,6 +164,55 @@ const desktopApi: DesktopApi = {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.saveWorkbook, validatedRequest)
     return parseSaveResult(result)
   },
+  async beginSaveEditsTransfer(request) {
+    if (!isRecord(request)) throw new Error('Invalid save transfer request.')
+    if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
+    if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
+    if (
+      typeof request.total !== 'number' ||
+      !Number.isInteger(request.total) ||
+      request.total <= 0 ||
+      request.total > MAX_SAVE_EDITS_TOTAL
+    ) {
+      throw new Error(
+        `Invalid save transfer size. (${String(request.total)} exceeds the ${MAX_SAVE_EDITS_TOTAL} limit)`,
+      )
+    }
+    await ipcRenderer.invoke(IPC_CHANNELS.saveEditsBegin, {
+      sessionId: request.sessionId,
+      transferId: request.transferId,
+      total: request.total,
+    })
+  },
+  async sendSaveEditsChunk(request) {
+    if (!isRecord(request)) throw new Error('Invalid save transfer chunk.')
+    if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
+    if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
+    if (typeof request.seq !== 'number' || !Number.isInteger(request.seq) || request.seq < 0)
+      throw new Error('Invalid save transfer chunk index.')
+    if (
+      !Array.isArray(request.edits) ||
+      request.edits.length === 0 ||
+      request.edits.length > SAVE_EDITS_CHUNK_MAX
+    ) {
+      throw new Error('Invalid save transfer chunk edits.')
+    }
+    await ipcRenderer.invoke(IPC_CHANNELS.saveEditsChunk, {
+      sessionId: request.sessionId,
+      transferId: request.transferId,
+      seq: request.seq,
+      edits: request.edits,
+    })
+  },
+  async abortSaveEditsTransfer(request) {
+    if (!isRecord(request)) throw new Error('Invalid save transfer request.')
+    if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
+    if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
+    await ipcRenderer.invoke(IPC_CHANNELS.saveEditsAbort, {
+      sessionId: request.sessionId,
+      transferId: request.transferId,
+    })
+  },
   async writeWorkbookRecovery(request) {
     const validatedRequest = parseSaveRequest(request)
     const result: unknown = await ipcRenderer.invoke(
@@ -256,6 +311,27 @@ const desktopApi: DesktopApi = {
   },
   reportCloseSaveResult(ok) {
     ipcRenderer.send(IPC_CHANNELS.closeSaveResult, ok === true)
+  },
+  onRecoveryPrompt(callback) {
+    const listener = (_event: unknown, payload: unknown): void => {
+      if (
+        isRecord(payload) &&
+        typeof payload.title === 'string' &&
+        typeof payload.body === 'string' &&
+        typeof payload.restoreLabel === 'string' &&
+        typeof payload.discardLabel === 'string' &&
+        typeof payload.fileName === 'string' &&
+        typeof payload.savedAtMs === 'number' &&
+        Number.isFinite(payload.savedAtMs)
+      ) {
+        callback(payload as unknown as RecoveryPromptPayload)
+      }
+    }
+    ipcRenderer.on(IPC_CHANNELS.recoveryPrompt, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.recoveryPrompt, listener)
+  },
+  replyRecoveryPrompt(restore) {
+    ipcRenderer.send(IPC_CHANNELS.recoveryPromptReply, restore === true)
   },
   async getAiSettings() {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiGetSettings)
@@ -565,8 +641,19 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         !isOptionalString(table.lastColumnFill) ||
         !isOptionalString(table.totalRowFill) ||
         !isOptionalString(table.totalRowFontColor) ||
+        !isOptionalString(table.totalRowBorderColor) ||
+        !isOptionalString(table.totalRowBorderStyle) ||
+        !isOptionalString(table.bodyFontColor) ||
         !isOptionalString(table.firstHeaderCellFontColor) ||
         !isOptionalString(table.borderColor) ||
+        !isOptionalString(table.wholeTableBorderColor) ||
+        !isOptionalString(table.wholeTableBorderStyle) ||
+        !isOptionalString(table.innerHorizontalBorderColor) ||
+        !isOptionalString(table.innerHorizontalBorderStyle) ||
+        !isOptionalString(table.innerVerticalBorderColor) ||
+        !isOptionalString(table.innerVerticalBorderStyle) ||
+        !isOptionalString(table.headerBottomBorderColor) ||
+        !isOptionalString(table.headerBottomBorderStyle) ||
         (table.totalsRowCount !== undefined && !isNonnegativeInteger(table.totalsRowCount))
       ) {
         throw new Error('Invalid worksheet table.')
@@ -598,11 +685,42 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
         ...(table.totalRowFontColor === undefined
           ? {}
           : { totalRowFontColor: table.totalRowFontColor }),
+        ...(table.totalRowBorderColor === undefined
+          ? {}
+          : { totalRowBorderColor: table.totalRowBorderColor }),
+        ...(table.totalRowBorderStyle === undefined
+          ? {}
+          : { totalRowBorderStyle: table.totalRowBorderStyle }),
+        ...(table.bodyFontColor === undefined ? {} : { bodyFontColor: table.bodyFontColor }),
         ...(table.firstHeaderCellFontColor === undefined
           ? {}
           : { firstHeaderCellFontColor: table.firstHeaderCellFontColor }),
         ...(table.totalsRowCount === undefined ? {} : { totalsRowCount: table.totalsRowCount }),
         ...(table.borderColor === undefined ? {} : { borderColor: table.borderColor }),
+        ...(table.wholeTableBorderColor === undefined
+          ? {}
+          : { wholeTableBorderColor: table.wholeTableBorderColor }),
+        ...(table.wholeTableBorderStyle === undefined
+          ? {}
+          : { wholeTableBorderStyle: table.wholeTableBorderStyle }),
+        ...(table.innerHorizontalBorderColor === undefined
+          ? {}
+          : { innerHorizontalBorderColor: table.innerHorizontalBorderColor }),
+        ...(table.innerHorizontalBorderStyle === undefined
+          ? {}
+          : { innerHorizontalBorderStyle: table.innerHorizontalBorderStyle }),
+        ...(table.innerVerticalBorderColor === undefined
+          ? {}
+          : { innerVerticalBorderColor: table.innerVerticalBorderColor }),
+        ...(table.innerVerticalBorderStyle === undefined
+          ? {}
+          : { innerVerticalBorderStyle: table.innerVerticalBorderStyle }),
+        ...(table.headerBottomBorderColor === undefined
+          ? {}
+          : { headerBottomBorderColor: table.headerBottomBorderColor }),
+        ...(table.headerBottomBorderStyle === undefined
+          ? {}
+          : { headerBottomBorderStyle: table.headerBottomBorderStyle }),
       }
     })
     const comments = sheet.comments.map((comment) => {
@@ -713,6 +831,8 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
   }
   const activeTab = isNonnegativeInteger(input.activeTab) ? input.activeTab : 0
   const date1904 = input.date1904 === true
+  const shortDateFormat =
+    typeof input.shortDateFormat === 'string' ? input.shortDateFormat : undefined
   return {
     sessionId,
     name,
@@ -734,6 +854,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       ? {}
       : { workbookProtection: parsedWorkbookProtection }),
     ...(date1904 ? { date1904 } : {}),
+    ...(shortDateFormat === undefined ? {} : { shortDateFormat }),
   }
 }
 
@@ -1193,47 +1314,51 @@ function parseConditionalRule(input: unknown): WorkbookConditionalRule {
 }
 
 function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
+  // Every rejection names the failing part: this one message ends up in the
+  // save-failure toast, and "Invalid workbook save request." alone gave user
+  // reports nothing to go on (alpha ledger r110).
+  const invalid = (detail: string): never => {
+    throw new Error(`Invalid workbook save request. (${detail})`)
+  }
+  // Arrays of renderer-built parts share one shape rule: a real array, at
+  // most `cap` entries.
+  const cappedArray = (name: string, value: unknown, cap: number): void => {
+    if (!Array.isArray(value)) invalid(`${name}: not a list`)
+    if ((value as unknown[]).length > cap)
+      invalid(`${name}: ${(value as unknown[]).length} entries exceeds the ${cap} limit`)
+  }
+  if (!isRecord(input)) invalid('malformed request')
+  if (!isUuid(input.sessionId)) invalid('session id')
+  if (input.mode !== 'save' && input.mode !== 'save-as') invalid('mode')
+  if (input.restoreWriteBack !== undefined && typeof input.restoreWriteBack !== 'boolean')
+    invalid('restore flag')
+  if (input.editsTransferId !== undefined && !isUuid(input.editsTransferId))
+    invalid('edits transfer id')
+  cappedArray('cell edits', input.edits, MAX_SAVE_EDITS)
+  if (input.editsTransferId !== undefined && input.edits.length > 0)
+    invalid('cell edits: inline edits mixed with a transfer')
+  cappedArray('bulk constant fills', input.bulkConstantFills ?? [], 1_000)
+  cappedArray('structural operations', input.structuralOps, 1_000)
+  cappedArray('chart edits', input.chartEdits, 100)
+  cappedArray('visual edits', input.visualEdits, 100)
+  cappedArray('visual additions', input.visualAdditions, 100)
+  cappedArray('table additions', input.tableAdditions, 50)
+  cappedArray('pivot additions', input.pivotAdditions, 20)
+  cappedArray('sheet operations', input.sheetOps, 100)
+  cappedArray('sheet order', input.sheetOrder, 1_000)
+  if (input.sheetOrder.some((sheetId) => typeof sheetId !== 'string' || sheetId.length === 0))
+    invalid('sheet order: empty sheet id')
+  cappedArray('filter states', input.filterStates, 1_000)
+  cappedArray('hyperlink edits', input.hyperlinkEdits, 1_000)
+  cappedArray('conditional-formatting states', input.cfStates, 1_000)
+  cappedArray('data-validation states', input.dvStates, 1_000)
+  cappedArray('page-setup states', input.pageSetupStates, 1_000)
+  cappedArray('note states', input.noteStates, 1_000)
+  cappedArray('pivot cache refreshes', input.pivotCacheRefreshPaths, 100)
+  if (input.pivotCacheRefreshPaths.some((path) => typeof path !== 'string'))
+    invalid('pivot cache refreshes: non-string path')
+  cappedArray('pivot refresh updates', input.pivotRefreshUpdates, 100)
   if (
-    !isRecord(input) ||
-    !isUuid(input.sessionId) ||
-    (input.mode !== 'save' && input.mode !== 'save-as') ||
-    (input.restoreWriteBack !== undefined && typeof input.restoreWriteBack !== 'boolean') ||
-    !Array.isArray(input.edits) ||
-    input.edits.length > 10_000 ||
-    !Array.isArray(input.structuralOps) ||
-    input.structuralOps.length > 1_000 ||
-    !Array.isArray(input.chartEdits) ||
-    input.chartEdits.length > 100 ||
-    !Array.isArray(input.visualEdits) ||
-    input.visualEdits.length > 100 ||
-    !Array.isArray(input.visualAdditions) ||
-    input.visualAdditions.length > 100 ||
-    !Array.isArray(input.tableAdditions) ||
-    input.tableAdditions.length > 50 ||
-    !Array.isArray(input.pivotAdditions) ||
-    input.pivotAdditions.length > 20 ||
-    !Array.isArray(input.sheetOps) ||
-    input.sheetOps.length > 100 ||
-    !Array.isArray(input.sheetOrder) ||
-    input.sheetOrder.length > 1_000 ||
-    input.sheetOrder.some((sheetId) => typeof sheetId !== 'string' || sheetId.length === 0) ||
-    !Array.isArray(input.filterStates) ||
-    input.filterStates.length > 1_000 ||
-    !Array.isArray(input.hyperlinkEdits) ||
-    input.hyperlinkEdits.length > 1_000 ||
-    !Array.isArray(input.cfStates) ||
-    input.cfStates.length > 1_000 ||
-    !Array.isArray(input.dvStates) ||
-    input.dvStates.length > 1_000 ||
-    !Array.isArray(input.pageSetupStates) ||
-    input.pageSetupStates.length > 1_000 ||
-    !Array.isArray(input.noteStates) ||
-    input.noteStates.length > 1_000 ||
-    !Array.isArray(input.pivotCacheRefreshPaths) ||
-    input.pivotCacheRefreshPaths.length > 100 ||
-    input.pivotCacheRefreshPaths.some((path) => typeof path !== 'string') ||
-    !Array.isArray(input.pivotRefreshUpdates) ||
-    input.pivotRefreshUpdates.length > 100 ||
     input.pivotRefreshUpdates.some(
       (update) =>
         !isRecord(update) ||
@@ -1244,23 +1369,30 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
         update.newOutputRef.length > 64 ||
         // relayout's full shape is authoritatively validated by main's zod schema.
         (update.relayout !== undefined && !isRecord(update.relayout)),
-    ) ||
-    !Array.isArray(input.sheetProtections) ||
-    input.sheetProtections.length > 1_000 ||
+    )
+  )
+    invalid('pivot refresh updates: malformed entry')
+  cappedArray('sheet protections', input.sheetProtections, 1_000)
+  if (
     input.sheetProtections.some(
       (state) =>
         !isRecord(state) ||
         typeof state.sheetId !== 'string' ||
         state.sheetId.length === 0 ||
         typeof state.protected !== 'boolean',
-    ) ||
-    !isDefinedNamesState(input.definedNamesState) ||
-    !isThemeState(input.themeState) ||
-    (input.workbookProtectionState !== null &&
-      (!isRecord(input.workbookProtectionState) ||
-        typeof input.workbookProtectionState.lockStructure !== 'boolean')) ||
-    !Array.isArray(input.protectedRangeStates) ||
-    input.protectedRangeStates.length > 1_000 ||
+    )
+  )
+    invalid('sheet protections: malformed entry')
+  if (!isDefinedNamesState(input.definedNamesState)) invalid('defined names')
+  if (!isThemeState(input.themeState)) invalid('theme')
+  if (
+    input.workbookProtectionState !== null &&
+    (!isRecord(input.workbookProtectionState) ||
+      typeof input.workbookProtectionState.lockStructure !== 'boolean')
+  )
+    invalid('workbook protection')
+  cappedArray('protected-range states', input.protectedRangeStates, 1_000)
+  if (
     input.protectedRangeStates.some(
       (state) =>
         !isRecord(state) ||
@@ -1278,34 +1410,39 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
             range.sqref.length === 0 ||
             range.sqref.length > 1_024,
         ),
-    ) ||
-    (input.mode !== 'save-as' &&
-      input.restoreWriteBack !== true &&
-      input.edits.length === 0 &&
-      input.structuralOps.length === 0 &&
-      input.chartEdits.length === 0 &&
-      input.visualEdits.length === 0 &&
-      input.visualAdditions.length === 0 &&
-      input.tableAdditions.length === 0 &&
-      input.pivotAdditions.length === 0 &&
-      input.sheetOps.length === 0 &&
-      input.filterStates.length === 0 &&
-      input.hyperlinkEdits.length === 0 &&
-      input.cfStates.length === 0 &&
-      input.dvStates.length === 0 &&
-      input.pageSetupStates.length === 0 &&
-      input.noteStates.length === 0 &&
-      input.pivotCacheRefreshPaths.length === 0 &&
-      input.pivotRefreshUpdates.length === 0 &&
-      input.sheetProtections.length === 0 &&
-      input.definedNamesState === null &&
-      input.themeState === null &&
-      input.workbookProtectionState === null &&
-      input.protectedRangeStates.length === 0) ||
-    (input.sheetOps.length > 0 && input.sheetOrder.length === 0)
-  ) {
-    throw new Error('Invalid workbook save request.')
-  }
+    )
+  )
+    invalid('protected-range states: malformed entry')
+  if (
+    input.mode !== 'save-as' &&
+    input.restoreWriteBack !== true &&
+    input.editsTransferId === undefined &&
+    input.edits.length === 0 &&
+    (input.bulkConstantFills?.length ?? 0) === 0 &&
+    input.structuralOps.length === 0 &&
+    input.chartEdits.length === 0 &&
+    input.visualEdits.length === 0 &&
+    input.visualAdditions.length === 0 &&
+    input.tableAdditions.length === 0 &&
+    input.pivotAdditions.length === 0 &&
+    input.sheetOps.length === 0 &&
+    input.filterStates.length === 0 &&
+    input.hyperlinkEdits.length === 0 &&
+    input.cfStates.length === 0 &&
+    input.dvStates.length === 0 &&
+    input.pageSetupStates.length === 0 &&
+    input.noteStates.length === 0 &&
+    input.pivotCacheRefreshPaths.length === 0 &&
+    input.pivotRefreshUpdates.length === 0 &&
+    input.sheetProtections.length === 0 &&
+    input.definedNamesState === null &&
+    input.themeState === null &&
+    input.workbookProtectionState === null &&
+    input.protectedRangeStates.length === 0
+  )
+    invalid('no changes to save')
+  if (input.sheetOps.length > 0 && input.sheetOrder.length === 0)
+    invalid('sheet order missing for sheet operations')
   for (const state of input.dvStates) {
     if (
       !isRecord(state) ||
@@ -1635,6 +1772,22 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
       throw new Error('Invalid workbook cell edit.')
     }
     if (edit.rich !== undefined) parseRichRuns(edit.rich)
+  }
+  for (const fill of input.bulkConstantFills ?? []) {
+    if (
+      !isRecord(fill) ||
+      typeof fill.sheetId !== 'string' ||
+      fill.sheetId.length === 0 ||
+      !isNonnegativeInteger(fill.startRow) ||
+      !isNonnegativeInteger(fill.endRow) ||
+      fill.endRow < fill.startRow ||
+      !isNonnegativeInteger(fill.startColumn) ||
+      !isNonnegativeInteger(fill.endColumn) ||
+      fill.endColumn < fill.startColumn ||
+      !isCellScalar(fill.value)
+    ) {
+      invalid('bulk constant fills: malformed entry')
+    }
   }
   return input
 }
@@ -2015,6 +2168,9 @@ function parsePivotTableInfos(input: unknown): {
   cachePath: string | null
   outputRef: string
   headerFill?: string
+  headerFontColor?: string
+  wholeTableFill?: string
+  stripeFill?: string
   firstDataRow?: number
   rowGrandTotals?: boolean
 }[] {
@@ -2030,6 +2186,9 @@ function parsePivotTableInfos(input: unknown): {
       typeof entry.outputRef !== 'string' ||
       entry.outputRef.length === 0 ||
       (entry.headerFill !== undefined && typeof entry.headerFill !== 'string') ||
+      (entry.headerFontColor !== undefined && typeof entry.headerFontColor !== 'string') ||
+      (entry.wholeTableFill !== undefined && typeof entry.wholeTableFill !== 'string') ||
+      (entry.stripeFill !== undefined && typeof entry.stripeFill !== 'string') ||
       (entry.firstDataRow !== undefined && !isNonnegativeInteger(entry.firstDataRow)) ||
       (entry.rowGrandTotals !== undefined && typeof entry.rowGrandTotals !== 'boolean')
     ) {
@@ -2040,6 +2199,9 @@ function parsePivotTableInfos(input: unknown): {
       cachePath: entry.cachePath,
       outputRef: entry.outputRef,
       ...(entry.headerFill === undefined ? {} : { headerFill: entry.headerFill }),
+      ...(entry.headerFontColor === undefined ? {} : { headerFontColor: entry.headerFontColor }),
+      ...(entry.wholeTableFill === undefined ? {} : { wholeTableFill: entry.wholeTableFill }),
+      ...(entry.stripeFill === undefined ? {} : { stripeFill: entry.stripeFill }),
       ...(entry.firstDataRow === undefined ? {} : { firstDataRow: entry.firstDataRow }),
       ...(entry.rowGrandTotals === undefined ? {} : { rowGrandTotals: entry.rowGrandTotals }),
     }
@@ -2213,17 +2375,31 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
   }
   const paragraphs =
     input.paragraphs === undefined ? undefined : parseShapeParagraphs(input.paragraphs)
+  const fillGradient =
+    input.fillGradient === undefined ? undefined : parseFillGradient(input.fillGradient)
   if (
     !isOptionalString(input.shapeType) ||
     !isOptionalString(input.fillColor) ||
     !isOptionalString(input.lineColor) ||
     (input.lineWidth !== undefined &&
       (typeof input.lineWidth !== 'number' || !Number.isFinite(input.lineWidth))) ||
+    !isOptionalString(input.lineDash) ||
+    !isOptionalString(input.lineCap) ||
+    (input.flipH !== undefined && typeof input.flipH !== 'boolean') ||
+    (input.flipV !== undefined && typeof input.flipV !== 'boolean') ||
     !isOptionalString(input.textColor) ||
     !isOptionalString(input.textAnchor) ||
     !isOptionalString(input.text) ||
     (input.rotation !== undefined &&
       (typeof input.rotation !== 'number' || !Number.isFinite(input.rotation))) ||
+    (input.frameWidth !== undefined &&
+      (typeof input.frameWidth !== 'number' ||
+        !Number.isFinite(input.frameWidth) ||
+        input.frameWidth <= 0)) ||
+    (input.frameHeight !== undefined &&
+      (typeof input.frameHeight !== 'number' ||
+        !Number.isFinite(input.frameHeight) ||
+        input.frameHeight <= 0)) ||
     (input.drawingPath !== undefined &&
       (typeof input.drawingPath !== 'string' ||
         !/^xl\/drawings\/[A-Za-z0-9._/-]+\.xml$/.test(input.drawingPath))) ||
@@ -2244,16 +2420,50 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     ...(typeof input.name === 'string' ? { name: input.name } : {}),
     ...(input.shapeType === undefined ? {} : { shapeType: input.shapeType }),
     ...(input.fillColor === undefined ? {} : { fillColor: input.fillColor }),
+    ...(fillGradient === undefined ? {} : { fillGradient }),
     ...(input.lineColor === undefined ? {} : { lineColor: input.lineColor }),
     ...(input.lineWidth === undefined ? {} : { lineWidth: input.lineWidth }),
+    ...(input.lineDash === undefined ? {} : { lineDash: input.lineDash }),
+    ...(input.lineCap === undefined ? {} : { lineCap: input.lineCap }),
+    ...(input.flipH === undefined ? {} : { flipH: input.flipH }),
+    ...(input.flipV === undefined ? {} : { flipV: input.flipV }),
     ...(input.textColor === undefined ? {} : { textColor: input.textColor }),
     ...(input.textAnchor === undefined ? {} : { textAnchor: input.textAnchor }),
     ...(paragraphs === undefined ? {} : { paragraphs }),
     ...(input.text === undefined ? {} : { text: input.text }),
     ...(input.rotation === undefined ? {} : { rotation: input.rotation }),
+    ...(input.frameWidth === undefined ? {} : { frameWidth: input.frameWidth }),
+    ...(input.frameHeight === undefined ? {} : { frameHeight: input.frameHeight }),
     ...(input.drawingPath === undefined ? {} : { drawingPath: input.drawingPath }),
     ...(input.drawingIndex === undefined ? {} : { drawingIndex: input.drawingIndex }),
   }
+}
+
+function parseFillGradient(input: unknown): NonNullable<WorkbookVisualObject['fillGradient']> {
+  if (
+    !isRecord(input) ||
+    typeof input.angle !== 'number' ||
+    !Number.isFinite(input.angle) ||
+    !Array.isArray(input.stops) ||
+    input.stops.length < 2 ||
+    input.stops.length > 50
+  ) {
+    throw new Error('Invalid workbook shape gradient.')
+  }
+  const stops = input.stops.map((stop) => {
+    if (
+      !isRecord(stop) ||
+      typeof stop.position !== 'number' ||
+      !Number.isFinite(stop.position) ||
+      stop.position < 0 ||
+      stop.position > 1 ||
+      typeof stop.color !== 'string'
+    ) {
+      throw new Error('Invalid workbook shape gradient stop.')
+    }
+    return { position: stop.position, color: stop.color }
+  })
+  return { angle: input.angle, stops }
 }
 
 function parseShapeParagraphs(input: unknown): NonNullable<WorkbookVisualObject['paragraphs']> {

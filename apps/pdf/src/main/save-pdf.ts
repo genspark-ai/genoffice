@@ -1,4 +1,4 @@
-import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import {
   PDFArray,
   PDFBool,
@@ -28,6 +28,7 @@ import type {
   TextEditFailure,
   TextInsertFailure,
 } from '../shared/ipc'
+import { writePdfAtomically } from './atomic-write'
 
 const num = (v: number) => Math.round(v * 100) / 100
 const STATIC_FORM_FILLS_KEY = PDFName.of('GenOfficeStaticFormFills')
@@ -845,14 +846,7 @@ export async function savePdfToPath(
     request,
   )
   await verifyContentEdits(bytes, request, skips)
-  const tmp = `${targetPath}.gensave-${process.pid}.tmp`
-  try {
-    await writeFile(tmp, bytes)
-    await rename(tmp, targetPath)
-  } catch (err) {
-    await rm(tmp, { force: true })
-    throw err
-  }
+  await writePdfAtomically(targetPath, bytes)
   return skips
 }
 
@@ -886,12 +880,18 @@ export async function applySaveRequest(
     const applied = await applyTextEdits(bytes, request.textEdits)
     bytes = applied.bytes
     skippedTextEdits = applied.skipped
+    for (const s of skippedTextEdits) {
+      console.warn(`[pdf] text edit skipped on page ${s.pageIndex + 1}: ${s.reason}`)
+    }
   }
   if (request.textInserts && request.textInserts.length > 0) {
     const { applyTextInserts } = await import('./text-edit')
     const applied = await applyTextInserts(bytes, request.textInserts)
     bytes = applied.bytes
     skippedTextInserts = applied.skipped
+    for (const s of skippedTextInserts) {
+      console.warn(`[pdf] text insert skipped on page ${s.pageIndex + 1}: ${s.reason}`)
+    }
   }
   if (request.imageEdits && request.imageEdits.length > 0) {
     const { applyImageEdits } = await import('./image-edit')

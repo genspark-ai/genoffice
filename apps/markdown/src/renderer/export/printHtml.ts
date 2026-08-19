@@ -1,3 +1,5 @@
+import katexCss from 'katex/dist/katex.min.css?inline'
+
 /** Print-theme CSS: mirrors the editor typography so the PDF matches the canvas */
 const PRINT_CSS = `
 * { box-sizing: border-box; }
@@ -50,12 +52,17 @@ export function buildPrintHtml(editorRoot: HTMLElement, title: string): string {
   for (const bar of clone.querySelectorAll('.md-codeblock-bar')) bar.remove()
 
   const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  // <base> lets the inlined KaTeX CSS resolve its relative font URLs from the
+  // print iframe (which otherwise has no document URL to resolve against)
+  const escapedBase = document.baseURI.replace(/"/g, '&quot;')
   return [
     '<!doctype html>',
     '<html>',
     '<head>',
     '<meta charset="utf-8">',
+    `<base href="${escapedBase}">`,
     `<title>${escapedTitle}</title>`,
+    `<style>${katexCss}</style>`,
     `<style>${PRINT_CSS}</style>`,
     '</head>',
     `<body>${clone.innerHTML}</body>`,

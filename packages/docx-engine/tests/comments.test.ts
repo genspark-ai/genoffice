@@ -19,12 +19,12 @@ const COMMENTS_XML =
 
 /** paragraph with an in-paragraph comment range over its middle run */
 const COMMENTED_P =
-  '<w:p><w:r><w:t>before </w:t></w:r>' +
+  '<w:p><w:r><w:t xml:space="preserve">before </w:t></w:r>' +
   '<w:commentRangeStart w:id="1"/>' +
   '<w:r><w:t>marked</w:t></w:r>' +
   '<w:commentRangeEnd w:id="1"/>' +
   '<w:r><w:commentReference w:id="1"/></w:r>' +
-  '<w:r><w:t> after</w:t></w:r></w:p>'
+  '<w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p>'
 
 /** comment 2 spans two paragraphs: start in one, end in the next */
 const CROSS_P_A = '<w:p><w:commentRangeStart w:id="2"/><w:r><w:t>range opens here</w:t></w:r></w:p>'
@@ -139,6 +139,21 @@ describe('comment parsing', () => {
     expect(docXml2).toContain(
       '<w:commentRangeEnd w:id="2"/><w:r><w:commentReference w:id="2"/></w:r>',
     )
+  })
+
+  it('removes cross-paragraph markers when the authoritative comment list deletes the comment', async () => {
+    const doc = await parseDocx(await buildCommentedDocx())
+    const saved = await saveDocx(
+      doc,
+      doc.blocks
+        .filter((block) => !block.hidden)
+        .map((block): SaveBlock => ({ kind: 'original', docxIndex: block.docxIndex! })),
+      { comments: doc.comments.filter((comment) => comment.id !== '2') },
+    )
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(docXml).not.toContain('w:id="2"')
+    expect(docXml).not.toMatch(/<w:comment(?:RangeStart|RangeEnd|Reference)\b[^>]*w:id="2"/)
+    expect(docXml).toContain('<w:commentRangeStart w:id="1"/>')
   })
 })
 

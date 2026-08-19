@@ -60,6 +60,46 @@ describe('readSections enumerates all sections', () => {
     expect(sections[1].firstBlockIndex).toBe(sections[0].lastBlockIndex + 1)
   })
 
+  it('a section-break paragraph with visible text stays an editable paragraph (tdf#159032)', async () => {
+    const withText =
+      '<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr>' +
+      '<w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr>' +
+      '<w:r><w:t>section one tail</w:t></w:r></w:p>'
+    const source = await buildDocx({ bodyXml: P('a') + withText + P('b') })
+    const parsed = await parseDocx(source)
+    const blk = parsed.blocks[1]
+    expect(blk.type).toBe('paragraph')
+    expect(blk.runs).toEqual([{ text: 'section one tail' }])
+    expect(blk.rawPPr).toContain('<w:sectPr')
+    // section boundary still closes at this block
+    const sections = readSections(parsed)
+    expect(sections.length).toBe(2)
+    expect(sections[0].lastBlockIndex).toBe(1)
+
+    // unedited: byte-identical
+    const visible = parsed.blocks.filter((b) => !b.hidden).map((b) => b.docxIndex!)
+    const asIs: SaveBlock[] = visible.map((docxIndex) => ({ kind: 'original', docxIndex }))
+    expect(await saveDocx(parsed, asIs)).toBe(source)
+
+    // edited text: the sectPr must survive regeneration
+    const edited: SaveBlock[] = visible.map((docxIndex) =>
+      docxIndex === blk.docxIndex
+        ? {
+            kind: 'generated',
+            block: {
+              type: 'paragraph',
+              rawPPr: blk.rawPPr,
+              runs: [{ text: 'edited tail' }],
+            },
+          }
+        : { kind: 'original', docxIndex },
+    )
+    const saved = await saveDocx(parsed, edited)
+    const reparsed = await parseDocx(saved)
+    expect(readSections(reparsed).length).toBe(2)
+    expect(JSON.stringify(reparsed.blocks)).toContain('edited tail')
+  })
+
   it('parses startType/titlePg/pgNumType/header-footer references per section', async () => {
     const extra =
       '<w:headerReference w:type="default" r:id="rId7"/>' +

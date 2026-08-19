@@ -11,6 +11,7 @@ import type { OpenedPptx } from './index'
 import { resolveTarget, type PackageArchive } from './zip'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 import { appendRelationship, unescapeXml } from './notes'
+import { removeRelationshipAndCollectOwnedTarget } from './resource-cleanup'
 
 const XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
 const NS_P = 'http://schemas.openxmlformats.org/presentationml/2006/main'
@@ -73,12 +74,22 @@ function readAuthors(archive: PackageArchive): Map<number, { name: string; initi
   return map
 }
 
-/** Path of a slide's comments part (null if the slide has no comments). */
-function commentsPathForSlide(archive: PackageArchive, slidePath: string): string | null {
+/** Relationship and path of a slide's comments part (null when absent). */
+function commentsRelationshipForSlide(
+  archive: PackageArchive,
+  slidePath: string,
+): { id: string; path: string } | null {
   for (const rel of archive.readRels(slidePath).values()) {
-    if (rel.type === COMMENTS_REL) return resolveTarget(slidePath, rel.target)
+    if (rel.type === COMMENTS_REL) {
+      return { id: rel.id, path: resolveTarget(slidePath, rel.target) }
+    }
   }
   return null
+}
+
+/** Path of a slide's comments part (null if the slide has no comments). */
+function commentsPathForSlide(archive: PackageArchive, slidePath: string): string | null {
+  return commentsRelationshipForSlide(archive, slidePath)?.path ?? null
 }
 
 /** Read all comments on a slide (in order of appearance). */
@@ -201,8 +212,9 @@ export function deleteSlideComment(
   const slide = opened.deck.slides[slideIndex]
   if (!slide) return false
   const { archive } = opened
-  const partPath = commentsPathForSlide(archive, slide.path)
-  if (!partPath) return false
+  const relationship = commentsRelationshipForSlide(archive, slide.path)
+  if (!relationship) return false
+  const partPath = relationship.path
   const xml = archive.readText(partPath)
   if (!xml) return false
   for (const m of xml.matchAll(/<p:cm\b([^>]*)>[\s\S]*?<\/p:cm>/g)) {
@@ -211,7 +223,11 @@ export function deleteSlideComment(
       Number(/\bauthorId="(\d+)"/.exec(attrs)?.[1] ?? -1) === ref.authorId &&
       Number(/\bidx="(\d+)"/.exec(attrs)?.[1] ?? -1) === ref.idx
     ) {
-      setEntry(archive, partPath, xml.slice(0, m.index!) + xml.slice(m.index! + m[0].length))
+      const next = xml.slice(0, m.index!) + xml.slice(m.index! + m[0].length)
+      setEntry(archive, partPath, next)
+      if (!/<p:cm\b/.test(next)) {
+        removeRelationshipAndCollectOwnedTarget(archive, slide.path, relationship.id)
+      }
       return true
     }
   }

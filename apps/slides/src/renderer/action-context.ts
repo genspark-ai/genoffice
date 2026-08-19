@@ -16,6 +16,7 @@ import type {
   TransitionKind,
 } from '../shared/ipc'
 import type { BrushFormat } from './format-brush'
+import type { InkTool } from './ink'
 import type { CustomShow } from './slideshow-utils'
 
 type Set<T> = React.Dispatch<React.SetStateAction<T>>
@@ -125,6 +126,9 @@ export interface ActionCtx {
   setBrushFormat: Set<BrushFormat | null>
   brushMode: 'once' | 'continuous' | null
   setBrushMode: Set<'once' | 'continuous' | null>
+  /** Freehand ink tool ('select' = not drawing); Esc drops back to select */
+  inkTool: InkTool
+  setInkTool: Set<InkTool>
 
   // Animations / transition
   animations: AnimationItem[]
@@ -193,4 +197,6 @@ export interface ActionCtx {
   ) => Promise<void>
   /** Open the format-background pane (canvas context menu entry) */
   openBgFormat: () => void
+  /** Open the "Change Shape" gallery popover for a shape (context menu entry) */
+  openChangeShape: (targetId: string, x: number, y: number) => void
 }

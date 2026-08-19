@@ -86,6 +86,9 @@ const homeApi: HomeApi = {
   async newMarkdown(opts) {
     await ipcRenderer.invoke(HOME_CHANNELS.newMarkdown, opts)
   },
+  async newPdf(opts) {
+    await ipcRenderer.invoke(HOME_CHANNELS.newPdf, opts)
+  },
   async removeRecent(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.removeRecent, paths)
   },
@@ -156,7 +159,8 @@ const homeApi: HomeApi = {
     return result === true
   },
   async setOnboardingSeen() {
-    await ipcRenderer.invoke(HOME_CHANNELS.setOnboardingSeen)
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setOnboardingSeen)
+    return result === true
   },
   async getTheme() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getTheme)
@@ -166,6 +170,15 @@ const homeApi: HomeApi = {
     if (theme !== 'light' && theme !== 'dark' && theme !== 'system')
       throw new Error('Invalid theme.')
     await ipcRenderer.invoke(HOME_CHANNELS.setTheme, theme)
+  },
+  async getAnalyticsEnabled() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAnalyticsEnabled)
+    return result !== false
+  },
+  async setAnalyticsEnabled(enabled) {
+    if (typeof enabled !== 'boolean') throw new Error('Invalid analytics consent.')
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setAnalyticsEnabled, enabled)
+    return result === true
   },
   async getDefaultSaveDir() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDefaultSaveDir)

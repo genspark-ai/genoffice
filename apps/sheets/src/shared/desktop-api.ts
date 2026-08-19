@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { MAX_SAVE_EDITS, MAX_SAVE_EDITS_TOTAL, SAVE_EDITS_CHUNK_MAX } from './ipc-channels'
 import { ADDABLE_SHAPE_TYPES } from './shape-types'
 import type {
   AiChatRequest,
@@ -26,6 +27,9 @@ const worksheetMetadataSchema = z
     name: z.string().min(1),
     rowCount: z.number().int().positive(),
     columnCount: z.number().int().positive(),
+    /// Uncompressed worksheet XML size reported by the sidecar. Optional for
+    /// compatibility with an older sidecar binary.
+    sourceXmlBytes: z.number().int().nonnegative().optional(),
     columnWidths: z.array(
       z
         .object({
@@ -81,11 +85,25 @@ const worksheetMetadataSchema = z
           lastColumnFill: z.string().optional(),
           totalRowFill: z.string().optional(),
           totalRowFontColor: z.string().optional(),
+          /// Rule Excel draws across the top of the totals band.
+          totalRowBorderColor: z.string().optional(),
+          totalRowBorderStyle: z.string().optional(),
+          /// Data-band text color (Dark families paint white on the solid body).
+          bodyFontColor: z.string().optional(),
           firstHeaderCellFontColor: z.string().optional(),
           /// table/@totalsRowCount — bottom rows styled as the totals band.
           totalsRowCount: z.number().int().nonnegative().optional(),
           /// Style frame color (outline + header rule) for border-drawn families.
           borderColor: z.string().optional(),
+          /// Custom-style wholeTable borders: outline + inner grid + header rule.
+          wholeTableBorderColor: z.string().optional(),
+          wholeTableBorderStyle: z.string().optional(),
+          innerHorizontalBorderColor: z.string().optional(),
+          innerHorizontalBorderStyle: z.string().optional(),
+          innerVerticalBorderColor: z.string().optional(),
+          innerVerticalBorderStyle: z.string().optional(),
+          headerBottomBorderColor: z.string().optional(),
+          headerBottomBorderStyle: z.string().optional(),
         })
         .strict(),
     ),
@@ -112,6 +130,10 @@ const worksheetMetadataSchema = z
             outputRef: z.string().min(1),
             /// Pivot style band fill (header + grand-total rows).
             headerFill: z.string().optional(),
+            headerFontColor: z.string().optional(),
+            /// Body band fill for solid families (Dark); stripe overlays it.
+            wholeTableFill: z.string().optional(),
+            stripeFill: z.string().optional(),
             firstDataRow: z.number().int().nonnegative().optional(),
             rowGrandTotals: z.boolean().optional(),
           })
@@ -373,10 +395,37 @@ const visualObjectSchema = z
     name: z.string().optional(),
     shapeType: z.string().optional(),
     fillColor: z.string().optional(),
+    /// xdr:style fillRef resolved against a theme fillStyleLst gradient;
+    /// fillColor stays the flat approximation.
+    fillGradient: z
+      .object({
+        /// Degrees clockwise, 0 = left-to-right.
+        angle: z.number().finite(),
+        stops: z
+          .array(
+            z
+              .object({
+                /// 0..1 along the gradient axis.
+                position: z.number().min(0).max(1),
+                color: z.string(),
+              })
+              .strict(),
+          )
+          .min(2),
+      })
+      .strict()
+      .optional(),
     /// Shape outline (spPr/a:ln or xdr:style lnRef); "none" = no outline.
     lineColor: z.string().optional(),
     /// a:ln width in points.
     lineWidth: z.number().finite().optional(),
+    /// a:ln/a:prstDash val — solid when absent.
+    lineDash: z.string().optional(),
+    /// a:ln cap — rnd | sq | flat.
+    lineCap: z.string().optional(),
+    /// a:xfrm flipH/flipV — mirror the preset geometry.
+    flipH: z.boolean().optional(),
+    flipV: z.boolean().optional(),
     /// xdr:style fontRef color — default run color.
     textColor: z.string().optional(),
     /// a:bodyPr anchor — t | ctr | b.
@@ -406,6 +455,10 @@ const visualObjectSchema = z
       .optional(),
     text: z.string().optional(),
     rotation: z.number().finite().optional(),
+    /// a:xfrm ext in EMU — a rotated shape's true unrotated frame (the
+    /// anchor stores rotated bounds, centered on the shape center).
+    frameWidth: z.number().finite().positive().optional(),
+    frameHeight: z.number().finite().positive().optional(),
     /// Save-side edit locator: the drawing part this visual lives in and its
     /// anchor index within that part (document order, skipped anchors counted).
     drawingPath: z
@@ -450,6 +503,10 @@ export const workbookFileSchema = z
     /// writes back to the original file, and the 30s recovery writer stands
     /// down (it would overwrite the copy the sidecar is streaming from).
     restoredFromRecovery: z.boolean().optional(),
+    /// Very large worksheet XML entries use too much memory in the current
+    /// string-based patcher to rewrite safely every 30 seconds. Manual Save
+    /// remains available; only the background crash-recovery copy is disabled.
+    automaticRecoveryDisabled: z.boolean().optional(),
     /// Theme palette as #RRGGBB in theme index order [lt1, dk1, lt2, dk2,
     /// accent1-6, hlink, folHlink]; absent without a readable theme.
     themeColors: z.array(z.string()).length(12).optional(),
@@ -461,6 +518,8 @@ export const workbookFileSchema = z
       .optional(),
     /// workbookPr/@date1904: serial dates count from 1904-01-01.
     date1904: z.boolean().optional(),
+    /// System short-date pattern the sidecar applied to builtin numFmtIds 14/22.
+    shortDateFormat: z.string().optional(),
   })
   .strict()
 
@@ -678,7 +737,6 @@ export const workbookRecalcResultSchema = z
   })
   .strict()
 
-const MAX_SAVE_EDITS = 10_000
 const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
 
 /// OOXML border line styles the editor can write.
@@ -764,6 +822,23 @@ export const workbookCellEditSchema = z
   .strict()
   .refine((edit) => edit.writeValue || edit.style !== undefined || edit.styleReset === true, {
     message: 'A style-only edit needs a style delta or a reset.',
+  })
+
+/// One constant value painted over a rectangular range. Large lazy-workbook
+/// fills stay declarative through renderer journal, IPC, and save planning
+/// instead of allocating one object per cell.
+export const workbookBulkConstantFillSchema = z
+  .object({
+    sheetId: z.string().min(1),
+    startRow: z.number().int().nonnegative().max(1_048_575),
+    endRow: z.number().int().nonnegative().max(1_048_575),
+    startColumn: z.number().int().nonnegative().max(16_383),
+    endColumn: z.number().int().nonnegative().max(16_383),
+    value: cellScalarSchema,
+  })
+  .strict()
+  .refine((fill) => fill.endRow >= fill.startRow && fill.endColumn >= fill.startColumn, {
+    message: 'Invalid bulk constant-fill range.',
   })
 
 /// One structural operation, in the coordinate space produced by all
@@ -1073,6 +1148,15 @@ export const workbookVisualEditSchema = z
     drawingIndex: z.number().int().nonnegative().max(10_000),
     remove: z.literal(true).optional(),
     anchor: drawingAnchorSchema.optional(),
+    /// New xfrm ext in EMU — sent with `anchor` when a rotated shape is
+    /// resized (its anchor stores the rotated AABB, not the true frame).
+    frameSize: z
+      .object({
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((edit) => edit.remove === true || edit.anchor !== undefined, {
@@ -1473,6 +1557,37 @@ export const workbookPivotAddSchema = z
   })
   .strict()
 
+/// Chunked transfer for edit sets too large to inline in one save request.
+/// The renderer opens a transfer, uploads ordered slices, then references the
+/// transfer from the save request; the main process concatenates the slices
+/// back into one edits array before applying.
+export const workbookSaveEditsBeginSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    transferId: z.string().uuid(),
+    total: z.number().int().positive().max(MAX_SAVE_EDITS_TOTAL),
+  })
+  .strict()
+
+export const workbookSaveEditsChunkSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    transferId: z.string().uuid(),
+    /// 0-based slice index; chunks must arrive in order.
+    seq: z.number().int().nonnegative(),
+    edits: z.array(workbookCellEditSchema).min(1).max(SAVE_EDITS_CHUNK_MAX),
+  })
+  .strict()
+
+/// Renderer-initiated cleanup when an upload or its save fails: frees the
+/// accumulated edits immediately instead of waiting for the idle expiry.
+export const workbookSaveEditsAbortSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    transferId: z.string().uuid(),
+  })
+  .strict()
+
 export const workbookSaveRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -1482,6 +1597,12 @@ export const workbookSaveRequestSchema = z
     /// an otherwise empty payload (like an explicit Save As).
     restoreWriteBack: z.boolean().optional(),
     edits: z.array(workbookCellEditSchema).max(MAX_SAVE_EDITS),
+    /// Edit sets above MAX_SAVE_EDITS arrive through the chunked transfer
+    /// (saveEditsBegin/saveEditsChunk) instead of inline: the request then
+    /// carries the transfer id and an empty edits array, and the main process
+    /// splices the accumulated chunks back in before applying.
+    editsTransferId: z.string().uuid().optional(),
+    bulkConstantFills: z.array(workbookBulkConstantFillSchema).max(1_000).optional(),
     structuralOps: z.array(workbookStructuralOpSchema).max(1_000),
     chartEdits: z.array(workbookChartEditSchema).max(100),
     visualEdits: z.array(workbookVisualEditSchema).max(100),
@@ -1647,7 +1768,9 @@ export const workbookSaveRequestSchema = z
       // with nothing to apply: they write the unchanged workbook to a path.
       request.mode === 'save-as' ||
       request.restoreWriteBack === true ||
+      request.editsTransferId !== undefined ||
       request.edits.length > 0 ||
+      (request.bulkConstantFills?.length ?? 0) > 0 ||
       request.structuralOps.length > 0 ||
       request.chartEdits.length > 0 ||
       request.visualEdits.length > 0 ||
@@ -1891,6 +2014,7 @@ export const workbookMediaResultSchema = z
 export type WorkbookFile = z.infer<typeof workbookFileSchema>
 export type WorkbookStyleEdit = z.infer<typeof workbookStyleEditSchema>
 export type WorkbookCellEdit = z.infer<typeof workbookCellEditSchema>
+export type WorkbookBulkConstantFill = z.infer<typeof workbookBulkConstantFillSchema>
 export type WorkbookStructuralOp = z.infer<typeof workbookStructuralOpSchema>
 export type WorkbookChartEdit = z.infer<typeof workbookChartEditSchema>
 export type WorkbookVisualEdit = z.infer<typeof workbookVisualEditSchema>
@@ -1902,6 +2026,9 @@ export type WorkbookNoteState = z.infer<typeof workbookNoteStateSchema>
 export type WorkbookSheetOp = z.infer<typeof workbookSheetOpSchema>
 export type WorkbookFilterState = z.infer<typeof workbookFilterStateSchema>
 export type WorkbookSaveRequest = z.infer<typeof workbookSaveRequestSchema>
+export type WorkbookSaveEditsBegin = z.infer<typeof workbookSaveEditsBeginSchema>
+export type WorkbookSaveEditsChunk = z.infer<typeof workbookSaveEditsChunkSchema>
+export type WorkbookSaveEditsAbort = z.infer<typeof workbookSaveEditsAbortSchema>
 export type WorkbookSaveResult = z.infer<typeof workbookSaveResultSchema>
 export type WorkbookRangeRequest = z.infer<typeof workbookRangeRequestSchema>
 export type WorkbookFormulaCellsRequest = z.infer<typeof workbookFormulaCellsRequestSchema>
@@ -2106,6 +2233,18 @@ export interface AttachmentImageResult {
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
+/** Autosave-recovery prompt raised by main during workbook open (strings pre-localized). */
+export interface RecoveryPromptPayload {
+  title: string
+  body: string
+  restoreLabel: string
+  discardLabel: string
+  /** base name of the workbook being opened */
+  fileName: string
+  /** mtime of the recovery copy (epoch ms) — when the unsaved work was last autosaved */
+  savedAtMs: number
+}
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -2136,6 +2275,14 @@ export interface DesktopApi {
   /// null when the source vanished between listing and capture.
   captureScreenSource(request: ScreenCaptureRequest): Promise<ScreenCaptureResult | null>
   saveWorkbookEdits(request: WorkbookSaveRequest): Promise<WorkbookSaveResult>
+  /// Chunked upload of a large save's cell edits (above MAX_SAVE_EDITS):
+  /// begin a transfer, send ordered slices, then reference the transfer via
+  /// editsTransferId in the following save/recovery request.
+  beginSaveEditsTransfer(request: WorkbookSaveEditsBegin): Promise<void>
+  sendSaveEditsChunk(request: WorkbookSaveEditsChunk): Promise<void>
+  /// Frees an unconsumed transfer after a failed upload or save; silent no-op
+  /// if the transfer was already consumed or expired.
+  abortSaveEditsTransfer(request: WorkbookSaveEditsAbort): Promise<void>
   /// Crash-recovery copy of the pending edits, written under userData.
   /// Best-effort: never prompts, never touches the opened file.
   writeWorkbookRecovery(request: WorkbookSaveRequest): Promise<{ ok: boolean }>
@@ -2158,6 +2305,11 @@ export interface DesktopApi {
   /// Main asks the renderer to save before closing; reply via reportCloseSaveResult.
   onCloseSaveRequest(callback: () => void): () => void
   reportCloseSaveResult(ok: boolean): void
+  /// Main found a newer autosaved recovery copy while opening a workbook; the
+  /// renderer shows the styled restore prompt and replies via replyRecoveryPrompt.
+  /// Strings arrive pre-localized from the main process.
+  onRecoveryPrompt(callback: (prompt: RecoveryPromptPayload) => void): () => void
+  replyRecoveryPrompt(restore: boolean): void
   /// Returns true once when this tab was opened via "New Spreadsheet" from the
   /// shell home.
   consumeNewBlankWorkbook(): Promise<boolean>

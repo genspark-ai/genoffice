@@ -11,9 +11,20 @@ import React, {
   useState,
   type ReactNode,
 } from 'react'
-import type { AnimEffectKind, AnimTrigger, TransitionKind } from '../../shared/ipc'
+import type {
+  AnimEffectKind,
+  AnimTrigger,
+  GradientFillSpec,
+  TransitionKind,
+} from '../../shared/ipc'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
-import { useDismissablePopover } from '@genoffice/ui'
+import {
+  useDismissablePopover,
+  THEME_COLORS,
+  THEME_COLOR_SHADES,
+  STANDARD_COLORS,
+} from '@genoffice/ui'
+import { getRecentColors, pushRecentColor } from '../recent-colors'
 import { ICON_COLORS } from '../insert-presets'
 import { THEME_PRESETS, type SlideThemePreset } from '../themes'
 import { restoreEditSelection } from '../TextEditOverlay'
@@ -76,6 +87,7 @@ import {
   IconPathDiagonal,
   IconPathCircle,
   IconPathZigzag,
+  IconShapes,
   IconShapeStyle,
   IconFillColor,
 } from './icons'
@@ -83,6 +95,14 @@ import {
 import iconSpelling from '../assets/icon-spelling.png'
 import iconTranslate from '../assets/icon-translate.png'
 import iconTransparency from '../assets/icon-transparency.png'
+import texPaper from '../assets/textures/paper.png'
+import texCanvas from '../assets/textures/canvas.png'
+import texWood from '../assets/textures/wood.png'
+import texMarble from '../assets/textures/marble.png'
+import texGranite from '../assets/textures/granite.png'
+import texDenim from '../assets/textures/denim.png'
+import texCork from '../assets/textures/cork.png'
+import texParchment from '../assets/textures/parchment.png'
 import iconCrop from '../assets/icon-crop.png'
 import { ChartTypeDialog } from './ChartTypeDialog'
 import {
@@ -90,7 +110,6 @@ import {
   Group,
   RbCaret,
   RIBBON_SHAPE_STYLES,
-  TEXT_COLORS,
   closeSiblingPanels,
   type Props,
   type RibbonPanelKey,
@@ -100,6 +119,7 @@ export type { FormatCmd, SlidesViewMode } from './ribbon-shared'
 import type { FormatCmd } from './ribbon-shared'
 import { RibbonHomeTab } from './RibbonHomeTab'
 import { RibbonInsertTab } from './RibbonInsertTab'
+import { ShapeGalleryContent } from './ShapeGalleryPopover'
 import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
@@ -713,6 +733,323 @@ function RbCheck({
   )
 }
 
+/** Bundled seamless texture-fill presets (tiled at natural size when applied). */
+const FILL_TEXTURES: Array<{ url: string; tipKey: StringKey }> = [
+  { url: texPaper, tipKey: 'ribbonTexturePaper' },
+  { url: texCanvas, tipKey: 'ribbonTextureCanvas' },
+  { url: texWood, tipKey: 'ribbonTextureWood' },
+  { url: texMarble, tipKey: 'ribbonTextureMarble' },
+  { url: texGranite, tipKey: 'ribbonTextureGranite' },
+  { url: texDenim, tipKey: 'ribbonTextureDenim' },
+  { url: texCork, tipKey: 'ribbonTextureCork' },
+  { url: texParchment, tipKey: 'ribbonTextureParchment' },
+]
+
+/** Bundled asset → raw base64 (for shipping texture bytes over IPC). */
+async function urlToBase64(url: string): Promise<string> {
+  const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
+
+/** Right-pointing chevron on the gradient/texture submenu rows. */
+function RbSubCaret() {
+  return (
+    <svg
+      className="rbf-sub-caret"
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M9.25 5.5 15.75 12l-6.5 6.5"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** #RRGGBB blended toward `to` by t (0..1); gradient preset variants. */
+function mixHex(from: string, to: string, t: number): string {
+  const pf = parseInt(from.slice(1), 16)
+  const pt = parseInt(to.slice(1), 16)
+  const ch = (shift: number) => {
+    const a = (pf >> shift) & 255
+    const b = (pt >> shift) & 255
+    return Math.round(a + (b - a) * t)
+  }
+  return `#${((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0').toUpperCase()}`
+}
+
+/**
+ * PowerPoint-style shape fill popup: no-fill, theme colors + shades, standard
+ * colors, recent colors, more-colors native picker, then picture / gradient
+ * variants / texture. Color sections reuse the shared picker's gcp-* styling
+ * (the popup root carries .gcp-palette); previews/values are document colors,
+ * set inline.
+ */
+function ShapeFillMenu({
+  currentFill,
+  onPickFill,
+  onPickImage,
+  onMoreGradient,
+  onClose,
+}: {
+  /** Selected shape's solid fill #RRGGBB (null = none/non-solid) */
+  currentFill: string | null | undefined
+  onPickFill: (fill: string | GradientFillSpec) => void
+  onPickImage:
+    ((mode: 'stretch' | 'tile', source?: { base64: string; ext: string }) => void) | undefined
+  /** "More Gradients…": opens the format pane's gradient editor */
+  onMoreGradient: (() => void) | undefined
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const recent = getRecentColors()
+  const current = currentFill?.toUpperCase() ?? null
+  // Gradient/texture preset flyout: opens beside its row on hover, survives the
+  // pointer crossing the gap via a short close delay
+  const [flyout, setFlyout] = useState<{
+    kind: 'gradient' | 'texture'
+    x: number
+    y: number
+  } | null>(null)
+  const flyoutTimer = useRef<number | null>(null)
+  const cancelFlyoutClose = () => {
+    if (flyoutTimer.current) window.clearTimeout(flyoutTimer.current)
+    flyoutTimer.current = null
+  }
+  const scheduleFlyoutClose = () => {
+    cancelFlyoutClose()
+    flyoutTimer.current = window.setTimeout(() => setFlyout(null), 150)
+  }
+  const openFlyout = (kind: 'gradient' | 'texture', e: React.MouseEvent<HTMLElement>) => {
+    cancelFlyoutClose()
+    const r = e.currentTarget.getBoundingClientRect()
+    setFlyout({
+      kind,
+      x: Math.min(r.right + 4, window.innerWidth - 270),
+      y: Math.min(r.top - 8, window.innerHeight - (kind === 'texture' ? 160 : 190)),
+    })
+  }
+  useEffect(() => cancelFlyoutClose, [])
+  const pickHex = (hex: string) => {
+    onClose()
+    pushRecentColor(hex)
+    onPickFill(hex)
+  }
+  const swatch = (bare: string, title: string, key?: string) => (
+    <button
+      key={key ?? bare}
+      type="button"
+      className={`gcp-swatch ${current === `#${bare.toUpperCase()}` ? 'selected' : ''}`}
+      title={title}
+      style={{ background: `#${bare}` }}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => pickHex(`#${bare}`)}
+    />
+  )
+  // Gradient variants: light/dark rows built from the shape's color (fallback: last used, then Office blue)
+  const base = current ?? recent[0] ?? '#4472C4'
+  const variants = [
+    { from: mixHex(base, '#FFFFFF', 0.7), to: base, tip: t('ribbonGradientLight') },
+    { from: base, to: mixHex(base, '#000000', 0.5), tip: t('ribbonGradientDark') },
+  ]
+  // OOXML angle (0°=left→right, 90°=top→bottom) with its CSS preview equivalent
+  const dirs: Array<{ angleDeg?: number; radial?: boolean; css: string; tip: string }> = [
+    { angleDeg: 90, css: 'linear-gradient(180deg', tip: t('ribbonGradientDirDown') },
+    { angleDeg: 0, css: 'linear-gradient(90deg', tip: t('ribbonGradientDirRight') },
+    { angleDeg: 45, css: 'linear-gradient(135deg', tip: t('ribbonGradientDirDiag') },
+    { radial: true, css: 'radial-gradient(circle', tip: t('ribbonGradientDirRadial') },
+  ]
+  return (
+    <div className="rb-drop gcp-palette rb-fill-menu" onMouseDown={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        className="gcp-auto"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onClose()
+          onPickFill('none')
+        }}
+      >
+        {t('paneFormatNoFill')}
+      </button>
+      <div className="gcp-section-title">{t('ribbonThemeColorsSection')}</div>
+      <div className="gcp-theme-base">{THEME_COLORS.map((c) => swatch(c.hex, c.name))}</div>
+      <div className="gcp-theme-shades">
+        {THEME_COLOR_SHADES.flatMap((row, r) =>
+          row.map((hex, c) => swatch(hex, `#${hex}`, `${r}-${c}-${hex}`)),
+        )}
+      </div>
+      <div className="gcp-section-title">{t('ribbonStandardColors')}</div>
+      <div className="gcp-standard-row">{STANDARD_COLORS.map((c) => swatch(c.hex, c.name))}</div>
+      {recent.length > 0 && (
+        <>
+          <div className="gcp-section-title">{t('ribbonRecentColors')}</div>
+          <div className="gcp-standard-row">
+            {recent.map((hex, i) => swatch(hex.slice(1), hex, `recent-${i}-${hex}`))}
+          </div>
+        </>
+      )}
+      <div className="rbf-actions">
+        <label className="rbf-row">
+          {t('ribbonMoreFillColors')}
+          <input
+            type="color"
+            defaultValue={(current ?? '#ffffff').toLowerCase()}
+            onPointerDown={(e) => armColorInput(e.currentTarget)}
+            onChange={(e) => {
+              pushRecentColor(e.target.value)
+              onPickFill(e.target.value)
+            }}
+          />
+        </label>
+        {onPickImage && (
+          <button
+            type="button"
+            className="rbf-row"
+            onClick={() => {
+              onClose()
+              onPickImage('stretch')
+            }}
+          >
+            {t('ribbonFillPicture')}
+          </button>
+        )}
+        <button
+          type="button"
+          className="rbf-row rbf-row-sub"
+          onMouseEnter={(e) => openFlyout('gradient', e)}
+          onMouseLeave={scheduleFlyoutClose}
+          onClick={(e) => openFlyout('gradient', e)}
+        >
+          {t('paneFormatGradient')}
+          <RbSubCaret />
+        </button>
+        {onPickImage && (
+          <button
+            type="button"
+            className="rbf-row rbf-row-sub"
+            onMouseEnter={(e) => openFlyout('texture', e)}
+            onMouseLeave={scheduleFlyoutClose}
+            onClick={(e) => openFlyout('texture', e)}
+          >
+            {t('ribbonFillTexture')}
+            <RbSubCaret />
+          </button>
+        )}
+      </div>
+      {flyout && (
+        <div
+          className="rbf-flyout"
+          style={{ left: flyout.x, top: flyout.y }}
+          onMouseEnter={cancelFlyoutClose}
+          onMouseLeave={scheduleFlyoutClose}
+        >
+          {flyout.kind === 'gradient' ? (
+            <>
+              <div className="rbf-actions rbf-actions-top">
+                <button
+                  type="button"
+                  className="rbf-row"
+                  onClick={() => {
+                    onClose()
+                    onPickFill(base)
+                  }}
+                >
+                  {t('ribbonNoGradient')}
+                </button>
+              </div>
+              {variants.map((v, vi) => (
+                <React.Fragment key={vi}>
+                  <div className="gcp-section-title">{v.tip}</div>
+                  <div className="rbf-gradients">
+                    {dirs.map((d, di) => (
+                      <button
+                        key={`${vi}-${di}`}
+                        type="button"
+                        className="rbf-gradient-tile"
+                        title={d.tip}
+                        style={{ background: `${d.css}, ${v.from}, ${v.to})` }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          onClose()
+                          onPickFill({
+                            gradient: {
+                              from: v.from,
+                              to: v.to,
+                              ...(d.radial ? { radial: true } : { angleDeg: d.angleDeg! }),
+                            },
+                          })
+                        }}
+                      />
+                    ))}
+                  </div>
+                </React.Fragment>
+              ))}
+              {onMoreGradient && (
+                <div className="rbf-actions">
+                  <button
+                    type="button"
+                    className="rbf-row"
+                    onClick={() => {
+                      onClose()
+                      onMoreGradient()
+                    }}
+                  >
+                    {t('ribbonGradientMore')}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="rbf-textures">
+                {FILL_TEXTURES.map((tex) => (
+                  <button
+                    key={tex.tipKey}
+                    type="button"
+                    className="rbf-texture-tile"
+                    title={t(tex.tipKey)}
+                    style={{ backgroundImage: `url(${tex.url})`, backgroundSize: '64px 64px' }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      onClose()
+                      void urlToBase64(tex.url).then((base64) =>
+                        onPickImage?.('tile', { base64, ext: 'png' }),
+                      )
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="rbf-actions">
+                <button
+                  type="button"
+                  className="rbf-row"
+                  onClick={() => {
+                    onClose()
+                    onPickImage?.('tile')
+                  }}
+                >
+                  {t('ribbonTextureMore')}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Ribbon({
   hasDoc,
   deckEmpty,
@@ -848,8 +1185,11 @@ export function Ribbon({
   contextPictureCanCutout,
   contextPictureStroke,
   onPictureStroke,
+  onChangeShape,
   onShapeStyle,
   onShapeFill,
+  onShapeFillImage,
+  contextShapeFill,
   onPictureCrop,
   cropActive,
   onPictureOpacity,
@@ -880,6 +1220,7 @@ export function Ribbon({
   const [slideSizeOpen, setSlideSizeOpen] = useState(false)
   const [transparencyOpen, setTransparencyOpen] = useState(false)
   const [pictureBorderOpen, setPictureBorderOpen] = useState(false)
+  const [changeShapeOpen, setChangeShapeOpen] = useState(false)
   const [shapeStyleOpen, setShapeStyleOpen] = useState(false)
   const [shapeFillOpen, setShapeFillOpen] = useState(false)
   // Debounced picture-border commit: color drags fire repeatedly, and a pending
@@ -958,6 +1299,7 @@ export function Ribbon({
     if (!keep.includes('slideSize')) setSlideSizeOpen(false)
     if (!keep.includes('transparency')) setTransparencyOpen(false)
     if (!keep.includes('pictureBorder')) setPictureBorderOpen(false)
+    if (!keep.includes('changeShape')) setChangeShapeOpen(false)
     if (!keep.includes('shapeStyle')) setShapeStyleOpen(false)
     if (!keep.includes('shapeFill')) setShapeFillOpen(false)
     if (!keep.includes('table')) setTableOpen(false)
@@ -987,6 +1329,7 @@ export function Ribbon({
     slideShowOpen ||
     paraOpen ||
     pictureBorderOpen ||
+    changeShapeOpen ||
     shapeStyleOpen ||
     shapeFillOpen ||
     layoutPickOpen ||
@@ -2794,6 +3137,37 @@ export function Ribbon({
           </>
         ) : tab === 'shapeFormat' ? (
           <>
+            <Group label={t('ribbonShapes')}>
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big ${changeShapeOpen ? 'active' : ''}`}
+                  disabled={!onChangeShape}
+                  data-tip={t('ribbonChangeShape')}
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    closeSiblingPanels(e, closePanels, 'changeShape')
+                  }}
+                  onClick={() => setChangeShapeOpen((v) => !v)}
+                >
+                  <span className="rb-big-icon">
+                    <IconShapes size={BIG} />
+                    <RbCaret />
+                  </span>
+                  <span>{t('ribbonChangeShape')}</span>
+                </button>
+                {changeShapeOpen && (
+                  <div className="rb-drop" onMouseDown={(e) => e.stopPropagation()}>
+                    <ShapeGalleryContent
+                      onPick={(prst) => {
+                        setChangeShapeOpen(false)
+                        onChangeShape?.(prst)
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </Group>
+            <div className="ribbon-sep" />
             <Group label={t('ribbonGroupShapeStyle')}>
               <div className="rb-drop-wrap">
                 <button
@@ -2857,42 +3231,15 @@ export function Ribbon({
                   <span>{t('paneFormatFill')}</span>
                 </button>
                 {shapeFillOpen && (
-                  <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
-                    <label className="rb-menu-input">
-                      {t('paneFormatSolidFill')}
-                      <input
-                        type="color"
-                        defaultValue="#ffffff"
-                        onPointerDown={(e) => armColorInput(e.currentTarget)}
-                        onChange={(e) => onShapeFill?.(e.target.value)}
-                      />
-                    </label>
-                    <div className="rb-menu-sep" />
-                    <div className="ctx-swatches-row">
-                      {TEXT_COLORS.map((c) => (
-                        <button
-                          key={c}
-                          className="ctx-swatch"
-                          style={{ background: c }}
-                          data-tip={c}
-                          aria-label={c}
-                          onClick={() => {
-                            setShapeFillOpen(false)
-                            onShapeFill?.(c)
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div className="rb-menu-sep" />
-                    <button
-                      onClick={() => {
-                        setShapeFillOpen(false)
-                        onShapeFill?.('none')
-                      }}
-                    >
-                      {t('paneFormatNoFill')}
-                    </button>
-                  </div>
+                  <ShapeFillMenu
+                    currentFill={contextShapeFill ?? null}
+                    onPickFill={(fill) => onShapeFill?.(fill)}
+                    onPickImage={onShapeFillImage}
+                    onMoreGradient={() => {
+                      if (!formatOpen) onToggleFormat()
+                    }}
+                    onClose={() => setShapeFillOpen(false)}
+                  />
                 )}
               </div>
             </Group>

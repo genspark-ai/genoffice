@@ -107,6 +107,9 @@ export type PageGapSpec = {
   /** page forced by an explicit break (w:br page / pageBreakBefore): Word drops the
    *  lead block's space-before, so a node decoration zeroes its margin-top */
   suppressLeadMt?: boolean
+  /** mixed-column page above: pull the gap (and everything below) up over the
+   *  vacated stacked-column space (negative margin-top, neutralized while measuring) */
+  pullUp?: number
 } & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
@@ -161,12 +164,16 @@ export function setPageGaps(
       pos = gap.pos
       kind = gap.kind ?? 'inline'
     }
-    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight}`
+    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)}`
     decos.push(
       Decoration.widget(
         pos,
         () => {
           const el = makeGapEl(metrics, kind)
+          // margins don't apply to table-rows and cuts are zero-height markers;
+          // tables inside mixed-column regions are out of scope anyway (v1)
+          if (gap.pullUp && kind !== 'cut' && kind !== 'table')
+            el.style.marginTop = `-${gap.pullUp}px`
           if (notes) el.appendChild(notes)
           if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
             for (const hf of hfEls) el.appendChild(hf)
@@ -366,6 +373,35 @@ export function syncFloatShifts(
     } else if (Math.abs(next - applied) > 0.5 || !f.el.dataset.pageFloatDy) {
       f.el.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
       f.el.dataset.pageFloatDy = String(next)
+    }
+  }
+}
+
+/**
+ * Word keeps anchored objects on the page: a cell-anchored box whose negative
+ * offset lifts it above the paper top (0219: a glossary title box -82pt above
+ * a first-row cell paragraph rendered clipped off the paper) is pushed back
+ * down to the paper edge. Cell boxes are overlay-only (zero flow footprint),
+ * so the shift has no layout feedback. Idempotent via the same
+ * --page-float-dy channel as syncFloatShifts.
+ */
+export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: number): void {
+  for (const box of Array.from(
+    pm.querySelectorAll<HTMLElement>('.doc-cell-boxes > .doc-textbox, .doc-cell-boxes > div'),
+  )) {
+    const r = box.getBoundingClientRect()
+    if (r.height <= 0) continue
+    const applied = parseFloat(box.dataset.pageFloatDy ?? '0') || 0
+    const naturalTop = r.top - applied * factor
+    const next = Math.max(0, (paperTop - naturalTop) / factor)
+    if (next < 0.5) {
+      if (box.dataset.pageFloatDy) {
+        box.style.removeProperty('--page-float-dy')
+        delete box.dataset.pageFloatDy
+      }
+    } else if (Math.abs(next - applied) > 0.5 || !box.dataset.pageFloatDy) {
+      box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
+      box.dataset.pageFloatDy = String(next)
     }
   }
 }

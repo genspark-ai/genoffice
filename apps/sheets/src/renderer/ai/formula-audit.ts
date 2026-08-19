@@ -10,8 +10,9 @@ import { formatAddress, parseAddress } from '../../domain/cell-address'
 import type { CellScalar } from '../../domain/workbook.types'
 import { qualifierMatches, type StructuralOp } from '../../gateway/xlsx-structure'
 import { containsUnresolvedNames, parseFormulaReferences } from '../formula-closure'
+import { lazySheetScreenExtent } from '../univer-state'
 import { readSheetRangeMapped } from '../univer-sync'
-import { fileRangeToScreenRange, fileToScreen, netAxisDelta } from '../view-transform'
+import { fileRangeToScreenRange, fileToScreen } from '../view-transform'
 import type {
   TraceCellSample,
   TraceDependentInfo,
@@ -89,15 +90,7 @@ function listSheets(ctx: WorkbookReadContext): { sheets: SheetInfo[]; activeId: 
 /** Data extent in screen coordinates (rows, columns); zeros when unknown. */
 function sheetExtent(ctx: WorkbookReadContext, sheetId: string): { rows: number; columns: number } {
   const state = ctx.lazyWorkbookRef.current
-  if (state) {
-    const meta = state.file.sheets.find((sheet) => sheet.id === sheetId)
-    if (!meta) return { rows: 0, columns: 0 }
-    const ops = state.editJournal.structuralOps.get(sheetId) ?? []
-    return {
-      rows: Math.max(meta.rowCount + netAxisDelta(ops, 'row'), 0),
-      columns: Math.max(meta.columnCount + netAxisDelta(ops, 'column'), 0),
-    }
-  }
+  if (state) return lazySheetScreenExtent(state, sheetId) ?? { rows: 0, columns: 0 }
   const sheet = ctx.adapterRef.current.getSnapshot().sheets.find((entry) => entry.id === sheetId)
   if (!sheet) return { rows: 0, columns: 0 }
   let rows = 0

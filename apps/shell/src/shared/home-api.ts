@@ -78,6 +78,8 @@ export interface HomeApi {
   newSlide(opts?: { projectId?: string }): Promise<void>
   /** open a blank markdown editor tab */
   newMarkdown(opts?: { projectId?: string }): Promise<void>
+  /** create a blank single-page PDF in the default save folder and open it */
+  newPdf(opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
@@ -112,12 +114,16 @@ export interface HomeApi {
   getAppVersion(): Promise<string>
   /** whether the first-run onboarding has been completed or skipped (persisted in userData/app-settings.json) */
   onboardingSeen(): Promise<boolean>
-  /** mark the first-run onboarding as done so it never shows again */
-  setOnboardingSeen(): Promise<void>
+  /** mark onboarding done; analytics remains enabled unless separately opted out */
+  setOnboardingSeen(): Promise<boolean>
   /** current UI theme preference (persisted in userData/app-settings.json) */
   getTheme(): Promise<UiTheme>
   /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
   setTheme(theme: UiTheme): Promise<void>
+  /** whether anonymous usage statistics are enabled (default true in official builds) */
+  getAnalyticsEnabled(): Promise<boolean>
+  /** persist an explicit analytics opt-in or opt-out */
+  setAnalyticsEnabled(enabled: boolean): Promise<boolean>
   /** effective default save folder for new/untitled files (configured in userData/app-settings.json, falls back to <Documents>/GenOffice) */
   getDefaultSaveDir(): Promise<string>
   /** directory picker to change the default save folder; resolves to the new folder, or null when canceled or the pick was unusable */
@@ -254,6 +260,7 @@ export const HOME_CHANNELS = {
   newSheet: 'home:new-sheet',
   newSlide: 'home:new-slide',
   newMarkdown: 'home:new-markdown',
+  newPdf: 'home:new-pdf',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',
@@ -274,6 +281,8 @@ export const HOME_CHANNELS = {
   setOnboardingSeen: 'home:set-onboarding-seen',
   getTheme: 'home:get-theme',
   setTheme: 'home:set-theme',
+  getAnalyticsEnabled: 'home:get-analytics-enabled',
+  setAnalyticsEnabled: 'home:set-analytics-enabled',
   getDefaultSaveDir: 'home:get-default-save-dir',
   pickDefaultSaveDir: 'home:pick-default-save-dir',
   openGenTeam: 'home:open-genteam',

@@ -14,6 +14,7 @@ import {
   replacePictureBytes,
   resetSlideBackground,
   setSlideBackground,
+  setShapePresetGeometry,
   setSlideBackgroundImage,
   setSlideBgGraphicsHidden,
 } from '../src/index'
@@ -286,7 +287,7 @@ describe('patchElementStroke', () => {
 describe('setSlideBackground', () => {
   it('injects <p:bg> and round-trips through save → reopen', async () => {
     const opened = await openPptx(await createBlankPptx())
-    setSlideBackground(opened.deck.slides[0]!, '#1A2B3C')
+    setSlideBackground(opened, opened.deck.slides[0]!, '#1A2B3C')
     expect(opened.deck.slides[0]!.background).toEqual({ type: 'solid', color: '#1A2B3C' })
 
     const reopened = await openPptx(await savePptx(opened))
@@ -296,8 +297,8 @@ describe('setSlideBackground', () => {
   it('replaces an existing bg without duplicating', async () => {
     const opened = await openPptx(await createBlankPptx())
     const slide = opened.deck.slides[0]!
-    setSlideBackground(slide, '#111111')
-    setSlideBackground(slide, '#222222')
+    setSlideBackground(opened, slide, '#111111')
+    setSlideBackground(opened, slide, '#222222')
     expect((slide.bodyPrefix.match(/<p:bg>/g) ?? []).length).toBe(1)
 
     const reopened = await openPptx(await savePptx(opened))
@@ -307,7 +308,7 @@ describe('setSlideBackground', () => {
   it('gradient background round-trips through save → reopen', async () => {
     const opened = await openPptx(await createBlankPptx())
     const slide = opened.deck.slides[0]!
-    setSlideBackground(slide, {
+    setSlideBackground(opened, slide, {
       stops: [
         { pos: 0, color: '#FF0000' },
         { pos: 1, color: '#0000FF' },
@@ -363,7 +364,7 @@ describe('setSlideBackground', () => {
   it('resetSlideBackground removes the override', async () => {
     const opened = await openPptx(await createBlankPptx())
     const slide = opened.deck.slides[0]!
-    setSlideBackground(slide, '#112233')
+    setSlideBackground(opened, slide, '#112233')
     resetSlideBackground(opened, slide)
     expect(slide.bgOwn).toBeUndefined()
     expect(slide.bodyPrefix).not.toContain('<p:bg>')
@@ -387,5 +388,45 @@ describe('setSlideBackground', () => {
     expect(slide.bodyPrefix).not.toContain('showMasterSp')
     const reopened2 = await openPptx(await savePptx(reopened))
     expect(reopened2.deck.slides[0]!.masterSpHidden).toBeUndefined()
+  })
+})
+
+describe('setShapePresetGeometry (change shape)', () => {
+  it('swaps prstGeom keeping fill/transform and round-trips', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF }, fillColor: '#4472C4' })
+
+    expect(setShapePresetGeometry(slide, el.id, 'star5')).toBe(true)
+    expect((el as TextElement).presetGeometry).toBe('star5')
+    expect(el.anchor.originalXml).toContain('<a:prstGeom prst="star5"><a:avLst/></a:prstGeom>')
+
+    const reopened = await openPptx(await savePptx(opened))
+    const saved = reopened.deck.slides[0]!.elements.at(-1) as TextElement
+    expect(saved.presetGeometry).toBe('star5')
+    expect(saved.fill).toEqual({ type: 'solid', color: '#4472C4' })
+    expect(saved.transform).toEqual(el.transform)
+  })
+
+  it('resets adjust values when changing geometry', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'roundRect', offset: { ...OFF } })
+
+    setShapePresetGeometry(slide, el.id, 'ellipse')
+    expect((el as TextElement).adjust).toBeUndefined()
+    expect(el.anchor.originalXml).not.toContain('a:gd')
+
+    const reopened = await openPptx(await savePptx(opened))
+    const saved = reopened.deck.slides[0]!.elements.at(-1) as TextElement
+    expect(saved.presetGeometry).toBe('ellipse')
+  })
+
+  it('rejects unknown element ids and invalid prst names', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    expect(setShapePresetGeometry(slide, 'nope', 'star5')).toBe(false)
+    expect(setShapePresetGeometry(slide, el.id, 'star5"><hack/>')).toBe(false)
   })
 })

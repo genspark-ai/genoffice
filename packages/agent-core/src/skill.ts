@@ -1,5 +1,12 @@
 import type { AgentToolCall, AgentToolDef, ToolExecution } from './types'
 
+/** One tool call actually executed during a run, as seen by verifyResponse. */
+export interface ExecutedToolCall {
+  name: string
+  /** false when the execution returned an error result */
+  ok: boolean
+}
+
 /**
  * A skill packages one capability domain for the agent loop: its system
  * prompt section, its tools, per-turn context, and the tool executor.
@@ -21,6 +28,15 @@ export interface AgentSkill {
    * their loops and stop promptly.
    */
   executeTool(call: AgentToolCall, signal?: AbortSignal): ToolExecution | Promise<ToolExecution>
+  /**
+   * Claimed-action guard: inspect the run's final assistant text against the
+   * tools that actually executed during the run. Return a corrective
+   * instruction to force one more model turn (e.g. the text claims "I
+   * selected/located ..." but no matching tool call succeeded), or null to
+   * accept the reply. The loop applies the correction at most once per run,
+   * so a detector false-positive costs one extra turn and cannot loop.
+   */
+  verifyResponse?(finalText: string, executed: readonly ExecutedToolCall[]): string | null
 }
 
 /**
@@ -50,6 +66,13 @@ export function composeSkills(id: string, intro: string, skills: AgentSkill[]): 
         return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
       }
       return skill.executeTool(call, signal)
+    },
+    verifyResponse: (finalText, executed) => {
+      for (const skill of skills) {
+        const correction = skill.verifyResponse?.(finalText, executed)
+        if (correction) return correction
+      }
+      return null
     },
   }
 }

@@ -48,6 +48,19 @@ export function SaveIcon(): ReactElement {
   )
 }
 
+/// Save As keeps the floppy silhouette and adds the familiar pencil overlay.
+export function SaveAsIcon(): ReactElement {
+  return (
+    <Icon>
+      <path d="M12.25 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v1.25" />
+      <path d="M7 21v-8h5" />
+      <path d="M7 3v5h8V3" />
+      <path d="m13.25 19.5.75-3.25 5.75-5.75 2.5 2.5-5.75 5.75-3.25.75Z" />
+      <path d="m18.75 11.5 2.5 2.5" />
+    </Icon>
+  )
+}
+
 /// Quick-access undo/redo — design-supplied geometry shared with the docs
 /// and slides ribbons, so the three apps' tab-row arrows read identically.
 export function UndoIcon(): ReactElement {

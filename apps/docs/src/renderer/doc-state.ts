@@ -24,6 +24,13 @@ export interface DocState {
   hash: string
   /** created from the built-in blank template (its numbering ids are known) */
   isBlank?: boolean
+  /** desired open password is set for the next save; toggled via Review > Protect */
+  encrypted?: boolean
+}
+
+/** A restored recovery snapshot has not reached the original path yet. */
+export function openedFileStartsDirty(result: { recovered?: boolean }): boolean {
+  return result.recovered === true
 }
 
 /** Pending numbering definitions to append (saved via SaveOptions.numbering) */

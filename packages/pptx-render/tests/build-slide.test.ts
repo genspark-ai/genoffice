@@ -287,6 +287,80 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(node.cells[1].w).toBeCloseTo(node.box.w / 2, 1)
   })
 
+  it('table renders at its grid width when the frame ext is a stale placeholder', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'tbl_1',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      // ext cx=3000000 is stale: the grid below sums to 6593050 EMU (real prod deck shape)
+      transform: {
+        offset: { x: 0, y: 0, cx: 3000000, cy: 3000000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [1449850, 5143200],
+      rowHeights: [645100, 645100],
+      rows: [
+        [{}, {}],
+        [{}, {}],
+      ],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    const emuPerPx = deck.size.cx / 1280
+    expect(node.box.w).toBeCloseTo(6593050 / emuPerPx, 0)
+    expect(node.cells[1].w / node.cells[0].w).toBeCloseTo(5143200 / 1449850, 1)
+  })
+
+  it('a table inside a scaled group keeps the group scale on its grid sizes', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const tbl: any = {
+      id: 'tbl_g',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 3810000, cy: 1905000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [1905000, 1905000],
+      rowHeights: [952500, 952500],
+      rows: [
+        [{}, {}],
+        [{}, {}],
+      ],
+    }
+    const grp: any = {
+      id: 'grp_1',
+      type: 'group',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      // group is half the size of its child coordinate space -> children scale by 0.5
+      transform: {
+        offset: { x: 0, y: 0, cx: 1905000, cy: 952500 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      childOffset: { x: 0, y: 0, cx: 3810000, cy: 1905000 },
+      children: [tbl],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [grp], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    const table = node.children[0]
+    const emuPerPx = deck.size.cx / 1280
+    expect(table.box.w).toBeCloseTo(1905000 / emuPerPx, 0)
+    expect(table.cells[0].w).toBeCloseTo(952500 / emuPerPx, 0)
+  })
+
   it('cells after a mid-row merge keep their grid position (continuation tc is not double-counted)', async () => {
     const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
     const slide = deck.slides[0]!
@@ -779,5 +853,40 @@ describe('metafile pictures get an opaque white backdrop (PlanS academy banner)'
     const [emf, png] = rs.nodes as any[]
     expect(emf.bgColor).toBe('#FFFFFF')
     expect(png.bgColor).toBeUndefined()
+  })
+
+  it('a clrChange metafile drops the white DC backing (the recolor sees through it)', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'pic_cc',
+      type: 'picture',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1000000, cy: 1000000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      mediaRef: '',
+      dataUrl: 'data:image/x-emf;base64,AAAA',
+      clrChange: { from: '#FFFFFF', to: '#FFFFFF00' },
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    expect(node.bgColor).toBeUndefined()
+    expect(node.clrChange).toEqual({ from: '#FFFFFF', to: '#FFFFFF00' })
+
+    // non-white keys never touch the DC; an opaque white key recolors it
+    const build = (clrChange: any) =>
+      buildRenderSlide({ ...slide, elements: [{ ...el, clrChange }], decorations: [] }, deck.size, {
+        fitWidthPx: 1280,
+      }).nodes[0] as any
+    expect(build({ from: '#FF0000', to: '#00FF0000' }).bgColor).toBe('#FFFFFF')
+    expect(build({ from: '#FFFFFF', to: '#00FF00' }).bgColor).toBe('#00FF00')
+    // partial alpha stays on the backing (canvas accepts #RRGGBBAA)
+    expect(build({ from: '#FFFFFF', to: '#00FF0080' }).bgColor).toBe('#00FF0080')
   })
 })

@@ -26,7 +26,7 @@ export function resolveFill(
         kind: 'gradient',
         stops: fill.stops.map((s) => ({ pos: s.pos, color: s.color })),
         angleDeg: fill.angle != null ? fill.angle / 60000 : 0,
-        ...(fill.path ? { radial: true } : {}),
+        ...(fill.path ? { radial: true, path: fill.path } : {}),
         ...(fill.path && fill.fillTo
           ? {
               center: {
@@ -37,8 +37,9 @@ export function resolveFill(
           : {}),
       }
     case 'image': {
-      // Tile natural size: image pixels are 96dpi units; vp.scale is the 96dpi-px multiplier
-      const pxPerImagePx = vp.scale
+      // Tile natural size: PowerPoint lays dpi-less bitmaps out at 144dpi (measured on
+      // page_transparent_bitmap: 94px tile = 0.653in), i.e. 2/3 of a 96dpi unit
+      const pxPerImagePx = vp.scale * (96 / 144)
       return {
         kind: 'image',
         dataUrl: media?.(fill.mediaRef),
@@ -61,8 +62,14 @@ export function resolveFill(
       }
     }
     case 'pattern':
-      // Pattern fills are approximated with the foreground color for now (Phase 2 skips 8x8 tile replication)
-      return { kind: 'solid', color: fill.fg }
+      // 8x8 preset mask, one mask pixel per 96dpi pixel (PowerPoint measured on n820786)
+      return {
+        kind: 'pattern',
+        preset: fill.preset,
+        fg: fill.fg,
+        bg: fill.bg,
+        cellPx: 8 * vp.scale,
+      }
     default:
       return { kind: 'none' }
   }

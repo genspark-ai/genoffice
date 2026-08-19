@@ -34,6 +34,7 @@ import {
   type PictureElement,
   type TextElement,
 } from '../src/index'
+import { relsPathFor } from '../src/zip'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -585,8 +586,49 @@ describe('setElementLink / getElementLink', () => {
     const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
     const s1 = setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://x.dev' })!
     const linked = s1.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
     const s2 = setElementLink(opened, 0, linked.id, null)!
     expect(getElementLink(opened, 0, s2.elements.at(-1)!.id)).toBeNull()
+    expect(opened.archive.readText(relsPathFor(s2.path))).not.toContain(`Id="${oldRid}"`)
+  })
+
+  it('replacing a link prunes the obsolete hyperlink relationship', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const first = setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://old.dev' })!
+    const linked = first.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
+
+    const second = setElementLink(opened, 0, linked.id, { kind: 'url', url: 'https://new.dev' })!
+    const rels = opened.archive.readText(relsPathFor(second.path))!
+    expect(rels).not.toContain(`Id="${oldRid}"`)
+    expect(rels).not.toContain('Target="https://old.dev"')
+    expect(rels).toContain('Target="https://new.dev"')
+  })
+
+  it('keeps an old hyperlink relationship while another element still uses its rId', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const linkedSlide = setElementLink(opened, 0, el.id, {
+      kind: 'url',
+      url: 'https://shared.dev',
+    })!
+    const linked = linkedSlide.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
+    const sharer = addElement(linkedSlide, {
+      kind: 'ellipse',
+      offset: { ...OFF, x: 5486400 },
+    })
+    sharer.anchor.originalXml = sharer.anchor.originalXml.replace(
+      /<p:cNvPr([^>]*)\/>/,
+      `<p:cNvPr$1><a:hlinkClick r:id="${oldRid}"/></p:cNvPr>`,
+    )
+    linkedSlide.structureDirty = true
+
+    setElementLink(opened, 0, linked.id, { kind: 'url', url: 'https://new.dev' })
+    expect(opened.archive.readText(relsPathFor(linkedSlide.path))).toContain(`Id="${oldRid}"`)
   })
 
   it('getSlideLinks collects every linked element on the slide', async () => {

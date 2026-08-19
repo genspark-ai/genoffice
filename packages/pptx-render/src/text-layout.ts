@@ -60,6 +60,12 @@ interface Token {
   outline?: { color: string; widthPx: number }
   /** Run outer shadow (px, offset resolved from dist/dir) */
   shadow?: { color: string; blurPx: number; offsetX: number; offsetY: number }
+  /** WordArt gradient text fill (resolved stops + screen angle) */
+  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+  /** Run glow (px radius) */
+  glow?: { color: string; blurPx: number }
+  /** Run reflection (faded mirror below the baseline) */
+  reflection?: boolean
   /** Run hyperlink (TextRun.hyperlink encoding) */
   link?: string
 }
@@ -288,6 +294,24 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
             },
           }
         : {}),
+      ...(run.gradient
+        ? {
+            gradient: {
+              stops: run.gradient.stops.map((s) => ({ pos: s.pos, color: s.color })),
+              // OOXML gradient angle is 1/60000° clockwise from the +x axis
+              angleDeg: (run.gradient.angle ?? 5400000) / 60000,
+            },
+          }
+        : {}),
+      ...(run.glow
+        ? {
+            glow: {
+              color: run.glow.color,
+              blurPx: emuToPx(run.glow.radius, scale) * fontScale,
+            },
+          }
+        : {}),
+      ...(run.reflection ? { reflection: true } : {}),
       ...(run.shadow
         ? {
             shadow: {
@@ -631,6 +655,9 @@ function buildLine(
       widthPx: w,
       ...(tok.ls ? { letterSpacingPx: tok.ls } : {}),
       ...(tok.outline ? { outline: tok.outline } : {}),
+      ...(tok.gradient ? { gradient: tok.gradient } : {}),
+      ...(tok.glow ? { glow: tok.glow } : {}),
+      ...(tok.reflection ? { reflection: true } : {}),
       ...(tok.shadow ? { shadow: tok.shadow } : {}),
       ...(tok.blShift ? { baselineShiftPx: tok.blShift } : {}),
       ...(tok.blPct ? { baselinePct: tok.blPct } : {}),
@@ -823,6 +850,21 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
       }))
     : result.lines
 
+  // WordArt text extrusion: depth projected by the body camera tilt (same screen basis
+  // as the scene3d shape pipeline: depth leans (sin lon, -sin lat·cos lon) per unit)
+  let extrusion: RenderTextLayout['extrusion']
+  if (body.extrusion3d) {
+    const e = body.extrusion3d
+    const d = emuToPx(e.depthEmu, vp.scale)
+    const la = (e.latDeg * Math.PI) / 180
+    const lo = (e.lonDeg * Math.PI) / 180
+    extrusion = {
+      color: e.color,
+      dx: -d * Math.sin(lo),
+      dy: d * Math.sin(la) * Math.cos(lo),
+    }
+  }
+
   return {
     lines,
     insets,
@@ -832,6 +874,7 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
     contentHeight: result.contentHeight,
     ...(result.inkBottom ? { inkBottom: result.inkBottom } : {}),
     wrap,
+    ...(extrusion ? { extrusion } : {}),
   }
 }
 
@@ -946,6 +989,9 @@ function layoutTextVertical(
         ...(tok.strike ? { strike: true } : {}),
         ...(tok.highlight ? { highlight: tok.highlight } : {}),
         ...(tok.outline ? { outline: tok.outline } : {}),
+        ...(tok.gradient ? { gradient: tok.gradient } : {}),
+        ...(tok.glow ? { glow: tok.glow } : {}),
+        ...(tok.reflection ? { reflection: true } : {}),
         ...(tok.shadow ? { shadow: tok.shadow } : {}),
         widthPx: metrics.measure(g, tok.style),
         ...(tok.blPct ? { baselinePct: tok.blPct } : {}),
@@ -980,6 +1026,9 @@ function layoutTextVertical(
         ...(tok.strike ? { strike: true } : {}),
         ...(tok.highlight ? { highlight: tok.highlight } : {}),
         ...(tok.outline ? { outline: tok.outline } : {}),
+        ...(tok.gradient ? { gradient: tok.gradient } : {}),
+        ...(tok.glow ? { glow: tok.glow } : {}),
+        ...(tok.reflection ? { reflection: true } : {}),
         ...(tok.shadow ? { shadow: tok.shadow } : {}),
         widthPx: adv,
         rotate90: true,

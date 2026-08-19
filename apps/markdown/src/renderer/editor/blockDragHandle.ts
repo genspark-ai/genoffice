@@ -70,6 +70,8 @@ function dragHandlePlugin(editor: Editor): Plugin {
       menu.className = 'md-block-menu'
       menu.style.display = 'none'
 
+      const previousContainerPosition = container?.style.position ?? ''
+      const setContainerPosition = Boolean(container && !container.style.position)
       if (container) {
         container.style.position ||= 'relative'
         container.append(handle, menu)
@@ -234,10 +236,11 @@ function dragHandlePlugin(editor: Editor): Plugin {
         }, 250)
       }
 
+      const onHandleMouseMove = (event: MouseEvent) => event.stopPropagation()
       view.dom.addEventListener('mousemove', onMouseMove)
       view.dom.addEventListener('mouseenter', cancelHide)
       view.dom.addEventListener('mouseleave', scheduleHide)
-      handle.addEventListener('mousemove', (e) => e.stopPropagation())
+      handle.addEventListener('mousemove', onHandleMouseMove)
       handle.addEventListener('mouseenter', cancelHide)
       handle.addEventListener('mouseleave', scheduleHide)
       grip.addEventListener('dragstart', onDragStart)
@@ -256,9 +259,18 @@ function dragHandlePlugin(editor: Editor): Plugin {
           view.dom.removeEventListener('mousemove', onMouseMove)
           view.dom.removeEventListener('mouseenter', cancelHide)
           view.dom.removeEventListener('mouseleave', scheduleHide)
+          handle.removeEventListener('mousemove', onHandleMouseMove)
+          handle.removeEventListener('mouseenter', cancelHide)
+          handle.removeEventListener('mouseleave', scheduleHide)
+          grip.removeEventListener('dragstart', onDragStart)
+          grip.removeEventListener('click', onGripClick)
+          plus.removeEventListener('click', onPlusClick)
           document.removeEventListener('scroll', onScrollOrLeave, true)
           handle.remove()
           menu.remove()
+          if (container && setContainerPosition && container.style.position === 'relative') {
+            container.style.position = previousContainerPosition
+          }
         },
       }
     },

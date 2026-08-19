@@ -104,6 +104,7 @@ export function AiPanel({
   const [panelWidth, setPanelWidth] = useState(() => clampPanelWidth(preferredWidthRef.current))
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
     const dock = asideRef.current?.closest('.ai-dock') as HTMLElement | null
@@ -254,6 +255,16 @@ export function AiPanel({
     })
   }
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      loopRef.current?.cancel()
+      const editor = depsRef.current.getEditor()
+      if (editor) clearAiHighlights(editor)
+    }
+  }, [])
+
   // ── chat-history persistence: bind to the file, restore prior transcript ──
   useEffect(() => {
     const api = window.projectApi
@@ -342,8 +353,10 @@ export function AiPanel({
     void (async () => {
       try {
         settingsRef.current = await window.markdownApi.getAiSettings()
+        if (!mountedRef.current) return
         await loop.run(instruction)
       } catch (err) {
+        if (!mountedRef.current) return
         patchLast({
           streaming: false,
           text: err instanceof Error ? err.message : String(err),

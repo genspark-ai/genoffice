@@ -17,6 +17,7 @@ import type {
   PictureRenderNode,
   GlyphRun,
 } from '@genoffice/pptx-render'
+import { patternGrid } from '@genoffice/pptx-render'
 import { classifyCjkScript } from '../shared/cjk-script'
 
 /**
@@ -102,20 +103,177 @@ export function fillImageUrl(fill: RenderFill): string | undefined {
   return fill.kind === 'image' ? fill.dataUrl : undefined
 }
 
+// ── Gradient ramp interpolation ──────────────────────────────────────────────
+// PowerPoint blends gradient ramps in linear sRGB (measured on tdf105739's
+// FF0000→00B050 background: the midpoint renders (188,129,55), matching the
+// linear-light mix; canvas gradients blend raw sRGB, which gives a muddy
+// (128,88,40)). Subdivide each stop pair with linear-mixed intermediate stops
+// so the canvas ramp tracks PowerPoint's.
+const srgbToLin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+const linToSrgb = (v: number) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)
+
+function parseStopColor(c: string): [number, number, number, number] | null {
+  const n = normalizeColor(c)
+  const hex = /^#([0-9A-Fa-f]{6})$/.exec(n)
+  if (hex) {
+    const h = hex[1]!
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+      1,
+    ]
+  }
+  const rgba = /^rgba\((\d+),(\d+),(\d+),([0-9.]+)\)$/.exec(n)
+  if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])]
+  return null
+}
+
+const SUBDIVISIONS = 8
+
+/** Konva colorStops array with linear-sRGB interpolated midpoints between each stop pair. */
+function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<number | string> {
+  const sorted = [...stops].sort((a, b) => a.pos - b.pos)
+  const out: Array<number | string> = []
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i]!
+    out.push(cur.pos, normalizeColor(cur.color))
+    const next = sorted[i + 1]
+    if (!next || next.color === cur.color || next.pos - cur.pos < 0.02) continue
+    const a = parseStopColor(cur.color)
+    const b = parseStopColor(next.color)
+    if (!a || !b) continue
+    const [lr, lg, lb] = [srgbToLin(a[0] / 255), srgbToLin(a[1] / 255), srgbToLin(a[2] / 255)]
+    const [mr, mg, mb] = [srgbToLin(b[0] / 255), srgbToLin(b[1] / 255), srgbToLin(b[2] / 255)]
+    for (let k = 1; k < SUBDIVISIONS; k++) {
+      const t = k / SUBDIVISIONS
+      const r = Math.round(linToSrgb(lr + (mr - lr) * t) * 255)
+      const g = Math.round(linToSrgb(lg + (mg - lg) * t) * 255)
+      const bl = Math.round(linToSrgb(lb + (mb - lb) * t) * 255)
+      const al = a[3] + (b[3] - a[3]) * t
+      out.push(
+        cur.pos + (next.pos - cur.pos) * t,
+        al >= 1 ? `rgb(${r},${g},${bl})` : `rgba(${r},${g},${bl},${al.toFixed(3)})`,
+      )
+    }
+  }
+  return out
+}
+
+/** Cached shape-sized pattern canvases for rect/shape path gradients. */
+const pathGradCache = new Map<string, HTMLCanvasElement>()
+
+/**
+ * rect/shape path gradient, rendered per pixel through a 256-entry ramp LUT (band/ring
+ * painting shows AA seams; the metrics below are C1-discontinuous on the diagonals,
+ * which per-pixel sampling reproduces exactly like PowerPoint).
+ * - rect: t = max(|dx|/ex, |dy|/ey) with per-side extents to the fillToRect focus
+ *   (seams run through the focus diagonals; iso-lines converge on the focus point).
+ * - shape: t = 1 − inset/maxInset, uniform distance to the bounds (45° corner
+ *   seams, medial plateau on non-square bounds; the focus is ignored, matching PPT's
+ *   path type having no direction option).
+ */
+export function pathGradientCanvas(
+  kind: 'rect' | 'shape',
+  stops: Array<{ pos: number; color: string }>,
+  w: number,
+  h: number,
+  cx01: number,
+  cy01: number,
+): HTMLCanvasElement | null {
+  const cw = Math.max(1, Math.ceil(w))
+  const ch = Math.max(1, Math.ceil(h))
+  const key = `${kind}:${cw}x${ch}:${cx01}:${cy01}:${stops.map((s) => `${s.pos},${s.color}`).join(';')}`
+  const hit = pathGradCache.get(key)
+  if (hit) return hit
+
+  // 1x256 ramp strip: reuse linearRampStops' linear-sRGB interpolation via a canvas gradient
+  const strip = document.createElement('canvas')
+  strip.width = 256
+  strip.height = 1
+  const sctx = strip.getContext('2d', { willReadFrequently: true })
+  const cv = document.createElement('canvas')
+  cv.width = cw
+  cv.height = ch
+  const ctx = cv.getContext('2d')
+  if (!sctx || !ctx) return null
+  const lg = sctx.createLinearGradient(0, 0, 256, 0)
+  const ramp = linearRampStops(stops)
+  for (let i = 0; i < ramp.length; i += 2)
+    lg.addColorStop(Math.max(0, Math.min(1, ramp[i] as number)), ramp[i + 1] as string)
+  sctx.fillStyle = lg
+  sctx.fillRect(0, 0, 256, 1)
+  const px = sctx.getImageData(0, 0, 256, 1).data
+
+  const cx = cx01 * cw
+  const cy = cy01 * ch
+  const maxInset = Math.min(cw, ch) / 2
+  const img = ctx.createImageData(cw, ch)
+  const d = img.data
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      let t: number
+      if (kind === 'shape') {
+        const inset = Math.min(x + 0.5, y + 0.5, cw - x - 0.5, ch - y - 0.5)
+        t = 1 - Math.min(1, inset / maxInset)
+      } else {
+        const ex = x + 0.5 < cx ? cx : cw - cx
+        const ey = y + 0.5 < cy ? cy : ch - cy
+        const tx = ex > 0 ? Math.abs(x + 0.5 - cx) / ex : 1
+        const ty = ey > 0 ? Math.abs(y + 0.5 - cy) / ey : 1
+        t = Math.min(1, Math.max(tx, ty))
+      }
+      const j = Math.min(255, Math.round(t * 255)) * 4
+      const o = (y * cw + x) * 4
+      d[o] = px[j]!
+      d[o + 1] = px[j + 1]!
+      d[o + 2] = px[j + 2]!
+      d[o + 3] = px[j + 3]!
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+  if (pathGradCache.size > 64) pathGradCache.delete(pathGradCache.keys().next().value!)
+  pathGradCache.set(key, cv)
+  return cv
+}
+
 export function fillToKonva(
   fill: RenderFill,
   w: number,
   h: number,
   images?: Map<string, HTMLImageElement>,
+  // Pattern phase: the shape's page position (GDI/PDF hatches anchor at the page
+  // origin, so the cell grid must not restart at every shape's own origin)
+  phase?: { x: number; y: number },
 ): KonvaFillProps {
   switch (fill.kind) {
     case 'solid':
       return { fill: normalizeColor(fill.color) }
+    case 'pattern':
+      return {
+        fillPatternImage: patternCanvas(fill, w, h, phase) as HTMLImageElement,
+        fillPatternRepeat: 'no-repeat',
+      }
     case 'gradient': {
       if (fill.radial) {
-        // Radial (circle/rect/shape all approximated as circular). Center follows fillToRect;
-        // the 100% ring sits well beyond the farthest corner (×1.8): PowerPoint's path-gradient
-        // falloff is much slower than a corner-normalized radial (calibrated against PPT renders).
+        // rect / shape: concentric-rectangle band pattern toward the focus point
+        if (fill.path === 'rect' || fill.path === 'shape') {
+          const cv = pathGradientCanvas(
+            fill.path,
+            fill.stops,
+            w,
+            h,
+            fill.center?.x ?? 0.5,
+            fill.center?.y ?? 0.5,
+          )
+          if (cv)
+            return {
+              fillPatternImage: cv as unknown as HTMLImageElement,
+              fillPatternRepeat: 'no-repeat',
+            }
+        }
+        // circle: native radial. Center follows fillToRect; the 100% ring sits on
+        // the farthest corner (pos-1 color lands exactly in that corner, like PowerPoint).
         const cx = (fill.center?.x ?? 0.5) * w
         const cy = (fill.center?.y ?? 0.5) * h
         const far = Math.max(
@@ -129,10 +287,9 @@ export function fillToKonva(
           fillRadialGradientEndPoint: { x: cx, y: cy },
           fillRadialGradientStartRadius: 0,
           fillRadialGradientEndRadius: far * 1.0,
-          fillRadialGradientColorStops: fill.stops.flatMap((s) => [s.pos, normalizeColor(s.color)]),
+          fillRadialGradientColorStops: linearRampStops(fill.stops),
         }
       }
-      const sorted = [...fill.stops].sort((a, b) => a.pos - b.pos)
       const rad = (fill.angleDeg * Math.PI) / 180
       const dx = Math.cos(rad)
       const dy = Math.sin(rad)
@@ -144,7 +301,7 @@ export function fillToKonva(
       return {
         fillLinearGradientStartPoint: { x: cx - (dx * len) / 2, y: cy - (dy * len) / 2 },
         fillLinearGradientEndPoint: { x: cx + (dx * len) / 2, y: cy + (dy * len) / 2 },
-        fillLinearGradientColorStops: sorted.flatMap((s) => [s.pos, normalizeColor(s.color)]),
+        fillLinearGradientColorStops: linearRampStops(fill.stops),
       }
     }
     case 'image': {
@@ -160,7 +317,7 @@ export function fillToKonva(
         // recolored variants must not share cache slots with the raw image
         const srcKey = processedImageKey(fill.dataUrl ?? '', fill.clrChange, fill.duotone)
         if (fill.mode === 'tile') {
-          // PowerPoint tiles at the image's 96dpi natural size x sx/sy, anchored per algn
+          // PowerPoint tiles at the image's 144dpi natural size x sx/sy, anchored per algn
           // plus tx/ty offsets. Pre-composited into a shape-sized canvas: Konva pattern
           // transforms (scale/offset with repeat) hit the same Skia pixelRatio bug as
           // no-repeat tiles (#612), so only the pre-padded canvas + no-repeat combo is safe.
@@ -290,12 +447,77 @@ function insetFillTile(
   return c
 }
 
+const patternCellCache = new Map<string, HTMLCanvasElement>()
+const patternCanvasCache = new Map<string, HTMLCanvasElement>()
+
+/** One pattern cell (8×8 mask pixels) rendered crisp at the viewport cell size. */
+function patternCellCanvas(
+  preset: string,
+  fg: string,
+  bg: string,
+  size: number,
+): HTMLCanvasElement {
+  const key = `${preset}|${fg}|${bg}|${size}`
+  let c = patternCellCache.get(key)
+  if (!c) {
+    const grid = patternGrid(preset)
+    const base = document.createElement('canvas')
+    base.width = 8
+    base.height = 8
+    const bctx = base.getContext('2d')!
+    bctx.fillStyle = normalizeColor(bg)
+    bctx.fillRect(0, 0, 8, 8)
+    bctx.fillStyle = normalizeColor(fg)
+    for (let v = 0; v < 8; v++)
+      for (let u = 0; u < 8; u++) if (grid[v]![u]) bctx.fillRect(u, v, 1, 1)
+    c = document.createElement('canvas')
+    c.width = size
+    c.height = size
+    const ctx = c.getContext('2d')!
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(base, 0, 0, size, size)
+    if (patternCellCache.size > 200) patternCellCache.clear()
+    patternCellCache.set(key, c)
+  }
+  return c
+}
+
+/**
+ * Shape-sized pattern canvas, cell grid phase-locked to the page origin (pre-composited
+ * with no-repeat for the same Skia pixelRatio reason as anchoredTileCanvas).
+ */
+function patternCanvas(
+  fill: { preset: string; fg: string; bg: string; cellPx: number },
+  w: number,
+  h: number,
+  phase?: { x: number; y: number },
+): HTMLCanvasElement | HTMLImageElement {
+  const size = Math.max(2, Math.round(fill.cellPx))
+  const cell = patternCellCanvas(fill.preset, fill.fg, fill.bg, size)
+  if (w * h > 4096 * 4096) return cell
+  const px = ((Math.round(phase?.x ?? 0) % size) + size) % size
+  const py = ((Math.round(phase?.y ?? 0) % size) + size) % size
+  const key = `${fill.preset}|${fill.fg}|${fill.bg}|${size}|${Math.ceil(w)}x${Math.ceil(h)}|${px},${py}`
+  let c = patternCanvasCache.get(key)
+  if (!c) {
+    c = document.createElement('canvas')
+    c.width = Math.max(1, Math.ceil(w))
+    c.height = Math.max(1, Math.ceil(h))
+    const ctx = c.getContext('2d')!
+    for (let y = -py; y < h; y += size)
+      for (let x = -px; x < w; x += size) ctx.drawImage(cell, x, y)
+    if (patternCanvasCache.size > 100) patternCanvasCache.clear()
+    patternCanvasCache.set(key, c)
+  }
+  return c
+}
+
 const anchoredTileCache = new Map<string, HTMLCanvasElement>()
 
 /**
- * Compose an a:tile grid into a canvas covering the shape: tiles at the image's 96dpi
- * natural size x sx/sy, anchored per algn (tl..br) with tx/ty offsets, repeating over
- * the whole shape box.
+ * Compose an a:tile grid into a canvas covering the shape: tiles at the image's 144dpi
+ * natural size x sx/sy (the caller bakes the dpi into t.scaleX/Y), anchored per algn
+ * (tl..br) with tx/ty offsets, repeating over the whole shape box.
  */
 function anchoredTileCanvas(
   src: HTMLImageElement | HTMLCanvasElement,
@@ -625,6 +847,13 @@ export interface GlyphDraw {
   shadowOffsetX?: number
   shadowOffsetY?: number
   shadowEnabled?: boolean
+  /** WordArt gradient text fill (mapped to Konva's linear-gradient fill over the run box) */
+  fillPriority?: 'linear-gradient'
+  fillLinearGradientStartPoint?: { x: number; y: number }
+  fillLinearGradientEndPoint?: { x: number; y: number }
+  fillLinearGradientColorStops?: Array<number | string>
+  /** Run reflection: the renderer draws a faded mirrored copy below the text */
+  reflection?: boolean
 }
 
 // Same-script fallback chains for Japanese/Korean/Traditional Chinese (win/mac family names back each other up); shared by FONT_STACK and the unknown-font fallback
@@ -763,7 +992,35 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
           shadowOffsetY: run.shadow.offsetY,
           shadowEnabled: true,
         }
+      : run.glow
+        ? {
+            shadowColor: normalizeColor(run.glow.color),
+            shadowBlur: run.glow.blurPx,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+            shadowEnabled: true,
+          }
+        : {}),
+    ...(run.gradient
+      ? (() => {
+          // Gradient in Text-node-local coords (origin = glyph top-left); 90° = top→bottom
+          // across the em box, 0° = left→right across the run width
+          const rad = (run.gradient.angleDeg * Math.PI) / 180
+          const gx = Math.cos(rad)
+          const gy = Math.sin(rad)
+          const cx = run.widthPx / 2
+          const cy = run.fontSizePx * 0.5
+          // Same projection as shape fills: ramp length = the box's projection onto the direction
+          const len = Math.abs(gx) * run.widthPx + Math.abs(gy) * run.fontSizePx
+          return {
+            fillPriority: 'linear-gradient' as const,
+            fillLinearGradientStartPoint: { x: cx - (gx * len) / 2, y: cy - (gy * len) / 2 },
+            fillLinearGradientEndPoint: { x: cx + (gx * len) / 2, y: cy + (gy * len) / 2 },
+            fillLinearGradientColorStops: linearRampStops(run.gradient.stops),
+          }
+        })()
       : {}),
+    ...(run.reflection ? { reflection: true } : {}),
   }
 }
 

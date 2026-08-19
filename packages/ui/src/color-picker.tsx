@@ -101,6 +101,8 @@ export const STANDARD_COLORS: readonly ColorSwatch[] = [
 export interface ColorPickerStrings {
   themeColors: string
   standardColors: string
+  /** Section title over the recentColors row (required to show that section). */
+  recentColors?: string | undefined
   /** Omit to hide the "More Colors…" native-picker row. */
   moreColors?: string | undefined
   /** Label of the full-width top button ("Automatic" / "No Fill"…); omit to hide it. */
@@ -117,6 +119,8 @@ export interface ColorPickerProps {
   strings: ColorPickerStrings
   /** Extra classes on the panel root (typically the app's popover positioning class). */
   className?: string | undefined
+  /** Recently used colors (#RRGGBB), most recent first; shown when strings.recentColors is set. */
+  recentColors?: readonly string[] | undefined
   /** Named/shade/custom pick emits "#RRGGBB" (uppercase); the auto button emits null. */
   onPick: (hex: string | null) => void
   /** Merged onto the hidden native input; lets callers override onChange (debounce,
@@ -133,6 +137,7 @@ export function ColorPicker({
   value,
   strings,
   className,
+  recentColors,
   onPick,
   moreInputProps,
 }: ColorPickerProps): ReactElement {
@@ -178,6 +183,17 @@ export function ColorPicker({
       <div className="gcp-standard-row">
         {STANDARD_COLORS.map((c) => swatch(c.hex, strings.colorName?.(c) ?? c.name))}
       </div>
+      {strings.recentColors && recentColors && recentColors.length > 0 && (
+        <>
+          <div className="gcp-section-title">{strings.recentColors}</div>
+          <div className="gcp-standard-row">
+            {recentColors.map((hex, i) => {
+              const bare = hex.replace(/^#/, '').toUpperCase()
+              return swatch(bare, `#${bare}`, `recent-${i}-${bare}`)
+            })}
+          </div>
+        </>
+      )}
       {strings.moreColors && (
         <label className="gcp-more">
           <span className="gcp-more-icon">

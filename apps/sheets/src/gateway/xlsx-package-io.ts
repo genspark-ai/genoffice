@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -11,6 +12,7 @@ import type { DefinedNamesState } from './xlsx-defined-names'
 import type { SheetPageSetupState } from './xlsx-page-setup'
 import type {
   CellEdit,
+  BulkConstantFill,
   EntrySource,
   MutationPlan,
   PivotRefreshUpdate,
@@ -33,7 +35,14 @@ import type { SheetEditPlan } from './xlsx-sheets'
 
 /// Mirrors the sidecar's per-entry extraction cap: only entries the gateway
 /// patches must fit in memory — the archive as a whole has no size limit.
-const MAX_PATCH_ENTRY_BYTES = 256 * 1024 * 1024
+///
+/// Large, densely styled worksheets routinely exceed 256 MiB as XML even
+/// when the .xlsx itself is modest (the 88k-row suppliers fixture is about
+/// 307 MiB). 500 MiB keeps those editable while retaining a finite
+/// decompression-bomb / main-process-memory bound — deliberately below
+/// V8's maximum string length (536,870,888 bytes), so an oversized entry
+/// fails here with a clear message instead of blowing up mid-stringify.
+const MAX_PATCH_ENTRY_BYTES = 500 * 1024 * 1024
 
 const archiveEntrySchema = z.object({
   name: z.string(),
@@ -82,6 +91,7 @@ export interface StreamingSaveRequest {
   readonly sourcePath: string
   readonly targetPath: string
   readonly edits: readonly CellEdit[]
+  readonly bulkConstantFills?: readonly BulkConstantFill[] | undefined
   readonly structuralOps?: readonly SheetStructuralOps[] | undefined
   readonly chartEdits?: readonly WorkbookChartEdit[] | undefined
   readonly sheetPlan?: SheetEditPlan | undefined
@@ -127,7 +137,7 @@ export async function readArchiveEntryText(
     )
     const filePath = extracted.entries[0]?.path
     if (!filePath) throw new Error(`Workbook is missing ${entryName}.`)
-    return await readFile(filePath, 'utf8')
+    return readFileSync(filePath, 'utf8')
   } finally {
     await rm(workDir, { recursive: true, force: true })
   }
@@ -171,6 +181,7 @@ export async function saveWorkbookViaSidecar(
       request.themeState ?? null,
       request.workbookProtectionState ?? null,
       request.protectedRangeStates ?? [],
+      request.bulkConstantFills ?? [],
     )
 
     const replacements = await writePlanContents(workDir, 'replace', plan.replaced)
@@ -229,6 +240,9 @@ function createSidecarEntrySource(
       )
       return scanned.matches.includes(path)
     },
+    releaseText: (path) => {
+      cache.delete(path)
+    },
     readText: async (path) => {
       const cached = cache.get(path)
       if (cached !== undefined) return cached
@@ -237,7 +251,7 @@ function createSidecarEntrySource(
       if (entry.uncompressedSize > MAX_PATCH_ENTRY_BYTES) {
         throw new Error(
           `${path} is ${entry.uncompressedSize} bytes uncompressed — too large to edit. ` +
-            'Entries above 256MB can be preserved but not patched.',
+            'Entries above 500MB can be preserved but not patched.',
         )
       }
       const extractDir = join(workDir, `extract-${extractionCount}`)
@@ -248,7 +262,7 @@ function createSidecarEntrySource(
       )
       const filePath = extracted.entries[0]?.path
       if (!filePath) throw new Error(`Sidecar did not extract ${path}.`)
-      const content = await readFile(filePath, 'utf8')
+      const content = readFileSync(filePath, 'utf8')
       cache.set(path, content)
       return content
     },
@@ -265,11 +279,40 @@ async function writePlanContents(
   for (const [name, content] of contents) {
     const contentPath = join(workDir, `${prefix}-${index}.bin`)
     index += 1
-    if (typeof content === 'string') await writeFile(contentPath, content, 'utf8')
-    else await writeFile(contentPath, content)
+    if (typeof content === 'string') writeUtf8StringChunked(contentPath, content)
+    else writeFileSync(contentPath, content)
     written.push({ name, contentPath })
   }
   return written
+}
+
+function writeUtf8StringChunked(path: string, content: string): void {
+  const descriptor = openSync(path, 'wx')
+  try {
+    const chunkCharacters = 1024 * 1024
+    // One reusable buffer (4 bytes/char upper bound) instead of a fresh
+    // Buffer per chunk — a 300MB entry otherwise churns hundreds of MB of
+    // external allocations while the GC is already under string pressure.
+    const buffer = Buffer.allocUnsafe(4 * chunkCharacters)
+    for (let start = 0; start < content.length;) {
+      let end = Math.min(content.length, start + chunkCharacters)
+      // Do not split a Unicode surrogate pair between independently encoded
+      // chunks, or a non-BMP character would be replaced on disk.
+      if (end < content.length) {
+        const last = content.charCodeAt(end - 1)
+        if (last >= 0xd800 && last <= 0xdbff) end -= 1
+      }
+      const bytes = buffer.write(content.slice(start, end), 0, 'utf8')
+      for (let offset = 0; offset < bytes;) {
+        const written = writeSync(descriptor, buffer, offset, bytes - offset)
+        if (written === 0) throw new Error(`Could not finish writing ${path}.`)
+        offset += written
+      }
+      start = end
+    }
+  } finally {
+    closeSync(descriptor)
+  }
 }
 
 function manifestsEqual(left: readonly ArchiveEntry[], right: readonly ArchiveEntry[]): boolean {

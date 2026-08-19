@@ -8,6 +8,7 @@ import {
   runsToInline,
   signatureOfBlock,
   signatureOfGenerated,
+  tableModelToPmNode,
   type PmNode,
 } from '../src/renderer/editor/convert'
 
@@ -59,6 +60,8 @@ describe('runsToInline image runs', () => {
           wrap: null,
           offsetXEmu: null,
           offsetYEmu: null,
+          border: null,
+          lineCenterV: false,
         },
       },
     ])
@@ -79,6 +82,8 @@ describe('runsToInline image runs', () => {
           wrap: null,
           offsetXEmu: null,
           offsetYEmu: null,
+          border: null,
+          lineCenterV: false,
         },
       },
     ])
@@ -247,6 +252,25 @@ describe('section row-height cap (declared trHeight taller than a page)', () => 
     expect(capped.rowHeightsTwips).toEqual([12960])
     expect(capped.rows[0][0].nestedTables![0].rowHeightsTwips).toEqual([12960])
     expect(capTableRowHeights(model, 40000)).toBe(model)
+  })
+})
+
+describe('oversize floating tables (w:tblpPr) lose the float', () => {
+  const row = [{ paras: ['x'] }]
+
+  it('a table taller than a page flows instead of floating', () => {
+    const model: TableModel = { rows: Array.from({ length: 60 }, () => row), floatSide: 'left' }
+    expect(tableModelToPmNode(model).attrs!.tblFloat).toBeNull()
+  })
+
+  it('a small floating table keeps its side', () => {
+    const model: TableModel = { rows: [row, row], floatSide: 'right' }
+    expect(tableModelToPmNode(model).attrs!.tblFloat).toBe('right')
+  })
+
+  it('declared row heights count toward the overflow estimate', () => {
+    const model: TableModel = { rows: [row], rowHeightsTwips: [20000], floatSide: 'left' }
+    expect(tableModelToPmNode(model).attrs!.tblFloat).toBeNull()
   })
 })
 

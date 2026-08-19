@@ -4,6 +4,7 @@ import {
   makeGapEl,
   syncCutOverlays,
   syncPhantomRowspans,
+  clampCellBoxTops,
 } from '../src/renderer/editor/pagination-gaps'
 import { createLineRectsCache, singleCutCell } from '../src/renderer/pagination'
 
@@ -184,5 +185,37 @@ describe('createLineRectsCache', () => {
     expect(rectsOf(el, 1)).toBe(a)
     const other = document.createElement('p')
     expect(rectsOf(other, 1)).not.toBe(a)
+  })
+})
+
+describe('clampCellBoxTops', () => {
+  const boxAt = (pm: HTMLElement, top: number, height = 45): HTMLElement => {
+    const cell = document.createElement('div')
+    cell.className = 'doc-cell-boxes'
+    const box = document.createElement('div')
+    box.className = 'doc-textbox'
+    box.getBoundingClientRect = () => ({ top, bottom: top + height, height, width: 100 }) as DOMRect
+    cell.appendChild(box)
+    pm.appendChild(cell)
+    return box
+  }
+
+  it('pushes a box lifted above the paper top back to the edge; leaves on-page boxes alone', () => {
+    const pm = document.createElement('div')
+    const above = boxAt(pm, -62)
+    const inside = boxAt(pm, 30)
+    clampCellBoxTops(pm, 0, 1)
+    expect(above.style.getPropertyValue('--page-float-dy')).toBe('62.0px')
+    expect(inside.style.getPropertyValue('--page-float-dy')).toBe('')
+  })
+
+  it('is idempotent: a re-run against the already-shifted rect keeps the same dy', () => {
+    const pm = document.createElement('div')
+    const box = boxAt(pm, -62)
+    clampCellBoxTops(pm, 0, 1)
+    // after the translate the live rect reads at the paper top
+    box.getBoundingClientRect = () => ({ top: 0, bottom: 45, height: 45, width: 100 }) as DOMRect
+    clampCellBoxTops(pm, 0, 1)
+    expect(box.style.getPropertyValue('--page-float-dy')).toBe('62.0px')
   })
 })

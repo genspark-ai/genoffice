@@ -2124,6 +2124,23 @@ th.cell-rev-del {
   column-fill: auto;
 }
 
+/* mixed-column canvas layout (sections with differing column specs): blocks keep the
+   engine's stacked flow and are painted into their column slot by a per-block width +
+   constant translate; the width also applies in preview clones (line breaks must match) */
+.doc-page .doc-col-block {
+  width: var(--col-w, auto);
+}
+
+.editor-scroll .doc-page:not(.measuring-columns) .doc-col-block {
+  transform: translate(var(--col-dx, 0px), var(--col-dy, 0px));
+}
+
+/* single-flow measuring state: transforms and the column-space pull-up must not
+   distort the 1-D virtual coordinates */
+.editor-scroll .doc-page.measuring-columns .page-gap {
+  margin-top: 0 !important;
+}
+
 /* page border (w:pgBorders): a box inset from the page edge */
 .page-bordered .doc-page {
   outline: 1.5px solid var(--docs-paper-ink-dim);
@@ -2555,6 +2572,31 @@ th.cell-rev-del {
 .rev-display-none .doc-ins .doc-del,
 .rev-display-original .doc-del .doc-ins {
   display: none;
+}
+
+/* balloon mode (print view, All Markup): deletions and format-change chrome move
+   to margin balloons and leave the text flow (Word's balloon view); insertions
+   stay inline. Collapsed paragraphs are fully deleted ones whose mark is also
+   deleted — Word shows no trace of them in the body. */
+.rev-balloon .doc-del,
+.rev-balloon .doc-para-del-collapse {
+  display: none;
+}
+
+/* deleted table rows/cells leave the flow with their fills (Word shows them balloon-side only) */
+.rev-balloon tr.row-rev-del,
+.rev-balloon td.cell-rev-del,
+.rev-balloon th.cell-rev-del {
+  display: none;
+}
+
+.rev-balloon .has-ppr-change {
+  border-left: none;
+  padding-left: 0;
+}
+
+.rev-balloon .has-ppr-change::after {
+  content: none;
 }
 
 /* Compare result pane */
@@ -3875,6 +3917,37 @@ th.cell-rev-del {
   overflow: visible;
 }
 
+/* wrapNone / behind-text anchored images: same zero-flow-height semantics */
+.doc-protected.doc-img-float {
+  position: relative;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.doc-img-float > .doc-img-wrap {
+  translate: 0 var(--page-float-dy, 0px);
+}
+
+/* cell-anchored boxes share the float display-shift channel (paper-top clamp) */
+.doc-cell-boxes > .doc-textbox,
+.doc-cell-boxes > div {
+  translate: 0 var(--page-float-dy, 0px);
+}
+.pv-clip .doc-cell-boxes > .doc-textbox,
+.pv-clip .doc-cell-boxes > div {
+  translate: none;
+}
+
+.pv-clip .doc-img-float > .doc-img-wrap {
+  translate: none;
+}
+
 /* anchor-paragraph text next to all-floating boxes keeps its flow line:
    the wrapper takes the stray line's height instead of collapsing */
 .doc-protected.doc-protected-floating.doc-protected-floating-stray {
@@ -3989,11 +4062,27 @@ th.cell-rev-del {
   user-select: none;
 }
 
-/* empty section-break paragraphs: invisible unless hovered/selected */
+/* empty section-break paragraphs: zero flow height like Word's absorbed section
+   mark (a 26px strip shifted every page below it); the label is an absolute
+   overlay (transparent until the node is selected), so it never takes flow space */
 .doc-protected-sectbreak {
   border-color: transparent;
   background: transparent;
-  padding: 0 0 2px;
+  padding: 0;
+  border-width: 0;
+  margin: 0;
+  height: 0;
+  min-height: 0;
+  position: relative;
+  overflow: visible;
+}
+
+.doc-protected-sectbreak .doc-sectbreak-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
 }
 
 .doc-protected-sectbreak:hover {
@@ -4443,10 +4532,14 @@ th.cell-rev-del {
   display: block;
 }
 
-/* SmartArt / drawing-canvas blocks: the shapes are the content — no chip box */
+/* SmartArt / drawing-canvas blocks: the shapes are the content — no chip box.
+   Zero padding: the block footprint must equal the declared wp:extent so
+   pagination matches Word (the dashed 1px border stays as hover chrome). */
 .doc-protected-diagram {
   border-color: transparent;
   background: none;
+  padding: 0;
+  margin: 0;
 }
 
 .doc-protected-diagram:hover {
@@ -4641,9 +4734,21 @@ th.cell-rev-del {
   text-align: center;
 }
 
-/* behind text / in front of text: the flowing canvas has no absolutely positioned layer; reduced opacity as an approximation */
-.doc-protected.img-wrap-behind {
-  opacity: 0.45;
+/* floating tables (w:tblpPr): text flows around the free side */
+.doc-table.doc-table-float-left {
+  float: left;
+  margin: 2px 12px 6px 0;
+}
+
+.doc-table.doc-table-float-right {
+  float: right;
+  margin: 2px 0 6px 12px;
+}
+
+/* behind text: the absolutely positioned wrap drops under the flow's inline
+   content (negative z-index stays above the paper: no intermediate background) */
+.img-wrap-behind > .doc-img-wrap {
+  z-index: -1;
 }
 
 .ProseMirror-focused
@@ -6342,6 +6447,62 @@ body.docs-crop-active
   border-color: var(--word-blue);
 }
 
+/* ---- Protect Document dialog (Review > Protect, Word's Password Protect layout) ---- */
+
+.modal.protect-dialog {
+  width: 480px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+
+.protect-dialog .protect-section-title {
+  margin: 16px 0 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.protect-dialog h2 + .protect-section-title {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* checkbox / radio rows: inline control, not the stacked full-width input */
+.protect-dialog label.protect-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.protect-dialog label.protect-check input {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+/* the four Word protection modes, indented under the enable checkbox */
+.protect-dialog .protect-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+  margin: 0 0 10px 24px;
+}
+
+.protect-dialog .protect-modes .protect-check {
+  margin-bottom: 6px;
+}
+
+.protect-dialog .pgnum-hint {
+  margin: -6px 0 12px;
+}
+
 /* ---- print dialog (Word-style: page preview + range options) ---- */
 
 .modal.print-dialog {
@@ -7769,6 +7930,25 @@ tr > .page-gap-cut {
   border-top: 1px solid var(--border);
 }
 
+/* revision balloons (Deleted:/Formatted:) share the bubble frame, keyed by revision ink */
+.rev-bubble {
+  cursor: default;
+  border-left-color: var(--docs-paper-rev-ink);
+}
+
+.rev-bubble .rev-bubble-label {
+  font-weight: 700;
+}
+
+.rev-bubble .rev-bubble-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rev-bubble-del .rev-bubble-text {
+  text-decoration: line-through;
+}
+
 /* nested table inside a cell (read-only child table) */
 /* anchored shapes/textboxes inside a cell: in-flow spacer sized to the boxes'
    extent (Word grows the row), boxes positioned absolutely within it */
@@ -7777,6 +7957,12 @@ tr > .page-gap-cut {
   float: left;
   width: 0;
   overflow: visible;
+}
+
+/* the zero-width host must not collapse an absolutely-positioned box:
+   its own width (from the anchor extent) wins over the 100% cap */
+.doc-cell-boxes > .doc-textbox {
+  max-width: none;
 }
 
 .doc-nested-table {
@@ -8267,4 +8453,15 @@ tr > .page-gap-cut {
 /* Gallery variant keeps .shape-palette's anchored-card chrome but stacks grouped grids */
 .shape-palette.rb-shape-gallery {
   display: block;
+}
+
+/* Whitespace-only runs: Word ignores their font size for line height (tdf#137335).
+   Only the run's own [data-doc-style] span carries the oversized font-size — outer
+   comment/ins/del spans inherit the paragraph size and contribute nothing — so zero
+   that span and everything nested inside it (intermediate marks, the decoration),
+   without touching ancestor spans that may also wrap real text. */
+.doc-page .doc-ws-run,
+.doc-page span[data-doc-style]:has(.doc-ws-run),
+.doc-page span[data-doc-style]:has(.doc-ws-run) span {
+  line-height: 0;
 }

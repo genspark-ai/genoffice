@@ -1,7 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
+import { docToText } from './doc'
 import { docxToText } from './docx'
 import { pdfToText } from './pdf'
+import { pptToText } from './ppt'
 import { pptxToText } from './pptx'
 import { xlsxToText } from './xlsx'
 
@@ -35,6 +37,7 @@ const TEXT_EXTS = new Set([
   'html',
   'htm',
   'log',
+  'py',
 ])
 
 /** parse an attachment into plain text (or flag it as image / unsupported) */
@@ -47,8 +50,12 @@ export async function parseFileToText(filePath: string): Promise<ParsedFile> {
       return { ok: true, kind: 'text', text: await readFile(filePath, 'utf-8') }
     }
     switch (ext) {
+      case 'doc':
+        return { ok: true, kind: 'text', text: await docToText(await readFile(filePath)) }
       case 'docx':
         return { ok: true, kind: 'text', text: await docxToText(await readFile(filePath)) }
+      case 'ppt':
+        return { ok: true, kind: 'text', text: await pptToText(await readFile(filePath)) }
       case 'pptx':
         return { ok: true, kind: 'text', text: await pptxToText(await readFile(filePath)) }
       case 'xlsx':

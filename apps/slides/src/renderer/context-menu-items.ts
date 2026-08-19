@@ -324,6 +324,16 @@ export function buildCtxItems(ctx: ActionCtx): Array<CtxItem | null> {
     ...(node && isEditableText(node)
       ? [{ label: t('appCtxEditText'), onClick: () => ctx.startEdit(ctxMenu.targetId) } as CtxItem]
       : []),
+    // Connectors are endpoint-based (p:cxnSp): swapping their prstGeom would
+    // orphan the connection metadata, so they keep their existing menu.
+    ...(single && node?.type === 'shape' && !(node as { line?: unknown }).line
+      ? [
+          {
+            label: t('appCtxChangeShape'),
+            onClick: () => ctx.openChangeShape(ctxMenu.targetId, ctxMenu.x, ctxMenu.y),
+          } as CtxItem,
+        ]
+      : []),
     ...(single
       ? [
           {

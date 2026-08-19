@@ -180,6 +180,12 @@ export interface TextRun {
   outline?: { color: ResolvedColor; widthEmu: number }
   /** Run-level outer shadow (<a:rPr>/defRPr <a:effectLst><a:outerShdw>) */
   shadow?: ShadowEffect
+  /** WordArt gradient text fill (<a:rPr><a:gradFill>); color keeps a mid-stop fallback */
+  gradient?: { stops: Array<{ pos: number; color: ResolvedColor }>; angle?: number }
+  /** Run-level glow (<a:rPr><a:effectLst><a:glow>) */
+  glow?: GlowEffect
+  /** Run-level reflection (<a:rPr><a:effectLst><a:reflection>), rendered as a faded mirror */
+  reflection?: boolean
 }
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
@@ -252,6 +258,8 @@ export interface TextBody {
   numCol?: number
   /** <a:bodyPr spcCol>: gap between columns (EMU) */
   spcCol?: number
+  /** <a:bodyPr><a:scene3d>+<a:sp3d>: WordArt text extrusion (camera angles in degrees) */
+  extrusion3d?: { color: ResolvedColor; depthEmu: number; latDeg: number; lonDeg: number }
 }
 
 // ── Elements ───────────────────────────────────────────────────────────
@@ -346,6 +354,31 @@ export interface CustomGeometry {
   strokePath?: string
 }
 
+/**
+ * <a:scene3d> + <a:sp3d>: 3D scene (camera + light rig) and shape extrusion.
+ * Angles are in 1/60000 degree (OOXML ST_Angle); lengths in EMU.
+ */
+export interface Scene3D {
+  /** <a:camera prst> preset name (ST_PresetCameraType) */
+  cameraPreset: string
+  /** <a:camera><a:rot>: overrides the preset's angles when present */
+  cameraRot?: { lat: number; lon: number; rev: number }
+  /** <a:lightRig rig> preset name (ST_LightRigType) */
+  lightRig?: string
+  /** <a:lightRig dir>: rig rotation in 45° steps (tl/t/tr/l/r/bl/b/br) */
+  lightDir?: string
+  /** <a:lightRig><a:rot> */
+  lightRot?: { lat: number; lon: number; rev: number }
+  /** <a:sp3d extrusionH> extrusion depth (EMU) */
+  extrusionEmu?: number
+  /** <a:sp3d z> shape z-position in the scene (EMU) */
+  zEmu?: number
+  /** <a:sp3d><a:extrusionClr> resolved color for the extruded side walls */
+  extrusionColor?: ResolvedColor
+  /** <a:sp3d prstMaterial> (legacyWireframe renders edges only) */
+  material?: string
+}
+
 export interface TextElement extends ElementBase {
   type: 'text' | 'shape'
   /** Shape's preset geometry (rect/ellipse/roundRect/…); absent for text */
@@ -363,6 +396,7 @@ export interface TextElement extends ElementBase {
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect
+  scene3d?: Scene3D
   text?: TextBody
 }
 

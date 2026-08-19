@@ -6,7 +6,7 @@
 [![Latest release](https://img.shields.io/github/v/release/genspark-ai/genoffice)](https://github.com/genspark-ai/genoffice/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/genspark-ai/genoffice/total)](https://github.com/genspark-ai/genoffice/releases)
 
-[Website](https://genoffice.ai/) · [Download](https://github.com/genspark-ai/genoffice/releases/latest) · [Demo](https://www.youtube.com/watch?v=B2pLdMX95v4)
+[Website](https://genoffice.ai/) · [Download](https://github.com/genspark-ai/genoffice/releases/latest) · [Privacy](PRIVACY.md) · [Demo](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
 GenOffice is a free, open-source alternative to Microsoft Office for macOS,
 Windows, and Linux, built around AI editing as a first-class workflow rather
@@ -38,12 +38,12 @@ layer.
 
 | Platform                             | Requirements                                          | Download                                                                                                                         |
 | ------------------------------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [GenOffice-0.7.204-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.7.204/GenOffice-0.7.204-arm64.dmg)   |
-| **macOS** — Intel (x64)              | macOS 11+                                             | [GenOffice-0.7.204.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.7.204/GenOffice-0.7.204.dmg)               |
-| **Windows** (x64)                    | Windows 10+                                           | [GenOfficeSetup-v0.7.204.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.7.204/GenOfficeSetup-v0.7.204.exe)   |
-| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer)           | [genoffice_0.7.204_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/v0.7.204/genoffice_0.7.204_amd64.deb)   |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | [genoffice-0.7.204.x86_64.rpm](https://github.com/genspark-ai/genoffice/releases/download/v0.7.204/genoffice-0.7.204.x86_64.rpm) |
-| **Linux** — other distributions      | x86_64, glibc 2.34+, FUSE 2                           | [GenOffice-0.7.204.AppImage](https://github.com/genspark-ai/genoffice/releases/download/v0.7.204/GenOffice-0.7.204.AppImage)     |
+| **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [GenOffice-0.7.512-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.7.512/GenOffice-0.7.512-arm64.dmg)   |
+| **macOS** — Intel (x64)              | macOS 11+                                             | [GenOffice-0.7.512.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.7.512/GenOffice-0.7.512.dmg)               |
+| **Windows** (x64)                    | Windows 10+                                           | [GenOfficeSetup-v0.7.512.exe](https://github.com/genspark-ai/genoffice/releases/download/v0.7.512/GenOfficeSetup-v0.7.512.exe)   |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer)           | [genoffice_0.7.512_amd64.deb](https://github.com/genspark-ai/genoffice/releases/download/v0.7.512/genoffice_0.7.512_amd64.deb)   |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | [genoffice-0.7.512.x86_64.rpm](https://github.com/genspark-ai/genoffice/releases/download/v0.7.512/genoffice-0.7.512.x86_64.rpm) |
+| **Linux** — other distributions      | x86_64, glibc 2.34+, FUSE 2                           | [GenOffice-0.7.512.AppImage](https://github.com/genspark-ai/genoffice/releases/download/v0.7.512/GenOffice-0.7.512.AppImage)     |
 
 All builds come from `main`; the macOS and Windows installers are signed.
 Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
@@ -54,14 +54,14 @@ The deb installs with apt — it pulls in the dependencies and adds GenOffice
 to the applications menu:
 
 ```bash
-sudo apt install ./genoffice_0.7.204_amd64.deb
+sudo apt install ./genoffice_0.7.512_amd64.deb
 ```
 
 On Fedora / RHEL-family / openSUSE, install the rpm instead:
 
 ```bash
-sudo dnf install ./genoffice-0.7.204.x86_64.rpm     # Fedora / RHEL family
-sudo zypper install ./genoffice-0.7.204.x86_64.rpm  # openSUSE
+sudo dnf install ./genoffice-0.7.512.x86_64.rpm     # Fedora / RHEL family
+sudo zypper install ./genoffice-0.7.512.x86_64.rpm  # openSUSE
 ```
 
 The AppImage instead runs in place: install the FUSE 2 runtime
@@ -69,8 +69,8 @@ The AppImage instead runs in place: install the FUSE 2 runtime
 make the file executable, then run it:
 
 ```bash
-chmod +x GenOffice-0.7.204.AppImage
-./GenOffice-0.7.204.AppImage
+chmod +x GenOffice-0.7.512.AppImage
+./GenOffice-0.7.512.AppImage
 ```
 
 ## Apps
@@ -176,6 +176,12 @@ in to a Genspark account and need a network connection.
 **Can GenOffice edit PDF files?**
 Yes — real PDF text and image editing that rewrites the page content stream
 with the original fonts preserved, not cover-up annotations.
+
+**Does GenOffice collect any data?**
+Official packaged builds send limited usage analytics by default, and you can
+disable reporting at any time under Settings → General. Analytics never sends
+document content, file names, file paths, account identity, or email addresses.
+See [GenOffice Privacy](PRIVACY.md) for the complete event and data disclosures.
 
 ## Security
 

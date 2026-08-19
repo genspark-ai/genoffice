@@ -54,6 +54,10 @@ pub struct WorkbookMetadata {
     /// workbookPr/@date1904: serial dates count from 1904-01-01.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub date1904: bool,
+    /// System short-date pattern applied to builtin numFmtIds 14/22, echoed
+    /// so the renderer's own short-date affordances match.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short_date_format: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -81,6 +85,10 @@ pub struct SheetMetadata {
     pub name: String,
     pub row_count: usize,
     pub column_count: usize,
+    /// Uncompressed worksheet XML size. The host uses this to avoid
+    /// background recovery saves whose string-based patch path would require
+    /// several copies of a very large entry in the Electron main process.
+    pub source_xml_bytes: u64,
     pub column_widths: Vec<ColumnWidth>,
     pub default_row_height: Option<f64>,
     pub default_column_width: Option<f64>,
@@ -133,6 +141,14 @@ pub struct PivotTableInfo {
     /// keeps pivot styling out of cell xfs entirely.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub header_fill: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_font_color: Option<String>,
+    /// Body band fill for solid families (Dark); stripe overlays it on
+    /// alternating data rows when the style shows row stripes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub whole_table_fill: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stripe_fill: Option<String>,
     /// location/@firstDataRow — rows above it inside the output ref are
     /// header rows.
     #[serde(skip_serializing_if = "is_zero")]
@@ -231,6 +247,14 @@ pub struct TableInfo {
     pub total_row_fill: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_row_font_color: Option<String>,
+    /// Rule Excel draws across the top of the totals band (thin/medium/double).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_row_border_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_row_border_style: Option<String>,
+    /// Data-band text color (Dark families paint white on the solid body).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_font_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_header_cell_font_color: Option<String>,
     /// table/@totalsRowCount — rows at the bottom styled as the totals band.
@@ -239,6 +263,23 @@ pub struct TableInfo {
     /// Style frame color (outline + header rule) for border-drawn families.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border_color: Option<String>,
+    /// Custom-style wholeTable borders: outline + inner grid + header rule.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub whole_table_border_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub whole_table_border_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_horizontal_border_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_horizontal_border_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_vertical_border_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_vertical_border_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_bottom_border_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_bottom_border_style: Option<String>,
 }
 
 fn is_zero(value: &usize) -> bool {
@@ -517,13 +558,14 @@ impl WorkbookSessions {
     }
 
     pub fn open(&mut self, path: &Path) -> Result<WorkbookMetadata, SidecarError> {
-        self.open_with_locale(path, "zh")
+        self.open_with_locale(path, "zh", None)
     }
 
     pub fn open_with_locale(
         &mut self,
         path: &Path,
         locale: &str,
+        short_date_format: Option<&str>,
     ) -> Result<WorkbookMetadata, SidecarError> {
         let canonical_path = path.canonicalize()?;
         let file = File::open(&canonical_path)?;
@@ -537,8 +579,13 @@ impl WorkbookSessions {
         let (declarations, workbook_protection, active_tab, date_1904) =
             read_sheet_declarations(&mut archive)?;
         let relationships = read_workbook_relationships(&mut archive)?;
-        let (styles, dxf_styles) =
-            visuals::read_styles(&mut archive, &color_context, theme_fonts.as_ref(), locale)?;
+        let (styles, dxf_styles) = visuals::read_styles(
+            &mut archive,
+            &color_context,
+            theme_fonts.as_ref(),
+            locale,
+            short_date_format,
+        )?;
         let custom_table_styles = read_custom_table_styles(&mut archive, &dxf_styles);
         let mut sheets = Vec::with_capacity(declarations.len());
         let mut runtimes = Vec::with_capacity(declarations.len());
@@ -552,6 +599,7 @@ impl WorkbookSessions {
                 ))
             })?;
             let worksheet_path = normalize_worksheet_path(target)?;
+            let source_xml_bytes = zip_entry(&mut archive, &worksheet_path)?.size();
             let dimensions = read_sheet_dimensions(&mut archive, &worksheet_path, &color_context)?;
             let tables = read_sheet_tables(
                 &mut archive,
@@ -580,21 +628,37 @@ impl WorkbookSessions {
                 .collect();
             let pivot_tables = pivot_infos
                 .into_iter()
-                .map(|info| PivotTableInfo {
-                    header_fill: pivot_style_fill(info.style_name.as_deref(), &color_context),
-                    path: info.path,
-                    cache_path: info.cache_path,
-                    output_ref: info.output_ref,
-                    first_data_row: info.first_data_row,
-                    row_grand_totals: info.row_grand_totals,
+                .map(|info| {
+                    let palette = pivot_style_palette(info.style_name.as_deref(), &color_context);
+                    PivotTableInfo {
+                        header_fill: palette.header_fill,
+                        header_font_color: palette.header_font_color,
+                        whole_table_fill: palette.whole_table_fill,
+                        stripe_fill: palette.stripe_fill.filter(|_| info.show_row_stripes),
+                        path: info.path,
+                        cache_path: info.cache_path,
+                        output_ref: info.output_ref,
+                        first_data_row: info.first_data_row,
+                        row_grand_totals: info.row_grand_totals,
+                    }
                 })
                 .collect();
             let id = format!("sheet-{}", declaration.sheet_id);
+            // A table may extend past the last written cell (a header-only
+            // sheet whose table spans empty data rows); its banding and
+            // frame still render there, so the grid must reach it.
+            let (mut row_count, mut column_count) =
+                (dimensions.row_count, dimensions.column_count);
+            for table in &tables {
+                row_count = row_count.max(table.range.end_row + 1);
+                column_count = column_count.max(table.range.end_column + 1);
+            }
             sheets.push(SheetMetadata {
                 id: id.clone(),
                 name: declaration.name,
-                row_count: dimensions.row_count,
-                column_count: dimensions.column_count,
+                row_count,
+                column_count,
+                source_xml_bytes,
                 column_widths: dimensions.column_widths,
                 default_row_height: dimensions.default_row_height,
                 default_column_width: dimensions.default_column_width,
@@ -672,6 +736,7 @@ impl WorkbookSessions {
             theme_fonts,
             workbook_protection,
             date1904: date_1904,
+            short_date_format: short_date_format.map(ToOwned::to_owned),
         })
     }
 
@@ -1188,7 +1253,7 @@ fn read_sheet_dimensions(
     worksheet_path: &str,
     colors: &ColorContext,
 ) -> Result<SheetDimensions, SidecarError> {
-    let entry = archive.by_name(worksheet_path)?;
+    let entry = zip_entry(archive, worksheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(entry));
     let mut buffer = Vec::new();
     let mut maximum_row = 0;
@@ -1314,8 +1379,13 @@ fn read_sheet_dimensions(
                 if element.local_name().as_ref() == b"sheetData"
                     // Single-row/column dimensions are the signature of writers
                     // that never update <dimension> (POI SXSSF, OpenXML SDK
-                    // producers emitting A1 or A1:G1); measure instead.
-                    && dimensions.is_some_and(|(rows, columns)| rows > 1 && columns > 1) =>
+                    // producers emitting A1 or A1:G1). Small dimensions can be
+                    // stale too (tdf113271 declares A1:F5 over 462 rows) and
+                    // are cheap to verify — trust only refs large enough that
+                    // scanning them would cost real time.
+                    && dimensions.is_some_and(|(rows, columns)| {
+                        rows > 1 && columns > 1 && rows * columns >= DIMENSION_TRUST_CELLS
+                    }) =>
             {
                 let (row_count, column_count) = dimensions.unwrap_or((1, 1));
                 return Ok(SheetDimensions {
@@ -1379,6 +1449,8 @@ fn read_sheet_dimensions(
     }
 }
 
+const DIMENSION_TRUST_CELLS: usize = 10_000;
+
 fn dimensions_from_reference(reference: &str) -> Result<(usize, usize), SidecarError> {
     let last = reference
         .split(':')
@@ -1393,7 +1465,7 @@ fn read_shared_strings(
     archive: &mut ZipArchive<File>,
     colors: &ColorContext,
 ) -> Result<Vec<SharedString>, SidecarError> {
-    let Ok(entry) = archive.by_name("xl/sharedStrings.xml") else {
+    let Ok(entry) = zip_entry(archive, "xl/sharedStrings.xml") else {
         return Ok(Vec::new());
     };
     let mut reader = Reader::from_reader(BufReader::new(entry));
@@ -1434,6 +1506,13 @@ fn read_shared_strings(
             }
             Event::Text(text) if in_text => {
                 let decoded = decode_text(&text)?;
+                current.push_str(&decoded);
+                if let Some(run) = &mut current_run {
+                    run.text.push_str(&decoded);
+                }
+            }
+            Event::CData(text) if in_text => {
+                let decoded = decode_cdata(&text)?;
                 current.push_str(&decoded);
                 if let Some(run) = &mut current_run {
                     run.text.push_str(&decoded);
@@ -1532,7 +1611,7 @@ fn index_worksheet(
     let file = File::open(workbook_path)?;
     let mut archive = ZipArchive::new(file)?;
     let link_targets = visuals::hyperlink_targets(&mut archive, worksheet_path)?;
-    let entry = archive.by_name(worksheet_path)?;
+    let entry = zip_entry(&mut archive, worksheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(entry));
     let mut buffer = Vec::new();
     let mut cell_builder: Option<CellBuilder> = None;
@@ -1565,6 +1644,7 @@ fn index_worksheet(
     let mut x14_current_id: Option<String> = None;
     let mut x14_negative_colors: HashMap<String, String> = HashMap::new();
     let mut x14_databars: HashMap<String, (Option<bool>, bool)> = HashMap::new();
+    let mut x14_cfvo_kinds: HashMap<String, Vec<String>> = HashMap::new();
     let mut auto_filter: Option<MergedRange> = None;
     let mut sheet_protection: Option<SheetProtectionInfo> = None;
     let mut row_breaks: Vec<usize> = Vec::new();
@@ -1698,9 +1778,13 @@ fn index_worksheet(
                     apply_run_property(run, &reader, &element, colors)?;
                 }
             }
-            Event::Text(text) => {
+            event @ (Event::Text(_) | Event::CData(_)) => {
+                let decoded = match &event {
+                    Event::Text(text) => decode_text(text)?,
+                    Event::CData(text) => decode_cdata(text)?,
+                    _ => unreachable!(),
+                };
                 if let Some(builder) = &mut cell_builder {
-                    let decoded = decode_text(&text)?;
                     if in_formula {
                         builder.formula.push_str(&decoded);
                     } else if in_value {
@@ -1716,18 +1800,18 @@ fn index_worksheet(
                         .as_mut()
                         .and_then(|rule| rule.formulas.last_mut())
                     {
-                        formula.push_str(&decode_text(&text)?);
+                        formula.push_str(&decoded);
                     }
                 } else if in_cf_ext_id {
                     cf_rule_ext_id
                         .get_or_insert_with(String::new)
-                        .push_str(&decode_text(&text)?);
+                        .push_str(&decoded);
                 } else if in_dv_formula {
                     if let Some(formula) = dv_rule
                         .as_mut()
                         .and_then(|rule| rule.formulas.last_mut())
                     {
-                        formula.push_str(&decode_text(&text)?);
+                        formula.push_str(&decoded);
                     }
                 }
             }
@@ -2036,6 +2120,17 @@ fn index_worksheet(
                     }
                 }
             }
+            // x14:cfvo inside an x14 twin: autoMin/autoMax refine the 2006
+            // twin's plain min/max (Excel anchors auto bounds at zero).
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"cfvo" && cf_rule.is_none() =>
+            {
+                if let Some(id) = &x14_current_id {
+                    if let Some(kind) = attribute_value(&reader, &element, b"type")? {
+                        x14_cfvo_kinds.entry(id.clone()).or_default().push(kind);
+                    }
+                }
+            }
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"cfvo" && cf_rule.is_some() =>
             {
@@ -2122,6 +2217,18 @@ fn index_worksheet(
         {
             rule.gradient = gradient;
             rule.negative_same_as_positive = Some(same_as_positive);
+        }
+    }
+    for (id, kinds) in x14_cfvo_kinds {
+        if let Some(rule) = x14_rule_slots
+            .get(&id)
+            .and_then(|slot| conditional_rules.get_mut(*slot))
+        {
+            for (cfvo, kind) in rule.cfvos.iter_mut().zip(kinds) {
+                if kind == "autoMin" || kind == "autoMax" {
+                    cfvo.kind = kind;
+                }
+            }
         }
     }
     index.conditional_rules = conditional_rules;
@@ -2239,14 +2346,20 @@ fn read_defined_names(archive: &mut ZipArchive<File>) -> Result<Vec<DefinedName>
                     defined.formula.push_str(&decode_text(&text)?);
                 }
             }
+            Event::CData(text) => {
+                if let Some(defined) = &mut current {
+                    defined.formula.push_str(&decode_cdata(&text)?);
+                }
+            }
             Event::GeneralRef(reference) => {
                 if let Some(defined) = &mut current {
                     defined.formula.push_str(&general_ref_text(&reference)?);
                 }
             }
             Event::End(element) if element.local_name().as_ref() == b"definedName" => {
-                if let Some(defined) = current.take() {
+                if let Some(mut defined) = current.take() {
                     if !defined.formula.is_empty() {
+                        defined.formula = strip_future_function_markers(&defined.formula);
                         names.push(defined);
                     }
                 }
@@ -2271,11 +2384,9 @@ fn rgb_hex((red, green, blue): (u8, u8, u8)) -> String {
     format!("#{red:02X}{green:02X}{blue:02X}")
 }
 
-/// Approximates the built-in table style families using the workbook's real
-/// theme accents: accent cycle is (n-1) % 7 with 0 = neutral gray, variants
-/// come in blocks of 7 (Light 1-21, Medium 1-28, Dark 1-11).
 /// Fills/font colors a table band can draw, resolved from a custom
-/// `<tableStyle>` in styles.xml (each element references a dxf).
+/// `<tableStyle>` in styles.xml (each element references a dxf) or from the
+/// built-in family rules (builtin_table_palette).
 #[derive(Clone, Debug, Default)]
 struct CustomTablePalette {
     header_fill: Option<String>,
@@ -2289,11 +2400,21 @@ struct CustomTablePalette {
     last_column_fill: Option<String>,
     total_row_fill: Option<String>,
     total_row_font_color: Option<String>,
+    total_row_border_color: Option<String>,
+    total_row_border_style: Option<String>,
+    body_font_color: Option<String>,
     first_header_cell_font_color: Option<String>,
+    whole_table_border_color: Option<String>,
+    whole_table_border_style: Option<String>,
+    inner_horizontal_border_color: Option<String>,
+    inner_horizontal_border_style: Option<String>,
+    inner_vertical_border_color: Option<String>,
+    inner_vertical_border_style: Option<String>,
+    header_bottom_border_color: Option<String>,
+    header_bottom_border_style: Option<String>,
 }
 
-/// styles.xml `<tableStyles>` → per-style band palette. Only fills and font
-/// colors are carried; band borders stay unsupported.
+/// styles.xml `<tableStyles>` → per-style band palette.
 fn read_custom_table_styles(
     archive: &mut ZipArchive<File>,
     dxf_styles: &[visuals::CellStyle],
@@ -2330,14 +2451,45 @@ fn read_custom_table_styles(
                 match kind.as_deref() {
                     Some("wholeTable") => {
                         palette.whole_table_fill = dxf.fill_color.clone();
+                        // Outline edges are uniform in practice; take left,
+                        // fall back to top.
+                        let outline = dxf.border_left.as_ref().or(dxf.border_top.as_ref());
+                        palette.whole_table_border_color =
+                            outline.and_then(|edge| edge.color.clone());
+                        palette.whole_table_border_style =
+                            outline.map(|edge| edge.style.clone());
+                        palette.inner_horizontal_border_color = dxf
+                            .border_inner_horizontal
+                            .as_ref()
+                            .and_then(|edge| edge.color.clone());
+                        palette.inner_horizontal_border_style = dxf
+                            .border_inner_horizontal
+                            .as_ref()
+                            .map(|edge| edge.style.clone());
+                        palette.inner_vertical_border_color = dxf
+                            .border_inner_vertical
+                            .as_ref()
+                            .and_then(|edge| edge.color.clone());
+                        palette.inner_vertical_border_style = dxf
+                            .border_inner_vertical
+                            .as_ref()
+                            .map(|edge| edge.style.clone());
                     }
                     Some("headerRow") => {
                         palette.header_fill = dxf.fill_color.clone();
                         palette.header_font_color = dxf.font_color.clone();
+                        palette.header_bottom_border_color =
+                            dxf.border_bottom.as_ref().and_then(|edge| edge.color.clone());
+                        palette.header_bottom_border_style =
+                            dxf.border_bottom.as_ref().map(|edge| edge.style.clone());
                     }
                     Some("totalRow") => {
                         palette.total_row_fill = dxf.fill_color.clone();
                         palette.total_row_font_color = dxf.font_color.clone();
+                        palette.total_row_border_color =
+                            dxf.border_top.as_ref().and_then(|edge| edge.color.clone());
+                        palette.total_row_border_style =
+                            dxf.border_top.as_ref().map(|edge| edge.style.clone());
                     }
                     Some("firstColumn") => {
                         palette.first_column_fill = dxf.fill_color.clone();
@@ -2378,16 +2530,48 @@ fn read_custom_table_styles(
 /// Light-family pivot styles paint header and grand-total bands with a light
 /// tint of the style's accent; Medium/Dark families are left unpainted until
 /// their (solid-fill, white-text) bands are modelled.
-fn pivot_style_fill(style_name: Option<&str>, colors: &ColorContext) -> Option<String> {
-    let rest = style_name?.strip_prefix("PivotStyleLight")?;
-    let number = rest.parse::<usize>().ok()?;
-    let accent_index = number.saturating_sub(1) % 7;
-    let base = if accent_index == 0 {
-        visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00))
-    } else {
-        visuals::theme_accent(colors, accent_index).unwrap_or(DEFAULT_ACCENTS[accent_index - 1])
+#[derive(Clone, Debug, Default)]
+struct PivotStylePalette {
+    header_fill: Option<String>,
+    header_font_color: Option<String>,
+    whole_table_fill: Option<String>,
+    stripe_fill: Option<String>,
+}
+
+/// Built-in pivot style bands. Light families paint the header band only
+/// (tint 0.8 of the base). PivotStyleDark1 is pixel-calibrated against Excel
+/// (header/grand-total tint 0.5 with white bold text, body 0.65, stripe
+/// 0.75 of dk1); the accent Dark members and the Medium block stay unpainted
+/// until they get their own calibration pass.
+fn pivot_style_palette(style_name: Option<&str>, colors: &ColorContext) -> PivotStylePalette {
+    let Some(name) = style_name else {
+        return PivotStylePalette::default();
     };
-    Some(visuals::tint_to_hex(base, 0.8))
+    if let Some(rest) = name.strip_prefix("PivotStyleLight") {
+        let Some(number) = rest.parse::<usize>().ok() else {
+            return PivotStylePalette::default();
+        };
+        let accent_index = number.saturating_sub(1) % 7;
+        let base = if accent_index == 0 {
+            visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00))
+        } else {
+            visuals::theme_accent(colors, accent_index).unwrap_or(DEFAULT_ACCENTS[accent_index - 1])
+        };
+        return PivotStylePalette {
+            header_fill: Some(visuals::tint_to_hex(base, 0.8)),
+            ..PivotStylePalette::default()
+        };
+    }
+    if name == "PivotStyleDark1" {
+        let base = visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00));
+        return PivotStylePalette {
+            header_fill: Some(visuals::tint_to_hex(base, 0.5)),
+            header_font_color: Some("#FFFFFF".into()),
+            whole_table_fill: Some(visuals::tint_to_hex(base, 0.65)),
+            stripe_fill: Some(visuals::tint_to_hex(base, 0.75)),
+        };
+    }
+    PivotStylePalette::default()
 }
 
 /// Table style column 1 of the Light block (Light1-7) draws its frame in the
@@ -2407,14 +2591,17 @@ fn table_style_border(style_name: Option<&str>, colors: &ColorContext) -> Option
     Some(rgb_hex(base))
 }
 
-fn table_style_palette(
-    style_name: Option<&str>,
-    colors: &ColorContext,
-) -> (Option<String>, Option<String>, Option<String>) {
+/// Built-in table style bands, pixel-calibrated against Excel for Mac
+/// (calibration workbook: genoffice-sample/sheets/calib). Accent cycle is
+/// (n-1) % 7 with 0 = dk1, variants come in blocks of 7; dk1-based members
+/// tint their bands 0.05 lighter than the accent members do.
+fn builtin_table_palette(style_name: Option<&str>, colors: &ColorContext) -> CustomTablePalette {
+    const WHITE: &str = "#FFFFFF";
+    let mut palette = CustomTablePalette::default();
     // A tableStyleInfo without a name (or none at all) is Excel's style
     // "None": nothing gets painted.
     let Some(name) = style_name else {
-        return (None, None, None);
+        return palette;
     };
     let (family, number) = if let Some(rest) = name.strip_prefix("TableStyleLight") {
         ("light", rest.parse::<usize>().unwrap_or(1))
@@ -2425,48 +2612,119 @@ fn table_style_palette(
     } else {
         ("medium", 2)
     };
+    let accent = |index: usize| {
+        // Wrap so an out-of-range family number can't index past accent6.
+        let index = (index - 1) % 6 + 1;
+        visuals::theme_accent(colors, index).unwrap_or(DEFAULT_ACCENTS[index - 1])
+    };
+    let dark1 = visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00));
     let accent_index = number.saturating_sub(1) % 7;
-    let base = if accent_index == 0 {
-        // Column 1 of each family is the theme's neutral text color (dk1),
-        // not a literal gray.
-        visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00))
-    } else {
-        visuals::theme_accent(colors, accent_index)
-            .unwrap_or(DEFAULT_ACCENTS[accent_index - 1])
+    let neutral = accent_index == 0;
+    let base = if neutral { dark1 } else { accent(accent_index) };
+    let band = |color, from_dark1: bool, tint: f64| {
+        visuals::tint_to_hex(color, if from_dark1 { tint + 0.05 } else { tint })
     };
     let variant = number.saturating_sub(1) / 7;
-    match family {
-        "light" => {
-            let stripe = Some(visuals::tint_to_hex(base, 0.85));
-            if variant == 1 {
-                (Some(rgb_hex(base)), Some("#FFFFFF".into()), stripe)
+    match (family, variant) {
+        // Light 1-7: unfilled shaded-accent header, single accent rule over
+        // the totals band.
+        ("light", 0) => {
+            palette.header_font_color = Some(visuals::tint_to_hex(base, -0.25));
+            palette.stripe_fill = Some(band(base, neutral, 0.8));
+            palette.total_row_font_color = Some(visuals::tint_to_hex(base, -0.25));
+            palette.total_row_border_color = Some(rgb_hex(base));
+            palette.total_row_border_style = Some("thin".into());
+        }
+        // Light 8-14: solid header, banding drawn as row RULES, not fills —
+        // no stripe color (tablerefsnamed renders all-white).
+        ("light", 1) => {
+            palette.header_fill = Some(rgb_hex(base));
+            palette.header_font_color = Some(WHITE.into());
+            palette.total_row_border_color = Some(rgb_hex(base));
+            palette.total_row_border_style = Some("double".into());
+        }
+        // Light 15-21: unfilled header in plain dk1 (only 1-7 color it).
+        ("light", _) => {
+            palette.header_font_color = Some(rgb_hex(dark1));
+            palette.stripe_fill = Some(band(base, neutral, 0.8));
+            palette.total_row_border_color = Some(rgb_hex(base));
+            palette.total_row_border_style = Some("double".into());
+        }
+        // Medium 8-14 are Excel's "full color" block: both bands filled
+        // (Medium9: accent tint 0.6 alternating with 0.8, #B8CCE4 /
+        // #DCE6F1) and the totals band solid accent under white text.
+        ("medium", 1) => {
+            palette.header_fill = Some(rgb_hex(base));
+            palette.header_font_color = Some(WHITE.into());
+            palette.stripe_fill = Some(band(base, neutral, 0.6));
+            palette.second_row_stripe_fill = Some(band(base, neutral, 0.8));
+            palette.whole_table_fill = Some(band(base, neutral, 0.8));
+            palette.total_row_fill = Some(rgb_hex(base));
+            palette.total_row_font_color = Some(WHITE.into());
+        }
+        // Medium 15-21: accent header over dk1-gray banding, dk1 totals rule.
+        ("medium", 2) => {
+            palette.header_fill = Some(rgb_hex(base));
+            palette.header_font_color = Some(WHITE.into());
+            palette.stripe_fill = Some(visuals::tint_to_hex(dark1, 0.85));
+            palette.total_row_border_color = Some(rgb_hex(dark1));
+            palette.total_row_border_style = Some("double".into());
+        }
+        // Medium 22-28: whole table tinted (0.8 body / 0.6 stripe), header
+        // included, dk1 text throughout, accent rule over the totals band.
+        ("medium", 3) => {
+            palette.header_fill = Some(band(base, neutral, 0.8));
+            palette.header_font_color = Some(rgb_hex(dark1));
+            palette.stripe_fill = Some(band(base, neutral, 0.6));
+            palette.whole_table_fill = Some(band(base, neutral, 0.8));
+            palette.total_row_fill = Some(band(base, neutral, 0.8));
+            palette.total_row_border_color = Some(rgb_hex(base));
+            palette.total_row_border_style = Some("medium".into());
+        }
+        // Medium 1-7 (and unknown style names, which resolve like the default
+        // Medium 2): solid header, tint-0.8 stripe, double accent rule over
+        // an unfilled totals band.
+        ("medium", _) => {
+            palette.header_fill = Some(rgb_hex(base));
+            palette.header_font_color = Some(WHITE.into());
+            palette.stripe_fill = Some(band(base, neutral, 0.8));
+            palette.total_row_border_color = Some(rgb_hex(base));
+            palette.total_row_border_style = Some("double".into());
+        }
+        // Dark 8-11 pair two accents: header on accent 2/4/6, bands on
+        // accent 1/3/5 (Dark 8 runs both on dk1).
+        ("dark", 1) => {
+            let band_base = if neutral { dark1 } else { accent(2 * (number - 8) - 1) };
+            let header_base = if neutral { dark1 } else { accent(2 * (number - 8)) };
+            palette.header_fill = Some(rgb_hex(header_base));
+            palette.header_font_color = Some(WHITE.into());
+            palette.stripe_fill = Some(band(band_base, neutral, 0.6));
+            palette.second_row_stripe_fill = Some(band(band_base, neutral, 0.8));
+            palette.whole_table_fill = Some(band(band_base, neutral, 0.8));
+            palette.total_row_fill = Some(band(band_base, neutral, 0.8));
+            palette.total_row_border_color = Some(rgb_hex(dark1));
+            palette.total_row_border_style = Some("double".into());
+        }
+        // Dark 1-7: dk1 header over a solid accent body, stripe and totals
+        // shaded darker (the dk1 member tints toward white instead).
+        ("dark", _) => {
+            palette.header_fill = Some(rgb_hex(dark1));
+            palette.header_font_color = Some(WHITE.into());
+            if neutral {
+                palette.whole_table_fill = Some(visuals::tint_to_hex(dark1, 0.45));
+                palette.stripe_fill = Some(visuals::tint_to_hex(dark1, 0.25));
+                palette.total_row_fill = Some(visuals::tint_to_hex(dark1, 0.15));
             } else {
-                // Light 1-7 / 15-21: unfilled bold header in the accent color.
-                (None, Some(rgb_hex(base)), stripe)
+                palette.whole_table_fill = Some(rgb_hex(base));
+                palette.stripe_fill = Some(visuals::tint_to_hex(base, -0.25));
+                palette.total_row_fill = Some(visuals::tint_to_hex(base, -0.5));
             }
+            palette.body_font_color = Some(WHITE.into());
+            palette.total_row_font_color = Some(WHITE.into());
         }
-        "dark" => (
-            Some(visuals::tint_to_hex(base, -0.25)),
-            Some("#FFFFFF".into()),
-            Some(visuals::tint_to_hex(base, 0.4)),
-        ),
-        _ => {
-            let header = if variant == 2 {
-                visuals::tint_to_hex(base, -0.25)
-            } else {
-                rgb_hex(base)
-            };
-            // Medium 8-14 are Excel's "full color" block: darker stripes
-            // (accent tint 0.6, e.g. Medium9 #B8CCE4) than the white-bodied
-            // blocks (tint 0.8, e.g. Medium2 #DCE6F1).
-            let stripe_tint = if variant == 1 { 0.6 } else { 0.8 };
-            (
-                Some(header),
-                Some("#FFFFFF".into()),
-                Some(visuals::tint_to_hex(base, stripe_tint)),
-            )
-        }
+        _ => unreachable!("family is one of light/medium/dark"),
     }
+    palette
 }
 
 fn read_sheet_tables(
@@ -2541,13 +2799,9 @@ fn read_sheet_tables(
             let custom = style_name
                 .as_deref()
                 .and_then(|style| custom_styles.get(style));
-            let (header_fill, header_font_color, stripe_fill) = match custom {
-                Some(palette) => (
-                    palette.header_fill.clone(),
-                    palette.header_font_color.clone(),
-                    palette.stripe_fill.clone(),
-                ),
-                None => table_style_palette(style_name.as_deref(), colors),
+            let palette = match custom {
+                Some(palette) => palette.clone(),
+                None => builtin_table_palette(style_name.as_deref(), colors),
             };
             let border_color = if custom.is_some() {
                 None
@@ -2562,29 +2816,35 @@ fn read_sheet_tables(
                 name,
                 columns,
                 style_name,
-                header_fill,
-                header_font_color,
-                stripe_fill,
-                second_row_stripe_fill: custom.and_then(|p| p.second_row_stripe_fill.clone()),
-                column_stripe_fill: custom.and_then(|p| p.column_stripe_fill.clone()),
-                second_column_stripe_fill: custom
-                    .and_then(|p| p.second_column_stripe_fill.clone()),
-                whole_table_fill: custom.and_then(|p| p.whole_table_fill.clone()),
+                header_fill: palette.header_fill,
+                header_font_color: palette.header_font_color,
+                stripe_fill: palette.stripe_fill,
+                second_row_stripe_fill: palette.second_row_stripe_fill,
+                column_stripe_fill: palette.column_stripe_fill,
+                second_column_stripe_fill: palette.second_column_stripe_fill,
+                whole_table_fill: palette.whole_table_fill,
                 // First/last column emphasis (and the first-header corner
                 // cell) only paint when tableStyleInfo turns them on.
-                first_column_fill: custom
-                    .filter(|_| show_first_column)
-                    .and_then(|p| p.first_column_fill.clone()),
-                last_column_fill: custom
-                    .filter(|_| show_last_column)
-                    .and_then(|p| p.last_column_fill.clone()),
-                total_row_fill: custom.and_then(|p| p.total_row_fill.clone()),
-                total_row_font_color: custom.and_then(|p| p.total_row_font_color.clone()),
-                first_header_cell_font_color: custom
-                    .filter(|_| show_first_column)
-                    .and_then(|p| p.first_header_cell_font_color.clone()),
+                first_column_fill: palette.first_column_fill.filter(|_| show_first_column),
+                last_column_fill: palette.last_column_fill.filter(|_| show_last_column),
+                total_row_fill: palette.total_row_fill,
+                total_row_font_color: palette.total_row_font_color,
+                total_row_border_color: palette.total_row_border_color,
+                total_row_border_style: palette.total_row_border_style,
+                body_font_color: palette.body_font_color,
+                first_header_cell_font_color: palette
+                    .first_header_cell_font_color
+                    .filter(|_| show_first_column),
                 totals_row_count,
                 border_color,
+                whole_table_border_color: palette.whole_table_border_color,
+                whole_table_border_style: palette.whole_table_border_style,
+                inner_horizontal_border_color: palette.inner_horizontal_border_color,
+                inner_horizontal_border_style: palette.inner_horizontal_border_style,
+                inner_vertical_border_color: palette.inner_vertical_border_color,
+                inner_vertical_border_style: palette.inner_vertical_border_style,
+                header_bottom_border_color: palette.header_bottom_border_color,
+                header_bottom_border_style: palette.header_bottom_border_style,
             });
         }
     }
@@ -2620,7 +2880,7 @@ fn read_sheet_sparklines(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
 ) -> Result<Vec<SparklineGroupInfo>, SidecarError> {
-    let entry = archive.by_name(worksheet_path)?;
+    let entry = zip_entry(archive, worksheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(entry));
     parse_sparkline_groups(&mut reader)
 }
@@ -2701,6 +2961,14 @@ fn parse_sparkline_groups<R: std::io::BufRead>(
             }
             Event::Text(text) if in_sparkline => {
                 let value = decode_text(&text)?;
+                match target {
+                    Target::Formula => source_ref.push_str(&value),
+                    Target::Sqref => host_cell.push_str(&value),
+                    Target::None => {}
+                }
+            }
+            Event::CData(text) if in_sparkline => {
+                let value = decode_cdata(&text)?;
                 match target {
                     Target::Formula => source_ref.push_str(&value),
                     Target::Sqref => host_cell.push_str(&value),
@@ -2933,7 +3201,10 @@ impl CellBuilder {
         let formula = if self.formula.is_empty() {
             None
         } else {
-            Some(format!("={}", self.formula))
+            Some(format!(
+                "={}",
+                strip_future_function_markers(&self.formula)
+            ))
         };
         let mut rich = None;
         let value = match self.cell_type.as_deref() {
@@ -2957,10 +3228,12 @@ impl CellBuilder {
             }
             Some("str") | Some("e") => Some(CellValue::String(self.raw_value)),
             Some("b") => Some(CellValue::Boolean(self.raw_value == "1")),
-            _ if self.raw_value.is_empty() => None,
+            _ if self.raw_value.trim().is_empty() => None,
             // Real-world exporters write stray non-numeric values without a
-            // type attribute; degrade to text instead of failing the sheet.
-            _ => match self.raw_value.parse::<f64>() {
+            // type attribute (or pad them with whitespace — Excel still
+            // reads those as numbers); degrade to text instead of failing
+            // the sheet.
+            _ => match self.raw_value.trim().parse::<f64>() {
                 Ok(number) => Some(CellValue::Number(number)),
                 Err(_) => Some(CellValue::String(self.raw_value)),
             },
@@ -2982,6 +3255,28 @@ impl CellBuilder {
             rich,
         }))
     }
+}
+
+/// Excel stores post-2007 functions as `_xlfn.NAME` (worksheet-scope ones as
+/// `_xlfn._xlws.NAME`); its UI never shows the markers. Strip them outside
+/// string literals so the formula bar and engine see the plain names — the
+/// save side restores the markers on edited cells.
+fn strip_future_function_markers(formula: &str) -> String {
+    if !formula.contains("_xlfn.") && !formula.contains("_xlws.") {
+        return formula.to_owned();
+    }
+    formula
+        .split('"')
+        .enumerate()
+        .map(|(index, segment)| {
+            if index % 2 == 1 {
+                segment.to_owned()
+            } else {
+                segment.replace("_xlfn.", "").replace("_xlws.", "")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\"")
 }
 
 /// "A3:C20" (or a single "A3") → MergedRange; None on anything unparsable.
@@ -3053,11 +3348,36 @@ fn parse_address(address: &str) -> Result<(usize, usize), SidecarError> {
     Ok((row - 1, column - 1))
 }
 
+/// Entry lookup tolerant of non-conformant producers: '\' separators,
+/// leading '/', and case drift in entry names. Excel opens such packages
+/// (tdf131575: .NET-written `xl\workbook.xml` with `sharedstrings.xml`).
+pub(crate) fn zip_entry<'a>(
+    archive: &'a mut ZipArchive<File>,
+    name: &str,
+) -> zip::result::ZipResult<zip::read::ZipFile<'a, File>> {
+    let resolved = if archive.index_for_name(name).is_some() {
+        None
+    } else {
+        let normalize = |value: &str| {
+            value
+                .trim_start_matches(['/', '\\'])
+                .replace('\\', "/")
+                .to_ascii_lowercase()
+        };
+        let wanted = normalize(name);
+        archive
+            .file_names()
+            .find(|candidate| normalize(candidate) == wanted)
+            .map(ToOwned::to_owned)
+    };
+    archive.by_name(resolved.as_deref().unwrap_or(name))
+}
+
 fn read_zip_string(
     archive: &mut ZipArchive<File>,
     path: &str,
 ) -> Result<String, SidecarError> {
-    let mut entry = archive.by_name(path)?;
+    let mut entry = zip_entry(archive, path)?;
     let mut value = String::new();
     entry.read_to_string(&mut value)?;
     Ok(value)
@@ -3116,9 +3436,34 @@ fn decode_text(text: &quick_xml::events::BytesText<'_>) -> Result<String, Sideca
         .map_err(|error| SidecarError::Workbook(error.to_string()))
 }
 
+/// CDATA content is literal — decoded per the document encoding, never
+/// entity-unescaped.
+fn decode_cdata(text: &quick_xml::events::BytesCData<'_>) -> Result<String, SidecarError> {
+    text.decode()
+        .map(|value| value.into_owned())
+        .map_err(|error| SidecarError::Workbook(error.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strips_future_function_markers_outside_strings() {
+        assert_eq!(
+            strip_future_function_markers("_xlfn.MINIFS(C7:C10,C7:C10,\">0\")"),
+            "MINIFS(C7:C10,C7:C10,\">0\")"
+        );
+        assert_eq!(
+            strip_future_function_markers("_xlfn._xlws.SORT(A:A)"),
+            "SORT(A:A)"
+        );
+        assert_eq!(
+            strip_future_function_markers("CONCATENATE(\"_xlfn.MINIFS(\",A1)"),
+            "CONCATENATE(\"_xlfn.MINIFS(\",A1)"
+        );
+        assert_eq!(strip_future_function_markers("SUM(A1:A3)"), "SUM(A1:A3)");
+    }
 
     #[test]
     fn normalizes_worksheet_paths_with_forward_slashes() {
@@ -3154,6 +3499,7 @@ mod tests {
             name: "Sheet1".into(),
             row_count: 100_000,
             column_count: 100,
+            source_xml_bytes: 1024,
             column_widths: Vec::new(),
             default_row_height: None,
             default_column_width: None,
@@ -3181,6 +3527,21 @@ mod tests {
     fn sparklines_from(xml: &str) -> Vec<SparklineGroupInfo> {
         let mut reader = Reader::from_reader(xml.as_bytes());
         parse_sparkline_groups(&mut reader).unwrap()
+    }
+
+    #[test]
+    fn reads_cdata_wrapped_sparkline_refs() {
+        let xml = sparkline_ext(
+            r#"<x14:sparklineGroup>
+<x14:sparklines><x14:sparkline>
+<xm:f><![CDATA[Sheet1!A2:C2]]></xm:f><xm:sqref><![CDATA[D2]]></xm:sqref>
+</x14:sparkline></x14:sparklines>
+</x14:sparklineGroup>"#,
+        );
+        let groups = sparklines_from(&xml);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].cells[0].source_ref, "Sheet1!A2:C2");
+        assert_eq!(groups[0].cells[0].cell, "D2");
     }
 
     fn sparkline_ext(groups_xml: &str) -> String {
@@ -3290,6 +3651,7 @@ mod tests {
             name: "Sheet1".into(),
             row_count: 1,
             column_count: 1,
+            source_xml_bytes: 1024,
             column_widths: Vec::new(),
             default_row_height: None,
             default_column_width: None,
@@ -3405,6 +3767,65 @@ mod tests {
         assert_eq!(metadata.sheets[0].column_count, 9);
     }
 
+    /// Small multi-row dimensions can be stale too (tdf113271 declares
+    /// A1:F5 over 462 rows); they are cheap to verify by scanning.
+    #[test]
+    fn stale_small_dimension_is_remeasured() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:F5"/>
+<sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="40"><c r="C40"><v>2</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(metadata.sheets[0].row_count, 40);
+        assert_eq!(metadata.sheets[0].column_count, 6);
+    }
+
+    /// Non-conformant packages (tdf131575, written by old .NET tooling) use
+    /// '\' entry separators, case-drifted names, and leading-'/' rel targets;
+    /// Excel opens them, so entry lookup must tolerate all three.
+    #[test]
+    fn opens_backslash_and_case_drifted_package() {
+        let (_dir, path) = open_fixture(&[
+            (
+                r"xl\workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                r"xl\_rels\workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="/xl/sharedStrings.xml"/></Relationships>"#,
+            ),
+            (
+                r"xl\sharedstrings.xml",
+                r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>hello</t></si></sst>"#,
+            ),
+            (
+                r"xl\worksheets\sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>7</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(metadata.sheets.len(), 1);
+        assert_eq!(metadata.sheets[0].row_count, 1);
+        assert_eq!(metadata.sheets[0].column_count, 2);
+    }
+
     /// An empty <v/> on a t="s" cell degrades to a valueless styled cell;
     /// erroring used to blank every cell of the sheet.
     #[test]
@@ -3481,6 +3902,157 @@ mod tests {
         assert_eq!(table.columns, vec!["Unit", "Goal"]);
         assert_eq!(table.range.end_row, 3);
         assert_eq!(table.range.end_column, 8);
+        // Medium 1-7 stripe against a white body: no second band.
+        assert!(table.second_row_stripe_fill.is_none());
+    }
+
+    /// Medium 8-14 fill both bands (Excel Medium9: accent tint 0.6
+    /// alternating with 0.8); dropping the second band left even data rows
+    /// white (50867_with_table).
+    #[test]
+    fn medium_full_color_styles_fill_both_row_bands() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1" t="str"><v>a</v></c></row></sheetData><tableParts count="1"><tablePart r:id="rId2"/></tableParts></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/tables/table1.xml",
+                r#"<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T" displayName="T" ref="A1:C3"><tableColumns count="1"><tableColumn id="1" name="a"/></tableColumns><tableStyleInfo name="TableStyleMedium9" showRowStripes="1"/></table>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let table = &metadata.sheets[0].tables[0];
+        let base = DEFAULT_ACCENTS[0];
+        assert_eq!(
+            table.stripe_fill.as_deref(),
+            Some(visuals::tint_to_hex(base, 0.6).as_str())
+        );
+        assert_eq!(
+            table.second_row_stripe_fill.as_deref(),
+            Some(visuals::tint_to_hex(base, 0.8).as_str())
+        );
+        assert_eq!(table.total_row_fill.as_deref(), Some(rgb_hex(base).as_str()));
+        assert_eq!(table.total_row_font_color.as_deref(), Some("#FFFFFF"));
+    }
+
+    /// Negative tints must reproduce Excel's HSL shading: the totals band of
+    /// the Dark block and the Light-block text were pixel-measured on the
+    /// classic theme's accent1 (#4F81BD). Excel quantizes HSL to 0-240, so
+    /// allow one 1/255 step per channel.
+    #[test]
+    fn tint_matches_excel_shades() {
+        fn assert_close(actual: &str, expected: &str) {
+            let channel = |hex: &str, at: usize| {
+                i32::from_str_radix(&hex[at..at + 2], 16).expect("hex channel")
+            };
+            for at in [1, 3, 5] {
+                assert!(
+                    (channel(actual, at) - channel(expected, at)).abs() <= 1,
+                    "{actual} != {expected}"
+                );
+            }
+        }
+        let accent1 = (0x4F, 0x81, 0xBD);
+        assert_close(&visuals::tint_to_hex(accent1, -0.25), "#366092");
+        assert_close(&visuals::tint_to_hex(accent1, -0.5), "#244062");
+        assert_close(&visuals::tint_to_hex(accent1, 0.6), "#B8CCE4");
+        assert_close(&visuals::tint_to_hex(accent1, 0.8), "#DCE6F1");
+        assert_close(&visuals::tint_to_hex((0, 0, 0), 0.85), "#D9D9D9");
+    }
+
+    /// Built-in family rules, per the Excel calibration workbook
+    /// (genoffice-sample/sheets/calib): totals bands, dk1-gray Medium 15-21
+    /// stripes, tinted Medium 22-28, solid Dark bodies, paired Dark 8-11.
+    #[test]
+    fn builtin_palette_matches_calibration() {
+        let colors = ColorContext::default();
+        let accent1 = DEFAULT_ACCENTS[0];
+
+        let light2 = builtin_table_palette(Some("TableStyleLight2"), &colors);
+        assert!(light2.header_fill.is_none());
+        assert_eq!(
+            light2.header_font_color,
+            Some(visuals::tint_to_hex(accent1, -0.25))
+        );
+        assert_eq!(light2.stripe_fill, Some(visuals::tint_to_hex(accent1, 0.8)));
+        assert_eq!(light2.total_row_border_style.as_deref(), Some("thin"));
+        assert_eq!(light2.total_row_border_color, Some(rgb_hex(accent1)));
+        assert!(light2.total_row_fill.is_none());
+
+        // Light 15-21 headers are plain dk1, not accent-colored.
+        let light16 = builtin_table_palette(Some("TableStyleLight16"), &colors);
+        assert_eq!(light16.header_font_color.as_deref(), Some("#000000"));
+        assert_eq!(light16.total_row_border_style.as_deref(), Some("double"));
+
+        let medium2 = builtin_table_palette(Some("TableStyleMedium2"), &colors);
+        assert_eq!(medium2.header_fill, Some(rgb_hex(accent1)));
+        assert!(medium2.total_row_fill.is_none());
+        assert_eq!(medium2.total_row_border_style.as_deref(), Some("double"));
+        assert_eq!(medium2.total_row_border_color, Some(rgb_hex(accent1)));
+
+        // Medium 15-21 stripe in dk1 gray and rule the totals band in dk1.
+        let medium16 = builtin_table_palette(Some("TableStyleMedium16"), &colors);
+        assert_eq!(medium16.header_fill, Some(rgb_hex(accent1)));
+        assert_eq!(medium16.stripe_fill.as_deref(), Some("#D9D9D9"));
+        assert_eq!(medium16.total_row_border_color.as_deref(), Some("#000000"));
+
+        let medium23 = builtin_table_palette(Some("TableStyleMedium23"), &colors);
+        assert_eq!(
+            medium23.header_fill,
+            Some(visuals::tint_to_hex(accent1, 0.8))
+        );
+        assert_eq!(medium23.header_font_color.as_deref(), Some("#000000"));
+        assert_eq!(
+            medium23.whole_table_fill,
+            Some(visuals::tint_to_hex(accent1, 0.8))
+        );
+        assert_eq!(
+            medium23.total_row_fill,
+            Some(visuals::tint_to_hex(accent1, 0.8))
+        );
+        assert_eq!(medium23.total_row_border_style.as_deref(), Some("medium"));
+
+        let dark2 = builtin_table_palette(Some("TableStyleDark2"), &colors);
+        assert_eq!(dark2.header_fill.as_deref(), Some("#000000"));
+        assert_eq!(dark2.whole_table_fill, Some(rgb_hex(accent1)));
+        assert_eq!(dark2.stripe_fill, Some(visuals::tint_to_hex(accent1, -0.25)));
+        assert_eq!(
+            dark2.total_row_fill,
+            Some(visuals::tint_to_hex(accent1, -0.5))
+        );
+        assert_eq!(dark2.body_font_color.as_deref(), Some("#FFFFFF"));
+        assert_eq!(dark2.total_row_font_color.as_deref(), Some("#FFFFFF"));
+
+        // Dark 10 pairs an accent4 header with accent3 bands.
+        let dark10 = builtin_table_palette(Some("TableStyleDark10"), &colors);
+        assert_eq!(dark10.header_fill, Some(rgb_hex(DEFAULT_ACCENTS[3])));
+        assert_eq!(
+            dark10.stripe_fill,
+            Some(visuals::tint_to_hex(DEFAULT_ACCENTS[2], 0.6))
+        );
+        assert_eq!(dark10.total_row_border_color.as_deref(), Some("#000000"));
+
+        // dk1 members tint 0.05 lighter than the accent members.
+        let light1 = builtin_table_palette(Some("TableStyleLight1"), &colors);
+        assert_eq!(light1.stripe_fill.as_deref(), Some("#D9D9D9"));
+
+        // Out-of-range family numbers must not panic on accent lookup.
+        let _ = builtin_table_palette(Some("TableStyleDark12"), &colors);
+        assert!(builtin_table_palette(None, &colors).header_fill.is_none());
     }
 
     #[test]
@@ -3570,6 +4142,47 @@ mod tests {
         assert!(!runs[0].underline);
         assert!(runs[1].bold);
         assert!(runs[1].strikethrough);
+    }
+
+    /// A oneCellAnchor sizes by xdr:ext (encoded as offsets in the from
+    /// cell); dashes, caps, and flips ride along the shape metadata.
+    #[test]
+    fn parses_one_cell_anchor_ext_and_line_style() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><drawing r:id="rId2"/></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/drawings/drawing1.xml",
+                r#"<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><xdr:oneCellAnchor><xdr:from><xdr:col>6</xdr:col><xdr:colOff>342900</xdr:colOff><xdr:row>8</xdr:row><xdr:rowOff>133349</xdr:rowOff></xdr:from><xdr:ext cx="1647825" cy="790576"/><xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="2" name="Line 1"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm flipV="1"><a:off x="0" y="0"/><a:ext cx="952500" cy="952500"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="127000" cap="rnd"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="sysDot"/></a:ln></xdr:spPr></xdr:sp><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let shape = &metadata.visuals[0];
+        assert_eq!(shape.kind, "shape");
+        assert_eq!(shape.anchor.to_row, 8);
+        assert_eq!(shape.anchor.to_column, 6);
+        assert_eq!(shape.anchor.to_row_offset, 133349 + 790576);
+        assert_eq!(shape.anchor.to_column_offset, 342900 + 1647825);
+        assert_eq!(shape.line_dash.as_deref(), Some("sysDot"));
+        assert_eq!(shape.line_cap.as_deref(), Some("rnd"));
+        assert!(shape.flip_v);
+        assert!(!shape.flip_h);
+        assert_eq!(shape.line_width, Some(10.0));
     }
 
     /// An OLE embed's hidden drawing fallback gets the object's progId as
@@ -4453,13 +5066,121 @@ mod tests {
         // other day-first locales), id 58 is a full date rather than the
         // zh-CN month/day pattern that previously leaked into every workbook.
         let mut portuguese_sessions = WorkbookSessions::new();
-        let portuguese = portuguese_sessions.open_with_locale(&path, "pt").unwrap();
+        let portuguese = portuguese_sessions.open_with_locale(&path, "pt", None).unwrap();
         let portuguese_format =
             |index: usize| portuguese.styles[index].number_format.as_deref();
         assert_eq!(portuguese_format(1), Some("d/m/yyyy"));
         assert_eq!(portuguese_format(3), Some("yyyy/m/d"));
         assert_eq!(portuguese_format(4), Some("d/m/yyyy"));
         assert_eq!(portuguese_format(5), Some("d/m/yyyy"));
+    }
+
+    /// Builtin 14/22 are Excel's OS-region short-date formats; the host
+    /// passes the system pattern, explicit formatCode entries still win.
+    #[test]
+    fn applies_system_short_date_to_builtin_date_formats() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1"><numFmt numFmtId="165" formatCode="yyyy/mm/dd"/></numFmts>
+<fonts count="1"><font/></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf/></cellStyleXfs>
+<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="14" applyNumberFormat="1"/><xf numFmtId="22" applyNumberFormat="1"/><xf numFmtId="165" applyNumberFormat="1"/></cellXfs>
+</styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" s="1"><v>42438</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions
+            .open_with_locale(&path, "en", Some("yyyy/m/d"))
+            .unwrap();
+        let format = |index: usize| metadata.styles[index].number_format.as_deref();
+        assert_eq!(format(1), Some("yyyy/m/d"));
+        assert_eq!(format(2), Some("yyyy/m/d h:mm"));
+        assert_eq!(format(3), Some("yyyy/mm/dd"));
+        assert_eq!(metadata.short_date_format.as_deref(), Some("yyyy/m/d"));
+
+        let mut default_sessions = WorkbookSessions::new();
+        let default_metadata = default_sessions.open(&path).unwrap();
+        let default_format =
+            |index: usize| default_metadata.styles[index].number_format.as_deref();
+        assert_eq!(default_format(1), Some("m/d/yyyy"));
+        assert_eq!(default_format(2), Some("m/d/yy h:mm"));
+        assert!(default_metadata.short_date_format.is_none());
+    }
+
+    /// Hancom exports wrap individual styles.xml entries in
+    /// mc:AlternateContent; a core consumer resolves mc:Fallback (or a lone
+    /// mc:Choice) instead of dropping the entry and shifting every later id.
+    #[test]
+    fn resolves_alternate_content_style_entries() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                // font 1 and xf 1 are Fallback-wrapped, numFmt 165 and dxf 0
+                // Choice-only: dropping any of them shifts the later indexes.
+                "xl/styles.xml",
+                r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:hs="http://schemas.haansoft.com/office/spreadsheet/8.0" mc:Ignorable="hs">
+<numFmts count="1"><mc:AlternateContent><mc:Choice Requires="hs"><numFmt numFmtId="165" formatCode="0.000"/></mc:Choice></mc:AlternateContent></numFmts>
+<fonts count="3"><font><sz val="11"/></font><mc:AlternateContent><mc:Choice Requires="hs"><font><b/><sz val="20"/></font></mc:Choice><mc:Fallback><font><b/><sz val="18"/></font></mc:Fallback></mc:AlternateContent><font><sz val="9"/></font></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf/></cellStyleXfs>
+<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><mc:AlternateContent><mc:Fallback><xf fontId="1" applyFont="1"><alignment horizontal="center"/></xf></mc:Fallback></mc:AlternateContent><xf numFmtId="165" fontId="2" applyNumberFormat="1" applyFont="1"/></cellXfs>
+<dxfs count="2"><mc:AlternateContent><mc:Fallback><dxf><font><b/></font></dxf></mc:Fallback></mc:AlternateContent><dxf><fill><patternFill><bgColor rgb="FFFF0000"/></patternFill></fill></dxf></dxfs>
+</styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" s="1"><v>1</v></c><c r="B1" s="2"><v>2.5</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(metadata.styles.len(), 3);
+        // Fallback wins over Choice for the wrapped font (18, not 20).
+        assert!(metadata.styles[1].bold);
+        assert_eq!(metadata.styles[1].font_size, Some(18.0));
+        assert_eq!(
+            metadata.styles[1].horizontal_alignment.as_deref(),
+            Some("center")
+        );
+        // Entries after the wrappers keep their declared ids.
+        assert_eq!(metadata.styles[2].font_size, Some(9.0));
+        assert_eq!(metadata.styles[2].number_format.as_deref(), Some("0.000"));
+        assert_eq!(metadata.dxf_styles.len(), 2);
+        assert!(metadata.dxf_styles[0].bold);
+        assert_eq!(
+            metadata.dxf_styles[1].fill_color.as_deref(),
+            Some("#FF0000")
+        );
     }
 
     #[test]

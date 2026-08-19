@@ -15,14 +15,13 @@ import {
   type NoteKind,
 } from './notes'
 import {
-  INK_MEDIA_PATH_RE,
   INK_MEDIA_PREFIX,
-  INK_REL_RE,
   anchoredInkRunXml,
   injectInkRunsIntoParagraph,
   stripInkRuns,
 } from './ink'
-import { assertZipWithinLimits, type ParseExtras } from './parse'
+import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
+import { cleanupDocxOwnedResources } from './resource-cleanup'
 import { loadDocxZip } from './zip-load'
 import { BLANK_NUMBERING_XML, abstractNumXml, type CustomNumberingLevel } from './blank'
 import { applyPageNumType, applySectionSettings, applySectionStartType } from './section'
@@ -44,6 +43,7 @@ import { buildChartPartXml, buildChartWorkbookXlsxBase64, CHART_WORKBOOK_REL_TYP
 import type {
   CommentInfo,
   DocProtection,
+  WriteProtection,
   GeneratedBlock,
   HeaderFooter,
   NewChart,
@@ -93,7 +93,7 @@ export interface SaveOptions {
   /** rewrite page size / margins in the trailing w:sectPr */
   section?: SectionSettings
   /** last-section start type (w:type); rewrites the trailing sectPr when inserting a continuous section break; undefined = keep */
-  sectionStartType?: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'
+  sectionStartType?: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn'
   /** last-section page numbering (w:pgNumType): both fmt/start unset = remove the tag; undefined = keep */
   pgNumType?: { fmt?: string; start?: number }
   /** page color: hex without '#' to set, null to remove, undefined to keep as-is */
@@ -160,6 +160,14 @@ export interface SaveOptions {
   comments?: CommentInfo[]
   /** editing restriction; null removes w:documentProtection, undefined keeps */
   protection?: DocProtection | null
+  /** password to modify / read-only recommended; null removes w:writeProtection, undefined keeps */
+  writeProtection?: WriteProtection | null
+  /**
+   * settings.xml w:removePersonalInformation flag; undefined keeps the current value.
+   * Whenever the flag is effective (set here or already in the document), the save
+   * removes known author and organization metadata throughout the final package.
+   */
+  removePersonalInfo?: boolean
   /**
    * Full desired footnote / endnote lists; the part is regenerated from them
    * (separator entries preserved). undefined = keep byte-identical.
@@ -368,6 +376,7 @@ export async function saveDocx(
 ): Promise<Uint8Array> {
   const { documentXml, originalBytes, bodyInnerStart, bodyInnerEnd } = parsed.internal
   const elements = parsed.extras.elements
+  const scrubPersonalInfo = options.removePersonalInfo ?? parsed.removePersonalInfo ?? false
 
   const visibleOriginalOrder = parsed.blocks.filter((b) => !b.hidden).map((b) => b.docxIndex)
   const isUnchanged =
@@ -395,6 +404,8 @@ export async function saveDocx(
     options.evenAndOddHeaders === undefined &&
     options.comments === undefined &&
     options.protection === undefined &&
+    options.writeProtection === undefined &&
+    options.removePersonalInfo === undefined &&
     options.footnotes === undefined &&
     options.endnotes === undefined &&
     options.watermark === undefined &&
@@ -404,13 +415,14 @@ export async function saveDocx(
     options.themeColors === undefined &&
     (options.partXml === undefined || Object.keys(options.partXml).length === 0) &&
     (options.partBinary === undefined || Object.keys(options.partBinary).length === 0)
-  if (isUnchanged) return originalBytes
+  if (isUnchanged && !scrubPersonalInfo) return originalBytes
 
   const zip = await loadDocxZip(originalBytes)
   assertZipWithinLimits(zip)
+  const docPath = (await resolveMainDocumentPath(zip)) ?? 'word/document.xml'
 
   // Relationship allocation for newly created hyperlinks and images.
-  const relsPath = 'word/_rels/document.xml.rels'
+  const relsPath = docPath.replace(/([^/]+)$/, '_rels/$1.rels')
   const relsFile = zip.file(relsPath)
   // fall back to an empty part so newly allocated rIds are never dangling
   let relsXml = relsFile
@@ -968,6 +980,13 @@ export async function saveDocx(
   let newDocumentXml =
     documentXml.slice(0, bodyInnerStart) + parts.join('') + documentXml.slice(bodyInnerEnd)
 
+  if (options.comments !== undefined) {
+    newDocumentXml = removeDeletedCommentMarkers(
+      newDocumentXml,
+      new Set(options.comments.map((comment) => comment.id)),
+    )
+  }
+
   // editor-generated formulas need the math namespace on the document root;
   // docx produced by non-Word generators may not declare it
   if (newDocumentXml.includes('<m:') && !/<w:document[^>]*xmlns:m=/.test(newDocumentXml)) {
@@ -987,6 +1006,8 @@ export async function saveDocx(
   if (
     options.pageColor ||
     options.protection !== undefined ||
+    options.writeProtection !== undefined ||
+    options.removePersonalInfo !== undefined ||
     options.evenAndOddHeaders !== undefined
   ) {
     const file = zip.file(settingsPath)
@@ -1012,8 +1033,19 @@ export async function saveDocx(
       xml = xml.replace(/(<w:settings[^>]*>)/, '$1<w:displayBackgroundShape/>')
       touched = true
     }
+    // Each apply* inserts right after the settings root, so run them in reverse
+    // schema order — the final order becomes writeProtection, removePersonalInformation,
+    // documentProtection (CT_Settings sequence).
     if (options.protection !== undefined) {
       xml = applyProtection(xml, options.protection)
+      touched = true
+    }
+    if (options.removePersonalInfo !== undefined) {
+      xml = applyRemovePersonalInfo(xml, options.removePersonalInfo)
+      touched = true
+    }
+    if (options.writeProtection !== undefined) {
+      xml = applyWriteProtection(xml, options.writeProtection)
       touched = true
     }
     if (options.evenAndOddHeaders !== undefined) {
@@ -1024,14 +1056,6 @@ export async function saveDocx(
   }
 
   let relsChanged = false
-  // drop relationships of stripped ink runs (their media parts are dropped too)
-  if (options.inks !== undefined && relsXml) {
-    const cleaned = relsXml.replace(INK_REL_RE, '')
-    if (cleaned !== relsXml) {
-      relsXml = cleaned
-      relsChanged = true
-    }
-  }
   if (newRels.length > 0 && relsXml) {
     const inserts = newRels
       .map(
@@ -1134,10 +1158,8 @@ export async function saveDocx(
       out.folder(name)
       continue
     }
-    // old ink PNGs are re-emitted from options.inks; don't carry orphans over
-    if (options.inks !== undefined && INK_MEDIA_PATH_RE.test(name)) continue
     const hfPart = hfParts.find((p) => p.path === name)
-    if (name === 'word/document.xml') {
+    if (name === docPath) {
       out.file(name, newDocumentXml, { date: entry.date })
     } else if (hfPart) {
       out.file(name, hfPart.xml, { date: entry.date })
@@ -1222,11 +1244,27 @@ export async function saveDocx(
   if (themePart?.isNew) {
     out.file(THEME_PART_PATH, themePart.xml)
   }
+  await cleanupDocxOwnedResources(out, docPath)
+  if (scrubPersonalInfo) await scrubPersonalMetadata(out)
   return out.generateAsync({
     type: 'uint8array',
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   })
+}
+
+/**
+ * A comment-list edit is authoritative. Remove body markers for ids no longer
+ * present even when their paragraphs were copied through as original XML.
+ */
+function removeDeletedCommentMarkers(xml: string, liveIds: Set<string>): string {
+  return xml.replace(
+    /<w:comment(?:RangeStart|RangeEnd|Reference)\b[^>]*(?:\/\s*>|>\s*<\/w:comment(?:RangeStart|RangeEnd|Reference)\s*>)/g,
+    (tag) => {
+      const id = /\bw:id\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(tag)
+      return id && !liveIds.has(id[1] ?? id[2]) ? '' : tag
+    },
+  )
 }
 
 /**
@@ -1520,6 +1558,223 @@ function applyProtection(xml: string, protection: DocProtection | null): string 
     out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
   }
   return out
+}
+
+/** set or remove <w:writeProtection> (password to modify) right after the settings root opens */
+function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
+  let out = xml.replace(/<w:writeProtection[^>]*\/>/, '')
+  if (wp && (wp.recommended || wp.hash)) {
+    const crypt = wp.hash
+      ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
+        ` w:cryptAlgorithmSid="${wp.algorithmSid ?? 14}"` +
+        ` w:cryptSpinCount="${wp.spinCount ?? 100000}"` +
+        ` w:hash="${escapeXmlAttr(wp.hash)}"` +
+        (wp.salt ? ` w:salt="${escapeXmlAttr(wp.salt)}"` : '')
+      : ''
+    const tag = `<w:writeProtection${wp.recommended ? ' w:recommended="1"' : ''}${crypt}/>`
+    out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
+  }
+  return out
+}
+
+/** Set or remove removePersonalInformation while retaining the settings part's prefix. */
+function applyRemovePersonalInfo(xml: string, on: boolean): string {
+  const prefixes = namespacePrefixes(xml, WORDPROCESSINGML_NAMESPACES)
+  const prefix = prefixes.find(Boolean) ?? (prefixes.includes('') ? '' : 'w')
+  const propertyName = prefix ? `${prefix}:removePersonalInformation` : 'removePersonalInformation'
+  const escapedProperty = regexEscape(propertyName)
+  const out = xml.replace(
+    new RegExp(`<${escapedProperty}\\b[^>]*(?:\\/\\s*>|>\\s*<\\/${escapedProperty}\\s*>)`, 'g'),
+    '',
+  )
+  if (!on) return out
+  const settingsName = prefix ? `${prefix}:settings` : 'settings'
+  return out.replace(new RegExp(`(<${regexEscape(settingsName)}\\b[^>]*>)`), `$1<${propertyName}/>`)
+}
+
+const WORDPROCESSINGML_NAMESPACES = [
+  'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+  'http://purl.oclc.org/ooxml/wordprocessingml/main',
+] as const
+const CORE_PROPERTIES_NAMESPACE =
+  'http://schemas.openxmlformats.org/package/2006/metadata/core-properties'
+const DUBLIN_CORE_NAMESPACE = 'http://purl.org/dc/elements/1.1/'
+const EXTENDED_PROPERTIES_NAMESPACES = [
+  'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties',
+  'http://purl.oclc.org/ooxml/officeDocument/extendedProperties',
+] as const
+const PEOPLE_NAMESPACE = 'http://schemas.microsoft.com/office/word/2012/wordml'
+
+const regexEscape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Rewrite start tags only; text, CDATA, comments and processing instructions stay byte-identical. */
+function mapXmlStartTags(xml: string, rewrite: (tag: string) => string): string {
+  let out = ''
+  let cursor = 0
+  while (cursor < xml.length) {
+    const start = xml.indexOf('<', cursor)
+    if (start < 0) return out + xml.slice(cursor)
+    out += xml.slice(cursor, start)
+
+    const specialEnd = xml.startsWith('<!--', start)
+      ? '-->'
+      : xml.startsWith('<![CDATA[', start)
+        ? ']]>'
+        : xml.startsWith('<?', start)
+          ? '?>'
+          : null
+    if (specialEnd !== null) {
+      const at = xml.indexOf(specialEnd, start + 2)
+      if (at < 0) return out + xml.slice(start)
+      const end = at + specialEnd.length
+      out += xml.slice(start, end)
+      cursor = end
+      continue
+    }
+
+    let quote = ''
+    let end = start + 1
+    for (; end < xml.length; end += 1) {
+      const char = xml[end]!
+      if (quote) {
+        if (char === quote) quote = ''
+      } else if (char === '"' || char === "'") {
+        quote = char
+      } else if (char === '>') {
+        break
+      }
+    }
+    if (end >= xml.length) return out + xml.slice(start)
+    const tag = xml.slice(start, end + 1)
+    out += tag.startsWith('</') || tag.startsWith('<!') ? tag : rewrite(tag)
+    cursor = end + 1
+  }
+  return out
+}
+
+/** Namespace prefixes declared anywhere in this standalone XML part. */
+function namespacePrefixes(xml: string, namespaces: readonly string[]): string[] {
+  const wanted = new Set(namespaces)
+  const found = new Set<string>()
+  const declaration = /\bxmlns(?::([A-Za-z_][\w.-]*))?\s*=\s*(["'])([^"']*)\2/g
+  let match: RegExpExecArray | null
+  while ((match = declaration.exec(xml)) !== null) {
+    if (wanted.has(match[3])) found.add(match[1] ?? '')
+  }
+  return [...found]
+}
+
+function replaceQualifiedAttributes(
+  xml: string,
+  prefixes: readonly string[],
+  replacements: Readonly<Record<string, string>>,
+): string {
+  const qualifiedPrefixes = prefixes.filter(Boolean)
+  if (qualifiedPrefixes.length === 0) return xml
+  const prefixPattern = qualifiedPrefixes.map(regexEscape).join('|')
+  const localPattern = Object.keys(replacements).map(regexEscape).join('|')
+  const attribute = new RegExp(
+    `(\\b(?:${prefixPattern}):(${localPattern})\\s*=\\s*)(["'])([\\s\\S]*?)\\3`,
+    'g',
+  )
+  return mapXmlStartTags(xml, (tag) =>
+    tag.replace(
+      attribute,
+      (_whole, start: string, localName: string, quote: string) =>
+        `${start}${quote}${replacements[localName]}${quote}`,
+    ),
+  )
+}
+
+function replaceUnqualifiedAttributes(
+  xml: string,
+  replacements: Readonly<Record<string, string>>,
+): string {
+  const localPattern = Object.keys(replacements).map(regexEscape).join('|')
+  const attribute = new RegExp(`(\\s(${localPattern})\\s*=\\s*)(["'])([\\s\\S]*?)\\3`, 'g')
+  return mapXmlStartTags(xml, (tag) =>
+    tag.replace(
+      attribute,
+      (_whole, start: string, localName: string, quote: string) =>
+        `${start}${quote}${replacements[localName]}${quote}`,
+    ),
+  )
+}
+
+function clearQualifiedElements(
+  xml: string,
+  namespaces: readonly string[],
+  localNames: readonly string[],
+): string {
+  const qNames = namespacePrefixes(xml, namespaces).flatMap((prefix) =>
+    localNames.map((localName) => (prefix ? `${prefix}:${localName}` : localName)),
+  )
+  let out = xml
+  for (const qName of qNames) {
+    const escaped = regexEscape(qName)
+    out = out.replace(
+      new RegExp(`(<${escaped}\\b[^>]*>)[\\s\\S]*?(<\\/${escaped}\\s*>)`, 'g'),
+      '$1$2',
+    )
+  }
+  return out
+}
+
+function scrubWordprocessingMetadata(xml: string): string {
+  const prefixes = namespacePrefixes(xml, WORDPROCESSINGML_NAMESPACES)
+  if (prefixes.length === 0) return xml
+  const replacements = { author: 'Author', initials: 'A' }
+  return replaceUnqualifiedAttributes(
+    replaceQualifiedAttributes(xml, prefixes, replacements),
+    replacements,
+  )
+}
+
+function scrubPeopleMetadata(xml: string): string {
+  const prefixes = namespacePrefixes(xml, [PEOPLE_NAMESPACE])
+  if (prefixes.length === 0) return xml
+  let out = xml
+  for (const prefix of prefixes) {
+    const qName = prefix ? `${prefix}:person` : 'person'
+    const escaped = regexEscape(qName)
+    out = out.replace(
+      new RegExp(`<${escaped}\\b[^>]*(?:\\/\\s*>|>[\\s\\S]*?<\\/${escaped}\\s*>)`, 'g'),
+      '',
+    )
+  }
+  return out
+}
+
+/**
+ * Strict final-package scrub. It runs after generated and copy-through parts
+ * have been assembled, so headers, footers, notes, glossary and people data all
+ * receive the same namespace-aware treatment. Custom XML/properties and binary
+ * parts are deliberately untouched.
+ */
+async function scrubPersonalMetadata(zip: JSZip): Promise<void> {
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir || !/\.xml$/i.test(name)) continue
+    const isCustomData = name.startsWith('customXml/') || name === 'docProps/custom.xml'
+    const isCore = name === CORE_PROPS_PATH
+    const isApp = name === 'docProps/app.xml'
+    const isPeople = name === 'word/people.xml'
+    if (isCustomData) continue
+
+    const original = await entry.async('string')
+    let scrubbed = scrubWordprocessingMetadata(original)
+    if (isCore) {
+      scrubbed = clearQualifiedElements(scrubbed, [DUBLIN_CORE_NAMESPACE], ['creator'])
+      scrubbed = clearQualifiedElements(scrubbed, [CORE_PROPERTIES_NAMESPACE], ['lastModifiedBy'])
+    }
+    if (isApp) {
+      scrubbed = clearQualifiedElements(scrubbed, EXTENDED_PROPERTIES_NAMESPACES, [
+        'Manager',
+        'Company',
+      ])
+    }
+    if (isPeople) scrubbed = scrubPeopleMetadata(scrubbed)
+    if (scrubbed !== original) zip.file(name, scrubbed, { date: entry.date })
+  }
 }
 
 /** set or remove <w:titlePg/> ("different first page"), before w:docGrid per schema order */

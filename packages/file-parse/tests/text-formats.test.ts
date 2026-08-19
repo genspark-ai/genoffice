@@ -11,6 +11,7 @@ describe('parseFileToText: plain-text formats', () => {
     ['sample.json', '{"key":"value"}'],
     ['sample.xml', '<root><item>value</item></root>'],
     ['sample.html', '<html><body><p>page</p></body></html>'],
+    ['sample.py', 'def hello():\n    return "world"'],
   ]
 
   for (const [name, content] of cases) {

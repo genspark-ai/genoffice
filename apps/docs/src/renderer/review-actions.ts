@@ -1,19 +1,11 @@
 /**
  * Review-tab actions: footnotes/endnotes, comments, revisions, ink
- * annotations, document protection and compare. Extracted from App.tsx; the
- * App component passes a ReviewContext built fresh per call so state never
- * goes stale.
+ * annotations and compare (document protection lives in ProtectDialog +
+ * App.applyProtectDialog). Extracted from App.tsx; the App component passes a
+ * ReviewContext built fresh per call so state never goes stale.
  */
 import type { Editor } from '@tiptap/core'
-import {
-  hashProtectionPassword,
-  nextNoteId,
-  parseDocx,
-  verifyProtectionPassword,
-  type CommentInfo,
-  type DocProtection,
-  type NoteInfo,
-} from '@genoffice/docx-engine'
+import { nextNoteId, parseDocx, type CommentInfo, type NoteInfo } from '@genoffice/docx-engine'
 import type { Dispatch, SetStateAction } from 'react'
 import type { DocState } from './doc-state'
 import {
@@ -39,13 +31,6 @@ export interface NotePrompt {
   id?: string
 }
 
-/** Protection toggle dialog: set = enable (password may be blank), unlock = removing requires password verification */
-export interface ProtectModalState {
-  mode: 'set' | 'unlock'
-  value: string
-  error?: string
-}
-
 /** The App state the review actions need; built fresh per call. */
 export interface ReviewContext {
   editor: Editor | null
@@ -66,11 +51,6 @@ export interface ReviewContext {
   setShowComments: (show: boolean) => void
   setInkAnnotations: Dispatch<SetStateAction<InkAnnotation[]>>
   setInksDirty: (dirty: boolean) => void
-  protection: DocProtection | null
-  setProtection: (value: DocProtection | null) => void
-  setProtectionDirty: (dirty: boolean) => void
-  protectModal: ProtectModalState | null
-  setProtectModal: (value: ProtectModalState | null) => void
   setCompareResult: (value: { otherName: string; entries: CompareEntry[] } | null) => void
 }
 
@@ -244,51 +224,16 @@ export function clearInks(ctx: ReviewContext): void {
   ctx.setStatus(t('appInksCleared'))
 }
 
-export function toggleProtection(ctx: ReviewContext): void {
-  if (ctx.protection?.enforced && ctx.protection.edit === 'readOnly') {
-    if (ctx.protection.hash) {
-      ctx.setProtectModal({ mode: 'unlock', value: '' })
-    } else {
-      ctx.setProtection(null)
-      ctx.setProtectionDirty(true)
-      ctx.dirtyRef.current = true
-    }
-  } else {
-    ctx.setProtectModal({ mode: 'set', value: '' })
-  }
-}
-
-export async function submitProtectModal(ctx: ReviewContext): Promise<void> {
-  if (!ctx.protectModal) return
-  if (ctx.protectModal.mode === 'set') {
-    const pwd = ctx.protectModal.value
-    const creds = pwd ? await hashProtectionPassword(pwd) : {}
-    ctx.setProtection({ edit: 'readOnly', enforced: true, ...creds })
-    ctx.setProtectionDirty(true)
-    ctx.dirtyRef.current = true
-    ctx.setProtectModal(null)
-    ctx.setStatus(pwd ? t('appProtectionEnabledPwd') : t('appProtectionEnabled'))
-  } else {
-    const ok = ctx.protection
-      ? await verifyProtectionPassword(ctx.protectModal.value, ctx.protection)
-      : true
-    if (!ok) {
-      ctx.setProtectModal({ ...ctx.protectModal, error: t('appWrongPassword') })
-      return
-    }
-    ctx.setProtection(null)
-    ctx.setProtectionDirty(true)
-    ctx.dirtyRef.current = true
-    ctx.setProtectModal(null)
-    ctx.setStatus(t('appProtectionRemoved'))
-  }
-}
-
 /** Compare: pick a second .docx and diff it against the open document */
 export async function compareWithFile(ctx: ReviewContext): Promise<void> {
   if (!ctx.doc) return
   const other = await window.desktop.openDocx()
   if (!other) return
+  // password-protected comparison target: not wired through the decrypt prompt (yet)
+  if ('needsPassword' in other) {
+    ctx.setStatus(t('appCompareFailed', { error: t('appDocPwdTitle') }))
+    return
+  }
   try {
     const otherParsed = await parseDocx(new Uint8Array(other.data))
     const entries = compareParagraphs(

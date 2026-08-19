@@ -141,7 +141,8 @@ export const NodeBody = React.memo(function NodeBody({
             }}
           >
             {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
-            {pic.fill && outline({ ...fillToKonva(pic.fill, box.w, box.h, images) })}
+            {pic.fill &&
+              outline({ ...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y }) })}
             {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
             {pic.bgColor && (pic.opacity ?? 1) >= 1 && outline({ fill: pic.bgColor })}
             {image}
@@ -155,7 +156,11 @@ export const NodeBody = React.memo(function NodeBody({
       <>
         {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
         {pic.fill && (
-          <Rect width={box.w} height={box.h} {...fillToKonva(pic.fill, box.w, box.h, images)} />
+          <Rect
+            width={box.w}
+            height={box.h}
+            {...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y })}
+          />
         )}
         {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
         {pic.bgColor && img && (pic.opacity ?? 1) >= 1 && (
@@ -179,7 +184,7 @@ export const NodeBody = React.memo(function NodeBody({
             y={0}
             width={tblW}
             height={tblH}
-            {...fillToKonva(table.bgFill, tblW, tblH, images)}
+            {...fillToKonva(table.bgFill, tblW, tblH, images, { x: box.x, y: box.y })}
           />
         )}
         {table.cells.map((cell, i) => {
@@ -194,7 +199,10 @@ export const NodeBody = React.memo(function NodeBody({
                 y={cell.y}
                 width={cell.w}
                 height={cell.h}
-                {...fillToKonva(cell.fill, cell.w, cell.h, images)}
+                {...fillToKonva(cell.fill, cell.w, cell.h, images, {
+                  x: box.x + cell.x,
+                  y: box.y + cell.y,
+                })}
               />
               {cell.borders?.t && (
                 <Line
@@ -300,7 +308,7 @@ export const NodeBody = React.memo(function NodeBody({
 
   // shape / text
   const shape = node as ShapeRenderNode
-  const fillProps = fillToKonva(shape.fill, box.w, box.h, images)
+  const fillProps = fillToKonva(shape.fill, box.w, box.h, images, { x: box.x, y: box.y })
   const strokeProps = strokeToKonva(shape.stroke)
   const shadowProps = shadowToKonva(shape.shadow, shape.glow)
   const glyphs = hideText ? [] : shapeGlyphs(shape)
@@ -402,7 +410,28 @@ export const NodeBody = React.memo(function NodeBody({
   }
 
   let geom: React.ReactNode
-  if (shape.pathData || shape.fillPathData || shape.strokePathData) {
+  if (shape.extrusion) {
+    // scene3d/sp3d extrusion: pre-projected shaded faces in painter order replace the flat geometry
+    geom = (
+      <>
+        {shape.extrusion.faces.map((f, i) => (
+          <Path
+            key={i}
+            data={f.path}
+            {...(f.front
+              ? fillProps
+              : f.color === 'transparent'
+                ? { fillEnabled: false }
+                : { fill: normalizeColor(f.color) })}
+            {...(f.stroke
+              ? { stroke: normalizeColor(f.stroke), strokeWidth: f.strokeWidthPx ?? 1 }
+              : {})}
+            lineJoin="round"
+          />
+        ))}
+      </>
+    )
+  } else if (shape.pathData || shape.fillPathData || shape.strokePathData) {
     // custGeom / arc-type presets: SVG path (local px; flip/rot handled by the outer container)
     geom = (
       <>
@@ -465,8 +494,10 @@ export const NodeBody = React.memo(function NodeBody({
   // of bleeding in whatever lies under the shape.
   let overlayUnder: React.ReactNode = null
   let overlayGeom: React.ReactNode = null
-  if (shape.fillOverlay) {
-    const oProps = fillToKonva(shape.fillOverlay, box.w, box.h, images)
+  // Extrusion replaces the flat geometry, so a flat-geometry overlay would paint over the
+  // 3D faces — the base fill already went through scene3d shading, skip the overlay.
+  if (shape.fillOverlay && !shape.extrusion) {
+    const oProps = fillToKonva(shape.fillOverlay, box.w, box.h, images, { x: box.x, y: box.y })
     const sameGeom = (props: Record<string, unknown>): React.ReactNode => {
       const common = { listening: false, ...props }
       if (shape.fillPathData || shape.pathData)
@@ -522,6 +553,26 @@ export const NodeBody = React.memo(function NodeBody({
             />
           ),
       )}
+      {/* WordArt text extrusion: dark offset layers behind every glyph; PowerPoint's 3D
+          material also tints the face glyphs with the extrusion color (front stays lighter) */}
+      {shape.text?.extrusion &&
+        glyphs.flatMap((g, i) =>
+          [1, 0.5].map((k) => (
+            <Text
+              key={`x${i}-${k}`}
+              x={(shape.text?.insets.l ?? 0) + g.x + shape.text!.extrusion!.dx * k}
+              y={(shape.text?.insets.t ?? 0) + g.y + shape.text!.extrusion!.dy * k}
+              text={g.text}
+              fontSize={g.fontSize}
+              fontFamily={g.fontFamily}
+              fontStyle={g.fontStyle}
+              rotation={g.rotation ?? 0}
+              letterSpacing={g.letterSpacing ?? 0}
+              fill={normalizeColor(shadeHex(shape.text!.extrusion!.color, 0.7))}
+              listening={false}
+            />
+          )),
+        )}
       {glyphs.map((g, i) => (
         <Text
           key={i}
@@ -534,8 +585,20 @@ export const NodeBody = React.memo(function NodeBody({
           textDecoration={g.textDecoration}
           rotation={g.rotation ?? 0}
           letterSpacing={g.letterSpacing ?? 0}
-          fill={g.fill}
+          fill={
+            shape.text?.extrusion
+              ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
+              : g.fill
+          }
           direction={g.direction ?? 'inherit'}
+          {...(g.fillPriority && !shape.text?.extrusion
+            ? {
+                fillPriority: g.fillPriority,
+                fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+              }
+            : {})}
           {...(g.stroke
             ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
             : {})}
@@ -549,6 +612,34 @@ export const NodeBody = React.memo(function NodeBody({
             : {})}
         />
       ))}
+      {/* Reflections: faded mirror below each run (PowerPoint fades it out; approximated flat) */}
+      {glyphs.map(
+        (g, i) =>
+          g.reflection && (
+            <Text
+              key={`rf${i}`}
+              x={(shape.text?.insets.l ?? 0) + g.x}
+              y={(shape.text?.insets.t ?? 0) + g.y + g.fontSize * 1.8}
+              scaleY={-1}
+              text={g.text}
+              fontSize={g.fontSize}
+              fontFamily={g.fontFamily}
+              fontStyle={g.fontStyle}
+              letterSpacing={g.letterSpacing ?? 0}
+              fill={g.fill}
+              opacity={0.15}
+              listening={false}
+              {...(g.fillPriority
+                ? {
+                    fillPriority: g.fillPriority,
+                    fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                    fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                    fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                  }
+                : {})}
+            />
+          ),
+      )}
     </>
   )
 })
@@ -557,6 +648,17 @@ export const NodeBody = React.memo(function NodeBody({
  * ArrowHead — draws a custom arrowhead (stealth/diamond/oval/arrow) at a polyline's start or end.
  * The arrowhead always faces the segment direction (angle taken from the tangent at the end point).
  */
+/** Darken a #RRGGBB color by factor (extrusion side layers). */
+function shadeHex(color: string, f: number): string {
+  const m = /^#([0-9a-f]{6})/i.exec(color)
+  if (!m) return color
+  const ch = (i: number) =>
+    Math.round(parseInt(m[1]!.slice(i, i + 2), 16) * f)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${ch(0)}${ch(2)}${ch(4)}`
+}
+
 function ArrowHead({
   end,
   pts,

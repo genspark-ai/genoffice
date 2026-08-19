@@ -80,6 +80,12 @@ export function handleGlobalKeydown(ctx: ActionCtx, e: KeyboardEvent): void {
     const sel = window.getSelection()
     if (sel && !sel.isCollapsed) return
   }
+  // Esc: drop the ink pen/highlighter/eraser back to the select tool (PowerPoint behavior)
+  if (e.key === 'Escape' && ctx.inkTool !== 'select') {
+    e.preventDefault()
+    ctx.setInkTool('select')
+    return
+  }
   // Esc: exit format painter continuous mode
   if (e.key === 'Escape' && ctx.brushMode) {
     e.preventDefault()

@@ -18,7 +18,13 @@ const MAX_ENTRY_COUNT: usize = 10_000;
 /// Cap on a single decompressed entry handed to the patching layer. The
 /// archive itself has no size limit — only entries the gateway edits must
 /// fit in memory.
-const MAX_EXTRACTED_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+// Densely styled worksheets can exceed 256 MiB as XML while remaining
+// ordinary workbooks on disk (the 88k-row suppliers fixture is ~307 MiB).
+// Keep a finite anti-bomb / memory bound, but allow that real-world case.
+// 500 MiB, not 512: the host patches entries as JavaScript strings, and
+// V8's maximum string length is 536,870,888 bytes — an entry between that
+// and 512 MiB would pass a 512 MiB cap and then fail to materialize.
+const MAX_EXTRACTED_ENTRY_BYTES: u64 = 500 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

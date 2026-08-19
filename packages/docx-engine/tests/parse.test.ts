@@ -167,6 +167,23 @@ describe('style-level pageBreakBefore', () => {
     // style-level value must not leak into paragraph format (would be saved as redundant pPr)
     expect(doc.blocks[0].format?.pageBreakBefore).toBeUndefined()
   })
+
+  it('an explicit w:val="0" overrides an inherited true (fdo#45183)', async () => {
+    const bytes = await buildDocx({
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="ChapterTitle"><w:name w:val="Chapter Title"/>' +
+        '<w:pPr><w:pageBreakBefore/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="NoBreak"><w:name w:val="No Break"/>' +
+        '<w:basedOn w:val="ChapterTitle"/><w:pPr><w:pageBreakBefore w:val="0"/></w:pPr></w:style>',
+      bodyXml:
+        '<w:p><w:pPr><w:pStyle w:val="ChapterTitle"/><w:pageBreakBefore w:val="0"/></w:pPr>' +
+        '<w:r><w:t>off</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.styles.get('NoBreak')?.display?.pageBreakBefore).toBe(false)
+    // direct-format off must survive so it can veto the style chain's true
+    expect(doc.blocks[0].format?.pageBreakBefore).toBe(false)
+  })
 })
 
 describe('empty paragraph line size', () => {

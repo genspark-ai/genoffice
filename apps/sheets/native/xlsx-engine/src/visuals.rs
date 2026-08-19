@@ -66,6 +66,12 @@ pub struct CellStyle {
     pub border_diagonal: Option<BorderEdge>,
     pub diagonal_up: bool,
     pub diagonal_down: bool,
+    /// Table-style dxf inner grid edges (<horizontal>/<vertical>) — consumed
+    /// by the custom table palette only, never serialized per cell.
+    #[serde(skip)]
+    pub border_inner_horizontal: Option<BorderEdge>,
+    #[serde(skip)]
+    pub border_inner_vertical: Option<BorderEdge>,
 }
 
 impl CellStyle {
@@ -330,6 +336,10 @@ pub struct VisualObject {
     pub shape_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_color: Option<String>,
+    /// xdr:style fillRef resolved against a theme fillStyleLst gradient;
+    /// fill_color stays the flat approximation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_gradient: Option<FillGradient>,
     /// spPr/a:ln solid color, or the xdr:style lnRef theme color; "none"
     /// for an explicit a:noFill outline.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -337,6 +347,17 @@ pub struct VisualObject {
     /// a:ln/@w in points.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_width: Option<f64>,
+    /// a:ln/a:prstDash/@val — solid when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_dash: Option<String>,
+    /// a:ln/@cap — rnd | sq | flat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_cap: Option<String>,
+    /// a:xfrm/@flipH, @flipV — mirror the preset geometry.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub flip_h: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub flip_v: bool,
     /// xdr:style fontRef theme color — the default run color.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_color: Option<String>,
@@ -350,6 +371,14 @@ pub struct VisualObject {
     /// Degrees clockwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
+    /// a:xfrm ext in EMU — the true unrotated frame of a rotated shape.
+    /// The anchor stores rotated bounds (Excel: quadrant-swapped snap rect,
+    /// LibreOffice: the AABB); both keep the anchor center on the shape
+    /// center, so the renderer restores ext around it before rotating.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_width: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_height: Option<f64>,
     /// xdr:cNvPr/@id — pairs a drawing fallback shape with its worksheet
     /// <oleObject shapeId=…>. Engine-internal, never serialized.
     #[serde(skip)]
@@ -404,6 +433,10 @@ struct BorderSet {
     diagonal: Option<BorderEdge>,
     diagonal_up: bool,
     diagonal_down: bool,
+    // <vertical>/<horizontal>: inner grid edges, only meaningful in
+    // table-style dxfs.
+    vertical: Option<BorderEdge>,
+    horizontal: Option<BorderEdge>,
 }
 
 /// Theme palette in `theme` attribute index order (0↔1 and 2↔3 are swapped
@@ -411,6 +444,43 @@ struct BorderSet {
 #[derive(Clone, Default)]
 pub struct ColorContext {
     theme: Vec<(u8, u8, u8)>,
+    /// fmtScheme/fillStyleLst entries (1-based fillRef idx order); None for
+    /// non-gradient entries.
+    fill_styles: Vec<Option<ThemeGradient>>,
+}
+
+/// A theme gradient with phClr stops: the placeholder resolves to the
+/// fillRef color at use time, then each stop's transforms apply.
+#[derive(Clone, Debug)]
+pub struct ThemeGradient {
+    pub stops: Vec<ThemeGradientStop>,
+    /// Degrees clockwise, 0 = left-to-right.
+    pub angle: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ThemeGradientStop {
+    /// 0..1 along the gradient axis.
+    pub position: f64,
+    /// (transform tag, val/100000) pairs in document order.
+    pub modifiers: Vec<(String, f64)>,
+}
+
+/// A shape gradient with fully resolved stop colors, ready to render.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillGradient {
+    /// Degrees clockwise, 0 = left-to-right.
+    pub angle: f64,
+    pub stops: Vec<FillGradientStop>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillGradientStop {
+    /// 0..1 along the gradient axis.
+    pub position: f64,
+    pub color: String,
 }
 
 impl ColorContext {
@@ -466,11 +536,43 @@ pub fn read_theme_fonts(
     })
 }
 
+/// Children with the given local tag, resolving mc:AlternateContent wrappers
+/// (ECMA-376 Part 3): a core-only consumer takes mc:Fallback (first mc:Choice
+/// when a producer omits the fallback). Hancom exports wrap individual
+/// font/xf/dxf entries this way; skipping them shifted every later
+/// fontId/fillId/borderId/dxfId.
+fn mc_children<'a, 'input>(parent: Node<'a, 'input>, tag: &str) -> Vec<Node<'a, 'input>> {
+    let mut nodes = Vec::new();
+    collect_mc_children(parent, tag, &mut nodes);
+    nodes
+}
+
+fn collect_mc_children<'a, 'input>(
+    parent: Node<'a, 'input>,
+    tag: &str,
+    nodes: &mut Vec<Node<'a, 'input>>,
+) {
+    for child in parent.children() {
+        if child.has_tag_name(tag) {
+            nodes.push(child);
+        } else if child.has_tag_name("AlternateContent") {
+            let branch = child
+                .children()
+                .find(|node| node.has_tag_name("Fallback"))
+                .or_else(|| child.children().find(|node| node.has_tag_name("Choice")));
+            if let Some(branch) = branch {
+                collect_mc_children(branch, tag, nodes);
+            }
+        }
+    }
+}
+
 pub fn read_styles(
     archive: &mut ZipArchive<File>,
     colors: &ColorContext,
     theme_fonts: Option<&ThemeFonts>,
     locale: &str,
+    short_date_format: Option<&str>,
 ) -> Result<(Vec<CellStyle>, Vec<CellStyle>), SidecarError> {
     let Some(xml) = read_optional_xml(archive, "xl/styles.xml")? else {
         return Ok((vec![CellStyle::default()], Vec::new()));
@@ -481,8 +583,7 @@ pub fn read_styles(
     let custom_formats = document
         .descendants()
         .filter(|node| node.has_tag_name("numFmts"))
-        .flat_map(|node| node.children())
-        .filter(|node| node.has_tag_name("numFmt"))
+        .flat_map(|node| mc_children(node, "numFmt"))
         .filter_map(|node| {
             Some((
                 node.attribute("numFmtId")?.parse::<u32>().ok()?,
@@ -494,8 +595,8 @@ pub fn read_styles(
         .descendants()
         .find(|node| node.has_tag_name("fonts"))
         .map(|node| {
-            node.children()
-                .filter(|child| child.has_tag_name("font"))
+            mc_children(node, "font")
+                .into_iter()
                 .map(|font| parse_font(font, &colors))
                 .collect::<Vec<_>>()
         })
@@ -504,8 +605,8 @@ pub fn read_styles(
         .descendants()
         .find(|node| node.has_tag_name("fills"))
         .map(|node| {
-            node.children()
-                .filter(|child| child.has_tag_name("fill"))
+            mc_children(node, "fill")
+                .into_iter()
                 .map(|fill| parse_fill(fill, &colors))
                 .collect::<Vec<_>>()
         })
@@ -514,8 +615,8 @@ pub fn read_styles(
         .descendants()
         .find(|node| node.has_tag_name("borders"))
         .map(|node| {
-            node.children()
-                .filter(|child| child.has_tag_name("border"))
+            mc_children(node, "border")
+                .into_iter()
                 .map(|border| parse_border(border, &colors))
                 .collect::<Vec<_>>()
         })
@@ -524,8 +625,8 @@ pub fn read_styles(
         .descendants()
         .find(|node| node.has_tag_name("cellXfs"))
         .map(|node| {
-            node.children()
-                .filter(|child| child.has_tag_name("xf"))
+            mc_children(node, "xf")
+                .into_iter()
                 .map(|xf| {
                     let font = numeric_attribute(xf, "fontId")
                         .and_then(|index| fonts.get(index))
@@ -539,15 +640,15 @@ pub fn read_styles(
                         .and_then(|index| borders.get(index))
                         .cloned()
                         .unwrap_or_default();
-                    let number_format = numeric_attribute(xf, "numFmtId")
-                        .and_then(|id| {
-                            custom_formats
-                                .get(&(id as u32))
-                                .cloned()
-                                .or_else(|| {
-                                    builtin_number_format(id as u32, locale).map(ToOwned::to_owned)
-                                })
-                        });
+                    let number_format = numeric_attribute(xf, "numFmtId").and_then(|id| {
+                        custom_formats
+                            .get(&(id as u32))
+                            .cloned()
+                            .or_else(|| short_date_number_format(id as u32, short_date_format))
+                            .or_else(|| {
+                                builtin_number_format(id as u32, locale).map(ToOwned::to_owned)
+                            })
+                    });
                     let alignment = xf.children().find(|child| child.has_tag_name("alignment"));
                     // Excel resolves scheme fonts against the theme; the
                     // literal <name val> is only a cached copy.
@@ -595,6 +696,8 @@ pub fn read_styles(
                         border_diagonal: border.diagonal,
                         diagonal_up: border.diagonal_up,
                         diagonal_down: border.diagonal_down,
+                        border_inner_horizontal: None,
+                        border_inner_vertical: None,
                     }
                 })
                 .collect::<Vec<_>>()
@@ -604,8 +707,8 @@ pub fn read_styles(
         .descendants()
         .find(|node| node.has_tag_name("dxfs"))
         .map(|node| {
-            node.children()
-                .filter(|child| child.has_tag_name("dxf"))
+            mc_children(node, "dxf")
+                .into_iter()
                 .map(|dxf| parse_dxf(dxf, colors))
                 .collect::<Vec<_>>()
         })
@@ -636,11 +739,7 @@ fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
             pattern
                 .children()
                 .find(|node| node.has_tag_name("bgColor"))
-                .or_else(|| {
-                    pattern
-                        .children()
-                        .find(|node| node.has_tag_name("fgColor"))
-                })
+                .or_else(|| pattern.children().find(|node| node.has_tag_name("fgColor")))
                 .and_then(|node| parse_color(node, colors))
         });
     let border = dxf
@@ -682,6 +781,8 @@ fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         border_diagonal: border.diagonal,
         diagonal_up: border.diagonal_up,
         diagonal_down: border.diagonal_down,
+        border_inner_horizontal: border.horizontal,
+        border_inner_vertical: border.vertical,
     }
 }
 
@@ -699,10 +800,9 @@ pub fn read_visual_objects(
         else {
             continue;
         };
-        let drawing_path = resolve_part_target(
-            &sheet.worksheet_path,
-            &drawing_relationship.target,
-        )?;
+        let drawing_path =
+            resolve_part_target(&sheet.worksheet_path, &drawing_relationship.target)?;
+        let prog_ids = read_ole_prog_ids(archive, &sheet.worksheet_path)?;
         let start = visuals.len();
         visuals.extend(read_drawing(
             archive,
@@ -710,11 +810,11 @@ pub fn read_visual_objects(
             &sheet.sheet_id,
             visuals.len(),
             colors,
+            &prog_ids,
         )?);
         // OLE embeds keep a hidden drawing fallback shape; give it the
         // object's progId as caption text so the placeholder reads as an
         // embedded object instead of an empty rectangle.
-        let prog_ids = read_ole_prog_ids(archive, &sheet.worksheet_path)?;
         if !prog_ids.is_empty() {
             for visual in &mut visuals[start..] {
                 if visual.kind != "shape" || visual.text.is_some() {
@@ -755,26 +855,40 @@ fn read_ole_prog_ids(
         let Some(prog_id) = node.attribute("progId") else {
             continue;
         };
-        prog_ids.entry(shape_id).or_insert_with(|| prog_id.to_owned());
+        prog_ids
+            .entry(shape_id)
+            .or_insert_with(|| prog_id.to_owned());
     }
     Ok(prog_ids)
 }
 
 /// DrawingML solid fill: srgbClr, or schemeClr resolved via the theme palette.
 fn drawing_fill_color(node: Node<'_, '_>, colors: &ColorContext) -> Option<String> {
+    // An a:ln below `node` carries the outline color, not the fill.
+    let outside_outline = |child: &Node<'_, '_>| {
+        !child
+            .ancestors()
+            .take_while(|ancestor| *ancestor != node)
+            .any(|ancestor| ancestor.has_tag_name("ln"))
+    };
     let fill = node
         .descendants()
-        .find(|child| child.has_tag_name("solidFill"))
+        .find(|child| child.has_tag_name("solidFill") && outside_outline(child))
         .or_else(|| {
             // Gradient fills approximate to their first stop color.
             node.descendants()
-                .find(|child| child.has_tag_name("gradFill"))
+                .find(|child| child.has_tag_name("gradFill") && outside_outline(child))
                 .and_then(|grad| grad.descendants().find(|child| child.has_tag_name("gs")))
         })?;
-    if let Some(srgb) = fill.descendants().find(|child| child.has_tag_name("srgbClr")) {
+    if let Some(srgb) = fill
+        .descendants()
+        .find(|child| child.has_tag_name("srgbClr"))
+    {
         return srgb.attribute("val").map(|value| format!("#{value}"));
     }
-    let scheme = fill.descendants().find(|child| child.has_tag_name("schemeClr"))?;
+    let scheme = fill
+        .descendants()
+        .find(|child| child.has_tag_name("schemeClr"))?;
     let base = scheme_color_rgb(scheme.attribute("val")?, colors)?;
     Some(apply_color_modifiers(scheme, base))
 }
@@ -783,15 +897,56 @@ fn drawing_fill_color(node: Node<'_, '_>, colors: &ColorContext) -> Option<Strin
 /// usual RGB approximations — enough for Excel's accent "40% lighter" dPt
 /// and legend variants.
 fn apply_color_modifiers(color_node: Node<'_, '_>, base: (u8, u8, u8)) -> String {
-    let factor = |node: Node<'_, '_>| {
-        node.attribute("val")
-            .and_then(|value| value.parse::<f64>().ok())
-            .map(|value| value / 100_000.0)
-    };
+    let modifiers = color_node
+        .children()
+        .filter(|child| child.is_element())
+        .filter_map(|child| {
+            Some((
+                child.tag_name().name().to_owned(),
+                child.attribute("val")?.parse::<f64>().ok()? / 100_000.0,
+            ))
+        })
+        .collect::<Vec<_>>();
+    apply_modifier_values(base, &modifiers)
+}
+
+/// xdr:style fillRef pointing at a fmtScheme gradient entry: each phClr
+/// stop resolves against the reference's scheme color.
+fn style_fill_gradient(
+    style_node: Option<Node<'_, '_>>,
+    colors: &ColorContext,
+) -> Option<FillGradient> {
+    let reference = style_node?
+        .children()
+        .find(|node| node.has_tag_name("fillRef"))?;
+    let idx = reference.attribute("idx")?.parse::<usize>().ok()?;
+    let gradient = colors.fill_styles.get(idx.checked_sub(1)?)?.as_ref()?;
+    let scheme = reference
+        .children()
+        .find(|node| node.has_tag_name("schemeClr"))?;
+    let base = scheme_color_rgb(scheme.attribute("val")?, colors)?;
+    let base = parse_hex_rgb(apply_color_modifiers(scheme, base).trim_start_matches('#'))?;
+    let stops = gradient
+        .stops
+        .iter()
+        .map(|stop| FillGradientStop {
+            position: stop.position,
+            color: apply_modifier_values(base, &stop.modifiers),
+        })
+        .collect();
+    Some(FillGradient {
+        angle: gradient.angle,
+        stops,
+    })
+}
+
+/// Data-driven twin of apply_color_modifiers, for theme gradient stops whose
+/// source document is gone by the time the fillRef color is known.
+fn apply_modifier_values(base: (u8, u8, u8), modifiers: &[(String, f64)]) -> String {
     let mut channels = [f64::from(base.0), f64::from(base.1), f64::from(base.2)];
-    for child in color_node.children() {
-        let Some(value) = factor(child) else { continue };
-        match child.tag_name().name() {
+    for (name, value) in modifiers {
+        let value = *value;
+        match name.as_str() {
             "lumMod" | "shade" => {
                 for channel in &mut channels {
                     *channel *= value;
@@ -806,6 +961,13 @@ fn apply_color_modifiers(color_node: Node<'_, '_>, base: (u8, u8, u8)) -> String
                 for channel in &mut channels {
                     *channel = *channel * value + 255.0 * (1.0 - value);
                 }
+            }
+            "satMod" => {
+                let clamp = |v: f64| v.round().clamp(0.0, 255.0) as u8;
+                let (hue, saturation, luminance) =
+                    rgb_to_hsl((clamp(channels[0]), clamp(channels[1]), clamp(channels[2])));
+                let (red, green, blue) = hsl_to_rgb(hue, (saturation * value).min(1.0), luminance);
+                channels = [f64::from(red), f64::from(green), f64::from(blue)];
             }
             _ => {}
         }
@@ -837,7 +999,7 @@ pub fn read_media(
     archive: &mut ZipArchive<File>,
     media_path: &str,
 ) -> Result<MediaResult, SidecarError> {
-    let mut entry = archive.by_name(media_path)?;
+    let mut entry = crate::zip_entry(archive, media_path)?;
     if entry.size() > MAX_MEDIA_BYTES {
         return Err(SidecarError::Workbook(
             "Embedded image exceeds the media response limit.".into(),
@@ -912,6 +1074,7 @@ fn read_drawing(
     sheet_id: &str,
     id_offset: usize,
     colors: &ColorContext,
+    ole_prog_ids: &HashMap<u32, String>,
 ) -> Result<Vec<VisualObject>, SidecarError> {
     let xml = read_xml(archive, drawing_path)?;
     let document = parse_document(&xml, drawing_path)?;
@@ -929,8 +1092,51 @@ fn read_drawing(
         let Some(anchor) = parse_anchor(anchor_node) else {
             continue;
         };
+        // Excel does not render objects flagged hidden (cNvPr hidden="1").
+        // OLE placeholder shapes are the exception: their hidden fallback
+        // shape is the visible render.
+        let nv = anchor_node
+            .descendants()
+            .find(|node| node.has_tag_name("cNvPr"));
+        let hidden = nv.is_some_and(hidden_attribute);
+        let is_ole_placeholder = nv
+            .and_then(|node| node.attribute("id"))
+            .and_then(|value| value.parse::<u32>().ok())
+            .is_some_and(|id| ole_prog_ids.contains_key(&id));
+        if hidden && !is_ole_placeholder {
+            continue;
+        }
         let visual_id = format!("visual-{}", id_offset + index + 1);
-        if let Some(chart_node) = anchor_node.descendants().find(|node| node.has_tag_name("chart")) {
+        if let Some(group) = anchor_node
+            .children()
+            .find(|node| node.has_tag_name("grpSp"))
+        {
+            // The group box spans the whole anchor; its EMU size comes from
+            // the group's own xfrm ext (Excel keeps the two equal).
+            let xfrm = group_xfrm(group);
+            let width = xfrm_value(xfrm, "ext", "cx").unwrap_or(0.0);
+            let height = xfrm_value(xfrm, "ext", "cy").unwrap_or(0.0);
+            if width > 0.0 && height > 0.0 {
+                let mut counter = 0;
+                expand_group(
+                    group,
+                    &anchor,
+                    (0.0, 0.0, width, height),
+                    &visual_id,
+                    &mut counter,
+                    sheet_id,
+                    colors,
+                    drawing_path,
+                    &relationships,
+                    &mut visuals,
+                )?;
+            }
+            continue;
+        }
+        if let Some(chart_node) = anchor_node
+            .descendants()
+            .find(|node| node.has_tag_name("chart"))
+        {
             let Some(id) = relationship_id(chart_node) else {
                 continue;
             };
@@ -950,20 +1156,30 @@ fn read_drawing(
                 name: drawing_name(anchor_node),
                 shape_type: None,
                 fill_color: None,
+                fill_gradient: None,
                 line_color: None,
                 line_width: None,
+                line_dash: None,
+                line_cap: None,
+                flip_h: false,
+                flip_v: false,
                 text_color: None,
                 text_anchor: None,
                 paragraphs: None,
                 text: None,
                 rotation: None,
+                frame_width: None,
+                frame_height: None,
                 nv_id: None,
                 drawing_path: Some(drawing_path.to_owned()),
                 drawing_index: Some(index),
             });
             continue;
         }
-        if let Some(blip_node) = anchor_node.descendants().find(|node| node.has_tag_name("blip")) {
+        if let Some(blip_node) = anchor_node
+            .descendants()
+            .find(|node| node.has_tag_name("blip"))
+        {
             let Some(id) = relationship_id(blip_node) else {
                 continue;
             };
@@ -983,20 +1199,69 @@ fn read_drawing(
                 name: drawing_name(anchor_node),
                 shape_type: None,
                 fill_color: None,
+                fill_gradient: None,
                 line_color: None,
                 line_width: None,
+                line_dash: None,
+                line_cap: None,
+                flip_h: false,
+                flip_v: false,
                 text_color: None,
                 text_anchor: None,
                 paragraphs: None,
                 text: None,
                 rotation: None,
+                frame_width: None,
+                frame_height: None,
                 nv_id: None,
                 drawing_path: Some(drawing_path.to_owned()),
                 drawing_index: Some(index),
             });
             continue;
         }
-        if let Some(shape_node) = anchor_node.descendants().find(|node| node.has_tag_name("sp")) {
+        if let Some(shape_node) = anchor_node
+            .descendants()
+            .find(|node| node.has_tag_name("sp") || node.has_tag_name("cxnSp"))
+        {
+            visuals.push(shape_visual(
+                shape_node,
+                anchor,
+                visual_id,
+                sheet_id,
+                drawing_name(anchor_node),
+                colors,
+                drawing_path,
+                Some(index),
+            ));
+        }
+    }
+    // Chart children of expanded groups carry only their part path.
+    for visual in &mut visuals {
+        if visual.kind == "chart" && visual.chart.is_none() {
+            if let Some(chart_path) = visual.chart_path.clone() {
+                visual.chart = Some(read_chart(archive, &chart_path, colors)?);
+            }
+        }
+    }
+    Ok(visuals)
+}
+
+/// One `sp`/`cxnSp` node → a shape visual placed at `anchor`. Shared by the
+/// direct anchor branch and grpSp expansion (children pass their own name
+/// and no drawing_index — anchor edits would rewrite the whole group).
+#[allow(clippy::too_many_arguments)]
+fn shape_visual(
+    shape_node: Node<'_, '_>,
+    anchor: DrawingAnchor,
+    visual_id: String,
+    sheet_id: &str,
+    name: Option<String>,
+    colors: &ColorContext,
+    drawing_path: &str,
+    drawing_index: Option<usize>,
+) -> VisualObject {
+    {
+        {
             let shape_type = shape_node
                 .descendants()
                 .find(|node| node.has_tag_name("prstGeom"))
@@ -1012,12 +1277,27 @@ fn read_drawing(
             } else {
                 shape_sppr.and_then(|sppr| drawing_fill_color(sppr, colors))
             };
-            let rotation = shape_node
+            let xfrm = shape_node
                 .descendants()
-                .find(|node| node.has_tag_name("xfrm"))
+                .find(|node| node.has_tag_name("xfrm"));
+            let rotation = xfrm
                 .and_then(|node| node.attribute("rot"))
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| value / 60_000.0);
+            // Only rotated shapes need the true frame — unrotated anchors
+            // already are the frame.
+            let frame_extent = |attribute: &str| {
+                if rotation.is_none() {
+                    return None;
+                }
+                xfrm_value(xfrm, "ext", attribute).filter(|value| *value > 0.0)
+            };
+            let frame_width = frame_extent("cx");
+            let frame_height = frame_extent("cy");
+            let flipped = |attribute: &str| {
+                xfrm.and_then(|node| node.attribute(attribute))
+                    .is_some_and(|value| value == "1" || value == "true")
+            };
             let body = shape_node
                 .descendants()
                 .find(|node| node.has_tag_name("txBody"));
@@ -1055,6 +1335,11 @@ fn read_drawing(
                 let base = scheme_color_rgb(scheme.attribute("val")?, colors)?;
                 Some(apply_color_modifiers(scheme, base))
             };
+            let fill_gradient = if fill_color.is_none() {
+                style_fill_gradient(style_node, colors)
+            } else {
+                None
+            };
             let fill_color = fill_color.or_else(|| style_color("fillRef"));
             let line_node = shape_node
                 .children()
@@ -1072,13 +1357,20 @@ fn read_drawing(
                 .and_then(|ln| ln.attribute("w"))
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|emu| emu / 12_700.0);
+            let line_dash = line_node
+                .and_then(|ln| ln.children().find(|node| node.has_tag_name("prstDash")))
+                .and_then(|node| node.attribute("val"))
+                .map(ToOwned::to_owned);
+            let line_cap = line_node
+                .and_then(|ln| ln.attribute("cap"))
+                .map(ToOwned::to_owned);
             let text_color = style_color("fontRef");
             let nv_id = shape_node
                 .descendants()
                 .find(|node| node.has_tag_name("cNvPr"))
                 .and_then(|node| node.attribute("id"))
                 .and_then(|value| value.parse::<u32>().ok());
-            visuals.push(VisualObject {
+            VisualObject {
                 id: visual_id,
                 sheet_id: sheet_id.to_owned(),
                 kind: "shape".into(),
@@ -1087,23 +1379,244 @@ fn read_drawing(
                 chart_path: None,
                 media_path: None,
                 media_type: None,
-                name: drawing_name(anchor_node),
+                name,
                 shape_type,
                 fill_color,
+                fill_gradient,
                 line_color,
                 line_width,
+                line_dash,
+                line_cap,
+                flip_h: flipped("flipH"),
+                flip_v: flipped("flipV"),
                 text_color,
                 text_anchor,
                 paragraphs,
                 text,
                 rotation,
+                frame_width,
+                frame_height,
                 nv_id,
                 drawing_path: Some(drawing_path.to_owned()),
-                drawing_index: Some(index),
-            });
+                drawing_index,
+            }
         }
     }
-    Ok(visuals)
+}
+
+fn hidden_attribute(node: Node<'_, '_>) -> bool {
+    node.attribute("hidden")
+        .is_some_and(|value| value == "1" || value == "true")
+}
+
+fn group_xfrm<'a>(group: Node<'a, 'a>) -> Option<Node<'a, 'a>> {
+    group
+        .children()
+        .find(|node| node.has_tag_name("grpSpPr"))?
+        .children()
+        .find(|node| node.has_tag_name("xfrm"))
+}
+
+fn xfrm_value(xfrm: Option<Node<'_, '_>>, tag: &str, attribute: &str) -> Option<f64> {
+    xfrm?
+        .children()
+        .find(|node| node.has_tag_name(tag))?
+        .attribute(attribute)?
+        .parse::<f64>()
+        .ok()
+}
+
+/// Flatten a grpSp into per-child visuals. `group_box` is the group's frame
+/// as (x, y, width, height) in EMU relative to the anchor's `from` marker;
+/// children map from the group's chOff/chExt space onto that box. Child
+/// anchors encode the box as offsets within the from cell, which the
+/// renderer's marker walk resolves across real row/column sizes.
+#[allow(clippy::too_many_arguments)]
+fn expand_group(
+    group: Node<'_, '_>,
+    anchor: &DrawingAnchor,
+    group_box: (f64, f64, f64, f64),
+    visual_id: &str,
+    counter: &mut usize,
+    sheet_id: &str,
+    colors: &ColorContext,
+    drawing_path: &str,
+    relationships: &HashMap<String, Relationship>,
+    visuals: &mut Vec<VisualObject>,
+) -> Result<(), SidecarError> {
+    let (box_x, box_y, box_width, box_height) = group_box;
+    let xfrm = group_xfrm(group);
+    let ch_off_x = xfrm_value(xfrm, "chOff", "x").unwrap_or(0.0);
+    let ch_off_y = xfrm_value(xfrm, "chOff", "y").unwrap_or(0.0);
+    let ch_ext_x = xfrm_value(xfrm, "chExt", "cx").filter(|value| *value > 0.0);
+    let ch_ext_y = xfrm_value(xfrm, "chExt", "cy").filter(|value| *value > 0.0);
+    let scale_x = box_width / ch_ext_x.unwrap_or(box_width);
+    let scale_y = box_height / ch_ext_y.unwrap_or(box_height);
+    for child in group.children() {
+        let is_group = child.has_tag_name("grpSp");
+        let is_shape = child.has_tag_name("sp") || child.has_tag_name("cxnSp");
+        let is_picture = child.has_tag_name("pic");
+        let is_frame = child.has_tag_name("graphicFrame");
+        if !is_group && !is_shape && !is_picture && !is_frame {
+            continue;
+        }
+        if child
+            .descendants()
+            .find(|node| node.has_tag_name("cNvPr"))
+            .is_some_and(hidden_attribute)
+        {
+            continue;
+        }
+        // The first xfrm under the child is its own (spPr or grpSpPr).
+        let child_xfrm = child.descendants().find(|node| node.has_tag_name("xfrm"));
+        let (Some(off_x), Some(off_y), Some(ext_x), Some(ext_y)) = (
+            xfrm_value(child_xfrm, "off", "x"),
+            xfrm_value(child_xfrm, "off", "y"),
+            xfrm_value(child_xfrm, "ext", "cx"),
+            xfrm_value(child_xfrm, "ext", "cy"),
+        ) else {
+            continue;
+        };
+        let child_box = (
+            box_x + (off_x - ch_off_x) * scale_x,
+            box_y + (off_y - ch_off_y) * scale_y,
+            ext_x * scale_x,
+            ext_y * scale_y,
+        );
+        if is_group {
+            expand_group(
+                child,
+                anchor,
+                child_box,
+                visual_id,
+                counter,
+                sheet_id,
+                colors,
+                drawing_path,
+                relationships,
+                visuals,
+            )?;
+            continue;
+        }
+        let child_anchor = DrawingAnchor {
+            from_row: anchor.from_row,
+            from_column: anchor.from_column,
+            from_row_offset: anchor.from_row_offset + child_box.1.round() as i64,
+            from_column_offset: anchor.from_column_offset + child_box.0.round() as i64,
+            to_row: anchor.from_row,
+            to_column: anchor.from_column,
+            to_row_offset: anchor.from_row_offset + (child_box.1 + child_box.3).round() as i64,
+            to_column_offset: anchor.from_column_offset
+                + (child_box.0 + child_box.2).round() as i64,
+        };
+        *counter += 1;
+        let child_id = format!("{visual_id}-{counter}");
+        let child_name = child
+            .descendants()
+            .find(|node| node.has_tag_name("cNvPr"))
+            .and_then(|node| node.attribute("name"))
+            .map(ToOwned::to_owned);
+        if is_shape {
+            visuals.push(shape_visual(
+                child,
+                child_anchor,
+                child_id,
+                sheet_id,
+                child_name,
+                colors,
+                drawing_path,
+                None,
+            ));
+            continue;
+        }
+        if is_frame {
+            // Chart data is backfilled by read_drawing (reading the part
+            // needs the archive, which this expansion deliberately avoids).
+            let Some(chart_path) = child
+                .descendants()
+                .find(|node| node.has_tag_name("chart"))
+                .and_then(relationship_id)
+                .and_then(|id| relationships.get(&id))
+                .map(|relationship| resolve_part_target(drawing_path, &relationship.target))
+                .transpose()?
+            else {
+                continue;
+            };
+            visuals.push(VisualObject {
+                id: child_id,
+                sheet_id: sheet_id.to_owned(),
+                kind: "chart".into(),
+                anchor: child_anchor,
+                chart: None,
+                chart_path: Some(chart_path),
+                media_path: None,
+                media_type: None,
+                name: child_name,
+                shape_type: None,
+                fill_color: None,
+                fill_gradient: None,
+                line_color: None,
+                line_width: None,
+                line_dash: None,
+                line_cap: None,
+                flip_h: false,
+                flip_v: false,
+                text_color: None,
+                text_anchor: None,
+                paragraphs: None,
+                text: None,
+                rotation: None,
+                frame_width: None,
+                frame_height: None,
+                nv_id: None,
+                drawing_path: Some(drawing_path.to_owned()),
+                drawing_index: None,
+            });
+            continue;
+        }
+        let Some(id) = child
+            .descendants()
+            .find(|node| node.has_tag_name("blip"))
+            .and_then(relationship_id)
+        else {
+            continue;
+        };
+        let Some(relationship) = relationships.get(&id) else {
+            continue;
+        };
+        let media_path = resolve_part_target(drawing_path, &relationship.target)?;
+        visuals.push(VisualObject {
+            id: child_id,
+            sheet_id: sheet_id.to_owned(),
+            kind: "image".into(),
+            anchor: child_anchor,
+            chart: None,
+            chart_path: None,
+            media_type: media_type_for_path(&media_path).map(ToOwned::to_owned),
+            media_path: Some(media_path),
+            name: child_name,
+            shape_type: None,
+            fill_color: None,
+            fill_gradient: None,
+            line_color: None,
+            line_width: None,
+            line_dash: None,
+            line_cap: None,
+            flip_h: false,
+            flip_v: false,
+            text_color: None,
+            text_anchor: None,
+            paragraphs: None,
+            text: None,
+            rotation: None,
+            frame_width: None,
+            frame_height: None,
+            nv_id: None,
+            drawing_path: Some(drawing_path.to_owned()),
+            drawing_index: None,
+        });
+    }
+    Ok(())
 }
 
 const CHART_TYPE_NAMES: [&str; 7] = [
@@ -1133,7 +1646,9 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
         .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     // Only the chart-level title — axes carry their own c:title deeper down.
-    let chart_node = document.descendants().find(|node| node.has_tag_name("chart"));
+    let chart_node = document
+        .descendants()
+        .find(|node| node.has_tag_name("chart"));
     let title_node = chart_node.and_then(|chart| direct_child(chart, "title"));
     let explicit_title = title_node
         .map(|node| {
@@ -1162,11 +1677,16 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
         .find(|node| node.has_tag_name("barDir"))
         .and_then(|node| node.attribute("val"))
         .map(ToOwned::to_owned);
-    let series = document
+    let series_nodes = document
         .descendants()
         .filter(|node| node.has_tag_name("ser"))
+        .collect::<Vec<_>>();
+    let sole_series_named = matches!(&series_nodes[..],
+        [only] if direct_child(*only, "tx").and_then(first_cached_value).is_some());
+    let series = series_nodes
+        .iter()
         .enumerate()
-        .map(|(index, node)| parse_chart_series(node, index, colors))
+        .map(|(index, node)| parse_chart_series(*node, index, colors))
         .collect::<Vec<_>>();
     // Excel's title rules: explicit text wins; a deleted auto title (or no
     // <c:title> at all) means no title; a present-but-empty <c:title> shows
@@ -1176,7 +1696,7 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
         Some(text) => text,
         None if auto_title_deleted || title_node.is_none() => String::new(),
         None => match &series[..] {
-            [only] if only.name != "Series" => only.name.clone(),
+            [only] if sole_series_named => only.name.clone(),
             _ => "Chart Title".into(),
         },
     };
@@ -1192,7 +1712,9 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
                 .attribute("sz")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| value / 100.0),
-            bold: def.attribute("b").map(|value| value == "1" || value == "true"),
+            bold: def
+                .attribute("b")
+                .map(|value| value == "1" || value == "true"),
             color: drawing_fill_color(def, colors),
         });
     ChartMetadata {
@@ -1346,14 +1868,19 @@ fn value_axis_bounds(document: &Document<'_>) -> Option<ValueAxisBounds> {
 }
 
 fn plot_val_attribute(document: &Document<'_>, plot: &str, name: &str) -> Option<u32> {
-    let plot = document.descendants().find(|node| node.has_tag_name(plot))?;
+    let plot = document
+        .descendants()
+        .find(|node| node.has_tag_name(plot))?;
     direct_child(plot, name)
         .and_then(|node| node.attribute("val"))
         .and_then(|value| value.parse::<u32>().ok())
 }
 
 fn legend_position(document: &Document<'_>) -> String {
-    let Some(legend) = document.descendants().find(|node| node.has_tag_name("legend")) else {
+    let Some(legend) = document
+        .descendants()
+        .find(|node| node.has_tag_name("legend"))
+    else {
         return "none".into();
     };
     match direct_child(legend, "legendPos").and_then(|node| node.attribute("val")) {
@@ -1451,26 +1978,24 @@ fn plot_grouping(document: &Document<'_>) -> Option<String> {
     direct_child(plot, "grouping")
         .and_then(|node| node.attribute("val"))
         .filter(|value| {
-            matches!(*value, "clustered" | "stacked" | "percentStacked" | "standard")
+            matches!(
+                *value,
+                "clustered" | "stacked" | "percentStacked" | "standard"
+            )
         })
         .map(ToOwned::to_owned)
 }
 
-fn parse_chart_series(
-    series: Node<'_, '_>,
-    index: usize,
-    colors: &ColorContext,
-) -> ChartSeries {
+fn parse_chart_series(series: Node<'_, '_>, index: usize, colors: &ColorContext) -> ChartSeries {
+    // Unnamed series get Excel's global Series1..N numbering.
     let name = direct_child(series, "tx")
         .and_then(|node| first_cached_value(node))
-        .unwrap_or_else(|| "Series".into());
+        .unwrap_or_else(|| format!("Series{}", index + 1));
     // Explicit series fill/line color, else the theme accent cycle Excel uses
     // for automatic chart colors.
     let color = direct_child(series, "spPr")
         .and_then(|sppr| drawing_fill_color(sppr, colors))
-        .or_else(|| {
-            theme_accent(colors, index % 6 + 1).map(|base| tint_to_hex(base, 0.0))
-        });
+        .or_else(|| theme_accent(colors, index % 6 + 1).map(|base| tint_to_hex(base, 0.0)));
     let category_node = direct_child(series, "cat").or_else(|| direct_child(series, "xVal"));
     let categories = category_node.map(cached_values).unwrap_or_default();
     let category_format = category_node.and_then(cache_format_code);
@@ -1576,19 +2101,76 @@ fn formula_ref(node: Node<'_, '_>) -> Option<String> {
 }
 
 fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
-    let from = direct_child(anchor, "from")?;
-    let to = direct_child(anchor, "to").unwrap_or(from);
-    Some(DrawingAnchor {
-        from_row: marker_value(from, "row")?,
-        from_column: marker_value(from, "col")?,
-        from_row_offset: marker_signed_value(from, "rowOff").unwrap_or(0),
-        from_column_offset: marker_signed_value(from, "colOff").unwrap_or(0),
-        to_row: marker_value(to, "row").unwrap_or_else(|| marker_value(from, "row").unwrap_or(0) + 20),
-        to_column: marker_value(to, "col")
-            .unwrap_or_else(|| marker_value(from, "col").unwrap_or(0) + 8),
-        to_row_offset: marker_signed_value(to, "rowOff").unwrap_or(0),
-        to_column_offset: marker_signed_value(to, "colOff").unwrap_or(0),
-    })
+    let Some(from) = direct_child(anchor, "from") else {
+        // absoluteAnchor: xdr:pos + xdr:ext in sheet EMU. Encode both corners
+        // as offsets from cell (0,0) — the renderer's marker walk carries
+        // offsets across real row/column sizes.
+        let pos = direct_child(anchor, "pos")?;
+        let ext = direct_child(anchor, "ext")?;
+        let coordinate =
+            |node: Node<'_, '_>, attribute: &str| node.attribute(attribute)?.parse::<i64>().ok();
+        let x = coordinate(pos, "x")?;
+        let y = coordinate(pos, "y")?;
+        let cx = coordinate(ext, "cx")?;
+        let cy = coordinate(ext, "cy")?;
+        return Some(DrawingAnchor {
+            from_row: 0,
+            from_column: 0,
+            from_row_offset: y,
+            from_column_offset: x,
+            to_row: 0,
+            to_column: 0,
+            to_row_offset: y + cy,
+            to_column_offset: x + cx,
+        });
+    };
+    let from_row = marker_value(from, "row")?;
+    let from_column = marker_value(from, "col")?;
+    let from_row_offset = marker_signed_value(from, "rowOff").unwrap_or(0);
+    let from_column_offset = marker_signed_value(from, "colOff").unwrap_or(0);
+    if let Some(to) = direct_child(anchor, "to") {
+        return Some(DrawingAnchor {
+            from_row,
+            from_column,
+            from_row_offset,
+            from_column_offset,
+            to_row: marker_value(to, "row").unwrap_or(from_row + 20),
+            to_column: marker_value(to, "col").unwrap_or(from_column + 8),
+            to_row_offset: marker_signed_value(to, "rowOff").unwrap_or(0),
+            to_column_offset: marker_signed_value(to, "colOff").unwrap_or(0),
+        });
+    }
+    // oneCellAnchor: the size lives in xdr:ext (EMU). Encode it as offsets
+    // within the from cell — the renderer's marker walk handles offsets past
+    // the cell edge, so no new anchor fields are needed. (Previously `to`
+    // fell back to `from` itself: a zero-size box.)
+    let ext = direct_child(anchor, "ext");
+    let extent = |attribute: &str| {
+        ext.and_then(|node| node.attribute(attribute))
+            .and_then(|value| value.parse::<i64>().ok())
+    };
+    match (extent("cx"), extent("cy")) {
+        (Some(cx), Some(cy)) => Some(DrawingAnchor {
+            from_row,
+            from_column,
+            from_row_offset,
+            from_column_offset,
+            to_row: from_row,
+            to_column: from_column,
+            to_row_offset: from_row_offset + cy,
+            to_column_offset: from_column_offset + cx,
+        }),
+        _ => Some(DrawingAnchor {
+            from_row,
+            from_column,
+            from_row_offset,
+            from_column_offset,
+            to_row: from_row + 20,
+            to_column: from_column + 8,
+            to_row_offset: 0,
+            to_column_offset: 0,
+        }),
+    }
 }
 
 fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle {
@@ -1596,7 +2178,7 @@ fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle {
     let color = color_node.and_then(|node| parse_color(node, colors));
     let (color_theme, color_tint) = color_node
         .filter(|_| color.is_some())
-        .map(|node| theme_provenance(node))
+        .map(|node| theme_provenance(node, colors))
         .unwrap_or((None, None));
     FontStyle {
         family: font
@@ -1638,14 +2220,13 @@ fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle {
 }
 
 /// Theme slot + tint of a color node, when the color resolves through the
-/// theme palette (rgb/indexed take precedence and carry no provenance).
-fn theme_provenance(node: Node<'_, '_>) -> (Option<usize>, Option<f64>) {
-    if node.attribute("rgb").is_some() || node.attribute("indexed").is_some() {
-        return (None, None);
-    }
+/// theme palette (mirrors resolve_color: a resolvable theme slot wins over
+/// rgb/indexed).
+fn theme_provenance(node: Node<'_, '_>, colors: &ColorContext) -> (Option<usize>, Option<f64>) {
     let theme = node
         .attribute("theme")
-        .and_then(|value| value.parse::<usize>().ok());
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|index| colors.theme.get(*index).is_some());
     if theme.is_none() {
         return (None, None);
     }
@@ -1702,7 +2283,7 @@ fn parse_fill(fill: Node<'_, '_>, colors: &ColorContext) -> FillInfo {
     };
     let (theme, tint) = node
         .filter(|_| color.is_some())
-        .map(theme_provenance)
+        .map(|node| theme_provenance(node, colors))
         .unwrap_or((None, None));
     FillInfo { color, theme, tint }
 }
@@ -1747,6 +2328,8 @@ fn parse_border(border: Node<'_, '_>, colors: &ColorContext) -> BorderSet {
         left: edge("left"),
         right: edge("right"),
         diagonal: edge("diagonal"),
+        vertical: edge("vertical"),
+        horizontal: edge("horizontal"),
         diagonal_up: border
             .attribute("diagonalUp")
             .is_some_and(|value| value == "1" || value == "true"),
@@ -1759,15 +2342,14 @@ fn parse_border(border: Node<'_, '_>, colors: &ColorContext) -> BorderSet {
 /// Legacy indexed palette, ECMA-376 §18.8.27. Indexes 64/65 are the system
 /// window text/background colors.
 const INDEXED_COLORS: [&str; 66] = [
-    "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",
-    "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",
-    "800000", "008000", "000080", "808000", "800080", "008080", "C0C0C0", "808080",
-    "9999FF", "993366", "FFFFCC", "CCFFFF", "660066", "FF8080", "0066CC", "CCCCFF",
-    "000080", "FF00FF", "FFFF00", "00FFFF", "800080", "800000", "008080", "0000FF",
-    "00CCFF", "CCFFFF", "CCFFCC", "FFFF99", "99CCFF", "FF99CC", "CC99FF", "FFCC99",
-    "3366FF", "33CCCC", "99CC00", "FFCC00", "FF9900", "FF6600", "666699", "969696",
-    "003366", "339966", "003300", "333300", "993300", "993366", "333399", "333333",
-    "000000", "FFFFFF",
+    "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF", "000000",
+    "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF", "800000", "008000",
+    "000080", "808000", "800080", "008080", "C0C0C0", "808080", "9999FF", "993366", "FFFFCC",
+    "CCFFFF", "660066", "FF8080", "0066CC", "CCCCFF", "000080", "FF00FF", "FFFF00", "00FFFF",
+    "800080", "800000", "008080", "0000FF", "00CCFF", "CCFFFF", "CCFFCC", "FFFF99", "99CCFF",
+    "FF99CC", "CC99FF", "FFCC99", "3366FF", "33CCCC", "99CC00", "FFCC00", "FF9900", "FF6600",
+    "666699", "969696", "003366", "339966", "003300", "333300", "993300", "993366", "333399",
+    "333333", "000000", "FFFFFF",
 ];
 
 fn parse_color(node: Node<'_, '_>, colors: &ColorContext) -> Option<String> {
@@ -1787,21 +2369,25 @@ pub fn resolve_color(
     tint: Option<&str>,
     colors: &ColorContext,
 ) -> Option<String> {
+    // A resolvable theme slot wins over rgb: Excel treats rgb as a cached
+    // copy of the theme color, and some producers bake a wrong cache
+    // (tdf113271 writes theme="1" rgb="FFFFFF" for black dk1 text).
+    if let Some(base) = theme
+        .and_then(|value| value.parse::<usize>().ok())
+        .and_then(|index| colors.theme.get(index).copied())
+    {
+        let tint = tint
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let (red, green, blue) = apply_tint(base, tint);
+        return Some(format!("#{red:02X}{green:02X}{blue:02X}"));
+    }
     if let Some(rgb) = rgb {
         let value = if rgb.len() == 8 { &rgb[2..] } else { rgb };
         return Some(format!("#{value}"));
     }
-    if let Some(indexed) = indexed {
-        let index = indexed.parse::<usize>().ok()?;
-        return INDEXED_COLORS.get(index).map(|value| format!("#{value}"));
-    }
-    let theme = theme?.parse::<usize>().ok()?;
-    let base = *colors.theme.get(theme)?;
-    let tint = tint
-        .and_then(|value| value.parse::<f64>().ok())
-        .unwrap_or(0.0);
-    let (red, green, blue) = apply_tint(base, tint);
-    Some(format!("#{red:02X}{green:02X}{blue:02X}"))
+    let index = indexed?.parse::<usize>().ok()?;
+    INDEXED_COLORS.get(index).map(|value| format!("#{value}"))
 }
 
 /// Theme accent color (1-6) as rgb, if the palette was loaded.
@@ -1857,7 +2443,60 @@ pub fn read_theme_palette(archive: &mut ZipArchive<File>) -> Result<ColorContext
             None => return Ok(ColorContext::default()),
         }
     }
-    Ok(ColorContext { theme })
+    let fill_styles = document
+        .descendants()
+        .find(|node| node.has_tag_name("fillStyleLst"))
+        .map(|list| {
+            list.children()
+                .filter(|node| node.is_element())
+                .map(|node| parse_theme_gradient(node))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(ColorContext { theme, fill_styles })
+}
+
+/// A fillStyleLst gradFill entry as data (the theme document does not
+/// outlive the palette); non-gradient entries map to None.
+fn parse_theme_gradient(node: Node<'_, '_>) -> Option<ThemeGradient> {
+    if !node.has_tag_name("gradFill") {
+        return None;
+    }
+    let stops = node
+        .descendants()
+        .filter(|child| child.has_tag_name("gs"))
+        .filter_map(|gs| {
+            let position = gs.attribute("pos")?.parse::<f64>().ok()? / 100_000.0;
+            let color = gs
+                .children()
+                .find(|child| child.has_tag_name("schemeClr") || child.has_tag_name("srgbClr"))?;
+            let modifiers = color
+                .children()
+                .filter(|child| child.is_element())
+                .filter_map(|child| {
+                    Some((
+                        child.tag_name().name().to_owned(),
+                        child.attribute("val")?.parse::<f64>().ok()? / 100_000.0,
+                    ))
+                })
+                .collect();
+            Some(ThemeGradientStop {
+                position,
+                modifiers,
+            })
+        })
+        .collect::<Vec<_>>();
+    if stops.len() < 2 {
+        return None;
+    }
+    let angle = node
+        .descendants()
+        .find(|child| child.has_tag_name("lin"))
+        .and_then(|lin| lin.attribute("ang"))
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(|value| value / 60_000.0)
+        .unwrap_or(90.0);
+    Some(ThemeGradient { stops, angle })
 }
 
 fn parse_hex_rgb(hex: &str) -> Option<(u8, u8, u8)> {
@@ -1961,6 +2600,7 @@ pub struct PivotPartInfo {
     pub style_name: Option<String>,
     pub first_data_row: usize,
     pub row_grand_totals: bool,
+    pub show_row_stripes: bool,
 }
 
 pub fn read_pivot_tables(
@@ -1996,11 +2636,15 @@ pub fn read_pivot_tables(
             .attribute("rowGrandTotals")
             .map(|value| value == "1" || value == "true")
             .unwrap_or(true);
-        let style_name = document
+        let style_info = document
             .descendants()
-            .find(|node| node.has_tag_name("pivotTableStyleInfo"))
+            .find(|node| node.has_tag_name("pivotTableStyleInfo"));
+        let style_name = style_info
             .and_then(|node| node.attribute("name"))
             .map(str::to_owned);
+        let show_row_stripes = style_info
+            .and_then(|node| node.attribute("showRowStripes"))
+            .is_some_and(|value| value == "1" || value == "true");
         let cache_path = read_relationships(archive, &pivot_path)?
             .values()
             .find(|part| part.relationship_type.ends_with("/pivotCacheDefinition"))
@@ -2013,6 +2657,7 @@ pub fn read_pivot_tables(
             style_name,
             first_data_row,
             row_grand_totals,
+            show_row_stripes,
         });
     }
     Ok(infos)
@@ -2170,7 +2815,7 @@ fn read_optional_xml(
     archive: &mut ZipArchive<File>,
     path: &str,
 ) -> Result<Option<String>, SidecarError> {
-    let Ok(mut entry) = archive.by_name(path) else {
+    let Ok(mut entry) = crate::zip_entry(archive, path) else {
         return Ok(None);
     };
     let mut xml = String::new();
@@ -2277,6 +2922,18 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
 ///    locale-defined and unrecorded.
 ///  - 59-81: th-TH; numfmt has no Thai digit/era tokens, so these map to
 ///    Arabic-digit equivalents (Buddhist-era years render as Gregorian).
+/// Ids 14/22 are the locale-reactive short-date builtins; when the host
+/// supplies the OS short-date pattern they follow it (explicit formatCode
+/// entries still win at the call site).
+fn short_date_number_format(id: u32, short_date: Option<&str>) -> Option<String> {
+    let short_date = short_date?;
+    match id {
+        14 => Some(short_date.to_owned()),
+        22 => Some(format!("{short_date} h:mm")),
+        _ => None,
+    }
+}
+
 fn builtin_number_format(id: u32, locale: &str) -> Option<&'static str> {
     if matches!(
         id,
@@ -2378,10 +3035,229 @@ mod tests {
         metadata_with(body, &ColorContext::default())
     }
 
+    #[test]
+    fn numbers_unnamed_series_like_excel() {
+        let chart = metadata(
+            r#"<c:title/><c:plotArea><c:barChart><c:ser/><c:ser/></c:barChart></c:plotArea>"#,
+        );
+        assert_eq!(chart.series[0].name, "Series1");
+        assert_eq!(chart.series[1].name, "Series2");
+        assert_eq!(chart.title, "Chart Title");
+    }
+
+    #[test]
+    fn sole_named_series_still_becomes_auto_title() {
+        let chart = metadata(
+            r#"<c:title/><c:plotArea><c:barChart><c:ser><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strCache></c:strRef></c:tx></c:ser></c:barChart></c:plotArea>"#,
+        );
+        assert_eq!(chart.series[0].name, "Revenue");
+        assert_eq!(chart.title, "Revenue");
+    }
+
+    #[test]
+    fn sole_unnamed_series_keeps_placeholder_title() {
+        let chart =
+            metadata(r#"<c:title/><c:plotArea><c:barChart><c:ser/></c:barChart></c:plotArea>"#);
+        assert_eq!(chart.series[0].name, "Series1");
+        assert_eq!(chart.title, "Chart Title");
+    }
+
     fn theme_colors() -> ColorContext {
         ColorContext {
             theme: (0..12).map(|slot| (slot as u8, 0x22, 0x33)).collect(),
+            fill_styles: Vec::new(),
         }
+    }
+
+    const XDR: &str = r#"xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main""#;
+
+    #[test]
+    fn parses_absolute_anchor_as_offsets_from_origin() {
+        let xml = format!(
+            r#"<xdr:wsDr {XDR}><xdr:absoluteAnchor><xdr:pos x="1440000" y="1080000"/><xdr:ext cx="2880000" cy="720000"/><xdr:sp/></xdr:absoluteAnchor></xdr:wsDr>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        let anchor_node = document
+            .descendants()
+            .find(|node| node.has_tag_name("absoluteAnchor"))
+            .unwrap();
+        let anchor = parse_anchor(anchor_node).unwrap();
+        assert_eq!(anchor.from_row, 0);
+        assert_eq!(anchor.from_column, 0);
+        assert_eq!(anchor.from_column_offset, 1_440_000);
+        assert_eq!(anchor.from_row_offset, 1_080_000);
+        assert_eq!(anchor.to_column_offset, 4_320_000);
+        assert_eq!(anchor.to_row_offset, 1_800_000);
+    }
+
+    #[test]
+    fn expands_group_children_through_child_space() {
+        // Group box 200x100 (EMU), child space 100x50 offset at (10, 20):
+        // scale is 2x on both axes.
+        let xml = format!(
+            r#"<xdr:wsDr {XDR}><xdr:grpSp>
+              <xdr:nvGrpSpPr><xdr:cNvPr id="1" name="g"/></xdr:nvGrpSpPr>
+              <xdr:grpSpPr><a:xfrm>
+                <a:off x="0" y="0"/><a:ext cx="200" cy="100"/>
+                <a:chOff x="10" y="20"/><a:chExt cx="100" cy="50"/>
+              </a:xfrm></xdr:grpSpPr>
+              <xdr:sp><xdr:nvSpPr><xdr:cNvPr id="2" name="child"/></xdr:nvSpPr>
+                <xdr:spPr><a:xfrm><a:off x="20" y="30"/><a:ext cx="40" cy="10"/></a:xfrm>
+                <a:prstGeom prst="rect"/></xdr:spPr></xdr:sp>
+              <xdr:sp><xdr:nvSpPr><xdr:cNvPr id="3" name="hidden" hidden="1"/></xdr:nvSpPr>
+                <xdr:spPr><a:xfrm><a:off x="10" y="20"/><a:ext cx="5" cy="5"/></a:xfrm>
+                <a:prstGeom prst="rect"/></xdr:spPr></xdr:sp>
+            </xdr:grpSp></xdr:wsDr>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        let group = document
+            .descendants()
+            .find(|node| node.has_tag_name("grpSp"))
+            .unwrap();
+        let anchor = DrawingAnchor {
+            from_row: 3,
+            from_column: 2,
+            from_row_offset: 1000,
+            from_column_offset: 500,
+            to_row: 9,
+            to_column: 8,
+            to_row_offset: 0,
+            to_column_offset: 0,
+        };
+        let mut visuals = Vec::new();
+        let mut counter = 0;
+        expand_group(
+            group,
+            &anchor,
+            (0.0, 0.0, 200.0, 100.0),
+            "visual-1",
+            &mut counter,
+            "sheet1",
+            &ColorContext::default(),
+            "xl/drawings/drawing1.xml",
+            &HashMap::new(),
+            &mut visuals,
+        )
+        .unwrap();
+        assert_eq!(visuals.len(), 1, "hidden child must be skipped");
+        let child = &visuals[0];
+        assert_eq!(child.id, "visual-1-1");
+        assert_eq!(child.name.as_deref(), Some("child"));
+        // (20-10)*2 = 20 within the box, plus the group's own from offset.
+        assert_eq!(child.anchor.from_column_offset, 500 + 20);
+        assert_eq!(child.anchor.from_row_offset, 1000 + 20);
+        assert_eq!(child.anchor.to_column_offset, 500 + 20 + 80);
+        assert_eq!(child.anchor.to_row_offset, 1000 + 20 + 20);
+        assert_eq!(child.anchor.from_row, 3);
+        assert_eq!(child.anchor.to_row, 3);
+        assert!(
+            child.drawing_index.is_none(),
+            "group children are read-only"
+        );
+    }
+
+    #[test]
+    fn expands_group_chart_children_with_their_part_path() {
+        let xml = format!(
+            r#"<xdr:wsDr {XDR} xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:grpSp>
+              <xdr:nvGrpSpPr><xdr:cNvPr id="1" name="g"/></xdr:nvGrpSpPr>
+              <xdr:grpSpPr><a:xfrm>
+                <a:off x="0" y="0"/><a:ext cx="200" cy="100"/>
+                <a:chOff x="0" y="0"/><a:chExt cx="200" cy="100"/>
+              </a:xfrm></xdr:grpSpPr>
+              <xdr:graphicFrame>
+                <xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="chart child"/></xdr:nvGraphicFramePr>
+                <xdr:xfrm><a:off x="20" y="30"/><a:ext cx="40" cy="10"/></xdr:xfrm>
+                <a:graphic><a:graphicData><c:chart r:id="rId7"/></a:graphicData></a:graphic>
+              </xdr:graphicFrame>
+            </xdr:grpSp></xdr:wsDr>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        let group = document
+            .descendants()
+            .find(|node| node.has_tag_name("grpSp"))
+            .unwrap();
+        let anchor = DrawingAnchor {
+            from_row: 0,
+            from_column: 0,
+            from_row_offset: 0,
+            from_column_offset: 0,
+            to_row: 5,
+            to_column: 5,
+            to_row_offset: 0,
+            to_column_offset: 0,
+        };
+        let relationships = HashMap::from([(
+            "rId7".to_owned(),
+            Relationship {
+                target: "../charts/chart1.xml".to_owned(),
+                relationship_type: String::new(),
+            },
+        )]);
+        let mut visuals = Vec::new();
+        let mut counter = 0;
+        expand_group(
+            group,
+            &anchor,
+            (0.0, 0.0, 200.0, 100.0),
+            "visual-1",
+            &mut counter,
+            "sheet1",
+            &ColorContext::default(),
+            "xl/drawings/drawing1.xml",
+            &relationships,
+            &mut visuals,
+        )
+        .unwrap();
+        assert_eq!(visuals.len(), 1);
+        let child = &visuals[0];
+        assert_eq!(child.kind, "chart");
+        assert_eq!(child.chart_path.as_deref(), Some("xl/charts/chart1.xml"));
+        assert!(child.chart.is_none(), "data is backfilled by read_drawing");
+        assert_eq!(child.name.as_deref(), Some("chart child"));
+        assert_eq!(child.anchor.from_column_offset, 20);
+        assert_eq!(child.anchor.from_row_offset, 30);
+        assert_eq!(child.anchor.to_column_offset, 60);
+        assert_eq!(child.anchor.to_row_offset, 40);
+        assert!(child.drawing_index.is_none(), "group children are read-only");
+    }
+
+    #[test]
+    fn rotated_shape_reports_true_frame_extent() {
+        let xml = format!(
+            r#"<xdr:wsDr {XDR}><xdr:sp>
+              <xdr:nvSpPr><xdr:cNvPr id="2" name="r"/></xdr:nvSpPr>
+              <xdr:spPr><a:xfrm rot="2700000"><a:off x="0" y="0"/><a:ext cx="3686174" cy="419100"/></a:xfrm>
+              <a:prstGeom prst="rect"/></xdr:spPr></xdr:sp></xdr:wsDr>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        let shape = document
+            .descendants()
+            .find(|node| node.has_tag_name("sp"))
+            .unwrap();
+        let anchor = DrawingAnchor {
+            from_row: 0,
+            from_column: 0,
+            from_row_offset: 0,
+            from_column_offset: 0,
+            to_row: 1,
+            to_column: 1,
+            to_row_offset: 0,
+            to_column_offset: 0,
+        };
+        let visual = shape_visual(
+            shape,
+            anchor,
+            "visual-1".into(),
+            "sheet1",
+            None,
+            &ColorContext::default(),
+            "xl/drawings/drawing1.xml",
+            Some(0),
+        );
+        assert_eq!(visual.rotation, Some(45.0));
+        assert_eq!(visual.frame_width, Some(3_686_174.0));
+        assert_eq!(visual.frame_height, Some(419_100.0));
     }
 
     #[test]
@@ -2397,16 +3273,23 @@ mod tests {
             assert_eq!(metadata(&body).legend, expected, "legendPos {val}");
         }
         assert_eq!(metadata("<c:legend/>").legend, "right");
-        assert_eq!(metadata("<c:plotArea><c:barChart/></c:plotArea>").legend, "none");
+        assert_eq!(
+            metadata("<c:plotArea><c:barChart/></c:plotArea>").legend,
+            "none"
+        );
     }
 
     #[test]
     fn maps_data_labels_from_plot_or_series() {
         let plot = |labels: &str| {
-            format!("<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser>{labels}</c:pieChart></c:plotArea>")
+            format!(
+                "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser>{labels}</c:pieChart></c:plotArea>"
+            )
         };
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:showVal val=\"1\"/></c:dLbls>")).data_labels.as_deref(),
+            metadata(&plot("<c:dLbls><c:showVal val=\"1\"/></c:dLbls>"))
+                .data_labels
+                .as_deref(),
             Some("value")
         );
         assert_eq!(
@@ -2424,11 +3307,15 @@ mod tests {
             Some("category-percent")
         );
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:delete val=\"1\"/></c:dLbls>")).data_labels.as_deref(),
+            metadata(&plot("<c:dLbls><c:delete val=\"1\"/></c:dLbls>"))
+                .data_labels
+                .as_deref(),
             Some("none")
         );
         assert_eq!(
-            metadata(&plot("<c:dLbls><c:showVal val=\"0\"/></c:dLbls>")).data_labels.as_deref(),
+            metadata(&plot("<c:dLbls><c:showVal val=\"0\"/></c:dLbls>"))
+                .data_labels
+                .as_deref(),
             Some("none")
         );
         // No dLbls anywhere: absent, so renderer defaults may apply.
@@ -2441,23 +3328,41 @@ mod tests {
     #[test]
     fn maps_data_label_position_and_format() {
         let plot = |labels: &str| {
-            format!("<c:plotArea><c:barChart><c:ser><c:idx val=\"0\"/></c:ser>{labels}</c:barChart></c:plotArea>")
+            format!(
+                "<c:plotArea><c:barChart><c:ser><c:idx val=\"0\"/></c:ser>{labels}</c:barChart></c:plotArea>"
+            )
         };
-        for (val, expected) in [("ctr", "center"), ("inEnd", "inside-end"), ("outEnd", "outside-end")] {
+        for (val, expected) in [
+            ("ctr", "center"),
+            ("inEnd", "inside-end"),
+            ("outEnd", "outside-end"),
+        ] {
             let body = plot(&format!("<c:dLbls><c:dLblPos val=\"{val}\"/></c:dLbls>"));
-            assert_eq!(metadata(&body).data_label_position.as_deref(), Some(expected), "dLblPos {val}");
+            assert_eq!(
+                metadata(&body).data_label_position.as_deref(),
+                Some(expected),
+                "dLblPos {val}"
+            );
         }
         let best_fit = plot("<c:dLbls><c:dLblPos val=\"bestFit\"/></c:dLbls>");
         assert!(metadata(&best_fit).data_label_position.is_none());
-        assert!(metadata(&plot("<c:dLbls><c:showVal val=\"1\"/></c:dLbls>")).data_label_position.is_none());
+        assert!(
+            metadata(&plot("<c:dLbls><c:showVal val=\"1\"/></c:dLbls>"))
+                .data_label_position
+                .is_none()
+        );
 
         let series_level = "<c:plotArea><c:barChart><c:ser><c:dLbls><c:dLblPos val=\"outEnd\"/><c:numFmt formatCode=\"0.0%\"/></c:dLbls></c:ser></c:barChart></c:plotArea>";
         let chart = metadata(series_level);
         assert_eq!(chart.data_label_position.as_deref(), Some("outside-end"));
         assert_eq!(chart.data_label_format.as_deref(), Some("0.0%"));
 
-        let formatted = plot("<c:dLbls><c:numFmt formatCode=\"#,##0\" sourceLinked=\"0\"/></c:dLbls>");
-        assert_eq!(metadata(&formatted).data_label_format.as_deref(), Some("#,##0"));
+        let formatted =
+            plot("<c:dLbls><c:numFmt formatCode=\"#,##0\" sourceLinked=\"0\"/></c:dLbls>");
+        assert_eq!(
+            metadata(&formatted).data_label_format.as_deref(),
+            Some("#,##0")
+        );
         assert!(metadata(&plot("<c:dLbls/>")).data_label_format.is_none());
     }
 
@@ -2479,7 +3384,9 @@ mod tests {
     #[test]
     fn collects_axis_titles() {
         let axis_title = |text: &str| {
-            format!("<c:title><c:tx><c:rich><a:p><a:r><a:t>{text}</a:t></a:r></a:p></c:rich></c:tx></c:title>")
+            format!(
+                "<c:title><c:tx><c:rich><a:p><a:r><a:t>{text}</a:t></a:r></a:p></c:rich></c:tx></c:title>"
+            )
         };
         let both = format!(
             "<c:plotArea><c:barChart/><c:catAx>{}</c:catAx><c:valAx>{}</c:valAx></c:plotArea>",
@@ -2513,7 +3420,11 @@ mod tests {
         let unknown =
             "<c:plotArea><c:areaChart><c:grouping val=\"weird\"/></c:areaChart></c:plotArea>";
         assert!(metadata(unknown).grouping.is_none());
-        assert!(metadata("<c:plotArea><c:pieChart/></c:plotArea>").grouping.is_none());
+        assert!(
+            metadata("<c:plotArea><c:pieChart/></c:plotArea>")
+                .grouping
+                .is_none()
+        );
     }
 
     #[test]
@@ -2530,7 +3441,8 @@ mod tests {
         // accent2 lives at theme slot 5.
         assert_eq!((points[1].index, points[1].color.as_str()), (2, "#052233"));
 
-        let plain = "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser></c:pieChart></c:plotArea>";
+        let plain =
+            "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser></c:pieChart></c:plotArea>";
         assert!(metadata(plain).series[0].point_colors.is_none());
     }
 
@@ -2540,7 +3452,11 @@ mod tests {
         assert_eq!(metadata(with).gridlines, Some(true));
         let without = "<c:plotArea><c:barChart/><c:catAx/><c:valAx/></c:plotArea>";
         assert_eq!(metadata(without).gridlines, Some(false));
-        assert!(metadata("<c:plotArea><c:pieChart/></c:plotArea>").gridlines.is_none());
+        assert!(
+            metadata("<c:plotArea><c:pieChart/></c:plotArea>")
+                .gridlines
+                .is_none()
+        );
     }
 
     #[test]
@@ -2557,7 +3473,11 @@ mod tests {
 
         let auto = "<c:plotArea><c:barChart/><c:valAx><c:scaling><c:orientation val=\"minMax\"/></c:scaling></c:valAx></c:plotArea>";
         assert!(metadata(auto).value_axis.is_none());
-        assert!(metadata("<c:plotArea><c:pieChart/></c:plotArea>").value_axis.is_none());
+        assert!(
+            metadata("<c:plotArea><c:pieChart/></c:plotArea>")
+                .value_axis
+                .is_none()
+        );
     }
 
     /// Issue #182: category number formats survive into the metadata so the
@@ -2576,16 +3496,25 @@ mod tests {
         assert!(chart.category_axis_format.is_none());
 
         let axis_level = r#"<c:plotArea><c:barChart/><c:catAx><c:numFmt formatCode="0.0%" sourceLinked="0"/></c:catAx><c:valAx/></c:plotArea>"#;
-        assert_eq!(metadata(axis_level).category_axis_format.as_deref(), Some("0.0%"));
+        assert_eq!(
+            metadata(axis_level).category_axis_format.as_deref(),
+            Some("0.0%")
+        );
         let date_axis = r#"<c:plotArea><c:lineChart/><c:dateAx><c:numFmt formatCode="mmm\-yy" sourceLinked="1"/></c:dateAx><c:valAx/></c:plotArea>"#;
-        assert_eq!(metadata(date_axis).category_axis_format.as_deref(), Some("mmm\\-yy"));
+        assert_eq!(
+            metadata(date_axis).category_axis_format.as_deref(),
+            Some("mmm\\-yy")
+        );
 
         // scatter X data (c:xVal) carries the same field
         let scatter = r#"<c:plotArea><c:scatterChart><c:ser>
             <c:xVal><c:numRef><c:numCache><c:formatCode>0%</c:formatCode><c:ptCount val="1"/><c:pt idx="0"><c:v>0.15</c:v></c:pt></c:numCache></c:numRef></c:xVal>
             <c:yVal><c:numRef><c:numCache><c:ptCount val="1"/><c:pt idx="0"><c:v>0.4</c:v></c:pt></c:numCache></c:numRef></c:yVal>
         </c:ser></c:scatterChart></c:plotArea>"#;
-        assert_eq!(metadata(scatter).series[0].category_format.as_deref(), Some("0%"));
+        assert_eq!(
+            metadata(scatter).series[0].category_format.as_deref(),
+            Some("0%")
+        );
 
         // string categories carry no format
         let plain = "<c:plotArea><c:barChart><c:ser><c:cat><c:strRef><c:strCache><c:pt idx=\"0\"><c:v>a</c:v></c:pt></c:strCache></c:strRef></c:cat></c:ser></c:barChart></c:plotArea>";
@@ -2616,11 +3545,20 @@ mod tests {
         let bar = "<c:plotArea><c:barChart><c:gapWidth val=\"80\"/></c:barChart></c:plotArea>";
         assert_eq!(metadata(bar).gap_width_pct, Some(80));
         // Missing gapWidth stays absent; the default is the consumer's call.
-        assert!(metadata("<c:plotArea><c:barChart/></c:plotArea>").gap_width_pct.is_none());
+        assert!(
+            metadata("<c:plotArea><c:barChart/></c:plotArea>")
+                .gap_width_pct
+                .is_none()
+        );
 
-        let doughnut = "<c:plotArea><c:doughnutChart><c:holeSize val=\"65\"/></c:doughnutChart></c:plotArea>";
+        let doughnut =
+            "<c:plotArea><c:doughnutChart><c:holeSize val=\"65\"/></c:doughnutChart></c:plotArea>";
         assert_eq!(metadata(doughnut).hole_size_pct, Some(65));
-        assert!(metadata("<c:plotArea><c:doughnutChart/></c:plotArea>").hole_size_pct.is_none());
+        assert!(
+            metadata("<c:plotArea><c:doughnutChart/></c:plotArea>")
+                .hole_size_pct
+                .is_none()
+        );
     }
 
     #[test]
@@ -2643,7 +3581,8 @@ mod tests {
         assert_eq!(points.len(), 2);
         assert_eq!((points[0].index, points[0].color.as_str()), (0, "#FF8800"));
 
-        let plain = "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser></c:pieChart></c:plotArea>";
+        let plain =
+            "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/></c:ser></c:pieChart></c:plotArea>";
         assert!(metadata(plain).series[0].explosion_pct.is_none());
         assert!(metadata(plain).series[0].point_explosions.is_none());
     }
@@ -2705,5 +3644,107 @@ mod tests {
             serde_json::json!([{ "index": 2, "pct": 30 }])
         );
         assert!(json["series"][0].get("pointColors").is_none());
+    }
+
+    #[test]
+    fn outline_solid_fill_is_not_the_shape_fill() {
+        let sppr = r#"<xdr:spPr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+            <a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>
+            </xdr:spPr>"#;
+        let document = Document::parse(sppr).unwrap();
+        let root = document.root_element();
+        assert_eq!(drawing_fill_color(root, &ColorContext::default()), None);
+        // Called on the a:ln itself, its solidFill is the answer.
+        let line = root
+            .children()
+            .find(|node| node.has_tag_name("ln"))
+            .unwrap();
+        assert_eq!(
+            drawing_fill_color(line, &ColorContext::default()).as_deref(),
+            Some("#FF0000")
+        );
+
+        let sppr = r#"<xdr:spPr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+            <a:solidFill><a:srgbClr val="00FF00"/></a:solidFill>
+            <a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>
+            </xdr:spPr>"#;
+        let document = Document::parse(sppr).unwrap();
+        assert_eq!(
+            drawing_fill_color(document.root_element(), &ColorContext::default()).as_deref(),
+            Some("#00FF00")
+        );
+    }
+
+    /// Producers may bake a wrong rgb cache next to a theme reference
+    /// (tdf113271: theme="1" rgb="FFFFFF" on black dk1 text); the theme
+    /// slot wins, and rgb is the fallback when the slot cannot resolve.
+    #[test]
+    fn theme_attribute_wins_over_rgb_cache() {
+        let colors = theme_colors();
+        assert_eq!(
+            resolve_color(Some("FFFFFF"), None, Some("1"), None, &colors).as_deref(),
+            Some("#012233")
+        );
+        // Slot outside the palette (or no palette at all) → rgb cache.
+        assert_eq!(
+            resolve_color(Some("FF00FF"), None, Some("99"), None, &colors).as_deref(),
+            Some("#FF00FF")
+        );
+        assert_eq!(
+            resolve_color(
+                Some("FF00FF"),
+                None,
+                Some("1"),
+                None,
+                &ColorContext::default()
+            )
+            .as_deref(),
+            Some("#FF00FF")
+        );
+    }
+
+    #[test]
+    fn resolves_style_fill_ref_theme_gradient() {
+        let theme = r#"<a:fillStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+            <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
+            <a:gradFill rotWithShape="1"><a:gsLst>
+                <a:gs pos="0"><a:schemeClr val="phClr"/></a:gs>
+                <a:gs pos="100000"><a:schemeClr val="phClr"><a:tint val="50000"/></a:schemeClr></a:gs>
+            </a:gsLst><a:lin ang="16200000" scaled="0"/></a:gradFill>
+            </a:fillStyleLst>"#;
+        let document = Document::parse(theme).unwrap();
+        let fill_styles: Vec<Option<ThemeGradient>> = document
+            .root_element()
+            .children()
+            .filter(|node| node.is_element())
+            .map(parse_theme_gradient)
+            .collect();
+        assert!(fill_styles[0].is_none());
+        let colors = ColorContext {
+            fill_styles,
+            ..theme_colors()
+        };
+
+        let style = r#"<xdr:style xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+            <a:fillRef idx="2"><a:schemeClr val="accent1"/></a:fillRef>
+            </xdr:style>"#;
+        let document = Document::parse(style).unwrap();
+        let gradient =
+            style_fill_gradient(Some(document.root_element()), &colors).expect("gradient");
+        assert_eq!(gradient.angle, 270.0);
+        // accent1 = theme slot 4 = (0x04, 0x22, 0x33); second stop is a 50% tint.
+        assert_eq!(gradient.stops[0].position, 0.0);
+        assert_eq!(gradient.stops[0].color, "#042233");
+        assert_eq!(gradient.stops[1].position, 1.0);
+        assert_eq!(gradient.stops[1].color, "#829199");
+
+        // idx 1 is the solid entry; idx 1001+ (bgFillStyleLst) is out of range.
+        for idx in ["1", "1001", "0"] {
+            let style = format!(
+                r#"<xdr:style xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:fillRef idx="{idx}"><a:schemeClr val="accent1"/></a:fillRef></xdr:style>"#
+            );
+            let document = Document::parse(&style).unwrap();
+            assert!(style_fill_gradient(Some(document.root_element()), &colors).is_none());
+        }
     }
 }

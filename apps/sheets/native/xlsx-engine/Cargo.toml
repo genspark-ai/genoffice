@@ -9,7 +9,7 @@ publish = false
 base64 = "0.22.1"
 calamine = "0.36.0"
 ironcalc = "0.7.1"
-quick-xml = "0.38"
+quick-xml = { version = "0.38", features = ["encoding"] }
 roxmltree = "0.21.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

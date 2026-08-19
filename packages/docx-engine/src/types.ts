@@ -138,6 +138,13 @@ export interface Run {
     wrap?: ImageWrap
     offsetXEmu?: number
     offsetYEmu?: number
+    /** wp:anchor allowOverlap="0" (display-only collision hint) */
+    noOverlap?: boolean
+    /** picture outline (pic:spPr a:ln solid fill, display-only) */
+    border?: { color: string; widthPt: number }
+    /** wp:positionV relativeFrom="line" align="center": the floating picture
+     *  centers on its anchor line instead of hanging below it (display-only) */
+    lineCenterV?: boolean
   }
 }
 
@@ -321,7 +328,7 @@ export interface SectionSettings {
 export interface SectionInfo {
   settings: SectionSettings
   /** Section-break type w:type (how this section starts; meaningless for the first section), default nextPage */
-  startType: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'
+  startType: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn'
   /** docxIndex range of this section's blocks (inclusive; the section-break paragraph / trailing hidden sectPr block belong to this section) */
   firstBlockIndex: number
   lastBlockIndex: number
@@ -542,6 +549,10 @@ export interface DiagramShape {
   prst?: string
   /** solid fill (hex without '#') */
   fillHex?: string
+  /** a:ln stroke color (hex without '#'); connectors (prst=line, zero cx/cy) render as rules */
+  lnHex?: string
+  /** a:ln stroke width in px */
+  lnWPx?: number
   /** picture fill (a:blipFill) */
   imageDataUrl?: string
   /** a:stretch/a:fillRect fractions of the picture fill (negative = bleed) */
@@ -673,6 +684,8 @@ export interface TableModel {
   align?: 'left' | 'center' | 'right'
   /** table left indent (w:tblInd, twips; effective only with left alignment) */
   indentTwips?: number
+  /** floating table (w:tblpPr): text wraps around the side opposite the anchor */
+  floatSide?: 'left' | 'right'
   /** per-row height (twips, w:trHeight; null = not set), aligned with rows */
   rowHeightsTwips?: Array<number | null>
   /** per-row height rule (w:trHeight w:hRule; absent/legacy models = atLeast), aligned with rows */
@@ -834,6 +847,8 @@ export interface Block {
   /** picture mirror flips (pic a:xfrm flipH/flipV) */
   imageFlipH?: boolean
   imageFlipV?: boolean
+  /** picture outline (pic:spPr a:ln solid fill; display-only, like crop) */
+  imageBorder?: { color: string; widthPt: number }
   /** editable structure (type === 'table'); untouched original XML still saves byte-identically */
   table?: TableModel
   /** display-only rendering for field passthrough paragraphs (TOC lines etc.) */
@@ -898,6 +913,8 @@ export interface Block {
   }
   /** Top-level block insertion/deletion wrapper (w:ins/w:del around w:p or w:tbl). */
   blockRevision?: { kind: 'ins' | 'del' } & RevisionInfo
+  /** Tracked deletion of the paragraph mark (w:pPr/w:rPr/w:del): Word joins the paragraph into the next one. */
+  paraMarkDel?: { author: string; date?: string; id?: string }
 }
 
 /** one paragraph inside an anchored textbox */
@@ -1070,6 +1087,8 @@ export interface StyleDisplay {
   contextualSpacing?: boolean
   /** paragraph alignment from the style (w:pPr w:jc) */
   align?: 'left' | 'center' | 'right' | 'justify'
+  /** paragraph shading from the style (w:pPr w:shd w:fill, hex without '#') */
+  shadingFill?: string
   /** CJK-Latin/digit auto spacing from the style pPr (w:autoSpaceDE/DN) */
   autoSpace?: boolean
   /** style-level w:vanish (hidden text, e.g. z-TopofForm/z-BottomofForm HTML form markers) */
@@ -1081,13 +1100,13 @@ export interface TableStyleDisplay {
   /** whole-table cell shading (hex without '#') */
   fill?: string
   /** whole-table run formatting (style-level w:rPr) */
-  wholeTable?: { color?: string; bold?: boolean }
+  wholeTable?: { color?: string; bold?: boolean; italic?: boolean; sizeHalfPoints?: number }
   /** conditional first-row formatting (w:tblStylePr w:type="firstRow") */
-  firstRow?: { fill?: string; bold?: boolean; color?: string }
+  firstRow?: { fill?: string; bold?: boolean; color?: string; sizeHalfPoints?: number }
   /** conditional first/last-column and last-row formatting (w:tblStylePr) */
-  firstCol?: { fill?: string; bold?: boolean; color?: string }
-  lastCol?: { fill?: string; bold?: boolean; color?: string }
-  lastRow?: { fill?: string; bold?: boolean; color?: string }
+  firstCol?: { fill?: string; bold?: boolean; color?: string; sizeHalfPoints?: number }
+  lastCol?: { fill?: string; bold?: boolean; color?: string; sizeHalfPoints?: number }
+  lastRow?: { fill?: string; bold?: boolean; color?: string; sizeHalfPoints?: number }
   /** odd-band row shading (band1Horz) */
   band1Fill?: string
   /** even-band row shading (band2Horz) */
@@ -1105,6 +1124,8 @@ export interface TableStyleDisplay {
     lineRule?: 'auto' | 'atLeast' | 'exact'
     lineSpacing?: number
   }
+  /** style-level w:pPr w:jc applied to every cell paragraph (Calendar styles center) */
+  paraJc?: string
 }
 
 export interface StyleInfo {
@@ -1152,6 +1173,8 @@ export interface DocDefaults {
   spaceBeforeTwips?: number
   /** F1: paragraph spacing after default (twips); undefined = not set in docDefaults */
   spaceAfterTwips?: number
+  /** rPrDefault w:lang w:val (BCP-47) — hyphenation/locale of the body text */
+  lang?: string
 }
 
 /** word/settings.xml w:documentProtection (only the editing restriction subset). */
@@ -1161,6 +1184,20 @@ export interface DocProtection {
   /** w:enforcement="1" — restriction is active */
   enforced: boolean
   /** password hash (base64, Word 2013+ iterated SHA-512 scheme); absent when there is no password protection */
+  hash?: string
+  /** salt (base64) */
+  salt?: string
+  /** iteration count (w:cryptSpinCount), Word default 100000 */
+  spinCount?: number
+  /** w:cryptAlgorithmSid, 14 = SHA-512 (the only supported value) */
+  algorithmSid?: number
+}
+
+/** word/settings.xml w:writeProtection (password to modify; honor-system, no encryption). */
+export interface WriteProtection {
+  /** w:recommended="1" — Word suggests opening read-only */
+  recommended?: boolean
+  /** password-to-modify hash (base64, same iterated-SHA-512 scheme as DocProtection); absent = no modify password */
   hash?: string
   /** salt (base64) */
   salt?: string
@@ -1239,6 +1276,10 @@ export interface ParsedDoc {
   themeColors?: ThemeColors | null
   /** editing restriction from word/settings.xml, null when none */
   protection: DocProtection | null
+  /** password-to-modify / read-only-recommended from word/settings.xml, null when none */
+  writeProtection: WriteProtection | null
+  /** settings.xml w:removePersonalInformation — remove author/organization metadata on save */
+  removePersonalInfo: boolean
   /** plain text of the default page header, null when the document has none */
   headerText?: string | null
   /** rich paragraphs of the default header (PAGE fields appear as PAGE_MARK runs) */
@@ -1262,6 +1303,10 @@ export interface ParsedDoc {
   evenAndOddHeaders?: boolean
   /** settings.xml compatSetting compatibilityMode (0 when absent; >=15 = Word 2013+ layout) */
   compatibilityMode?: number
+  /** settings.xml <w:autoHyphenation/> — Word breaks words at line ends automatically */
+  autoHyphenation?: boolean
+  /** settings.xml w:defaultTabStop in twips (absent = Word's 720); 0 = zero-width default tabs */
+  defaultTabStopTwips?: number
   /** first-page header/footer parts (w:type="first"), null when absent */
   headerFirst?: HfPartInfo | null
   footerFirst?: HfPartInfo | null

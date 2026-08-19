@@ -119,7 +119,8 @@ function exportRef(xlsx, dir) {
   fs.rmSync(pdf, { force: true })
   const script = `
     tell application "Microsoft Excel"
-      open (POSIX file "${src}")
+      set display alerts to false
+      open workbook workbook file name "${src}" update links do not update links
       set wb to active workbook
       save workbook as wb filename "${pdf}" file format PDF file format
       close active workbook saving no

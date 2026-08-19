@@ -146,7 +146,7 @@ describe('apply-theme round trip (bake → surgical patch → save → reopen an
       offset: { x: 914400, y: 914400, cx: 1828800, cy: 914400 },
       fillColor: '#217346',
     })
-    setSlideBackground(opened.deck.slides[0]!, '#FFFFFF')
+    setSlideBackground(opened, opened.deck.slides[0]!, '#FFFFFF')
 
     // = handler flow: bake unsaved edits first, then do the entry surgery
     opened = await openPptx(await savePptx(opened))

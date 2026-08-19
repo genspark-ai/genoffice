@@ -58,7 +58,6 @@ import {
   editGroupChildTransform,
   patchGroupChildText,
   setGroupChildFont,
-  editGroupChildFill,
   editGroupChildStroke,
   patchBodyPrAutofit,
   getElementLink,
@@ -125,8 +124,10 @@ import {
   setPictureOpacity,
   setElementConnection,
   updateConnectorsForMoved,
+  setElementFill,
   setElementImageFill,
   setElementTextAnchor,
+  setShapePresetGeometry,
   setTableRowHeight,
   resizeTable,
   setTableCellAnchor,
@@ -153,6 +154,7 @@ import {
   type Paragraph,
   type Slide,
   type TextElement,
+  cleanupSupersededSlideResources,
 } from '@genoffice/pptx-engine'
 import { buildRenderSlide, EMU_PER_PX_96, type RenderSlide } from '@genoffice/pptx-render'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
@@ -182,6 +184,8 @@ import type {
   DeleteElementOp,
   EditBackgroundOp,
   EditFillOp,
+  GradientFillSpec,
+  EditFillImageOp,
   EditStrokeOp,
   FlipElementOp,
   EditPictureSrcRectOp,
@@ -282,6 +286,26 @@ export {
   setSlidesShellWindow,
   setSlidesShowBleed,
 } from './session-state'
+
+/** IPC gradient → engine stop list (full stop list wins over the two-color from/to form). */
+const gradientStops = (g: GradientFillSpec['gradient']): Array<{ pos: number; color: string }> =>
+  g.stops?.length
+    ? g.stops
+    : [
+        { pos: 0, color: g.from },
+        { pos: 1, color: g.to },
+      ]
+
+/** IPC gradient → path kind (radial is a legacy alias for circle; undefined = linear). */
+const gradientPathKind = (
+  g: GradientFillSpec['gradient'],
+): 'circle' | 'rect' | 'shape' | undefined => g.path ?? (g.radial ? 'circle' : undefined)
+
+/** IPC gradient focus point → <a:fillToRect> insets (undefined when unspecified). */
+const gradientFillTo = (
+  g: GradientFillSpec['gradient'],
+): { l: number; t: number; r: number; b: number } | undefined =>
+  g.center ? { l: g.center.x, t: g.center.y, r: 1 - g.center.x, b: 1 - g.center.y } : undefined
 export { registerAiIpc } from './ai-ipc'
 
 /** standalone: path queued before window creation (argv/open-file) */
@@ -1028,6 +1052,7 @@ export function registerSlidesIpc(): void {
       if (!child || (child.type !== 'text' && child.type !== 'shape')) return null
       const textChild = child as TextElement
       if (!textChild.text) return null
+      const previousXml = patchSlideXml(slide)
       pushHistory(session)
       textChild.text.paragraphs = applyEditParagraphs(textChild.text.paragraphs, op.paragraphs)
       ensureRunLinkRels(session.opened, op.slideIndex, textChild.text.paragraphs)
@@ -1038,10 +1063,12 @@ export function registerSlidesIpc(): void {
       for (const { index, patch } of collectParagraphFormatPatches(op.paragraphs)) {
         setGroupChildParagraphFormat(slide, op.groupId, op.sourceId, patch, [index])
       }
+      cleanupSupersededSlideResources(session.opened, slide, previousXml, patchSlideXml(slide))
       return rebuildSlide(session, op.slideIndex)
     }
     const el = findEl(slide, op.sourceId)
     if (!el || !el.text) return null
+    const previousXml = patchSlideXml(slide)
     pushHistory(session)
     // Run-level rich-text rebuild: srcPara/srcRun back-tracing + preserving unedited fields, see applyEditParagraphs
     const levelDirty = levelsChanged(el.text.paragraphs, op.paragraphs)
@@ -1052,6 +1079,7 @@ export function registerSlidesIpc(): void {
     for (const { index, patch } of collectParagraphFormatPatches(op.paragraphs)) {
       setElementParagraphFormat(slide, op.sourceId, patch, [index])
     }
+    cleanupSupersededSlideResources(session.opened, slide, previousXml, patchSlideXml(slide))
     if (levelDirty) {
       // Level changes affect inheritance (font size/bullet/indent take master defaults by lvl); bake into bytes then reparse
       el.dirtyPPr = { ...el.dirtyPPr, level: true, indents: true }
@@ -1631,7 +1659,7 @@ export function registerSlidesIpc(): void {
     if (!slide) return null
     if (!slide.elements.some((x) => x.id === op.sourceId)) return null
     pushHistory(session)
-    if (!deleteElement(slide, op.sourceId)) return null
+    if (!deleteElement(session.opened, slide, op.sourceId)) return null
     return rebuildSlide(session, op.slideIndex)
   })
 
@@ -1869,7 +1897,7 @@ export function registerSlidesIpc(): void {
     } else if (op.kind === 'solid') {
       pushHistory(session)
       for (const s of targets) {
-        setSlideBackground(s!, op.color)
+        setSlideBackground(session.opened, s!, op.color)
         repaintFullBleedBackdrops(s!, session.opened.deck.size, {
           type: 'solid',
           color: op.color,
@@ -1884,7 +1912,7 @@ export function registerSlidesIpc(): void {
       const angle = Math.round((op.angleDeg ?? 0) * 60000)
       const patch = { stops, ...(op.radial ? { radial: true } : { angle }) }
       for (const s of targets) {
-        setSlideBackground(s!, patch)
+        setSlideBackground(session.opened, s!, patch)
         repaintFullBleedBackdrops(s!, session.opened.deck.size, {
           type: 'gradient',
           stops,
@@ -1902,15 +1930,19 @@ export function registerSlidesIpc(): void {
     return buildAllRenderSlides(session.opened, op.fitWidthPx)
   })
 
-  ipcMain.handle(
-    'slides:edit-image-fill',
-    async (e, op: { slideIndex: number; sourceId: string }) => {
-      const session = sessions.get(e.sender.id)
-      if (!session) return null
-      const slide = session.opened.deck.slides[op.slideIndex]
-      if (!slide) return null
-      const parent = dialogParent()
-      const options = {
+  ipcMain.handle('slides:edit-image-fill', async (e, op: EditFillImageOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session) return null
+    const slide = session.opened.deck.slides[op.slideIndex]
+    if (!slide || op.targets.length === 0) return null
+    let bytes: Uint8Array
+    let ext: string
+    if (op.source) {
+      // bundled texture preset: bytes shipped inline, no picker
+      bytes = new Uint8Array(Buffer.from(op.source.base64, 'base64'))
+      ext = op.source.ext.toLowerCase()
+    } else {
+      const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
         title: tm('dlgInsertImage'),
         properties: ['openFile' as const],
         filters: [
@@ -1919,19 +1951,30 @@ export function registerSlidesIpc(): void {
             extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff'],
           },
         ],
-      }
-      const r = await showOpenDialogWithMemory(dialog, parent, options)
+      })
       if (r.canceled || !r.filePaths[0]) return null
-      const bytes = await readFile(r.filePaths[0])
-      const ext = r.filePaths[0].split('.').pop()!.toLowerCase()
-      pushHistory(session)
-      if (!setElementImageFill(session.opened, slide, op.sourceId, bytes, ext)) {
-        session.undoStack.pop()
-        return null
-      }
-      return rebuildSlide(session, op.slideIndex)
-    },
-  )
+      bytes = new Uint8Array(await readFile(r.filePaths[0]))
+      ext = r.filePaths[0].split('.').pop()!.toLowerCase()
+    }
+    pushHistory(session)
+    // The picked bytes land as one media part; further targets only add rels to it
+    let landed: string | null = null
+    for (const target of op.targets) {
+      const used = setElementImageFill(
+        session.opened,
+        slide,
+        target.sourceId,
+        landed ? { mediaPath: landed } : { bytes, ext },
+        { tile: op.mode === 'tile', ...(target.groupId ? { groupId: target.groupId } : {}) },
+      )
+      if (used) landed = used
+    }
+    if (!landed) {
+      session.undoStack.pop()
+      return null
+    }
+    return rebuildSlide(session, op.slideIndex)
+  })
 
   ipcMain.handle('slides:insert-image', async (e, slideIndex: number, fitWidthPx: number) => {
     const session = sessions.get(e.sender.id)
@@ -1993,45 +2036,30 @@ export function registerSlidesIpc(): void {
     if (!session) return null
     const slide = session.opened.deck.slides[op.slideIndex]
     if (!slide) return null
-    if (op.groupId) {
-      pushHistory(session)
-      const fill =
-        typeof op.fill === 'string'
-          ? op.fill
-          : {
-              stops: [
-                { pos: 0, color: op.fill.gradient.from },
-                { pos: 1, color: op.fill.gradient.to },
-              ],
-              ...(op.fill.gradient.radial
-                ? { radial: true }
-                : { angle: Math.round((op.fill.gradient.angleDeg ?? 0) * 60000) }),
-            }
-      if (!editGroupChildFill(slide, op.groupId, op.sourceId, fill)) {
-        session.undoStack.pop()
-        return null
-      }
-      return rebuildSlide(session, op.slideIndex)
-    }
-    const el = findEl(slide, op.sourceId)
-    if (!el) return null
+    const fill =
+      typeof op.fill === 'string'
+        ? op.fill
+        : {
+            stops: gradientStops(op.fill.gradient),
+            ...((pk) =>
+              pk
+                ? {
+                    path: pk,
+                    ...((ft) => (ft ? { fillTo: ft } : {}))(gradientFillTo(op.fill.gradient)),
+                  }
+                : { angle: Math.round((op.fill.gradient.angleDeg ?? 0) * 60000) })(
+              gradientPathKind(op.fill.gradient),
+            ),
+          }
     pushHistory(session)
-    if (typeof op.fill === 'string') {
-      el.fill = op.fill === 'none' ? { type: 'none' } : { type: 'solid', color: op.fill }
-    } else {
-      const g = op.fill.gradient
-      el.fill = {
-        type: 'gradient',
-        stops: [
-          { pos: 0, color: g.from },
-          { pos: 1, color: g.to },
-        ],
-        ...(g.radial
-          ? { path: 'circle' as const }
-          : { angle: Math.round((g.angleDeg ?? 0) * 60000) }),
-      }
+    if (
+      !setElementFill(session.opened, slide, op.sourceId, fill, {
+        ...(op.groupId ? { groupId: op.groupId } : {}),
+      })
+    ) {
+      session.undoStack.pop()
+      return null
     }
-    el.dirtyFill = true
     return rebuildSlide(session, op.slideIndex)
   })
 
@@ -2315,13 +2343,11 @@ export function registerSlidesIpc(): void {
       const g = op.fill.gradient
       el.fill = {
         type: 'gradient',
-        stops: [
-          { pos: 0, color: g.from },
-          { pos: 1, color: g.to },
-        ],
-        ...(g.radial
-          ? { path: 'circle' as const }
-          : { angle: Math.round((g.angleDeg ?? 0) * 60000) }),
+        stops: gradientStops(g),
+        ...((pk) =>
+          pk
+            ? { path: pk, ...((ft) => (ft ? { fillTo: ft } : {}))(gradientFillTo(g)) }
+            : { angle: Math.round((g.angleDeg ?? 0) * 60000) })(gradientPathKind(g)),
       }
     }
     el.dirtyFill = true
@@ -2353,7 +2379,7 @@ export function registerSlidesIpc(): void {
     if (!session || !me) return null
     if (!me.slide.elements.some((x) => x.id === op.sourceId)) return null
     pushHistory(session)
-    if (!deleteElement(me.slide, op.sourceId)) {
+    if (!deleteElement(session.opened, me.slide, op.sourceId)) {
       session.undoStack.pop()
       return null
     }
@@ -2666,6 +2692,22 @@ export function registerSlidesIpc(): void {
     }
     return rebuildSlide(session, op.slideIndex)
   })
+
+  ipcMain.handle(
+    'slides:change-shape',
+    (e, op: { slideIndex: number; sourceId: string; prst: string }) => {
+      const session = sessions.get(e.sender.id)
+      if (!session) return null
+      const slide = session.opened.deck.slides[op.slideIndex]
+      if (!slide) return null
+      pushHistory(session)
+      if (!setShapePresetGeometry(slide, op.sourceId, op.prst)) {
+        session.undoStack.pop()
+        return null
+      }
+      return rebuildSlide(session, op.slideIndex)
+    },
+  )
 
   ipcMain.handle(
     'slides:set-text-anchor',
@@ -3232,7 +3274,7 @@ export function registerSlidesIpc(): void {
     const lt1 = op.colors.lt1
     if (lt1) {
       for (const s of session.opened.deck.slides) {
-        if (!s.background) setSlideBackground(s, `#${lt1.replace(/^#/, '')}`)
+        if (!s.background) setSlideBackground(session.opened, s, `#${lt1.replace(/^#/, '')}`)
       }
     }
     // Reopening cleared element-level dirty; the session-level flag preserves the "unsaved" state (reset on save)

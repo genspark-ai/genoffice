@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "shared attachment parsing: pdf/docx/pptx/xlsx and plain-text formats to text; images flagged for multimodal input",
+  "description": "shared attachment parsing: PDF, Office and plain-text formats to text; images flagged for multimodal input",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -15,9 +15,12 @@
   },
   "dependencies": {
     "@genoffice/docx-engine": "*",
+    "cfb": "^1.2.2",
     "fast-xml-parser": "^5.3.4",
     "jszip": "^3.10.1",
-    "pdfjs-dist": "^6.2.108"
+    "pdfjs-dist": "^6.2.108",
+    "ppt-to-text": "^1.0.1",
+    "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

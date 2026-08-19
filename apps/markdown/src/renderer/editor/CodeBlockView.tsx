@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NodeViewContent, NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { t } from '../i18n/locale'
@@ -38,13 +38,31 @@ const LANGUAGES = [
 
 export function CodeBlockView({ node, updateAttributes, editor }: NodeViewProps) {
   const [copied, setCopied] = useState(false)
+  const copyTimerRef = useRef<number | null>(null)
+  const mountedRef = useRef(true)
   const language = String(node.attrs.language ?? '') || 'plaintext'
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
   const copy = () => {
-    void navigator.clipboard.writeText(node.textContent).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
+    void navigator.clipboard
+      .writeText(node.textContent)
+      .then(() => {
+        if (!mountedRef.current) return
+        if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+        setCopied(true)
+        copyTimerRef.current = window.setTimeout(() => {
+          copyTimerRef.current = null
+          setCopied(false)
+        }, 1500)
+      })
+      .catch(() => {})
   }
 
   return (

@@ -17,10 +17,12 @@ import {
   BLANK_ORDERED_NUM_ID,
   DEFAULT_SECTION,
   applySectionSettings,
+  verifyProtectionPassword,
   type Block,
   type CommentInfo,
   type CustomNumberingLevel,
   type DocProtection,
+  type WriteProtection,
   type HeaderFooter,
   type HfImage,
   type NoteInfo,
@@ -31,7 +33,7 @@ import {
   type ThemeColors,
   type ThemeFonts,
 } from '@genoffice/docx-engine'
-import type { AiSettings, OpenFileResult } from '../shared/ipc'
+import type { AiSettings, OpenDocxResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
 import { AiPanel } from './ai/AiPanel'
 import { asianCharCount, countWords, nonAsianWordCount } from './word-count'
@@ -63,6 +65,9 @@ import {
   type PageNoteItem,
   pageAt,
   singleCutCell,
+  columnLayoutSpecs,
+  vAlignShiftSpecs,
+  sectionBidi,
   sectionColGeom,
   sectionColumns,
   sectionFirstPages,
@@ -82,8 +87,10 @@ import {
   setPageGaps,
   syncCutOverlays,
   syncFloatShifts,
+  clampCellBoxTops,
   type PageGapSpec,
 } from './editor/pagination-gaps'
+import { setColumnLayout } from './editor/column-layout'
 import {
   MARKUP_AREA_W,
   clearMarginAnnotations,
@@ -129,6 +136,7 @@ import {
   type ContextMenuState,
 } from './components/ContextMenu'
 import { PromptModal } from './components/PromptModal'
+import { ProtectDialog, type ProtectDialogResult } from './components/ProtectDialog'
 import { t, useI18n } from './i18n/locale'
 import {
   getActiveSubEditor,
@@ -192,10 +200,7 @@ import {
   startNewComment as startNewCommentImpl,
   submitNewComment as submitNewCommentImpl,
   submitNote as submitNoteImpl,
-  submitProtectModal as submitProtectModalImpl,
-  toggleProtection as toggleProtectionImpl,
   type NotePrompt,
-  type ProtectModalState,
   type ReviewContext,
 } from './review-actions'
 
@@ -338,8 +343,24 @@ export function App() {
   const { lang } = useI18n()
   const [doc, setDoc] = useState<DocState | null>(null)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
-  const bootPendingRef = useRef<Promise<[OpenFileResult | null, boolean]> | null>(null)
+  const bootPendingRef = useRef<Promise<[OpenDocxResult, boolean]> | null>(null)
   const bootHandledRef = useRef(false)
+  /** password prompt for an ECMA-376 encrypted docx; submit retries via openDocxDecrypt */
+  const [docPwdPrompt, setDocPwdPrompt] = useState<{
+    path: string
+    name: string
+    value: string
+    /** i18n key of the inline failure line ('' = none) */
+    errorKey: '' | 'appDocPwdWrong' | 'appDocPwdUnsupported'
+    busy: boolean
+  } | null>(null)
+  /** Review > Protect: the combined Word-style Protect Document dialog */
+  const [showProtectDialog, setShowProtectDialog] = useState(false)
+  /** prompt for a document with a password to modify (w:writeProtection): enter it or open read-only */
+  const [modifyPwdPrompt, setModifyPwdPrompt] = useState<{
+    value: string
+    errorKey: '' | 'appDocPwdWrong'
+  } | null>(null)
   const [_recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<AiSettings>(DEFAULT_SETTINGS)
   const [showAi, setShowAi] = useState(() => localStorage.getItem('aidocs.showAi') !== '0')
@@ -568,8 +589,27 @@ export function App() {
     if (editor) editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revisionDisplay])
+  // section breaks on tracked-deleted paragraph marks don't break in Word's
+  // markup views (only the Original view restores them)
+  const delSectBreaks = useMemo(
+    () =>
+      revisionDisplay === 'original'
+        ? undefined
+        : new Set(
+            (doc?.parsed.blocks ?? [])
+              .filter((b) => b.paraMarkDel && b.docxIndex != null)
+              .map((b) => b.docxIndex as number),
+          ),
+    [doc, revisionDisplay],
+  )
   const [protection, setProtection] = useState<DocProtection | null>(null)
   const [protectionDirty, setProtectionDirty] = useState(false)
+  const [writeProtection, setWriteProtection] = useState<WriteProtection | null>(null)
+  const [writeProtectionDirty, setWriteProtectionDirty] = useState(false)
+  const [removePersonalInfo, setRemovePersonalInfo] = useState(false)
+  const [removePersonalInfoDirty, setRemovePersonalInfoDirty] = useState(false)
+  /** modify password entered (or set by the user this session) — false = write-locked, document read-only */
+  const [modifyUnlocked, setModifyUnlocked] = useState(true)
   const [compareResult, setCompareResult] = useState<{
     otherName: string
     entries: CompareEntry[]
@@ -749,9 +789,27 @@ export function App() {
     return () => window.removeEventListener('wheel', onWheel)
   }, [])
 
-  const isProtected = !!protection?.enforced && protection.edit === 'readOnly'
+  // ---- protection enforcement (Review > Protect Document) ----
+  const editRestriction = protection?.enforced ? protection.edit : null
+  /** modify password set but not entered: honor-system write lock, document read-only */
+  const writeLocked = !!writeProtection?.hash && !modifyUnlocked
+  /** body is read-only (readOnly/forms/comments restriction or write lock) */
+  const isProtected =
+    writeLocked ||
+    editRestriction === 'readOnly' ||
+    editRestriction === 'forms' ||
+    editRestriction === 'comments'
+  /** comments restriction: body read-only but adding comments stays allowed */
+  const commentsAllowed = !writeLocked && editRestriction === 'comments'
+  /** trackedChanges restriction: editing allowed, revision recording forced on */
+  const trackChangesForced = !writeLocked && editRestriction === 'trackedChanges'
 
-  // Read Mode / Restrict Editing: the document becomes read-only; Esc leaves Read Mode
+  // the trackedChanges restriction keeps the recorder on (the ribbon toggle is disabled)
+  useEffect(() => {
+    if (trackChangesForced && !trackChanges) setTrackChanges(true)
+  }, [trackChangesForced, trackChanges])
+
+  // Read Mode / Protect Document: the document becomes read-only; Esc leaves Read Mode
   useEffect(() => {
     if (!editor) return
     editor.setEditable(!readMode && !isProtected)
@@ -952,11 +1010,25 @@ export function App() {
     protectionDirty,
     setProtection,
     setProtectionDirty,
+    writeProtection,
+    writeProtectionDirty,
+    setWriteProtection,
+    setWriteProtectionDirty,
+    removePersonalInfo,
+    removePersonalInfoDirty,
+    setRemovePersonalInfo,
+    setRemovePersonalInfoDirty,
+    onWriteProtectionLoaded: (wp) => {
+      setModifyUnlocked(!wp?.hash)
+      setModifyPwdPrompt(wp?.hash ? { value: '', errorKey: '' } : null)
+    },
     setCompareResult,
+    promptDocxPassword: (info) =>
+      setDocPwdPrompt({ path: info.path, name: info.name, value: '', errorKey: '', busy: false }),
   }
 
   const loadFile = useCallback(
-    (result: OpenFileResult | null) => loadFileImpl(fileCtxRef.current, result),
+    (result: OpenDocxResult) => loadFileImpl(fileCtxRef.current, result),
     [],
   )
 
@@ -995,8 +1067,12 @@ export function App() {
       .then(async ([pending]) => {
         if (bootHandledRef.current) return
         bootHandledRef.current = true
-        if (pending) await loadFile(pending)
-        else await newFile()
+        // A failed open (corrupt file etc.) falls back to a blank document —
+        // otherwise the tab shows "Opening…" forever with only a status-bar
+        // line explaining why (github.com/genspark-ai/genoffice issue #102).
+        // 'password': the prompt is up; its cancel path lands on blank instead.
+        const outcome = pending ? await loadFile(pending) : 'canceled'
+        if (outcome === 'failed' || outcome === 'canceled') await newFile()
       })
       // Open failures also land on a blank document, or the tab stays at "Opening…" forever
       .catch(() => {
@@ -1024,6 +1100,80 @@ export function App() {
     },
     [loadFile],
   )
+
+  /** decrypt-and-open retry loop for the password prompt (wrong password stays in the dialog) */
+  const submitDocPwd = async () => {
+    if (!docPwdPrompt || docPwdPrompt.busy || !docPwdPrompt.value) return
+    setDocPwdPrompt({ ...docPwdPrompt, busy: true, errorKey: '' })
+    const res = await window.desktop.openDocxDecrypt(docPwdPrompt.path, docPwdPrompt.value)
+    if (res.ok) {
+      setDocPwdPrompt(null)
+      const outcome = await loadFile(res.result)
+      // decrypted fine but the content failed to parse: don't strand the boot screen
+      if (outcome === 'failed' && !fileCtxRef.current.doc) void newFile()
+      return
+    }
+    setDocPwdPrompt({
+      ...docPwdPrompt,
+      value: res.reason === 'wrong-password' ? '' : docPwdPrompt.value,
+      busy: false,
+      errorKey: res.reason === 'wrong-password' ? 'appDocPwdWrong' : 'appDocPwdUnsupported',
+    })
+  }
+
+  const cancelDocPwd = () => {
+    setDocPwdPrompt(null)
+    // canceling a boot-time open leaves no document: land on blank, not "Opening…"
+    if (!fileCtxRef.current.doc) void newFile()
+  }
+
+  /** apply the diff the Protect Document dialog produced (undefined field = unchanged) */
+  const applyProtectDialog = async (result: ProtectDialogResult) => {
+    setShowProtectDialog(false)
+    let changed = false
+    if (result.openPassword !== undefined) {
+      const cur = fileCtxRef.current.doc
+      const res = await window.desktop.setDocPassword(cur?.filePath ?? null, result.openPassword)
+      if (res.ok) {
+        setDoc((d) => (d ? { ...d, encrypted: !!result.openPassword } : d))
+        // the on-disk file only changes on the next save
+        dirtyRef.current = true
+        changed = true
+      }
+    }
+    if (result.writeProtection !== undefined) {
+      setWriteProtection(result.writeProtection)
+      setWriteProtectionDirty(true)
+      // the user set (or removed) the modify password themselves: never lock them out
+      setModifyUnlocked(true)
+      dirtyRef.current = true
+      changed = true
+    }
+    if (result.protection !== undefined) {
+      setProtection(result.protection)
+      setProtectionDirty(true)
+      dirtyRef.current = true
+      changed = true
+    }
+    if (result.removePersonalInfo !== undefined) {
+      setRemovePersonalInfo(result.removePersonalInfo)
+      setRemovePersonalInfoDirty(true)
+      dirtyRef.current = true
+      changed = true
+    }
+    if (changed) setStatus(t('appProtectUpdated'))
+  }
+
+  /** modify-password prompt (write-protected document): verify, or fall back to read-only */
+  const submitModifyPwd = async () => {
+    if (!modifyPwdPrompt || !writeProtection) return
+    if (await verifyProtectionPassword(modifyPwdPrompt.value, writeProtection)) {
+      setModifyUnlocked(true)
+      setModifyPwdPrompt(null)
+    } else {
+      setModifyPwdPrompt({ value: '', errorKey: 'appDocPwdWrong' })
+    }
+  }
 
   const save = useCallback(
     (saveAs: boolean, auto = false) => saveImpl(fileCtxRef.current, saveAs, auto),
@@ -1089,6 +1239,8 @@ export function App() {
         continuous: t('appBreakContinuous'),
         evenPage: t('appBreakEvenPage'),
         oddPage: t('appBreakOddPage'),
+        // parse-only start type (single-column: acts like next page); the UI never inserts it
+        nextColumn: t('appBreakNextPage'),
       }
       if (doc.filePath) {
         pendingSectionSaveRef.current = true
@@ -1302,7 +1454,6 @@ export function App() {
   // ---- References: footnotes / endnotes ----
 
   const [notePrompt, setNotePrompt] = useState<NotePrompt | null>(null)
-  const [protectModal, setProtectModal] = useState<ProtectModalState | null>(null)
 
   /** App state bundle for the extracted review actions (review-actions.ts); refreshed every render. */
   const reviewCtxRef = useRef<ReviewContext>(null as unknown as ReviewContext)
@@ -1325,11 +1476,6 @@ export function App() {
     setShowComments,
     setInkAnnotations,
     setInksDirty,
-    protection,
-    setProtection,
-    setProtectionDirty,
-    protectModal,
-    setProtectModal,
     setCompareResult,
   }
 
@@ -1381,8 +1527,6 @@ export function App() {
   )
   const removeInks = useCallback((ids: string[]) => removeInksImpl(reviewCtxRef.current, ids), [])
   const clearInks = useCallback(() => clearInksImpl(reviewCtxRef.current), [])
-  const toggleProtection = useCallback(() => toggleProtectionImpl(reviewCtxRef.current), [])
-  const submitProtectModal = useCallback(() => submitProtectModalImpl(reviewCtxRef.current), [])
   const compareWithFile = useCallback(() => compareWithFileImpl(reviewCtxRef.current), [])
 
   const revisionCount = editor && doc ? revisionCountOfDoc(editor.state.doc) : 0
@@ -1638,21 +1782,56 @@ export function App() {
     }))
   }, [endnotes, sections, section])
 
-  // canvas column-flow geometry (non-null when the cursor's section has equal-width columns —
-  // same follow-the-cursor rule as the canvas page box): shared by canvas CSS / measuring state / preview.
+  // canvas column mode:
+  //  - 'uniform': every section shares one equal-width multi-column spec (and is LTR) —
+  //    whole-page CSS multicol renders it (browser splits paragraphs across columns natively)
+  //  - 'mixed': some multi-column section coexists with other specs (or RTL columns) —
+  //    per-block column-layout decorations paint the engine's regions (block granularity)
+  //  - 'none': no multi-column sections.
   // equalWidth="0" (unequal local layout columns) is not modeled, matching the engine's scope
-  const colFlow = useMemo(() => {
-    const cur = sections[Math.min(activeSection, sections.length - 1)]
-    if (!cur || sectionColumns(cur) <= 1) return null
-    return sectionColGeom(cur)
-  }, [sections, activeSection])
+  const colMode = useMemo<'none' | 'uniform' | 'mixed'>(() => {
+    if (sections.length === 0) return 'none'
+    if (!sections.some((s) => sectionColumns(s) > 1)) return 'none'
+    const g0 = sectionColGeom(sections[0])
+    const uniform =
+      !sections.some(sectionBidi) &&
+      // a same-count nextColumn boundary advances a column — whole-page CSS
+      // multicol can't paint that, so such documents go through mixed mode
+      !sections.some((s, i) => i > 0 && s.startType === 'nextColumn') &&
+      sections.every((s) => {
+        const g = sectionColGeom(s)
+        return (
+          g.cols === g0.cols &&
+          g.cols > 1 &&
+          g.equalWidth &&
+          Math.abs(g.colWidthPx - g0.colWidthPx) < 0.5 &&
+          Math.abs(g.gapPx - g0.gapPx) < 0.5
+        )
+      })
+    return uniform ? 'uniform' : 'mixed'
+  }, [sections])
 
-  // single-flow measuring state for the columned canvas: temporarily drop CSS columns and
-  // set the width to the column width so DOM measurement yields 1-D coordinates matching
-  // the engine's column flow (synchronous layout round-trip, no visible flicker)
+  // uniform-mode geometry for the whole-page CSS multicol path / measuring width swap
+  const colFlow = useMemo(
+    () => (colMode === 'uniform' ? sectionColGeom(sections[0]) : null),
+    [colMode, sections],
+  )
+
+  // sectPr w:vAlign pages carry visual block translates (vAlignShiftSpecs), so
+  // measurement must neutralize them exactly like mixed-column translates
+  const hasVAlign = useMemo(
+    () => sections.some((s) => s.settings.vAlign === 'center' || s.settings.vAlign === 'bottom'),
+    [sections],
+  )
+
+  // single-flow measuring state for the columned canvas: uniform mode temporarily drops
+  // the CSS columns and sets the width to the column width; mixed mode neutralizes the
+  // per-block translates/gap compression (widths stay — line boxes must reflect column
+  // wrapping). Either way DOM measurement yields 1-D coordinates matching the engine's
+  // column flow (synchronous layout round-trip, no visible flicker)
   const measureSingleFlow = useCallback(
     function run<T>(pm: HTMLElement, fn: () => T): T {
-      if (!colFlow || viewMode !== 'print') return fn()
+      if ((colMode === 'none' && !hasVAlign) || viewMode !== 'print') return fn()
       pm.classList.add('measuring-columns')
       try {
         return fn()
@@ -1660,17 +1839,17 @@ export function App() {
         pm.classList.remove('measuring-columns')
       }
     },
-    [colFlow, viewMode],
+    [colMode, hasVAlign, viewMode],
   )
 
-  // column-flow geometry gate: when the canvas column CSS is inactive, measure as full-width single flow; the geometry must drop cols to match
+  // column-flow geometry gate: when the canvas column layout is inactive, measure as full-width single flow; the geometry must drop cols to match
   const colGeomsFor = useCallback(
     (geoms: SectionGeom[]): SectionGeom[] => {
-      if (colFlow && viewMode === 'print') return geoms
+      if (colMode !== 'none' && viewMode === 'print') return geoms
       for (const g of geoms) if (g.cols) g.cols = undefined
       return geoms
     },
-    [colFlow, viewMode],
+    [colMode, viewMode],
   )
 
   // real TOC page-number backfill: compute each heading's (docHeading) page from the current real page slicing.
@@ -1682,8 +1861,8 @@ export function App() {
     const factor = zoom / 100
     const { mBlocks, slices, secs } = measureSingleFlow(pm, () => {
       const origin = pm.getBoundingClientRect().top + effTopSingle * factor
-      const { blocks, totalHeight } = measureBlocks(pm, origin, factor)
-      const live = liveSections(sections, blocks)
+      const { blocks, totalHeight, sectBreaks } = measureBlocks(pm, origin, factor)
+      const live = liveSections(sections, blocks, sectBreaks, delSectBreaks)
       let s: PageSlice[]
       if (live.length > 0) {
         assignSections(blocks, live)
@@ -1721,6 +1900,7 @@ export function App() {
     editor,
     section,
     sections,
+    delSectBreaks,
     zoom,
     blockMetaOf,
     effTopSingle,
@@ -1781,11 +1961,12 @@ export function App() {
       const measured = measureSingleFlow(pm, () => {
         const t0 = performance.now()
         const origin = pm.getBoundingClientRect().top + mTopPx * factor
-        const { blocks, totalHeight, floats } = measureBlocks(pm, origin, factor)
+        const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(pm, origin, factor)
         tMeasure = performance.now() - t0
         // multi-section: assign blocks to sections by docxIndex; each section has its own content height / forced breaks.
         // liveSections: when a section-break block is deleted, that section merges into the next in real time (effective before saving)
-        const secList = sections.length > 0 ? liveSections(sections, blocks) : null
+        const secList =
+          sections.length > 0 ? liveSections(sections, blocks, sectBreaks, delSectBreaks) : null
         if (secList) assignSections(blocks, secList)
         // the endnote area takes part in page slicing (placed together at the document end; overflows continue on later pages)
         const withEndnotes = appendEndnotesBlock(
@@ -1961,8 +2142,11 @@ export function App() {
           // strip must not overflow the (portrait) canvas paper it is drawn on
           const canvasPaperW = pmRect.width / factor
           slices.slice(1).forEach((slice, k) => {
-            // an even/odd section's zero-height blank page shares its start with the following page: draw only one gap band on the canvas
-            if (slice.start === slices[k].start) return
+            // a same-start predecessor that is zero-height is a deliberate blank page
+            // (leading/double w:br, even/odd parity): it needs its own gap band so the
+            // blank sheet paints (pad below covers its full paper height); other
+            // same-start duplicates draw only one band
+            if (slice.start === slices[k].start && slices[k].end > slices[k].start) return
             // gap = previous page's (its section's) bottom margin + inter-page band + this page's (its section's) top margin
             const prevSec = secList?.[slices[k].section]?.settings ?? section
             const nextSec = secList?.[slice.section]?.settings ?? section
@@ -1977,7 +2161,9 @@ export function App() {
             }
             // a page ended early (explicit break / section break / keepNext) leaves unused
             // content height; pad the gap so the canvas paints the full paper height and the
-            // footer stays at the paper bottom. Multi-column pages span columns × height, skip.
+            // footer stays at the paper bottom. Uniform multi-column pages span columns ×
+            // height with the browser compressing the flow, skip; mixed-column pages use the
+            // engine's physical height and pull the gap up over the vacated stacked space.
             const prevContentH =
               twipsToPx(prevSec.pageHeight) -
               effectiveTopPx(prevSec, prevHf.headerPx) -
@@ -1986,7 +2172,13 @@ export function App() {
             const items = pageNotes[k] ?? []
             const fnH =
               items.length > 0 ? items.reduce((s, n) => s + n.height, 0) + FOOTNOTE_SEPARATOR_H : 0
-            const remaining = slices[k].regions ? 0 : Math.max(0, prevContentH - used)
+            const physUsed = slices[k].regions
+              ? colMode === 'mixed'
+                ? (slices[k].physHeight ?? used)
+                : null
+              : used
+            const remaining = physUsed === null ? 0 : Math.max(0, prevContentH - physUsed)
+            const pullUp = physUsed === null ? 0 : Math.max(0, used - physUsed)
             // used excludes the reserved footnote height (footnoteExtraPx inflates capacity
             // bookkeeping, not DOM coordinates), and the notes area already extends the gap
             // by fnH: pad covers only the rest of the shortfall
@@ -2070,6 +2262,7 @@ export function App() {
                   pad > 0
                     ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
                     : notesMetrics,
+                ...(pullUp > 0.5 ? { pullUp } : {}),
                 ...(blocks[i].breakBefore || (i > 0 && blocks[i - 1].breakAfter)
                   ? { suppressLeadMt: true }
                   : {}),
@@ -2083,7 +2276,25 @@ export function App() {
             const b = blocks.find(
               (bb) => bb.el && bb.top < slice.start && slice.start < bb.top + bb.height - 0.5,
             )
-            if (!b?.el) return
+            if (!b?.el) {
+              // deliberate trailing blank page (document ends with a page break): no
+              // anchor block exists — hang the gap at the document end so the blank
+              // sheet paints (min-height extension below covers its paper height)
+              if (k + 2 === slices.length) {
+                gaps.push({
+                  pos: editor.state.doc.content.size,
+                  kind: 'inline',
+                  metrics:
+                    pad > 0
+                      ? { ...notesMetrics, marginBottom: notesMetrics.marginBottom + pad }
+                      : notesMetrics,
+                  ...(pullUp > 0.5 ? { pullUp } : {}),
+                  ...hfProps,
+                })
+                markShown()
+              }
+              return
+            }
             if (b.el.querySelector('tr')) {
               // in-table cut point: insert an in-table gap row (display:table-row widget)
               // before the broken row (next page's first row). Positioning must subtract the
@@ -2222,6 +2433,7 @@ export function App() {
                       marginLeft: (r.left - pmRect.left) / factor,
                       marginRight: (pmRect.right - r.right) / factor,
                     },
+                    ...(pullUp > 0.5 ? { pullUp } : {}),
                     ...hfProps,
                   })
                 } else {
@@ -2260,6 +2472,7 @@ export function App() {
                 marginLeft: (elRect.left - pmRect.left) / factor,
                 marginRight: (pmRect.right - elRect.right) / factor,
               },
+              ...(pullUp > 0.5 ? { pullUp } : {}),
               ...(notes ? { notes, notesKey } : {}),
               ...hfProps,
             })
@@ -2312,8 +2525,22 @@ export function App() {
         tGapsBuild = performance.now() - tGaps0
         const tSet0 = performance.now()
         setPageGaps(editor.view, gaps, firstPageFloats)
+        // mixed-column canvas: paint the engine's regions via per-block width/translate decorations
+        const colSpecs =
+          viewMode === 'print' && !readMode && colMode === 'mixed' && secList
+            ? columnLayoutSpecs(blocks, slices, secList)
+            : []
+        // sectPr w:vAlign pages ride the same visual-translate channel
+        const vaSpecs =
+          viewMode === 'print' && !readMode && secList && hfHs
+            ? vAlignShiftSpecs(blocks, slices, secList, sectionGeoms(secList, hfHs))
+            : []
+        setColumnLayout(editor.view, [...colSpecs, ...vaSpecs])
         // after setPageGaps: widget insertion is synchronous, so anchor rects are final
         syncFloatShifts(pm, floats, pm.getBoundingClientRect().top + mTopPx * factor, factor)
+        // Word keeps anchored objects on the page: cell boxes lifted past the
+        // paper top by a negative anchor offset are pushed back down
+        clampCellBoxTops(pm, pm.getBoundingClientRect().top, factor)
         syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
         syncMarginAnnotations(
           (pm.closest('.page-wrap') as HTMLElement) ?? pm,
@@ -2321,6 +2548,7 @@ export function App() {
           comments,
           factor,
           doc.parsed.blocks,
+          editor.view,
         )
         tSetGaps = performance.now() - tSet0
         // suppression collapses the DOM after this pass sliced; one follow-up remeasure re-syncs (sig goes stable, no loop)
@@ -2358,7 +2586,30 @@ export function App() {
         // for real-device verification/troubleshooting: current slices and block geometry (read-only snapshot, no functional dependency)
         ;(window as unknown as Record<string, unknown>).__pageDebug = {
           slices,
-          blocks: blocks.map((b) => ({ top: b.top, height: b.height, docxIndex: b.docxIndex })),
+          colMode,
+          colSpecs: colSpecs.map((s) => ({
+            w: s.widthPx === undefined ? null : Math.round(s.widthPx),
+            dx: Math.round(s.dx),
+            dy: Math.round(s.dy),
+            cls: s.el.className.slice(0, 30),
+          })),
+          secs: secList?.map((s, i) => ({
+            startType: s.startType,
+            cols: sectionColumns(s),
+            first: s.firstBlockIndex,
+            last: s.lastBlockIndex,
+            contentH: hfHs
+              ? Math.round(sectionGeoms(secList, hfHs)[i]?.contentHeight ?? -1)
+              : undefined,
+          })),
+          blocks: blocks.map((b) => ({
+            top: b.top,
+            height: b.height,
+            docxIndex: b.docxIndex,
+            section: b.section,
+            empty: b.emptyPara,
+            nLines: b.lineBoxes?.length,
+          })),
           tableRows: blocks
             .filter((b) => b.tableRows)
             .map((b) => ({
@@ -2438,6 +2689,7 @@ export function App() {
     // display-mode toggles reflow the text (No Markup hides deletions) and gate
     // the change bars, but dispatch no doc change: remeasure must follow them
     revisionDisplay,
+    delSectBreaks,
   ])
 
   // section at the cursor: the target the Layout tab acts on
@@ -2967,7 +3219,7 @@ export function App() {
     onGotoRevision: (dir: 1 | -1) => {
       if (editor) gotoRevision(editor, dir)
     },
-    onToggleProtection: toggleProtection,
+    onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
     onViewMode: setViewMode,
     onReadMode: setReadMode,
@@ -3071,7 +3323,7 @@ export function App() {
 
   return (
     <div
-      className={`app ${readMode ? 'read-mode' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}`}
+      className={`app ${readMode ? 'read-mode' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${revisionDisplay === 'all' && viewMode === 'print' ? ' rev-balloon' : ''}`}
     >
       <ToastHost />
       {docCss && <style>{docCss}</style>}
@@ -3133,6 +3385,11 @@ export function App() {
         revisionDisplay={revisionDisplay}
         revisionCount={revisionCount}
         isProtected={isProtected}
+        commentsAllowed={commentsAllowed}
+        trackChangesForced={trackChangesForced}
+        protectActive={
+          isProtected || trackChangesForced || (doc?.encrypted ?? false) || !!writeProtection?.hash
+        }
         filePath={doc?.filePath ?? null}
         viewMode={viewMode}
         readMode={readMode}
@@ -3483,8 +3740,10 @@ export function App() {
         <PaginationPreview
           section={section}
           sections={sections}
+          delSectBreaks={delSectBreaks}
           hfParts={doc.parsed.hfParts ?? {}}
           colFlow={viewMode === 'print' ? colFlow : null}
+          colMode={viewMode === 'print' ? colMode : 'none'}
           zoom={zoom}
           hf={{
             header,
@@ -3507,6 +3766,9 @@ export function App() {
           endnoteItems={endnoteItems}
           sectionHfOverride={sectionHfOverride}
           clearPageGaps={() => {
+            // column-layout decorations stay: the preview measures with the block widths
+            // (line boxes must keep column wrapping); transforms are neutralized by its
+            // measuring-columns state
             if (editor) setPageGaps(editor.view, [])
             const wrap = document.querySelector('.editor-scroll .page-wrap')
             if (wrap) {
@@ -3575,38 +3837,79 @@ export function App() {
         </div>
       )}
 
-      {protectModal && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => e.target === e.currentTarget && setProtectModal(null)}
-        >
+      {docPwdPrompt && (
+        <div className="modal-backdrop">
           <div className="modal">
-            <h2>
-              {protectModal.mode === 'set' ? t('appRestrictEditing') : t('appUnrestrictEditing')}
-            </h2>
+            <h2>{t('appDocPwdTitle')}</h2>
+            <p className="pgnum-hint">{t('appDocPwdBody', { name: docPwdPrompt.name })}</p>
             <label className="pgnum-row">
-              {protectModal.mode === 'set' ? t('appProtectPwdOptional') : t('appProtectPwdEnter')}
+              {t('appDocPwdLabel')}
               <input
                 type="password"
                 autoFocus
-                value={protectModal.value}
+                disabled={docPwdPrompt.busy}
+                value={docPwdPrompt.value}
                 onChange={(e) =>
-                  setProtectModal({ ...protectModal, value: e.target.value, error: undefined })
+                  setDocPwdPrompt({ ...docPwdPrompt, value: e.target.value, errorKey: '' })
                 }
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') void submitProtectModal()
+                  if (e.key === 'Enter') void submitDocPwd()
                 }}
               />
             </label>
-            {protectModal.error && (
-              <p className="pgnum-hint" style={{ color: '#c62828' }}>
-                {protectModal.error}
-              </p>
-            )}
-            {protectModal.mode === 'set' && <p className="pgnum-hint">{t('appProtectPwdHint')}</p>}
+            {docPwdPrompt.errorKey && <p className="modal-error">{t(docPwdPrompt.errorKey)}</p>}
             <div className="modal-actions">
-              <button onClick={() => setProtectModal(null)}>{t('appCancel')}</button>
-              <button className="btn-primary" onClick={() => void submitProtectModal()}>
+              <button onClick={cancelDocPwd}>{t('appCancel')}</button>
+              <button
+                className="btn-primary"
+                disabled={docPwdPrompt.busy || !docPwdPrompt.value}
+                onClick={() => void submitDocPwd()}
+              >
+                {docPwdPrompt.busy ? t('appStartOpening') : t('appOk')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showProtectDialog && (
+        <ProtectDialog
+          encrypted={doc?.encrypted ?? false}
+          writeProtection={writeProtection}
+          protection={protection}
+          removePersonalInfo={removePersonalInfo}
+          onCancel={() => setShowProtectDialog(false)}
+          onApply={(result) => void applyProtectDialog(result)}
+        />
+      )}
+
+      {modifyPwdPrompt && doc && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>{t('appModifyPwdTitle')}</h2>
+            <p className="pgnum-hint">{t('appModifyPwdBody', { name: doc.fileName })}</p>
+            <label>
+              {t('appDocPwdLabel')}
+              <input
+                type="password"
+                autoFocus
+                value={modifyPwdPrompt.value}
+                onChange={(e) => setModifyPwdPrompt({ value: e.target.value, errorKey: '' })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void submitModifyPwd()
+                }}
+              />
+            </label>
+            {modifyPwdPrompt.errorKey && (
+              <p className="modal-error">{t(modifyPwdPrompt.errorKey)}</p>
+            )}
+            <div className="modal-actions">
+              <button onClick={() => setModifyPwdPrompt(null)}>{t('appOpenReadOnly')}</button>
+              <button
+                className="btn-primary"
+                disabled={!modifyPwdPrompt.value}
+                onClick={() => void submitModifyPwd()}
+              >
                 {t('appOk')}
               </button>
             </div>

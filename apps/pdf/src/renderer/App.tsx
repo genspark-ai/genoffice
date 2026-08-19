@@ -1,20 +1,9 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type {
-  CSSProperties,
-  MouseEvent as ReactMouseEvent,
-  ReactElement,
-  ReactNode,
-  RefObject,
-} from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 // legacy build: the modern build relies on new APIs like Math.sumPrecise that the current
 // Electron V8 lacks, making embedded font parsing fail and whole pages render as garbled raw char codes
-import {
-  AnnotationMode,
-  GlobalWorkerOptions,
-  TextLayer,
-  getDocument,
-} from 'pdfjs-dist/legacy/build/pdf.mjs'
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
 import type { PdfAiDeps } from './ai/tools'
@@ -61,6 +50,8 @@ import type { CropFractions } from './image-bake'
 import type { PixelImage } from './cutout'
 import { navAction } from './keyNav'
 import { rowOfVisIdx, spreadRows, stepPage } from './spread'
+import { captureViewState, loadViewState, saveViewState } from './view-state'
+import type { PdfViewState } from './view-state'
 import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import type { OutlineNode } from './OutlinePanel'
@@ -105,7 +96,6 @@ import { platformShortcuts } from '@genoffice/i18n'
 import { useDismissablePopover } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
-import { EDIT_FONTS } from '../shared/ipc'
 import type {
   AnnotDeleteInput,
   DrawingInput,
@@ -121,817 +111,127 @@ import type {
   StampInput,
   TextEditFailure,
   TextEditInput,
-  TextEditValidation,
   TextInsertFailure,
   TextInsertInput,
 } from '../shared/ipc'
-
-const EDIT_FONT_BY_ID = new Map<string, (typeof EDIT_FONTS)[number]>(
-  EDIT_FONTS.map((f) => [f.id, f]),
-)
-
-/** pdf.js AnnotationType codes for the markup subtypes we can delete */
-const MARKUP_TYPE_BY_ANNOT: Record<number, MarkupType> = {
-  9: 'highlight',
-  10: 'underline',
-  12: 'strikeout',
-}
+import {
+  ZOOM_STEPS,
+  MIN_SCALE,
+  MAX_SCALE,
+  PAGE_GAP,
+  SCROLL_PAD,
+  SIDEBAR_W_KEY,
+  SIDEBAR_CHROME,
+  clampSidebarW,
+  loadSidebarW,
+  DOC_OPTS,
+  PAPER_SIZES,
+  STROKE_WIDTH,
+  NOTE_MARGIN_W,
+  parsePageRanges,
+} from './view-config'
+import type { PageSize, FitMode } from './view-config'
+import { useVisibleSet, PdfPage, MarkupOverlay } from './PdfPage'
+import { PdfThumb, ThumbPendingOverlay } from './PdfThumb'
+import type { ThumbMenu } from './PdfThumb'
+import { SignDropOverlay, signPlaceK, imagePlaceK, staticFormFillPlaceK } from './SignDropOverlay'
+import {
+  EDIT_FONT_BY_ID,
+  measureTextWidth,
+  rgbToHex,
+  hexToRgb,
+  hexTo255,
+  rgb255ToHex,
+  styleRunsToKeyRuns,
+  styleSegCss,
+  keyRunsToStyleRuns,
+  blockRectKey,
+  shiftRect,
+  unionCover,
+  inflateCss,
+  textInsertPreviewStyle,
+  textEditPreviewParts,
+  textEditPreviewContent,
+  seedDraftColors,
+} from './text-edit-preview'
+import type { LocalTextEdit, LocalTextInsert, TextDraft } from './text-edit-preview'
+import { MARKUP_TYPE_BY_ANNOT, rectsNear } from './edit-state'
+import type {
+  StampConfig,
+  SavedMarkupAnnot,
+  LocalAnnotDelete,
+  LocalNoteEdit,
+  EditSnapshot,
+  SavedSnapshot,
+  AnnotSelection,
+} from './edit-state'
+import {
+  IconThumbs,
+  IconHighlight,
+  IconUnderline,
+  IconStrike,
+  IconEditText,
+  IconInk,
+  IconRect,
+  IconEllipse,
+  IconArrow,
+  IconNote,
+  IconSign,
+  IconPreviousField,
+  IconNextField,
+  IconCompleteForm,
+  IconFormText,
+  IconFormCheck,
+  IconFormCross,
+  IconExportImg,
+  IconInsertImage,
+  IconEditImage,
+  IconNight,
+  IconSpread,
+  IconSinglePage,
+  IconWatermark,
+  IconProps,
+  IconRotateL,
+  IconRotateR,
+  IconDeletePage,
+  IconExtract,
+  IconInsertPdf,
+  IconInsertBlank,
+  IconRotateAll,
+  IconReverse,
+  IconSplitPdf,
+  IconMergePdf,
+  IconMergePages,
+  IconReplacePages,
+  IconSplitPages,
+  IconCropPages,
+  IconPageSize,
+  IconFitWidth,
+  IconFitPage,
+  IconOutline,
+  IconDrawColor,
+  RbCaret,
+  IconSearch,
+  IconPrint,
+  IconUndo,
+  IconRedo,
+  IconSave,
+  IconLayerUp,
+  IconLayerDown,
+  IconTrash,
+  IconRotateCw,
+  IconRotateCcw,
+  IconSwapImage,
+  IconFlipH,
+  IconFlipV,
+  IconCrop,
+  IconCutout,
+  IconOpacity,
+  IconAiSummarize,
+  IconAiKeyPoints,
+} from './icons'
 
 GlobalWorkerOptions.workerSrc = workerUrl
-
-// cmaps/standard fonts/wasm are statically copied by the build into pdfjs/ of the renderer output (same path on the dev server)
-const ASSET_BASE = new URL('pdfjs/', document.baseURI).href
-
-let measureCtx: CanvasRenderingContext2D | null = null
-/** Width of text in the given CSS font (shared hidden canvas) */
-function measureTextWidth(text: string, font: string): number {
-  measureCtx ??= document.createElement('canvas').getContext('2d')
-  if (!measureCtx) return 0
-  measureCtx.font = font
-  return measureCtx.measureText(text).width
-}
-
-const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4]
-const MIN_SCALE = ZOOM_STEPS[0]
-const MAX_SCALE = ZOOM_STEPS[ZOOM_STEPS.length - 1]
-const PAGE_GAP = 16
-const SCROLL_PAD = 24
-// ── Sidebar (thumbnails / outline) width: drag the divider to resize; persisted ──
-const SIDEBAR_W_KEY = 'genoffice-pdf-sidebar-width'
-const SIDEBAR_W_DEFAULT = 150
-const SIDEBAR_W_MIN = 120
-/** pane padding (10px × 2) + thumb box borders (2px × 2) */
-const SIDEBAR_CHROME = 24
-
-const clampSidebarW = (w: number): number =>
-  Math.min(Math.max(w, SIDEBAR_W_MIN), Math.min(320, Math.round(window.innerWidth * 0.4)))
-
-const loadSidebarW = (): number => {
-  const saved = Number(localStorage.getItem(SIDEBAR_W_KEY))
-  return Number.isFinite(saved) && saved > 0 ? clampSidebarW(saved) : SIDEBAR_W_DEFAULT
-}
-
-interface PageSize {
-  width: number
-  height: number
-}
-
-type FitMode = 'width' | 'page' | null
-
-const DOC_OPTS = {
-  cMapUrl: `${ASSET_BASE}cmaps/`,
-  cMapPacked: true,
-  standardFontDataUrl: `${ASSET_BASE}standard_fonts/`,
-  wasmUrl: `${ASSET_BASE}wasm/`,
-}
-
-/** Which items in the container are within the (expanded) viewport — shared lazy-render basis
-    for pages/thumbnails. Rebuild the observer when enabled flips (sidebar toggles unmount/remount the root) */
-function useVisibleSet(
-  rootRef: RefObject<HTMLElement | null>,
-  count: number,
-  rootMargin: string,
-  enabled = true,
-): { visible: Set<number>; setItemRef: (idx: number) => (el: HTMLElement | null) => void } {
-  const [visible, setVisible] = useState<Set<number>>(new Set())
-  const itemRefs = useRef<(HTMLElement | null)[]>([])
-  useEffect(() => {
-    const root = rootRef.current
-    if (!enabled || !root || count === 0) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        setVisible((prev) => {
-          const next = new Set(prev)
-          for (const e of entries) {
-            const idx = Number((e.target as HTMLElement).dataset.idx)
-            if (e.isIntersecting) next.add(idx)
-            else next.delete(idx)
-          }
-          return next
-        })
-      },
-      { root, rootMargin },
-    )
-    for (const el of itemRefs.current) if (el) io.observe(el)
-    return () => io.disconnect()
-  }, [rootRef, count, rootMargin, enabled])
-  return {
-    visible,
-    setItemRef: (idx) => (el) => {
-      itemRefs.current[idx] = el
-    },
-  }
-}
-
-/** Single page: renders canvas + text layer (select/copy) when visible, released once off-viewport */
-function PdfPage({
-  doc,
-  pageNo,
-  scale,
-  rotationDelta,
-  visible,
-  onRenderState,
-}: {
-  doc: PDFDocumentProxy
-  pageNo: number
-  scale: number
-  /** Unsaved rotation delta (clockwise degrees) */
-  rotationDelta: number
-  visible: boolean
-  onRenderState: (doc: PDFDocumentProxy, pageNo: number, pending: boolean) => void
-}) {
-  const holderRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const holder = holderRef.current
-    if (!holder) return
-    // Offscreen pages still release their bitmap. For an in-place rerender (save
-    // reload, zoom, rotation), keep the previous canvas visible until its replacement
-    // is fully rendered so the page never flashes white between document instances.
-    if (!visible) {
-      holder.replaceChildren()
-      // A page captured by the post-save barrier may scroll out before its replacement
-      // renders. Its overlays are no longer mounted, so treat the cleared offscreen page
-      // as settled instead of making the whole document wait for the timeout.
-      onRenderState(doc, pageNo, false)
-      return
-    }
-    // Visibility may change while a save reload is running. Register newly visible
-    // pages dynamically so global preview cleanup cannot outrun their bitmap swap.
-    onRenderState(doc, pageNo, true)
-    let cancelled = false
-    let renderTask: RenderTask | null = null
-    void (async () => {
-      const page = await doc.getPage(pageNo)
-      if (cancelled) return
-      const viewport = page.getViewport({ scale, rotation: (page.rotate + rotationDelta) % 360 })
-      // Cap at 2x: on hi-dpi screens a 3x-dpr full-page bitmap doubles memory with no visible gain
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.floor(viewport.width * dpr)
-      canvas.height = Math.floor(viewport.height * dpr)
-      canvas.style.width = `${Math.floor(viewport.width)}px`
-      canvas.style.height = `${Math.floor(viewport.height)}px`
-      renderTask = page.render({
-        canvas,
-        viewport,
-        // FormLayer renders interactive widgets as HTML. Exclude their saved appearance
-        // streams from the page bitmap or filled values are drawn twice after a reload.
-        annotationMode: AnnotationMode.ENABLE_FORMS,
-        transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
-      })
-      try {
-        await renderTask.promise
-      } catch {
-        return // cancelled
-      }
-      if (cancelled) return
-      const textDiv = document.createElement('div')
-      textDiv.className = 'textLayer'
-      holder.replaceChildren(canvas, textDiv)
-      // Notify after the bitmap swap, but before the browser paints. A post-save
-      // reload uses this to remove the matching edit previews in the same frame.
-      onRenderState(doc, pageNo, false)
-      const textLayer = new TextLayer({
-        textContentSource: page.streamTextContent(),
-        container: textDiv,
-        viewport,
-      })
-      try {
-        await textLayer.render()
-      } catch {
-        /* cancelled */
-      }
-    })()
-    return () => {
-      cancelled = true
-      renderTask?.cancel()
-    }
-  }, [doc, pageNo, scale, rotationDelta, visible, onRenderState])
-  return <div ref={holderRef} className="pdf-page-content" />
-}
-
-/** Overlay for unsaved markups. Purely visual (pointer-events: none) so the text
- *  underneath stays selectable; clicking is handled by the page-level hit test. */
-function MarkupOverlay({
-  markups,
-  geom,
-  scale,
-  selectedId,
-}: {
-  markups: LocalMarkup[]
-  geom: PageGeom
-  scale: number
-  selectedId: string | null
-}) {
-  return (
-    <>
-      {markups.flatMap((m) =>
-        m.quads.map((q, i) => {
-          const [r, g, b] = m.color
-          const style: CSSProperties = pdfRectToCss(geom, quadToRect(q), scale)
-          if (m.type === 'highlight') {
-            style.background = `rgba(${r * 255}, ${g * 255}, ${b * 255}, 0.4)`
-          } else {
-            const bar = `rgb(${r * 255}, ${g * 255}, ${b * 255})`
-            if (m.type === 'underline') style.borderBottom = `2px solid ${bar}`
-            else style.backgroundImage = `linear-gradient(${bar}, ${bar})`
-          }
-          return (
-            <div
-              key={`${m.id}-${i}`}
-              className={`pdf-markup pdf-markup-${m.type}${m.id === selectedId ? ' pdf-markup-selected' : ''}`}
-              style={style}
-            />
-          )
-        }),
-      )}
-    </>
-  )
-}
-
-/** Thumbnail: rendered once per (doc, rotation, raster width) when visible and cached.
- *  rasterW only changes when a sidebar drag ends, so a resize re-rasters each
- *  visible thumb once; while dragging the canvas just CSS-stretches. */
-function PdfThumb({
-  doc,
-  pageNo,
-  rotationDelta,
-  visible,
-  rasterW,
-}: {
-  doc: PDFDocumentProxy
-  pageNo: number
-  rotationDelta: number
-  visible: boolean
-  rasterW: number
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const renderedKeyRef = useRef<string | null>(null)
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const key = `${rotationDelta}:${rasterW}`
-    if (!visible || !canvas || renderedKeyRef.current === key) return
-    renderedKeyRef.current = key
-    let cancelled = false
-    void (async () => {
-      const page = await doc.getPage(pageNo)
-      if (cancelled) return
-      const rotation = (page.rotate + rotationDelta) % 360
-      const scale = rasterW / page.getViewport({ scale: 1, rotation }).width
-      const viewport = page.getViewport({ scale, rotation })
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      canvas.width = Math.floor(viewport.width * dpr)
-      canvas.height = Math.floor(viewport.height * dpr)
-      try {
-        await page.render({
-          canvas,
-          viewport,
-          transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
-        }).promise
-      } catch {
-        renderedKeyRef.current = null
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [doc, pageNo, rotationDelta, visible, rasterW])
-  // Reset the cache key when the doc changes (save reload); re-render next time it's visible
-  useEffect(() => {
-    renderedKeyRef.current = null
-  }, [doc])
-  return <canvas ref={canvasRef} style={{ width: '100%' }} />
-}
-
-// ── ribbon icons (aligned with slides' rb-big visual language) ──
-
-/** Constant painted stroke instead of proportional scaling — same rule as the
- *  slides icons: ~1.5px lines at 20px+, ~1.25px on 13-19px glyphs, ~1.1px below.
- *  stroke-width is in 24-canvas units: units = painted-px × 24 / rendered-px. */
-function pinnedStroke(size: number): number {
-  const painted = size >= 20 ? 1.5 : size >= 13 ? 1.25 : 1.1
-  return (painted * 24) / size
-}
-
-function Icon({ size = 28, children }: { size?: number; children: ReactNode }): ReactElement {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={pinnedStroke(size)}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      {children}
-    </svg>
-  )
-}
-
-const IconThumbs = () => (
-  <Icon>
-    <rect x="4.5" y="5" width="6" height="6.5" rx="1" />
-    <rect x="4.5" y="14" width="6" height="5" rx="1" />
-    <path d="M14 6 L19.5 6 M14 10 L19.5 10 M14 15 L19.5 15 M14 18 L19.5 18" />
-  </Icon>
-)
-const IconHighlight = () => (
-  <Icon>
-    <path d="M6.04 15.09 L13.54 7.59 L16.63 10.68 L9.13 18.18 L6.04 18.18 L6.04 15.09 Z" />
-    <path d="M13.54 6.71 L15.75 4.5 L18.84 7.59 L16.63 9.79" />
-    <path d="M5.16 19.5 L17.51 19.5" strokeWidth={2.2} />
-  </Icon>
-)
-const IconUnderline = () => (
-  <Icon>
-    <path d="M7.56 4.5 L7.56 11.17 A 4.44 4.44 0 0 0 16.44 11.17 L16.44 4.5" />
-    <path d="M5.89 19.5 L18.11 19.5" strokeWidth={1.85} />
-  </Icon>
-)
-const IconStrike = () => (
-  <Icon>
-    <path d="M16.29 7.21 C15.72 5.52 14.03 4.5 12 4.5 C9.52 4.5 7.71 5.85 7.71 7.88 C7.71 9.46 8.73 10.36 10.65 10.93" />
-    <path d="M8.62 16.91 C9.18 18.48 10.87 19.5 13.02 19.5 C15.5 19.5 17.41 18.26 17.41 16.12 C17.41 15.44 17.3 14.88 16.96 14.42" />
-    <path d="M4.67 12.28 L19.33 12.28" strokeWidth={1.65} />
-  </Icon>
-)
-const IconEditText = () => (
-  <Icon>
-    <path d="M5 5.5 L14.5 5.5 M9.75 5.5 L9.75 15.5 M7.5 15.5 L12 15.5" />
-    <path d="M16.7 10.3 L19.7 13.3 L13.4 19.6 L10.4 20.1 L10.9 17.1 Z" />
-  </Icon>
-)
-const IconInk = () => (
-  <Icon>
-    <path d="M16.15 4.85 L19.15 7.85 L8.9 18.1 L4.9 19.1 L5.9 15.1 Z" />
-    <path d="M14.15 6.85 L17.15 9.85" />
-  </Icon>
-)
-const IconRect = () => (
-  <Icon>
-    <rect x="4.5" y="6.64" width="15" height="10.71" rx="1.07" />
-  </Icon>
-)
-const IconEllipse = () => (
-  <Icon>
-    <ellipse cx="12" cy="12" rx="7.5" ry="5.57" />
-  </Icon>
-)
-const IconArrow = () => (
-  <Icon>
-    <path d="M4.5 19.2 L19.5 4.8" />
-    <path d="M12.9 4.8 L19.5 4.8 L19.5 11.4" />
-  </Icon>
-)
-const IconNote = () => (
-  <Icon>
-    <path d="M4.5 5.57 L19.5 5.57 L19.5 15.21 L10.93 15.21 L6.64 18.43 L6.64 15.21 L4.5 15.21 Z" />
-    <path d="M8.25 9.32 L15.75 9.32 M8.25 12 L13.07 12" />
-  </Icon>
-)
-const IconSign = () => (
-  <Icon>
-    <path d="M5.5 15.1 C7.8 12.3 9.5 9 9.2 7 C9 5.7 7.9 5.9 7.6 7.4 C7.2 9.6 8.6 13.4 10.5 14.9 C12 16.1 13.9 15.3 14.7 13.8 C15.1 13 15.9 13 16.3 13.8 C16.7 14.7 17.7 15 18.5 14.4" />
-    <path d="M4.75 18.6 L19.25 18.6" />
-  </Icon>
-)
-const IconPreviousField = () => (
-  <Icon>
-    <rect x="6" y="4.5" width="12" height="15" rx="1.5" />
-    <path d="M14.5 8 L10.5 12 L14.5 16" />
-  </Icon>
-)
-const IconNextField = () => (
-  <Icon>
-    <rect x="6" y="4.5" width="12" height="15" rx="1.5" />
-    <path d="M9.5 8 L13.5 12 L9.5 16" />
-  </Icon>
-)
-const IconCompleteForm = () => (
-  <Icon>
-    <rect x="4.5" y="5" width="15" height="14" rx="1.5" />
-    <path d="M8 12 L10.8 14.8 L16.5 9" />
-  </Icon>
-)
-const IconFormText = () => (
-  <Icon>
-    <path d="M5 6 H19 M12 6 V19 M8.5 19 H15.5" />
-  </Icon>
-)
-const IconFormCheck = () => (
-  <Icon>
-    <path d="M4.5 12.5 L9.5 17.5 L19.5 6.5" />
-  </Icon>
-)
-const IconFormCross = () => (
-  <Icon>
-    <path d="M6 6 L18 18 M18 6 L6 18" />
-  </Icon>
-)
-const IconExportImg = () => (
-  <Icon>
-    <rect x="4.5" y="6.75" width="15" height="10.5" rx="1" />
-    <circle cx="9" cy="10.55" r="1.2" />
-    <path d="M4.8 14.95 L9 11.75 L12.4 14.35 L15 12.35 L19.2 15.75" />
-  </Icon>
-)
-const IconInsertImage = () => (
-  <Icon>
-    <rect x="4.5" y="6" width="11.5" height="9.5" rx="1" />
-    <circle cx="8" cy="9.2" r="1.1" />
-    <path d="M4.8 13.6 L8 11.2 L11 13.4 L13.2 11.8 L15.8 13.9" />
-    <path d="M18.6 13.4 V19 M15.8 16.2 H21.4" />
-  </Icon>
-)
-const IconEditImage = () => (
-  <Icon>
-    <rect x="4.5" y="6" width="12.5" height="10" rx="1" />
-    <circle cx="8.3" cy="9.4" r="1.1" />
-    <path d="M4.8 14 L8.3 11.4 L11.5 13.7 L13.8 12" />
-    <path d="M14.2 18.9 L19.7 13.4 A1.06 1.06 0 0 0 18.2 11.9 L12.7 17.4 L12.2 19.4 Z" />
-  </Icon>
-)
-const IconNight = () => (
-  <Icon>
-    <path d="M19.5 13.48 A 7.58 7.58 0 0 1 10.52 4.5 A 7.58 7.58 0 1 0 19.5 13.48 Z" />
-  </Icon>
-)
-const IconSpread = () => (
-  <Icon>
-    <rect x="4.5" y="6" width="6.5" height="12" rx="1" />
-    <rect x="13" y="6" width="6.5" height="12" rx="1" />
-  </Icon>
-)
-const IconSinglePage = () => (
-  <Icon>
-    <rect x="6.81" y="4.5" width="10.38" height="15" rx="1.15" />
-  </Icon>
-)
-const IconWatermark = () => (
-  <Icon>
-    <rect x="4.5" y="5.04" width="15" height="13.93" rx="1.07" />
-    <path d="M7.71 15.75 L15.75 7.71" />
-    <path d="M7.71 11.46 L11.46 7.71 M12.54 15.75 L16.29 12" />
-  </Icon>
-)
-const IconProps = () => (
-  <Icon>
-    <circle cx="12" cy="12" r="7.5" />
-    <path d="M12 10.96 L12 15.65" />
-    <circle cx="12" cy="8.46" r="0.94" fill="currentColor" stroke="none" />
-  </Icon>
-)
-const IconRotateL = () => (
-  <Icon>
-    <path d="M8.28 10.3 L4.53 10.3 L4.53 6.55" />
-    <path d="M4.75 9.98 A 7.5 7.5 0 1 1 4.53 12.98" />
-  </Icon>
-)
-const IconRotateR = () => (
-  <Icon>
-    <path d="M15.72 10.3 L19.47 10.3 L19.47 6.55" />
-    <path d="M19.25 9.98 A 7.5 7.5 0 1 0 19.47 12.98" />
-  </Icon>
-)
-const IconDeletePage = () => (
-  <Icon>
-    <path d="M7.7 4.5 H13.7 L17.2 8 V18.5 A1 1 0 0 1 16.2 19.5 H7.7 A1 1 0 0 1 6.7 18.5 V5.5 A1 1 0 0 1 7.7 4.5 Z" />
-    <path d="M13.7 4.5 V8 H17.2" />
-    <path d="M9.7 11.75 L14.2 16.25 M14.2 11.75 L9.7 16.25" />
-  </Icon>
-)
-const IconExtract = () => (
-  <Icon>
-    <path d="M7.2 4.5 H13.2 L16.7 8 V11.5" />
-    <path d="M6.2 5.5 V18.5 A1 1 0 0 0 7.2 19.5 H11.2" />
-    <path d="M14.95 13.5 V19 M12.2 16.5 L14.95 19.25 L17.7 16.5" />
-  </Icon>
-)
-const IconInsertPdf = () => (
-  <Icon>
-    <path d="M7.7 4.5 H13.7 L17.2 8 V18.5 A1 1 0 0 1 16.2 19.5 H7.7 A1 1 0 0 1 6.7 18.5 V5.5 A1 1 0 0 1 7.7 4.5 Z" />
-    <path d="M13.7 4.5 V8 H17.2" />
-    <path d="M11.95 11 V17 M8.95 14 H14.95" />
-  </Icon>
-)
-const IconInsertBlank = () => (
-  <Icon>
-    <rect x="6.7" y="4.5" width="10.5" height="15" rx="1" strokeDasharray="2.2 1.8" />
-    <path d="M11.95 9.5 V14.5 M9.45 12 H14.45" />
-  </Icon>
-)
-const IconRotateAll = () => (
-  <Icon>
-    <rect x="8.5" y="8.5" width="7" height="9" rx="0.8" />
-    <path d="M6.2 6.2 A 8.2 8.2 0 0 1 17.8 6.2" />
-    <path d="M17.8 3.4 L17.8 6.4 L14.8 6.4" />
-    <path d="M17.8 17.8 A 8.2 8.2 0 0 1 6.2 17.8" />
-    <path d="M6.2 20.6 L6.2 17.6 L9.2 17.6" />
-  </Icon>
-)
-const IconReverse = () => (
-  <Icon>
-    <path d="M9 5.5 L9 18 M6.5 8 L9 5.5 L11.5 8" />
-    <path d="M15 6 L15 18.5 M12.5 16 L15 18.5 L17.5 16" />
-  </Icon>
-)
-const IconSplitPdf = () => (
-  <Icon>
-    <rect x="4.5" y="6.5" width="6.2" height="11" rx="0.8" />
-    <rect x="13.3" y="6.5" width="6.2" height="11" rx="0.8" />
-    <path d="M12 4.6 V7 M12 9.4 V11.8 M12 14.2 V16.6 M12 19 V19.4" />
-  </Icon>
-)
-const IconMergePdf = () => (
-  <Icon>
-    <path d="M4.5 6.5 H8.5 V17.5 H4.5 Z" />
-    <path d="M15.5 6.5 H19.5 V17.5 H15.5 Z" />
-    <path d="M10 9 L12 12 L10 15 M14 9 L12 12 L14 15" />
-  </Icon>
-)
-const IconMergePages = () => (
-  <Icon>
-    <rect x="5" y="4.5" width="14" height="15" rx="1" />
-    <path d="M12 4.5 V19.5 M5 12 H19" />
-  </Icon>
-)
-/** Target paper sizes for "page size" (points, portrait) */
-const PAPER_SIZES = [
-  { label: 'A3', w: 842, h: 1191 },
-  { label: 'A4', w: 595, h: 842 },
-  { label: 'A5', w: 420, h: 595 },
-  { label: 'Letter', w: 612, h: 792 },
-  { label: 'Legal', w: 612, h: 1008 },
-] as const
-
-const IconReplacePages = () => (
-  <Icon>
-    <rect x="4.5" y="7.5" width="9" height="12" rx="1" />
-    <rect x="10.5" y="4.5" width="9" height="12" rx="1" strokeDasharray="2.2 1.8" />
-  </Icon>
-)
-const IconSplitPages = () => (
-  <Icon>
-    <rect x="5" y="4.5" width="14" height="15" rx="1" />
-    <path d="M12 4.5 V19.5" strokeDasharray="2.2 1.8" />
-    <path d="M8.2 12 L5.8 12 M6.6 10.8 L5.4 12 L6.6 13.2 M15.8 12 L18.2 12 M17.4 10.8 L18.6 12 L17.4 13.2" />
-  </Icon>
-)
-const IconCropPages = () => (
-  <Icon>
-    <path d="M7.5 4.5 V16.5 H19.5" />
-    <path d="M4.5 7.5 H16.5 V19.5" />
-  </Icon>
-)
-const IconPageSize = () => (
-  <Icon>
-    <rect x="4.5" y="4.5" width="15" height="15" rx="1" />
-    <rect x="8.5" y="8.5" width="7" height="9" rx="0.8" strokeDasharray="2 1.6" />
-  </Icon>
-)
-const IconFitWidth = () => (
-  <Icon>
-    <path d="M4.5 5.57 L4.5 18.43 M19.5 5.57 L19.5 18.43" />
-    <path d="M7.71 12 L16.29 12 M10.07 9.64 L7.71 12 L10.07 14.36 M13.93 9.64 L16.29 12 L13.93 14.36" />
-  </Icon>
-)
-const IconFitPage = () => (
-  <Icon>
-    <rect x="7" y="4.5" width="10" height="15" rx="1" />
-    <path d="M12 8 L12 16 M9.8 10.2 L12 8 L14.2 10.2 M9.8 13.8 L12 16 L14.2 13.8" />
-  </Icon>
-)
-const IconOutline = () => (
-  <Icon>
-    <path d="M4.84 4.78 L19.5 4.78 M8.22 9.29 L19.5 9.29 M8.22 13.8 L19.5 13.8 M11.61 18.32 L19.5 18.32" />
-    <circle cx="5.4" cy="9.29" r="0.9" fill="currentColor" stroke="none" />
-    <circle cx="5.4" cy="13.8" r="0.9" fill="currentColor" stroke="none" />
-    <circle cx="8.79" cy="18.32" r="0.9" fill="currentColor" stroke="none" />
-  </Icon>
-)
-const IconDrawColor = () => (
-  <Icon>
-    <path d="M12 4.5 C14.2 7.3 17.25 9.2 17.25 12.4 C17.25 15.4 14.9 17.5 12 17.5 C9.1 17.5 6.75 15.4 6.75 12.4 C6.75 9.2 9.8 7.3 12 4.5 Z" />
-  </Icon>
-)
-/* dropdown chevron, same glyph as slides' RbCaret */
-const RbCaret = () => (
-  <svg className="rb-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden>
-    <path
-      d="M5.5 9.25 12 15.75l6.5-6.5"
-      stroke="currentColor"
-      strokeWidth="2.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-)
-const IconSearch = () => (
-  <Icon>
-    <circle cx="10.61" cy="10.61" r="6.11" />
-    <path d="M15.28 15.28 L19.5 19.5" />
-  </Icon>
-)
-const IconPrint = () => (
-  <Icon>
-    <path d="M7.71 8.79 L7.71 4.5 L16.29 4.5 L16.29 8.79" />
-    <rect x="5.04" y="8.79" width="13.93" height="6.96" rx="1.07" />
-    <path d="M7.71 13.07 L16.29 13.07 L16.29 19.5 L7.71 19.5 Z" />
-  </Icon>
-)
-/** Design-supplied glyphs on the 1:16 stroke:canvas ratio (24-canvas / 1.5 stroke),
- *  geometry shared with docs/slides/sheets. */
-const IconRatio = ({ size = 16, children }: { size?: number; children: ReactNode }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.5}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    {children}
-  </svg>
-)
-const IconUndo = () => (
-  <IconRatio>
-    <path d="M5.91026 4L2.5 7.14791L5.91026 10.8205" />
-    <path d="M3.96154 7.41028H15.1636C18.5169 7.41028 21.3646 10.1484 21.4953 13.5C21.6334 17.0416 18.707 20.0769 15.1636 20.0769H6.88384" />
-  </IconRatio>
-)
-const IconRedo = () => (
-  <IconRatio>
-    <path d="M18.0897 4L21.5 7.14791L18.0897 10.8205" />
-    <path d="M20.0385 7.41028H8.83636C5.4831 7.41028 2.63537 10.1484 2.5047 13.5C2.36657 17.0416 5.29296 20.0769 8.83636 20.0769H17.1162" />
-  </IconRatio>
-)
-const IconSave = () => (
-  <IconRatio>
-    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-    <path d="M17 21v-8H7v8" />
-    <path d="M7 3v5h8V3" />
-  </IconRatio>
-)
-
-// ── selection-popup icons (14px; bring-forward / send-backward / trash) ──
-
-const IconLayerUp = () => (
-  <Icon size={18}>
-    <rect x="9.5" y="4.5" width="10" height="10" rx="1" />
-    <path d="M14.5 19.5 H5.5 A1 1 0 0 1 4.5 18.5 V9.5" />
-  </Icon>
-)
-const IconLayerDown = () => (
-  <Icon size={18}>
-    <rect x="4.5" y="9.5" width="10" height="10" rx="1" />
-    <path d="M9.5 4.5 H18.5 A1 1 0 0 1 19.5 5.5 V14.5" />
-  </Icon>
-)
-const IconTrash = () => (
-  <Icon size={18}>
-    <path d="M4.5 6.5 H19.5" />
-    <path d="M9 6.5 V5 A1 1 0 0 1 10 4 H14 A1 1 0 0 1 15 5 V6.5" />
-    <path d="M6.5 6.5 L7.3 18.6 A1.4 1.4 0 0 0 8.7 19.9 H15.3 A1.4 1.4 0 0 0 16.7 18.6 L17.5 6.5" />
-    <path d="M10.2 10 V16 M13.8 10 V16" />
-  </Icon>
-)
-const IconRotateCw = () => (
-  <Icon size={18}>
-    <path d="M18.5 8.5 A7.5 7.5 0 1 0 19.5 12" />
-    <path d="M19 4 V8.5 H14.5" />
-  </Icon>
-)
-const IconRotateCcw = () => (
-  <Icon size={18}>
-    <path d="M5.5 8.5 A7.5 7.5 0 1 1 4.5 12" />
-    <path d="M5 4 V8.5 H9.5" />
-  </Icon>
-)
-const IconSwapImage = () => (
-  <Icon size={18}>
-    <rect x="4" y="6.5" width="11" height="11" rx="1" />
-    <circle cx="7.5" cy="10" r="1.2" />
-    <path d="M4.5 16 L8.5 12.5 L11 15 L12.5 13.5 L15 16" />
-    <path d="M17 4.5 H19 A1 1 0 0 1 20 5.5 V13" />
-    <path d="M18.2 11.2 L20 13 L21.8 11.2" />
-  </Icon>
-)
-const IconFlipH = () => (
-  <Icon size={18}>
-    <path d="M12 3.5 V20.5" strokeDasharray="2.6 2.2" />
-    <path d="M8.5 7 V17 L3.5 17 Z" />
-    <path d="M15.5 7 V17 L20.5 17 Z" />
-  </Icon>
-)
-const IconFlipV = () => (
-  <Icon size={18}>
-    <path d="M3.5 12 H20.5" strokeDasharray="2.6 2.2" />
-    <path d="M7 8.5 H17 L17 3.5 Z" />
-    <path d="M7 15.5 H17 L17 20.5 Z" />
-  </Icon>
-)
-const IconCrop = () => (
-  <Icon size={18}>
-    <path d="M7 3.5 V17 H20.5" />
-    <path d="M3.5 7 H17 V20.5" />
-  </Icon>
-)
-const IconCutout = () => (
-  <Icon size={18}>
-    <path d="M13.5 6.5 L17.5 10.5 L8 20 H4 V16 Z" />
-    <path d="M16 4 L20 8" />
-    <path d="M18.5 12.5 L19.4 14.6 L21.5 15.5 L19.4 16.4 L18.5 18.5 L17.6 16.4 L15.5 15.5 L17.6 14.6 Z" />
-  </Icon>
-)
-const IconOpacity = () => (
-  <Icon size={18}>
-    <path d="M12 3.5 C12 3.5 5.5 10 5.5 14.5 A6.5 6.5 0 0 0 18.5 14.5 C18.5 10 12 3.5 12 3.5 Z" />
-    <path d="M12 18.2 A3.7 3.7 0 0 1 8.3 14.5" />
-  </Icon>
-)
-
-const rgbToHex = (c: readonly [number, number, number]): string =>
-  `#${c
-    .map((v) =>
-      Math.round(v * 255)
-        .toString(16)
-        .padStart(2, '0'),
-    )
-    .join('')}`
-const hexToRgb = (hex: string): [number, number, number] => [
-  parseInt(hex.slice(1, 3), 16) / 255,
-  parseInt(hex.slice(3, 5), 16) / 255,
-  parseInt(hex.slice(5, 7), 16) / 255,
-]
-
-/** Text-edit colors travel as 0-255 RGB (PDFium fill color), unlike markups' 0-1 floats */
-const hexTo255 = (hex: string): [number, number, number] => [
-  parseInt(hex.slice(1, 3), 16),
-  parseInt(hex.slice(3, 5), 16),
-  parseInt(hex.slice(5, 7), 16),
-]
-const rgb255ToHex = (c: readonly [number, number, number]): string =>
-  `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`
-
-/** Committed IPC style runs → encoded-key runs over newText (the draft/preview form) */
-const styleRunsToKeyRuns = (
-  runs: NonNullable<TextEditInput['styleRuns']>,
-): { start: number; end: number; color: string }[] =>
-  runs.map((r) => ({
-    start: r.start,
-    end: r.end,
-    color: encodeStyle({
-      color: r.color ? rgb255ToHex(r.color) : undefined,
-      font: r.font,
-      size: r.size,
-      bold: r.bold,
-      italic: r.italic,
-    }),
-  }))
-
-/** CSS of one styled segment in the editor mirror / pending preview. Explicit on/off
-    overrides the inherited draft-level weight/slant; size scales like the host text. */
-const styleSegCss = (s: CharStyle, scale: number): CSSProperties => ({
-  ...(s.color ? { color: s.color } : {}),
-  ...(s.font ? { fontFamily: EDIT_FONT_BY_ID.get(s.font)?.css } : {}),
-  ...(s.size !== undefined ? { fontSize: s.size * scale * 0.92 } : {}),
-  ...(s.bold !== undefined ? { fontWeight: s.bold ? 700 : 400 } : {}),
-  ...(s.italic !== undefined ? { fontStyle: s.italic ? 'italic' : 'normal' } : {}),
-})
-
-/** Encoded-key runs → the IPC styleRuns the engine consumes */
-const keyRunsToStyleRuns = (
-  runs: { start: number; end: number; color: string }[],
-): NonNullable<TextEditInput['styleRuns']> =>
-  runs.map((r) => {
-    const s = decodeStyle(r.color)
-    return {
-      start: r.start,
-      end: r.end,
-      color: s.color ? hexTo255(s.color) : undefined,
-      font: s.font,
-      size: s.size,
-      bold: s.bold,
-      italic: s.italic,
-    }
-  })
-
-const rectsNear = (a: readonly number[], b: readonly number[], tolerance = 2): boolean =>
-  a.length === 4 &&
-  b.length === 4 &&
-  a.every((value, index) => Math.abs(value - b[index]!) <= tolerance)
-
-interface ThumbMenu {
-  x: number
-  y: number
-  origIdx: number
-}
 
 const DRAW_TOOLS = [
   { tool: 'ink' as const, icon: IconInk, key: 'drawInk' as const },
@@ -950,612 +250,6 @@ const RIBBON_TABS = [
   { id: 'view', labelKey: 'ribbonTabView' },
 ] as const
 type RibbonTab = (typeof RIBBON_TABS)[number]['id'] | 'fillForm'
-
-/** One-click AI feature glyphs (same 24-canvas/1.5-stroke artwork as the docs ribbon) */
-const IconAiSummarize = () => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M13.875 21H12H6.5C5.39543 21 4.5 20.1046 4.5 19V5C4.5 3.89543 5.39543 3 6.5 3H17.5C18.6046 3 19.5 3.89543 19.5 5V9V12V13" />
-    <path d="M8.00001 7H16" />
-    <path d="M8.00007 10.2032H14.0001" />
-    <path d="M8.00007 13.4062H12.0001" />
-    <path
-      d="M17 14L17.2579 14.697C17.5961 15.611 17.7652 16.068 18.0986 16.4014C18.432 16.7348 18.889 16.9039 19.803 17.2421L20.5 17.5L19.803 17.7579C18.889 18.0961 18.432 18.2652 18.0986 18.5986C17.7652 18.932 17.5961 19.389 17.2579 20.303L17 21L16.7421 20.303C16.4039 19.389 16.2348 18.932 15.9014 18.5986C15.568 18.2652 15.111 18.0961 14.197 17.7579L13.5 17.5L14.197 17.2421C15.111 16.9039 15.568 16.7348 15.9014 16.4014C16.2348 16.068 16.4039 15.611 16.7421 14.697L17 14Z"
-      strokeLinejoin="round"
-    />
-  </svg>
-)
-const IconAiKeyPoints = () => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M4 5H20" />
-    <path d="M4 9H16" />
-    <path d="M4 13H11" />
-    <path d="M4 17H10" />
-    <path
-      d="M17 14L17.2579 14.697C17.5961 15.611 17.7652 16.068 18.0986 16.4014C18.432 16.7348 18.889 16.9039 19.803 17.2421L20.5 17.5L19.803 17.7579C18.889 18.0961 18.432 18.2652 18.0986 18.5986C17.7652 18.932 17.5961 19.389 17.2579 20.303L17 21L16.7421 20.303C16.4039 19.389 16.2348 18.932 15.9014 18.5986C15.568 18.2652 15.111 18.0961 14.197 17.7579L13.5 17.5L14.197 17.2421C15.111 16.9039 15.568 16.7348 15.9014 16.4014C16.2348 16.068 16.4039 15.611 16.7421 14.697L17 14Z"
-      strokeLinejoin="round"
-    />
-  </svg>
-)
-
-/** Drawing stroke width (PDF pt); thin lines stay crisp under zoom */
-const STROKE_WIDTH = 2
-
-/** Width of the WPS-style comments margin beside the pages */
-const NOTE_MARGIN_W = 300
-
-/** Full snapshot of unsaved edits (for undo/redo; data is small, whole-copy replace is safest) */
-/** Watermark/header-footer are kept as config and rendered in final page order only at save time, so page numbers survive reorders/deletions */
-interface StampConfig {
-  wm: WatermarkConfig | null
-  hf: HeaderFooterConfig | null
-}
-
-interface LocalTextEdit {
-  id: string
-  input: TextEditInput
-  /** Matched run's ink bounds from validation (PDF user space). The edit rect is a pdf.js
-      layout box; glyph ink can poke out of it, so the preview covers this instead */
-  cover?: [number, number, number, number]
-  /** The run's base ink (display-only, from the draft's probe): the pending preview
-      shows the document's real color when the edit doesn't change it */
-  baseInk?: string
-  /** Local look-alike of the run's own font (display-only, from the PostScript
-      name): the pending preview reads like the document. Never sent to the engine. */
-  baseFont?: DocFontStyle
-  /** Accumulated block-move delta (PDF user space). Renderer metadata only: the preview
-      and hover box draw at rect + moveBy while input.rect stays at the original position
-      (it is the save-time match key). The engine-side position rides in input.translate
-      (pure moves) or the shifted input.origin (moved rebuild edits). */
-  moveBy?: [number, number]
-}
-
-/** Stable per-render key for a clustered block's rect (same idea as imageRectKey) */
-const blockRectKey = (r: readonly number[]): string => r.map((v) => v.toFixed(2)).join(',')
-
-const shiftRect = (
-  r: readonly [number, number, number, number],
-  d: readonly [number, number],
-): [number, number, number, number] => [r[0] + d[0], r[1] + d[1], r[2] + d[0], r[3] + d[1]]
-
-interface LocalTextInsert {
-  id: string
-  input: TextInsertInput
-}
-
-/** Area a pending edit must blank: the edit rect grown to the validated ink bounds */
-const unionCover = (
-  rect: readonly [number, number, number, number],
-  cover: readonly [number, number, number, number] | undefined,
-): [number, number, number, number] =>
-  cover
-    ? [
-        Math.min(rect[0], cover[0]),
-        Math.min(rect[1], cover[1]),
-        Math.max(rect[2], cover[2]),
-        Math.max(rect[3], cover[3]),
-      ]
-    : [rect[0], rect[1], rect[2], rect[3]]
-
-/** Expand a CSS box by p px on every side (antialiasing bleeds past exact ink bounds) */
-const inflateCss = (
-  b: { left: number; top: number; width: number; height: number },
-  p: number,
-) => ({
-  left: b.left - p,
-  top: b.top - p,
-  width: b.width + 2 * p,
-  height: b.height + 2 * p,
-})
-
-/** Pending text-insert preview style; shared by the canvas overlay and the thumbnail mirror */
-const textInsertPreviewStyle = (
-  insert: LocalTextInsert,
-  geom: PageGeom,
-  scale: number,
-): CSSProperties => {
-  const [vx, vy] = pdfToView(geom, insert.input.origin[0], insert.input.origin[1])
-  const align = insert.input.align ?? 'left'
-  const style: CSSProperties = {
-    left: vx * scale,
-    top: (vy - insert.input.fontSize) * scale,
-    fontSize: insert.input.fontSize * scale * 0.92,
-    lineHeight: insert.input.lineLeading ? `${insert.input.lineLeading * scale}px` : 1.2,
-    color: `rgb(${insert.input.color.join(', ')})`,
-    whiteSpace: 'pre',
-    transform:
-      align === 'center' ? 'translateX(-50%)' : align === 'right' ? 'translateX(-100%)' : undefined,
-    textAlign: align,
-  }
-  if (insert.input.font) style.fontFamily = EDIT_FONT_BY_ID.get(insert.input.font)?.css
-  if (insert.input.bold) style.fontWeight = 700
-  if (insert.input.italic) style.fontStyle = 'italic'
-  return style
-}
-
-/** Pending text-edit preview style + original-run cover; shared with the thumbnail mirror */
-const textEditPreviewParts = (
-  te: LocalTextEdit,
-  geom: PageGeom,
-  scale: number,
-): { style: CSSProperties; coverStyle: CSSProperties | null } => {
-  const fs = (te.input.newFontSize ?? te.input.fontSize) * scale * 0.92
-  const lineCount = te.input.newText.split('\n').length
-  const leadPx = te.input.lineLeading ? te.input.lineLeading * scale : fs * 1.2
-  const style: CSSProperties = {
-    // A moved block previews at its new position; input.rect stays at the original
-    // (it is the save-time match key, and the cover below must hide the original ink)
-    ...pdfRectToCss(geom, te.moveBy ? shiftRect(te.input.rect, te.moveBy) : te.input.rect, scale),
-    fontSize: fs,
-    ...(te.input.lineLeading ? { lineHeight: `${leadPx}px` } : {}),
-  }
-  if (te.input.newColor) {
-    style.color = `rgb(${te.input.newColor.join(', ')})`
-  } else if (te.baseInk) {
-    style.color = te.baseInk
-  }
-  const baseF = te.input.newFont ? undefined : te.baseFont
-  if (te.input.newFont) {
-    style.fontFamily = EDIT_FONT_BY_ID.get(te.input.newFont)?.css
-  } else if (baseF) {
-    // Look-alike of the document's own face
-    style.fontFamily = baseF.css
-  }
-  if (te.input.newBold) style.fontWeight = 700
-  else if (baseF?.weight) style.fontWeight = baseF.weight
-  if (te.input.newItalic) style.fontStyle = 'italic'
-  else if (baseF?.italic) style.fontStyle = 'italic'
-  if (lineCount > 1) {
-    // Grow below the original rect, same leading the engine writes
-    // (block edits carry the paragraph's own leading)
-    style.height = lineCount * leadPx
-    style.lineHeight = te.input.lineLeading ? `${leadPx}px` : 1.2
-    style.alignItems = 'flex-start'
-  } else if (typeof style.height === 'number' && fs + 2 > style.height) {
-    // Enlarged single line: the engine keeps the run's baseline, so glyphs grow
-    // upward past the original rect — extend the box up and bottom-align, or the
-    // preview clips the taller glyphs (overflow: hidden)
-    const grown = Math.ceil(fs) + 2
-    style.top = (style.top as number) - (grown - style.height)
-    style.height = grown
-    style.alignItems = 'flex-end'
-  }
-  // The rebuilt run grows right past the original rect when the replacement is
-  // longer; the preview must too, or the extra characters look cut off until
-  // the save (overflow: hidden)
-  const previewFont = `${te.input.newItalic || baseF?.italic ? 'italic ' : ''}${
-    te.input.newBold ? 'bold ' : baseF?.weight ? `${baseF.weight} ` : ''
-  }${fs}px ${
-    (te.input.newFont && EDIT_FONT_BY_ID.get(te.input.newFont)?.css) ||
-    baseF?.css ||
-    getComputedStyle(document.body).fontFamily
-  }`
-  const widest = Math.max(
-    ...te.input.newText.split('\n').map((l) => measureTextWidth(l, previewFont)),
-  )
-  if (typeof style.width === 'number' && widest > style.width) {
-    style.width = widest + 2
-  }
-  if (te.input.align) {
-    // The preview is a flex container and its text is one shrink-to-fit anonymous
-    // item: textAlign only aligns lines within that item, justifyContent moves
-    // the item itself off main-start
-    style.textAlign = te.input.align
-    if (te.input.align === 'center') style.justifyContent = 'center'
-    if (te.input.align === 'right') style.justifyContent = 'flex-end'
-  }
-  const coverStyle = te.cover
-    ? inflateCss(pdfRectToCss(geom, unionCover(te.input.rect, te.cover), scale), 1.5)
-    : null
-  return { style, coverStyle }
-}
-
-/** Styled-run children of a text-edit preview; shared with the thumbnail mirror */
-const textEditPreviewContent = (te: LocalTextEdit, scale: number): ReactNode =>
-  (te.input.styleRuns ?? te.input.colorRuns)?.length ? (
-    // One wrapper span = one flex item: the preview is a row flex container, and
-    // bare segments would become separate items laid out horizontally, breaking
-    // '\n' stacking in multi-line previews
-    <span>
-      {colorSegments(
-        te.input.newText,
-        runsToColors(
-          te.input.newText.length,
-          styleRunsToKeyRuns(te.input.styleRuns ?? te.input.colorRuns ?? []),
-        ),
-      ).map((seg, i) => {
-        if (!seg.color) return <Fragment key={i}>{seg.text}</Fragment>
-        const s = decodeStyle(seg.color)
-        return (
-          <span key={i} style={styleSegCss(s, scale)}>
-            {seg.text}
-          </span>
-        )
-      })}
-    </span>
-  ) : (
-    te.input.newText
-  )
-
-/** Read-only mirror of the pending-edit overlays, scaled into a page thumbnail so the
- *  sidebar tracks unsaved edits like the canvas does. Children render at scale 1 (display
- *  coords) and the container scales down; CSS kills all inner pointer events so thumbnail
- *  click/drag/context-menu behavior is untouched. */
-function ThumbPendingOverlay({
-  geom,
-  k,
-  markups,
-  drawings,
-  textEdits,
-  textInserts,
-  imageEdits,
-  stamps,
-}: {
-  geom: PageGeom
-  k: number
-  markups: LocalMarkup[]
-  drawings: LocalDrawing[]
-  textEdits: LocalTextEdit[]
-  textInserts: LocalTextInsert[]
-  imageEdits: LocalImageEdit[]
-  stamps: StampInput[]
-}): ReactElement {
-  const disp = geomDispSize(geom)
-  const noop = () => {}
-  return (
-    <div
-      className="pdf-thumb-overlay"
-      style={{ width: disp.width, height: disp.height, transform: `scale(${k})` }}
-    >
-      {imageEdits.length > 0 && (
-        <ImageEditLayer
-          geom={geom}
-          scale={1}
-          edits={imageEdits}
-          existing={[]}
-          selectedId={null}
-          selectedKey={null}
-          editHint=""
-          onSelectEdit={noop}
-          onSelectExisting={noop}
-        />
-      )}
-      {stamps.map((s, si) => (
-        <img
-          key={si}
-          className="pdf-stamp-preview"
-          src={`data:image/png;base64,${s.image}`}
-          alt=""
-          style={{ ...pdfRectToCss(geom, s.rect, 1), opacity: s.opacity ?? 1 }}
-        />
-      ))}
-      <MarkupOverlay markups={markups} geom={geom} scale={1} selectedId={null} />
-      {drawings.length > 0 && (
-        <DrawLayer
-          geom={geom}
-          scale={1}
-          pageWidth={disp.width}
-          pageHeight={disp.height}
-          drawings={drawings}
-          savedNotes={[]}
-          activeNoteKey={null}
-          noteOpenTitle=""
-          tool={null}
-          color={[0, 0, 0]}
-          strokeWidth={STROKE_WIDTH}
-          selectedId={null}
-          selectTitle=""
-          onCommit={noop}
-          onNoteAt={noop}
-          onNoteOpen={noop}
-          onSelect={noop}
-        />
-      )}
-      {textInserts.map((insert) => (
-        <div
-          key={insert.id}
-          className="pdf-textinsert-preview"
-          style={textInsertPreviewStyle(insert, geom, 1)}
-        >
-          {insert.input.text}
-        </div>
-      ))}
-      {textEdits.map((te) => {
-        const { style, coverStyle } = textEditPreviewParts(te, geom, 1)
-        return (
-          <Fragment key={te.id}>
-            {coverStyle && <div className="pdf-textedit-cover" style={coverStyle} />}
-            <div className="pdf-textedit-preview" style={style}>
-              {textEditPreviewContent(te, 1)}
-            </div>
-          </Fragment>
-        )
-      })}
-    </div>
-  )
-}
-
-/** Editor state for the floating text-edit box; editId set when re-opening a pending edit */
-interface TextDraft {
-  origIdx: number
-  rect: [number, number, number, number]
-  oldText: string
-  fontSize: number
-  value: string
-  /** Style overrides; undefined = keep the run's original size/color */
-  size?: number
-  /** CSS hex like '#d32f2f' */
-  color?: string
-  /** Selection-level styles, one encoded key per code unit of value (see encodeStyle);
-      '' = base (the draft-level overrides ?? original). undefined/all-'' = uniform
-      draft (the pre-existing whole-run behavior). */
-  charStyles?: string[]
-  /** Colors the document already draws the run with (async, from the open probe),
-      pre-seeded into charStyles as color-only keys. A commit whose styles still equal
-      these carries no *change* — they only ride along so a rebuild repaints them. */
-  seedStyleRuns?: { start: number; end: number; color: string }[]
-  /** The run's base ink in the document (async, from the open probe). Display-only:
-      the editor/preview text shows the real color; never committed as a change. */
-  seedInk?: string
-  /** Local look-alike of the run's own font (async, from the dominant run's
-      PostScript name). Display + reflow measurement only; never committed. */
-  seedFont?: DocFontStyle
-  /** EDIT_FONTS id; undefined = automatic rebuild font */
-  font?: string
-  /** Style toggles; true = on, undefined = off (resolved via font variants at save) */
-  bold?: true
-  italic?: true
-  editId?: string
-  /** Further pending edits folded into this block draft (besides editId); the
-      commit replaces editId and removes these — they would overlap the block
-      edit at save otherwise */
-  foldedIds?: string[]
-  /** The value the editor opened with when pending edits were folded in: an
-      unmodified commit must keep those edits instead of converting them */
-  foldBase?: string
-  /** charStyles the fold seeded (styles of the folded line edits); an unmodified
-      commit compares against these, not against empty */
-  foldStyles?: string[]
-  /** Ink bounds of the run being edited (async, from a dry-run validate) */
-  cover?: [number, number, number, number]
-  /** Present for paragraph (block) edits: the geometry the commit reflows into.
-      lineHeight is the block's original leading at the original font size;
-      bottomPt is the block's bottom edge in firstBaseline's (possibly moved)
-      frame — the overflow guard measures growth against it. */
-  block?: {
-    leftPt: number
-    firstBaseline: number
-    widthPt: number
-    lineHeight: number
-    align: 'left' | 'center' | 'right'
-    bottomPt: number
-  }
-  /** Carried from a reopened moved edit: the floating editor draws at rect + moveBy
-      (where the preview sits) while rect itself stays the save-time match key */
-  moveBy?: [number, number]
-}
-
-/** Seed a fresh draft's colors from the open probe's report of what the document
-    already draws: the run's base ink (display-only) plus earlier saved selection
-    colors. Selection colors only while the draft is pristine — the runs are offsets
-    into oldText, and once typing starts they no longer align (the engine-side
-    rebuild still preserves the colors on save). */
-const seedDraftColors = (d: TextDraft, v: TextEditValidation): TextDraft => {
-  let next = d
-  // Near-white ink would vanish on the editor's white background; keep default ink
-  if (v.baseColor && !next.color && !next.seedInk) {
-    const [r, g, b] = v.baseColor
-    if ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 <= 0.85)
-      next = { ...next, seedInk: rgb255ToHex(v.baseColor) }
-  }
-  if (!v.colorRuns || v.colorRuns.length === 0) return next
-  if (next.charStyles || next.seedStyleRuns || next.value !== next.oldText) return next
-  const keyRuns = v.colorRuns.map((r) => ({
-    start: r.start,
-    end: r.end,
-    color: encodeStyle({ color: rgb255ToHex(r.color) }),
-  }))
-  return {
-    ...next,
-    charStyles: runsToColors(next.oldText.length, keyRuns),
-    seedStyleRuns: keyRuns,
-  }
-}
-
-/** A markup annotation already saved in the file (read via pdf.js getAnnotations) */
-interface SavedMarkupAnnot {
-  pageIndex: number
-  /** PDF object number (pdf.js id "123R" → 123) */
-  objNum: number
-  type: MarkupType
-  quads: number[][]
-  rect: [number, number, number, number]
-}
-
-/** Pending deletion of a saved markup or note annotation */
-interface LocalAnnotDelete {
-  id: string
-  annot: SavedMarkupAnnot | SavedNoteAnnot
-}
-
-/** Pending in-place content edit of a note comment saved in the file.
-    `annot.contents` stays the on-disk text — the save path matches by it. */
-interface LocalNoteEdit {
-  id: string
-  annot: SavedNoteAnnot
-  contents: string
-}
-
-interface EditSnapshot {
-  markups: LocalMarkup[]
-  annotDeletes: LocalAnnotDelete[]
-  noteEdits: LocalNoteEdit[]
-  drawings: LocalDrawing[]
-  textEdits: LocalTextEdit[]
-  textInserts: LocalTextInsert[]
-  imageEdits: LocalImageEdit[]
-  stampCfg: StampConfig | null
-  formEdits: Map<string, FormValueInput>
-  rotations: Map<number, number>
-  deleted: Set<number>
-  order: number[] | null
-  metadata: MetadataInput | null
-}
-
-/** What a running save wrote, captured when the save starts. The post-save reload
-    subtracts exactly this instead of wiping all edit state, so anything the user did
-    while the write was in flight stays pending on the reloaded document. */
-interface SavedSnapshot {
-  markupIds: Set<string>
-  annotDeleteIds: Set<string>
-  noteEditIds: Set<string>
-  /** objNum → /Contents this save wrote via noteEdits. A re-edit of the same note made
-      while the write was in flight still carries the pre-save on-disk text as its match
-      key; the post-save subtraction retargets it to what the file now says. */
-  noteEditWritten: Map<number, string>
-  drawingIds: Set<string>
-  textEditIds: Set<string>
-  textInsertIds: Set<string>
-  imageEditIds: Set<string>
-  stampCfg: StampConfig | null
-  formEdits: Map<string, FormValueInput>
-  rotations: Map<number, number>
-  metadata: MetadataInput | null
-  /** Old original page index → its index in the saved file (saved deletions/reorder applied) */
-  pageMap: Map<number, number>
-}
-
-/** Selected annotation with the anchor of its floating delete popup; a stamp click selects the whole watermark/header-footer set */
-type AnnotSelection =
-  | {
-      kind: 'markup' | 'drawing' | 'textEdit' | 'textInsert' | 'imageEdit'
-      id: string
-      x: number
-      y: number
-    }
-  | { kind: 'savedMarkup'; annot: SavedMarkupAnnot; x: number; y: number }
-  | { kind: 'pageImage'; ref: PageImageRef; x: number; y: number }
-  | { kind: 'stamp'; x: number; y: number }
-
-/** Page ranges like "1-3,5" → list of 1-based page numbers; null if invalid */
-function parsePageRanges(input: string, max: number): number[] | null {
-  const out = new Set<number>()
-  for (const part of input.split(/[,，]/)) {
-    const s = part.trim()
-    if (!s) continue
-    const m = /^(\d+)\s*[-–]\s*(\d+)$|^(\d+)$/.exec(s)
-    if (!m) return null
-    const a = Number(m[1] ?? m[3])
-    const b = Number(m[2] ?? m[3])
-    if (a < 1 || b > max || a > b) return null
-    for (let i = a; i <= b; i++) out.add(i)
-  }
-  return out.size > 0 ? [...out].sort((x, y) => x - y) : null
-}
-
-/** Scale factor applied when placing a signature: 1/3 of the displayed page width,
-    capped at 1/6 of its height so tall images stay signature-sized */
-const signPlaceK = (sig: SignatureData, dispW: number, dispH: number): number =>
-  Math.min(dispW / 3 / sig.width, dispH / 6 / sig.height)
-
-/** Inserted images land at up to half the page, never above natural size
-    (0.75 ≈ px→pt, so a screen-resolution image keeps its printed size) */
-const imagePlaceK = (sig: SignatureData, dispW: number, dispH: number): number =>
-  Math.min(dispW / 2 / sig.width, dispH / 2 / sig.height, 0.75)
-const staticFormFillPlaceK = (): number => 1
-
-/** Click-to-place overlay: a translucent ghost of the pending signature follows the
-    cursor at its actual landing size, and clicking drops it centered on that point */
-function SignDropOverlay({
-  sig,
-  dispW,
-  dispH,
-  scale,
-  color,
-  title,
-  onPlace,
-  placeK = signPlaceK,
-}: {
-  sig: SignatureData
-  /** Displayed page size at scale=1 (view coords) */
-  dispW: number
-  dispH: number
-  scale: number
-  color: [number, number, number]
-  title: string
-  onPlace: (vx: number, vy: number) => void
-  /** Landing-size rule; defaults to signature sizing (image insert passes its own) */
-  placeK?: (sig: SignatureData, dispW: number, dispH: number) => number
-}): ReactElement {
-  const [pt, setPt] = useState<[number, number] | null>(null)
-  const k = placeK(sig, dispW, dispH) * scale
-  const w = sig.width * k
-  const h = sig.height * k
-  return (
-    <div
-      className="pdf-sign-drop"
-      data-tip={title}
-      onPointerMove={(e) => {
-        const box = e.currentTarget.getBoundingClientRect()
-        setPt([e.clientX - box.left, e.clientY - box.top])
-      }}
-      onPointerLeave={() => setPt(null)}
-      onClick={(e) => {
-        const box = e.currentTarget.getBoundingClientRect()
-        onPlace((e.clientX - box.left) / scale, (e.clientY - box.top) / scale)
-      }}
-    >
-      {pt && (
-        <div
-          className="pdf-sign-ghost"
-          style={{
-            left: Math.min(Math.max(pt[0] - w / 2, 0), Math.max(dispW * scale - w, 0)),
-            top: Math.min(Math.max(pt[1] - h / 2, 0), Math.max(dispH * scale - h, 0)),
-            width: w,
-            height: h,
-          }}
-        >
-          {sig.kind === 'image' ? (
-            <img src={`data:image/png;base64,${sig.image}`} alt="" draggable={false} />
-          ) : (
-            <svg viewBox={`0 0 ${sig.width} ${sig.height}`} preserveAspectRatio="none">
-              {sig.paths.map((p, i) => {
-                const pts: string[] = []
-                for (let j = 0; j < p.length; j += 2) pts.push(`${p[j]},${p[j + 1]}`)
-                return (
-                  <polyline
-                    key={i}
-                    points={pts.join(' ')}
-                    fill="none"
-                    stroke={cssRgb(color)}
-                    strokeWidth={2.4}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )
-              })}
-            </svg>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function App() {
   const { lang, t } = useI18n()
@@ -1609,7 +303,13 @@ export default function App() {
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
-  const [aiCollapsed, setAiCollapsed] = useState(false)
+  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const [aiCollapsed, setAiCollapsed] = useState(
+    () => localStorage.getItem('genoffice-pdf-show-ai') === '0',
+  )
+  useEffect(() => {
+    localStorage.setItem('genoffice-pdf-show-ai', aiCollapsed ? '0' : '1')
+  }, [aiCollapsed])
   /** One-shot prompt pushed by the ribbon AI buttons; the panel auto-runs it (docs preset pattern) */
   const [aiPreset, setAiPreset] = useState<{ text: string; nonce: number } | null>(null)
   const [ribbonTab, setRibbonTab] = useState<RibbonTab>('home')
@@ -1989,6 +689,8 @@ export default function App() {
   const coalesceKeyRef = useRef<string | null>(null)
   const passwordRef = useRef<string | undefined>(undefined)
   const fitModeRef = useRef<FitMode>('width')
+  /** Reading position saved when this file was last viewed; applied once after open */
+  const pendingViewRestoreRef = useRef<PdfViewState | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const thumbsRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -2322,6 +1024,16 @@ export default function App() {
         // A newly opened file starts outside the autosave gate
         savedOnceRef.current = false
         await loadDoc(path, null)
+        // Silently restore the last reading position (WPS-style). A saved custom
+        // zoom (fitMode null) must be applied before 'ready', or the initial
+        // fit-width recompute would take over; fit modes are recomputed anyway.
+        const savedView = loadViewState(path)
+        if (savedView) {
+          pendingViewRestoreRef.current = savedView
+          fitModeRef.current = savedView.fitMode
+          if (savedView.fitMode === null)
+            setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedView.scale)))
+        }
         setStatus('ready')
       } catch (err) {
         if ((err as Error | null)?.name === 'PasswordException') {
@@ -2461,6 +1173,75 @@ export default function App() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [status, recomputeFit])
+
+  /** Apply the restored reading position once the doc is ready. Positions via the
+   *  row's DOM offset two frames later: the initial fit recompute (effect above)
+   *  and its anchored scroll write (layout effect on scale) must land first, or
+   *  they would clobber this write. */
+  useEffect(() => {
+    if (status !== 'ready' || rows.length === 0) return
+    const savedView = pendingViewRestoreRef.current
+    if (!savedView) return
+    const page = Math.min(Math.max(1, savedView.page), pageCount)
+    if (page <= 1 && savedView.frac === 0) {
+      pendingViewRestoreRef.current = null
+      return
+    }
+    const rowIdx = rowOfVis(page - 1)
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        // Cleared here, not at schedule time: the persist guard must keep blocking
+        // saves until this write lands (or is abandoned) — a slow first paint could
+        // otherwise let a debounced save overwrite the stored spot with the top
+        pendingViewRestoreRef.current = null
+        const el = scrollRef.current
+        const rowEl = el?.querySelector<HTMLElement>(`.pdf-row[data-idx="${rowIdx}"]`)
+        if (!el || !rowEl) return
+        const rowTopPx =
+          rowEl.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+        el.scrollTop = rowTopPx + savedView.frac * rowEl.offsetHeight
+      }),
+    )
+  }, [status, rows, pageCount, rowOfVis])
+
+  /** Persist the reading position (debounced) so reopening the file returns here.
+   *  Listens to scroll directly — currentPage only changes per page, not per pixel. */
+  useEffect(() => {
+    if (status !== 'ready' || !filePath || rows.length === 0) return
+    const el = scrollRef.current
+    if (!el) return
+    let timer = 0
+    const saveNow = () => {
+      window.clearTimeout(timer)
+      // Not yet positioned — saving now would overwrite the stored spot with page 1
+      if (pendingViewRestoreRef.current) return
+      const visPos = new Map(visList.map((origIdx, i) => [origIdx, i]))
+      saveViewState(
+        filePath,
+        captureViewState({
+          scrollTop: el.scrollTop,
+          rowHeights: rows.map((row) => rowSize(row).height * scale),
+          rowPages: rows.map((row) => (visPos.get(row[0]!) ?? 0) + 1),
+          gap: PAGE_GAP,
+          scale,
+          fitMode: fitModeRef.current,
+        }),
+      )
+    }
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(saveNow, 300)
+    }
+    el.addEventListener('scroll', schedule, { passive: true })
+    // Closing faster than the debounce would drop the last update; flush on teardown
+    window.addEventListener('pagehide', saveNow)
+    schedule()
+    return () => {
+      el.removeEventListener('scroll', schedule)
+      window.removeEventListener('pagehide', saveNow)
+      window.clearTimeout(timer)
+    }
+  }, [status, filePath, rows, rowSize, visList, scale])
 
   /** Page-top offset of a visible position (used for search positioning) */
   const pageTop = useCallback((visIdx: number) => rowTop(rowOfVis(visIdx)), [rowTop, rowOfVis])
@@ -4152,21 +2933,28 @@ export default function App() {
     showNotice(`${t('saveFailed')}: ${friendly}`)
   }
 
+  /** Engine skip reasons are internal English strings; append the first one raw so a
+      failure is diagnosable from the toast alone (page numbers never explain WHY) */
+  const skipDetail = (skipped: { reason: string }[]): string => {
+    const reason = skipped.find((s) => s.reason)?.reason
+    return reason ? ` — ${reason}` : ''
+  }
+
   /** Skipped text edits are dropped from the file and from the pending list — surface
       which pages lost an edit instead of silently succeeding */
   const noticeSkippedEdits = (skipped: TextEditFailure[]) => {
     const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(t('textEditSkipped', { pages }))
+    showNotice(`${t('textEditSkipped', { pages })}${skipDetail(skipped)}`)
   }
 
   const noticeSkippedImages = (skipped: ImageEditFailure[]) => {
     const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(t('imageEditSkipped', { pages }))
+    showNotice(`${t('imageEditSkipped', { pages })}${skipDetail(skipped)}`)
   }
 
   const noticeSkippedTextInserts = (skipped: TextInsertFailure[]) => {
     const pages = [...new Set(skipped.map((s) => s.pageIndex + 1))].sort((a, b) => a - b).join(', ')
-    showNotice(t('textInsertSkipped', { pages }))
+    showNotice(`${t('textInsertSkipped', { pages })}${skipDetail(skipped)}`)
   }
 
   /** Pending edits in SavePdfRequest form; shared by in-place Save and Save As.
@@ -4294,6 +3082,24 @@ export default function App() {
         })
       } catch {
         /* Save already succeeded; a reload failure doesn't block (takes effect on next open) */
+      }
+      // Content-derived naming (docs/sheets analog): a shell-created blank still
+      // carrying its untitled name takes its file name from the topmost text this
+      // save inserted; the main process no-ops for every other file, so
+      // user-chosen names are never touched.
+      const nameCandidate = [...textInserts]
+        .sort(
+          (a, b) => a.input.pageIndex - b.input.pageIndex || b.input.origin[1] - a.input.origin[1],
+        )[0]
+        ?.input.text.split('\n')[0]
+        ?.trim()
+      if (nameCandidate) {
+        try {
+          const renamed = await window.pdfApi.autoRename(filePath, nameCandidate)
+          if (renamed.renamed && renamed.path) setFilePath(renamed.path)
+        } catch {
+          /* naming is best-effort; the save itself already succeeded */
+        }
       }
       setSaveState('saved')
       setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 2000)
@@ -4632,36 +3438,56 @@ export default function App() {
       .map((line) => measureTextWidth(line, font) * (align === 'center' ? -0.5 : -1))
   }
 
-  const confirmTextInsert = () => {
+  /** Re-entry guard: the dialog stays open (and its OK stays clickable) while the
+      canDrawText round-trip runs — a second click must not run the confirm again
+      (double pushUndo / duplicate insert) */
+  const textInsertConfirmBusy = useRef(false)
+
+  const confirmTextInsert = async () => {
     const text = staticText.trim()
     if (!text) return
-    const config: Omit<TextInsertInput, 'pageIndex' | 'origin'> = {
-      text,
-      fontSize: staticTextSize,
-      color: hexTo255(staticTextColor),
-      lineLeading: staticTextSize * 1.2,
-      lineXOffsets: textInsertOffsets(text, staticTextSize, staticTextAlign),
-      align: staticTextAlign,
+    if (textInsertConfirmBusy.current) return
+    textInsertConfirmBusy.current = true
+    try {
+      // The dialog preview renders with the browser's per-char font fallback, which
+      // proves nothing about save: gate on an embeddable face NOW, keeping the dialog
+      // open, instead of failing at save time ("could not be saved" long after typing).
+      // An IPC error must not block inserting — the save path re-checks anyway.
+      const drawable = await window.pdfApi.canDrawText(text).catch(() => true)
+      if (!drawable) {
+        showNotice(t('textInsertNoFont'))
+        return
+      }
+      const config: Omit<TextInsertInput, 'pageIndex' | 'origin'> = {
+        text,
+        fontSize: staticTextSize,
+        color: hexTo255(staticTextColor),
+        lineLeading: staticTextSize * 1.2,
+        lineXOffsets: textInsertOffsets(text, staticTextSize, staticTextAlign),
+        align: staticTextAlign,
+      }
+      setStaticTextDialog(false)
+      if (textInsertEditId) {
+        pushUndo()
+        setTextInserts((prev) =>
+          prev.map((insert) =>
+            insert.id === textInsertEditId
+              ? { ...insert, input: { ...insert.input, ...config } }
+              : insert,
+          ),
+        )
+        setTextInsertEditId(null)
+        return
+      }
+      setPendingTextInsert(config)
+    } finally {
+      textInsertConfirmBusy.current = false
     }
-    setStaticTextDialog(false)
-    if (textInsertEditId) {
-      pushUndo()
-      setTextInserts((prev) =>
-        prev.map((insert) =>
-          insert.id === textInsertEditId
-            ? { ...insert, input: { ...insert.input, ...config } }
-            : insert,
-        ),
-      )
-      setTextInsertEditId(null)
-      return
-    }
-    setPendingTextInsert(config)
   }
 
   const confirmStaticFormText = () => {
     if (staticTextPurpose === 'insert') {
-      confirmTextInsert()
+      void confirmTextInsert()
       return
     }
     const image = renderStaticFormText(staticText, staticTextSize, staticTextColor, staticTextAlign)
@@ -5959,6 +4785,10 @@ export default function App() {
       setTextEdits((prev) => [...prev, { id: newId(), input, cover }])
       return null
     },
+    insertText: (input) => {
+      pushUndoRef.current()
+      setTextInserts((prev) => [...prev, { id: newId(), input }])
+    },
     editFonts: () => editFonts,
     formEdits: () => formEdits,
     applyFormEdit: (v) => {
@@ -6021,6 +4851,25 @@ export default function App() {
         return null
       }
     },
+  }
+
+  /**
+   * After an AI run that mutated a shell-created blank still carrying its untitled
+   * name, silently save once: the save's auto-rename then derives the file name from
+   * the inserted text — mirrors docs/sheets, where AI generation names the draft.
+   * PDFs the user merely opened keep the pending-until-⌘S contract (isUntitled is
+   * false for them, and the main process would refuse the rename anyway).
+   */
+  const autoSaveAfterAiRun = async () => {
+    if (!filePath || readOnly) return
+    try {
+      if (!(await window.pdfApi.isUntitled(filePath))) return
+    } catch {
+      return
+    }
+    // A file we created ourselves is safe to keep autosaving from here on
+    savedOnceRef.current = true
+    void save(true)
   }
 
   /** Internal destination of a Link annotation → jump to that page */
@@ -6429,6 +5278,37 @@ export default function App() {
     </button>
   )
 
+  const insertTextBtn = (
+    <button
+      className={`rb-big${pendingTextInsert ? ' active' : ''}`}
+      disabled={readOnly}
+      data-tip={t('insertTextHint')}
+      onClick={() => {
+        if (pendingTextInsert) {
+          setPendingTextInsert(null)
+          return
+        }
+        setEditTextMode(false)
+        setTextDraft(null)
+        setDrawTool(null)
+        setPendingSign(null)
+        setSignatureTarget(null)
+        setImagePick(null)
+        setPendingStaticFill(null)
+        setEditImageMode(false)
+        setTextInsertEditId(null)
+        setStaticTextPurpose('insert')
+        setStaticText('')
+        setStaticTextDialog(true)
+      }}
+    >
+      <span className="rb-big-icon">
+        <IconFormText />
+      </span>
+      {t('insertText')}
+    </button>
+  )
+
   const activeFormWidget = activeFormIndex >= 0 ? formWidgets[activeFormIndex]! : null
   const formWidgetSigned = (widget: FormWidget): boolean =>
     widget.signed || signedFormWidgetIds.has(widget.id)
@@ -6621,10 +5501,11 @@ export default function App() {
               <div className="ribbon-sep" />
               {markupGroup}
               <div className="ribbon-sep" />
+              {/* Edit entries lead; Search moved after page/zoom (⌘F is the common path) */}
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
-                  {searchBtn}
                   {editTextBtn}
+                  {insertTextBtn}
                 </div>
               </div>
               <div className="ribbon-sep" />
@@ -6632,6 +5513,7 @@ export default function App() {
               <div className="ribbon-sep" />
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
+                  {searchBtn}
                   <button
                     className="rb-big"
                     data-tip={`${t('print')} (${platformShortcuts('⌘P')})`}
@@ -6746,34 +5628,7 @@ export default function App() {
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
                   {editTextBtn}
-                  <button
-                    className={`rb-big${pendingTextInsert ? ' active' : ''}`}
-                    disabled={readOnly}
-                    data-tip={t('insertTextHint')}
-                    onClick={() => {
-                      if (pendingTextInsert) {
-                        setPendingTextInsert(null)
-                        return
-                      }
-                      setEditTextMode(false)
-                      setTextDraft(null)
-                      setDrawTool(null)
-                      setPendingSign(null)
-                      setSignatureTarget(null)
-                      setImagePick(null)
-                      setPendingStaticFill(null)
-                      setEditImageMode(false)
-                      setTextInsertEditId(null)
-                      setStaticTextPurpose('insert')
-                      setStaticText('')
-                      setStaticTextDialog(true)
-                    }}
-                  >
-                    <span className="rb-big-icon">
-                      <IconFormText />
-                    </span>
-                    {t('insertText')}
-                  </button>
+                  {insertTextBtn}
                   <button
                     className={`rb-big${imagePick && !pendingStaticFill ? ' active' : ''}`}
                     disabled={readOnly}
@@ -7155,7 +6010,12 @@ export default function App() {
               <GensparkMark size={22} />
             </button>
           )}
-          <AiPanel api={aiApi} preset={aiPreset} onCollapse={() => setAiCollapsed(true)} />
+          <AiPanel
+            api={aiApi}
+            preset={aiPreset}
+            onCollapse={() => setAiCollapsed(true)}
+            onRunDone={() => void autoSaveAfterAiRun()}
+          />
         </div>
         <div className="app-content">
           <div className="pdf-body">

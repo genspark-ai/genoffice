@@ -13,18 +13,16 @@ import type { GroupElement, Slide } from './types'
 import { escapeXmlAttr } from './xml-utils'
 import { sliceGroupChildXmls } from './parse'
 import { relsPathFor, resolveTarget } from './zip'
-import { materializeSlide, patchedElementXml, type OpenedPptx } from './index'
+import { cleanupSupersededSlideResources } from './resource-cleanup'
+import { materializeSlide, patchedElementXml, patchSlideXml, type OpenedPptx } from './index'
 
 const HYPERLINK_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
-const SLIDE_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
+const SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
 const SLDJUMP_ACTION = 'ppaction://hlinksldjump'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-export type LinkTarget =
-  | { kind: 'url'; url: string }
-  | { kind: 'slide'; slideIndex: number }
+export type LinkTarget = { kind: 'url'; url: string } | { kind: 'slide'; slideIndex: number }
 
 const EMPTY_RELS =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
@@ -45,7 +43,10 @@ function appendRel(
   const rid = `rId${maxRid + 1}`
   const mode = external ? ' TargetMode="External"' : ''
   const relXml = `<Relationship Id="${rid}" Type="${type}" Target="${escapeXmlAttr(target)}"${mode}/>`
-  archive.entries.set(relsPath, Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'))
+  archive.entries.set(
+    relsPath,
+    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+  )
   return rid
 }
 
@@ -55,9 +56,9 @@ function stripHlink(xml: string): string {
 }
 
 /**
- * Set/clear an element hyperlink. target=null clears it (the relationship is left
- * orphaned, which is harmless). On success returns the materialized new slide model
- * (all element ids refreshed); on failure returns null.
+ * Set/clear an element hyperlink. Relationships no longer used by any live slide
+ * XML are pruned after the fragment changes. On success returns the materialized
+ * new slide model (all element ids refreshed); on failure returns null.
  */
 export function setElementLink(
   opened: OpenedPptx,
@@ -70,6 +71,7 @@ export function setElementLink(
   const el = slide.elements.find((e) => e.id === elementId)
   if (!el) return null
 
+  const previousXml = patchSlideXml(slide)
   let xml = stripHlink(patchedElementXml(el))
 
   if (target) {
@@ -104,6 +106,7 @@ export function setElementLink(
   // Post-surgery fragment is the sole truth: clear text dirty so patches don't overwrite; structural rebuild persists it
   el.dirty = false
   slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
   return materializeSlide(opened, slideIndex)
 }
 
@@ -122,13 +125,16 @@ export function encodeRunLink(target: LinkTarget): string {
 /**
  * Allocate slide-rels relationships for runs whose hyperlink was set this session
  * (hyperlink present, hyperlinkRId absent — the edit path clears the rId on change).
- * Cleared links just lose their rId; the old relationship is left orphaned like
- * setElementLink does. Returns whether anything was allocated.
+ * The caller reconciles the before/after slide XML after its text patch so cleared
+ * or replaced relationship ids can be removed safely. Returns whether anything
+ * was allocated.
  */
 export function ensureRunLinkRels(
   opened: OpenedPptx,
   slideIndex: number,
-  paragraphs: Array<{ runs: Array<{ hyperlink?: string; hyperlinkRId?: string; hyperlinkAction?: string }> }>,
+  paragraphs: Array<{
+    runs: Array<{ hyperlink?: string; hyperlinkRId?: string; hyperlinkAction?: string }>
+  }>,
 ): boolean {
   const slide = opened.deck.slides[slideIndex]
   if (!slide) return false
@@ -144,7 +150,13 @@ export function ensureRunLinkRels(
       } else {
         const dst = opened.deck.slides[target.slideIndex]
         if (!dst) continue
-        run.hyperlinkRId = appendRel(opened, slide, SLIDE_REL_TYPE, dst.path.split('/').pop()!, false)
+        run.hyperlinkRId = appendRel(
+          opened,
+          slide,
+          SLIDE_REL_TYPE,
+          dst.path.split('/').pop()!,
+          false,
+        )
         run.hyperlinkAction = SLDJUMP_ACTION
       }
       changed = true
@@ -164,7 +176,8 @@ export function getRunLinks(
 ): Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> {
   const slide = opened.deck.slides[slideIndex]
   if (!slide) return []
-  const out: Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> = []
+  const out: Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> =
+    []
   const rels = opened.archive.readRels(slide.path)
   const resolve = (rid: string): LinkTarget | null => {
     const rel = rels.get(rid)

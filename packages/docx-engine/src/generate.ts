@@ -983,10 +983,12 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
     out.push({ name: 'w:spacing', xml: `<w:spacing ${spacingAttrs.join(' ')}/>` })
   }
   const indAttrs: string[] = []
-  if (format.indentLeft && format.indentLeft > 0)
-    indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
-  if (format.indentRight && format.indentRight > 0)
-    indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
+  // w:left/w:right are signed in OOXML — negative indents (text extending
+  // into the margin) are valid and must survive a paragraph rebuild; the
+  // old > 0 guard silently dropped them, shifting rebuilt paragraphs
+  // rightward on save (alpha ledger r116).
+  if (format.indentLeft) indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
+  if (format.indentRight) indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
   if (format.indentFirstLine) {
     if (format.indentFirstLine > 0)
       indAttrs.push(`w:firstLine="${Math.round(format.indentFirstLine)}"`)
@@ -2576,6 +2578,9 @@ function generateRunXml(run: Run, insideLink: boolean): string {
     } else if (ch === '\f') {
       flush()
       segments.push('<w:br w:type="page"/>')
+    } else if (ch === '\v') {
+      flush()
+      segments.push('<w:br w:type="column"/>')
     } else {
       buffer += ch
     }

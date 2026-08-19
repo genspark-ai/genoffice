@@ -9,6 +9,7 @@ import { BorderType, LocalUndoRedoService, type IRange } from '@univerjs/core'
 import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
 import type { createUniver } from './create-univer'
 import type { EditJournal } from './edit-journal'
+import { netAxisDelta } from './view-transform'
 
 export type UniverRuntime = ReturnType<typeof createUniver>
 export type ActiveWorkbook = NonNullable<
@@ -27,6 +28,10 @@ export interface LazyWorkbookState {
   readonly appliedCfSheets: Set<string>
   readonly appliedFilterSheets: Set<string>
   readonly appliedDvSheets: Set<string>
+  /// Sheets whose last range read predated the sidecar's indexingComplete:
+  /// conditional formatting / filters / validations were not yet available,
+  /// so an already-loaded range must not satisfy the next load request.
+  readonly decorationsPendingSheets: Set<string>
   /// File-side worksheet protection, known once a sheet finishes indexing.
   readonly sheetProtections: Map<string, { protected: boolean; hasPassword: boolean }>
   /// File-side manual page breaks (0-based index of the row/column after the
@@ -99,6 +104,21 @@ export interface LazyWorkbookState {
 export interface PinnedClosureCell {
   readonly f?: string
   readonly v?: string | number | boolean | null
+}
+
+/// Data extent in screen coordinates: the file extent shifted by this
+/// session's structural row/column ops. Null when the sheet is unknown.
+export function lazySheetScreenExtent(
+  state: LazyWorkbookState,
+  sheetId: string,
+): { rows: number; columns: number } | null {
+  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
+  if (!sheet) return null
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  return {
+    rows: Math.max(sheet.rowCount + netAxisDelta(ops, 'row'), 0),
+    columns: Math.max(sheet.columnCount + netAxisDelta(ops, 'column'), 0),
+  }
 }
 
 /// Budget for closure mode: formula cells plus every precedent they read.

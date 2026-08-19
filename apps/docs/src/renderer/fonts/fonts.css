@@ -188,6 +188,19 @@
   font-style: normal;
 }
 
+/* Documents declaring NanumGothic: mac Word lays out with the OS *downloadable*
+ * source asset Chromium cannot see (M3 probe sample 19: hangul 0.94em, space
+ * 0.28, digits 0.606 vs the Batang-normalized subset's 1.0/0.333/0.596 —
+ * +6.4% per hangul line, +19% per space). Real-metric source subset
+ * (tools/build-gothic-kr-font.py), advances unmodified; renamed per OFL
+ * ("Nanum" is a Reserved Font Name and subsetting is a modification). */
+@font-face {
+  font-family: 'GenOffice Gothic KR';
+  src: url('./GenOfficeGothicKR-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
 /*
  * Arabic fallback: unmodified Noto Naskh/Sans Arabic subsets (Arabic blocks +
  * presentation forms + digits/punctuation). Without them, missing Arabic fonts
@@ -395,6 +408,18 @@
   /* verified on regression sample 39: line breaks match Word at 72%; the
      residual page-4 spill is line-height, not width */
   size-adjust: 72%;
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Tamil: Word substitutes missing Tamil families with Latha; Chromium's macOS
+ * fallback (Tamil Sangam MN) shapes ~27% narrower (M3 probe: sentence R 0.728,
+ * space 0.39x) — too far for size-adjust (137% would inflate glyph ink). Noto
+ * Sans Tamil with advances rewritten to Latha's (tools/build-tamil-font.py;
+ * shaped sentence R 0.994, all probe sentences within ±2.3%). */
+@font-face {
+  font-family: 'GenOffice Tamil';
+  src: url('./GenOfficeTamil-Regular.woff2') format('woff2');
   font-weight: normal;
   font-style: normal;
 }

@@ -3,9 +3,12 @@
  * same save pipeline, but recovery mode must never touch the opened file, prompt,
  * or clear the journal — the whole point is that unsaved work survives a crash.
  */
+import JSZip from 'jszip'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { applyCellEditsToXlsx } from '../src/gateway/xlsx-gateway'
 import { handleSave, type SaveContext } from '../src/renderer/save-actions'
 import { createEditJournal, recordSetRangeValues } from '../src/renderer/edit-journal'
+import { buildEditFixture } from './fixture-builder'
 
 const saveWorkbookEdits = vi.fn()
 const writeWorkbookRecovery = vi.fn()
@@ -21,14 +24,20 @@ beforeEach(() => {
 function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean; restoredFromRecovery?: boolean }): {
   ctx: SaveContext
   messages: string[]
+  journal: ReturnType<typeof createEditJournal>
+  overlay: Map<string, Map<string, { v?: string | number | boolean | null }>>
 } {
   const journal = createEditJournal()
   if (opts.dirty) recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { v: 'edited' } } })
   const messages: string[] = []
+  const overlay = new Map<string, Map<string, { v?: string | number | boolean | null }>>()
   return {
     messages,
+    journal,
+    overlay,
     ctx: {
       univerRef: { current: null },
+      stashViewRestore: () => {},
       lazyWorkbookRef: {
         current: {
           editJournal: journal,
@@ -37,7 +46,7 @@ function ctxWith(opts: { dirty: boolean; needsSaveAs?: boolean; restoredFromReco
             generation: 0,
             failed: false,
             formulaCells: new Map(),
-            overlay: new Map(),
+            overlay,
           },
           file: {
             sessionId: '11111111-1111-4111-8111-111111111111',
@@ -87,6 +96,90 @@ describe('handleSave recovery mode', () => {
     const { ctx, messages } = ctxWith({ dirty: true })
     await expect(handleSave(ctx, 'recovery')).resolves.toBeUndefined()
     expect(messages).toEqual([])
+  })
+})
+
+describe('handleSave formula cache overlay', () => {
+  it('never pairs an immediately saved replacement formula with the previous cached value', async () => {
+    const { ctx, journal, overlay } = ctxWith({ dirty: false })
+    recordSetRangeValues(journal, 'sheet-1', { 2: { 1: { f: '=2+2' } } })
+    overlay.set(
+      'sheet-1',
+      new Map([
+        // B3 used to be SUM(C1:C2), whose cached value was 5.
+        ['2:1', { v: 5 }],
+        ['0:2', { v: 7 }],
+      ]),
+    )
+    let savedWorksheet = ''
+    saveWorkbookEdits.mockImplementationOnce(async (payload) => {
+      const request = payload as {
+        edits: {
+          row: number
+          column: number
+          writeValue: boolean
+          value: string | number | boolean | null
+          formula?: string
+        }[]
+        formulaValues: {
+          sheetId: string
+          row: number
+          column: number
+          value: string | number | boolean | null
+        }[]
+      }
+      const mutation = await applyCellEditsToXlsx(
+        await buildEditFixture(),
+        request.edits.map((edit) => ({
+          sheetName: 'Data',
+          row: edit.row,
+          column: edit.column,
+          writeValue: edit.writeValue,
+          cell: {
+            value: edit.value,
+            ...(edit.formula === undefined ? {} : { formula: edit.formula }),
+          },
+        })),
+        [],
+        [],
+        undefined,
+        [],
+        [],
+        [],
+        [],
+        [],
+        null,
+        [],
+        [],
+        [
+          {
+            sheetName: 'Data',
+            cells: request.formulaValues.map(({ row, column, value }) => ({
+              row,
+              column,
+              value,
+            })),
+          },
+        ],
+      )
+      const zip = await JSZip.loadAsync(mutation.buffer)
+      savedWorksheet = await zip.file('xl/worksheets/sheet1.xml')!.async('text')
+      return { canceled: true }
+    })
+
+    await handleSave(ctx, 'save')
+
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      edits: { row: number; column: number; formula?: string }[]
+      formulaValues: { row: number; column: number; value: unknown }[]
+    }
+    expect(payload.edits).toContainEqual(
+      expect.objectContaining({ row: 2, column: 1, formula: '=2+2' }),
+    )
+    expect(payload.formulaValues).toEqual([{ sheetId: 'sheet-1', row: 0, column: 2, value: 7 }])
+    const savedB3 = /<c r="B3"[^>]*>[\s\S]*?<\/c>/.exec(savedWorksheet)?.[0]
+    expect(savedB3).toContain('<f>2+2</f>')
+    expect(savedB3).not.toContain('<v>')
   })
 })
 

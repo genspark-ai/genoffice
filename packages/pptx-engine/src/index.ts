@@ -71,8 +71,11 @@ import {
   type SlideBundle,
 } from './slide-transfer'
 import { moveSlide } from './sections'
+import { cleanupSupersededSlideResources, removePartWithOwnedResources } from './resource-cleanup'
 
 export * from './types'
+export { cleanupSupersededSlideResources }
+export type { ResourceCleanupStats } from './resource-cleanup'
 export {
   animClassOf,
   buildTimingXml,
@@ -312,6 +315,7 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
   const chartXmls = new Map<string, string>()
   const chartMediaRels = new Map<string, Map<string, string>>()
   const chartUserShapes = new Map<string, string>()
+  const chartStyleRels = new Set<string>()
   const avRels = new Map<string, { target: string; external?: boolean }>()
   const diagramDrawings = new Map<string, string>()
   const diagramDatas = new Map<string, string>()
@@ -343,6 +347,7 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
             const usXml = archive.readText(resolveTarget(target, sub.target))
             if (usXml) chartUserShapes.set(rel.id, usXml)
           }
+          if (sub.type.endsWith('/chartStyle')) chartStyleRels.add(rel.id)
         }
       }
     } else if (/\/(?:video|audio|media)$/.test(rel.type)) {
@@ -400,6 +405,7 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
   ctx.chartXmls = chartXmls
   if (chartMediaRels.size) ctx.chartMediaRels = chartMediaRels
   if (chartUserShapes.size) ctx.chartUserShapes = chartUserShapes
+  if (chartStyleRels.size) ctx.chartStyleRels = chartStyleRels
   if (hlinkRels.size) ctx.hlinkRels = hlinkRels
   if (avRels.size) ctx.avRels = avRels
   if (diagramDrawings.size) ctx.diagramDrawings = diagramDrawings
@@ -734,7 +740,8 @@ export function patchedElementXml(el: SlideElement): string {
       xml = patchElementFill(xml, {
         stops: fill.stops,
         ...(fill.angle != null ? { angle: fill.angle } : {}),
-        ...(fill.path ? { radial: true } : {}),
+        ...(fill.path ? { path: fill.path } : {}),
+        ...(fill.path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
       })
     }
   }
@@ -758,7 +765,12 @@ export function patchedElementXml(el: SlideElement): string {
  * Set a solid or gradient slide background: patch the bodyPrefix and sync the model
  * (written back with the whole-slide rebuild on save).
  */
-export function setSlideBackground(slide: Slide, fill: string | GradientFillPatch): void {
+export function setSlideBackground(
+  opened: OpenedPptx,
+  slide: Slide,
+  fill: string | GradientFillPatch,
+): void {
+  const previousXml = patchSlideXml(slide)
   slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, fill)
   slide.background =
     typeof fill === 'string'
@@ -770,6 +782,7 @@ export function setSlideBackground(slide: Slide, fill: string | GradientFillPatc
         }
   slide.bgOwn = true
   slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
 }
 
 /**
@@ -796,6 +809,7 @@ export function setSlideBackgroundImage(
     rid = imageRelFor(opened.archive, slide, mediaPath)
     if (!rid) return null
   }
+  const previousXml = patchSlideXml(slide)
   slide.bodyPrefix = patchSlideBackgroundXml(slide.bodyPrefix, {
     imageRid: rid,
     ...(tile ? { tile: true } : {}),
@@ -803,6 +817,7 @@ export function setSlideBackgroundImage(
   slide.background = { type: 'image', mediaRef: mediaPath, mode: tile ? 'tile' : 'stretch' }
   slide.bgOwn = true
   slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
   return mediaPath
 }
 
@@ -834,6 +849,7 @@ function imageRelFor(archive: PackageArchive, slide: Slide, mediaPath: string): 
  * layout/master definition (recomputed here so rendering updates without a reopen).
  */
 export function resetSlideBackground(opened: OpenedPptx, slide: Slide): void {
+  const previousXml = patchSlideXml(slide)
   slide.bodyPrefix = removeSlideBackgroundXml(slide.bodyPrefix)
   delete slide.bgOwn
   slide.structureDirty = true
@@ -855,6 +871,7 @@ export function resetSlideBackground(opened: OpenedPptx, slide: Slide): void {
       : undefined)
   if (inherited) slide.background = inherited
   else delete slide.background
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
 }
 
 /**
@@ -936,6 +953,41 @@ export function editPictureSrcRect(
 }
 
 /**
+ * Change a shape's preset geometry ("Change Shape"): replace <a:prstGeom> (or
+ * <a:custGeom>) with the new preset and a fresh <a:avLst/>, keeping transform,
+ * fill, outline, and text. Byte surgery baked directly into originalXml.
+ */
+export function setShapePresetGeometry(slide: Slide, elementId: string, prst: string): boolean {
+  if (!/^[A-Za-z0-9]+$/.test(prst)) return false
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  let xml = patchedElementXml(el)
+  const geomXml = `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`
+  const existing =
+    /<a:prstGeom\b[^>]*\/>|<a:prstGeom\b[\s\S]*?<\/a:prstGeom>|<a:custGeom\b[\s\S]*?<\/a:custGeom>/.exec(
+      xml,
+    )
+  if (existing) {
+    xml = xml.slice(0, existing.index) + geomXml + xml.slice(existing.index + existing[0].length)
+  } else {
+    // No explicit geometry (bare text boxes): insert after </a:xfrm> inside spPr
+    const xfrmClose = /<\/a:xfrm>/.exec(xml)
+    if (!xfrmClose) return false
+    const at = xfrmClose.index + xfrmClose[0].length
+    xml = xml.slice(0, at) + geomXml + xml.slice(at)
+  }
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  const shape = el as TextElement
+  shape.presetGeometry = prst
+  delete shape.adjust
+  delete shape.customGeometry
+  slide.structureDirty = true
+  return true
+}
+
+/**
  * Text-box vertical alignment (bodyPr anchor: t/ctr/b). Byte surgery baked directly into originalXml.
  */
 export function setElementTextAnchor(
@@ -963,29 +1015,139 @@ export function setElementTextAnchor(
 }
 
 /**
- * Shape image fill: after landing the image in the package (media + rels), the
- * spPr fill node is replaced with a blipFill, byte surgery baked directly into
- * originalXml. Returns the mediaPath (for render-layer decoding), null on failure.
+ * Shape fill (top-level or one-level group child). The XML patch is baked into
+ * the owning fragment so a dropped picture fill can immediately release its
+ * obsolete relationship and unshared media.
+ */
+export function setElementFill(
+  opened: OpenedPptx,
+  slide: Slide,
+  elementId: string,
+  fill: string | GradientFillPatch,
+  opts: { groupId?: string } = {},
+): boolean {
+  let grp: GroupElement | undefined
+  let child: SlideElement | undefined
+  let el: SlideElement | undefined
+  if (opts.groupId) {
+    const found = findGroupChild(slide, opts.groupId, elementId)
+    if (
+      !found ||
+      (found.child.type !== 'text' && found.child.type !== 'shape') ||
+      !found.child.nvId
+    )
+      return false
+    ;({ grp, child } = found)
+  } else {
+    el = slide.elements.find((candidate) => candidate.id === elementId)
+    if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  }
+
+  const model =
+    typeof fill === 'string'
+      ? fill === 'none'
+        ? { type: 'none' as const }
+        : { type: 'solid' as const, color: fill }
+      : (() => {
+          const path = fill.path ?? (fill.radial ? ('circle' as const) : undefined)
+          return {
+            type: 'gradient' as const,
+            stops: fill.stops,
+            ...(fill.angle != null ? { angle: fill.angle } : {}),
+            ...(path ? { path } : {}),
+            ...(path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
+          }
+        })()
+  const previousXml = patchSlideXml(slide)
+  if (grp && child) {
+    if (!patchGroupChildXml(grp, child, (xml) => patchElementFill(xml, fill))) return false
+    ;(child as TextElement).fill = model
+  } else if (el) {
+    el.anchor.originalXml = patchElementFill(patchedElementXml(el), fill)
+    ;(el as TextElement).fill = model
+    el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+    el.dirtyPPr = undefined
+  }
+  slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+  return true
+}
+
+/**
+ * Shape picture/texture fill (top-level or one-level group child): lands the
+ * image in the package (media + rels), or reuses an already-landed media path
+ * (applying one pick to many shapes only adds rels), then replaces the spPr
+ * fill node with a blipFill, byte surgery baked directly into originalXml.
+ * tile repeats the image at natural size (texture), stretch maps it onto the
+ * bounds. Returns the mediaPath (render-layer decoding / reuse), null on failure.
  */
 export function setElementImageFill(
   opened: OpenedPptx,
   slide: Slide,
   elementId: string,
-  bytes: Uint8Array,
-  ext: string,
+  source: { bytes: Uint8Array; ext: string } | { mediaPath: string },
+  opts: { tile?: boolean; groupId?: string } = {},
 ): string | null {
-  const el = slide.elements.find((e) => e.id === elementId)
-  if (!el || (el.type !== 'text' && el.type !== 'shape')) return null
-  const added = addImageMediaAndRel(opened, slide, bytes, ext)
-  if (!added) return null
-  const rawFillXml = `<a:blipFill rotWithShape="1"><a:blip r:embed="${added.rid}"/><a:stretch><a:fillRect/></a:stretch></a:blipFill>`
-  const xml = patchElementFill(patchedElementXml(el), { rawFillXml })
-  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
-  el.dirtyPPr = undefined
-  el.anchor.originalXml = xml
-  ;(el as TextElement).fill = { type: 'image', mediaRef: added.mediaPath, mode: 'stretch' }
+  // Resolve the target before touching the package: a failed lookup must not
+  // leave an orphaned media part behind (multi-target fills would grow the
+  // archive on every failed attempt).
+  let grp: GroupElement | undefined
+  let child: SlideElement | undefined
+  let el: SlideElement | undefined
+  if (opts.groupId) {
+    const found = findGroupChild(slide, opts.groupId, elementId)
+    if (
+      !found ||
+      (found.child.type !== 'text' && found.child.type !== 'shape') ||
+      !found.child.nvId
+    )
+      return null
+    ;({ grp, child } = found)
+  } else {
+    el = slide.elements.find((e) => e.id === elementId)
+    if (!el || (el.type !== 'text' && el.type !== 'shape')) return null
+  }
+  const previousXml = patchSlideXml(slide)
+  let rid: string
+  let mediaPath: string
+  if ('bytes' in source) {
+    const added = addImageMediaAndRel(opened, slide, source.bytes, source.ext)
+    if (!added) return null
+    ;({ rid, mediaPath } = added)
+  } else {
+    mediaPath = source.mediaPath
+    if (!opened.archive.entries.has(mediaPath)) return null
+    const existing = imageRelFor(opened.archive, slide, mediaPath)
+    if (!existing) return null
+    rid = existing
+  }
+  const rawFillXml =
+    `<a:blipFill rotWithShape="1"><a:blip r:embed="${rid}"/>` +
+    (opts.tile
+      ? '<a:tile tx="0" ty="0" sx="100000" sy="100000" flip="none" algn="tl"/>'
+      : '<a:stretch><a:fillRect/></a:stretch>') +
+    '</a:blipFill>'
+  const model = {
+    type: 'image' as const,
+    mediaRef: mediaPath,
+    mode: opts.tile ? ('tile' as const) : ('stretch' as const),
+    // mirror what parse restores from the <a:tile> node, so the pre-save
+    // render already tiles at the natural (zoom-scaled) size
+    ...(opts.tile ? { tile: { tx: 0, ty: 0, sx: 1, sy: 1, algn: 'tl' } } : {}),
+  }
+  if (grp && child) {
+    if (!patchGroupChildXml(grp, child, (xml) => patchElementFill(xml, { rawFillXml }))) return null
+    ;(child as TextElement).fill = model
+  } else if (el) {
+    const xml = patchElementFill(patchedElementXml(el), { rawFillXml })
+    el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+    el.dirtyPPr = undefined
+    el.anchor.originalXml = xml
+    ;(el as TextElement).fill = model
+  }
   slide.structureDirty = true
-  return added.mediaPath
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+  return mediaPath
 }
 
 /**
@@ -1042,6 +1204,7 @@ export function replacePictureBytes(
   let xml = patchedElementXml(el)
   const blip = /<a:blip\b[^>]*\/?>/.exec(xml)
   if (!blip) return false
+  const previousXml = patchSlideXml(slide)
   const added = addImageMediaAndRel(opened, slide, bytes, ext)
   if (!added) return false
   let tag = blip[0]
@@ -1069,6 +1232,7 @@ export function replacePictureBytes(
   el.dirtyPPr = undefined
   el.anchor.originalXml = xml
   slide.structureDirty = true
+  cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
   return true
 }
 
@@ -1449,17 +1613,7 @@ export function deleteSlide(opened: OpenedPptx, index: number): boolean {
     archive.entries.set(presRelsPath, Buffer.from(presRels.replace(relTag, ''), 'utf8'))
   }
 
-  const ctPath = '[Content_Types].xml'
-  const ct = archive.readText(ctPath)
-  if (ct) {
-    const override = new RegExp(
-      `<Override PartName="/${slide.path.replace(/[.\\/]/g, '\\$&')}"[^>]*/>`,
-    ).exec(ct)?.[0]
-    if (override) archive.entries.set(ctPath, Buffer.from(ct.replace(override, ''), 'utf8'))
-  }
-
-  archive.entries.delete(slide.path)
-  archive.entries.delete(relsPathFor(slide.path))
+  removePartWithOwnedResources(archive, slide.path)
   deck.slides.splice(index, 1)
   return true
 }
@@ -3474,12 +3628,18 @@ export function editGroupChildFill(
       ? fill === 'none'
         ? { type: 'none' }
         : { type: 'solid', color: fill }
-      : {
-          type: 'gradient',
-          stops: fill.stops,
-          ...(fill.angle != null ? { angle: fill.angle } : {}),
-          ...(fill.radial ? { path: 'circle' as const } : {}),
-        }
+      : (() => {
+          // Mirror the XML patch onto the model (radial is the legacy alias for path: circle),
+          // so the canvas re-render shows the right shading without a reload
+          const path = fill.path ?? (fill.radial ? ('circle' as const) : undefined)
+          return {
+            type: 'gradient' as const,
+            stops: fill.stops,
+            ...(fill.angle != null ? { angle: fill.angle } : {}),
+            ...(path ? { path } : {}),
+            ...(path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
+          }
+        })()
   if (!patchGroupChildXml(found!.grp, child, (xml) => patchElementFill(xml, fill))) return false
   slide.structureDirty = true
   return true

@@ -46,6 +46,9 @@ export const initialSnapshot: WorkbookSnapshot = {
 
 export const FORMULA_MODE_MAX_CELLS = 50_000
 export const SET_RANGE_VALUES_MUTATION = 'sheet.mutation.set-range-values'
+// Command (not mutation) id — the gate where user-typed / facade-set values
+// can still be cancelled before they reach the model and the formula engine.
+export const SET_RANGE_VALUES_COMMAND = 'sheet.command.set-range-values'
 export const SET_NUMFMT_MUTATION = 'sheet.mutation.set.numfmt'
 // Freeze and gridline toggles journal from their mutations so Univer's own
 // undo/redo re-records the restored state (ribbon handlers do not record).
@@ -89,10 +92,23 @@ export const AXIS_ATTR_MUTATIONS: Record<
   'sheet.mutation.set-col-visible': { kind: 'hidden', axis: 'column', hidden: false },
 }
 
+/// Max digit width of the workbook's Normal font in px — Excel's column
+/// width unit base. 7 = Calibri 11 (Windows GDI); set per loaded workbook so
+/// both width conversions stay consistent for the session.
+let workbookMdw = 7
+
+export function setWorkbookMdw(mdw: number): void {
+  workbookMdw = Number.isFinite(mdw) && mdw >= 4 && mdw <= 30 ? Math.round(mdw) : 7
+}
+
+export function getWorkbookMdw(): number {
+  return workbookMdw
+}
+
 /// Univer column pixels → OOXML character width (inverse of
 /// characterWidthToPixels), snapped to the format's 1/256 granularity.
 export function pixelsToCharacterWidth(pixels: number): number {
-  return Math.max(Math.round(((pixels - 5) / 7) * 256) / 256, 1 / 256)
+  return Math.max(Math.round(((pixels - 5) / workbookMdw) * 256) / 256, 1 / 256)
 }
 // Sorting reorders the model in place; the journal snapshots the sorted
 // range afterwards, so the save writes exactly what the screen shows.

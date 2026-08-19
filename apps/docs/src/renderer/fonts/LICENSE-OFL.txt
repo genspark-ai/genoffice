@@ -6,6 +6,10 @@ Copyright (c) 2010-2013 by tyPoland Lukasz Dziedzic (team@latofonts.com)
 	with Reserved Font Name "Carlito".
 Copyright 2014-2021 Adobe (http://www.adobe.com/), Google LLC
 	with Reserved Font Name "Source". (Noto Sans CJK / Noto Serif CJK)
+Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com),
+with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver
+NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver
+NanumBrush, NanumPen, Naver NanumPen.
 
 Note: the Caladea fonts in this directory are NOT under this license;
 they are licensed under the Apache License 2.0 (see LICENSE at the

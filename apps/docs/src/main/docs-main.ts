@@ -64,13 +64,32 @@ import type {
   AttachmentImageResult,
   AttachmentMeta,
   AttachmentReadResult,
+  DecryptOpenResult,
   DocsTabInfo,
   MenuCommand,
-  OpenFileResult,
+  OpenDocxResult,
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { findDocxPath } from '../shared/open-file'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
+import {
+  commitDocPasswordSave,
+  currentDocPasswordIntentRevision,
+  decryptDocx,
+  decryptRecoveryCopy,
+  discardDocPasswordIntents,
+  DocxDecryptError,
+  docPasswordFor,
+  encryptDocx,
+  forgetDocPasswords,
+  isEncryptedDocx,
+  markDiskEncrypted,
+  prepareRecoveryDocx,
+  rememberDocPassword,
+  renameDocPassword,
+  setDocPassword,
+  snapshotDocPassword,
+} from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { initDocsAutoUpdater } from './updater'
 
@@ -2035,6 +2054,9 @@ export function docsFileRenamed(wc: WebContents, oldPath: string, newPath: strin
     states.delete(oldPath)
     states.set(newPath, recorded)
   }
+  // an encrypted document's password must follow the path, or the next save
+  // finds no password under the new name and silently writes plaintext
+  renameDocPassword(wc.id, oldPath, newPath)
   wc.send('docs:renamed', { oldPath, newPath })
 }
 
@@ -2208,6 +2230,7 @@ export function teardownDocsRenderer(contents: WebContents): void {
   docWritablePaths.delete(contents.id)
   pdfWritablePaths.delete(contents.id)
   docDiskStates.delete(contents.id)
+  forgetDocPasswords(contents.id)
   if (!contents.isDestroyed()) contents.send('docs:teardown')
 }
 
@@ -2230,21 +2253,30 @@ function clearRecoveryCopy(filePath: string): void {
   }
 }
 
+interface MaybeRecoveredDocBytes {
+  bytes: Buffer
+  recovered: boolean
+}
+
 /** On open, if a recovery copy newer than the original exists, ask whether to restore
  * (still points at the original path; only save persists it). */
-async function maybeRecoverDocBytes(filePath: string, original: Buffer): Promise<Buffer> {
+async function maybeRecoverDocBytes(
+  filePath: string,
+  original: Buffer,
+): Promise<MaybeRecoveredDocBytes> {
   const asPath = recoveryPathFor(filePath)
   try {
-    if (!existsSync(asPath)) return original
+    if (!existsSync(asPath)) return { bytes: original, recovered: false }
     if (statSync(asPath).mtimeMs <= statSync(filePath).mtimeMs) {
-      // a crashed partial write bumps mtime yet corrupts the file — keep the copy then
-      if (looksLikeZip(original)) {
+      // a crashed partial write bumps mtime yet corrupts the file — keep the copy
+      // then (an encrypted original is a CFB container, not a zip: intact too)
+      if (looksLikeZip(original) || isEncryptedDocx(original)) {
         unlinkSync(asPath)
-        return original
+        return { bytes: original, recovered: false }
       }
     }
   } catch {
-    return original
+    return { bytes: original, recovered: false }
   }
   const options = {
     type: 'question' as const,
@@ -2261,23 +2293,56 @@ async function maybeRecoverDocBytes(filePath: string, original: Buffer): Promise
       : await dialog.showMessageBox(options)
   if (r.response === 0) {
     try {
-      return await readFile(asPath)
+      return { bytes: await readFile(asPath), recovered: true }
     } catch {
-      return original
+      return { bytes: original, recovered: false }
     }
   }
   clearRecoveryCopy(filePath)
-  return original
+  return { bytes: original, recovered: false }
 }
 
-async function loadDocx(filePath: string, wcId: number): Promise<OpenFileResult | null> {
+async function loadDocx(
+  filePath: string,
+  wcId: number,
+  password?: string,
+): Promise<OpenDocxResult> {
   if (typeof filePath !== 'string' || !/\.docx$/i.test(filePath)) return null
   if (!existsSync(filePath)) return null
   const original = await readFile(filePath)
+  // Password-protected docx (ECMA-376 CFB container): without a password, hand
+  // back a marker — the renderer prompts and retries via docs:open-decrypt.
+  // No side effects (recents/write grant) until the password checks out.
+  let plainBytes: Buffer = original
+  const encrypted = isEncryptedDocx(original)
+  if (encrypted) {
+    const pwd = password ?? docPasswordFor(wcId, filePath)
+    if (!pwd) return { needsPassword: true, path: filePath, name: basename(filePath) }
+    plainBytes = await decryptDocx(original, pwd) // throws DocxDecryptError
+    rememberDocPassword(wcId, filePath, pwd)
+  } else {
+    rememberDocPassword(wcId, filePath, null)
+  }
+  // the archive keeps the on-disk original as-is (encrypted ones included: they
+  // reopen with the user's password), so a bad save never loses the source file
   const hash = await archiveOriginal(filePath, original)
-  const bytes = await maybeRecoverDocBytes(filePath, original)
+  const recovery = await maybeRecoverDocBytes(filePath, plainBytes)
+  let bytes = recovery.bytes
+  let recovered = recovery.recovered
+  // recovery copies of a protected document are themselves encrypted (see
+  // docs:write-recovery); an unreadable copy falls back to the original
+  if (encrypted && isEncryptedDocx(bytes)) {
+    try {
+      bytes = await decryptRecoveryCopy(wcId, filePath, bytes)
+    } catch {
+      bytes = plainBytes
+      recovered = false
+    }
+  }
   pushRecent(filePath)
   allowDocWrite(wcId, filePath)
+  if (fileOpenedHook) fileOpenedHook(wcId, filePath)
+  markDiskEncrypted(wcId, filePath, encrypted)
   // record the on-disk file, not the recovery copy: what matters is what save would overwrite
   await rememberDiskState(wcId, filePath, original)
   return {
@@ -2285,6 +2350,8 @@ async function loadDocx(filePath: string, wcId: number): Promise<OpenFileResult 
     name: basename(filePath),
     data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
     hash,
+    encrypted,
+    recovered: recovered || undefined,
   }
 }
 
@@ -2333,6 +2400,7 @@ const TEXT_EXTS = new Set([
 /** office/pdf formats get text extracted via @genoffice/file-parse; images skip extraction and go multimodal (files:read-image) */
 const ATTACHMENT_EXTS = new Set([
   ...TEXT_EXTS,
+  'doc',
   'docx',
   'pdf',
   'pptx',
@@ -2655,6 +2723,19 @@ function notifyFileSaved(wc: WebContents, filePath: string): void {
 }
 
 /**
+ * Fired when a docx is opened INSIDE an existing tab (File > Open dialog or an
+ * explicit path open). Sheets and slides have had this hook from the start;
+ * docs only synced the tab on save-as/first-save, so a file opened into an
+ * untitled tab kept the "Untitled Document" tab title until a save landed on a
+ * NEW path — which a plain Ctrl+S to the original file never does (r115).
+ */
+let fileOpenedHook: ((wcId: number, filePath: string) => void) | null = null
+
+export function setDocsFileOpenedHook(hook: (wcId: number, filePath: string) => void): void {
+  fileOpenedHook = hook
+}
+
+/**
  * Reverse lookup from a sheets sessionId to its file path. In shell mode the
  * project:* handlers are registered by this file, but only sheets-main knows the
  * sessionId mapping; the shell injects it at startup (standalone docs doesn't need it).
@@ -2844,6 +2925,66 @@ export function registerDocsIpc(): void {
 
   ipcMain.handle('docs:open-path', (event, filePath: string) => loadDocx(filePath, event.sender.id))
 
+  // Review > Protect > Encrypt with Password: set/clear the open password.
+  // Takes effect on the next save (docs:save / save-as / save-new all consult the store).
+  ipcMain.handle(
+    'docs:set-password',
+    (event, filePath: string | null, password: string | null): { ok: boolean } => {
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      if (filePath !== null && typeof filePath !== 'string') return { ok: false }
+      if (password !== null && (typeof password !== 'string' || password.length === 0)) {
+        return { ok: false }
+      }
+      // only the document this renderer legitimately has open (same grant as saving)
+      if (filePath && !canDocWrite(event.sender.id, filePath)) return { ok: false }
+      setDocPassword(event.sender.id, filePath, password)
+      return { ok: true }
+    },
+  )
+
+  ipcMain.handle('docs:password-intent-revision', (event): number => {
+    if (tornDownWcIds.has(event.sender.id)) return -1
+    return currentDocPasswordIntentRevision()
+  })
+
+  ipcMain.handle(
+    'docs:discard-password-intents',
+    (event, throughRevision: unknown): { ok: boolean } => {
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      if (
+        typeof throughRevision !== 'number' ||
+        !Number.isSafeInteger(throughRevision) ||
+        throughRevision < 0
+      ) {
+        return { ok: false }
+      }
+      discardDocPasswordIntents(event.sender.id, throughRevision)
+      return { ok: true }
+    },
+  )
+
+  // decrypt-and-open a password-protected docx; wrong-password keeps the renderer's prompt open
+  ipcMain.handle(
+    'docs:open-decrypt',
+    async (event, filePath: string, password: string): Promise<DecryptOpenResult> => {
+      if (typeof filePath !== 'string' || typeof password !== 'string' || password.length === 0) {
+        return { ok: false, reason: 'error', error: 'invalid arguments' }
+      }
+      try {
+        const result = await loadDocx(filePath, event.sender.id, password)
+        if (!result) return { ok: false, reason: 'error', error: 'file not found' }
+        // the file was swapped for a plain docx between prompt and submit — still an open
+        if ('needsPassword' in result) return { ok: false, reason: 'error', error: 'not encrypted' }
+        return { ok: true, result }
+      } catch (err) {
+        if (err instanceof DocxDecryptError) {
+          return { ok: false, reason: err.reason, error: err.message }
+        }
+        return { ok: false, reason: 'error', error: String(err) }
+      }
+    },
+  )
+
   ipcMain.handle('docs:consume-pending-open', (event) => {
     rendererReady = true
     // a tab spawned via New Tab loads the document queued for it specifically
@@ -2901,12 +3042,32 @@ export function registerDocsIpc(): void {
         if (tornDownWcIds.has(event.sender.id) || !canDocWrite(event.sender.id, filePath)) {
           return { ok: false, error: 'save target is not an opened document' }
         }
-        const bytes = Buffer.from(data)
+        // Snapshot desired state: the disk password remains unchanged until the
+        // atomic write succeeds, and a newer ribbon intent survives this save.
+        const passwordState = snapshotDocPassword(event.sender.id, filePath)
+        const bytes = passwordState.password
+          ? encryptDocx(Buffer.from(data), passwordState.password)
+          : Buffer.from(data)
         await atomicWriteFile(filePath, bytes)
+        // Teardown may have cleared all in-memory secrets while the atomic
+        // write was pending. Never resurrect state for an orphaned renderer.
+        if (tornDownWcIds.has(event.sender.id)) {
+          return { ok: false, error: 'save target is not an opened document' }
+        }
         await rememberDiskState(event.sender.id, filePath, bytes)
+        if (tornDownWcIds.has(event.sender.id)) {
+          return { ok: false, error: 'save target is not an opened document' }
+        }
+        // Commit immediately after the final await: intents received during
+        // post-write bookkeeping are included, with no later async race.
+        const passwordIntentPending = commitDocPasswordSave(
+          event.sender.id,
+          passwordState,
+          filePath,
+        )
         clearRecoveryCopy(filePath)
         pushRecent(filePath)
-        return { ok: true }
+        return { ok: true, passwordIntentPending }
       } catch (err) {
         return { ok: false, error: String(err) }
       }
@@ -2923,7 +3084,12 @@ export function registerDocsIpc(): void {
       // copy while this write is in flight bumps the epoch and invalidates it
       const epoch = recoveryClearEpochs.get(filePath) ?? 0
       await mkdir(recoveryDir(), { recursive: true })
-      await atomicWriteFile(recoveryPathFor(filePath), Buffer.from(data))
+      // Recovery follows the current disk state, never the desired next-save
+      // password. Missing state for an encrypted disk file skips the tick so
+      // plaintext can never be written as its recovery copy.
+      const bytes = prepareRecoveryDocx(event.sender.id, filePath, Buffer.from(data))
+      if (!bytes) return { ok: false }
+      await atomicWriteFile(recoveryPathFor(filePath), bytes)
       // The tab may have been closed ("Don't Save" clears the copy, teardown
       // revokes access) or the document saved (docs:save clears the copy) while
       // the write was in flight. A write that lost either race would offer
@@ -2942,30 +3108,46 @@ export function registerDocsIpc(): void {
     }
   })
 
-  ipcMain.handle('docs:save-as', async (event, defaultName: string, data: ArrayBuffer) => {
-    // an orphaned (closed-tab) renderer must not open dialogs or land new files
-    if (tornDownWcIds.has(event.sender.id)) return { ok: false }
-    const result = await saveDialog(event, {
-      title: tm('dlgSaveAs'),
-      defaultPath: defaultName,
-      filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
-    })
-    if (result.canceled || !result.filePath) return { ok: false }
-    // the tab may have been closed while the dialog was open; checked before the
-    // write because Save As may overwrite an existing file (no safe rollback)
-    if (tornDownWcIds.has(event.sender.id)) return { ok: false }
-    try {
-      const bytes = Buffer.from(data)
-      await atomicWriteFile(result.filePath, bytes)
-      allowDocWrite(event.sender.id, result.filePath)
-      await rememberDiskState(event.sender.id, result.filePath, bytes)
-      pushRecent(result.filePath)
-      notifyFileSaved(event.sender, result.filePath)
-      return { ok: true, path: result.filePath }
-    } catch (err) {
-      return { ok: false, error: String(err) }
-    }
-  })
+  ipcMain.handle(
+    'docs:save-as',
+    async (event, defaultName: string, data: ArrayBuffer, sourcePath?: string | null) => {
+      // an orphaned (closed-tab) renderer must not open dialogs or land new files
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      const result = await saveDialog(event, {
+        title: tm('dlgSaveAs'),
+        defaultPath: defaultName,
+        filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+      })
+      if (result.canceled || !result.filePath) return { ok: false }
+      // the tab may have been closed while the dialog was open; checked before the
+      // write because Save As may overwrite an existing file (no safe rollback)
+      if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+      try {
+        const passwordState = snapshotDocPassword(
+          event.sender.id,
+          typeof sourcePath === 'string' && sourcePath ? sourcePath : null,
+        )
+        const bytes = passwordState.password
+          ? encryptDocx(Buffer.from(data), passwordState.password)
+          : Buffer.from(data)
+        await atomicWriteFile(result.filePath, bytes)
+        if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+        allowDocWrite(event.sender.id, result.filePath)
+        await rememberDiskState(event.sender.id, result.filePath, bytes)
+        if (tornDownWcIds.has(event.sender.id)) return { ok: false }
+        const passwordIntentPending = commitDocPasswordSave(
+          event.sender.id,
+          passwordState,
+          result.filePath,
+        )
+        pushRecent(result.filePath)
+        notifyFileSaved(event.sender, result.filePath)
+        return { ok: true, path: result.filePath, passwordIntentPending }
+      } catch (err) {
+        return { ok: false, error: String(err) }
+      }
+    },
+  )
 
   ipcMain.handle('docs:save-new', async (event, defaultName: string, data: ArrayBuffer) => {
     try {
@@ -2973,7 +3155,10 @@ export function registerDocsIpc(): void {
       // itself to the default folder after the user chose Don't Save
       if (tornDownWcIds.has(event.sender.id)) return { ok: false }
       const filePath = uniquePathIn(defaultSaveDir(), defaultName)
-      const bytes = Buffer.from(data)
+      const passwordState = snapshotDocPassword(event.sender.id, null)
+      const bytes = passwordState.password
+        ? encryptDocx(Buffer.from(data), passwordState.password)
+        : Buffer.from(data)
       await atomicWriteFile(filePath, bytes)
       // teardown may have happened while the write was in flight — the path is
       // freshly created, so rolling it back is safe (mirrors docs:write-recovery)
@@ -2983,9 +3168,14 @@ export function registerDocsIpc(): void {
       }
       allowDocWrite(event.sender.id, filePath)
       await rememberDiskState(event.sender.id, filePath, bytes)
+      if (tornDownWcIds.has(event.sender.id)) {
+        await unlink(filePath).catch(() => {})
+        return { ok: false }
+      }
+      const passwordIntentPending = commitDocPasswordSave(event.sender.id, passwordState, filePath)
       pushRecent(filePath)
       notifyFileSaved(event.sender, filePath)
-      return { ok: true, path: filePath }
+      return { ok: true, path: filePath, passwordIntentPending }
     } catch (err) {
       return { ok: false, error: String(err) }
     }

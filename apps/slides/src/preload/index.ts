@@ -55,6 +55,7 @@ import type {
   DesktopFilesApi,
   EditBackgroundOp,
   EditFillOp,
+  EditFillImageOp,
   EditStrokeOp,
   FlipElementOp,
   EditTextOp,
@@ -139,8 +140,9 @@ const api: SlidesApi = {
     ipcRenderer.invoke('slides:edit-picture-src-rect', op),
   editPictureOpacity: (op: EditPictureOpacityOp) =>
     ipcRenderer.invoke('slides:edit-picture-opacity', op),
-  editImageFill: (op: { slideIndex: number; sourceId: string }) =>
-    ipcRenderer.invoke('slides:edit-image-fill', op),
+  editImageFill: (op: EditFillImageOp) => ipcRenderer.invoke('slides:edit-image-fill', op),
+  changeShape: (op: { slideIndex: number; sourceId: string; prst: string }) =>
+    ipcRenderer.invoke('slides:change-shape', op),
   setTextAnchor: (op: {
     slideIndex: number
     sourceId: string

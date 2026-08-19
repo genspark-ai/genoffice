@@ -1060,6 +1060,15 @@ export function IconLock(props: IconProps) {
   )
 }
 
+export function IconKey(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="5.4" cy="10.6" r="2.5" />
+      <path d="M 7.3 8.7 L 12.9 3.1 M 10.4 5.6 l 1.7 1.7 M 12.1 3.9 l 1.4 1.4" />
+    </Svg>
+  )
+}
+
 /* ---------- View ---------- */
 
 function Magnifier({ children }: { children?: ReactNode }) {
