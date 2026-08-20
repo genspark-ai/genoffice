@@ -18,7 +18,6 @@ import {
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
-  safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
   toggleDevToolsItem,
@@ -26,6 +25,7 @@ import {
 } from '@genoffice/electron-utils'
 import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
+import { createDocsWindowOpenHandler } from './external-links'
 import { ProjectStore } from '@genoffice/project-store'
 import type {
   IpcMainInvokeEvent,
@@ -73,6 +73,7 @@ import type {
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { findDocxPath } from '../shared/open-file'
+import { DOCS_LINK_PROTOCOLS } from '../shared/link-protocols'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
 import {
   commitDocPasswordSave,
@@ -94,6 +95,10 @@ import {
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { initDocsAutoUpdater } from './updater'
+
+// One shared window.open route for every Docs webContents: allowlist-validated
+// (http/https/aof-review) then shell.openExternal; the window never navigates.
+const docsWindowOpenHandler = createDocsWindowOpenHandler((url) => shell.openExternal(url))
 
 /**
  * Docs main-process logic as an embeddable module: no top-level side effects.
@@ -3751,11 +3756,7 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
   const webContentsId = win.webContents.id
   if (openPath) pendingWindowOpens.set(webContentsId, openPath)
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    const target = safeExternalUrl(url)
-    if (target) void shell.openExternal(target)
-    return { action: 'deny' }
-  })
+  win.webContents.setWindowOpenHandler(docsWindowOpenHandler)
 
   if (runtime.rendererUrl) {
     void win.loadURL(runtime.rendererUrl)
@@ -3972,11 +3973,7 @@ export function createDocsView(openPath?: string): WebContentsView {
 
   if (openPath) pendingWindowOpens.set(view.webContents.id, openPath)
 
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    const target = safeExternalUrl(url)
-    if (target) void shell.openExternal(target)
-    return { action: 'deny' }
-  })
+  view.webContents.setWindowOpenHandler(docsWindowOpenHandler)
 
   // mode=tab: the shell's tab strip owns the traffic lights / caption buttons,
   // so the ribbon must not reserve space for them

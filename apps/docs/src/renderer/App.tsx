@@ -3057,6 +3057,30 @@ export function App() {
   // Word: TOC entries jump on ⌘/Ctrl+click only; a plain click just places the
   // caret. Resolve the bookmark anchor against the original block XML, fall
   // back to matching the heading text.
+  // Link opening, capture phase on the document (Chromium disables native
+  // link navigation inside contenteditable and ProseMirror may consume
+  // bubbling clicks). aof-review:// timecode links jump on a PLAIN click —
+  // jumping is their whole purpose in a review log. Web links keep the Word
+  // modifier+click convention so prose editing stays safe. Everything routes
+  // through the window-open handler, whose safeExternalUrl allowlist decides
+  // what actually reaches the OS.
+  useEffect(() => {
+    const onLinkClick = (e: MouseEvent): void => {
+      const link = (e.target as HTMLElement).closest?.('a.doc-link') as HTMLAnchorElement | null
+      if (!link) return
+      const href = link.getAttribute('href')
+      if (!href) return
+      const isTimecodeLink = href.startsWith('aof-review:')
+      if (!isTimecodeLink && !e.metaKey && !e.ctrlKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      console.info(`[doc-link] click -> ${href}`)
+      window.open(href, '_blank')
+    }
+    document.addEventListener('click', onLinkClick, true)
+    return () => document.removeEventListener('click', onLinkClick, true)
+  }, [])
+
   const onDocClick = useCallback(
     (e: ReactMouseEvent) => {
       const commentSpan = (e.target as HTMLElement).closest('.doc-comment') as HTMLElement | null
@@ -3073,6 +3097,14 @@ export function App() {
         if ((e.metaKey || e.ctrlKey) && /^https?:/i.test(href)) window.open(href)
       }
       if (!e.metaKey && !e.ctrlKey) return
+      // Word behavior: Ctrl/Cmd+Click follows a hyperlink. window.open routes
+      // through the main-process allowlist handler (http/https/aof-review only).
+      const link = (e.target as HTMLElement).closest('a.doc-link') as HTMLAnchorElement | null
+      if (link?.getAttribute('href')) {
+        e.preventDefault()
+        window.open(link.getAttribute('href') as string, '_blank')
+        return
+      }
       const line = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
       if (!line) return
       let target: Element | null = null
