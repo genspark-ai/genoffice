@@ -387,6 +387,16 @@ function symbolBulletText(font: string | undefined, char: string): string | unde
   return cp >= 0x20 && cp <= 0xff ? String.fromCodePoint(0xf000 + cp) : char
 }
 
+// ── East-Asian kinsoku (PowerPoint default rules) ───────────────────
+// Closing marks / small kana must not begin a line; opening brackets must not end one.
+// Only single-grapheme tokens participate (CJK tokenization emits one token per wide char).
+const KINSOKU_NO_START = new Set(
+  '、。々,.!?:;)]}%，．！？：；）］｝％〉》」』】〕〟｡｣､･ｰﾞﾟ・ーぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ゛゜ゝゞヽヾ',
+)
+const KINSOKU_NO_END = new Set('([{$（［｛＄〈《「『【〔〝｢£¥￡￥')
+const kinsokuNoStart = (t: Token) => KINSOKU_NO_START.has(t.text)
+const kinsokuNoEnd = (t: Token) => KINSOKU_NO_END.has(t.text)
+
 /** Southeast Asian scripts without spaces (Thai/Burmese/Khmer/Lao); word boundaries need ICU dictionary segmentation. */
 const SEA_RE = /[฀-໿က-႟ក-៿]/
 const WORD_SEG: Intl.Segmenter | null =
@@ -581,9 +591,18 @@ function layoutParagraph(
     // lazily because the soft wrap right below can end line 0 for this same token
     const lineAvail = () => (lines.length === 0 ? availWidth - firstLineShrinkPx : availWidth)
     if (wrap && cur.length && curW + w > lineAvail() && !tok.isSpace) {
+      // Kinsoku: pull the predecessor down when the new line would start with a closing
+      // mark, push an opening bracket down when it would end the old line.
+      const carry: Token[] = []
+      while (cur.length > 1) {
+        const head = carry[0] ?? tok
+        const last = cur[cur.length - 1]!
+        if (last.isSpace || (!kinsokuNoStart(head) && !kinsokuNoEnd(last))) break
+        carry.unshift(cur.pop()!)
+      }
       pushLine(cur)
-      cur = []
-      curW = 0
+      cur = carry
+      curW = carry.reduce((s, t) => s + tokenWidth(t, metrics), 0)
     }
     // Hard-break over-long words (a single token wider than the line)
     if (wrap && !cur.length && w > lineAvail() && tok.text.length > 1 && !tok.isSpace) {

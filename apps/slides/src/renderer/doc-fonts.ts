@@ -30,25 +30,30 @@ export async function syncPrivateFonts(): Promise<void> {
     window.__genofficeDocFontsSynced = true
     return
   }
-  await Promise.all(
+  const added = await Promise.all(
     faces
       .filter((f) => !requested.has(f.id))
       .map(async (f) => {
         requested.add(f.id)
         try {
           const data = await window.slidesApi.privateFontData(f.id)
-          if (!data) return
+          if (!data) return false
           const face = new FontFace(f.family, data, {
             weight: f.bold ? '700' : '400',
             style: f.italic ? 'italic' : 'normal',
           })
-          // Add before load so the FontFaceSet emits 'loadingdone' when it finishes
           document.fonts.add(face)
           await face.load()
+          return true
         } catch {
           /* unparseable face: keep the CSS fallback chain */
+          return false
         }
       }),
   )
+  // ArrayBuffer-backed FontFaces parse synchronously in the constructor, so the set never
+  // enters the loading state and never emits a real 'loadingdone' — canvases already
+  // rastered with a fallback face would keep the stale pixels. Fire it by hand.
+  if (added.some(Boolean)) document.fonts.dispatchEvent(new Event('loadingdone'))
   window.__genofficeDocFontsSynced = true
 }

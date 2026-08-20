@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider'
+import type { AiSettings } from '@genoffice/ai-provider'
 import type {
   AccountLoginEvent,
   AccountStatus,
@@ -237,6 +239,37 @@ const homeApi: HomeApi = {
   async openCloudProject(projectUrl) {
     if (typeof projectUrl !== 'string' || !projectUrl) throw new Error('Invalid project URL.')
     await ipcRenderer.invoke(HOME_CHANNELS.openCloudProject, projectUrl)
+  },
+  // AI settings channels are registered once by the shell's aggregated docs handlers
+  async getAiSettings() {
+    return (await ipcRenderer.invoke('ai:get-settings')) as AiSettings
+  },
+  async setAiSettings(settings) {
+    await ipcRenderer.invoke('ai:set-settings', settings)
+  },
+  getAiProviders() {
+    return AI_PROVIDERS.map((meta) => {
+      let defaultBaseUrl = ''
+      // genspark routes by model and custom has no default — both stay ''
+      if (meta.id !== 'genspark' && !meta.needsBaseUrl) {
+        defaultBaseUrl = getProviderAdapter(meta.id).resolveEndpoint({
+          apiKey: '',
+          model: meta.defaultModel,
+        }).baseUrl
+      }
+      return { ...meta, defaultBaseUrl }
+    })
+  },
+  async testAiSettings(settings) {
+    const result: unknown = await ipcRenderer.invoke('ai:chat', {
+      settings,
+      system: 'You are a connectivity test. Reply with the single word OK.',
+      user: 'ping',
+    })
+    const raw = (result ?? {}) as { ok?: unknown; error?: unknown }
+    return raw.ok === true
+      ? { ok: true }
+      : { ok: false, error: typeof raw.error === 'string' ? raw.error : 'Connection failed' }
   },
 }
 

@@ -123,6 +123,14 @@ export interface SaveOptions {
   /** "different odd & even pages": set/remove settings.xml w:evenAndOddHeaders */
   evenAndOddHeaders?: boolean
   /**
+   * Inject the newly created header/footer references into EVERY body sectPr
+   * that has none (not just the trailing one). Generated multi-section
+   * documents (pdf2docx) need the same header on every section: sections
+   * inherit forward from the previous section only, so a reference on the
+   * trailing sectPr alone leaves all earlier sections blank.
+   */
+  hfAllSections?: boolean
+  /**
    * Append numbering definitions to word/numbering.xml (when the part is missing, it is
    * created from the blank template, including rel/ContentType). newDefs = brand-new
    * abstractNum + w:num (new lists); restartNums = new w:num pointing at an existing
@@ -447,20 +455,29 @@ export async function saveDocx(
 
   const newMedia: Array<{ path: string; base64: string }> = []
   const usedExtensions = new Set<string>()
+  // identical bytes embed ONE media part (repeated logos / per-page backgrounds)
+  const mediaRelByContent = new Map<string, string>()
   let imageSeq = nextImageSeq(zip)
-  /** Land image bytes as a media part + relationship; returns the new rId. */
+  let docPrSeq = imageSeq
+  /** Land image bytes as a media part + relationship; returns the rId.
+   *  Identical bytes reuse ONE media part (repeated logos / per-page backgrounds). */
   const embedImageMedia = (image: { base64: string; mime: NewImage['mime'] }): string => {
     const ext = IMAGE_EXT[image.mime]
-    const mediaPath = `word/media/aidocs${imageSeq++}.${ext}`
-    const rId = `rId${nextRelNum++}`
-    newRels.push({
-      rId,
-      type: IMAGE_REL_TYPE,
-      target: mediaPath.replace(/^word\//, ''),
-      external: false,
-    })
-    newMedia.push({ path: mediaPath, base64: image.base64 })
-    usedExtensions.add(ext)
+    const contentKey = `${image.mime}:${image.base64}`
+    let rId = mediaRelByContent.get(contentKey)
+    if (rId === undefined) {
+      const mediaPath = `word/media/aidocs${imageSeq++}.${ext}`
+      rId = `rId${nextRelNum++}`
+      newRels.push({
+        rId,
+        type: IMAGE_REL_TYPE,
+        target: mediaPath.replace(/^word\//, ''),
+        external: false,
+      })
+      newMedia.push({ path: mediaPath, base64: image.base64 })
+      usedExtensions.add(ext)
+      mediaRelByContent.set(contentKey, rId)
+    }
     return rId
   }
   const embedImage = (image: NewImage): string => {
@@ -476,9 +493,20 @@ export async function saveDocx(
     const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
     const eeX = Math.max(0, Math.round((bw - cx) / 2))
     const eeY = Math.max(0, Math.round((bh - cy) / 2))
-    const docPrId = 9000 + imageSeq
-    const pPr =
-      image.align && image.align !== 'left' ? `<w:pPr><w:jc w:val="${image.align}"/></w:pPr>` : ''
+    // dedup means imageSeq does not advance for repeated bytes — docPr ids need their own counter
+    const docPrId = 9000 + ++docPrSeq
+    const ps = image.paraSpacing
+    const spacingAttrs: string[] = []
+    if (ps?.beforeTwips && ps.beforeTwips > 0)
+      spacingAttrs.push(`w:before="${Math.round(ps.beforeTwips)}"`)
+    if (ps?.afterTwips !== undefined && ps.afterTwips >= 0)
+      spacingAttrs.push(`w:after="${Math.round(ps.afterTwips)}"`)
+    if (ps?.lineTwips && ps.lineRule)
+      spacingAttrs.push(`w:line="${Math.round(ps.lineTwips)}"`, `w:lineRule="${ps.lineRule}"`)
+    // schema order inside pPr: w:spacing before w:jc
+    const spacing = spacingAttrs.length > 0 ? `<w:spacing ${spacingAttrs.join(' ')}/>` : ''
+    const jc = image.align && image.align !== 'left' ? `<w:jc w:val="${image.align}"/>` : ''
+    const pPr = spacing || jc ? `<w:pPr>${spacing}${jc}</w:pPr>` : ''
     const xml =
       `<w:p>${pPr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
       `<wp:extent cx="${cx}" cy="${cy}"/>` +
@@ -492,7 +520,9 @@ export async function saveDocx(
       `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${image.flipH ? ' flipH="1"' : ''}${image.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
       '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
       '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
-    return image.wrap ? applyImageWrap(xml, image.wrap) : xml
+    return image.wrap
+      ? applyImageWrap(xml, image.wrap, image.posOffsetEmu, undefined, image.zOrder)
+      : xml
   }
 
   // ---- new embedded charts: chart part + workbook + relationship + drawing paragraph ----
@@ -979,6 +1009,16 @@ export async function saveDocx(
 
   let newDocumentXml =
     documentXml.slice(0, bodyInnerStart) + parts.join('') + documentXml.slice(bodyInnerEnd)
+
+  // every ref-less body sectPr picks up the new header/footer references
+  // (the trailing sectPr already received them above and is skipped by the
+  // lookahead; sections that carry their own references keep them)
+  if (options.hfAllSections && hfRefTags.length > 0) {
+    newDocumentXml = newDocumentXml.replace(
+      /(<w:sectPr(?:\s[^>]*)?>)(?!<w:headerReference|<w:footerReference)/g,
+      `$1${hfRefTags.join('')}`,
+    )
+  }
 
   if (options.comments !== undefined) {
     newDocumentXml = removeDeletedCommentMarkers(

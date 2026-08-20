@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Dropdown } from '@genoffice/ui'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
-import type { StringKey } from './locale'
-import type { AccountStatus, UiTheme } from '../../shared/home-api'
+import type { StringKey, TFunc } from './locale'
+import type { AccountStatus, AiCatalogEntry, UiTheme } from '../../shared/home-api'
+import { ProviderLogo } from './provider-logos'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -53,15 +56,34 @@ function formatStars(n: number): string {
   return `${k >= 100 ? Math.round(k) : (Math.round(k * 10) / 10).toString().replace(/\.0$/, '')}k`
 }
 
-type SectionId = 'account' | 'general' | 'about'
+type SectionId = 'account' | 'aiModel' | 'general' | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'account', labelKey: 'setSecAccount' },
+  { id: 'aiModel', labelKey: 'setSecAiModel' },
   { id: 'general', labelKey: 'setSecGeneral' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
 function SectionIcon({ id }: { id: SectionId }) {
+  if (id === 'aiModel') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M8 1.8 9.5 6l4.2 1.5L9.5 9 8 13.2 6.5 9 2.3 7.5 6.5 6 8 1.8Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M12.8 11.2v3M11.3 12.7h3"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
   if (id === 'account') {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -120,6 +142,273 @@ function Field({
       </div>
       {action}
     </div>
+  )
+}
+
+/** AI model pane: provider / model / key / base URL, saved to userData/ai-settings.json */
+function AiModelPane({ t }: { t: TFunc }) {
+  const [catalog] = useState<AiCatalogEntry[]>(() => window.aiOffice.getAiProviders?.() ?? [])
+  const [settings, setSettings] = useState<AiSettings | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void window.aiOffice.getAiSettings?.().then((s) => {
+      if (!alive || !s) return
+      // The switch is disabled with genspark, so never present it stranded
+      // off. Display-only: s.provider may be the activeProvider fallback for
+      // a half-configured BYOK selection, so writing anything back here would
+      // clobber the stored choice — the main process heals a genuine legacy
+      // genspark+off file itself, judged on the raw stored provider.
+      if (s.provider === 'genspark' && s.gskToolsEnabled === false) {
+        s = { ...s, gskToolsEnabled: true }
+      }
+      setSettings(s)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  if (!settings) return null
+  const provider = settings.provider
+  const meta = catalog.find((c) => c.id === provider)
+  const config = settings.providers[provider] ?? {
+    apiKey: '',
+    model: meta?.defaultModel ?? '',
+  }
+  const isGenspark = provider === 'genspark'
+
+  const touch = () => {
+    setDirty(true)
+    setSaved(false)
+    setTestResult(null)
+  }
+  const updateConfig = (patch: Partial<typeof config>) => {
+    setSettings({
+      ...settings,
+      providers: { ...settings.providers, [provider]: { ...config, ...patch } },
+    })
+    touch()
+  }
+  const selectProvider = (id: AiSettings['provider']) => {
+    // cloud tools cannot be off with genspark (chat runs through gsk anyway)
+    setSettings({
+      ...settings,
+      provider: id,
+      ...(id === 'genspark' ? { gskToolsEnabled: true } : {}),
+    })
+    touch()
+  }
+  const save = () => {
+    void window.aiOffice.setAiSettings?.(settings).then(() => {
+      setDirty(false)
+      setSaved(true)
+    })
+  }
+  const test = () => {
+    setTesting(true)
+    setTestResult(null)
+    void window.aiOffice
+      .testAiSettings?.(settings)
+      .then((r) => setTestResult(r ?? { ok: false }))
+      .finally(() => setTesting(false))
+  }
+
+  return (
+    <>
+      <h3 className="set-pane-title">{t('setSecAiModel')}</h3>
+      <div className="set-field">
+        <div className="set-field-text">
+          <label className="set-field-label">{t('setAiProvider')}</label>
+        </div>
+        <Dropdown
+          className="set-dd"
+          value={provider}
+          ariaLabel={t('setAiProvider')}
+          options={catalog.map((c) => ({
+            value: c.id,
+            label: c.label,
+            render: (
+              <>
+                <ProviderLogo id={c.id} />
+                {c.label}
+              </>
+            ),
+          }))}
+          onPick={(v) => selectProvider(v as AiSettings['provider'])}
+        />
+      </div>
+      <div className="set-field-desc set-ai-note">
+        {isGenspark ? t('setAiGensparkHint') : t('setAiByokNote')}
+      </div>
+      <div className="set-field">
+        <div className="set-field-text">
+          <label className="set-field-label">{t('setAiModelId')}</label>
+        </div>
+        {meta && meta.models.length > 0 ? (
+          <Dropdown
+            className="set-dd"
+            value={config.model || meta.defaultModel}
+            ariaLabel={t('setAiModelId')}
+            options={meta.models.map((m) => ({ value: m, label: m }))}
+            onPick={(m) => updateConfig({ model: m })}
+          />
+        ) : (
+          <input
+            id="set-ai-model"
+            className="set-input"
+            type="text"
+            value={config.model}
+            placeholder="model-id"
+            spellCheck={false}
+            onChange={(e) => updateConfig({ model: e.target.value })}
+          />
+        )}
+      </div>
+      {!isGenspark && (
+        <>
+          <div className="set-field">
+            <div className="set-field-text">
+              <div className="set-field-stack">
+                <label className="set-field-label" htmlFor="set-ai-key">
+                  {t('setAiApiKey')}
+                </label>
+                <div className="set-field-desc">{t('setAiKeyHint')}</div>
+              </div>
+            </div>
+            <input
+              id="set-ai-key"
+              className="set-input"
+              type="password"
+              value={config.apiKey}
+              placeholder={meta?.keyPlaceholder ?? 'API Key'}
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(e) => updateConfig({ apiKey: e.target.value })}
+            />
+          </div>
+          <div className="set-field">
+            <div className="set-field-text">
+              <div className="set-field-stack">
+                <label className="set-field-label" htmlFor="set-ai-base-url">
+                  {t('setAiBaseUrl')}
+                </label>
+                {!meta?.needsBaseUrl && (
+                  <div className="set-field-desc">{t('setAiBaseUrlHint')}</div>
+                )}
+              </div>
+            </div>
+            <input
+              id="set-ai-base-url"
+              className="set-input"
+              type="text"
+              value={config.baseUrl ?? ''}
+              placeholder={meta?.needsBaseUrl ? 'https://…/v1' : meta?.defaultBaseUrl}
+              spellCheck={false}
+              onChange={(e) => updateConfig({ baseUrl: e.target.value })}
+            />
+          </div>
+        </>
+      )}
+      <div className="set-field">
+        <div className="set-field-text">
+          <div className="set-field-stack">
+            <div className="set-field-label">{t('setAiGskTools')}</div>
+            <div className="set-field-desc">{t('setAiGskToolsDesc')}</div>
+          </div>
+        </div>
+        {/* locked on with the genspark provider — chat runs through gsk anyway */}
+        <button
+          className="set-switch"
+          role="switch"
+          aria-checked={settings.gskToolsEnabled !== false}
+          aria-label={t('setAiGskTools')}
+          disabled={isGenspark}
+          onClick={() => {
+            setSettings({ ...settings, gskToolsEnabled: settings.gskToolsEnabled === false })
+            touch()
+          }}
+        />
+      </div>
+      <div className="set-pane-footer">
+        <AiStatusPill
+          status={
+            testing
+              ? { kind: 'testing', text: t('setAiTesting') }
+              : testResult
+                ? testResult.ok
+                  ? { kind: 'ok', text: t('setAiTestOk') }
+                  : { kind: 'err', text: testResult.error || t('setAiTestFail') }
+                : saved
+                  ? { kind: 'ok', text: t('setAiSaved') }
+                  : null
+          }
+        />
+        <button className="set-btn" disabled={testing} onClick={test}>
+          {t('setAiTest')}
+        </button>
+        <button className="set-btn primary" disabled={!dirty} onClick={save}>
+          {t('setAiSave')}
+        </button>
+      </div>
+    </>
+  )
+}
+
+interface AiStatus {
+  kind: 'testing' | 'ok' | 'err'
+  text: string
+}
+
+/** colored feedback pill in the AI pane footer: spinner while testing, then success/error */
+function AiStatusPill({ status }: { status: AiStatus | null }) {
+  if (!status) return null
+  return (
+    <span
+      className={`set-ai-status ${status.kind}`}
+      role="status"
+      // error text (HTTP body, network message) can be long — full text via native tooltip
+      title={status.kind === 'err' ? status.text : undefined}
+    >
+      {status.kind === 'testing' ? (
+        <span className="set-ai-spin" aria-hidden="true" />
+      ) : status.kind === 'ok' ? (
+        <svg
+          className="set-ai-status-icon"
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          aria-hidden="true"
+        >
+          <circle cx="7" cy="7" r="6.3" fill="currentColor" opacity="0.16" />
+          <path
+            d="M4.2 7.3l1.9 1.9 3.7-4.3"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+      ) : (
+        <svg
+          className="set-ai-status-icon"
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          aria-hidden="true"
+        >
+          <circle cx="7" cy="7" r="6.3" fill="currentColor" opacity="0.16" />
+          <path d="M7 3.8v3.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="7" cy="10.1" r="1" fill="currentColor" />
+        </svg>
+      )}
+      <span className="set-ai-status-text">{status.text}</span>
+    </span>
   )
 }
 
@@ -294,56 +583,36 @@ export function SettingsModal({
                 </div>
               </>
             )}
+            {section === 'aiModel' && <AiModelPane t={t} />}
             {section === 'general' && (
               <>
                 <h3 className="set-pane-title">{t('setSecGeneral')}</h3>
                 <div className="set-field">
                   <div className="set-field-text">
-                    <label className="set-field-label" htmlFor="set-lang">
-                      {t('language')}
-                    </label>
+                    <label className="set-field-label">{t('language')}</label>
                   </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {LANG_OPTIONS.find((o) => o.value === lang)?.label ?? lang}
-                    </span>
-                    <select
-                      id="set-lang"
-                      className="set-select"
-                      value={lang}
-                      onChange={(e) => setLang(e.target.value as typeof lang)}
-                    >
-                      {LANG_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                  <Dropdown
+                    className="set-dd"
+                    value={lang}
+                    ariaLabel={t('language')}
+                    options={LANG_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+                    onPick={(v) => setLang(v as typeof lang)}
+                  />
                 </div>
                 <div className="set-field">
                   <div className="set-field-text">
-                    <label className="set-field-label" htmlFor="set-theme">
-                      {t('theme')}
-                    </label>
+                    <label className="set-field-label">{t('theme')}</label>
                   </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {t(THEME_OPTIONS.find((o) => o.value === theme)?.labelKey ?? 'themeSystem')}
-                    </span>
-                    <select
-                      id="set-theme"
-                      className="set-select"
-                      value={theme}
-                      onChange={(e) => applyTheme(e.target.value as UiTheme)}
-                    >
-                      {THEME_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {t(opt.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                  <Dropdown
+                    className="set-dd"
+                    value={theme}
+                    ariaLabel={t('theme')}
+                    options={THEME_OPTIONS.map((opt) => ({
+                      value: opt.value,
+                      label: t(opt.labelKey),
+                    }))}
+                    onPick={(v) => applyTheme(v as UiTheme)}
+                  />
                 </div>
                 <Field
                   label={t('saveLocation')}
@@ -389,34 +658,22 @@ export function SettingsModal({
                 <Field label={t('versionLabel')} value={appVersion || '—'} />
                 <div className="set-field">
                   <div className="set-field-text">
-                    <label className="set-field-label" htmlFor="set-channel">
-                      {t('updateChannel')}
-                    </label>
+                    <label className="set-field-label">{t('updateChannel')}</label>
                   </div>
-                  <span className="set-select-wrap">
-                    <span className="set-select-text" aria-hidden="true">
-                      {t(
-                        CHANNEL_OPTIONS.find((o) => o.value === channel)?.labelKey ??
-                          'channelStable',
-                      )}
-                    </span>
-                    <select
-                      id="set-channel"
-                      className="set-select"
-                      value={channel}
-                      onChange={(e) => {
-                        const next = e.target.value === 'beta' ? 'beta' : 'stable'
-                        setChannel(next)
-                        void window.aiOffice.setUpdateChannel(next)
-                      }}
-                    >
-                      {CHANNEL_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {t(opt.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                  <Dropdown
+                    className="set-dd"
+                    value={channel}
+                    ariaLabel={t('updateChannel')}
+                    options={CHANNEL_OPTIONS.map((opt) => ({
+                      value: opt.value,
+                      label: t(opt.labelKey),
+                    }))}
+                    onPick={(v) => {
+                      const next = v === 'beta' ? 'beta' : 'stable'
+                      setChannel(next)
+                      void window.aiOffice.setUpdateChannel(next)
+                    }}
+                  />
                 </div>
                 <Field
                   label={t('setGithub')}

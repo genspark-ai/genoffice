@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
-import { SHAPE_GALLERY_GROUPS, ShapePreview, useDismissablePopover } from '@genoffice/ui'
+import { Dropdown, SHAPE_GALLERY_GROUPS, ShapePreview, useDismissablePopover } from '@genoffice/ui'
 
 import {
   CaretIcon,
@@ -835,26 +835,26 @@ function SortDialog({
           {levels.map((level, index) => (
             <div className="sort-level" key={index}>
               <span>{t(index === 0 ? 'appSortBy' : 'appThenBy')}</span>
-              <select
-                className="select-like"
-                value={level.colIndex}
-                onChange={(event) => setLevel(index, { colIndex: Number(event.target.value) })}
-              >
-                {index > 0 && <option value={NO_SORT_LEVEL}>{t('appSortNone')}</option>}
-                {columns.map((column) => (
-                  <option key={column.colIndex} value={column.colIndex}>
-                    {column.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select-like compact"
+              <Dropdown
+                ariaLabel={t(index === 0 ? 'appSortBy' : 'appThenBy')}
+                value={String(level.colIndex)}
+                options={[
+                  ...(index > 0 ? [{ value: String(NO_SORT_LEVEL), label: t('appSortNone') }] : []),
+                  ...columns.map((column) => ({
+                    value: String(column.colIndex),
+                    label: column.label,
+                  })),
+                ]}
+                onPick={(v) => setLevel(index, { colIndex: Number(v) })}
+              />
+              <Dropdown
                 value={level.order}
-                onChange={(event) => setLevel(index, { order: event.target.value as 'a' | 'd' })}
-              >
-                <option value="a">{t('appSortAsc')}</option>
-                <option value="d">{t('appSortDesc')}</option>
-              </select>
+                options={[
+                  { value: 'a', label: t('appSortAsc') },
+                  { value: 'd', label: t('appSortDesc') },
+                ]}
+                onPick={(v) => setLevel(index, { order: v })}
+              />
             </div>
           ))}
         </div>

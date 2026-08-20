@@ -8,6 +8,7 @@ import type { UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
 import '@genoffice/ui/color-picker.css'
+import '@genoffice/ui/dropdown.css'
 import './styles.css'
 import { installScreenTips } from '@genoffice/ui'
 

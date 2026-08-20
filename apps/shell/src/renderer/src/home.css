@@ -4,6 +4,8 @@
   /* Genspark DS v4.1: guide/onboarding accent is the brand blue */
   --accent: #0f7fff;
   --accent-hover: #0e72e5;
+  /* selected-option tint for the shared dropdown (gs-dd) */
+  --accent-soft: #eaf0fd;
   --modal-width-sm: 480px;
   --avatar-bg: #e8ebef;
   --badge-bg: #eaf0fd;
@@ -23,6 +25,7 @@
 [data-theme='dark'] {
   --accent: #3f99ff;
   --accent-hover: #5ba5ff;
+  --accent-soft: #24354d;
   --avatar-bg: #333;
   --badge-bg: #2a3a4a;
   --checkbox-bg: #333;
@@ -37,6 +40,7 @@
   :root:not([data-theme='light']):not([data-theme='dark']) {
     --accent: #3f99ff;
     --accent-hover: #5ba5ff;
+    --accent-soft: #24354d;
     --avatar-bg: #333;
     --badge-bg: #2a3a4a;
     --checkbox-bg: #333;

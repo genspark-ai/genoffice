@@ -41,6 +41,8 @@ import {
   isAiNetworkError,
   chatForProvider,
   defaultAiSettings,
+  activeProvider,
+  cloudToolsEnabled,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
@@ -2526,6 +2528,11 @@ const TWIPS_PER_INCH = 1440
 
 const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
+/** live read: the shell settings pane writes the file; every tool call re-checks */
+function gskCloudToolsOn(): boolean {
+  return cloudToolsEnabled(readJson<Partial<AiSettings>>(SETTINGS_PATH(), {}))
+}
+
 const activeAiStreams = new Map<string, AbortController>()
 
 /**
@@ -2536,9 +2543,18 @@ const activeAiStreams = new Map<string, AbortController>()
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    // pre-lock legacy file: genspark selected with cloud tools opted out. The
+    // settings UI locks the tools switch on with genspark and apps read this
+    // file live, so heal the stored flag once. Judged on the *stored* provider
+    // — never the activeProvider fallback below, which must not leak into the
+    // file and clobber a saved (half-configured) BYOK selection.
+    if ((stored.provider ?? 'genspark') === 'genspark' && stored.gskToolsEnabled === false) {
+      stored.gskToolsEnabled = true
+      writeJson(SETTINGS_PATH(), stored)
+    }
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
+    // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
+    settings.provider = activeProvider(settings)
     return settings
   })
 
@@ -2637,14 +2653,22 @@ export function registerAiIpc(): void {
   // shared search tools (content + images): Serper with DuckDuckGo fallback (same source as slides/sheets)
   ipcMain.handle('ai:web-search', async (_event, query: string, maxResults?: number) => {
     try {
-      return await webSearch(String(query), typeof maxResults === 'number' ? maxResults : 6)
+      return await webSearch(
+        String(query),
+        typeof maxResults === 'number' ? maxResults : 6,
+        gskCloudToolsOn(),
+      )
     } catch (err) {
       return { results: [], method: 'error', error: String(err) }
     }
   })
   ipcMain.handle('ai:image-search', async (_event, query: string, maxResults?: number) => {
     try {
-      return await imageSearch(String(query), typeof maxResults === 'number' ? maxResults : 8)
+      return await imageSearch(
+        String(query),
+        typeof maxResults === 'number' ? maxResults : 8,
+        gskCloudToolsOn(),
+      )
     } catch (err) {
       return { images: [], method: 'error', error: String(err) }
     }

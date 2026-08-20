@@ -29,6 +29,9 @@ export interface RenderNodeBase {
   box: PlacedBox
   /** Source Slide element id, used by the edit layer to locate write-backs */
   sourceId: string
+  /** Durable element id ("e_*", from a16:creationId / cNvPr bytes): survives
+      save→reopen, reparse and group/ungroup — what the AI layer shows and accepts */
+  durableId?: string
   /** master/layout decoration node: read-only display, not selectable/draggable/snappable */
   decoration?: boolean
   /**
@@ -63,6 +66,8 @@ export type RenderFill =
       fillRect?: { l: number; t: number; r: number; b: number }
       /** [dark, light] duotone colors mapped over image luminance */
       duotone?: [string, string]
+      /** Legacy brightness/contrast picture adjustment (-1..1 each) */
+      lum?: { bright: number; contrast: number }
       /** clrChange: pixels matching `from` become `to` (#RRGGBB or #RRGGBBAA) */
       clrChange?: { from: string; to: string }
       /** Tile grid: scale in px-per-image-px, anchor offsets in px, and the algn anchor */
@@ -86,6 +91,14 @@ export interface RenderStroke {
   dash?: number[]
   /** OOXML prstDash preset name (for property panel display/editing) */
   dashPreset?: string
+  /** Canvas line cap (from <a:ln cap>; canvas default butt when absent) */
+  cap?: 'butt' | 'round' | 'square'
+  /** Canvas line join (from <a:round>/<a:bevel>/<a:miter>) */
+  join?: 'round' | 'bevel' | 'miter'
+  /** Compound line type (<a:ln cmpd>; drawn single on canvas, kept for editing round-trip) */
+  compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+  /** Gradient line (<a:ln><a:gradFill>); color then holds the first stop as a fallback */
+  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
 }
 
 /** Outer shadow converted to px. */
@@ -224,6 +237,8 @@ export interface ShapeRenderNode extends RenderNodeBase {
   /** Placeholder type (title/ctrTitle/subTitle/body/…); empty placeholders draw hint text on the canvas */
   placeholder?: string
   presetGeometry?: string
+  /** Raw avLst adjust values (OOXML units) for the edit layer's adjust handles */
+  adjust?: Record<string, number>
   /** Exact corner radius for roundRect-style geometry (px, computed from avLst adj; 50% of the min side = pill) */
   cornerRadiusPx?: number
   /** Point list of closed-polygon preset geometry (triangle/diamond/arrow…) (local px, drawn closed) */
@@ -262,6 +277,8 @@ export interface PictureRenderNode extends RenderNodeBase {
   fill?: RenderFill
   /** [dark, light] duotone colors applied to the picture pixels */
   duotone?: [string, string]
+  /** Brightness/contrast applied to the picture pixels (-1..1 each) */
+  lum?: { bright: number; contrast: number }
   /** clrChange applied to the picture pixels before duotone */
   clrChange?: { from: string; to: string }
   /** Picture shape-geometry clip (picture styles): three channels matching shape geometry; clip when any is set */
@@ -325,9 +342,12 @@ export interface TableRenderNode extends RenderNodeBase {
   cells: TableCellRender[]
   /** Table-style <a:tblBg>: drawn under the cells (alpha band fills composite over it) */
   bgFill?: TableCellRender['fill']
-  /** Grid line offsets relative to the box (px): gridX has nCols+1 entries, gridY nRows+1 */
+  /** Grid line offsets relative to the box (px): gridX has nCols+1 entries, gridY nRows+1.
+      gridX stays in logical column order; when rtl is set, visual x = table width − gridX. */
   gridX: number[]
   gridY: number[]
+  /** tblPr rtl="1": cell geometry is mirrored (logical column 1 rendered rightmost) */
+  rtl?: boolean
   /** tblPr header-row / banded-row toggles (for the Ribbon "Table Design" display) */
   styleFlags?: { firstRow: boolean; bandRow: boolean }
 }

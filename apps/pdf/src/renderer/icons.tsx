@@ -141,6 +141,14 @@ export const IconExportImg = () => (
     <path d="M4.8 14.95 L9 11.75 L12.4 14.35 L15 12.35 L19.2 15.75" />
   </Icon>
 )
+export const IconConvertPdf = () => (
+  <Icon>
+    <path d="M5.6 9.6 A 7.1 7.1 0 0 1 18.1 7.7" />
+    <path d="M18.4 4.3 L18.4 7.9 L14.8 7.9" />
+    <path d="M18.4 14.4 A 7.1 7.1 0 0 1 5.9 16.3" />
+    <path d="M5.6 19.7 L5.6 16.1 L9.2 16.1" />
+  </Icon>
+)
 export const IconInsertImage = () => (
   <Icon>
     <rect x="4.5" y="6" width="11.5" height="9.5" rx="1" />

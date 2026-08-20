@@ -12,10 +12,10 @@
   --md-code-inline-bg: rgb(129 139 152 / 14%);
   --md-table-header-bg: #f6f8fa;
   --md-ai-changed: rgb(255 213 79 / 40%);
-  --md-selection: rgb(59 130 246 / 10%);
-  --md-text-selection: rgb(56 108 255 / 32%);
-  --md-focus: #3b82f6;
-  --md-node-outline: rgb(59 130 246 / 60%);
+  --md-selection: color-mix(in srgb, var(--accent) 10%, transparent);
+  --md-text-selection: color-mix(in srgb, var(--accent) 32%, transparent);
+  --md-focus: var(--accent);
+  --md-node-outline: color-mix(in srgb, var(--accent) 60%, transparent);
   --md-focus-ring: rgb(35 36 37 / 20%);
   --md-focus-ring-blue: rgb(74 141 246 / 30%);
   --md-error: #c62828;
@@ -41,10 +41,10 @@
   --md-code-inline-bg: rgb(129 139 152 / 22%);
   --md-table-header-bg: #282c32;
   --md-ai-changed: rgb(255 213 79 / 28%);
-  --md-selection: rgb(74 158 255 / 20%);
-  --md-text-selection: rgb(74 158 255 / 40%);
-  --md-focus: #4a9eff;
-  --md-node-outline: rgb(74 158 255 / 70%);
+  --md-selection: color-mix(in srgb, var(--accent) 20%, transparent);
+  --md-text-selection: color-mix(in srgb, var(--accent) 40%, transparent);
+  --md-focus: var(--accent);
+  --md-node-outline: color-mix(in srgb, var(--accent) 70%, transparent);
   --md-focus-ring: rgb(228 228 228 / 25%);
   --md-focus-ring-blue: rgb(74 158 255 / 40%);
   --md-error: #f28b82;
@@ -70,10 +70,10 @@
     --md-code-inline-bg: rgb(129 139 152 / 22%);
     --md-table-header-bg: #282c32;
     --md-ai-changed: rgb(255 213 79 / 28%);
-    --md-selection: rgb(74 158 255 / 20%);
-    --md-text-selection: rgb(74 158 255 / 40%);
-    --md-focus: #4a9eff;
-    --md-node-outline: rgb(74 158 255 / 70%);
+    --md-selection: color-mix(in srgb, var(--accent) 20%, transparent);
+    --md-text-selection: color-mix(in srgb, var(--accent) 40%, transparent);
+    --md-focus: var(--accent);
+    --md-node-outline: color-mix(in srgb, var(--accent) 70%, transparent);
     --md-focus-ring: rgb(228 228 228 / 25%);
     --md-focus-ring-blue: rgb(74 158 255 / 40%);
     --md-error: #f28b82;
@@ -599,35 +599,19 @@ html.genoffice-popover-open .ribbon-tabs {
   font-size: 11.5px;
 }
 
-/* block-style picker: same box as the docs/slides font pickers (.rb-font-btn:
- * 28px tall, 3px radius, 13px label, 7px inline padding, strong border) */
-.rb-style-wrap {
-  position: relative;
-  display: inline-flex;
+/* block-style picker (shared @genoffice/ui gs-dd dropdown): same box as the
+ * docs/slides font pickers (28px tall, 3px radius, 13px label, 7px inline
+ * padding, strong border) */
+.rb-style.gs-dd {
+  min-width: 108px;
 }
 
-.rb-style {
+.rb-style .gs-dd-btn {
   height: 28px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 3px;
-  background: var(--surface);
+  padding: 0 7px;
+  border-color: var(--color-border-strong);
   color: var(--text-primary);
   font-size: 13px;
-  /* native chevron replaced by .rb-style-caret so it can sit off the edge */
-  appearance: none;
-  padding: 0 26px 0 7px;
-  min-width: 108px;
-  outline: none;
-}
-
-.rb-style-caret {
-  position: absolute;
-  right: 9px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  color: var(--text-dim);
-  pointer-events: none;
 }
 
 /* Anchor for the link popover, which is position: fixed so it escapes the
@@ -2025,15 +2009,14 @@ html.genoffice-popover-open .ribbon-tabs {
   opacity: 1;
 }
 
-.md-codeblock-lang {
+/* language picker (shared @genoffice/ui gs-dd dropdown), sized like the copy
+   button beside it */
+.md-codeblock-lang .gs-dd-btn {
   height: 22px;
-  border: 1px solid var(--border-strong);
   border-radius: 5px;
-  background: var(--surface);
   color: var(--text-secondary);
   font-size: 11.5px;
   padding: 0 4px;
-  outline: none;
 }
 
 .md-codeblock-copy {

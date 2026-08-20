@@ -360,6 +360,81 @@ describe('sectionHf per-section headers/footers', () => {
   })
 })
 
+describe('column widths + section bidi (P3 pdf2docx support)', () => {
+  const BASE =
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>'
+
+  it('colWidths emits explicit unequal w:col children', async () => {
+    const { sectionSettingsFromXml } = await import('../src/index')
+    const base = sectionSettingsFromXml(BASE)
+    const xml = applySectionSettings(BASE, {
+      ...base,
+      columns: 2,
+      colSpace: 400,
+      colWidths: [3000, 6000],
+    })
+    expect(xml).toContain(
+      '<w:cols w:num="2" w:space="400" w:equalWidth="0"><w:col w:w="3000" w:space="400"/><w:col w:w="6000"/></w:cols>',
+    )
+  })
+
+  it('parse reads colWidths and bidi back; re-applying identical values is byte-stable', async () => {
+    const { sectionSettingsFromXml } = await import('../src/index')
+    const base = sectionSettingsFromXml(BASE)
+    const once = applySectionSettings(BASE, {
+      ...base,
+      columns: 2,
+      colSpace: 400,
+      colWidths: [3000, 6000],
+      bidi: true,
+    })
+    expect(once).toContain('<w:bidi/>')
+    const parsed = sectionSettingsFromXml(once)
+    expect(parsed.columns).toBe(2)
+    expect(parsed.colWidths).toEqual([3000, 6000])
+    expect(parsed.bidi).toBe(true)
+    // round-trip: parse → apply must not rewrite the element
+    expect(applySectionSettings(once, parsed)).toBe(once)
+  })
+
+  it('undefined bidi leaves an existing w:bidi untouched; false removes it', async () => {
+    const { sectionSettingsFromXml } = await import('../src/index')
+    const withBidi = BASE.replace('</w:sectPr>', '<w:bidi/></w:sectPr>')
+    const base = sectionSettingsFromXml(BASE)
+    const kept = applySectionSettings(withBidi, { ...base, bidi: undefined })
+    expect(kept).toContain('<w:bidi/>')
+    const removed = applySectionSettings(withBidi, { ...base, bidi: false })
+    expect(removed).not.toContain('<w:bidi/>')
+  })
+
+  it('NewImage posOffsetEmu positions a floating image numerically', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: P('文字') }))
+    const blocks: SaveBlock[] = [
+      ...parsed.blocks
+        .filter((b) => !b.hidden && b.docxIndex !== null)
+        .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
+      {
+        kind: 'image',
+        image: {
+          base64:
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+          mime: 'image/png',
+          widthPx: 100,
+          heightPx: 80,
+          wrap: 'square-right',
+          posOffsetEmu: { x: 4165600, y: 0 },
+        },
+      },
+    ]
+    const saved = await saveDocx(parsed, blocks, {})
+    const reparsed = await parseDocx(saved)
+    const xml = reparsed.internal.documentXml
+    expect(xml).toContain('<wp:anchor')
+    expect(xml).toContain('<wp:posOffset>4165600</wp:posOffset>')
+    expect(xml).toContain('<wp:wrapSquare')
+  })
+})
+
 describe('pgNumType page numbering', () => {
   it('applyPageNumType inserts/replaces/removes', async () => {
     const { applyPageNumType } = await import('../src/index')

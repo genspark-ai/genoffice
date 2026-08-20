@@ -599,6 +599,24 @@ describe('chart wave2: palette idx colors, multi-level cats, barH hidden labels'
     expect(ca.y).toBeGreaterThan(leaf.y)
   })
 
+  it('reversed category axis (maxMin) mirrors the group label spans', () => {
+    const m: ChartModel = {
+      kind: 'bar',
+      categories: ['SF', 'LA', 'NY', 'Albany'],
+      series: [{ values: [1, 2, 3, 4] }],
+      catAxis: { reversed: true },
+      categoryGroups: [
+        { label: 'CA', start: 0 },
+        { label: 'NY2', start: 2 },
+      ],
+    } as any
+    const node = buildChartNode('r_1', 'el1', m, box, vp, metrics)!
+    const ca = node.labels.find((l) => l.text === 'CA')!
+    const ny = node.labels.find((l) => l.text === 'NY2')!
+    // categories render right-to-left, so CA's span now sits on the right
+    expect(ca.x).toBeGreaterThan(ny.x)
+  })
+
   it('barH with tickLblPos none draws no category labels', () => {
     const m: ChartModel = {
       kind: 'bar',

@@ -33,6 +33,9 @@
   --docs-brand-ring: rgb(15 127 255 / 40%);
   --docs-focus-ring: rgb(35 36 37 / 20%);
   --docs-focus-ring-blue: rgb(74 141 246 / 30%);
+  --docs-input-focus: #0f7fff;
+  --docs-input-ring: rgb(15 127 255 / 12%);
+  --docs-error-ring: rgb(239 68 68 / 12%);
   --docs-scroll-thumb: rgb(0 0 0 / 25%);
   --docs-tooltip-bg: #232425;
   --docs-tooltip-ink: #ffffff;
@@ -167,6 +170,9 @@
   --docs-brand-ring: rgb(74 158 255 / 45%);
   --docs-focus-ring: rgb(228 228 228 / 25%);
   --docs-focus-ring-blue: rgb(74 158 255 / 40%);
+  --docs-input-focus: #4a9eff;
+  --docs-input-ring: rgb(74 158 255 / 20%);
+  --docs-error-ring: rgb(242 139 130 / 20%);
   --docs-scroll-thumb: rgb(255 255 255 / 28%);
   --docs-tooltip-bg: #e4e4e4;
   --docs-tooltip-ink: #1e1e1e;
@@ -234,6 +240,9 @@
     --docs-brand-ring: rgb(74 158 255 / 45%);
     --docs-focus-ring: rgb(228 228 228 / 25%);
     --docs-focus-ring-blue: rgb(74 158 255 / 40%);
+    --docs-input-focus: #4a9eff;
+    --docs-input-ring: rgb(74 158 255 / 20%);
+    --docs-error-ring: rgb(242 139 130 / 20%);
     --docs-scroll-thumb: rgb(255 255 255 / 28%);
     --docs-tooltip-bg: #e4e4e4;
     --docs-tooltip-ink: #1e1e1e;
@@ -1038,7 +1047,7 @@ html.genoffice-popover-open .ribbon-tabs {
   position-visibility: anchors-visible;
   z-index: 60;
   display: grid;
-  grid-template-columns: repeat(6, 22px);
+  grid-template-columns: repeat(6, 20px);
   gap: 4px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
@@ -1047,16 +1056,18 @@ html.genoffice-popover-open .ribbon-tabs {
   box-shadow: var(--docs-shadow-menu);
 }
 
+/* Sharp 20px squares with a faint contour, matching the shared gcp picker */
 .color-swatch {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: 1px solid var(--docs-swatch-outline);
-  border-radius: 3px;
+  border-radius: 0;
   cursor: pointer;
 }
 
 .color-swatch:hover {
-  outline: 2px solid var(--word-blue);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* "No Shading" reset row under the swatch grid */
@@ -1084,43 +1095,48 @@ html.genoffice-popover-open .ribbon-tabs {
 
 .color-palette-highlight-word {
   display: block;
-  width: 233px;
-  padding: 12px 14px;
+  width: auto;
+  padding: 10px 12px;
   border-radius: 8px;
 }
 
 .color-highlight-title {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
 }
 
 .color-highlight-grid {
   display: grid;
-  grid-template-columns: repeat(5, 35px);
-  gap: 7px;
+  grid-template-columns: repeat(5, 20px);
+  gap: 4px;
 }
 
 .color-highlight-swatch {
-  width: 35px;
-  height: 35px;
-  border-radius: 4px;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 0;
 }
 
 .color-highlight-swatch:hover,
 .color-highlight-swatch.selected {
-  outline: 2px solid var(--word-blue);
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
 .color-highlight-none {
   width: 100%;
-  margin-top: 12px;
-  padding: 7px 0;
-  font-size: 14px;
+  margin-top: 10px;
+  padding: 5px 0;
+  font-size: 12.5px;
 }
 
+/* Selected (no highlight applied) is a quiet filled state, matching the
+   shared picker's auto row — an accent ring reads as a stray focus outline. */
 .color-highlight-none.selected {
-  outline: 2px solid color-mix(in srgb, var(--word-blue) 65%, transparent);
-  outline-offset: -2px;
+  background: var(--hover);
 }
 
 /* Anchor positioning for the shared Word-style color panel (@genoffice/ui
@@ -1136,9 +1152,9 @@ html.genoffice-popover-open .ribbon-tabs {
 }
 
 .color-section-title {
-  margin: 18px 0 8px;
+  margin: 12px 0 6px;
   color: var(--text);
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 500;
 }
 
@@ -1935,21 +1951,23 @@ th.cell-rev-del {
 /* ---- page color swatch selection ---- */
 
 .color-palette-page {
-  grid-template-columns: repeat(5, 22px);
+  grid-template-columns: repeat(5, 20px);
 }
 
 .color-swatch.selected {
-  outline: 2px solid var(--word-blue);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* style gallery */
 /* The Styles group absorbs the row's free width and shrinks with the window
-   (min-width keeps two cards + the expander visible); extra cards clip inside
-   .style-gallery instead of widening the scrolling ribbon row, and the
-   expander below makes the clipped ones reachable. */
+   (min-width keeps three cards + the expander visible); extra cards wrap onto
+   a clipped second row inside .style-gallery — whole cards only, never a
+   half-cut one — instead of widening the scrolling ribbon row, and the
+   expander below makes the hidden ones reachable. */
 .ribbon-group-styles {
   flex: 1;
-  min-width: 178px;
+  min-width: 259px;
 }
 
 .style-gallery-wrap {
@@ -1959,10 +1977,14 @@ th.cell-rev-del {
 
 .style-gallery {
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
   gap: 4px;
   flex: 1 1 0;
   min-width: 0;
+  /* one card row tall: wrapped cards land on the hidden second row */
+  height: 62px;
   overflow: hidden;
 }
 
@@ -3029,6 +3051,10 @@ th.cell-rev-del {
 .doc-page {
   width: var(--page-w, 816px);
   margin: 0 auto;
+  /* own stacking context: floating pictures rank via z-index (front band is
+     unbounded upward), so trap those ranks here — editor chrome mounted
+     outside the page (table handles, menus) always paints above them */
+  isolation: isolate;
   background: var(--page-bg, var(--docs-paper));
   box-shadow: var(--docs-page-shadow);
   padding: var(--page-pad, 96px 96px 120px);
@@ -3607,6 +3633,18 @@ th.cell-rev-del {
   pointer-events: auto;
 }
 
+/* Word-style inactive selection: while a ribbon combobox (font family/size)
+   holds keyboard focus the DOM selection lives in that input, so the editor's
+   native highlight vanishes — this decoration keeps the target text visibly
+   selected (gray, like Word's unfocused selection) until focus returns.
+   Translucent on purpose: it overlays run highlights/shading without hiding
+   them, which no opaque token can do (document canvas, not themed chrome). */
+.doc-inactive-selection {
+  --doc-inactive-selection-bg: rgb(0 0 0 / 18%);
+
+  background-color: var(--doc-inactive-selection-bg);
+}
+
 /* corner resize handle of floating shape/textbox/WordArt/line boxes */
 .box-resize-handle {
   position: absolute;
@@ -3843,15 +3881,18 @@ th.cell-rev-del {
 
 .table-style-swatches {
   display: grid;
-  grid-template-columns: repeat(6, 28px);
-  gap: 3px;
+  /* square swatches with breathing room (matches the slides shape-style grid) */
+  grid-template-columns: repeat(6, 24px);
+  gap: 5px;
   align-content: center;
   flex: 1;
 }
 
 .table-tool-group .table-style-swatch {
   box-sizing: border-box;
-  min-width: 28px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
   min-height: 24px;
   padding: 0;
   border-color: var(--docs-swatch-border);
@@ -6430,6 +6471,108 @@ body.docs-crop-active
   margin-top: 18px;
 }
 
+/* ---- Genspark DS form dialogs (password prompts + Protect Document) ---- */
+
+.modal.gs-form h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.gs-form .modal-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: 0 0 20px;
+}
+
+.gs-form label.fld {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+/* the "(optional)" suffix stays lighter than the label itself */
+.gs-form .fld-opt {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.gs-form .fld input {
+  display: block;
+  width: 100%;
+  margin-top: 0;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 12px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.gs-form .fld input:hover:not(:focus):not(.invalid) {
+  border-color: var(--border-strong);
+}
+
+.gs-form .fld input:focus {
+  border-color: var(--docs-input-focus);
+  box-shadow: 0 0 0 3px var(--docs-input-ring);
+}
+
+.gs-form .fld input.invalid {
+  border-color: var(--color-error);
+}
+
+.gs-form .fld input.invalid:focus {
+  box-shadow: 0 0 0 3px var(--docs-error-ring);
+}
+
+/* side-by-side password + confirm pair */
+.gs-form .fld-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* wrapper positioning the shared .pwd-eye toggle (defined with .pwd-field
+   below) inside a gs-form field */
+.pwd-wrap {
+  position: relative;
+  display: block;
+  margin-top: 6px;
+}
+
+.gs-form .pwd-wrap input {
+  padding-right: 40px;
+}
+
+.fld-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-error);
+  margin: 6px 0 0;
+}
+
+.fld-error svg {
+  flex-shrink: 0;
+}
+
+.gs-form .fld-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: -8px 0 16px;
+}
+
 .modal select {
   display: block;
   width: 100%;
@@ -6447,60 +6590,306 @@ body.docs-crop-active
   border-color: var(--word-blue);
 }
 
+/* Shared dropdown (@genoffice/ui gs-dd) app sizing: modal dialogs keep the old
+   `.modal select` footprint; ribbon/table/page-number rows scope their own
+   width/height below */
+.modal .gs-dd {
+  display: flex;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.modal .gs-dd-btn {
+  height: 34px;
+  border-radius: 4px;
+  padding: 0 6px 0 8px;
+  font-size: 13px;
+}
+
+.pgnum-row .gs-dd {
+  width: 180px;
+  flex-shrink: 0;
+}
+
+/* wrap-text picker on the Picture Format tab (was select.rb-select) */
+.rb-wrap-dd {
+  width: 128px;
+}
+
+.rb-wrap-dd .gs-dd-btn {
+  height: 28px;
+}
+
+.rb-wrap-dd .gs-dd-btn:disabled {
+  opacity: 0.55;
+}
+
+.table-border-opts .gs-dd {
+  width: 72px;
+}
+
+.table-border-opts .gs-dd-btn {
+  height: 22px;
+}
+
 /* ---- Protect Document dialog (Review > Protect, Word's Password Protect layout) ---- */
 
 .modal.protect-dialog {
-  width: 480px;
+  width: 520px;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
 }
 
 .protect-dialog .protect-section-title {
-  margin: 16px 0 10px;
-  padding-top: 12px;
+  margin: 24px 0 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
 }
 
-.protect-dialog h2 + .protect-section-title {
+.protect-dialog .modal-desc + .protect-section-title {
   margin-top: 0;
   padding-top: 0;
   border-top: none;
 }
 
-/* checkbox / radio rows: inline control, not the stacked full-width input */
+/* checkbox / radio rows: the native input is visually replaced by the .ctl
+   box (18px, black checked state per the Genspark DS palette) */
 .protect-dialog label.protect-check {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 13px;
   color: var(--text);
+  cursor: pointer;
 }
 
 .protect-dialog label.protect-check input {
-  display: inline-block;
-  width: auto;
-  height: auto;
+  position: absolute;
+  opacity: 0;
+  width: 18px;
+  height: 18px;
   margin: 0;
+  cursor: pointer;
+}
+
+.protect-dialog .protect-check .ctl {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  position: relative;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.protect-dialog .protect-check input[type='checkbox'] + .ctl {
+  border-radius: 5px;
+}
+
+.protect-dialog .protect-check input[type='checkbox']:checked + .ctl {
+  border-color: var(--color-btn-primary);
+  background: var(--color-btn-primary);
+}
+
+.protect-dialog .protect-check input[type='checkbox']:checked + .ctl::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--color-btn-primary-text);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.protect-dialog .protect-check input[type='radio'] + .ctl {
+  border-radius: 50%;
+}
+
+.protect-dialog .protect-check input[type='radio']:checked + .ctl {
+  border-color: var(--color-btn-primary);
+  box-shadow: inset 0 0 0 4.5px var(--color-btn-primary);
+}
+
+.protect-dialog .protect-check input:focus-visible + .ctl {
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
+}
+
+.protect-dialog .protect-check input[type='radio']:checked:focus-visible + .ctl {
+  /* the checked dot and the focus ring are both box-shadows: they must be combined */
+  box-shadow:
+    inset 0 0 0 4.5px var(--color-btn-primary),
+    0 0 0 3px var(--docs-focus-ring);
+}
+
+.protect-dialog .protect-check input:disabled + .ctl {
+  opacity: 0.4;
+}
+
+.protect-dialog label.protect-check:has(> input:disabled) {
+  color: var(--text-dim);
+  cursor: default;
 }
 
 /* the four Word protection modes, indented under the enable checkbox */
 .protect-dialog .protect-modes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0 12px;
-  margin: 0 0 10px 24px;
+  gap: 2px 16px;
+  margin: 0 0 14px 26px;
 }
 
 .protect-dialog .protect-modes .protect-check {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
-.protect-dialog .pgnum-hint {
-  margin: -6px 0 12px;
+/* ---- password prompt dialog (open password / password to modify) ---- */
+
+.modal.pwd-dialog {
+  width: 384px;
+  padding: 28px 28px 22px;
+  text-align: center;
+}
+
+.pwd-dialog-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.modal.pwd-dialog h2 {
+  margin: 0 0 8px;
+}
+
+.pwd-dialog-body {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.pwd-field {
+  position: relative;
+}
+
+.pwd-field input {
+  height: 38px;
+  margin: 0;
+  padding: 0 40px 0 12px;
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  /* don't inherit the dialog's centered text */
+  text-align: start;
+}
+
+.pwd-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
+}
+
+.pwd-field.has-error {
+  animation: pwd-shake 0.4s ease;
+}
+
+.pwd-field.has-error input {
+  border-color: var(--danger);
+}
+
+.pwd-field.has-error input:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+@keyframes pwd-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+/* show/hide toggle inside the field */
+.pwd-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.pwd-eye:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.pwd-eye:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pwd-dialog-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: start;
+}
+
+.pwd-dialog-error svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.pwd-dialog-actions {
+  margin-top: 22px;
+}
+
+.pwd-dialog-actions button {
+  flex: 1;
 }
 
 /* ---- print dialog (Word-style: page preview + range options) ---- */

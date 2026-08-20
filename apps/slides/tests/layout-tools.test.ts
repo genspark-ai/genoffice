@@ -2,7 +2,7 @@
  * Tests for the layout tool trio (benchmarked against the Google Slides plugin approach):
  *  - runLayoutScript: sandbox-execute the AI layout script, collecting setBox operations
  *  - auditSlideLayout: deterministic geometry audit (overlap/out-of-bounds/text overflow)
- *  - execute_layout_script tool chain: script -> batchEditTransform -> audit report back
+ *  - execute_layout_script tool chain: script -> one applyEditScript transaction -> audit report back
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RenderSlide, RenderNode, ShapeRenderNode, PlacedBox } from '@genoffice/pptx-render'
@@ -222,16 +222,16 @@ describe('execute_layout_script tool', () => {
       textNode('t1', box(100, 100, 400, 100), 'Title'),
       textNode('t2', box(120, 150, 400, 100), 'Subtitle'),
     ])
-    // Simulate the main process's batchEditTransform: update boxes per items and return a new RenderSlide
+    // Simulate the main process's applyEditScript: update boxes per items and return a new RenderSlide
     ;(globalThis as any).window = {
       slidesApi: {
-        batchEditTransform: vi.fn(async (op: any) => {
+        applyEditScript: vi.fn(async (op: any) => {
           const nodes = slide.nodes.map((n) => {
-            const item = op.items.find((it: any) => it.sourceId === n.sourceId)
+            const item = op.boxes.find((b: any) => b.id === n.sourceId)
             if (!item) return n
-            return { ...n, box: box(item.xPx, item.yPx, item.wPx, item.hPx, item.rotationDeg) }
+            return { ...n, box: box(item.x, item.y, item.w, item.h, item.rotation) }
           })
-          return { ...slide, nodes }
+          return { slide: { ...slide, nodes } }
         }),
       },
     }

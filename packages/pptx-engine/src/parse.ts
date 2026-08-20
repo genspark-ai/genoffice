@@ -499,6 +499,16 @@ function parseStroke(
   const capMap: Record<string, Stroke['cap']> = { flat: 'flat', rnd: 'round', sq: 'square' }
   const dash = ln['a:prstDash']?.['@_val']
   const cap = ln['@_cap'] ? capMap[ln['@_cap']] : undefined
+  const cmpdMap: Record<string, Stroke['compound']> = {
+    sng: 'sng',
+    dbl: 'dbl',
+    thickThin: 'thickThin',
+    thinThick: 'thinThick',
+    tri: 'tri',
+  }
+  const compound = ln['@_cmpd'] ? cmpdMap[ln['@_cmpd']] : undefined
+  const join: Stroke['join'] =
+    'a:round' in ln ? 'round' : 'a:bevel' in ln ? 'bevel' : 'a:miter' in ln ? 'miter' : undefined
   const headEnd = parseArrowEnd(ln['a:headEnd'])
   const tailEnd = parseArrowEnd(ln['a:tailEnd'])
   return {
@@ -506,6 +516,8 @@ function parseStroke(
     width: intOr(ln['@_w'], 12700),
     ...(dash ? { dash: String(dash) } : {}),
     ...(cap ? { cap } : {}),
+    ...(join ? { join } : {}),
+    ...(compound && compound !== 'sng' ? { compound } : {}),
     ...(headEnd ? { headEnd } : {}),
     ...(tailEnd ? { tailEnd } : {}),
   }
@@ -871,6 +883,7 @@ function parsePicture(node: any, anchor: ByteAnchor, ctx: ParseContext): Picture
   const fill = parseFill(spPr, ctx)
   const duotone = parseDuotone(blip, ctx)
   const clrChange = parseClrChange(blip, ctx)
+  const lum = parseLum(blip)
   // Audio/video: a:videoFile/a:audioFile under p:nvPr; blipFill is the poster frame
   const nvPr = node['p:nvPicPr']?.['p:nvPr']
   const avNode = nvPr?.['a:videoFile'] ?? nvPr?.['a:audioFile']
@@ -902,6 +915,7 @@ function parsePicture(node: any, anchor: ByteAnchor, ctx: ParseContext): Picture
     ...(fill ? { fill } : {}),
     ...(duotone ? { duotone } : {}),
     ...(clrChange ? { clrChange } : {}),
+    ...(lum ? { lum } : {}),
     ...(stroke ? { stroke } : {}),
     ...(shadow ? { shadow } : {}),
     ...(glow ? { glow } : {}),
@@ -2604,6 +2618,7 @@ function parseTable(
     rowHeights,
     rows,
     styleFlags: { firstRow: flags.firstRow, bandRow: flags.bandRow },
+    ...(tblPr['@_rtl'] === '1' || tblPr['@_rtl'] === 'true' ? { rtl: true } : {}),
     ...(bgFill && bgFill.type !== 'none' ? { bgFill } : {}),
   }
 }
@@ -2645,10 +2660,12 @@ function parseTableCell(
     cell.text = text
   }
 
-  // Fill: explicit tcPr fill > table-style region fill
+  // Fill: explicit tcPr fill > table-style region fill; an explicit <a:noFill/> means
+  // transparent and still overrides the style fill (only an absent fill falls through)
   const fill = parseFill(tcPr, ctx)
-  if (fill && fill.type !== 'none') cell.fill = fill
-  else if (part?.fill) cell.fill = part.fill
+  if (fill) {
+    if (fill.type !== 'none') cell.fill = fill
+  } else if (part?.fill) cell.fill = part.fill
 
   // Borders on four edges: a:lnL/R/T/B share a:ln's structure, so reuse parseStroke; style inside-borders as fallback
   const borders: TableCellBorders = {}
@@ -2713,6 +2730,19 @@ function parseXfrm(xfrm: any): Transform {
 }
 
 // ── Fill ─────────────────────────────────────────────────────────────
+
+/** <a:lum bright/contrast>: legacy picture brightness/contrast (attribute per-100k -> -1..1). */
+function parseLum(blipNode: any): { bright: number; contrast: number } | undefined {
+  const lum = blipNode?.['a:lum']
+  if (lum === undefined) return undefined
+  const attrs = lum && typeof lum === 'object' ? lum : {}
+  const pct = (v: unknown) =>
+    Math.max(-1, Math.min(1, (v != null ? parseInt(String(v), 10) || 0 : 0) / 100000))
+  const bright = pct(attrs['@_bright'])
+  const contrast = pct(attrs['@_contrast'])
+  if (!bright && !contrast) return undefined
+  return { bright, contrast }
+}
 
 /** <a:duotone>: two colors mapping image luminance dark→light (theme texture backgrounds). */
 function parseDuotone(blipNode: any, ctx: ParseContext): [string, string] | undefined {
@@ -2780,6 +2810,7 @@ function parseFill(spPr: any, ctx: ParseContext): Fill | undefined {
         alphaAmt != null ? Math.max(0, Math.min(1, parseInt(alphaAmt, 10) / 100000)) : undefined
       const duotone = parseDuotone(blip['a:blip'], ctx)
       const clrChange = parseClrChange(blip['a:blip'], ctx)
+      const lum = parseLum(blip['a:blip'])
       const fr = blip['a:stretch']?.['a:fillRect']
       const pct = (v: unknown) => (v != null ? (parseInt(String(v), 10) || 0) / 100000 : 0)
       const fillRect =
@@ -2807,6 +2838,7 @@ function parseFill(spPr: any, ctx: ParseContext): Fill | undefined {
         ...(fillRect ? { fillRect } : {}),
         ...(duotone ? { duotone } : {}),
         ...(clrChange ? { clrChange } : {}),
+        ...(lum ? { lum } : {}),
         ...(tile ? { tile } : {}),
       }
     }
@@ -3117,10 +3149,19 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const latin = resolveFontRef(rPr['a:latin']?.['@_typeface'], ctx.theme) ?? dflt?.latinFont
   const ea = resolveFontRef(rPr['a:ea']?.['@_typeface'], ctx.theme) ?? dflt?.eaFont
   const cs = resolveFontRef(rPr['a:cs']?.['@_typeface'], ctx.theme) ?? dflt?.csFont
+  const sym = resolveFontRef(rPr['a:sym']?.['@_typeface'], ctx.theme)
+  // Symbol-slot characters (Wingdings dots/checkmarks stored as U+F0xx PUA) draw with a:sym,
+  // not the latin font; applied when the run is entirely PUA (the common single-glyph case)
+  const puaOnly =
+    sym != null && /^[\uf000-\uf0ff]+$/.test(text.replace(/\s+/g, '')) && !!text.trim()
   // Pick the bucket by script: complex script → a:cs, CJK → a:ea, otherwise → a:latin; fall back through buckets when missing
-  const fontFamily =
-    (CS_RE.test(text) ? (cs ?? latin ?? ea) : CJK_RE.test(text) ? (ea ?? latin) : (latin ?? ea)) ??
-    ctx.theme?.minorFont
+  const fontFamily = puaOnly
+    ? sym
+    : ((CS_RE.test(text)
+        ? (cs ?? latin ?? ea)
+        : CJK_RE.test(text)
+          ? (ea ?? latin)
+          : (latin ?? ea)) ?? ctx.theme?.minorFont)
   const bAttr = rPr['@_b']
   const iAttr = rPr['@_i']
   // Text outline <a:rPr><a:ln> (WordArt): only solid-color outlines are modeled, kept by the rebuild path

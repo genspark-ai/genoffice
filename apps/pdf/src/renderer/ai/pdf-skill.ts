@@ -21,11 +21,22 @@ const SYSTEM_PROMPT = `You are GenOffice's PDF assistant, helping the user read,
 - All modifications are in an unsaved state; when done, remind the user they can save with ⌘S and undo with ⌘Z.
 - Cite page numbers when quoting document content. Answer in Markdown and keep it concise.`
 
+const GSK_TOOLS_OFF_NOTE =
+  '\n\nNote: generate_image is currently unavailable (Genspark cloud tools are off or the user is signed out). Do not call or promise it; use image_search for imagery.'
+
 export function createPdfSkill(deps: PdfAiDeps): AgentSkill {
   return {
     id: 'pdf',
-    systemPrompt: SYSTEM_PROMPT,
-    tools: AGENT_TOOLS,
+    // live like tools: the off-note overrides the prose that still mentions generate_image
+    get systemPrompt() {
+      return deps.gskTools?.() === false ? SYSTEM_PROMPT + GSK_TOOLS_OFF_NOTE : SYSTEM_PROMPT
+    },
+    // live view: gskTools (login && cloud-tools toggle) is re-read before every model request
+    get tools() {
+      return deps.gskTools?.() === false
+        ? AGENT_TOOLS.filter((t) => t.name !== 'generate_image')
+        : AGENT_TOOLS
+    },
     buildContext: () => {
       const parts = [
         `Current document: "${deps.fileName()}", ${deps.pageCount()} pages; the user is viewing page ${deps.currentPage()}.`,

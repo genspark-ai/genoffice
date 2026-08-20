@@ -86,6 +86,26 @@ export function AiPanel({
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
   }, [panelWidth])
   const settingsRef = useRef<AiSettings | null>(null)
+
+  /** gsk login state for the cloud-tools gate (refreshed on mount and window focus) */
+  const gskLoggedInRef = useRef(false)
+  useEffect(() => {
+    let alive = true
+    const refresh = () => {
+      void window.pdfApi
+        ?.gskStatus()
+        .then((s) => {
+          if (alive) gskLoggedInRef.current = !!s?.loggedIn
+        })
+        .catch(() => {})
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      alive = false
+      window.removeEventListener('focus', refresh)
+    }
+  }, [])
   const langRef = useRef(lang)
   langRef.current = lang
   const apiRef = useRef(api)
@@ -136,6 +156,7 @@ export function AiPanel({
       deleteImage: (ref) => apiRef.current.deleteImage(ref),
       searchImages: (query, max) => apiRef.current.searchImages(query, max),
       generateImage: (op) => apiRef.current.generateImage(op),
+      gskTools: () => gskLoggedInRef.current && settingsRef.current?.gskToolsEnabled !== false,
       fetchImage: (url) => apiRef.current.fetchImage(url),
     }
     loopRef.current = new AgentLoop({

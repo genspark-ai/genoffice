@@ -2071,6 +2071,7 @@ export const aiSettingsInputSchema = z
   .object({
     provider: z.string().min(1),
     providers: z.record(z.string(), aiProviderConfigSchema),
+    gskToolsEnabled: z.boolean().optional(),
   })
   .strict()
 
@@ -2358,6 +2359,8 @@ export interface WebSearchResult {
   results: Array<{ title: string; url: string; snippet: string }>
   answer?: string
   method: string
+  /** failure reason when method === 'error' */
+  error?: string
 }
 
 export interface ImageSearchResponse {

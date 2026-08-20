@@ -11,6 +11,8 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { DOMParser as PmDOMParser, type Mark as PmMark } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
+import { Dropdown } from '@genoffice/ui'
 import { markdownPasteHtml } from './editor/markdown-paste'
 import {
   BLANK_BULLET_NUM_ID,
@@ -105,6 +107,7 @@ import {
 import {
   estimateFootnoteHeight,
   estimateHfHeight,
+  hfHeaderGeom,
   footnoteLineHeightPx,
   FOOTNOTE_SEPARATOR_H,
   textHasCjk,
@@ -136,6 +139,7 @@ import {
   type ContextMenuState,
 } from './components/ContextMenu'
 import { PromptModal } from './components/PromptModal'
+import { PasswordDialog } from './components/PasswordDialog'
 import { ProtectDialog, type ProtectDialogResult } from './components/ProtectDialog'
 import { t, useI18n } from './i18n/locale'
 import {
@@ -1662,7 +1666,7 @@ export function App() {
     if (!section) return { headerPx: 0, footerPx: 0 }
     const contentW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
     return {
-      headerPx: estimateHfHeight(header, contentW, doc?.parsed.headerImages),
+      headerPx: estimateHfHeight(header, contentW, doc?.parsed.headerImages, hfHeaderGeom(section)),
       footerPx: estimateHfHeight(footer, contentW, doc?.parsed.footerImages),
     }
   }, [section, header, footer, doc])
@@ -1695,7 +1699,12 @@ export function App() {
           return undefined
         }
         return {
-          headerPx: estimateHfHeight(pick('header'), contentW, imagesOf('header')),
+          headerPx: estimateHfHeight(
+            pick('header'),
+            contentW,
+            imagesOf('header'),
+            hfHeaderGeom(set),
+          ),
           footerPx: estimateHfHeight(pick('footer'), contentW, imagesOf('footer')),
         }
       })
@@ -2117,6 +2126,8 @@ export function App() {
               marginRight: twipsToPx(s.marginRight),
               marginTop: effectiveTopPx(s, hfH.headerPx),
               marginBottom: effectiveBottomPx(s, hfH.footerPx),
+              headerDist: twipsToPx(s.headerDist ?? 720),
+              sectMarginTop: twipsToPx(s.marginTop),
             }
           }
           const pageNoTextOf = (pageIdx: number) =>
@@ -2486,7 +2497,7 @@ export function App() {
               const box = floatBoxOf(0)
               firstPageFloats = {
                 els: floats.map((img) => makeHfFloatImgEl(img, box, 'lead')),
-                key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginTop)}`,
+                key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginTop)}·${Math.round(box.sectMarginTop)}`,
               }
             }
           }
@@ -3096,11 +3107,34 @@ export function App() {
       e.preventDefault()
       // Word behavior: right-clicking outside the selection moves the cursor there first (menu items act on the clicked block)
       if (editor) {
-        const hit = editor.view.posAtCoords({ left: e.clientX, top: e.clientY })
-        if (hit) {
-          const { from, to } = editor.state.selection
-          if (hit.pos < from || hit.pos > to) {
-            editor.commands.setTextSelection(hit.pos)
+        // Right-clicking directly on an image / floating object selects it as a
+        // node (Word shows Wrap Text / Position on a plain right-click), so the
+        // context menu can offer wrap + z-order without a prior left-click.
+        const protectedEl = (e.target as HTMLElement).closest(
+          ".doc-protected[data-doc-protected='image'], .doc-protected.doc-img-float",
+        ) as HTMLElement | null
+        let selectedNode = false
+        if (protectedEl) {
+          const dom = editor.view.nodeDOM.bind(editor.view)
+          let nodePos = -1
+          editor.state.doc.descendants((node, pos) => {
+            if (nodePos !== -1) return false
+            if (node.type.name === 'docProtected' && dom(pos) === protectedEl) nodePos = pos
+            return nodePos === -1
+          })
+          if (nodePos !== -1) {
+            const tr = editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, nodePos))
+            editor.view.dispatch(tr)
+            selectedNode = true
+          }
+        }
+        if (!selectedNode) {
+          const hit = editor.view.posAtCoords({ left: e.clientX, top: e.clientY })
+          if (hit) {
+            const { from, to } = editor.state.selection
+            if (hit.pos < from || hit.pos > to) {
+              editor.commands.setTextSelection(hit.pos)
+            }
           }
         }
       }
@@ -3838,38 +3872,21 @@ export function App() {
       )}
 
       {docPwdPrompt && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h2>{t('appDocPwdTitle')}</h2>
-            <p className="pgnum-hint">{t('appDocPwdBody', { name: docPwdPrompt.name })}</p>
-            <label className="pgnum-row">
-              {t('appDocPwdLabel')}
-              <input
-                type="password"
-                autoFocus
-                disabled={docPwdPrompt.busy}
-                value={docPwdPrompt.value}
-                onChange={(e) =>
-                  setDocPwdPrompt({ ...docPwdPrompt, value: e.target.value, errorKey: '' })
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void submitDocPwd()
-                }}
-              />
-            </label>
-            {docPwdPrompt.errorKey && <p className="modal-error">{t(docPwdPrompt.errorKey)}</p>}
-            <div className="modal-actions">
-              <button onClick={cancelDocPwd}>{t('appCancel')}</button>
-              <button
-                className="btn-primary"
-                disabled={docPwdPrompt.busy || !docPwdPrompt.value}
-                onClick={() => void submitDocPwd()}
-              >
-                {docPwdPrompt.busy ? t('appStartOpening') : t('appOk')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PasswordDialog
+          title={t('appDocPwdTitle')}
+          body={t('appDocPwdBody', { name: docPwdPrompt.name })}
+          label={t('appDocPwdLabel')}
+          showLabel={t('appPwdShow')}
+          hideLabel={t('appPwdHide')}
+          value={docPwdPrompt.value}
+          error={docPwdPrompt.errorKey ? t(docPwdPrompt.errorKey) : ''}
+          busy={docPwdPrompt.busy}
+          submitLabel={docPwdPrompt.busy ? t('appStartOpening') : t('appOk')}
+          cancelLabel={t('appCancel')}
+          onChange={(value) => setDocPwdPrompt({ ...docPwdPrompt, value, errorKey: '' })}
+          onSubmit={() => void submitDocPwd()}
+          onCancel={cancelDocPwd}
+        />
       )}
 
       {showProtectDialog && (
@@ -3884,37 +3901,20 @@ export function App() {
       )}
 
       {modifyPwdPrompt && doc && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h2>{t('appModifyPwdTitle')}</h2>
-            <p className="pgnum-hint">{t('appModifyPwdBody', { name: doc.fileName })}</p>
-            <label>
-              {t('appDocPwdLabel')}
-              <input
-                type="password"
-                autoFocus
-                value={modifyPwdPrompt.value}
-                onChange={(e) => setModifyPwdPrompt({ value: e.target.value, errorKey: '' })}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void submitModifyPwd()
-                }}
-              />
-            </label>
-            {modifyPwdPrompt.errorKey && (
-              <p className="modal-error">{t(modifyPwdPrompt.errorKey)}</p>
-            )}
-            <div className="modal-actions">
-              <button onClick={() => setModifyPwdPrompt(null)}>{t('appOpenReadOnly')}</button>
-              <button
-                className="btn-primary"
-                disabled={!modifyPwdPrompt.value}
-                onClick={() => void submitModifyPwd()}
-              >
-                {t('appOk')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PasswordDialog
+          title={t('appModifyPwdTitle')}
+          body={t('appModifyPwdBody', { name: doc.fileName })}
+          label={t('appDocPwdLabel')}
+          showLabel={t('appPwdShow')}
+          hideLabel={t('appPwdHide')}
+          value={modifyPwdPrompt.value}
+          error={modifyPwdPrompt.errorKey ? t(modifyPwdPrompt.errorKey) : ''}
+          submitLabel={t('appOk')}
+          cancelLabel={t('appOpenReadOnly')}
+          onChange={(value) => setModifyPwdPrompt({ value, errorKey: '' })}
+          onSubmit={() => void submitModifyPwd()}
+          onCancel={() => setModifyPwdPrompt(null)}
+        />
       )}
       {pgNumModal && (
         <div
@@ -3925,18 +3925,20 @@ export function App() {
             <h2>{t('appPageNumFormatTitle')}</h2>
             <label className="pgnum-row">
               {t('appNumberFormat')}
-              <select
+              <Dropdown
                 value={pgNumModal.fmt}
-                onChange={(e) => setPgNumModal({ ...pgNumModal, fmt: e.target.value })}
-              >
-                <option value="decimal">1, 2, 3, …</option>
-                <option value="numberInDash">- 1 -, - 2 -, - 3 -, …</option>
-                <option value="lowerLetter">a, b, c, …</option>
-                <option value="upperLetter">A, B, C, …</option>
-                <option value="lowerRoman">i, ii, iii, …</option>
-                <option value="upperRoman">I, II, III, …</option>
-                <option value="chineseCounting">一, 二, 三, …</option>
-              </select>
+                ariaLabel={t('appNumberFormat')}
+                options={[
+                  { value: 'decimal', label: '1, 2, 3, …' },
+                  { value: 'numberInDash', label: '- 1 -, - 2 -, - 3 -, …' },
+                  { value: 'lowerLetter', label: 'a, b, c, …' },
+                  { value: 'upperLetter', label: 'A, B, C, …' },
+                  { value: 'lowerRoman', label: 'i, ii, iii, …' },
+                  { value: 'upperRoman', label: 'I, II, III, …' },
+                  { value: 'chineseCounting', label: '一, 二, 三, …' },
+                ]}
+                onPick={(v) => setPgNumModal({ ...pgNumModal, fmt: v })}
+              />
             </label>
             <label className="pgnum-row">
               {t('appStartAt')}

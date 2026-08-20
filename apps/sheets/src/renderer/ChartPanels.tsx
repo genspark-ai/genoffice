@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { Dropdown } from '@genoffice/ui'
+
 import { transposeChartSeries, type ChartVisualState } from '../domain/chart-visual'
 import { ColorDropdown } from './ColorDropdown'
 import { useI18n, type StringKey, type TFunc } from './i18n/locale'
@@ -226,58 +228,46 @@ export function ChartFormatPane({
         <strong>{t('appLegendAndLabels')}</strong>
         <label>
           {t('appLegendPosition')}
-          <select
+          <Dropdown
+            ariaLabel={t('appLegendPosition')}
             value={chart.legend ?? 'right'}
-            onChange={(event) =>
-              onEdit({ legend: event.target.value as NonNullable<ChartEditData['legend']> })
-            }
-          >
-            {LEGEND_OPTIONS.map(([value, key]) => (
-              <option key={value} value={value}>
-                {t(key)}
-              </option>
-            ))}
-          </select>
+            options={LEGEND_OPTIONS.map(([value, key]) => ({ value, label: t(key) }))}
+            onPick={(v) => onEdit({ legend: v as NonNullable<ChartEditData['legend']> })}
+          />
         </label>
         <label>
           {t('appDataLabels')}
-          <select
+          <Dropdown
+            ariaLabel={t('appDataLabels')}
             value={chart.dataLabels ?? 'none'}
-            onChange={(event) =>
-              onEdit({ dataLabels: event.target.value as NonNullable<ChartEditData['dataLabels']> })
-            }
-          >
-            {LABEL_OPTIONS.filter(
+            options={LABEL_OPTIONS.filter(
               ([value]) => isPie || (value !== 'percent' && value !== 'category-percent'),
-            ).map(([value, key]) => (
-              <option key={value} value={value}>
-                {t(key)}
-              </option>
-            ))}
-          </select>
+            ).map(([value, key]) => ({ value, label: t(key) }))}
+            onPick={(v) => onEdit({ dataLabels: v as NonNullable<ChartEditData['dataLabels']> })}
+          />
         </label>
         {(isBar || isPie) && chart.dataLabels !== undefined && chart.dataLabels !== 'none' && (
           <label>
             {t('appLabelPosition')}
-            <select
+            {/* '' is the auto placeholder (the old <option> was disabled+hidden):
+                it labels the unset state and is not pickable */}
+            <Dropdown
+              ariaLabel={t('appLabelPosition')}
               value={chart.dataLabelPosition ?? ''}
-              onChange={(event) => {
-                if (event.target.value) {
+              options={[
+                { value: '', label: t('appAuto'), disabled: true },
+                { value: 'outside-end', label: t('appOutsideEnd') },
+                { value: 'inside-end', label: t('appInsideEnd') },
+                { value: 'center', label: t('appCenter') },
+              ]}
+              onPick={(v) => {
+                if (v) {
                   onEdit({
-                    dataLabelPosition: event.target.value as NonNullable<
-                      ChartEditData['dataLabelPosition']
-                    >,
+                    dataLabelPosition: v as NonNullable<ChartEditData['dataLabelPosition']>,
                   })
                 }
               }}
-            >
-              <option value="" disabled hidden>
-                {t('appAuto')}
-              </option>
-              <option value="outside-end">{t('appOutsideEnd')}</option>
-              <option value="inside-end">{t('appInsideEnd')}</option>
-              <option value="center">{t('appCenter')}</option>
-            </select>
+            />
           </label>
         )}
         {chart.dataLabels !== undefined && chart.dataLabels !== 'none' && (

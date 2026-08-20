@@ -54,7 +54,7 @@ async function mount(partial: Partial<Props>) {
     expect(done()).toBe(true)
   }
   const applied = () => onApply.mock.calls.length > 0
-  const errorShown = () => host.querySelector('.modal-error') !== null
+  const errorShown = () => host.querySelector('.fld-error') !== null
   const cleanup = async () => {
     await act(async () => root.unmount())
     host.remove()

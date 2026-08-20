@@ -361,6 +361,39 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(table.cells[0].w).toBeCloseTo(952500 / emuPerPx, 0)
   })
 
+  it('rtl table mirrors the grid: logical column 1 renders rightmost, borders swap sides', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const stroke = { fill: { type: 'solid', color: '#FF0000' }, widthPt: 1 }
+    const el: any = {
+      id: 'tbl_rtl',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 2857500, cy: 952500 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      rtl: true,
+      colWidths: [952500, 1905000],
+      rowHeights: [952500],
+      rows: [[{ borders: { l: stroke } }, {}]],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    const [c0, c1] = node.cells
+    // logical col 0 (narrow) sits at the right edge, col 1 at x=0
+    expect(c1.x).toBeCloseTo(0, 1)
+    expect(c0.x).toBeCloseTo(c1.w, 1)
+    expect(c0.x + c0.w).toBeCloseTo(node.box.w, 1)
+    // the logical-left border of col 0 lands on its visual right edge
+    expect(c0.borders?.r).toBeTruthy()
+    expect(c0.borders?.l).toBeUndefined()
+  })
+
   it('cells after a mid-row merge keep their grid position (continuation tc is not double-counted)', async () => {
     const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
     const slide = deck.slides[0]!
@@ -888,5 +921,38 @@ describe('metafile pictures get an opaque white backdrop (PlanS academy banner)'
     expect(build({ from: '#FFFFFF', to: '#00FF00' }).bgColor).toBe('#00FF00')
     // partial alpha stays on the backing (canvas accepts #RRGGBBAA)
     expect(build({ from: '#FFFFFF', to: '#00FF0080' }).bgColor).toBe('#00FF0080')
+  })
+})
+
+describe('durable ids on render nodes', () => {
+  it('nodes carry the durable id resolved from the element bytes', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const rs = buildRenderSlide(slide, deck.size, { fitWidthPx: 1280 })
+    // Every element has at least the cNvPr fallback in its bytes
+    for (const n of rs.nodes) {
+      expect(n.durableId).toMatch(/^e_/)
+    }
+    // Ids are unique per slide
+    const ids = rs.nodes.map((n) => n.durableId)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('durable ids on chart nodes', () => {
+  it('charts (and their placeholder chips) carry durable ids too', async () => {
+    const opened = await openPptx(enginePptx('01_standard_business.pptx'))
+    const { addChart } = await import('@genoffice/pptx-engine')
+    const r = addChart(opened, 0, {
+      kind: 'bar',
+      categories: ['Q1', 'Q2'],
+      series: [{ name: 'Rev', values: [3, 5] }],
+      offset: { x: 914400, y: 914400, cx: 4572000, cy: 2743200 },
+    })
+    expect(r).toBeTruthy()
+    const rs = buildRenderSlide(opened.deck.slides[0]!, opened.deck.size, { fitWidthPx: 1280 })
+    const chart = rs.nodes.find((n) => n.type === 'chart' || n.type === 'placeholder-chip')
+    expect(chart).toBeTruthy()
+    expect(chart!.durableId).toMatch(/^e_[0-9a-f]{8}$/)
   })
 })

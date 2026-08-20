@@ -1035,6 +1035,31 @@ describe('composeSkills', () => {
     expect(unknown.isError).toBe(true)
   })
 
+  it('reflects a sub-skill whose tools vary at runtime (capability gating)', () => {
+    let enabled = true
+    const base = { name: 'base', description: '', inputSchema: {} }
+    const gated = { name: 'gated', description: '', inputSchema: {} }
+    const skill: AgentSkill = {
+      id: 'dyn',
+      get systemPrompt() {
+        return enabled ? 'with gated' : 'without gated'
+      },
+      get tools() {
+        return enabled ? [base, gated] : [base]
+      },
+      executeTool: () => ({ output: 'ok', summary: '' }),
+    }
+    const composed = composeSkills('x', '', [skill])
+    expect(composed.tools.map((t) => t.name)).toEqual(['base', 'gated'])
+    expect(composed.systemPrompt).toBe('with gated')
+    enabled = false
+    expect(composed.tools.map((t) => t.name)).toEqual(['base'])
+    expect(composed.systemPrompt).toBe('without gated')
+    // a call to the now-hidden tool routes as unknown
+    const result = composed.executeTool({ id: '1', name: 'gated', input: {} })
+    expect(result).toMatchObject({ isError: true })
+  })
+
   it('rejects duplicate tool names', () => {
     const tool = { name: 'same', description: '', inputSchema: {} }
     const make = (id: string): AgentSkill => ({
@@ -1043,7 +1068,8 @@ describe('composeSkills', () => {
       tools: [tool],
       executeTool: () => ({ output: '', summary: '' }),
     })
-    expect(() => composeSkills('x', '', [make('a'), make('b')])).toThrow(/duplicate/)
+    // the check moved into the lazy tools getter (tools can vary per request)
+    expect(() => composeSkills('x', '', [make('a'), make('b')]).tools).toThrow(/duplicate/)
   })
 
   it('verifyResponse returns the first non-null correction across skills', () => {

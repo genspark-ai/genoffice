@@ -261,4 +261,36 @@ describe('group child format operations (font/fill/stroke)', () => {
     expect(grp.anchor.originalXml).toContain('typeface="Arial"')
     expect(grp.anchor.originalXml).toContain('sz="3000"')
   })
+
+  it('setGroupChildShapePresetGeometry: swaps only the target slice, model kept in sync', async () => {
+    const { setGroupChildShapePresetGeometry } = await import('../src/index')
+    const { slide, grp } = mk()
+    expect(setGroupChildShapePresetGeometry(slide, 'grp1', 'c4', 'star5')).toBe(true)
+    const slices = grp.anchor.originalXml.split('<p:sp>')
+    expect(slices[1]).toContain('<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>')
+    expect(slices[2]).toContain('<a:prstGeom prst="star5"><a:avLst/></a:prstGeom>')
+    expect((grp.children[1] as any).presetGeometry).toBe('star5')
+    expect((grp.children[1] as any).adjust).toBeUndefined()
+    expect(slide.structureDirty).toBe(true)
+  })
+
+  it('setGroupChildShapeAdjustValues: swaps only the target slice avLst, model kept in sync', async () => {
+    const { setGroupChildShapeAdjustValues } = await import('../src/index')
+    const { slide, grp } = mk()
+    expect(setGroupChildShapeAdjustValues(slide, 'grp1', 'c4', { adj: 25000 })).toBe(true)
+    const slices = grp.anchor.originalXml.split('<p:sp>')
+    expect(slices[1]).toContain('<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>')
+    expect(slices[2]).toContain('<a:avLst><a:gd name="adj" fmla="val 25000"/></a:avLst>')
+    expect((grp.children[1] as any).adjust).toEqual({ adj: 25000 })
+    expect(slide.structureDirty).toBe(true)
+  })
+
+  it('setGroupChildShapePresetGeometry: rejects unknown child, bad prst, and non-shape children', async () => {
+    const { setGroupChildShapePresetGeometry } = await import('../src/index')
+    const { slide, grp } = mk()
+    expect(setGroupChildShapePresetGeometry(slide, 'grp1', 'nope', 'star5')).toBe(false)
+    expect(setGroupChildShapePresetGeometry(slide, 'grp1', 'c4', 'star5"><hack/>')).toBe(false)
+    ;(grp.children[1] as any).type = 'picture'
+    expect(setGroupChildShapePresetGeometry(slide, 'grp1', 'c4', 'star5')).toBe(false)
+  })
 })

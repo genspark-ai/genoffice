@@ -8,51 +8,67 @@ import { t } from '../i18n/locale'
  * add_image path, which downloads the URL in the main process on apply.
  */
 
-const IMAGES_SYSTEM_PROMPT = `## Images
-- image_search finds real web images (returns direct imageUrl entries); generate_image creates an illustration with AI when no suitable real image exists or the user explicitly wants generated art.
-- To place an image on a sheet, pass the URL to propose_operations {op:"add_image", sheetId, path:"<https url>", anchorCell} — field details in guide charts. The image anchors at that cell and is written into the file on save (imported xlsx only).
+const PLACEMENT_PROMPT = `- To place an image on a sheet, pass the URL to propose_operations {op:"add_image", sheetId, path:"<https url>", anchorCell} — field details in guide charts. The image anchors at that cell and is written into the file on save (imported xlsx only).
 - Only insert images the user asked for; data correctness always outranks decoration.`
 
-export function createImageSkill(): AgentSkill {
+const IMAGES_SYSTEM_PROMPT = `## Images
+- image_search finds real web images (returns direct imageUrl entries); generate_image creates an illustration with AI when no suitable real image exists or the user explicitly wants generated art.
+${PLACEMENT_PROMPT}`
+
+const IMAGES_SYSTEM_PROMPT_NO_GEN = `## Images
+- image_search finds real web images (returns direct imageUrl entries).
+${PLACEMENT_PROMPT}`
+
+/**
+ * `gskTools` is a live predicate (login state && the Genspark-cloud-tools
+ * toggle); the loop re-reads tools and systemPrompt before every request,
+ * so generate_image appears and disappears without rebuilding the loop.
+ */
+export function createImageSkill(gskTools: () => boolean = () => true): AgentSkill {
+  const allTools = [
+    {
+      name: 'image_search',
+      description:
+        'Search the web for images. Returns a numbered list of direct imageUrl entries with pixel sizes; ' +
+        'pick one and insert it with propose_operations add_image (path = the URL).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Image search keywords (English works better)' },
+          maxResults: { type: 'integer', description: 'Maximum number of results, default 8' },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'generate_image',
+      description:
+        'Generate an image with AI from a text prompt (Genspark account required). Returns a URL to insert ' +
+        'with propose_operations add_image. Use for illustrations/decorative art; prefer image_search for real-world subjects.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'What to draw — subject, style, composition (English works better)',
+          },
+          aspectRatio: {
+            type: 'string',
+            description: 'Aspect ratio like "1:1", "16:9", "4:3"; default 1:1',
+          },
+        },
+        required: ['prompt'],
+      },
+    },
+  ]
   return {
     id: 'images',
-    systemPrompt: IMAGES_SYSTEM_PROMPT,
-    tools: [
-      {
-        name: 'image_search',
-        description:
-          'Search the web for images. Returns a numbered list of direct imageUrl entries with pixel sizes; ' +
-          'pick one and insert it with propose_operations add_image (path = the URL).',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Image search keywords (English works better)' },
-            maxResults: { type: 'integer', description: 'Maximum number of results, default 8' },
-          },
-          required: ['query'],
-        },
-      },
-      {
-        name: 'generate_image',
-        description:
-          'Generate an image with AI from a text prompt (Genspark account required). Returns a URL to insert ' +
-          'with propose_operations add_image. Use for illustrations/decorative art; prefer image_search for real-world subjects.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            prompt: {
-              type: 'string',
-              description: 'What to draw — subject, style, composition (English works better)',
-            },
-            aspectRatio: {
-              type: 'string',
-              description: 'Aspect ratio like "1:1", "16:9", "4:3"; default 1:1',
-            },
-          },
-          required: ['prompt'],
-        },
-      },
-    ],
+    get systemPrompt() {
+      return gskTools() ? IMAGES_SYSTEM_PROMPT : IMAGES_SYSTEM_PROMPT_NO_GEN
+    },
+    get tools() {
+      return gskTools() ? allTools : allTools.filter((t) => t.name !== 'generate_image')
+    },
     executeTool: async (call) => {
       if (call.name === 'image_search') {
         const query = String(call.input.query ?? '').trim()

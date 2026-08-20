@@ -116,6 +116,17 @@ describe('generateTableModelXml', () => {
     expect(model.colWidthsPct?.map(Math.round)).toEqual([25, 35, 40])
   })
 
+  it('emits and round-trips the table left indent (w:tblInd, P17)', async () => {
+    const xml = generateTableModelXml({
+      colWidthsTwips: [2000, 2000],
+      indentTwips: 1300,
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+    })
+    expect(xml).toContain('<w:tblInd w:w="1300" w:type="dxa"/>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(parsed.blocks[0].table!.indentTwips).toBe(1300)
+  })
+
   it('reuses the imported tblPr while regenerating rows and rich runs', async () => {
     const template =
       '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/>' +

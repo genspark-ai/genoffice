@@ -11,15 +11,11 @@ import React, {
   useState,
   type ReactNode,
 } from 'react'
-import type {
-  AnimEffectKind,
-  AnimTrigger,
-  GradientFillSpec,
-  TransitionKind,
-} from '../../shared/ipc'
+import type { AnimEffectKind, GradientFillSpec, TransitionKind } from '../../shared/ipc'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
 import {
   useDismissablePopover,
+  Dropdown,
   THEME_COLORS,
   THEME_COLOR_SHADES,
   STANDARD_COLORS,
@@ -120,7 +116,7 @@ import type { FormatCmd } from './ribbon-shared'
 import { RibbonHomeTab } from './RibbonHomeTab'
 import { RibbonInsertTab } from './RibbonInsertTab'
 import { ShapeGalleryContent } from './ShapeGalleryPopover'
-import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
+import { contextTabForElement, type ContextTab } from './context-tabs'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** shell tab mode: the tab strip above owns traffic lights / caption buttons */
@@ -755,6 +751,29 @@ async function urlToBase64(url: string): Promise<string> {
 }
 
 /** Right-pointing chevron on the gradient/texture submenu rows. */
+/** Table border weight picker (the old <select> was uncontrolled; the picked value lives here). */
+function BorderWeightDropdown({
+  tip,
+  onPick,
+}: {
+  readonly tip?: string
+  readonly onPick: (pt: number) => void
+}) {
+  const [val, setVal] = useState('1')
+  return (
+    <Dropdown
+      className="rb-border-weight-dd"
+      value={val}
+      tip={tip}
+      options={['0.5', '1', '1.5', '2.25', '3'].map((v) => ({ value: v, label: `${v}pt` }))}
+      onPick={(v) => {
+        setVal(v)
+        onPick(Number(v))
+      }}
+    />
+  )
+}
+
 function RbSubCaret() {
   return (
     <svg
@@ -802,7 +821,7 @@ function ShapeFillMenu({
   onMoreGradient,
   onClose,
 }: {
-  /** Selected shape's solid fill #RRGGBB (null = none/non-solid) */
+  /** Selected shape's solid fill #RRGGBB, 'none' when the shape has no fill (null = non-solid) */
   currentFill: string | null | undefined
   onPickFill: (fill: string | GradientFillSpec) => void
   onPickImage:
@@ -813,7 +832,8 @@ function ShapeFillMenu({
 }) {
   const { t } = useI18n()
   const recent = getRecentColors()
-  const current = currentFill?.toUpperCase() ?? null
+  const isNoFill = currentFill === 'none'
+  const current = !currentFill || isNoFill ? null : currentFill.toUpperCase()
   // Gradient/texture preset flyout: opens beside its row on hover, survives the
   // pointer crossing the gap via a short close delay
   const [flyout, setFlyout] = useState<{
@@ -873,7 +893,7 @@ function ShapeFillMenu({
     <div className="rb-drop gcp-palette rb-fill-menu" onMouseDown={(e) => e.stopPropagation()}>
       <button
         type="button"
-        className="gcp-auto"
+        className={`gcp-auto ${isNoFill ? 'selected' : ''}`}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           onClose()
@@ -1207,7 +1227,6 @@ export function Ribbon({
   // Shapes get their own format tab; text-bearing shapes do not auto-activate it
   // (users are usually after Home's text controls when selecting them).
   const contextTab = contextTabForElement(contextElementType ?? null)
-  const autoContextTab = autoContextTabForElement(contextElementType ?? null)
 
   const [tab, setTab] = useState<MainTab | ContextTab>('home')
   const [fileOpen, setFileOpen] = useState(false)
@@ -1413,23 +1432,18 @@ export function Ribbon({
     return () => ro.disconnect()
   }, [tab, collapsedGroups])
 
-  // Contextual tab auto-switch: jump in for dedicated object tools, but not text-bearing shapes.
-  // Track visibility separately so a manually opened picture-format tab still closes on deselect.
+  // Contextual tab auto-switch: selecting an object jumps to its format tab
+  // (shapes included, text-bearing or not); deselecting falls back to Home.
   const prevContextTab = useRef<ContextTab | null>(null)
-  const prevAutoContextTab = useRef<ContextTab | null>(null)
   useEffect(() => {
     const previousContextTab = prevContextTab.current
-    const previousAutoContextTab = prevAutoContextTab.current
-    if (autoContextTab && autoContextTab !== previousAutoContextTab) {
-      setTab(autoContextTab)
-    } else if (!autoContextTab && previousAutoContextTab) {
-      setTab((cur) => (cur === previousAutoContextTab ? 'home' : cur))
+    if (contextTab && contextTab !== previousContextTab) {
+      setTab(contextTab)
     } else if (!contextTab && previousContextTab) {
       setTab((cur) => (cur === previousContextTab ? 'home' : cur))
     }
     prevContextTab.current = contextTab
-    prevAutoContextTab.current = autoContextTab
-  }, [contextTab, autoContextTab])
+  }, [contextTab])
 
   /** Insert tab dropdown big button (click toggles, content stopPropagation) */
   const dropBig = (
@@ -2278,16 +2292,19 @@ export function Ribbon({
               <div className="rb-anim-timing">
                 <label>
                   {t('ribbonAnimStart')}
-                  <select
+                  <Dropdown
                     disabled={!timingAnim}
                     value={timingAnim?.trigger ?? 'onClick'}
-                    onChange={(e) => onAnimTiming({ trigger: e.target.value as AnimTrigger })}
-                    data-tip={t('ribbonAnimTriggerTip')}
-                  >
-                    <option value="onClick">{t('ribbonAnimOnClick')}</option>
-                    <option value="withPrev">{t('ribbonAnimWithPrev')}</option>
-                    <option value="afterPrev">{t('ribbonAnimAfterPrev')}</option>
-                  </select>
+                    tip={t('ribbonAnimTriggerTip')}
+                    options={(
+                      [
+                        ['onClick', t('ribbonAnimOnClick')],
+                        ['withPrev', t('ribbonAnimWithPrev')],
+                        ['afterPrev', t('ribbonAnimAfterPrev')],
+                      ] as const
+                    ).map(([k, label]) => ({ value: k, label }))}
+                    onPick={(trigger) => onAnimTiming({ trigger })}
+                  />
                 </label>
                 <label>
                   {t('ribbonAnimDuration')}
@@ -2745,18 +2762,10 @@ export function Ribbon({
                   onChange={(e) => onEditTableStyle?.({ borderColor: e.target.value })}
                 />
                 <span className="rb-label">{t('ribbonBorderWeightLabel')}</span>
-                <select
-                  className="rb-select-sm"
-                  defaultValue="1"
-                  data-tip={t('ribbonBorderWeightTip')}
-                  onChange={(e) => onEditTableStyle?.({ borderWidthPt: Number(e.target.value) })}
-                >
-                  <option value="0.5">0.5pt</option>
-                  <option value="1">1pt</option>
-                  <option value="1.5">1.5pt</option>
-                  <option value="2.25">2.25pt</option>
-                  <option value="3">3pt</option>
-                </select>
+                <BorderWeightDropdown
+                  tip={t('ribbonBorderWeightTip')}
+                  onPick={(pt) => onEditTableStyle?.({ borderWidthPt: pt })}
+                />
               </div>
             </Group>
           </>

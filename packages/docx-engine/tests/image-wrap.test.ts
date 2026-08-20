@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyImageWrap, parseDocx, saveDocx } from '../src/index'
+import { applyImageWrap, applyImageZOrder, parseDocx, saveDocx } from '../src/index'
 import { buildDocx, IMAGE_PARAGRAPH_XML } from './helpers/build-docx'
 
 const ANCHOR_SQUARE_RIGHT_XML =
@@ -144,6 +144,14 @@ describe('image text wrap (wp:anchor)', () => {
     expect(out).not.toContain('wp:wrapSquare')
   })
 
+  it('zOrder raises relativeHeight so stacked behind anchors keep paint order', () => {
+    const out = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'behind', undefined, undefined, 7)
+    expect(out).toContain('relativeHeight="251658247"')
+    // default stays at the base value
+    const plain = applyImageWrap(ANCHOR_SQUARE_RIGHT_XML, 'behind')
+    expect(plain).toContain('relativeHeight="251658240"')
+  })
+
   it('applies margin-relative position presets (Word position gallery)', () => {
     const out = applyImageWrap(IMAGE_PARAGRAPH_XML, 'square-right', undefined, {
       h: 'center',
@@ -192,6 +200,70 @@ describe('image text wrap (wp:anchor)', () => {
     const p3 = await parseDocx(backInline)
     expect(p3.blocks[0].imageWrap).toBeUndefined()
     expect(p3.blocks[0].imageDataUrl).toBeTruthy()
+  })
+
+  it('parses imageZOrder from a non-base relativeHeight (round-trip paint order)', async () => {
+    // relativeHeight = 251658240 base + 5
+    const xml = ANCHOR_SQUARE_RIGHT_XML.replace('relativeHeight="1"', 'relativeHeight="251658245"')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].imageZOrder).toBe(5)
+
+    // base value (or absent) leaves imageZOrder undefined
+    const base = ANCHOR_SQUARE_RIGHT_XML.replace('relativeHeight="1"', 'relativeHeight="251658240"')
+    const doc2 = await parseDocx(await buildDocx({ bodyXml: base, withImage: true }))
+    expect(doc2.blocks[0].imageZOrder).toBeUndefined()
+  })
+
+  it('applyImageZOrder re-encodes relativeHeight and nothing else', () => {
+    const out = applyImageZOrder(ANCHOR_SQUARE_RIGHT_XML, 3)
+    expect(out).toContain('relativeHeight="251658243"')
+    // byte-identical apart from the one attribute value: position basis,
+    // wrap element and distances must survive a pure reorder
+    expect(out.replace('relativeHeight="251658243"', 'relativeHeight="1"')).toBe(
+      ANCHOR_SQUARE_RIGHT_XML,
+    )
+    // no rank = base level; inline (no anchor) passes through untouched
+    expect(applyImageZOrder(ANCHOR_SQUARE_RIGHT_XML)).toContain('relativeHeight="251658240"')
+    expect(applyImageZOrder(IMAGE_PARAGRAPH_XML, 5)).toBe(IMAGE_PARAGRAPH_XML)
+  })
+
+  it('compresses wild producer relativeHeight values to compact ranks', async () => {
+    // LibreOffice-style: arbitrary small relativeHeight (1, 7) decodes to huge
+    // negative ranks; parse re-ranks the document's anchors 0..n-1 in paint
+    // order so the editor's ±1 reorder steps and CSS bands stay meaningful
+    const second = ANCHOR_SQUARE_RIGHT_XML.replace(
+      'relativeHeight="1"',
+      'relativeHeight="7"',
+    ).replace('id="1" name="图片 1"', 'id="2" name="图片 2"')
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: ANCHOR_SQUARE_RIGHT_XML + second, withImage: true }),
+    )
+    expect(doc.blocks[0].imageZOrder).toBeUndefined() // rank 0 = base level
+    expect(doc.blocks[1].imageZOrder).toBe(1)
+  })
+
+  it('round-trips imageZOrder through applyImageWrap + saveDocx + reparse', async () => {
+    const bytes = await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true })
+    const parsed = await parseDocx(bytes)
+    // float it in front with a stacking rank of 3
+    const saved = await saveDocx(parsed, [
+      {
+        kind: 'xml',
+        xml: applyImageWrap(parsed.blocks[0].originalXml!, 'front', undefined, undefined, 3),
+      },
+    ])
+    const p2 = await parseDocx(saved)
+    expect(p2.blocks[0].imageWrap).toBe('front')
+    expect(p2.blocks[0].imageZOrder).toBe(3)
+    // bump the rank; wrap unchanged
+    const bumped = await saveDocx(p2, [
+      {
+        kind: 'xml',
+        xml: applyImageWrap(p2.blocks[0].originalXml!, 'front', undefined, undefined, 13),
+      },
+    ])
+    const p3 = await parseDocx(bumped)
+    expect(p3.blocks[0].imageZOrder).toBe(13)
   })
 
   it('embeds new images as anchors when NewImage.wrap is set', async () => {

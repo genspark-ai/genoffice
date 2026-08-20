@@ -46,13 +46,25 @@ export function ColorWell({
       <button
         type="button"
         className="fp-color-well"
-        style={{ background: value }}
         data-tip={label}
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-      />
+      >
+        <span className="fp-color-well-swatch" style={{ background: value }} />
+        <span className="fp-color-well-caret" aria-hidden="true">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M5.5 9.25 12 15.75l6.5-6.5"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
       {open && (
         <ColorPicker
           className="fp-color-pop"

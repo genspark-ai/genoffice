@@ -47,6 +47,7 @@ export function resolveFill(
         ...(fill.alpha != null ? { alpha: fill.alpha } : {}),
         ...(fill.fillRect ? { fillRect: fill.fillRect } : {}),
         ...(fill.duotone ? { duotone: fill.duotone } : {}),
+        ...(fill.lum ? { lum: fill.lum } : {}),
         ...(fill.clrChange ? { clrChange: fill.clrChange } : {}),
         ...(fill.tile
           ? {
@@ -79,17 +80,29 @@ export function resolveStroke(stroke: Stroke | undefined, vp: Viewport): RenderS
   if (!stroke) return undefined
   const rf = stroke.fill
   let color = '#000000'
+  let gradient: RenderStroke['gradient']
   if (rf.type === 'solid') color = rf.color
-  else if (rf.type === 'none') return undefined
+  else if (rf.type === 'gradient' && rf.stops.length) {
+    gradient = {
+      stops: rf.stops.map((s) => ({ pos: s.pos, color: s.color })),
+      angleDeg: rf.angle != null ? rf.angle / 60000 : 0,
+    }
+    color = rf.stops[0]!.color
+  } else if (rf.type === 'none') return undefined
   const widthPx = Math.max(emuToPx(stroke.width || 12700, vp.scale), 0.5)
   const widthPt = (stroke.width || 12700) / EMU_PER_PT
   const dash = dashPreset(stroke.dash, widthPx)
+  const capMap = { flat: 'butt', round: 'round', square: 'square' } as const
   return {
     color,
     widthPx,
     widthPt,
     ...(dash ? { dash } : {}),
     ...(stroke.dash && stroke.dash !== 'solid' ? { dashPreset: stroke.dash } : {}),
+    ...(stroke.cap ? { cap: capMap[stroke.cap] } : {}),
+    ...(stroke.join ? { join: stroke.join } : {}),
+    ...(stroke.compound ? { compound: stroke.compound } : {}),
+    ...(gradient ? { gradient } : {}),
   }
 }
 

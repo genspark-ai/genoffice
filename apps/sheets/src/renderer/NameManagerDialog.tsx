@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Dropdown } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 
 /// The Name Manager dialog, minimal: list, add, edit (name / refers-to), and
@@ -130,14 +131,15 @@ export function NameManagerDialog({
             {selected === null && (
               <label>
                 {t('dlgNmScope')}
-                <select value={scope} onChange={(e) => setScope(e.target.value)}>
-                  <option value="">{t('dlgNmWorkbook')}</option>
-                  {sheets.map((sheet) => (
-                    <option key={sheet.id} value={sheet.id}>
-                      {sheet.name}
-                    </option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel={t('dlgNmScope')}
+                  value={scope}
+                  options={[
+                    { value: '', label: t('dlgNmWorkbook') },
+                    ...sheets.map((sheet) => ({ value: sheet.id, label: sheet.name })),
+                  ]}
+                  onPick={setScope}
+                />
               </label>
             )}
           </div>

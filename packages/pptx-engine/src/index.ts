@@ -35,6 +35,7 @@ import {
   removeSlideBackgroundXml,
   type GradientFillPatch,
   type SlideTransitionKind,
+  type StrokePatch,
 } from './generate'
 import {
   buildTableXml,
@@ -47,6 +48,7 @@ import {
 import { BLANK_SLIDE_XML } from './blank'
 import { escapeXmlAttr } from './xml-utils'
 import { elementSpid } from './animation'
+import { ensureCreationId } from './identity'
 import { listMasterParts, parseMasterPart } from './master-edit'
 import type {
   Paragraph,
@@ -59,6 +61,7 @@ import type {
   ChartElement,
   GroupElement,
   Transform,
+  Stroke,
 } from './types'
 import { patchTableStyleXml, ensureTableStyleXml, type TableStyleEdit } from './table-edit'
 import { buildChartSpaceXml, type NewChartKind, type NewChartOptions } from './chart-insert'
@@ -125,19 +128,25 @@ export {
   type GradientFillPatch,
   type BackgroundImagePatch,
   type SlideTransitionKind,
+  type StrokePatch,
 } from './generate'
 export {
   addElement,
   addPicture,
+  addImageMediaAndRel,
   deleteElement,
   buildSpXml,
   buildTableXml,
+  buildTableGridXml,
   buildGrpSpXml,
   calcBoundingBox,
   type NewElementOptions,
+  type NewElementBodyPr,
   type NewPictureOptions,
   type NewShapeKind,
   type NewTableOptions,
+  type NewTableCellSpec,
+  type NewTableGridOptions,
 } from './insert'
 export {
   alignRects,
@@ -147,6 +156,14 @@ export {
   type AlignRect,
 } from './align'
 export { createBlankPptx } from './blank'
+export {
+  elementCNvPrId,
+  elementDurableId,
+  ensureCreationId,
+  groupChildDurableId,
+  matchesElementRef,
+  slideDurableId,
+} from './identity'
 export { promoteSlideBackground, isBackgroundLikeElement } from './background-promote'
 export {
   applyThemeToArchive,
@@ -719,6 +736,20 @@ export function patchSlideXml(slide: Slide): string {
 
 /** One element's current XML slice (dirty elements patch-regenerated, clean elements original bytes). */
 export function patchedElementXml(el: SlideElement): string {
+  // Progressive identity hardening: an element whose bytes are being rewritten
+  // anyway gets a creationId minted into its anchor (idempotent — repeated calls
+  // from commitSaved/buildZip see the same GUID). Clean elements pass through
+  // untouched, so unedited decks stay byte-identical on save.
+  if (
+    el.dirty ||
+    el.dirtyTransform ||
+    el.dirtyFill ||
+    el.dirtyStroke ||
+    el.dirtySrcRect ||
+    el.dirtyPPr
+  ) {
+    ensureCreationId(el)
+  }
   let xml = el.anchor.originalXml
   if (el.dirty && (el.type === 'text' || el.type === 'shape')) {
     xml = patchTextElementXml(el as TextElement, xml)
@@ -747,12 +778,7 @@ export function patchedElementXml(el: SlideElement): string {
   }
   if (el.dirtyStroke && (el.type === 'text' || el.type === 'shape' || el.type === 'picture')) {
     const stroke = (el as TextElement).stroke
-    xml = patchElementStroke(
-      xml,
-      stroke && stroke.fill.type === 'solid'
-        ? { color: stroke.fill.color, widthEmu: stroke.width, dash: stroke.dash }
-        : null,
-    )
+    xml = patchElementStroke(xml, stroke ? modelStrokeToPatch(stroke) : null)
   }
   if (el.dirtySrcRect && el.type === 'picture') {
     const pic = el as import('./types').PictureElement
@@ -961,21 +987,8 @@ export function setShapePresetGeometry(slide: Slide, elementId: string, prst: st
   if (!/^[A-Za-z0-9]+$/.test(prst)) return false
   const el = slide.elements.find((e) => e.id === elementId)
   if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
-  let xml = patchedElementXml(el)
-  const geomXml = `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`
-  const existing =
-    /<a:prstGeom\b[^>]*\/>|<a:prstGeom\b[\s\S]*?<\/a:prstGeom>|<a:custGeom\b[\s\S]*?<\/a:custGeom>/.exec(
-      xml,
-    )
-  if (existing) {
-    xml = xml.slice(0, existing.index) + geomXml + xml.slice(existing.index + existing[0].length)
-  } else {
-    // No explicit geometry (bare text boxes): insert after </a:xfrm> inside spPr
-    const xfrmClose = /<\/a:xfrm>/.exec(xml)
-    if (!xfrmClose) return false
-    const at = xfrmClose.index + xfrmClose[0].length
-    xml = xml.slice(0, at) + geomXml + xml.slice(at)
-  }
+  const xml = swapGeometryXml(patchedElementXml(el), prst)
+  if (xml == null) return false
   el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
   el.dirtyPPr = undefined
   el.anchor.originalXml = xml
@@ -985,6 +998,81 @@ export function setShapePresetGeometry(slide: Slide, elementId: string, prst: st
   delete shape.customGeometry
   slide.structureDirty = true
   return true
+}
+
+/** Serialize adjust values as an <a:avLst> ("val" formulas only). */
+function avLstXml(adjust: Record<string, number>): string {
+  const gds = Object.entries(adjust)
+    .map(([n, v]) => `<a:gd name="${n}" fmla="val ${Math.round(v)}"/>`)
+    .join('')
+  return `<a:avLst>${gds}</a:avLst>`
+}
+
+/** Adjust maps must be non-empty, with safe names and finite values (they go straight into XML). */
+function validAdjust(adjust: Record<string, number>): boolean {
+  const entries = Object.entries(adjust)
+  return (
+    entries.length > 0 && entries.every(([n, v]) => /^[A-Za-z0-9]+$/.test(n) && Number.isFinite(v))
+  )
+}
+
+/** Replace the <a:avLst> inside <a:prstGeom> with the given adjust values; null without a prstGeom. */
+function swapAvLstXml(xml: string, adjust: Record<string, number>): string | null {
+  const open = /<a:prstGeom\b[^>]*?(\/?)>/.exec(xml)
+  if (!open) return null
+  const av = avLstXml(adjust)
+  if (open[1] === '/') {
+    const tag = open[0].slice(0, -2) + '>'
+    return (
+      xml.slice(0, open.index) + tag + av + '</a:prstGeom>' + xml.slice(open.index + open[0].length)
+    )
+  }
+  const end = xml.indexOf('</a:prstGeom>', open.index)
+  if (end < 0) return null
+  const innerStart = open.index + open[0].length
+  const inner = xml.slice(innerStart, end)
+  const avRe = /<a:avLst\b[^>]*\/>|<a:avLst\b[\s\S]*?<\/a:avLst>/
+  const newInner = avRe.test(inner) ? inner.replace(avRe, av) : av + inner
+  return xml.slice(0, innerStart) + newInner + xml.slice(end)
+}
+
+/**
+ * Set a shape's preset-geometry adjust values (the "yellow handle" edit):
+ * rewrite <a:avLst> inside <a:prstGeom>, keeping everything else. Byte surgery
+ * baked directly into originalXml (same contract as setShapePresetGeometry).
+ */
+export function setShapeAdjustValues(
+  slide: Slide,
+  elementId: string,
+  adjust: Record<string, number>,
+): boolean {
+  if (!validAdjust(adjust)) return false
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const xml = swapAvLstXml(patchedElementXml(el), adjust)
+  if (xml == null) return false
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  ;(el as TextElement).adjust = { ...adjust }
+  slide.structureDirty = true
+  return true
+}
+
+/** Replace <a:prstGeom>/<a:custGeom> in a shape's XML with the new preset; null if no anchor point exists. */
+function swapGeometryXml(xml: string, prst: string): string | null {
+  const geomXml = `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`
+  const existing =
+    /<a:prstGeom\b[^>]*\/>|<a:prstGeom\b[\s\S]*?<\/a:prstGeom>|<a:custGeom\b[\s\S]*?<\/a:custGeom>/.exec(
+      xml,
+    )
+  if (existing)
+    return xml.slice(0, existing.index) + geomXml + xml.slice(existing.index + existing[0].length)
+  // No explicit geometry (bare text boxes): insert after </a:xfrm> inside spPr
+  const xfrmClose = /<\/a:xfrm>/.exec(xml)
+  if (!xfrmClose) return null
+  const at = xfrmClose.index + xfrmClose[0].length
+  return xml.slice(0, at) + geomXml + xml.slice(at)
 }
 
 /**
@@ -3008,12 +3096,24 @@ export function setTableColWidth(
   const patched = gc[0].replace(/\bw="-?\d+"/, `w="${w}"`)
   xml = xml.slice(0, gc.index) + patched + xml.slice(gc.index + gc[0].length)
 
+  const dxRtl = table.rtl ? w - table.colWidths[col]! : 0
   table.colWidths[col] = w
   const sum = table.colWidths.reduce((a, b) => a + b, 0)
   xml = xml.replace(
     /(<p:xfrm[^>]*>[\s\S]*?<a:ext\s[^>]*\bcx=")-?\d+(")/,
     (_a, pre: string, post: string) => `${pre}${sum}${post}`,
   )
+  // rtl mirroring anchors the table's visual-right edge: growing a column extends the
+  // frame leftward, so the origin shifts by the width delta (LTR keeps the origin and
+  // extends rightward)
+  if (dxRtl) {
+    const newX = el.transform.offset.x - dxRtl
+    xml = xml.replace(
+      /(<p:xfrm[^>]*>[\s\S]*?<a:off\s[^>]*\bx=")-?\d+(")/,
+      (_a, pre: string, post: string) => `${pre}${newX}${post}`,
+    )
+    el.transform.offset.x = newX
+  }
   el.anchor.originalXml = xml
   el.transform.offset.cx = sum
   slide.structureDirty = true
@@ -3258,6 +3358,13 @@ export function pasteElements(
     xml = xml.replace(
       /(<p:cNvPr\s[^>]*\bid=")\d+(")/g,
       (_a, pre: string, post: string) => `${pre}${nextId++}${post}`,
+    )
+    // Pasted elements are new identities: mint fresh creationIds so durable ids
+    // never collide with their source elements on the same slide
+    xml = xml.replace(
+      /(<a16:creationId[^>]*\bid=")\{?[0-9A-Fa-f-]{36}\}?(")/g,
+      (_a, pre: string, post: string) =>
+        `${pre}{${globalThis.crypto.randomUUID().toUpperCase()}}${post}`,
     )
     // Offset only the outermost xfrm's off (group child coordinate systems stay put)
     xml = xml.replace(/<a:off\b[^>]*\/>/, (tag) =>
@@ -3646,25 +3753,109 @@ export function editGroupChildFill(
 }
 
 /** Group-child stroke (null = remove the stroke). */
+/** In-memory Stroke → StrokePatch for the save-time XML rewrite (inverse of strokePatchToModel).
+ * null for fills a StrokePatch cannot express (image/pattern), which writes <a:noFill/>. */
+function modelStrokeToPatch(stroke: Stroke): StrokePatch | null {
+  const capMap = { flat: 'flat', round: 'rnd', square: 'sq' } as const
+  const base = {
+    widthEmu: stroke.width,
+    // 'solid' actively clears a stale prstDash left in the original bytes
+    dash: stroke.dash ?? 'solid',
+    ...(stroke.cap ? { cap: capMap[stroke.cap] } : {}),
+    ...(stroke.join ? { join: stroke.join } : {}),
+    ...(stroke.compound ? { compound: stroke.compound } : {}),
+  }
+  if (stroke.fill.type === 'solid') return { color: stroke.fill.color, ...base }
+  if (stroke.fill.type === 'gradient')
+    return {
+      color: stroke.fill.stops[0]?.color ?? '#000000',
+      ...base,
+      gradient: { stops: stroke.fill.stops, angle: stroke.fill.angle ?? 0 },
+    }
+  return null
+}
+
+/** StrokePatch → in-memory Stroke model (mirrors what patchLnXml writes into the XML). */
+export function strokePatchToModel(stroke: StrokePatch): Stroke {
+  const capMap = { flat: 'flat', rnd: 'round', sq: 'square' } as const
+  return {
+    fill: stroke.gradient
+      ? {
+          type: 'gradient',
+          stops: stroke.gradient.stops,
+          angle: Math.round(stroke.gradient.angle),
+        }
+      : { type: 'solid', color: stroke.color },
+    width: stroke.widthEmu,
+    ...(stroke.dash && stroke.dash !== 'solid' ? { dash: stroke.dash } : {}),
+    ...(stroke.cap ? { cap: capMap[stroke.cap] } : {}),
+    ...(stroke.join ? { join: stroke.join } : {}),
+    ...(stroke.compound && stroke.compound !== 'sng' ? { compound: stroke.compound } : {}),
+  }
+}
+
 export function editGroupChildStroke(
   slide: Slide,
   groupId: string,
   childId: string,
-  stroke: { color: string; widthEmu: number; dash?: string } | null,
+  stroke: StrokePatch | null,
 ): boolean {
   const found = findGroupChild(slide, groupId, childId)
   const child = found?.child
   if (!child || (child.type !== 'text' && child.type !== 'shape' && child.type !== 'picture'))
     return false
   const t = child as TextElement
-  t.stroke = stroke
-    ? {
-        fill: { type: 'solid', color: stroke.color },
-        width: stroke.widthEmu,
-        ...(stroke.dash ? { dash: stroke.dash } : {}),
-      }
-    : undefined
+  t.stroke = stroke ? strokePatchToModel(stroke) : undefined
   if (!patchGroupChildXml(found!.grp, child, (xml) => patchElementStroke(xml, stroke))) return false
+  slide.structureDirty = true
+  return true
+}
+
+/** Group-child adjust values (same avLst-swap semantics as setShapeAdjustValues). */
+export function setGroupChildShapeAdjustValues(
+  slide: Slide,
+  groupId: string,
+  childId: string,
+  adjust: Record<string, number>,
+): boolean {
+  if (!validAdjust(adjust)) return false
+  const found = findGroupChild(slide, groupId, childId)
+  const child = found?.child
+  if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
+  let swapped = false
+  const ok = patchGroupChildXml(found!.grp, child, (xml) => {
+    const next = swapAvLstXml(xml, adjust)
+    swapped = next != null
+    return next ?? xml
+  })
+  if (!ok || !swapped) return false
+  ;(child as TextElement).adjust = { ...adjust }
+  slide.structureDirty = true
+  return true
+}
+
+/** Group-child "Change Shape" (same geometry-swap semantics as setShapePresetGeometry). */
+export function setGroupChildShapePresetGeometry(
+  slide: Slide,
+  groupId: string,
+  childId: string,
+  prst: string,
+): boolean {
+  if (!/^[A-Za-z0-9]+$/.test(prst)) return false
+  const found = findGroupChild(slide, groupId, childId)
+  const child = found?.child
+  if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
+  let swapped = false
+  const ok = patchGroupChildXml(found!.grp, child, (xml) => {
+    const next = swapGeometryXml(xml, prst)
+    swapped = next != null
+    return next ?? xml
+  })
+  if (!ok || !swapped) return false
+  const shape = child as TextElement
+  shape.presetGeometry = prst
+  delete shape.adjust
+  delete shape.customGeometry
   slide.structureDirty = true
   return true
 }

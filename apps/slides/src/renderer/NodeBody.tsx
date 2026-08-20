@@ -45,6 +45,9 @@ export interface NodeBodyProps {
   hideText?: boolean
   /** Table cell being edited (model coordinates): skip drawing that cell's text */
   hideCellText?: { row: number; col: number }
+  /** Accumulated mirror parity from flipped ancestor groups (their transform also mirrors this node's text) */
+  flipHInherited?: boolean
+  flipVInherited?: boolean
 }
 
 /**
@@ -56,6 +59,8 @@ export const NodeBody = React.memo(function NodeBody({
   images,
   hideText,
   hideCellText,
+  flipHInherited,
+  flipVInherited,
 }: NodeBodyProps) {
   const { box } = node
 
@@ -65,7 +70,13 @@ export const NodeBody = React.memo(function NodeBody({
     return (
       <Group>
         {g.children.map((c) => (
-          <StaticNode key={c.id} node={c} images={images} />
+          <StaticNode
+            key={c.id}
+            node={c}
+            images={images}
+            flipHInherited={!!box.flipH !== !!flipHInherited}
+            flipVInherited={!!box.flipV !== !!flipVInherited}
+          />
         ))}
       </Group>
     )
@@ -75,14 +86,15 @@ export const NodeBody = React.memo(function NodeBody({
     const pic = node as PictureRenderNode
     const rawImg = pic.dataUrl ? images.get(pic.dataUrl) : undefined
     // clrChange/duotone recolor the pixels; the derived key keeps processed variants out of raw cache slots
-    const srcKey = processedImageKey(pic.dataUrl ?? '', pic.clrChange, pic.duotone)
+    const srcKey = processedImageKey(pic.dataUrl ?? '', pic.clrChange, pic.duotone, pic.lum)
     const procImg =
-      rawImg && (pic.clrChange || pic.duotone)
+      rawImg && (pic.clrChange || pic.duotone || pic.lum)
         ? (processedImage(
             rawImg,
             pic.dataUrl ?? '',
             pic.clrChange,
             pic.duotone,
+            pic.lum,
           ) as HTMLImageElement)
         : rawImg
     // ≤2×2 pictures stretch to one flat color in PowerPoint (crop is meaningless there)
@@ -309,7 +321,7 @@ export const NodeBody = React.memo(function NodeBody({
   // shape / text
   const shape = node as ShapeRenderNode
   const fillProps = fillToKonva(shape.fill, box.w, box.h, images, { x: box.x, y: box.y })
-  const strokeProps = strokeToKonva(shape.stroke)
+  const strokeProps = strokeToKonva(shape.stroke, { w: box.w, h: box.h })
   const shadowProps = shadowToKonva(shape.shadow, shape.glow)
   const glyphs = hideText ? [] : shapeGlyphs(shape)
 
@@ -538,108 +550,117 @@ export const NodeBody = React.memo(function NodeBody({
       {overlayUnder}
       {geom}
       {overlayGeom}
-      {/* Text highlight backgrounds: all rects first so a run's highlight never covers a neighbor's glyphs */}
-      {glyphs.map(
-        (g, i) =>
-          g.highlight && (
-            <Rect
-              key={`hl${i}`}
-              x={(shape.text?.insets.l ?? 0) + g.highlight.x}
-              y={(shape.text?.insets.t ?? 0) + g.highlight.y}
-              width={g.highlight.w}
-              height={g.highlight.h}
-              fill={g.highlight.color}
-              listening={false}
-            />
-          ),
-      )}
-      {/* WordArt text extrusion: dark offset layers behind every glyph; PowerPoint's 3D
-          material also tints the face glyphs with the extrusion color (front stays lighter) */}
-      {shape.text?.extrusion &&
-        glyphs.flatMap((g, i) =>
-          [1, 0.5].map((k) => (
-            <Text
-              key={`x${i}-${k}`}
-              x={(shape.text?.insets.l ?? 0) + g.x + shape.text!.extrusion!.dx * k}
-              y={(shape.text?.insets.t ?? 0) + g.y + shape.text!.extrusion!.dy * k}
-              text={g.text}
-              fontSize={g.fontSize}
-              fontFamily={g.fontFamily}
-              fontStyle={g.fontStyle}
-              rotation={g.rotation ?? 0}
-              letterSpacing={g.letterSpacing ?? 0}
-              fill={normalizeColor(shadeHex(shape.text!.extrusion!.color, 0.7))}
-              listening={false}
-            />
-          )),
+      {/* PowerPoint flips geometry only: text in a flipped shape stays readable. The
+          container Group mirrors everything, so counter-flip the text layer. */}
+      <Group
+        scaleX={!!box.flipH !== !!flipHInherited ? -1 : 1}
+        scaleY={!!box.flipV !== !!flipVInherited ? -1 : 1}
+        x={!!box.flipH !== !!flipHInherited ? box.w : 0}
+        y={!!box.flipV !== !!flipVInherited ? box.h : 0}
+      >
+        {/* Text highlight backgrounds: all rects first so a run's highlight never covers a neighbor's glyphs */}
+        {glyphs.map(
+          (g, i) =>
+            g.highlight && (
+              <Rect
+                key={`hl${i}`}
+                x={(shape.text?.insets.l ?? 0) + g.highlight.x}
+                y={(shape.text?.insets.t ?? 0) + g.highlight.y}
+                width={g.highlight.w}
+                height={g.highlight.h}
+                fill={g.highlight.color}
+                listening={false}
+              />
+            ),
         )}
-      {glyphs.map((g, i) => (
-        <Text
-          key={i}
-          x={(shape.text?.insets.l ?? 0) + g.x}
-          y={(shape.text?.insets.t ?? 0) + g.y}
-          text={g.text}
-          fontSize={g.fontSize}
-          fontFamily={g.fontFamily}
-          fontStyle={g.fontStyle}
-          textDecoration={g.textDecoration}
-          rotation={g.rotation ?? 0}
-          letterSpacing={g.letterSpacing ?? 0}
-          fill={
-            shape.text?.extrusion
-              ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
-              : g.fill
-          }
-          direction={g.direction ?? 'inherit'}
-          {...(g.fillPriority && !shape.text?.extrusion
-            ? {
-                fillPriority: g.fillPriority,
-                fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
-                fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
-                fillLinearGradientColorStops: g.fillLinearGradientColorStops,
-              }
-            : {})}
-          {...(g.stroke
-            ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
-            : {})}
-          {...(g.shadowEnabled
-            ? {
-                shadowColor: g.shadowColor,
-                shadowBlur: g.shadowBlur,
-                shadowOffsetX: g.shadowOffsetX,
-                shadowOffsetY: g.shadowOffsetY,
-              }
-            : {})}
-        />
-      ))}
-      {/* Reflections: faded mirror below each run (PowerPoint fades it out; approximated flat) */}
-      {glyphs.map(
-        (g, i) =>
-          g.reflection && (
-            <Text
-              key={`rf${i}`}
-              x={(shape.text?.insets.l ?? 0) + g.x}
-              y={(shape.text?.insets.t ?? 0) + g.y + g.fontSize * 1.8}
-              scaleY={-1}
-              text={g.text}
-              fontSize={g.fontSize}
-              fontFamily={g.fontFamily}
-              fontStyle={g.fontStyle}
-              letterSpacing={g.letterSpacing ?? 0}
-              fill={g.fill}
-              opacity={0.15}
-              listening={false}
-              {...(g.fillPriority
-                ? {
-                    fillPriority: g.fillPriority,
-                    fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
-                    fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
-                    fillLinearGradientColorStops: g.fillLinearGradientColorStops,
-                  }
-                : {})}
-            />
-          ),
-      )}
+        {/* WordArt text extrusion: dark offset layers behind every glyph; PowerPoint's 3D
+          material also tints the face glyphs with the extrusion color (front stays lighter) */}
+        {shape.text?.extrusion &&
+          glyphs.flatMap((g, i) =>
+            [1, 0.5].map((k) => (
+              <Text
+                key={`x${i}-${k}`}
+                x={(shape.text?.insets.l ?? 0) + g.x + shape.text!.extrusion!.dx * k}
+                y={(shape.text?.insets.t ?? 0) + g.y + shape.text!.extrusion!.dy * k}
+                text={g.text}
+                fontSize={g.fontSize}
+                fontFamily={g.fontFamily}
+                fontStyle={g.fontStyle}
+                rotation={g.rotation ?? 0}
+                letterSpacing={g.letterSpacing ?? 0}
+                fill={normalizeColor(shadeHex(shape.text!.extrusion!.color, 0.7))}
+                listening={false}
+              />
+            )),
+          )}
+        {glyphs.map((g, i) => (
+          <Text
+            key={i}
+            x={(shape.text?.insets.l ?? 0) + g.x}
+            y={(shape.text?.insets.t ?? 0) + g.y}
+            text={g.text}
+            fontSize={g.fontSize}
+            fontFamily={g.fontFamily}
+            fontStyle={g.fontStyle}
+            textDecoration={g.textDecoration}
+            rotation={g.rotation ?? 0}
+            letterSpacing={g.letterSpacing ?? 0}
+            fill={
+              shape.text?.extrusion
+                ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
+                : g.fill
+            }
+            direction={g.direction ?? 'inherit'}
+            {...(g.fillPriority && !shape.text?.extrusion
+              ? {
+                  fillPriority: g.fillPriority,
+                  fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                  fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                  fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                }
+              : {})}
+            {...(g.stroke
+              ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
+              : {})}
+            {...(g.shadowEnabled
+              ? {
+                  shadowColor: g.shadowColor,
+                  shadowBlur: g.shadowBlur,
+                  shadowOffsetX: g.shadowOffsetX,
+                  shadowOffsetY: g.shadowOffsetY,
+                }
+              : {})}
+          />
+        ))}
+        {/* Reflections: faded mirror below each run (PowerPoint fades it out; approximated flat) */}
+        {glyphs.map(
+          (g, i) =>
+            g.reflection && (
+              <Text
+                key={`rf${i}`}
+                x={(shape.text?.insets.l ?? 0) + g.x}
+                y={(shape.text?.insets.t ?? 0) + g.y + g.fontSize * 1.8}
+                scaleY={-1}
+                text={g.text}
+                fontSize={g.fontSize}
+                fontFamily={g.fontFamily}
+                fontStyle={g.fontStyle}
+                letterSpacing={g.letterSpacing ?? 0}
+                fill={g.fill}
+                opacity={0.15}
+                listening={false}
+                {...(g.fillPriority
+                  ? {
+                      fillPriority: g.fillPriority,
+                      fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                      fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                      fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                    }
+                  : {})}
+              />
+            ),
+        )}
+      </Group>
     </>
   )
 })
@@ -804,11 +825,21 @@ function MediaBadge({ kind, w, h }: { kind: 'video' | 'audio'; w: number; h: num
  * Statically positioned node: container (position/rotation/flip) + NodeBody.
  * Rotation and flip pivot on the box center (boxPivotProps), matching OOXML.
  */
-export const StaticNode = React.memo(function StaticNode({ node, images }: NodeBodyProps) {
+export const StaticNode = React.memo(function StaticNode({
+  node,
+  images,
+  flipHInherited,
+  flipVInherited,
+}: NodeBodyProps) {
   const { box } = node
   return (
     <Group {...boxPivotProps(box)} listening={false}>
-      <NodeBody node={node} images={images} />
+      <NodeBody
+        node={node}
+        images={images}
+        flipHInherited={flipHInherited}
+        flipVInherited={flipVInherited}
+      />
     </Group>
   )
 })

@@ -45,6 +45,12 @@ function extractFace(buf: Buffer, offset: number): Buffer {
   return out
 }
 
+/** The family (nameID 1/16, normalized-exact match) has at least one installed face. */
+export function isFamilyInstalled(family: string): boolean {
+  const key = norm(family)
+  return key !== '' && getFontIndex().byFamily.has(key)
+}
+
 const faceCache = new Map<string, Buffer>()
 
 /**

@@ -296,6 +296,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
     blocks.push(await buildBlock(el, i, xml, buildCtx))
   }
   applyTocEntryNumbers(blocks, numbering)
+  normalizeImageZOrders(blocks)
 
   const header = await readHeaderFooterPart(
     zip,
@@ -1277,6 +1278,8 @@ function buildTextParagraph(
   if (runs.length === 0) {
     const emptySz = emptyParaSizeHalfPoints(pNode, pPr)
     if (emptySz) format = { ...(format ?? {}), emptyRunSizeHalfPoints: emptySz }
+    const emptyFont = emptyParaMarkFont(pNode, pPr)
+    if (emptyFont) format = { ...(format ?? {}), emptyRunFontFamily: emptyFont }
   }
 
   // allowOverlap="0" colliding with a sibling anchor (tdf#134114): Word displaces
@@ -2053,6 +2056,8 @@ interface DrawingAnchorMeta {
   offsetYEmu?: number
   /** wrapNone (front) / behindDoc anchors leave the text flow entirely */
   noWrap?: boolean
+  /** wp:wrapTopAndBottom: body text is excluded from the drawing's vertical band */
+  topBottom?: boolean
   anchored?: boolean
   /** wp:positionH/V relativeFrom */
   relH?: string
@@ -2140,6 +2145,12 @@ function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
     meta.extentYEmu = parseInt(extent[2], 10)
   }
   if (frag.includes('<wp:wrapNone') || /behindDoc="(?:1|true)"/.test(anchorTag)) meta.noWrap = true
+  // the anchor's own wrap element sits before a:graphic; a nested drawing's
+  // wrap must not leak up. behindDoc="1" + wrapTopAndBottom coexist in
+  // generated docs — Word still excludes the band (behindDoc is z-order only)
+  const graphicAt = frag.indexOf('<a:graphic')
+  const ownXml = graphicAt === -1 ? frag : frag.slice(0, graphicAt)
+  if (ownXml.includes('<wp:wrapTopAndBottom')) meta.topBottom = true
   return meta
 }
 
@@ -2536,6 +2547,7 @@ function extractTextboxes(
     box: TextboxDisplay,
     meta: DrawingAnchorMeta,
     pagePos: ResolvedAnchorPos | null,
+    grouped = false,
   ): void => {
     if (!meta.anchored) return
     // page/margin-anchored drawing sitting outside the body column (Word
@@ -2550,6 +2562,26 @@ function extractTextboxes(
     }
     if (meta.offsetXEmu !== undefined) box.offsetXEmu = (box.offsetXEmu ?? 0) + meta.offsetXEmu
     if (meta.offsetYEmu !== undefined) box.offsetYEmu = (box.offsetYEmu ?? 0) + meta.offsetYEmu
+    // wrapTopAndBottom (Word): body text is excluded from the box's whole
+    // vertical band. The box floats at its offset and the anchor paragraph
+    // reserves flow height down to the box bottom (union over its boxes).
+    if (meta.topBottom && (meta.relV === 'paragraph' || meta.relV === 'line')) {
+      // wp:extent cy covers the whole drawing: a usable height fallback only
+      // for an ungrouped shape (each group child would claim the group height)
+      const h =
+        box.heightPx ??
+        (!grouped && meta.extentYEmu !== undefined
+          ? Math.round(meta.extentYEmu / EMU_PER_PX)
+          : undefined)
+      if (h !== undefined) {
+        const top = Math.round((box.offsetYEmu ?? 0) / EMU_PER_PX)
+        if (top + h > 0) {
+          box.bandTopPx = top
+          box.bandBottomPx = top + h
+        }
+      }
+      box.floating = true
+    }
     if (meta.noWrap || multiDrawing) box.floating = true
   }
 
@@ -2582,7 +2614,7 @@ function extractTextboxes(
         // grouped shapes place absolutely at their mapped offset like Word
         box.floating = true
       }
-      applyAnchor(box, meta, pagePos)
+      applyAnchor(box, meta, pagePos, ctm !== null)
       out.push(box)
     }
     // document-order walk (box order must match w:txbxContent order for the
@@ -3007,6 +3039,26 @@ function emptyParaSizeHalfPoints(pNode: XNode, pPr: XNode | undefined): number |
   }
   const n = sz ? parseInt(sz, 10) : NaN
   return Number.isFinite(n) && n > 0 ? n : undefined
+}
+
+/**
+ * w:rFonts governing a run-less paragraph's line height: same sources as
+ * emptyParaSizeHalfPoints — Word lays the empty line with the mark's face
+ * metrics, not the document default face.
+ */
+function emptyParaMarkFont(pNode: XNode, pPr: XNode | undefined): string | undefined {
+  const pick = (rPr: XNode | undefined): string | undefined => {
+    const a = attrsOf(findChild(rPr ?? {}, 'w:rFonts') ?? {})
+    return a['w:ascii'] ?? a['w:hAnsi'] ?? a['w:eastAsia']
+  }
+  let font = pPr ? pick(findChild(pPr, 'w:rPr')) : undefined
+  if (!font) {
+    for (const r of findChildren(pNode, 'w:r')) {
+      const v = pick(findChild(r, 'w:rPr'))
+      if (v) font = v
+    }
+  }
+  return font
 }
 
 function extractRuns(
@@ -3452,13 +3504,20 @@ function buildRun(
     if (color) run.color = color
     const sz = attrsOf(findChild(rPr, cs ? 'w:szCs' : 'w:sz') ?? {})['w:val']
     if (sz) run.sizeHalfPoints = parseInt(sz, 10) || undefined
-    const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
+    const rfAttrs = attrsOf(findChild(rPr, 'w:rFonts') ?? {})
+    const rf = themedRFonts(rfAttrs, themeFonts)
     const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
     if (font) run.font = font
     if (rf.eaSlotEmpty && font && font === rf.eastAsia) run.eaSlotEmpty = true
     const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) run.fontAscii = fontAscii
+    // complex-script slot: literal attribute only — theme refs (w:cstheme) stay in
+    // rawRPr so untouched runs keep their original bytes
+    if (rfAttrs['w:cs']) run.fontCs = rfAttrs['w:cs']
+    // theme-resolved cs font for display consumers
     if (rf.cs) run.csFont = rf.cs
+    const rtl = onOffOf(rPr, 'w:rtl')
+    if (rtl !== undefined) run.rtl = rtl
     const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
     if (spc) run.charSpacingTwips = spc
     // w:caps wins over w:smallCaps when both are on (Word)
@@ -3522,6 +3581,7 @@ function buildRun(
       run.text = decoded
       delete run.font
       delete run.fontAscii
+      delete run.fontCs
       if (run.rawRPr) run.rawRPr = run.rawRPr.replace(/<w:rFonts[^>]*\/>/, '')
     }
   }
@@ -4101,10 +4161,12 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number): TableCell {
       : undefined
     const runs = extractRuns(p, ctx, [], [], true)
     const emptySz = runs.length === 0 ? emptyParaSizeHalfPoints(p, pPr) : undefined
+    const emptyFont = runs.length === 0 ? emptyParaMarkFont(p, pPr) : undefined
     richParas.push({
       ...format,
       ...(cellStyleId ? { styleId: cellStyleId } : {}),
       ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
+      ...(emptyFont ? { emptyRunFontFamily: emptyFont } : {}),
       ...(list ? { list } : {}),
       runs,
     })
@@ -4192,6 +4254,10 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
       image.floating = true
       const anchorTag = /<wp:anchor[^>]*>/.exec(frag)?.[0] ?? ''
       if (/behindDoc="(?:1|true)"/.test(anchorTag)) image.behind = true
+      const wrap = /<wp:wrap(None|Square|Tight|Through|TopAndBottom)[\s/>]/.exec(frag)?.[1]
+      if (wrap) {
+        image.wrap = wrap === 'TopAndBottom' ? 'topBottom' : (wrap.toLowerCase() as HfImage['wrap'])
+      }
       readAnchorPos(frag, image)
     } else {
       const align = paraAlignAt(m.index!)
@@ -4235,7 +4301,9 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
 
 /** wp:anchor wp:positionH/V of a header/footer image: wp:align keeps the VML-style
  *  alignment fields, wp:posOffset (EMU) becomes a px offset from the page edge or
- *  margin box (paragraph/column/character origins approximate to margin). */
+ *  margin box (horizontal paragraph/column/character origins approximate to margin;
+ *  vertical paragraph/line keeps 'paragraph' so body push-down can measure from the
+ *  header strip top). */
 function readAnchorPos(frag: string, image: HfImage): void {
   for (const axis of ['H', 'V'] as const) {
     const m = new RegExp(
@@ -4253,13 +4321,17 @@ function readAnchorPos(frag: string, image: HfImage): void {
       }
     } else if (offset != null) {
       const px = Math.round(Number(offset) / EMU_PER_PX)
-      const rel = m[1] === 'page' ? 'page' : 'margin'
       if (axis === 'H') {
         image.posXPx = px
-        image.posHRel = rel
+        image.posHRel = m[1] === 'page' ? 'page' : 'margin'
       } else {
         image.posYPx = px
-        image.posVRel = rel
+        image.posVRel =
+          m[1] === 'page'
+            ? 'page'
+            : m[1] === 'paragraph' || m[1] === 'line'
+              ? 'paragraph'
+              : 'margin'
       }
     }
   }
@@ -4834,6 +4906,28 @@ function fieldDisplayOf(xml: string): FieldDisplay | undefined {
 }
 
 /**
+ * Word writes wp:anchor relativeHeight as 251658240 + rank, which decodes to
+ * small z-orders; other producers write arbitrary values (LibreOffice: 1, 2,
+ * …) that decode to huge magnitudes, defeating the editor's ±1 reorder steps
+ * and its CSS bands. When any decoded rank is wild, re-rank every anchored
+ * image by its decoded value (stable by document order) starting at 0; rank 0
+ * is the base level, so its attribute is dropped like an untouched anchor.
+ */
+function normalizeImageZOrders(blocks: Block[]): void {
+  const anchored = blocks.filter((b) => b.imageZOrder !== undefined)
+  if (!anchored.some((b) => Math.abs(b.imageZOrder!) > 10000)) return
+  anchored
+    .map((b, i) => ({ b, i }))
+    .sort((x, y) => x.b.imageZOrder! - y.b.imageZOrder! || x.i - y.i)
+    .forEach(({ b }, rank) => {
+      if (rank === 0) delete b.imageZOrder
+      else b.imageZOrder = rank
+      // raw XML still carries the wild value; flag for save-time harmonization
+      b.imageZOrderNormalized = true
+    })
+}
+
+/**
  * TOC entries carry their outline number ("1.", "1.1.") as w:numPr numbering
  * (Pages exports one numId per entry with startOverride restarts). The field
  * result is a display-only cache, so the marker is computed once at parse time
@@ -4908,6 +5002,7 @@ type ImageMeta = Pick<
   | 'imageHeightPx'
   | 'imageAlign'
   | 'imageWrap'
+  | 'imageZOrder'
   | 'imageOffsetXEmu'
   | 'imageOffsetYEmu'
   | 'imagePosH'
@@ -4998,6 +5093,13 @@ function imageMeta(xml: string): ImageMeta {
   const anchor = /<wp:anchor[^>]*>/.exec(xml)?.[0]
   if (anchor) {
     if (/allowOverlap="(?:0|false)"/.test(anchor)) meta.imageNoOverlap = true
+    // relativeHeight = 251658240 base + zOrder; keep the delta so overlapping
+    // anchors round-trip their paint order and the editor can reorder them
+    const relHeight = Number(/relativeHeight="(\d+)"/.exec(anchor)?.[1] ?? NaN)
+    if (Number.isFinite(relHeight)) {
+      const z = relHeight - 251658240
+      if (z !== 0) meta.imageZOrder = z
+    }
     // an explicit wrap element wins over behindDoc: Word draws a
     // behindDoc+wrapTight object behind the text and still wraps around it
     if (/behindDoc="1"/.test(anchor) && !/<wp:wrap(Square|Tight|Through|TopAndBottom)/.test(xml))

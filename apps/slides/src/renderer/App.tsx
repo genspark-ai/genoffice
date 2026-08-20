@@ -17,6 +17,7 @@ import type {
   AttachmentMeta,
   EditChartOp,
   EditParagraph,
+  EditStrokeOp,
   EditTableStyleOp,
   GetLayoutsResult,
   GradientFillSpec,
@@ -1101,7 +1102,7 @@ export function App() {
     [],
   )
   const onStroke = useCallback(
-    (sourceId: string, stroke: { color: string; widthPt: number; dash?: string } | null) =>
+    (sourceId: string, stroke: EditStrokeOp['stroke']) =>
       styleActions.onStroke(ctxRef.current, sourceId, stroke),
     [],
   )
@@ -1391,6 +1392,14 @@ export function App() {
   const openBgFormat = useCallback(() => {
     setShowBgFormat(true)
     setShowFormat(false)
+    setShowAnimPane(false)
+    setShowComments(false)
+  }, [])
+
+  /** Open the format pane (Home ribbon toggle / element context menu); never auto-opens on selection */
+  const openFormat = useCallback(() => {
+    setShowFormat(true)
+    setShowBgFormat(false)
     setShowAnimPane(false)
     setShowComments(false)
   }, [])
@@ -2016,6 +2025,31 @@ export function App() {
     [current],
   )
 
+  // Yellow adjust-handle drag: throttled preview commits keep the geometry live,
+  // the release commit is never dropped (edit-transform gesture undo semantics)
+  const adjustLastSent = useRef(0)
+  const onAdjust = useCallback(
+    (sourceId: string, adjust: Record<string, number>, preview: boolean) => {
+      const now = performance.now()
+      if (preview && now - adjustLastSent.current < 80) return
+      adjustLastSent.current = now
+      void window.slidesApi
+        .setShapeAdjust({
+          slideIndex: current,
+          sourceId,
+          adjust,
+          ...(preview ? { preview: true } : {}),
+        })
+        .then((r) => {
+          if (r) {
+            setSlides((s) => s.map((sl, i) => (i === current ? r : sl)))
+            setDirty(true)
+          }
+        })
+    },
+    [current],
+  )
+
   // Connector endpoint drag: new endpoints + attach/detach for the dragged end
   const onEditConnectorEndpoints = useCallback(
     async (
@@ -2446,6 +2480,7 @@ export function App() {
     redo,
     onTransform,
     openBgFormat,
+    openFormat,
     openChangeShape: (targetId, x, y) => setShapeGalleryAt({ targetId, x, y }),
   }
 
@@ -2689,6 +2724,7 @@ export function App() {
                     slideIndex: current,
                     sourceId: selectedNode.sourceId,
                     prst,
+                    groupId: groupIdOf(selectedNode.sourceId),
                   })
                   .then((r) => r && applySlide(current, r))
               }
@@ -2780,10 +2816,14 @@ export function App() {
           })()
         }}
         contextShapeFill={
-          selectedNode?.type === 'shape' && (selectedNode as ShapeRenderNode).fill.kind === 'solid'
-            ? toPickerHex(
-                (selectedNode as ShapeRenderNode & { fill: { color: string } }).fill.color,
-              )
+          selectedNode?.type === 'shape'
+            ? (selectedNode as ShapeRenderNode).fill.kind === 'solid'
+              ? toPickerHex(
+                  (selectedNode as ShapeRenderNode & { fill: { color: string } }).fill.color,
+                )
+              : (selectedNode as ShapeRenderNode).fill.kind === 'none'
+                ? 'none'
+                : null
             : null
         }
         onPictureCrop={startCrop}
@@ -3269,6 +3309,7 @@ export function App() {
                                 drawKindRef.current = null
                                 setDrawKind(null)
                               }}
+                              onAdjust={onAdjust}
                               editingText={
                                 editing
                                   ? { sourceId: editing.sourceId }
@@ -3759,7 +3800,12 @@ export function App() {
           onPick={(prst) => {
             const { targetId } = shapeGalleryAt
             void window.slidesApi
-              .changeShape({ slideIndex: current, sourceId: targetId, prst })
+              .changeShape({
+                slideIndex: current,
+                sourceId: targetId,
+                prst,
+                groupId: groupIdOf(targetId),
+              })
               .then((r) => r && applySlide(current, r))
           }}
           onClose={() => setShapeGalleryAt(null)}
@@ -3805,6 +3851,7 @@ function ZoomControls({
         min={25}
         max={300}
         step={5}
+        style={{ '--zoom-pct': `${((live - 25) / 275) * 100}%` } as React.CSSProperties}
         value={live}
         onChange={(e) => {
           const v = Number(e.target.value)

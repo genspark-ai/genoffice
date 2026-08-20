@@ -1,0 +1,29 @@
+{
+  "name": "@genoffice/pdf2docx",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "local PDF → DOCX conversion: PDFium char-level extraction, pure-geometry layout analysis, docx-engine rebuild",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@embedpdf/pdfium": "^2.15.0",
+    "@genoffice/docx-engine": "*",
+    "@genoffice/font-metrics": "*",
+    "@genoffice/pptx-engine": "*",
+    "bidi-js": "^1.0.3",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

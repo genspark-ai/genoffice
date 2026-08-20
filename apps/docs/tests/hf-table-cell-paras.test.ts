@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { HeaderFooter, HfImage } from '@genoffice/docx-engine'
+import type { HeaderFooter, HfImage, SectionSettings } from '@genoffice/docx-engine'
 import {
   hfFloatPagePos,
   hfHasVisibleContent,
   makeGapHfEl,
   makeHfFloatImgEl,
 } from '../src/renderer/editor/hf-dom'
-import { estimateHfHeight } from '../src/renderer/line-metrics'
+import { estimateHfHeight, hfHeaderGeom } from '../src/renderer/line-metrics'
+import { effectiveTopPx } from '../src/renderer/pagination'
 
 describe('header table cells keep per-paragraph lines', () => {
   const value: HeaderFooter = {
@@ -66,6 +67,8 @@ describe('floating header image positioning', () => {
     marginRight: 96,
     marginTop: 96,
     marginBottom: 96,
+    headerDist: 48,
+    sectMarginTop: 80,
   }
 
   it('page-relative posOffsets measure from the page corner', () => {
@@ -88,6 +91,37 @@ describe('floating header image positioning', () => {
       posVRel: 'margin',
     }
     expect(hfFloatPagePos(img, box)).toEqual({ x: 106, y: 116, translateX: 0, translateY: 0 })
+  })
+
+  it('margin-relative wrapped image reserves and places from the same raw sectPr margin', () => {
+    const set = { marginTop: 1200, headerDist: 720 } as SectionSettings // 80px / 48px
+    const img: HfImage = {
+      dataUrl: 'data:,',
+      floating: true,
+      wrap: 'square',
+      posXPx: 10,
+      posYPx: 20,
+      posHRel: 'margin',
+      posVRel: 'margin',
+      heightPx: 100,
+    }
+    const headerPx = estimateHfHeight({ text: '', paras: [] }, 600, [img], hfHeaderGeom(set))
+    const effTop = effectiveTopPx(set, headerPx)
+    expect(effTop).toBeCloseTo(80 + 20 + 100, 5)
+    const pos = hfFloatPagePos(img, { ...box, marginTop: effTop, sectMarginTop: 80 })
+    expect(pos.y).toBeCloseTo(100, 5) // raw margin + offset, not the pushed-down margin
+    expect(pos.y + img.heightPx!).toBeCloseTo(effTop, 5) // bottom edge meets the body top
+  })
+
+  it('paragraph-relative posOffsets measure from the header strip top, not the pushed margin', () => {
+    const img: HfImage = {
+      dataUrl: 'data:,',
+      posXPx: 10,
+      posYPx: -14,
+      posHRel: 'margin',
+      posVRel: 'paragraph',
+    }
+    expect(hfFloatPagePos(img, box)).toEqual({ x: 106, y: 34, translateX: 0, translateY: 0 })
   })
 
   it('alignment fields reproduce the legacy margin-box anchors', () => {
@@ -212,5 +246,73 @@ describe('empty header with only a floating watermark (sample-17 shape)', () => 
   it('hfHasVisibleContent is false for an empty part with an empty inline-image list', () => {
     expect(hfHasVisibleContent({ text: '', paras: [] }, [])).toBe(false)
     expect(hfHasVisibleContent(null, [])).toBe(false)
+  })
+})
+
+describe('wrapped anchored header images push the body below their bottom edge', () => {
+  const twipsToPx = (t: number) => (t / 1440) * 96
+
+  it('page-relative offsets (prod_090 shape): body top clears the lower image bottom', () => {
+    // header dist 720 twips, top margin 907 twips; two wrapTopAndBottom logos + one wrapNone
+    const set = { marginTop: 907, headerDist: 720 } as SectionSettings
+    const geom = hfHeaderGeom(set)
+    const images: HfImage[] = [
+      {
+        dataUrl: 'x',
+        floating: true,
+        wrap: 'topBottom',
+        posYPx: 35,
+        posVRel: 'page',
+        heightPx: 40,
+      },
+      {
+        dataUrl: 'x',
+        floating: true,
+        wrap: 'topBottom',
+        posYPx: 80,
+        posVRel: 'page',
+        heightPx: 34,
+      },
+      { dataUrl: 'x', floating: true, wrap: 'none', posYPx: 0, posVRel: 'page', heightPx: 300 },
+    ]
+    const headerPx = estimateHfHeight({ text: '', paras: [] }, 600, images, geom)
+    expect(effectiveTopPx(set, headerPx)).toBeCloseTo(80 + 34, 5) // 114px ≈ Word's ~85pt
+    expect(effectiveTopPx(set, 0)).toBeCloseTo(twipsToPx(907), 5) // without the push it was the raw margin
+  })
+
+  it('paragraph-relative offset (prod_004 shape): bottom measures from the header strip top', () => {
+    // header dist 708 twips, top margin 1417 twips; wrapSquare logo, posOffset -14px, 101px tall
+    const set = { marginTop: 1417, headerDist: 708 } as SectionSettings
+    const geom = hfHeaderGeom(set)
+    const images: HfImage[] = [
+      {
+        dataUrl: 'x',
+        floating: true,
+        wrap: 'square',
+        posYPx: -14,
+        posVRel: 'paragraph',
+        heightPx: 101,
+      },
+    ]
+    const headerPx = estimateHfHeight({ text: '', paras: [] }, 600, images, geom)
+    expect(effectiveTopPx(set, headerPx)).toBeCloseTo(twipsToPx(708) - 14 + 101, 5) // ≈134px, was 94.5px
+  })
+
+  it('watermarks keep reserving nothing even with geometry supplied', () => {
+    const set = { marginTop: 907, headerDist: 720 } as SectionSettings
+    const geom = hfHeaderGeom(set)
+    const images: HfImage[] = [
+      { dataUrl: 'x', floating: true, posYPx: 0, posVRel: 'page', heightPx: 954 }, // no wrap
+      {
+        dataUrl: 'x',
+        floating: true,
+        wrap: 'square',
+        behind: true,
+        posYPx: 0,
+        posVRel: 'page',
+        heightPx: 954,
+      },
+    ]
+    expect(estimateHfHeight(null, 600, images, geom)).toBe(0)
   })
 })

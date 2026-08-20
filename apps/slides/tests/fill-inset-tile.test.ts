@@ -104,6 +104,30 @@ describe('gradient ramps interpolate in linear sRGB (tdf105739)', () => {
     expect(Math.abs(b0 - 55)).toBeLessThanOrEqual(2)
   })
 
+  it('alpha fades interpolate premultiplied: a transparent stop contributes no color', () => {
+    const r = fillToKonva(
+      {
+        kind: 'gradient',
+        angleDeg: 0,
+        stops: [
+          { pos: 0, color: '#FFFFFF00' },
+          { pos: 1, color: '#29354D' },
+        ],
+      } as any,
+      100,
+      100,
+    )
+    const stops = r.fillLinearGradientColorStops!
+    // Straight interpolation would wash the midpoint toward white; PowerPoint keeps the
+    // opaque stop's hue through the fade and only ramps the alpha.
+    const mid = stops[stops.indexOf(0.5) + 1] as string
+    const [r0, g0, b0, a0] = mid.match(/[\d.]+/g)!.map(Number)
+    expect(Math.abs(r0 - 41)).toBeLessThanOrEqual(1)
+    expect(Math.abs(g0 - 53)).toBeLessThanOrEqual(1)
+    expect(Math.abs(b0 - 77)).toBeLessThanOrEqual(1)
+    expect(a0).toBeCloseTo(0.5, 2)
+  })
+
   it('keeps equal-color stop pairs unsubdivided', () => {
     const r = fillToKonva(
       {

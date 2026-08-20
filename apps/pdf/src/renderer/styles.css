@@ -25,36 +25,38 @@
    * these never follow the theme */
   --pdf-paper: #fff;
   --pdf-on-accent: #fff;
-  --pdf-select: #2b66ff;
-  --pdf-select-glow: rgb(43 102 255 / 90%);
+  --pdf-select: #c43e1c;
+  --pdf-select-glow: rgb(196 62 28 / 90%);
   --pdf-ink-highlight: #ffde59;
+  /* annotation ink previews match MARKUP_COLORS in annotations.ts */
+  --pdf-ink-underline: #2b66ff;
   --pdf-ink-strike: #db3830;
   --pdf-form-border: rgb(60 120 216 / 55%);
   --pdf-form-bg: rgb(235 243 255 / 55%);
   --pdf-form-text: #222;
   --pdf-form-control-border: #333;
   --pdf-form-control-mark: #111;
-  --pdf-sign-drop-bg: rgb(60 120 216 / 6%);
+  --pdf-sign-drop-bg: rgb(196 62 28 / 6%);
   --pdf-search-hit-bg: rgb(255 214 0 / 35%);
   --pdf-search-hit-cur-bg: rgb(255 150 50 / 55%);
   --pdf-search-hit-cur-outline: #f08c00;
-  --pdf-link-hover-bg: rgb(60 120 216 / 12%);
-  --pdf-link-hover-ring: rgb(60 120 216 / 35%);
+  --pdf-link-hover-bg: rgb(196 62 28 / 12%);
+  --pdf-link-hover-ring: rgb(196 62 28 / 35%);
   --pdf-text-selection: rgb(56 108 255 / 32%);
   --pdf-page-hover-outline: rgb(0 0 0 / 35%);
   /* text edit overlays sit on the rendered page, so paper/ink stay unthemed like form-text */
   --pdf-textedit-paper: #fff;
   --pdf-textedit-ink: #111;
-  --pdf-textedit-ring: rgb(60 120 216 / 90%);
-  --pdf-textedit-hover-bg: rgb(60 120 216 / 10%);
+  --pdf-textedit-ring: rgb(196 62 28 / 90%);
+  --pdf-textedit-hover-bg: rgb(196 62 28 / 10%);
   --pdf-textblock-ring: rgb(96 99 102 / 40%);
-  --pdf-textblock-ring-hover: rgb(60 120 216 / 65%);
-  --pdf-textblock-hover-bg: rgb(60 120 216 / 5%);
+  --pdf-textblock-ring-hover: rgb(196 62 28 / 65%);
+  --pdf-textblock-hover-bg: rgb(196 62 28 / 5%);
 
   /* image edit overlays also sit on paper; unthemed like the text-edit set */
-  --pdf-imgedit-hover-bg: rgb(60 120 216 / 8%);
+  --pdf-imgedit-hover-bg: rgb(196 62 28 / 8%);
   --pdf-imgedit-veil-bg: rgb(255 255 255 / 62%);
-  --pdf-imgedit-ghost-bg: rgb(60 120 216 / 6%);
+  --pdf-imgedit-ghost-bg: rgb(196 62 28 / 6%);
 
   /* dark chrome in both themes */
   --pdf-toast-bg: rgb(32 33 36 / 92%);
@@ -629,7 +631,7 @@ button {
 }
 
 .sel-swatch-ul {
-  color: var(--pdf-select);
+  color: var(--pdf-ink-underline);
   text-decoration: underline;
 }
 
@@ -841,7 +843,7 @@ button {
 }
 
 .pdf-form-input.is-required-empty,
-.pdf-form-select.is-required-empty {
+.pdf-form-select.is-required-empty .gs-dd-btn {
   border-color: var(--pdf-error);
 }
 
@@ -889,18 +891,29 @@ button {
   color: transparent;
 }
 
+/* Choice widget: shared dropdown (@genoffice/ui gs-dd) sized to the AcroForm
+ * rect — the wrapper carries the absolute position, the trigger the field look */
 .pdf-form-select {
   position: absolute;
   box-sizing: border-box;
+}
+
+.pdf-form-select .gs-dd {
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-form-select .gs-dd-btn {
+  height: 100%;
   border: 1px solid var(--pdf-form-border);
   background: var(--pdf-form-bg);
   border-radius: 2px;
   padding: 0 2px;
-  font-family: inherit;
+  font-size: inherit;
   color: var(--pdf-form-text);
 }
 
-.pdf-form-select:focus {
+.pdf-form-select .gs-dd-btn:focus {
   outline: none;
   border-color: var(--pdf-select);
   background: var(--pdf-paper);
@@ -1923,14 +1936,16 @@ button {
   font-size: 12px;
 }
 
+/* Font picker: shared dropdown (@genoffice/ui gs-dd) sized to the 22px bar row */
 .pdf-textedit-fontsel {
   max-width: 130px;
-  padding: 2px 4px;
-  border: 1px solid var(--border);
+}
+
+.pdf-textedit-fontsel .gs-dd-btn {
+  height: 22px;
+  padding: 0 4px;
+  border-color: var(--border);
   border-radius: 4px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
 }
 
 .pdf-textedit-toggle {
@@ -2171,6 +2186,20 @@ button {
 .pdf-field .pdf-modal-input {
   flex: 1;
   min-width: 0;
+}
+
+/* Shared dropdown (@genoffice/ui gs-dd) in modal field rows: matches the
+ * .pdf-modal-input frame (28px, radius 4, 13px) */
+.pdf-field .pdf-modal-dd {
+  flex: 1;
+  min-width: 0;
+}
+
+.pdf-modal-dd .gs-dd-btn {
+  height: 28px;
+  border-radius: 4px;
+  padding: 0 6px 0 8px;
+  font-size: 13px;
 }
 
 .pdf-field input[type='range'] {
@@ -2590,6 +2619,35 @@ button {
   border-radius: 10px;
   box-shadow: var(--pdf-shadow-drop);
   padding: 8px;
+}
+
+/* Plain command list inside a ribbon dropdown (converter menu) */
+.rb-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 4px;
+}
+
+.rb-menu button {
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.rb-menu button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.rb-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Dialog color well (stamp dialog): swatch trigger + the shared picker popover.

@@ -566,7 +566,7 @@ export interface Props {
   /** Shape picture/texture fill: stretch or tile onto the selection; source = bundled
       texture preset bytes (base64), absent = system picker */
   onShapeFillImage?: (mode: 'stretch' | 'tile', source?: { base64: string; ext: string }) => void
-  /** Selected shape's current solid fill (#RRGGBB, null = none/non-solid): picker highlight + gradient preset base */
+  /** Selected shape's current fill (#RRGGBB, 'none' = no fill, null = non-solid): picker highlight + gradient preset base */
   contextShapeFill?: string | null
   /** Execute a table style operation */
   onEditTableStyle?: (op: Omit<EditTableStyleOp, 'slideIndex' | 'sourceId'>) => void

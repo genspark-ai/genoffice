@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { numfmt } from '@univerjs/core'
-import { shapePreviewPath, useDismissablePopover } from '@genoffice/ui'
+import { Dropdown, shapePreviewPath, useDismissablePopover } from '@genoffice/ui'
 
 import type { createUniver } from './create-univer'
 
@@ -1935,17 +1935,16 @@ function ChartEditor({
       {convertible && (
         <label>
           {t('appTypeLabel')}
-          <select
+          <Dropdown
             className="chart-editor-type"
+            ariaLabel={t('appTypeLabel')}
             value={chartType}
-            onChange={(event) => setChartType(event.target.value)}
-          >
-            {CHART_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {t(option.labelKey)}
-              </option>
-            ))}
-          </select>
+            options={CHART_TYPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
+            onPick={setChartType}
+          />
         </label>
       )}
       {!isPie &&

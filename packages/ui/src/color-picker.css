@@ -10,8 +10,8 @@
 .gcp-palette {
   display: block;
   box-sizing: border-box;
-  width: 389px;
-  padding: 12px 16px;
+  width: 260px;
+  padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -25,28 +25,31 @@
   display: block;
   min-width: 0;
   width: 100%;
-  height: 36px;
+  height: 28px;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 0;
   background: var(--surface);
   color: var(--text);
-  font-size: 15px;
+  font-size: 12.5px;
   font-family: inherit;
   cursor: pointer;
 }
 
-.gcp-palette.gcp-palette .gcp-auto:hover,
-.gcp-palette.gcp-palette .gcp-auto.selected {
+.gcp-palette.gcp-palette .gcp-auto:hover {
   background: var(--hover);
-  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
-  outline-offset: -2px;
+}
+
+/* Selected (color unset / no fill applied): the per-app accent tint, matching
+   the shared dropdown's selected option (each app's --accent-soft) */
+.gcp-palette.gcp-palette .gcp-auto.selected {
+  background: var(--accent-soft);
 }
 
 .gcp-section-title {
-  margin: 18px 0 8px;
+  margin: 12px 0 6px;
   color: var(--text);
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 500;
 }
 
@@ -58,21 +61,21 @@
 .gcp-theme-shades,
 .gcp-standard-row {
   display: grid;
-  grid-template-columns: repeat(10, 31px);
-  column-gap: 5px;
+  grid-template-columns: repeat(10, 20px);
+  column-gap: 4px;
   row-gap: 0;
 }
 
 .gcp-theme-base {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .gcp-palette.gcp-palette .gcp-swatch {
   display: block;
   box-sizing: border-box;
   min-width: 0;
-  width: 31px;
-  height: 31px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: 0;
@@ -91,15 +94,15 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 14px -16px -12px;
-  padding: 11px 18px;
+  gap: 8px;
+  margin: 12px -12px -10px;
+  padding: 9px 14px;
   border: none;
   border-top: 1px solid var(--border);
   border-radius: 0 0 8px 8px;
   background: none;
   color: var(--text);
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 400;
   cursor: pointer;
 }

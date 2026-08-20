@@ -7,6 +7,7 @@ import type { ShapeRenderNode } from '@genoffice/pptx-render'
 import type {
   EditBackgroundOp,
   EditChartOp,
+  EditStrokeOp,
   EditTableStyleOp,
   GradientFillSpec,
 } from '../shared/ipc'
@@ -209,7 +210,7 @@ export async function onFill(
 export async function onStroke(
   ctx: ActionCtx,
   sourceId: string,
-  stroke: { color: string; widthPt: number; dash?: string } | null,
+  stroke: EditStrokeOp['stroke'],
 ): Promise<void> {
   const groupId = ctx.groupIdOf(sourceId)
   const updated = await window.slidesApi.editStroke({

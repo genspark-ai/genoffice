@@ -1,3 +1,4 @@
+import type { AiChatResponse, AiProviderMeta, AiSettings } from '@genoffice/ai-provider'
 import type { UpdateChannel } from './update-api'
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
@@ -149,6 +150,19 @@ export interface HomeApi {
   cloudProjectsSync(): Promise<CloudProjectsSnapshot | null>
   /** open a cloud project (relative '/agents?id=...' URL) in the default browser */
   openCloudProject(projectUrl: string): Promise<void>
+  /** AI settings (userData/ai-settings.json, shared by every editor); the genspark key never appears here */
+  getAiSettings(): Promise<AiSettings>
+  /** persist AI settings; open editors pick the change up on their next settings read */
+  setAiSettings(settings: AiSettings): Promise<void>
+  /** provider catalog with each fixed endpoint's default base URL (empty for genspark/custom) */
+  getAiProviders(): AiCatalogEntry[]
+  /** one-shot round trip against the given (possibly unsaved) settings — the settings-UI connection test */
+  testAiSettings(settings: AiSettings): Promise<AiChatResponse>
+}
+
+export interface AiCatalogEntry extends AiProviderMeta {
+  /** default endpoint for fixed-endpoint providers ('' = model-dependent or user-supplied) */
+  defaultBaseUrl: string
 }
 
 /** 'starred' = went to GitHub or said "already starred" (never prompt again);

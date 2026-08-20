@@ -10,7 +10,7 @@
  */
 import type { EmuRect, Paragraph, PictureElement, Slide, SlideElement, TextElement } from './types'
 import { generateParagraphXml, generateXfrmXml } from './generate'
-import { escapeXmlAttr } from './xml-utils'
+import { creationIdXml, escapeXmlAttr } from './xml-utils'
 import { relsPathFor } from './zip'
 import type { OpenedPptx } from './index'
 import { cleanupDeletedElementResources } from './resource-cleanup'
@@ -23,14 +23,59 @@ import { cleanupDeletedElementResources } from './resource-cleanup'
  */
 export type NewShapeKind = 'textbox' | (string & {})
 
+/**
+ * Text-body geometry overrides for generated boxes (pdf2pptx P25): imported
+ * absolutely-positioned text must not inherit PowerPoint's default insets
+ * (0.1in/0.05in) or wrap defaults, or every box drifts off its measured spot.
+ */
+export interface NewElementBodyPr {
+  /** wrap="none" lets a measured line overflow instead of re-wrapping */
+  wrap?: 'square' | 'none'
+  /** vertical anchor (default top) */
+  anchor?: 't' | 'ctr' | 'b'
+  /** lIns/tIns/rIns/bIns (EMU); absent keeps PowerPoint defaults */
+  insetsEmu?: { l: number; t: number; r: number; b: number }
+}
+
 export interface NewElementOptions {
   kind: NewShapeKind
   offset: EmuRect
   paragraphs?: Paragraph[]
-  /** Solid shape fill (#RRGGBB); textbox has no fill by default */
+  /** Solid shape fill (#RRGGBB, or #RRGGBBAA for translucency); textbox has no fill by default */
   fillColor?: string
   /** Shape stroke (solid color, width in EMU) */
   stroke?: { color: string; widthEmu: number }
+  /** body geometry overrides; absent = `wrap="square" rtlCol="0"` as before */
+  bodyPr?: NewElementBodyPr
+}
+
+/**
+ * #RRGGBB or #RRGGBBAA → <a:srgbClr>, translucency as an <a:alpha> child
+ * (pdf2pptx scrims: an opaque slab where the source painted a wash reads as a
+ * black bar). Alpha is the LAST byte pair, 00 = transparent, FF = opaque.
+ */
+function srgbClrXml(color: string): string {
+  const hex = color.replace(/^#/, '').toUpperCase()
+  const rgb = hex.slice(0, 6)
+  if (hex.length >= 8) {
+    const alpha = Math.round((parseInt(hex.slice(6, 8), 16) / 255) * 100000)
+    if (alpha < 100000) return `<a:srgbClr val="${rgb}"><a:alpha val="${alpha}"/></a:srgbClr>`
+  }
+  return `<a:srgbClr val="${rgb}"/>`
+}
+
+/** <a:bodyPr> for generated sp fragments (defaults match the historical output). */
+function buildBodyPrXml(bodyPr: NewElementBodyPr | undefined): string {
+  if (!bodyPr) return '<a:bodyPr wrap="square" rtlCol="0"/>'
+  const ins = bodyPr.insetsEmu
+  return (
+    `<a:bodyPr wrap="${bodyPr.wrap ?? 'square'}" rtlCol="0"` +
+    (ins
+      ? ` lIns="${Math.round(ins.l)}" tIns="${Math.round(ins.t)}" rIns="${Math.round(ins.r)}" bIns="${Math.round(ins.b)}"`
+      : '') +
+    (bodyPr.anchor ? ` anchor="${bodyPr.anchor}"` : '') +
+    '/>'
+  )
 }
 
 let insertCounter = 1
@@ -71,7 +116,7 @@ function buildCxnSpXml(
   const head = def.head ? '<a:headEnd type="triangle" w="med" len="med"/>' : ''
   const tail = def.tail ? '<a:tailEnd type="triangle" w="med" len="med"/>' : ''
   return (
-    `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
     `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
     `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>` +
@@ -104,9 +149,7 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
   const geom = isTextbox
     ? ''
     : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}"><a:avLst/></a:prstGeom>`
-  const fill = opts.fillColor
-    ? `<a:solidFill><a:srgbClr val="${opts.fillColor.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill>`
-    : ''
+  const fill = opts.fillColor ? `<a:solidFill>${srgbClrXml(opts.fillColor)}</a:solidFill>` : ''
   const ln = opts.stroke
     ? `<a:ln w="${Math.round(opts.stroke.widthEmu)}"><a:solidFill><a:srgbClr val="${opts.stroke.color.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill></a:ln>`
     : ''
@@ -114,10 +157,10 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
     .map((p) => generateParagraphXml(p))
     .join('')
   return (
-    `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     `<p:cNvSpPr${isTextbox ? ' txBox="1"' : ''}/><p:nvPr/></p:nvSpPr>` +
     `<p:spPr>${xfrm}${geom}${fill}${ln}</p:spPr>` +
-    `<p:txBody><a:bodyPr wrap="square" rtlCol="0"/><a:lstStyle/>${paras}</p:txBody></p:sp>`
+    `<p:txBody>${buildBodyPrXml(opts.bodyPr)}<a:lstStyle/>${paras}</p:txBody></p:sp>`
   )
 }
 
@@ -200,12 +243,127 @@ export function buildTableXml(slide: Slide, opts: NewTableOptions): string {
     () => `<a:tr h="${rowH}">${cell.repeat(cols)}</a:tr>`,
   ).join('')
   return (
-    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}"/>` +
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>' +
     `<p:xfrm><a:off x="${opts.offset.x}" y="${opts.offset.y}"/><a:ext cx="${opts.offset.cx}" cy="${opts.offset.cy}"/></p:xfrm>` +
     '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">' +
     `<a:tbl><a:tblPr firstRow="1" bandRow="1"><a:tableStyleId>${DEFAULT_TABLE_STYLE_ID}</a:tableStyleId></a:tblPr>` +
     `<a:tblGrid>${grid}</a:tblGrid>${trs}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
+  )
+}
+
+// ── Grid table insertion (pdf2pptx P25): explicit widths/heights/merges ──
+
+/** One grid cell of buildTableGridXml. Covered cells (hMerge/vMerge) must still be listed. */
+export interface NewTableCellSpec {
+  paragraphs?: Paragraph[]
+  /** columns this cell spans (a:tc gridSpan), default 1 */
+  gridSpan?: number
+  /** rows this cell spans (a:tc rowSpan), default 1 */
+  rowSpan?: number
+  /** covered by a gridSpan cell to the left */
+  hMerge?: boolean
+  /** covered by a rowSpan cell above */
+  vMerge?: boolean
+  /** solid cell shading (#RRGGBB) */
+  fillColor?: string
+  /** vertical content alignment (a:tcPr anchor), default top */
+  anchor?: 't' | 'ctr' | 'b'
+  /** cell margins (EMU); absent keeps PowerPoint defaults */
+  marginsEmu?: { l: number; t: number; r: number; b: number }
+}
+
+export interface NewTableGridOptions {
+  offset: EmuRect
+  colWidthsEmu: number[]
+  rowHeightsEmu: number[]
+  /** row-major; every row lists one entry per GRID column (merged-covered cells flagged) */
+  cells: NewTableCellSpec[][]
+  /**
+   * uniform cell borders; scope 'all' rules every edge, 'insideV' only the
+   * verticals between columns (rule-separated zones); absent = borderless
+   */
+  border?: { color: string; widthEmu: number; scope?: 'all' | 'insideV' }
+}
+
+function tableCellXml(
+  cell: NewTableCellSpec,
+  colIdx: number,
+  border: NewTableGridOptions['border'],
+): string {
+  const attrs: string[] = []
+  if ((cell.gridSpan ?? 1) > 1) attrs.push(`gridSpan="${Math.floor(cell.gridSpan!)}"`)
+  if ((cell.rowSpan ?? 1) > 1) attrs.push(`rowSpan="${Math.floor(cell.rowSpan!)}"`)
+  if (cell.hMerge) attrs.push('hMerge="1"')
+  if (cell.vMerge) attrs.push('vMerge="1"')
+  const tcAttrs = attrs.length ? ` ${attrs.join(' ')}` : ''
+
+  const tcPrAttrs: string[] = []
+  const m = cell.marginsEmu
+  if (m) {
+    tcPrAttrs.push(
+      `marL="${Math.round(m.l)}"`,
+      `marR="${Math.round(m.r)}"`,
+      `marT="${Math.round(m.t)}"`,
+      `marB="${Math.round(m.b)}"`,
+    )
+  }
+  if (cell.anchor && cell.anchor !== 't') tcPrAttrs.push(`anchor="${cell.anchor}"`)
+
+  // CT_TableCellProperties child order: lnL lnR lnT lnB … fill
+  let lines = ''
+  if (border) {
+    const color = border.color.replace(/^#/, '').slice(0, 6).toUpperCase()
+    const w = Math.max(1, Math.round(border.widthEmu))
+    const ln = (tag: string) =>
+      `<a:${tag} w="${w}" cap="flat"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:${tag}>`
+    if ((border.scope ?? 'all') === 'all') {
+      lines = ln('lnL') + ln('lnR') + ln('lnT') + ln('lnB')
+    } else if (colIdx > 0 && !cell.hMerge) {
+      // insideV: only the left edge of non-first columns carries the rule
+      lines = ln('lnL')
+    }
+  }
+  const fill = cell.fillColor
+    ? `<a:solidFill><a:srgbClr val="${cell.fillColor.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill>`
+    : ''
+  const inner = lines + fill
+  const tcPr = `<a:tcPr${tcPrAttrs.length ? ` ${tcPrAttrs.join(' ')}` : ''}${inner ? `>${inner}</a:tcPr>` : '/>'}`
+
+  const paras = (
+    cell.paragraphs?.length ? cell.paragraphs : [{ runs: [{ text: '' }] } as Paragraph]
+  )
+    .map((p) => generateParagraphXml(p))
+    .join('')
+  return `<a:tc${tcAttrs}><a:txBody><a:bodyPr/><a:lstStyle/>${paras}</a:txBody>${tcPr}</a:tc>`
+}
+
+/**
+ * Build a table graphicFrame with explicit column widths, row heights, merged
+ * cells, per-cell shading/anchor/margins and uniform borders — what a measured
+ * PDF table needs (buildTableXml only makes uniform empty grids). No
+ * tableStyleId on purpose: styling is fully explicit, so the deck's theme
+ * cannot repaint the imported table. Insert via appendRawElements.
+ */
+export function buildTableGridXml(slide: Slide, opts: NewTableGridOptions): string {
+  const id = nextCNvPrId(slide)
+  const grid = opts.colWidthsEmu
+    .map((w) => `<a:gridCol w="${Math.max(1, Math.round(w))}"/>`)
+    .join('')
+  const trs = opts.cells
+    .map((row, r) => {
+      const h = Math.max(1, Math.round(opts.rowHeightsEmu[r] ?? 1))
+      // one <a:tc> per grid column (covered columns keep their own hMerge tc)
+      const tcs = row.map((cell, colIdx) => tableCellXml(cell, colIdx, opts.border)).join('')
+      return `<a:tr h="${h}">${tcs}</a:tr>`
+    })
+    .join('')
+  return (
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}">${creationIdXml()}</p:cNvPr>` +
+    '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>' +
+    `<p:xfrm><a:off x="${opts.offset.x}" y="${opts.offset.y}"/><a:ext cx="${opts.offset.cx}" cy="${opts.offset.cy}"/></p:xfrm>` +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">' +
+    `<a:tbl><a:tblPr/><a:tblGrid>${grid}</a:tblGrid>${trs}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
   )
 }
 
@@ -304,7 +462,7 @@ export function addPicture(
   const name = opts.name ?? `Picture ${id}`
   const descrAttr = opts.descr ? ` descr="${escapeXmlAttr(opts.descr)}"` : ''
   const xml =
-    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"${descrAttr}/>` +
+    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"${descrAttr}>${creationIdXml()}</p:cNvPr>` +
     '<p:cNvPicPr/><p:nvPr/></p:nvPicPr>' +
     `<p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
     `<p:spPr>${generateXfrmXml({ offset: opts.offset, rot: 0, flipH: false, flipV: false })}` +
@@ -384,7 +542,7 @@ export function buildGrpSpXml(slide: Slide, bbox: EmuRect, childrenXml: string):
     `</a:xfrm>`
   return (
     `<p:grpSp>` +
-    `<p:nvGrpSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:nvGrpSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     `<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
     `<p:grpSpPr>${grpXfrm}</p:grpSpPr>` +
     childrenXml +

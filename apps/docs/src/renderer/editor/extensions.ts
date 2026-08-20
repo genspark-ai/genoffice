@@ -124,6 +124,8 @@ import {
   WsRunLineHeightExtension,
 } from './decoration-extensions'
 import { AutoDirectionExtension } from './direction'
+import { InactiveSelectionExtension } from './inactive-selection'
+import { PageGapNavExtension } from './page-gap-nav'
 export * from './marks'
 export * from './decoration-extensions'
 
@@ -159,6 +161,8 @@ const anchorAttrs = {
   shadingFill: { default: null as string | null },
   /** w:sz (half-points) of the paragraph mark / dropped empty runs; sizes the line of run-less paragraphs */
   emptyRunSize: { default: null as number | null },
+  /** w:rFonts of the paragraph mark / dropped empty runs; faces the line of run-less paragraphs */
+  emptyRunFont: { default: null as string | null },
   /** subset of "tblr": which sides have a single-line border */
   borders: { default: null as string | null },
   /** JSON per-side {color?,szPt?} for `borders` (w:pBdr declared look) */
@@ -287,6 +291,79 @@ function paraLineFactor(node: {
   return undeclaredCjk ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
 }
 
+/**
+ * Paragraph FORMATTING attrs that survive the clipboard HTML round-trip
+ * (renderHTML emits them as data-para JSON; parseHTML restores them), typed so
+ * a crafted/corrupt payload can't smuggle wrong-typed values into the model.
+ * Identity/anchor attrs stay out on purpose: a pasted paragraph is NEW content,
+ * so docxIndex (save patch anchor), bookmarks, comment endpoints, sdtShell and
+ * revision metadata must not be duplicated by copy/paste (alpha ledger r117).
+ */
+const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'> = {
+  styleId: 'string',
+  align: 'string',
+  lineSpacing: 'number',
+  lineRule: 'string',
+  lineRawTwips: 'number',
+  snapToGrid: 'boolean',
+  indentLeft: 'number',
+  indentRight: 'number',
+  indentFirstLine: 'number',
+  spaceBefore: 'number',
+  spaceAfter: 'number',
+  pageBreakBefore: 'boolean',
+  bidi: 'boolean',
+  autoSpace: 'boolean',
+  shadingFill: 'string',
+  emptyRunSize: 'number',
+  emptyRunFont: 'string',
+  borders: 'string',
+  borderLines: 'string',
+  tabStops: 'string',
+  dropCap: 'string',
+  // docListItem identity (paragraphs never set them; ProseMirror drops attrs
+  // unknown to the parsing node type). numId stays out: a pasted copy pointing
+  // at another document's numbering table would dangle.
+  kind: 'string',
+  ilvl: 'number',
+}
+
+/** data-para payload for a block node, or null when everything is at defaults */
+function clipboardParaPayload(attrs: Record<string, unknown>): string | null {
+  const clip: Record<string, unknown> = {}
+  for (const key of Object.keys(CLIPBOARD_PARA_ATTR_TYPES)) {
+    const v = attrs[key]
+    if (v == null) continue
+    // false IS meaningful for snapToGrid/autoSpace (explicit opt-out); for the
+    // false-by-default flags it's just the default and stays out of the payload
+    if (v === false && (key === 'pageBreakBefore' || key === 'bidi')) continue
+    clip[key] = v
+  }
+  return Object.keys(clip).length > 0 ? JSON.stringify(clip) : null
+}
+
+/** Inverse of clipboardParaPayload for parseHTML getAttrs: restores only
+ *  whitelisted keys whose runtime type matches, null when absent/malformed. */
+export function clipboardParaAttrs(el: HTMLElement): Record<string, unknown> | null {
+  const raw = el.getAttribute?.('data-para')
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const attrs: Record<string, unknown> = {}
+  for (const [key, type] of Object.entries(CLIPBOARD_PARA_ATTR_TYPES)) {
+    const v = (parsed as Record<string, unknown>)[key]
+    if (typeof v !== type) continue
+    if (type === 'number' && !Number.isFinite(v)) continue
+    attrs[key] = v
+  }
+  return Object.keys(attrs).length > 0 ? attrs : null
+}
+
 function blockAttrs(
   node: {
     attrs: Record<string, unknown>
@@ -300,6 +377,10 @@ function blockAttrs(
 ): Record<string, string> {
   const attrs: Record<string, string> = {}
   if (node.attrs.docxIndex !== null) attrs['data-idx'] = String(node.attrs.docxIndex)
+  // paragraph formatting round-trips the clipboard through this attribute:
+  // the CSS below renders it, but nothing parses that CSS back (r117)
+  const clip = clipboardParaPayload(node.attrs)
+  if (clip) attrs['data-para'] = clip
   // per-document style CSS (generated from styles.xml) targets this attribute
   if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
   // bookmark jump targets ([data-bookmarks~="name"]; names cannot contain spaces)
@@ -346,9 +427,16 @@ function blockAttrs(
     // line by the runs on it, so the strut must never exceed the inherited size
     const strut = explicitStrutHalfPoints(node)
     if (strut) styles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
-  } else if (node.attrs.emptyRunSize) {
+  } else if (node.attrs.emptyRunSize || node.attrs.emptyRunFont) {
     // Word sizes an empty line by the paragraph mark / empty run, both directions
-    styles.push(`font-size:${Number(node.attrs.emptyRunSize) / 2}pt`)
+    if (node.attrs.emptyRunSize) styles.push(`font-size:${Number(node.attrs.emptyRunSize) / 2}pt`)
+    // CJK mark faces stay on the document factor: table cells deliberately keep
+    // the Latin factor for empty lines, and KR/JP line height is calibrated
+    // doc-wide — scoping to Western faces fixes their hairline surplus only
+    const fam = node.attrs.emptyRunFont ? String(node.attrs.emptyRunFont) : null
+    if (fam && !isCjkFontName(fam)) {
+      styles.push(`--doc-line-factor:${lineHeightFactor(fam)}`, `font-family:${cssFontFamily(fam)}`)
+    }
   }
   const lh = cssLineHeight(
     (node.attrs.lineRule as 'auto' | 'atLeast' | 'exact' | null) ?? undefined,
@@ -714,7 +802,8 @@ export const DocParagraph = Node.create({
     return { ...anchorAttrs }
   },
   parseHTML() {
-    return [{ tag: 'p' }]
+    // getAttrs null = match with defaults (foreign HTML); data-para restores formatting
+    return [{ tag: 'p', getAttrs: (el) => clipboardParaAttrs(el as HTMLElement) }]
   },
   renderHTML({ node }) {
     return ['p', blockAttrs(node), 0]
@@ -729,7 +818,10 @@ export const DocHeading = Node.create({
     return { ...anchorAttrs, level: { default: 1 } }
   },
   parseHTML() {
-    return [1, 2, 3, 4, 5, 6].map((level) => ({ tag: `h${level}`, attrs: { level } }))
+    return [1, 2, 3, 4, 5, 6].map((level) => ({
+      tag: `h${level}`,
+      getAttrs: (el) => ({ level, ...clipboardParaAttrs(el as HTMLElement) }),
+    }))
   },
   renderHTML({ node }) {
     const level = Math.min(Math.max(Number(node.attrs.level) || 1, 1), 6)
@@ -763,7 +855,26 @@ export const DocListItem = Node.create({
         getAttrs: (el) => ({
           kind: (el as HTMLElement).closest('ol') ? 'ordered' : 'bullet',
           ilvl: ilvlOf(el as HTMLElement),
+          ...clipboardParaAttrs(el as HTMLElement),
         }),
+      },
+      // our own clipboard HTML: renderHTML emits <div class="doc-li …">, which
+      // no rule matched before r117 — pasting a GenOffice list item degraded it
+      // to plain text. kind/ilvl ride in data-para; classes are the fallback.
+      {
+        tag: 'div.doc-li',
+        getAttrs: (el) => {
+          const div = el as HTMLElement
+          const attrs = clipboardParaAttrs(div) ?? {}
+          if (attrs.kind === undefined) {
+            attrs.kind = div.classList.contains('doc-li-ordered') ? 'ordered' : 'bullet'
+          }
+          if (attrs.ilvl === undefined) {
+            const m = /(?:^|\s)ilvl-(\d)(?:\s|$)/.exec(div.className)
+            attrs.ilvl = m ? Number(m[1]) : 0
+          }
+          return attrs
+        },
       },
     ]
   },
@@ -1826,6 +1937,12 @@ export const DocProtected = Node.create({
       imageAlign: { default: null as string | null },
       imageWrap: { default: null as string | null },
       /**
+       * Stacking rank of a floating image among overlapping anchors
+       * (bring-to-front / send-to-back). Written to the anchor's
+       * relativeHeight; higher paints in front. Null = base level.
+       */
+      imageZOrder: { default: null as number | null },
+      /**
        * Free-position offset (EMU) of a floating image with wp:posOffset.
        * Used for drag-to-reposition. Null when the image uses named alignment
        * or is inline.
@@ -2054,6 +2171,12 @@ function diagramSpecOf(diagram: DiagramDisplay): DomSpec {
   ]
 }
 
+/** wrapTopAndBottom band bottom (px) for a box at the given (live) height */
+export function textboxBandBottom(box: TextboxDisplay, height = box.heightPx): number {
+  if (box.bandTopPx !== undefined && height !== undefined) return box.bandTopPx + height
+  return box.bandBottomPx ?? 0
+}
+
 /** shared DOM spec for protected blocks (renderHTML + node view) */
 function protectedDomSpec(node: PmNode): DomSpec {
   const {
@@ -2109,6 +2232,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
     let strayStyle = ''
     if (allFloating) {
       attrs.class += ' doc-protected-floating'
+      // wrapTopAndBottom band: the wrapper reserves flow height down to the
+      // lowest such box bottom so following text resumes below (min-height,
+      // not a sum — stray flow content on the same paragraph must not add)
+      const band = Math.max(0, ...boxes.map((b) => textboxBandBottom(b)))
+      if (band > 0) attrs.style = `min-height:${band}px`
       // stray text keeps the anchor paragraph's flow line in Word, so the
       // wrapper must not collapse to height 0 (next block would overlap it)
       if (strayRuns?.length) attrs.class += ' doc-protected-floating-stray'
@@ -2185,18 +2313,30 @@ function protectedDomSpec(node: PmNode): DomSpec {
     let imgFloatPos = ''
     if (imageWrap === 'front' || imageWrap === 'behind') {
       attrs.class += ' doc-img-float'
+      // z-index bands keep behind-text pictures under the body text and
+      // front pictures over it, while imageZOrder ranks overlapping anchors
+      // within each band (Word bring-forward / send-back).
+      const z = node.attrs.imageZOrder != null ? Number(node.attrs.imageZOrder) : 0
+      // behind band: negative (below text). front band: >=1 (above text; the
+      // text layer sits at auto/0). Parse compresses wild relativeHeight
+      // values to compact ranks, but the floor still guards the band: the
+      // wrap semantics always win over the rank. No ceiling — the editor
+      // content root is isolated (styles.css), so ranks can never climb
+      // above editor chrome outside it (table handles, menus).
+      const zi = imageWrap === 'behind' ? Math.min(-1, -1000 + z) : Math.max(1, 2 + z)
+      const imgZIndexCss = `;z-index:${Math.round(zi)}`
       const posH = node.attrs.imagePosH
       const tx =
         node.attrs.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) / EMU_PER_PX : 0
       const ty =
         node.attrs.imageOffsetYEmu != null ? Number(node.attrs.imageOffsetYEmu) / EMU_PER_PX : 0
       if (posH === 'center') {
-        imgFloatPos = `left:50%;top:${ty.toFixed(1)}px`
+        imgFloatPos = `left:50%;top:${ty.toFixed(1)}px${imgZIndexCss}`
         imgWrapTransform = 'transform:translateX(-50%)'
       } else if (posH === 'right') {
-        imgFloatPos = `right:0;top:${ty.toFixed(1)}px`
+        imgFloatPos = `right:0;top:${ty.toFixed(1)}px${imgZIndexCss}`
       } else {
-        imgFloatPos = `left:${tx.toFixed(1)}px;top:${ty.toFixed(1)}px`
+        imgFloatPos = `left:${tx.toFixed(1)}px;top:${ty.toFixed(1)}px${imgZIndexCss}`
       }
     } else if (imageWrap && node.attrs.imageOffsetYEmu != null) {
       // wrapped floats keep their flow slot, but a negative vertical anchor
@@ -2822,6 +2962,13 @@ function mountTextboxEditors(
   const minHeights = knownBoxes.map((box) => box.minHeightPx ?? box.heightPx)
   const measuredHeights = knownBoxes.map((box) => box.heightPx)
   const resizeFrames: Array<number | undefined> = []
+  // wrapTopAndBottom band on the wrapper must follow autogrow, or the text
+  // below would overlap a box that outgrew its parse-time height
+  const refreshBand = () => {
+    if (!knownBoxes || !dom.classList.contains('doc-protected-floating')) return
+    const band = Math.max(0, ...knownBoxes.map((b, i) => textboxBandBottom(b, measuredHeights[i])))
+    if (band > 0) dom.style.minHeight = `${band}px`
+  }
   const measureBox = (index: number) => {
     const el = boxEls[index]
     const minHeight = minHeights[index]
@@ -2832,6 +2979,7 @@ function mountTextboxEditors(
     const nextHeight = Math.max(minHeight, naturalHeight)
     el.style.height = `${nextHeight}px`
     measuredHeights[index] = nextHeight
+    refreshBand()
   }
   const scheduleMeasure = (index: number) => {
     if (resizeFrames[index] !== undefined) cancelAnimationFrame(resizeFrames[index]!)
@@ -2914,6 +3062,7 @@ function mountTextboxEditors(
       minHeights[i] = box.minHeightPx ?? box.heightPx
       measuredHeights[i] = box.heightPx
     })
+    refreshBand()
   }
 
   dom.addEventListener('focusout', (e) => {
@@ -3303,6 +3452,7 @@ const textboxSubExtensions = [
   DocText,
   DocHardBreak,
   TextboxParagraph,
+  InactiveSelectionExtension,
   BoldMark,
   ItalicMark,
   UnderlineMark,
@@ -3365,6 +3515,8 @@ export const editorExtensions = [
   LineFactorExtension,
   ListNumberingExtension,
   PaginationGapsExtension,
+  InactiveSelectionExtension,
+  PageGapNavExtension,
   CaretMarksMemory,
   ColumnLayoutExtension,
   TabStopExtension,

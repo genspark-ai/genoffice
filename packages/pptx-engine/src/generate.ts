@@ -640,6 +640,7 @@ export function generateParagraphXml(p: Paragraph): string {
   if (p.marL != null && want('marL')) pPrAttrs.push(`marL="${Math.round(p.marL)}"`)
   if (p.indent != null && want('indent')) pPrAttrs.push(`indent="${Math.round(p.indent)}"`)
   if (p.align && want('align')) pPrAttrs.push(`algn="${alignMap[p.align]}"`)
+  if (p.rtl) pPrAttrs.push('rtl="1"')
   if (p.level) pPrAttrs.push(`lvl="${p.level}"`)
 
   // CT_TextParagraphProperties child order: lnSpc → spcBef → spcAft → buClr → buSzPct → buFont → bu*
@@ -986,23 +987,58 @@ export interface StrokePatch {
   widthEmu: number
   /** prstDash preset name; 'solid' removes the prstDash node; undefined keeps the original bytes */
   dash?: string
+  /** Line cap attribute (undefined keeps the original bytes) */
+  cap?: 'flat' | 'rnd' | 'sq'
+  /** Compound type attribute ('sng' removes it; undefined keeps the original bytes) */
+  compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+  /** Join child element (undefined keeps the original bytes) */
+  join?: 'round' | 'bevel' | 'miter'
+  /** Gradient line: replaces the fill child (color then only feeds callers' fallbacks); angle in 1/60000° */
+  gradient?: { stops: Array<{ pos: number; color: string }>; angle: number }
 }
 
-/** In-place patch of <a:ln>: change the w attribute, replace the fill child and (when requested) the prstDash child; all other bytes are kept. */
+const JOIN_XML: Record<NonNullable<StrokePatch['join']>, string> = {
+  round: '<a:round/>',
+  bevel: '<a:bevel/>',
+  // PowerPoint's default miter limit (8×)
+  miter: '<a:miter lim="800000"/>',
+}
+
+/** The <a:ln> fill child for a stroke patch: gradient line, solid color (alpha kept), or noFill. */
+function strokeFillXml(stroke: StrokePatch | null): string {
+  if (!stroke) return '<a:noFill/>'
+  if (stroke.gradient)
+    return buildFillXml({ stops: stroke.gradient.stops, angle: stroke.gradient.angle })
+  return `<a:solidFill>${srgbClrXml(stroke.color)}</a:solidFill>`
+}
+
+/** Set/replace/remove one attribute inside an <a:ln> attribute string. */
+function setLnAttr(attrs: string, name: string, value: string | null): string {
+  const re = new RegExp(`\\s${name}="[^"]*"`)
+  if (value === null) return attrs.replace(re, '')
+  const decl = `${name}="${value}"`
+  return re.test(attrs) ? attrs.replace(re, ` ${decl}`) : ` ${decl}${attrs}`
+}
+
+/** In-place patch of <a:ln>: change the w/cap/cmpd attributes, replace the fill child and
+ * (when requested) the prstDash / join children; all other bytes are kept. */
 function patchLnXml(lnXml: string, stroke: StrokePatch | null): string {
   const open = /^<a:ln((?:"[^"]*"|'[^']*'|[^"'>])*?)(\/?)>/.exec(lnXml)
   if (!open) return lnXml
   let attrs = open[1] ?? ''
   if (stroke) {
-    const w = `w="${Math.round(stroke.widthEmu)}"`
-    attrs = /\sw="[^"]*"/.test(attrs) ? attrs.replace(/\sw="[^"]*"/, ` ${w}`) : ` ${w}${attrs}`
+    attrs = setLnAttr(attrs, 'w', String(Math.round(stroke.widthEmu)))
+    if (stroke.cap !== undefined) attrs = setLnAttr(attrs, 'cap', stroke.cap)
+    if (stroke.compound !== undefined)
+      attrs = setLnAttr(attrs, 'cmpd', stroke.compound === 'sng' ? null : stroke.compound)
   }
-  const fillXml = stroke ? `<a:solidFill>${srgbClrXml(stroke.color)}</a:solidFill>` : '<a:noFill/>'
+  const fillXml = strokeFillXml(stroke)
   const dashXml =
     stroke?.dash && stroke.dash !== 'solid'
       ? `<a:prstDash val="${escapeXmlAttr(stroke.dash)}"/>`
       : ''
-  if (open[2] === '/') return `<a:ln${attrs}>${fillXml}${dashXml}</a:ln>`
+  const joinXml = stroke?.join ? JOIN_XML[stroke.join] : ''
+  if (open[2] === '/') return `<a:ln${attrs}>${fillXml}${dashXml}${joinXml}</a:ln>`
   const innerStart = open[0].length
   const innerEnd = lnXml.lastIndexOf('</a:ln>')
   if (innerEnd < 0) return lnXml
@@ -1019,6 +1055,16 @@ function patchLnXml(lnXml: string, stroke: StrokePatch | null): string {
       const fillEnd = inner.indexOf(fillXml) + fillXml.length
       inner = inner.slice(0, fillEnd) + dashXml + inner.slice(fillEnd)
     }
+  }
+  if (stroke && stroke.join !== undefined) {
+    inner = inner.replace(
+      /<a:(?:round|bevel|miter)\b(?:[^>]*\/>|[^>]*>[\s\S]*?<\/a:(?:round|bevel|miter)>)/,
+      '',
+    )
+    // join sits after prstDash (when present), otherwise right after the fill
+    const dashEl = /<a:prstDash\b(?:[^>]*\/>|[^>]*>[\s\S]*?<\/a:prstDash>)/.exec(inner)
+    const at = dashEl ? dashEl.index + dashEl[0].length : inner.indexOf(fillXml) + fillXml.length
+    inner = inner.slice(0, at) + joinXml + inner.slice(at)
   }
   return `<a:ln${attrs}>${inner}</a:ln>`
 }
@@ -1048,11 +1094,13 @@ export function patchElementStroke(originalXml: string, stroke: StrokePatch | nu
   }
 
   const lnXml = stroke
-    ? `<a:ln w="${Math.round(stroke.widthEmu)}"><a:solidFill>${srgbClrXml(stroke.color)}</a:solidFill>${
+    ? `<a:ln w="${Math.round(stroke.widthEmu)}"${stroke.cap ? ` cap="${stroke.cap}"` : ''}${
+        stroke.compound && stroke.compound !== 'sng' ? ` cmpd="${stroke.compound}"` : ''
+      }>${strokeFillXml(stroke)}${
         stroke.dash && stroke.dash !== 'solid'
           ? `<a:prstDash val="${escapeXmlAttr(stroke.dash)}"/>`
           : ''
-      }</a:ln>`
+      }${stroke.join ? JOIN_XML[stroke.join] : ''}</a:ln>`
     : '<a:ln><a:noFill/></a:ln>'
   // Insert after fill / geometry / xfrm (OOXML order: xfrm → geom → fill → ln)
   const anchor =

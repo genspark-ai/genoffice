@@ -12,7 +12,9 @@ afterEach(() => {
   delete process.env.SERPER_API_KEY
 })
 
-function mockFetch(handler: (url: string, init?: RequestInit) => { ok: boolean; json?: any; text?: string }) {
+function mockFetch(
+  handler: (url: string, init?: RequestInit) => { ok: boolean; json?: any; text?: string },
+) {
   globalThis.fetch = vi.fn(async (url: any, init: any) => {
     const r = handler(String(url), init)
     return {
@@ -63,6 +65,36 @@ describe('webSearch (Serper)', () => {
   })
 })
 
+describe('DuckDuckGo fallback error surfacing', () => {
+  it('web: reports method error when the backend is unreachable', async () => {
+    mockFetch(() => {
+      throw new Error('network down')
+    })
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('error')
+    expect(r.results).toHaveLength(0)
+    expect(r.error).toContain('duckduckgo')
+  })
+
+  it('web: stays a plain empty result when the backend responds with nothing', async () => {
+    mockFetch(() => ({ ok: true, text: '<html></html>' }))
+    const r = await webSearch('q', 3)
+    expect(r.method).toBe('duckduckgo')
+    expect(r.results).toHaveLength(0)
+    expect(r.error).toBeUndefined()
+  })
+
+  it('images: reports method error when the backend is unreachable', async () => {
+    mockFetch(() => {
+      throw new Error('network down')
+    })
+    const r = await imageSearch('cats', 8)
+    expect(r.method).toBe('error')
+    expect(r.images).toHaveLength(0)
+    expect(r.error).toContain('duckduckgo')
+  })
+})
+
 describe('imageSearch (Serper)', () => {
   it('parses images + filters copyright hosts', async () => {
     process.env.SERPER_API_KEY = 'test-key'
@@ -72,8 +104,18 @@ describe('imageSearch (Serper)', () => {
         ok: true,
         json: {
           images: [
-            { title: 'good', imageUrl: 'https://cdn.example.com/a.jpg', link: 'https://example.com', imageWidth: 800, imageHeight: 600 },
-            { title: 'paid', imageUrl: 'https://gettyimages.com/x.jpg', link: 'https://gettyimages.com' },
+            {
+              title: 'good',
+              imageUrl: 'https://cdn.example.com/a.jpg',
+              link: 'https://example.com',
+              imageWidth: 800,
+              imageHeight: 600,
+            },
+            {
+              title: 'paid',
+              imageUrl: 'https://gettyimages.com/x.jpg',
+              link: 'https://gettyimages.com',
+            },
           ],
         },
       }
@@ -81,6 +123,10 @@ describe('imageSearch (Serper)', () => {
     const r = await imageSearch('cats', 8)
     expect(r.method).toBe('serper')
     expect(r.images).toHaveLength(1) // getty is filtered out
-    expect(r.images[0]).toMatchObject({ imageUrl: 'https://cdn.example.com/a.jpg', width: 800, height: 600 })
+    expect(r.images[0]).toMatchObject({
+      imageUrl: 'https://cdn.example.com/a.jpg',
+      width: 800,
+      height: 600,
+    })
   })
 })

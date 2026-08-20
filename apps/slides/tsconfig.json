@@ -9,6 +9,7 @@
     "paths": {
       "@genoffice/pptx-engine": ["../../packages/pptx-engine/src/index.ts"],
       "@genoffice/pptx-engine/table-grid": ["../../packages/pptx-engine/src/table-grid.ts"],
+      "@genoffice/pptx-engine/identity": ["../../packages/pptx-engine/src/identity.ts"],
       "@genoffice/pptx-engine/background-promote": [
         "../../packages/pptx-engine/src/background-promote.ts"
       ],

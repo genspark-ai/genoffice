@@ -34,6 +34,13 @@ function select(editor: Editor, from: number, to: number) {
   )
 }
 
+/** Drive a shared Dropdown (gs-dd): open the trigger, click the option by value. */
+function pickDropdown(container: Element, dd: HTMLButtonElement, value: string) {
+  act(() => dd.click())
+  const item = container.querySelector<HTMLButtonElement>(`.gs-dd-item[data-value="${value}"]`)!
+  act(() => item.click())
+}
+
 function render(element: React.ReactElement): { container: HTMLElement; unmount: () => void } {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -143,12 +150,9 @@ describe('FontDialog', () => {
     const editor = createEditor()
     select(editor, 1, 10)
     const { container, unmount } = render(createElement(FontDialog, { editor, onClose: noop }))
-    const selects = container.querySelectorAll('select')
-    act(() => {
-      // Font style → bold
-      selects[1].value = 'bold'
-      selects[1].dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    const dds = container.querySelectorAll<HTMLButtonElement>('.gs-dd-btn')
+    // Font style → bold
+    pickDropdown(container, dds[1]!, 'bold')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
     act(() => ok.click())
     expect(editor.isActive('bold')).toBe(true)
@@ -163,11 +167,7 @@ describe('ParagraphDialog', () => {
     const editor = createEditor()
     select(editor, 2, 2)
     const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
-    const selects = container.querySelectorAll('select')
-    act(() => {
-      selects[0].value = 'center'
-      selects[0].dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    pickDropdown(container, container.querySelector<HTMLButtonElement>('.gs-dd-btn')!, 'center')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
     act(() => ok.click())
     expect(editor.getAttributes('docParagraph').align).toBe('center')
@@ -179,12 +179,9 @@ describe('ParagraphDialog', () => {
     const editor = createEditor({ align: 'right' })
     select(editor, 2, 2)
     const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
-    const alignSelect = container.querySelector('select')!
-    expect(alignSelect.value).toBe('right')
-    act(() => {
-      alignSelect.value = 'left'
-      alignSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    const alignDd = container.querySelector<HTMLButtonElement>('.gs-dd-btn')!
+    expect(alignDd.dataset.value).toBe('right')
+    pickDropdown(container, alignDd, 'left')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
     act(() => ok.click())
     // visual left is the start side in LTR → stored as null
@@ -197,13 +194,10 @@ describe('ParagraphDialog', () => {
     const editor = createEditor({ bidi: true })
     select(editor, 2, 2)
     const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
-    const alignSelect = container.querySelector('select')!
+    const alignDd = container.querySelector<HTMLButtonElement>('.gs-dd-btn')!
     // unset align in an RTL paragraph renders right, so the dialog shows Right
-    expect(alignSelect.value).toBe('right')
-    act(() => {
-      alignSelect.value = 'left'
-      alignSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    expect(alignDd.dataset.value).toBe('right')
+    pickDropdown(container, alignDd, 'left')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
     act(() => ok.click())
     // visual left is the end side in RTL → stored explicitly
@@ -216,12 +210,9 @@ describe('ParagraphDialog', () => {
     const editor = createEditor({ bidi: true, align: 'left' })
     select(editor, 2, 2)
     const { container, unmount } = render(createElement(ParagraphDialog, { editor, onClose: noop }))
-    const alignSelect = container.querySelector('select')!
-    expect(alignSelect.value).toBe('left')
-    act(() => {
-      alignSelect.value = 'right'
-      alignSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    const alignDd = container.querySelector<HTMLButtonElement>('.gs-dd-btn')!
+    expect(alignDd.dataset.value).toBe('left')
+    pickDropdown(container, alignDd, 'right')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === '确定')!
     act(() => ok.click())
     expect(editor.getAttributes('docParagraph').align).toBeNull()

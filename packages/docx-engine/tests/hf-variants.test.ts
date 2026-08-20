@@ -158,6 +158,31 @@ describe('first-page / even-page headers & footers', () => {
   })
 })
 
+describe('hfAllSections (P17)', () => {
+  it('injects new header/footer references into every ref-less body sectPr', async () => {
+    const midSect =
+      '<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/>' +
+      '<w:pgSz w:w="11906" w:h="16838"/>' +
+      '<w:pgMar w:top="975" w:right="1051" w:bottom="400" w:left="982" w:header="708" w:footer="708" w:gutter="0"/>' +
+      '</w:sectPr></w:pPr></w:p>'
+    const source = await buildDocx({ bodyXml: BODY + midSect + BODY })
+    const parsed = await parseDocx(source)
+    const saved = await saveDocx(
+      parsed,
+      parsed.blocks
+        .filter((b) => !b.hidden && b.docxIndex !== null)
+        .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! })),
+      { header: { text: '重复页眉' }, hfAllSections: true },
+    )
+    const docXml = (await zipText(saved, 'word/document.xml'))!
+    const refs = docXml.match(/<w:headerReference[^>]*\/>/g) ?? []
+    expect(refs.length).toBe(2) // mid-body sectPr + trailing sectPr
+    // both point at the same part
+    const ids = refs.map((r) => /r:id="([^"]+)"/.exec(r)![1])
+    expect(new Set(ids).size).toBe(1)
+  })
+})
+
 const HEADER_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml'
 const FOOTER_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml'
 const SETTINGS_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml'

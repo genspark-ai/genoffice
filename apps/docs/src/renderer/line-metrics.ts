@@ -1316,6 +1316,15 @@ interface HfRunLike {
   image?: { heightPx?: number }
 }
 
+/** header push-down geometry of a section (twips → px) for estimateHfHeight's geom param */
+export function hfHeaderGeom(set: { marginTop: number; headerDist?: number }): {
+  marginTopPx: number
+  headerDistPx: number
+} {
+  const toPx = (twips: number) => (twips / 1440) * 96
+  return { marginTopPx: toPx(set.marginTop), headerDistPx: toPx(set.headerDist ?? 720) }
+}
+
 export function estimateHfHeight(
   part:
     | {
@@ -1335,12 +1344,38 @@ export function estimateHfHeight(
     | undefined,
   contentWidthPx: number,
   /** images in the part (logos): non-floating ones count as one line of height (same as the display layer) */
-  images?: Array<{ heightPx?: number; floating?: boolean }> | null,
+  images?: Array<{
+    heightPx?: number
+    floating?: boolean
+    behind?: boolean
+    wrap?: 'none' | 'square' | 'tight' | 'through' | 'topBottom'
+    posYPx?: number
+    posVRel?: 'page' | 'margin' | 'paragraph'
+  }> | null,
+  /** header geometry (px): pass for headers so wrapped anchored images push the body below their bottom edge (Word); watermarks (wrapNone/behindDoc) still reserve nothing */
+  geom?: { marginTopPx: number; headerDistPx: number },
 ): number {
   const inlineImages = (images ?? []).filter((im) => !im.floating && im.heightPx)
   const imagesHeight =
     inlineImages.length > 0 ? Math.max(...inlineImages.map((im) => im.heightPx!)) + 2 : 0
-  if (!part) return imagesHeight
+  let anchoredPx = 0
+  if (geom) {
+    for (const im of images ?? []) {
+      if (!im.floating || im.behind || !im.heightPx) continue
+      if (!im.wrap || im.wrap === 'none') continue
+      if (im.posYPx == null || !im.posVRel) continue
+      // bottom edge in page coordinates; the anchor paragraph sits at the header strip top
+      const bottom =
+        im.posVRel === 'page'
+          ? im.posYPx + im.heightPx
+          : im.posVRel === 'margin'
+            ? geom.marginTopPx + im.posYPx + im.heightPx
+            : geom.headerDistPx + im.posYPx + im.heightPx
+      // effectiveTopPx adds headerDist back: dist + this = the image bottom
+      anchoredPx = Math.max(anchoredPx, bottom - geom.headerDistPx)
+    }
+  }
+  if (!part) return Math.max(imagesHeight, anchoredPx)
   type HfPara = NonNullable<typeof part.paras>[number]
   const paras: HfPara[] = part.paras?.length
     ? part.paras
@@ -1385,7 +1420,7 @@ export function estimateHfHeight(
     }
     height += lineH(p.runs, p)
   }
-  return height + imagesHeight
+  return Math.max(height + imagesHeight, anchoredPx)
 }
 
 /**

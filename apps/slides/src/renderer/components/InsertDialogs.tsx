@@ -3,6 +3,7 @@
  * Reuses SettingsModal's .modal-backdrop/.modal styles.
  */
 import React, { useEffect, useState } from 'react'
+import { Dropdown } from '@genoffice/ui'
 import type { LinkTargetOp } from '../../shared/ipc'
 import { EQUATION_GALLERY } from '../insert-presets'
 import { useI18n } from '../i18n/locale'
@@ -74,14 +75,17 @@ export function LinkDialog({
         ) : (
           <label>
             {t('ribbonDlgGoTo')}
-            <select value={slideIndex} onChange={(e) => setSlideIndex(Number(e.target.value))}>
-              {Array.from({ length: slideCount }, (_, i) => (
-                <option key={i} value={i}>
-                  {t('ribbonSlideN', { n: i + 1 })}
-                  {i === currentSlide ? t('ribbonCurrentSlideSuffix') : ''}
-                </option>
-              ))}
-            </select>
+            <Dropdown
+              value={String(slideIndex)}
+              ariaLabel={t('ribbonDlgGoTo')}
+              options={Array.from({ length: slideCount }, (_, i) => ({
+                value: String(i),
+                label:
+                  t('ribbonSlideN', { n: i + 1 }) +
+                  (i === currentSlide ? t('ribbonCurrentSlideSuffix') : ''),
+              }))}
+              onPick={(v) => setSlideIndex(Number(v))}
+            />
           </label>
         )}
         <div className="modal-actions">
