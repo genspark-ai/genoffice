@@ -144,10 +144,14 @@ export function loadPdfium(): Promise<Pdfium> {
   return pdfiumPromise
 }
 
-/** Fallback fonts for rebuilt runs, first readable file wins; must be single-face sfnt (no .ttc) */
+/** Fallback fonts for rebuilt runs, first readable file wins; must be single-face sfnt (no .ttc).
+    Arial Unicode MS is absent on modern Windows by default, so common Latin faces follow it
+    (a rebuilt run degrades to the fallback only after the run's own/installed font fails). */
 const FALLBACK_FONTS = [
   '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
   'C:\\Windows\\Fonts\\arialuni.ttf',
+  'C:\\Windows\\Fonts\\arial.ttf',
+  'C:\\Windows\\Fonts\\segoeui.ttf',
   '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
 ]
 

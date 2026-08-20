@@ -1,19 +1,27 @@
 import type { AgentSkill } from '@genoffice/agent-core'
+import type { WorkspaceSearchResult } from './embed'
 
 /**
  * Workspace Q&A as an AgentSkill: the agent calls workspace_search to retrieve
  * relevant passages from the user's saved documents (semantic search over a
  * local Ollama embedding index built in the main process — files never leave
  * the machine).
+ *
+ * Shared by all five apps (docs/slides/pdf/markdown/sheets): each app passes
+ * its own preload bridge as the search function, e.g.
+ *   createWorkspaceSkill((query, k) => window.desktop.workspaceSearch(query, k))
  */
 
+/** per-app search bridge: executes workspace:search in the app's main process */
+export type WorkspaceSearchFn = (query: string, k: number) => Promise<WorkspaceSearchResult>
+
 const WORKSPACE_SYSTEM_PROMPT = `## Workspace Q&A
-The user's saved documents (the shared GenOffice folder: docs, sheets, slides, PDFs and Markdown) are indexed locally for semantic search.
+The user's saved documents (the shared KARYA folder: docs, sheets, slides, PDFs and Markdown) are indexed locally for semantic search.
 - When the user asks about their own documents ("what did I write about X?", "find the budget spreadsheet", "summarize my notes on Y"), search the workspace with workspace_search first and answer from the retrieved passages.
 - If the search returns nothing useful, say so plainly instead of inventing file contents.
 - Cite the file name alongside any factual claims drawn from search results.`
 
-export function createWorkspaceSkill(): AgentSkill {
+export function createWorkspaceSkill(search: WorkspaceSearchFn): AgentSkill {
   return {
     id: 'workspace',
     systemPrompt: WORKSPACE_SYSTEM_PROMPT,
@@ -21,7 +29,7 @@ export function createWorkspaceSkill(): AgentSkill {
       {
         name: 'workspace_search',
         description:
-          'Semantic search over the user\'s saved GenOffice documents (docx/pdf/pptx/xlsx/markdown/txt, indexed locally with Ollama embeddings). Returns the most relevant passages with file names. Use when the request concerns the user\'s own documents.',
+          'Semantic search over the user\'s saved KARYA documents (docx/pdf/pptx/xlsx/markdown/txt, indexed locally with Ollama embeddings). Returns the most relevant passages with file names. Use when the request concerns the user\'s own documents.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -48,7 +56,7 @@ export function createWorkspaceSkill(): AgentSkill {
         return { output: 'provide a search query', isError: true, summary: 'workspace_search' }
       }
       const k = Math.min(Math.max(Number(call.input.k) || 5, 1), 10)
-      const res = await window.desktop.workspaceSearch(query, k)
+      const res = await search(query, k)
       if (!res.ok) {
         return {
           output:

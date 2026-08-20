@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings } from '@genoffice/ui'
-import type { AiSettingsDialogStrings } from '@genoffice/ui'
+import { AiComposer, AiSettingsDialog, AiTypingIndicator, AiLocalBadge, IconSettings } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -464,13 +463,16 @@ export function AiChatPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Genspark"
+        aria-label="KARYA"
       />
       <header className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
-          Genspark
+          KARYA
         </span>
+        {settings.provider === 'ollama' && (
+          <AiLocalBadge model={settings.providers.ollama?.model} />
+        )}
         <div className="ai-panel-header-actions">
           <button
             className="ai-header-btn"
@@ -758,6 +760,7 @@ export function AiChatPanel({
             aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
             aiSettingsRefresh: t('aiSettingsRefresh'),
             aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsModelMissing: t('aiSettingsModelMissing'),
             aiSettingsTestFail: t('aiSettingsTestFail'),
             aiSettingsCancel: t('aiSettingsCancel'),
             aiSettingsSave: t('aiSettingsSave'),
@@ -775,7 +778,7 @@ export function AiChatPanel({
             aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
             aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
-          listOllamaModels={(baseUrl) => window.desktopApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          listOllamaModels={(baseUrl) => window.desktopApi.aiOllamaModels(baseUrl)}
           onTestConnection={(provider, input) => window.desktopApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}

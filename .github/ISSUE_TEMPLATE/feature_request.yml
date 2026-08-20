@@ -7,11 +7,11 @@ body:
     attributes:
       label: App
       options:
-        - GenOffice Docs (docs)
-        - GenOffice Sheets (sheets)
-        - GenOffice Slides (slides)
-        - GenOffice PDF (pdf)
-        - GenOffice Markdown (markdown)
+        - KARYA Docs (docs)
+        - KARYA Sheets (sheets)
+        - KARYA Slides (slides)
+        - KARYA PDF (pdf)
+        - KARYA Markdown (markdown)
         - Shell / home screen
         - AI panel / providers
         - Whole suite

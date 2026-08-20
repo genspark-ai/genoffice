@@ -4,9 +4,9 @@ import type {
   AiConnectionTestResult,
   AiSettings,
   AiProviderId,
-  AiProviderMeta,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
-import { AI_PROVIDERS } from '@genoffice/ai-provider'
+import { AI_PROVIDERS, ollamaListStatus } from '@genoffice/ai-provider'
 
 export interface OllamaModel {
   name: string
@@ -22,6 +22,7 @@ export interface AiSettingsDialogStrings {
   aiSettingsDetectedModels: string
   aiSettingsRefresh: string
   aiSettingsNoModel: string
+  aiSettingsModelMissing: string
   aiSettingsTestFail: string
   aiSettingsCancel: string
   aiSettingsSave: string
@@ -45,7 +46,7 @@ export interface AiSettingsDialogProps {
   strings: AiSettingsDialogStrings
   gskStatus?: { loggedIn: boolean; email?: string } | null
   onGskLogin?: () => void
-  listOllamaModels?: (baseUrl: string) => Promise<OllamaModel[]>
+  listOllamaModels?: (baseUrl: string) => Promise<OllamaModelsResult>
   onTestConnection?: (
     provider: AiProviderId,
     input: { baseUrl?: string; apiKey?: string; model?: string },
@@ -56,6 +57,12 @@ export interface AiSettingsDialogProps {
 
 const OLLAMA_DEFAULT_BASE = 'http://localhost:11434/v1'
 const KEY_OPTIONAL_PROVIDERS = new Set(['ollama'])
+
+/** Model discovery is cached briefly so reopening the dialog (or re-selecting
+    Ollama) doesn't hammer the local /api/tags endpoint; the refresh button
+    forces a fresh probe. Errors are never cached. */
+const OLLAMA_LIST_TTL_MS = 10_000
+const ollamaListCache = new Map<string, { at: number; result: OllamaModelsResult }>()
 
 export function AiSettingsDialog({
   settings,
@@ -73,39 +80,51 @@ export function AiSettingsDialog({
   const [model, setModel] = useState(() => settings.providers[settings.provider]?.model ?? '')
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
   const [ollamaLoading, setOllamaLoading] = useState(false)
-  const [ollamaError, setOllamaError] = useState<string | null>(null)
+  /** derived from the last discovery: connected / not-running / invalid / unknown */
+  const [ollamaStatus, setOllamaStatus] = useState<AiConnectionStatus | null>(null)
   const [testState, setTestState] = useState<AiConnectionTestResult | null>(null)
   const [testing, setTesting] = useState(false)
 
   const meta = AI_PROVIDERS.find((p) => p.id === provider) ?? null
 
   const fetchOllamaModels = useCallback(
-    async (url?: string) => {
+    async (force = false) => {
       if (!listOllamaModels) return
-      const target = url ?? baseUrl ?? OLLAMA_DEFAULT_BASE
+      const target = (baseUrl || OLLAMA_DEFAULT_BASE).replace(/\/+$/, '')
+      const cached = ollamaListCache.get(target)
+      if (!force && cached && Date.now() - cached.at < OLLAMA_LIST_TTL_MS) {
+        const result = cached.result
+        setOllamaModels(result.models)
+        setOllamaStatus(ollamaListStatus(result))
+        return
+      }
       setOllamaLoading(true)
-      setOllamaError(null)
+      setOllamaStatus(null)
       try {
-        const models = await listOllamaModels(target)
-        setOllamaModels(models)
-        const first = models[0]
+        const result = await listOllamaModels(target)
+        // errors are not cached: a transient failure must retry on next open
+        if (!result.error) ollamaListCache.set(target, { at: Date.now(), result })
+        setOllamaModels(result.models)
+        setOllamaStatus(ollamaListStatus(result))
+        const first = result.models[0]
         if (first && !model) {
           setModel(first.name)
         }
-      } catch {
-        setOllamaError(strings.aiSettingsTestFail)
       } finally {
         setOllamaLoading(false)
       }
     },
-    [listOllamaModels, baseUrl, model, strings.aiSettingsTestFail],
+    [listOllamaModels, baseUrl, model],
   )
 
+  // discovery runs when Ollama is selected — on open and when the user switches
+  // to Ollama mid-dialog (the brief TTL cache covers rapid re-selection)
   useEffect(() => {
     if (provider === 'ollama') {
       fetchOllamaModels()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider])
 
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const next = e.target.value as AiProviderId
@@ -119,7 +138,7 @@ export function AiSettingsDialog({
     setApiKey('')
     setModel(nextMeta?.defaultModel ?? '')
     setOllamaModels([])
-    setOllamaError(null)
+    setOllamaStatus(null)
   }
 
   const handleSave = () => {
@@ -277,40 +296,57 @@ export function AiSettingsDialog({
           {showModel && (
             <>
               {isOllama ? (
-                <div className="ai-settings-model-row">
-                  <div className="ai-settings-field">
-                    <label>{strings.aiSettingsDetectedModels}</label>
-                    <select
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
+                <>
+                  {ollamaLoading || ollamaStatus ? (
+                    <div className={`ai-settings-ollama-status ai-settings-ollama-status--${ollamaStatus ?? 'loading'}`}>
+                      {ollamaLoading
+                        ? `${strings.aiSettingsTestButton}…`
+                        : statusText[ollamaStatus!]}
+                    </div>
+                  ) : null}
+                  <div className="ai-settings-model-row">
+                    <div className="ai-settings-field">
+                      <label>{strings.aiSettingsDetectedModels}</label>
+                      <select
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                      >
+                        {ollamaLoading && (
+                          <option value="">{strings.aiSettingsRefresh}…</option>
+                        )}
+                        {!ollamaLoading && ollamaModels.length === 0 && (
+                          <option value="">{strings.aiSettingsNoModel}</option>
+                        )}
+                        {!ollamaLoading &&
+                          model &&
+                          !ollamaModels.some((m) => m.name === model) && (
+                            <option value={model}>{model}</option>
+                          )}
+                        {ollamaModels.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                            {m.parameterSize ? ` (${m.parameterSize})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {!ollamaLoading &&
+                        model &&
+                        ollamaModels.length > 0 &&
+                        !ollamaModels.some((m) => m.name === model) && (
+                          <div className="ai-settings-field-hint" style={{ color: 'var(--error)' }}>
+                            {strings.aiSettingsModelMissing}
+                          </div>
+                        )}
+                    </div>
+                    <button
+                      className="ai-settings-model-refresh"
+                      onClick={() => fetchOllamaModels(true)}
+                      disabled={ollamaLoading}
                     >
-                      {ollamaLoading && (
-                        <option value="">{strings.aiSettingsRefresh}…</option>
-                      )}
-                      {!ollamaLoading && ollamaModels.length === 0 && (
-                        <option value="">{strings.aiSettingsNoModel}</option>
-                      )}
-                      {ollamaModels.map((m) => (
-                        <option key={m.name} value={m.name}>
-                          {m.name}
-                          {m.parameterSize ? ` (${m.parameterSize})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {ollamaError && (
-                      <div className="ai-settings-field-hint" style={{ color: 'var(--error)' }}>
-                        {ollamaError}
-                      </div>
-                    )}
+                      {strings.aiSettingsRefresh}
+                    </button>
                   </div>
-                  <button
-                    className="ai-settings-model-refresh"
-                    onClick={() => fetchOllamaModels()}
-                    disabled={ollamaLoading}
-                  >
-                    {strings.aiSettingsRefresh}
-                  </button>
-                </div>
+                </>
               ) : isCustom ? (
                 <div className="ai-settings-field">
                   <label>{strings.aiSettingsModel}</label>

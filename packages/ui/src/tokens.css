@@ -1,4 +1,4 @@
-/* GenOffice design tokens — the single source of truth for UI chrome colors.
+/* KARYA design tokens — the single source of truth for UI chrome colors.
  * Theme switching: light defaults in :root, [data-theme='dark'] overrides,
  * prefers-color-scheme fallback for system mode (no data-theme attribute).
  * Per-app accents (--accent / --accent-dark / --accent-soft) live in each

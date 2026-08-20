@@ -1,5 +1,5 @@
 {
-  "name": "genoffice",
+  "name": "karya",
   "version": "0.1.0",
   "private": true,
   "description": "AI-native office suite (docs, sheets, slides, pdf)",
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/genspark-ai/genoffice.git"
+    "url": "git+https://github.com/karya-office/karya.git"
   },
   "workspaces": [
     "apps/*",
@@ -25,7 +25,7 @@
     "fixtures": "npm run fixtures -w @genoffice/docx-engine",
     "test": "npm run test -w @genoffice/i18n && npm run test -w @genoffice/electron-utils && npm run test -w @genoffice/font-metrics && npm run test -w @genoffice/docx-engine && npm run test -w @genoffice/file-parse && npm run test -w @genoffice/pptx-engine && npm run test -w @genoffice/pptx-render && npm run test -w @genoffice/ai-search && npm run test -w @genoffice/agent-core && npm run test -w @genoffice/ai-provider && npm run test -w @genoffice/project-store && npm run test -w @genoffice/docs && npm run test -w @genoffice/sheets && npm run test -w @genoffice/shell && npm run test -w @genoffice/slides && npm run test -w @genoffice/pdf && npm run test -w @genoffice/markdown",
     "typecheck": "npm run typecheck -w @genoffice/i18n && npm run typecheck -w @genoffice/electron-utils && npm run typecheck -w @genoffice/font-metrics && npm run typecheck -w @genoffice/docx-engine && npm run typecheck -w @genoffice/file-parse && npm run typecheck -w @genoffice/pptx-engine && npm run typecheck -w @genoffice/pptx-render && npm run typecheck -w @genoffice/ai-search && npm run typecheck -w @genoffice/agent-core && npm run typecheck -w @genoffice/ai-provider && npm run typecheck -w @genoffice/project-store && npm run typecheck -w @genoffice/ui && npm run typecheck -w @genoffice/docs && npm run typecheck -w @genoffice/sheets && npm run typecheck -w @genoffice/shell && npm run typecheck -w @genoffice/slides && npm run typecheck -w @genoffice/pdf && npm run typecheck -w @genoffice/markdown",
-    "dev": "concurrently -k -n docs,sheets,slides,pdf,markdown,shell -c blue,green,yellow,red,cyan,magenta \"npm run dev:renderer -w @genoffice/docs\" \"npm run dev:renderer -w @genoffice/sheets\" \"npm run dev:renderer -w @genoffice/slides\" \"npm run dev:renderer -w @genoffice/pdf\" \"npm run dev:renderer -w @genoffice/markdown\" \"DOCS_RENDERER_URL=http://localhost:5173 SHEETS_RENDERER_URL=http://localhost:5174 SLIDES_RENDERER_URL=http://localhost:5175 PDF_RENDERER_URL=http://localhost:5176 MARKDOWN_RENDERER_URL=http://localhost:5177 npm run dev -w @genoffice/shell\"",
+    "dev": "concurrently -k -n docs,sheets,slides,pdf,markdown,shell -c blue,green,yellow,red,cyan,magenta \"npm run dev:renderer -w @genoffice/docs\" \"npm run dev:renderer -w @genoffice/sheets\" \"npm run dev:renderer -w @genoffice/slides\" \"npm run dev:renderer -w @genoffice/pdf\" \"npm run dev:renderer -w @genoffice/markdown\" \"cross-env DOCS_RENDERER_URL=http://localhost:5173 SHEETS_RENDERER_URL=http://localhost:5174 SLIDES_RENDERER_URL=http://localhost:5175 PDF_RENDERER_URL=http://localhost:5176 MARKDOWN_RENDERER_URL=http://localhost:5177 npm run dev -w @genoffice/shell\"",
     "dev:docs": "npm run dev -w @genoffice/docs",
     "build": "npm run build -w @genoffice/docs",
     "build:all": "npm run build -w @genoffice/docs && npm run build -w @genoffice/sheets && npm run build -w @genoffice/slides && npm run build -w @genoffice/pdf && npm run build -w @genoffice/markdown && npm run build -w @genoffice/shell",
@@ -48,6 +48,7 @@
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "concurrently": "^9.2.4",
+    "cross-env": "^10.1.0",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.8.0",

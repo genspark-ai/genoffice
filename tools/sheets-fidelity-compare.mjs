@@ -314,7 +314,7 @@ ${rows
       ? `<h2>${r.file} · <span class="err">${r.error}</span></h2>`
       : `
 <h2>${r.file} · <span class="pct ${r.pct > 0.2 ? 'bad' : 'ok'}">${(r.pct * 100).toFixed(1)}% mismatch</span> · ${r.pages} ref page(s)</h2>
-<table><tr><td>Excel<br><img src="${rel(r.ref)}"></td><td>GenOffice Sheets<br><img src="${rel(r.ours)}"></td><td>diff<br><img src="${rel(r.diff)}"></td></tr></table>`,
+<table><tr><td>Excel<br><img src="${rel(r.ref)}"></td><td>KARYA Sheets<br><img src="${rel(r.ours)}"></td><td>diff<br><img src="${rel(r.diff)}"></td></tr></table>`,
   )
   .join('')}
 `

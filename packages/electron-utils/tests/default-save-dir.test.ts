@@ -58,7 +58,9 @@ describe('resolveDefaultSaveDir', () => {
     expect(existsSync(fallback)).toBe(true)
   })
 
-  it('degrades to the fallback when the configured folder is not writable', () => {
+  // POSIX permission bits don't map to Windows ACLs (a 0o500 directory stays
+  // writable), so this permission-revocation case only applies on POSIX.
+  it.runIf(process.platform !== 'win32')('degrades to the fallback when the configured folder is not writable', () => {
     const readOnly = join(root, 'read-only')
     mkdirSync(readOnly)
     chmodSync(readOnly, 0o500)
@@ -84,14 +86,14 @@ describe('configuredDefaultSaveDir', () => {
     expect(configuredDefaultSaveDir(app)).toBe(custom)
   })
 
-  it('falls back to <Documents>/GenOffice without a setting', () => {
+  it('falls back to <Documents>/KARYA without a setting', () => {
     const userData = join(root, 'userData')
     const documents = join(root, 'Documents')
     mkdirSync(userData, { recursive: true })
     const app = {
       getPath: (name: 'userData' | 'documents') => (name === 'userData' ? userData : documents),
     }
-    expect(configuredDefaultSaveDir(app)).toBe(join(documents, 'GenOffice'))
-    expect(existsSync(join(documents, 'GenOffice'))).toBe(true)
+    expect(configuredDefaultSaveDir(app)).toBe(join(documents, 'KARYA'))
+    expect(existsSync(join(documents, 'KARYA'))).toBe(true)
   })
 })

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop } from '@genoffice/agent-core'
-import { isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings } from '@genoffice/ui'
+import { AgentLoop, composeSkills } from '@genoffice/agent-core'
+import { createWorkspaceSkill, isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
+import { AiComposer, AiSettingsDialog, AiTypingIndicator, AiLocalBadge, IconSettings } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -155,7 +155,10 @@ export function AiPanel({
     }
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),
-      skill: createPdfSkill(deps),
+      skill: composeSkills('pdf+workspace', '', [
+        createPdfSkill(deps),
+        createWorkspaceSkill((query, k) => window.pdfApi.workspaceSearch(query, k)),
+      ]),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {
@@ -322,13 +325,16 @@ export function AiPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Genspark"
+        aria-label="KARYA"
       />
       <header className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
           Genspark
         </span>
+        {settings?.provider === 'ollama' && (
+          <AiLocalBadge model={settings?.providers.ollama?.model} />
+        )}
         <div className="ai-panel-header-actions">
           {settings && (
             <button
@@ -449,6 +455,7 @@ export function AiPanel({
             aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
             aiSettingsRefresh: t('aiSettingsRefresh'),
             aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsModelMissing: t('aiSettingsModelMissing'),
             aiSettingsTestFail: t('aiSettingsTestFail'),
             aiSettingsCancel: t('aiSettingsCancel'),
             aiSettingsSave: t('aiSettingsSave'),
@@ -466,7 +473,7 @@ export function AiPanel({
             aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
             aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
-          listOllamaModels={(baseUrl) => window.pdfApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          listOllamaModels={(baseUrl) => window.pdfApi.aiOllamaModels(baseUrl)}
           onTestConnection={(provider, input) => window.pdfApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}

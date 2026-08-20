@@ -66,7 +66,7 @@
 
 /* Home carries the product name and is never closable, so it hugs its own
  * content instead of sharing the document tabs' 240px flex basis — and it
- * never shrinks, so "GenOffice" stays whole however many tabs are open.
+ * never shrinks, so "KĀRYA" stays whole however many tabs are open.
  * ("tab-home", not "home" — home.css owns `.home` for the home page
  * container living in this same document.) */
 .tab-item.tab-home {
@@ -75,7 +75,7 @@
   /* 2px tighter icon-to-label gap than document tabs: the home glyph is an
    * outline (no solid plate), so the default 8px reads too loose */
   gap: 6px;
-  /* 27px = 3px plate inset + 24px from "GenOffice" to the plate's edge, so the
+  /* 27px = 3px plate inset + 24px from "KĀRYA" to the plate's edge, so the
    * label gets a real 24px of breathing room (the 9px the other tabs' icons
    * get reads too tight after a word) */
   padding-right: 27px;

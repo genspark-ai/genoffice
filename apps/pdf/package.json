@@ -1,6 +1,6 @@
 {
   "name": "@genoffice/pdf",
-  "productName": "GenOffice PDF",
+  "productName": "KĀRYA PDF",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "private": true,
@@ -38,5 +38,5 @@
     "vite-plugin-static-copy": "^3.0.0",
     "vitest": "^4.1.10"
   },
-  "author": "GenOffice"
+  "author": "KARYA"
 }

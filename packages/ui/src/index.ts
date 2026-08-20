@@ -4,6 +4,7 @@ export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, IconSettings, type IconProps } from './icons'
 export { Markdown } from './Markdown'
 export { AiSettingsDialog, type AiSettingsDialogProps, type AiSettingsDialogStrings } from './AiSettingsDialog'
+export { AiLocalBadge } from './AiLocalBadge'
 export { isSymbolFontFamily } from './symbol-fonts'
 export {
   WORDART_PRESETS,

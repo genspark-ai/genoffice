@@ -7,11 +7,10 @@ import {
   type ToolDisplay,
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
-import { isProviderConfigured } from '@genoffice/ai-provider'
+import { createWorkspaceSkill, isProviderConfigured } from '@genoffice/ai-provider'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
-import {
-  createSlidesSkill,
+import { createSlidesSkill,
   type DeckAccess,
   type ClarifyQuestion,
   type DeckProgressEvent,
@@ -23,7 +22,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown, AiSettingsDialog, IconSettings } from '@genoffice/ui'
+import { Markdown, AiSettingsDialog, AiLocalBadge, IconSettings } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -1177,6 +1176,7 @@ export function AiPanel({
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
         createFilesSkill(availableAttachments, (path) => readAttachmentPathsRef.current.add(path)),
+        createWorkspaceSkill((query, k) => window.slidesApi.workspaceSearch(query, k)),
       ]),
       // Page-by-page deck generation needs more tool rounds
       maxTurns: 24,
@@ -1711,13 +1711,16 @@ export function AiPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Genspark AI"
+        aria-label="KARYA AI"
       />
       <div className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
           {t('aiPanelTitle')}
         </span>
+        {settings.provider === 'ollama' && (
+          <AiLocalBadge model={settings.providers.ollama?.model} />
+        )}
         <div className="ai-panel-header-actions">
           <button
             className="ai-header-btn"
@@ -2098,6 +2101,7 @@ export function AiPanel({
             aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
             aiSettingsRefresh: t('aiSettingsRefresh'),
             aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsModelMissing: t('aiSettingsModelMissing'),
             aiSettingsTestFail: t('aiSettingsTestFail'),
             aiSettingsCancel: t('aiSettingsCancel'),
             aiSettingsSave: t('aiSettingsSave'),
@@ -2115,7 +2119,7 @@ export function AiPanel({
             aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
             aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
-          listOllamaModels={(baseUrl) => window.slidesApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          listOllamaModels={(baseUrl) => window.slidesApi.aiOllamaModels(baseUrl)}
           onTestConnection={(provider, input) => window.slidesApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}

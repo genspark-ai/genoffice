@@ -19,7 +19,7 @@ export {
   providerRequiresApiKey,
   resolveAiSettings,
 } from './providers'
-export { listOllamaModels, type OllamaModelsResult } from './ollama'
+export { listOllamaModels, ollamaListStatus, type OllamaModelsResult } from './ollama'
 export {
   chunkText,
   cosineSimilarity,
@@ -32,6 +32,7 @@ export {
   type WorkspaceSearchResult,
 } from './embed'
 export { testProviderConnection } from './connection'
+export { createWorkspaceSkill, type WorkspaceSearchFn } from './workspace-skill'
 export type {
   AiConnectionStatus,
   AiConnectionTestInput,

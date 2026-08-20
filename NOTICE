@@ -1,7 +1,8 @@
-GenOffice
+KARYA (derived from GenOffice)
 Copyright 2026 Mainfunc, Inc.
 
 This product includes software developed at Mainfunc, Inc.
+This product is a modified fork of GenOffice.
 
 Bundled third-party components are listed in THIRD-PARTY-NOTICES.txt, which
 tools/gen-third-party-notices.mjs generates at packaging time. It is not

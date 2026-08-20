@@ -9,3 +9,10 @@
 # native:build script in apps/sheets/package.json).
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# Same reasoning for the GNU cross-target used by the Windows shell installer
+# (apps/shell/electron-builder.cjs win.extraResources): statically link the
+# mingw CRT so xlsx-sidecar.exe has no libgcc_s_seh-1.dll / libwinpthread-1.dll
+# runtime dependency on the user's machine.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]

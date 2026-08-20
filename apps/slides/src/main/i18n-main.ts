@@ -1,4 +1,4 @@
-/** Main-process i18n strings for GenOffice Slides (dialogs, native menus, export, autosave prompts). */
+/** Main-process i18n strings for KĀRYA Slides (dialogs, native menus, export, autosave prompts). */
 import { createI18n, getUiLang } from '@genoffice/i18n'
 
 export const tMain = createI18n({

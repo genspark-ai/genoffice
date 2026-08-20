@@ -96,10 +96,10 @@ describe('note reply save', () => {
     expect(modified instanceof PDFString && modified.decodeText()).toMatch(/^D:20\d{12}[+-]/)
   })
 
-  it('falls back to the GenOffice author when none is provided', async () => {
+  it('falls back to the KARYA author when none is provided', async () => {
     const { bytes } = await fixtureWithComment()
     const { bytes: out } = await applySaveRequest(bytes, request([note({ contents: 'anon' })]))
-    expect((await textAnnots(out)).find((a) => a.contents === 'anon')!.author).toBe('GenOffice')
+    expect((await textAnnots(out)).find((a) => a.contents === 'anon')!.author).toBe('KARYA')
   })
 
   it('links a reply to a saved comment via /IRT even with a stale object number', async () => {

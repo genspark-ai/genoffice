@@ -109,7 +109,11 @@ describe('startGenofficeLogin', () => {
       key_id: 'kid-1',
       access_token: 'bearer-token',
     })
-    expect(statSync(genofficeAuthPath()).mode & 0o777).toBe(0o600)
+    // chmod is POSIX-exact only off Windows: NTFS maps 0o600 to the read-only
+    // attribute (0o444) or ignores it, so the mode bits there are not meaningful
+    if (process.platform !== 'win32') {
+      expect(statSync(genofficeAuthPath()).mode & 0o777).toBe(0o600)
+    }
     expect(genofficeApiKey()).toBe('gsk-genoffice-key')
     expect(genofficeLoginInFlight()).toBe(false)
 

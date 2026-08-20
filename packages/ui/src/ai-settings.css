@@ -254,3 +254,47 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* ── Ollama connection status (settings dialog) ─────────────────────────── */
+.ai-settings-ollama-status {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+  background: var(--hover);
+  color: var(--text);
+}
+.ai-settings-ollama-status--connected {
+  background: rgba(46, 160, 67, 0.14);
+  color: #2ea043;
+}
+.ai-settings-ollama-status--not-running,
+.ai-settings-ollama-status--refused,
+.ai-settings-ollama-status--invalid,
+.ai-settings-ollama-status--unknown {
+  background: rgba(218, 54, 51, 0.12);
+  color: #da3633;
+}
+.ai-settings-ollama-status--loading {
+  color: var(--text-muted, #888);
+}
+
+/* ── Local-AI badge (AI panel header, shared by all editors) ────────────── */
+.ai-local-badge {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  color: var(--text-muted, #888);
+  background: transparent;
+  white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  margin-left: 8px;
+}

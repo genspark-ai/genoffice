@@ -1,11 +1,11 @@
 {
   "name": "@genoffice/shell",
-  "productName": "GenOffice",
+  "productName": "KĀRYA",
   "version": "0.6.0",
   "license": "Apache-2.0",
   "homepage": "https://github.com/genspark-ai/genoffice",
   "private": true,
-  "description": "Unified GenOffice shell: one app hosting the docs and sheets modules behind a home/launcher window",
+  "description": "Unified KĀRYA shell: one app hosting the docs and sheets modules behind a home/launcher window",
   "main": "out/main/index.js",
   "desktopName": "genoffice.desktop",
   "scripts": {
@@ -16,7 +16,8 @@
     "start": "electron-vite build && electron .",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
-    "dist:linux": "electron-vite build && electron-builder --linux"
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dev:preview": "vite --config vite.preview.config.ts"
   },
   "devDependencies": {
     "@genoffice/agent-core": "*",
@@ -44,5 +45,5 @@
     "vite": "^7.3.1",
     "vitest": "^4.1.10"
   },
-  "author": "GenOffice"
+  "author": "KĀRYA"
 }

@@ -18,6 +18,7 @@ import {
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  migrateUserDataDir,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -40,23 +41,15 @@ import {
   AiCreditsError,
   AiTimeoutError,
   chatForProvider,
-  defaultAiSettings,
-  listOllamaModels,
   providerRequiresApiKey,
-  resolveAiSettings,
   setRescueFetch,
   streamForProvider,
-  testProviderConnection,
   type AiChatRequest,
-  type AiConnectionTestInput,
-  type AiProviderConfig,
-  type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
-  type LegacyAiSettings,
-  type OllamaModelsResult,
 } from '@genoffice/ai-provider'
+import { registerAiSettingsIpc } from '@genoffice/ai-provider/ipc'
 import {
   ensureGenofficeLogin,
   gskApiKey,
@@ -180,7 +173,7 @@ const tMain = createI18n({
     menuMacros: '宏',
     menuWindow: '窗口',
     menuHelp: '帮助',
-    menuDocsHelp: 'GenOffice Docs 帮助',
+    menuDocsHelp: 'KĀRYA Docs 帮助',
   },
   en: {
     dlgOpenDoc: 'Open Document',
@@ -274,7 +267,7 @@ const tMain = createI18n({
     menuMacros: 'Macros',
     menuWindow: 'Window',
     menuHelp: 'Help',
-    menuDocsHelp: 'GenOffice Docs Help',
+    menuDocsHelp: 'KĀRYA Docs Help',
   },
   ja: {
     dlgOpenDoc: '文書を開く',
@@ -368,7 +361,7 @@ const tMain = createI18n({
     menuMacros: 'マクロ',
     menuWindow: 'ウィンドウ',
     menuHelp: 'ヘルプ',
-    menuDocsHelp: 'GenOffice Docs ヘルプ',
+    menuDocsHelp: 'KĀRYA Docs ヘルプ',
   },
   ko: {
     dlgOpenDoc: '문서 열기',
@@ -463,7 +456,7 @@ const tMain = createI18n({
     menuMacros: '매크로',
     menuWindow: '창',
     menuHelp: '도움말',
-    menuDocsHelp: 'GenOffice Docs 도움말',
+    menuDocsHelp: 'KĀRYA Docs 도움말',
   },
   fr: {
     dlgOpenDoc: 'Ouvrir un document',
@@ -559,7 +552,7 @@ const tMain = createI18n({
     menuMacros: 'Macros',
     menuWindow: 'Fenêtre',
     menuHelp: 'Aide',
-    menuDocsHelp: 'Aide GenOffice Docs',
+    menuDocsHelp: 'Aide KĀRYA Docs',
   },
   de: {
     dlgOpenDoc: 'Dokument öffnen',
@@ -655,7 +648,7 @@ const tMain = createI18n({
     menuMacros: 'Makros',
     menuWindow: 'Fenster',
     menuHelp: 'Hilfe',
-    menuDocsHelp: 'GenOffice Docs-Hilfe',
+    menuDocsHelp: 'KĀRYA Docs-Hilfe',
   },
   es: {
     dlgOpenDoc: 'Abrir documento',
@@ -750,7 +743,7 @@ const tMain = createI18n({
     menuMacros: 'Macros',
     menuWindow: 'Ventana',
     menuHelp: 'Ayuda',
-    menuDocsHelp: 'Ayuda de GenOffice Docs',
+    menuDocsHelp: 'Ayuda de KĀRYA Docs',
   },
   th: {
     dlgOpenDoc: 'เปิดเอกสาร',
@@ -844,7 +837,7 @@ const tMain = createI18n({
     menuMacros: 'แมโคร',
     menuWindow: 'หน้าต่าง',
     menuHelp: 'วิธีใช้',
-    menuDocsHelp: 'วิธีใช้ GenOffice Docs',
+    menuDocsHelp: 'วิธีใช้ KĀRYA Docs',
   },
   id: {
     dlgOpenDoc: 'Buka Dokumen',
@@ -938,7 +931,7 @@ const tMain = createI18n({
     menuMacros: 'Makro',
     menuWindow: 'Jendela',
     menuHelp: 'Bantuan',
-    menuDocsHelp: 'Bantuan GenOffice Docs',
+    menuDocsHelp: 'Bantuan KĀRYA Docs',
   },
   ru: {
     dlgOpenDoc: 'Открыть документ',
@@ -1033,7 +1026,7 @@ const tMain = createI18n({
     menuMacros: 'Макросы',
     menuWindow: 'Окно',
     menuHelp: 'Справка',
-    menuDocsHelp: 'Справка GenOffice Docs',
+    menuDocsHelp: 'Справка KĀRYA Docs',
   },
   ar: {
     dlgOpenDoc: 'فتح مستند',
@@ -1128,7 +1121,7 @@ const tMain = createI18n({
     menuMacros: 'وحدات الماكرو',
     menuWindow: 'نافذة',
     menuHelp: 'تعليمات',
-    menuDocsHelp: 'تعليمات GenOffice Docs',
+    menuDocsHelp: 'تعليمات KĀRYA Docs',
   },
   pt: {
     dlgOpenDoc: 'Abrir Documento',
@@ -1223,7 +1216,7 @@ const tMain = createI18n({
     menuMacros: 'Macros',
     menuWindow: 'Janela',
     menuHelp: 'Ajuda',
-    menuDocsHelp: 'Ajuda do GenOffice Docs',
+    menuDocsHelp: 'Ajuda do KĀRYA Docs',
   },
   it: {
     dlgOpenDoc: 'Apri documento',
@@ -1318,7 +1311,7 @@ const tMain = createI18n({
     menuMacros: 'Macro',
     menuWindow: 'Finestra',
     menuHelp: 'Aiuto',
-    menuDocsHelp: 'Guida di GenOffice Docs',
+    menuDocsHelp: 'Guida di KĀRYA Docs',
   },
   pl: {
     dlgOpenDoc: 'Otwórz dokument',
@@ -1413,7 +1406,7 @@ const tMain = createI18n({
     menuMacros: 'Makra',
     menuWindow: 'Okno',
     menuHelp: 'Pomoc',
-    menuDocsHelp: 'Pomoc GenOffice Docs',
+    menuDocsHelp: 'Pomoc KĀRYA Docs',
   },
   nl: {
     dlgOpenDoc: 'Document openen',
@@ -1508,7 +1501,7 @@ const tMain = createI18n({
     menuMacros: "Macro's",
     menuWindow: 'Venster',
     menuHelp: 'Help',
-    menuDocsHelp: 'GenOffice Docs Help',
+    menuDocsHelp: 'KĀRYA Docs Help',
   },
   ms: {
     dlgOpenDoc: 'Buka Dokumen',
@@ -1603,7 +1596,7 @@ const tMain = createI18n({
     menuMacros: 'Makro',
     menuWindow: 'Tetingkap',
     menuHelp: 'Bantuan',
-    menuDocsHelp: 'Bantuan GenOffice Docs',
+    menuDocsHelp: 'Bantuan KĀRYA Docs',
   },
   he: {
     dlgOpenDoc: 'פתיחת מסמך',
@@ -1696,7 +1689,7 @@ const tMain = createI18n({
     menuMacros: 'פקודות מאקרו',
     menuWindow: 'חלון',
     menuHelp: 'עזרה',
-    menuDocsHelp: 'עזרה של GenOffice Docs',
+    menuDocsHelp: 'עזרה של KĀRYA Docs',
   },
   hi: {
     dlgOpenDoc: 'दस्तावेज़ खोलें',
@@ -1791,7 +1784,7 @@ const tMain = createI18n({
     menuMacros: 'मैक्रो',
     menuWindow: 'विंडो',
     menuHelp: 'सहायता',
-    menuDocsHelp: 'GenOffice Docs सहायता',
+    menuDocsHelp: 'KĀRYA Docs सहायता',
   },
   'zh-TW': {
     dlgOpenDoc: '開啟文件',
@@ -1883,7 +1876,7 @@ const tMain = createI18n({
     menuMacros: '巨集',
     menuWindow: '視窗',
     menuHelp: '說明',
-    menuDocsHelp: 'GenOffice Docs 說明',
+    menuDocsHelp: 'KĀRYA Docs 說明',
   },
 })
 const tm = (key: Parameters<typeof tMain>[1], params?: Parameters<typeof tMain>[2]) =>
@@ -2491,9 +2484,11 @@ const activeAiStreams = new Map<string, AbortController>()
  * sheets' standalone AI handlers use the same channel names.
  */
 export function registerAiIpc(): void {
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    return resolveAiSettings(stored, defaultAiSettings())
+  registerAiSettingsIpc({
+    settingsPath: SETTINGS_PATH,
+    readJson,
+    writeJson,
+    gensparkApiKey: gskApiKey,
   })
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
@@ -2509,10 +2504,6 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:gsk-login', () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
-  })
-
-  ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(SETTINGS_PATH(), settings)
   })
 
   // ── Cross-app AI panel state (issue #33): per-app chat transcripts live in
@@ -2531,33 +2522,6 @@ export function registerAiIpc(): void {
     settingsPath: SETTINGS_PATH,
     userDataPath,
     saveDir: defaultSaveDir,
-  })
-
-  ipcMain.handle(
-    'ai:ollama-models',
-    async (_event, baseUrl?: string): Promise<OllamaModelsResult> => {
-      try {
-        return await listOllamaModels(baseUrl)
-      } catch (err) {
-        return { models: [], error: String(err) }
-      }
-    },
-  )
-
-  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
-    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
-    const provider = raw.provider
-    if (!provider) return { ok: false as const, status: 'unknown' as const }
-    let config: AiProviderConfig = {
-      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
-      model: typeof raw.model === 'string' ? raw.model : '',
-      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
-    }
-    // the genspark key lives in the gsk login state, never the settings file
-    if (provider === 'genspark' && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    return testProviderConnection(provider, config)
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
@@ -3573,7 +3537,7 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
     height: 900,
     minWidth: 980,
     minHeight: 600,
-    title: 'GenOffice Docs',
+    title: 'KĀRYA Docs',
     // Word-like custom title bar (document name centered, quick-access buttons)
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const }
@@ -3864,8 +3828,16 @@ export function startDocsStandalone(): void {
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   // dev runs must not share the packaged app's userData (recent files, AI settings)
   // or its single-instance lock — otherwise `npm run dev` silently quits whenever
-  // the installed GenOffice Docs is open and forwards its argv there instead.
-  if (isDev) app.setPath('userData', join(app.getPath('appData'), 'GenOffice Docs Dev'))
+  // the installed KĀRYA Docs is open and forwards its argv there instead.
+  if (isDev) {
+    app.setPath('userData', join(app.getPath('appData'), 'KĀRYA Docs Dev'))
+    // dev userData rename (GenOffice Docs Dev → KĀRYA Docs Dev)
+    migrateUserDataDir(app.getPath('appData'), 'GenOffice Docs Dev', 'KĀRYA Docs Dev')
+  } else {
+    // Product rename: Electron derives the packaged userData dir from
+    // productName, so migrate the old GenOffice Docs configuration once.
+    migrateUserDataDir(app.getPath('appData'), 'GenOffice Docs', 'KĀRYA Docs')
+  }
 
   const hasSingleInstanceLock = app.requestSingleInstanceLock()
   if (!hasSingleInstanceLock) {

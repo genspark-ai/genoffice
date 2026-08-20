@@ -11,11 +11,10 @@ import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
-import { createWorkspaceSkill } from './workspace-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
-import { isProviderConfigured } from '@genoffice/ai-provider'
-import { Markdown, AiSettingsDialog, IconSettings } from '@genoffice/ui'
+import { createWorkspaceSkill, isProviderConfigured } from '@genoffice/ai-provider'
+import { Markdown, AiSettingsDialog, AiLocalBadge, IconSettings } from '@genoffice/ui'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -577,7 +576,7 @@ export function AiPanel({
           () => (trackChangesRef.current ? { author: AI_REVISION_AUTHOR } : undefined),
         ),
         createFilesSkill(availableAttachments),
-        createWorkspaceSkill(),
+        createWorkspaceSkill((query, k) => window.desktop.workspaceSearch(query, k)),
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {
@@ -979,6 +978,9 @@ export function AiPanel({
           <GensparkMark size={22} />
           {t('aiPanelTitle')}
         </span>
+        {settings.provider === 'ollama' && (
+          <AiLocalBadge model={settings.providers.ollama?.model} />
+        )}
         <div className="ai-panel-header-actions">
           <button
             className="ai-header-btn"
@@ -1305,6 +1307,7 @@ export function AiPanel({
             aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
             aiSettingsRefresh: t('aiSettingsRefresh'),
             aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsModelMissing: t('aiSettingsModelMissing'),
             aiSettingsTestFail: t('aiSettingsTestFail'),
             aiSettingsCancel: t('aiSettingsCancel'),
             aiSettingsSave: t('aiSettingsSave'),
@@ -1322,7 +1325,7 @@ export function AiPanel({
             aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
             aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
-          listOllamaModels={(baseUrl) => window.desktop.aiOllamaModels(baseUrl).then((r) => r.models)}
+          listOllamaModels={(baseUrl) => window.desktop.aiOllamaModels(baseUrl)}
           onTestConnection={(provider, input) => window.desktop.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}

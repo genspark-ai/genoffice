@@ -12,7 +12,8 @@
     "./ai-settings.css": "./src/ai-settings.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "peerDependencies": {
     "react": "^19.0.0"
@@ -20,7 +21,11 @@
   "devDependencies": {
     "@genoffice/ai-provider": "*",
     "@types/react": "^19.2.14",
-    "typescript": "^5.9.3"
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^28.0.0",
+    "react-dom": "^19.2.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@genoffice/pptx-render": "*"

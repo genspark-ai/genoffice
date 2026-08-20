@@ -23,6 +23,7 @@ export {
   resolveDefaultSaveDir,
   type PathProvider,
 } from './default-save-dir'
+export { migrateUserDataDir } from './migrate-user-data'
 export { installNavigationGuard } from './navigation-guard'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {

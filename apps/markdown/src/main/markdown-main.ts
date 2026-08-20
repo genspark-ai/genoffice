@@ -19,6 +19,7 @@ import {
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  migrateUserDataDir,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -762,6 +763,9 @@ export function createMarkdownView(openPath?: string | null): WebContentsView {
 /** Standalone window mode: `npm run dev -w @genoffice/markdown`, md path passed via argv */
 export function startMarkdownStandalone(): void {
   installNavigationGuard(app)
+  // Product rename: Electron derives the packaged userData dir from
+  // productName, so migrate the old GenOffice Markdown configuration once.
+  migrateUserDataDir(app.getPath('appData'), 'GenOffice Markdown', 'KĀRYA Markdown')
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   configureMarkdownRuntime({
     preloadPath: join(__dirname, '../preload/index.js'),

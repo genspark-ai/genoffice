@@ -1,6 +1,6 @@
 {
   "name": "@genoffice/sheets",
-  "productName": "GenOffice Sheets",
+  "productName": "KĀRYA Sheets",
   "version": "0.1.0",
   "private": true,
   "description": "Cross-platform AI-native spreadsheet compatibility prototype",
@@ -65,5 +65,5 @@
     "vite": "^7.3.1",
     "vitest": "^4.1.0"
   },
-  "author": "GenOffice"
+  "author": "KARYA"
 }

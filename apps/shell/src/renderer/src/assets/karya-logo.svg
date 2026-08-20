@@ -1,0 +1,13 @@
+<svg width="1091" height="240" viewBox="0 0 1091 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!--
+  KĀRYA logo lockup. The mark mirrors the app icon geometry
+  (tools/gen-karya-icons.mjs) but is monochrome on purpose: the shell's
+  .logo-lockup CSS applies filter: invert() in dark mode, so the artwork
+  must stay pure black + white to flip cleanly.
+-->
+<rect width="240" height="240" rx="54" fill="black"/>
+<path d="M72 59V181" stroke="white" strokeWidth="31.7" strokeLinecap="round"/>
+<path d="M89.3 82.8L176.4 53.3" stroke="white" strokeWidth="27.8" strokeLinecap="round"/>
+<path d="M89.3 123.6L176.4 186.7" stroke="white" strokeWidth="27.8" strokeLinecap="round"/>
+<text x="272" y="172" fontFamily="'Segoe UI', system-ui, -apple-system, sans-serif" fontSize="136" fontWeight="600" fill="black" letterSpacing="-1">KĀRYA</text>
+</svg>

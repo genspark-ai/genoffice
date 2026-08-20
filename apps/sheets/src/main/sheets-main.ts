@@ -41,6 +41,7 @@ import {
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  migrateUserDataDir,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -54,22 +55,15 @@ import {
   AiCreditsError,
   AiTimeoutError,
   chatForProvider,
-  defaultAiSettings,
-  listOllamaModels,
   providerRequiresApiKey,
-  resolveAiSettings,
   setRescueFetch,
   streamForProvider,
-  testProviderConnection,
-  type AiConnectionTestInput,
-  type AiProviderConfig,
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type GenSparkAccountStatus,
-  type LegacyAiSettings,
-  type OllamaModelsResult,
 } from '@genoffice/ai-provider'
+import { registerAiSettingsIpc } from '@genoffice/ai-provider/ipc'
 import { csvToXlsxBuffer, decodeCsvBuffer } from '../gateway/csv-import'
 import {
   ensureGenofficeLogin,
@@ -1327,7 +1321,7 @@ export async function createSheetsWindow(
     minWidth: 1024,
     minHeight: 680,
     show: false,
-    title: 'GenOffice Sheets',
+    title: 'KĀRYA Sheets',
     // Traffic lights sit inside the toolbar row.
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
     webPreferences: {
@@ -2124,10 +2118,15 @@ export function registerSheetsAiIpc(): void {
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
 
-  ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
-    sessionFor(event)
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    return resolveAiSettings(stored, defaultAiSettings())
+  registerAiSettingsIpc({
+    settingsPath: SETTINGS_PATH,
+    readJson,
+    writeJson,
+    gensparkApiKey: gskApiKey,
+    beforeAccess: (event) => {
+      sessionFor(event)
+    },
+    validateSettings: (input) => aiSettingsInputSchema.parse(input) as AiSettings,
   })
 
   // Genspark account (gsk login state): the auth source for AI features; the
@@ -2144,38 +2143,6 @@ export function registerSheetsAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.aiGskLogin, () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
-  })
-
-  ipcMain.handle(IPC_CHANNELS.aiSetSettings, (event, input: unknown) => {
-    sessionFor(event)
-    const settings = aiSettingsInputSchema.parse(input)
-    writeJson(SETTINGS_PATH(), settings)
-  })
-
-  ipcMain.handle(
-    'ai:ollama-models',
-    async (_event, baseUrl?: string): Promise<OllamaModelsResult> => {
-      try {
-        return await listOllamaModels(baseUrl)
-      } catch (err) {
-        return { models: [], error: String(err) }
-      }
-    },
-  )
-
-  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
-    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
-    const provider = raw.provider
-    if (!provider) return { ok: false as const, status: 'unknown' as const }
-    let config: AiProviderConfig = {
-      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
-      model: typeof raw.model === 'string' ? raw.model : '',
-      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
-    }
-    if (provider === 'genspark' && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
-    return testProviderConnection(provider, config)
   })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {
@@ -2901,6 +2868,10 @@ export function startSheetsStandalone(): void {
   // Same dev-only hook as apps/slides/src/main/slides-main.ts.
   if (!app.isPackaged && process.env.GENOFFICE_USER_DATA) {
     app.setPath('userData', process.env.GENOFFICE_USER_DATA)
+  } else if (app.isPackaged) {
+    // Product rename: Electron derives the packaged userData dir from
+    // productName, so migrate the old GenOffice Sheets configuration once.
+    migrateUserDataDir(app.getPath('appData'), 'GenOffice Sheets', 'KĀRYA Sheets')
   }
   void applyMainProcessProxy()
   app.whenReady().then(() => {

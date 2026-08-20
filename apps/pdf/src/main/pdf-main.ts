@@ -9,6 +9,7 @@ import {
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  migrateUserDataDir,
   safeExternalUrl,
   showOpenDialogWithMemory,
 } from '@genoffice/electron-utils'
@@ -415,7 +416,7 @@ interface RuntimePaths {
   preloadPath: string
   rendererUrl?: string
   rendererFile?: string
-  /** Shell router used to open generated PDFs in a new GenOffice tab. */
+  /** Shell router used to open generated PDFs in a new KĀRYA tab. */
   openGeneratedPath?: (path: string) => boolean
 }
 
@@ -1128,6 +1129,9 @@ export function createPdfView(openPath?: string | null): WebContentsView {
 /** Standalone window mode: `npm run dev -w @genoffice/pdf`, pdf path passed via argv */
 export function startPdfStandalone(): void {
   installNavigationGuard(app)
+  // Product rename: Electron derives the packaged userData dir from
+  // productName, so migrate the old GenOffice PDF configuration once.
+  migrateUserDataDir(app.getPath('appData'), 'GenOffice PDF', 'KĀRYA PDF')
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   configurePdfRuntime({
     preloadPath: join(__dirname, '../preload/index.js'),

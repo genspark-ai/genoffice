@@ -29,7 +29,7 @@ describe('showOpenDialogWithMemory', () => {
     const dialog = fakeDialog({ showOpenDialog: pickedOpen([join('/work', 'report.docx')]) })
     await showOpenDialogWithMemory(dialog, undefined, {})
     await showOpenDialogWithMemory(dialog, undefined, {})
-    expect(dialog.showOpenDialog).toHaveBeenLastCalledWith({ defaultPath: '/work' })
+    expect(dialog.showOpenDialog).toHaveBeenLastCalledWith({ defaultPath: join('/work') })
   })
 
   it('forwards the parent window when given', async () => {
@@ -75,7 +75,7 @@ describe('showSaveDialogWithMemory', () => {
     const dialog = fakeDialog({ showSaveDialog: pickedSave(join('/work', 'deck.pptx')) })
     await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'deck.pptx' })
     await showOpenDialogWithMemory(dialog, undefined, {})
-    expect(dialog.showOpenDialog).toHaveBeenCalledWith({ defaultPath: '/work' })
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith({ defaultPath: join('/work') })
   })
 
   it('keeps an explicit absolute defaultPath untouched', async () => {

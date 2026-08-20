@@ -1,6 +1,6 @@
-# Contributing to GenOffice
+# Contributing to KĀRYA
 
-Thanks for your interest in contributing. This document covers the local
+Thanks for your interest in contributing to KĀRYA. This document covers the local
 setup, the checks a change must pass, and the conventions used in this
 repository.
 

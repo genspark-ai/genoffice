@@ -1760,3 +1760,76 @@ body.vib .home {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── About dialog (opened from the sidebar footer) ─────────── */
+.about-dialog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: min(380px, 90vw);
+  padding: 28px 28px 20px;
+}
+
+.about-dialog h3 {
+  margin-bottom: 2px;
+  font-size: 17px;
+}
+
+.about-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-modal-strong);
+}
+
+.about-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.about-version {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.about-attribution {
+  margin-top: 12px;
+  max-width: 340px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.about-license {
+  margin-top: 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.about-dialog .modal-buttons {
+  margin-top: 18px;
+}
+
+/* Sidebar footer trigger */
+.about-entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.about-entry:hover {
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}

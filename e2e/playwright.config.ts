@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
 /**
- * E2E config for the GenOffice Electron shell.
+ * E2E config for the KĀRYA Electron shell.
  *
  * Tests launch the real built app (electron.launch), so they run serially —
  * parallel Electron instances fight over the GPU cache and dock on macOS.

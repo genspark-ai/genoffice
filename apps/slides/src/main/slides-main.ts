@@ -1,5 +1,5 @@
 /**
- * GenOffice Slides main process — pptx parsing/render-tree building/edit application/saving all live
+ * KĀRYA Slides main process — pptx parsing/render-tree building/edit application/saving all live
  * here (Node side). The renderer only gets plain-data RenderSlide; edit intents are sent back
  * here to apply. Structure mirrors apps/docs: exports embeddable configure/register/start for
  * future shell reuse.
@@ -31,6 +31,7 @@ import {
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  migrateUserDataDir,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -3811,7 +3812,7 @@ export function createSlidesWindow(openPath?: string | null): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
-    title: 'GenOffice Slides',
+    title: 'KĀRYA Slides',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const }
       : {
@@ -4043,6 +4044,10 @@ export function startSlidesStandalone(): void {
   // to userData), allowing parallel instances alongside a normal dev run.
   if (!app.isPackaged && process.env.GENOFFICE_USER_DATA) {
     app.setPath('userData', process.env.GENOFFICE_USER_DATA)
+  } else if (app.isPackaged) {
+    // Product rename: Electron derives the packaged userData dir from
+    // productName, so migrate the old GenOffice Slides configuration once.
+    migrateUserDataDir(app.getPath('appData'), 'GenOffice Slides', 'KĀRYA Slides')
   }
   // The main process's Node fetch (undici) does not use the system proxy by default, so access
   // from mainland China to overseas LLM APIs like api.anthropic.com hits ETIMEDOUT on direct

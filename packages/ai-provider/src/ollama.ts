@@ -1,6 +1,26 @@
+import type { AiConnectionStatus } from './connection'
+
 export interface OllamaModelsResult {
   models: Array<{ name: string; parameterSize?: string; modifiedAt?: string }>
   error?: string
+}
+
+/**
+ * Derive a user-facing connection status from an Ollama model-list result,
+ * using the same status vocabulary as the connection test so the settings
+ * dialog shows one consistent set of states. Network-level failures mean the
+ * server is not running; HTTP-level failures mean the endpoint is wrong.
+ * Never echoes the raw error string — the caller maps the status to a
+ * localized message.
+ */
+export function ollamaListStatus(result: OllamaModelsResult): AiConnectionStatus {
+  if (result.models.length > 0 || !result.error) return 'connected'
+  const low = result.error.toLowerCase()
+  if (/(econnrefused|econnreset|fetch failed|getaddrinfo|network|timed? ?out)/.test(low)) {
+    return 'not-running'
+  }
+  if (/(status|http|4\d\d|5\d\d|unauthorized|forbidden)/.test(low)) return 'invalid'
+  return 'unknown'
 }
 
 const OLLAMA_DEFAULT_MODELS_URL = 'http://localhost:11434'

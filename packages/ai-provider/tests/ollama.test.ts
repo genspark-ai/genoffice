@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { listOllamaModels } from '../src/ollama'
+import { listOllamaModels, ollamaListStatus } from '../src/ollama'
 
 describe('listOllamaModels', () => {
   let fetchSpy: ReturnType<typeof vi.fn>
@@ -87,5 +87,31 @@ describe('listOllamaModels', () => {
       parameterSize: undefined,
       modifiedAt: undefined,
     })
+  })
+})
+
+describe('ollamaListStatus', () => {
+  it('is connected when models were discovered', () => {
+    expect(ollamaListStatus({ models: [{ name: 'qwen3:8b' }] })).toBe('connected')
+  })
+
+  it('is connected when the list succeeded with no models installed', () => {
+    expect(ollamaListStatus({ models: [] })).toBe('connected')
+  })
+
+  it('classifies network-level failures as not-running', () => {
+    for (const error of ['ECONNREFUSED', 'fetch failed', 'getaddrinfo ENOTFOUND', 'network unreachable']) {
+      expect(ollamaListStatus({ models: [], error })).toBe('not-running')
+    }
+  })
+
+  it('classifies HTTP-level failures as an invalid endpoint', () => {
+    for (const error of ['Ollama returned 500', 'Ollama returned 404', 'HTTP 401 unauthorized']) {
+      expect(ollamaListStatus({ models: [], error })).toBe('invalid')
+    }
+  })
+
+  it('falls back to unknown for anything else', () => {
+    expect(ollamaListStatus({ models: [], error: 'some unexpected error' })).toBe('unknown')
   })
 })

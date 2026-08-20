@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
-import { isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiSettingsDialog, AiTypingIndicator, IconSettings, Markdown } from '@genoffice/ui'
+import { createWorkspaceSkill, isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
+import { AiComposer, AiSettingsDialog, AiTypingIndicator, AiLocalBadge, IconSettings, Markdown } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -189,6 +189,7 @@ export function AiPanel({
       skill: composeSkills('markdown+search', '', [
         createMarkdownSkill(() => depsRef.current.getEditor()),
         createSearchSkill(),
+        createWorkspaceSkill((query, k) => window.markdownApi.workspaceSearch(query, k)),
       ]),
       captureSnapshot: () => depsRef.current.getSnapshot(),
       systemSuffix: () => aiLangDirective(langRef.current),
@@ -459,13 +460,16 @@ export function AiPanel({
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Genspark"
+        aria-label="KARYA"
       />
       <header className="ai-panel-header">
         <span className="ai-panel-title">
           <GensparkMark size={22} />
           Genspark
         </span>
+        {settings?.provider === 'ollama' && (
+          <AiLocalBadge model={settings?.providers.ollama?.model} />
+        )}
         <div className="ai-panel-header-actions">
           <button
             className="ai-header-btn"
@@ -682,6 +686,7 @@ export function AiPanel({
             aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
             aiSettingsRefresh: t('aiSettingsRefresh'),
             aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsModelMissing: t('aiSettingsModelMissing'),
             aiSettingsTestFail: t('aiSettingsTestFail'),
             aiSettingsCancel: t('aiSettingsCancel'),
             aiSettingsSave: t('aiSettingsSave'),
@@ -699,7 +704,7 @@ export function AiPanel({
             aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
             aiSettingsTestFailed: t('aiSettingsTestFailed'),
           }}
-          listOllamaModels={(baseUrl) => window.markdownApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          listOllamaModels={(baseUrl) => window.markdownApi.aiOllamaModels(baseUrl)}
           onTestConnection={(provider, input) => window.markdownApi.aiTestConnection({ provider, ...input })}
           onSettingsChange={(next) => onSettingsChange?.(next)}
           onClose={() => setSettingsOpen(false)}

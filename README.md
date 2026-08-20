@@ -1,6 +1,12 @@
-# [GenOffice](https://genoffice.ai/)
+# KĀRYA — Intelligent Workspace
 
-**The world's first full-featured open-source AI Office suite.**
+**The world's first full-featured open-source AI Office suite — a modified fork of [GenOffice](https://github.com/genspark-ai/genoffice).**
+
+> **About this fork.** KĀRYA is derived from and modified from the upstream
+> [GenOffice](https://github.com/genspark-ai/genoffice) project (Apache-2.0).
+> The badges, release links, and installers listed below belong to the
+> upstream GenOffice project; KĀRYA builds are distributed separately. All
+> upstream attribution and the Apache-2.0 license are preserved.
 
 [![License: Apache-2.0](https://img.shields.io/github/license/genspark-ai/genoffice)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/genspark-ai/genoffice)](https://github.com/genspark-ai/genoffice/releases/latest)
@@ -8,7 +14,7 @@
 
 [Website](https://genoffice.ai/) · [Download](https://github.com/genspark-ai/genoffice/releases/latest) · [Demo](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
-GenOffice is a free, open-source alternative to Microsoft Office for macOS,
+KĀRYA is a free, open-source alternative to Microsoft Office for macOS,
 Windows, and Linux, built around AI editing as a first-class workflow rather
 than a bolted-on chat box. It opens and saves the real Microsoft Office
 formats — Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`) — and edits
@@ -16,7 +22,7 @@ PDF and Markdown too: a word processor, spreadsheet, presentation editor,
 PDF editor, and Markdown editor as six Electron apps sharing one engine
 layer.
 
-[![Meet GenOffice — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
+[![Meet KĀRYA — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
 [Watch the demo video on YouTube](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
@@ -36,6 +42,9 @@ layer.
 
 ## Download
 
+The table below lists **upstream GenOffice releases** (the KĀRYA fork ships
+its own installers from its own distribution channel):
+
 | Platform                             | Requirements                                          | Download                                                                                                                         |
 | ------------------------------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [GenOffice-0.6.389-arm64.dmg](https://github.com/genspark-ai/genoffice/releases/download/v0.6.389/GenOffice-0.6.389-arm64.dmg)   |
@@ -50,7 +59,7 @@ Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/re
 
 ### Installing on Linux
 
-The deb installs with apt — it pulls in the dependencies and adds GenOffice
+The deb installs with apt — it pulls in the dependencies and adds the app
 to the applications menu:
 
 ```bash
@@ -77,12 +86,12 @@ chmod +x GenOffice-0.6.389.AppImage
 
 | App             | Product                | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | --------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/docs`     | **GenOffice Docs**     | `.docx` word processor. Byte-preserving round trip: only dirty paragraphs are regenerated (paragraph patch), everything else in the original file is kept byte-for-byte, so opening and saving never breaks layout in Word. Paginated view whose line metrics reproduce the original document's layout, tracked changes, comments, styles, equations, ink.                                                                                                                                                                                                      |
-| `apps/sheets`   | **GenOffice Sheets**   | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing.                                                                                                                                                                                                   |
-| `apps/slides`   | **GenOffice Slides**   | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `apps/pdf`      | **GenOffice PDF**      | `.pdf` viewer/editor on [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0) + [pdf-lib](https://github.com/Hopding/pdf-lib) (MIT): annotations, forms, outlines, stamps, signatures, page operations, and printing support. True text editing — paragraph selection with in-block reflow, alignment restoration, original-font preservation — and content-stream image insert/edit, all rewriting page content streams through [PDFium](https://pdfium.googlesource.com/pdfium/) wasm (BSD-3-Clause) with subset-embedded fonts — no cover-up annotations. |
-| `apps/markdown` | **GenOffice Markdown** | `.md` / `.markdown` editor: Tiptap block editor over plain Markdown files — headings, lists, tables, images, code blocks — saved back as plain Markdown, hosted in shell tabs.                                                                                                                                                                                                                                                                                                                                                                                  |
-| `apps/shell`    | **GenOffice**          | The suite shell: home screen, tabbed hosting of the five editors, light/dark/system theme, auto-update.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `apps/docs`     | **KĀRYA Docs**         | `.docx` word processor. Byte-preserving round trip: only dirty paragraphs are regenerated (paragraph patch), everything else in the original file is kept byte-for-byte, so opening and saving never breaks layout in Word. Paginated view whose line metrics reproduce the original document's layout, tracked changes, comments, styles, equations, ink.                                                                                                                                                                                                      |
+| `apps/sheets`   | **KĀRYA Sheets**       | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing.                                                                                                                                                                                                   |
+| `apps/slides`   | **KĀRYA Slides**       | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `apps/pdf`      | **KĀRYA PDF**          | `.pdf` viewer/editor on [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0) + [pdf-lib](https://github.com/Hopding/pdf-lib) (MIT): annotations, forms, outlines, stamps, signatures, page operations, and printing support. True text editing — paragraph selection with in-block reflow, alignment restoration, original-font preservation — and content-stream image insert/edit, all rewriting page content streams through [PDFium](https://pdfium.googlesource.com/pdfium/) wasm (BSD-3-Clause) with subset-embedded fonts — no cover-up annotations. |
+| `apps/markdown` | **KĀRYA Markdown**     | `.md` / `.markdown` editor: Tiptap block editor over plain Markdown files — headings, lists, tables, images, code blocks — saved back as plain Markdown, hosted in shell tabs.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `apps/shell`    | **KĀRYA**              | The suite shell: home screen, tabbed hosting of the five editors, light/dark/system theme, auto-update.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Every app embeds the same AI panel: block-granular AI editing with version
 snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
@@ -93,13 +102,29 @@ tokens (`packages/ui`), with a CI guard that keeps chrome colors on the token
 system. Document surfaces stay light in dark mode — Word-style dark chrome
 around white paper — so files render and export identically in both themes.
 
-**AI backend (Genspark).** The apps sign in to a Genspark account through a
-device-code flow; no model API key is entered or stored by the user. Model
-calls route through the Genspark proxy (Claude, GPT, and Gemini families).
-The same account also unlocks the Genspark ("gsk") tool endpoints the agents
-build on — web and image search, image generation and editing,
-image/audio/video analysis, and audio transcription — all reachable through
-`packages/ai-search` for anyone extending the agent layer.
+**AI backends (multi-provider).** Every app's AI panel can run against the
+provider of your choice, selected in the AI settings dialog:
+
+- **Genspark** — sign in with a Genspark account (device-code flow, no API
+  key to manage). Model calls route through the Genspark proxy (Claude,
+  GPT, and Gemini families), and the same account unlocks the Genspark
+  ("gsk") tool endpoints the agents build on — web and image search, image
+  generation and editing, image/audio/video analysis, and audio
+  transcription — all reachable through `packages/ai-search` for anyone
+  extending the agent layer.
+- **Direct vendors** — Anthropic Claude, Google Gemini, DeepSeek, and OpenAI
+  with your own API key.
+- **Custom OpenAI-compatible endpoint** — any server implementing the OpenAI
+  chat-completions API, with a configurable base URL.
+- **Ollama (local)** — fully local inference through a locally running
+  Ollama server (default `http://localhost:11434/v1`); installed models are
+  discovered from the server and no API key is needed.
+
+There is **no automatic cloud fallback**: the selected provider handles every
+request, so choosing Ollama means your prompts and documents never leave your
+machine. See [docs/providers.md](docs/providers.md) for the configuration
+model, [docs/ollama.md](docs/ollama.md) for the local-AI guide, and
+[docs/installation.md](docs/installation.md) for Windows setup.
 
 ## Engine packages
 
@@ -119,6 +144,20 @@ All pure TypeScript, no Electron dependency, unit-tested (except the UI kit):
 - `packages/i18n`, `packages/ui`, `packages/project-store`,
   `packages/electron-utils` — shared i18n core, React UI kit, recent-files
   store, and Electron main-process helpers.
+
+## Documentation
+
+- [docs/installation.md](docs/installation.md) — Windows installation,
+  installer usage, prerequisites, and Ollama setup for the fork.
+- [docs/ollama.md](docs/ollama.md) — the local-AI guide: endpoint, model
+  discovery, provider selection, and common errors.
+- [docs/providers.md](docs/providers.md) — supported providers, the
+  configuration model (provider / model / baseUrl / apiKey), and privacy.
+- [docs/development.md](docs/development.md) — repository structure,
+  provider architecture, how to add a provider, how tests work, and build
+  instructions.
+- [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) — the pre-release
+  verification checklist.
 
 ## Development
 
@@ -159,21 +198,24 @@ editor didn't touch survives the round trip untouched.
 
 ## FAQ
 
-**Is GenOffice free?**
-Yes. GenOffice is free and open-source under the Apache-2.0 license — no
+**Is KĀRYA free?**
+Yes. KĀRYA is free and open-source under the Apache-2.0 license — no
 trial, no paid tier for the apps themselves.
 
-**Can GenOffice open Microsoft Word, Excel, and PowerPoint files?**
-Yes. GenOffice opens and saves native `.docx`, `.xlsx`, and `.pptx` files.
+**Can KĀRYA open Microsoft Word, Excel, and PowerPoint files?**
+Yes. KĀRYA opens and saves native `.docx`, `.xlsx`, and `.pptx` files.
 Saving is byte-preserving: parts of the file you didn't touch are written
 back byte-for-byte, so documents keep working in Microsoft Office.
 
-**Does GenOffice work offline?**
+**Does KĀRYA work offline?**
 Document editing is fully local — files never leave your machine to be
-opened, edited, or saved. The AI features (agents, search, image tools) sign
-in to a Genspark account and need a network connection.
+opened, edited, or saved. For AI, select **Ollama** in the AI settings and
+the entire AI panel runs locally with no network connection. Cloud providers
+(Genspark, OpenAI, Claude, Gemini, DeepSeek, custom endpoints) send prompts
+to their own APIs and need a connection — there is no automatic fallback
+between the two.
 
-**Can GenOffice edit PDF files?**
+**Can KĀRYA edit PDF files?**
 Yes — real PDF text and image editing that rewrites the page content stream
 with the original fonts preserved, not cover-up annotations.
 
@@ -185,7 +227,8 @@ AI-generated content.
 
 ## Acknowledgements
 
-GenOffice would not be possible without these open-source projects:
+KĀRYA (and its upstream GenOffice) would not be possible without these
+open-source projects:
 
 - [Electron](https://www.electronjs.org/) — the desktop runtime for every app.
 - [Univer](https://github.com/dream-num/univer) (Apache-2.0) — the spreadsheet
@@ -217,10 +260,11 @@ Caladea, Noto CJK subsets) are OFL/Apache.
 
 ## License
 
-GenOffice is licensed under the [Apache License 2.0](LICENSE), with one
-exception: the `ee/` directory is reserved for future enterprise modules and
-is covered by the [GenOffice Enterprise License](ee/LICENSE).
+KĀRYA is licensed under the [Apache License 2.0](LICENSE), as is its upstream
+GenOffice, with one exception: the `ee/` directory is reserved for future
+enterprise modules and is covered by the [GenOffice Enterprise License](ee/LICENSE).
 
 The GenOffice and Genspark names and logos are trademarks of Mainfunc, Inc.
 The Apache-2.0 license does not grant permission to use them (see section 6);
-forks should use their own branding.
+forks should use their own branding. KĀRYA is an independent product name of
+this fork and is not affiliated with Mainfunc, Inc.

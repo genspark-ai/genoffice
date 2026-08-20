@@ -1,5 +1,27 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fetchRemoteImage, remoteImageHeaders } from '../src/remote-image'
+
+// Mock the SSRF guard so tests don't depend on DNS resolution.
+// isSafeRemoteUrl blocks non-public hosts (127.0.0.1, etc.) and passes others.
+vi.mock('../src/safe-remote-url', () => ({
+  isSafeRemoteUrl: vi.fn(async (raw: unknown) => {
+    if (typeof raw !== 'string') return false
+    try {
+      const u = new URL(raw)
+      const host = u.hostname
+      if (host === '127.0.0.1' || host === 'localhost' || host === '::1') return false
+      return true
+    } catch {
+      return false
+    }
+  }),
+  fetchWithSsrfGuard: vi.fn(async (url: string, opts: Record<string, unknown> = {}) => {
+    const { isSafeRemoteUrl } = await import('../src/safe-remote-url')
+    if (!(await isSafeRemoteUrl(url))) return null
+    const fetchImpl = (opts.fetchImpl ?? globalThis.fetch) as typeof fetch
+    return fetchImpl(url, { headers: opts.headers as Record<string, string>, redirect: 'manual' })
+  }),
+}))
 
 const png = () => new Response('img', { status: 200 })
 

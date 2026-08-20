@@ -105,7 +105,12 @@ import {
   composeSkills,
   type AgentImage,
 } from '@genoffice/agent-core'
-import { defaultAiSettings, isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
+import {
+  createWorkspaceSkill,
+  defaultAiSettings,
+  isProviderConfigured,
+  type AiSettings,
+} from '@genoffice/ai-provider'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
 import {
@@ -836,6 +841,7 @@ export function App(): React.JSX.Element {
         createWorkbookSkill(sheetsSkillDeps()),
         createFilesSkill(availableAttachments),
         createSearchSkill(),
+        createWorkspaceSkill((query, k) => window.desktopApi.workspaceSearch(query, k)),
       ]),
       // guide loading adds a tool round; the default 8 cuts off multi-step work
       maxTurns: 24,

@@ -75,6 +75,12 @@ function typeInto(textarea: HTMLTextAreaElement, text: string) {
 beforeAll(() => {
   // jsdom has no scrollTo; the panel auto-scrolls its chat log
   Element.prototype.scrollTo ??= () => {}
+  // jsdom has no preload bridge: the panel loads/saves its persisted chat through it
+  const w = window as unknown as { desktop?: unknown }
+  w.desktop = {
+    aiChatLoad: async () => [],
+    aiChatSave: async () => {},
+  }
 })
 
 describe('AiPanel collapse', () => {

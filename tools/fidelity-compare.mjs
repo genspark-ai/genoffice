@@ -5,7 +5,7 @@
  *   export to PDF → pdftoppm PNG per page (96dpi, 16:9 → 1280×720).
  *   (PowerPoint AppleScript needs its first-run screens clicked through once per machine;
  *   before that the process starts windowless and every apple event times out.)
- * Our side: playwright drives the packaged GenOffice Slides (Electron) with zoom locked at 100%,
+ * Our side: playwright drives the packaged KARYA Slides (Electron) with zoom locked at 100%,
  *   clicks through the thumbnails page by page, and screenshots the canvas element .stage-rel.
  * Compare: pixelmatch per-pixel diff (bilinear-scaled to the same size first), emitting a side-by-side HTML report.
  *
@@ -142,7 +142,7 @@ function exportPdfViaPowerPoint(pptx, outPdf) {
 }
 
 /**
- * Opens GenOffice Slides and, page by page, composites the main canvas's Konva layers into a PNG
+ * Opens KARYA Slides and, page by page, composites the main canvas's Konva layers into a PNG
  * (in-page toDataURL, unaffected by window size/zoom/DPR; output = slide logical pixels 1280×720).
  */
 async function shootOurs(pptx, dir, thumbIndexes) {
@@ -316,7 +316,7 @@ ${rows
   .map(
     (r) => `
 <h2>${r.deck} · slide ${r.slide} · <span class="pct ${r.pct > 0.08 ? 'bad' : 'ok'}">${(r.pct * 100).toFixed(1)}% mismatch</span></h2>
-<table><tr><td>reference<br><img src="${rel(r.ref)}"></td><td>GenOffice Slides<br><img src="${rel(r.ours)}"></td><td>diff<br><img src="${rel(r.diff)}"></td></tr></table>`,
+<table><tr><td>reference<br><img src="${rel(r.ref)}"></td><td>KARYA Slides<br><img src="${rel(r.ours)}"></td><td>diff<br><img src="${rel(r.diff)}"></td></tr></table>`,
   )
   .join('')}
 `

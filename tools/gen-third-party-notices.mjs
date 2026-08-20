@@ -246,7 +246,7 @@ const seed = importedNames()
 const { resolved, missing } = closure(seed)
 resolved.sort(([a], [b]) => a.localeCompare(b))
 
-let out = `GenOffice — Third-Party Software Notices
+let out = `KĀRYA — Third-Party Software Notices
 
 This application includes third-party software components under the licenses
 reproduced below.

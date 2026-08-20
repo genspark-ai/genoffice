@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import logoLockup from './assets/genoffice-logo.svg'
+import logoLockup from './assets/karya-logo.svg'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
@@ -18,6 +18,7 @@ import type {
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
+import { AboutDialog } from './AboutDialog'
 import { SettingsModal } from './SettingsModal'
 
 declare global {
@@ -1012,6 +1013,7 @@ export function Home() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
+  const [aboutOpen, setAboutOpen] = useState(false)
   // name in the greeting; omitted when logged out
   const [accountName, setAccountName] = useState('')
   // Genspark Projects is web-account data, so its nav entry only shows when logged in
@@ -1949,7 +1951,7 @@ export function Home() {
     <div className="home">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
+          <img className="logo-lockup" src={logoLockup} alt="KĀRYA" />
         </div>
 
         <nav className="sidebar-nav">
@@ -2051,6 +2053,13 @@ export function Home() {
         )}
 
         <AccountEntry onStatusChange={handleAccountStatus} />
+        <button className="about-entry" onClick={() => setAboutOpen(true)}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M8 7.2v3.2M8 4.8h.01" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+          <span className="nav-label">{t('aboutTitle')}</span>
+        </button>
       </aside>
 
       {selectedProjectId ? (
@@ -2060,6 +2069,8 @@ export function Home() {
       ) : (
         renderGlobalContent()
       )}
+
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
 
       {confirmDelete && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>

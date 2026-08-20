@@ -10,23 +10,14 @@ import { join } from 'node:path'
 import {
   AiCreditsError,
   AiTimeoutError,
-  defaultAiSettings,
-  listOllamaModels,
   providerRequiresApiKey,
-  resolveAiSettings,
   setRescueFetch,
   streamForProvider,
-  testProviderConnection,
-  type AiConnectionTestInput,
-  type AiProviderConfig,
-  type AiProviderId,
-  type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
-  type LegacyAiSettings,
-  type OllamaModelsResult,
 } from '@genoffice/ai-provider'
+import { registerAiSettingsIpc } from '@genoffice/ai-provider/ipc'
 import { fetchRemoteImage } from '@genoffice/electron-utils'
 import {
   webSearch,
@@ -67,9 +58,11 @@ export function registerAiIpc(): void {
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
 
-  ipcMain.handle('ai:get-settings', (): AiSettings => {
-    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
-    return resolveAiSettings(stored, defaultAiSettings())
+  registerAiSettingsIpc({
+    settingsPath: AI_SETTINGS_PATH,
+    readJson,
+    writeJson,
+    gensparkApiKey: gskApiKey,
   })
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
@@ -85,33 +78,6 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:gsk-login', () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
-  })
-
-  ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJson(AI_SETTINGS_PATH(), settings)
-  })
-
-  ipcMain.handle(
-    'ai:ollama-models',
-    async (_event, baseUrl?: string): Promise<OllamaModelsResult> => {
-      try {
-        return await listOllamaModels(baseUrl)
-      } catch (err) {
-        return { models: [], error: String(err) }
-      }
-    },
-  )
-
-  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
-    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
-    const provider = raw.provider
-    if (!provider) return { ok: false as const, status: 'unknown' as const }
-    const config: AiProviderConfig = {
-      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
-      model: typeof raw.model === 'string' ? raw.model : '',
-      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
-    }
-    return testProviderConnection(provider, config)
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
