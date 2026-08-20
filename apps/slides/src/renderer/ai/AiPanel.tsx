@@ -7,6 +7,7 @@ import {
   type ToolDisplay,
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
+import { isProviderConfigured } from '@genoffice/ai-provider'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import {
@@ -22,7 +23,7 @@ import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { Markdown, AiSettingsDialog, IconSettings } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -261,6 +262,7 @@ interface AiPanelProps {
   applyDeck: (slides: RenderSlide[], goTo?: number) => void
   fitWidthPx: number
   settings: AiSettings
+  onSettingsChange?: (next: AiSettings) => void
   /** Preset instruction pushed from the ribbon/start screen; sent immediately when autoRun. When displayText exists the chat bubble shows only it while the full text still goes to the model.
       attachments are local files added in the start-screen input, taking effect with the first message.
       slideShot attaches a rendering of the current slide so the model sees what it's editing (AI Beautify) */
@@ -356,6 +358,7 @@ export function AiPanel({
   applyDeck,
   fitWidthPx,
   settings,
+  onSettingsChange,
   preset,
   open = true,
   onExpand,
@@ -368,6 +371,24 @@ export function AiPanel({
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [chat, setChat] = useState<ChatEntry[]>([])
+  // Cross-app persistence (#33): the transcript lives in the main-process store,
+  // so tab switches and restarts keep the conversation.
+  useEffect(() => {
+    let alive = true
+    void window.slidesApi.aiChatLoad('slides').then((entries) => {
+      if (alive && entries.length > 0) {
+        setChat((entries as ChatEntry[]).filter((e) => !e.streaming))
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (chat.length === 0) return
+    const timer = setTimeout(() => void window.slidesApi.aiChatSave('slides', chat), 500)
+    return () => clearTimeout(timer)
+  }, [chat])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
@@ -424,6 +445,7 @@ export function AiPanel({
     attachScrollFadeRef.current = window.setTimeout(() => el.classList.remove('is-scrolling'), 800)
   }
   const [dragOver, setDragOver] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // preferred = the user's chosen width (session only); panelWidth = what fits
   // the current window. Deriving the display width from the preference means a
   // transiently small window never permanently shrinks the panel.
@@ -1697,6 +1719,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setSettingsOpen(true)}
+            data-tip={t('aiSettingsTitle')}
+            aria-label={t('aiSettingsTitle')}
+          >
+            <IconSettings size={15} />
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -1720,6 +1750,11 @@ export function AiPanel({
         </div>
       </div>
 
+      {!isProviderConfigured(settings) && (
+        <div className="ai-not-configured" role="status">
+          {t('aiNotConfigured')}
+        </div>
+      )}
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* Past conversation (read-only transcript, not fed to the model), displayed continuously with the current turn */}
         {historicChat.length > 0 && (
@@ -2051,6 +2086,40 @@ export function AiPanel({
             </div>
           </div>
         </div>
+      )}
+      {settingsOpen && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+            aiSettingsTestButton: t('aiSettingsTestButton'),
+            aiSettingsTestConnected: t('aiSettingsTestConnected'),
+            aiSettingsTestNotRunning: t('aiSettingsTestNotRunning'),
+            aiSettingsTestRefused: t('aiSettingsTestRefused'),
+            aiSettingsTestInvalid: t('aiSettingsTestInvalid'),
+            aiSettingsTestAuth: t('aiSettingsTestAuth'),
+            aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
+            aiSettingsTestFailed: t('aiSettingsTestFailed'),
+          }}
+          listOllamaModels={(baseUrl) => window.slidesApi.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onTestConnection={(provider, input) => window.slidesApi.aiTestConnection({ provider, ...input })}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
     </aside>
   )

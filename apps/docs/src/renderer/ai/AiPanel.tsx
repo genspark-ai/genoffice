@@ -11,9 +11,11 @@ import { createDocsSkill } from './docs-skill'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_AGENT_MAX_TURNS, DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { createFilesSkill } from './files-skill'
+import { createWorkspaceSkill } from './workspace-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { isProviderConfigured } from '@genoffice/ai-provider'
+import { Markdown, AiSettingsDialog, IconSettings } from '@genoffice/ui'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -262,6 +264,8 @@ interface AiPanelProps {
   onCollapse?: () => void
   /** Absolute path of the currently open file (used for chat-history persistence) */
   filePath?: string | null
+  /** Persist updated AI settings (called when the user saves changes in the settings dialog) */
+  onSettingsChange?: (next: AiSettings) => void
 }
 
 export function AiPanel({
@@ -275,6 +279,7 @@ export function AiPanel({
   onExpand,
   onCollapse,
   filePath,
+  onSettingsChange,
 }: AiPanelProps) {
   const { t } = useI18n()
   const [input, setInput] = useState('')
@@ -282,6 +287,24 @@ export function AiPanel({
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
   const [chat, setChat] = useState<ChatEntry[]>([])
+  // Cross-app persistence (#33): the transcript lives in the main-process store,
+  // so tab switches and restarts keep the conversation.
+  useEffect(() => {
+    let alive = true
+    void window.desktop.aiChatLoad('docs').then((entries) => {
+      if (alive && entries.length > 0) {
+        setChat((entries as ChatEntry[]).filter((e) => !e.streaming))
+      }
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (chat.length === 0) return
+    const timer = setTimeout(() => void window.desktop.aiChatSave('docs', chat), 500)
+    return () => clearTimeout(timer)
+  }, [chat])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
   const [trackChanges, setTrackChanges] = useState(
@@ -298,6 +321,8 @@ export function AiPanel({
       files skill must keep reading them mid-run and in follow-up turns. Deduped by path
       against the live composer list. */
   const sentAttachmentsRef = useRef<AttachmentMeta[]>([])
+  /** AI settings dialog open/closed */
+  const [settingsOpen, setSettingsOpen] = useState(false)
   useEffect(() => {
     // previews cover the composer plus every image echoed on a sent/history message
     // (history chips re-read the file by its stored path; a deleted file keeps the placeholder)
@@ -552,6 +577,7 @@ export function AiPanel({
           () => (trackChangesRef.current ? { author: AI_REVISION_AUTHOR } : undefined),
         ),
         createFilesSkill(availableAttachments),
+        createWorkspaceSkill(),
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {
@@ -654,22 +680,23 @@ export function AiPanel({
             }
             return next
           })
-          // Signed-out failures get an inline sign-in button; detected via
-          // gsk status rather than matching the localized error text
-          void window.desktop
-            .aiGskStatus()
-            .then((status) => {
-              if (status.loggedIn) return
-              setChat((prev) => {
-                const next = [...prev]
-                const last = next.at(-1)
-                if (last?.role === 'assistant' && last.error) {
-                  next[next.length - 1] = { ...last, loginRequired: true }
-                }
-                return next
+          // Signed-out failures get an inline sign-in button; only relevant for genspark provider
+          if (settingsRef.current.provider === 'genspark') {
+            void window.desktop
+              .aiGskStatus()
+              .then((status) => {
+                if (status.loggedIn) return
+                setChat((prev) => {
+                  const next = [...prev]
+                  const last = next.at(-1)
+                  if (last?.role === 'assistant' && last.error) {
+                    next[next.length - 1] = { ...last, loginRequired: true }
+                  }
+                  return next
+                })
               })
-            })
-            .catch(() => {})
+              .catch(() => {})
+          }
           setBusy(false)
         },
       },
@@ -953,6 +980,14 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            className="ai-header-btn"
+            onClick={() => setSettingsOpen(true)}
+            data-tip={t('aiSettingsTitle')}
+            aria-label={t('aiSettingsTitle')}
+          >
+            <IconSettings size={15} />
+          </button>
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
@@ -976,6 +1011,11 @@ export function AiPanel({
         </div>
       </div>
 
+      {!isProviderConfigured(settings) && (
+        <div className="ai-not-configured" role="status">
+          {t('aiNotConfigured')}
+        </div>
+      )}
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
         {/* past conversation (read-only transcript, not fed to the model), shown continuously with the current turn */}
         {historicChat.length > 0 && (
@@ -1254,6 +1294,40 @@ export function AiPanel({
           }
         />
       </div>
+      {settingsOpen && (
+        <AiSettingsDialog
+          settings={settings}
+          strings={{
+            aiSettingsProvider: t('aiSettingsProvider'),
+            aiSettingsApiKey: t('aiSettingsApiKey'),
+            aiSettingsApiKeyHint: t('aiSettingsApiKeyHint'),
+            aiSettingsBaseUrl: t('aiSettingsBaseUrl'),
+            aiSettingsDetectedModels: t('aiSettingsDetectedModels'),
+            aiSettingsRefresh: t('aiSettingsRefresh'),
+            aiSettingsNoModel: t('aiSettingsNoModel'),
+            aiSettingsTestFail: t('aiSettingsTestFail'),
+            aiSettingsCancel: t('aiSettingsCancel'),
+            aiSettingsSave: t('aiSettingsSave'),
+            aiSettingsModel: t('aiSettingsModel'),
+            aiSettingsGensparkLogin: t('aiSettingsGensparkLogin'),
+            aiSettingsGensparkConnected: t('aiSettingsGensparkConnected'),
+            aiSettingsGensparkDisconnected: t('aiSettingsGensparkDisconnected'),
+            aiSettingsOllamaBaseUrlHint: t('aiSettingsOllamaBaseUrlHint'),
+            aiSettingsTestButton: t('aiSettingsTestButton'),
+            aiSettingsTestConnected: t('aiSettingsTestConnected'),
+            aiSettingsTestNotRunning: t('aiSettingsTestNotRunning'),
+            aiSettingsTestRefused: t('aiSettingsTestRefused'),
+            aiSettingsTestInvalid: t('aiSettingsTestInvalid'),
+            aiSettingsTestAuth: t('aiSettingsTestAuth'),
+            aiSettingsTestTimeout: t('aiSettingsTestTimeout'),
+            aiSettingsTestFailed: t('aiSettingsTestFailed'),
+          }}
+          listOllamaModels={(baseUrl) => window.desktop.aiOllamaModels(baseUrl).then((r) => r.models)}
+          onTestConnection={(provider, input) => window.desktop.aiTestConnection({ provider, ...input })}
+          onSettingsChange={(next) => onSettingsChange?.(next)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </aside>
   )
 }

@@ -5,10 +5,15 @@ import { ADDABLE_SHAPE_TYPES } from './shape-types'
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
 } from '@genoffice/ai-provider'
 
 const MAX_RANGE_CELLS = 20_000
@@ -2328,6 +2333,18 @@ export interface DesktopApi {
   /// Opens the browser to sign in to Genspark (fire-and-forget; aiGskStatus
   /// becomes signed-in on completion)
   aiGskLogin(): Promise<void>
+  /// List locally-available Ollama models (Ollama's /api/tags endpoint)
+  aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
+  /// Lightweight provider connection test (never returns stack traces)
+  aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
+  /// Load the persisted AI chat transcript for this app (main-process store, cross-tab persistence)
+  aiChatLoad(appId: string): Promise<unknown[]>
+  /// Persist the AI chat transcript for this app (main-process store)
+  aiChatSave(appId: string, entries: unknown[]): Promise<void>
+  /// Build/refresh the local Workspace Q&A index over saved documents (Ollama embeddings)
+  workspaceIndex(): Promise<WorkspaceIndexResult>
+  /// Semantic search over the Workspace Q&A index
+  workspaceSearch(query: string, k?: number): Promise<WorkspaceSearchResult>
   /// Web search (main-process Serper/DuckDuckGo, shared with docs/slides)
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
   /// Image search (same shared main-process channel as docs/slides)

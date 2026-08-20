@@ -2,9 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
   AiChatResponse,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import type {
@@ -365,6 +368,24 @@ const desktopApi: DesktopApi = {
   async aiGskLogin() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiGskLogin)
   },
+  async aiOllamaModels(baseUrl?) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiOllamaModels, baseUrl)
+    if (!isRecord(result) || !Array.isArray(result.models)) {
+      throw new Error('Invalid Ollama models response.')
+    }
+    return result as unknown as OllamaModelsResult
+  },
+  async aiTestConnection(input: AiConnectionTestInput) {
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiTestConnection, input)
+    if (
+      !isRecord(result) ||
+      typeof result.ok !== 'boolean' ||
+      typeof result.status !== 'string'
+    ) {
+      throw new Error('Invalid connection test response.')
+    }
+    return result as unknown as AiConnectionTestResult
+  },
   async webSearch(query, maxResults) {
     if (typeof query !== 'string' || !query.trim() || query.length > 512) {
       throw new Error('Invalid search query.')
@@ -404,6 +425,10 @@ const desktopApi: DesktopApi = {
     }
     return result as { base64: string; mime: string }
   },
+  aiChatLoad: (appId: string) => ipcRenderer.invoke(IPC_CHANNELS.aiChatLoad, appId),
+  aiChatSave: (appId: string, entries: unknown[]) => ipcRenderer.invoke(IPC_CHANNELS.aiChatSave, appId, entries),
+  workspaceIndex: () => ipcRenderer.invoke(IPC_CHANNELS.workspaceIndex),
+  workspaceSearch: (query: string, k?: number) => ipcRenderer.invoke(IPC_CHANNELS.workspaceSearch, query, k),
   onAiStream(callback) {
     const listener = (_event: unknown, chunk: unknown): void => {
       if (

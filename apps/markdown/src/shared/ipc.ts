@@ -1,5 +1,14 @@
 import type { Lang } from '@genoffice/i18n'
-import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
+import type {
+  AiConnectionTestInput,
+  AiConnectionTestResult,
+  AiSettings,
+  AiStreamChunk,
+  AiStreamRequest,
+  OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
+} from '@genoffice/ai-provider'
 
 export const MARKDOWN_CHANNELS = {
   consumePending: 'markdown:consume-pending',
@@ -55,10 +64,17 @@ export type SaveMarkdownResult =
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
+  setSettings: 'ai:set-settings',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
   webSearch: 'ai:web-search',
+  ollamaModels: 'ai:ollama-models',
+  testConnection: 'ai:test-connection',
+  chatLoad: 'ai:chat-load',
+  chatSave: 'ai:chat-save',
+  workspaceIndex: 'workspace:index',
+  workspaceSearch: 'workspace:search',
 } as const
 
 export interface WebSearchResult {
@@ -144,9 +160,16 @@ export interface MarkdownApi {
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void
   getAiSettings(): Promise<AiSettings>
+  setAiSettings(settings: AiSettings): Promise<void>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
+  aiOllamaModels(baseUrl?: string): Promise<OllamaModelsResult>
+  aiTestConnection(input: AiConnectionTestInput): Promise<AiConnectionTestResult>
+  aiChatLoad(appId: string): Promise<unknown[]>
+  aiChatSave(appId: string, entries: unknown[]): Promise<void>
+  workspaceIndex(): Promise<WorkspaceIndexResult>
+  workspaceSearch(query: string, k?: number): Promise<WorkspaceSearchResult>
   /** Main-process web search (Serper/DuckDuckGo via the shared ai:web-search handler) */
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
 }

@@ -10,16 +10,24 @@
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
 import type {
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
+  WorkspaceIndexResult,
+  WorkspaceSearchResult,
 } from '@genoffice/ai-provider'
 
 export type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
 
 // Canonical definitions of AI-related types live in @genoffice/ai-provider / @genoffice/agent-core (shared with docs)
 export type {
+  AiConnectionStatus,
+  AiConnectionTestInput,
+  AiConnectionTestResult,
   AiProviderConfig,
   AiProviderId,
   AiProviderMeta,
@@ -27,6 +35,7 @@ export type {
   AiStreamChunk,
   AiStreamRequest,
   GenSparkAccountStatus,
+  OllamaModelsResult,
 } from '@genoffice/ai-provider'
 export { AI_PROVIDERS } from '@genoffice/ai-provider'
 export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
@@ -1384,6 +1393,18 @@ export interface SlidesApi {
   aiGskStatus: (withEmail?: boolean) => Promise<GenSparkAccountStatus>
   /** Open the browser to log into Genspark (fire-and-forget; aiGskStatus turns logged-in once done) */
   aiGskLogin: () => Promise<void>
+  /** List locally-available Ollama models (Ollama's /api/tags endpoint) */
+  aiOllamaModels: (baseUrl?: string) => Promise<OllamaModelsResult>
+  /** Lightweight provider connection test (never returns stack traces) */
+  aiTestConnection: (input: AiConnectionTestInput) => Promise<AiConnectionTestResult>
+  /** Load the persisted AI chat transcript for this app (main-process store, cross-tab persistence) */
+  aiChatLoad: (appId: string) => Promise<unknown[]>
+  /** Persist the AI chat transcript for this app (main-process store) */
+  aiChatSave: (appId: string, entries: unknown[]) => Promise<void>
+  /** Build/refresh the local Workspace Q&A index over saved documents (Ollama embeddings) */
+  workspaceIndex: () => Promise<WorkspaceIndexResult>
+  /** Semantic search over the Workspace Q&A index */
+  workspaceSearch: (query: string, k?: number) => Promise<WorkspaceSearchResult>
   webSearch: (
     query: string,
     maxResults?: number,

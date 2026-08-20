@@ -115,7 +115,7 @@ import {
   composeSkills,
   type AgentImage,
 } from '@genoffice/agent-core'
-import type { AiSettings } from '@genoffice/ai-provider'
+import { defaultAiSettings, isProviderConfigured, type AiSettings } from '@genoffice/ai-provider'
 import {
   copyTargetBounds,
   replaceOccurrences,
@@ -676,8 +676,8 @@ export function App(): React.JSX.Element {
 
   // ---- AI: real LLM agent (falls back to the deterministic planner above
   // when no provider is configured — see isAgentConfigured/handleSend) ----
-  const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
-  const aiSettingsRef = useRef<AiSettings | null>(null)
+  const [aiSettings, setAiSettingsState] = useState<AiSettings>(defaultAiSettings)
+  const aiSettingsRef = useRef<AiSettings>(aiSettings)
   aiSettingsRef.current = aiSettings
   const [aiBusy, setAiBusy] = useState(false)
   // Display history survives restarts via localStorage; the AgentLoop's model
@@ -1090,14 +1090,11 @@ export function App(): React.JSX.Element {
   }
 
   function isAgentConfigured(): boolean {
-    const settings = aiSettingsRef.current
-    if (!settings) return false
-    const config = settings.providers[settings.provider]
-    if (!config?.model) return false
-    // Genspark's key never lands in the settings file; the main process injects
-    // it from the gsk login state. When logged out, requests return an error
-    // guiding sign-in — not intercepted here.
-    return settings.provider === 'genspark' || !!config.apiKey
+    // Shared readiness check: key-optional providers (local Ollama) count as
+    // configured once a model is selected; Genspark counts as configured and
+    // login errors guide sign-in at request time (the key is injected by the
+    // main process from the gsk login state).
+    return isProviderConfigured(aiSettingsRef.current)
   }
 
   /** Image attachments read as base64 and sent multimodal with this user message
@@ -4241,6 +4238,11 @@ export function App(): React.JSX.Element {
         onCreateConsolidate={(config) => handleCreateConsolidateImpl(dataToolsContext(), config)}
         onGetConsolidateDefault={() => consolidateDefaultReferenceImpl(dataToolsContext())}
         onApplyHeaderFooter={(result) => handleApplyHeaderFooterImpl(pageLayoutContext(), result)}
+        settings={aiSettings}
+        onSettingsChange={(next) => {
+          setAiSettingsState(next)
+          void window.desktopApi.setAiSettings(next)
+        }}
       />
       {advancedFilterColumns !== null && (
         <AdvancedFilterDialog

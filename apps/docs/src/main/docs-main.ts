@@ -35,21 +35,28 @@ import type {
   WebContents,
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
+import { registerWorkspaceIpc } from './ai-workspace'
 import {
   AiCreditsError,
   AiTimeoutError,
   isAiNetworkError,
   chatForProvider,
   defaultAiSettings,
+  listOllamaModels,
+  providerRequiresApiKey,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
+  testProviderConnection,
   type AiChatRequest,
+  type AiConnectionTestInput,
+  type AiProviderConfig,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
+  type OllamaModelsResult,
 } from '@genoffice/ai-provider'
 import {
   ensureGenofficeLogin,
@@ -2536,10 +2543,7 @@ const activeAiStreams = new Map<string, AbortController>()
 export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings with another provider are reset
-    settings.provider = 'genspark'
-    return settings
+    return resolveAiSettings(stored, defaultAiSettings())
   })
 
   // Genspark account (gsk login state): auth source for AI features; the frontend uses it to prompt login when logged out
@@ -2561,6 +2565,51 @@ export function registerAiIpc(): void {
     writeJson(SETTINGS_PATH(), settings)
   })
 
+  // ── Cross-app AI panel state (issue #33): per-app chat transcripts live in
+  // the main process so switching tabs / restarting keeps each conversation. ──
+  ipcMain.handle('ai:chat-load', (_event, appId: unknown): unknown[] => {
+    if (typeof appId !== 'string' || !/^[a-z0-9-]+$/.test(appId)) return []
+    return readJson<unknown[]>(join(userDataPath('ai-chat'), `${appId}.json`), [])
+  })
+  ipcMain.handle('ai:chat-save', (_event, appId: unknown, entries: unknown): void => {
+    if (typeof appId !== 'string' || !/^[a-z0-9-]+$/.test(appId) || !Array.isArray(entries)) return
+    writeJson(join(userDataPath('ai-chat'), `${appId}.json`), entries)
+  })
+
+  // ── Workspace Q&A: local RAG over saved documents (Ollama embeddings) ──
+  registerWorkspaceIpc({
+    settingsPath: SETTINGS_PATH,
+    userDataPath,
+    saveDir: defaultSaveDir,
+  })
+
+  ipcMain.handle(
+    'ai:ollama-models',
+    async (_event, baseUrl?: string): Promise<OllamaModelsResult> => {
+      try {
+        return await listOllamaModels(baseUrl)
+      } catch (err) {
+        return { models: [], error: String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
+    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
+    const provider = raw.provider
+    if (!provider) return { ok: false as const, status: 'unknown' as const }
+    let config: AiProviderConfig = {
+      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
+      model: typeof raw.model === 'string' ? raw.model : '',
+      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
+    }
+    // the genspark key lives in the gsk login state, never the settings file
+    if (provider === 'genspark' && !config.apiKey) {
+      config = { ...config, apiKey: gskApiKey() }
+    }
+    return testProviderConnection(provider, config)
+  })
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, settings, system, messages } = request
     const tools = request.tools ?? []
@@ -2574,7 +2623,7 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (providerRequiresApiKey(provider) && !config?.apiKey) {
       send({
         requestId,
         type: 'error',
@@ -2682,7 +2731,7 @@ export function registerAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (providerRequiresApiKey(provider) && !config?.apiKey) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),

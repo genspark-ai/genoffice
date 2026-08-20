@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
-import type { AiStreamChunk } from '@genoffice/ai-provider'
+import type { AiConnectionTestInput, AiStreamChunk } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import { AI_CHANNELS, MARKDOWN_CHANNELS } from '../shared/ipc'
 import type { ExportFormat, MarkdownApi, SaveMode, UiTheme } from '../shared/ipc'
@@ -60,6 +60,7 @@ const api: MarkdownApi = {
     return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
   },
   getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  setAiSettings: (settings) => ipcRenderer.invoke(AI_CHANNELS.setSettings, settings),
   aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
   aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),
   onAiStream: (handler) => {
@@ -68,6 +69,12 @@ const api: MarkdownApi = {
     return () => ipcRenderer.removeListener(AI_CHANNELS.streamChunk, listener)
   },
   webSearch: (query, maxResults) => ipcRenderer.invoke(AI_CHANNELS.webSearch, query, maxResults),
+  aiOllamaModels: (baseUrl?: string) => ipcRenderer.invoke(AI_CHANNELS.ollamaModels, baseUrl),
+  aiTestConnection: (input: AiConnectionTestInput) => ipcRenderer.invoke(AI_CHANNELS.testConnection, input),
+  aiChatLoad: (appId: string) => ipcRenderer.invoke(AI_CHANNELS.chatLoad, appId),
+  aiChatSave: (appId: string, entries: unknown[]) => ipcRenderer.invoke(AI_CHANNELS.chatSave, appId, entries),
+  workspaceIndex: () => ipcRenderer.invoke(AI_CHANNELS.workspaceIndex),
+  workspaceSearch: (query: string, k?: number) => ipcRenderer.invoke(AI_CHANNELS.workspaceSearch, query, k),
 }
 
 /** Chat persistence: the shared project:* handlers are registered once by the shell (docs-main registerProjectIpc) */

@@ -12,14 +12,21 @@ import {
   AiTimeoutError,
   isAiNetworkError,
   defaultAiSettings,
+  listOllamaModels,
+  providerRequiresApiKey,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
+  testProviderConnection,
+  type AiConnectionTestInput,
+  type AiProviderConfig,
+  type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
   type GenSparkAccountStatus,
   type LegacyAiSettings,
+  type OllamaModelsResult,
 } from '@genoffice/ai-provider'
 import { fetchRemoteImage } from '@genoffice/electron-utils'
 import {
@@ -64,10 +71,7 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
-    const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
-    settings.provider = 'genspark'
-    return settings
+    return resolveAiSettings(stored, defaultAiSettings())
   })
 
   // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
@@ -89,6 +93,29 @@ export function registerAiIpc(): void {
     writeJson(AI_SETTINGS_PATH(), settings)
   })
 
+  ipcMain.handle(
+    'ai:ollama-models',
+    async (_event, baseUrl?: string): Promise<OllamaModelsResult> => {
+      try {
+        return await listOllamaModels(baseUrl)
+      } catch (err) {
+        return { models: [], error: String(err) }
+      }
+    },
+  )
+
+  ipcMain.handle('ai:test-connection', async (_event, input: unknown) => {
+    const raw = (input ?? {}) as Partial<AiConnectionTestInput>
+    const provider = raw.provider
+    if (!provider) return { ok: false as const, status: 'unknown' as const }
+    const config: AiProviderConfig = {
+      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
+      model: typeof raw.model === 'string' ? raw.model : '',
+      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
+    }
+    return testProviderConnection(provider, config)
+  })
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, settings, system, messages } = request
     const tools = request.tools ?? []
@@ -102,7 +129,7 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (providerRequiresApiKey(provider) && !config?.apiKey) {
       send({
         requestId,
         type: 'error',

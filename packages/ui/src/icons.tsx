@@ -47,3 +47,13 @@ export function IconEnter(props: IconProps) {
     </Svg>
   )
 }
+
+/** gear icon for AI settings */
+export function IconSettings(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="2" />
+      <path d="M7.05.5h1.9l.4 1.2a5.5 5.5 0 0 1 1.1.6l1.1-.6.9 1.6-1 .8a5.5 5.5 0 0 1 0 1.2l1 .8-.9 1.6-1.1-.6a5.5 5.5 0 0 1-1.1.6l-.4 1.2h-1.9l-.4-1.2a5.5 5.5 0 0 1-1.1-.6l-1.1.6-.9-1.6 1-.8a5.5 5.5 0 0 1 0-1.2l-1-.8.9-1.6 1.1.6a5.5 5.5 0 0 1 1.1-.6l.4-1.2Z" />
+    </Svg>
+  )
+}

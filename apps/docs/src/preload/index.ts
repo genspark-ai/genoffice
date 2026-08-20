@@ -9,6 +9,7 @@ import type {
   MenuCommand,
   UiTheme,
 } from '../shared/ipc'
+import type { AiConnectionTestInput } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 
 const api: DesktopApi = {
@@ -92,6 +93,12 @@ const api: DesktopApi = {
   aiChat: (request: AiChatRequest) => ipcRenderer.invoke('ai:chat', request),
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
+  aiOllamaModels: (baseUrl?: string) => ipcRenderer.invoke('ai:ollama-models', baseUrl),
+  aiTestConnection: (input: AiConnectionTestInput) => ipcRenderer.invoke('ai:test-connection', input),
+  aiChatLoad: (appId: string) => ipcRenderer.invoke('ai:chat-load', appId),
+  aiChatSave: (appId: string, entries: unknown[]) => ipcRenderer.invoke('ai:chat-save', appId, entries),
+  workspaceIndex: () => ipcRenderer.invoke('workspace:index'),
+  workspaceSearch: (query: string, k?: number) => ipcRenderer.invoke('workspace:search', query, k),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),
   aiGskLogin: () => ipcRenderer.invoke('ai:gsk-login'),
   webSearch: (query: string, maxResults?: number) =>

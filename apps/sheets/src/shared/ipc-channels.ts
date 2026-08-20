@@ -54,6 +54,13 @@ export const IPC_CHANNELS = {
   aiFetchImage: 'ai:fetch-image',
   // sheets: prefix — slides' ai:generate-image only registers once a slides view exists
   aiGenerateImage: 'sheets:ai-generate-image',
+  aiOllamaModels: 'ai:ollama-models',
+  aiTestConnection: 'ai:test-connection',
+  // Chat persistence and workspace Q&A
+  aiChatLoad: 'ai:chat-load',
+  aiChatSave: 'ai:chat-save',
+  workspaceIndex: 'workspace:index',
+  workspaceSearch: 'workspace:search',
   // Chat attachments (sheets: prefix — docs already registers global files:* in
   // the shell; avoids collisions)
   captureScreenSources: 'sheets:capture-screen-sources',

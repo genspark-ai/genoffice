@@ -15,8 +15,9 @@ export {
   type PopoverDismissOptions,
 } from './popover-dismiss'
 export { AiTypingIndicator } from './AiTypingIndicator'
-export { IconSend, IconStop, type IconProps } from './icons'
+export { IconSend, IconStop, IconSettings, type IconProps } from './icons'
 export { Markdown } from './Markdown'
+export { AiSettingsDialog, type AiSettingsDialogProps, type AiSettingsDialogStrings } from './AiSettingsDialog'
 export { isSymbolFontFamily } from './symbol-fonts'
 export { BUILTIN_FONT_FAMILIES, fontFamiliesFor } from './font-list'
 export {

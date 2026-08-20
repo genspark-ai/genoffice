@@ -896,3 +896,112 @@ it('rejects an unknown provider id', async () => {
     streamForProvider('unknown' as never, { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
   ).rejects.toThrow(/Unknown provider/)
 })
+
+describe('streamForProvider: ollama', () => {
+  it('streams via the OpenAI-compatible path with the default local base URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse(
+        sseStream([
+          'data: {"choices":[{"delta":{"content":"hello "}}]}',
+          'data: {"choices":[{"delta":{"content":"ollama"}}]}',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+          'data: [DONE]',
+        ]),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { deltas, stopReasons, cb } = collector()
+    await streamForProvider('ollama', { apiKey: '', model: 'llama3.2' }, 'sys', [], [], 100, cb)
+    expect(deltas.join('')).toBe('hello ollama')
+    expect(stopReasons).toEqual([])
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:11434/v1/chat/completions',
+      expect.anything(),
+    )
+  })
+
+  it('assembles streamed tool calls', async () => {
+    const body = sseStream([
+      'data: {"choices":[{"delta":{"content":"let me call a tool "}}]}',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"do_thing","arguments":"{\\"a\\": 1}"}}]}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { deltas, toolCalls, cb } = collector()
+    await streamForProvider('ollama', { apiKey: '', model: 'llama3.2' }, 'sys', [], [], 100, cb)
+    expect(deltas.join('')).toBe('let me call a tool ')
+    expect(toolCalls).toEqual([{ id: 'c1', name: 'do_thing', input: { a: 1 } }])
+  })
+
+  it('omits Authorization when no key is set', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'ollama',
+      { apiKey: '', model: 'm' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    ).catch(() => {})
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
+    expect(headers['Authorization']).toBeUndefined()
+    expect(headers['X-Agent-Type']).toBeUndefined()
+  })
+
+  it('sends Authorization when a key is configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'ollama',
+      { apiKey: 'remote-token', model: 'm' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    ).catch(() => {})
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
+    expect(headers['Authorization']).toBe('Bearer remote-token')
+  })
+
+  it('uses a custom base URL when configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'ollama',
+      { apiKey: '', model: 'm', baseUrl: 'http://192.168.1.10:11434/v1' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    ).catch(() => {})
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://192.168.1.10:11434/v1/chat/completions',
+      expect.anything(),
+    )
+  })
+
+  it('rejects on an empty stream like other OpenAI-compatible providers', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(sseStream([]))))
+    const { cb } = collector()
+    await expect(
+      streamForProvider('ollama', { apiKey: '', model: 'm' }, 'sys', [], [], 100, cb),
+    ).rejects.toThrow(/The model returned no content/)
+  })
+
+  it('existing openai-compatible provider streaming is unaffected', async () => {
+    const body = sseStream([
+      'data: {"choices":[{"delta":{"content":"hi"}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { deltas, cb } = collector()
+    await streamForProvider('openai', { apiKey: 'k', model: 'gpt-4.1-mini' }, 'sys', [], [], 100, cb)
+    expect(deltas.join('')).toBe('hi')
+  })
+})

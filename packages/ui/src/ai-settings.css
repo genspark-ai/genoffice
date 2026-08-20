@@ -1,0 +1,256 @@
+.ai-settings-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  font-family: inherit;
+}
+
+.ai-settings-dialog-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-dialog);
+  color: var(--text);
+}
+
+.ai-settings-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 0;
+}
+
+.ai-settings-dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ai-settings-dialog-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.ai-settings-dialog-close:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.ai-settings-dialog-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Provider dropdown */
+.ai-settings-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.ai-settings-field select,
+.ai-settings-field input[type="text"],
+.ai-settings-field input[type="password"] {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ai-settings-field select:focus,
+.ai-settings-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ai-settings-field-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* Genspark account section */
+.ai-settings-genspark-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ai-settings-genspark-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-settings-genspark-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.ai-settings-genspark-dot--connected {
+  background: var(--accent);
+}
+
+.ai-settings-genspark-login-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-settings-genspark-login-btn:hover {
+  background: var(--hover);
+}
+
+/* Model dropdown */
+.ai-settings-model-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.ai-settings-model-row .ai-settings-field {
+  flex: 1;
+}
+
+.ai-settings-model-refresh {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  height: 32px;
+}
+
+.ai-settings-model-refresh:hover {
+  background: var(--hover);
+}
+
+.ai-settings-model-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-settings-dialog-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 16px;
+}
+
+.ai-settings-dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-settings-test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ai-settings-test-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-settings-test-btn:hover {
+  background: var(--hover);
+}
+
+.ai-settings-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-settings-test-status {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-settings-test-status--ok {
+  color: var(--accent);
+}
+
+.ai-settings-test-status--fail {
+  color: var(--error);
+}
+
+.ai-settings-dialog-cancel {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ai-settings-dialog-cancel:hover {
+  background: var(--hover);
+}
+
+.ai-settings-dialog-save {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ai-settings-dialog-save:hover {
+  background: var(--accent-dark);
+}
+
+/* Modal close: ESC */
+@keyframes ai-settings-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
