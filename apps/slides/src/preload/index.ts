@@ -4,6 +4,8 @@ import type { ProjectApi } from '@genoffice/project-store'
 import type {
   AddChartOp,
   AddElementOp,
+  ApplyEditScriptOp,
+  ApplyTxnOp,
   AddImageBytesOp,
   AddInkOp,
   AddMediaBytesOp,
@@ -125,6 +127,8 @@ const api: SlidesApi = {
     width?: number
     height?: number
   }) => ipcRenderer.invoke('slides:cloud-page-generate', op),
+  localGeneratePage: (op: { specJson: string }) =>
+    ipcRenderer.invoke('slides:local-page-generate', op),
   editText: (op: EditTextOp) => ipcRenderer.invoke('slides:edit-text', op),
   setElementFont: (op: SetElementFontOp) => ipcRenderer.invoke('slides:set-element-font', op),
   setElementParagraphFormat: (op: SetElementParagraphFormatOp) =>
@@ -141,8 +145,15 @@ const api: SlidesApi = {
   editPictureOpacity: (op: EditPictureOpacityOp) =>
     ipcRenderer.invoke('slides:edit-picture-opacity', op),
   editImageFill: (op: EditFillImageOp) => ipcRenderer.invoke('slides:edit-image-fill', op),
-  changeShape: (op: { slideIndex: number; sourceId: string; prst: string }) =>
+  changeShape: (op: { slideIndex: number; sourceId: string; prst: string; groupId?: string }) =>
     ipcRenderer.invoke('slides:change-shape', op),
+  setShapeAdjust: (op: {
+    slideIndex: number
+    sourceId: string
+    adjust: Record<string, number>
+    groupId?: string
+    preview?: boolean
+  }) => ipcRenderer.invoke('slides:set-shape-adjust', op),
   setTextAnchor: (op: {
     slideIndex: number
     sourceId: string
@@ -248,6 +259,8 @@ const api: SlidesApi = {
     ipcRenderer.invoke('slides:native-clipboard', op),
   beginHistoryBatch: () => ipcRenderer.invoke('slides:history-batch-begin'),
   endHistoryBatch: () => ipcRenderer.invoke('slides:history-batch-end'),
+  applyEditScript: (op: ApplyEditScriptOp) => ipcRenderer.invoke('slides:apply-edit-script', op),
+  applyTxn: (op: ApplyTxnOp) => ipcRenderer.invoke('slides:apply-txn', op),
   aiSnapshotRestore: (id: number) => ipcRenderer.invoke('slides:ai-snapshot-restore', id),
   undo: () => ipcRenderer.invoke('slides:undo'),
   redo: () => ipcRenderer.invoke('slides:redo'),

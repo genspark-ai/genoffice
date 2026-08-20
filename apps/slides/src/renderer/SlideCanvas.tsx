@@ -50,6 +50,7 @@ import {
   type DrawRect,
 } from './draw-shape'
 import { shapePreviewPath } from './components/gallery-previews'
+import { adjustHandleSpecs } from './adjust-handles'
 
 /** Whether a node is a connector (read-only, no Transformer attached). */
 function isConnectorNode(node: RenderNode): boolean {
@@ -309,6 +310,8 @@ interface Props {
   onDrawCommit?: (rect: DrawRect) => void
   /** Draw mode cancelled from inside the canvas (Escape) */
   onDrawCancel?: () => void
+  /** Yellow adjust-handle drag: full avLst map; preview=true during the drag, false on release */
+  onAdjust?: (sourceId: string, adjust: Record<string, number>, preview: boolean) => void
 }
 
 /**
@@ -414,6 +417,96 @@ function applyChromeZoom(tr: Konva.Transformer, zoom: number, nodeCount: number)
   tr.getLayer()?.batchDraw()
 }
 
+/** PowerPoint's adjust-handle yellow — canvas editing chrome, identical in both
+ * themes (like the Transformer's white anchors). */
+const ADJUST_HANDLE_FILL = '#ffc94d'
+const ADJUST_HANDLE_STROKE = '#a97d00'
+
+/**
+ * Yellow adjust handles for the single selected adjustable shape (preset avLst
+ * edit). The handle position derives from the committed node; during a drag it
+ * is pinned imperatively to the constraint path, and onAdjust fires throttled
+ * preview commits (the rebuilt slide re-renders the geometry live) with a final
+ * non-preview commit on release — one whole drag = one undo step.
+ */
+function AdjustHandles({
+  node,
+  zoom,
+  chromeScale,
+  onAdjust,
+}: {
+  node: ShapeRenderNode
+  zoom: number
+  chromeScale: number
+  onAdjust: (adjust: Record<string, number>, preview: boolean) => void
+}) {
+  const specs = adjustHandleSpecs(node)
+  if (!specs.length) return null
+  const b = node.box
+  const val = (k: string, d: number) => node.adjust?.[k] ?? d
+  /** Committed values for every handle key (the engine rewrites the whole avLst) */
+  const fullAdjust = (): Record<string, number> => {
+    const out: Record<string, number> = { ...(node.adjust ?? {}) }
+    for (const sp of specs) for (const k of sp.keys) if (out[k.name] == null) out[k.name] = k.def
+    return out
+  }
+  const rot = ((b.rotationDeg || 0) * Math.PI) / 180
+  const cos = Math.cos(rot)
+  const sin = Math.sin(rot)
+  const toStage = (px: number, py: number) => {
+    const lx = b.flipH ? b.w - px : px
+    const ly = b.flipV ? b.h - py : py
+    const dx = lx - b.w / 2
+    const dy = ly - b.h / 2
+    return { x: b.x + b.w / 2 + dx * cos - dy * sin, y: b.y + b.h / 2 + dx * sin + dy * cos }
+  }
+  const toLocal = (sx: number, sy: number) => {
+    const dx = sx - (b.x + b.w / 2)
+    const dy = sy - (b.y + b.h / 2)
+    let lx = b.w / 2 + dx * cos + dy * sin
+    let ly = b.h / 2 - dx * sin + dy * cos
+    if (b.flipH) lx = b.w - lx
+    if (b.flipV) ly = b.h - ly
+    return { x: lx, y: ly }
+  }
+  const z = Math.max(zoom, 0.1)
+  return (
+    <>
+      {specs.map((spec) => {
+        const p = spec.pos(b.w, b.h, val)
+        const s = toStage(p.x, p.y)
+        const valuesAt = (t: Konva.Node) => {
+          const l = toLocal(t.x(), t.y())
+          return spec.values(b.w, b.h, l.x, l.y, val)
+        }
+        return (
+          <Circle
+            key={spec.keys.map((k) => k.name).join('-')}
+            x={s.x}
+            y={s.y}
+            radius={(5 * chromeScale) / z}
+            fill={ADJUST_HANDLE_FILL}
+            stroke={ADJUST_HANDLE_STROKE}
+            strokeWidth={1 / z}
+            draggable
+            onDragMove={(e) => {
+              const merged = { ...fullAdjust(), ...valuesAt(e.target) }
+              // pin the handle onto its constraint path
+              const np = spec.pos(b.w, b.h, (k, d) => merged[k] ?? d)
+              const ns = toStage(np.x, np.y)
+              e.target.position(ns)
+              onAdjust(merged, true)
+            }}
+            onDragEnd={(e) => {
+              onAdjust({ ...fullAdjust(), ...valuesAt(e.target) }, false)
+            }}
+          />
+        )
+      })}
+    </>
+  )
+}
+
 export function SlideCanvas({
   slide,
   selectedIds,
@@ -436,6 +529,7 @@ export function SlideCanvas({
   drawMode,
   onDrawCommit,
   onDrawCancel,
+  onAdjust,
 }: Props) {
   const trRef = useRef<Konva.Transformer>(null)
   const layerRef = useRef<Konva.Layer>(null)
@@ -985,14 +1079,17 @@ export function SlideCanvas({
           // One grip per grid boundary; only boundaries a merged cell spans across are skipped
           const spansX = (b: number) => tbl.cells.some((c) => c.x < b - 0.5 && c.x + c.w > b + 0.5)
           const spansY = (b: number) => tbl.cells.some((c) => c.y < b - 0.5 && c.y + c.h > b + 0.5)
+          // rtl tables render mirrored: gridX stays logical, so visual boundary = width − gridX
+          const tblGridW = tbl.gridX[tbl.gridX.length - 1] ?? n.box.w
+          const visX = (i: number) => (tbl.rtl ? tblGridW - tbl.gridX[i]! : tbl.gridX[i]!)
           return [
-            ...tbl.gridX.slice(1).flatMap((b, col) =>
-              spansX(b)
+            ...tbl.gridX.slice(1).flatMap((_, col) =>
+              spansX(visX(col + 1))
                 ? []
                 : [
                     <Rect
                       key={`colgrip_${col}`}
-                      x={n.box.x + b - 3}
+                      x={n.box.x + visX(col + 1) - 3}
                       y={n.box.y}
                       width={6}
                       height={n.box.h}
@@ -1008,7 +1105,13 @@ export function SlideCanvas({
                         if (st) st.container().style.cursor = 'default'
                       }}
                       onDragEnd={(e) => {
-                        const newW = Math.max(12, e.target.x() + 3 - (n.box.x + tbl.gridX[col]!))
+                        // rtl: the grip is the column's visual-left edge; width grows leftward
+                        const newW = Math.max(
+                          12,
+                          tbl.rtl
+                            ? n.box.x + visX(col) - (e.target.x() + 3)
+                            : e.target.x() + 3 - (n.box.x + tbl.gridX[col]!),
+                        )
                         onTableColResize(n.sourceId, col, newW)
                       }}
                     />,
@@ -1174,6 +1277,24 @@ export function SlideCanvas({
             setSizeMatch(null)
           }}
         />
+        {onAdjust &&
+          selectedIds.length === 1 &&
+          !editingText &&
+          (() => {
+            // Top-level shapes only: entered-group children live in group-local
+            // coordinates, which the handle math doesn't map yet
+            const n = slide.nodes.find((x) => x.sourceId === selectedIds[0])
+            if (!n || (n.type !== 'shape' && n.type !== 'text') || isConnectorNode(n)) return null
+            const id = n.sourceId
+            return (
+              <AdjustHandles
+                node={n as ShapeRenderNode}
+                zoom={zoom}
+                chromeScale={chromeScale}
+                onAdjust={(adjust, preview) => onAdjust(id, adjust, preview)}
+              />
+            )
+          })()}
       </Layer>
     </Stage>
   )

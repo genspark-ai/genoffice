@@ -90,3 +90,32 @@ describe('a:grayscl (tdf112209 grayscale picture fill)', () => {
     expect(el.duotone).toEqual(['#112233', '#AABBCC'])
   })
 })
+
+describe('p:pic blip lum brightness/contrast (prod_048 washed-out photo box)', () => {
+  it('parses a:lum on a pic blip', () => {
+    const xml = slideWith(pic('<a:lum bright="70000" contrast="-70000"/>'))
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: xml, ctx: {} })
+    const el = slide.elements[0] as any
+    expect(el.lum).toEqual({ bright: 0.7, contrast: -0.7 })
+  })
+
+  it('parses a:lum on a shape blipFill and omits a no-op lum', () => {
+    const sp = (lum: string) =>
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="S"/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/>' +
+      `<a:blipFill><a:blip r:embed="rId2">${lum}</a:blip><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:spPr></p:sp>`
+    const ctx = { mediaRels: new Map([['rId2', 'ppt/media/image1.png']]) }
+    const one = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp('<a:lum bright="40000"/>')),
+      ctx,
+    }).elements[0] as any
+    expect(one.fill.lum).toEqual({ bright: 0.4, contrast: 0 })
+    const none = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp('<a:lum/>')),
+      ctx,
+    }).elements[0] as any
+    expect(none.fill.lum).toBeUndefined()
+  })
+})

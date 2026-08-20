@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAnchoredTextboxParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
@@ -16,6 +17,17 @@ const BUILDERS: Array<[string, string]> = [
   ['wordart', buildWordArtParagraphXml({ text: 'Hi' })],
   ['textbox', buildTextboxParagraphXml()],
   ['shape', buildShapeParagraphXml({ prst: 'ellipse' })],
+  [
+    'anchored-textbox',
+    buildAnchoredTextboxParagraphXml({
+      anchor: 'paragraph',
+      xEmu: 0,
+      yEmu: 0,
+      widthEmu: 914400,
+      heightEmu: 914400,
+      paragraphs: [{ runs: [{ text: 'Hi' }] }],
+    }),
+  ],
 ]
 
 describe('MCE Requires prefixes resolve at AlternateContent scope', () => {

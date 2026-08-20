@@ -621,9 +621,11 @@ describe('setElementLink / getElementLink', () => {
       kind: 'ellipse',
       offset: { ...OFF, x: 5486400 },
     })
+    // Newborn cNvPr carries a creationId extLst (paired tag); hlinkClick goes
+    // right after the opening tag — its schema slot is before extLst
     sharer.anchor.originalXml = sharer.anchor.originalXml.replace(
-      /<p:cNvPr([^>]*)\/>/,
-      `<p:cNvPr$1><a:hlinkClick r:id="${oldRid}"/></p:cNvPr>`,
+      /(<p:cNvPr[^>]*>)/,
+      `$1<a:hlinkClick r:id="${oldRid}"/>`,
     )
     linkedSlide.structureDirty = true
 

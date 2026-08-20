@@ -8,7 +8,7 @@
  * hierarchy / pyramid / matrix / venn.
  */
 import type { EmuRect, Slide } from './types'
-import { escapeXmlAttr, escapeXmlText } from './xml-utils'
+import { creationIdXml, escapeXmlAttr, escapeXmlText } from './xml-utils'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
 import { layoutShapes, type SmartArtChildShape, type SmartArtLayout } from './smartart-layout'
@@ -49,7 +49,7 @@ export function buildSmartArtXml(slide: Slide, opts: NewSmartArtOptions): string
   const shapes = layoutShapes(opts.layout, opts.items, o.cx, o.cy)
   const children = shapes.map((s, i) => childSpXml(baseId + 1 + i, s)).join('')
   return (
-    `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${baseId}" name="SmartArt ${baseId}"/>` +
+    `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${baseId}" name="SmartArt ${baseId}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>' +
     `<p:grpSpPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/>` +
     `<a:chOff x="0" y="0"/><a:chExt cx="${o.cx}" cy="${o.cy}"/></a:xfrm></p:grpSpPr>` +

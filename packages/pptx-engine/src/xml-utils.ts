@@ -26,3 +26,21 @@ export function escapeXmlText(text: string): string {
 export function escapeXmlAttr(text: string): string {
   return escapeXmlText(text).replace(/"/g, '&quot;')
 }
+
+/**
+ * a16:creationId extLst for a newborn <p:cNvPr> — durable identity from birth
+ * (design step 0): the GUID is written into the file bytes, so ids survive
+ * save→reopen, reparse, group/ungroup, and editors that renumber cNvPr ids.
+ * The a16 namespace is declared inline so the fragment is valid standalone.
+ */
+export function creationIdExtXml(): string {
+  return (
+    '<a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">' +
+    `<a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{${globalThis.crypto.randomUUID().toUpperCase()}}"/>` +
+    '</a:ext>'
+  )
+}
+
+export function creationIdXml(): string {
+  return `<a:extLst>${creationIdExtXml()}</a:extLst>`
+}

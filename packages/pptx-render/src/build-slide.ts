@@ -17,6 +17,7 @@ import type {
 // Subpath import: the renderer bundles this package, so pulling the engine's index
 // (Node-only imports like node:crypto) would break the browser build
 import { tableRowGridCols } from '@genoffice/pptx-engine/table-grid'
+import { elementDurableId, groupChildDurableId } from '@genoffice/pptx-engine/identity'
 import { isBackgroundLikeElement } from '@genoffice/pptx-engine/background-promote'
 import { buildChartNode } from './build-chart'
 import type {
@@ -191,6 +192,26 @@ function buildNode(
   metrics: FontMetricsProvider,
   media: MediaResolver | undefined,
   parentOffset: ParentPlacement,
+  parentGroup?: SlideElement,
+): RenderNode | null {
+  const node = buildNodeInner(el, vp, metrics, media, parentOffset)
+  // Durable id attached centrally so every node kind (charts and placeholder
+  // chips included) carries it — the AI projection prefers it over sourceId.
+  // Group children resolve through the parent's bytes (their creationId lives
+  // there), keeping the id continuous across group/ungroup.
+  if (node) {
+    const durable = parentGroup ? groupChildDurableId(parentGroup, el) : elementDurableId(el)
+    if (durable) node.durableId = durable
+  }
+  return node
+}
+
+function buildNodeInner(
+  el: SlideElement,
+  vp: Viewport,
+  metrics: FontMetricsProvider,
+  media: MediaResolver | undefined,
+  parentOffset: ParentPlacement,
 ): RenderNode | null {
   const box = placeTransform(el.transform, vp, parentOffset)
   switch (el.type) {
@@ -353,6 +374,8 @@ function buildShape(
     ...(el.placeholder ? { placeholder: el.placeholder } : {}),
     ...(el.presetGeometry ? { presetGeometry: el.presetGeometry } : {}),
   }
+  // Raw avLst values ride along for the edit layer (yellow adjust handles)
+  if (el.adjust) node.adjust = { ...el.adjust }
   // custGeom: the normalized path is scaled to local px by the element box (mutually exclusive with preset, takes priority)
   if (el.customGeometry) {
     const g = el.customGeometry
@@ -519,6 +542,7 @@ function buildPicture(
     // tdf113163's black master bg shows through); other keys leave the DC white
     ...(metafileDcColor(isMetafile, el.clrChange) ?? {}),
     ...(el.duotone ? { duotone: el.duotone } : {}),
+    ...(el.lum ? { lum: el.lum } : {}),
     ...(el.clrChange ? { clrChange: el.clrChange } : {}),
   }
   const stroke = resolveStroke(el.stroke, vp)
@@ -565,7 +589,7 @@ function buildGroup(
 
   const children: RenderNode[] = []
   for (const child of el.children ?? []) {
-    const c = buildNode(child, vp, metrics, media, parentOffset)
+    const c = buildNode(child, vp, metrics, media, parentOffset, el)
     if (c) children.push(c)
   }
   return {
@@ -649,10 +673,13 @@ function buildTable(
       const gridSpan = cell.gridSpan ?? 1
       if (cell.merged) return
       const rowSpan = cell.rowSpan ?? 1
-      const x = colX[cIdx] ?? 0
+      const xLogical = colX[cIdx] ?? 0
       const y = rowY[r] ?? 0
-      const w = (colX[Math.min(cIdx + gridSpan, colX.length - 1)] ?? x) - x
+      const w = (colX[Math.min(cIdx + gridSpan, colX.length - 1)] ?? xLogical) - xLogical
       const h = (rowY[Math.min(r + rowSpan, rowY.length - 1)] ?? y) - y
+      // rtl="1" mirrors the grid: logical column 1 renders rightmost (style banding and
+      // firstCol/lastCol regions stay on logical indices; only geometry flips)
+      const x = el.rtl ? totalW - xLogical - w : xLogical
       const out: TableCellRender = {
         x,
         y,
@@ -667,7 +694,8 @@ function buildTable(
       const borders: NonNullable<TableCellRender['borders']> = {}
       for (const k of ['l', 'r', 't', 'b'] as const) {
         const s = resolveStroke(cell.borders?.[k], vp)
-        if (s) borders[k] = s
+        // Mirrored geometry puts a cell's logical-left edge on the visual right
+        if (s) borders[el.rtl && k === 'l' ? 'r' : el.rtl && k === 'r' ? 'l' : k] = s
       }
       if (Object.keys(borders).length) out.borders = borders
       if (cell.text && cell.text.paragraphs.length) {
@@ -693,6 +721,7 @@ function buildTable(
     ...(el.bgFill ? { bgFill: resolveFill(el.bgFill, vp, media) } : {}),
     gridX: colX,
     gridY: rowY,
+    ...(el.rtl ? { rtl: true } : {}),
     ...(el.styleFlags ? { styleFlags: el.styleFlags } : {}),
   }
 }

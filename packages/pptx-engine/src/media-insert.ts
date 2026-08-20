@@ -13,7 +13,7 @@
  */
 import { deflateSync } from 'node:zlib'
 import type { EmuRect, Slide } from './types'
-import { escapeXmlAttr } from './xml-utils'
+import { creationIdXml, escapeXmlAttr } from './xml-utils'
 import { relsPathFor } from './zip'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
@@ -101,7 +101,10 @@ function ensureDefaultContentType(opened: OpenedPptx, ext: string, mime: string)
   const ct = opened.archive.readText(ctPath)
   if (ct && !new RegExp(`<Default Extension="${ext}"`).test(ct)) {
     const dflt = `<Default Extension="${ext}" ContentType="${mime}"/>`
-    opened.archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${dflt}</Types>`), 'utf8'))
+    opened.archive.entries.set(
+      ctPath,
+      Buffer.from(ct.replace('</Types>', `${dflt}</Types>`), 'utf8'),
+    )
   }
 }
 
@@ -200,7 +203,7 @@ export function addMedia(
   const fileTag = opts.kind === 'video' ? 'a:videoFile' : 'a:audioFile'
   const o = opts.offset
   const xml =
-    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}"/>` +
+    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>' +
     `<p:nvPr><${fileTag} xmlns:r="${R_NS}" r:link="${ridLegacy}"/>` +
     `<p:extLst><p:ext uri="${MEDIA_EXT_URI}">` +
@@ -262,7 +265,7 @@ export function addModel3d(
   const name = opts.name ?? `3D Model ${id}`
   const o = opts.offset
   const xml =
-    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="${escapeXmlAttr(`aislides-3d:${modelPath}`)}"/>` +
+    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="${escapeXmlAttr(`aislides-3d:${modelPath}`)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvPicPr/><p:nvPr/></p:nvPicPr>' +
     `<p:blipFill><a:blip r:embed="${ridPoster}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
     `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +

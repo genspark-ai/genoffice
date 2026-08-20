@@ -419,10 +419,36 @@ export function buildCtxItems(ctx: ActionCtx): Array<CtxItem | null> {
       : []),
     null,
     {
+      // findNodeCtx also resolves children of the group being edited (node is top-level only)
+      label: t('paneFormatTitleTyped', {
+        type: nodeTypeName(node ?? ctx.findNodeCtx(ctxMenu.targetId)?.node),
+      }),
+      onClick: ctx.openFormat,
+    },
+    null,
+    {
       label: t('appCtxDelete'),
       hint: '⌫',
       danger: true,
       onClick: () => void clipboardActions.deleteSelected(ctx),
     },
   ]
+}
+
+/** Format-pane type name (same mapping as FormatPane's title) for the context-menu label */
+function nodeTypeName(node: { type: string } | undefined): string {
+  switch (node?.type) {
+    case 'picture':
+      return t('paneFormatPicture')
+    case 'group':
+      return t('paneFormatGroup')
+    case 'text':
+      return t('paneFormatTextBox')
+    case 'table':
+      return t('ribbonGroupTable')
+    case 'chart':
+      return t('ribbonChart')
+    default:
+      return t('paneFormatShape')
+  }
 }

@@ -185,6 +185,10 @@ export interface HfFloatBox {
   /** effective top margin after header push-down (mirrors the strip layout) */
   marginTop: number
   marginBottom: number
+  /** header strip top (w:headerDist, px): origin of paragraph-relative vertical offsets */
+  headerDist: number
+  /** raw sectPr top margin (px, before push-down): origin wrapped margin-relative images reserve from */
+  sectMarginTop: number
 }
 
 /**
@@ -213,7 +217,17 @@ export function hfFloatPagePos(
   let y: number
   let translateY: 0 | -50 | -100 = 0
   if (img.posYPx != null) {
-    y = img.posVRel === 'page' ? img.posYPx : box.marginTop + img.posYPx
+    // paragraph/margin-rel wrapped images use the same origins the body
+    // push-down estimate measures from (header strip top / raw sectPr margin),
+    // so the image never chases the pushed-down margin; watermarks keep the
+    // effective margin
+    const wrapped = img.wrap && img.wrap !== 'none' && !img.behind
+    y =
+      img.posVRel === 'page'
+        ? img.posYPx
+        : img.posVRel === 'paragraph'
+          ? box.headerDist + img.posYPx
+          : (wrapped ? box.sectMarginTop : box.marginTop) + img.posYPx
   } else if (img.posV === 'center') {
     y = box.pageH / 2
     translateY = -50

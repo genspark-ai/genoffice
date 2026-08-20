@@ -278,4 +278,38 @@ describe('rich-text footnote display runs', () => {
     expect(notes[1].richParas).toBeUndefined()
     expect(notes[1].text).toBe('纯文本')
   })
+
+  it('serializes richParas runs with size/font formatting for fresh notes (P17)', async () => {
+    const { buildNotesXml, parseNotesXml } = await import('../src/notes')
+    const xml = buildNotesXml(
+      'footnote',
+      [
+        {
+          id: '201',
+          text: 'small note tail',
+          richParas: [
+            [
+              { text: 'small note', sizeHalfPoints: 16, fontAscii: 'Arial', bold: true },
+              { text: ' tail', sizeHalfPoints: 16, color: '1F4E79' },
+            ],
+          ],
+        },
+      ],
+      null,
+    )
+    expect(xml).toContain('<w:sz w:val="16"/>')
+    expect(xml).toContain('w:ascii="Arial"')
+    expect(xml).toContain('<w:b/>')
+    expect(xml).toContain('<w:color w:val="1F4E79"/>')
+    // the self-reference mark + spacer shrink to the note's own size
+    expect(xml).toContain('<w:vertAlign w:val="superscript"/><w:sz w:val="16"/>')
+    // rich rebuilds pin single spacing so template docDefaults cannot inflate the area
+    expect(xml).toContain('<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>')
+    const notes = parseNotesXml(xml, 'footnote')
+    expect(notes[0]!.text).toBe('small note tail')
+    expect(notes[0]!.richParas?.[0]).toEqual([
+      { text: 'small note', bold: true, sizeHalfPoints: 16 },
+      { text: ' tail', color: '1F4E79', sizeHalfPoints: 16 },
+    ])
+  })
 })

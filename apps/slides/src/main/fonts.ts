@@ -375,6 +375,13 @@ function rankFaces(
         : style.italic
           ? ['italic', 'oblique']
           : ['regular', 'w3', 'medium']
+  // Style keywords the request did NOT ask for: without a penalty, "Bold Italic" matches the
+  // 'bold' substring and ties with the true Bold face, and cloud dirs (numeric filenames) can
+  // sort the italic file first — a bold request then lands on Bold Italic.
+  const avoidKeys = [
+    ...(style.italic ? [] : ['italic', 'oblique']),
+    ...(style.bold ? [] : ['bold']),
+  ]
   // origKey: an alias candidate may open a ttc that also carries the exact requested face
   // (request "Meiryo UI" -> alias "Meiryo" -> meiryo.ttc, which has both) — exact match wins.
   // Sub-family faces (Poppins Light) still match exactly through their typographic family
@@ -384,7 +391,8 @@ function rankFaces(
     (origKey && f.famKeys.some((k) => k === origKey) ? 4 : 0) -
     (origKey && f.famKeys.some((k) => k !== origKey && k.startsWith(origKey)) ? 1 : 0) +
     (f.famKeys.some((k) => k === wantKey || k.startsWith(wantKey)) ? 2 : 0) +
-    (styleKeys.some((s) => f.styleText.includes(s)) ? 1 : 0)
+    (styleKeys.some((s) => f.styleText.includes(s)) ? 1 : 0) -
+    (avoidKeys.some((s) => f.styleText.includes(s)) ? 2 : 0)
   return [...faces].sort((a, b) => score(b) - score(a))
 }
 
@@ -575,6 +583,11 @@ class FontRegistry {
             ? ['italic', 'it', 'i', 'oblique']
             : ['', 'regular', 'w4', 'w3']
     const origKey = norm(style.fontFamily)
+    // A weight baked into the requested name (Hiragino Kaku Gothic ProN W3, Hiragino Sans W7) names an
+    // exact face — it beats the bold-flag-derived file suffix (which would try W4 first and
+    // measure/draw a different weight than PowerPoint)
+    const wReq = /w([0-9])$/.exec(origKey)?.[1]
+    if (wReq) suffixes.unshift(`w${wReq}`)
     const tryFamily = (family: string) => {
       const base = norm(family)
       // Try style-variant files first, then fall back to regular (approximate widths still far better than heuristics)
@@ -784,6 +797,20 @@ export function createSystemFontMetrics(): FontMetricsProvider {
     if (cache.has(key)) return cache.get(key)
     const raw = registry.resolve(style)
     let entry: { font: OpentypeFontLike; family: string } | undefined
+    // Weight-in-name requests (Hiragino Kaku Gothic ProN W3) resolve to a specific face of a system
+    // collection, but CSS matches that family by weight only (normal → W4) — register the
+    // exact face under a synthetic "<family> W<n>" name so drawing uses the measured face.
+    const wReq = /w([0-9])$/.exec(norm(style.fontFamily))?.[1]
+    if (raw && !registry.isPrivate(raw.path) && wReq) {
+      if (!norm(raw.family).endsWith(`w${wReq}`)) raw.family = `${raw.family} W${wReq}`
+      privateFaces.set(`${raw.family}|${style.bold ? 1 : 0}${style.italic ? 1 : 0}`, {
+        family: raw.family,
+        bold: style.bold,
+        italic: style.italic,
+        path: raw.path,
+        offset: raw.offset,
+      })
+    }
     if (raw && registry.isPrivate(raw.path)) {
       // Register under the requested style only when this style resolved to its own face —
       // when bold/italic fell back to the same file+face as regular, skip it so Chromium

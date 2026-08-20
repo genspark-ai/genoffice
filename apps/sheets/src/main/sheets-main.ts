@@ -57,6 +57,8 @@ import {
   isAiNetworkError,
   chatForProvider,
   defaultAiSettings,
+  activeProvider,
+  cloudToolsEnabled,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
@@ -1354,6 +1356,11 @@ function writeJson(path: string, value: unknown): void {
 
 const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
+/** live read: the shell settings pane writes the file; every tool call re-checks */
+function gskCloudToolsOn(): boolean {
+  return cloudToolsEnabled(readJson<Partial<AiSettings>>(SETTINGS_PATH(), {}))
+}
+
 // Dev-only automation hooks: a fixed CDP port for driving the app from test
 // scripts, and a workbook path that bypasses the native file dialog.
 const debugPort = app.isPackaged ? undefined : process.env.XLSX_DEBUG_PORT
@@ -1762,6 +1769,11 @@ export function registerSheetsIpc(): void {
       if (!hasGskAuth())
         return {
           error: 'Genspark account is not logged in on this machine; ask the user to log in first',
+        }
+      if (!gskCloudToolsOn())
+        return {
+          error:
+            'Genspark cloud tools are turned off in Settings (AI Model); enable them to use this tool',
         }
       const prompt = String(op?.prompt ?? '').trim()
       if (!prompt) return { error: 'prompt must not be empty' }
@@ -2377,9 +2389,8 @@ export function registerSheetsAiIpc(): void {
     sessionFor(event)
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); legacy settings that chose
-    // another provider are reset
-    settings.provider = 'genspark'
+    // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
+    settings.provider = activeProvider(settings)
     return settings
   })
 
@@ -2507,6 +2518,7 @@ export function registerSheetsAiIpc(): void {
       return await webSearch(
         z.string().parse(query),
         typeof maxResults === 'number' ? maxResults : 6,
+        gskCloudToolsOn(),
       )
     } catch (err) {
       return { results: [], method: 'error', error: String(err) }
@@ -2517,6 +2529,7 @@ export function registerSheetsAiIpc(): void {
       return await imageSearch(
         z.string().parse(query),
         typeof maxResults === 'number' ? maxResults : 8,
+        gskCloudToolsOn(),
       )
     } catch (err) {
       return { images: [], method: 'error', error: String(err) }

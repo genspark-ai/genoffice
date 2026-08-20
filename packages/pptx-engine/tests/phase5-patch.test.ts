@@ -15,6 +15,7 @@ import {
   resetSlideBackground,
   setSlideBackground,
   setShapePresetGeometry,
+  setShapeAdjustValues,
   setSlideBackgroundImage,
   setSlideBgGraphicsHidden,
 } from '../src/index'
@@ -428,5 +429,47 @@ describe('setShapePresetGeometry (change shape)', () => {
     const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
     expect(setShapePresetGeometry(slide, 'nope', 'star5')).toBe(false)
     expect(setShapePresetGeometry(slide, el.id, 'star5"><hack/>')).toBe(false)
+  })
+})
+
+describe('setShapeAdjustValues (adjust handles)', () => {
+  it('writes the avLst, updates the model, and round-trips', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'roundRect', offset: { ...OFF } })
+
+    expect(setShapeAdjustValues(slide, el.id, { adj: 33333 })).toBe(true)
+    expect((el as TextElement).adjust).toEqual({ adj: 33333 })
+    expect(el.anchor.originalXml).toContain(
+      '<a:avLst><a:gd name="adj" fmla="val 33333"/></a:avLst>',
+    )
+
+    const reopened = await openPptx(await savePptx(opened))
+    const saved = reopened.deck.slides[0]!.elements.at(-1) as TextElement
+    expect(saved.adjust).toEqual({ adj: 33333 })
+    expect(saved.presetGeometry).toBe('roundRect')
+  })
+
+  it('replaces an existing avLst and supports multiple values', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'roundRect', offset: { ...OFF } })
+    setShapeAdjustValues(slide, el.id, { adj: 10000 })
+    expect(setShapeAdjustValues(slide, el.id, { adj1: 12000, adj2: 4000 })).toBe(true)
+    const xml = el.anchor.originalXml
+    expect(xml).not.toContain('val 10000')
+    expect(xml).toContain('<a:gd name="adj1" fmla="val 12000"/>')
+    expect(xml).toContain('<a:gd name="adj2" fmla="val 4000"/>')
+    expect(xml.match(/<a:avLst>/g)).toHaveLength(1)
+  })
+
+  it('rejects unknown ids, unsafe names, and non-finite values', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'roundRect', offset: { ...OFF } })
+    expect(setShapeAdjustValues(slide, 'nope', { adj: 1 })).toBe(false)
+    expect(setShapeAdjustValues(slide, el.id, { 'adj"><hack/>': 1 })).toBe(false)
+    expect(setShapeAdjustValues(slide, el.id, { adj: Number.NaN })).toBe(false)
+    expect(setShapeAdjustValues(slide, el.id, {})).toBe(false)
   })
 })

@@ -52,8 +52,11 @@
   --sheets-pie-label-in: #fff;
   --sheets-pie-label-out: #444;
   --sheets-pie-label-stroke: rgb(0 0 0 / 25%);
-  --sheets-select-blue: #1f5aa8;
-  --sheets-select-blue-bg: rgb(31 90 168 / 6%);
+  --sheets-select-frame: var(--excel-green);
+  /* Excel-blue grid overlays: formula-audit trace boxes (paired with the
+   * #1f5aa8 arrows in trace-arrows.tsx) and page-break preview lines */
+  --sheets-excel-blue: #1f5aa8;
+  --sheets-excel-blue-bg: rgb(31 90 168 / 6%);
   --sheets-el-selected: #107c41;
   --sheets-float-btn-bg: rgb(255 255 255 / 92%);
   --sheets-shape-border: #aeb4b8;
@@ -1521,13 +1524,6 @@ button.check-item:hover {
   opacity: 0.45;
 }
 
-select.select-like {
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  font: inherit;
-  font-size: 12px;
-}
-
 /* AI panel on the left, spanning from the ribbon to the status bar (unified with docs);
  * its column is drag-resizable: driven by --copilot-width (updated by the AiChatPanel resizer) */
 .sheet-body {
@@ -2133,7 +2129,7 @@ textarea:focus {
   content: '';
   position: absolute;
   inset: 0;
-  border: 2px solid var(--sheets-select-blue);
+  border: 2px solid var(--sheets-select-frame);
   pointer-events: none;
   z-index: 1;
 }
@@ -2148,7 +2144,7 @@ textarea:focus {
   display: none;
   width: 9px;
   height: 9px;
-  border: 1.5px solid var(--sheets-select-blue);
+  border: 1.5px solid var(--sheets-select-frame);
   border-radius: 50%;
   background: var(--sheets-paper);
   box-sizing: border-box;
@@ -2240,7 +2236,7 @@ textarea:focus {
   position: absolute;
   top: 0;
   left: 0;
-  border: 1.5px dashed var(--sheets-select-blue);
+  border: 1.5px dashed var(--sheets-select-frame);
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -2254,7 +2250,7 @@ textarea:focus {
   text-align: center;
   font-size: 12px;
   color: var(--sheets-chart-ink);
-  outline: 2px solid var(--sheets-select-blue);
+  outline: 2px solid var(--sheets-select-frame);
   outline-offset: -2px;
   cursor: text;
   overflow: hidden;
@@ -2265,8 +2261,8 @@ textarea:focus {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  border: 1.5px solid var(--sheets-select-blue);
-  background: var(--sheets-select-blue-bg);
+  border: 1.5px solid var(--sheets-excel-blue);
+  background: var(--sheets-excel-blue-bg);
   pointer-events: none;
 }
 
@@ -2286,15 +2282,15 @@ textarea:focus {
 }
 
 .page-break-outline {
-  border: 2px solid var(--sheets-select-blue);
+  border: 2px solid var(--sheets-excel-blue);
 }
 
 .page-break-row {
-  border-top: 2px dashed var(--sheets-select-blue);
+  border-top: 2px dashed var(--sheets-excel-blue);
 }
 
 .page-break-col {
-  border-left: 2px dashed var(--sheets-select-blue);
+  border-left: 2px dashed var(--sheets-excel-blue);
 }
 
 .page-break-row.manual {
@@ -5072,4 +5068,60 @@ textarea:focus {
    Univer's formula-bar row; the flex workbench reflows the grid below. */
 #univer-container.formula-bar-hidden [data-u-comp='formula-bar'] {
   display: none;
+}
+
+/* ── Shared dropdown (@genoffice/ui gs-dd) app sizing ──────────────────────
+   Ports the old native-select metrics per container so replacing <select>
+   with the themed Dropdown doesn't shift layout (reference: the matching
+   block in apps/slides styles.css). */
+
+/* dialog fields: fill the grid cell like the old `.dialog-grid select`
+   (100% × 26px) / `.numfmt-field select` rules */
+.dialog-grid .gs-dd,
+.numfmt-field .gs-dd {
+  width: 100%;
+  min-width: 0;
+}
+
+.dialog-grid .gs-dd-btn,
+.numfmt-field .gs-dd-btn {
+  border-radius: var(--radius-small);
+}
+
+/* pivot rows: the field pickers keep their old inline flex: 1 stretch */
+.pivot-dialog .gs-dd.pivot-dd-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* floating chart editor: old `.chart-editor select` was 120px+ × 24px, 11px type */
+.chart-editor .gs-dd {
+  min-width: 120px;
+}
+
+.chart-editor .gs-dd-btn {
+  height: 24px;
+  font-size: 11px;
+}
+
+/* chart format pane: old `.chart-format-pane select` was a fixed 120px */
+.chart-format-pane .gs-dd {
+  width: 120px;
+}
+
+/* custom-sort dialog: the old .select-like triggers were 28px tall; widths
+   come from the .sort-level grid columns */
+.sort-level .gs-dd {
+  min-width: 0;
+}
+
+.sort-level .gs-dd-btn {
+  height: 28px;
+}
+
+/* Insert Function filter row: a floor so the trigger doesn't resize with
+   each picked category (the old select sized to its longest option) */
+.fn-filter-row .gs-dd {
+  flex-shrink: 0;
+  min-width: 120px;
 }

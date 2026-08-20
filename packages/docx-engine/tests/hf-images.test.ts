@@ -119,6 +119,44 @@ describe('header/footer images (display-only Logo)', () => {
     expect(img.posYPx).toBeUndefined()
   })
 
+  it('anchored image reads the wrap mode and keeps paragraph-relative positionV (prod_004 shape)', async () => {
+    const headerXml = HEADER_XML.replace(
+      '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
+        '<wp:extent cx="381000" cy="190500"/>',
+      '<wp:anchor behindDoc="0">' +
+        '<wp:positionH relativeFrom="column"><wp:posOffset>190500</wp:posOffset></wp:positionH>' +
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>-137208</wp:posOffset></wp:positionV>' +
+        '<wp:extent cx="381000" cy="958215"/>' +
+        '<wp:wrapSquare wrapText="bothSides"/>',
+    ).replace('</wp:inline>', '</wp:anchor>')
+    const img = (await parseDocx(await buildHeaderLogoDocx(headerXml))).headerImages![0]
+    expect(img.floating).toBe(true)
+    expect(img.wrap).toBe('square')
+    expect(img.posVRel).toBe('paragraph')
+    expect(img.posYPx).toBe(-14)
+    expect(img.heightPx).toBe(101)
+    expect(img.posHRel).toBe('margin')
+  })
+
+  it('wrapTopAndBottom and wrapNone map to topBottom / none', async () => {
+    const withWrap = (wrapXml: string) =>
+      HEADER_XML.replace(
+        '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
+          '<wp:extent cx="381000" cy="190500"/>',
+        '<wp:anchor behindDoc="0">' +
+          '<wp:positionV relativeFrom="page"><wp:posOffset>335280</wp:posOffset></wp:positionV>' +
+          '<wp:extent cx="381000" cy="377190"/>' +
+          wrapXml,
+      ).replace('</wp:inline>', '</wp:anchor>')
+    const tb = (await parseDocx(await buildHeaderLogoDocx(withWrap('<wp:wrapTopAndBottom/>'))))
+      .headerImages![0]
+    expect(tb.wrap).toBe('topBottom')
+    expect(tb.posVRel).toBe('page')
+    const none = (await parseDocx(await buildHeaderLogoDocx(withWrap('<wp:wrapNone/>'))))
+      .headerImages![0]
+    expect(none.wrap).toBe('none')
+  })
+
   it('AlternateContent picks the first blip whose media resolves (mac PDF Choice → PNG Fallback)', async () => {
     // rId9 is unresolvable (missing media part); the PNG fallback must be used
     const headerXml = HEADER_XML.replace(

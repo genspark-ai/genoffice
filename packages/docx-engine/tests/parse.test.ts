@@ -200,4 +200,16 @@ describe('empty paragraph line size', () => {
     expect(doc.blocks[1].format?.emptyRunSizeHalfPoints).toBe(2)
     expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBe(16)
   })
+
+  it('records the w:rFonts that faces a run-less paragraph', async () => {
+    const bodyXml =
+      '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/></w:rPr></w:pPr></w:p>' +
+      // no pPr rPr: falls back to the (dropped) empty run
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr><w:t></w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].format?.emptyRunFontFamily).toBeUndefined()
+    expect(doc.blocks[1].format?.emptyRunFontFamily).toBe('Times New Roman')
+    expect(doc.blocks[2].format?.emptyRunFontFamily).toBe('Arial')
+  })
 })

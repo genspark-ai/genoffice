@@ -185,30 +185,32 @@ export function HeaderFooterArea({
         if (!readOnly && !editing) setEditing(true)
       }}
     >
-      {images && images.length > 0 && (
+      {images && images.some((im) => !im.floating) && (
         <div
           className="page-hf-images"
           contentEditable={false}
           style={
-            images[0].align === 'right'
+            images.find((im) => !im.floating)?.align === 'right'
               ? { justifyContent: 'flex-end' }
-              : images[0].align === 'center'
+              : images.find((im) => !im.floating)?.align === 'center'
                 ? { justifyContent: 'center' }
                 : undefined
           }
         >
-          {images.map((img, i) => (
-            <img
-              key={i}
-              src={img.dataUrl}
-              alt=""
-              draggable={false}
-              style={{
-                ...(img.widthPx ? { width: img.widthPx } : {}),
-                ...(img.heightPx ? { height: img.heightPx } : {}),
-              }}
-            />
-          ))}
+          {images
+            .filter((img) => !img.floating)
+            .map((img, i) => (
+              <img
+                key={i}
+                src={img.dataUrl}
+                alt=""
+                draggable={false}
+                style={{
+                  ...(img.widthPx ? { width: img.widthPx } : {}),
+                  ...(img.heightPx ? { height: img.heightPx } : {}),
+                }}
+              />
+            ))}
         </div>
       )}
       {editing ? (

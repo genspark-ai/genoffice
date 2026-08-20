@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { Dropdown } from '@genoffice/ui'
+
 import { useI18n, type StringKey } from './i18n/locale'
 
 /// Native OOXML pivot table dialog: creates a real PivotTable part (not
@@ -238,28 +240,25 @@ export function PivotDialog({
           <span style={{ fontSize: 12, color: '#888', width: 34 }}>
             {t('dlgPivotLevel', { n: i + 1 })}
           </span>
-          <select
-            value={fieldIdx}
-            onChange={(event) => updateAxisField(setAxis, i, Number(event.target.value))}
-            style={{ flex: 1, minWidth: 0 }}
-          >
-            {fields.map((field, fi) => (
-              <option key={field.colIndex} value={fi}>
-                {field.label}
-              </option>
-            ))}
-          </select>
-          <select
-            data-tip={t('dlgPivotGrouping')}
+          <Dropdown
+            className="pivot-dd-grow"
+            value={String(fieldIdx)}
+            options={fields.map((field, fi) => ({ value: String(fi), label: field.label }))}
+            onPick={(v) => updateAxisField(setAxis, i, Number(v))}
+          />
+          <Dropdown
+            tip={t('dlgPivotGrouping')}
+            ariaLabel={t('dlgPivotGrouping')}
             value={groupingSelectValue(fieldGroupings[fieldIdx])}
-            onChange={(event) => setFieldGrouping(fieldIdx, event.target.value)}
-          >
-            <option value="">{t('dlgPivotGroupNone')}</option>
-            <option value="date:year">{t('dlgPivotGroupYear')}</option>
-            <option value="date:quarter">{t('dlgPivotGroupQuarter')}</option>
-            <option value="date:month">{t('dlgPivotGroupMonth')}</option>
-            <option value="range">{t('dlgPivotGroupRange')}</option>
-          </select>
+            options={[
+              { value: '', label: t('dlgPivotGroupNone') },
+              { value: 'date:year', label: t('dlgPivotGroupYear') },
+              { value: 'date:quarter', label: t('dlgPivotGroupQuarter') },
+              { value: 'date:month', label: t('dlgPivotGroupMonth') },
+              { value: 'range', label: t('dlgPivotGroupRange') },
+            ]}
+            onPick={(v) => setFieldGrouping(fieldIdx, v)}
+          />
           {fieldGroupings[fieldIdx]?.kind === 'range' && (
             <input
               type="number"
@@ -277,11 +276,18 @@ export function PivotDialog({
               }}
             />
           )}
-          <select
-            data-tip={t('dlgPivotLabelFilter')}
+          <Dropdown
+            tip={t('dlgPivotLabelFilter')}
+            ariaLabel={t('dlgPivotLabelFilter')}
             value={labelFilters[fieldIdx]?.op ?? ''}
-            onChange={(event) => {
-              const op = event.target.value as PivotLabelFilterOption['op'] | ''
+            options={[
+              { value: '', label: t('dlgPivotFilterNone') },
+              { value: 'equal', label: t('dlgPivotFilterEqual') },
+              { value: 'contains', label: t('dlgPivotFilterContains') },
+              { value: 'beginsWith', label: t('dlgPivotFilterBeginsWith') },
+            ]}
+            onPick={(picked) => {
+              const op = picked as PivotLabelFilterOption['op'] | ''
               setLabelFilters((prev) => {
                 const next = { ...prev }
                 if (op === '') delete next[fieldIdx]
@@ -289,12 +295,7 @@ export function PivotDialog({
                 return next
               })
             }}
-          >
-            <option value="">{t('dlgPivotFilterNone')}</option>
-            <option value="equal">{t('dlgPivotFilterEqual')}</option>
-            <option value="contains">{t('dlgPivotFilterContains')}</option>
-            <option value="beginsWith">{t('dlgPivotFilterBeginsWith')}</option>
-          </select>
+          />
           {labelFilters[fieldIdx] && (
             <input
               type="text"
@@ -444,55 +445,47 @@ export function PivotDialog({
                     </>
                   ) : (
                     <>
-                      <select
-                        value={spec.fieldIndex}
-                        onChange={(event) =>
-                          updateValue(i, { fieldIndex: Number(event.target.value) })
-                        }
-                        style={{ flex: 1, minWidth: 0 }}
-                      >
-                        {fields.map((field, fi) => (
-                          <option key={field.colIndex} value={fi}>
-                            {field.label}
-                          </option>
-                        ))}
-                      </select>
-                      <select
+                      <Dropdown
+                        className="pivot-dd-grow"
+                        value={String(spec.fieldIndex)}
+                        options={fields.map((field, fi) => ({
+                          value: String(fi),
+                          label: field.label,
+                        }))}
+                        onPick={(v) => updateValue(i, { fieldIndex: Number(v) })}
+                      />
+                      <Dropdown
                         value={spec.agg}
-                        onChange={(event) =>
-                          updateValue(i, { agg: event.target.value as PivotValueSpec['agg'] })
-                        }
-                      >
-                        {(Object.entries(AGG_LABELS) as [PivotValueSpec['agg'], StringKey][]).map(
-                          ([agg, labelKey]) => (
-                            <option key={agg} value={agg}>
-                              {t(labelKey)}
-                            </option>
-                          ),
-                        )}
-                      </select>
+                        options={(
+                          Object.entries(AGG_LABELS) as [PivotValueSpec['agg'], StringKey][]
+                        ).map(([agg, labelKey]) => ({ value: agg, label: t(labelKey) }))}
+                        onPick={(v) => updateValue(i, { agg: v })}
+                      />
                     </>
                   )}
-                  <select
-                    data-tip={t('dlgPivotShowAs')}
+                  <Dropdown
+                    tip={t('dlgPivotShowAs')}
+                    ariaLabel={t('dlgPivotShowAs')}
                     value={spec.showDataAs ?? ''}
-                    onChange={(event) => {
-                      const v = event.target.value as PivotShowDataAsOption | ''
-                      // '' = normal: remove showDataAs from the spec.
-                      updateValue(i, { showDataAs: v === '' ? undefined : v })
-                    }}
-                  >
-                    {SHOW_DATA_AS_LABELS.map(({ value, labelKey }) => (
-                      <option key={value} value={value}>
-                        {t(labelKey)}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    data-tip={t('dlgPivotValueFilter')}
+                    options={SHOW_DATA_AS_LABELS.map(({ value, labelKey }) => ({
+                      value,
+                      label: t(labelKey),
+                    }))}
+                    // '' = normal: remove showDataAs from the spec.
+                    onPick={(v) => updateValue(i, { showDataAs: v === '' ? undefined : v })}
+                  />
+                  <Dropdown
+                    tip={t('dlgPivotValueFilter')}
+                    ariaLabel={t('dlgPivotValueFilter')}
                     value={valueFilters[i]?.op ?? ''}
-                    onChange={(event) => {
-                      const op = event.target.value as PivotValueFilterOption['op'] | ''
+                    options={[
+                      { value: '', label: t('dlgPivotFilterNone') },
+                      { value: 'top', label: t('dlgPivotFilterTopN') },
+                      { value: 'greaterThan', label: t('dlgPivotFilterGreaterThan') },
+                      { value: 'between', label: t('dlgPivotFilterBetween') },
+                    ]}
+                    onPick={(picked) => {
+                      const op = picked as PivotValueFilterOption['op'] | ''
                       setValueFilters((prev) => {
                         const next = { ...prev }
                         if (op === '') delete next[i]
@@ -502,12 +495,7 @@ export function PivotDialog({
                         return next
                       })
                     }}
-                  >
-                    <option value="">{t('dlgPivotFilterNone')}</option>
-                    <option value="top">{t('dlgPivotFilterTopN')}</option>
-                    <option value="greaterThan">{t('dlgPivotFilterGreaterThan')}</option>
-                    <option value="between">{t('dlgPivotFilterBetween')}</option>
-                  </select>
+                  />
                   {valueFilters[i]?.op === 'top' && (
                     <input
                       type="number"

@@ -376,6 +376,51 @@ export function fontAttrsFromFamilyChain(chain: string | undefined): Record<stri
   return { font: ea ?? latin, ...(latin ? { fontAscii: latin } : {}) }
 }
 
+/**
+ * docTextStyle attrs that round-trip the clipboard exactly via the
+ * data-doc-style JSON payload (the CSS in renderHTML is lossy — highlight,
+ * shading, caps, emphasis and dual-font slots don't all survive the
+ * style-heuristic parse below). rawRPr/cs stay out: they are rendered:false
+ * save-side pass-throughs, deliberately kept off the DOM. (alpha ledger r117)
+ */
+const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'> = {
+  color: 'string',
+  sizeHalfPoints: 'number',
+  font: 'string',
+  eaSlotEmpty: 'boolean',
+  fontAscii: 'string',
+  csFont: 'string',
+  charSpacingTwips: 'number',
+  charScaleEm: 'number',
+  highlight: 'string',
+  shading: 'string',
+  vertAlign: 'string',
+  em: 'string',
+  caps: 'string',
+  styleId: 'string',
+}
+
+/** Exact attrs from our own data-doc-style JSON; null on legacy '1' or foreign/malformed values */
+function clipboardTextStyleAttrs(el: HTMLElement): Record<string, unknown> | null {
+  const raw = el.getAttribute?.('data-doc-style')
+  if (!raw || raw === '1') return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const attrs: Record<string, unknown> = {}
+  for (const [key, type] of Object.entries(CLIPBOARD_TEXT_STYLE_TYPES)) {
+    const v = (parsed as Record<string, unknown>)[key]
+    if (typeof v !== type) continue
+    if (type === 'number' && !Number.isFinite(v)) continue
+    attrs[key] = v
+  }
+  return Object.keys(attrs).length > 0 ? attrs : null
+}
+
 /** Inline styles of foreign HTML → docTextStyle attrs (returns false when no usable style, so no mark is applied) */
 function textStyleAttrsFromDom(el: HTMLElement): Record<string, unknown> | false {
   const attrs: Record<string, unknown> = {}
@@ -453,7 +498,11 @@ export const TextStyleMark = Mark.create({
     return [
       {
         tag: 'span[data-doc-style]',
-        getAttrs: (el) => textStyleAttrsFromDom(el as HTMLElement) || {},
+        // own clipboard HTML: exact attrs from the JSON payload; legacy '1' or
+        // stripped payloads fall back to the lossy style heuristics
+        getAttrs: (el) =>
+          clipboardTextStyleAttrs(el as HTMLElement) ??
+          (textStyleAttrsFromDom(el as HTMLElement) || {}),
       },
       { tag: 'sup', attrs: { vertAlign: 'superscript' } },
       { tag: 'sub', attrs: { vertAlign: 'subscript' } },
@@ -504,7 +553,17 @@ export const TextStyleMark = Mark.create({
     }
     if (mark.attrs.caps === 'all') styles.push('text-transform:uppercase')
     else if (mark.attrs.caps === 'small') styles.push('font-variant-caps:small-caps')
-    const attrs: Record<string, string> = { 'data-doc-style': '1', style: styles.join(';') }
+    // the attr value carries the exact attrs for clipboard round-trip; '1'
+    // (nothing set) keeps the attribute present for CSS/selector consumers
+    const clip: Record<string, unknown> = {}
+    for (const key of Object.keys(CLIPBOARD_TEXT_STYLE_TYPES)) {
+      const v = mark.attrs[key]
+      if (v != null) clip[key] = v
+    }
+    const attrs: Record<string, string> = {
+      'data-doc-style': Object.keys(clip).length > 0 ? JSON.stringify(clip) : '1',
+      style: styles.join(';'),
+    }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
     return ['span', attrs, 0]
   },

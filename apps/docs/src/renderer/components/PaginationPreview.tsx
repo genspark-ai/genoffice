@@ -29,7 +29,7 @@ import {
   type PageSlice,
   type SectionHfHeights,
 } from '../pagination'
-import { estimateHfHeight, FOOTNOTE_SEPARATOR_H } from '../line-metrics'
+import { estimateHfHeight, hfHeaderGeom, FOOTNOTE_SEPARATOR_H } from '../line-metrics'
 import { toRoman } from '../note-format'
 import { useI18n } from '../i18n/locale'
 import { hfFloatPagePos } from '../editor/hf-dom'
@@ -209,7 +209,7 @@ export function PaginationPreview({
   // canvas content-area top = effective top margin after header push-down (matches --page-pad)
   const canvasMTop = effectiveTopPx(
     section,
-    estimateHfHeight(hf.header, canvasContentW, hf.images?.header),
+    estimateHfHeight(hf.header, canvasContentW, hf.images?.header, hfHeaderGeom(section)),
   )
   /** Settings of the page's section (single-section documents fall back to the canvas geometry) */
   const settingsOf = (slice: PageSlice): SectionSettings =>
@@ -275,7 +275,7 @@ export function PaginationPreview({
             return i === live.length - 1 ? hf.images?.[kind] : undefined
           }
           return {
-            headerPx: estimateHfHeight(pick('header'), w, imagesOf('header')),
+            headerPx: estimateHfHeight(pick('header'), w, imagesOf('header'), hfHeaderGeom(set)),
             footerPx: estimateHfHeight(pick('footer'), w, imagesOf('footer')),
           }
         })
@@ -286,7 +286,10 @@ export function PaginationPreview({
       } else {
         const contentH =
           twipsToPx(section.pageHeight) -
-          effectiveTopPx(section, estimateHfHeight(hf.header, canvasContentW, hf.images?.header)) -
+          effectiveTopPx(
+            section,
+            estimateHfHeight(hf.header, canvasContentW, hf.images?.header, hfHeaderGeom(section)),
+          ) -
           effectiveBottomPx(section, estimateHfHeight(hf.footer, canvasContentW, hf.images?.footer))
         computed = sliceWithLineSplit(
           blocks,
@@ -466,8 +469,14 @@ export function PaginationPreview({
           const pageH = pageBox.height
           const secContentW = pageBox.contentWidth
           // effective margins after this page's variant header/footer push-down (an over-tall header pushes the body down)
-          const mTop = effectiveTopPx(s, estimateHfHeight(parts.header, secContentW))
-          const mBottom = effectiveBottomPx(s, estimateHfHeight(parts.footer, secContentW))
+          const mTop = effectiveTopPx(
+            s,
+            estimateHfHeight(parts.header, secContentW, parts.headerImages, hfHeaderGeom(s)),
+          )
+          const mBottom = effectiveBottomPx(
+            s,
+            estimateHfHeight(parts.footer, secContentW, parts.footerImages),
+          )
           const contentH = pageH - mTop - mBottom
           // page vertical alignment (sectPr w:vAlign): content of non-full pages shifts down as a whole
           const usedH = Math.min(slice.end - slice.start, contentH)
@@ -515,6 +524,8 @@ export function PaginationPreview({
                     marginRight: twipsToPx(s.marginRight),
                     marginTop: mTop,
                     marginBottom: mBottom,
+                    headerDist: pageBox.headerDist,
+                    sectMarginTop: twipsToPx(s.marginTop),
                   })
                   return (
                     <img

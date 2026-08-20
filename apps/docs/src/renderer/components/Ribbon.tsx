@@ -29,9 +29,10 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
-import { ColorPicker, isSymbolFontFamily, useDismissablePopover } from '@genoffice/ui'
+import { ColorPicker, Dropdown, isSymbolFontFamily, useDismissablePopover } from '@genoffice/ui'
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
+import { setInactiveSelectionShown } from '../editor/inactive-selection'
 import { stepParagraphIndent } from '../editor/indent'
 import { formatNumber } from '../editor/numbering'
 import type { InkTool } from '../editor/ink'
@@ -644,6 +645,9 @@ function RibbonInner({
     head: number
     doc: PMNode | null
   }>({ pending: null, applied: null, timer: null, anchor: -1, head: -1, doc: null })
+  /** Enter pressed in a font combobox: the coming blur is an explicit commit,
+   *  which applies even an unchanged value (normalizes mixed selections, r121) */
+  const fontCommitRef = useRef(false)
   const lastRegularTab = useRef<(typeof TABS)[number]>('home')
   const wasInTable = useRef(false)
   const wasInImage = useRef(false)
@@ -1025,20 +1029,37 @@ function RibbonInner({
             ? 'char:__preset_emphasis'
             : 'p'
 
-  // Style gallery overflow: the inline row clips (the ribbon row cannot grow),
-  // so a "more styles" expander must appear whenever cards are cut off.
+  // Style gallery overflow: cards that don't fit wrap onto a second row that
+  // the fixed-height gallery clips (whole cards only, never a half-cut one),
+  // and a "more styles" expander appears whenever cards are hidden. The
+  // gallery is then capped right after the last visible card so the expander
+  // hugs it instead of floating at the group's far edge.
   const styleGalleryRef = useRef<HTMLDivElement | null>(null)
   const [styleGalleryOverflow, setStyleGalleryOverflow] = useState(false)
   useLayoutEffect(() => {
     const el = styleGalleryRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const check = () => setStyleGalleryOverflow(el.scrollWidth - el.clientWidth > 1)
+    const check = () => {
+      // measure the natural (uncapped) layout at the current wrapper width
+      el.style.maxWidth = ''
+      const cards = Array.from(el.children) as HTMLElement[]
+      const firstRow = cards.filter((c) => c.offsetTop === cards[0]?.offsetTop)
+      const overflow = firstRow.length < cards.length
+      if (overflow) {
+        const last = firstRow[firstRow.length - 1]
+        el.style.maxWidth = `${last.offsetLeft - firstRow[0].offsetLeft + last.offsetWidth}px`
+      }
+      setStyleGalleryOverflow(overflow)
+    }
     check()
     const ro = new ResizeObserver(check)
-    ro.observe(el)
+    // observe the wrapper, not the gallery: once capped, the gallery no longer
+    // resizes with the window, so it would never re-trigger the observer
+    ro.observe(el.parentElement ?? el)
     return () => ro.disconnect()
-    // scrollWidth changes don't fire the observer: re-check when the card set can change
-  }, [tab, charStyleItems.length, lang])
+    // re-check when the card set can change, and after the expander mounts or
+    // unmounts (it takes row width, which can change how many cards fit)
+  }, [tab, charStyleItems.length, lang, styleGalleryOverflow])
 
   const currentSize = fs.fontSizePt
   const currentFont = fs.fontFamily
@@ -1805,26 +1826,24 @@ function RibbonInner({
             {/* ---- Arrange: wrap text / align ---- */}
             <div className="table-tool-group">
               <div className="table-tool-row">
-                <select
-                  className="rb-select"
+                <Dropdown
+                  className="rb-wrap-dd"
                   disabled={!canEdit}
-                  data-tip={t('ribbonWrapText')}
+                  tip={t('ribbonWrapText')}
                   value={fs.imageWrap ?? ''}
-                  onChange={(e) => {
+                  options={WRAP_OPTIONS.map((opt) => ({
+                    value: opt.value ?? '',
+                    label: t(opt.labelKey),
+                  }))}
+                  onPick={(v) => {
                     if (!canEdit) return
                     editor
                       .chain()
                       .focus()
-                      .updateAttributes('docProtected', { imageWrap: e.target.value || null })
+                      .updateAttributes('docProtected', { imageWrap: v || null })
                       .run()
                   }}
-                >
-                  {WRAP_OPTIONS.map((opt) => (
-                    <option key={String(opt.value)} value={opt.value ?? ''}>
-                      {t(opt.labelKey)}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="table-tool-row">
                 {(
@@ -2074,17 +2093,15 @@ function RibbonInner({
                   value={`#${borderColor}`}
                   onChange={(e) => setBorderColor(e.target.value.slice(1).toUpperCase())}
                 />
-                <select
-                  data-tip={t('ribbonBorderWidth')}
-                  value={borderSz}
-                  onChange={(e) => setBorderSz(Number(e.target.value))}
-                >
-                  <option value={4}>{t('ribbonPtValue', { n: 0.5 })}</option>
-                  <option value={8}>{t('ribbonPtValue', { n: 1 })}</option>
-                  <option value={12}>{t('ribbonPtValue', { n: 1.5 })}</option>
-                  <option value={18}>{t('ribbonPtValue', { n: 2.25 })}</option>
-                  <option value={24}>{t('ribbonPtValue', { n: 3 })}</option>
-                </select>
+                <Dropdown
+                  tip={t('ribbonBorderWidth')}
+                  value={String(borderSz)}
+                  options={[4, 8, 12, 18, 24].map((sz) => ({
+                    value: String(sz),
+                    label: t('ribbonPtValue', { n: sz / 8 }),
+                  }))}
+                  onPick={(v) => setBorderSz(Number(v))}
+                />
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupBorders')}</div>
             </div>
@@ -2450,11 +2467,29 @@ function RibbonInner({
                       placeholder={t('ribbonFontBodyNamed', { font: bodyFontName })}
                       data-tip={t('ribbonFontFamilyTip')}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        if (e.key === 'Enter') {
+                          fontCommitRef.current = true
+                          ;(e.target as HTMLInputElement).blur()
+                        }
+                      }}
+                      // focusing the input relocates the DOM selection into it,
+                      // hiding the document highlight — the decoration keeps the
+                      // target text visibly selected, like Word (r119)
+                      onFocus={(e) => {
+                        e.currentTarget.select()
+                        setInactiveSelectionShown(ed, true)
                       }}
                       onBlur={(e) => {
+                        const committed = fontCommitRef.current
+                        fontCommitRef.current = false
+                        setInactiveSelectionShown(ed, false)
                         const v = e.target.value.trim()
+                        // Enter always applies, even an unchanged name: over a
+                        // mixed-font selection the shown value is just the first
+                        // run's font, and committing it must normalize the rest
+                        // (r121). Plain click-away keeps the no-op guard.
                         if (v !== currentFont) setFont(v || null)
+                        else if (committed && v) setFont(v)
                       }}
                     />
                     <button
@@ -2527,13 +2562,25 @@ function RibbonInner({
                       defaultValue={currentSize}
                       data-tip={t('ribbonFontSizeTip')}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        if (e.key === 'Enter') {
+                          fontCommitRef.current = true
+                          ;(e.target as HTMLInputElement).blur()
+                        }
+                      }}
+                      onFocus={(e) => {
+                        e.currentTarget.select()
+                        setInactiveSelectionShown(ed, true)
                       }}
                       onBlur={(e) => {
+                        const committed = fontCommitRef.current
+                        fontCommitRef.current = false
+                        setInactiveSelectionShown(ed, false)
                         const v = Number(e.target.value)
                         if (!Number.isFinite(v) || v <= 0) return
                         const half = Math.round(Math.min(1638, Math.max(1, v)) * 2)
-                        if (half !== Math.round(currentSize * 2))
+                        // same r121 rule as the family box: Enter normalizes a
+                        // mixed-size selection to the shown value
+                        if (half !== Math.round(currentSize * 2) || committed)
                           setTextStyle({ sizeHalfPoints: half })
                       }}
                     />
@@ -3364,10 +3411,11 @@ function ListDefineDialog({
           {levels.map((l, i) => (
             <div key={i} className="list-define-row">
               <span>{i + 1}</span>
-              <select
+              <Dropdown
                 value={l.numFmt}
-                onChange={(e) => {
-                  const numFmt = e.target.value
+                ariaLabel={t('ribbonListNumStyle')}
+                options={LIST_NUM_FMTS.map((f) => ({ value: f, label: LIST_FMT_SAMPLES[f] }))}
+                onPick={(numFmt) => {
                   update(i, {
                     numFmt,
                     lvlText:
@@ -3378,13 +3426,7 @@ function ListDefineDialog({
                           : `%${i + 1}.`,
                   })
                 }}
-              >
-                {LIST_NUM_FMTS.map((f) => (
-                  <option key={f} value={f}>
-                    {LIST_FMT_SAMPLES[f]}
-                  </option>
-                ))}
-              </select>
+              />
               <input value={l.lvlText} onChange={(e) => update(i, { lvlText: e.target.value })} />
               <input
                 type="number"

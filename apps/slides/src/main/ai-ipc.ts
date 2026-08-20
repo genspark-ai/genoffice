@@ -12,6 +12,8 @@ import {
   AiTimeoutError,
   isAiNetworkError,
   defaultAiSettings,
+  activeProvider,
+  cloudToolsEnabled,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
@@ -33,6 +35,7 @@ import {
   hasGskAuth,
 } from '@genoffice/ai-search'
 import { addPicture, editPictureSrcRect, replacePictureBytes } from '@genoffice/pptx-engine'
+import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { coverCropFractions } from '../shared/cover-crop'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'
@@ -41,6 +44,11 @@ import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './se
 // ---- AI settings + streaming proxy (the main process does the networking to avoid renderer CORS; implementation shared via @genoffice/ai-provider) ----
 
 const AI_SETTINGS_PATH = () => join(app.getPath('userData'), 'ai-settings.json')
+
+/** live read: the shell settings pane writes the file; every tool call re-checks */
+function gskCloudToolsOn(): boolean {
+  return cloudToolsEnabled(readJson<Partial<AiSettings>>(AI_SETTINGS_PATH(), {}))
+}
 
 function readJson<T>(path: string, fallback: T): T {
   try {
@@ -65,8 +73,8 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // AI features all go through Genspark (gsk login); stored settings that chose another provider are normalized back
-    settings.provider = 'genspark'
+    // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
+    settings.provider = activeProvider(settings)
     return settings
   })
 
@@ -163,7 +171,11 @@ export function registerAiIpc(): void {
   // Search tools (content + images), Serper with DuckDuckGo fallback
   ipcMain.handle('ai:web-search', async (_event, query: string, maxResults?: number) => {
     try {
-      return await webSearch(String(query), typeof maxResults === 'number' ? maxResults : 6)
+      return await webSearch(
+        String(query),
+        typeof maxResults === 'number' ? maxResults : 6,
+        gskCloudToolsOn(),
+      )
     } catch (err) {
       return { results: [], method: 'error', error: String(err) }
     }
@@ -171,7 +183,11 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:image-search', async (_event, query: string, maxResults?: number) => {
     try {
-      return await imageSearch(String(query), typeof maxResults === 'number' ? maxResults : 8)
+      return await imageSearch(
+        String(query),
+        typeof maxResults === 'number' ? maxResults : 8,
+        gskCloudToolsOn(),
+      )
     } catch (err) {
       return { images: [], method: 'error', error: String(err) }
     }
@@ -198,6 +214,11 @@ export function registerSlidesOnlyAiIpc(): void {
       },
     ) => {
       if (!hasGskAuth()) return { error: tm('errGskCli') }
+      if (!gskCloudToolsOn())
+        return {
+          error:
+            'Genspark cloud tools are turned off in Settings (AI Model); enable them to use this tool',
+        }
       try {
         const r = await gskGenerateImage({
           prompt: String(op.prompt),
@@ -219,6 +240,11 @@ export function registerSlidesOnlyAiIpc(): void {
     'ai:analyze-media',
     async (_event, op: { mediaUrls: string[]; requirements: string }) => {
       if (!hasGskAuth()) return { error: tm('errGskCli') }
+      if (!gskCloudToolsOn())
+        return {
+          error:
+            'Genspark cloud tools are turned off in Settings (AI Model); enable them to use this tool',
+        }
       try {
         const text = await gskAnalyzeMedia({
           mediaUrls: (op.mediaUrls ?? []).map(String),
@@ -303,6 +329,11 @@ export function registerSlidesOnlyAiIpc(): void {
       if (!session) return null
       const slide = session.opened.deck.slides[op.slideIndex]
       if (!slide) return null
+      // The AI layer may address the picture by its durable id — translate to the
+      // parse-time id the engine matches
+      const targetId =
+        slide.elements.find((el) => matchesElementRef(el, String(op.sourceId)))?.id ??
+        String(op.sourceId)
       try {
         const resp = await fetchRemoteImage(String(op.url))
         if (!resp || !resp.ok) return null
@@ -313,7 +344,7 @@ export function registerSlidesOnlyAiIpc(): void {
         const ok = replacePictureBytes(
           session.opened,
           slide,
-          String(op.sourceId),
+          targetId,
           new Uint8Array(buf),
           ext,
           op.keepSrcRect ? { keepSrcRect: true } : undefined,
@@ -326,14 +357,12 @@ export function registerSlidesOnlyAiIpc(): void {
         // A replacement with a different aspect ratio would be stretched into
         // the surviving frame — center-crop it to cover the frame instead.
         if (!op.keepSrcRect) {
-          const pic = slide.elements.find(
-            (el) => el.id === String(op.sourceId) && el.type === 'picture',
-          )
+          const pic = slide.elements.find((el) => el.id === targetId && el.type === 'picture')
           const frame = pic?.transform?.offset
           if (frame) {
             const natural = nativeImage.createFromBuffer(buf).getSize()
             const crop = coverCropFractions(natural.width, natural.height, frame.cx, frame.cy)
-            if (crop) editPictureSrcRect(slide, String(op.sourceId), crop)
+            if (crop) editPictureSrcRect(slide, targetId, crop)
           }
         }
         return rebuildSlide(session, op.slideIndex)

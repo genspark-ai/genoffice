@@ -197,6 +197,8 @@ export interface ActionCtx {
   ) => Promise<void>
   /** Open the format-background pane (canvas context menu entry) */
   openBgFormat: () => void
+  /** Open the format pane for the selection (element context menu entry) */
+  openFormat: () => void
   /** Open the "Change Shape" gallery popover for a shape (context menu entry) */
   openChangeShape: (targetId: string, x: number, y: number) => void
 }

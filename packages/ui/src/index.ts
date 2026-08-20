@@ -14,6 +14,7 @@ export {
   useDismissablePopover,
   type PopoverDismissOptions,
 } from './popover-dismiss'
+export { Dropdown, type DropdownOption } from './dropdown'
 export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'

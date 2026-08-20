@@ -19,6 +19,7 @@ import {
   type WriteProtection,
 } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
+import { FieldError, PasswordInput } from './PasswordInput'
 
 /** every field: undefined = unchanged; null = remove; value = set */
 export interface ProtectDialogResult {
@@ -151,66 +152,75 @@ export function ProtectDialog({
   }
   const clearError = () => setErrorKey('')
 
+  const mismatch = errorKey === 'appEncMismatch'
+
   return (
     <div className="modal-backdrop">
-      <div className="modal protect-dialog">
+      <div className="modal protect-dialog gs-form">
         <h2>{t('appProtectTitle')}</h2>
+        <p className="modal-desc">{t('appProtectDesc')}</p>
 
         <h3 className="protect-section-title">{t('appProtectSecurity')}</h3>
-        <label>
-          {t('appProtectOpenPwd')}
-          <input
-            type="password"
-            autoFocus
-            maxLength={255}
-            value={openPwd}
-            onChange={(e) => {
-              setOpenPwd(e.target.value)
-              clearError()
-            }}
-            onKeyDown={onEnter}
-          />
-        </label>
-        <label>
-          {t('appEncConfirmLabel')}
-          <input
-            type="password"
-            maxLength={255}
-            value={openPwd2}
-            onChange={(e) => {
-              setOpenPwd2(e.target.value)
-              clearError()
-            }}
-            onKeyDown={onEnter}
-          />
-        </label>
-        <label>
-          {t('appProtectModifyPwd')}
-          <input
-            type="password"
-            maxLength={255}
-            value={modifyPwd}
-            onChange={(e) => {
-              setModifyPwd(e.target.value)
-              clearError()
-            }}
-            onKeyDown={onEnter}
-          />
-        </label>
-        <label>
-          {t('appEncConfirmLabel')}
-          <input
-            type="password"
-            maxLength={255}
-            value={modifyPwd2}
-            onChange={(e) => {
-              setModifyPwd2(e.target.value)
-              clearError()
-            }}
-            onKeyDown={onEnter}
-          />
-        </label>
-        {(encrypted || hadModifyPwd) && <p className="pgnum-hint">{t('appProtectPwdKeepHint')}</p>}
+        <div className="fld-row">
+          <label className="fld">
+            {t('appProtectOpenPwd')} <span className="fld-opt">{t('appOptional')}</span>
+            <PasswordInput
+              autoFocus
+              maxLength={255}
+              value={openPwd}
+              hideReveal={openPwd === KEEP}
+              onChange={(v) => {
+                setOpenPwd(v)
+                clearError()
+              }}
+              onKeyDown={onEnter}
+            />
+          </label>
+          <label className="fld">
+            {t('appEncConfirmLabel')}
+            <PasswordInput
+              maxLength={255}
+              value={openPwd2}
+              invalid={mismatch}
+              hideReveal={openPwd2 === KEEP}
+              onChange={(v) => {
+                setOpenPwd2(v)
+                clearError()
+              }}
+              onKeyDown={onEnter}
+            />
+          </label>
+        </div>
+        <div className="fld-row">
+          <label className="fld">
+            {t('appProtectModifyPwd')} <span className="fld-opt">{t('appOptional')}</span>
+            <PasswordInput
+              maxLength={255}
+              value={modifyPwd}
+              hideReveal={modifyPwd === KEEP}
+              onChange={(v) => {
+                setModifyPwd(v)
+                clearError()
+              }}
+              onKeyDown={onEnter}
+            />
+          </label>
+          <label className="fld">
+            {t('appEncConfirmLabel')}
+            <PasswordInput
+              maxLength={255}
+              value={modifyPwd2}
+              invalid={mismatch}
+              hideReveal={modifyPwd2 === KEEP}
+              onChange={(v) => {
+                setModifyPwd2(v)
+                clearError()
+              }}
+              onKeyDown={onEnter}
+            />
+          </label>
+        </div>
+        {(encrypted || hadModifyPwd) && <p className="fld-hint">{t('appProtectPwdKeepHint')}</p>}
 
         <h3 className="protect-section-title">{t('appProtectSectionTitle')}</h3>
         <label className="protect-check">
@@ -222,6 +232,7 @@ export function ProtectDialog({
               clearError()
             }}
           />
+          <span className="ctl" aria-hidden="true" />
           {t('appProtectFor')}
         </label>
         <div className="protect-modes">
@@ -237,19 +248,20 @@ export function ProtectDialog({
                   clearError()
                 }}
               />
+              <span className="ctl" aria-hidden="true" />
               {t(MODE_LABEL_KEYS[m])}
             </label>
           ))}
         </div>
         {protectOn && (
-          <label>
-            {t('appProtectPwdOptional')}
-            <input
-              type="password"
+          <label className="fld">
+            {t('appProtectPwdOptional')} <span className="fld-opt">{t('appOptionalBlank')}</span>
+            <PasswordInput
               maxLength={255}
               value={protectPwd}
-              onChange={(e) => {
-                setProtectPwd(e.target.value)
+              hideReveal={protectPwd === KEEP}
+              onChange={(v) => {
+                setProtectPwd(v)
                 clearError()
               }}
               onKeyDown={onEnter}
@@ -257,13 +269,13 @@ export function ProtectDialog({
           </label>
         )}
         {locked && protectionChanged && (
-          <label>
+          <label className="fld">
             {t('appProtectUnlockPwd')}
-            <input
-              type="password"
+            <PasswordInput
               value={unlockPwd}
-              onChange={(e) => {
-                setUnlockPwd(e.target.value)
+              invalid={errorKey === 'appWrongPassword'}
+              onChange={(v) => {
+                setUnlockPwd(v)
                 clearError()
               }}
               onKeyDown={onEnter}
@@ -278,10 +290,11 @@ export function ProtectDialog({
             checked={removePersonal}
             onChange={(e) => setRemovePersonal(e.target.checked)}
           />
+          <span className="ctl" aria-hidden="true" />
           {t('appProtectRemovePersonal')}
         </label>
 
-        {errorKey && <p className="modal-error">{t(errorKey)}</p>}
+        {errorKey && <FieldError>{t(errorKey)}</FieldError>}
         <div className="modal-actions">
           <button onClick={onCancel}>{t('appCancel')}</button>
           <button className="btn-primary" disabled={busy} onClick={() => void submit()}>

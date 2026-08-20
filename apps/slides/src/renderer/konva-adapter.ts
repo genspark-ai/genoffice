@@ -145,12 +145,18 @@ function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<nu
     if (!a || !b) continue
     const [lr, lg, lb] = [srgbToLin(a[0] / 255), srgbToLin(a[1] / 255), srgbToLin(a[2] / 255)]
     const [mr, mg, mb] = [srgbToLin(b[0] / 255), srgbToLin(b[1] / 255), srgbToLin(b[2] / 255)]
+    // Alpha-varying pairs interpolate premultiplied (PowerPoint semantics): a transparent
+    // stop contributes no color, so white@0% → navy stays navy through the fade instead of
+    // washing toward white (straight interpolation) — measured on prod alpha-fade overlays.
+    const [aA, aB] = [a[3], b[3]]
     for (let k = 1; k < SUBDIVISIONS; k++) {
       const t = k / SUBDIVISIONS
-      const r = Math.round(linToSrgb(lr + (mr - lr) * t) * 255)
-      const g = Math.round(linToSrgb(lg + (mg - lg) * t) * 255)
-      const bl = Math.round(linToSrgb(lb + (mb - lb) * t) * 255)
-      const al = a[3] + (b[3] - a[3]) * t
+      const al = aA + (aB - aA) * t
+      const mix = (x: number, y: number) =>
+        al > 0 ? (x * aA + (y * aB - x * aA) * t) / al : x + (y - x) * t
+      const r = Math.round(linToSrgb(mix(lr, mr)) * 255)
+      const g = Math.round(linToSrgb(mix(lg, mg)) * 255)
+      const bl = Math.round(linToSrgb(mix(lb, mb)) * 255)
       out.push(
         cur.pos + (next.pos - cur.pos) * t,
         al >= 1 ? `rgb(${r},${g},${bl})` : `rgba(${r},${g},${bl},${al.toFixed(3)})`,
@@ -313,9 +319,10 @@ export function fillToKonva(
           fill.dataUrl ?? '',
           fill.clrChange,
           fill.duotone,
+          fill.lum,
         ) as HTMLImageElement
         // recolored variants must not share cache slots with the raw image
-        const srcKey = processedImageKey(fill.dataUrl ?? '', fill.clrChange, fill.duotone)
+        const srcKey = processedImageKey(fill.dataUrl ?? '', fill.clrChange, fill.duotone, fill.lum)
         if (fill.mode === 'tile') {
           // PowerPoint tiles at the image's 144dpi natural size x sx/sy, anchored per algn
           // plus tx/ty offsets. Pre-composited into a shape-sized canvas: Konva pattern
@@ -369,16 +376,43 @@ export function fillToKonva(
   }
 }
 
-export function strokeToKonva(stroke: RenderStroke | undefined): {
+export function strokeToKonva(
+  stroke: RenderStroke | undefined,
+  // Shape-local box for gradient strokes (the gradient vector spans the shape, like fills)
+  size?: { w: number; h: number },
+): {
   stroke?: string
   strokeWidth?: number
   dash?: number[]
+  lineCap?: 'butt' | 'round' | 'square'
+  lineJoin?: 'round' | 'bevel' | 'miter'
+  strokeLinearGradientStartPoint?: { x: number; y: number }
+  strokeLinearGradientEndPoint?: { x: number; y: number }
+  strokeLinearGradientColorStops?: Array<number | string>
 } {
   if (!stroke) return {}
+  const grad = stroke.gradient
+  let gradProps = {}
+  if (grad && size) {
+    const rad = (grad.angleDeg * Math.PI) / 180
+    const dx = Math.cos(rad)
+    const dy = Math.sin(rad)
+    const cx = size.w / 2
+    const cy = size.h / 2
+    const len = Math.abs(dx) * size.w + Math.abs(dy) * size.h
+    gradProps = {
+      strokeLinearGradientStartPoint: { x: cx - (dx * len) / 2, y: cy - (dy * len) / 2 },
+      strokeLinearGradientEndPoint: { x: cx + (dx * len) / 2, y: cy + (dy * len) / 2 },
+      strokeLinearGradientColorStops: linearRampStops(grad.stops),
+    }
+  }
   return {
     stroke: normalizeColor(stroke.color),
     strokeWidth: stroke.widthPx,
     ...(stroke.dash ? { dash: stroke.dash } : {}),
+    ...(stroke.cap ? { lineCap: stroke.cap } : {}),
+    ...(stroke.join ? { lineJoin: stroke.join } : {}),
+    ...gradProps,
   }
 }
 
@@ -644,32 +678,81 @@ function averageColor(img: HTMLImageElement | HTMLCanvasElement, cacheKey: strin
 }
 
 const duotoneCache = new Map<string, HTMLCanvasElement>()
+const lumCache = new Map<string, HTMLCanvasElement>()
 
 type ClrChange = { from: string; to: string }
+type Lum = { bright: number; contrast: number }
 
 export function processedImageKey(
   dataUrl: string,
   clrChange?: ClrChange,
   duotone?: [string, string],
+  lum?: Lum,
 ): string {
   let key = dataUrl
   if (clrChange) key += `|cc:${clrChange.from}>${clrChange.to}`
   if (duotone) key += `|${duotone[0]}|${duotone[1]}`
+  if (lum) key += `|lum:${lum.bright},${lum.contrast}`
   return key
 }
 
-/** Apply blip pixel effects in PowerPoint's order: clrChange first, then duotone. */
+/** Apply blip pixel effects in PowerPoint's order: clrChange, then duotone, then lum. */
 export function processedImage(
   img: HTMLImageElement,
   dataUrl: string,
   clrChange?: ClrChange,
   duotone?: [string, string],
+  lum?: Lum,
 ): CanvasImageSource {
   let src: HTMLImageElement | HTMLCanvasElement = img
   if (clrChange) src = clrChangeImage(src, `${dataUrl}|cc`, clrChange.from, clrChange.to)
   if (duotone)
     src = duotoneImage(src, processedImageKey(dataUrl, clrChange), duotone[0], duotone[1])
+  if (lum) src = lumImage(src, processedImageKey(dataUrl, clrChange, duotone), lum)
   return src
+}
+
+/**
+ * <a:lum> brightness/contrast: contrast scales around mid gray, then positive brightness
+ * blends toward white / negative toward black. Calibrated against PowerPoint on a
+ * bright=70% contrast=-70% washed-out photo box (navy 0.09 -> 0.813 measured on the ref).
+ */
+export function lumImage(
+  img: HTMLImageElement | HTMLCanvasElement,
+  cacheKey: string,
+  lum: Lum,
+): HTMLCanvasElement {
+  const key = `${cacheKey}|lum:${lum.bright},${lum.contrast}`
+  let c = lumCache.get(key)
+  if (!c) {
+    c = document.createElement('canvas')
+    c.width = img.width || 1
+    c.height = img.height || 1
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    const slope = lum.contrast >= 0 ? 1 / (1 - Math.min(lum.contrast, 0.99)) : 1 + lum.contrast
+    const lut = new Uint8ClampedArray(256)
+    for (let i = 0; i < 256; i++) {
+      let v = ((i / 255 - 0.5) * slope + 0.5) * 255
+      v = lum.bright >= 0 ? v + lum.bright * (255 - v) : v * (1 + lum.bright)
+      lut[i] = Math.max(0, Math.min(255, Math.round(v)))
+    }
+    try {
+      const data = ctx.getImageData(0, 0, c.width, c.height)
+      const px = data.data
+      for (let i = 0; i < px.length; i += 4) {
+        px[i] = lut[px[i]!]!
+        px[i + 1] = lut[px[i + 1]!]!
+        px[i + 2] = lut[px[i + 2]!]!
+      }
+      ctx.putImageData(data, 0, 0)
+    } catch {
+      /* tainted canvas: keep the original pixels */
+    }
+    if (lumCache.size > 100) lumCache.clear()
+    lumCache.set(key, c)
+  }
+  return c
 }
 
 const clrChangeCache = new Map<string, HTMLCanvasElement>()

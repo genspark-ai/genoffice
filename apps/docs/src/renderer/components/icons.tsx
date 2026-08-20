@@ -1069,6 +1069,35 @@ export function IconKey(props: IconProps) {
   )
 }
 
+export function IconEye(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 1.7 8 C 3.1 5.15 5.35 3.6 8 3.6 s 4.9 1.55 6.3 4.4 C 12.9 10.85 10.65 12.4 8 12.4 S 3.1 10.85 1.7 8 Z" />
+      <circle cx="8" cy="8" r="1.95" />
+    </Svg>
+  )
+}
+
+export function IconEyeOff(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 3.5 4.65 C 2.78 5.5 2.18 6.62 1.7 8 c 1.4 2.85 3.65 4.4 6.3 4.4 c 1.02 0 1.97 -0.23 2.84 -0.68 M 6.4 3.82 C 6.91 3.67 7.44 3.6 8 3.6 c 2.65 0 4.9 1.55 6.3 4.4 c -0.4 0.82 -0.87 1.54 -1.4 2.15" />
+      <path d="M 6.62 6.62 a 1.95 1.95 0 0 0 2.76 2.76" />
+      <path d="M 2.7 2.7 l 10.6 10.6" />
+    </Svg>
+  )
+}
+
+export function IconAlert(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M 8 4.9 v 3.5" />
+      <circle cx="8" cy="10.9" r="0.75" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
 /* ---------- View ---------- */
 
 function Magnifier({ children }: { children?: ReactNode }) {

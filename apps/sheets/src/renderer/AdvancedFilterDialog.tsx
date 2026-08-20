@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { Dropdown } from '@genoffice/ui'
 import { BooleanNumber } from '@univerjs/core'
 import type { IFilterColumn } from '@univerjs/preset-sheets-filter'
 
@@ -14,12 +15,7 @@ import { t, useI18n, type StringKey } from './i18n/locale'
 /// CustomFilterOperator string values (whose .d.ts declaration is missing,
 /// so the enum itself would type as `any`).
 export type AdvancedFilterOperator =
-  | 'equal'
-  | 'notEqual'
-  | 'greaterThan'
-  | 'greaterThanOrEqual'
-  | 'lessThan'
-  | 'lessThanOrEqual'
+  'equal' | 'notEqual' | 'greaterThan' | 'greaterThanOrEqual' | 'lessThan' | 'lessThanOrEqual'
 
 export interface AdvancedFilterCondition {
   readonly operator: AdvancedFilterOperator
@@ -65,15 +61,17 @@ export function buildCustomFilters(
   return {
     // `and` only matters (and only serializes) with two conditions.
     ...(and && second !== undefined ? { and: BooleanNumber.TRUE } : {}),
-    customFilters: second === undefined
-      ? [toUniverCustomFilter(first)]
-      : [toUniverCustomFilter(first), toUniverCustomFilter(second)],
+    customFilters:
+      second === undefined
+        ? [toUniverCustomFilter(first)]
+        : [toUniverCustomFilter(first), toUniverCustomFilter(second)],
   }
 }
 
-function toUniverCustomFilter(
-  condition: AdvancedFilterCondition,
-): { val: string; operator?: AdvancedFilterOperator } {
+function toUniverCustomFilter(condition: AdvancedFilterCondition): {
+  val: string
+  operator?: AdvancedFilterOperator
+} {
   return condition.operator === 'equal'
     ? { val: condition.val }
     : { val: condition.val, operator: condition.operator }
@@ -107,81 +105,84 @@ export function AdvancedFilterDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <header>{t('dlgAdvFilterTitle')}</header>
-        {columns.length === 0
-          ? (
-              <p className="dialog-note">
-                {t('dlgAdvFilterNoColumns')}
-              </p>
-            )
-          : (
-              <div className="dialog-grid">
-                <label className="dialog-span">
-                  {t('dlgAdvFilterColumn')}
-                  <select
-                    value={colId}
-                    onChange={(event) => setColId(Number(event.target.value))}
-                  >
-                    {columns.map((column) => (
-                      <option key={column.colId} value={column.colId}>{column.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {t('dlgAdvFilterCondition1')}
-                  <select
-                    value={operator1}
-                    onChange={(event) => setOperator1(event.target.value as AdvancedFilterOperator)}
-                  >
-                    {OPERATOR_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {t('dlgAdvFilterValue')}
-                  <input value={value1} onChange={(event) => setValue1(event.target.value)} />
-                </label>
-                <label className="dialog-check">
-                  <input
-                    type="radio"
-                    name="advanced-filter-join"
-                    checked={and}
-                    onChange={() => setAnd(true)}
-                  />
-                  {t('dlgAdvFilterAnd')}
-                </label>
-                <label className="dialog-check">
-                  <input
-                    type="radio"
-                    name="advanced-filter-join"
-                    checked={!and}
-                    onChange={() => setAnd(false)}
-                  />
-                  {t('dlgAdvFilterOr')}
-                </label>
-                <label>
-                  {t('dlgAdvFilterCondition2')}
-                  <select
-                    value={operator2}
-                    onChange={(event) => setOperator2(event.target.value as AdvancedFilterOperator)}
-                  >
-                    {OPERATOR_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {t('dlgAdvFilterValue')}
-                  <input value={value2} onChange={(event) => setValue2(event.target.value)} />
-                </label>
-                <p className="dialog-note dialog-span">
-                  {t('dlgAdvFilterNote')}
-                </p>
-              </div>
-            )}
-        {error && <p className="dialog-note" role="alert">{error}</p>}
+        {columns.length === 0 ? (
+          <p className="dialog-note">{t('dlgAdvFilterNoColumns')}</p>
+        ) : (
+          <div className="dialog-grid">
+            <label className="dialog-span">
+              {t('dlgAdvFilterColumn')}
+              <Dropdown
+                ariaLabel={t('dlgAdvFilterColumn')}
+                value={String(colId)}
+                options={columns.map((column) => ({
+                  value: String(column.colId),
+                  label: column.label,
+                }))}
+                onPick={(v) => setColId(Number(v))}
+              />
+            </label>
+            <label>
+              {t('dlgAdvFilterCondition1')}
+              <Dropdown
+                ariaLabel={t('dlgAdvFilterCondition1')}
+                value={operator1}
+                options={OPERATOR_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                onPick={setOperator1}
+              />
+            </label>
+            <label>
+              {t('dlgAdvFilterValue')}
+              <input value={value1} onChange={(event) => setValue1(event.target.value)} />
+            </label>
+            <label className="dialog-check">
+              <input
+                type="radio"
+                name="advanced-filter-join"
+                checked={and}
+                onChange={() => setAnd(true)}
+              />
+              {t('dlgAdvFilterAnd')}
+            </label>
+            <label className="dialog-check">
+              <input
+                type="radio"
+                name="advanced-filter-join"
+                checked={!and}
+                onChange={() => setAnd(false)}
+              />
+              {t('dlgAdvFilterOr')}
+            </label>
+            <label>
+              {t('dlgAdvFilterCondition2')}
+              <Dropdown
+                ariaLabel={t('dlgAdvFilterCondition2')}
+                value={operator2}
+                options={OPERATOR_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                onPick={setOperator2}
+              />
+            </label>
+            <label>
+              {t('dlgAdvFilterValue')}
+              <input value={value2} onChange={(event) => setValue2(event.target.value)} />
+            </label>
+            <p className="dialog-note dialog-span">{t('dlgAdvFilterNote')}</p>
+          </div>
+        )}
+        {error && (
+          <p className="dialog-note" role="alert">
+            {error}
+          </p>
+        )}
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
           {columns.length > 0 && (
             <button
               className="primary-action"

@@ -2,6 +2,7 @@ import type {
   GeneratedBlock,
   ImageWrap,
   ParaFormat,
+  ParaFrame,
   Run,
   TabStop,
   TableCell,
@@ -141,6 +142,17 @@ const WRAP_ELEMENT_RE =
   /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
 
 /**
+ * Re-encode ONLY the stacking rank of an existing wp:anchor as Word's
+ * base + rank relativeHeight. Everything else — position basis (relativeFrom),
+ * wrap element, distances — keeps its original bytes, so a picture never
+ * shifts from a pure reorder (or from the save-time harmonization of wild
+ * producer values). No-op on inline images (no wp:anchor).
+ */
+export function applyImageZOrder(xml: string, zOrder?: number): string {
+  return xml.replace(/(<wp:anchor[^>]*?relativeHeight=")\d+(")/, `$1${251658240 + (zOrder ?? 0)}$2`)
+}
+
+/**
  * Switch an image paragraph between inline (in line with text, wrap = null) and floating
  * (wp:anchor with the given wrap mode). Position/wrap elements are rebuilt;
  * extent, docPr and the pic graphic stay untouched.
@@ -151,8 +163,9 @@ const WRAP_ELEMENT_RE =
 export function applyImageWrap(
   xml: string,
   wrap: ImageWrap | null,
-  posOffset?: { x: number; y: number },
+  posOffset?: { x: number; y: number; relativeTo?: 'page' },
   marginAlign?: { h: 'left' | 'center' | 'right'; v: 'top' | 'center' | 'bottom' },
+  zOrder?: number,
 ): string {
   const hasAnchor = /<wp:anchor[\s>]/.test(xml)
   // Original wrapTight/wrapThrough bytes (including wp:wrapPolygon) — reused as a whole
@@ -180,10 +193,12 @@ export function applyImageWrap(
     wrap === 'through-right'
   let position: string
   if (posOffset !== undefined) {
+    const relH = posOffset.relativeTo ?? 'column'
+    const relV = posOffset.relativeTo ?? 'paragraph'
     position =
       '<wp:simplePos x="0" y="0"/>' +
-      `<wp:positionH relativeFrom="column"><wp:posOffset>${Math.round(posOffset.x)}</wp:posOffset></wp:positionH>` +
-      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${Math.round(posOffset.y)}</wp:posOffset></wp:positionV>`
+      `<wp:positionH relativeFrom="${relH}"><wp:posOffset>${Math.round(posOffset.x)}</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="${relV}"><wp:posOffset>${Math.round(posOffset.y)}</wp:posOffset></wp:positionV>`
   } else if (marginAlign !== undefined) {
     position =
       '<wp:simplePos x="0" y="0"/>' +
@@ -211,7 +226,7 @@ export function applyImageWrap(
           : '<wp:wrapNone/>'
   const anchorOpen =
     `<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0"` +
-    ` relativeHeight="251658240" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1">`
+    ` relativeHeight="${251658240 + (zOrder ?? 0)}" behindDoc="${behind}" locked="0" layoutInCell="1" allowOverlap="1">`
   if (hasAnchor) {
     out = out.replace(/<wp:anchor[^>]*>/, anchorOpen)
   } else {
@@ -934,17 +949,41 @@ interface PPrChild {
   xml: string
 }
 
+/** w:spacing element for a ParaFormat ('' when nothing is set) — shared by body and table-cell paragraphs */
+function paraSpacingXml(format: ParaFormat): string {
+  const attrs: string[] = []
+  if (format.spaceBefore && format.spaceBefore > 0) {
+    attrs.push(`w:before="${Math.round(format.spaceBefore)}"`)
+  }
+  // explicit 0 overrides the style's space-after in Word, so it must be written back
+  if (format.spaceAfter !== undefined && format.spaceAfter >= 0) {
+    attrs.push(`w:after="${Math.round(format.spaceAfter)}"`)
+  }
+  if ((format.lineRule === 'exact' || format.lineRule === 'atLeast') && format.lineRawTwips) {
+    // Exact/at-least line height: write the twips back verbatim (previously only auto was
+    // recognized, so edited paragraphs lost their line spacing)
+    attrs.push(`w:line="${Math.round(format.lineRawTwips)}"`, `w:lineRule="${format.lineRule}"`)
+  } else if (format.lineSpacing && format.lineSpacing > 0) {
+    attrs.push(`w:line="${Math.round(format.lineSpacing * 240)}"`, 'w:lineRule="auto"')
+  }
+  return attrs.length > 0 ? `<w:spacing ${attrs.join(' ')}/>` : ''
+}
+
 /** pPr children the ParaFormat model owns (rebuilt on format edits) */
 function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   if (!format) return []
   const out: PPrChild[] = []
   if (format.pageBreakBefore) out.push({ name: 'w:pageBreakBefore', xml: '<w:pageBreakBefore/>' })
   if (format.borders) {
+    const style = format.borderStyle
+    const defaultSz = Math.max(2, Math.round(style?.szEighths ?? 4))
+    const space = Math.min(31, Math.max(0, Math.round(style?.spacePt ?? 1)))
+    const defaultColor = style?.color ? escapeXmlAttr(style.color) : 'auto'
     const line = (side: string, ch: 't' | 'b' | 'l' | 'r') => {
       const declared = format.borderLines?.[ch]
-      const sz = declared?.szPt ? Math.max(1, Math.round(declared.szPt * 8)) : 4
-      const color = declared?.color ? escapeXmlAttr(declared.color) : 'auto'
-      return `<w:${side} w:val="single" w:sz="${sz}" w:space="1" w:color="${color}"/>`
+      const sz = declared?.szPt ? Math.max(1, Math.round(declared.szPt * 8)) : defaultSz
+      const color = declared?.color ? escapeXmlAttr(declared.color) : defaultColor
+      return `<w:${side} w:val="single" w:sz="${sz}" w:space="${space}" w:color="${color}"/>`
     }
     const sides: string[] = []
     // schema order inside pBdr: top, left, bottom, right
@@ -961,27 +1000,8 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
     })
   }
   if (format.bidi) out.push({ name: 'w:bidi', xml: '<w:bidi/>' })
-  const spacingAttrs: string[] = []
-  if (format.spaceBefore && format.spaceBefore > 0) {
-    spacingAttrs.push(`w:before="${Math.round(format.spaceBefore)}"`)
-  }
-  // explicit 0 overrides the style's space-after in Word, so it must be written back
-  if (format.spaceAfter !== undefined && format.spaceAfter >= 0) {
-    spacingAttrs.push(`w:after="${Math.round(format.spaceAfter)}"`)
-  }
-  if ((format.lineRule === 'exact' || format.lineRule === 'atLeast') && format.lineRawTwips) {
-    // Exact/at-least line height: write the twips back verbatim (previously only auto was
-    // recognized, so edited paragraphs lost their line spacing)
-    spacingAttrs.push(
-      `w:line="${Math.round(format.lineRawTwips)}"`,
-      `w:lineRule="${format.lineRule}"`,
-    )
-  } else if (format.lineSpacing && format.lineSpacing > 0) {
-    spacingAttrs.push(`w:line="${Math.round(format.lineSpacing * 240)}"`, 'w:lineRule="auto"')
-  }
-  if (spacingAttrs.length > 0) {
-    out.push({ name: 'w:spacing', xml: `<w:spacing ${spacingAttrs.join(' ')}/>` })
-  }
+  const spacing = paraSpacingXml(format)
+  if (spacing) out.push({ name: 'w:spacing', xml: spacing })
   const indAttrs: string[] = []
   // w:left/w:right are signed in OOXML — negative indents (text extending
   // into the margin) are valid and must survive a paragraph rebuild; the
@@ -1011,7 +1031,9 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
       .join('')
     out.push({ name: 'w:tabs', xml: `<w:tabs>${tabXml}</w:tabs>` })
   }
-  if (format.dropCap) {
+  if (format.frame) {
+    out.push({ name: 'w:framePr', xml: framePrXml(format.frame) })
+  } else if (format.dropCap) {
     const { type, lines } = format.dropCap
     out.push({
       name: 'w:framePr',
@@ -1023,6 +1045,22 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
     out.push({ name: 'w:rPr', xml: `<w:rPr><w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr>` })
   }
   return out
+}
+
+/** positioned paragraph frame (P19): w:framePr with absolute x/y, Word's attribute order */
+function framePrXml(frame: ParaFrame): string {
+  const attrs = [`w:w="${Math.round(frame.wTwips)}"`]
+  if (frame.hTwips !== undefined) {
+    attrs.push(`w:h="${Math.round(frame.hTwips)}"`, `w:hRule="${frame.hRule ?? 'atLeast'}"`)
+  }
+  attrs.push(
+    `w:wrap="${frame.wrap ?? 'none'}"`,
+    `w:vAnchor="${frame.vAnchor ?? 'page'}"`,
+    `w:hAnchor="${frame.hAnchor ?? 'page'}"`,
+    `w:x="${Math.round(frame.xTwips)}"`,
+    `w:y="${Math.round(frame.yTwips)}"`,
+  )
+  return `<w:framePr ${attrs.join(' ')}/>`
 }
 
 const FORMAT_MANAGED_TAGS = new Set([
@@ -1172,6 +1210,9 @@ function rawTabsUnchanged(raw: string | undefined, stops: TabStop[]): boolean {
 }
 
 function rawFramePrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
+  // positioned frames (P19) rebuild whenever set: comparing every attribute
+  // buys nothing — the generated framePr is byte-stable already
+  if (f.frame !== undefined) return raw !== undefined && raw === framePrXml(f.frame)
   const val = rawAttr(raw, 'w:dropCap')
   const rawDc =
     val === 'drop' || val === 'margin'
@@ -1246,7 +1287,7 @@ export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): 
   // build set of managed tags for this format (base + conditional)
   const managedTags = new Set(FORMAT_MANAGED_TAGS)
   if (format?.tabStops !== undefined) managedTags.add('w:tabs')
-  if (format?.dropCap !== undefined) managedTags.add('w:framePr')
+  if (format?.dropCap !== undefined || format?.frame !== undefined) managedTags.add('w:framePr')
   // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
   if (format?.emptyRunSizeHalfPoints !== undefined) managedTags.add('w:rPr')
   const rawChildren = splitXmlChildren(inner)
@@ -1573,10 +1614,34 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       : percentages.map((value) => Math.max(1, Math.round((value / totalPct) * 9360)))
   const totalWidth = widths.reduce((sum, value) => sum + value, 0)
   const border = (name: string) => `<w:${name} w:val="single" w:sz="4" w:space="0" w:color="auto"/>`
+  const sides = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'] as const
+  // model borders (e.g. 'none' for borderless source tables) win over the
+  // self-contained single-line default
   const borders =
     '<w:tblBorders>' +
-    ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(border).join('') +
+    sides
+      .map((name) => {
+        const b = model.borders?.[name]
+        if (!b) return model.borders ? '' : border(name)
+        return (
+          `<w:${name} w:val="${escapeXmlAttr(b.style)}"` +
+          (b.szEighths != null ? ` w:sz="${Math.round(b.szEighths)}"` : '') +
+          ` w:space="0" w:color="${escapeXmlAttr(b.color ?? 'auto')}"/>`
+        )
+      })
+      .join('') +
     '</w:tblBorders>'
+  const marSides = ['top', 'left', 'bottom', 'right'] as const
+  const cellMar = model.cellMarTwips
+    ? '<w:tblCellMar>' +
+      marSides
+        .map((name) => {
+          const w = model.cellMarTwips?.[name]
+          return w != null ? `<w:${name} w:w="${Math.round(w)}" w:type="dxa"/>` : ''
+        })
+        .join('') +
+      '</w:tblCellMar>'
+    : ''
   const grid = `<w:tblGrid>${widths.map((width) => `<w:gridCol w:w="${width}"/>`).join('')}</w:tblGrid>`
   const rows = model.rows
     .map((row, ri) => {
@@ -1610,10 +1675,24 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
   const originalTblPr = originalTableXml?.match(
     /<w:tblPr(?:\s[^>]*)?>[\s\S]*?<\/w:tblPr>|<w:tblPr(?:\s[^>]*)?\/>/,
   )?.[0]
+  const tblInd =
+    model.indentTwips && Math.round(model.indentTwips) !== 0
+      ? `<w:tblInd w:w="${Math.round(model.indentTwips)}" w:type="dxa"/>`
+      : ''
+  // floating table (P19 canvas): tblpPr + tblOverlap lead the fresh tblPr
+  // (CT_TblPr order: tblStyle, tblpPr, tblOverlap, …, tblW)
+  const tblpPr = model.floatPos
+    ? `<w:tblpPr w:leftFromText="0" w:rightFromText="0"` +
+      ` w:vertAnchor="${model.floatPos.vertAnchor ?? 'page'}"` +
+      ` w:horzAnchor="${model.floatPos.horzAnchor ?? 'page'}"` +
+      ` w:tblpX="${Math.round(model.floatPos.xTwips)}"` +
+      ` w:tblpY="${Math.round(model.floatPos.yTwips)}"/>` +
+      '<w:tblOverlap w:val="overlap"/>'
+    : ''
   let tblPr =
     originalTblPr ??
-    `<w:tblPr><w:tblW w:w="${totalWidth}" w:type="dxa"/>${borders}` +
-      '<w:tblLayout w:type="fixed"/></w:tblPr>'
+    `<w:tblPr>${tblpPr}<w:tblW w:w="${totalWidth}" w:type="dxa"/>${tblInd}${borders}` +
+      `<w:tblLayout w:type="fixed"/>${cellMar}</w:tblPr>`
   // Table style reference: '' = remove, non-empty = replace/insert (tblStyle is the
   // first tblPr child)
   if (model.tblStyleId !== undefined) {
@@ -2054,6 +2133,7 @@ const RUN_MANAGED_GROUPS: Array<{ key: string; tags: string[] }> = [
   { key: 'underline', tags: ['w:u'] },
   { key: 'shading', tags: ['w:shd'] },
   { key: 'vertAlign', tags: ['w:vertAlign'] },
+  { key: 'rtl', tags: ['w:rtl'] },
   { key: 'rPrChange', tags: ['w:rPrChange'] },
 ]
 
@@ -2069,11 +2149,17 @@ function rawBool(xml: string | undefined): boolean {
 }
 
 /** rFonts built from the model alone (no original element to preserve).
- * Latin-only keeps eastAsia empty; a lone primary font fills every slot (legacy behavior). */
-function freshRFontsXml(font: string | undefined, fontAscii: string | undefined): string {
-  const a = escapeXmlAttr(fontAscii ?? font ?? '')
+ * Latin-only keeps eastAsia empty; a lone primary font fills every slot (legacy behavior);
+ * a complex-script font fills the cs slot instead of mirroring the ascii font. */
+function freshRFontsXml(
+  font: string | undefined,
+  fontAscii: string | undefined,
+  fontCs?: string,
+): string {
+  const a = escapeXmlAttr(fontAscii ?? font ?? fontCs ?? '')
   const ea = font ? ` w:eastAsia="${escapeXmlAttr(font)}"` : ''
-  return `<w:rFonts w:ascii="${a}"${ea} w:hAnsi="${a}" w:cs="${a}"/>`
+  const cs = fontCs ? escapeXmlAttr(fontCs) : a
+  return `<w:rFonts w:ascii="${a}"${ea} w:hAnsi="${a}" w:cs="${cs}"/>`
 }
 
 /**
@@ -2100,6 +2186,7 @@ function mergeRFontsXml(rawXml: string, run: Run): string {
   if (run.font && (hadEastAsia || run.font !== rawPrimary)) {
     set('w:eastAsia', 'w:eastAsiaTheme', run.font)
   }
+  if (run.fontCs) set('w:cs', 'w:cstheme', run.fontCs)
   return `<w:rFonts${[...attrs].map(([k, v]) => ` ${k}="${v}"`).join('')}/>`
 }
 
@@ -2140,8 +2227,8 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   if (insideLink) out.push({ name: 'w:rStyle', xml: '<w:rStyle w:val="Hyperlink"/>' })
   else if (run.styleId)
     out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(run.styleId)}"/>` })
-  if (run.font || run.fontAscii) {
-    out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii) })
+  if (run.font || run.fontAscii || run.fontCs) {
+    out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii, run.fontCs) })
   }
   // the Cs twins carry the same flag for complex-script text; without them clicking Bold
   // on Arabic or Hebrew changes nothing on screen, which is what Word writes too
@@ -2169,6 +2256,7 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   }
   if (run.vertAlign)
     out.push({ name: 'w:vertAlign', xml: `<w:vertAlign w:val="${run.vertAlign}"/>` })
+  if (run.rtl) out.push({ name: 'w:rtl', xml: '<w:rtl/>' })
   const rPrChange = revisionRPrChangeXml(run)
   if (rPrChange) out.push({ name: 'w:rPrChange', xml: rPrChange })
   return out
@@ -2215,10 +2303,19 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return raw === modeled || (raw === 'Hyperlink' && !modeled)
       }
       case 'rFonts': {
-        // mirrors the parse side: primary = eastAsia ?? ascii ?? hAnsi, latin = ascii ?? hAnsi
+        // mirrors the parse side: primary = eastAsia ?? ascii ?? hAnsi, latin = ascii ?? hAnsi,
+        // complex-script = literal w:cs
         const attrs = rawOf('w:rFonts')
         const ascii = rawAttr(attrs, 'w:ascii') ?? rawAttr(attrs, 'w:hAnsi')
-        return (rawAttr(attrs, 'w:eastAsia') ?? ascii) === run.font && ascii === run.fontAscii
+        // an absent model fontCs is "untouched", not a removal: editor-rebuilt
+        // Runs drop unmodeled fields, and losing w:cs on an unrelated edit
+        // would corrupt complex-script runs (mergeRFontsXml likewise only
+        // writes w:cs when the model carries one)
+        return (
+          (rawAttr(attrs, 'w:eastAsia') ?? ascii) === run.font &&
+          ascii === run.fontAscii &&
+          (run.fontCs === undefined || rawAttr(attrs, 'w:cs') === run.fontCs)
+        )
       }
       case 'bold':
         return rawBool(rawOf(cs ? 'w:bCs' : 'w:b')) === !!run.bold
@@ -2254,6 +2351,8 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         const modeled = raw === 'superscript' || raw === 'subscript' ? raw : undefined
         return modeled === run.vertAlign
       }
+      case 'rtl':
+        return rawBool(rawOf('w:rtl')) === !!run.rtl
       case 'rPrChange':
         return !!rawOf('w:rPrChange') === !!run.rPrChange
       default:
@@ -2371,6 +2470,178 @@ export function buildTextboxParagraphXml(opts?: {
     `<mc:AlternateContent ${mcNs}>` + mcChoice + mcFallback + `</mc:AlternateContent>`
 
   return `<w:p><w:r>${alternateContent}</w:r></w:p>`
+}
+
+/** one paragraph of anchored-textbox content: real runs plus ParaFormat-owned pPr */
+export interface TextboxContentParagraph {
+  runs: Run[]
+  format?: ParaFormat
+}
+
+export interface AnchoredTextboxOptions {
+  /**
+   * 'paragraph': the box rides its holder paragraph through the flow (card
+   * regions); 'page': absolute page coordinates (newsletter regions).
+   */
+  anchor: 'paragraph' | 'page'
+  /**
+   * EMU offsets. paragraph anchor: x from the text column, y from the holder
+   * paragraph; page anchor: both from the page edges.
+   */
+  xEmu: number
+  yEmu: number
+  widthEmu: number
+  heightEmu: number
+  paragraphs: TextboxContentParagraph[]
+  /** wp:docPr id / name suffix (caller must keep unique) */
+  id?: number
+  /** solid interior fill (RRGGBB); omitted = transparent */
+  fillHex?: string
+  /** border color (RRGGBB); omitted = no outline */
+  borderHex?: string
+  /** text insets in EMU; omitted = Word defaults (91440 horizontal / 45720 vertical) */
+  insetsEmu?: { l: number; t: number; r: number; b: number }
+  /** corner radius in EMU; maps to a:prstGeom roundRect with the matching adj */
+  cornerRadiusEmu?: number
+  /** written as relativeHeight base + zOrder (P16 z discipline) */
+  zOrder?: number
+  behindDoc?: boolean
+  /** default: paragraph anchor wraps topAndBottom, page anchor wraps none */
+  wrap?: 'topAndBottom' | 'none'
+  /** exact line height (twips) for the holder <w:p>, so the anchor row adds no visible height */
+  holderLineTwips?: number
+  /** spacing-before (twips) on the holder <w:p> — the region's slot in the caller's spacing chain */
+  holderSpacingBeforeTwips?: number
+  /** page-break-before on the holder <w:p> (region starts its page) */
+  holderPageBreakBefore?: boolean
+}
+
+/**
+ * Build a <w:p> holding a floating WPS text box whose content is real,
+ * editable w:p paragraphs (P20 region container). Unlike
+ * buildTextboxParagraphXml (cursor-position UI insert), this variant takes
+ * explicit geometry, fill, insets and z-order — pdf2docx uses it to rebuild
+ * measured card/column regions.
+ */
+export function buildAnchoredTextboxParagraphXml(opts: AnchoredTextboxOptions): string {
+  const id = opts.id ?? 1
+  const { xEmu, yEmu, widthEmu, heightEmu } = opts
+
+  const contentParaXml = (p: TextboxContentParagraph): string => {
+    const children = formatPPrChildren(p.format)
+    children.sort((a, b) => PPR_CHILD_ORDER.indexOf(a.name) - PPR_CHILD_ORDER.indexOf(b.name))
+    const pPr = children.length > 0 ? `<w:pPr>${children.map((c) => c.xml).join('')}</w:pPr>` : ''
+    return `<w:p>${pPr}${inlineRunsXml(p.runs)}</w:p>`
+  }
+  const txbxContent = `<w:txbxContent>${opts.paragraphs.map(contentParaXml).join('')}</w:txbxContent>`
+
+  // roundRect radius = adj / 100000 * min(cx, cy); clamp to the spec's half-side max
+  const geom = opts.cornerRadiusEmu
+    ? `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${Math.min(
+        50000,
+        Math.max(
+          0,
+          Math.round((opts.cornerRadiusEmu / Math.max(1, Math.min(widthEmu, heightEmu))) * 100000),
+        ),
+      )}"/></a:avLst></a:prstGeom>`
+    : `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`
+  const fill = opts.fillHex
+    ? `<a:solidFill><a:srgbClr val="${escapeXmlAttr(opts.fillHex)}"/></a:solidFill>`
+    : `<a:noFill/>`
+  const line = opts.borderHex
+    ? `<a:ln><a:solidFill><a:srgbClr val="${escapeXmlAttr(opts.borderHex)}"/></a:solidFill></a:ln>`
+    : `<a:ln><a:noFill/></a:ln>`
+  const spPr =
+    `<wps:spPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm>` +
+    geom +
+    fill +
+    line +
+    `</wps:spPr>`
+
+  const ins = opts.insetsEmu ?? { l: 91440, t: 45720, r: 91440, b: 45720 }
+  // fixed box: a:noAutofit keeps overflowing content from growing the region
+  const bodyPr =
+    `<wps:bodyPr wrap="square" lIns="${Math.round(ins.l)}" tIns="${Math.round(ins.t)}" ` +
+    `rIns="${Math.round(ins.r)}" bIns="${Math.round(ins.b)}" anchor="t"><a:noAutofit/></wps:bodyPr>`
+
+  const wsp =
+    `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">` +
+    `<wps:cNvSpPr txBox="1"/>` +
+    spPr +
+    `<wps:txbx>${txbxContent}</wps:txbx>` +
+    bodyPr +
+    `</wps:wsp>`
+
+  const graphic =
+    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
+    `<a:graphicData xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
+    `uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">${wsp}</a:graphicData>` +
+    `</a:graphic>`
+
+  const relFrom = opts.anchor === 'page' ? 'page' : undefined
+  const posH =
+    `<wp:positionH relativeFrom="${relFrom ?? 'column'}">` +
+    `<wp:posOffset>${Math.round(xEmu)}</wp:posOffset></wp:positionH>`
+  const posV =
+    `<wp:positionV relativeFrom="${relFrom ?? 'paragraph'}">` +
+    `<wp:posOffset>${Math.round(yEmu)}</wp:posOffset></wp:positionV>`
+  const wrapMode = opts.wrap ?? (opts.anchor === 'page' ? 'none' : 'topAndBottom')
+  const wrapEl = wrapMode === 'topAndBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>'
+
+  const anchor =
+    `<wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ` +
+    `distT="0" distB="0" distL="0" distR="0" simplePos="0" ` +
+    `relativeHeight="${251658240 + (opts.zOrder ?? 0)}" behindDoc="${opts.behindDoc ? 1 : 0}" ` +
+    `locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<wp:simplePos x="0" y="0"/>` +
+    posH +
+    posV +
+    `<wp:extent cx="${widthEmu}" cy="${heightEmu}"/>` +
+    `<wp:effectExtent l="0" t="0" r="0" b="0"/>` +
+    wrapEl +
+    `<wp:docPr id="${id}" name="Region ${id}"/>` +
+    graphic +
+    `</wp:anchor>`
+
+  // Requires="wps" must resolve at the AlternateContent scope, or Word
+  // reports the whole file as unreadable content
+  const mcNs =
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"'
+  const vmlTag = opts.cornerRadiusEmu ? 'v:roundrect' : 'v:rect'
+  const vmlFill = opts.fillHex
+    ? ` fillcolor="#${escapeXmlAttr(opts.fillHex)}" filled="t"`
+    : ' filled="f"'
+  const vmlRect =
+    `<${vmlTag} xmlns:v="urn:schemas-microsoft-com:vml" ` +
+    `style="position:absolute;margin-left:${xEmu / EMU_PER_PT}pt;margin-top:${yEmu / EMU_PER_PT}pt;` +
+    `width:${widthEmu / EMU_PER_PT}pt;height:${heightEmu / EMU_PER_PT}pt"${vmlFill} stroked="f">` +
+    `<v:textbox>${txbxContent}</v:textbox>` +
+    `</${vmlTag}>`
+
+  const alternateContent =
+    `<mc:AlternateContent ${mcNs}>` +
+    `<mc:Choice Requires="wps"><w:drawing>${anchor}</w:drawing></mc:Choice>` +
+    `<mc:Fallback><w:pict>${vmlRect}</w:pict></mc:Fallback>` +
+    `</mc:AlternateContent>`
+
+  const holderSpacing =
+    opts.holderLineTwips !== undefined || opts.holderSpacingBeforeTwips !== undefined
+      ? `<w:spacing` +
+        (opts.holderSpacingBeforeTwips
+          ? ` w:before="${Math.round(opts.holderSpacingBeforeTwips)}"`
+          : '') +
+        ` w:after="0"` +
+        (opts.holderLineTwips !== undefined
+          ? ` w:line="${Math.round(opts.holderLineTwips)}" w:lineRule="exact"`
+          : '') +
+        `/>`
+      : ''
+  const holderBreak = opts.holderPageBreakBefore ? '<w:pageBreakBefore/>' : ''
+  const holderPPr =
+    holderSpacing || holderBreak ? `<w:pPr>${holderBreak}${holderSpacing}</w:pPr>` : ''
+  return `<w:p>${holderPPr}<w:r>${alternateContent}</w:r></w:p>`
 }
 
 /**

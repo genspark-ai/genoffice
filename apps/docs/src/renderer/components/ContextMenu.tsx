@@ -17,7 +17,7 @@ import {
   splitCell,
 } from '@tiptap/pm/tables'
 import { platformShortcuts } from '@genoffice/i18n'
-import { isSymbolFontFamily } from '@genoffice/ui'
+import { Dropdown, isSymbolFontFamily, type DropdownOption } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
 import { useSystemFontFamilies } from '../system-fonts'
@@ -187,6 +187,34 @@ export function EditorContextMenu({
   const currentWrap = (protAttrs?.imageWrap as string | null) ?? null
   const setWrap = (wrap: string | null) =>
     editor.chain().focus().updateAttributes('docProtected', { imageWrap: wrap }).run()
+  // Stacking order among overlapping floating pictures. z-order only has a
+  // visible effect on floating (front/behind) images, so the menu enables it
+  // there; a bring-forward on an inline image also floats it (Word parity).
+  const currentZOrder = Number((protAttrs?.imageZOrder as number | null) ?? 0)
+  const isFloatingWrap = currentWrap === 'front' || currentWrap === 'behind'
+  const setZOrder = (z: number) => {
+    const attrs: Record<string, unknown> = { imageZOrder: z }
+    // an inline image has no paint order; floating it (in front) makes the
+    // reorder meaningful, matching Word's "Bring to Front" on an inline picture
+    if (!isFloatingWrap) attrs.imageWrap = 'front'
+    editor.chain().focus().updateAttributes('docProtected', attrs).run()
+  }
+  /** z-order of every floating anchor in the document (Word's to-front/to-back are document-global) */
+  const floatingZOrders = (): number[] => {
+    const zs: number[] = [currentZOrder]
+    editor.state.doc.descendants((n) => {
+      if (
+        n.type.name === 'docProtected' &&
+        (n.attrs.imageWrap === 'front' || n.attrs.imageWrap === 'behind')
+      )
+        zs.push(Number(n.attrs.imageZOrder ?? 0))
+    })
+    return zs
+  }
+  const bringToFront = () => setZOrder(Math.max(...floatingZOrders()) + 1)
+  const sendToBack = () => setZOrder(Math.min(...floatingZOrders()) - 1)
+  const bringForward = () => setZOrder(currentZOrder + 1)
+  const sendBackward = () => setZOrder(currentZOrder - 1)
 
   /** Plain-text insertion: no HTML parsing (insertContent(string) would treat < > as tags) */
   const insertPlainText = (text: string) => {
@@ -440,6 +468,25 @@ export function EditorContextMenu({
               </div>
             )}
           </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('appArrangeMenu'), { submenuKey: 'arrange' })}
+            {submenu === 'arrange' && (
+              <div className="ctx-submenu">
+                <button className="ctx-item" onClick={run(bringToFront)}>
+                  <span className="ctx-label">{t('appBringToFront')}</span>
+                </button>
+                <button className="ctx-item" onClick={run(bringForward)}>
+                  <span className="ctx-label">{t('appBringForward')}</span>
+                </button>
+                <button className="ctx-item" onClick={run(sendBackward)}>
+                  <span className="ctx-label">{t('appSendBackward')}</span>
+                </button>
+                <button className="ctx-item" onClick={run(sendToBack)}>
+                  <span className="ctx-label">{t('appSendToBack')}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </>
       )}
       <div className="ctx-sep" />
@@ -541,54 +588,57 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
         <div className="font-dialog-row">
           <label>
             {t('appFontFamilyLabel')}
-            <select value={font} onChange={(e) => setFont(e.target.value)}>
-              <option value="">{t('appDefaultBodyFont')}</option>
-              <optgroup label={t('ribbonFontsCommon')}>
-                {fontFamilies.map((f) => (
-                  <option key={f} value={f} style={{ fontFamily: cssFontFamily(f) }}>
-                    {f}
-                  </option>
-                ))}
-              </optgroup>
-              {systemFontFamilies.length > 0 && (
-                <optgroup label={t('ribbonFontsSystem')}>
-                  {systemFontFamilies.map((f) => (
-                    <option
-                      key={f}
-                      value={f}
-                      // symbol fonts would render their own name as pictographs
-                      style={{ fontFamily: isSymbolFontFamily(f) ? undefined : cssFontFamily(f) }}
+            <Dropdown
+              value={font}
+              ariaLabel={t('appFontFamilyLabel')}
+              options={[
+                { value: '', label: t('appDefaultBodyFont') } as DropdownOption,
+                ...fontFamilies.map((f): DropdownOption => ({
+                  value: f,
+                  label: f,
+                  render: <span style={{ fontFamily: cssFontFamily(f) }}>{f}</span>,
+                })),
+                ...systemFontFamilies.map((f): DropdownOption => ({
+                  value: f,
+                  label: f,
+                  render: (
+                    // symbol fonts would render their own name as pictographs
+                    <span
+                      style={{
+                        fontFamily: isSymbolFontFamily(f) ? undefined : cssFontFamily(f),
+                      }}
                     >
                       {f}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {font && !fontFamilies.includes(font) && !systemFontFamilies.includes(font) && (
-                <option value={font}>{font}</option>
-              )}
-            </select>
+                    </span>
+                  ),
+                })),
+                ...(font && !fontFamilies.includes(font) && !systemFontFamilies.includes(font)
+                  ? [{ value: font, label: font } as DropdownOption]
+                  : []),
+              ]}
+              onPick={setFont}
+            />
           </label>
           <label>
             {t('appFontStyleLabel')}
-            <select value={style} onChange={(e) => setStyle(e.target.value)}>
-              {FONT_STYLES.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {t(s.nameKey)}
-                </option>
-              ))}
-            </select>
+            <Dropdown
+              value={style}
+              ariaLabel={t('appFontStyleLabel')}
+              options={FONT_STYLES.map((s) => ({ value: s.key, label: t(s.nameKey) }))}
+              onPick={setStyle}
+            />
           </label>
           <label>
             {t('appFontSizeLabel')}
-            <select value={size} onChange={(e) => setSize(Number(e.target.value))}>
-              {!FONT_SIZES.includes(size) && <option value={size}>{size}</option>}
-              {FONT_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <Dropdown
+              value={String(size)}
+              ariaLabel={t('appFontSizeLabel')}
+              options={[
+                ...(!FONT_SIZES.includes(size) ? [String(size)] : []),
+                ...FONT_SIZES.map(String),
+              ].map((s) => ({ value: s, label: s }))}
+              onPick={(v) => setSize(Number(v))}
+            />
           </label>
         </div>
         <div className="font-dialog-row">
@@ -762,40 +812,40 @@ export function ParagraphDialog({ editor, onClose }: { editor: Editor; onClose: 
         <div className="font-dialog-row">
           <label>
             {t('appAlignment')}
-            <select value={align} onChange={(e) => setAlign(e.target.value as AlignValue)}>
-              {ALIGN_OPTIONS.map((o) => (
-                <option key={o.key} value={o.key}>
-                  {t(o.nameKey)}
-                </option>
-              ))}
-            </select>
+            <Dropdown
+              value={align}
+              ariaLabel={t('appAlignment')}
+              options={ALIGN_OPTIONS.map((o) => ({ value: o.key, label: t(o.nameKey) }))}
+              onPick={setAlign}
+            />
           </label>
           <label>
             {t('appLineSpacingLabel')}
-            <select
+            <Dropdown
               value={lineRule || String(lineSpacing)}
-              onChange={(e) => {
-                const v = e.target.value
-                if (v === 'exact' || v === 'atLeast' || v === 'multiple') {
-                  setLineRule(v === 'multiple' ? '' : v)
-                  if (v === 'multiple') setLineSpacing(1.25)
+              ariaLabel={t('appLineSpacingLabel')}
+              options={[
+                ...(!lineRule && !LINE_SPACINGS.some((s) => s.value === lineSpacing)
+                  ? [
+                      {
+                        value: String(lineSpacing),
+                        label: t('appLineMultiple', { n: lineSpacing }),
+                      },
+                    ]
+                  : []),
+                ...LINE_SPACINGS.map((s) => ({ value: String(s.value), label: t(s.nameKey) })),
+                { value: 'atLeast', label: t('appLineAtLeast') },
+                { value: 'exact', label: t('appLineExactly') },
+              ]}
+              onPick={(v) => {
+                if (v === 'exact' || v === 'atLeast') {
+                  setLineRule(v)
                 } else {
                   setLineRule('')
                   setLineSpacing(Number(v))
                 }
               }}
-            >
-              {!lineRule && !LINE_SPACINGS.some((s) => s.value === lineSpacing) && (
-                <option value={lineSpacing}>{t('appLineMultiple', { n: lineSpacing })}</option>
-              )}
-              {LINE_SPACINGS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {t(s.nameKey)}
-                </option>
-              ))}
-              <option value="atLeast">{t('appLineAtLeast')}</option>
-              <option value="exact">{t('appLineExactly')}</option>
-            </select>
+            />
           </label>
           {lineRule === 'exact' || lineRule === 'atLeast' ? (
             <label>

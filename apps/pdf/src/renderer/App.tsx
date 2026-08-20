@@ -93,7 +93,7 @@ import {
 } from './color-runs'
 import type { CharStyle } from './color-runs'
 import { platformShortcuts } from '@genoffice/i18n'
-import { useDismissablePopover } from '@genoffice/ui'
+import { Dropdown, useDismissablePopover } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
 import type {
@@ -107,6 +107,7 @@ import type {
   MetadataInput,
   NoteEditInput,
   PageImageRef,
+  PdfConvertFormat,
   StaticFormFillRecord,
   StampInput,
   TextEditFailure,
@@ -184,6 +185,7 @@ import {
   IconFormCheck,
   IconFormCross,
   IconExportImg,
+  IconConvertPdf,
   IconInsertImage,
   IconEditImage,
   IconNight,
@@ -336,6 +338,8 @@ export default function App() {
     MARKUP_COLORS.highlight,
   )
   const [highlightColorOpen, setHighlightColorOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [convertBusy, setConvertBusy] = useState(false)
   const [drawings, setDrawings] = useState<LocalDrawing[]>([])
   const [drawTool, setDrawTool] = useState<DrawTool | null>(null)
   const [textEdits, setTextEdits] = useState<LocalTextEdit[]>([])
@@ -4903,6 +4907,7 @@ export default function App() {
   const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
   const opacityMenuRef = useRef<HTMLDivElement | null>(null)
   const staticColorFieldRef = useRef<HTMLDivElement | null>(null)
+  const convertWrapRef = useRef<HTMLDivElement | null>(null)
 
   // Thumbnail context menu
   useDismissablePopover(thumbMenu != null, () => setThumbMenu(null), {
@@ -4937,6 +4942,11 @@ export default function App() {
   // Color popover inside the static-text dialog (the dialog itself stays open)
   useDismissablePopover(staticTextColorOpen, () => setStaticTextColorOpen(false), {
     inside: () => [staticColorFieldRef.current],
+  })
+
+  // Converter dropdown (Home tab)
+  useDismissablePopover(convertOpen, () => setConvertOpen(false), {
+    inside: () => [convertWrapRef.current],
   })
 
   // Main process picked "Save" in the close prompt → save and report the result
@@ -5112,6 +5122,20 @@ export default function App() {
   const runAiPreset = (text: string): void => {
     setAiCollapsed(false)
     setAiPreset({ text, nonce: Date.now() })
+  }
+
+  /** Converter dropdown → the shell's local conversion flows (save dialog, password prompt) */
+  const convertTo = async (format: PdfConvertFormat): Promise<void> => {
+    setConvertOpen(false)
+    if (convertBusy) return
+    setConvertBusy(true)
+    try {
+      await window.pdfApi.convertOffice(format)
+    } catch {
+      // No shell conversion flow in standalone mode; shell-side errors show their own dialogs
+    } finally {
+      setConvertBusy(false)
+    }
   }
 
   // ── shared ribbon groups (rendered on more than one tab) ──
@@ -5506,6 +5530,34 @@ export default function App() {
                 <div className="ribbon-group-items">
                   {editTextBtn}
                   {insertTextBtn}
+                </div>
+              </div>
+              <div className="ribbon-sep" />
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <div className="rb-drop-wrap" ref={convertWrapRef}>
+                    <button
+                      className={`rb-big${convertOpen ? ' active' : ''}`}
+                      data-tip={t('convertPdfTip')}
+                      disabled={convertBusy}
+                      onClick={() => setConvertOpen((v) => !v)}
+                    >
+                      <span className="rb-big-icon">
+                        <IconConvertPdf />
+                        <RbCaret />
+                      </span>
+                      {t('convertPdf')}
+                    </button>
+                    {convertOpen && (
+                      <div className="rb-drop rb-menu">
+                        <button onClick={() => void convertTo('docx')}>{t('convertToWord')}</button>
+                        <button onClick={() => void convertTo('xlsx')}>
+                          {t('convertToExcel')}
+                        </button>
+                        <button onClick={() => void convertTo('pptx')}>{t('convertToPpt')}</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="ribbon-sep" />
@@ -6826,12 +6878,20 @@ export default function App() {
                                       >
                                         <div ref={textEditBarRef} className="pdf-textedit-bar">
                                           {editFonts.length > 0 && (
-                                            <select
+                                            <Dropdown
                                               className="pdf-textedit-fontsel"
-                                              data-tip={t('texteditFont')}
+                                              tip={t('texteditFont')}
+                                              ariaLabel={t('texteditFont')}
                                               value={textDraft.font ?? ''}
-                                              onChange={(e) => {
-                                                const id = e.target.value || undefined
+                                              options={[
+                                                { value: '', label: t('texteditFontOriginal') },
+                                                ...editFonts.map((id) => ({
+                                                  value: id,
+                                                  label: EDIT_FONT_BY_ID.get(id)?.label ?? id,
+                                                })),
+                                              ]}
+                                              onPick={(v) => {
+                                                const id = v || undefined
                                                 applyDraftStyle(
                                                   // "Original font" on a selection clears
                                                   // the override back to the draft level
@@ -6840,14 +6900,7 @@ export default function App() {
                                                   true,
                                                 )
                                               }}
-                                            >
-                                              <option value="">{t('texteditFontOriginal')}</option>
-                                              {editFonts.map((id) => (
-                                                <option key={id} value={id}>
-                                                  {EDIT_FONT_BY_ID.get(id)?.label ?? id}
-                                                </option>
-                                              ))}
-                                            </select>
+                                            />
                                           )}
                                           <input
                                             className="pdf-textedit-sizenum"
@@ -7738,17 +7791,17 @@ export default function App() {
                     </div>
                     <label className="pdf-field">
                       <span>{t('formTextAlign')}</span>
-                      <select
-                        className="pdf-modal-input"
+                      <Dropdown
+                        className="pdf-modal-dd"
+                        ariaLabel={t('formTextAlign')}
                         value={staticTextAlign}
-                        onChange={(e) =>
-                          setStaticTextAlign(e.target.value as 'left' | 'center' | 'right')
-                        }
-                      >
-                        <option value="left">{t('formAlignLeft')}</option>
-                        <option value="center">{t('formAlignCenter')}</option>
-                        <option value="right">{t('formAlignRight')}</option>
-                      </select>
+                        options={[
+                          { value: 'left', label: t('formAlignLeft') },
+                          { value: 'center', label: t('formAlignCenter') },
+                          { value: 'right', label: t('formAlignRight') },
+                        ]}
+                        onPick={setStaticTextAlign}
+                      />
                     </label>
                   </div>
                   <div className="pdf-modal-actions">

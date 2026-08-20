@@ -33,8 +33,13 @@
   --danger: #d13438;
   --danger-bg: #fdf3f3;
   --danger-border: #f0c8c9;
+  --success: #107c41;
+  --success-bg: #eaf7ef;
+  --success-border: #c8e8d4;
   --color-bg-overlay: rgb(0 0 0 / 50%);
   --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 10%);
+  --shadow-btn-hover: 0 2px 8px rgb(35 36 37 / 15%);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / 18%);
 
   /* AI panel (canonical names from the former per-app copies) */
   --gs-font-sans:
@@ -96,8 +101,13 @@
   --danger: #d13438;
   --danger-bg: #3a2020;
   --danger-border: #5a3030;
+  --success: #52c082;
+  --success-bg: #20342a;
+  --success-border: #33543f;
   --color-bg-overlay: rgb(0 0 0 / 60%);
   --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+  --shadow-btn-hover: 0 2px 8px rgb(0 0 0 / 50%);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
 
   --color-btn-primary: #e4e4e4;
   --color-btn-primary-hover: #d0d0d0;
@@ -143,8 +153,13 @@
     --danger: #d13438;
     --danger-bg: #3a2020;
     --danger-border: #5a3030;
+    --success: #52c082;
+    --success-bg: #20342a;
+    --success-border: #33543f;
     --color-bg-overlay: rgb(0 0 0 / 60%);
     --shadow-modal-strong: 0 20px 25px rgb(0 0 0 / 30%);
+    --shadow-btn-hover: 0 2px 8px rgb(0 0 0 / 50%);
+    --shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
 
     --color-btn-primary: #e4e4e4;
     --color-btn-primary-hover: #d0d0d0;

@@ -157,6 +157,11 @@ import {
   setPdfRenamedHook,
   setPdfSaveAsInFlight,
 } from '../../../pdf/src/main/pdf-main'
+import { PDF_CHANNELS } from '../../../pdf/src/shared/ipc'
+import { convertPdfFileToDocxLocalWithPrompt, PdfLoadError } from './pdf2docx-local'
+import { convertPdfFileToPptxLocalWithPrompt } from './pdf2pptx-local'
+import { convertPdfFileToXlsxLocalWithPrompt } from './pdf2xlsx-local'
+import { closePdfPasswordDialog, promptPdfPassword } from './pdf-password-dialog'
 import {
   configureMarkdownRuntime,
   markdownFileRenamed,
@@ -484,6 +489,32 @@ const tMain = createI18n({
     pdfDocxFailedMsg: '导出为 Word 失败',
     pdfDocxNoCliMsg: '无法登录 Genspark：缺少必需组件（gsk），请重新安装应用。',
     pdfDocxBusyMsg: '正在转换中，请等待当前导出完成。',
+    menuExportDocxLocal: '导出为 Word（本地转换）…',
+    menuExportDocxCloud: '导出为 Word（云端转换）…',
+    menuExportPptx: '导出为 PPT…',
+    pdfPptxFailedMsg: '导出为 PPT 失败',
+    pdfPptxBusyMsg: '正在转换中，请等待当前导出完成。',
+    pdfPptxLocalScannedDetail: '本地转换已按图片保真导出各页，幻灯片中的文字不可编辑。',
+    menuExportXlsx: '导出为 Excel…',
+    pdfXlsxFailedMsg: '导出为 Excel 失败',
+    pdfXlsxBusyMsg: '正在转换中，请等待当前导出完成。',
+    pdfXlsxLocalScannedDetail: '扫描页无法转换为单元格，对应工作表中已写入提示行。',
+    pdfXlsxLocalSkippedMsg: '部分页面未转换为单元格',
+    pdfXlsxLocalSkippedDetail: '第 {pages} 页无法转换为单元格，对应工作表中已写入提示行。',
+    pdfDocxLocalScannedMsg: '检测到扫描件',
+    pdfDocxLocalScannedDetail:
+      '本地转换已按图片保真导出各页。如需可编辑的文本，请使用云端转换（支持 OCR）。',
+    pdfDocxLocalDegradedMsg: '部分页面已按图片导出',
+    pdfDocxLocalDegradedDetail: '第 {pages} 页版面无法可靠重建，已按整页图片保真导出。',
+    pdfDocxLocalEncryptedDetail: '此 PDF 已加密，未提供正确的密码，无法转换。',
+    pdfDocxLocalUnsupportedEncDetail:
+      '该文件使用证书加密或不支持的加密方式，无法在本地转换，可尝试云端转换。',
+    pdfPwdTitle: '输入密码',
+    pdfPwdPrompt: '此 PDF 已加密，请输入打开密码：',
+    pdfPwdRetryPrompt: '密码不正确，请重试。',
+    pdfPwdOk: '确定',
+    pdfPwdVerifying: '正在验证密码…',
+    pdfDocxLocalCorruptDetail: '文件已损坏或不是有效的 PDF，无法转换。',
     dlgPickSaveDir: '选择默认保存位置',
     errSaveDirUnusable: '所选文件夹不可写，无法用作默认保存位置',
   },
@@ -543,6 +574,37 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Cannot sign in to Genspark: a required component (gsk) is missing. Please reinstall the app.',
     pdfDocxBusyMsg: 'A Word export is already in progress. Please wait for it to finish.',
+    menuExportDocxLocal: 'Export as Word (Local)…',
+    menuExportDocxCloud: 'Export as Word (Cloud)…',
+    menuExportPptx: 'Export as PowerPoint…',
+    pdfPptxFailedMsg: 'Export as PowerPoint failed',
+    pdfPptxBusyMsg: 'An export is already in progress. Please wait for it to finish.',
+    pdfPptxLocalScannedDetail:
+      'Each page was exported as a full-page image; the text on the slides is not editable.',
+    menuExportXlsx: 'Export as Excel…',
+    pdfXlsxFailedMsg: 'Export as Excel failed',
+    pdfXlsxBusyMsg: 'An export is already in progress. Please wait for it to finish.',
+    pdfXlsxLocalScannedDetail:
+      "Scanned pages cannot be converted to cells; each page's worksheet carries a notice row instead.",
+    pdfXlsxLocalSkippedMsg: 'Some pages were not converted to cells',
+    pdfXlsxLocalSkippedDetail:
+      'Pages {pages} could not be converted to cells; their worksheets carry a notice row instead.',
+    pdfDocxLocalScannedMsg: 'Scanned document detected',
+    pdfDocxLocalScannedDetail:
+      'The local conversion exported the pages as images to preserve their appearance. For editable text, use the cloud conversion (with OCR).',
+    pdfDocxLocalDegradedMsg: 'Some pages were exported as images',
+    pdfDocxLocalDegradedDetail:
+      'Page(s) {pages} could not be reliably reconstructed and were exported as full-page images.',
+    pdfDocxLocalEncryptedDetail:
+      'This PDF is encrypted and could not be opened without the correct password.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'This PDF uses certificate-based or otherwise unsupported encryption and cannot be converted locally. Try the cloud conversion instead.',
+    pdfPwdTitle: 'Enter Password',
+    pdfPwdPrompt: 'This PDF is encrypted. Enter the password to open it:',
+    pdfPwdRetryPrompt: 'Incorrect password. Please try again.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Verifying password…',
+    pdfDocxLocalCorruptDetail: 'The file is damaged or not a valid PDF and cannot be converted.',
     dlgPickSaveDir: 'Choose Default Save Location',
     errSaveDirUnusable:
       'The selected folder is not writable and cannot be used as the default save location',
@@ -603,6 +665,37 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Genspark にサインインできません：必要なコンポーネント（gsk）が見つかりません。アプリを再インストールしてください。',
     pdfDocxBusyMsg: 'Word への書き出しが進行中です。完了までお待ちください。',
+    menuExportDocxLocal: 'Word として書き出す（ローカル変換）…',
+    menuExportDocxCloud: 'Word として書き出す（クラウド変換）…',
+    menuExportPptx: 'PowerPoint として書き出す…',
+    pdfPptxFailedMsg: 'PowerPoint への書き出しに失敗しました',
+    pdfPptxBusyMsg: '変換が進行中です。現在の書き出しが完了するまでお待ちください。',
+    pdfPptxLocalScannedDetail:
+      '各ページは画像として書き出されたため、スライド内のテキストは編集できません。',
+    menuExportXlsx: 'Excel として書き出す…',
+    pdfXlsxFailedMsg: 'Excel への書き出しに失敗しました',
+    pdfXlsxBusyMsg: '変換が進行中です。現在の書き出しが完了するまでお待ちください。',
+    pdfXlsxLocalScannedDetail:
+      'スキャンされたページはセルに変換できないため、各ページのワークシートに通知行を書き込みました。',
+    pdfXlsxLocalSkippedMsg: '一部のページはセルに変換されませんでした',
+    pdfXlsxLocalSkippedDetail:
+      'ページ {pages} はセルに変換できなかったため、対応するワークシートに通知行を書き込みました。',
+    pdfDocxLocalScannedMsg: 'スキャン文書を検出しました',
+    pdfDocxLocalScannedDetail:
+      'ローカル変換では、見た目を保つため各ページを画像として書き出しました。編集可能なテキストが必要な場合は、クラウド変換（OCR 対応）をご利用ください。',
+    pdfDocxLocalDegradedMsg: '一部のページを画像として書き出しました',
+    pdfDocxLocalDegradedDetail:
+      'ページ {pages} はレイアウトを正確に再構築できなかったため、ページ全体を画像として書き出しました。',
+    pdfDocxLocalEncryptedDetail:
+      'このPDFは暗号化されており、正しいパスワードがないため変換できませんでした。',
+    pdfDocxLocalUnsupportedEncDetail:
+      'このPDFは証明書ベースまたは未対応の暗号化方式を使用しているため、ローカルでは変換できません。クラウド変換をお試しください。',
+    pdfPwdTitle: 'パスワードを入力',
+    pdfPwdPrompt: 'このPDFは暗号化されています。開くためのパスワードを入力してください：',
+    pdfPwdRetryPrompt: 'パスワードが正しくありません。もう一度お試しください。',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'パスワードを確認しています…',
+    pdfDocxLocalCorruptDetail: 'ファイルが破損しているか有効なPDFではないため、変換できません。',
     dlgPickSaveDir: '既定の保存先を選択',
     errSaveDirUnusable:
       '選択したフォルダーは書き込みできないため、既定の保存先として使用できません',
@@ -663,6 +756,37 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Genspark에 로그인할 수 없습니다. 필수 구성 요소(gsk)가 없습니다. 앱을 다시 설치해 주세요.',
     pdfDocxBusyMsg: 'Word 내보내기가 이미 진행 중입니다. 완료될 때까지 기다려 주세요.',
+    menuExportDocxLocal: 'Word로 내보내기(로컬 변환)…',
+    menuExportDocxCloud: 'Word로 내보내기(클라우드 변환)…',
+    menuExportPptx: 'PowerPoint로 내보내기…',
+    pdfPptxFailedMsg: 'PowerPoint 내보내기 실패',
+    pdfPptxBusyMsg: '변환이 진행 중입니다. 현재 내보내기가 완료될 때까지 기다려 주세요.',
+    pdfPptxLocalScannedDetail:
+      '각 페이지가 이미지로 내보내져 슬라이드의 텍스트를 편집할 수 없습니다.',
+    menuExportXlsx: 'Excel로 내보내기…',
+    pdfXlsxFailedMsg: 'Excel 내보내기 실패',
+    pdfXlsxBusyMsg: '변환이 진행 중입니다. 현재 내보내기가 완료될 때까지 기다려 주세요.',
+    pdfXlsxLocalScannedDetail:
+      '스캔된 페이지는 셀로 변환할 수 없어 각 페이지의 워크시트에 알림 행을 기록했습니다.',
+    pdfXlsxLocalSkippedMsg: '일부 페이지가 셀로 변환되지 않았습니다',
+    pdfXlsxLocalSkippedDetail:
+      '{pages} 페이지는 셀로 변환할 수 없어 해당 워크시트에 알림 행을 기록했습니다.',
+    pdfDocxLocalScannedMsg: '스캔 문서가 감지되었습니다',
+    pdfDocxLocalScannedDetail:
+      '로컬 변환은 모양을 유지하기 위해 각 페이지를 이미지로 내보냈습니다. 편집 가능한 텍스트가 필요하면 클라우드 변환(OCR 지원)을 사용하세요.',
+    pdfDocxLocalDegradedMsg: '일부 페이지가 이미지로 내보내졌습니다',
+    pdfDocxLocalDegradedDetail:
+      '{pages}쪽은 레이아웃을 안정적으로 재구성할 수 없어 전체 페이지 이미지로 내보냈습니다.',
+    pdfDocxLocalEncryptedDetail:
+      '이 PDF는 암호화되어 있으며 올바른 비밀번호가 없어 변환할 수 없습니다.',
+    pdfDocxLocalUnsupportedEncDetail:
+      '이 PDF는 인증서 기반이거나 지원되지 않는 암호화 방식을 사용하므로 로컬에서 변환할 수 없습니다. 클라우드 변환을 사용해 보세요.',
+    pdfPwdTitle: '비밀번호 입력',
+    pdfPwdPrompt: '이 PDF는 암호화되어 있습니다. 열기 위한 비밀번호를 입력하세요:',
+    pdfPwdRetryPrompt: '비밀번호가 올바르지 않습니다. 다시 시도하세요.',
+    pdfPwdOk: '확인',
+    pdfPwdVerifying: '비밀번호 확인 중…',
+    pdfDocxLocalCorruptDetail: '파일이 손상되었거나 유효한 PDF가 아니어서 변환할 수 없습니다.',
     dlgPickSaveDir: '기본 저장 위치 선택',
     errSaveDirUnusable: '선택한 폴더에 쓸 수 없어 기본 저장 위치로 사용할 수 없습니다',
   },
@@ -722,6 +846,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       "Connexion à Genspark impossible : un composant requis (gsk) est manquant. Veuillez réinstaller l'application.",
     pdfDocxBusyMsg: "Un export en Word est déjà en cours. Veuillez attendre qu'il se termine.",
+    menuExportDocxLocal: 'Exporter en Word (local)…',
+    menuExportDocxCloud: 'Exporter en Word (cloud)…',
+    menuExportPptx: 'Exporter en PowerPoint…',
+    pdfPptxFailedMsg: "Échec de l'exportation en PowerPoint",
+    pdfPptxBusyMsg: "Une exportation est déjà en cours. Veuillez attendre qu'elle se termine.",
+    pdfPptxLocalScannedDetail:
+      "Chaque page a été exportée sous forme d'image ; le texte des diapositives n'est pas modifiable.",
+    menuExportXlsx: 'Exporter en Excel…',
+    pdfXlsxFailedMsg: "Échec de l'exportation en Excel",
+    pdfXlsxBusyMsg: "Une exportation est déjà en cours. Veuillez attendre qu'elle se termine.",
+    pdfXlsxLocalScannedDetail:
+      "Les pages numérisées ne peuvent pas être converties en cellules ; la feuille de chaque page contient une ligne d'avertissement.",
+    pdfXlsxLocalSkippedMsg: "Certaines pages n'ont pas été converties en cellules",
+    pdfXlsxLocalSkippedDetail:
+      "Les pages {pages} n'ont pas pu être converties en cellules ; leurs feuilles contiennent une ligne d'avertissement.",
+    pdfDocxLocalScannedMsg: 'Document numérisé détecté',
+    pdfDocxLocalScannedDetail:
+      "La conversion locale a exporté les pages sous forme d'images pour préserver leur apparence. Pour un texte modifiable, utilisez la conversion cloud (avec OCR).",
+    pdfDocxLocalDegradedMsg: 'Certaines pages ont été exportées en images',
+    pdfDocxLocalDegradedDetail:
+      "Les pages {pages} n'ont pas pu être reconstruites de manière fiable et ont été exportées en images pleine page.",
+    pdfDocxLocalEncryptedDetail:
+      "Ce PDF est chiffré et n'a pas pu être ouvert sans le mot de passe correct.",
+    pdfDocxLocalUnsupportedEncDetail:
+      'Ce PDF utilise un chiffrement par certificat ou un chiffrement non pris en charge et ne peut pas être converti localement. Essayez la conversion cloud.',
+    pdfPwdTitle: 'Saisir le mot de passe',
+    pdfPwdPrompt: "Ce PDF est chiffré. Saisissez le mot de passe pour l'ouvrir :",
+    pdfPwdRetryPrompt: 'Mot de passe incorrect. Veuillez réessayer.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Vérification du mot de passe…',
+    pdfDocxLocalCorruptDetail:
+      "Le fichier est endommagé ou n'est pas un PDF valide et ne peut pas être converti.",
     dlgPickSaveDir: "Choisir l'emplacement d'enregistrement par défaut",
     errSaveDirUnusable:
       "Le dossier sélectionné n'est pas accessible en écriture et ne peut pas servir d'emplacement d'enregistrement par défaut",
@@ -782,6 +938,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Anmeldung bei Genspark nicht möglich: Eine erforderliche Komponente (gsk) fehlt. Bitte installieren Sie die App neu.',
     pdfDocxBusyMsg: 'Ein Word-Export läuft bereits. Bitte warten Sie, bis er abgeschlossen ist.',
+    menuExportDocxLocal: 'Als Word exportieren (lokal)…',
+    menuExportDocxCloud: 'Als Word exportieren (Cloud)…',
+    menuExportPptx: 'Als PowerPoint exportieren…',
+    pdfPptxFailedMsg: 'Export als PowerPoint fehlgeschlagen',
+    pdfPptxBusyMsg: 'Ein Export läuft bereits. Bitte warten Sie, bis er abgeschlossen ist.',
+    pdfPptxLocalScannedDetail:
+      'Jede Seite wurde als Bild exportiert; der Text auf den Folien ist nicht bearbeitbar.',
+    menuExportXlsx: 'Als Excel exportieren…',
+    pdfXlsxFailedMsg: 'Export als Excel fehlgeschlagen',
+    pdfXlsxBusyMsg: 'Ein Export läuft bereits. Bitte warten Sie, bis er abgeschlossen ist.',
+    pdfXlsxLocalScannedDetail:
+      'Gescannte Seiten können nicht in Zellen umgewandelt werden; das Arbeitsblatt jeder Seite enthält stattdessen eine Hinweiszeile.',
+    pdfXlsxLocalSkippedMsg: 'Einige Seiten wurden nicht in Zellen umgewandelt',
+    pdfXlsxLocalSkippedDetail:
+      'Die Seiten {pages} konnten nicht in Zellen umgewandelt werden; ihre Arbeitsblätter enthalten stattdessen eine Hinweiszeile.',
+    pdfDocxLocalScannedMsg: 'Gescanntes Dokument erkannt',
+    pdfDocxLocalScannedDetail:
+      'Die lokale Konvertierung hat die Seiten als Bilder exportiert, um ihr Aussehen zu erhalten. Für bearbeitbaren Text nutzen Sie die Cloud-Konvertierung (mit OCR).',
+    pdfDocxLocalDegradedMsg: 'Einige Seiten wurden als Bilder exportiert',
+    pdfDocxLocalDegradedDetail:
+      'Seite(n) {pages} konnten nicht zuverlässig rekonstruiert werden und wurden als ganzseitige Bilder exportiert.',
+    pdfDocxLocalEncryptedDetail:
+      'Diese PDF ist verschlüsselt und konnte ohne das richtige Passwort nicht geöffnet werden.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Diese PDF verwendet eine zertifikatsbasierte oder nicht unterstützte Verschlüsselung und kann nicht lokal konvertiert werden. Versuchen Sie die Cloud-Konvertierung.',
+    pdfPwdTitle: 'Passwort eingeben',
+    pdfPwdPrompt: 'Diese PDF ist verschlüsselt. Geben Sie das Passwort zum Öffnen ein:',
+    pdfPwdRetryPrompt: 'Falsches Passwort. Bitte versuchen Sie es erneut.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Passwort wird überprüft…',
+    pdfDocxLocalCorruptDetail:
+      'Die Datei ist beschädigt oder keine gültige PDF und kann nicht konvertiert werden.',
     dlgPickSaveDir: 'Standard-Speicherort auswählen',
     errSaveDirUnusable:
       'Der ausgewählte Ordner ist nicht beschreibbar und kann nicht als Standard-Speicherort verwendet werden',
@@ -842,6 +1030,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'No se puede iniciar sesión en Genspark: falta un componente necesario (gsk). Reinstale la aplicación.',
     pdfDocxBusyMsg: 'Ya hay una exportación a Word en curso. Espera a que termine.',
+    menuExportDocxLocal: 'Exportar como Word (local)…',
+    menuExportDocxCloud: 'Exportar como Word (nube)…',
+    menuExportPptx: 'Exportar como PowerPoint…',
+    pdfPptxFailedMsg: 'Error al exportar como PowerPoint',
+    pdfPptxBusyMsg: 'Ya hay una exportación en curso. Espere a que termine.',
+    pdfPptxLocalScannedDetail:
+      'Cada página se exportó como imagen; el texto de las diapositivas no es editable.',
+    menuExportXlsx: 'Exportar como Excel…',
+    pdfXlsxFailedMsg: 'Error al exportar como Excel',
+    pdfXlsxBusyMsg: 'Ya hay una exportación en curso. Espere a que termine.',
+    pdfXlsxLocalScannedDetail:
+      'Las páginas escaneadas no se pueden convertir en celdas; la hoja de cada página incluye una fila de aviso.',
+    pdfXlsxLocalSkippedMsg: 'Algunas páginas no se convirtieron en celdas',
+    pdfXlsxLocalSkippedDetail:
+      'Las páginas {pages} no se pudieron convertir en celdas; sus hojas incluyen una fila de aviso.',
+    pdfDocxLocalScannedMsg: 'Documento escaneado detectado',
+    pdfDocxLocalScannedDetail:
+      'La conversión local exportó las páginas como imágenes para conservar su aspecto. Para texto editable, usa la conversión en la nube (con OCR).',
+    pdfDocxLocalDegradedMsg: 'Algunas páginas se exportaron como imágenes',
+    pdfDocxLocalDegradedDetail:
+      'Las páginas {pages} no se pudieron reconstruir de forma fiable y se exportaron como imágenes de página completa.',
+    pdfDocxLocalEncryptedDetail:
+      'Este PDF está cifrado y no se pudo abrir sin la contraseña correcta.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Este PDF usa cifrado basado en certificados u otro cifrado no compatible y no se puede convertir localmente. Prueba la conversión en la nube.',
+    pdfPwdTitle: 'Introducir contraseña',
+    pdfPwdPrompt: 'Este PDF está cifrado. Introduzca la contraseña para abrirlo:',
+    pdfPwdRetryPrompt: 'Contraseña incorrecta. Inténtelo de nuevo.',
+    pdfPwdOk: 'Aceptar',
+    pdfPwdVerifying: 'Verificando la contraseña…',
+    pdfDocxLocalCorruptDetail:
+      'El archivo está dañado o no es un PDF válido y no se puede convertir.',
     dlgPickSaveDir: 'Elegir ubicación de guardado predeterminada',
     errSaveDirUnusable:
       'La carpeta seleccionada no admite escritura y no puede usarse como ubicación de guardado predeterminada',
@@ -901,6 +1121,35 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'ไม่สามารถลงชื่อเข้าใช้ Genspark ได้: ไม่พบคอมโพเนนต์ที่จำเป็น (gsk) โปรดติดตั้งแอปใหม่',
     pdfDocxBusyMsg: 'กำลังส่งออกเป็น Word อยู่ โปรดรอให้เสร็จสิ้นก่อน',
+    menuExportDocxLocal: 'ส่งออกเป็น Word (แปลงในเครื่อง)…',
+    menuExportDocxCloud: 'ส่งออกเป็น Word (แปลงบนคลาวด์)…',
+    menuExportPptx: 'ส่งออกเป็น PowerPoint…',
+    pdfPptxFailedMsg: 'การส่งออกเป็น PowerPoint ล้มเหลว',
+    pdfPptxBusyMsg: 'กำลังแปลงอยู่ โปรดรอให้การส่งออกปัจจุบันเสร็จสิ้น',
+    pdfPptxLocalScannedDetail: 'แต่ละหน้าถูกส่งออกเป็นรูปภาพ ข้อความในสไลด์จึงแก้ไขไม่ได้',
+    menuExportXlsx: 'ส่งออกเป็น Excel…',
+    pdfXlsxFailedMsg: 'การส่งออกเป็น Excel ล้มเหลว',
+    pdfXlsxBusyMsg: 'กำลังแปลงอยู่ โปรดรอให้การส่งออกปัจจุบันเสร็จสิ้น',
+    pdfXlsxLocalScannedDetail:
+      'หน้าที่สแกนไม่สามารถแปลงเป็นเซลล์ได้ เวิร์กชีตของแต่ละหน้าจึงมีแถวแจ้งเตือนแทน',
+    pdfXlsxLocalSkippedMsg: 'บางหน้าไม่ได้ถูกแปลงเป็นเซลล์',
+    pdfXlsxLocalSkippedDetail:
+      'หน้า {pages} ไม่สามารถแปลงเป็นเซลล์ได้ เวิร์กชีตของหน้าดังกล่าวมีแถวแจ้งเตือนแทน',
+    pdfDocxLocalScannedMsg: 'ตรวจพบเอกสารสแกน',
+    pdfDocxLocalScannedDetail:
+      'การแปลงในเครื่องได้ส่งออกแต่ละหน้าเป็นรูปภาพเพื่อคงรูปลักษณ์เดิม หากต้องการข้อความที่แก้ไขได้ โปรดใช้การแปลงบนคลาวด์ (รองรับ OCR)',
+    pdfDocxLocalDegradedMsg: 'บางหน้าถูกส่งออกเป็นรูปภาพ',
+    pdfDocxLocalDegradedDetail:
+      'หน้า {pages} ไม่สามารถสร้างเลย์เอาต์ใหม่ได้อย่างน่าเชื่อถือ จึงส่งออกเป็นรูปภาพทั้งหน้า',
+    pdfDocxLocalEncryptedDetail: 'PDF นี้ถูกเข้ารหัสและไม่สามารถเปิดได้โดยไม่มีรหัสผ่านที่ถูกต้อง',
+    pdfDocxLocalUnsupportedEncDetail:
+      'PDF นี้ใช้การเข้ารหัสแบบใบรับรองหรือการเข้ารหัสที่ไม่รองรับ จึงไม่สามารถแปลงในเครื่องได้ ลองใช้การแปลงบนคลาวด์แทน',
+    pdfPwdTitle: 'ป้อนรหัสผ่าน',
+    pdfPwdPrompt: 'PDF นี้ถูกเข้ารหัส โปรดป้อนรหัสผ่านเพื่อเปิด:',
+    pdfPwdRetryPrompt: 'รหัสผ่านไม่ถูกต้อง โปรดลองอีกครั้ง',
+    pdfPwdOk: 'ตกลง',
+    pdfPwdVerifying: 'กำลังตรวจสอบรหัสผ่าน…',
+    pdfDocxLocalCorruptDetail: 'ไฟล์เสียหายหรือไม่ใช่ PDF ที่ถูกต้อง จึงไม่สามารถแปลงได้',
     dlgPickSaveDir: 'เลือกตำแหน่งบันทึกเริ่มต้น',
     errSaveDirUnusable: 'โฟลเดอร์ที่เลือกไม่สามารถเขียนได้ จึงใช้เป็นตำแหน่งบันทึกเริ่มต้นไม่ได้',
   },
@@ -960,6 +1209,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Tidak dapat masuk ke Genspark: komponen yang diperlukan (gsk) tidak ditemukan. Silakan instal ulang aplikasi.',
     pdfDocxBusyMsg: 'Ekspor ke Word sedang berlangsung. Harap tunggu hingga selesai.',
+    menuExportDocxLocal: 'Ekspor sebagai Word (lokal)…',
+    menuExportDocxCloud: 'Ekspor sebagai Word (cloud)…',
+    menuExportPptx: 'Ekspor sebagai PowerPoint…',
+    pdfPptxFailedMsg: 'Gagal mengekspor sebagai PowerPoint',
+    pdfPptxBusyMsg: 'Ekspor sedang berlangsung. Harap tunggu hingga selesai.',
+    pdfPptxLocalScannedDetail:
+      'Setiap halaman diekspor sebagai gambar; teks pada slide tidak dapat diedit.',
+    menuExportXlsx: 'Ekspor sebagai Excel…',
+    pdfXlsxFailedMsg: 'Gagal mengekspor sebagai Excel',
+    pdfXlsxBusyMsg: 'Ekspor sedang berlangsung. Harap tunggu hingga selesai.',
+    pdfXlsxLocalScannedDetail:
+      'Halaman hasil pindaian tidak dapat diubah menjadi sel; lembar kerja setiap halaman berisi baris pemberitahuan.',
+    pdfXlsxLocalSkippedMsg: 'Beberapa halaman tidak diubah menjadi sel',
+    pdfXlsxLocalSkippedDetail:
+      'Halaman {pages} tidak dapat diubah menjadi sel; lembar kerjanya berisi baris pemberitahuan.',
+    pdfDocxLocalScannedMsg: 'Dokumen hasil pindaian terdeteksi',
+    pdfDocxLocalScannedDetail:
+      'Konversi lokal mengekspor halaman sebagai gambar untuk mempertahankan tampilannya. Untuk teks yang dapat diedit, gunakan konversi cloud (dengan OCR).',
+    pdfDocxLocalDegradedMsg: 'Beberapa halaman diekspor sebagai gambar',
+    pdfDocxLocalDegradedDetail:
+      'Halaman {pages} tidak dapat direkonstruksi dengan andal dan diekspor sebagai gambar satu halaman penuh.',
+    pdfDocxLocalEncryptedDetail:
+      'PDF ini terenkripsi dan tidak dapat dibuka tanpa kata sandi yang benar.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'PDF ini menggunakan enkripsi berbasis sertifikat atau enkripsi yang tidak didukung dan tidak dapat dikonversi secara lokal. Coba konversi cloud.',
+    pdfPwdTitle: 'Masukkan Kata Sandi',
+    pdfPwdPrompt: 'PDF ini terenkripsi. Masukkan kata sandi untuk membukanya:',
+    pdfPwdRetryPrompt: 'Kata sandi salah. Silakan coba lagi.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Memverifikasi kata sandi…',
+    pdfDocxLocalCorruptDetail:
+      'File rusak atau bukan PDF yang valid sehingga tidak dapat dikonversi.',
     dlgPickSaveDir: 'Pilih Lokasi Penyimpanan Default',
     errSaveDirUnusable:
       'Folder yang dipilih tidak dapat ditulis dan tidak bisa digunakan sebagai lokasi penyimpanan default',
@@ -1020,6 +1301,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Не удаётся войти в Genspark: отсутствует необходимый компонент (gsk). Переустановите приложение.',
     pdfDocxBusyMsg: 'Экспорт в Word уже выполняется. Дождитесь его завершения.',
+    menuExportDocxLocal: 'Экспортировать в Word (локально)…',
+    menuExportDocxCloud: 'Экспортировать в Word (облако)…',
+    menuExportPptx: 'Экспортировать в PowerPoint…',
+    pdfPptxFailedMsg: 'Не удалось экспортировать в PowerPoint',
+    pdfPptxBusyMsg: 'Экспорт уже выполняется. Дождитесь его завершения.',
+    pdfPptxLocalScannedDetail:
+      'Каждая страница экспортирована как изображение; текст на слайдах нельзя редактировать.',
+    menuExportXlsx: 'Экспортировать в Excel…',
+    pdfXlsxFailedMsg: 'Не удалось экспортировать в Excel',
+    pdfXlsxBusyMsg: 'Экспорт уже выполняется. Дождитесь его завершения.',
+    pdfXlsxLocalScannedDetail:
+      'Отсканированные страницы нельзя преобразовать в ячейки; на листе каждой страницы добавлена строка с уведомлением.',
+    pdfXlsxLocalSkippedMsg: 'Некоторые страницы не были преобразованы в ячейки',
+    pdfXlsxLocalSkippedDetail:
+      'Страницы {pages} не удалось преобразовать в ячейки; на их листах добавлена строка с уведомлением.',
+    pdfDocxLocalScannedMsg: 'Обнаружен отсканированный документ',
+    pdfDocxLocalScannedDetail:
+      'Локальное преобразование экспортировало страницы как изображения, чтобы сохранить их вид. Для редактируемого текста используйте облачное преобразование (с OCR).',
+    pdfDocxLocalDegradedMsg: 'Некоторые страницы экспортированы как изображения',
+    pdfDocxLocalDegradedDetail:
+      'Страницы {pages} не удалось надёжно реконструировать; они экспортированы как полностраничные изображения.',
+    pdfDocxLocalEncryptedDetail:
+      'Этот PDF зашифрован, и его не удалось открыть без правильного пароля.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Этот PDF использует шифрование на основе сертификата или другое неподдерживаемое шифрование, локальное преобразование невозможно. Попробуйте облачное преобразование.',
+    pdfPwdTitle: 'Введите пароль',
+    pdfPwdPrompt: 'Этот PDF зашифрован. Введите пароль, чтобы открыть его:',
+    pdfPwdRetryPrompt: 'Неверный пароль. Попробуйте ещё раз.',
+    pdfPwdOk: 'ОК',
+    pdfPwdVerifying: 'Проверка пароля…',
+    pdfDocxLocalCorruptDetail:
+      'Файл повреждён или не является корректным PDF, преобразование невозможно.',
     dlgPickSaveDir: 'Выбрать папку сохранения по умолчанию',
     errSaveDirUnusable:
       'Выбранная папка недоступна для записи и не может использоваться как папка сохранения по умолчанию',
@@ -1079,6 +1392,35 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'تعذّر تسجيل الدخول إلى Genspark: المكوّن المطلوب (gsk) مفقود. يُرجى إعادة تثبيت التطبيق.',
     pdfDocxBusyMsg: 'يجري حاليًا تصدير إلى Word. يُرجى الانتظار حتى يكتمل.',
+    menuExportDocxLocal: 'تصدير كملف Word (تحويل محلي)…',
+    menuExportDocxCloud: 'تصدير كملف Word (تحويل سحابي)…',
+    menuExportPptx: 'تصدير كملف PowerPoint…',
+    pdfPptxFailedMsg: 'فشل التصدير كملف PowerPoint',
+    pdfPptxBusyMsg: 'هناك عملية تصدير قيد التنفيذ. يرجى الانتظار حتى تكتمل.',
+    pdfPptxLocalScannedDetail: 'تم تصدير كل صفحة كصورة؛ النص في الشرائح غير قابل للتحرير.',
+    menuExportXlsx: 'تصدير كملف Excel…',
+    pdfXlsxFailedMsg: 'فشل التصدير كملف Excel',
+    pdfXlsxBusyMsg: 'هناك عملية تصدير قيد التنفيذ. يرجى الانتظار حتى تكتمل.',
+    pdfXlsxLocalScannedDetail:
+      'لا يمكن تحويل الصفحات الممسوحة ضوئيًا إلى خلايا؛ تحتوي ورقة كل صفحة على صف تنبيه بدلاً من ذلك.',
+    pdfXlsxLocalSkippedMsg: 'لم يتم تحويل بعض الصفحات إلى خلايا',
+    pdfXlsxLocalSkippedDetail:
+      'تعذر تحويل الصفحات {pages} إلى خلايا؛ تحتوي أوراقها على صف تنبيه بدلاً من ذلك.',
+    pdfDocxLocalScannedMsg: 'تم اكتشاف مستند ممسوح ضوئيًا',
+    pdfDocxLocalScannedDetail:
+      'قام التحويل المحلي بتصدير الصفحات كصور للحفاظ على مظهرها. للحصول على نص قابل للتحرير، استخدم التحويل السحابي (مع OCR).',
+    pdfDocxLocalDegradedMsg: 'تم تصدير بعض الصفحات كصور',
+    pdfDocxLocalDegradedDetail:
+      'تعذّرت إعادة بناء الصفحات {pages} بشكل موثوق، وتم تصديرها كصور لكامل الصفحة.',
+    pdfDocxLocalEncryptedDetail: 'هذا الملف PDF مشفّر وتعذّر فتحه دون كلمة المرور الصحيحة.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'يستخدم ملف PDF هذا تشفيرًا قائمًا على الشهادات أو تشفيرًا غير مدعوم ولا يمكن تحويله محليًا. جرّب التحويل السحابي.',
+    pdfPwdTitle: 'إدخال كلمة المرور',
+    pdfPwdPrompt: 'هذا الملف PDF مشفّر. أدخل كلمة المرور لفتحه:',
+    pdfPwdRetryPrompt: 'كلمة المرور غير صحيحة. حاول مرة أخرى.',
+    pdfPwdOk: 'موافق',
+    pdfPwdVerifying: 'جارٍ التحقق من كلمة المرور…',
+    pdfDocxLocalCorruptDetail: 'الملف تالف أو ليس ملف PDF صالحًا ولا يمكن تحويله.',
     dlgPickSaveDir: 'اختيار موقع الحفظ الافتراضي',
     errSaveDirUnusable: 'المجلد المحدد غير قابل للكتابة ولا يمكن استخدامه كموقع حفظ افتراضي',
   },
@@ -1138,6 +1480,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Não é possível iniciar sessão no Genspark: falta um componente necessário (gsk). Reinstale o aplicativo.',
     pdfDocxBusyMsg: 'Já há uma exportação para Word em andamento. Aguarde a conclusão.',
+    menuExportDocxLocal: 'Exportar como Word (local)…',
+    menuExportDocxCloud: 'Exportar como Word (nuvem)…',
+    menuExportPptx: 'Exportar como PowerPoint…',
+    pdfPptxFailedMsg: 'Falha ao exportar como PowerPoint',
+    pdfPptxBusyMsg: 'Já há uma exportação em andamento. Aguarde a conclusão.',
+    pdfPptxLocalScannedDetail:
+      'Cada página foi exportada como imagem; o texto dos slides não é editável.',
+    menuExportXlsx: 'Exportar como Excel…',
+    pdfXlsxFailedMsg: 'Falha ao exportar como Excel',
+    pdfXlsxBusyMsg: 'Já há uma exportação em andamento. Aguarde a conclusão.',
+    pdfXlsxLocalScannedDetail:
+      'Páginas digitalizadas não podem ser convertidas em células; a planilha de cada página contém uma linha de aviso.',
+    pdfXlsxLocalSkippedMsg: 'Algumas páginas não foram convertidas em células',
+    pdfXlsxLocalSkippedDetail:
+      'As páginas {pages} não puderam ser convertidas em células; suas planilhas contêm uma linha de aviso.',
+    pdfDocxLocalScannedMsg: 'Documento digitalizado detectado',
+    pdfDocxLocalScannedDetail:
+      'A conversão local exportou as páginas como imagens para preservar a aparência. Para texto editável, use a conversão na nuvem (com OCR).',
+    pdfDocxLocalDegradedMsg: 'Algumas páginas foram exportadas como imagens',
+    pdfDocxLocalDegradedDetail:
+      'As páginas {pages} não puderam ser reconstruídas de forma confiável e foram exportadas como imagens de página inteira.',
+    pdfDocxLocalEncryptedDetail:
+      'Este PDF está criptografado e não pôde ser aberto sem a senha correta.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Este PDF usa criptografia baseada em certificado ou outra criptografia sem suporte e não pode ser convertido localmente. Experimente a conversão na nuvem.',
+    pdfPwdTitle: 'Digitar senha',
+    pdfPwdPrompt: 'Este PDF está criptografado. Digite a senha para abri-lo:',
+    pdfPwdRetryPrompt: 'Senha incorreta. Tente novamente.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Verificando a senha…',
+    pdfDocxLocalCorruptDetail:
+      'O arquivo está danificado ou não é um PDF válido e não pode ser convertido.',
     dlgPickSaveDir: 'Escolher local de salvamento padrão',
     errSaveDirUnusable:
       'A pasta selecionada não permite gravação e não pode ser usada como local de salvamento padrão',
@@ -1198,6 +1572,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       "Impossibile accedere a Genspark: manca un componente necessario (gsk). Reinstallare l'app.",
     pdfDocxBusyMsg: "Un'esportazione in Word è già in corso. Attendi il completamento.",
+    menuExportDocxLocal: 'Esporta come Word (locale)…',
+    menuExportDocxCloud: 'Esporta come Word (cloud)…',
+    menuExportPptx: 'Esporta come PowerPoint…',
+    pdfPptxFailedMsg: 'Esportazione come PowerPoint non riuscita',
+    pdfPptxBusyMsg: "Un'esportazione è già in corso. Attendere che finisca.",
+    pdfPptxLocalScannedDetail:
+      'Ogni pagina è stata esportata come immagine; il testo delle diapositive non è modificabile.',
+    menuExportXlsx: 'Esporta come Excel…',
+    pdfXlsxFailedMsg: 'Esportazione come Excel non riuscita',
+    pdfXlsxBusyMsg: "Un'esportazione è già in corso. Attendere che finisca.",
+    pdfXlsxLocalScannedDetail:
+      'Le pagine scansionate non possono essere convertite in celle; il foglio di ogni pagina contiene una riga di avviso.',
+    pdfXlsxLocalSkippedMsg: 'Alcune pagine non sono state convertite in celle',
+    pdfXlsxLocalSkippedDetail:
+      'Le pagine {pages} non hanno potuto essere convertite in celle; i loro fogli contengono una riga di avviso.',
+    pdfDocxLocalScannedMsg: 'Rilevato documento scansionato',
+    pdfDocxLocalScannedDetail:
+      "La conversione locale ha esportato le pagine come immagini per preservarne l'aspetto. Per testo modificabile, usa la conversione cloud (con OCR).",
+    pdfDocxLocalDegradedMsg: 'Alcune pagine sono state esportate come immagini',
+    pdfDocxLocalDegradedDetail:
+      'Non è stato possibile ricostruire in modo affidabile le pagine {pages}; sono state esportate come immagini a pagina intera.',
+    pdfDocxLocalEncryptedDetail:
+      'Questo PDF è crittografato e non è stato possibile aprirlo senza la password corretta.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Questo PDF usa una crittografia basata su certificati o comunque non supportata e non può essere convertito localmente. Prova la conversione cloud.',
+    pdfPwdTitle: 'Inserisci password',
+    pdfPwdPrompt: 'Questo PDF è crittografato. Inserisci la password per aprirlo:',
+    pdfPwdRetryPrompt: 'Password errata. Riprova.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Verifica della password…',
+    pdfDocxLocalCorruptDetail:
+      'Il file è danneggiato o non è un PDF valido e non può essere convertito.',
     dlgPickSaveDir: 'Scegli la posizione di salvataggio predefinita',
     errSaveDirUnusable:
       'La cartella selezionata non è scrivibile e non può essere usata come posizione di salvataggio predefinita',
@@ -1258,6 +1664,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Nie można zalogować się do Genspark: brakuje wymaganego komponentu (gsk). Zainstaluj aplikację ponownie.',
     pdfDocxBusyMsg: 'Eksport do formatu Word już trwa. Poczekaj na jego zakończenie.',
+    menuExportDocxLocal: 'Eksportuj jako Word (lokalnie)…',
+    menuExportDocxCloud: 'Eksportuj jako Word (chmura)…',
+    menuExportPptx: 'Eksportuj jako PowerPoint…',
+    pdfPptxFailedMsg: 'Eksport jako PowerPoint nie powiódł się',
+    pdfPptxBusyMsg: 'Eksport już trwa. Poczekaj na jego zakończenie.',
+    pdfPptxLocalScannedDetail:
+      'Każda strona została wyeksportowana jako obraz; tekst na slajdach nie jest edytowalny.',
+    menuExportXlsx: 'Eksportuj jako Excel…',
+    pdfXlsxFailedMsg: 'Eksport jako Excel nie powiódł się',
+    pdfXlsxBusyMsg: 'Eksport już trwa. Poczekaj na jego zakończenie.',
+    pdfXlsxLocalScannedDetail:
+      'Zeskanowanych stron nie można przekształcić w komórki; arkusz każdej strony zawiera wiersz z informacją.',
+    pdfXlsxLocalSkippedMsg: 'Niektóre strony nie zostały przekształcone w komórki',
+    pdfXlsxLocalSkippedDetail:
+      'Stron {pages} nie udało się przekształcić w komórki; ich arkusze zawierają wiersz z informacją.',
+    pdfDocxLocalScannedMsg: 'Wykryto zeskanowany dokument',
+    pdfDocxLocalScannedDetail:
+      'Konwersja lokalna wyeksportowała strony jako obrazy, aby zachować ich wygląd. Aby uzyskać edytowalny tekst, użyj konwersji w chmurze (z OCR).',
+    pdfDocxLocalDegradedMsg: 'Niektóre strony wyeksportowano jako obrazy',
+    pdfDocxLocalDegradedDetail:
+      'Stron {pages} nie udało się wiarygodnie odtworzyć; wyeksportowano je jako obrazy całych stron.',
+    pdfDocxLocalEncryptedDetail:
+      'Ten PDF jest zaszyfrowany i nie można go otworzyć bez prawidłowego hasła.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Ten PDF używa szyfrowania opartego na certyfikatach lub innego nieobsługiwanego szyfrowania i nie można go przekonwertować lokalnie. Wypróbuj konwersję w chmurze.',
+    pdfPwdTitle: 'Wprowadź hasło',
+    pdfPwdPrompt: 'Ten PDF jest zaszyfrowany. Wprowadź hasło, aby go otworzyć:',
+    pdfPwdRetryPrompt: 'Nieprawidłowe hasło. Spróbuj ponownie.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Weryfikowanie hasła…',
+    pdfDocxLocalCorruptDetail:
+      'Plik jest uszkodzony lub nie jest prawidłowym plikiem PDF i nie można go przekonwertować.',
     dlgPickSaveDir: 'Wybierz domyślną lokalizację zapisu',
     errSaveDirUnusable:
       'Wybrany folder nie pozwala na zapis i nie może być domyślną lokalizacją zapisu',
@@ -1318,6 +1756,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Kan niet inloggen bij Genspark: een vereist onderdeel (gsk) ontbreekt. Installeer de app opnieuw.',
     pdfDocxBusyMsg: 'Er is al een Word-export bezig. Wacht tot deze is voltooid.',
+    menuExportDocxLocal: 'Exporteren als Word (lokaal)…',
+    menuExportDocxCloud: 'Exporteren als Word (cloud)…',
+    menuExportPptx: 'Exporteren als PowerPoint…',
+    pdfPptxFailedMsg: 'Exporteren als PowerPoint mislukt',
+    pdfPptxBusyMsg: 'Er is al een export bezig. Wacht tot deze is voltooid.',
+    pdfPptxLocalScannedDetail:
+      'Elke pagina is als afbeelding geëxporteerd; de tekst op de dia’s is niet bewerkbaar.',
+    menuExportXlsx: 'Exporteren als Excel…',
+    pdfXlsxFailedMsg: 'Exporteren als Excel mislukt',
+    pdfXlsxBusyMsg: 'Er is al een export bezig. Wacht tot deze is voltooid.',
+    pdfXlsxLocalScannedDetail:
+      "Gescande pagina's kunnen niet naar cellen worden omgezet; het werkblad van elke pagina bevat een meldingsrij.",
+    pdfXlsxLocalSkippedMsg: "Sommige pagina's zijn niet naar cellen omgezet",
+    pdfXlsxLocalSkippedDetail:
+      "Pagina's {pages} konden niet naar cellen worden omgezet; hun werkbladen bevatten een meldingsrij.",
+    pdfDocxLocalScannedMsg: 'Gescand document gedetecteerd',
+    pdfDocxLocalScannedDetail:
+      "De lokale conversie heeft de pagina's als afbeeldingen geëxporteerd om hun uiterlijk te behouden. Gebruik voor bewerkbare tekst de cloudconversie (met OCR).",
+    pdfDocxLocalDegradedMsg: "Sommige pagina's zijn als afbeeldingen geëxporteerd",
+    pdfDocxLocalDegradedDetail:
+      "Pagina's {pages} konden niet betrouwbaar worden gereconstrueerd en zijn als paginagrote afbeeldingen geëxporteerd.",
+    pdfDocxLocalEncryptedDetail:
+      'Deze PDF is versleuteld en kon niet worden geopend zonder het juiste wachtwoord.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Deze PDF gebruikt certificaatgebaseerde of anderszins niet-ondersteunde versleuteling en kan niet lokaal worden geconverteerd. Probeer de cloudconversie.',
+    pdfPwdTitle: 'Wachtwoord invoeren',
+    pdfPwdPrompt: 'Deze PDF is versleuteld. Voer het wachtwoord in om te openen:',
+    pdfPwdRetryPrompt: 'Onjuist wachtwoord. Probeer het opnieuw.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Wachtwoord controleren…',
+    pdfDocxLocalCorruptDetail:
+      'Het bestand is beschadigd of geen geldige PDF en kan niet worden geconverteerd.',
     dlgPickSaveDir: 'Standaard opslaglocatie kiezen',
     errSaveDirUnusable:
       'De geselecteerde map is niet beschrijfbaar en kan niet als standaard opslaglocatie worden gebruikt',
@@ -1378,6 +1848,37 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Tidak dapat log masuk ke Genspark: komponen yang diperlukan (gsk) tiada. Sila pasang semula aplikasi.',
     pdfDocxBusyMsg: 'Eksport ke Word sedang dijalankan. Sila tunggu sehingga selesai.',
+    menuExportDocxLocal: 'Eksport sebagai Word (setempat)…',
+    menuExportDocxCloud: 'Eksport sebagai Word (awan)…',
+    menuExportPptx: 'Eksport sebagai PowerPoint…',
+    pdfPptxFailedMsg: 'Eksport sebagai PowerPoint gagal',
+    pdfPptxBusyMsg: 'Eksport sedang berjalan. Sila tunggu sehingga selesai.',
+    pdfPptxLocalScannedDetail:
+      'Setiap halaman dieksport sebagai imej; teks pada slaid tidak boleh diedit.',
+    menuExportXlsx: 'Eksport sebagai Excel…',
+    pdfXlsxFailedMsg: 'Eksport sebagai Excel gagal',
+    pdfXlsxBusyMsg: 'Eksport sedang berjalan. Sila tunggu sehingga selesai.',
+    pdfXlsxLocalScannedDetail:
+      'Halaman imbasan tidak boleh ditukar kepada sel; helaian setiap halaman mengandungi baris makluman.',
+    pdfXlsxLocalSkippedMsg: 'Sesetengah halaman tidak ditukar kepada sel',
+    pdfXlsxLocalSkippedDetail:
+      'Halaman {pages} tidak dapat ditukar kepada sel; helaiannya mengandungi baris makluman.',
+    pdfDocxLocalScannedMsg: 'Dokumen imbasan dikesan',
+    pdfDocxLocalScannedDetail:
+      'Penukaran setempat mengeksport halaman sebagai imej untuk mengekalkan rupanya. Untuk teks boleh edit, gunakan penukaran awan (dengan OCR).',
+    pdfDocxLocalDegradedMsg: 'Sesetengah halaman dieksport sebagai imej',
+    pdfDocxLocalDegradedDetail:
+      'Halaman {pages} tidak dapat dibina semula dengan pasti dan telah dieksport sebagai imej halaman penuh.',
+    pdfDocxLocalEncryptedDetail:
+      'PDF ini disulitkan dan tidak dapat dibuka tanpa kata laluan yang betul.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'PDF ini menggunakan penyulitan berasaskan sijil atau penyulitan yang tidak disokong dan tidak boleh ditukar secara setempat. Cuba penukaran awan.',
+    pdfPwdTitle: 'Masukkan Kata Laluan',
+    pdfPwdPrompt: 'PDF ini disulitkan. Masukkan kata laluan untuk membukanya:',
+    pdfPwdRetryPrompt: 'Kata laluan salah. Sila cuba lagi.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Mengesahkan kata laluan…',
+    pdfDocxLocalCorruptDetail: 'Fail rosak atau bukan PDF yang sah dan tidak dapat ditukar.',
     dlgPickSaveDir: 'Pilih Lokasi Simpanan Lalai',
     errSaveDirUnusable:
       'Folder yang dipilih tidak boleh ditulis dan tidak dapat digunakan sebagai lokasi simpanan lalai',
@@ -1435,6 +1936,35 @@ const tMain = createI18n({
     pdfDocxFailedMsg: 'הייצוא כ-Word נכשל',
     pdfDocxNoCliMsg: 'לא ניתן להתחבר ל-Genspark: רכיב נדרש (gsk) חסר. נא להתקין מחדש את האפליקציה.',
     pdfDocxBusyMsg: 'ייצוא ל-Word כבר מתבצע. נא להמתין לסיומו.',
+    menuExportDocxLocal: 'ייצוא כ-Word (המרה מקומית)…',
+    menuExportDocxCloud: 'ייצוא כ-Word (המרה בענן)…',
+    menuExportPptx: 'ייצוא כ-PowerPoint…',
+    pdfPptxFailedMsg: 'הייצוא כ-PowerPoint נכשל',
+    pdfPptxBusyMsg: 'ייצוא כבר מתבצע. יש להמתין לסיומו.',
+    pdfPptxLocalScannedDetail: 'כל עמוד יוצא כתמונה; הטקסט בשקופיות אינו ניתן לעריכה.',
+    menuExportXlsx: 'ייצוא כ-Excel…',
+    pdfXlsxFailedMsg: 'הייצוא כ-Excel נכשל',
+    pdfXlsxBusyMsg: 'ייצוא כבר מתבצע. יש להמתין לסיומו.',
+    pdfXlsxLocalScannedDetail:
+      'עמודים סרוקים אינם ניתנים להמרה לתאים; בגיליון של כל עמוד נוספה שורת הודעה.',
+    pdfXlsxLocalSkippedMsg: 'חלק מהעמודים לא הומרו לתאים',
+    pdfXlsxLocalSkippedDetail:
+      'לא ניתן היה להמיר את העמודים {pages} לתאים; בגיליונות שלהם נוספה שורת הודעה.',
+    pdfDocxLocalScannedMsg: 'זוהה מסמך סרוק',
+    pdfDocxLocalScannedDetail:
+      'ההמרה המקומית ייצאה את העמודים כתמונות כדי לשמר את המראה. לטקסט הניתן לעריכה, השתמשו בהמרה בענן (עם OCR).',
+    pdfDocxLocalDegradedMsg: 'חלק מהעמודים יוצאו כתמונות',
+    pdfDocxLocalDegradedDetail:
+      'לא ניתן היה לשחזר באופן אמין את עמודים {pages}, והם יוצאו כתמונות של עמוד מלא.',
+    pdfDocxLocalEncryptedDetail: 'קובץ PDF זה מוצפן ולא ניתן היה לפתוח אותו ללא הסיסמה הנכונה.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'קובץ PDF זה משתמש בהצפנה מבוססת אישורים או בהצפנה שאינה נתמכת ולא ניתן להמירו מקומית. נסו את ההמרה בענן.',
+    pdfPwdTitle: 'הזנת סיסמה',
+    pdfPwdPrompt: 'קובץ PDF זה מוצפן. הזינו את הסיסמה כדי לפתוח אותו:',
+    pdfPwdRetryPrompt: 'סיסמה שגויה. נסו שוב.',
+    pdfPwdOk: 'אישור',
+    pdfPwdVerifying: 'מאמת את הסיסמה…',
+    pdfDocxLocalCorruptDetail: 'הקובץ פגום או שאינו PDF תקין ולא ניתן להמירו.',
     dlgPickSaveDir: 'בחירת מיקום שמירה כברירת מחדל',
     errSaveDirUnusable:
       'התיקייה שנבחרה אינה ניתנת לכתיבה ולא ניתן להשתמש בה כמיקום שמירה כברירת מחדל',
@@ -1495,6 +2025,38 @@ const tMain = createI18n({
     pdfDocxNoCliMsg:
       'Genspark में साइन इन नहीं किया जा सकता: आवश्यक घटक (gsk) मौजूद नहीं है। कृपया ऐप को फिर से इंस्टॉल करें।',
     pdfDocxBusyMsg: 'Word के रूप में निर्यात पहले से चल रहा है। कृपया पूरा होने तक प्रतीक्षा करें।',
+    menuExportDocxLocal: 'Word के रूप में निर्यात करें (लोकल)…',
+    menuExportDocxCloud: 'Word के रूप में निर्यात करें (क्लाउड)…',
+    menuExportPptx: 'PowerPoint के रूप में निर्यात करें…',
+    pdfPptxFailedMsg: 'PowerPoint के रूप में निर्यात विफल रहा',
+    pdfPptxBusyMsg: 'एक निर्यात पहले से चल रहा है। कृपया उसके पूरा होने की प्रतीक्षा करें।',
+    pdfPptxLocalScannedDetail:
+      'प्रत्येक पृष्ठ छवि के रूप में निर्यात किया गया; स्लाइड का टेक्स्ट संपादन योग्य नहीं है।',
+    menuExportXlsx: 'Excel के रूप में निर्यात करें…',
+    pdfXlsxFailedMsg: 'Excel के रूप में निर्यात विफल रहा',
+    pdfXlsxBusyMsg: 'एक निर्यात पहले से चल रहा है। कृपया उसके पूरा होने की प्रतीक्षा करें।',
+    pdfXlsxLocalScannedDetail:
+      'स्कैन किए गए पेज सेल में परिवर्तित नहीं किए जा सकते; प्रत्येक पेज की वर्कशीट में एक सूचना पंक्ति जोड़ी गई है।',
+    pdfXlsxLocalSkippedMsg: 'कुछ पेज सेल में परिवर्तित नहीं हुए',
+    pdfXlsxLocalSkippedDetail:
+      'पेज {pages} सेल में परिवर्तित नहीं किए जा सके; उनकी वर्कशीट में एक सूचना पंक्ति जोड़ी गई है।',
+    pdfDocxLocalScannedMsg: 'स्कैन किया गया दस्तावेज़ मिला',
+    pdfDocxLocalScannedDetail:
+      'लोकल रूपांतरण ने पृष्ठों का स्वरूप बनाए रखने के लिए उन्हें छवियों के रूप में निर्यात किया। संपादन योग्य टेक्स्ट के लिए क्लाउड रूपांतरण (OCR सहित) का उपयोग करें।',
+    pdfDocxLocalDegradedMsg: 'कुछ पृष्ठ छवियों के रूप में निर्यात किए गए',
+    pdfDocxLocalDegradedDetail:
+      'पृष्ठ {pages} का लेआउट विश्वसनीय रूप से पुनर्निर्मित नहीं हो सका, इसलिए उन्हें पूर्ण-पृष्ठ छवियों के रूप में निर्यात किया गया।',
+    pdfDocxLocalEncryptedDetail:
+      'यह PDF एन्क्रिप्टेड है और सही पासवर्ड के बिना इसे खोला नहीं जा सका।',
+    pdfDocxLocalUnsupportedEncDetail:
+      'यह PDF प्रमाणपत्र-आधारित या असमर्थित एन्क्रिप्शन का उपयोग करता है और इसे स्थानीय रूप से परिवर्तित नहीं किया जा सकता। क्लाउड रूपांतरण आज़माएँ।',
+    pdfPwdTitle: 'पासवर्ड दर्ज करें',
+    pdfPwdPrompt: 'यह PDF एन्क्रिप्टेड है। खोलने के लिए पासवर्ड दर्ज करें:',
+    pdfPwdRetryPrompt: 'पासवर्ड गलत है। कृपया फिर से प्रयास करें।',
+    pdfPwdOk: 'ठीक है',
+    pdfPwdVerifying: 'पासवर्ड सत्यापित किया जा रहा है…',
+    pdfDocxLocalCorruptDetail:
+      'फ़ाइल क्षतिग्रस्त है या मान्य PDF नहीं है, इसलिए रूपांतरण नहीं हो सकता।',
     dlgPickSaveDir: 'डिफ़ॉल्ट सहेजने का स्थान चुनें',
     errSaveDirUnusable:
       'चयनित फ़ोल्डर में लिखा नहीं जा सकता, इसलिए इसे डिफ़ॉल्ट सहेजने के स्थान के रूप में उपयोग नहीं किया जा सकता',
@@ -1552,6 +2114,32 @@ const tMain = createI18n({
     pdfDocxFailedMsg: '匯出為 Word 失敗',
     pdfDocxNoCliMsg: '無法登入 Genspark：缺少必要元件（gsk），請重新安裝應用程式。',
     pdfDocxBusyMsg: '正在轉換中，請等待目前的匯出完成。',
+    menuExportDocxLocal: '匯出為 Word（本機轉換）…',
+    menuExportDocxCloud: '匯出為 Word（雲端轉換）…',
+    menuExportPptx: '匯出為 PPT…',
+    pdfPptxFailedMsg: '匯出為 PPT 失敗',
+    pdfPptxBusyMsg: '正在轉換中，請等待目前匯出完成。',
+    pdfPptxLocalScannedDetail: '本機轉換已將各頁以圖片保真匯出，簡報中的文字無法編輯。',
+    menuExportXlsx: '匯出為 Excel…',
+    pdfXlsxFailedMsg: '匯出為 Excel 失敗',
+    pdfXlsxBusyMsg: '正在轉換中，請等待目前匯出完成。',
+    pdfXlsxLocalScannedDetail: '掃描頁無法轉換為儲存格，對應工作表中已寫入提示列。',
+    pdfXlsxLocalSkippedMsg: '部分頁面未轉換為儲存格',
+    pdfXlsxLocalSkippedDetail: '第 {pages} 頁無法轉換為儲存格，對應工作表中已寫入提示列。',
+    pdfDocxLocalScannedMsg: '偵測到掃描文件',
+    pdfDocxLocalScannedDetail:
+      '本機轉換已將各頁以圖片方式保真匯出。如需可編輯的文字，請使用雲端轉換（支援 OCR）。',
+    pdfDocxLocalDegradedMsg: '部分頁面已以圖片匯出',
+    pdfDocxLocalDegradedDetail: '第 {pages} 頁的版面無法可靠重建，已以整頁圖片保真匯出。',
+    pdfDocxLocalEncryptedDetail: '此 PDF 已加密，未提供正確的密碼，無法轉換。',
+    pdfDocxLocalUnsupportedEncDetail:
+      '該檔案使用憑證加密或不支援的加密方式，無法在本機轉換，可嘗試雲端轉換。',
+    pdfPwdTitle: '輸入密碼',
+    pdfPwdPrompt: '此 PDF 已加密，請輸入開啟密碼：',
+    pdfPwdRetryPrompt: '密碼不正確，請重試。',
+    pdfPwdOk: '確定',
+    pdfPwdVerifying: '正在驗證密碼…',
+    pdfDocxLocalCorruptDetail: '檔案已損壞或不是有效的 PDF，無法轉換。',
     dlgPickSaveDir: '選擇預設儲存位置',
     errSaveDirUnusable: '所選資料夾無法寫入，無法作為預設儲存位置',
   },
@@ -2591,9 +3179,25 @@ function buildPdfMenu(): void {
           click: () => void savePdfAs(),
         },
         { type: 'separator' },
+        // local pdf2docx is the default Word export; cloud stays as a
+        // secondary option because scanned PDFs still need its OCR
         {
           label: tm('menuExportDocx'),
+          click: () => void exportPdfAsDocxLocal(),
+        },
+        {
+          label: tm('menuExportDocxCloud'),
           click: () => void exportPdfAsDocx(),
+        },
+        // local pdf2pptx (P25): one slide per page, no cloud counterpart
+        {
+          label: tm('menuExportPptx'),
+          click: () => void exportPdfAsPptxLocal(),
+        },
+        // local pdf2xlsx (P26): one worksheet per page, no cloud counterpart
+        {
+          label: tm('menuExportXlsx'),
+          click: () => void exportPdfAsXlsxLocal(),
         },
         { type: 'separator' },
         {
@@ -2849,6 +3453,338 @@ async function exportPdfAsDocx(): Promise<void> {
     if (shellWindow && !shellWindow.isDestroyed()) shellWindow.setProgressBar(-1)
   }
 }
+
+/**
+ * Export as Word for pdf tabs, fully local (pdf2docx P4): flush pending
+ * edits, pick the destination, convert in-process via PDFium wasm, write the
+ * file and open it in a Docs tab. No login, no credits. Shares the in-flight
+ * guard with the cloud export so the two can never run concurrently.
+ */
+async function exportPdfAsDocxLocal(): Promise<void> {
+  const tab = tabManager?.activePdfTab()
+  if (!tab?.filePath || !shellWindow) return
+  if (exportingPdfDocx) {
+    void dialog.showMessageBox(shellWindow, {
+      type: 'info',
+      message: tm('pdfDocxBusyMsg'),
+    })
+    return
+  }
+  exportingPdfDocx = true
+  try {
+    if (!(await flushPdfSave(tab.webContents))) return
+    const picked = await showSaveDialogWithMemory(dialog, shellWindow, {
+      defaultPath: tab.filePath.replace(/\.pdf$/i, '.docx'),
+      filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+    })
+    if (picked.canceled || !picked.filePath) return
+    // same stale-tab handling as the cloud export (see exportPdfAsDocx)
+    const staleTabId = tabManager?.findDocsTabByPath(picked.filePath)
+    if (staleTabId) {
+      await tabManager?.closeTab(staleTabId)
+      tabManager?.activateTab(tab.id)
+      if (tabManager?.findDocsTabByPath(picked.filePath)) return
+    }
+    shellWindow.setProgressBar(2)
+    // encrypted PDFs prompt for the password (P23), looping on wrong entries;
+    // null result = user cancelled the prompt → abort silently
+    const pdfPath = tab.filePath
+    const result = await convertPdfFileToDocxLocalWithPrompt(
+      pdfPath,
+      (retry) =>
+        promptPdfPassword(shellWindow, {
+          fileName: basename(pdfPath),
+          retry,
+          busy: false,
+          lang: currentLang(),
+          strings: {
+            title: tm('pdfPwdTitle'),
+            prompt: tm('pdfPwdPrompt'),
+            retryPrompt: tm('pdfPwdRetryPrompt'),
+            ok: tm('pdfPwdOk'),
+            cancel: tm('btnCancel'),
+            verifying: tm('pdfPwdVerifying'),
+          },
+        }),
+      (page, total) => {
+        if (shellWindow && !shellWindow.isDestroyed() && total > 0) {
+          shellWindow.setProgressBar(page / total)
+        }
+      },
+    )
+    if (result === null) return
+    writeFileSync(picked.filePath, result.docx)
+
+    // degrade transparency (plan §7.6 dual-track split): whole scan → point
+    // to the cloud/OCR flow; individual image-fallback pages → name them
+    const imagePages = result.pageResults.filter((r) => r.status !== 'ok').map((r) => r.page)
+    if (result.scannedDocument) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalScannedMsg'),
+        detail: tm('pdfDocxLocalScannedDetail'),
+      })
+    } else if (imagePages.length > 0) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalDegradedMsg'),
+        detail: tm('pdfDocxLocalDegradedDetail', { pages: imagePages.join(', ') }),
+      })
+    }
+    openDocumentPath(picked.filePath)
+  } catch (err) {
+    if (shellWindow && !shellWindow.isDestroyed()) {
+      // structured load failures (P22): password-protected / damaged PDFs get
+      // a human-readable explanation instead of the raw PDFium error string
+      const detail =
+        err instanceof PdfLoadError
+          ? err.code === 'password-required'
+            ? tm('pdfDocxLocalEncryptedDetail')
+            : err.code === 'unsupported'
+              ? // certificate-based or otherwise unsupported security (FPDF
+                // error 5): a hard PDFium boundary — no password can open it
+                // locally, so the message must NOT suggest one (P24 C)
+                tm('pdfDocxLocalUnsupportedEncDetail')
+              : tm('pdfDocxLocalCorruptDetail')
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      void dialog.showMessageBox(shellWindow, {
+        type: 'error',
+        message: tm('pdfDocxFailedMsg'),
+        detail,
+      })
+    }
+  } finally {
+    // the prompt window may still be open when the loop exits through cancel
+    // or a non-password error thrown mid-retry
+    closePdfPasswordDialog()
+    exportingPdfDocx = false
+    if (shellWindow && !shellWindow.isDestroyed()) shellWindow.setProgressBar(-1)
+  }
+}
+
+/**
+ * Export as PowerPoint for pdf tabs, fully local (pdf2pptx P25): flush
+ * pending edits, pick the destination, convert in-process via PDFium wasm,
+ * write the file and open it in a Slides tab. No login, no credits. Shares
+ * the in-flight guard with the Word exports so pdfium never runs two
+ * conversions at once.
+ */
+async function exportPdfAsPptxLocal(): Promise<void> {
+  const tab = tabManager?.activePdfTab()
+  if (!tab?.filePath || !shellWindow) return
+  if (exportingPdfDocx) {
+    void dialog.showMessageBox(shellWindow, {
+      type: 'info',
+      message: tm('pdfPptxBusyMsg'),
+    })
+    return
+  }
+  exportingPdfDocx = true
+  try {
+    if (!(await flushPdfSave(tab.webContents))) return
+    const picked = await showSaveDialogWithMemory(dialog, shellWindow, {
+      defaultPath: tab.filePath.replace(/\.pdf$/i, '.pptx'),
+      filters: [{ name: tm('filterPpt'), extensions: ['pptx'] }],
+    })
+    if (picked.canceled || !picked.filePath) return
+    // same stale-tab handling as the Word exports (see exportPdfAsDocx),
+    // against the slides tab that may already show the destination file
+    const staleTabId = tabManager?.findSlidesTabByPath(picked.filePath)
+    if (staleTabId) {
+      await tabManager?.closeTab(staleTabId)
+      tabManager?.activateTab(tab.id)
+      if (tabManager?.findSlidesTabByPath(picked.filePath)) return
+    }
+    shellWindow.setProgressBar(2)
+    // encrypted PDFs prompt for the password (P23), looping on wrong entries;
+    // null result = user cancelled the prompt → abort silently
+    const pdfPath = tab.filePath
+    const result = await convertPdfFileToPptxLocalWithPrompt(
+      pdfPath,
+      (retry) =>
+        promptPdfPassword(shellWindow, {
+          fileName: basename(pdfPath),
+          retry,
+          busy: false,
+          lang: currentLang(),
+          strings: {
+            title: tm('pdfPwdTitle'),
+            prompt: tm('pdfPwdPrompt'),
+            retryPrompt: tm('pdfPwdRetryPrompt'),
+            ok: tm('pdfPwdOk'),
+            cancel: tm('btnCancel'),
+            verifying: tm('pdfPwdVerifying'),
+          },
+        }),
+      (page, total) => {
+        if (shellWindow && !shellWindow.isDestroyed() && total > 0) {
+          shellWindow.setProgressBar(page / total)
+        }
+      },
+    )
+    if (result === null) return
+    writeFileSync(picked.filePath, result.pptx)
+
+    // degrade transparency (same split as the Word export): whole scan vs
+    // individual image-fallback pages
+    const imagePages = result.pageResults.filter((r) => r.status !== 'ok').map((r) => r.page)
+    if (result.scannedDocument) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalScannedMsg'),
+        detail: tm('pdfPptxLocalScannedDetail'),
+      })
+    } else if (imagePages.length > 0) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalDegradedMsg'),
+        detail: tm('pdfDocxLocalDegradedDetail', { pages: imagePages.join(', ') }),
+      })
+    }
+    openDocumentPath(picked.filePath)
+  } catch (err) {
+    if (shellWindow && !shellWindow.isDestroyed()) {
+      // structured load failures (P22): same explanations as the Word export
+      const detail =
+        err instanceof PdfLoadError
+          ? err.code === 'password-required'
+            ? tm('pdfDocxLocalEncryptedDetail')
+            : err.code === 'unsupported'
+              ? tm('pdfDocxLocalUnsupportedEncDetail')
+              : tm('pdfDocxLocalCorruptDetail')
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      void dialog.showMessageBox(shellWindow, {
+        type: 'error',
+        message: tm('pdfPptxFailedMsg'),
+        detail,
+      })
+    }
+  } finally {
+    closePdfPasswordDialog()
+    exportingPdfDocx = false
+    if (shellWindow && !shellWindow.isDestroyed()) shellWindow.setProgressBar(-1)
+  }
+}
+
+/**
+ * Export as Excel for pdf tabs, fully local (pdf2xlsx P26): flush pending
+ * edits, pick the destination, convert in-process via PDFium wasm, write the
+ * file and open it in a Sheets tab. No login, no credits. Shares the
+ * in-flight guard with the Word/PowerPoint exports so pdfium never runs two
+ * conversions at once.
+ */
+async function exportPdfAsXlsxLocal(): Promise<void> {
+  const tab = tabManager?.activePdfTab()
+  if (!tab?.filePath || !shellWindow) return
+  if (exportingPdfDocx) {
+    void dialog.showMessageBox(shellWindow, {
+      type: 'info',
+      message: tm('pdfXlsxBusyMsg'),
+    })
+    return
+  }
+  exportingPdfDocx = true
+  try {
+    if (!(await flushPdfSave(tab.webContents))) return
+    const picked = await showSaveDialogWithMemory(dialog, shellWindow, {
+      defaultPath: tab.filePath.replace(/\.pdf$/i, '.xlsx'),
+      filters: [{ name: tm('filterExcel'), extensions: ['xlsx'] }],
+    })
+    if (picked.canceled || !picked.filePath) return
+    // same stale-tab handling as the Word exports (see exportPdfAsDocx),
+    // against the sheets tab that may already show the destination file
+    const staleTabId = tabManager?.findSheetsTabByPath(picked.filePath)
+    if (staleTabId) {
+      await tabManager?.closeTab(staleTabId)
+      tabManager?.activateTab(tab.id)
+      if (tabManager?.findSheetsTabByPath(picked.filePath)) return
+    }
+    shellWindow.setProgressBar(2)
+    // encrypted PDFs prompt for the password (P23), looping on wrong entries;
+    // null result = user cancelled the prompt → abort silently
+    const pdfPath = tab.filePath
+    const result = await convertPdfFileToXlsxLocalWithPrompt(
+      pdfPath,
+      (retry) =>
+        promptPdfPassword(shellWindow, {
+          fileName: basename(pdfPath),
+          retry,
+          busy: false,
+          lang: currentLang(),
+          strings: {
+            title: tm('pdfPwdTitle'),
+            prompt: tm('pdfPwdPrompt'),
+            retryPrompt: tm('pdfPwdRetryPrompt'),
+            ok: tm('pdfPwdOk'),
+            cancel: tm('btnCancel'),
+            verifying: tm('pdfPwdVerifying'),
+          },
+        }),
+      (page, total) => {
+        if (shellWindow && !shellWindow.isDestroyed() && total > 0) {
+          shellWindow.setProgressBar(page / total)
+        }
+      },
+    )
+    if (result === null) return
+    writeFileSync(picked.filePath, result.xlsx)
+
+    // degrade transparency: pages that could not become cells got a notice
+    // row on their worksheet instead of an image (a spreadsheet has none)
+    const noticePages = result.pageResults.filter((r) => r.status !== 'ok').map((r) => r.page)
+    if (result.scannedDocument) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalScannedMsg'),
+        detail: tm('pdfXlsxLocalScannedDetail'),
+      })
+    } else if (noticePages.length > 0) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfXlsxLocalSkippedMsg'),
+        detail: tm('pdfXlsxLocalSkippedDetail', { pages: noticePages.join(', ') }),
+      })
+    }
+    openDocumentPath(picked.filePath)
+  } catch (err) {
+    if (shellWindow && !shellWindow.isDestroyed()) {
+      // structured load failures (P22): same explanations as the Word export
+      const detail =
+        err instanceof PdfLoadError
+          ? err.code === 'password-required'
+            ? tm('pdfDocxLocalEncryptedDetail')
+            : err.code === 'unsupported'
+              ? tm('pdfDocxLocalUnsupportedEncDetail')
+              : tm('pdfDocxLocalCorruptDetail')
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      void dialog.showMessageBox(shellWindow, {
+        type: 'error',
+        message: tm('pdfXlsxFailedMsg'),
+        detail,
+      })
+    }
+  } finally {
+    closePdfPasswordDialog()
+    exportingPdfDocx = false
+    if (shellWindow && !shellWindow.isDestroyed()) shellWindow.setProgressBar(-1)
+  }
+}
+
+// The pdf renderer's converter dropdown funnels into the same local conversion
+// flows as the File menu items (dialogs, password prompt, in-flight guard included)
+ipcMain.handle(PDF_CHANNELS.convertOffice, async (e, format: unknown) => {
+  // only the active pdf tab may trigger a conversion (its file is the source)
+  if (tabManager?.activePdfTab()?.webContents.id !== e.sender.id) return
+  if (format === 'docx') await exportPdfAsDocxLocal()
+  else if (format === 'xlsx') await exportPdfAsXlsxLocal()
+  else if (format === 'pptx') await exportPdfAsPptxLocal()
+})
 
 function openThirdPartyNotices(): Promise<string> {
   const path = app.isPackaged

@@ -786,6 +786,8 @@ function buildChartNodeInner(
   // ── Category labels (all shown: horizontal, wrapped horizontal, or rotated when crowded) ──
   const n = Math.max(model.categories.length, 1)
   const slotW = plot.w / n
+  // c:orientation maxMin on the category axis flips the category order (first slot on the right)
+  const catSlot = model.catAxis?.reversed ? (i: number) => n - 1 - i : (i: number) => i
   // Category-axis vertical gridlines: majors at slot boundaries, minors at slot midpoints
   const catGrid = majorGridColor(model.catAxis, model)
   const catMinor = minorGridColor(model.catAxis, model)
@@ -837,7 +839,7 @@ function buildChartNodeInner(
   const catLabelBase = catAtZero ? crossY : plot.y + plot.h
   if (!catLabelsOff)
     model.categories.forEach((cat, i) => {
-      const cx = plot.x + (i + 0.5) * slotW
+      const cx = plot.x + (catSlot(i) + 0.5) * slotW
       if (drawRotate) {
         // Rotation is about the text's origin (left end). Negative angles slant up-right:
         // place the origin down-left so the right end lands just below the tick. Positive
@@ -878,9 +880,14 @@ function buildChartNodeInner(
     const gy = plot.y + plot.h + catReserve + catLabelSizePx * 0.35
     const nCatsG = Math.max(model.categories.length, 1)
     const slotWG = plot.w / nCatsG
+    const revG = !!model.catAxis?.reversed
     model.categoryGroups.forEach((g, gi) => {
       const end = model.categoryGroups![gi + 1]?.start ?? nCatsG
-      const cxG = plot.x + ((g.start + end) / 2) * slotWG
+      // maxMin remaps category i to slot n-1-i, so the span [start, end) lands
+      // on slots [n-end, n-start) and the divider boundary flips with it
+      const lo = revG ? nCatsG - end : g.start
+      const hi = revG ? nCatsG - g.start : end
+      const cxG = plot.x + ((lo + hi) / 2) * slotWG
       node.labels.push({
         text: g.label,
         x: cxG - measure(g.label, catLabelSizePx) / 2,
@@ -888,11 +895,12 @@ function buildChartNodeInner(
         fontSizePx: catLabelSizePx,
         color: catLabelColor,
       })
+      const bx = revG ? nCatsG - g.start : g.start
       if (g.start > 0)
         node.axisLines.push({
-          x1: plot.x + g.start * slotWG,
+          x1: plot.x + bx * slotWG,
           y1: plot.y + plot.h,
-          x2: plot.x + g.start * slotWG,
+          x2: plot.x + bx * slotWG,
           y2: plot.y + plot.h + catReserve + catLabelSizePx * 1.5,
           color: model.catAxis?.lineColor ?? '#888888',
           widthPx: 1,
@@ -921,7 +929,7 @@ function buildChartNodeInner(
     const gap = (model.gapWidthPct ?? 150) / 100
     const barW = slotW / (1 + gap)
     for (let i = 0; i < n; i++) {
-      const x = plot.x + i * slotW + (slotW - barW) / 2
+      const x = plot.x + catSlot(i) * slotW + (slotW - barW) / 2
       let posAcc = 0
       let negAcc = 0
       barSeriesIdx.forEach((si) => {
@@ -955,7 +963,7 @@ function buildChartNodeInner(
       const color = seriesColor(si)
       ser.values.forEach((v, i) => {
         if (v == null || i >= n) return
-        const x = plot.x + i * slotW + (slotW - groupW) / 2 + slot * step
+        const x = plot.x + catSlot(i) * slotW + (slotW - groupW) / 2 + slot * step
         const yTop = Math.min(yOf(v), yOf(base))
         const yBot = Math.max(yOf(v), yOf(base))
         // Explicit per-point colors (c:dPt, varyColors multi-color single-series bars) win over the series color
@@ -1008,7 +1016,7 @@ function buildChartNodeInner(
         for (let i = 0; i < n; i++) {
           let v = ser.values[i] ?? 0
           if (grouping === 'percentStacked') v = (v / (areaTotals[i] || 1)) * 100
-          const x = plot.x + (i + 0.5) * slotW
+          const x = plot.x + (catSlot(i) + 0.5) * slotW
           const y0 = yOf(areaCum[i]!)
           bottom.push(x, y0)
           areaCum[i]! += v
@@ -1025,7 +1033,7 @@ function buildChartNodeInner(
       const pts: number[] = []
       ser.values.forEach((v, i) => {
         if (v == null || i >= n) return
-        const x = plot.x + (i + 0.5) * slotW
+        const x = plot.x + (catSlot(i) + 0.5) * slotW
         let vv = v
         if (lineStack) {
           vv = lineCum[i]! + (valueAt(si, i) ?? 0)
@@ -1078,7 +1086,7 @@ function buildChartNodeInner(
     for (let i = 0; i < n; i++) {
       const vals = stockSers.map((s) => s.values[i]).filter((v): v is number => v != null)
       if (vals.length < 2) continue
-      const x = plot.x + (i + 0.5) * slotW
+      const x = plot.x + (catSlot(i) + 0.5) * slotW
       if (model.stock.hiLowLines) {
         node.axisLines.push({
           x1: x,
@@ -1369,12 +1377,16 @@ function buildPieNode(
       const r = innerR > 0 ? (innerR + outerR) / 2 : outerR * 0.66
       const valueText = model.dataLabelsPct ? `${Math.round((v / total) * 100)}%` : fmtNum(v)
       const text = composeDataLabel(model, 0, i, valueText)
+      const dlSize = model.dataLabelPt ? ptToPx(model.dataLabelPt, vp.scale) : labelSizePx * 0.9
+      const dlBold = !!model.dataLabelBold
+      const dlW = metrics.measure(text, { ...style, fontSizePx: dlSize, bold: dlBold })
       node.labels.push({
         text,
-        x: cx + dx + Math.cos(midRad) * (p3d ? rx * 0.66 : r) - measure(text) / 2,
-        y: cy + dy + Math.sin(midRad) * (p3d ? ry * 0.66 : r) - labelSizePx * 0.55,
-        fontSizePx: labelSizePx * 0.9,
+        x: cx + dx + Math.cos(midRad) * (p3d ? rx * 0.66 : r) - dlW / 2,
+        y: cy + dy + Math.sin(midRad) * (p3d ? ry * 0.66 : r) - dlSize * 0.55,
+        fontSizePx: dlSize,
         color: '#FFFFFF',
+        ...(dlBold ? { bold: true } : {}),
       })
     }
     angle += sweep

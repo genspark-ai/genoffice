@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
 import type { GradientFillSpec, LinkTargetOp } from '../../shared/ipc'
+import { Dropdown } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import { pathGradientCanvas } from '../konva-adapter'
 import { ColorWell } from './ColorWell'
@@ -25,7 +26,15 @@ interface Props {
   onTextAnchor?: (sourceId: string, anchor: 'top' | 'middle' | 'bottom') => void
   onStroke: (
     sourceId: string,
-    stroke: { color: string; widthPt: number; dash?: string } | null,
+    stroke: {
+      color: string
+      widthPt: number
+      dash?: string
+      cap?: 'flat' | 'rnd' | 'sq'
+      join?: 'round' | 'bevel' | 'miter'
+      compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+      gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+    } | null,
   ) => void
   onDelete: (sourceId: string) => void
   onCollapse: () => void
@@ -52,8 +61,6 @@ interface Props {
 
 const TRANSFORMABLE = new Set(['shape', 'text', 'picture', 'group', 'table', 'chart'])
 
-const TRANSPARENCY_PRESETS = [0, 15, 30, 50, 65, 80, 95]
-
 /** Office default series palette (mirrors pptx-render build-chart's PALETTE) */
 const CHART_PALETTE = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
 
@@ -66,17 +73,204 @@ const FOCUS_POINTS: Array<[string, number, number]> = [
   ['↖', 0, 0],
 ]
 
-/** OOXML prstDash presets with language-neutral glyph labels. */
-const DASH_PRESETS: Array<[string, string]> = [
-  ['solid', '───────'],
-  ['sysDot', '·······'],
-  ['dot', '• • • •'],
-  ['dash', '– – – –'],
-  ['lgDash', '— — —'],
-  ['dashDot', '– · – ·'],
-  ['lgDashDot', '— · — ·'],
-  ['lgDashDotDot', '— · · — · ·'],
+/** Thin chevron for the width spinner (Lucide-style: currentColor, round caps). */
+function SpinChevron({ up }: { up: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d={up ? 'M5.5 14.75 12 8.25l6.5 6.5' : 'M5.5 9.25 12 15.75l6.5-6.5'}
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/**
+ * PPT-style transparency control: slider + a text field showing "<value> %" —
+ * the unit is part of the editable text, so selecting digits, digits+unit or
+ * clearing all behaves like any text field. The slider is controlled by local
+ * state so model round-trips never remount it mid-drag; commits are throttled
+ * (~8/s leading + trailing) so the canvas previews live without flooding IPC.
+ */
+function PctControl({ value, onChange }: { value: number; onChange: (pct: number) => void }) {
+  const [pct, setPct] = useState(value)
+  const [text, setText] = useState(`${value} %`)
+  const dragging = useRef(false)
+  const lastSent = useRef(0)
+  const trailing = useRef<number | null>(null)
+  useEffect(() => {
+    if (!dragging.current) {
+      setPct(value)
+      setText(`${value} %`)
+    }
+  }, [value])
+  useEffect(
+    () => () => {
+      if (trailing.current) window.clearTimeout(trailing.current)
+    },
+    [],
+  )
+  const send = (v: number, force = false) => {
+    if (trailing.current) window.clearTimeout(trailing.current)
+    const now = performance.now()
+    if (force || now - lastSent.current > 120) {
+      lastSent.current = now
+      onChange(v)
+    } else {
+      trailing.current = window.setTimeout(() => onChange(v), 130)
+    }
+  }
+  const set = (v: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(v)))
+    setPct(clamped)
+    setText(`${clamped} %`)
+    send(clamped, true)
+  }
+  return (
+    <div className="fp-slider">
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={pct}
+        // elapsed-track fill: the CSS gradient reads the current position from this var
+        style={{ '--fp-pct': `${pct}%` } as React.CSSProperties}
+        onPointerDown={() => (dragging.current = true)}
+        onPointerUp={() => {
+          dragging.current = false
+          send(pct, true)
+        }}
+        onChange={(e) => {
+          const v = Number(e.target.value)
+          setPct(v)
+          setText(`${v} %`)
+          send(v)
+        }}
+      />
+      <div className="fp-unitstep fp-unitstep-pct" onMouseDown={focusSpinnerField}>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={text}
+          onChange={(e) => {
+            const raw = e.target.value
+            // free-form while editing, but entries beyond 100 are rejected as typed
+            const num = parseFloat(raw)
+            if (!Number.isNaN(num) && num > 100) return
+            setText(raw)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
+          onBlur={() => {
+            const num = parseFloat(text)
+            if (Number.isNaN(num)) {
+              setText(`${pct} %`)
+              return
+            }
+            set(num)
+          }}
+        />
+        <span className="fp-unitstep-btns">
+          <button type="button" aria-label="+1%" disabled={pct >= 100} onClick={() => set(pct + 1)}>
+            <SpinChevron up />
+          </button>
+          <button type="button" aria-label="−1%" disabled={pct <= 0} onClick={() => set(pct - 1)}>
+            <SpinChevron up={false} />
+          </button>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/** Clicking anywhere in a spinner box except the buttons focuses the field and selects the value. */
+function focusSpinnerField(e: React.MouseEvent<HTMLDivElement>) {
+  const t = e.target as HTMLElement
+  if (t.closest('button') || t.tagName === 'INPUT') return
+  e.preventDefault()
+  const inp = e.currentTarget.querySelector('input')
+  if (inp) {
+    inp.focus()
+    inp.select()
+  }
+}
+
+/** PowerPoint's line-width ceiling (pt); larger entries show a validation balloon. */
+const MAX_LINE_PT = 1584
+
+/** OOXML compound-line (cmpd) presets. */
+type CompoundKind = 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+
+/** Stacked-line preview bands per preset: [y, height] pairs in a 0–16 box
+ * (native <option> can't render graphics, so the dropdown draws PPT-style
+ * previews itself). */
+const COMPOUND_BANDS: Record<CompoundKind, Array<[number, number]>> = {
+  sng: [[6.5, 3]],
+  dbl: [
+    [4, 2.5],
+    [9.5, 2.5],
+  ],
+  thickThin: [
+    [3.5, 4],
+    [10, 1.5],
+  ],
+  thinThick: [
+    [3.5, 1.5],
+    [8.5, 4],
+  ],
+  tri: [
+    [3, 1.5],
+    [6.75, 2.5],
+    [11.5, 1.5],
+  ],
+}
+
+function CompoundPreview({ kind }: { readonly kind: CompoundKind }) {
+  return (
+    <svg
+      viewBox="0 0 96 16"
+      preserveAspectRatio="none"
+      className="fp-line-preview"
+      aria-hidden="true"
+    >
+      {COMPOUND_BANDS[kind].map(([y, h], i) => (
+        <rect key={i} x="0" y={y} width="96" height={h} fill="currentColor" />
+      ))}
+    </svg>
+  )
+}
+
+/** OOXML prstDash presets with dash-pattern previews (stroke-dasharray units). */
+const DASH_PRESETS: Array<[string, string | undefined]> = [
+  ['solid', undefined],
+  ['sysDot', '1.5 2.5'],
+  ['dot', '2 3.5'],
+  ['dash', '6 4'],
+  ['lgDash', '10 4'],
+  ['dashDot', '6 4 2 4'],
+  ['lgDashDot', '10 4 2 4'],
+  ['lgDashDotDot', '10 4 2 4 2 4'],
 ]
+
+function DashPreview({ dasharray }: { readonly dasharray?: string }) {
+  return (
+    <svg width="100%" height="16" className="fp-line-preview" aria-hidden="true">
+      <line
+        x1="2"
+        y1="8"
+        x2="98%"
+        y2="8"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeDasharray={dasharray}
+      />
+    </svg>
+  )
+}
 
 export function FormatPane({
   node,
@@ -120,6 +314,14 @@ export function FormatPane({
   // PPT-style collapsible fill / line sections
   const [fillOpen, setFillOpen] = useState(true)
   const [lineOpen, setLineOpen] = useState(true)
+  // Width-limit balloon (shown while a keystroke tries to exceed MAX_LINE_PT)
+  const [widthLimitTip, setWidthLimitTip] = useState(false)
+  const widthTipTimer = useRef<number | null>(null)
+  const flashWidthLimitTip = () => {
+    setWidthLimitTip(true)
+    if (widthTipTimer.current) window.clearTimeout(widthTipTimer.current)
+    widthTipTimer.current = window.setTimeout(() => setWidthLimitTip(false), 2500)
+  }
 
   const box = node?.box
   const canTransform = !!node && TRANSFORMABLE.has(node.type)
@@ -131,9 +333,18 @@ export function FormatPane({
   // 0..100 transparency shown in the dropdown (0 = opaque)
   const fillTransparency = Math.round(((255 - fillAlpha) / 255) * 100)
   const stroke = (shape ?? pic)?.stroke
-  const strokeWidthPt = stroke ? Math.max(0.5, Math.round(stroke.widthPt * 2) / 2) : 1
+  const strokeWidthPt = stroke ? Math.max(0.25, Math.round(stroke.widthPt * 4) / 4) : 1
   const strokeColor = stroke ? toHex6(stroke.color) : '#000000'
   const strokeDash = stroke?.dashPreset ?? 'solid'
+  // 0..100 line transparency (alpha byte of the stroke color)
+  const strokeTransparency = stroke ? Math.round(((255 - alphaOf(stroke.color)) / 255) * 100) : 0
+  // UI works in the op's OOXML attribute values ('flat'/'rnd'/'sq'); render model carries canvas caps
+  const capToOp = { butt: 'flat', round: 'rnd', square: 'sq' } as const
+  const strokeCap: 'flat' | 'rnd' | 'sq' = stroke?.cap ? capToOp[stroke.cap] : 'flat'
+  const strokeJoin: 'round' | 'bevel' | 'miter' = stroke?.join ?? 'round'
+  const strokeCompound: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri' =
+    stroke?.compound ?? 'sng'
+  const strokeGradient = stroke?.gradient ?? null
   const fillKind = shape?.fill.kind ?? 'none'
   const gradFill = shape?.fill.kind === 'gradient' ? shape.fill : null
 
@@ -219,16 +430,6 @@ export function FormatPane({
     const next = gradStops.filter((_, j) => j !== selStopIdx)
     setStopIdx(Math.max(0, selStopIdx - 1))
     applyGradient({ stops: next })
-  }
-
-  /** The stop-transparency slider fires per pixel; debounce before IPC (same as fills) */
-  const gradTimer = useRef<number | null>(null)
-  const debouncedStopAlpha = (pct: number) => {
-    if (gradTimer.current) window.clearTimeout(gradTimer.current)
-    gradTimer.current = window.setTimeout(
-      () => setStop(selStopIdx, { color: stopColor(selStop.color, pct) }),
-      200,
-    )
   }
 
   const curAngle = Math.round(((gradFill?.angleDeg ?? 90) % 360) * 10) / 10
@@ -320,27 +521,62 @@ export function FormatPane({
 
   // Latest intended stroke: each input contributes only its own dimension, so a debounced color
   // commit can't overwrite a width committed meanwhile (and vice versa)
-  const strokeDraft = useRef<{ id: string; color: string; widthPt: number; dash: string } | null>(
-    null,
-  )
+  interface StrokeDraft {
+    id: string
+    color: string
+    transparencyPct: number
+    widthPt: number
+    dash: string
+    cap: 'flat' | 'rnd' | 'sq'
+    join: 'round' | 'bevel' | 'miter'
+    compound: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+    /** null = solid line; stops keep any mid-stops an opened file had */
+    gradient: { stops: Array<{ pos: number; color: string }>; angleDeg: number } | null
+  }
+  const strokeDraft = useRef<StrokeDraft | null>(null)
   useEffect(() => {
     if (!strokeTimer.current) strokeDraft.current = null
-  }, [strokeColor, strokeWidthPt, strokeDash, node?.sourceId])
+  }, [stroke, node?.sourceId])
   const commitStroke = (
     sourceId: string,
-    patch: Partial<{ color: string; widthPt: number; dash: string }>,
+    patch: Partial<Omit<StrokeDraft, 'id'>>,
     immediate = false,
   ) => {
     if (strokeTimer.current) window.clearTimeout(strokeTimer.current)
-    const prev =
+    const prev: StrokeDraft =
       strokeDraft.current?.id === sourceId
         ? strokeDraft.current
-        : { id: sourceId, color: strokeColor, widthPt: strokeWidthPt, dash: strokeDash }
+        : {
+            id: sourceId,
+            color: strokeColor,
+            transparencyPct: strokeTransparency,
+            widthPt: strokeWidthPt,
+            dash: strokeDash,
+            cap: strokeCap,
+            join: strokeJoin,
+            compound: strokeCompound,
+            gradient: strokeGradient
+              ? { stops: strokeGradient.stops, angleDeg: strokeGradient.angleDeg }
+              : null,
+          }
     const draft = { ...prev, ...patch }
     strokeDraft.current = draft
     const fire = () => {
       strokeTimer.current = null
-      onStroke(sourceId, { color: draft.color, widthPt: draft.widthPt, dash: draft.dash })
+      const alpha = Math.round(((100 - draft.transparencyPct) / 100) * 255)
+      const color =
+        alpha >= 255
+          ? draft.color
+          : `${draft.color}${Math.max(0, alpha).toString(16).padStart(2, '0')}`
+      onStroke(sourceId, {
+        color,
+        widthPt: draft.widthPt,
+        dash: draft.dash,
+        cap: draft.cap,
+        join: draft.join,
+        compound: draft.compound,
+        ...(draft.gradient ? { gradient: draft.gradient } : {}),
+      })
     }
     if (immediate) fire()
     else strokeTimer.current = window.setTimeout(fire, 200)
@@ -350,6 +586,21 @@ export function FormatPane({
     strokeTimer.current = null
     strokeDraft.current = null
     onStroke(sourceId, null)
+  }
+  /** Patch the gradient-line's first/last stop color, keeping any mid-stops. */
+  const strokeGradEdge = (which: 'from' | 'to', hex: string) => {
+    const cur = strokeDraft.current?.gradient ??
+      strokeGradient ?? {
+        stops: [
+          { pos: 0, color: strokeColor },
+          { pos: 1, color: '#FFFFFF' },
+        ],
+        angleDeg: 90,
+      }
+    const stops = cur.stops.map((s, i) =>
+      (which === 'from' ? i === 0 : i === cur.stops.length - 1) ? { ...s, color: hex } : s,
+    )
+    return { ...cur, stops }
   }
 
   const commit = (
@@ -376,10 +627,12 @@ export function FormatPane({
 
   /** PPT-style fill/line mode radio row */
   const radioRow = (group: string, checked: boolean, label: string, pick: () => void) => (
-    <label className="fp-radio" key={label}>
-      <input type="radio" name={group} checked={checked} onChange={pick} />
+    // Deliberately a div, not a label: only the radio circle itself is the hit
+    // area — text and row whitespace must not toggle the option
+    <div className="fp-radio" key={label}>
+      <input type="radio" name={group} checked={checked} onChange={pick} aria-label={label} />
       <span>{label}</span>
-    </label>
+    </div>
   )
 
   const numField = (label: string, value: number, apply: (v: number) => void, min?: number) => (
@@ -577,25 +830,12 @@ export function FormatPane({
                       </div>
                       <label className="fp-prow">
                         <span>{t('ribbonTransparency')}</span>
-                        <select
-                          key={`${node.sourceId}:fa:${fillTransparency}`}
-                          defaultValue={fillTransparency}
-                          onChange={(e) =>
-                            onFill(
-                              node.sourceId,
-                              fillValue(fillColor ?? '#ffffff', Number(e.target.value)),
-                            )
+                        <PctControl
+                          value={fillTransparency}
+                          onChange={(pct) =>
+                            onFill(node.sourceId, fillValue(fillColor ?? '#ffffff', pct))
                           }
-                        >
-                          {!TRANSPARENCY_PRESETS.includes(fillTransparency) && (
-                            <option value={fillTransparency}>{fillTransparency}%</option>
-                          )}
-                          {TRANSPARENCY_PRESETS.map((pct) => (
-                            <option key={pct} value={pct}>
-                              {pct}%
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
                     </>
                   )}
@@ -789,17 +1029,12 @@ export function FormatPane({
                       </label>
                       <label className="fp-prow">
                         <span>{t('ribbonTransparency')}</span>
-                        <div className="fp-slider">
-                          <input
-                            key={`${node.sourceId}:ga:${selStopIdx}:${selStopTransparency}`}
-                            type="range"
-                            min={0}
-                            max={100}
-                            defaultValue={selStopTransparency}
-                            onChange={(e) => debouncedStopAlpha(Number(e.target.value))}
-                          />
-                          <span className="fp-slider-val">{selStopTransparency}%</span>
-                        </div>
+                        <PctControl
+                          value={selStopTransparency}
+                          onChange={(pct) =>
+                            setStop(selStopIdx, { color: stopColor(selStop.color, pct) })
+                          }
+                        />
                       </label>
                     </>
                   )}
@@ -847,11 +1082,25 @@ export function FormatPane({
                     {radioRow(`line-${node.sourceId}`, !stroke, t('paneLineNone'), () =>
                       clearStroke(node.sourceId),
                     )}
-                    {radioRow(`line-${node.sourceId}`, !!stroke, t('paneLineSolid'), () =>
-                      commitStroke(node.sourceId, {}, true),
+                    {radioRow(
+                      `line-${node.sourceId}`,
+                      !!stroke && !strokeGradient,
+                      t('paneLineSolid'),
+                      () => commitStroke(node.sourceId, { gradient: null }, true),
+                    )}
+                    {radioRow(
+                      `line-${node.sourceId}`,
+                      !!stroke && !!strokeGradient,
+                      t('paneLineGradient'),
+                      () =>
+                        commitStroke(
+                          node.sourceId,
+                          { gradient: strokeGradEdge('from', strokeColor) },
+                          true,
+                        ),
                     )}
                   </div>
-                  {stroke && (
+                  {stroke && !strokeGradient && (
                     <>
                       <div className="fp-prow">
                         <span>{t('paneFormatOutlineColor')}</span>
@@ -862,42 +1111,228 @@ export function FormatPane({
                         />
                       </div>
                       <label className="fp-prow">
-                        <span>{t('paneFormatPt')}</span>
+                        <span>{t('ribbonTransparency')}</span>
+                        <PctControl
+                          value={strokeTransparency}
+                          onChange={(pct) =>
+                            commitStroke(node.sourceId, { transparencyPct: pct }, true)
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  {stroke && strokeGradient && (
+                    <>
+                      <div className="fp-prow">
+                        <span>{t('paneGradientColor')} 1</span>
+                        <ColorWell
+                          value={toHex6(strokeGradient.stops[0]?.color ?? strokeColor)}
+                          label={`${t('paneGradientColor')} 1`}
+                          onPick={(hex) =>
+                            commitStroke(node.sourceId, { gradient: strokeGradEdge('from', hex) })
+                          }
+                        />
+                      </div>
+                      <div className="fp-prow">
+                        <span>{t('paneGradientColor')} 2</span>
+                        <ColorWell
+                          value={toHex6(
+                            strokeGradient.stops[strokeGradient.stops.length - 1]?.color ??
+                              '#ffffff',
+                          )}
+                          label={`${t('paneGradientColor')} 2`}
+                          onPick={(hex) =>
+                            commitStroke(node.sourceId, { gradient: strokeGradEdge('to', hex) })
+                          }
+                        />
+                      </div>
+                      <label className="fp-prow">
+                        <span>{t('paneGradientAngle')}</span>
                         <input
-                          key={`${node.sourceId}:sw:${strokeWidthPt}`}
+                          key={`${node.sourceId}:sga:${strokeGradient.angleDeg}`}
                           type="number"
-                          step={0.5}
-                          min={0.5}
-                          defaultValue={strokeWidthPt}
+                          min={0}
+                          max={359.9}
+                          defaultValue={Math.round(strokeGradient.angleDeg)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
                           }}
                           onBlur={(e) => {
                             const v = Number(e.target.value)
-                            if (!Number.isNaN(v) && v > 0)
-                              commitStroke(node.sourceId, { widthPt: v }, true)
+                            if (!Number.isNaN(v))
+                              commitStroke(
+                                node.sourceId,
+                                {
+                                  gradient: {
+                                    ...strokeGradEdge(
+                                      'from',
+                                      toHex6(strokeGradient.stops[0]?.color ?? strokeColor),
+                                    ),
+                                    angleDeg: ((v % 360) + 360) % 360,
+                                  },
+                                },
+                                true,
+                              )
                           }}
                         />
                       </label>
+                    </>
+                  )}
+                  {stroke && (
+                    <>
                       <label className="fp-prow">
-                        <span>{t('paneFormatDashStyle')}</span>
-                        <select
-                          key={`${node.sourceId}:sd:${strokeDash}`}
-                          defaultValue={strokeDash}
-                          onChange={(e) =>
-                            commitStroke(node.sourceId, { dash: e.target.value }, true)
-                          }
-                        >
-                          {!DASH_PRESETS.some(([k]) => k === strokeDash) && (
-                            <option value={strokeDash}>{strokeDash}</option>
+                        <span>{t('paneLineWidth')}</span>
+                        <div className="fp-unitstep" onMouseDown={focusSpinnerField}>
+                          {widthLimitTip && (
+                            <div className="fp-limit-tip" role="alert">
+                              {t('paneLineWidthMax', { max: MAX_LINE_PT.toLocaleString() })}
+                            </div>
                           )}
-                          {DASH_PRESETS.map(([k, glyph]) => (
-                            <option key={k} value={k}>
-                              {glyph}
-                            </option>
-                          ))}
-                        </select>
+                          <input
+                            key={`${node.sourceId}:sw:${strokeWidthPt}`}
+                            type="text"
+                            inputMode="decimal"
+                            defaultValue={`${strokeWidthPt} ${t('paneFormatPt')}`}
+                            onChange={(e) => {
+                              // PPT blocks entries over 1584pt as they are typed: the
+                              // offending keystroke is reverted and a balloon flashes
+                              const raw = e.target.value
+                              const v = parseFloat(raw)
+                              if (!Number.isNaN(v) && v > MAX_LINE_PT) {
+                                e.target.value =
+                                  e.target.dataset['prev'] ??
+                                  `${strokeWidthPt} ${t('paneFormatPt')}`
+                                flashWidthLimitTip()
+                              } else {
+                                e.target.dataset['prev'] = raw
+                                setWidthLimitTip(false)
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                            }}
+                            onBlur={(e) => {
+                              const v = parseFloat(e.target.value)
+                              if (!Number.isNaN(v) && v > 0 && v <= MAX_LINE_PT)
+                                commitStroke(node.sourceId, { widthPt: v }, true)
+                              else e.target.value = `${strokeWidthPt} ${t('paneFormatPt')}`
+                            }}
+                          />
+                          <span className="fp-unitstep-btns">
+                            <button
+                              type="button"
+                              aria-label={`+0.25 ${t('paneFormatPt')}`}
+                              disabled={
+                                (strokeDraft.current?.widthPt ?? strokeWidthPt) >= MAX_LINE_PT
+                              }
+                              onClick={() =>
+                                commitStroke(
+                                  node.sourceId,
+                                  {
+                                    widthPt: Math.min(
+                                      MAX_LINE_PT,
+                                      (strokeDraft.current?.widthPt ?? strokeWidthPt) + 0.25,
+                                    ),
+                                  },
+                                  true,
+                                )
+                              }
+                            >
+                              <SpinChevron up />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`−0.25 ${t('paneFormatPt')}`}
+                              disabled={(strokeDraft.current?.widthPt ?? strokeWidthPt) <= 0.25}
+                              onClick={() =>
+                                commitStroke(
+                                  node.sourceId,
+                                  {
+                                    widthPt: Math.max(
+                                      0.25,
+                                      (strokeDraft.current?.widthPt ?? strokeWidthPt) - 0.25,
+                                    ),
+                                  },
+                                  true,
+                                )
+                              }
+                            >
+                              <SpinChevron up={false} />
+                            </button>
+                          </span>
+                        </div>
                       </label>
+                      <div className="fp-prow">
+                        <span>{t('paneLineCompound')}</span>
+                        <Dropdown
+                          value={strokeCompound}
+                          ariaLabel={t('paneLineCompound')}
+                          options={(
+                            [
+                              ['sng', t('paneLineCompoundSng')],
+                              ['dbl', t('paneLineCompoundDbl')],
+                              ['thickThin', t('paneLineCompoundThickThin')],
+                              ['thinThick', t('paneLineCompoundThinThick')],
+                              ['tri', t('paneLineCompoundTri')],
+                            ] as const
+                          ).map(([k, label]) => ({
+                            value: k,
+                            label,
+                            render: <CompoundPreview kind={k} />,
+                          }))}
+                          onPick={(kind) => commitStroke(node.sourceId, { compound: kind }, true)}
+                        />
+                      </div>
+                      <div className="fp-prow">
+                        <span>{t('paneFormatDashStyle')}</span>
+                        <Dropdown
+                          value={strokeDash}
+                          ariaLabel={t('paneFormatDashStyle')}
+                          options={[
+                            // an off-preset dash from the file keeps a text entry (parity
+                            // with the old select's fallback <option>)
+                            ...(DASH_PRESETS.some(([k]) => k === strokeDash)
+                              ? []
+                              : [{ value: strokeDash, label: strokeDash }]),
+                            ...DASH_PRESETS.map(([k, dasharray]) => ({
+                              value: k,
+                              label: k,
+                              render: <DashPreview dasharray={dasharray} />,
+                            })),
+                          ]}
+                          onPick={(dash) => commitStroke(node.sourceId, { dash }, true)}
+                        />
+                      </div>
+                      <div className="fp-prow">
+                        <span>{t('paneLineCap')}</span>
+                        <Dropdown
+                          value={strokeCap}
+                          ariaLabel={t('paneLineCap')}
+                          options={(
+                            [
+                              ['flat', t('paneLineCapFlat')],
+                              ['rnd', t('paneLineCapRound')],
+                              ['sq', t('paneLineCapSquare')],
+                            ] as const
+                          ).map(([k, label]) => ({ value: k, label }))}
+                          onPick={(cap) => commitStroke(node.sourceId, { cap }, true)}
+                        />
+                      </div>
+                      <div className="fp-prow">
+                        <span>{t('paneLineJoin')}</span>
+                        <Dropdown
+                          value={strokeJoin}
+                          ariaLabel={t('paneLineJoin')}
+                          options={(
+                            [
+                              ['round', t('paneLineJoinRound')],
+                              ['bevel', t('paneLineJoinBevel')],
+                              ['miter', t('paneLineJoinMiter')],
+                            ] as const
+                          ).map(([k, label]) => ({ value: k, label }))}
+                          onPick={(join) => commitStroke(node.sourceId, { join }, true)}
+                        />
+                      </div>
                     </>
                   )}
                 </>

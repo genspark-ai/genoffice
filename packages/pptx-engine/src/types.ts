@@ -68,6 +68,8 @@ export type Fill =
       duotone?: [string, string]
       /** <a:blip><a:clrChange>: pixels matching `from` are replaced with `to` (#RRGGBB or #RRGGBBAA; alpha 0 = color-to-transparent) */
       clrChange?: { from: string; to: string }
+      /** <a:blip><a:lum>: legacy brightness/contrast picture adjustment (-1..1 each) */
+      lum?: { bright: number; contrast: number }
       /** <a:tile>: offsets (EMU), scale fractions and anchor alignment of the tile grid */
       tile?: { tx: number; ty: number; sx: number; sy: number; algn: string }
     }
@@ -92,6 +94,10 @@ export interface Stroke {
   width: number
   dash?: string
   cap?: 'flat' | 'round' | 'square'
+  /** Line join <a:round>/<a:bevel>/<a:miter> (omitted when absent) */
+  join?: 'round' | 'bevel' | 'miter'
+  /** Compound line type (<a:ln cmpd>, single when absent) */
+  compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
   /** Line head decoration <a:headEnd> (omitted when absent or none) */
   headEnd?: ArrowEnd
   /** Line tail decoration <a:tailEnd> (omitted when absent or none) */
@@ -193,6 +199,8 @@ export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 export interface Paragraph {
   runs: TextRun[]
   align?: TextAlign
+  /** right-to-left paragraph (a:pPr rtl="1"); generated content only (pdf2pptx) */
+  rtl?: boolean
   /** Indent level (bullet level) */
   level?: number
   /** Line spacing (%, 100 = single) or absolute (pt, via lineExact) */
@@ -426,6 +434,8 @@ export interface PictureElement extends ElementBase {
   duotone?: [string, string]
   /** <a:blip><a:clrChange> on the picture blip */
   clrChange?: { from: string; to: string }
+  /** <a:blip><a:lum> brightness/contrast on the picture blip (-1..1 each) */
+  lum?: { bright: number; contrast: number }
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect
@@ -488,6 +498,8 @@ export interface TableElement extends ElementBase {
   rows: TableCell[][]
   /** tblPr's header-row/banded-rows toggles (echoed in the Ribbon's "Table Design") */
   styleFlags?: { firstRow: boolean; bandRow: boolean }
+  /** tblPr rtl="1": PowerPoint mirrors the grid horizontally (logical column 1 renders rightmost) */
+  rtl?: boolean
   /** Table-style <a:tblBg>: drawn under the cells (alpha band fills composite over it) */
   bgFill?: Fill
 }

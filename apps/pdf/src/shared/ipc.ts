@@ -25,6 +25,7 @@ export const PDF_CHANNELS = {
   splitPages: 'pdf:split-pages',
   cropPages: 'pdf:crop-pages',
   exportImages: 'pdf:export-images',
+  convertOffice: 'pdf:convert-office',
   generateImage: 'pdf:generate-image',
   listSignatures: 'pdf:list-signatures',
   addSignature: 'pdf:add-signature',
@@ -69,6 +70,8 @@ export interface SavedSignature {
   createdAt: number
   data: SignatureData
 }
+
+export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx'
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -613,6 +616,7 @@ export type ExportImagesResult =
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
+  gskStatus: 'ai:gsk-status',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
@@ -683,6 +687,8 @@ export interface PdfApi {
   splitPages(request: SplitPagesRequest): Promise<SplitPagesResult>
   cropPages(request: CropPagesRequest): Promise<CropPagesResult>
   exportImages(request: ExportImagesRequest): Promise<ExportImagesResult>
+  /** Convert the current PDF to Word / Excel / PowerPoint via the shell's local conversion flows */
+  convertOffice(format: PdfConvertFormat): Promise<void>
   /** Web image search for AI tools (app-wide ai:image-search handler) */
   imageSearch(query: string, maxResults?: number): Promise<ImageSearchResponse>
   /** Download an image URL in the main process (SSRF-guarded, avoids CORS); null on failure */
@@ -720,6 +726,8 @@ export interface PdfApi {
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void
   getAiSettings(): Promise<AiSettings>
+  /** Genspark login state (gsk); gates the cloud-only generate_image tool */
+  gskStatus(): Promise<{ loggedIn: boolean }>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void

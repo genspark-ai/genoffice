@@ -856,6 +856,12 @@ function cellParaSpec(
   if (!text && fmt?.emptyRunSizeHalfPoints) {
     styles.push(`font-size:${fmt.emptyRunSizeHalfPoints / 2}pt`)
   }
+  // Western mark faces only (same scoping as blockAttrs): empty cells keep
+  // the Latin-factor rule instead of growing to a CJK mark face
+  if (!text && fmt?.emptyRunFontFamily && !isCjkFontName(fmt.emptyRunFontFamily)) {
+    const fam = fmt.emptyRunFontFamily
+    styles.push(`--doc-line-factor:${lineHeightFactor(fam)}`, `font-family:${cssFontFamily(fam)}`)
+  }
   const attrs: Record<string, string> = { style: styles.join(';') }
   // empty paragraphs get the Latin factor (.doc-table .doc-p-empty) and a <br> line box
   if (!text) attrs.class = 'doc-p-empty'

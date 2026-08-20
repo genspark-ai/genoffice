@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Dropdown } from '@genoffice/ui'
 import type { PivotField } from './PivotDialog'
 import { useI18n } from './i18n/locale'
 
@@ -36,49 +37,59 @@ export function SubtotalDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <header>{t('dlgSubtotalTitle')}</header>
-        {fields.length === 0
-          ? <p className="dialog-note">{t('dlgSubtotalNoFields')}</p>
-          : (
-              <div className="dialog-grid">
-                <label>
-                  {t('dlgSubtotalGroupBy')}
-                  <select
-                    value={groupCol}
-                    onChange={(event) => setGroupCol(Number(event.target.value))}
-                  >
-                    {fields.map((field) => (
-                      <option key={field.colIndex} value={field.colIndex}>{field.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {t('dlgSubtotalFunction')}
-                  <select
-                    value={agg}
-                    onChange={(event) => setAgg(event.target.value as SubtotalConfig['agg'])}
-                  >
-                    <option value="sum">{t('dlgPivotAggSum')}</option>
-                    <option value="count">{t('dlgPivotAggCount')}</option>
-                    <option value="average">{t('dlgPivotAggAverage')}</option>
-                  </select>
-                </label>
-                <label>
-                  {t('dlgSubtotalAddTo')}
-                  <select
-                    value={valueCol}
-                    onChange={(event) => setValueCol(Number(event.target.value))}
-                  >
-                    {fields.map((field) => (
-                      <option key={field.colIndex} value={field.colIndex}>{field.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="dialog-note">{t('dlgSubtotalNote')}</p>
-              </div>
-            )}
-        {error && <p className="dialog-note" role="alert">{error}</p>}
+        {fields.length === 0 ? (
+          <p className="dialog-note">{t('dlgSubtotalNoFields')}</p>
+        ) : (
+          <div className="dialog-grid">
+            <label>
+              {t('dlgSubtotalGroupBy')}
+              <Dropdown
+                ariaLabel={t('dlgSubtotalGroupBy')}
+                value={String(groupCol)}
+                options={fields.map((field) => ({
+                  value: String(field.colIndex),
+                  label: field.label,
+                }))}
+                onPick={(v) => setGroupCol(Number(v))}
+              />
+            </label>
+            <label>
+              {t('dlgSubtotalFunction')}
+              <Dropdown
+                ariaLabel={t('dlgSubtotalFunction')}
+                value={agg}
+                options={[
+                  { value: 'sum', label: t('dlgPivotAggSum') },
+                  { value: 'count', label: t('dlgPivotAggCount') },
+                  { value: 'average', label: t('dlgPivotAggAverage') },
+                ]}
+                onPick={(v) => setAgg(v as SubtotalConfig['agg'])}
+              />
+            </label>
+            <label>
+              {t('dlgSubtotalAddTo')}
+              <Dropdown
+                ariaLabel={t('dlgSubtotalAddTo')}
+                value={String(valueCol)}
+                options={fields.map((field) => ({
+                  value: String(field.colIndex),
+                  label: field.label,
+                }))}
+                onPick={(v) => setValueCol(Number(v))}
+              />
+            </label>
+            <p className="dialog-note">{t('dlgSubtotalNote')}</p>
+          </div>
+        )}
+        {error && (
+          <p className="dialog-note" role="alert">
+            {error}
+          </p>
+        )}
         <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>{t('dlgCancel')}</button>
+          <button className="secondary" onClick={onClose}>
+            {t('dlgCancel')}
+          </button>
           {fields.length > 0 && (
             <button
               className="primary-action"

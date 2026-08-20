@@ -30,11 +30,3 @@ export function contextTabForElement(type: ContextElementType): ContextTab | nul
   if (type === 'shape' || type === 'textShape') return 'shapeFormat'
   return null
 }
-
-/**
- * Shapes get their own format tab (styles/fill/outline), but selecting a text-bearing
- * shape should not pull the user away from Home's text controls.
- */
-export function autoContextTabForElement(type: ContextElementType): ContextTab | null {
-  return type === 'textShape' ? null : contextTabForElement(type)
-}

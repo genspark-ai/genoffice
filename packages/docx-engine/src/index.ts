@@ -12,9 +12,13 @@ export {
 export {
   TABLE_HEADER_FILL,
   applyImageWrap,
+  applyImageZOrder,
+  buildAnchoredTextboxParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
+  type AnchoredTextboxOptions,
+  type TextboxContentParagraph,
   generateCaptionXml,
   generateIndexFieldXml,
   generateParagraphXml,

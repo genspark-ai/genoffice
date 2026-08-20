@@ -10,6 +10,7 @@ import {
   type SourceInfo,
   type TocEntry,
 } from '@genoffice/docx-engine'
+import { Dropdown } from '@genoffice/ui'
 import { PromptModal } from './PromptModal'
 import { collectHeadings } from '../editor/headings'
 import { t, useI18n, type StringKey } from '../i18n/locale'
@@ -200,13 +201,12 @@ function CaptionModal({
         <h2>{t('ribbonCaptionInsertTitle')}</h2>
         <label>
           {t('ribbonCaptionLabel')}
-          <select value={label} onChange={(e) => setLabel(e.target.value)}>
-            {CAPTION_LABELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
+          <Dropdown
+            value={label}
+            ariaLabel={t('ribbonCaptionLabel')}
+            options={CAPTION_LABELS.map((l) => ({ value: l, label: l }))}
+            onPick={setLabel}
+          />
         </label>
         <label>
           {t('ribbonCaption')}
@@ -281,13 +281,12 @@ function SourceModal({
         <h2>{t('ribbonSourceCreateTitle')}</h2>
         <label>
           {t('ribbonSourceType')}
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            {SOURCE_TYPES.map((s) => (
-              <option key={s.key} value={s.key}>
-                {t(s.nameKey)}
-              </option>
-            ))}
-          </select>
+          <Dropdown
+            value={type}
+            ariaLabel={t('ribbonSourceType')}
+            options={SOURCE_TYPES.map((s) => ({ value: s.key, label: t(s.nameKey) }))}
+            onPick={setType}
+          />
         </label>
         <label>
           {t('ribbonSourceAuthor')}

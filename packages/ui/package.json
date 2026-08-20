@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
     "./screentip.css": "./src/screentip.css",
-    "./color-picker.css": "./src/color-picker.css"
+    "./color-picker.css": "./src/color-picker.css",
+    "./dropdown.css": "./src/dropdown.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -68,6 +68,31 @@ describe('built-in table style Medium Style 2 (PowerPoint default)', () => {
     expect(run.bold).toBe(false)
     expect(run.color).toBe('#000000')
   })
+
+  it('explicit <a:noFill/> on tcPr overrides the style fill (cell stays transparent)', () => {
+    const slide2 = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: tableSlideXml('firstRow="1" bandRow="1"', MEDIUM2_A1).replace(
+        /<a:tcPr\/>/,
+        '<a:tcPr><a:noFill/></a:tcPr>',
+      ),
+      ctx: { theme },
+    })
+    const t2 = slide2.elements[0] as any
+    expect(t2.rows[0][0].fill).toBeUndefined()
+    // Remaining cells keep the style fill
+    expect(t2.rows[0][1].fill).toEqual({ type: 'solid', color: '#4472C4' })
+  })
+
+  it('tblPr rtl="1" is parsed onto the table element', () => {
+    const slide2 = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: tableSlideXml('rtl="1" firstRow="1"', MEDIUM2_A1),
+      ctx: { theme },
+    })
+    expect((slide2.elements[0] as any).rtl).toBe(true)
+    expect((slide.elements[0] as any).rtl).toBeUndefined()
+  })
 })
 
 describe('tableStyles.xml custom styles', () => {

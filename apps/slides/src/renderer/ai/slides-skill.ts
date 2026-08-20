@@ -7,6 +7,7 @@ import type {
   ShapeRenderNode,
 } from '@genoffice/pptx-render'
 import type { AddSmartArtOp, AgentToolCall, AgentToolDef, EditParagraph } from '../../shared/ipc'
+import { opVocabulary } from '../../shared/op-docs'
 import { auditSlideLayout, formatAudit } from './layout-audit'
 import { runLayoutScript, type LayoutScriptElement, type SlideStylePatch } from './layout-script'
 import { t } from '../i18n/locale'
@@ -108,6 +109,8 @@ export interface DeckAccess {
   searchImages?(query: string, maxResults: number): Promise<string[]>
   /** Whether cloud single-page generation is available (kill switch + gsk login state) */
   isCloudPageGenEnabled?(): Promise<boolean>
+  /** live predicate: gsk login && the Genspark-cloud-tools toggle; false hides generate_image / analyze_media */
+  gskTools?(): boolean
   /**
    * Cloud single-page generation (gsk slide_generate), used by generate_deck's self-driven
    * pipeline: given the unified style + this page's brief/layout/images, the cloud service
@@ -129,6 +132,27 @@ export interface DeckAccess {
     canvasH: number
     signal?: AbortSignal
   }): Promise<{ ok: boolean; marker?: string; error?: string }>
+  /**
+   * Local single-page generation (used when cloud is unavailable, e.g. BYOK without gsk):
+   * same inputs and marker contract as generatePageCloud, but the page is produced entirely
+   * locally — one LLM request writes a structured slide spec and the main process builds it
+   * directly into a one-slide pptx (no HTML intermediate).
+   */
+  generatePageLocal?(args: {
+    pageIndex: number
+    totalPages: number
+    coreHook: string
+    style: string
+    title: string
+    brief: string
+    layout: string
+    images: string[]
+    context?: string
+    topic?: string
+    canvasW: number
+    canvasH: number
+    signal?: AbortSignal
+  }): Promise<{ ok: boolean; marker?: string; error?: string; imageFailures?: string[] }>
   /**
    * In-tool Style Skill generation:
    * a dedicated LLM call focused on producing a complete structured visual style guide
@@ -210,12 +234,12 @@ const AGENT_SYSTEM_PROMPT = `You are the AI assistant inside GenOffice Slides (a
 
 ## Most important tool-selection principles (judge the scenario before acting)
 - **Creating a whole new deck (from scratch)** → first gather material (web_search) and images (image_search), then call **generate_deck**. With many pages, prefer **passing topic + approx_pages + context (the real material you found)** and let the system plan internally + generate page by page + display page by page (**you don't hand-write dozens of pages, and no pages get missed / arguments truncated**). For few pages where you already know each page, you may pass core_hook+style+pages directly.
-- **Adding 1 page or a few pages to an existing deck** → generate_deck(pages: briefs for just the new pages, insert_mode:"append"). Write each page's brief in detail (real content/data per region + layout); first look at the existing pages (get_deck_context) and pass a style description matching them so new pages stay consistent. **Even a single new page goes through this cloud generation; don't fall back to native tools and build a crude page**.
-- **Redoing / redesigning an existing page** (user says "redo this page / redesign it / try another layout / make it prettier") → **regenerate_slide**: first read_slide to get the page's original copy, then pass a detailed brief (copy the text/data to keep into the brief verbatim, state what to change and the target layout); the cloud service regenerates the page in place (other pages untouched). Don't dismantle and rebuild the whole page element by element with native tools.
+- **Adding 1 page or a few pages to an existing deck** → generate_deck(pages: briefs for just the new pages, insert_mode:"append"). Write each page's brief in detail (real content/data per region + layout); first look at the existing pages (get_deck_context) and pass a style description matching them so new pages stay consistent. **Even a single new page goes through this generation pipeline; don't fall back to native tools and build a crude page**.
+- **Redoing / redesigning an existing page** (user says "redo this page / redesign it / try another layout / make it prettier") → **regenerate_slide**: first read_slide to get the page's original copy, then pass a detailed brief (copy the text/data to keep into the brief verbatim, state what to change and the target layout); the page is regenerated in place (other pages untouched). Don't dismantle and rebuild the whole page element by element with native tools.
 - **Deleting a page** → delete_slide(slideIndex).
 - **Modifying / fine-tuning existing elements** (position/size/alignment/distribution/relative nudges/text/style/fill/stroke, one or many elements) → always prefer **execute_slide_script** and do it in one script (see "Editing existing elements" below; read-write combined, no read_slide first). Don't blind-fire individual set_element_* calls. Add/delete elements with add_* / delete_element; redo a whole page with regenerate_slide.
 - **Elements inside a group**: direct children of a top-level group (marked "in group <id>" / els groupId) are edited exactly like normal elements — same script primitives and set_element_* tools, absolute coordinates. Only elements nested in a sub-group are read-only: call ungroup_element on the outer group first (ids on the page change afterwards; the result returns the fresh list). To delete a single group member, ungroup first too.
-- **Key constraint**: after cloud generation, do **not** use native tools to "polish/redo" a generated page — the output is the final good-looking result. Only when the user asks for a specific change should you edit the corresponding element with native tools; if they ask to redo the whole page, use regenerate_slide.
+- **Key constraint**: after a page is generated, do **not** use native tools to "polish/redo" a generated page — the output is the final good-looking result. Only when the user asks for a specific change should you edit the corresponding element with native tools; if they ask to redo the whole page, use regenerate_slide.
 - **When the user attached files (see the "attachment list" in each turn's context)**: first read all text attachments with read_attachment (paginate long files); image attachments were already sent as images with the message, just look at them. Only **then** plan/generate the deck — content should come from the attachments first. When calling generate_deck, put the key content you read into the context argument; no need to web_search information the attachments already cover. **This is enforced: generate_deck refuses to run while any text attachment is still unread.**
 
 Rules:
@@ -253,8 +277,8 @@ Step D Generate (call generate_deck): with many pages pass topic + approx_pages 
 Step E Vary layouts per page (avoid sameness): 3 parallel points→three-column cards; a key number→big-number hero; comparison→two columns; sequence→timeline; image+text→left-text-right-image / full-image with text overlay. **Content pages of one deck must not all use the same layout**.
 
 - **generate_deck is the first choice for a whole new deck**: with many pages pass topic+approx_pages+context; the system plans internally (auto-batching over the threshold), **auto-searches images**, writes HTML page by page, and **lands pages onto the canvas as they generate (the user sees them one by one)**. **Neither "only page 1 got generated" nor "arguments were truncated" can happen — the page count is guaranteed by the system loop**.
-- **When adding just 1 page or a few pages (common case)**: also use generate_deck with **pages (briefs for only the new pages) + insert_mode:"append"** (appended at the end, existing pages untouched). **New pages also go through the cloud generation for polish — don't fall back to native tools for a crude page just because it's one page**. Before adding, read_slide/get_deck_context to see the existing pages' style (primary color/layout) and pass a matching style description; write each brief with the real content per region.
-- Briefs should be concrete: what text/data/numbers go in each region, which image goes where, and the layout name — the cloud designer follows your brief; vague briefs produce generic pages.
+- **When adding just 1 page or a few pages (common case)**: also use generate_deck with **pages (briefs for only the new pages) + insert_mode:"append"** (appended at the end, existing pages untouched). **New pages also go through the generation pipeline for polish — don't fall back to native tools for a crude page just because it's one page**. Before adding, read_slide/get_deck_context to see the existing pages' style (primary color/layout) and pass a matching style description; write each brief with the real content per region.
+- Briefs should be concrete: what text/data/numbers go in each region, which image goes where, and the layout name — the page designer follows your brief; vague briefs produce generic pages.
 - After generation, if the user wants a tweak, edit the corresponding element with the native tools below; don't redo whole pages unprompted "to look better". Use regenerate_slide only when the user explicitly asks to redo a page.
 
 Native tools (only for modifying/refining existing pages, not for generating from scratch):
@@ -410,7 +434,7 @@ const TOOLS: AgentToolDef[] = [
     description:
       "[Preferred tool for editing a slide's existing elements] Runs your JS edit script against one page; a single script covers: position/size/alignment/distribution/relative nudges/text/style/fill/stroke." +
       ' At run time the script automatically receives the real geometry and text of every element on the page (els) — **no read_slide needed first**; read-write combined, compute from els inside the script.' +
-      ' Geometry changes are applied atomically in one batch (undoable as a whole), the rest in script order, and a layout audit (overlap/out-of-bounds/text overflow) is returned at the end.' +
+      ' The whole script is one atomic transaction: geometry in one batch, the rest in script order, one undo step; if any operation fails, everything rolls back and the page is unchanged — fix the script and resend it whole. A layout audit (overlap/out-of-bounds/text overflow) is returned at the end.' +
       ' Far more reliable than individual set_element_* calls — coordinate math happens at execution site, not from memory. If the audit reports problems, call this tool again immediately to fix.\n' +
       'Script environment (constrained synchronous JS-like DSL; no external APIs or ambient globals):\n' +
       '- els: array, each item {id,type,text,x,y,w,h,rotation,fontSizePt?,fill?,textColor?,strokeColor?,inGroup?,groupId?,locked?} (pixels, origin top-left; fill/textColor/strokeColor are current colors in #RRGGBB, read-only — write via setFill/setStyle/setStroke; inGroup+groupId=directly editable group child (all primitives work, coordinates absolute as shown); inGroup without groupId=nested in a sub-group, read-only — ungroup_element the outer group first; locked=layout decoration, read-only)\n' +
@@ -700,12 +724,12 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'regenerate_slide',
     description:
-      '[Redo/redesign an existing page] The cloud service regenerates the page from your brief and replaces it in place (other pages untouched, undoable).' +
+      '[Redo/redesign an existing page] Regenerates the page from your brief and replaces it in place (other pages untouched, undoable).' +
       ' Use when the user says "redo this page / redesign it / try another layout / make it prettier"; don\'t dismantle the page element by element with native tools.' +
       " Flow: first read_slide to get the page's current content, then check neighboring pages / get_deck_context to grasp the deck's style;" +
       ' write a detailed brief — what to keep (copy real text/data into the brief verbatim), what to change, and the target layout; the deck style is applied automatically.' +
       ' If the page needs images, image_search first and pass real URLs in image_urls.' +
-      ' If cloud generation fails, it is usually a temporary service error: do NOT loop retrying — make the concrete changes in place with execute_slide_script instead (or tell the user to try again in a few minutes).',
+      ' If generation fails, it is usually a temporary error: do NOT loop retrying — make the concrete changes in place with execute_slide_script instead (or tell the user to try again in a few minutes).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1122,6 +1146,34 @@ const TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'apply_ops',
+    description:
+      '[Advanced batch surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). Use for multi-page or many-element batches (retitle every page, deck-wide transitions, bulk restyle); for one-page layout math prefer execute_slide_script, for ordinary single edits prefer the dedicated tools.\n' +
+      'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +
+      'Units are document-space EMU: 1 px = 9525 EMU (read_slide reports px — multiply by 9525). Font sizes are pt.\n' +
+      'Full vocabulary (the same executor every editing surface uses):\n' +
+      opVocabulary() +
+      '\nCommon signatures: setText {paragraphs:[{runs:[{text,bold?,italic?,fontSize?,color?}],align?}]} · setFont {font:{fontFamily?,fontSizePt?,bold?,…}} · setFill {fill:"#RRGGBB"|"none"} · setStroke {stroke:{color,widthEmu}|null} · setTransform {box:{x,y,cx,cy},rotDeg?} · addElement {kind:"textbox"|preset,offset,paragraphs?} · setTableCell {row,col,paragraphs} · moveSlide {to} · findReplace {find,replace}.\n' +
+      "For any other op, send your best guess: a failing op's error returns its exact one-line signature, and dry_run rehearses the whole batch without touching the deck. An unknown op name returns the full vocabulary.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ops: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'The op list, applied in order as one transaction (at most 50)',
+        },
+        dry_run: { type: 'boolean', description: 'Validate the plan only; the deck is untouched' },
+        isolation: {
+          type: 'string',
+          enum: ['atomic', 'per_op'],
+          description: 'atomic (default): all-or-nothing. per_op: independent ops, failures skip.',
+        },
+      },
+      required: ['ops'],
+    },
+  },
+  {
     name: 'delete_element',
     description: 'Delete one element from a page.',
     inputSchema: {
@@ -1152,7 +1204,7 @@ const TOOLS: AgentToolDef[] = [
 /** Find one node by id in the node tree (including groups). */
 function findNodeById(nodes: RenderNode[], id: string): RenderNode | undefined {
   for (const n of nodes) {
-    if (n.sourceId === id) return n
+    if (n.sourceId === id || n.durableId === id) return n
     if (n.type === 'group') {
       const hit = findNodeById(n.children, id)
       if (hit) return hit
@@ -1170,11 +1222,12 @@ function findNodeById(nodes: RenderNode[], id: string): RenderNode | undefined {
 type EditTarget =
   { node: RenderNode; groupId?: string; groupOrigin?: { x: number; y: number } } | { nested: true }
 function resolveEditTarget(slide: RenderSlide, sourceId: string): EditTarget | null {
+  const matches = (n: RenderNode) => n.sourceId === sourceId || n.durableId === sourceId
   for (const n of slide.nodes) {
-    if (n.sourceId === sourceId) return { node: n }
+    if (matches(n)) return { node: n }
     if (n.type === 'group') {
       const g = n as GroupRenderNode
-      const child = g.children.find((c) => c.sourceId === sourceId)
+      const child = g.children.find(matches)
       if (child)
         return {
           node: child,
@@ -1187,10 +1240,29 @@ function resolveEditTarget(slide: RenderSlide, sourceId: string): EditTarget | n
   return null
 }
 
-/** Shared not-found / nested-in-subgroup error text for element-targeting tools. */
-function targetError(target: EditTarget | null, sourceId: string, pageNo: number): string | null {
-  if (!target)
-    return `Element ${sourceId} not found on page ${pageNo} (ids change after regenerate/ungroup/save; call read_slide for fresh ids)`
+/** Editable element ids of a slide (locked layout decorations excluded), with short text hints. */
+function availableIdList(slide: RenderSlide, withText = false): string {
+  return collectNodeInfos(slide.nodes)
+    .filter((n) => !n.locked)
+    .map((n) => (withText && n.text?.trim() ? `${n.id} ("${preview(n.text, 12)}")` : n.id))
+    .join(', ')
+}
+
+/**
+ * Shared not-found / nested-in-subgroup error text for element-targeting tools. Guided: the
+ * not-found branch lists the ids that DO exist — models self-correct from the list, but
+ * blind-retry a bare "not found".
+ */
+function targetError(
+  target: EditTarget | null,
+  sourceId: string,
+  pageNo: number,
+  slide?: RenderSlide,
+): string | null {
+  if (!target) {
+    const avail = slide ? ` Elements on this page: [${availableIdList(slide)}].` : ''
+    return `Element ${sourceId} not found on page ${pageNo}.${avail} (e_* ids are durable across edits/saves; call read_slide when in doubt)`
+  }
   if ('nested' in target)
     return `Element ${sourceId} is nested inside a sub-group; call ungroup_element on the outer group first, or edit the sub-group as a whole`
   return null
@@ -1344,7 +1416,9 @@ function collectNodeInfos(
       h: Math.round(b.h),
     }
     const base: NodeInfo = {
-      id: n.sourceId,
+      // Durable id when the element's bytes carry one — survives regenerate/
+      // ungroup/save, so the AI can keep addressing across turns
+      id: n.durableId ?? n.sourceId,
       type: n.type,
       text: nodeText(n),
       ...abs,
@@ -1359,7 +1433,12 @@ function collectNodeInfos(
     out.push(base)
     if (n.type === 'group') {
       const g = n as GroupRenderNode
-      out.push(...collectNodeInfos(g.children, abs.x, abs.y, { id: n.sourceId, topLevel: !parent }))
+      out.push(
+        ...collectNodeInfos(g.children, abs.x, abs.y, {
+          id: n.durableId ?? n.sourceId,
+          topLevel: !parent,
+        }),
+      )
     }
   }
   return out
@@ -1441,14 +1520,30 @@ export function formatSlideDump(slide: RenderSlide): string {
   return `Canvas ${slide.widthPx}×${slide.heightPx}px\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
 }
 
+/** tools only usable through the Genspark cloud (gated by login + the cloud-tools toggle) */
+const GSK_ONLY_TOOLS = new Set(['generate_image', 'analyze_media'])
+
+const GSK_TOOLS_OFF_NOTE =
+  '\n\nNote: generate_image and analyze_media are currently unavailable (Genspark cloud tools are off or the user is signed out). Do not call or promise them; for imagery use image_search + insert_web_image instead.'
+
 export function createSlidesSkill(access: DeckAccess): AgentSkill {
   // The HTML pipeline was already used in this conversation → later calls without an explicit mode default to append.
   // Safety net for when the AI ignores the "pass all pages at once" constraint: separate calls no longer overwrite each other (P0-1).
   const state: SkillState = { htmlGenerated: false }
   return {
     id: 'slides',
-    systemPrompt: AGENT_SYSTEM_PROMPT,
-    tools: TOOLS,
+    // live like tools: the off-note overrides the prose that still mentions the hidden tools
+    get systemPrompt() {
+      return access.gskTools?.() === false
+        ? AGENT_SYSTEM_PROMPT + GSK_TOOLS_OFF_NOTE
+        : AGENT_SYSTEM_PROMPT
+    },
+    // live view: gskTools is re-read before every model request
+    get tools() {
+      return access.gskTools?.() === false
+        ? TOOLS.filter((t) => !GSK_ONLY_TOOLS.has(t.name))
+        : TOOLS
+    },
     buildContext: () => {
       const outline = `<deck outline>\n${buildDeckOutline(access.getSlides(), access.getCurrent(), access.getSelectedIds())}\n</deck outline>`
       const progress = buildProgressNote(state)
@@ -1500,7 +1595,7 @@ function blockScratchBuild(
   return {
     output:
       "For blank/from-scratch scenarios don't hand-assemble pages element by element with add_text_box/add_shape/add_smartart (crude layout). " +
-      'Use cloud generation instead: new whole deck → generate_deck; new pages for an existing deck → generate_deck(pages, insert_mode:"append"). ' +
+      'Use the generation pipeline instead: new whole deck → generate_deck; new pages for an existing deck → generate_deck(pages, insert_mode:"append"). ' +
       'Write it beautifully in HTML/CSS and the system converts it into editable elements. Use native tools only when the deck already has polished content and one element needs refining.',
     isError: true,
     mutated: false,
@@ -1584,34 +1679,6 @@ function dataSourceGateError(call: AgentToolCall, state: SkillState | undefined)
 const SAMPLE_DATA_NOTE =
   '\nNOTE: dataSource is "sample" — you MUST tell the user these figures are illustrative placeholders, not real data, and offer to research real numbers with web_search.'
 
-/** Template placeholder strings that must never survive into a delivered page */
-const PLACEHOLDER_PATTERNS: RegExp[] = [
-  /copy paste fonts\. choose the only option to retain text/i,
-  /click to edit master title style/i,
-  /\btext here\b/i,
-  /supporting text here/i,
-  /lorem ipsum/i,
-]
-
-/**
- * Cheap post-generation audit of one page's HTML: flags leftover template
- * placeholders and near-empty pages so the model is forced to redo them instead of
- * delivering filler as success. Returns a short reason, or null when the page looks fine.
- */
-export function auditPageHtml(html: string): string | null {
-  const text = html
-    .replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  for (const re of PLACEHOLDER_PATTERNS) {
-    const m = re.exec(text)
-    if (m) return `contains template placeholder text "${m[0]}"`
-  }
-  if (text.length < 10) return 'has almost no text content'
-  return null
-}
-
 /** Append the missing-image report to the tool output: the model learns which pages lack images and how to fix them, instead of silently treating it as success. */
 function imageFailNote(fails?: { page: number; url: string }[]): string {
   if (!fails?.length) return ''
@@ -1655,7 +1722,7 @@ async function executeTool(
       const paragraphs = toEditParagraphs(call.input.paragraphs)
       if (!paragraphs) return fail(t('aiFailEditText'), 'paragraphs must be a non-empty array')
       const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t('aiFailEditText'), terr!)
       const updated = await window.slidesApi.editText({
         slideIndex: idx,
@@ -1687,7 +1754,7 @@ async function executeTool(
       const slide = slides[idx]
       if (!slide) return fail(t('aiFailStyle'), `slideIndex out of range (0-${slides.length - 1})`)
       const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t('aiFailStyle'), terr!)
       const node = target.node
       if (!(node.type === 'text' || node.type === 'shape')) {
@@ -1720,7 +1787,7 @@ async function executeTool(
       if (!slide)
         return fail(t('aiFailTransform'), `slideIndex out of range (0-${slides.length - 1})`)
       const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t('aiFailTransform'), terr!)
       const b = target.node.box
       // Group-child render boxes are group-local; the tool takes absolute px, so convert both ways via the group origin
@@ -1793,154 +1860,37 @@ async function executeTool(
           summary: t('aiSumScriptNoop', { n: idx + 1 }),
         }
       }
-      // ── Dispatch: geometry applied atomically once via batchEditTransform, the rest serially in script order,
-      //   each step using the returned new slide as the next step's current state. One failure doesn't crash the whole run; report faithfully.
-      // Balanced with the end in the finally below; an unbalanced pair would leave
-      // the session mid-batch, where undo/redo refuse to run
-      const batchOpened = (await window.slidesApi.beginHistoryBatch?.()) === true
-      try {
-        let current = slide
-        const failures: string[] = []
-        let boxApplied = 0
-        const topOps = r.ops.filter((op) => !op.groupId)
-        const grpOps = r.ops.filter((op) => op.groupId)
-        if (topOps.length > 0) {
-          const updated = await window.slidesApi.batchEditTransform({
-            slideIndex: idx,
-            fitWidthPx: access.fitWidthPx,
-            items: topOps.map((op) => ({
-              sourceId: op.id,
-              xPx: op.x,
-              yPx: op.y,
-              wPx: op.w,
-              hPx: op.h,
-              rotationDeg: op.rotation,
-            })),
-          })
-          if (updated) {
-            current = updated
-            access.applySlide(idx, updated)
-            boxApplied = topOps.length
-          } else {
-            failures.push(
-              `Batch geometry apply failed (${topOps.length} items; some elements may no longer exist on this page)`,
-            )
-          }
-        }
-        // Group children go through the per-element in-group transform IPC (abs px → group-local px via the group origin)
-        for (const op of grpOps) {
-          const gnode = findNodeById(current.nodes, op.groupId!)
-          const updated = gnode
-            ? await window.slidesApi.editTransform({
-                slideIndex: idx,
-                sourceId: op.id,
-                groupId: op.groupId!,
-                xPx: op.x - Math.round(gnode.box.x),
-                yPx: op.y - Math.round(gnode.box.y),
-                wPx: op.w,
-                hPx: op.h,
-                rotationDeg: op.rotation,
-                fitWidthPx: access.fitWidthPx,
-              })
-            : null
-          if (!updated) {
-            failures.push(`setBox("${op.id}"): geometry apply inside group ${op.groupId} failed`)
-            continue
-          }
-          current = updated
-          access.applySlide(idx, updated)
-          boxApplied += 1
-        }
-        const counts = { text: 0, style: 0, fill: 0, stroke: 0 }
-        for (const e of r.edits) {
-          const grp = e.groupId ? { groupId: e.groupId } : {}
-          let updated: RenderSlide | null
-          if (e.kind === 'text') {
-            updated = await window.slidesApi.editText({
-              slideIndex: idx,
-              sourceId: e.id,
-              paragraphs: e.paragraphs,
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(
-                `setText("${e.id}"): element not found or does not support text editing`,
-              )
-              continue
-            }
-          } else if (e.kind === 'style') {
-            // Changing style = read current paragraphs (including earlier edit results), merge override fields, write back whole
-            const node = findNodeById(current.nodes, e.id)
-            if (!node || !(node.type === 'text' || node.type === 'shape')) {
-              failures.push(`setStyle("${e.id}"): text element not found`)
-              continue
-            }
-            const cur = nodeToParagraphs(node as ShapeRenderNode)
-            if (!cur.length) {
-              failures.push(`setStyle("${e.id}"): this element has no text to format`)
-              continue
-            }
-            updated = await window.slidesApi.editText({
-              slideIndex: idx,
-              sourceId: e.id,
-              paragraphs: mergeStyleIntoParagraphs(cur, e.style),
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(`setStyle("${e.id}"): element does not support format editing`)
-              continue
-            }
-          } else if (e.kind === 'fill') {
-            updated = await window.slidesApi.editFill({
-              slideIndex: idx,
-              sourceId: e.id,
-              fill: e.fill,
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(`setFill("${e.id}"): element does not support fill`)
-              continue
-            }
-          } else {
-            updated = await window.slidesApi.editStroke({
-              slideIndex: idx,
-              sourceId: e.id,
-              stroke: e.stroke,
-              ...grp,
-            })
-            if (!updated) {
-              failures.push(`setStroke("${e.id}"): element does not support stroke`)
-              continue
-            }
-          }
-          current = updated
-          access.applySlide(idx, updated)
-          counts[e.kind] += 1
-        }
-        const totalApplied = boxApplied + counts.text + counts.style + counts.fill + counts.stroke
-        if (totalApplied === 0) {
-          return fail(
-            t('aiFailScript'),
-            `All operations collected by the script failed to apply:\n${failures.map((f) => `- ${f}`).join('\n')}${returnedStr}${logsStr}`,
-          )
-        }
-        const parts: string[] = []
-        if (boxApplied > 0) parts.push(`layout ${boxApplied} element(s)`)
-        if (counts.text > 0) parts.push(`text ${counts.text} item(s)`)
-        if (counts.style > 0) parts.push(`style ${counts.style} item(s)`)
-        if (counts.fill > 0) parts.push(`fill ${counts.fill} item(s)`)
-        if (counts.stroke > 0) parts.push(`stroke ${counts.stroke} item(s)`)
-        const failStr = failures.length
-          ? `\n⚠️ ${failures.length} operation(s) failed (the rest took effect):\n${failures.map((f) => `- ${f}`).join('\n')}`
-          : ''
-        const issues = auditSlideLayout(current)
-        return {
-          output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${failStr}${formatAudit(issues)}`,
-          mutated: true,
-          summary: t('aiSumScript', { n: idx + 1, count: totalApplied }),
-        }
-      } finally {
-        if (batchOpened) await window.slidesApi.endHistoryBatch?.()
+      // ── Dispatch: the whole script is ONE transaction — the collected primitives go
+      //   to the main process in a single IPC and apply atomically through the op
+      //   executor (any failure rolls the deck back there and returns a guided error).
+      const applied = await window.slidesApi.applyEditScript({
+        slideIndex: idx,
+        fitWidthPx: access.fitWidthPx,
+        boxes: r.ops,
+        edits: r.edits,
+      })
+      if (!applied || 'error' in applied) {
+        return fail(
+          t('aiFailScript'),
+          `${applied && 'error' in applied ? applied.error : t('aiErrUnknown')}\n` +
+            `The page is unchanged (the script is atomic). Elements on page ${idx + 1}: ` +
+            `[${availableIdList(slide, true)}]. Fix the script and resend it whole.${returnedStr}${logsStr}`,
+        )
+      }
+      access.applySlide(idx, applied.slide)
+      const counts = { text: 0, style: 0, fill: 0, stroke: 0 }
+      for (const e of r.edits) counts[e.kind] += 1
+      const parts: string[] = []
+      if (r.ops.length > 0) parts.push(`layout ${r.ops.length} element(s)`)
+      if (counts.text > 0) parts.push(`text ${counts.text} item(s)`)
+      if (counts.style > 0) parts.push(`style ${counts.style} item(s)`)
+      if (counts.fill > 0) parts.push(`fill ${counts.fill} item(s)`)
+      if (counts.stroke > 0) parts.push(`stroke ${counts.stroke} item(s)`)
+      const issues = auditSlideLayout(applied.slide)
+      return {
+        output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${formatAudit(issues)}`,
+        mutated: true,
+        summary: t('aiSumScript', { n: idx + 1, count: r.ops.length + r.edits.length }),
       }
     }
 
@@ -1950,7 +1900,7 @@ async function executeTool(
       if (!slides[idx])
         return fail(t('aiFailFill'), `slideIndex out of range (0-${slides.length - 1})`)
       const target = resolveEditTarget(slides[idx]!, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t('aiFailFill'), terr!)
       const updated = await window.slidesApi.editFill({
         slideIndex: idx,
@@ -1977,7 +1927,7 @@ async function executeTool(
         ? null
         : { color: String(call.input.color ?? '#000000'), widthPt: Number(call.input.widthPt ?? 1) }
       const target = resolveEditTarget(slides[idx]!, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t('aiFailStroke'), terr!)
       const updated = await window.slidesApi.editStroke({
         slideIndex: idx,
@@ -1998,6 +1948,13 @@ async function executeTool(
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiFailWebSearch'), 'query must not be empty')
       const r = await window.slidesApi.webSearch(query, Number(call.input.maxResults) || 6)
+      // a backend failure must not read as "no results" — the model would fabricate conclusions
+      if (r.method === 'error') {
+        return fail(
+          t('aiFailWebSearch'),
+          `web search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
       if (state) state.webSearched = true
       // output for the LLM: title+URL+summary (each summary truncated to 120 chars to stay lean)
       const SNIPPET_MAX = 120
@@ -2025,6 +1982,13 @@ async function executeTool(
       const query = String(call.input.query ?? '').trim()
       if (!query) return fail(t('aiFailImageSearch'), 'query must not be empty')
       const r = await window.slidesApi.imageSearch(query, Number(call.input.maxResults) || 8)
+      // a backend failure must not read as an empty gallery — the model would fabricate image choices
+      if (r.method === 'error') {
+        return fail(
+          t('aiFailImageSearch'),
+          `image search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+        )
+      }
       // output for the LLM: keep the existing format (the LLM needs to read URLs into image_queries; format unchanged)
       const lines = r.images.map(
         (im, i) =>
@@ -2133,7 +2097,7 @@ async function executeTool(
       const slide = slides[idx]
       if (!slide) return fail(t(failKey), `slideIndex out of range (0-${slides.length - 1})`)
       const target = resolveEditTarget(slide, sourceId)
-      const terr = targetError(target, sourceId, idx + 1)
+      const terr = targetError(target, sourceId, idx + 1, slides[idx])
       if (terr || !target || 'nested' in target) return fail(t(failKey), terr!)
       if (target.node.type !== 'picture')
         return fail(t(failKey), `Element ${sourceId} is not a picture (type: ${target.node.type})`)
@@ -2280,7 +2244,9 @@ async function executeTool(
       const idx = Number(call.input.slideIndex)
       if (!slides[idx])
         return fail(t('aiFailRegen'), `slideIndex out of range (0-${slides.length - 1})`)
-      if (!access.regenerateSlide || !access.generatePageCloud)
+      const regenUseCloud =
+        !!access.generatePageCloud && !!(await access.isCloudPageGenEnabled?.().catch(() => false))
+      if (!access.regenerateSlide || (!regenUseCloud && !access.generatePageLocal))
         return fail(
           t('aiFailRegen'),
           'The current environment does not support the page-redo pipeline',
@@ -2295,31 +2261,38 @@ async function executeTool(
       const regenImages = Array.isArray(call.input.image_urls)
         ? (call.input.image_urls as unknown[]).map(String).filter((u) => /^https?:\/\//.test(u))
         : []
-      // Cloud generation, one retry then give up (same semantics as generate_deck pages)
+      // One retry then give up (same semantics as generate_deck pages). Both paths return a
+      // marker pointing at a one-slide pptx temp file; landing is shared.
       const backoff = access.retryBackoffMs ?? 2000
       let marker: string | null = null
+      let genImageFails: string[] = []
       let lastErr = ''
+      const regenArgs = {
+        pageIndex: idx + 1,
+        totalPages: slides.length,
+        coreHook: '',
+        style: state?.lastStyleSkill ?? '',
+        title: String(call.input.title ?? ''),
+        brief,
+        layout: String(call.input.layout ?? ''),
+        images: regenImages,
+        canvasW: 1280,
+        canvasH: 720,
+      }
+      const regenGen = regenUseCloud ? access.generatePageCloud! : access.generatePageLocal!
       for (let attempt = 0; attempt < 2 && !marker; attempt++) {
         if (attempt > 0 && backoff > 0) await new Promise((r) => setTimeout(r, backoff))
-        const res = await access.generatePageCloud({
-          pageIndex: idx + 1,
-          totalPages: slides.length,
-          coreHook: '',
-          style: state?.lastStyleSkill ?? '',
-          title: String(call.input.title ?? ''),
-          brief,
-          layout: String(call.input.layout ?? ''),
-          images: regenImages,
-          canvasW: 1280,
-          canvasH: 720,
-        })
-        if (res.ok && res.marker) marker = res.marker
-        else lastErr = res.error ?? t('aiErrUnknown')
+        const res = await regenGen(regenArgs)
+        if (res.ok && res.marker) {
+          marker = res.marker
+          if ('imageFailures' in res && Array.isArray(res.imageFailures))
+            genImageFails = res.imageFailures
+        } else lastErr = res.error ?? t('aiErrUnknown')
       }
       if (!marker)
         return fail(
           t('aiFailRegen'),
-          `Cloud page generation failed (2 attempts): ${lastErr}. This is usually a temporary cloud service error — do not keep calling regenerate_slide in a loop. Instead, make the requested changes in place with execute_slide_script / set_element_* (group children are editable too), or tell the user to retry in a few minutes. The page was not modified.`,
+          `Page generation failed (2 attempts): ${lastErr}. This is usually a temporary service error — do not keep calling regenerate_slide in a loop. Instead, make the requested changes in place with execute_slide_script / set_element_* (group children are editable too), or tell the user to retry in a few minutes. The page was not modified.`,
         )
       const r = await access.regenerateSlide(idx, marker)
       if (!r.ok)
@@ -2328,10 +2301,14 @@ async function executeTool(
           `${r.error || 'Redo failed'} (the page was not modified; retry once, or edit it in place with execute_slide_script)`,
         )
       if (state) state.htmlGenerated = true
+      const allImageFails = [
+        ...(r.imageFailures ?? []),
+        ...genImageFails.map((url) => ({ page: idx + 1, url })),
+      ]
       return {
         output:
-          `Redid page ${idx + 1} in place from the brief via cloud generation (other pages untouched; the user can undo). Fine-tune afterwards with execute_slide_script / set_element_* tools.` +
-          imageFailNote(r.imageFailures),
+          `Redid page ${idx + 1} in place from the brief (other pages untouched; the user can undo). Fine-tune afterwards with execute_slide_script / set_element_* tools.` +
+          imageFailNote(allImageFails.length ? allImageFails : undefined),
         mutated: true,
         summary: t('aiSumRegen', { n: idx + 1 }),
       }
@@ -2356,16 +2333,20 @@ async function executeTool(
     case 'generate_deck': {
       // ── Self-driven pipeline:
       //   1) Plan: use pages if passed; with topic, the tool plans the outline via LLM (batched recursion over threshold) — fixes missing pages at the input side.
-      //   2) Generate: batched concurrent cloud page generation (gsk slide_generate, one retry per page), **each batch lands immediately → frontend shows pages one by one**.
-      if (!access.generatePageCloud || !(await access.isCloudPageGenEnabled?.().catch(() => false)))
+      //   2) Generate: batched concurrent page generation (one retry per page), **each batch lands immediately → frontend shows pages one by one**.
+      //      Cloud (gsk slide_generate) when available; otherwise fully local — the LLM (app AI
+      //      transport, works with BYOK) writes a slide spec that is built directly into a pptx.
+      const useCloud =
+        !!access.generatePageCloud && !!(await access.isCloudPageGenEnabled?.().catch(() => false))
+      if (!useCloud && !access.generatePageLocal)
         return fail(
           t('aiFailGenDeck'),
-          'Cloud slide generation is unavailable — sign in to Genspark (gsk) first',
+          'No page generation pipeline is available in this environment',
         )
       if (!access.generateFromHtml)
         return fail(
           t('aiFailGenDeck'),
-          'The current environment does not support the HTML→pptx pipeline',
+          'The current environment does not support the page landing pipeline',
         )
 
       // Hard gate: with unread text attachments present, refuse to generate.
@@ -2668,18 +2649,17 @@ async function executeTool(
       const deckName = String(pages[0]?.title ?? '').trim() || topic || coreHook
 
       // ── Step 2: generate page by page + land as we go (frontend shows pages one by one).
-      // The cloud service (gsk slide_generate) writes each page's HTML and converts it to a
-      // one-slide pptx; genOne returns a marker and landing reads the bytes.
+      // Cloud (gsk slide_generate) and local (LLM spec → pptx-engine build) both produce a
+      // one-slide pptx temp file; genOne returns its marker and landing reads the bytes.
       // Land strictly in page order: nextToLand pointer; a page lands only when its marker is ready, keeping page order intact.
-      const htmlByIndex: (string | null)[] = new Array(total).fill(null)
+      const markerByIndex: (string | null)[] = new Array(total).fill(null)
       // Per-page completion flags (aligned with pages; same reference as state.pageDone, used by buildContext progress injection)
       const doneFlags: boolean[] = state?.pageDone ?? new Array(total).fill(false)
-      const genFailed: number[] = [] // Page indexes (0-based) whose HTML generation failed
+      const genFailed: number[] = [] // Page indexes (0-based) whose page generation failed
       const landFailed: number[] = [] // Page indexes (0-based) whose HTML generated but conversion/landing failed
       const degraded: number[] = [] // Page indexes (0-based) that "landed" via the plain-text fallback — must be reported, otherwise dead pages appear silently
       const deckImageFails: { page: number; url: string }[] = [] // Image download/conversion failures (page numbers are deck-global 1-based)
       const pageErrors: (string | undefined)[] = new Array(total).fill(undefined) // Last failure reason per page
-      const auditWarns: string[] = [] // Content audit findings: placeholder text / near-empty pages
       let landedPages = 0
       let firstDone = false
       let baseOffset = 0 // Number of existing pages before generated page 0 in the deck (>0 in append mode); used to re-insert retries at their original position
@@ -2723,28 +2703,33 @@ async function executeTool(
               .filter((x) => /^https?:\/\//.test(x))
           : []
         let lastErr = ''
-        // One retry, then the page is skipped (marked failed in the progress card and the
-        // final summary) and the rest of the deck keeps generating.
+        const pageArgs = {
+          pageIndex,
+          totalPages: total,
+          coreHook,
+          style: styleSkill,
+          title: String(p.title ?? ''),
+          brief: String(p.brief ?? ''),
+          layout: String(p.layout ?? ''),
+          images,
+          ...(pageContext ? { context: pageContext } : {}),
+          ...(topic ? { topic } : {}),
+          canvasW,
+          canvasH,
+          ...(signal ? { signal } : {}),
+        }
+        // Both paths return a marker pointing at a one-slide pptx temp file. One retry, then the
+        // page is skipped for now (locally-failed pages get one more chance in the retry round)
+        // and the rest of the deck keeps generating.
+        const gen = useCloud ? access.generatePageCloud! : access.generatePageLocal!
         for (let attempt = 0; attempt < 2; attempt++) {
           if (cancelled()) return null
           if (attempt > 0 && BACKOFF_MS > 0) await new Promise((r) => setTimeout(r, BACKOFF_MS))
-          const res = await access.generatePageCloud!({
-            pageIndex,
-            totalPages: total,
-            coreHook,
-            style: styleSkill,
-            title: String(p.title ?? ''),
-            brief: String(p.brief ?? ''),
-            layout: String(p.layout ?? ''),
-            images,
-            ...(pageContext ? { context: pageContext } : {}),
-            ...(topic ? { topic } : {}),
-            canvasW,
-            canvasH,
-            ...(signal ? { signal } : {}),
-          })
+          const res = await gen(pageArgs)
           if (res.ok && res.marker) {
             pageErrors[pageIndex - 1] = undefined
+            if ('imageFailures' in res && Array.isArray(res.imageFailures))
+              deckImageFails.push(...res.imageFailures.map((url) => ({ page: pageIndex, url })))
             return res.marker
           }
           lastErr = res.error ?? t('aiErrUnknown')
@@ -2755,12 +2740,12 @@ async function executeTool(
 
       // Land in page order: starting from nextToLand, land as many as possible (stop at a gap and wait for it to generate).
       const flushLanded = async () => {
-        while (nextToLand < total && htmlByIndex[nextToLand] !== null) {
+        while (nextToLand < total && markerByIndex[nextToLand] !== null) {
           if (cancelled()) return
-          const html = htmlByIndex[nextToLand] as string
-          if (html.length > 0) {
+          const marker = markerByIndex[nextToLand] as string
+          if (marker.length > 0) {
             const m: 'replace' | 'append' = firstDone ? 'append' : insertMode
-            const r = await access.generateFromHtml!([html], m, deckName)
+            const r = await access.generateFromHtml!([marker], m, deckName)
             if (r.ok) {
               if (r.fallbackReason) {
                 degraded.push(nextToLand)
@@ -2803,16 +2788,14 @@ async function executeTool(
         const batchIdxs = []
         for (let k = start; k < Math.min(start + GEN_BATCH, total); k++) batchIdxs.push(k)
         const results = await Promise.all(
-          batchIdxs.map(async (idx) => ({ idx, html: await genOne(pages[idx], idx + 1) })),
+          batchIdxs.map(async (idx) => ({ idx, marker: await genOne(pages[idx], idx + 1) })),
         )
         if (cancelled()) break
-        for (const { idx, html } of results) {
-          if (html && html.length > 0) {
-            htmlByIndex[idx] = html
-            const audit = auditPageHtml(html)
-            if (audit) auditWarns.push(`page ${idx + 1} ${audit}`)
+        for (const { idx, marker } of results) {
+          if (marker && marker.length > 0) {
+            markerByIndex[idx] = marker
           } else {
-            htmlByIndex[idx] = '' // Empty-string placeholder; doesn't block subsequent landings
+            markerByIndex[idx] = '' // Empty-string placeholder; doesn't block subsequent landings
             genFailed.push(idx)
             pageProgressItems[idx] = {
               ...pageProgressItems[idx]!,
@@ -2826,21 +2809,33 @@ async function executeTool(
       }
       if (!cancelled()) await flushLanded() // Finalize
 
-      // ── One re-land round for landing-failed pages (their one-slide pptx already exists, so
-      //   landing again is cheap), re-inserted at their original page position with insert_at
-      //   (target position = existing-page offset + pages completed before this one).
-      //   Generation-failed pages already spent their single retry and stay skipped.
+      // ── One retry round for failed pages, re-inserted at their original page position with
+      //   insert_at (target position = existing-page offset + pages completed before this one).
+      //   Landing-failed pages re-land (cheap: the one-slide pptx already exists). Cloud
+      //   generation-failed pages already spent their single retry and stay skipped; local
+      //   generation-failed pages get one more generation attempt here (LLM calls are the
+      //   user's own quota, and a JSON spec retry is cheap).
       if (!cancelled()) {
-        const retryIdxs = [...new Set(landFailed)].sort((a, b) => a - b)
+        const retryIdxs = [...new Set([...(useCloud ? [] : genFailed), ...landFailed])].sort(
+          (a, b) => a - b,
+        )
         for (const idx of retryIdxs) {
           if (cancelled()) break
-          const html = htmlByIndex[idx]
-          if (!html) continue
+          let marker = markerByIndex[idx]
+          if (!marker && !useCloud) marker = await genOne(pages[idx]!, idx + 1)
+          if (!marker) {
+            pageProgressItems[idx] = {
+              ...pageProgressItems[idx]!,
+              status: 'error',
+              error: pageErrors[idx],
+            }
+            continue
+          }
           const isFirstLand = !firstDone
           const r = isFirstLand
-            ? await access.generateFromHtml!([html], insertMode, deckName)
+            ? await access.generateFromHtml!([marker], insertMode, deckName)
             : await access.generateFromHtml!(
-                [html],
+                [marker],
                 'insert_at',
                 deckName,
                 baseOffset + doneFlags.slice(0, idx).filter(Boolean).length,
@@ -2950,13 +2945,8 @@ async function executeTool(
               ', ',
             )} degraded to a plain-text fallback page after conversion failure (all layout and styling lost): immediately redo these pages in place with regenerate_slide following the original brief, then reply to the user.`
         : ''
-      // Content audit: placeholder text / near-empty pages must not be delivered as finished work
-      const auditMsg = auditWarns.length
-        ? ` ⚠️ Content audit: ${auditWarns.join('; ')}. Do not tell the user the deck is done — redo each flagged page in place with regenerate_slide using real content (from the attachments/context), then reply.`
-        : ''
       return {
-        output:
-          okMsg + failMsg + degradedMsg + auditMsg + imageFailNote(deckImageFails) + progressTail,
+        output: okMsg + failMsg + degradedMsg + imageFailNote(deckImageFails) + progressTail,
         mutated: true,
         summary: t('aiSumDeckGenerated', { done: landedPages, total }),
       }
@@ -3343,6 +3333,52 @@ async function executeTool(
       }
     }
 
+    case 'apply_ops': {
+      const opsIn = Array.isArray(call.input.ops) ? (call.input.ops as unknown[]) : null
+      if (!opsIn || opsIn.length === 0)
+        return fail(t('aiFailApplyOps'), 'ops must be a non-empty array')
+      const r = await window.slidesApi.applyTxn?.({
+        ops: opsIn,
+        ...(call.input.dry_run === true ? { dryRun: true } : {}),
+        ...(call.input.isolation === 'per_op' ? { isolation: 'per_op' as const } : {}),
+      })
+      if (!r) return fail(t('aiFailApplyOps'), 'The transaction could not be executed')
+      const failLines = (r.failures ?? []).map((f) => `- ops[${f.index}]: ${f.error}`).join('\n')
+      if (r.dryRun) {
+        const planStr = (r.plan ?? []).join('\n')
+        return {
+          output:
+            `Dry run — the deck was NOT modified.\n` +
+            (planStr ? `Valid plan:\n${planStr}\n` : '') +
+            (failLines ? `Rejected ops:\n${failLines}\n` : 'All ops validated.\n') +
+            `Resend with dry_run omitted to apply.`,
+          mutated: false,
+          summary: t('aiSumApplyOpsDryRun'),
+        }
+      }
+      if (!r.applied) {
+        return fail(
+          t('aiFailApplyOps'),
+          `Nothing was applied${call.input.isolation === 'per_op' ? '' : ' (atomic)'}:\n${failLines || 'unknown failure'}`,
+        )
+      }
+      // Ops can delete slides — clamp the current index into the rebuilt deck
+      // (the dedicated delete_slide tool does the same)
+      access.applyDeck(r.slides!, Math.max(0, Math.min(access.getCurrent(), r.slides!.length - 1)))
+      const created = (r.records ?? []).flatMap((rec) => rec.created ?? [])
+      const doneStr = (r.records ?? [])
+        .map((rec) => `${rec.op}${rec.target ? ` @${rec.target}` : ''}`)
+        .join(', ')
+      return {
+        output:
+          `Applied ${r.records?.length ?? 0} op(s): ${doneStr}.` +
+          (created.length ? ` New element ids: ${created.join(', ')}.` : '') +
+          (failLines ? `\nSkipped (per_op):\n${failLines}` : ''),
+        mutated: true,
+        summary: t('aiSumApplyOps', { count: r.records?.length ?? 0 }),
+      }
+    }
+
     case 'delete_element': {
       const idx = Number(call.input.slideIndex)
       const sourceId = String(call.input.sourceId ?? '')
@@ -3361,7 +3397,7 @@ async function executeTool(
       if (!updated)
         return fail(
           t('aiFailDeleteElement'),
-          `Element ${sourceId} not found on page ${idx + 1} (ids change after regenerate/ungroup/save; call read_slide for fresh ids)`,
+          `Element ${sourceId} not found on page ${idx + 1} (e_* ids are durable across edits/saves; call read_slide when in doubt)`,
         )
       access.applySlide(idx, updated)
       return {
