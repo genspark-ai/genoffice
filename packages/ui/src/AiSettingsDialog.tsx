@@ -306,7 +306,7 @@ export function AiSettingsDialog({
   onSaved,
 }: AiSettingsDialogProps) {
   const [draft, setDraft] = useState<AiSettings | null>(null)
-  const [selected, setSelected] = useState<AiProviderId>('genspark')
+  const [selected, setSelected] = useState<AiProviderId | ''>('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [fetching, setFetching] = useState(false)
@@ -349,9 +349,9 @@ export function AiSettingsDialog({
 
   if (!open) return null
 
-  const cfg = draft?.providers[selected]
+  const cfg = selected ? draft?.providers[selected] : undefined
   const setCfg = (patch: Partial<AiProviderConfig>) => {
-    if (!draft) return
+    if (!draft || !selected) return
     setDraft({
       ...draft,
       providers: { ...draft.providers, [selected]: { ...cfg!, ...patch } },
@@ -360,6 +360,10 @@ export function AiSettingsDialog({
 
   const doSave = async (): Promise<void> => {
     if (!draft) return
+    if (!selected) {
+      setStatus({ kind: 'err', text: 'Pick a provider from the list first.' })
+      return
+    }
     setSaving(true)
     try {
       await save({ ...draft, provider: selected })
@@ -374,6 +378,10 @@ export function AiSettingsDialog({
 
   const doTest = async (): Promise<void> => {
     if (!draft || !test) return
+    if (!selected) {
+      setStatus({ kind: 'err', text: 'Pick a provider from the list first.' })
+      return
+    }
     const pending: AiSettings = { ...draft, provider: selected }
     setTesting(true)
     setStatus({ kind: 'idle', text: 'Testing connection…' })
@@ -392,7 +400,7 @@ export function AiSettingsDialog({
   }
 
   const doFetchModels = async (): Promise<void> => {
-    if (!draft || !listModels || !cfg) return
+    if (!draft || !listModels || !cfg || !selected) return
     setFetching(true)
     setStatus({ kind: 'idle', text: 'Fetching model catalog…' })
     try {
@@ -441,7 +449,13 @@ export function AiSettingsDialog({
           </nav>
 
           <div style={S.form}>
-            <p style={S.tip}>{PROVIDER_TIPS[selected]}</p>
+            <p style={S.tip}>{PROVIDER_TIPS[selected as AiProviderId] ?? ''}</p>
+
+            {!selected ? (
+              <p style={S.tip}>
+                No provider selected yet — pick one from the list on the left to configure it.
+              </p>
+            ) : null}
 
             {selected === 'genspark' ? (
               <div style={S.row}>
@@ -491,7 +505,7 @@ export function AiSettingsDialog({
               </div>
             ) : null}
 
-            {selected !== 'genspark' && selected !== 'custom' ? (
+            {selected !== 'genspark' && selected !== 'custom' && selected !== '' ? (
               <div>
                 <Field
                   label="API key"

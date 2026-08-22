@@ -22,8 +22,9 @@ import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
+import { SLIDES_CONTINUE_INSTRUCTION } from './continuation'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown, AiSettingsButton } from '@genoffice/ui'
+import { Markdown, AiSettingsButton, useOnlineStatus } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -204,6 +205,8 @@ interface ChatEntry {
   undelivered?: boolean
   /** the run failed because Genspark is signed out — render an inline sign-in button */
   loginRequired?: boolean
+  /** mid-run connectivity loss after tool work: the run paused and can be resumed */
+  interrupted?: boolean
   tools?: ToolActivity[]
   /** Generation progress card (only one per turn, replaced in real time) */
   deckProgress?: DeckProgressSnapshot
@@ -467,6 +470,8 @@ export function AiPanel({
 
   const instructionRef = useRef('')
   const lastInstructionRef = useRef('')
+  /** an interrupted run awaiting reconnect; cleared once resumed or a new run starts */
+  const pendingResumeRef = useRef<{ toolResults: number; partialText: boolean } | null>(null)
   /** Paired with lastInstructionRef: keeps the bubble showing only the user's request on retries */
   const lastDisplayTextRef = useRef<string | undefined>(undefined)
   /** Mirror of the last turn's (the final reply's turn) tool activity — used when persisting the assistant message,
@@ -1242,6 +1247,25 @@ export function AiPanel({
             .catch(() => {})
           void finishHistoryBatch().finally(() => setBusy(false))
         },
+        onInterrupted: ({ error, partialText, toolResults }) => {
+          qcPagesRef.current = []
+          setChat((prev) => {
+            const next = [...prev]
+            const last = next.at(-1)
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                streaming: false,
+                interrupted: partialText.length > 0 || toolResults > 0,
+                error,
+                tools: last.tools?.filter((tl) => !tl.running),
+              }
+            }
+            return next
+          })
+          pendingResumeRef.current = { toolResults, partialText: partialText.length > 0 }
+          void finishHistoryBatch().finally(() => setBusy(false))
+        },
       },
     })
   }
@@ -1296,7 +1320,13 @@ export function AiPanel({
     // `open` dep: re-measure after expand restores a draft
   }, [input, open])
 
-  const run = () => runWith(input.trim())
+  const run = () => {
+    if (!settings.provider) {
+      onOpenSettings?.()
+      return
+    }
+    runWith(input.trim())
+  }
 
   /** Image attachments read as base64, sent multimodally with this user message (≤5MB per image, max 20; isomorphic to docs) */
   const MAX_IMAGES_PER_MESSAGE = 20
@@ -1340,8 +1370,9 @@ export function AiPanel({
     // so duplicate triggers must be blocked synchronously (e.g. StrictMode double-running the preset autoRun effect),
     // otherwise two sets of bubbles get pushed and the earlier assistant placeholder stays at "thinking" forever.
     // qcRunningRef: the post-generation QC pass edits the deck outside the main loop — no concurrent runs
-    if (!instruction || !loop || loop.busy || runStartingRef.current || qcRunningRef.current) return
+    if (!settings.provider || !instruction || !loop || loop.busy || runStartingRef.current || qcRunningRef.current) return
     runStartingRef.current = true
+    pendingResumeRef.current = null
     setInput('')
     inputEditedSinceRunRef.current = false
     instructionRef.current = instruction
@@ -1487,9 +1518,38 @@ export function AiPanel({
 
   const retry = () => runWith(lastInstructionRef.current, lastDisplayTextRef.current)
 
+  const continueRun = () =>
+    runWith(SLIDES_CONTINUE_INSTRUCTION, t('aiContinue'))
+
+  const online = useOnlineStatus()
+  useEffect(() => {
+    if (!online) return
+    const pending = pendingResumeRef.current
+    if (!pending) return
+    const timer = window.setTimeout(() => {
+      if (pendingResumeRef.current !== pending) return
+      pendingResumeRef.current = null
+      if (
+        loopRef.current?.busy ||
+        runStartingRef.current ||
+        qcRunningRef.current ||
+        !settingsRef.current.provider
+      ) {
+        return
+      }
+      // with tool work done a "continue" picks up the preserved context;
+      // otherwise re-send the last instruction (nothing was executed)
+      if (pending.toolResults > 0 || pending.partialText) continueRun()
+      else retry()
+    }, 800)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
+
   const newChat = () => {
     dismissClarify()
     qcAbortRef.current?.abort()
+    pendingResumeRef.current = null
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
@@ -1734,6 +1794,23 @@ export function AiPanel({
                 <div className="ai-msg-undelivered">{t('aiUndelivered')}</div>
               )}
               {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+              {entry.interrupted && (
+                <div className="ai-msg-interrupted">
+                  <div className="ai-interrupted-note">
+                    {t('aiInterruptedNote', { error: entry.error ?? '' })}
+                  </div>
+                  <div className="ai-interrupted-actions">
+                    <button className="ai-continue-btn" onClick={continueRun}>
+                      {t('aiResumeNow')}
+                    </button>
+                    {!busy && (
+                      <button className="ai-interrupted-retry" onClick={retry}>
+                        {t('aiRetry')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {entry.error && (
                 <div className="ai-msg-error">{t('aiMsgError', { error: entry.error })}</div>
               )}
@@ -1857,6 +1934,14 @@ export function AiPanel({
       ) : (
         <div className="ai-composer">
           {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
+          {!settings.provider ? (
+            <div className="ai-setup-card">
+              <div className="ai-setup-title">{t('aiNoProviderTitle')}</div>
+              <button className="ai-login-btn" onClick={() => onOpenSettings?.()}>
+                {t('aiNoProviderButton')}
+              </button>
+            </div>
+          ) : (
           <div className="ai-input-box">
             {attachments.length > 0 && (
               <div className="ai-attachments" onScroll={onAttachmentsScroll}>
@@ -1974,6 +2059,7 @@ export function AiPanel({
               )}
             </div>
           </div>
+          )}
         </div>
       )}
     </aside>

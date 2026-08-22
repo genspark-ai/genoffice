@@ -70,6 +70,7 @@ export const tMain = createI18n({
     errNotImage: '不是支持的图片类型',
     errGskNotLoggedIn: '未登录 Genspark:请点击下方「登录 Genspark」完成登录后重试',
     errNoApiKey: '未配置 {provider} 的 API Key',
+    errNoProvider: '未配置 AI 提供商:请打开 AI 设置选择一个',
     errNoModel: '未配置模型名称',
     errGskCli: 'gsk 未登录:请先运行 gsk login 登录 Genspark 账号',
     errNoDeckAppend:
@@ -178,6 +179,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Not signed in to Genspark: click “Sign in to Genspark” below, sign in, then retry',
     errNoApiKey: 'No API key configured for {provider}',
+    errNoProvider: 'No AI provider configured — open AI settings to choose one',
     errNoModel: 'No model name configured',
     errGskCli: 'gsk not signed in: run gsk login to sign in to your Genspark account first',
     errNoDeckAppend:
@@ -286,6 +288,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark にサインインしていません。下の「Genspark にサインイン」からサインインして再試行してください',
     errNoApiKey: '{provider} の API キーが設定されていません',
+    errNoProvider: 'AI プロバイダーが設定されていません — AI 設定を開いて選択してください',
     errNoModel: 'モデル名が設定されていません',
     errGskCli:
       'gsk が未サインインです。先に gsk login を実行して Genspark アカウントにサインインしてください',
@@ -399,6 +402,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark에 로그인되어 있지 않습니다. 아래 "Genspark 로그인"을 눌러 로그인한 뒤 다시 시도하세요',
     errNoApiKey: '{provider}의 API 키가 설정되지 않았습니다',
+    errNoProvider: 'AI 제공자가 설정되지 않았습니다 — AI 설정에서 선택하세요',
     errNoModel: '모델 이름이 설정되지 않았습니다',
     errGskCli:
       'gsk가 로그인되어 있지 않습니다. 먼저 gsk login을 실행해 Genspark 계정에 로그인하세요',
@@ -509,6 +513,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Non connecté à Genspark : cliquez sur « Se connecter à Genspark » ci-dessous, connectez-vous puis réessayez',
     errNoApiKey: 'Aucune clé API configurée pour {provider}',
+    errNoProvider: 'Aucun fournisseur d\'IA configuré — ouvrez les paramètres IA pour en choisir un',
     errNoModel: 'Aucun nom de modèle configuré',
     errGskCli:
       "gsk non connecté : exécutez d'abord gsk login pour vous connecter à votre compte Genspark",
@@ -624,6 +629,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Nicht bei Genspark angemeldet: Klicken Sie unten auf „Bei Genspark anmelden“, melden Sie sich an und versuchen Sie es erneut',
     errNoApiKey: 'Kein API-Schlüssel für {provider} konfiguriert',
+    errNoProvider: 'Kein KI-Anbieter konfiguriert — öffnen Sie die KI-Einstellungen und wählen Sie einen',
     errNoModel: 'Kein Modellname konfiguriert',
     errGskCli:
       'gsk nicht angemeldet: Führen Sie zuerst gsk login aus, um sich bei Ihrem Genspark-Konto anzumelden',
@@ -738,6 +744,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'No has iniciado sesión en Genspark: pulsa «Iniciar sesión en Genspark» abajo, inicia sesión y vuelve a intentarlo',
     errNoApiKey: 'No hay clave de API configurada para {provider}',
+    errNoProvider: 'No hay proveedor de IA configurado — abre los ajustes de IA para elegir uno',
     errNoModel: 'No hay nombre de modelo configurado',
     errGskCli:
       'gsk sin sesión iniciada: ejecuta primero gsk login para iniciar sesión en tu cuenta de Genspark',
@@ -851,6 +858,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'ยังไม่ได้ลงชื่อเข้าใช้ Genspark: แตะ “ลงชื่อเข้าใช้ Genspark” ด้านล่าง แล้วลองอีกครั้ง',
     errNoApiKey: 'ยังไม่ได้ตั้งค่า API Key ของ {provider}',
+    errNoProvider: 'ยังไม่ได้ตั้งค่า AI provider — เปิดการตั้งค่า AI เพื่อเลือก',
     errNoModel: 'ยังไม่ได้ตั้งค่าชื่อโมเดล',
     errGskCli: 'gsk ยังไม่ได้เข้าสู่ระบบ: โปรดรัน gsk login เพื่อเข้าสู่ระบบบัญชี Genspark ก่อน',
     errNoDeckAppend:
@@ -959,6 +967,7 @@ export const tMain = createI18n({
     errNotImage: 'bukan jenis gambar yang didukung',
     errGskNotLoggedIn: 'Belum masuk ke Genspark: klik “Masuk ke Genspark” di bawah, lalu coba lagi',
     errNoApiKey: 'API Key untuk {provider} belum dikonfigurasi',
+    errNoProvider: 'Belum ada penyedia AI yang dikonfigurasi — buka pengaturan AI untuk memilih',
     errNoModel: 'Nama model belum dikonfigurasi',
     errGskCli: 'gsk belum masuk: jalankan gsk login dulu untuk masuk ke akun Genspark',
     errNoDeckAppend:
@@ -1072,6 +1081,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Вы не вошли в Genspark: нажмите «Войти в Genspark» ниже, войдите и повторите попытку',
     errNoApiKey: 'API-ключ для {provider} не настроен',
+    errNoProvider: 'Поставщик ИИ не настроен — откройте настройки ИИ и выберите',
     errNoModel: 'Не указано имя модели',
     errGskCli:
       'gsk не авторизован: сначала выполните gsk login, чтобы войти в учётную запись Genspark',
@@ -1185,6 +1195,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'لم تسجّل الدخول إلى Genspark: انقر على «تسجيل الدخول إلى Genspark» أدناه ثم أعد المحاولة',
     errNoApiKey: 'لم يتم تكوين مفتاح API لـ {provider}',
+    errNoProvider: 'لم يتم تكوين مزود الذكاء الاصطناعي — افتح إعدادات الذكاء الاصطناعي للاختيار',
     errNoModel: 'لم يتم تكوين اسم النموذج',
     errGskCli: 'gsk غير مسجَّل الدخول: شغّل gsk login أولًا لتسجيل الدخول إلى حساب Genspark',
     errNoDeckAppend:
@@ -1294,6 +1305,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Não conectado ao Genspark: clique em “Entrar no Genspark” abaixo, entre e tente novamente',
     errNoApiKey: 'Nenhuma chave de API configurada para {provider}',
+    errNoProvider: 'Nenhum provedor de IA configurado — abra as configurações de IA para escolher',
     errNoModel: 'Nenhum nome de modelo configurado',
     errGskCli: 'gsk não conectado: execute gsk login primeiro para entrar na sua conta Genspark',
     errNoDeckAppend:
@@ -1407,6 +1419,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Accesso a Genspark non effettuato: fai clic su “Accedi a Genspark” qui sotto, accedi e riprova',
     errNoApiKey: 'Nessuna chiave API configurata per {provider}',
+    errNoProvider: 'Nessun provider IA configurato — apri le impostazioni IA per sceglierne uno',
     errNoModel: 'Nessun nome di modello configurato',
     errGskCli:
       "gsk non ha effettuato l'accesso: esegui prima gsk login per accedere al tuo account Genspark",
@@ -1522,6 +1535,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Nie zalogowano do Genspark: kliknij „Zaloguj się do Genspark” poniżej, zaloguj się i spróbuj ponownie',
     errNoApiKey: 'Nie skonfigurowano klucza API dla {provider}',
+    errNoProvider: 'Nie skonfigurowano dostawcy AI — otwórz ustawienia AI, aby wybrać',
     errNoModel: 'Nie skonfigurowano nazwy modelu',
     errGskCli:
       'gsk nie jest zalogowany: najpierw uruchom gsk login, aby zalogować się na konto Genspark',
@@ -1635,6 +1649,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Niet aangemeld bij Genspark: klik hieronder op “Aanmelden bij Genspark”, meld u aan en probeer het opnieuw',
     errNoApiKey: 'Geen API-sleutel geconfigureerd voor {provider}',
+    errNoProvider: 'Geen AI-provider geconfigureerd — open de AI-instellingen om er een te kiezen',
     errNoModel: 'Geen modelnaam geconfigureerd',
     errGskCli:
       'gsk is niet aangemeld: voer eerst gsk login uit om u aan te melden bij uw Genspark-account',
@@ -1747,6 +1762,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Belum log masuk ke Genspark: klik “Log masuk ke Genspark” di bawah, kemudian cuba lagi',
     errNoApiKey: 'Kunci API untuk {provider} belum dikonfigurasikan',
+    errNoProvider: 'Tiada pembekal AI dikonfigurasi — buka tetapan AI untuk memilih',
     errNoModel: 'Nama model belum dikonfigurasikan',
     errGskCli:
       'gsk belum log masuk: jalankan gsk login dahulu untuk log masuk ke akaun Genspark anda',
@@ -1857,6 +1873,7 @@ export const tMain = createI18n({
     errNotImage: 'סוג תמונה שאינו נתמך',
     errGskNotLoggedIn: 'לא מחובר ל-Genspark: לחץ על "התחבר ל-Genspark" למטה, התחבר ונסה שוב',
     errNoApiKey: 'לא הוגדר מפתח API עבור {provider}',
+    errNoProvider: 'לא הוגדר ספק AI — פתח את הגדרות ה-AI כדי לבחור',
     errNoModel: 'לא הוגדר שם מודל',
     errGskCli: 'gsk אינו מחובר: הרץ תחילה gsk login כדי להיכנס לחשבון Genspark שלך',
     errNoDeckAppend:
@@ -1965,6 +1982,7 @@ export const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark में साइन इन नहीं है: नीचे “Genspark में साइन इन करें” पर क्लिक करें, साइन इन करें और फिर से कोशिश करें',
     errNoApiKey: '{provider} के लिए कोई API कुंजी कॉन्फ़िगर नहीं है',
+    errNoProvider: 'कोई AI प्रदाता कॉन्फ़िगर नहीं है — AI सेटिंग्स खोलकर चुनें',
     errNoModel: 'कोई मॉडल नाम कॉन्फ़िगर नहीं है',
     errGskCli: 'gsk साइन इन नहीं है: पहले gsk login चलाकर अपने Genspark खाते में साइन इन करें',
     errNoDeckAppend:
@@ -2074,6 +2092,7 @@ export const tMain = createI18n({
     errNotImage: '不是支援的圖片類型',
     errGskNotLoggedIn: '未登入 Genspark:請點擊下方「登入 Genspark」完成登入後重試',
     errNoApiKey: '未設定 {provider} 的 API Key',
+    errNoProvider: '未設定 AI 提供商:請開啟 AI 設定選擇一個',
     errNoModel: '未設定模型名稱',
     errGskCli: 'gsk 未登入:請先執行 gsk login 登入 Genspark 帳號',
     errNoDeckAppend:

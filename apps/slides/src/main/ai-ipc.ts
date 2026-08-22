@@ -13,9 +13,10 @@ import {
   applyProviderOverrides,
   chatForProvider,
   defaultAiSettings,
+  isRetryableStreamError,
   listModelsForProvider,
   resolveAiSettings,
-  streamForProvider,
+  retryStreamForProvider,
   type AiChatResponse,
   type AiProviderConfig,
   type AiProviderId,
@@ -105,7 +106,8 @@ export function registerAiIpc(): void {
   // One-shot connectivity test for the AI settings UI (no tool calls).
   ipcMain.handle('ai:test-settings', async (_event, settings: AiSettings): Promise<AiChatResponse> => {
     const provider = settings.provider
-    let config = settings.providers?.[provider]
+    let config = settings.providers?.[provider as AiProviderId]
+    if (!provider) return { ok: false, error: tm('errNoProvider') }
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
@@ -133,13 +135,17 @@ export function registerAiIpc(): void {
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
     const provider = settings.provider
-    let config = settings.providers?.[provider]
+    let config = settings.providers?.[provider as AiProviderId]
     // The genspark key never enters the settings file; it is fetched from the gsk login state per request
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
+    }
+    if (!provider) {
+      send({ requestId, type: 'error', error: tm('errNoProvider') })
+      return
     }
     if (!config?.apiKey) {
       send({
@@ -164,7 +170,7 @@ export function registerAiIpc(): void {
       send({ requestId, type: 'ping' })
     }
     try {
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+      await retryStreamForProvider(provider, config, system, messages, tools, maxTokens, {
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
@@ -185,7 +191,9 @@ export function registerAiIpc(): void {
             ? { errorCode: 'timeout' as const }
             : err instanceof AiCreditsError
               ? { errorCode: 'credits' as const }
-              : {}),
+              : isRetryableStreamError(err)
+                ? { errorCode: 'network' as const }
+                : {}),
         })
       }
     } finally {

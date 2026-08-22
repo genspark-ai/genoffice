@@ -37,6 +37,132 @@ export interface StreamCallbacks {
 }
 
 /**
+ * A transient network-level failure that is safe to retry: the request never
+ * produced output, so retrying cannot duplicate billed/emitted content.
+ * Fetch failures in the Electron main process surface the real reason in
+ * `cause.code` (ECONNRESET / ENOTFOUND / EAI_AGAIN / ETIMEDOUT / ...); HTTP
+ * >= 500 responses are also treated as transient.
+ */
+export class AiNetworkError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'AiNetworkError'
+  }
+}
+
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EPIPE',
+  'ECONNABORTED',
+  'UND_ERR_CONNECT_TIMEOUT',
+])
+
+/** classify a failed fetch / non-2xx response: retryable network faults get typed */
+function throwHttpError(prefix: string, status: number, detail: string): never {
+  const label = prefix ? `${prefix} ` : ''
+  if (status >= 500) {
+    throw new AiNetworkError(`${label}HTTP ${status}: ${detail}`)
+  }
+  throw new Error(`${label}HTTP ${status}: ${detail}`)
+}
+
+function throwFetchError(prefix: string, e: unknown): never {
+  const err = e as { message?: unknown; cause?: { code?: unknown; message?: unknown } } | null
+  const causeText = err?.cause
+    ? ` cause=${String(err.cause.code || err.cause.message || err.cause)}`
+    : ''
+  // Only network-level failures are retryable: in production fetch() rejects for
+  // connection/DNS/TLS faults (message "fetch failed" + cause.code), never for
+  // business errors. Anything else rethrows untouched so classification stays honest.
+  if (isRetryableStreamError(e)) {
+    throw new AiNetworkError(`${prefix} fetch failed: ${err?.message || String(e)}${causeText}`, {
+      cause: e,
+    })
+  }
+  throw err instanceof Error ? err : new Error(`${prefix} fetch failed: ${String(e)}`)
+}
+
+export function isRetryableStreamError(err: unknown): boolean {
+  if (err instanceof AiNetworkError) return true
+  if (!(err instanceof Error)) return false
+  const code = (err.cause as { code?: string } | undefined)?.code
+  return NETWORK_ERROR_CODES.has(code ?? '') || /fetch failed/i.test(err.message)
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** watchdog timeouts override, used to give retry attempts a shorter connect budget */
+export interface StreamTimeouts {
+  connectMs?: number
+  idleMs?: number
+}
+
+export interface StreamRetryOptions {
+  /** total attempts including the first (default 3) */
+  maxAttempts?: number
+  /** delay between attempts (default [1000, 2000]) */
+  backoffMs?: number[]
+  /** watchdog connect timeout on retry attempts (default 20_000) */
+  retryConnectMs?: number
+}
+
+/**
+ * Run a streaming turn with bounded retries for transient network failures.
+ * Retries only happen while nothing was emitted: once `onDelta`/`onToolCall`
+ * fired, a mid-stream drop is not retried here (the loop resumes instead).
+ */
+export async function retryStreamForProvider(
+  provider: AiProviderId,
+  config: AiProviderConfig,
+  system: string,
+  messages: AgentMessage[],
+  tools: AgentToolDef[],
+  maxTokens: number,
+  cb: StreamCallbacks,
+  opts: StreamRetryOptions = {},
+): Promise<void> {
+  const maxAttempts = Math.max(1, opts.maxAttempts ?? 3)
+  const backoff = opts.backoffMs ?? [1000, 2000]
+  const retryConnectMs = opts.retryConnectMs ?? 20_000
+  let attempt = 0
+  for (;;) {
+    attempt++
+    let sawContent = false
+    const attemptCb: StreamCallbacks = {
+      ...cb,
+      onDelta: (text) => {
+        sawContent = true
+        cb.onDelta(text)
+      },
+      onToolCall: (call) => {
+        sawContent = true
+        cb.onToolCall(call)
+      },
+    }
+    const timeouts: StreamTimeouts | undefined =
+      attempt > 1 ? { connectMs: retryConnectMs } : undefined
+    try {
+      await streamForProvider(provider, config, system, messages, tools, maxTokens, attemptCb, timeouts)
+      return
+    } catch (err) {
+      if (cb.signal.aborted) throw err
+      if (sawContent) throw err
+      if (!isRetryableStreamError(err) || attempt >= maxAttempts) throw err
+      const delayMs = backoff[attempt - 1] ?? backoff[backoff.length - 1] ?? 1000
+      cb.onActivity?.()
+      await sleep(delayMs)
+      cb.onActivity?.()
+    }
+  }
+}
+
+/**
  * Models occasionally emit unescaped " inside string values (e.g. English quotes in Chinese copy).
  * Single-pass scan: a " inside a string whose next non-whitespace char is not structural gets escaped.
  */
@@ -251,8 +377,9 @@ export async function streamAnthropic(
   maxTokens: number,
   cb: StreamCallbacks,
   baseUrl = 'https://api.anthropic.com',
+  timeouts?: StreamTimeouts,
 ): Promise<void> {
-  const wd = createStreamWatchdog(cb.signal)
+  const wd = createStreamWatchdog(cb.signal, timeouts?.connectMs, timeouts?.idleMs)
   return wd.guard(() => anthropicTurn(config, system, messages, tools, maxTokens, cb, baseUrl, wd))
 }
 
@@ -303,17 +430,12 @@ async function anthropicTurn(
       }),
     })
   } catch (e) {
-    // When fetch fails in the Electron main process, the real reason lives in `cause`
-    const err = e as { message?: unknown; cause?: { code?: unknown; message?: unknown } } | null
-    const causeText = err?.cause
-      ? ` cause=${String(err.cause.code || err.cause.message || err.cause)}`
-      : ''
-    throw new Error(`Claude fetch failed: ${err?.message || String(e)}${causeText}`, { cause: e })
+    throwFetchError('Claude', e)
   }
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
   onBytes()
   if (!response.ok || !response.body) {
-    throw new Error(`Claude HTTP ${response.status}: ${httpBodyDetail(await response.text())}`)
+    throwHttpError('Claude', response.status, httpBodyDetail(await response.text()))
   }
   const jsonBody = await jsonBodyInsteadOfSse(response)
   if (jsonBody !== null) {
@@ -550,8 +672,9 @@ export async function streamGemini(
   maxTokens: number,
   cb: StreamCallbacks,
   baseUrl = 'https://generativelanguage.googleapis.com/v1beta',
+  timeouts?: StreamTimeouts,
 ): Promise<void> {
-  const wd = createStreamWatchdog(cb.signal)
+  const wd = createStreamWatchdog(cb.signal, timeouts?.connectMs, timeouts?.idleMs)
   return wd.guard(() => geminiTurn(config, system, messages, tools, maxTokens, cb, baseUrl, wd))
 }
 
@@ -570,37 +693,42 @@ async function geminiTurn(
     cb.onActivity?.()
   }
   const url = `${baseUrl.replace(/\/$/, '')}/models/${config.model}:streamGenerateContent?alt=sse`
-  const response = await fetch(url, {
-    method: 'POST',
-    signal: wd.signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': config.apiKey,
-      ...gensparkAttributionHeaders(baseUrl),
-    },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: geminiContents(messages),
-      ...(tools.length > 0
-        ? {
-            tools: [
-              {
-                functionDeclarations: tools.map((t) => ({
-                  name: t.name,
-                  description: t.description,
-                  parameters: sanitizeGeminiSchema(t.inputSchema),
-                })),
-              },
-            ],
-          }
-        : {}),
-      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
-    }),
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      signal: wd.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': config.apiKey,
+        ...gensparkAttributionHeaders(baseUrl),
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: geminiContents(messages),
+        ...(tools.length > 0
+          ? {
+              tools: [
+                {
+                  functionDeclarations: tools.map((t) => ({
+                    name: t.name,
+                    description: t.description,
+                    parameters: sanitizeGeminiSchema(t.inputSchema),
+                  })),
+                },
+              ],
+            }
+          : {}),
+        generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+      }),
+    })
+  } catch (e) {
+    throwFetchError('Gemini', e)
+  }
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
   onBytes()
   if (!response.ok || !response.body) {
-    throw new Error(`Gemini HTTP ${response.status}: ${httpBodyDetail(await response.text())}`)
+    throwHttpError('Gemini', response.status, httpBodyDetail(await response.text()))
   }
   const jsonBody = await jsonBodyInsteadOfSse(response)
   if (jsonBody !== null) {
@@ -762,8 +890,9 @@ export async function streamOpenAiCompatible(
   tools: AgentToolDef[],
   maxTokens: number,
   cb: StreamCallbacks,
+  timeouts?: StreamTimeouts,
 ): Promise<void> {
-  const wd = createStreamWatchdog(cb.signal)
+  const wd = createStreamWatchdog(cb.signal, timeouts?.connectMs, timeouts?.idleMs)
   return wd.guard(() =>
     openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd),
   )
@@ -783,34 +912,39 @@ async function openAiCompatibleTurn(
     wd.touch()
     cb.onActivity?.()
   }
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    signal: wd.signal,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-      ...gensparkAttributionHeaders(baseUrl),
-    },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: maxTokens,
-      messages: openAiMessages(system, messages),
-      ...(tools.length > 0
-        ? {
-            tools: tools.map((t) => ({
-              type: 'function',
-              function: { name: t.name, description: t.description, parameters: t.inputSchema },
-            })),
-          }
-        : {}),
-      temperature: 0.3,
-      stream: true,
-    }),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      signal: wd.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+        ...gensparkAttributionHeaders(baseUrl),
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: maxTokens,
+        messages: openAiMessages(system, messages),
+        ...(tools.length > 0
+          ? {
+              tools: tools.map((t) => ({
+                type: 'function',
+                function: { name: t.name, description: t.description, parameters: t.inputSchema },
+              })),
+            }
+          : {}),
+        temperature: 0.3,
+        stream: true,
+      }),
+    })
+  } catch (e) {
+    throwFetchError('OpenAI-compatible', e)
+  }
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
   onBytes()
   if (!response.ok || !response.body) {
-    throw new Error(`HTTP ${response.status}: ${httpBodyDetail(await response.text())}`)
+    throwHttpError('', response.status, httpBodyDetail(await response.text()))
   }
   const jsonBody = await jsonBodyInsteadOfSse(response)
   if (jsonBody !== null) {
@@ -916,6 +1050,7 @@ export async function streamForProvider(
   tools: AgentToolDef[],
   maxTokens: number,
   cb: StreamCallbacks,
+  timeouts?: StreamTimeouts,
 ): Promise<void> {
   switch (provider) {
     case 'genspark':
@@ -930,6 +1065,7 @@ export async function streamForProvider(
           maxTokens,
           cb,
           GENSPARK_LLM_BASE_URLS.anthropic,
+          timeouts,
         )
       }
       if (config.model.startsWith('gemini')) {
@@ -941,6 +1077,7 @@ export async function streamForProvider(
           maxTokens,
           cb,
           GENSPARK_LLM_BASE_URLS.gemini,
+          timeouts,
         )
       }
       return streamOpenAiCompatible(
@@ -951,11 +1088,12 @@ export async function streamForProvider(
         tools,
         maxTokens,
         cb,
+        timeouts,
       )
     case 'anthropic':
-      return streamAnthropic(config, system, messages, tools, maxTokens, cb)
+      return streamAnthropic(config, system, messages, tools, maxTokens, cb, undefined, timeouts)
     case 'gemini':
-      return streamGemini(config, system, messages, tools, maxTokens, cb)
+      return streamGemini(config, system, messages, tools, maxTokens, cb, undefined, timeouts)
     case 'deepseek':
     case 'openai':
     case 'openrouter':
@@ -967,10 +1105,20 @@ export async function streamForProvider(
         tools,
         maxTokens,
         cb,
+        timeouts,
       )
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')
-      return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb)
+      return streamOpenAiCompatible(
+        config.baseUrl,
+        config,
+        system,
+        messages,
+        tools,
+        maxTokens,
+        cb,
+        timeouts,
+      )
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

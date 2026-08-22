@@ -36,9 +36,10 @@ import {
   applyProviderOverrides,
   chatForProvider,
   defaultAiSettings,
+  isRetryableStreamError,
   listModelsForProvider,
   resolveAiSettings,
-  streamForProvider,
+  retryStreamForProvider,
   type AiChatRequest,
   type AiChatResponse,
   type AiProviderConfig,
@@ -118,6 +119,7 @@ const tMain = createI18n({
     errNotImage: '不是支持的图片类型',
     errGskNotLoggedIn: '未登录 Genspark:请点击下方「登录 Genspark」完成登录后重试',
     errNoApiKey: '未配置 {provider} 的 API Key',
+    errNoProvider: '未配置 AI 提供商:请打开 AI 设置选择一个',
     errNoModel: '未配置模型名称',
     menuFile: '文件',
     menuNewDoc: '新建文档',
@@ -214,6 +216,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Not signed in to Genspark: click “Sign in to Genspark” below, sign in, then retry',
     errNoApiKey: 'No API key configured for {provider}',
+    errNoProvider: 'No AI provider configured — open AI settings to choose one',
     errNoModel: 'No model name configured',
     menuFile: 'File',
     menuNewDoc: 'New Document',
@@ -310,6 +313,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark にサインインしていません。下の「Genspark にサインイン」からサインインして再試行してください',
     errNoApiKey: '{provider} の API キーが設定されていません',
+    errNoProvider: 'AI プロバイダーが設定されていません — AI 設定を開いて選択してください',
     errNoModel: 'モデル名が設定されていません',
     menuFile: 'ファイル',
     menuNewDoc: '新規文書',
@@ -407,6 +411,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark에 로그인되어 있지 않습니다. 아래 "Genspark 로그인"을 눌러 로그인한 뒤 다시 시도하세요',
     errNoApiKey: '{provider}의 API 키가 설정되지 않았습니다',
+    errNoProvider: 'AI 제공자가 설정되지 않았습니다 — AI 설정에서 선택하세요',
     errNoModel: '모델 이름이 설정되지 않았습니다',
     menuFile: '파일',
     menuNewDoc: '새 문서',
@@ -505,6 +510,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Non connecté à Genspark : cliquez sur « Se connecter à Genspark » ci-dessous, connectez-vous puis réessayez',
     errNoApiKey: 'Aucune clé API configurée pour {provider}',
+    errNoProvider: 'Aucun fournisseur d\'IA configuré — ouvrez les paramètres IA pour en choisir un',
     errNoModel: 'Aucun nom de modèle configuré',
     menuFile: 'Fichier',
     menuNewDoc: 'Nouveau document',
@@ -603,6 +609,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Nicht bei Genspark angemeldet: Klicken Sie unten auf „Bei Genspark anmelden“, melden Sie sich an und versuchen Sie es erneut',
     errNoApiKey: 'Kein API-Schlüssel für {provider} konfiguriert',
+    errNoProvider: 'Kein KI-Anbieter konfiguriert — öffnen Sie die KI-Einstellungen und wählen Sie einen',
     errNoModel: 'Kein Modellname konfiguriert',
     menuFile: 'Datei',
     menuNewDoc: 'Neues Dokument',
@@ -700,6 +707,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'No has iniciado sesión en Genspark: pulsa «Iniciar sesión en Genspark» abajo, inicia sesión y vuelve a intentarlo',
     errNoApiKey: 'No hay clave de API configurada para {provider}',
+    errNoProvider: 'No hay proveedor de IA configurado — abre los ajustes de IA para elegir uno',
     errNoModel: 'No se ha configurado el nombre del modelo',
     menuFile: 'Archivo',
     menuNewDoc: 'Nuevo documento',
@@ -796,6 +804,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'ยังไม่ได้ลงชื่อเข้าใช้ Genspark: แตะ “ลงชื่อเข้าใช้ Genspark” ด้านล่าง แล้วลองอีกครั้ง',
     errNoApiKey: 'ยังไม่ได้ตั้งค่า API Key ของ {provider}',
+    errNoProvider: 'ยังไม่ได้ตั้งค่า AI provider — เปิดการตั้งค่า AI เพื่อเลือก',
     errNoModel: 'ยังไม่ได้ตั้งค่าชื่อโมเดล',
     menuFile: 'ไฟล์',
     menuNewDoc: 'เอกสารใหม่',
@@ -892,6 +901,7 @@ const tMain = createI18n({
     errNotImage: 'bukan jenis gambar yang didukung',
     errGskNotLoggedIn: 'Belum masuk ke Genspark: klik “Masuk ke Genspark” di bawah, lalu coba lagi',
     errNoApiKey: 'API Key untuk {provider} belum dikonfigurasi',
+    errNoProvider: 'Belum ada penyedia AI yang dikonfigurasi — buka pengaturan AI untuk memilih',
     errNoModel: 'Nama model belum dikonfigurasi',
     menuFile: 'File',
     menuNewDoc: 'Dokumen Baru',
@@ -989,6 +999,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Вы не вошли в Genspark: нажмите «Войти в Genspark» ниже, войдите и повторите попытку',
     errNoApiKey: 'API-ключ для {provider} не настроен',
+    errNoProvider: 'Поставщик ИИ не настроен — откройте настройки ИИ и выберите',
     errNoModel: 'Не указано имя модели',
     menuFile: 'Файл',
     menuNewDoc: 'Создать документ',
@@ -1086,6 +1097,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'لم تسجّل الدخول إلى Genspark: انقر على «تسجيل الدخول إلى Genspark» أدناه ثم أعد المحاولة',
     errNoApiKey: 'لم يتم تكوين مفتاح API لـ {provider}',
+    errNoProvider: 'لم يتم تكوين مزود الذكاء الاصطناعي — افتح إعدادات الذكاء الاصطناعي للاختيار',
     errNoModel: 'لم يتم تكوين اسم النموذج',
     menuFile: 'ملف',
     menuNewDoc: 'مستند جديد',
@@ -1183,6 +1195,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Não conectado ao Genspark: clique em “Entrar no Genspark” abaixo, entre e tente novamente',
     errNoApiKey: 'Nenhuma chave de API configurada para {provider}',
+    errNoProvider: 'Nenhum provedor de IA configurado — abra as configurações de IA para escolher',
     errNoModel: 'Nenhum nome de modelo configurado',
     menuFile: 'Arquivo',
     menuNewDoc: 'Novo Documento',
@@ -1280,6 +1293,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Accesso a Genspark non effettuato: fai clic su “Accedi a Genspark” qui sotto, accedi e riprova',
     errNoApiKey: 'Nessuna chiave API configurata per {provider}',
+    errNoProvider: 'Nessun provider IA configurato — apri le impostazioni IA per sceglierne uno',
     errNoModel: 'Nessun nome di modello configurato',
     menuFile: 'File',
     menuNewDoc: 'Nuovo documento',
@@ -1377,6 +1391,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Nie zalogowano do Genspark: kliknij „Zaloguj się do Genspark” poniżej, zaloguj się i spróbuj ponownie',
     errNoApiKey: 'Nie skonfigurowano klucza API dla {provider}',
+    errNoProvider: 'Nie skonfigurowano dostawcy AI — otwórz ustawienia AI, aby wybrać',
     errNoModel: 'Nie skonfigurowano nazwy modelu',
     menuFile: 'Plik',
     menuNewDoc: 'Nowy dokument',
@@ -1474,6 +1489,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Niet aangemeld bij Genspark: klik hieronder op “Aanmelden bij Genspark”, meld u aan en probeer het opnieuw',
     errNoApiKey: 'Geen API-sleutel geconfigureerd voor {provider}',
+    errNoProvider: 'Geen AI-provider geconfigureerd — open de AI-instellingen om er een te kiezen',
     errNoModel: 'Geen modelnaam geconfigureerd',
     menuFile: 'Bestand',
     menuNewDoc: 'Nieuw document',
@@ -1571,6 +1587,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Belum log masuk ke Genspark: klik “Log masuk ke Genspark” di bawah, kemudian cuba lagi',
     errNoApiKey: 'Kunci API untuk {provider} belum dikonfigurasikan',
+    errNoProvider: 'Tiada pembekal AI dikonfigurasi — buka tetapan AI untuk memilih',
     errNoModel: 'Nama model belum dikonfigurasikan',
     menuFile: 'Fail',
     menuNewDoc: 'Dokumen Baharu',
@@ -1666,6 +1683,7 @@ const tMain = createI18n({
     errNotImage: 'סוג תמונה שאינו נתמך',
     errGskNotLoggedIn: 'לא מחובר ל-Genspark: לחץ על "התחבר ל-Genspark" למטה, התחבר ונסה שוב',
     errNoApiKey: 'לא הוגדר מפתח API עבור {provider}',
+    errNoProvider: 'לא הוגדר ספק AI — פתח את הגדרות ה-AI כדי לבחור',
     errNoModel: 'לא הוגדר שם מודל',
     menuFile: 'קובץ',
     menuNewDoc: 'מסמך חדש',
@@ -1763,6 +1781,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark में साइन इन नहीं है: नीचे “Genspark में साइन इन करें” पर क्लिक करें, साइन इन करें और फिर से कोशिश करें',
     errNoApiKey: '{provider} के लिए कोई API कुंजी कॉन्फ़िगर नहीं है',
+    errNoProvider: 'कोई AI प्रदाता कॉन्फ़िगर नहीं है — AI सेटिंग्स खोलकर चुनें',
     errNoModel: 'कोई मॉडल नाम कॉन्फ़िगर नहीं है',
     menuFile: 'फ़ाइल',
     menuNewDoc: 'नया दस्तावेज़',
@@ -1857,6 +1876,7 @@ const tMain = createI18n({
     errNotImage: '不是支援的圖片類型',
     errGskNotLoggedIn: '未登入 Genspark:請點擊下方「登入 Genspark」完成登入後重試',
     errNoApiKey: '未設定 {provider} 的 API Key',
+    errNoProvider: '未設定 AI 提供商:請開啟 AI 設定選擇一個',
     errNoModel: '未設定模型名稱',
     menuFile: '檔案',
     menuNewDoc: '新增文件',
@@ -2567,7 +2587,8 @@ export function registerAiIpc(): void {
     'ai:test-settings',
     async (_event, settings: AiSettings): Promise<AiChatResponse> => {
       const provider = settings.provider
-      let config = settings.providers?.[provider]
+      let config = settings.providers?.[provider as AiProviderId]
+      if (!provider) return { ok: false, error: tm('errNoProvider') }
       if (provider === 'genspark' && config && !config.apiKey) {
         config = { ...config, apiKey: gskApiKey() }
       }
@@ -2596,13 +2617,17 @@ export function registerAiIpc(): void {
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? 8192
     const provider = settings.provider
-    let config = settings.providers?.[provider]
+    let config = settings.providers?.[provider as AiProviderId]
     // the genspark key never enters the settings file; requests take it from the gsk login state
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
+    }
+    if (!provider) {
+      send({ requestId, type: 'error', error: tm('errNoProvider') })
+      return
     }
     if (!config?.apiKey) {
       send({
@@ -2628,7 +2653,7 @@ export function registerAiIpc(): void {
     }
     try {
       let stopReason: string | undefined
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+      await retryStreamForProvider(provider, config, system, messages, tools, maxTokens, {
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
@@ -2650,7 +2675,9 @@ export function registerAiIpc(): void {
             ? { errorCode: 'timeout' as const }
             : err instanceof AiCreditsError
               ? { errorCode: 'credits' as const }
-              : {}),
+              : isRetryableStreamError(err)
+                ? { errorCode: 'network' as const }
+                : {}),
         })
       }
     } finally {
@@ -2706,7 +2733,10 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
     const { settings, system, user } = request
     const provider = settings.provider
-    let config = settings.providers?.[provider]
+    let config = settings.providers?.[provider as AiProviderId]
+    if (!provider) {
+      return { ok: false, error: tm('errNoProvider') }
+    }
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }

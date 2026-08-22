@@ -18,8 +18,8 @@ export interface IpcStreamChunk {
   text?: string
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause; maps to the localized timeout/credits message */
-  errorCode?: 'timeout' | 'credits'
+  /** machine-readable error cause; maps to the localized timeout/credits/network message */
+  errorCode?: 'timeout' | 'credits' | 'network'
   /** normalized stop reason on 'done' ('max_tokens' = cut off by the token limit) */
   stopReason?: string
 }
@@ -55,6 +55,8 @@ export interface IpcTransportOptions<S> {
   timeoutErrorText?(): string
   /** localized message for exhausted credits (errorCode 'credits') */
   creditsErrorText?(): string
+  /** localized message for connection loss (errorCode 'network') */
+  networkErrorText?(): string
 }
 
 /**
@@ -74,10 +76,11 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
         clearTimeout(silenceTimer)
         unsubscribe()
       }
-      const fail = (error: string) => {
+      const fail = (error: string, interrupted?: boolean) => {
         if (settled) return
         settle()
-        cb.onError(error)
+        if (interrupted) cb.onError(error, true)
+        else cb.onError(error)
       }
       const armSilence = () => {
         clearTimeout(silenceTimer)
@@ -102,13 +105,17 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
           cb.onDone()
         } else {
           settle()
-          cb.onError(
+          const interrupted = chunk.errorCode === 'network'
+          const text =
             chunk.errorCode === 'timeout'
               ? timeoutText()
               : chunk.errorCode === 'credits'
                 ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                : (chunk.error ?? options.unknownErrorText()),
-          )
+                : chunk.errorCode === 'network'
+                  ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                  : (chunk.error ?? options.unknownErrorText())
+          if (interrupted) cb.onError(text, true)
+          else cb.onError(text)
         }
       })
       armSilence()

@@ -112,10 +112,14 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
 ]
 
 /**
- * Fresh settings with every provider's default model and an empty key,
- * except providers listed in `defaultApiKeys` (e.g. an app-specific
- * preconfigured Anthropic key). Callers own that policy; this package
- * has no hardcoded keys.
+ * Fresh settings with every provider's default model and an empty key, except
+ * providers listed in `defaultApiKeys` (e.g. an app-specific preconfigured
+ * Anthropic key). Callers own that policy; this package has no hardcoded keys.
+ *
+ * No provider is forced: the active provider starts as '' so a fresh install
+ * prompts the user to choose one (BYOK or local) on first AI use instead of
+ * defaulting to Genspark. Environment overrides (applyProviderOverrides) can
+ * still select one up front.
  */
 export function defaultAiSettings(
   defaultApiKeys?: Partial<Record<AiProviderId, string>>,
@@ -128,7 +132,7 @@ export function defaultAiSettings(
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }
-  return { provider: 'genspark', providers }
+  return { provider: '', providers }
 }
 
 /**
@@ -170,7 +174,9 @@ export function resolveAiSettings(
  *   GENOFFICE_AI_API_KEY   api key (local servers usually accept any non-empty value) *
  * If GENOFFICE_AI_PROVIDER is omitted but GENOFFICE_AI_BASE_URL is set, the
  * active provider is switched to `custom` so a local/OpenAI-compatible endpoint
- * works out of the box. Genspark remains the default whenever nothing is set.
+ * works out of the box. Nothing forces a provider: without overrides (and
+ * without stored settings) the active provider stays '' so the app prompts the
+ * user to configure one on first AI use.
  */
 export function applyProviderOverrides(settings: AiSettings): AiSettings {
   const envProvider = process.env.GENOFFICE_AI_PROVIDER as AiProviderId | undefined
@@ -180,9 +186,9 @@ export function applyProviderOverrides(settings: AiSettings): AiSettings {
 
   let provider = settings.provider
   if (envProvider) provider = envProvider
-  else if (baseUrl && provider === 'genspark') provider = 'custom'
+  else if (baseUrl && (provider === 'genspark' || provider === '')) provider = 'custom'
 
-  const cfg = settings.providers[provider]
+  const cfg = settings.providers[provider as AiProviderId]
   if (!cfg) return settings
 
   settings.provider = provider

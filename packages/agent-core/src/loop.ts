@@ -29,6 +29,17 @@ export interface AgentRunResult {
   truncated?: boolean
 }
 
+export interface AgentInterruptedEvent {
+  /** raw error message from the transport */
+  error: string
+  /** assistant/reply text streamed before the drop (may be '') */
+  partialText: string
+  /** tool calls already executed and finished in this run (results fed back to the model) */
+  toolResults: number
+  /** partial (unfinished) tool calls of the interrupted turn */
+  pendingToolCalls: number
+}
+
 export interface AgentLoopEvents<TSnapshot> {
   /** cumulative assistant text of the current turn (call per delta) */
   onText?(text: string): void
@@ -37,8 +48,20 @@ export interface AgentLoopEvents<TSnapshot> {
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
   /** a turn requested tools and they ran; the loop is going back to the model */
   onTurnEnd?(): void
+  onTurnEnd?(): void
   onDone?(result: AgentRunResult): void
-  onError?(error: string): void
+  /**
+   * The run failed and was rolled back out of history. When `interrupted` is true
+   * it was mid-run connectivity loss with no tool work completed; the UI may
+   * offer a "resume/re-send" action (nothing was preserved, re-send the brief).
+   */
+  onError?(error: string, interrupted?: boolean): void
+  /**
+   * Mid-run connectivity loss after tool work: content may have streamed and
+   * completed tool results may exist in history. The loop has already preserved
+   * context so a follow-up resume can pick up where the run stopped (see preserveAfterInterrupt).
+   */
+  onInterrupted?(event: AgentInterruptedEvent): void
 }
 
 /** Context compaction config (budget tracked in UTF-8 bytes rather than message count) */
@@ -286,6 +309,38 @@ export class AgentLoop<TSnapshot = unknown> {
     if (i >= 0) this.history.splice(i)
   }
 
+  /** count of `tool` result messages pushed after the current run's user message */
+  private runToolResultCount(): number {
+    const msg = this.runUserMsg
+    if (!msg) return 0
+    const i = this.history.lastIndexOf(msg)
+    if (i < 0) return 0
+    let n = 0
+    for (let j = i + 1; j < this.history.length; j++) {
+      if (this.history[j]!.role === 'tool') n++
+    }
+    return n
+  }
+
+  /**
+   * Mid-run connectivity loss after tool work already happened: keep the run's
+   * context (completed tool results and any partial reply) so a follow-up
+   * resume can continue instead of repeating the work. The partial turn is
+   * persisted as an assistant message without its pending tool calls (an
+   * unmatched tool_use would break provider message pairing); the UI decides
+   * what a resume sends.
+   */
+  private preserveAfterInterrupt(error: string): void {
+    const events = this.options.events
+    const partialText = this.turnText
+    const toolResults = this.runToolResultCount()
+    const pendingToolCalls = this.toolCalls.length
+    this.history.push({ role: 'assistant', text: partialText || COMPLETED_VIA_TOOLS_TEXT })
+    this.running = false
+    this.runUserMsg = null
+    events?.onInterrupted?.({ error, partialText, toolResults, pendingToolCalls })
+  }
+
   // ── Context compaction: fold old conversation into a summary, keep recent messages verbatim ──
 
   private compactionEnabled(): boolean {
@@ -485,12 +540,20 @@ export class AgentLoop<TSnapshot = unknown> {
           settled = true
           void this.finishTurn()
         },
-        onError: (error) => {
+        onError: (error, interrupted) => {
           if (generation !== this.generation || settled) return
           settled = true
           this.running = false
-          this.rollbackFailedRun()
-          this.options.events?.onError?.(error)
+          // Mid-run connectivity loss AFTER tool work happened: keep the run's
+          // context (completed tool results + partial reply) so a resume can
+          // continue instead of repeating the work.
+          if (interrupted && this.runToolResultCount() > 0) {
+            this.preserveAfterInterrupt(error)
+          } else {
+            this.rollbackFailedRun()
+            if (interrupted) this.options.events?.onError?.(error, true)
+            else this.options.events?.onError?.(error)
+          }
         },
       },
     )

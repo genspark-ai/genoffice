@@ -147,6 +147,11 @@ interface ExcelShellProps {
   readonly onUndo: () => void
   /** open the bring-your-own-key model settings dialog */
   readonly onOpenSettings: () => void
+  readonly noProvider?: boolean
+  /** Resume an interrupted run with the app's continuation instruction */
+  readonly onResume: () => void
+  /** Re-send the last instruction after an interrupted run with no tool work */
+  readonly onRetry: () => void
   readonly onCommand: (command: string) => void
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
@@ -262,6 +267,9 @@ export function ExcelShell({
   onNewChat,
   onUndo,
   onOpenSettings,
+  noProvider,
+  onResume,
+  onRetry,
   onCommand,
   statusMessage,
   zoomPercent,
@@ -457,6 +465,9 @@ export function ExcelShell({
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
           onOpenSettings={onOpenSettings}
+          onResume={onResume}
+          onRetry={onRetry}
+          {...{ noProvider: noProvider === true }}
         />
         <div className="sheet-main">
           {/* Excel's formula-bar row, Name Box only for now (fx bar TBD). */}

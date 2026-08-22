@@ -18,9 +18,9 @@ afterEach(() => {
 })
 
 describe('defaultAiSettings', () => {
-  it('gives every provider its default model and an empty key by default', () => {
+  it('gives every provider its default model and an empty key, with no active provider', () => {
     const settings = defaultAiSettings()
-    expect(settings.provider).toBe('genspark')
+    expect(settings.provider).toBe('')
     for (const meta of AI_PROVIDERS) {
       expect(settings.providers[meta.id].apiKey).toBe('')
       expect(settings.providers[meta.id].model).toBe(meta.defaultModel)
@@ -81,9 +81,9 @@ describe('resolveAiSettings', () => {
 })
 
 describe('applyProviderOverrides', () => {
-  it('leaves genspark untouched when no env is configured', () => {
+  it('leaves the unset default untouched when no env is configured', () => {
     const settings = defaultAiSettings()
-    expect(applyProviderOverrides(settings).provider).toBe('genspark')
+    expect(applyProviderOverrides(settings).provider).toBe('')
     expect(settings.providers.custom.baseUrl).toBe('')
   })
 

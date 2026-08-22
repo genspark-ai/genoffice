@@ -13,6 +13,7 @@ interface FakeSettings {
 function setup(
   startImpl?: (request: IpcStreamStart<FakeSettings>) => void | Promise<unknown>,
   creditsErrorText?: () => string,
+  networkErrorText?: () => string,
 ) {
   let listener: ((chunk: IpcStreamChunk) => void) | undefined
   const unsubscribe = vi.fn(() => {
@@ -34,6 +35,7 @@ function setup(
     unknownErrorText: () => 'unknown error',
     timeoutErrorText: () => 'timed out',
     ...(creditsErrorText ? { creditsErrorText } : {}),
+    ...(networkErrorText ? { networkErrorText } : {}),
   })
   const cb = {
     onDelta: vi.fn(),
@@ -121,6 +123,22 @@ describe('createIpcTransport', () => {
       errorCode: 'credits',
     })
     expect(cb.onError).toHaveBeenCalledWith('Your Genspark credits have been exhausted.')
+  })
+
+  it('a network error code reports interrupted so the loop can resume', () => {
+    const { cb, emit } = setup(undefined, undefined, () => 'connection lost')
+    emit({
+      type: 'error',
+      error: 'Claude fetch failed: fetch failed cause=ECONNRESET',
+      errorCode: 'network',
+    })
+    expect(cb.onError).toHaveBeenCalledWith('connection lost', true)
+  })
+
+  it('a network error code without networkErrorText falls back to the carried text', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'error', error: 'socket hang up', errorCode: 'network' })
+    expect(cb.onError).toHaveBeenCalledWith('socket hang up', true)
   })
 
   it('fails the run after prolonged silence; pings re-arm the watchdog', () => {

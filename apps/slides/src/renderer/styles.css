@@ -2050,6 +2050,59 @@ body.vib .slide-list {
   font-size: 13px;
 }
 
+.ai-msg-interrupted {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #e6a23c;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-interrupted-note {
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.ai-interrupted-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-continue-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-continue-btn:hover {
+  filter: brightness(0.94);
+}
+
+.ai-interrupted-retry {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-interrupted-retry:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 .ai-versions {
   border-top: 1px solid var(--border);
   padding: 8px 14px 10px;

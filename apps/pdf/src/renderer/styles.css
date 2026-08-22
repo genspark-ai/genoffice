@@ -2200,6 +2200,21 @@ button {
   font-family: var(--gs-font-sans);
 }
 
+.ai-setup-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  text-align: center;
+}
+
+.ai-setup-title {
+  font-size: 13px;
+  color: var(--color-text-secondary, #5f6368);
+  line-height: 1.5;
+}
+
 /* composer card — 16px radius, default border, production float shadow */
 .ai-input-box {
   border: 1px solid var(--color-border-default);
@@ -2386,6 +2401,59 @@ button {
 }
 
 .ai-retry-btn:hover {
+  background: rgb(198 40 40 / 8%);
+}
+
+.ai-msg-interrupted {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e0e0e0);
+  border-left: 3px solid #e6a23c;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-interrupted-note {
+  color: var(--text-dim, #666);
+  line-height: 1.4;
+}
+
+.ai-interrupted-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-continue-btn {
+  border: 1px solid var(--accent, #1a73e8);
+  border-radius: 6px;
+  background: var(--accent, #1a73e8);
+  padding: 4px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ai-continue-btn:hover {
+  filter: brightness(0.94);
+}
+
+.ai-interrupted-retry {
+  border: 1px solid rgb(198 40 40 / 45%);
+  border-radius: 6px;
+  background: none;
+  padding: 4px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #c62828;
+  cursor: pointer;
+}
+
+.ai-interrupted-retry:hover {
   background: rgb(198 40 40 / 8%);
 }
 

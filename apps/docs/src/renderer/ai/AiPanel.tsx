@@ -14,7 +14,7 @@ import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
-import { AiComposer, AiSettingsButton, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiSettingsButton, AiTypingIndicator, useOnlineStatus } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -73,6 +73,8 @@ interface ChatEntry {
   undelivered?: boolean
   /** the run failed because Genspark is signed out — render an inline sign-in button */
   loginRequired?: boolean
+  /** mid-run connectivity loss after tool work: the run paused and can be resumed */
+  interrupted?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
 }
@@ -386,6 +388,10 @@ export function AiPanel({
   const instructionRef = useRef('')
   /** last sent instruction, for one-click retry */
   const lastInstructionRef = useRef('')
+  /** an interrupted run awaiting reconnect; cleared once resumed or a new run starts */
+  const pendingResumeRef = useRef<
+    { toolResults: number; partialText: boolean } | null
+  >(null)
   /** Tool activity of the whole run (with args/output, accumulated across turns) — for full
       transcript persistence, and so persisting needn't do side effects inside a setState updater */
   const runToolsRef = useRef<
@@ -645,6 +651,32 @@ export function AiPanel({
             .catch(() => {})
           setBusy(false)
         },
+        onInterrupted: ({ error, partialText, toolResults }) => {
+          setChat((prev) => {
+            const next = [...prev]
+            const last = next.at(-1)
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                streaming: false,
+                interrupted: partialText.length > 0 || toolResults > 0,
+                error,
+                tools: last.tools?.filter((tl) => !tl.running),
+              }
+            }
+            return next
+          })
+          // remember the resume point so the online listener can pick it up
+          pendingResumeRef.current = {
+            toolResults,
+            partialText: partialText.length > 0,
+          }
+          setBusy(false)
+          // persist the partial context so a reload can restore the resume point
+          if (partialText || runToolsRef.current.length > 0) {
+            persistMessage('assistant', partialText, runToolsRef.current)
+          }
+        },
       },
     })
   }
@@ -684,7 +716,36 @@ export function AiPanel({
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
   }
 
-  const run = () => runWith(input.trim())
+  const noProvider = !settings.provider
+
+  const online = useOnlineStatus()
+
+  // Reconnect auto-resume: when the network comes back after an interrupted run,
+  // quietly continue it (debounced so flapping connectivity doesn't spam runs).
+  // With tool work done a "continue" picks up the preserved context; otherwise
+  // re-send the last instruction (nothing was executed, nothing to continue).
+  useEffect(() => {
+    if (!online) return
+    const pending = pendingResumeRef.current
+    if (!pending) return
+    const timer = window.setTimeout(() => {
+      if (pendingResumeRef.current !== pending) return
+      pendingResumeRef.current = null
+      if (loopRef.current?.busy || noProvider) return
+      if (pending.toolResults > 0 || pending.partialText) continueRun()
+      else retry()
+    }, 800)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
+
+  const run = () => {
+    if (noProvider) {
+      onOpenSettings?.()
+      return
+    }
+    runWith(input.trim())
+  }
 
   /** Image attachments are read as base64 and go multimodal with this user message (≤5MB per image, max 20) */
   const MAX_IMAGES_PER_MESSAGE = 20
@@ -712,7 +773,8 @@ export function AiPanel({
 
   const runWith = (instruction: string, displayInstruction = instruction) => {
     const loop = loopRef.current
-    if (!instruction || !loop || loop.busy) return
+    if (noProvider || !instruction || !loop || loop.busy) return
+    pendingResumeRef.current = null
     setInput('')
     instructionRef.current = instruction
     lastInstructionRef.current = instruction
@@ -744,6 +806,7 @@ export function AiPanel({
 
   const newChat = () => {
     loopRef.current?.reset()
+    pendingResumeRef.current = null
     setBusy(false)
     setChat([])
     inputRef.current?.focus()
@@ -1005,6 +1068,23 @@ export function AiPanel({
                 <div className="ai-msg-undelivered">{t('aiUndelivered')}</div>
               )}
               {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+              {entry.interrupted && (
+                <div className="ai-msg-interrupted">
+                  <div className="ai-interrupted-note">
+                    {t('aiInterruptedNote', { error: entry.error ?? '' })}
+                  </div>
+                  <div className="ai-interrupted-actions">
+                    <button className="ai-continue-btn" onClick={continueRun}>
+                      {t('aiResumeNow')}
+                    </button>
+                    {!busy && (
+                      <button className="ai-interrupted-retry" onClick={retry}>
+                        {t('aiRetry')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {entry.error && (
                 <div className="ai-msg-error">{t('aiErrorPrefix', { error: entry.error })}</div>
               )}
@@ -1105,6 +1185,14 @@ export function AiPanel({
 
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
+        {noProvider ? (
+          <div className="ai-setup-card">
+            <div className="ai-setup-title">{t('aiNoProviderTitle')}</div>
+            <button className="ai-login-btn" onClick={() => onOpenSettings?.()}>
+              {t('aiNoProviderButton')}
+            </button>
+          </div>
+        ) : (
         <AiComposer
           header={
             attachments.length > 0 && (
@@ -1204,6 +1292,7 @@ export function AiPanel({
             </>
           }
         />
+        )}
       </div>
     </aside>
   )

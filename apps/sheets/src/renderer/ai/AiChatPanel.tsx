@@ -144,6 +144,10 @@ export interface AiChatMessage {
   readonly loginRequired?: boolean | undefined
   /** Set when this message reflects an auto-applied plan; renders an inline [Undo] button. */
   readonly autoApplied?: { readonly opCount: number } | undefined
+  /** the run was interrupted mid-tool (connectivity loss); the run can be resumed */
+  readonly interrupted?: boolean | undefined
+  /** error text carried by an interrupted run (shown in the resume card) */
+  readonly interruptedError?: string | undefined
 }
 
 export function AiChatPanel({
@@ -169,6 +173,9 @@ export function AiChatPanel({
   onExpand,
   onCollapse,
   onOpenSettings,
+  noProvider,
+  onResume,
+  onRetry,
 }: {
   readonly isOpen: boolean
   /** the workbook has cells with content — empty workbooks get "build me a sheet" copy instead */
@@ -199,6 +206,11 @@ export function AiChatPanel({
   readonly onExpand: () => void
   readonly onCollapse: () => void
   readonly onOpenSettings: () => void
+  readonly noProvider?: boolean
+  /** Resume an interrupted run with a continuation instruction (connectivity restored) */
+  readonly onResume: () => void
+  /** Re-send the last instruction for an interrupted run with no tool work */
+  readonly onRetry: () => void
 }): React.JSX.Element {
   const { t } = useI18n()
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -503,6 +515,29 @@ export function AiChatPanel({
                     {t('aiGskLoginBtn')}
                   </button>
                 )}
+                {entry.interrupted && (
+                  <div className="ai-msg-interrupted">
+                    <span className="ai-interrupted-note">
+                      {t('aiInterruptedNote', { error: entry.interruptedError ?? '' })}
+                    </span>
+                    <div className="ai-interrupted-actions">
+                      <button
+                        className="ai-continue-btn"
+                        onClick={onResume}
+                        disabled={aiBusy}
+                      >
+                        {t('aiResumeNow')}
+                      </button>
+                      <button
+                        className="ai-interrupted-retry"
+                        onClick={onRetry}
+                        disabled={aiBusy}
+                      >
+                        {t('aiRetry')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -559,6 +594,14 @@ export function AiChatPanel({
 
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
+        {noProvider ? (
+          <div className="ai-setup-card">
+            <div className="ai-setup-title">{t('aiNoProviderTitle')}</div>
+            <button className="ai-login-btn" onClick={onOpenSettings}>
+              {t('aiNoProviderButton')}
+            </button>
+          </div>
+        ) : (
         <AiComposer
           header={
             attachments.length > 0 && (
@@ -659,6 +702,7 @@ export function AiChatPanel({
           onStop={onStop}
           onPasteFiles={onPasteFiles}
         />
+        )}
       </div>
     </aside>
   )

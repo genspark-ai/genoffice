@@ -18,8 +18,15 @@ export {
   applyProviderOverrides,
 } from './providers'
 export { chatForProvider } from './chat'
-export { AiCreditsError, sseLines, streamForProvider } from './stream'
-export type { StreamCallbacks } from './stream'
+export {
+  AiCreditsError,
+  AiNetworkError,
+  isRetryableStreamError,
+  retryStreamForProvider,
+  sseLines,
+  streamForProvider,
+} from './stream'
+export type { StreamCallbacks, StreamRetryOptions, StreamTimeouts } from './stream'
 export {
   GEMINI_FREE_MODELS,
   OPENROUTER_FREE_ROUTER,

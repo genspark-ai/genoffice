@@ -98,7 +98,13 @@ export interface AgentStreamCallbacks {
   /** normalized stop reason of the turn ('max_tokens' = cut off by the token limit); transports may omit this */
   onStopReason?(reason: string): void
   onDone(): void
-  onError(error: string): void
+  /**
+   * The turn failed. When `interrupted` is true the failure is mid-run
+   * connectivity loss (content may already have streamed, tool results may
+   * exist in history); the loop preserves context for a resume instead of
+   * rolling the run back.
+   */
+  onError(error: string, interrupted?: boolean): void
 }
 
 export interface AgentStreamHandle {

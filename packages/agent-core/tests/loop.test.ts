@@ -480,6 +480,105 @@ describe('AgentLoop', () => {
     ])
   })
 
+  it('an interrupted run after tool work preserves context for resume', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('partial reply')
+        cb.onError('connection lost', true)
+      },
+    ])
+    const onInterrupted = vi.fn()
+    const onError = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onInterrupted, onError },
+    })
+    loop.restore([
+      { role: 'user', text: 'earlier question' },
+      { role: 'assistant', text: 'earlier answer' },
+    ])
+    loop.run('do more work')
+    await flush()
+    await flush()
+    // the run ended through onInterrupted, not onError
+    expect(onError).not.toHaveBeenCalled()
+    expect(onInterrupted).toHaveBeenCalledTimes(1)
+    expect(onInterrupted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'connection lost',
+        partialText: 'partial reply',
+        toolResults: 1,
+        pendingToolCalls: 0,
+      }),
+    )
+    // history keeps the tool work and the partial reply, so a resume can continue
+    expect(loop.messages).toEqual([
+      { role: 'user', text: 'earlier question' },
+      { role: 'assistant', text: 'earlier answer' },
+      { role: 'user', text: expect.stringContaining('do more work') },
+      { role: 'assistant', text: '', toolCalls: [{ id: 't1', name: 'do_thing', input: {} }] },
+      { role: 'tool', results: [{ id: 't1', name: 'do_thing', output: 'ok' }] },
+      { role: 'assistant', text: 'partial reply' },
+    ])
+  })
+
+  it('an interrupted run with no tool work falls back to the error path', async () => {
+    const transport = scriptedTransport([
+      (cb) => cb.onError('connection lost', true),
+    ])
+    const onInterrupted = vi.fn()
+    const onError = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onInterrupted, onError },
+    })
+    loop.run('do more work')
+    await flush()
+    expect(onInterrupted).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith('connection lost', true)
+    // nothing was executed, so the run rolls back like any failed run
+    expect(loop.messages).toHaveLength(0)
+  })
+
+  it('a resume after interrupt continues from preserved context', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onError('connection lost', true)
+      },
+      (cb) => {
+        cb.onDelta('finished the rest')
+        cb.onDone()
+      },
+    ])
+    const onInterrupted = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onInterrupted },
+    })
+    loop.run('do more work')
+    await flush()
+    await flush()
+    expect(onInterrupted).toHaveBeenCalledTimes(1)
+
+    loop.run('please continue')
+    await flush()
+    await flush()
+    // the resume turn saw the preserved history (user + tool result + partial), not just itself
+    expect(transport.requests[2]!.messageCount).toBeGreaterThanOrEqual(5)
+    expect(loop.busy).toBe(false)
+  })
+
   it('restore drops unanswered user messages (trailing and adjacent)', () => {
     const transport = scriptedTransport([])
     const loop = new AgentLoop({ transport, skill: makeSkill() })

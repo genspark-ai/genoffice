@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop, type MemoryStoreAdapter } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiTypingIndicator, Markdown, useOnlineStatus } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
-import { Markdown } from '@genoffice/ui'
+import { PDF_CONTINUE_INSTRUCTION } from './continuation'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -40,6 +40,10 @@ interface ChatEntry {
   /** the run failed and this user message was rolled back out of the model context */
   undelivered?: boolean
   tools?: ToolActivity[]
+  /** the run was interrupted mid-tool (connectivity loss); the run can be resumed */
+  interrupted?: boolean
+  /** error text carried by an interrupted run (shown in the resume card) */
+  interruptedError?: string
 }
 
 type Phase = 'thinking' | 'replying' | 'working'
@@ -56,6 +60,7 @@ export function AiPanel({
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>('thinking')
+  const [noProvider, setNoProvider] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const [panelWidth, setPanelWidth] = useState(loadPanelWidth)
@@ -69,6 +74,11 @@ export function AiPanel({
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
   }, [panelWidth])
   const settingsRef = useRef<AiSettings | null>(null)
+  /** When the run was interrupted mid-flight (connectivity), the resume point
+   * remembered so a reconnect can pick it up. */
+  const pendingResumeRef = useRef<{ toolResults: number; partialText: boolean } | null>(null)
+  /** Instruction of the most recent run, for Retry after an interrupted run */
+  const lastInstructionRef = useRef('')
   const langRef = useRef(lang)
   langRef.current = lang
   const apiRef = useRef(api)
@@ -107,6 +117,16 @@ export function AiPanel({
   }
 
   // Resolve the default project once (memory persistence; no per-file history)
+  useEffect(() => {
+    void window.pdfApi
+      .getAiSettings()
+      .then((s) => {
+        settingsRef.current = s
+        setNoProvider(!s.provider)
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     const projectApi = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
     if (!projectApi) return
@@ -214,6 +234,28 @@ export function AiPanel({
           })
           setBusy(false)
         },
+        onInterrupted: ({ error, partialText, toolResults }) => {
+          setChat((prev) => {
+            const next = [...prev]
+            const last = next.at(-1)
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                streaming: false,
+                interrupted: partialText.length > 0 || toolResults > 0,
+                interruptedError: error,
+                text: partialText || last.text,
+              }
+            }
+            return next
+          })
+          // remember the resume point so the online listener can pick it up
+          pendingResumeRef.current = {
+            toolResults,
+            partialText: partialText.length > 0,
+          }
+          setBusy(false)
+        },
       },
     })
   }
@@ -234,6 +276,9 @@ export function AiPanel({
     const instruction = text.trim()
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return
+    pendingResumeRef.current = null
+    lastInstructionRef.current = instruction
+    settingsRef.current = settingsRef.current ?? null
     stickToBottomRef.current = true
     setChat((prev) => [
       ...prev,
@@ -246,6 +291,17 @@ export function AiPanel({
     void (async () => {
       try {
         settingsRef.current = await window.pdfApi.getAiSettings()
+        if (!settingsRef.current?.provider) {
+          patchLast({
+            streaming: false,
+            text: t('aiNoProviderTitle'),
+            isError: true,
+          })
+          setBusy(false)
+          setNoProvider(true)
+          return
+        }
+        setNoProvider(false)
         await loop.run(instruction)
       } catch (err) {
         patchLast({
@@ -259,6 +315,51 @@ export function AiPanel({
   }
 
   const stop = (): void => loopRef.current?.cancel()
+
+  /** Resume an interrupted run: re-enters the agent with the continuation
+   * instruction, branching off the preserved context. */
+  const resume = (): void => {
+    const loop = loopRef.current
+    if (!loop || loop.busy || noProvider) return
+    pendingResumeRef.current = null
+    stickToBottomRef.current = true
+    setChat((prev) => [
+      ...prev,
+      { role: 'user', text: t('aiContinue') },
+      { role: 'assistant', text: '', streaming: true },
+    ])
+    setBusy(true)
+    setPhase('thinking')
+    void loop.run(PDF_CONTINUE_INSTRUCTION)
+  }
+
+  /** Re-send the last instruction after an interrupted run with no tool work
+   * (nothing was executed, so a plain retry is correct). */
+  const retryLast = (): void => {
+    if (lastInstructionRef.current) send(lastInstructionRef.current)
+  }
+
+  const online = useOnlineStatus()
+
+  // Reconnect auto-resume: when the network comes back after an interrupted
+  // run, quietly continue it (debounced so flapping connectivity doesn't spam
+  // runs). With tool work done a "continue" picks up the preserved context;
+  // otherwise re-send the last instruction (nothing was executed).
+  useEffect(() => {
+    if (!online) return
+    const pending = pendingResumeRef.current
+    if (!pending) return
+    const timer = window.setTimeout(() => {
+      if (pendingResumeRef.current !== pending) return
+      pendingResumeRef.current = null
+      const loop = loopRef.current
+      if (loop?.busy || noProvider) return
+      if (pending.toolResults > 0 || pending.partialText) resume()
+      else retryLast()
+    }, 800)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
 
   // Re-clamp the persisted width when the window shrinks (max is 60% of the window)
   useEffect(() => {
@@ -403,6 +504,21 @@ export function AiPanel({
             >
               {hasTools && <ToolChipList tools={entry.tools!} />}
               {entry.text && <Markdown text={entry.text} />}
+              {entry.interrupted && (
+                <div className="ai-msg-interrupted">
+                  <span className="ai-interrupted-note">
+                    {t('aiInterruptedNote', { error: entry.interruptedError ?? '' })}
+                  </span>
+                  <div className="ai-interrupted-actions">
+                    <button className="ai-continue-btn" onClick={resume} disabled={busy}>
+                      {t('aiResumeNow')}
+                    </button>
+                    <button className="ai-interrupted-retry" onClick={retryLast} disabled={busy}>
+                      {t('aiRetry')}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
@@ -411,6 +527,11 @@ export function AiPanel({
       </div>
 
       <div className="ai-composer">
+        {noProvider && (
+          <div className="ai-setup-card">
+            <div className="ai-setup-title">{t('aiNoProviderTitle')}</div>
+          </div>
+        )}
         <AiComposer
           value={prompt}
           busy={busy}

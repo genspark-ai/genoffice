@@ -49,9 +49,10 @@ import {
   applyProviderOverrides,
   chatForProvider,
   defaultAiSettings,
+  isRetryableStreamError,
   listModelsForProvider,
   resolveAiSettings,
-  streamForProvider,
+  retryStreamForProvider,
   type AiProviderId,
   type AiSettings,
   type AiStreamChunk,
@@ -137,6 +138,7 @@ const tMain = createI18n({
     errNotImage: '不是支持的图片类型',
     errGskNotLoggedIn: '未登录 Genspark:请点击下方「登录 Genspark」完成登录后重试',
     errNoApiKey: '未配置 {provider} 的 API Key',
+    errNoProvider: '未配置 AI 提供商:请打开 AI 设置选择一个',
     errNoModel: '未配置模型名称',
     errImgAbsPath: '图片路径必须是绝对路径。',
     errImgNotFound: '找不到图片文件: {path}',
@@ -182,6 +184,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Not signed in to Genspark: click “Sign in to Genspark” below, sign in, then retry',
     errNoApiKey: 'No API key configured for {provider}',
+    errNoProvider: 'No AI provider configured — open AI settings to choose one',
     errNoModel: 'No model name configured',
     errImgAbsPath: 'Image path must be absolute.',
     errImgNotFound: 'Image file not found: {path}',
@@ -229,6 +232,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark にサインインしていません。下の「Genspark にサインイン」からサインインして再試行してください',
     errNoApiKey: '{provider} の API キーが設定されていません',
+    errNoProvider: 'AI プロバイダーが設定されていません — AI 設定を開いて選択してください',
     errNoModel: 'モデル名が設定されていません',
     errImgAbsPath: '画像パスは絶対パスで指定してください。',
     errImgNotFound: '画像ファイルが見つかりません: {path}',
@@ -277,6 +281,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark에 로그인되어 있지 않습니다. 아래 "Genspark 로그인"을 눌러 로그인한 뒤 다시 시도하세요',
     errNoApiKey: '{provider}의 API 키가 설정되지 않았습니다',
+    errNoProvider: 'AI 제공자가 설정되지 않았습니다 — AI 설정에서 선택하세요',
     errNoModel: '모델 이름이 설정되지 않았습니다',
     errImgAbsPath: '이미지 경로는 절대 경로여야 합니다.',
     errImgNotFound: '이미지 파일을 찾을 수 없습니다: {path}',
@@ -326,6 +331,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Non connecté à Genspark : cliquez sur « Se connecter à Genspark » ci-dessous, connectez-vous puis réessayez',
     errNoApiKey: 'Aucune clé API configurée pour {provider}',
+    errNoProvider: 'Aucun fournisseur d\'IA configuré — ouvrez les paramètres IA pour en choisir un',
     errNoModel: 'Aucun nom de modèle configuré',
     errImgAbsPath: "Le chemin de l'image doit être absolu.",
     errImgNotFound: 'Fichier image introuvable : {path}',
@@ -375,6 +381,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Nicht bei Genspark angemeldet: Klicken Sie unten auf „Bei Genspark anmelden“, melden Sie sich an und versuchen Sie es erneut',
     errNoApiKey: 'Kein API-Schlüssel für {provider} konfiguriert',
+    errNoProvider: 'Kein KI-Anbieter konfiguriert — öffnen Sie die KI-Einstellungen und wählen Sie einen',
     errNoModel: 'Kein Modellname konfiguriert',
     errImgAbsPath: 'Der Bildpfad muss absolut sein.',
     errImgNotFound: 'Bilddatei nicht gefunden: {path}',
@@ -424,6 +431,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'No has iniciado sesión en Genspark: pulsa «Iniciar sesión en Genspark» abajo, inicia sesión y vuelve a intentarlo',
     errNoApiKey: 'No hay clave de API configurada para {provider}',
+    errNoProvider: 'No hay proveedor de IA configurado — abre los ajustes de IA para elegir uno',
     errNoModel: 'No hay nombre de modelo configurado',
     errImgAbsPath: 'La ruta de la imagen debe ser absoluta.',
     errImgNotFound: 'No se encontró el archivo de imagen: {path}',
@@ -472,6 +480,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'ยังไม่ได้ลงชื่อเข้าใช้ Genspark: แตะ “ลงชื่อเข้าใช้ Genspark” ด้านล่าง แล้วลองอีกครั้ง',
     errNoApiKey: 'ยังไม่ได้ตั้งค่า API Key ของ {provider}',
+    errNoProvider: 'ยังไม่ได้ตั้งค่า AI provider — เปิดการตั้งค่า AI เพื่อเลือก',
     errNoModel: 'ยังไม่ได้กำหนดชื่อโมเดล',
     errImgAbsPath: 'เส้นทางรูปภาพต้องเป็นเส้นทางแบบสัมบูรณ์',
     errImgNotFound: 'ไม่พบไฟล์รูปภาพ: {path}',
@@ -517,6 +526,7 @@ const tMain = createI18n({
     errNotImage: 'bukan jenis gambar yang didukung',
     errGskNotLoggedIn: 'Belum masuk ke Genspark: klik “Masuk ke Genspark” di bawah, lalu coba lagi',
     errNoApiKey: 'API Key untuk {provider} belum dikonfigurasi',
+    errNoProvider: 'Belum ada penyedia AI yang dikonfigurasi — buka pengaturan AI untuk memilih',
     errNoModel: 'Nama model belum dikonfigurasi',
     errImgAbsPath: 'Jalur gambar harus berupa jalur absolut.',
     errImgNotFound: 'File gambar tidak ditemukan: {path}',
@@ -565,6 +575,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Вы не вошли в Genspark: нажмите «Войти в Genspark» ниже, войдите и повторите попытку',
     errNoApiKey: 'API-ключ для {provider} не настроен',
+    errNoProvider: 'Поставщик ИИ не настроен — откройте настройки ИИ и выберите',
     errNoModel: 'Имя модели не настроено',
     errImgAbsPath: 'Путь к изображению должен быть абсолютным.',
     errImgNotFound: 'Файл изображения не найден: {path}',
@@ -612,6 +623,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'لم تسجّل الدخول إلى Genspark: انقر على «تسجيل الدخول إلى Genspark» أدناه ثم أعد المحاولة',
     errNoApiKey: 'لم يتم تكوين مفتاح API لـ {provider}',
+    errNoProvider: 'لم يتم تكوين مزود الذكاء الاصطناعي — افتح إعدادات الذكاء الاصطناعي للاختيار',
     errNoModel: 'لم يتم تكوين اسم النموذج',
     errImgAbsPath: 'يجب أن يكون مسار الصورة مسارًا مطلقًا.',
     errImgNotFound: 'لم يتم العثور على ملف الصورة: {path}',
@@ -659,6 +671,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Não conectado ao Genspark: clique em “Entrar no Genspark” abaixo, entre e tente novamente',
     errNoApiKey: 'Nenhuma chave de API configurada para {provider}',
+    errNoProvider: 'Nenhum provedor de IA configurado — abra as configurações de IA para escolher',
     errNoModel: 'Nenhum nome de modelo configurado',
     errImgAbsPath: 'O caminho da imagem deve ser absoluto.',
     errImgNotFound: 'Arquivo de imagem não encontrado: {path}',
@@ -707,6 +720,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Accesso a Genspark non effettuato: fai clic su “Accedi a Genspark” qui sotto, accedi e riprova',
     errNoApiKey: 'Nessuna chiave API configurata per {provider}',
+    errNoProvider: 'Nessun provider IA configurato — apri le impostazioni IA per sceglierne uno',
     errNoModel: 'Nessun nome di modello configurato',
     errImgAbsPath: "Il percorso dell'immagine deve essere assoluto.",
     errImgNotFound: 'File immagine non trovato: {path}',
@@ -756,6 +770,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Nie zalogowano do Genspark: kliknij „Zaloguj się do Genspark” poniżej, zaloguj się i spróbuj ponownie',
     errNoApiKey: 'Nie skonfigurowano klucza API dla {provider}',
+    errNoProvider: 'Nie skonfigurowano dostawcy AI — otwórz ustawienia AI, aby wybrać',
     errNoModel: 'Nie skonfigurowano nazwy modelu',
     errImgAbsPath: 'Ścieżka obrazu musi być bezwzględna.',
     errImgNotFound: 'Nie znaleziono pliku obrazu: {path}',
@@ -804,6 +819,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Niet aangemeld bij Genspark: klik hieronder op “Aanmelden bij Genspark”, meld u aan en probeer het opnieuw',
     errNoApiKey: 'Geen API-sleutel geconfigureerd voor {provider}',
+    errNoProvider: 'Geen AI-provider geconfigureerd — open de AI-instellingen om er een te kiezen',
     errNoModel: 'Geen modelnaam geconfigureerd',
     errImgAbsPath: 'Het afbeeldingspad moet absoluut zijn.',
     errImgNotFound: 'Afbeeldingsbestand niet gevonden: {path}',
@@ -852,6 +868,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Belum log masuk ke Genspark: klik “Log masuk ke Genspark” di bawah, kemudian cuba lagi',
     errNoApiKey: 'Kunci API untuk {provider} belum dikonfigurasikan',
+    errNoProvider: 'Tiada pembekal AI dikonfigurasi — buka tetapan AI untuk memilih',
     errNoModel: 'Nama model belum dikonfigurasikan',
     errImgAbsPath: 'Laluan imej mestilah laluan mutlak.',
     errImgNotFound: 'Fail imej tidak ditemui: {path}',
@@ -898,6 +915,7 @@ const tMain = createI18n({
     errNotImage: 'סוג תמונה שאינו נתמך',
     errGskNotLoggedIn: 'לא מחובר ל-Genspark: לחץ על "התחבר ל-Genspark" למטה, התחבר ונסה שוב',
     errNoApiKey: 'לא הוגדר מפתח API עבור {provider}',
+    errNoProvider: 'לא הוגדר ספק AI — פתח את הגדרות ה-AI כדי לבחור',
     errNoModel: 'לא הוגדר שם מודל',
     errImgAbsPath: 'נתיב התמונה חייב להיות מוחלט.',
     errImgNotFound: 'קובץ התמונה לא נמצא: {path}',
@@ -943,6 +961,7 @@ const tMain = createI18n({
     errGskNotLoggedIn:
       'Genspark में साइन इन नहीं है: नीचे “Genspark में साइन इन करें” पर क्लिक करें, साइन इन करें और फिर से कोशिश करें',
     errNoApiKey: '{provider} के लिए कोई API कुंजी कॉन्फ़िगर नहीं है',
+    errNoProvider: 'कोई AI प्रदाता कॉन्फ़िगर नहीं है — AI सेटिंग्स खोलकर चुनें',
     errNoModel: 'कोई मॉडल नाम कॉन्फ़िगर नहीं है',
     errImgAbsPath: 'छवि पथ निरपेक्ष होना चाहिए।',
     errImgNotFound: 'छवि फ़ाइल नहीं मिली: {path}',
@@ -990,6 +1009,7 @@ const tMain = createI18n({
     errNotImage: '不是支援的圖片類型',
     errGskNotLoggedIn: '未登入 Genspark:請點擊下方「登入 Genspark」完成登入後重試',
     errNoApiKey: '未設定 {provider} 的 API Key',
+    errNoProvider: '未設定 AI 提供商:請開啟 AI 設定選擇一個',
     errNoModel: '未設定模型名稱',
     errImgAbsPath: '圖片路徑必須是絕對路徑。',
     errImgNotFound: '找不到圖片檔案: {path}',
@@ -2081,6 +2101,7 @@ export function registerSheetsAiIpc(): void {
     const request = aiChatRequestSchema.parse(input)
     const provider = request.settings.provider as AiProviderId
     let config = request.settings.providers[provider]
+    if (!provider) return { ok: false, error: tm('errNoProvider') }
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
@@ -2104,6 +2125,7 @@ export function registerSheetsAiIpc(): void {
     const settings = aiSettingsInputSchema.parse(input)
     const provider = settings.provider as AiProviderId
     let config = settings.providers[provider]
+    if (!provider) return { ok: false, error: tm('errNoProvider') }
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
@@ -2154,6 +2176,10 @@ export function registerSheetsAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
+    if (!provider) {
+      send({ requestId, type: 'error', error: tm('errNoProvider') })
+      return
+    }
     if (!config?.apiKey) {
       send({
         requestId,
@@ -2177,7 +2203,7 @@ export function registerSheetsAiIpc(): void {
       send({ requestId, type: 'ping' })
     }
     try {
-      await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+      await retryStreamForProvider(provider, config, system, messages, tools, maxTokens, {
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
@@ -2196,7 +2222,9 @@ export function registerSheetsAiIpc(): void {
             ? { errorCode: 'timeout' as const }
             : err instanceof AiCreditsError
               ? { errorCode: 'credits' as const }
-              : {}),
+              : isRetryableStreamError(err)
+                ? { errorCode: 'network' as const }
+                : {}),
         })
       }
     } finally {

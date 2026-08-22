@@ -105,8 +105,9 @@ import {
   type AgentImage,
   type MemoryStoreAdapter,
 } from '@genoffice/agent-core'
-import { AiSettingsDialog } from '@genoffice/ui'
+import { AiSettingsDialog, useOnlineStatus } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
+import { SHEETS_CONTINUE_INSTRUCTION } from './ai/continuation'
 import { type WorkbookOperation } from '../domain/workbook-dsl'
 import { columnIndex, columnLabel, parseAddress, parseRange } from '../domain/cell-address'
 import {
@@ -800,6 +801,13 @@ export function App(): React.JSX.Element {
   /** true once any tool of the run mutated the workbook */
   const runMutatedRef = useRef(false)
 
+  /** When the run was interrupted mid-flight (connectivity), the resume point
+   * remembered so a reconnect can pick it up: whether the model had streamed
+   * prose and how many tools completed before the drop. */
+  const pendingResumeRef = useRef<{ toolResults: number; partialText: boolean } | null>(null)
+  /** Instruction of the most recent run, for Retry after an interrupted run */
+  const lastInstructionRef = useRef('')
+
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
@@ -958,6 +966,33 @@ export function App(): React.JSX.Element {
             .catch(() => {})
           void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
         },
+        onInterrupted: ({ error, partialText, toolResults }) => {
+          setMessage(error)
+          setChat((previous) => {
+            const next = [...previous]
+            const last = next.at(-1)
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                interrupted: partialText.length > 0 || toolResults > 0,
+                interruptedError: error,
+                streaming: false,
+                tools: last.tools.filter((tl) => !tl.running),
+              }
+            }
+            return next
+          })
+          // remember the resume point so the online listener can pick it up
+          pendingResumeRef.current = {
+            toolResults,
+            partialText: partialText.length > 0,
+          }
+          // persist the partial context so a reload can restore the resume point
+          if (partialText || runToolsRef.current.length > 0) {
+            persistChatMessage('assistant', partialText, runToolsRef.current)
+          }
+          setAiBusy(false)
+        },
       },
     })
   }
@@ -965,6 +1000,7 @@ export function App(): React.JSX.Element {
   function isAgentConfigured(): boolean {
     const settings = aiSettingsRef.current
     if (!settings) return false
+    if (!settings.provider) return false
     const config = settings.providers[settings.provider]
     if (!config?.model) return false
     // Genspark's key never lands in the settings file; the main process injects
@@ -1056,6 +1092,7 @@ export function App(): React.JSX.Element {
 
   function handleNewChat(): void {
     agentLoopRef.current?.reset()
+    pendingResumeRef.current = null
     setAiBusy(false)
     setChat([])
     setHistoricChat([])
@@ -2014,11 +2051,17 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
-  function handleSend(overrideInstruction?: string): void {
+  function handleSend(overrideInstruction?: string, displayInstruction?: string): void {
     const instruction = (overrideInstruction ?? prompt).trim()
     if (!instruction || aiBusy) return
+    if (!aiSettingsRef.current?.provider) {
+      setAiSettingsOpen(true)
+      return
+    }
+    pendingResumeRef.current = null
+    lastInstructionRef.current = instruction
     runToolsRef.current = []
-    appendChat({ role: 'user', text: instruction, tools: [] })
+    appendChat({ role: 'user', text: displayInstruction ?? instruction, tools: [] })
     persistChatMessage('user', instruction)
     if (!overrideInstruction) setPrompt('')
     // real LLM configured → let the agent read context and propose operations;
@@ -2033,6 +2076,41 @@ export function App(): React.JSX.Element {
     appendChat({ role: 'assistant', text: outcome.text, tools: [], isError: outcome.isError })
     persistChatMessage('assistant', outcome.text)
   }
+
+  /** Resume an interrupted run: re-enters the agent with the continuation
+   * instruction, branching off the preserved context (used by the interrupted
+   * card, ribbon and the auto-resume-online listener). */
+  const handleResume = (): void => {
+    handleSend(SHEETS_CONTINUE_INSTRUCTION, t('aiContinue'))
+  }
+
+  /** Re-send the last instruction after an interrupted run with no tool work
+   * (nothing was executed, so a plain retry is correct). */
+  const handleRetry = (): void => {
+    handleSend(lastInstructionRef.current)
+  }
+
+  const online = useOnlineStatus()
+
+  // Reconnect auto-resume: when the network comes back after an interrupted
+  // run, quietly continue it (debounced so flapping connectivity doesn't spam
+  // runs). With tool work done a "continue" picks up the preserved context;
+  // otherwise re-send the last instruction (nothing was executed).
+  useEffect(() => {
+    if (!online) return
+    const pending = pendingResumeRef.current
+    if (!pending) return
+    const timer = window.setTimeout(() => {
+      if (pendingResumeRef.current !== pending) return
+      pendingResumeRef.current = null
+      if (agentLoopRef.current?.busy || runStartingRef.current) return
+      if (!aiSettingsRef.current?.provider) return
+      if (pending.toolResults > 0 || pending.partialText) handleResume()
+      else handleRetry()
+    }, 800)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online])
 
   /// AI edits on imported workbooks preview against the live sheet, then
   /// apply through Univer commands so they enter the edit journal exactly
@@ -3051,6 +3129,9 @@ export function App(): React.JSX.Element {
         onNewChat={handleNewChat}
         onUndo={handleUndo}
         onOpenSettings={() => setAiSettingsOpen(true)}
+        noProvider={!aiSettingsRef.current?.provider}
+        onResume={handleResume}
+        onRetry={handleRetry}
         onCommand={handleRibbonCommand}
         zoomPercent={zoomPercent}
         canSave={pendingEdits > 0}
