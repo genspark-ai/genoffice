@@ -201,6 +201,10 @@ export class AgentLoop<TSnapshot = unknown> {
   private generation = 0
   /** per-run abort: aborted on cancel(); long tools (e.g. generate_deck) use it to break internal loops */
   private abortController: AbortController | null = null
+  /** fast-path for simple generation: reduced prompt/context (reset each run) */
+  private fastMode = false
+  /** TTFT measurement per turn */
+  private turnStartMs = 0
 
   constructor(options: AgentLoopOptions<TSnapshot>) {
     this.options = options
@@ -262,7 +266,18 @@ export class AgentLoop<TSnapshot = unknown> {
     this.mutationSeen = false
     this.inputParseFails = 0
     this.abortController = new AbortController()
-    const context = this.options.skill.buildContext?.() ?? ''
+    this.fastMode = this.options.skill.isFastPath?.(instruction) ?? false
+    // fast-path telemetry (visible in renderer devtools; no effect on logic)
+    if (this.fastMode) {
+      try {
+        console.log('[AgentLoop] fast path', instruction.slice(0, 80))
+      } catch {}
+    }
+    const context = (
+      this.fastMode && this.options.skill.buildFastContext
+        ? this.options.skill.buildFastContext()
+        : this.options.skill.buildContext?.() ?? ''
+    )
     const format =
       this.options.formatUserMessage ??
       ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
@@ -513,18 +528,36 @@ export class AgentLoop<TSnapshot = unknown> {
     this.turnText = ''
     this.toolCalls = []
     this.turnStopReason = null
+    this.turnStartMs = Date.now()
     // Some transports emit an extra onDone after cancel — this turn may finalize only once
     let settled = false
+    const systemPrompt = (
+      this.fastMode && this.options.skill.fastSystemPrompt
+        ? this.options.skill.fastSystemPrompt
+        : this.options.skill.systemPrompt
+    ) + (this.options.systemSuffix?.() ?? '')
+    const tools = this.finalizing
+      ? []
+      : this.fastMode && this.options.skill.fastTools
+        ? this.options.skill.fastTools
+        : this.options.skill.tools
     this.handle = this.options.transport.stream(
       {
-        system: this.options.skill.systemPrompt + (this.options.systemSuffix?.() ?? ''),
+        system: systemPrompt,
         messages: [...this.history],
-        tools: this.finalizing ? [] : this.options.skill.tools,
+        tools,
       },
       {
         onDelta: (text) => {
           if (generation !== this.generation || settled) return
+          const wasEmpty = this.turnText.length === 0
           this.turnText += text
+          if (wasEmpty && text) {
+            const ttft = Date.now() - this.turnStartMs
+            try {
+              console.log(`[AgentLoop] TTFT ${ttft}ms (turn ${this.turns}, fast=${this.fastMode})`)
+            } catch {}
+          }
           this.options.events?.onText?.(this.turnText)
         },
         onToolCall: (call) => {

@@ -105,6 +105,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '',
   '# Tool usage',
   '- Every user message carries the latest "document block list" (index|type|content preview; previews may be truncated); after modifications, call get_document_context if you need the latest state;',
+  '- When the document is blank (The document is currently blank.), do not call get_document_context — directly call insert_content;',
   '- When a list preview is truncated, read the full content with read_blocks before rewriting; never rewrite based on a truncated preview;',
   '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML);',
   '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_commands — do not rewrite whole blocks with replace_blocks;',
@@ -120,6 +121,108 @@ export const AGENT_SYSTEM_PROMPT = [
   '# apply_commands command guide',
   COMMANDS_GUIDE,
 ].join('\n')
+
+/**
+ * Fast system prompt for simple generation on blank/small docs.
+ * Keeps HTML rules and intent resolution but drops the 5k COMMANDS_GUIDE
+ * (formatting/batch commands) and detailed selection/tool-selection prose.
+ * Used when isSimpleWriteIntent() is true — saves ~5.3k chars per turn.
+ */
+export const AGENT_FAST_SYSTEM_PROMPT = [
+  'You are the document assistant built into the local document editor GenOffice Docs. You read and modify the currently open document exclusively through tools; there is no other modification channel.',
+  '',
+  '# Intent resolution',
+  '- The user asks to modify/generate → call insert_content (or replace_blocks for rewrites), then summarize what was done in one or two sentences;',
+  '- The user is asking a question or consulting (word count, "what is this about", writing advice) → answer directly in plain text without calling modification tools;',
+  '- For append tasks on a blank document, directly call insert_content — do not call get_document_context first; the document is empty;',
+  '',
+  '# Tool usage',
+  '- For new content generation, directly use insert_content with restricted HTML (no need to read the document first when it is blank);',
+  '- After modifications, always finish with a short plain-text summary.',
+  '',
+  '# HTML fragment rules',
+  HTML_RULES,
+].join('\n')
+
+/** Heuristic: simple generation on blank/small docs that can skip the 8k skeleton + COMMANDS_GUIDE */
+export function isSimpleWriteIntent(instruction: string, isBlank: boolean): boolean {
+  const lower = instruction.toLowerCase().trim()
+  if (lower.length === 0 || lower.length > 500) return false
+  // Block edit keywords indicate not fast — needs full context/commands
+  const editKeywords = [
+    'edit',
+    'replace',
+    'translate',
+    'format',
+    'delete',
+    'move',
+    'convert',
+    'rewrite',
+    'fix',
+    'correct',
+    'change line spacing',
+    'apply',
+    'insert image',
+    'insert chart',
+    'table of contents',
+    'bullet',
+    'heading level',
+  ]
+  for (const kw of editKeywords) if (lower.includes(kw)) return false
+  const genKeywords = [
+    'write',
+    'create',
+    'generate',
+    'draft',
+    'compose',
+    'make',
+    'produce',
+    'prepare',
+    'build',
+  ]
+  const contentKeywords = [
+    'report',
+    'document',
+    'article',
+    'letter',
+    'memo',
+    'proposal',
+    'summary',
+    'weekly',
+    'project',
+    'outline',
+    'plan',
+    'essay',
+    'story',
+    'email',
+    'resume',
+    'cover',
+    'agenda',
+    'minutes',
+    'notes',
+  ]
+  const hasGen = genKeywords.some((k) => lower.includes(k))
+  const hasContent = contentKeywords.some((k) => lower.includes(k))
+  if (isBlank && hasGen) return true
+  if (hasGen && hasContent) return true
+  if (hasGen && lower.split(/\s+/).length < 20) return true
+  return false
+}
+
+/** Minimal context for fast path: blank notice or just stats line, no 8k skeleton */
+export function buildFastDocContext(editor: Editor): string {
+  const isEmptyDoc = isBlankDocument(editor)
+  if (isEmptyDoc) return 'The document is currently blank.'
+  const fullText = editor.state.doc.textContent
+  const statsLine = `Full-text stats: words ${countWords(fullText)}, characters (no spaces) ${fullText.replace(/\s/g, '').length}, characters (with spaces) ${fullText.length}`
+  const scope = getSelectionScope(editor)
+  const selLine = scope.isRange
+    ? scope.startIndex === scope.endIndex
+      ? `Current selection: block ${scope.startIndex}`
+      : `Current selection: blocks ${scope.startIndex}-${scope.endIndex}`
+    : `No selection; cursor is in block ${scope.startIndex}`
+  return [`The document has ${editor.state.doc.childCount} blocks.`, statsLine, selLine].join('\n')
+}
 
 export { countWords }
 

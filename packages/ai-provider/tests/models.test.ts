@@ -25,7 +25,9 @@ describe('listModelsForProvider', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     const models = await listModelsForProvider('openrouter', cfg(''), { freeOnly: false })
-    expect(fetchMock.mock.calls[0][0]).toBe('https://openrouter.ai/api/v1/models')
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://openrouter.ai/api/v1/models',
+    )
     const free = models.filter((m) => m.free)
     expect(free.map((m) => m.id).sort()).toEqual(['meta-llama/llama-3.3-70b-instruct:free'])
     expect(models.map((m) => m.id)).toContain('openai/gpt-4o-mini')
@@ -107,19 +109,19 @@ describe('listModelsForProvider', () => {
     ['anthropic', 'Enter a Claude API key first', 'https://api.anthropic.com/v1/models', [{ id: 'claude-sonnet-4-5', display_name: 'Sonnet' }, { id: 'claude-tools' }]],
     ['openai', 'Enter an OpenAI API key first', 'https://api.openai.com/v1/models', [{ id: 'gpt-4o-mini' }, { id: 'whisper-1' }, { id: 'deepseek-chat' }]],
     ['deepseek', 'Enter a DeepSeek API key first', 'https://api.deepseek.com/models', [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }]],
-  ])(
+  ] as const)(
     '%s requires a key, filters non-chat ids, and hits the right endpoint',
     async (
-      provider: 'anthropic' | 'openai' | 'deepseek',
+      provider: string,
       errMsg: string,
       url: string,
-      data: Array<{ id?: string; display_name?: string }>,
+      data: readonly { id?: string; display_name?: string }[],
     ) => {
-      await expect(listModelsForProvider(provider, cfg(''))).rejects.toThrow(errMsg)
+      await expect(listModelsForProvider(provider as 'anthropic' | 'openai' | 'deepseek', cfg(''))).rejects.toThrow(errMsg)
       const fetchMock = vi.fn(async () => jsonResponse({ data }))
       vi.stubGlobal('fetch', fetchMock)
-      const models = await listModelsForProvider(provider, cfg('key'))
-      expect(fetchMock.mock.calls[0][0]).toBe(url)
+      const models = await listModelsForProvider(provider as 'anthropic' | 'openai' | 'deepseek', cfg('key'))
+      expect(fetchMock).toHaveBeenCalledWith(url, expect.anything())
       if (provider === 'openai') {
         const ids = models.map((m) => m.id)
         expect(ids).toEqual(['gpt-4o-mini'])

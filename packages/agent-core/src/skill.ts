@@ -21,6 +21,12 @@ export interface AgentSkill {
    * their loops and stop promptly.
    */
   executeTool(call: AgentToolCall, signal?: AbortSignal): ToolExecution | Promise<ToolExecution>
+  /** Optional fast-path variants for simple generation (blank/small docs). */
+  fastSystemPrompt?: string
+  fastTools?: AgentToolDef[]
+  buildFastContext?(): string
+  /** Return true when this run's instruction qualifies for the fast path. */
+  isFastPath?(instruction: string): boolean
 }
 
 /**
@@ -35,6 +41,15 @@ export function composeSkills(id: string, intro: string, skills: AgentSkill[]): 
       owner.set(tool.name, skill)
     }
   }
+  // Fast owner also includes fastTools so executeTool can find insert_content in fast mode
+  const fastOwner = new Map<string, AgentSkill>()
+  for (const skill of skills) {
+    const fTools = skill.fastTools ?? skill.tools
+    for (const tool of fTools) {
+      if (!fastOwner.has(tool.name)) fastOwner.set(tool.name, skill)
+    }
+  }
+  const hasFast = skills.some((s) => s.fastSystemPrompt || s.fastTools || s.buildFastContext || s.isFastPath)
   return {
     id,
     systemPrompt: [intro, ...skills.map((s) => s.systemPrompt)].filter(Boolean).join('\n\n'),
@@ -45,11 +60,25 @@ export function composeSkills(id: string, intro: string, skills: AgentSkill[]): 
         .filter(Boolean)
         .join('\n\n'),
     executeTool: (call, signal) => {
-      const skill = owner.get(call.name)
+      const skill = owner.get(call.name) ?? fastOwner.get(call.name)
       if (!skill) {
         return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
       }
       return skill.executeTool(call, signal)
     },
+    ...(hasFast
+      ? {
+          fastSystemPrompt: [intro, ...skills.map((s) => s.fastSystemPrompt ?? s.systemPrompt)]
+            .filter(Boolean)
+            .join('\n\n'),
+          fastTools: skills.flatMap((s) => s.fastTools ?? s.tools),
+          buildFastContext: () =>
+            skills
+              .map((s) => (s.buildFastContext ? s.buildFastContext() : s.buildContext?.() ?? ''))
+              .filter(Boolean)
+              .join('\n\n'),
+          isFastPath: (instruction: string) => skills.some((s) => s.isFastPath?.(instruction) ?? false),
+        }
+      : {}),
   }
 }

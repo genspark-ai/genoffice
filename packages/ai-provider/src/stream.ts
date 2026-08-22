@@ -415,7 +415,8 @@ async function anthropicTurn(
       body: JSON.stringify({
         model: config.model,
         max_tokens: maxTokens,
-        system,
+        // Prompt-cache the system prompt (stable 9k/3.5k chars) so turn 2+ of same run reuses cached prefix.
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages: anthropicMessages(messages),
         ...(tools.length > 0
           ? {

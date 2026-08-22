@@ -442,7 +442,11 @@ describe('streamForProvider: gemini', () => {
   })
 
   it('sends Gemini-sanitized tool schemas (type unions collapsed, no additionalProperties)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream([])))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse(sseStream(['data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}'])),
+      )
     vi.stubGlobal('fetch', fetchMock)
     const { cb } = collector()
     await streamForProvider(
@@ -790,7 +794,14 @@ describe('streamForProvider: openai-compatible', () => {
   })
 
   it('routes openrouter to its fixed base URL', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse(
+        sseStream([
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+          'data: [DONE]',
+        ]),
+      ),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const { cb } = collector()
     await streamForProvider(
