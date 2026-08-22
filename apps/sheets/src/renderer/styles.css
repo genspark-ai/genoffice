@@ -4111,6 +4111,44 @@ textarea:focus {
   background: rgb(198 40 40 / 8%);
 }
 
+.ai-msg-truncated {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e0e0e0);
+  border-left: 3px solid #1a73e8;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-truncated-note {
+  color: var(--text-dim, #666);
+  line-height: 1.4;
+}
+
+.ai-truncated-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-msg-truncated .ai-continue-btn {
+  border: 1px solid var(--accent, #1a73e8);
+  border-radius: 6px;
+  background: var(--accent, #1a73e8);
+  padding: 4px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ai-msg-truncated .ai-continue-btn:hover {
+  filter: brightness(0.94);
+}
+
 .ai-login-btn {
   margin-top: 8px;
   border: 1px solid var(--accent, #1a73e8);

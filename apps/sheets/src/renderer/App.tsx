@@ -875,7 +875,32 @@ export function App(): React.JSX.Element {
             }
           })
         },
-        onDone: ({ text, cancelled, turnLimit }) => {
+        onDone: ({ text, cancelled, turnLimit, truncated }) => {
+          if (truncated) {
+            const proseTrunc =
+              text && text !== COMPLETED_VIA_TOOLS_TEXT
+                ? text
+                : runLastTextRef.current || text
+            const tText = proseTrunc || (runMutatedRef.current ? proseTrunc : '')
+            setMessage(tText)
+            patchLastAssistant((entry) => ({
+              ...entry,
+              text: tText || entry.text,
+              truncated: true,
+              streaming: false,
+              isError: false,
+              tools: entry.tools.filter((tl) => !tl.running),
+            }))
+            pendingResumeRef.current = {
+              toolResults: runToolsRef.current.length,
+              partialText: (tText || '').length > 0,
+            }
+            if (!cancelled && (tText || runToolsRef.current.length > 0)) {
+              persistChatMessage('assistant', tText || '', runToolsRef.current)
+            }
+            void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
+            return
+          }
           // Prefer tool summaries when the model finished via tools with no prose
           // (agent-core fills history with COMPLETED_VIA_TOOLS_TEXT so follow-ups
           // stay provider-safe; the UI can show the real work that ran).

@@ -148,6 +148,8 @@ export interface AiChatMessage {
   readonly interrupted?: boolean | undefined
   /** error text carried by an interrupted run (shown in the resume card) */
   readonly interruptedError?: string | undefined
+  /** the reply was cut off by the length limit (max_tokens) */
+  readonly truncated?: boolean | undefined
 }
 
 export function AiChatPanel({
@@ -534,6 +536,16 @@ export function AiChatPanel({
                         disabled={aiBusy}
                       >
                         {t('aiRetry')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {entry.truncated && (
+                  <div className="ai-msg-truncated">
+                    <span className="ai-truncated-note">{t('aiTruncatedNote')}</span>
+                    <div className="ai-truncated-actions">
+                      <button className="ai-continue-btn" onClick={onResume} disabled={aiBusy}>
+                        {t('aiContinue')}
                       </button>
                     </div>
                   </div>

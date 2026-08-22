@@ -138,6 +138,7 @@ export const AGENT_FAST_SYSTEM_PROMPT = [
   '',
   '# Tool usage',
   '- For new content generation, directly use insert_content with restricted HTML (no need to read the document first when it is blank);',
+  '- For long documents, split into several insert_content calls (e.g., per section) rather than one huge call to avoid length limits;',
   '- After modifications, always finish with a short plain-text summary.',
   '',
   '# HTML fragment rules',

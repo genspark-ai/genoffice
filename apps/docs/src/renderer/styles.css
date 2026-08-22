@@ -4881,6 +4881,44 @@ body.docs-crop-active
   background: rgba(0, 0, 0, 0.05);
 }
 
+.ai-msg-truncated {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #1a73e8;
+  border-radius: 6px;
+  background: var(--ai-tool-bg, rgba(0, 0, 0, 0.03));
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-truncated-note {
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.ai-truncated-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-msg-truncated .ai-continue-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-msg-truncated .ai-continue-btn:hover {
+  filter: brightness(0.94);
+}
+
 .ai-versions {
   border-top: 1px solid var(--border);
   padding: 8px 14px 10px;

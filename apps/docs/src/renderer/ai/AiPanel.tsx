@@ -75,6 +75,8 @@ interface ChatEntry {
   loginRequired?: boolean
   /** mid-run connectivity loss after tool work: the run paused and can be resumed */
   interrupted?: boolean
+  /** the reply was cut off by the length limit (max_tokens) and may be incomplete */
+  truncated?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
 }
@@ -591,9 +593,29 @@ export function AiPanel({
           const baseText = turnLimit
             ? [text, tModule('aiTurnLimit')].filter(Boolean).join('\n\n')
             : text || (cancelled ? tModule('aiStopped') : '')
-          const finalText = truncated
-            ? [baseText, tModule('aiTruncatedNote')].filter(Boolean).join('\n\n')
-            : baseText
+          if (truncated) {
+            const truncatedText = baseText || ''
+            patchLastAssistant((last) => ({
+              streaming: false,
+              turnLimit,
+              truncated: true,
+              text: truncatedText || (last.tools?.length ? last.text : tModule('aiNoReply')),
+              // A stop mid-tool can leave a running placeholder behind — drop it
+              tools: last.tools?.filter((tl) => !tl.running),
+            }))
+            // allow Continue to pick up the partial reply (same resume path as interrupted)
+            pendingResumeRef.current = {
+              toolResults: runToolsRef.current.length,
+              partialText: truncatedText.length > 0,
+            }
+            setBusy(false)
+            window.dispatchEvent(new Event('ai-docs-run-done'))
+            if (!cancelled && (truncatedText || runToolsRef.current.length > 0)) {
+              persistMessage('assistant', truncatedText, runToolsRef.current)
+            }
+            return
+          }
+          const finalText = baseText
           patchLastAssistant((last) => ({
             streaming: false,
             turnLimit,
@@ -1082,6 +1104,16 @@ export function AiPanel({
                         {t('aiRetry')}
                       </button>
                     )}
+                  </div>
+                </div>
+              )}
+              {entry.truncated && (
+                <div className="ai-msg-truncated">
+                  <div className="ai-truncated-note">{t('aiTruncatedNote')}</div>
+                  <div className="ai-truncated-actions">
+                    <button className="ai-continue-btn" onClick={continueRun} disabled={busy}>
+                      {t('aiContinue')}
+                    </button>
                   </div>
                 </div>
               )}
