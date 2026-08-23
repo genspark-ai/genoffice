@@ -67,7 +67,8 @@ register({
       }
       const textChild = child as TextElement
       if (!textChild.text) {
-        throw new GuidedError(`op "setText": group child "${id}" has no editable text body.`)
+        // Initialize an empty text body so the engine can inject <p:txBody>
+        textChild.text = { paragraphs: [], insets: { l: 0, t: 0, r: 0, b: 0 } }
       }
       const previousXml = patchSlideXml(slide)
       const before = plainText(textChild.text.paragraphs)
@@ -87,8 +88,10 @@ register({
     }
     const { el } = resolveElement(ctx, op, { types: ['text', 'shape'], allowPart: true })
     const te = el as TextElement
-    if (!te.text)
-      throw new GuidedError(`op "setText": element "${te.id}" has no editable text body.`)
+    if (!te.text) {
+      // Initialize an empty text body so the engine can inject <p:txBody>
+      te.text = { paragraphs: [], insets: { l: 0, t: 0, r: 0, b: 0 } }
+    }
     const previousXml = patchSlideXml(slide)
     const before = plainText(te.text.paragraphs)
     const levelDirty = levelsChanged(te.text.paragraphs, paragraphs)

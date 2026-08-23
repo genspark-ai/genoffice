@@ -1152,7 +1152,8 @@ export function normalizeColor(c: string): string {
 }
 
 export function isEditableText(node: RenderNode): node is ShapeRenderNode {
-  return (node.type === 'text' || node.type === 'shape') && !!(node as ShapeRenderNode).text
+  // Allow editing shapes without text body — the engine injects <p:txBody> on setText
+  return node.type === 'text' || node.type === 'shape'
 }
 
 /** Polyline smooth → Konva Line tension (0 = polyline, 0.4 ≈ PPT smooth curve). */
