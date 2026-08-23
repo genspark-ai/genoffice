@@ -89,12 +89,56 @@ const SPARSE_GAP_MAX_RATIO = 3.5
 /** an established run continues while the row-top pitch stays within this ratio */
 const PITCH_CONT_RATIO = 1.35
 
+/** key-value rows pair under this gap ceiling (× row height) — report sheets
+ * ("Credit Limit — ₹26,74,354") space label/value rows far beyond running-
+ * text leading, and none of the strong-row rules (≥5 units) reach them */
+const KV_GAP_MAX_RATIO = 4
+/** …but only when every inter-unit gutter is at least this wide (ems): the
+ * wide gutter is what separates a label/value pair from a numbered-list or
+ * caption row, whose units sit a word-space apart */
+const KV_MIN_UNIT_GAP_EMS = 2.5
+
+/** a column of self-describing 'Label: value' cells needs this share of
+ * colon-led entries to bypass the alignment gate (indented sub-labels drift
+ * a KV grid's x edges; prose columns never look like this) */
+const KV_COLUMN_MIN_SHARE = 0.6
+
+/** share of a column's entries that read as 'Label: value' cells */
+function kvColumnShare(cand: Candidate, col: number): number {
+  let n = 0
+  let kv = 0
+  for (const row of cand.entries) {
+    const e = row[col]
+    if (!e) continue
+    n++
+    const text = e.units
+      .map((u) => u.chars.map((c) => c.text).join(''))
+      .join(' ')
+      .trim()
+    if (/^[^:：]{1,40}[:：]/.test(text)) kv++
+  }
+  return n > 0 ? kv / n : 0
+}
+
+/** a 2+-unit row whose units are separated by wide gutters (label ⟷ value) */
+function isKeyValueRow(row: UnitRow): boolean {
+  if (row.units.length < STREAM_MIN_COLS) return false
+  const sorted = [...row.units].sort((a, b) => a.box.x0 - b.box.x0)
+  let minGap = Infinity
+  for (let i = 1; i < sorted.length; i++) {
+    minGap = Math.min(minGap, sorted[i]!.box.x0 - sorted[i - 1]!.box.x1)
+  }
+  const em = median(row.units.map((u) => u.fontSize)) || 12
+  return minGap >= KV_MIN_UNIT_GAP_EMS * em
+}
+
 /** consecutive multi-unit rows (vertical gaps within reason) form candidates */
 function findCandidates(
   rows: UnitRow[],
   absorbNarrowRows = false,
   maxRowGapRatio = ROW_GAP_MAX_RATIO,
   strongRunsOnly = false,
+  relaxKeyValue = false,
 ): UnitRow[][] {
   const runs: UnitRow[][] = []
   let run: UnitRow[] = []
@@ -122,6 +166,11 @@ function findCandidates(
       // tabular rows still pair up under a wider ceiling…
       if (!gapOk && row.units.length >= SPARSE_MIN_UNITS && prev.units.length >= SPARSE_MIN_UNITS) {
         gapOk = gap <= SPARSE_GAP_MAX_RATIO * refH
+      }
+      // key-value report sheets (cell-data mode): consecutive wide-gutter
+      // label/value rows pair up under their own relaxed ceiling
+      if (!gapOk && relaxKeyValue && isKeyValueRow(row) && isKeyValueRow(prev)) {
+        gapOk = gap <= KV_GAP_MAX_RATIO * refH
       }
       // …and an established STRONG run keeps going while the row-top pitch
       // stays steady (wrapped-label rows sit between value rows at the same
@@ -169,7 +218,12 @@ const RUN_SPLIT_MAX_DEPTH = 2
  * Splitting at the widest row gap recovers each table separately. Absorbed
  * sub-minimum rows never lead or trail a piece.
  */
-function collectCandidates(run: UnitRow[], out: Candidate[], depth: number): void {
+function collectCandidates(
+  run: UnitRow[],
+  out: Candidate[],
+  depth: number,
+  alignSplitRetry = false,
+): void {
   let lo = 0
   let hi = run.length
   while (lo < hi && run[lo]!.units.length < STREAM_MIN_COLS) lo++
@@ -178,8 +232,23 @@ function collectCandidates(run: UnitRow[], out: Candidate[], depth: number): voi
   if (piece.length < STREAM_MIN_ROWS) return
   const cand = solveColumns(piece)
   if (cand) {
-    out.push(cand)
-    return
+    // cell-data only: a run gluing a real table to a prose/totals section
+    // solves columns but fails the alignment gate downstream — give it the
+    // same widest-gap split retry as an unsolvable run, so the table half
+    // survives alone (docx keeps the flow layout until visually verified)
+    const minAlign =
+      alignSplitRetry &&
+      !cand.columns.every((_, c) => kvColumnShare(cand, c) >= KV_COLUMN_MIN_SHARE)
+        ? Math.min(...cand.columns.map((_, c) => columnAlignRatio(cand, c)))
+        : 1
+    if (
+      minAlign >= COL_ALIGN_MIN_ROW_RATIO ||
+      depth >= RUN_SPLIT_MAX_DEPTH ||
+      piece.length < 2 * STREAM_MIN_ROWS
+    ) {
+      out.push(cand)
+      return
+    }
   }
   if (depth >= RUN_SPLIT_MAX_DEPTH || piece.length < 2 * STREAM_MIN_ROWS) return
   let cut = -1
@@ -192,8 +261,8 @@ function collectCandidates(run: UnitRow[], out: Candidate[], depth: number): voi
     }
   }
   if (cut <= 0) return
-  collectCandidates(piece.slice(0, cut), out, depth + 1)
-  collectCandidates(piece.slice(cut), out, depth + 1)
+  collectCandidates(piece.slice(0, cut), out, depth + 1, alignSplitRetry)
+  collectCandidates(piece.slice(cut), out, depth + 1, alignSplitRetry)
 }
 
 /** solve a candidate's columns by x-projection; null when under 2 survive */
@@ -543,6 +612,7 @@ export function detectStreamTables(
   const base = detectPass(units, shapes, latticeBoxes, {
     absorbNarrowRows: true,
     strongRunsOnly: true,
+    relaxKeyValue: opts.relaxKeyValue,
   })
   if (!opts.slideRegions) return base
 
@@ -562,6 +632,8 @@ export function detectStreamTables(
 export interface StreamOptions {
   /** landscape slide: rerun over vast-valley regions with strong-grid gates (P16 E) */
   slideRegions?: boolean
+  /** cell-data mode: pair wide-gutter key-value rows across generous leading */
+  relaxKeyValue?: boolean
 }
 
 interface PassOptions {
@@ -574,6 +646,8 @@ interface PassOptions {
   maxRowGapRatio?: number
   /** restrict absorption to strong (many-unit) runs — base pass only (P27) */
   strongRunsOnly?: boolean
+  /** see StreamOptions.relaxKeyValue */
+  relaxKeyValue?: boolean
 }
 
 /** slide-region row-gap tolerance (see PassOptions.maxRowGapRatio) */
@@ -646,8 +720,9 @@ function detectPass(
     o.absorbNarrowRows === true,
     o.maxRowGapRatio,
     o.strongRunsOnly === true,
+    o.relaxKeyValue === true,
   )) {
-    collectCandidates(run, cands, 0)
+    collectCandidates(run, cands, 0, o.relaxKeyValue === true)
   }
   for (const cand of cands) {
     if (latticeBoxes.some((b) => intersectArea(cand.box, b) > 0)) continue
@@ -660,7 +735,14 @@ function detectPass(
 
     const alignRatios = cand.columns.map((_, c) => columnAlignRatio(cand, c))
     const minAlign = Math.min(...alignRatios)
-    if (minAlign < COL_ALIGN_MIN_ROW_RATIO) continue
+    // cell-data KV grids: 'Label: value' cells are self-describing — the
+    // drifting indents of sub-labels must not veto the whole grid, and the
+    // confidence formula treats the waived alignment as at-threshold
+    const kvGrid =
+      minAlign < COL_ALIGN_MIN_ROW_RATIO &&
+      o.relaxKeyValue === true &&
+      cand.columns.every((_, c) => kvColumnShare(cand, c) >= KV_COLUMN_MIN_SHARE)
+    if (minAlign < COL_ALIGN_MIN_ROW_RATIO && !kvGrid) continue
 
     const entryWidths: number[] = []
     for (const row of cand.entries) {
@@ -673,7 +755,11 @@ function detectPass(
     if (isPageColumns(cand, units.length)) continue
 
     const evidence = findEvidence(cand, shapes)
-    const confidence = confidenceOf(cand, minAlign, evidence)
+    const confidence = confidenceOf(
+      cand,
+      kvGrid ? Math.max(minAlign, COL_ALIGN_MIN_ROW_RATIO) : minAlign,
+      evidence,
+    )
     if (confidence < STREAM_CONF_MIN) continue
 
     // side-by-side stanzas (P22 E): the row-clustered cell assignment

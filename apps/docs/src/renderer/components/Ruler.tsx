@@ -45,25 +45,30 @@ export function Ruler({
     clear: 'appTabBar',
   }
 
-  // Get current tab stops from focused paragraph
-  const currentTabStops = (): TabStop[] => {
-    if (!editor) return []
+  // Get current tab stops from focused paragraph. rel stops mirror w:ptab
+  // (percent positions): not draggable ruler stops, but every write-back must
+  // carry them or a ruler edit silently drops the paragraph's ptab layout.
+  const currentTabStops = (): { stops: TabStop[]; relStops: TabStop[] } => {
+    if (!editor) return { stops: [], relStops: [] }
     const attrs = editor.isActive('docHeading')
       ? editor.getAttributes('docHeading')
       : editor.isActive('docListItem')
         ? editor.getAttributes('docListItem')
         : editor.getAttributes('docParagraph')
     const raw = attrs?.tabStops as string | null
-    if (!raw) return []
+    if (!raw) return { stops: [], relStops: [] }
     try {
       const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
+      if (!Array.isArray(parsed)) return { stops: [], relStops: [] }
+      return { stops: parsed.filter((s) => !s.rel), relStops: parsed.filter((s) => s.rel) }
     } catch {
-      return []
+      return { stops: [], relStops: [] }
     }
   }
 
-  const stops = currentTabStops()
+  const { stops, relStops } = currentTabStops()
+  const withRel = (edited: TabStop[]): TabStop[] | null =>
+    edited.length > 0 || relStops.length > 0 ? [...edited, ...relStops] : null
 
   // Drag state
   const dragRef = useRef<{ stopIndex: number; startX: number; origPos: number } | null>(null)
@@ -79,7 +84,7 @@ export function Ruler({
     const existing = stops.filter((s) => Math.abs(s.pos - snapped) > 60)
     const newStop: TabStop = { pos: snapped, val: nextTabType }
     const newStops = [...existing, newStop].sort((a, b) => a.pos - b.pos)
-    onTabStopsChange(newStops.length > 0 ? newStops : null)
+    onTabStopsChange(withRel(newStops))
   }
 
   // Drag tab stop to new position or drop outside to delete
@@ -109,14 +114,14 @@ export function Ruler({
       // drop outside the content area: delete the stop
       if (x < marginLeft || x > width - marginRight) {
         const newStops = stops.filter((_, i) => i !== dragRef.current!.stopIndex)
-        onTabStopsChange(newStops.length > 0 ? newStops : null)
+        onTabStopsChange(withRel(newStops))
       } else {
         const posTwips = Math.round((x / width) * section.pageWidth)
         const snapped = Math.round(posTwips / 60) * 60
         const newStops = stops
           .map((s, i) => (i === dragRef.current!.stopIndex ? { ...s, pos: snapped } : s))
           .sort((a, b) => a.pos - b.pos)
-        onTabStopsChange(newStops)
+        onTabStopsChange(withRel(newStops))
       }
       dragRef.current = null
     }

@@ -75,7 +75,9 @@ const DOUBLE_DRAW_MIN_BOX_OVERLAP = 0.5
 const LIGATURE_BOX_EPSILON = 0.05
 
 /** adjacent chars carrying the exact same glyph box are one ligature glyph
- * ('tt', 'ff') expanded through ToUnicode — not a double draw */
+ * ('tt', 'ff') expanded through ToUnicode — not a double draw. A ligature
+ * expands within ONE text object; the same box across two objects is the
+ * string drawn twice ("بطاقة" doubling to "ببططااققةة") and must dedupe. */
 function isLigatureExpansionPair(
   ia: number,
   ib: number,
@@ -83,6 +85,8 @@ function isLigatureExpansionPair(
   b: ExtractedPage['chars'][number],
 ): boolean {
   if (Math.abs(ia - ib) !== 1) return false
+  if (a.textObjId !== undefined && b.textObjId !== undefined && a.textObjId !== b.textObjId)
+    return false
   return (
     Math.abs(a.box.x0 - b.box.x0) <= LIGATURE_BOX_EPSILON &&
     Math.abs(a.box.x1 - b.box.x1) <= LIGATURE_BOX_EPSILON &&
@@ -200,4 +204,40 @@ export function analyzeChars(chars: ExtractedPage['chars']): Line[] {
     })
   }
   return lines
+}
+
+// ── CJK dash normalization (P31 D) ──
+// Word gives U+2014 EM DASH no line-break opportunity against adjacent CJK
+// text (verified empirically: a dash-ended line leaves 90pt unused while the
+// U+2015 HORIZONTAL BAR — the canonical CJK dash glyph — wraps normally).
+// It also renders in the LATIN font slot at ~0.64 em where the source drew a
+// fullwidth dash. Dash runs touching CJK on either side fold to U+2015.
+
+const isCjkDashNeighbor = (code: number): boolean =>
+  (code >= 0x1100 && code <= 0x115f) || // hangul jamo
+  (code >= 0x2e80 && code <= 0x9fff) ||
+  (code >= 0x3000 && code <= 0x303f) ||
+  (code >= 0xac00 && code <= 0xd7a3) || // hangul syllables
+  (code >= 0xf900 && code <= 0xfaff) ||
+  (code >= 0xff00 && code <= 0xff60)
+
+/** fold U+2014 runs adjacent to CJK into U+2015, in place */
+export function normalizeCjkDashes(chars: ExtractedPage['chars']): void {
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i]!.code !== 0x2014) continue
+    let end = i
+    while (end + 1 < chars.length && chars[end + 1]!.code === 0x2014) end++
+    const prev = chars[i - 1]
+    const next = chars[end + 1]
+    if (
+      (prev !== undefined && isCjkDashNeighbor(prev.code)) ||
+      (next !== undefined && isCjkDashNeighbor(next.code))
+    ) {
+      for (let k = i; k <= end; k++) {
+        chars[k]!.code = 0x2015
+        chars[k]!.text = '―'
+      }
+    }
+    i = end
+  }
 }

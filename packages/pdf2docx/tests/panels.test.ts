@@ -1,6 +1,6 @@
 /** Side-by-side lattice panel merge (P28): hand-built tables, no wasm. */
 import { describe, expect, it } from 'vitest'
-import { mergeSideBySidePanels } from '../src/analyze/panels'
+import { mergeSideBySidePanels, rowBoundaries } from '../src/analyze/panels'
 import type { Rect } from '../src/geometry'
 import type { TableBlock, TableCellBlock } from '../src/ir'
 
@@ -99,5 +99,47 @@ describe('mergeSideBySidePanels row-height safety', () => {
     const { tables, notes } = mergeSideBySidePanels([a, b])
     expect(tables).toHaveLength(2)
     expect(notes).toHaveLength(0)
+  })
+})
+
+describe('rowBoundaries deep-merge recovery', () => {
+  it('recovers boundaries when whole rows are covered by merges', () => {
+    // 3 cols × 4 rows; col 0 = one cell spanning all rows; col 1 = one cell
+    // spanning rows 1-3 → rows 2 and 3 have nothing starting in them beyond
+    // col 2's cells, and row 2's col-2 cell also spans into row 3
+    const mk = (
+      x0: number,
+      x1: number,
+      y0: number,
+      y1: number,
+      vm?: 'restart' | 'continue',
+    ): TableCellBlock => ({
+      box: { x0, x1, y0, y1 },
+      gridSpan: 1,
+      blocks: [],
+      ...(vm ? { vMerge: vm } : {}),
+    })
+    const t: TableBlock = {
+      kind: 'table',
+      box: { x0: 0, x1: 300, y0: 0, y1: 400 },
+      colWidthsPt: [100, 100, 100],
+      rows: [
+        [mk(0, 100, 0, 400, 'restart'), mk(100, 200, 300, 400), mk(200, 300, 300, 400)],
+        [mk(0, 100, 0, 400, 'continue'), mk(100, 200, 0, 300, 'restart'), mk(200, 300, 200, 300)],
+        [
+          mk(0, 100, 0, 400, 'continue'),
+          mk(100, 200, 0, 300, 'continue'),
+          mk(200, 300, 0, 200, 'restart'),
+        ],
+        [
+          mk(0, 100, 0, 400, 'continue'),
+          mk(100, 200, 0, 300, 'continue'),
+          mk(200, 300, 0, 200, 'continue'),
+        ],
+      ],
+    }
+    const ys = rowBoundaries(t)
+    expect(ys).not.toBeNull()
+    expect(ys!.map(Math.round)).toEqual([400, 300, 200, 100, 0])
   })
 })

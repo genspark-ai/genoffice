@@ -480,6 +480,95 @@ describe('AgentLoop', () => {
     ])
   })
 
+  it('retries the turn in place on an empty-stream error, then succeeds', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = scriptedTransport([
+        (cb) => cb.onError('Claude returned no content (empty stream)'),
+        (cb) => {
+          cb.onDelta('recovered answer')
+          cb.onDone()
+        },
+      ])
+      const onError = vi.fn()
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError, onDone } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(transport.requests).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(transport.requests).toHaveLength(2)
+      // the replayed request is identical: history untouched by the failed attempt
+      expect(transport.requests[1].messageCount).toBe(transport.requests[0].messageCount)
+      expect(onError).not.toHaveBeenCalled()
+      expect(onDone).toHaveBeenCalledWith({
+        text: 'recovered answer',
+        cancelled: false,
+        turnLimit: false,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('empty-stream retries exhaust after the backoff schedule and fail the run', async () => {
+    vi.useFakeTimers()
+    try {
+      const emptyErr = (cb: AgentStreamCallbacks) =>
+        cb.onError('Claude returned no content (empty stream)')
+      const transport = scriptedTransport([emptyErr, emptyErr, emptyErr])
+      const onError = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(transport.requests).toHaveLength(3)
+      expect(onError).toHaveBeenCalledWith('Claude returned no content (empty stream)')
+      expect(loop.messages).toHaveLength(0)
+      expect(loop.busy).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry an empty-stream error arriving after partial output', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onDelta('partial')
+        cb.onError('Claude returned no content (empty stream)')
+      },
+    ])
+    const onError = vi.fn()
+    const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError } })
+    loop.run('question')
+    await flush()
+    expect(transport.requests).toHaveLength(1)
+    expect(onError).toHaveBeenCalledWith('Claude returned no content (empty stream)')
+  })
+
+  it('a stop during the retry backoff finalizes as a cancel', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = scriptedTransport([
+        (cb) => cb.onError('Claude returned no content (empty stream)'),
+      ])
+      const onError = vi.fn()
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError, onDone } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      loop.cancel()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(transport.requests).toHaveLength(1)
+      expect(onError).not.toHaveBeenCalled()
+      expect(onDone).toHaveBeenCalledWith({ text: '', cancelled: true, turnLimit: false })
+      expect(loop.busy).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('restore drops unanswered user messages (trailing and adjacent)', () => {
     const transport = scriptedTransport([])
     const loop = new AgentLoop({ transport, skill: makeSkill() })

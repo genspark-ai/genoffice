@@ -7,8 +7,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zip::ZipArchive;
@@ -91,6 +91,10 @@ pub struct SheetMetadata {
     pub source_xml_bytes: u64,
     pub column_widths: Vec<ColumnWidth>,
     pub default_row_height: Option<f64>,
+    /// sheetFormatPr/@customHeight: the default row height is user-fixed, so
+    /// Excel keeps wrap rows without their own ht at the default (clipped)
+    /// instead of auto-fitting them on open.
+    pub default_row_height_fixed: bool,
     pub default_column_width: Option<f64>,
     pub freeze: Option<FreezePane>,
     pub hidden: bool,
@@ -263,7 +267,8 @@ pub struct TableInfo {
     /// Style frame color (outline + header rule) for border-drawn families.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border_color: Option<String>,
-    /// Custom-style wholeTable borders: outline + inner grid + header rule.
+    /// wholeTable borders (custom-style dxfs and the gridded builtin Light
+    /// 15-21 block): outline + inner grid + header rule.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub whole_table_border_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -332,10 +337,14 @@ pub struct CellRange {
 impl CellRange {
     fn validate(&self, sheet: &SheetMetadata) -> Result<(), SidecarError> {
         if self.start_row > self.end_row || self.start_column > self.end_column {
-            return Err(SidecarError::InvalidRequest("Range boundaries are reversed.".into()));
+            return Err(SidecarError::InvalidRequest(
+                "Range boundaries are reversed.".into(),
+            ));
         }
         if self.end_row >= sheet.row_count || self.end_column >= sheet.column_count {
-            return Err(SidecarError::InvalidRequest("Range is outside the worksheet.".into()));
+            return Err(SidecarError::InvalidRequest(
+                "Range is outside the worksheet.".into(),
+            ));
         }
         let row_count = self.end_row - self.start_row + 1;
         let column_count = self.end_column - self.start_column + 1;
@@ -387,6 +396,9 @@ pub struct RichRun {
     pub size: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
+    /// "subscript" | "superscript" (rPr <vertAlign val>).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vert_align: Option<String>,
 }
 
 #[derive(Debug)]
@@ -572,7 +584,8 @@ impl WorkbookSessions {
         let mut archive = ZipArchive::new(file)?;
         validate_archive(&mut archive)?;
         let entry_count = archive.len();
-        let color_context = visuals::read_theme_palette(&mut archive)?;
+        let mut color_context = visuals::read_theme_palette(&mut archive)?;
+        visuals::read_indexed_palette(&mut archive, &mut color_context)?;
         let theme_colors = color_context.palette_hex();
         let theme_fonts = visuals::read_theme_fonts(&mut archive)?;
         let shared_strings = Arc::new(read_shared_strings(&mut archive, &color_context)?);
@@ -592,12 +605,14 @@ impl WorkbookSessions {
         let mut visual_sources = Vec::with_capacity(declarations.len());
 
         for declaration in declarations {
-            let target = relationships.get(&declaration.relationship_id).ok_or_else(|| {
-                SidecarError::Workbook(format!(
-                    "Missing worksheet relationship {}.",
-                    declaration.relationship_id
-                ))
-            })?;
+            let target = relationships
+                .get(&declaration.relationship_id)
+                .ok_or_else(|| {
+                    SidecarError::Workbook(format!(
+                        "Missing worksheet relationship {}.",
+                        declaration.relationship_id
+                    ))
+                })?;
             let worksheet_path = normalize_worksheet_path(target)?;
             let source_xml_bytes = zip_entry(&mut archive, &worksheet_path)?.size();
             let dimensions = read_sheet_dimensions(&mut archive, &worksheet_path, &color_context)?;
@@ -647,8 +662,7 @@ impl WorkbookSessions {
             // A table may extend past the last written cell (a header-only
             // sheet whose table spans empty data rows); its banding and
             // frame still render there, so the grid must reach it.
-            let (mut row_count, mut column_count) =
-                (dimensions.row_count, dimensions.column_count);
+            let (mut row_count, mut column_count) = (dimensions.row_count, dimensions.column_count);
             for table in &tables {
                 row_count = row_count.max(table.range.end_row + 1);
                 column_count = column_count.max(table.range.end_column + 1);
@@ -661,6 +675,7 @@ impl WorkbookSessions {
                 source_xml_bytes,
                 column_widths: dimensions.column_widths,
                 default_row_height: dimensions.default_row_height,
+                default_row_height_fixed: dimensions.default_row_height_fixed,
                 default_column_width: dimensions.default_column_width,
                 freeze: dimensions.freeze,
                 hidden: declaration.hidden,
@@ -700,8 +715,7 @@ impl WorkbookSessions {
         let defined_names = read_defined_names(&mut archive)?;
 
         let session_id = Uuid::new_v4().to_string();
-        let cache_directory =
-            std::env::temp_dir().join(format!("genspark-ai-excel-{session_id}"));
+        let cache_directory = std::env::temp_dir().join(format!("genspark-ai-excel-{session_id}"));
         fs::create_dir(&cache_directory)?;
         let name = canonical_path
             .file_name()
@@ -906,7 +920,9 @@ impl WorkbookSession {
                 .wait_timeout_while(index, RANGE_WAIT, |current| {
                     current.error.is_none()
                         && !current.complete
-                        && current.indexed_through_row.is_none_or(|row| row < range.end_row)
+                        && current
+                            .indexed_through_row
+                            .is_none_or(|row| row < range.end_row)
                 })
                 .map_err(|_| SidecarError::Io("Worksheet index wait failed.".into()))?
                 .0
@@ -1121,7 +1137,15 @@ fn validate_archive(archive: &mut ZipArchive<File>) -> Result<(), SidecarError> 
 
 fn read_sheet_declarations(
     archive: &mut ZipArchive<File>,
-) -> Result<(Vec<SheetDeclaration>, Option<WorkbookProtectionInfo>, usize, bool), SidecarError> {
+) -> Result<
+    (
+        Vec<SheetDeclaration>,
+        Option<WorkbookProtectionInfo>,
+        usize,
+        bool,
+    ),
+    SidecarError,
+> {
     let xml = read_zip_string(archive, "xl/workbook.xml")?;
     let mut reader = Reader::from_str(&xml);
     let mut sheets = Vec::new();
@@ -1148,9 +1172,9 @@ fn read_sheet_declarations(
             {
                 let lock_structure = attribute_value(&reader, &element, b"lockStructure")?
                     .is_some_and(|value| value == "1" || value == "true");
-                let has_password =
-                    attribute_value(&reader, &element, b"workbookPassword")?.is_some()
-                        || attribute_value(&reader, &element, b"workbookHashValue")?.is_some();
+                let has_password = attribute_value(&reader, &element, b"workbookPassword")?
+                    .is_some()
+                    || attribute_value(&reader, &element, b"workbookHashValue")?.is_some();
                 protection = Some(WorkbookProtectionInfo {
                     lock_structure,
                     has_password,
@@ -1163,8 +1187,10 @@ fn read_sheet_declarations(
                     .ok_or_else(|| SidecarError::Workbook("Sheet has no name.".into()))?;
                 let sheet_id = attribute_value(&reader, &element, b"sheetId")?
                     .ok_or_else(|| SidecarError::Workbook("Sheet has no sheetId.".into()))?;
-                let relationship_id = attribute_value(&reader, &element, b"id")?
-                    .ok_or_else(|| SidecarError::Workbook("Sheet has no relationship id.".into()))?;
+                let relationship_id =
+                    attribute_value(&reader, &element, b"id")?.ok_or_else(|| {
+                        SidecarError::Workbook("Sheet has no relationship id.".into())
+                    })?;
                 let hidden = matches!(
                     attribute_value(&reader, &element, b"state")?.as_deref(),
                     Some("hidden") | Some("veryHidden")
@@ -1240,6 +1266,7 @@ struct SheetDimensions {
     column_count: usize,
     column_widths: Vec<ColumnWidth>,
     default_row_height: Option<f64>,
+    default_row_height_fixed: bool,
     default_column_width: Option<f64>,
     freeze: Option<FreezePane>,
     tab_color: Option<String>,
@@ -1265,6 +1292,7 @@ fn read_sheet_dimensions(
     let mut dimensions = None;
     let mut column_widths = Vec::new();
     let mut default_row_height = None;
+    let mut default_row_height_fixed = false;
     let mut default_column_width = None;
     let mut freeze = None;
     let mut tab_color = None;
@@ -1314,6 +1342,10 @@ fn read_sheet_dimensions(
                 default_row_height = attribute_value(&reader, &element, b"defaultRowHeight")?
                     .and_then(|value| value.parse::<f64>().ok())
                     .filter(|value| *value > 0.0);
+                default_row_height_fixed = matches!(
+                    attribute_value(&reader, &element, b"customHeight")?.as_deref(),
+                    Some("1") | Some("true")
+                );
                 default_column_width = attribute_value(&reader, &element, b"defaultColWidth")?
                     .and_then(|value| value.parse::<f64>().ok())
                     .filter(|value| *value > 0.0);
@@ -1393,6 +1425,7 @@ fn read_sheet_dimensions(
                     column_count,
                     column_widths,
                     default_row_height,
+                    default_row_height_fixed,
                     default_column_width,
                     freeze,
                     tab_color,
@@ -1435,6 +1468,7 @@ fn read_sheet_dimensions(
                     column_count,
                     column_widths,
                     default_row_height,
+                    default_row_height_fixed,
                     default_column_width,
                     freeze,
                     tab_color,
@@ -1532,9 +1566,15 @@ fn read_shared_strings(
                 }
             }
             Event::End(element) if element.local_name().as_ref() == b"si" => {
+                let mut finished = std::mem::take(&mut runs);
+                for run in &mut finished {
+                    normalize_line_endings(&mut run.text);
+                }
+                let mut text = current.clone();
+                normalize_line_endings(&mut text);
                 strings.push(SharedString {
-                    text: current.clone(),
-                    runs: qualify_runs(std::mem::take(&mut runs)),
+                    text,
+                    runs: qualify_runs(finished),
                 });
             }
             Event::Eof => break,
@@ -1553,13 +1593,14 @@ fn has_run_formatting(run: &RichRun) -> bool {
         || run.color.is_some()
         || run.size.is_some()
         || run.family.is_some()
+        || run.vert_align.is_some()
 }
 
 fn qualify_runs(runs: Vec<RichRun>) -> Option<Vec<RichRun>> {
     (runs.len() > 1 || runs.iter().any(has_run_formatting)).then_some(runs)
 }
 
-/// Applies one rPr child element (b/i/u/strike/sz/rFont/color) to a run.
+/// Applies one rPr child element (b/i/u/strike/sz/rFont/color/vertAlign) to a run.
 fn apply_run_property<R: std::io::BufRead>(
     run: &mut RichRun,
     reader: &Reader<R>,
@@ -1573,8 +1614,7 @@ fn apply_run_property<R: std::io::BufRead>(
         b"b" => run.bold = flag_on(attribute_value(reader, element, b"val")?),
         b"i" => run.italic = flag_on(attribute_value(reader, element, b"val")?),
         b"u" => {
-            run.underline =
-                attribute_value(reader, element, b"val")?.as_deref() != Some("none");
+            run.underline = attribute_value(reader, element, b"val")?.as_deref() != Some("none");
         }
         b"strike" => run.strikethrough = flag_on(attribute_value(reader, element, b"val")?),
         b"sz" => {
@@ -1582,6 +1622,10 @@ fn apply_run_property<R: std::io::BufRead>(
                 .and_then(|value| value.parse::<f64>().ok());
         }
         b"rFont" => run.family = attribute_value(reader, element, b"val")?,
+        b"vertAlign" => {
+            run.vert_align = attribute_value(reader, element, b"val")?
+                .filter(|value| value == "subscript" || value == "superscript");
+        }
         b"color" => {
             run.color = visuals::resolve_color(
                 attribute_value(reader, element, b"rgb")?.as_deref(),
@@ -1730,10 +1774,9 @@ fn index_worksheet(
             Event::Empty(element) if element.local_name().as_ref() == b"f" => {
                 // Self-closing shared-formula follower (<f t="shared" si="N"/>):
                 // inherit the master's formula shifted by the cell offset (#165).
-                if let (Some(si), Some(builder)) = (
-                    shared_formula_si(&reader, &element)?,
-                    cell_builder.as_mut(),
-                ) {
+                if let (Some(si), Some(builder)) =
+                    (shared_formula_si(&reader, &element)?, cell_builder.as_mut())
+                {
                     if let Some(formula) = shared_formulas.expand(si, builder.row, builder.column) {
                         builder.formula = formula;
                     }
@@ -1796,9 +1839,8 @@ fn index_worksheet(
                         }
                     }
                 } else if in_cf_formula {
-                    if let Some(formula) = cf_rule
-                        .as_mut()
-                        .and_then(|rule| rule.formulas.last_mut())
+                    if let Some(formula) =
+                        cf_rule.as_mut().and_then(|rule| rule.formulas.last_mut())
                     {
                         formula.push_str(&decoded);
                     }
@@ -1807,9 +1849,8 @@ fn index_worksheet(
                         .get_or_insert_with(String::new)
                         .push_str(&decoded);
                 } else if in_dv_formula {
-                    if let Some(formula) = dv_rule
-                        .as_mut()
-                        .and_then(|rule| rule.formulas.last_mut())
+                    if let Some(formula) =
+                        dv_rule.as_mut().and_then(|rule| rule.formulas.last_mut())
                     {
                         formula.push_str(&decoded);
                     }
@@ -1829,16 +1870,14 @@ fn index_worksheet(
                         }
                     }
                 } else if in_cf_formula {
-                    if let Some(formula) = cf_rule
-                        .as_mut()
-                        .and_then(|rule| rule.formulas.last_mut())
+                    if let Some(formula) =
+                        cf_rule.as_mut().and_then(|rule| rule.formulas.last_mut())
                     {
                         formula.push_str(&decoded);
                     }
                 } else if in_dv_formula {
-                    if let Some(formula) = dv_rule
-                        .as_mut()
-                        .and_then(|rule| rule.formulas.last_mut())
+                    if let Some(formula) =
+                        dv_rule.as_mut().and_then(|rule| rule.formulas.last_mut())
                     {
                         formula.push_str(&decoded);
                     }
@@ -1948,8 +1987,7 @@ fn index_worksheet(
                 in_col_breaks = false;
             }
             Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"brk"
-                    && (in_row_breaks || in_col_breaks) =>
+                if element.local_name().as_ref() == b"brk" && (in_row_breaks || in_col_breaks) =>
             {
                 // Only manual breaks: Excel also caches automatic ones when
                 // printer metrics are embedded, which we recompute instead.
@@ -1976,8 +2014,7 @@ fn index_worksheet(
                 ) {
                     // securityDescriptor carries per-user permissions the
                     // rewrite cannot preserve — treat like a password.
-                    let has_password = attribute_value(&reader, &element, b"password")?
-                        .is_some()
+                    let has_password = attribute_value(&reader, &element, b"password")?.is_some()
                         || attribute_value(&reader, &element, b"hashValue")?.is_some()
                         || attribute_value(&reader, &element, b"securityDescriptor")?.is_some();
                     protected_ranges.push(ProtectedRangeInfo {
@@ -1996,21 +2033,16 @@ fn index_worksheet(
                     range.has_password = true;
                 }
             }
-            Event::Start(element)
-                if element.local_name().as_ref() == b"dataValidation" =>
-            {
+            Event::Start(element) if element.local_name().as_ref() == b"dataValidation" => {
                 dv_rule = parse_dv_rule(&reader, &element)?;
             }
-            Event::Empty(element)
-                if element.local_name().as_ref() == b"dataValidation" =>
-            {
+            Event::Empty(element) if element.local_name().as_ref() == b"dataValidation" => {
                 if let Some(rule) = parse_dv_rule(&reader, &element)? {
                     data_validations.push(rule);
                 }
             }
             Event::Start(element)
-                if element.local_name().as_ref().starts_with(b"formula")
-                    && dv_rule.is_some() =>
+                if element.local_name().as_ref().starts_with(b"formula") && dv_rule.is_some() =>
             {
                 in_dv_formula = true;
                 if let Some(rule) = &mut dv_rule {
@@ -2018,8 +2050,7 @@ fn index_worksheet(
                 }
             }
             Event::End(element)
-                if element.local_name().as_ref().starts_with(b"formula")
-                    && dv_rule.is_some() =>
+                if element.local_name().as_ref().starts_with(b"formula") && dv_rule.is_some() =>
             {
                 in_dv_formula = false;
             }
@@ -2269,8 +2300,7 @@ fn parse_dv_rule<R: std::io::BufRead>(
     };
     Ok(Some(DataValidationRule {
         ranges,
-        rule_type: attribute_value(reader, element, b"type")?
-            .unwrap_or_else(|| "none".into()),
+        rule_type: attribute_value(reader, element, b"type")?.unwrap_or_else(|| "none".into()),
         operator: attribute_value(reader, element, b"operator")?,
         formulas: Vec::new(),
         allow_blank: flag(b"allowBlank")?,
@@ -2292,8 +2322,7 @@ fn parse_cf_rule<R: std::io::BufRead>(
 ) -> Result<ConditionalRule, SidecarError> {
     Ok(ConditionalRule {
         ranges: ranges.to_vec(),
-        rule_type: attribute_value(reader, element, b"type")?
-            .unwrap_or_else(|| "unknown".into()),
+        rule_type: attribute_value(reader, element, b"type")?.unwrap_or_else(|| "unknown".into()),
         operator: attribute_value(reader, element, b"operator")?,
         formulas: Vec::new(),
         text: attribute_value(reader, element, b"text")?,
@@ -2334,12 +2363,13 @@ fn read_defined_names(archive: &mut ZipArchive<File>) -> Result<Vec<DefinedName>
                     .and_then(|value| value.parse::<usize>().ok());
                 // _xlnm.* built-ins and hidden names stay file-only (the save
                 // preserves them verbatim; the editor never models them).
-                current = (!name.is_empty() && !name.starts_with("_xlnm") && !hidden)
-                    .then_some(DefinedName {
+                current = (!name.is_empty() && !name.starts_with("_xlnm") && !hidden).then_some(
+                    DefinedName {
                         name,
                         formula: String::new(),
                         sheet_index,
-                    });
+                    },
+                );
             }
             Event::Text(text) => {
                 if let Some(defined) = &mut current {
@@ -2456,8 +2486,7 @@ fn read_custom_table_styles(
                         let outline = dxf.border_left.as_ref().or(dxf.border_top.as_ref());
                         palette.whole_table_border_color =
                             outline.and_then(|edge| edge.color.clone());
-                        palette.whole_table_border_style =
-                            outline.map(|edge| edge.style.clone());
+                        palette.whole_table_border_style = outline.map(|edge| edge.style.clone());
                         palette.inner_horizontal_border_color = dxf
                             .border_inner_horizontal
                             .as_ref()
@@ -2478,8 +2507,10 @@ fn read_custom_table_styles(
                     Some("headerRow") => {
                         palette.header_fill = dxf.fill_color.clone();
                         palette.header_font_color = dxf.font_color.clone();
-                        palette.header_bottom_border_color =
-                            dxf.border_bottom.as_ref().and_then(|edge| edge.color.clone());
+                        palette.header_bottom_border_color = dxf
+                            .border_bottom
+                            .as_ref()
+                            .and_then(|edge| edge.color.clone());
                         palette.header_bottom_border_style =
                             dxf.border_bottom.as_ref().map(|edge| edge.style.clone());
                     }
@@ -2643,12 +2674,21 @@ fn builtin_table_palette(style_name: Option<&str>, colors: &ColorContext) -> Cus
             palette.total_row_border_color = Some(rgb_hex(base));
             palette.total_row_border_style = Some("double".into());
         }
-        // Light 15-21: unfilled header in plain dk1 (only 1-7 color it).
+        // Light 15-21: unfilled header in plain dk1 (only 1-7 color it), and
+        // the whole table gridded — thin base-color outline plus inner
+        // horizontal/vertical rules on every cell (ref: Light16 draws a full
+        // accent1 grid over the banding).
         ("light", _) => {
             palette.header_font_color = Some(rgb_hex(dark1));
             palette.stripe_fill = Some(band(base, neutral, 0.8));
             palette.total_row_border_color = Some(rgb_hex(base));
             palette.total_row_border_style = Some("double".into());
+            palette.whole_table_border_color = Some(rgb_hex(base));
+            palette.whole_table_border_style = Some("thin".into());
+            palette.inner_horizontal_border_color = Some(rgb_hex(base));
+            palette.inner_horizontal_border_style = Some("thin".into());
+            palette.inner_vertical_border_color = Some(rgb_hex(base));
+            palette.inner_vertical_border_style = Some("thin".into());
         }
         // Medium 8-14 are Excel's "full color" block: both bands filled
         // (Medium9: accent tint 0.6 alternating with 0.8, #B8CCE4 /
@@ -2694,8 +2734,16 @@ fn builtin_table_palette(style_name: Option<&str>, colors: &ColorContext) -> Cus
         // Dark 8-11 pair two accents: header on accent 2/4/6, bands on
         // accent 1/3/5 (Dark 8 runs both on dk1).
         ("dark", 1) => {
-            let band_base = if neutral { dark1 } else { accent(2 * (number - 8) - 1) };
-            let header_base = if neutral { dark1 } else { accent(2 * (number - 8)) };
+            let band_base = if neutral {
+                dark1
+            } else {
+                accent(2 * (number - 8) - 1)
+            };
+            let header_base = if neutral {
+                dark1
+            } else {
+                accent(2 * (number - 8))
+            };
             palette.header_fill = Some(rgb_hex(header_base));
             palette.header_font_color = Some(WHITE.into());
             palette.stripe_fill = Some(band(band_base, neutral, 0.6));
@@ -2787,9 +2835,8 @@ fn read_sheet_tables(
                         .is_some_and(|value| value == "1" || value == "true");
                     show_row_stripes = attribute_value(&reader, &element, b"showRowStripes")?
                         .is_some_and(|value| value == "1" || value == "true");
-                    show_column_stripes =
-                        attribute_value(&reader, &element, b"showColumnStripes")?
-                            .is_some_and(|value| value == "1" || value == "true");
+                    show_column_stripes = attribute_value(&reader, &element, b"showColumnStripes")?
+                        .is_some_and(|value| value == "1" || value == "true");
                 }
                 Event::Eof => break,
                 _ => {}
@@ -2917,10 +2964,8 @@ fn parse_sparkline_groups<R: std::io::BufRead>(
                 if in_ext && element.local_name().as_ref() == b"sparklineGroup" =>
             {
                 group = Some(SparklineGroupInfo {
-                    kind: sparkline_type(
-                        attribute_value(reader, &element, b"type")?.as_deref(),
-                    )
-                    .into(),
+                    kind: sparkline_type(attribute_value(reader, &element, b"type")?.as_deref())
+                        .into(),
                     color: None,
                     negative_color: None,
                     cells: Vec::new(),
@@ -2944,9 +2989,7 @@ fn parse_sparkline_groups<R: std::io::BufRead>(
                         .and_then(argb_to_hex);
                 }
             }
-            Event::Start(element)
-                if in_ext && element.local_name().as_ref() == b"sparkline" =>
-            {
+            Event::Start(element) if in_ext && element.local_name().as_ref() == b"sparkline" => {
                 in_sparkline = true;
                 source_ref.clear();
                 host_cell.clear();
@@ -2954,9 +2997,7 @@ fn parse_sparkline_groups<R: std::io::BufRead>(
             Event::Start(element) if in_sparkline && element.local_name().as_ref() == b"f" => {
                 target = Target::Formula;
             }
-            Event::Start(element)
-                if in_sparkline && element.local_name().as_ref() == b"sqref" =>
-            {
+            Event::Start(element) if in_sparkline && element.local_name().as_ref() == b"sqref" => {
                 target = Target::Sqref;
             }
             Event::Text(text) if in_sparkline => {
@@ -3009,9 +3050,7 @@ fn parse_sparkline_groups<R: std::io::BufRead>(
                     }
                 }
             }
-            Event::End(element)
-                if in_ext && element.local_name().as_ref() == b"sparklineGroup" =>
-            {
+            Event::End(element) if in_ext && element.local_name().as_ref() == b"sparklineGroup" => {
                 if let Some(group) = group.take() {
                     if !group.cells.is_empty() && groups.len() < MAX_SPARKLINE_GROUPS {
                         groups.push(group);
@@ -3081,7 +3120,10 @@ fn row_property<R: std::io::BufRead>(
         .filter(|value| *value > 0)
         .filter(|_| {
             matches!(
-                attribute_value(reader, element, b"customFormat").ok().flatten().as_deref(),
+                attribute_value(reader, element, b"customFormat")
+                    .ok()
+                    .flatten()
+                    .as_deref(),
                 Some("1") | Some("true")
             )
         });
@@ -3146,7 +3188,9 @@ fn flush_chunk(
         if pending_formulas.len() > room {
             index.formula_truncated = true;
         }
-        index.formula_cells.extend(pending_formulas.drain(..).take(room));
+        index
+            .formula_cells
+            .extend(pending_formulas.drain(..).take(room));
     }
     index.indexed_through_row = Some(indexed_through_row);
     condition.notify_all();
@@ -3201,10 +3245,7 @@ impl CellBuilder {
         let formula = if self.formula.is_empty() {
             None
         } else {
-            Some(format!(
-                "={}",
-                strip_future_function_markers(&self.formula)
-            ))
+            Some(format!("={}", strip_future_function_markers(&self.formula)))
         };
         let mut rich = None;
         let value = match self.cell_type.as_deref() {
@@ -3223,10 +3264,20 @@ impl CellBuilder {
                 None => None,
             },
             Some("inlineStr") => {
-                rich = qualify_runs(self.inline_runs);
-                Some(CellValue::String(self.inline_text))
+                let mut inline_runs = self.inline_runs;
+                for run in &mut inline_runs {
+                    normalize_line_endings(&mut run.text);
+                }
+                rich = qualify_runs(inline_runs);
+                let mut inline_text = self.inline_text;
+                normalize_line_endings(&mut inline_text);
+                Some(CellValue::String(inline_text))
             }
-            Some("str") | Some("e") => Some(CellValue::String(self.raw_value)),
+            Some("str") | Some("e") => {
+                let mut raw_value = self.raw_value;
+                normalize_line_endings(&mut raw_value);
+                Some(CellValue::String(raw_value))
+            }
             Some("b") => Some(CellValue::Boolean(self.raw_value == "1")),
             _ if self.raw_value.trim().is_empty() => None,
             // Real-world exporters write stray non-numeric values without a
@@ -3235,7 +3286,11 @@ impl CellBuilder {
             // the sheet.
             _ => match self.raw_value.trim().parse::<f64>() {
                 Ok(number) => Some(CellValue::Number(number)),
-                Err(_) => Some(CellValue::String(self.raw_value)),
+                Err(_) => {
+                    let mut raw_value = self.raw_value;
+                    normalize_line_endings(&mut raw_value);
+                    Some(CellValue::String(raw_value))
+                }
             },
         };
         // Unknown indices keep the cell so a bad styles part can't drop data.
@@ -3249,7 +3304,11 @@ impl CellBuilder {
             row: self.row,
             column: self.column,
             value,
-            array_ref: if formula.is_some() { self.array_ref } else { None },
+            array_ref: if formula.is_some() {
+                self.array_ref
+            } else {
+                None
+            },
             formula,
             style_index: self.style_index,
             rich,
@@ -3325,7 +3384,9 @@ fn parse_address(address: &str) -> Result<(usize, usize), SidecarError> {
         if byte.is_ascii_alphabetic() {
             column = column
                 .checked_mul(26)
-                .and_then(|value| value.checked_add((byte.to_ascii_uppercase() - b'A' + 1) as usize))
+                .and_then(|value| {
+                    value.checked_add((byte.to_ascii_uppercase() - b'A' + 1) as usize)
+                })
                 .ok_or_else(|| SidecarError::Workbook("Cell column overflows.".into()))?;
             split = index + 1;
         } else {
@@ -3373,10 +3434,7 @@ pub(crate) fn zip_entry<'a>(
     archive.by_name(resolved.as_deref().unwrap_or(name))
 }
 
-fn read_zip_string(
-    archive: &mut ZipArchive<File>,
-    path: &str,
-) -> Result<String, SidecarError> {
+fn read_zip_string(archive: &mut ZipArchive<File>, path: &str) -> Result<String, SidecarError> {
     let mut entry = zip_entry(archive, path)?;
     let mut value = String::new();
     entry.read_to_string(&mut value)?;
@@ -3389,8 +3447,7 @@ fn attribute_value<R: std::io::BufRead>(
     name: &[u8],
 ) -> Result<Option<String>, SidecarError> {
     for attribute in element.attributes().with_checks(false) {
-        let attribute =
-            attribute.map_err(|error| SidecarError::Workbook(error.to_string()))?;
+        let attribute = attribute.map_err(|error| SidecarError::Workbook(error.to_string()))?;
         if attribute.key.local_name().as_ref() == name {
             return Ok(Some(
                 attribute
@@ -3427,6 +3484,15 @@ pub(crate) fn general_ref_text(
     })
 }
 
+/// XML 1.0 §2.11 line-ending normalization that quick-xml leaves to the
+/// caller: CRLF pairs (and stray CRs) in cell text become LF. A CR surviving
+/// to the renderer doubles every line break in the document model.
+fn normalize_line_endings(text: &mut String) {
+    if text.contains('\r') {
+        *text = text.replace("\r\n", "\n").replace('\r', "\n");
+    }
+}
+
 fn decode_text(text: &quick_xml::events::BytesText<'_>) -> Result<String, SidecarError> {
     let decoded = text
         .decode()
@@ -3447,6 +3513,21 @@ fn decode_cdata(text: &quick_xml::events::BytesCData<'_>) -> Result<String, Side
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalizes_crlf_and_stray_cr_to_lf() {
+        let mut crlf = "Hyderabad Day Shift\r\n(500 Seats)".to_owned();
+        normalize_line_endings(&mut crlf);
+        assert_eq!(crlf, "Hyderabad Day Shift\n(500 Seats)");
+
+        let mut stray_cr = "a\rb\r\nc".to_owned();
+        normalize_line_endings(&mut stray_cr);
+        assert_eq!(stray_cr, "a\nb\nc");
+
+        let mut untouched = "plain\ntext".to_owned();
+        normalize_line_endings(&mut untouched);
+        assert_eq!(untouched, "plain\ntext");
+    }
 
     #[test]
     fn strips_future_function_markers_outside_strings() {
@@ -3502,6 +3583,7 @@ mod tests {
             source_xml_bytes: 1024,
             column_widths: Vec::new(),
             default_row_height: None,
+            default_row_height_fixed: false,
             default_column_width: None,
             freeze: None,
             hidden: false,
@@ -3605,7 +3687,11 @@ mod tests {
         );
         let groups = sparklines_from(&xml);
         assert_eq!(groups.len(), 1);
-        let cells: Vec<_> = groups[0].cells.iter().map(|entry| entry.cell.as_str()).collect();
+        let cells: Vec<_> = groups[0]
+            .cells
+            .iter()
+            .map(|entry| entry.cell.as_str())
+            .collect();
         assert_eq!(cells, ["D2", "D3", "D4"]);
     }
 
@@ -3654,6 +3740,7 @@ mod tests {
             source_xml_bytes: 1024,
             column_widths: Vec::new(),
             default_row_height: None,
+            default_row_height_fixed: false,
             default_column_width: None,
             freeze: None,
             hidden: false,
@@ -3867,7 +3954,9 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         };
         assert_eq!(result.cells.len(), 1);
-        assert!(matches!(&result.cells[0].value, Some(CellValue::String(text)) if text == "Partner ID"));
+        assert!(
+            matches!(&result.cells[0].value, Some(CellValue::String(text)) if text == "Partner ID")
+        );
     }
 
     /// Fully `x:`-prefixed table parts (common .NET writers) must still parse.
@@ -3945,7 +4034,10 @@ mod tests {
             table.second_row_stripe_fill.as_deref(),
             Some(visuals::tint_to_hex(base, 0.8).as_str())
         );
-        assert_eq!(table.total_row_fill.as_deref(), Some(rgb_hex(base).as_str()));
+        assert_eq!(
+            table.total_row_fill.as_deref(),
+            Some(rgb_hex(base).as_str())
+        );
         assert_eq!(table.total_row_font_color.as_deref(), Some("#FFFFFF"));
     }
 
@@ -3993,10 +4085,18 @@ mod tests {
         assert_eq!(light2.total_row_border_color, Some(rgb_hex(accent1)));
         assert!(light2.total_row_fill.is_none());
 
-        // Light 15-21 headers are plain dk1, not accent-colored.
+        // Light 15-21 headers are plain dk1, not accent-colored, and the
+        // whole table carries a thin accent grid (outline + inner rules).
         let light16 = builtin_table_palette(Some("TableStyleLight16"), &colors);
         assert_eq!(light16.header_font_color.as_deref(), Some("#000000"));
         assert_eq!(light16.total_row_border_style.as_deref(), Some("double"));
+        assert_eq!(light16.whole_table_border_color, Some(rgb_hex(accent1)));
+        assert_eq!(light16.whole_table_border_style.as_deref(), Some("thin"));
+        assert_eq!(
+            light16.inner_horizontal_border_color,
+            Some(rgb_hex(accent1))
+        );
+        assert_eq!(light16.inner_vertical_border_color, Some(rgb_hex(accent1)));
 
         let medium2 = builtin_table_palette(Some("TableStyleMedium2"), &colors);
         assert_eq!(medium2.header_fill, Some(rgb_hex(accent1)));
@@ -4029,7 +4129,10 @@ mod tests {
         let dark2 = builtin_table_palette(Some("TableStyleDark2"), &colors);
         assert_eq!(dark2.header_fill.as_deref(), Some("#000000"));
         assert_eq!(dark2.whole_table_fill, Some(rgb_hex(accent1)));
-        assert_eq!(dark2.stripe_fill, Some(visuals::tint_to_hex(accent1, -0.25)));
+        assert_eq!(
+            dark2.stripe_fill,
+            Some(visuals::tint_to_hex(accent1, -0.25))
+        );
         assert_eq!(
             dark2.total_row_fill,
             Some(visuals::tint_to_hex(accent1, -0.5))
@@ -4142,6 +4245,56 @@ mod tests {
         assert!(!runs[0].underline);
         assert!(runs[1].bold);
         assert!(runs[1].strikethrough);
+    }
+
+    /// rPr <vertAlign val="subscript|superscript"> must survive into the
+    /// wire; other values are dropped, and vertAlign alone qualifies a run
+    /// as formatted.
+    #[test]
+    fn rich_run_vert_align_reaches_the_wire() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/sharedStrings.xml",
+                r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><r><t>Cr</t></r><r><rPr><vertAlign val="subscript"/></rPr><t>2</t></r><r><rPr><vertAlign val="superscript"/></rPr><t>3</t></r><r><rPr><vertAlign val="baseline"/></rPr><t>%</t></r></si></sst>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let sheet_id = metadata.sheets[0].id.clone();
+        let range = CellRange {
+            start_row: 0,
+            end_row: 0,
+            start_column: 0,
+            end_column: 0,
+        };
+        let result = loop {
+            let result = sessions
+                .read_range(&metadata.session_id, &sheet_id, &range)
+                .unwrap();
+            if result.indexing_complete {
+                break result;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let runs = result.cells[0].rich.as_ref().expect("rich runs");
+        assert_eq!(runs[0].vert_align, None);
+        assert_eq!(runs[1].vert_align.as_deref(), Some("subscript"));
+        assert_eq!(runs[2].vert_align.as_deref(), Some("superscript"));
+        assert_eq!(runs[3].vert_align, None);
+        let json = serde_json::to_value(&runs[1]).unwrap();
+        assert_eq!(json["vertAlign"], "subscript");
     }
 
     /// A oneCellAnchor sizes by xdr:ext (encoded as offsets in the from
@@ -4599,6 +4752,7 @@ mod tests {
         let metadata = sessions.open(&path).unwrap();
         assert_eq!(metadata.sheets[0].default_column_width, None);
         assert_eq!(metadata.sheets[0].default_row_height, Some(12.75));
+        assert!(metadata.sheets[0].default_row_height_fixed);
     }
 
     /// Shared-formula followers (`<f t="shared" si="N"/>`) must
@@ -4700,6 +4854,8 @@ mod tests {
 
         let mut sessions = WorkbookSessions::new();
         let metadata = sessions.open(&path).unwrap();
+        // No sheetFormatPr customHeight: the sheet default stays auto-fit.
+        assert!(!metadata.sheets[0].default_row_height_fixed);
         let sheet_id = metadata.sheets[0].id.clone();
         let range = CellRange {
             start_row: 0,
@@ -4852,7 +5008,14 @@ mod tests {
         let mut cells: Vec<(usize, usize, bool, Option<usize>)> = result
             .cells
             .iter()
-            .map(|cell| (cell.row, cell.column, cell.value.is_some(), cell.style_index))
+            .map(|cell| {
+                (
+                    cell.row,
+                    cell.column,
+                    cell.value.is_some(),
+                    cell.style_index,
+                )
+            })
             .collect();
         cells.sort();
         assert_eq!(
@@ -4984,9 +5147,11 @@ mod tests {
             (styled.start_column, styled.end_column, styled.style_index),
             (1, 2, Some(2))
         );
-        assert!(widths
-            .iter()
-            .any(|width| width.width == Some(12.0) && width.style_index.is_none()));
+        assert!(
+            widths
+                .iter()
+                .any(|width| width.width == Some(12.0) && width.style_index.is_none())
+        );
         let sheet_id = metadata.sheets[0].id.clone();
         let range = CellRange {
             start_row: 0,
@@ -5039,7 +5204,7 @@ mod tests {
 <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
 <borders count="1"><border/></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="58" applyNumberFormat="1"/><xf numFmtId="44" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/><xf numFmtId="27" applyNumberFormat="1"/><xf numFmtId="30" applyNumberFormat="1"/></cellXfs>
+<cellXfs count="9"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="58" applyNumberFormat="1"/><xf numFmtId="44" applyNumberFormat="1"/><xf numFmtId="57" applyNumberFormat="1"/><xf numFmtId="27" applyNumberFormat="1"/><xf numFmtId="30" applyNumberFormat="1"/><xf numFmtId="55" applyNumberFormat="1"/><xf numFmtId="20" applyNumberFormat="1"/><xf numFmtId="21" applyNumberFormat="1"/></cellXfs>
 </styleSheet>"#,
             ),
             (
@@ -5061,18 +5226,27 @@ mod tests {
             Some(r#"_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)"#),
         );
         assert_eq!(format(3), Some("yyyy/m/d"));
+        // Id 55 is a date in Excel (ja: yyyy-mm), not the ECMA zh time
+        // pattern — a ja month header rendered "0\u{65f6}00\u{5206}" (#049).
+        assert_eq!(format(6), Some("yyyy/m/d"));
+        // Time builtins carry a leading zero on the hour in Excel (09:30),
+        // not the ECMA h:mm text.
+        assert_eq!(format(7), Some("hh:mm"));
+        assert_eq!(format(8), Some("hh:mm:ss"));
 
         // Locale-reserved ids must follow the UI locale. In Portuguese (and
         // other day-first locales), id 58 is a full date rather than the
         // zh-CN month/day pattern that previously leaked into every workbook.
         let mut portuguese_sessions = WorkbookSessions::new();
-        let portuguese = portuguese_sessions.open_with_locale(&path, "pt", None).unwrap();
-        let portuguese_format =
-            |index: usize| portuguese.styles[index].number_format.as_deref();
+        let portuguese = portuguese_sessions
+            .open_with_locale(&path, "pt", None)
+            .unwrap();
+        let portuguese_format = |index: usize| portuguese.styles[index].number_format.as_deref();
         assert_eq!(portuguese_format(1), Some("d/m/yyyy"));
         assert_eq!(portuguese_format(3), Some("yyyy/m/d"));
         assert_eq!(portuguese_format(4), Some("d/m/yyyy"));
         assert_eq!(portuguese_format(5), Some("d/m/yyyy"));
+        assert_eq!(portuguese_format(6), Some("d/m/yyyy"));
     }
 
     /// Builtin 14/22 are Excel's OS-region short-date formats; the host
@@ -5096,7 +5270,7 @@ mod tests {
 <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
 <borders count="1"><border/></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="14" applyNumberFormat="1"/><xf numFmtId="22" applyNumberFormat="1"/><xf numFmtId="165" applyNumberFormat="1"/></cellXfs>
+<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="14" applyNumberFormat="1"/><xf numFmtId="22" applyNumberFormat="1"/><xf numFmtId="165" applyNumberFormat="1"/><xf numFmtId="55" applyNumberFormat="1"/></cellXfs>
 </styleSheet>"#,
             ),
             (
@@ -5115,12 +5289,12 @@ mod tests {
         assert_eq!(format(1), Some("yyyy/m/d"));
         assert_eq!(format(2), Some("yyyy/m/d h:mm"));
         assert_eq!(format(3), Some("yyyy/mm/dd"));
+        assert_eq!(format(4), Some("yyyy/m/d"));
         assert_eq!(metadata.short_date_format.as_deref(), Some("yyyy/m/d"));
 
         let mut default_sessions = WorkbookSessions::new();
         let default_metadata = default_sessions.open(&path).unwrap();
-        let default_format =
-            |index: usize| default_metadata.styles[index].number_format.as_deref();
+        let default_format = |index: usize| default_metadata.styles[index].number_format.as_deref();
         assert_eq!(default_format(1), Some("m/d/yyyy"));
         assert_eq!(default_format(2), Some("m/d/yy h:mm"));
         assert!(default_metadata.short_date_format.is_none());
@@ -5181,6 +5355,51 @@ mod tests {
             metadata.dxf_styles[1].fill_color.as_deref(),
             Some("#FF0000")
         );
+    }
+
+    #[test]
+    fn parses_shrink_to_fit_alignment() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="1"><font><sz val="11"/></font></fonts>
+<fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellXfs count="3"><xf/><xf applyAlignment="1"><alignment horizontal="center" shrinkToFit="1"/></xf><xf applyAlignment="1"><alignment wrapText="1"/></xf></cellXfs>
+</styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" s="1" t="str"><v>text</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert!(!metadata.styles[0].shrink_to_fit);
+        assert!(metadata.styles[1].shrink_to_fit);
+        assert!(!metadata.styles[2].shrink_to_fit);
+        assert!(metadata.styles[2].wrap_text);
+    }
+
+    #[test]
+    fn blank_cell_keeps_shrink_to_fit_only_style() {
+        let default = CellStyle::default();
+        let mut style = CellStyle::default();
+        style.shrink_to_fit = true;
+        assert!(style.styles_blank_cell(&default));
+        assert!(!default.styles_blank_cell(&default));
     }
 
     #[test]

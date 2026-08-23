@@ -44,11 +44,17 @@ const GREET_ASK_KEYS = [
 const FILE_ICONS: Record<string, string> = {
   docx: iconDocx,
   xlsx: iconXlsx,
+  xlsm: iconXlsx,
   pptx: iconPptx,
   pdf: iconPdf,
   md: iconMd,
   markdown: iconMd,
 }
+
+/* Formats the open-local card advertises. Too long for the card at any window
+   width, so it ellipsizes and a hover ScreenTip carries the full list. Keep in
+   sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
+const OPEN_LOCAL_EXTENSIONS = '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md'
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]
@@ -594,10 +600,46 @@ function AccountEntry({
       {!settingsOpen && waiting && authUrl && (
         <div className="login-hint" role="status">
           <button className="login-hint-open" onClick={openLoginUrl}>
-            {t('loginOpenManually')}
+            {t('loginOpenShort')}
           </button>
-          <button className="login-hint-copy" onClick={copyLoginUrl}>
-            {urlCopied ? t('loginCopied') : t('loginCopyUrl')}
+          <button
+            className={`login-hint-copy${urlCopied ? ' copied' : ''}`}
+            onClick={copyLoginUrl}
+            // static tip: screentips are suppressed from pointerdown until the pointer
+            // leaves the control, so a swapped-in "copied" tip would never show — the
+            // check-mark icon is the visible feedback
+            data-tip={t('loginCopyUrl')}
+            aria-label={urlCopied ? t('loginCopied') : t('loginCopyUrl')}
+          >
+            {urlCopied ? (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="m3.5 8.5 3 3 6-7"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect
+                  x="5.5"
+                  y="5.5"
+                  width="7"
+                  height="7"
+                  rx="1.5"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                />
+                <path
+                  d="M3.5 10.5V5a1.5 1.5 0 0 1 1.5-1.5h5.5"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
           </button>
         </div>
       )}
@@ -1449,7 +1491,11 @@ export function Home() {
             </span>
           </button>
         ))}
-        <button className="quick-card" onClick={() => void window.aiOffice.browse()}>
+        <button
+          className="quick-card"
+          onClick={() => void window.aiOffice.browse()}
+          data-tip={OPEN_LOCAL_EXTENSIONS}
+        >
           <span className="quick-folder">
             <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
@@ -1464,7 +1510,7 @@ export function Home() {
             <span className="quick-title-row">
               <span className="quick-title">{t('openLocal')}</span>
             </span>
-            <span className="quick-sub">.docx / .xlsx / .xls / .csv / .pptx / .pdf / .md</span>
+            <span className="quick-sub">{OPEN_LOCAL_EXTENSIONS}</span>
           </span>
         </button>
       </div>

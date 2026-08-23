@@ -72,6 +72,54 @@ describe('resolveAiSettings', () => {
     // provider not mentioned in stored.providers keeps the computed default
     expect(resolved.providers.anthropic.apiKey).toBe('preset-key')
   })
+
+  it('rewrites a stored model id the vendor has retired', () => {
+    const resolved = resolveAiSettings(
+      {
+        providers: {
+          deepseek: { apiKey: 'sk-user', model: 'deepseek-reasoner' },
+        } as never,
+      },
+      defaultAiSettings(),
+    )
+    expect(resolved.providers.deepseek).toEqual({ apiKey: 'sk-user', model: 'deepseek-v4-flash' })
+  })
+
+  it('leaves a still-supported model id alone', () => {
+    const resolved = resolveAiSettings(
+      {
+        providers: {
+          deepseek: { apiKey: 'sk-user', model: 'deepseek-v4-pro' },
+        } as never,
+      },
+      defaultAiSettings(),
+    )
+    expect(resolved.providers.deepseek.model).toBe('deepseek-v4-pro')
+  })
+
+  it('trims whitespace pasted around stored keys and base URLs', () => {
+    const resolved = resolveAiSettings(
+      {
+        providers: {
+          deepseek: { apiKey: ' sk-user\n', model: 'deepseek-v4-pro' },
+          custom: { apiKey: 'k', model: 'm', baseUrl: ' http://localhost:1234/v1 ' },
+        } as never,
+      },
+      defaultAiSettings(),
+    )
+    expect(resolved.providers.deepseek.apiKey).toBe('sk-user')
+    expect(resolved.providers.deepseek.baseUrl).toBeUndefined()
+    expect(resolved.providers.custom.baseUrl).toBe('http://localhost:1234/v1')
+  })
+
+  it('trims the legacy single-endpoint key and base URL too', () => {
+    const resolved = resolveAiSettings(
+      { apiKey: ' legacy-key ', baseUrl: ' https://legacy.example.com/v1 ' },
+      defaultAiSettings(),
+    )
+    expect(resolved.providers.custom.apiKey).toBe('legacy-key')
+    expect(resolved.providers.custom.baseUrl).toBe('https://legacy.example.com/v1')
+  })
 })
 
 describe('activeProvider', () => {

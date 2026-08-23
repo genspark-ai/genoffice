@@ -105,6 +105,20 @@ export function AudienceView() {
     }
   }, [])
 
+  // Mid-show edits from the presenter window arrive as shared-session broadcasts.
+  // The sync cursor doesn't change on a content edit, so clear it: once the
+  // reloaded animation lists land, the seek effect re-aligns the player against
+  // the fresh deck instead of keeping stale animation state.
+  useEffect(
+    () =>
+      window.slidesApi.onDeckChanged?.(({ slides: all }) => {
+        if (all.length === 0) return
+        cursorRef.current = ''
+        setSlides(all)
+      }),
+    [],
+  )
+
   useEffect(() => {
     if (!slides) return
     let cancelled = false

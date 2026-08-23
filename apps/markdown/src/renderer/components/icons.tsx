@@ -71,10 +71,14 @@ export function IconHr(props: IconProps) {
   )
 }
 
+/* knobs sit at different offsets on purpose: three flush-left lines read as a
+ * hamburger/overflow menu, and left-aligned dots collide with IconBullets */
 export function IconProperties(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M2.5 4.4h11M2.5 8h11M2.5 11.6h6.2" />
+      <path d="M2.2 4.6h11.6M2.2 11.4h11.6" />
+      <circle cx="10.2" cy="4.6" r="1.7" fill="currentColor" stroke="none" />
+      <circle cx="5.6" cy="11.4" r="1.7" fill="currentColor" stroke="none" />
     </Svg>
   )
 }

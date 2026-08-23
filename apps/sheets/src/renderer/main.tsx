@@ -9,6 +9,7 @@ import '@genoffice/ui/dropdown.css'
 import '@univerjs/preset-sheets-core/lib/index.css'
 
 import { App } from './App'
+import { installCanvasFontFallback, registerCellFontAliases } from './cell-font-fallback'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
 import type { UiTheme } from '../shared/desktop-api'
 import './styles.css'
@@ -26,6 +27,7 @@ const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root.')
 
 installScreenTips()
+installCanvasFontFallback()
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')
@@ -36,9 +38,9 @@ function applyTheme(theme: UiTheme): void {
 // faces (Calibri/Aptos aliases in styles.css) must be loaded before Univer's
 // first skeleton — MDW, wrap points, and #### overflow all measure with them.
 async function loadCellFonts(): Promise<void> {
-  const loads: Promise<unknown>[] = []
+  const loads: Promise<unknown>[] = [registerCellFontAliases()]
   for (const variant of ['', 'bold ', 'italic ', 'italic bold ']) {
-    for (const family of ['Calibri', 'Aptos']) {
+    for (const family of ['Calibri', 'Aptos', "'Aptos Narrow'", 'Carlito']) {
       loads.push(document.fonts?.load?.(`${variant}16px ${family}`)?.catch(() => {}) ?? [])
     }
   }

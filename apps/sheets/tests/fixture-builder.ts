@@ -413,6 +413,42 @@ export async function buildKitchenSinkFixture(): Promise<Buffer> {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
+/// A macro-enabled workbook (.xlsm): the basic grid plus a vbaProject.bin
+/// payload and the macro-enabled workbook content type. The app never runs
+/// or parses the payload, so its bytes must round-trip a save verbatim.
+export async function buildMacroFixture(): Promise<Buffer> {
+  const zip = new JSZip()
+  zip.file('[Content_Types].xml', macroContentTypes)
+  zip.file('_rels/.rels', packageRelationships)
+  zip.file('xl/workbook.xml', workbook)
+  zip.file('xl/_rels/workbook.xml.rels', macroWorkbookRelationships)
+  zip.file('xl/worksheets/sheet1.xml', worksheet)
+  zip.file('xl/styles.xml', styles)
+  zip.file('xl/vbaProject.bin', macroVbaProjectPayload)
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
+export const macroVbaProjectPayload = Buffer.from(
+  Array.from({ length: 256 }, (_, i) => (i * 37 + 11) % 256),
+)
+
+const macroContentTypes = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`
+
+const macroWorkbookRelationships = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`
+
 const kitchenSinkContentTypes = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>

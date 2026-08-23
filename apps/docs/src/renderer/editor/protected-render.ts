@@ -7,9 +7,10 @@ import {
   autospaceBoundaries,
   autospacePadBetween,
   cjkDeclaredLineFactor,
+  cssAutoLineMult,
   cssCsFontFamily,
-  cssDualFontFamily,
   cssFontFamily,
+  cssRunFontFamily,
   cssGridLineBase,
   cssGridSpacingPt,
   cssLineHeight,
@@ -17,11 +18,13 @@ import {
   isCjkFontName,
   lineHeightFactor,
   paraLineFactorCss,
+  runLetterSpacingCss,
   textHasCjk,
   textHasComplexScript,
   textHasHangul,
+  WORD_AUTO_SPACING_PT,
 } from '../line-metrics'
-import { shapeBackgroundCss, shapeTextInsetsPx } from './shape-svg'
+import { custGeomBackgroundCss, shapeBackgroundCss, shapeTextInsetsPx } from './shape-svg'
 import { t } from '../i18n/locale'
 import {
   type ChartDisplay,
@@ -50,7 +53,7 @@ import {
   protectedText,
   tableBordersCss,
 } from './extensions'
-import { cellClipTwips } from './convert'
+import { cellClipTwips, inferredBidi } from './convert'
 
 // Word: links and TOC entries jump on modifier+click only
 const jumpHint = () =>
@@ -65,6 +68,15 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
       title: jumpHint(),
     }
     if (field.anchor) attrs['data-toc-anchor'] = field.anchor
+    // direct pPr/run metrics of the entry paragraph beat the inherited body size
+    const tocStyles: string[] = []
+    if (field.szHalfPoints) tocStyles.push(`font-size:${field.szHalfPoints / 2}pt`)
+    const tocLh = cssLineHeight(field.lineRule, field.lineRawTwips, field.lineSpacing)
+    if (tocLh) tocStyles.push(`line-height:${tocLh}`)
+    // --doc-line-max reads the multiple from this var on the same element
+    const tocMult = cssAutoLineMult(field.lineRule, field.lineRawTwips, field.lineSpacing)
+    if (tocMult && tocMult !== 1) tocStyles.push(`--doc-line-mult:${tocMult}`)
+    if (tocStyles.length > 0) attrs.style = tocStyles.join(';')
     const num: DomSpec[] = field.num
       ? [['span', { class: 'doc-toc-num', contenteditable: 'false' }, field.num]]
       : []
@@ -597,15 +609,17 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
   const insetRight = pad(box.insetRightPx ?? 9.6, geomInset?.r ?? 0)
   const insetBottom = pad(box.insetBottomPx ?? 4.8, geomInset?.b ?? 0)
   const insetLeft = pad(box.insetLeftPx ?? 9.6, geomInset?.l ?? 0)
-  // preset geometry renders as an SVG background so the border follows the
-  // outline (a clip-path would clip a CSS outline away with the box corners)
-  const geomCss = box.prst
-    ? shapeBackgroundCss(box.prst, boxW, boxH, box.fill, box.borderColor, {
-        diag: box.lineDiag,
-        flipH: box.flipH,
-        flipV: box.flipV,
-      })
-    : null
+  // preset/custom geometry renders as an SVG background so the border follows
+  // the outline (a clip-path would clip a CSS outline away with the box corners)
+  const geomCss = box.pathData
+    ? custGeomBackgroundCss(box.pathData, boxW, boxH, box.fill, box.borderColor)
+    : box.prst
+      ? shapeBackgroundCss(box.prst, boxW, boxH, box.fill, box.borderColor, {
+          diag: box.lineDiag,
+          flipH: box.flipH,
+          flipV: box.flipV,
+        })
+      : null
   const waStyle = box.wordArtId ? WORDART_CSS[box.wordArtId] : undefined
   // picture fill (photo boxes / a:blipFill): tiles repeat at natural size,
   // stretch fills cover the whole box. Document data, hence inline.
@@ -627,6 +641,9 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
     !geomCss && box.borderColor && box.borderWidthPx ? `border-width:${box.borderWidthPx}px` : '',
     !geomCss && box.borderColor && box.borderDash ? `border-style:${box.borderDash}` : '',
     fillImage,
+    // shape-style fontRef color: the box default, so runs carrying their own
+    // w:color still override it through the run spans
+    box.textColor ? `color:#${box.textColor}` : '',
     floatPos,
     box.widthPx ? `width:${box.widthPx}px` : '',
     // Word clips fixed-height (noAutofit) boxes instead of growing them
@@ -641,6 +658,9 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
     !waStyle?.stroke && box.textOutline
       ? `-webkit-text-stroke:${box.textOutline.widthPx}px #${box.textOutline.colorHex}`
       : '',
+    // behindDoc anchor: under the body text (per box, so paragraphs mixing
+    // behind and front drawings keep the split)
+    box.behind ? 'z-index:-1' : '',
     // WordArt strings never wrap; spill instead of clipping when the
     // font-size approximation runs slightly wide
     box.nowrap ? 'white-space:nowrap;overflow:visible' : '',
@@ -690,6 +710,7 @@ export function runSpanSpecs(run: Run, autoSpace?: boolean): DomSpec[] {
 
 function textSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
   const cs = run.csFont && textHasComplexScript(run.text) ? run.csFont : undefined
+  const letterSpacing = runLetterSpacingCss(run)
   const runStyle = [
     run.color ? `color:#${run.color}` : '',
     run.bold ? 'font-weight:700' : '',
@@ -699,12 +720,11 @@ function textSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
       ? `font-family:${
           cs
             ? cssCsFontFamily(cs, run.fontAscii, run.font)
-            : run.font && run.fontAscii
-              ? cssDualFontFamily(run.fontAscii, run.font)
-              : cssFontFamily((run.font ?? run.fontAscii)!)
+            : cssRunFontFamily(run.fontAscii, run.font)
         }`
       : '',
     run.sizeHalfPoints ? `font-size:${run.sizeHalfPoints / 2}pt` : '',
+    letterSpacing ? `letter-spacing:${letterSpacing}` : '',
     run.caps === 'all' ? 'text-transform:uppercase' : '',
     run.caps === 'small' ? 'font-variant-caps:small-caps' : '',
     // explicit autoSpaceDE/DN off also disables the browser's native gap (same as the editor path)
@@ -744,24 +764,61 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
   const style = textboxBoxStyle(box)
   const boxAttrs: Record<string, string> = { class: 'doc-textbox' }
   if (style) boxAttrs.style = style
+  // page-absolute V rendered from the anchor: syncFloatShifts re-pins it
+  if (box.floating && box.pageRelV) boxAttrs['data-page-rel-v'] = '1'
 
   const paras: DomSpec[] = box.paras.map((para) => {
     const spans: DomSpec[] = runSpansWithPads(para.runs, para.autoSpace)
+    const text = para.runs.map((r) => r.text).join('')
+    // same line strut as body/cell paragraphs (factor by run fonts + run-size
+    // strut + grid snapping); inheriting the page's computed line-height
+    // instead inflated every CJK textbox line to the body's pixel value
+    const fontStyles: string[] = []
+    if (text) {
+      fontStyles.push(`--doc-line-factor:${runsLineFactor(para.runs, text)}`)
+      const fam = runsDeclaredFontFamily(para.runs)
+      if (fam) fontStyles.push(`font-family:${fam}`)
+      const strut = runStrutHalfPoints(para.runs)
+      if (strut)
+        fontStyles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
+    }
+    const lineMult = cssAutoLineMult(para.lineRule, para.lineRawTwips, para.lineSpacing)
+    const lh = cssLineHeight(para.lineRule, para.lineRawTwips, para.lineSpacing)
     const pStyles = [
       para.align ? `text-align:${para.align}` : '',
       // .doc-textbox-para's pre-wrap would still wrap a nowrap (WordArt) box
       box.nowrap ? 'white-space:nowrap' : '',
-      para.lineSpacing ? `line-height:${para.lineSpacing * 1.2}` : '',
+      ...fontStyles,
+      // undeclared spacing inherits the document default via the
+      // .doc-textbox-para stylesheet rule (an inline base would override it)
+      lh ? `line-height:${lh}` : '',
+      // explicit single (mult 1) still overrides an inherited style/doc multiple
+      lineMult ? `--doc-line-mult:${lineMult}` : '',
+      // w:snapToGrid=0 opts the paragraph out of docGrid snapping (Word applies
+      // the typed line grid inside textboxes too)
+      para.snapToGrid === false ? '--doc-grid-pitch:0.0001px' : '',
       para.indentLeft ? `margin-left:${para.indentLeft / 20}pt` : '',
       para.indentRight ? `margin-right:${para.indentRight / 20}pt` : '',
       para.indentFirstLine ? `text-indent:${para.indentFirstLine / 20}pt` : '',
-      para.spaceBefore ? `margin-top:${para.spaceBefore / 20}pt` : '',
-      para.spaceAfter ? `margin-bottom:${para.spaceAfter / 20}pt` : '',
+      // != null: an explicit 0 twips must still emit (matches the sub-editor)
+      para.spaceBeforeAuto
+        ? `margin-top:${WORD_AUTO_SPACING_PT}pt`
+        : para.spaceBefore != null
+          ? `margin-top:${para.spaceBefore / 20}pt`
+          : '',
+      para.spaceAfterAuto
+        ? `margin-bottom:${WORD_AUTO_SPACING_PT}pt`
+        : para.spaceAfter != null
+          ? `margin-bottom:${para.spaceAfter / 20}pt`
+          : '',
     ]
       .filter(Boolean)
       .join(';')
+    const fixedLh = (para.lineRule === 'exact' && para.lineRawTwips) || para.lineRule === 'atLeast'
     const pAttrs: Record<string, string> = {
-      class: `doc-textbox-para${spans.length === 0 ? ' doc-textbox-para-empty' : ''}`,
+      class: `doc-textbox-para${spans.length === 0 ? ' doc-textbox-para-empty' : ''}${
+        fixedLh ? ' doc-lh-fixed' : ''
+      }${para.snapToGrid === false ? ' doc-nosnap' : ''}`,
     }
     if (para.styleId) pAttrs['data-style'] = para.styleId
     if (pStyles) pAttrs.style = pStyles
@@ -787,7 +844,9 @@ function latinRunsFactor(runs: Run[], scriptVar: string): string {
   let declaredMax = 0
   let undeclared = false
   for (const run of runs) {
-    const family = run.fontAscii ?? (run.eaSlotEmpty === true ? null : run.font)
+    // ascii slot only, like extensions' latinParaFactor: an eastAsia-only
+    // declaration must not set a Latin line's factor
+    const family = run.fontAscii
     if (family) declaredMax = Math.max(declaredMax, lineHeightFactor(family))
     else undeclared = true
   }
@@ -802,7 +861,7 @@ function runsDeclaredFontFamily(runs: Run[]): string | null {
     const ea = run.font || null
     const ascii = run.fontAscii || null
     if (!ea && !ascii) return null
-    first ??= ea && ascii ? cssDualFontFamily(ascii, ea) : cssFontFamily((ea ?? ascii)!)
+    first ??= cssRunFontFamily(ascii, ea)
   }
   return first
 }
@@ -838,6 +897,9 @@ function cellParaSpec(
   fmt?: TableParagraph,
 ): DomSpec {
   const styles: string[] = []
+  // explicit per-paragraph direction (same rule as the editor's blockAttrs):
+  // a bidiVisual table's dir="rtl" mirrors columns but must not reorder cell text
+  styles.push(fmt?.bidi || inferredBidi(fmt, runs ?? undefined) ? 'direction:rtl' : 'direction:ltr')
   if (text) {
     // Korean cells break at spaces like Word (same rule as the editor's blockAttrs)
     if (textHasHangul(text)) styles.push('word-break:keep-all', 'overflow-wrap:anywhere')
@@ -850,8 +912,12 @@ function cellParaSpec(
   styles.push(
     `line-height:${cssLineHeight(fmt?.lineRule, fmt?.lineRawTwips, fmt?.lineSpacing) ?? cssGridLineBase()}`,
   )
-  if (fmt?.spaceBefore) styles.push(`margin-top:${cssGridSpacingPt(fmt.spaceBefore / 20)}`)
-  if (fmt?.spaceAfter) styles.push(`margin-bottom:${cssGridSpacingPt(fmt.spaceAfter / 20)}`)
+  const cellMult = cssAutoLineMult(fmt?.lineRule, fmt?.lineRawTwips, fmt?.lineSpacing)
+  if (cellMult && cellMult !== 1) styles.push(`--doc-line-mult:${cellMult}`)
+  if (fmt?.spaceBeforeAuto) styles.push(`margin-top:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
+  else if (fmt?.spaceBefore) styles.push(`margin-top:${cssGridSpacingPt(fmt.spaceBefore / 20)}`)
+  if (fmt?.spaceAfterAuto) styles.push(`margin-bottom:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
+  else if (fmt?.spaceAfter) styles.push(`margin-bottom:${cssGridSpacingPt(fmt.spaceAfter / 20)}`)
   // Word sizes an empty line by the paragraph mark / empty run (same as blockAttrs)
   if (!text && fmt?.emptyRunSizeHalfPoints) {
     styles.push(`font-size:${fmt.emptyRunSizeHalfPoints / 2}pt`)
@@ -995,20 +1061,21 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
     // left-aligned: right up to the paper edge — see DocTable.renderHTML);
     // indent shifts the table right, so it comes out of the budget
     const widthPx = colPx.reduce((sum, w) => sum + w, 0)
+    // --doc-content-w: per-block section content width (differing-width sections); defaults to the page content box
+    const contentW = 'var(--doc-content-w,100%)'
     if (!nested && model.align === 'center') {
-      const paper =
-        'calc(100% + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
+      const paper = `calc(${contentW} + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))`
       tableStyles.push(`width:min(${widthPx}px,${paper})`)
-      centerMargin = `margin-left:calc((100% - min(${widthPx}px,${paper}))/2)`
+      centerMargin = `margin-left:calc((${contentW} - min(${widthPx}px,${paper}))/2)`
     } else {
       const indented =
         model.align !== 'center' && model.align !== 'right' && (model.indentTwips ?? 0) > 0
       const indentPx = indented ? model.indentTwips! / 15 : 0
-      const base = nested ? '100%' : 'calc(100% + var(--doc-margin-right,0px))'
+      const base = nested ? '100%' : `calc(${contentW} + var(--doc-margin-right,0px))`
       const avail = indentPx
         ? nested
           ? `calc(100% - ${indentPx.toFixed(1)}px)`
-          : `calc(100% + var(--doc-margin-right,0px) - ${indentPx.toFixed(1)}px)`
+          : `calc(${contentW} + var(--doc-margin-right,0px) - ${indentPx.toFixed(1)}px)`
         : base
       tableStyles.push(`width:min(${widthPx}px,${avail})`)
     }

@@ -288,7 +288,7 @@ function AiModelPane({ t }: { t: TFunc }) {
               placeholder={meta?.keyPlaceholder ?? 'API Key'}
               spellCheck={false}
               autoComplete="off"
-              onChange={(e) => updateConfig({ apiKey: e.target.value })}
+              onChange={(e) => updateConfig({ apiKey: e.target.value.trim() })}
             />
           </div>
           <div className="set-field">
@@ -309,7 +309,7 @@ function AiModelPane({ t }: { t: TFunc }) {
               value={config.baseUrl ?? ''}
               placeholder={meta?.needsBaseUrl ? 'https://…/v1' : meta?.defaultBaseUrl}
               spellCheck={false}
-              onChange={(e) => updateConfig({ baseUrl: e.target.value })}
+              onChange={(e) => updateConfig({ baseUrl: e.target.value.trim() })}
             />
           </div>
         </>

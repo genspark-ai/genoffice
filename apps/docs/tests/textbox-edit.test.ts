@@ -89,7 +89,11 @@ describe('text box rich-text edit and save', () => {
     const box = subDom?.closest('.doc-textbox') as HTMLElement
     const firstPara = box.querySelector('.doc-textbox-para') as HTMLElement
     expect(box.getAttribute('style')).toContain('padding:0px 0px 0px 0px')
-    expect(firstPara.style.lineHeight).toBe('1.56')
+    // 1.3 multiple now rides the shared grid/factor machinery (typed-grid
+    // docs snap it; elsewhere it resolves to factor x 1.3)
+    expect(firstPara.style.lineHeight).toBe(
+      'var(--doc-line-max, calc(var(--doc-line-factor,1.2) * 1.3))',
+    )
     expect(firstPara.style.marginTop).toBe('10.55pt')
     expect(firstPara.style.marginLeft).toBe('9pt')
     expect(firstPara.style.marginRight).toBe('4.5pt')
@@ -236,6 +240,97 @@ describe('text box rich-text edit and save', () => {
     const box = reparsed.blocks.find((b) => b.textboxes)?.textboxes?.[0]
     expect(box?.paras[0].runs[0]).toMatchObject({ color: 'FF0000', font: 'Courier New' })
     expect(box?.paras[1].runs[0]).toMatchObject({ color: 'FF0000', bold: true })
+    editor.destroy()
+  })
+})
+
+const TEXTLESS_SHAPE_PARAGRAPH =
+  '<w:p><w:r><w:drawing>' +
+  '<wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+  '<wp:simplePos x="0" y="0"/><wp:extent cx="1800000" cy="1080000"/>' +
+  '<wp:wrapSquare wrapText="bothSides"/>' +
+  '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+  '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+  '<wps:cNvPr id="42" name="Star 42"/><wps:cNvSpPr/>' +
+  '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1800000" cy="1080000"/></a:xfrm>' +
+  '<a:prstGeom prst="star5"><a:avLst/></a:prstGeom>' +
+  '<a:solidFill><a:srgbClr val="4472C4"/></a:solidFill></wps:spPr>' +
+  '<wps:bodyPr rot="0"/></wps:wsp>' +
+  '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+
+describe('first text on a textless shape', () => {
+  it('typing into an imported textless shape injects a centered text body on save', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: `<w:p><w:r><w:t>Lead</w:t></w:r></w:p>${TEXTLESS_SHAPE_PARAGRAPH}`,
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+
+    const pos = textboxNodePos(editor)
+    const node = editor.state.doc.nodeAt(pos)!
+    const boxes = node.attrs.textboxes as TextboxDisplay[]
+    expect(boxes[0].readOnly).toBeUndefined()
+    expect(boxes[0].shapeId).toBe('42')
+    expect(boxes[0].txbxIndex).toBeUndefined()
+    // an editable sub-editor mounts on the shape despite the missing txbx
+    expect(editor.view.dom.querySelector('.doc-textbox .doc-textbox-editor')).not.toBeNull()
+    // untouched shape still saves byte-stable
+    expect(pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).changedCount).toBe(0)
+
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        textboxes: [
+          {
+            ...boxes[0],
+            paras: [{ runs: [{ text: 'Star label', bold: true }], align: 'center' }],
+          },
+        ],
+      }),
+    )
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(1)
+
+    const reparsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    const box = reparsed.blocks.find((b) => b.textboxes)?.textboxes?.[0]
+    expect(box?.paras[0].runs[0]).toMatchObject({ text: 'Star label', bold: true })
+    expect(box?.paras[0].align).toBe('center')
+    expect(box?.vAlign).toBe('center')
+    // the injected body is a normal patch target from now on
+    expect(box?.txbxIndex).toBe(0)
+    expect(box?.fill).toBe('4472C4')
+    editor.destroy()
+  })
+
+  it('opening an empty ink box and committing changes nothing', async () => {
+    const emptyBoxXml = TEXTLESS_SHAPE_PARAGRAPH.replace(
+      '<wps:bodyPr rot="0"/>',
+      '<wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx><wps:bodyPr rot="0"/>',
+    )
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: `<w:p><w:r><w:t>Lead</w:t></w:r></w:p>${emptyBoxXml}` }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const pos = textboxNodePos(editor)
+    const before = editor.state.doc.nodeAt(pos)!.attrs.textboxes as TextboxDisplay[]
+    expect(before[0].paras).toEqual([])
+    expect(before[0].txbxIndex).toBe(0)
+    expect(before[0].readOnly).toBeUndefined()
+
+    // the seeded empty sub-editor paragraph is not content: no dirty, no patch
+    window.dispatchEvent(new Event('ai-docs-commit-tables'))
+    const after = editor.state.doc.nodeAt(pos)!.attrs.textboxes as TextboxDisplay[]
+    expect(after[0].paras).toEqual([])
+    expect(pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).changedCount).toBe(0)
     editor.destroy()
   })
 })

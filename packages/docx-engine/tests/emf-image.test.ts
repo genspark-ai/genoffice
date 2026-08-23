@@ -46,6 +46,19 @@ describe('metafileToDataUrl routing', () => {
     }
     expect(convertWmfToDataUrl).toHaveBeenLastCalledWith(expect.any(ArrayBuffer), { dpiScale: 2 })
   })
+
+  it('routes by content signature when it contradicts the mime', async () => {
+    // EMF bytes under a wmf mime (HWP-exported docx)
+    const emf = new Uint8Array(44)
+    const dv = new DataView(emf.buffer)
+    dv.setUint32(0, 1, true)
+    dv.setUint32(40, 0x464d4520, true)
+    expect(await metafileToDataUrl(emf, 'image/wmf')).toBe('data:image/png;base64,EMFPNG')
+    // placeable WMF bytes under an emf mime
+    const wmf = new Uint8Array(18)
+    new DataView(wmf.buffer).setUint32(0, 0x9ac6cdd7, true)
+    expect(await metafileToDataUrl(wmf, 'image/emf')).toBe('data:image/png;base64,WMFPNG')
+  })
 })
 
 describe('parseDocx with emf media', () => {

@@ -31,6 +31,7 @@ import {
   loadVisibleRange,
   sheetOutline,
   univerDefinedNames,
+  revealCellBelowFreeze,
 } from './univer-sync'
 import type { LazyWorkbookState, UniverRuntime, UniverWorksheet } from './univer-state'
 import { applyAiTableAdd } from './workbook-ops'
@@ -152,7 +153,7 @@ export function goToReference(ctx: DataToolsContext, ref: string): string | null
     const range = worksheet.getRange(resolved)
     const target = workbook.getSheetBySheetId(range.getSheetId()) ?? worksheet
     workbook.setActiveRange(range)
-    target.scrollToCell(range.getRow(), range.getColumn())
+    void revealCellBelowFreeze(target, range.getRow(), range.getColumn())
     // Hand keyboard focus back to the grid (Univer's hidden editor host, the
     // same handoff its own name box does); typing right after a jump then
     // lands in the target cell instead of being dropped on <body>.

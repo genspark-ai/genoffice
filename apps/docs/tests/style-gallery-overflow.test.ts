@@ -103,6 +103,7 @@ function ribbonProps(editor: Editor) {
     showNav: false,
     onShowNav: noop,
     commentCount: 0,
+    openCommentCount: 0,
     onShowComments: noop,
     canComment: false,
     onNewComment: noop,

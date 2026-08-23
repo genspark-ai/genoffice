@@ -30,10 +30,13 @@ export async function convertPdfToXlsx(
   pdf: Uint8Array,
   opts: ConvertOptions,
 ): Promise<ConvertXlsxResult> {
-  const { irPages, warnings, pageResults } = extractIrDocument(pdf, opts)
+  const { irPages, warnings, pageResults, furnitureHf } = extractIrDocument(pdf, {
+    ...opts,
+    cellData: true,
+  })
   // uninstalled embedded families map to metric-compatible stand-ins (P21)
   applyOutputFontSubstitutions(irPages, [])
-  const { xlsx, warnings: xlsxWarnings } = await rebuildXlsx(irPages)
+  const { xlsx, warnings: xlsxWarnings } = await rebuildXlsx(irPages, furnitureHf)
   return {
     xlsx,
     pages: irPages.length,

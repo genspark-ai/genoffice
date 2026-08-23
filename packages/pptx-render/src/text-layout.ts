@@ -28,6 +28,11 @@ import { emuToPx, ptToPx, type Viewport } from './coords'
 const DEFAULT_FONT = 'Arial'
 const DEFAULT_SIZE_PT = 18
 
+/** <a:bodyPr> inset defaults (EMU): 0.1" left/right, 0.05" top/bottom. Mirrors the
+ *  engine's DEFAULT_BODY_INSETS — importing it would drag the engine runtime into the
+ *  renderer bundle, so a test asserts the two stay equal instead. */
+export const DEFAULT_INSETS_EMU = { l: 91440, t: 45720, r: 91440, b: 45720 }
+
 interface Token {
   text: string
   style: RunStyle
@@ -84,11 +89,15 @@ function scaleHexAlpha(hex: string, factor: number): string {
 
 function runStyle(run: TextRun, scale: number, fontScale: number): RunStyle {
   const sizePt = run.fontSize ?? DEFAULT_SIZE_PT
+  // PowerPoint kerns only at effective size ≥ the rPr kern threshold (absent = 12 pt
+  // default, 0 = never; probe-measured). The autofit fontScale counts toward the size.
+  const kernMinPt = run.kern ?? 12
   return {
     fontFamily: run.fontFamily || DEFAULT_FONT,
     fontSizePx: ptToPx(sizePt, scale) * fontScale,
     bold: !!run.bold,
     italic: !!run.italic,
+    kerning: kernMinPt > 0 && sizePt * fontScale >= kernMinPt,
   }
 }
 
@@ -673,6 +682,7 @@ function buildLine(
       ...(tok.highlight ? { highlight: tok.highlight } : {}),
       widthPx: w,
       ...(tok.ls ? { letterSpacingPx: tok.ls } : {}),
+      ...(tok.style.kerning === false ? { kerningOff: true } : {}),
       ...(tok.outline ? { outline: tok.outline } : {}),
       ...(tok.gradient ? { gradient: tok.gradient } : {}),
       ...(tok.glow ? { glow: tok.glow } : {}),
@@ -739,6 +749,9 @@ export interface TextLayoutInput {
   /** Table cells: PowerPoint drops the first paragraph's space-before and the last
       paragraph's space-after (rows stay at their minimum height regardless of them). */
   trimEdgeSpacing?: boolean
+  /** Re-run the autofit ladder below a stored fontScale (edit flows only): plain rendering
+      honors the cache as-is like PowerPoint on open. */
+  refitAutofit?: boolean
 }
 
 /**
@@ -783,26 +796,29 @@ function flowIntoColumns(
 export function layoutText(input: TextLayoutInput): RenderTextLayout {
   const { body, boxWidthPx, boxHeightPx, metrics, vp } = input
   const insets = {
-    l: emuToPx(body.insets?.l ?? 91440, vp.scale),
-    t: emuToPx(body.insets?.t ?? 45720, vp.scale),
-    r: emuToPx(body.insets?.r ?? 91440, vp.scale),
-    b: emuToPx(body.insets?.b ?? 45720, vp.scale),
+    l: emuToPx(body.insets?.l ?? DEFAULT_INSETS_EMU.l, vp.scale),
+    t: emuToPx(body.insets?.t ?? DEFAULT_INSETS_EMU.t, vp.scale),
+    r: emuToPx(body.insets?.r ?? DEFAULT_INSETS_EMU.r, vp.scale),
+    b: emuToPx(body.insets?.b ?? DEFAULT_INSETS_EMU.b, vp.scale),
   }
   const availWidth = Math.max(boxWidthPx - insets.l - insets.r, 1)
   const availHeight = Math.max(boxHeightPx - insets.t - insets.b, 1)
   const wrap = body.wrap !== false
 
   if (body.vert)
-    return layoutTextVertical(
-      body,
-      body.vert,
-      availWidth,
-      availHeight,
-      insets,
-      wrap,
-      metrics,
-      vp.scale,
-    )
+    return {
+      ...layoutTextVertical(
+        body,
+        body.vert,
+        availWidth,
+        availHeight,
+        insets,
+        wrap,
+        metrics,
+        vp.scale,
+      ),
+      autofit: body.autofit ?? 'none',
+    }
 
   // bodyPr numCol: paragraphs wrap at the column width and fill column after column
   const numCol = body.numCol && body.numCol > 1 ? Math.floor(body.numCol) : 1
@@ -838,7 +854,16 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
   }
   // With columns, the single-stream span may spread over numCol columns of availHeight
   const fitTarget = availHeight * numCol
-  if (body.autofit === 'shrink' && fitSpan(result) > fitTarget * 1.03) {
+  // A stored fontScale is authoritative: PowerPoint renders the cached ratio as-is on
+  // open/export and never re-fits (probe-measured — a bare <a:normAutofit/> even renders
+  // at 100% overflowing the box). Stepping below the cache when our metrics run a hair
+  // long shrank whole pages a visible notch (autofit ladder only serves cache-less boxes,
+  // i.e. live edits).
+  if (
+    body.autofit === 'shrink' &&
+    (input.refitAutofit || body.fontScale == null) &&
+    fitSpan(result) > fitTarget * 1.03
+  ) {
     for (const [fs, red] of SHRINK_STEPS) {
       if (fs >= storedScale - 1e-6) continue
       const effRed = Math.max(red, storedRed)
@@ -893,6 +918,7 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
     contentHeight: result.contentHeight,
     ...(result.inkBottom ? { inkBottom: result.inkBottom } : {}),
     wrap,
+    autofit: body.autofit ?? 'none',
     ...(extrusion ? { extrusion } : {}),
   }
 }
@@ -1050,6 +1076,8 @@ function layoutTextVertical(
         ...(tok.reflection ? { reflection: true } : {}),
         ...(tok.shadow ? { shadow: tok.shadow } : {}),
         widthPx: adv,
+        // Rotated Latin words draw as whole strings too: keep draw kerning in step with the measure
+        ...(tok.style.kerning === false ? { kerningOff: true } : {}),
         rotate90: true,
         srcRunIdx: tok.srcRun,
         ...(tok.link ? { link: tok.link } : {}),

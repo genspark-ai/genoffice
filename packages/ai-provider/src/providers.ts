@@ -61,29 +61,34 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'gemini',
     label: 'Gemini',
-    // 3.x lineup per ai.google.dev pricing/model pages (2026-08)
+    // 3.x lineup per ai.google.dev/gemini-api/docs/models (2026-08). 3.7 Flash is
+    // the current stable Flash; 3.1 Pro is still preview-only.
     models: [
+      'gemini-3.7-flash',
       'gemini-3.1-pro-preview',
       'gemini-3.6-flash',
-      'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
     ],
-    defaultModel: 'gemini-3.6-flash',
+    defaultModel: 'gemini-3.7-flash',
     keyPlaceholder: 'AIza...',
   },
   {
     id: 'deepseek',
     label: 'DeepSeek',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
-    defaultModel: 'deepseek-chat',
+    // V4 ids per api-docs.deepseek.com (2026-08). The deepseek-chat /
+    // deepseek-reasoner aliases were retired 2026-07-24; thinking mode is now
+    // a request parameter, so both ids drive the tool-calling agent loop.
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+    defaultModel: 'deepseek-v4-pro',
     keyPlaceholder: 'sk-...',
   },
   {
     id: 'openai',
     label: 'OpenAI',
-    // GPT-5.6 naming: the bare `gpt-5.6` alias routes to gpt-5.6-sol (flagship);
-    // terra balances cost/intelligence, luna is the high-volume tier (2026-08)
-    models: ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+    // GPT-5.6 naming: sol is the flagship (the bare `gpt-5.6` alias resolves to
+    // it, but spell it out so the picker says which tier it is), terra balances
+    // cost/intelligence, luna is the high-volume tier (2026-08)
+    models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
     defaultModel: 'gpt-5.6-terra',
     keyPlaceholder: 'sk-...',
   },
@@ -97,31 +102,36 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'glm',
     label: 'GLM',
-    models: ['glm-5.3', 'glm-5-turbo', 'glm-4.7'],
+    // bigmodel.cn text-model lineup (2026-08); 5.3 and 5.2 share a base model,
+    // 5-Turbo is the cheap tier
+    models: ['glm-5.3', 'glm-5.2', 'glm-5-turbo'],
     defaultModel: 'glm-5.3',
     keyPlaceholder: 'xxxxxxxx.xxxxxxxx',
   },
   {
     id: 'qwen',
-    // DashScope "latest" aliases, stable across Qwen releases
     label: 'Qwen',
-    models: ['qwen-max', 'qwen-plus', 'qwen-flash'],
-    defaultModel: 'qwen-max',
+    // Versioned DashScope ids: the bare qwen-max alias still points at a
+    // Qwen2.5-era snapshot, so name the 3.x tiers explicitly (2026-08)
+    models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'],
+    defaultModel: 'qwen3.8-max',
     keyPlaceholder: 'sk-...',
   },
   {
     id: 'doubao',
-    // Ark also accepts ep-... inference endpoint ids in the model field
     label: 'Doubao',
-    models: ['doubao-seed-1-6-251015'],
-    defaultModel: 'doubao-seed-1-6-251015',
+    // Ark ids are dashed and date-pinned; it also accepts ep-... inference
+    // endpoint ids in the model field
+    models: ['doubao-seed-2-1-pro-260628', 'doubao-seed-2-1-turbo-260628'],
+    defaultModel: 'doubao-seed-2-1-pro-260628',
     keyPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
   },
   {
     id: 'minimax',
     label: 'MiniMax',
-    models: ['MiniMax-M2.5'],
-    defaultModel: 'MiniMax-M2.5',
+    // M3 is the current agentic/tool-use model; M2.5 moved to the legacy tier
+    models: ['MiniMax-M3', 'MiniMax-M2.7'],
+    defaultModel: 'MiniMax-M3',
     keyPlaceholder: 'eyJ...',
   },
   {
@@ -134,17 +144,21 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'mistral',
     label: 'Mistral',
-    models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],
-    defaultModel: 'mistral-large-latest',
+    // `-latest` aliases track the newest GA snapshot. Medium 3.5 is Mistral's
+    // agentic tier; codestral is a code-completion/FIM model, not an agent driver.
+    models: ['mistral-medium-latest', 'mistral-large-latest', 'mistral-small-latest'],
+    defaultModel: 'mistral-medium-latest',
     keyPlaceholder: 'API Key',
   },
   {
     id: 'openrouter',
     label: 'OpenRouter',
+    // vendor-prefixed slugs exactly as openrouter.ai/api/v1/models lists them —
+    // there is no `openai/gpt-5.6` alias there, only the per-tier ids
     models: [
       'openrouter/auto',
       'anthropic/claude-sonnet-5',
-      'openai/gpt-5.6',
+      'openai/gpt-5.6-sol',
       'moonshotai/kimi-k3',
     ],
     defaultModel: 'openrouter/auto',
@@ -204,6 +218,43 @@ export function activeProvider(settings: AiSettings): AiProviderId {
 }
 
 /**
+ * Model ids a vendor has stopped serving, mapped to their replacement. A
+ * stored selection outlives the provider list, so without this remap an old
+ * settings file keeps sending an id the API now rejects.
+ */
+const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
+  // aliases retired 2026-07-24; DeepSeek pointed both at the V4-Flash line,
+  // where thinking mode is a request parameter rather than a separate id
+  deepseek: {
+    'deepseek-chat': 'deepseek-v4-flash',
+    'deepseek-reasoner': 'deepseek-v4-flash',
+  },
+}
+
+/** pasted keys/URLs often carry stray whitespace, which turns into a 401 with a valid key */
+function trimConfigs(providers: AiSettings['providers']): AiSettings['providers'] {
+  const trimmed = { ...providers }
+  for (const [id, config] of Object.entries(trimmed)) {
+    trimmed[id as AiProviderId] = {
+      ...config,
+      apiKey: config.apiKey?.trim() ?? '',
+      ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl.trim() } : {}),
+    }
+  }
+  return trimmed
+}
+
+function migrateRetiredModels(providers: AiSettings['providers']): AiSettings['providers'] {
+  const migrated = { ...providers }
+  for (const [id, replacements] of Object.entries(RETIRED_MODELS)) {
+    const config = migrated[id as AiProviderId]
+    const replacement = config?.model ? replacements[config.model] : undefined
+    if (replacement) migrated[id as AiProviderId] = { ...config, model: replacement }
+  }
+  return migrated
+}
+
+/**
  * Merge on-disk settings over freshly computed defaults, migrating the
  * pre-provider shape (a single OpenAI-compatible endpoint) into the
  * "custom" provider slot. `stored` is whatever the caller read from its
@@ -216,16 +267,16 @@ export function resolveAiSettings(
   if (!stored.providers) {
     if (stored.apiKey) {
       defaults.providers.custom = {
-        apiKey: stored.apiKey,
+        apiKey: stored.apiKey.trim(),
         model: stored.model ?? '',
-        baseUrl: stored.baseUrl ?? 'https://api.openai.com/v1',
+        baseUrl: (stored.baseUrl ?? 'https://api.openai.com/v1').trim(),
       }
     }
     return defaults
   }
   return {
     provider: stored.provider ?? defaults.provider,
-    providers: { ...defaults.providers, ...stored.providers },
+    providers: trimConfigs(migrateRetiredModels({ ...defaults.providers, ...stored.providers })),
     gskToolsEnabled: stored.gskToolsEnabled ?? defaults.gskToolsEnabled ?? true,
   }
 }

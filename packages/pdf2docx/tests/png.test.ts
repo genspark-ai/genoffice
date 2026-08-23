@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { encodeRgbaPng } from '../src/extract'
+import { cropRgba, encodeRgbaPng } from '../src/extract'
 
 function solidRgba(w: number, h: number, rgba: [number, number, number, number]): Uint8Array {
   const buf = new Uint8Array(w * h * 4)
@@ -41,5 +41,28 @@ describe('encodeRgbaPng', () => {
 
   it('rejects a size mismatch', () => {
     expect(() => encodeRgbaPng(new Uint8Array(10), 2, 2)).toThrow(/expected/)
+  })
+})
+
+describe('cropRgba (P34)', () => {
+  const px = (w: number, h: number) => ({
+    rgba: Uint8Array.from({ length: w * h * 4 }, (_, i) => (i >> 2) % 256),
+    width: w,
+    height: h,
+  })
+
+  it('crops a fractional window measured from the top-left', () => {
+    const out = cropRgba(px(4, 4), { left: 0.25, top: 0.5, right: 0.25, bottom: 0 })
+    expect(out).not.toBeNull()
+    expect(out!.width).toBe(2)
+    expect(out!.height).toBe(2)
+    // row 2 (from top), col 1 → source pixel index 2*4+1 = 9
+    expect(out!.rgba[0]).toBe(9)
+    // second output row starts at source pixel 3*4+1 = 13
+    expect(out!.rgba[8]).toBe(13)
+  })
+
+  it('returns null when the window collapses', () => {
+    expect(cropRgba(px(4, 4), { left: 0.5, top: 0, right: 0.5, bottom: 0 })).toBeNull()
   })
 })

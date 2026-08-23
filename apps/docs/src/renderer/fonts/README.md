@@ -121,3 +121,18 @@ Reserved Font Name clause does not apply. The upstream fonts carry no Latin
 letters (only digits/punctuation); Latin text in a cs-font run falls through to
 the rest of the chain. Word substitutes a missing Arabic font with a naskh-style
 serif, so unknown Arabic families default to the Naskh chain.
+
+## PUA blanker
+
+| Font                              | Role                                             |
+| --------------------------------- | ------------------------------------------------ |
+| GenOffice PUA Blank (woff2, 312B) | blank 1em glyph for all of U+E000-F8FF (BMP PUA) |
+
+Generated from scratch by `tools/build-pua-blank-font.py` (no upstream font;
+two glyphs, both empty). Chromium never system-falls-back for Private Use
+codepoints: an unmapped PUA character renders the chain's primary font's
+`.notdef`. Chains headed by a real face (Calibri, Carlito GO) therefore draw
+tofu boxes for AI-residue PUA tokens, while Word — and chains headed by the
+bundled CJK subsets, whose subsetted `.notdef` is blank — show nothing. This
+face sits in the Aptos chain and behind the range-limited `Noto Sans/Serif
+CJK GO` aliases so PUA stays invisible there too.

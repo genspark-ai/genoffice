@@ -34,6 +34,7 @@ let maxSlides = 12
 let outDir = '/tmp/fidelity/run'
 let refKind = 'libreoffice'
 let refCache = null
+let pptTimeout = 120_000
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--max-slides') maxSlides = parseInt(args[++i], 10)
   else if (args[i] === '--out') outDir = args[++i]
@@ -41,6 +42,7 @@ for (let i = 0; i < args.length; i++) {
     refKind = args[++i] // libreoffice | powerpoint
   else if (args[i] === '--ref-cache')
     refCache = path.resolve(args[++i]) // previous run's outDir: reuse <cache>/<deck>/ref instead of re-exporting
+  else if (args[i] === '--ppt-timeout') pptTimeout = parseInt(args[++i], 10)
   else files.push(path.resolve(args[i]))
 }
 if (!files.length) {
@@ -132,7 +134,7 @@ function exportPdfViaPowerPoint(pptx, outPdf) {
       close p saving no
     end tell`
   try {
-    execFileSync('osascript', ['-e', script], { stdio: 'pipe', timeout: 120_000 })
+    execFileSync('osascript', ['-e', script], { stdio: 'pipe', timeout: pptTimeout })
   } catch (e) {
     try {
       execFileSync('pkill', ['-x', 'Microsoft PowerPoint'], { stdio: 'ignore' })

@@ -24,6 +24,43 @@ describe('w:t whitespace handling', () => {
     const doc = await parseDocx(bytes)
     expect(doc.blocks[0].runs!.map((r) => r.text).join('')).toBe('L1:cancelled kept ')
   })
+
+  it('xml:space="preserve" on the document root covers every w:t (inherited XML scope)', async () => {
+    const bytes = await buildDocx({
+      docRootExtraAttrs: 'xml:space="preserve"',
+      bodyXml:
+        '<w:p><w:r><w:t>Memorandum</w:t></w:r>' +
+        '<w:r><w:rPr><w:spacing w:val="-49"/></w:rPr><w:t> </w:t></w:r>' +
+        '<w:r><w:t>of</w:t></w:r>' +
+        '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="default">\n\t x \n</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    // whitespace-only run survives; an explicit xml:space="default" still trims
+    expect(doc.blocks[0].runs!.map((r) => r.text)).toEqual(['Memorandum', ' ', 'of', 'x'])
+  })
+
+  it('xml:space="preserve" on a footer part root covers its w:t too', async () => {
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId70" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/footer1.xml',
+          xml:
+            XML_DECL +
+            '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xml:space="preserve">' +
+            '<w:p><w:r><w:t>END</w:t></w:r>' +
+            '<w:r><w:rPr><w:spacing w:val="-4"/></w:rPr><w:t> </w:t></w:r>' +
+            '<w:r><w:t>OF</w:t></w:r></w:p></w:ftr>',
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml',
+        },
+      ],
+      sectPrExtra: '<w:footerReference w:type="default" r:id="rId70"/>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.footerParas![0].runs.map((r) => r.text)).toEqual(['END', ' ', 'OF'])
+  })
 })
 
 describe('hex color tolerance', () => {
@@ -54,21 +91,38 @@ describe('default style resolution', () => {
     expect(defaults.map((s) => s.styleId)).toEqual(['Title'])
   })
 
-  it('without any w:default, the first style of the type is the default', async () => {
+  it('without any w:default, a style id/named "Normal" is the default (not the first style)', async () => {
     const bytes = await buildDocx({
       bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
       stylesXml:
         XML_DECL +
         '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-        '<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/>' +
+        '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/>' +
+        '<w:rPr><w:b/><w:sz w:val="56"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Style7"><w:name w:val="normal"/>' +
         '<w:rPr><w:color w:val="FF00FF"/><w:sz w:val="48"/></w:rPr></w:style>' +
-        '<w:style w:type="paragraph" w:styleId="MyStyle"><w:name w:val="MyStyle"/></w:style>' +
         '</w:styles>',
     })
     const doc = await parseDocx(bytes)
     const defaults = [...doc.styles.values()].filter((s) => s.isDefault && s.type === 'paragraph')
-    expect(defaults.map((s) => s.styleId)).toEqual(['Normal'])
+    expect(defaults.map((s) => s.styleId)).toEqual(['Style7'])
     expect(defaults[0].display?.color).toBe('FF00FF')
+  })
+
+  it('without any w:default or Normal style, no paragraph style is the default', async () => {
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+      stylesXml:
+        XML_DECL +
+        '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/>' +
+        '<w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:b/><w:sz w:val="56"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="MyStyle"><w:name w:val="MyStyle"/></w:style>' +
+        '</w:styles>',
+    })
+    const doc = await parseDocx(bytes)
+    const defaults = [...doc.styles.values()].filter((s) => s.isDefault)
+    expect(defaults).toEqual([])
   })
 })
 

@@ -109,6 +109,9 @@ export interface ChartAxisStyle {
   /** Explicit tick units (c:majorUnit / c:minorUnit) */
   majorUnit?: number
   minorUnit?: number
+  /** Category-axis explicit skips: label every Nth category / tick+gridline every Nth slot */
+  tickLblSkip?: number
+  tickMarkSkip?: number
   title?: string
   /** <c:title><c:overlay val="1"/>: the axis title floats over the plot, reserving no space */
   titleOverlay?: boolean
@@ -263,17 +266,21 @@ export function parseChartXml(
   // Cartesian types (bar/area/line) may coexist combined (e.g. column+line combo); pie/scatter/radar stand alone.
   // 3D variants map onto the 2D pipelines (same data/palette/legend); the render layer adds a
   // pseudo-3D look (elliptical pie with a rim, extruded bars) driven by pseudo3D + c:view3D rotX.
-  const cartesian: Array<{ kind: 'bar' | 'area' | 'line'; plot: any }> = []
-  const barPlot = plotArea['c:barChart'] ?? plotArea['c:bar3DChart']
-  const areaPlot = plotArea['c:areaChart'] ?? plotArea['c:area3DChart']
-  const linePlot = plotArea['c:lineChart'] ?? plotArea['c:line3DChart']
+  // The same plot type may appear twice in one plotArea (primary + secondary-axis group:
+  // two c:lineChart nodes) — fast-xml-parser then yields an array; flatten each node into
+  // its own combo entry so the secondary group's series and axId still parse.
+  const plots = (n: any): any[] => (Array.isArray(n) ? n : n ? [n] : [])
+  const cartesian: Array<{ kind: 'bar' | 'area' | 'line'; plot: any; stock?: boolean }> = []
   // Stock (open-)high-low-close rides the line pipeline: category axis + one value series
   // per role; whiskers/up-down bars come from the stock flags, connecting lines stay off
   const stockPlot = plotArea['c:stockChart']
-  if (barPlot) cartesian.push({ kind: 'bar', plot: barPlot })
-  if (areaPlot) cartesian.push({ kind: 'area', plot: areaPlot })
-  if (linePlot) cartesian.push({ kind: 'line', plot: linePlot })
-  if (stockPlot) cartesian.push({ kind: 'line', plot: stockPlot })
+  for (const p of plots(plotArea['c:barChart'] ?? plotArea['c:bar3DChart']))
+    cartesian.push({ kind: 'bar', plot: p })
+  for (const p of plots(plotArea['c:areaChart'] ?? plotArea['c:area3DChart']))
+    cartesian.push({ kind: 'area', plot: p })
+  for (const p of plots(plotArea['c:lineChart'] ?? plotArea['c:line3DChart']))
+    cartesian.push({ kind: 'line', plot: p })
+  for (const p of plots(stockPlot)) cartesian.push({ kind: 'line', plot: p, stock: true })
 
   const piePlot = plotArea['c:pieChart'] ?? plotArea['c:pie3DChart'] ?? plotArea['c:doughnutChart']
 
@@ -338,6 +345,9 @@ export function parseChartXml(
       const s: ChartSeries = {
         values: readNumPoints(plotKind === 'scatter' ? ser['c:yVal'] : ser['c:val']),
       }
+      // A numRef with no numCache has no renderable data: PowerPoint plots nothing and
+      // omits the series from the legend (external workbook data is never re-fetched)
+      if (!s.values.length) continue
       if (tagPlotKind) s.plotKind = plotKind as 'line' | 'bar' | 'area'
       // Excel/PowerPoint pick automatic series colors by c:idx, not document order
       const palIdx = parseInt(ser['c:idx']?.['@_val'], 10)
@@ -449,9 +459,9 @@ export function parseChartXml(
         c.kind,
         true,
         secAxId != null && plotAxIds(c.plot).includes(secAxId),
-        c.plot === stockPlot,
+        !!c.stock,
       )
-  } else parsePlotSeries(plot, kind, false, false, plot === stockPlot)
+  } else parsePlotSeries(plot, kind, false, false, !!cartesian[0]?.stock)
   if (!series.length) return null
   if (!categories.length) {
     // With no category cache, keep names empty (length from the longest series); never inject placeholders
@@ -954,6 +964,10 @@ function parseAxis(ax: any, theme?: Theme): ChartAxisStyle | undefined {
   if (Number.isFinite(majorUnit) && majorUnit > 0) out.majorUnit = majorUnit
   const minorUnit = Number(ax['c:minorUnit']?.['@_val'])
   if (Number.isFinite(minorUnit) && minorUnit > 0) out.minorUnit = minorUnit
+  const lblSkip = parseInt(ax['c:tickLblSkip']?.['@_val'], 10)
+  if (Number.isFinite(lblSkip) && lblSkip > 1) out.tickLblSkip = lblSkip
+  const markSkip = parseInt(ax['c:tickMarkSkip']?.['@_val'], 10)
+  if (Number.isFinite(markSkip) && markSkip > 1) out.tickMarkSkip = markSkip
   // Axis title (all a:t inside c:title/c:tx/c:rich concatenated)
   const titleNode = ax['c:title']
   const title = collectText(titleNode?.['c:tx']?.['c:rich'])

@@ -4,6 +4,7 @@ import {
   classifyPage,
   classifyPages,
   computeCanvasPrior,
+  isBeamerPageSize,
   isSlideProducer,
   isSlideSizedPage,
 } from '../src/analyze/canvas'
@@ -90,7 +91,21 @@ function denseSlideSizedPage(index = 0): IrPage {
   return page([blockOf(lines)], { index })
 }
 
+/** sparse Beamer slide on the class's default 128×96mm page */
+function beamerPage(index = 0): IrPage {
+  return page(
+    [
+      blockOf([lineAt('Teorema del límite central', 24, 250, 17, 220)]),
+      blockOf([lineAt('σ: desviación estándar', 24, 170, 10, 140)]),
+      blockOf([lineAt('n = 30 muestras', 24, 140, 10, 120)]),
+      blockOf([lineAt('p. 7', 320, 20, 7, 24)]),
+    ],
+    { index, widthPt: 362.835, heightPt: 272.126, bgColor: '1a2b3c' },
+  )
+}
+
 const SLIDE_META = { producer: 'Microsoft® PowerPoint® 2016' }
+const PDFTEX_META = { producer: 'pdfTeX-1.40.25', creator: 'LaTeX with hyperref package' }
 
 describe('doc-level priors', () => {
   it('recognizes slide producers (PowerPoint/Keynote/Slides/Impress/WPS 演示)', () => {
@@ -123,6 +138,32 @@ describe('doc-level priors', () => {
     })
     expect(report.slideProducer).toBe(false)
     expect(report.pointsNeeded).toBeGreaterThanOrEqual(4)
+  })
+
+  it('recognizes Beamer page geometry, not A4/A6-landscape or letter', () => {
+    expect(isBeamerPageSize(362.835, 272.126)).toBe(true) // 128×96mm (4:3 default)
+    expect(isBeamerPageSize(453.543, 255.118)).toBe(true) // 160×90mm (16:9)
+    expect(isBeamerPageSize(453.543, 283.465)).toBe(true) // 160×100mm (16:10)
+    expect(isBeamerPageSize(842, 595)).toBe(false) // A4 landscape
+    expect(isBeamerPageSize(612, 792)).toBe(false) // letter portrait
+    expect(isBeamerPageSize(420.945, 297.638)).toBe(false) // aspectratio=141 = A6 landscape, excluded
+  })
+
+  it('a token-less pdfTeX Beamer deck earns the slide prior via the page-size fingerprint', () => {
+    const deck = computeCanvasPrior([beamerPage(0), beamerPage(1)], PDFTEX_META)
+    expect(deck.slideProducer).toBe(true)
+    expect(deck.pointsNeeded).toBe(2)
+    // same geometry from a non-TeX producer stays unprivileged
+    expect(computeCanvasPrior([beamerPage(0)], { producer: 'pypdf' }).slideProducer).toBe(false)
+    // TeX producer on ordinary paper stays unprivileged
+    const a4 = page([blockOf([lineAt('un artículo normal', 60, 700, 12, 200)])], {
+      widthPt: 595,
+      heightPt: 842,
+    })
+    expect(computeCanvasPrior([a4], PDFTEX_META).slideProducer).toBe(false)
+    // one ordinary page mixed into the deck breaks the fingerprint
+    const mixed = computeCanvasPrior([beamerPage(0), { ...a4, index: 1 }], PDFTEX_META)
+    expect(mixed.slideProducer).toBe(false)
   })
 })
 
@@ -159,6 +200,12 @@ describe('classifyPage', () => {
     const pages = [denseSlideSizedPage(0), denseSlideSizedPage(1), denseSlideSizedPage(2)]
     classifyPages(pages, { producer: 'pypdf' })
     expect(pages.every((p) => p.canvas === undefined)).toBe(true)
+  })
+
+  it('classifies a token-less pdfTeX Beamer deck as canvas (sub-576pt pages)', () => {
+    const pages = [beamerPage(0), beamerPage(1)]
+    classifyPages(pages, PDFTEX_META)
+    expect(pages.every((p) => p.canvas === true)).toBe(true)
   })
 
   it('a sparse-display deck without metadata still classifies canvas via geometry prior', () => {

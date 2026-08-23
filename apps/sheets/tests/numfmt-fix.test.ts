@@ -7,6 +7,7 @@ import {
   fixFormattedValue,
   formatGeneral,
   generalCharBudget,
+  yenLiteralDisplay,
 } from '../src/renderer/numfmt-fix'
 
 const NBSP = ' '
@@ -34,6 +35,32 @@ describe('expandAsteriskFill', () => {
   it('returns null without a fill or when nothing fits', () => {
     expect(expandAsteriskFill('#,##0.00', 1, 25, measure)).toBeNull()
     expect(expandAsteriskFill(ACCOUNTING, 1, 5, measure)).toBeNull()
+  })
+
+  it('matches escaped literal spaces before the fill (numfmt renders them NBSP)', () => {
+    const escapedSpace = '_("$"\\ * #,##0_);_("$"\\ * \\(#,##0\\);_("$"\\ * "-"_);_(@_)'
+    const text = expandAsteriskFill(escapedSpace, 683638, 30, measure)
+    expect(text).toBe(`${NBSP_CHAR}$${NBSP_CHAR}${NBSP_CHAR.repeat(14)}683,638${NBSP_CHAR}`)
+  })
+})
+
+describe('yenLiteralDisplay', () => {
+  const JIS_YEN = '"\\"#,##0'
+
+  it('renders the JIS 0x5C literal as yen for Japanese fonts', () => {
+    expect(yenLiteralDisplay(JIS_YEN, '\\1,275,730', 'Meiryo')).toBe('¥1,275,730')
+    expect(yenLiteralDisplay(JIS_YEN, '\\5', 'ＭＳ Ｐゴシック')).toBe('¥5')
+    expect(yenLiteralDisplay(JIS_YEN, '\\5', 'Yu Gothic')).toBe('¥5')
+  })
+
+  it('honors an explicit ja locale tag without a ja font', () => {
+    expect(yenLiteralDisplay('[$-411]"\\"#,##0', '\\5', 'Calibri')).toBe('¥5')
+  })
+
+  it('leaves non-Japanese contexts and other patterns alone', () => {
+    expect(yenLiteralDisplay(JIS_YEN, '\\5', 'Calibri')).toBeNull()
+    expect(yenLiteralDisplay(JIS_YEN, '\\5', undefined)).toBeNull()
+    expect(yenLiteralDisplay('#,##0', '5', 'Meiryo')).toBeNull()
   })
 })
 
@@ -110,6 +137,16 @@ describe('fixFormattedValue — _x padding and text section', () => {
 
   it('leaves strings alone when the pattern has no text section', () => {
     expect(fixFormattedValue('#,##0.0_);(#,##0.0)', 'abc', 'abc')).toBeNull()
+  })
+
+  it('restores numeric-looking text that Univer formatted as a number', () => {
+    // t="s" "9853" under a date format rendered 1926-12-22; Excel shows the
+    // text as-is (number formats apply to numbers only).
+    expect(fixFormattedValue('yyyy\\-mm\\-dd\\ hh:mm:ss', '9853', '1926-12-22 00:00:00')).toBe(
+      '9853',
+    )
+    expect(fixFormattedValue('0.00', '9853', '9853.00')).toBe('9853')
+    expect(fixFormattedValue('0.00', '9853', '9853')).toBeNull()
   })
 
   it('does not touch values Univer formatted with a different rendering', () => {

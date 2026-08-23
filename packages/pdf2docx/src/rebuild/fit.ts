@@ -15,9 +15,10 @@
  * down to a floor near the source size (the P8 calibration already pinned
  * that size to the rendered ink).
  *
- * Scope is deliberately narrow: LTR blocks of Latin-ish text whose families
- * the measurer resolves. CJK reflows gracefully (any character may wrap) and
- * complex scripts need shaping the measurer does not do.
+ * Coverage (P31): Latin measures through the resolved output face, CJK
+ * through synthetic 1-em fullwidth advances (font-independent), Arabic
+ * through isolated advances scaled by a calibrated shaping ratio. Blocks in
+ * other complex scripts stay out — no shaping model for them.
  */
 import { advanceWidths } from '../../../font-metrics/src/index'
 import type { Span, TextBlock } from '../ir'
@@ -54,10 +55,73 @@ export const systemFontMeasurer: SpanMeasurer = (text, family, sizePt, bold, ita
   return Number.isNaN(total) ? null : total / 20
 }
 
-const MEASURABLE_SCRIPTS = new Set(['latin', 'common'])
+// ── CJK synthetic advances (P31 A) ──
+// Every CJK output face renders ideographs, kana and hangul at exactly 1 em
+// and fullwidth punctuation likewise, so their width needs no font file at
+// all — which also sidesteps unresolvable mapped families. ASCII inside a
+// CJK-script span (rare) approximates at the half-width slot.
+
+/** fullwidth codepoint test: CJK ideographs, kana, hangul, fullwidth forms */
+const isFullwidthCode = (code: number): boolean =>
+  code === 0x2015 || // CJK dash (P31 D normalization target), 1 em in every EA face
+  (code >= 0x1100 && code <= 0x115f) || // hangul jamo
+  (code >= 0x2e80 && code <= 0x9fff) || // radicals, kana, CJK ideographs
+  (code >= 0xa000 && code <= 0xa4cf) || // yi
+  (code >= 0xac00 && code <= 0xd7a3) || // hangul syllables
+  (code >= 0xf900 && code <= 0xfaff) || // compat ideographs
+  (code >= 0xfe30 && code <= 0xfe4f) || // CJK compat forms
+  (code >= 0xff00 && code <= 0xff60) || // fullwidth forms
+  (code >= 0xffe0 && code <= 0xffe6) ||
+  (code >= 0x20000 && code <= 0x3fffd) // ext ideographs
+
+const cjkSyntheticWidthPt = (text: string, sizePt: number): number => {
+  let ems = 0
+  for (const ch of text) ems += isFullwidthCode(ch.codePointAt(0)!) ? 1 : 0.5
+  return ems * sizePt
+}
+
+// ── Arabic shaped-width estimate (P31 B) ──
+// advanceWidths sums ISOLATED-form advances; Word shapes the run, and the
+// joined initial/medial forms run narrower. Calibrated via CoreText shaped
+// line bounds vs isolated sums on Arial (0.72–0.78 across textbook phrases);
+// erring LOW under-tightens, which is the safe direction for an estimate.
+const ARABIC_SHAPED_RATIO = 0.75
+/** measurement stand-ins when the mapped family cannot render Arabic */
+const ARABIC_FALLBACK_FAMILIES = ['Geeza Pro', 'Arial', 'Times New Roman']
+
+const CJK_SCRIPTS = new Set(['cjk', 'kana', 'hangul'])
+const MEASURABLE_SCRIPTS = new Set(['latin', 'common', 'arabic', ...CJK_SCRIPTS])
+
+// a span without a family renders in the document default (Calibri); the
+// measurable stand-in is Arial, whose advances run ~5% wider (P31 C)
+const DEFAULT_LATIN_STANDIN = 'Arial'
+const CALIBRI_VS_ARIAL = 0.95
+
+/** measured width of one span in the output face, script-dispatched */
+const spanWidthPt = (
+  s: Span,
+  text: string,
+  sizePt: number,
+  measure: SpanMeasurer,
+): number | null => {
+  if (CJK_SCRIPTS.has(s.script)) return cjkSyntheticWidthPt(text, sizePt)
+  if (s.script === 'arabic') {
+    let w = s.fontFamily === '' ? null : measure(text, s.fontFamily, sizePt, s.bold, s.italic)
+    for (const fam of ARABIC_FALLBACK_FAMILIES) {
+      if (w !== null) break
+      w = measure(text, fam, sizePt, s.bold, s.italic)
+    }
+    return w === null ? null : w * ARABIC_SHAPED_RATIO
+  }
+  if (s.fontFamily === '') {
+    const w = measure(text, DEFAULT_LATIN_STANDIN, sizePt, s.bold, s.italic)
+    return w === null ? null : w * CALIBRI_VS_ARIAL
+  }
+  return measure(text, s.fontFamily, sizePt, s.bold, s.italic)
+}
 
 const measurable = (block: TextBlock): boolean =>
-  block.dir === 'ltr' &&
+  (block.dir === 'ltr' || block.dir === 'rtl') &&
   block.lines.length >= 1 &&
   block.tocEntry === undefined &&
   block.list === undefined &&
@@ -67,7 +131,7 @@ const measurable = (block: TextBlock): boolean =>
       (s) =>
         s.noteRef !== undefined ||
         s.invisible === true ||
-        (MEASURABLE_SCRIPTS.has(s.script) && !s.text.includes('\t') && s.fontFamily !== ''),
+        (MEASURABLE_SCRIPTS.has(s.script) && !s.text.includes('\t')),
     ),
   )
 
@@ -89,7 +153,7 @@ const measureLine = (
     const text = i === spans.length - 1 ? s.text.replace(/ +$/, '') : s.text
     if (text.length === 0) continue
     const size = s.fontSize * sizeScale
-    const w = measure(text, s.fontFamily, size, s.bold, s.italic)
+    const w = spanWidthPt(s, text, size, measure)
     if (w === null) return null
     const cps = [...text].length
     widthPt += w * (s.charScale ?? 1) + (s.charSpacingPt ?? 0) * cps

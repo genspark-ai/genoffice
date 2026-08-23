@@ -364,7 +364,7 @@ describe('normAutofit fontScale: files already shrunk by PowerPoint render at th
     expect(out.lines[0]!.runs[0]!.fontSizePx).toBeCloseTo(20 * (96 / 72) * 0.625, 1)
   })
 
-  it('content still overflows at the stored scale: keep bisecting downward, never exceed the stored scale', () => {
+  it('stored scale renders as-is; refitAutofit (edit flow) bisects downward below it', () => {
     const body = {
       paragraphs: Array.from({ length: 20 }, () => ({
         runs: [{ text: '很长的一行文字内容', fontSize: 20 }],
@@ -373,8 +373,18 @@ describe('normAutofit fontScale: files already shrunk by PowerPoint render at th
       autofit: 'shrink' as const,
       fontScale: 0.8,
     }
-    const out = layoutText({ body, boxWidthPx: 400, boxHeightPx: 120, metrics, vp })
-    expect(out.fontScale).toBeLessThan(0.8)
+    // Probe-measured: PowerPoint renders the cached ratio as-is on open and overflows
+    const plain = layoutText({ body, boxWidthPx: 400, boxHeightPx: 120, metrics, vp })
+    expect(plain.fontScale).toBe(0.8)
+    const refit = layoutText({
+      body,
+      boxWidthPx: 400,
+      boxHeightPx: 120,
+      metrics,
+      vp,
+      refitAutofit: true,
+    })
+    expect(refit.fontScale).toBeLessThan(0.8)
   })
 
   it('lnSpcReduction compresses line spacing (fixed lineExact unaffected)', () => {

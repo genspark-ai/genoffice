@@ -204,8 +204,6 @@ export function PaginationPreview({
   const [secs, setSecs] = useState<SectionInfo[]>(sections)
 
   const canvasContentW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
-  // clone wrap width = measurement width: a columned canvas measures single-flow at column width; the clone must match to reproduce line breaks
-  const wrapW = colFlow?.colWidthPx ?? canvasContentW
   // canvas content-area top = effective top margin after header push-down (matches --page-pad)
   const canvasMTop = effectiveTopPx(
     section,
@@ -214,6 +212,12 @@ export function PaginationPreview({
   /** Settings of the page's section (single-section documents fall back to the canvas geometry) */
   const settingsOf = (slice: PageSlice): SectionSettings =>
     secs[Math.min(slice.section, secs.length - 1)]?.settings ?? section
+  /** Clone wrap width = the section's measurement width (columned canvas = column width);
+   *  differing-width sections wrap at their own content width (per-block width decorations ride the clone) */
+  const wrapWOf = (sectionIdx: number): number =>
+    colFlow?.colWidthPx ??
+    sectionPageBox(secs[Math.min(sectionIdx, Math.max(secs.length - 1, 0))]?.settings ?? section)
+      .contentWidth
 
   useEffect(() => {
     const pm = document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
@@ -243,11 +247,14 @@ export function PaginationPreview({
         endnoteItems ?? [],
         FOOTNOTE_SEPARATOR_H,
       )
-      // floating boxes below the flow end still need pages to land on
+      // floating boxes below the flow end still need pages to land on; bottom-
+      // margin overhang stays on the page (same allowance as the canvas)
+      const lastSec = live.length > 0 ? live[live.length - 1].settings : section
       const flowWithFloats = appendFloatSpillBlock(
         blocks,
         withEndnotes?.totalHeight ?? totalHeight,
         floats,
+        lastSec ? twipsToPx(lastSec.marginBottom) : 0,
       )
       const flowH = flowWithFloats ?? withEndnotes?.totalHeight ?? totalHeight
       setEndnotesTop(withEndnotes?.top ?? null)
@@ -562,7 +569,7 @@ export function PaginationPreview({
                 <div className="pv-clip" style={{ height: slice.repeatHeader.height }}>
                   <div
                     className="pv-offset"
-                    style={{ marginTop: -slice.repeatHeader.top, width: wrapW }}
+                    style={{ marginTop: -slice.repeatHeader.top, width: wrapWOf(slice.section) }}
                   >
                     <div
                       className="doc-page pv-content"
@@ -622,7 +629,10 @@ export function PaginationPreview({
                             <div className="pv-clip" style={{ height: col.repeatHeader.height }}>
                               <div
                                 className="pv-offset"
-                                style={{ marginTop: -col.repeatHeader.top, width: wrapW }}
+                                style={{
+                                  marginTop: -col.repeatHeader.top,
+                                  width: wrapWOf(region.section),
+                                }}
                               >
                                 <div
                                   className="doc-page pv-content"
@@ -650,7 +660,7 @@ export function PaginationPreview({
                           >
                             <div
                               className="pv-offset"
-                              style={{ marginTop: -col.start, width: wrapW }}
+                              style={{ marginTop: -col.start, width: wrapWOf(region.section) }}
                             >
                               <div
                                 className="doc-page pv-content"
@@ -686,8 +696,11 @@ export function PaginationPreview({
                   }}
                 >
                   {/* the offset lives on a separate wrapper: print rules zero out .doc-page's margin;
-                      width is fixed to the measured wrap width (columned canvas = column width), so wider landscape-section paper doesn't reflow */}
-                  <div className="pv-offset" style={{ marginTop: -slice.start, width: wrapW }}>
+                      width is fixed to the section's wrap width so the clone never reflows against the paper */}
+                  <div
+                    className="pv-offset"
+                    style={{ marginTop: -slice.start, width: wrapWOf(slice.section) }}
+                  >
                     <div
                       className="doc-page pv-content"
                       dangerouslySetInnerHTML={{

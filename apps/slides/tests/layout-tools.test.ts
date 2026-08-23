@@ -291,8 +291,20 @@ describe('execute_layout_script tool', () => {
       name: 'read_slide',
       input: { slideIndex: 0 },
     } as any)
-    expect(r.output).toContain('Canvas 1280×720px')
+    expect(r.output).toContain('Canvas 1280×720px (1 px = 9525 EMU)')
     expect(r.output).toContain('pos(100,100) size 400×100')
     expect(r.output).toContain('font 18pt') // 24px → 18pt
+  })
+
+  it('read_slide reports the scale-adjusted px→EMU factor on non-16:9 decks', async () => {
+    // 4:3 deck: baseline 960 doc-px rendered at fitWidth 1280 → scale 4/3, 1 px = 7143.75 EMU
+    slide = { ...slide, scale: 4 / 3 }
+    const skill = createSlidesSkill(access())
+    const r = await skill.executeTool({
+      id: '5',
+      name: 'read_slide',
+      input: { slideIndex: 0 },
+    } as any)
+    expect(r.output).toContain('(1 px = 7143.75 EMU)')
   })
 })

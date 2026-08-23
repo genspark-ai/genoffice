@@ -110,12 +110,21 @@ describe('docStyleCss — typed line grid', () => {
     } as unknown as ParsedDocFull
   }
 
-  it('declares --doc-line-grid per element for uniform typed grids', () => {
+  it('declares --doc-line-grid and --doc-line-max per element for uniform typed grids', () => {
     const css = docStyleCss(
       parsedWithSectPr('<w:sectPr><w:docGrid w:type="lines" w:linePitch="360"/></w:sectPr>'),
     )
     expect(css).toContain(
-      '.doc-page, .doc-page * { --doc-line-grid:round(up, calc(var(--doc-line-factor,1.2) * 1em - var(--doc-grid-pitch,0.0001px) * 0.001), var(--doc-grid-pitch,0.0001px)) }',
+      '--doc-line-grid:round(up, calc(var(--doc-line-factor,1.2) * 1em - var(--doc-grid-pitch,0.0001px) * 0.004), var(--doc-grid-pitch,0.0001px))',
+    )
+    // Word probe 2026-08-22: mult x pitch, floored at the snapped single
+    expect(css).toContain(
+      '--doc-line-max:max(calc(var(--doc-grid-pitch,0.0001px) * var(--doc-line-mult,1)), round(up',
+    )
+    expect(css).toContain('--doc-grid-single-mult:1')
+    // snapToGrid=0 paragraphs degrade to natural x mult on the paragraph AND its spans
+    expect(css).toContain(
+      '.doc-page .doc-nosnap, .doc-page .doc-nosnap * { --doc-line-max:calc(var(--doc-line-factor,1.2) * 1em * var(--doc-line-mult,1)) }',
     )
   })
 

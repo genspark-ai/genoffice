@@ -205,6 +205,82 @@ describe('P27: extractPage flag plumbing', () => {
   })
 })
 
+describe('pseudo-2π char angles', () => {
+  it('keeps upright text whose matrix fuzz makes PDFium report ~2π', async () => {
+    // Office exporters write text matrices with microscopic negative skew
+    // (b/c ≈ -4e-7); PDFium wraps the angle to [0, 2π) and reports ~6.2832
+    // for plainly horizontal glyphs
+    let content = 'BT /F1 12 Tf\n'
+    BODY_LINES.forEach((line, i) => {
+      content += `1 -0.000000377 -0.000000188 1 72 ${700 - i * 20} Tm (${line}) Tj\n`
+    })
+    content += 'ET\n'
+    const pdf = textPdf('0 0 612 792', content)
+    const pdfium = await loadPdfium()
+    const page = withPdfDocument(pdfium, pdf, (doc: number) =>
+      extractPage(pdfium, doc, 0, { cellData: true }),
+    )
+    expect(page.degraded).toBe(false)
+    expect(page.rotatedDropped ?? 0).toBe(0)
+    const body = page.chars.filter((c) => !c.isGenerated && c.code > 0x20)
+    expect(body.length).toBeGreaterThan(100)
+    expect(body.every((c) => Math.abs(c.angle) < 0.26)).toBe(true)
+  })
+})
+
+describe('quarter-turn recovery (cell-data)', () => {
+  it('turns a page-rotated sheet upright instead of dropping every char', async () => {
+    // landscape table drawn rotated into a portrait page (Excel "rotate to
+    // fit"): Tm [0 -1 1 0] advances text down the page with glyph-up at +x,
+    // which PDFium reports as +π/2 on every char
+    let content = 'BT /F1 12 Tf\n'
+    BODY_LINES.forEach((line, i) => {
+      content += `0 -1 1 0 ${100 + i * 20} 700 Tm (${line}) Tj\n`
+    })
+    content += 'ET\n'
+    const pdf = textPdf('0 0 612 792', content)
+    const pdfium = await loadPdfium()
+    const page = withPdfDocument(pdfium, pdf, (doc: number) =>
+      extractPage(pdfium, doc, 0, { cellData: true }),
+    )
+    expect(page.degraded).toBe(false)
+    expect(Math.round(page.widthPt)).toBe(792)
+    expect(Math.round(page.heightPt)).toBe(612)
+    const body = page.chars.filter((c) => !c.isGenerated && c.code > 0x20)
+    expect(body.length).toBeGreaterThan(100)
+    expect(body.every((c) => Math.abs(c.angle) < 0.26)).toBe(true)
+    // reading order survives the turn: the leftmost display-space chars are
+    // the first glyph of each drawn line ("The…", "A second…", "Third…")
+    const first = [...body].sort((a, b) => a.box.x0 - b.box.x0).slice(0, 3)
+    expect(
+      first
+        .map((c) => c.text)
+        .sort()
+        .join(''),
+    ).toBe('ATT')
+  })
+
+  it('still drops mixed rotated labels (CAD-style pages)', async () => {
+    // horizontal body + a minority of rotated dimension labels on BOTH sides:
+    // no single ±90° angle dominates, so the page must NOT be turned
+    let content = bodyContent()
+    content += 'BT /F1 12 Tf\n'
+    for (let i = 0; i < 4; i++) {
+      content += `0 -1 1 0 ${360 + i * 20} 700 Tm (${BODY_LINES[0]}) Tj\n`
+      content += `0 1 -1 0 ${460 + i * 20} 300 Tm (${BODY_LINES[1]}) Tj\n`
+    }
+    content += 'ET\n'
+    const pdf = textPdf('0 0 612 792', content)
+    const pdfium = await loadPdfium()
+    const page = withPdfDocument(pdfium, pdf, (doc: number) =>
+      extractPage(pdfium, doc, 0, { cellData: true }),
+    )
+    expect(Math.round(page.widthPt)).toBe(612)
+    const body = page.chars.filter((c) => !c.isGenerated && c.code > 0x20)
+    expect(body.every((c) => Math.abs(c.angle) < 0.26)).toBe(true)
+  })
+})
+
 describe('P27 T5: /Rotate page normalization', () => {
   it('extracts upright display-space text from a /Rotate 90 page', async () => {
     // landscape content in a portrait MediaBox, displayed via /Rotate 90:

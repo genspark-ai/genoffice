@@ -73,3 +73,42 @@ describe('tab stops roundtrip', () => {
     expect(xml).toContain('w:pos="2880"')
   })
 })
+
+describe('w:ptab absolute position tabs', () => {
+  const PTAB_P =
+    '<w:p><w:r><w:t>1. Introduction</w:t></w:r>' +
+    '<w:r><w:ptab w:relativeTo="margin" w:alignment="right" w:leader="dot"/></w:r>' +
+    '<w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>'
+
+  it('parses into a display-only margin-relative stop and a tab character', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: PTAB_P }))
+    const block = doc.blocks[0]
+    expect(block.runs?.map((r) => r.text).join('')).toBe('1. Introduction\t ')
+    expect(block.format?.tabStops).toEqual([
+      { pos: 100, val: 'right', leader: 'dot', rel: 'margin' },
+    ])
+  })
+
+  it('rel stops never reach w:tabs: untouched paragraph saves byte-identical', async () => {
+    const bytes = await buildDocx({ bodyXml: PTAB_P })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(doc, [{ kind: 'original', docxIndex: 0 }])
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.internal.documentXml).toContain('<w:ptab')
+    expect(reparsed.internal.documentXml).not.toContain('<w:tabs>')
+  })
+
+  it('regenerating a format with only rel stops emits no w:tabs', async () => {
+    const { generateParagraphXml } = await import('../src/generate')
+    const block = {
+      type: 'paragraph' as const,
+      runs: [{ text: 'test' }],
+      format: { tabStops: [{ pos: 100, val: 'right', rel: 'margin' }] as TabStop[] },
+    }
+    const xml = generateParagraphXml(block, {
+      headingStyleIds: new Map(),
+      allocateHyperlinkRel: () => 'rId1',
+    })
+    expect(xml).not.toContain('<w:tabs>')
+  })
+})

@@ -70,6 +70,21 @@ describe('classifyFloatImages', () => {
     expect(img.float?.xOffsetPt).toBeCloseTo(400 - 72, 5)
   })
 
+  it('lines running INTO the image float it behind, not square (watermark)', () => {
+    // full-width justified lines cross a mid-page watermark: each line pokes
+    // deep into the image band, so square wrap is impossible — prod_049's
+    // naskh word gaps split such lines into side fragments that used to win
+    // the beside-rule and squeezed the whole page around the watermark
+    const img = image(190, 600, 410, 720)
+    const chars = [
+      ...mkText('a full width line crossing the watermark here', 72, { y: 700 }).chars,
+      ...mkText('another full width line across the image band', 72, { y: 686 }).chars,
+      ...mkText('third line also runs over the watermark art', 72, { y: 672 }).chars,
+    ]
+    classifyFloatImages([img], unitsOf(chars))
+    expect(img.float?.wrap).toBe('behind')
+  })
+
   it('text on top of the image floats it behind', () => {
     const img = image(60, 650, 460, 720)
     const chars = [
@@ -180,6 +195,20 @@ describe('suppressTextShadowImages (P11 B)', () => {
     const chars = mkText('formula text', 100, { y: 400, fontSize: 10 }).chars
     const img = image(98, 392, 165, 412)
     const kept = suppressTextShadowImages([img], unitsOf(chars))
+    expect(kept).toHaveLength(1)
+  })
+})
+
+describe('suppressTextShadowImages: multi-line stacks (P34)', () => {
+  it('keeps a hero photo whose title block stacks several lines', () => {
+    // clip-cropped band photo tightly wrapping a 3-line title block
+    const chars = [
+      ...mkText('成都一座来了就不想走的城市来了就不想走走走', 150, { y: 420, fontSize: 30 }).chars,
+      ...mkText('慢生活好味道巴适得板慢生活好味道巴适得板', 230, { y: 350, fontSize: 24 }).chars,
+      ...mkText('温馨提示温馨提示温馨提示温馨提示温馨提示', 320, { y: 290, fontSize: 14 }).chars,
+    ]
+    const hero = image(0, 260, 960, 460)
+    const kept = suppressTextShadowImages([hero], unitsOf(chars))
     expect(kept).toHaveLength(1)
   })
 })

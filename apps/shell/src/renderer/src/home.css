@@ -268,17 +268,18 @@ body.vib .home {
   color: #b3261e;
 }
 
-/* rescue panel while waiting for the browser sign-in (auto-open may have failed) */
+/* one-line rescue hint while waiting for the browser sign-in (auto-open may have failed) */
 .login-hint {
   position: absolute;
   left: -8px;
   bottom: calc(100% + 4px);
   width: calc(100% + 16px);
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 2px;
-  padding: 8px;
-  border-radius: 12px;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   z-index: 30;
@@ -286,22 +287,44 @@ body.vib .home {
 
 .login-hint button {
   border: none;
-  border-radius: 10px;
   background: none;
   font: inherit;
-  font-size: 13px;
-  line-height: 20px;
-  padding: 6px 8px;
-  color: var(--text-primary);
   cursor: pointer;
-  text-align: left;
 }
 
 .login-hint button:hover {
   background: var(--bg-hover);
 }
 
-.login-hint .login-hint-open {
+.login-hint-open {
+  flex: 1;
+  min-width: 0;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 17px;
+  padding: 4px 6px;
+  color: var(--accent);
+  text-align: start;
+}
+
+.login-hint-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--text-muted);
+}
+
+.login-hint-copy:hover {
+  color: var(--text-primary);
+}
+
+.login-hint-copy.copied {
   color: var(--accent);
 }
 

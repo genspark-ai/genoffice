@@ -316,11 +316,28 @@ export function patchFieldParagraphXml(xml: string, patch: FieldTextPatch): stri
   const nodes = textNodes(xml, 'w:t')
   if (nodes.length === 0) return xml
   // run-level tab only (attribute-less CT_Empty) — `<w:tab w:val=…/>` inside
-  // w:tabs is a tab-stop definition and must not split the left/right texts
-  const tabIndex = xml.search(/<w:tab\/>/)
-  if (patch.right !== undefined && tabIndex === -1) return xml
-  const leftNodes = tabIndex === -1 ? nodes : nodes.filter((node) => node.start < tabIndex)
-  const rightNodes = tabIndex === -1 ? [] : nodes.filter((node) => node.start > tabIndex)
+  // w:tabs is a tab-stop definition and must not split the left/right texts.
+  // Mirrors fieldDisplayOf: the page number follows the LAST tab, and a short
+  // space-free first segment before ≥2 tabs is the outline-number cell (not
+  // part of the editable title).
+  const tabStarts: number[] = []
+  const tabRe = /<w:tab\/>/g
+  let tabMatch: RegExpExecArray | null
+  while ((tabMatch = tabRe.exec(xml)) !== null) tabStarts.push(tabMatch.index)
+  const lastTab = tabStarts.length > 0 ? tabStarts[tabStarts.length - 1] : -1
+  if (patch.right !== undefined && lastTab === -1) return xml
+  let leftFrom = -1
+  if (tabStarts.length >= 2) {
+    const firstSeg = nodes
+      .filter((node) => node.start < tabStarts[0])
+      .map((node) => node.text)
+      .join('')
+      .trim()
+    if (/^\S{1,15}$/.test(firstSeg)) leftFrom = tabStarts[0]
+  }
+  const leftNodes =
+    lastTab === -1 ? nodes : nodes.filter((node) => node.start > leftFrom && node.start < lastTab)
+  const rightNodes = lastTab === -1 ? [] : nodes.filter((node) => node.start > lastTab)
   if (patch.left !== undefined && leftNodes.length === 0) return xml
   if (patch.right !== undefined && rightNodes.length === 0) return xml
 
@@ -580,49 +597,99 @@ function patchTxbxContent(
 }
 
 /**
- * Replace textbox paragraphs inside a paragraph fragment that carries
- * anchored DrawingML textboxes. `boxes[box]` = per-paragraph patches for that
- * box (visible-shape order, matching Block.textboxes), or null/undefined to
- * leave the box untouched. Word pairs every DrawingML shape with a VML twin
- * inside mc:Fallback whose w:txbxContent duplicates the content — fallback
- * copies are patched with the same paragraphs as the preceding visible box so
- * both renderings stay in sync.
+ * Text patches for the anchored boxes of one paragraph fragment. `byIndex` is
+ * sparse, indexed by TextboxDisplay.txbxIndex — the ordinal of the box's
+ * w:txbxContent among all non-fallback segments, empty ones included, so the
+ * mapping survives paragraphs that mix text-bearing boxes with ink-only
+ * shapes. `inject` carries the first text of shapes that have no
+ * w:txbxContent at all, addressed by their wps:cNvPr id.
  */
-export function patchTextboxParas(
-  paragraphXml: string,
-  boxes: ReadonlyArray<ReadonlyArray<TextboxParaPatch | null | undefined> | null | undefined>,
-): string {
+export interface TextboxParasPatchSet {
+  byIndex?: ReadonlyArray<ReadonlyArray<TextboxParaPatch | null | undefined> | null | undefined>
+  inject?: ReadonlyArray<{ shapeId: string; paras: TextboxParaPatch[] }>
+}
+
+/**
+ * Replace textbox paragraphs inside a paragraph fragment that carries
+ * anchored DrawingML textboxes. Word pairs every DrawingML shape with a VML
+ * twin inside mc:Fallback whose w:txbxContent duplicates the content —
+ * fallback copies are patched with the same paragraphs as the preceding
+ * visible box so both renderings stay in sync.
+ */
+export function patchTextboxParas(paragraphXml: string, patches: TextboxParasPatchSet): string {
+  const byIndex = patches.byIndex ?? []
   const segs = xmlSegments(paragraphXml, 'w:txbxContent', 0, paragraphXml.length)
-  if (segs.length === 0) return paragraphXml
-
-  const fallbacks: Array<{ start: number; end: number }> = []
-  const fbRe = /<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g
-  let fb: RegExpExecArray | null
-  while ((fb = fbRe.exec(paragraphXml)) !== null) {
-    fallbacks.push({ start: fb.index, end: fb.index + fb[0].length })
-  }
-  const inFallback = (pos: number) => fallbacks.some((f) => pos >= f.start && pos < f.end)
-
-  let out = ''
-  let cursor = 0
-  let boxIndex = -1
-  let lastVisibleCounted = false
-  for (const seg of segs) {
-    const segXml = paragraphXml.slice(seg.start, seg.end)
-    if (!inFallback(seg.start)) {
-      // display extraction skips all-empty boxes, so only boxes with text
-      // consume an index; a fallback twin repeats the preceding visible box
-      lastVisibleCounted = paraPlainText(segXml) !== ''
-      if (lastVisibleCounted) boxIndex++
-    } else if (!lastVisibleCounted) {
-      continue
+  let xml = paragraphXml
+  if (segs.length > 0 && byIndex.length > 0) {
+    const fallbacks: Array<{ start: number; end: number }> = []
+    const fbRe = /<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g
+    let fb: RegExpExecArray | null
+    while ((fb = fbRe.exec(paragraphXml)) !== null) {
+      fallbacks.push({ start: fb.index, end: fb.index + fb[0].length })
     }
-    const paras = boxIndex >= 0 && lastVisibleCounted ? boxes[boxIndex] : null
-    if (paras == null) continue
-    out += paragraphXml.slice(cursor, seg.start) + patchTxbxContent(segXml, paras)
-    cursor = seg.end
+    const inFallback = (pos: number) => fallbacks.some((f) => pos >= f.start && pos < f.end)
+
+    let out = ''
+    let cursor = 0
+    let ordinal = -1
+    let current: ReadonlyArray<TextboxParaPatch | null | undefined> | null = null
+    for (const seg of segs) {
+      // a fallback twin repeats the preceding visible segment's patch
+      if (!inFallback(seg.start)) current = byIndex[++ordinal] ?? null
+      if (current == null) continue
+      out +=
+        paragraphXml.slice(cursor, seg.start) +
+        patchTxbxContent(paragraphXml.slice(seg.start, seg.end), current)
+      cursor = seg.end
+    }
+    xml = out + paragraphXml.slice(cursor)
   }
-  return out + paragraphXml.slice(cursor)
+  for (const entry of patches.inject ?? []) xml = injectShapeText(xml, entry)
+  return xml
+}
+
+/**
+ * First text on a shape that has no <w:txbxContent>: inject a fresh wps:txbx
+ * into the shape carrying the cNvPr id, before wps:bodyPr per the
+ * CT_WordprocessingShape sequence. Word centers shape text, so a bodyPr
+ * without an anchor gains anchor="ctr" — matching the editable box's live
+ * preview. A shape that already has a txbx (stale inject) has its content
+ * rewritten instead. The VML fallback twin is left alone: only pre-2010 Word
+ * builds read it, and pairing it up is not worth corrupting on a miss.
+ */
+function injectShapeText(
+  paragraphXml: string,
+  entry: { shapeId: string; paras: TextboxParaPatch[] },
+): string {
+  for (const seg of xmlSegments(paragraphXml, 'wps:wsp', 0, paragraphXml.length)) {
+    let shapeXml = paragraphXml.slice(seg.start, seg.end)
+    const id = /<wps:cNvPr\b[^>]*\bid="([^"]+)"/.exec(shapeXml)?.[1]
+    if (id !== entry.shapeId) continue
+    if (shapeXml.includes('<wps:txbx')) {
+      const content = xmlSegments(shapeXml, 'w:txbxContent', 0, shapeXml.length)[0]
+      if (!content) return paragraphXml
+      shapeXml =
+        shapeXml.slice(0, content.start) +
+        patchTxbxContent(shapeXml.slice(content.start, content.end), entry.paras) +
+        shapeXml.slice(content.end)
+    } else {
+      const body = entry.paras
+        .map((p) => `<w:p>${pPrWithJc('', p.align)}${runsXml(p.runs, null)}</w:p>`)
+        .join('')
+      const txbx = `<wps:txbx><w:txbxContent>${body}</w:txbxContent></wps:txbx>`
+      const bodyPrAt = shapeXml.search(/<wps:bodyPr[\s/>]/)
+      shapeXml =
+        bodyPrAt === -1
+          ? shapeXml.replace('</wps:wsp>', `${txbx}<wps:bodyPr anchor="ctr"/></wps:wsp>`)
+          : shapeXml.slice(0, bodyPrAt) +
+            txbx +
+            shapeXml
+              .slice(bodyPrAt)
+              .replace(/<wps:bodyPr\b(?![^>]*\banchor=")/, '<wps:bodyPr anchor="ctr"')
+    }
+    return paragraphXml.slice(0, seg.start) + shapeXml + paragraphXml.slice(seg.end)
+  }
+  return paragraphXml
 }
 
 /** Resize fixed DrawingML textboxes while preserving their anchors and styling. */
@@ -955,10 +1022,16 @@ function paraSpacingXml(format: ParaFormat): string {
   if (format.spaceBefore && format.spaceBefore > 0) {
     attrs.push(`w:before="${Math.round(format.spaceBefore)}"`)
   }
+  // explicit "0" must be written back: a bare literal would not override a
+  // style-chain autospacing (Word resolves the attributes independently)
+  if (format.spaceBeforeAuto !== undefined)
+    attrs.push(`w:beforeAutospacing="${format.spaceBeforeAuto ? 1 : 0}"`)
   // explicit 0 overrides the style's space-after in Word, so it must be written back
   if (format.spaceAfter !== undefined && format.spaceAfter >= 0) {
     attrs.push(`w:after="${Math.round(format.spaceAfter)}"`)
   }
+  if (format.spaceAfterAuto !== undefined)
+    attrs.push(`w:afterAutospacing="${format.spaceAfterAuto ? 1 : 0}"`)
   if ((format.lineRule === 'exact' || format.lineRule === 'atLeast') && format.lineRawTwips) {
     // Exact/at-least line height: write the twips back verbatim (previously only auto was
     // recognized, so edited paragraphs lost their line spacing)
@@ -1021,8 +1094,10 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
     if (format.bidi && (jc === 'left' || jc === 'right')) jc = jc === 'left' ? 'right' : 'left'
     out.push({ name: 'w:jc', xml: `<w:jc w:val="${jc}"/>` })
   }
-  if (format.tabStops && format.tabStops.length > 0) {
-    const tabXml = format.tabStops
+  // rel stops are display-only w:ptab mirrors: never written into w:tabs
+  const realStops = (format.tabStops ?? []).filter((ts) => !ts.rel)
+  if (realStops.length > 0) {
+    const tabXml = realStops
       .map((ts) => {
         let xml = `<w:tab w:val="${escapeXmlAttr(ts.val)}" w:pos="${ts.pos}"`
         if (ts.leader && ts.leader !== 'none') xml += ` w:leader="${escapeXmlAttr(ts.leader)}"`
@@ -1123,6 +1198,10 @@ function rawSpacingUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   const fAfter =
     f.spaceAfter !== undefined && f.spaceAfter >= 0 ? Math.round(f.spaceAfter) : undefined
   if (rawBefore !== fBefore || rawAfter !== fAfter) return false
+  const rawAuto = (v: string | undefined): boolean | undefined =>
+    v === undefined ? undefined : v === '1' || v === 'true'
+  if (rawAuto(rawAttr(raw, 'w:beforeAutospacing')) !== f.spaceBeforeAuto) return false
+  if (rawAuto(rawAttr(raw, 'w:afterAutospacing')) !== f.spaceAfterAuto) return false
   if ((f.lineRule === 'exact' || f.lineRule === 'atLeast') && f.lineRawTwips) {
     return line > 0 && rule === f.lineRule && line === Math.round(f.lineRawTwips)
   }
@@ -1186,7 +1265,9 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   return normLines(rawLines) === normLines(f.borderLines)
 }
 
-function rawTabsUnchanged(raw: string | undefined, stops: TabStop[]): boolean {
+function rawTabsUnchanged(raw: string | undefined, allStops: TabStop[]): boolean {
+  // display-only w:ptab mirrors are not part of w:tabs
+  const stops = allStops.filter((s) => !s.rel)
   const rawStops: TabStop[] = []
   if (raw) {
     const inner = raw.replace(/^<w:tabs[^>]*>/, '').replace(/<\/w:tabs>$/, '')
@@ -2671,16 +2752,33 @@ export function buildShapeParagraphXml(opts: {
     `<a:ln><a:solidFill><a:srgbClr val="${borderHex}"/></a:solidFill></a:ln>` +
     `</wps:spPr>`
 
+  // Word centers autoshape text both ways (a survey of 279 Word-authored documents
+  // puts anchor="ctr" on 72% and w:jc="center" on 74% of them). A text box is the
+  // opposite case and stays top-left, which is why buildTextboxParagraphXml differs.
+  const seededPara = `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>`
   const txbxPart = opts.withTextbox
-    ? `<wps:txbx><w:txbxContent><w:p><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p></w:txbxContent></wps:txbx>`
+    ? `<wps:txbx><w:txbxContent>${seededPara}</w:txbxContent></wps:txbx>`
     : ''
+
+  // Gallery shapes carry a style block, and its a:fontRef is what gives them light
+  // text on the accent fill — Word writes no color on the runs. The fill/line refs
+  // are inert here because spPr states both explicitly, but CT_ShapeStyle requires
+  // all four children in this order.
+  const style =
+    `<wps:style>` +
+    `<a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef>` +
+    `<a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef>` +
+    `<a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef>` +
+    `<a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef>` +
+    `</wps:style>`
 
   const wsp =
     `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">` +
     `<wps:cNvSpPr/>` +
     spPr +
+    style +
     txbxPart +
-    `<wps:bodyPr/>` +
+    `<wps:bodyPr anchor="ctr"/>` +
     `</wps:wsp>`
 
   const graphicData =
@@ -2711,8 +2809,10 @@ export function buildShapeParagraphXml(opts: {
 
   const vmlRect =
     `<v:rect xmlns:v="urn:schemas-microsoft-com:vml" style="position:absolute;width:${widthEmu / EMU_PER_PT}pt;height:${heightEmu / EMU_PER_PT}pt" filled="t" stroked="t">` +
+    // The VML twin renders in place of the shape on older Word builds, so it has to
+    // carry the same centering (v:textbox takes the vertical half as an attribute)
     (opts.withTextbox
-      ? `<v:textbox><w:txbxContent><w:p><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p></w:txbxContent></v:textbox>`
+      ? `<v:textbox style="v-text-anchor:middle"><w:txbxContent>${seededPara}</w:txbxContent></v:textbox>`
       : '') +
     `</v:rect>`
 

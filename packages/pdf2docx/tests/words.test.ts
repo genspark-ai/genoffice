@@ -194,3 +194,19 @@ describe('letter-spaced display text (P10 C)', () => {
     expect(texts(groupIntoWords([...a.chars, ...b.chars, ...c.chars])).length).toBe(3)
   })
 })
+
+describe('tracked lines with inflated glyph boxes (P30 C)', () => {
+  it('splits words on origin-pitch outliers when boxes overlap', () => {
+    const pitch = 12.4
+    const chars = [...'REPORTFORM'].map((ch, i) => {
+      const x = 100 + i * pitch + (i >= 6 ? 6.1 : 0) // extra 6.1pt before FORM
+      return mkChar(ch, x, { fontSize: 16, width: 16 }) // 16pt boxes overlap the 12.4 pitch
+    })
+    expect(texts(groupIntoWords(chars))).toEqual(['REPORT', 'FORM'])
+  })
+
+  it('leaves proportional text (non-uniform pitch) alone', () => {
+    const { chars } = mkText('Wimm', 72, { fontSize: 12 })
+    expect(texts(groupIntoWords(chars))).toEqual(['Wimm'])
+  })
+})

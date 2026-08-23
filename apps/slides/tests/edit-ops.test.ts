@@ -7,13 +7,15 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   addElement,
   createBlankPptx,
+  extractMergeSlideSource,
   openPptx,
   parseMasterPart,
   patchSlideXml,
+  savePptx,
   type OpenedPptx,
   type TextElement,
 } from '@genoffice/pptx-engine'
-import { runTxn, opNames, elementDurableId } from '../src/main/ops'
+import { runTxn, opNames, elementDurableId, slideDurableId } from '../src/main/ops'
 import { mapScriptOps } from '../src/main/ops/script-map'
 
 let opened: OpenedPptx
@@ -155,6 +157,134 @@ describe('per_op isolation and dry-run', () => {
   })
 })
 
+describe('setText on a shape that has no text body', () => {
+  /** Strip the <p:txBody> the insert helper writes: AI/converter output and shapes
+   *  whose text was deleted elsewhere reach us with no text body at all. */
+  const stripTxBody = (xml: string) => xml.replace(/<p:txBody>[\s\S]*<\/p:txBody>/, '')
+
+  /** An autoshape with no text body, standing alone on the slide. */
+  function bodylessShape(): string {
+    const el = addElement(opened.deck.slides[0]!, {
+      kind: 'rect',
+      offset: { x: 0, y: 0, cx: 914400, cy: 457200 },
+    })
+    el.anchor.originalXml = stripTxBody(el.anchor.originalXml)
+    delete el.text
+    return el.id
+  }
+
+  /** The parser sets these from <p:ph> / <p:cNvSpPr txBox="1">; the op reads the model. */
+  const flagged = (id: string, patch: Partial<TextElement>) => {
+    Object.assign(els().find((x) => x.id === id) as TextElement, patch)
+    return id
+  }
+
+  /** The regenerated <p:sp> carrying `text`, so assertions can name one shape's bytes. */
+  const spWithText = (text: string) =>
+    patchSlideXml(opened.deck.slides[0]!)
+      .match(/<p:sp>[\s\S]*?<\/p:sp>/g)!
+      .find((sp) => sp.includes(`<a:t>${text}</a:t>`))!
+
+  const type = (el: string, text: string, group?: string) =>
+    runTxn(opened, {
+      ops: [
+        {
+          op: 'setText',
+          target: { slide: 0, el },
+          paragraphs: [{ runs: [{ text }] }],
+          ...(group ? { group } : {}),
+        },
+      ],
+    })
+
+  it('creates the body PowerPoint would have created', () => {
+    const id = bodylessShape()
+    expect(type(id, 'Typed').applied).toBe(true)
+    const el = els().find((x) => x.id === id) as TextElement
+    expect(el.text?.paragraphs[0]?.runs[0]?.text).toBe('Typed')
+    // Centered like PowerPoint, with the parser's bodyPr insets so the live render
+    // and the reopened file agree
+    expect(el.text?.anchor).toBe('middle')
+    expect(el.text?.paragraphs[0]?.align).toBe('center')
+    expect(el.text?.insets).toEqual({ l: 91440, t: 45720, r: 91440, b: 45720 })
+    // and both halves of the centering reach the bytes
+    expect(spWithText('Typed')).toContain('anchor="ctr"')
+    expect(spWithText('Typed')).toContain('algn="ctr"')
+  })
+
+  // Centering is an autoshape default. Across 421 PowerPoint-authored decks ~90% of
+  // placeholders carry neither anchor nor algn — they inherit from the layout/master,
+  // and baking the attributes in would override the template.
+  it('a placeholder inherits instead of centering', () => {
+    const id = flagged(bodylessShape(), { placeholder: 'body' })
+    expect(type(id, 'In a placeholder').applied).toBe(true)
+    const el = els().find((x) => x.id === id) as TextElement
+    expect(el.text?.anchor).toBeUndefined()
+    expect(el.text?.paragraphs[0]?.align).toBeUndefined()
+    const sp = spWithText('In a placeholder')
+    expect(sp).not.toContain('anchor=')
+    expect(sp).not.toContain('algn=')
+  })
+
+  it('a text box stays top-left', () => {
+    const id = flagged(bodylessShape(), { txBox: true })
+    expect(type(id, 'In a text box').applied).toBe(true)
+    const el = els().find((x) => x.id === id) as TextElement
+    expect(el.text?.anchor).toBeUndefined()
+    expect(el.text?.paragraphs[0]?.align).toBeUndefined()
+    expect(spWithText('In a text box')).not.toContain('anchor=')
+  })
+
+  it('the text survives a save → reopen round trip', async () => {
+    expect(type(bodylessShape(), 'Persisted').applied).toBe(true)
+    const reopened = await openPptx(await savePptx(opened))
+    const found = reopened.deck.slides[0]!.elements.find((e) =>
+      (e as TextElement).text?.paragraphs.some((p) => p.runs.some((r) => r.text === 'Persisted')),
+    ) as TextElement | undefined
+    expect(found?.text?.anchor).toBe('middle')
+  })
+
+  it('an explicit alignment from the caller wins over the centering default', () => {
+    const id = bodylessShape()
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'setText',
+          target: { slide: 0, el: id },
+          paragraphs: [{ runs: [{ text: 'Left' }], align: 'left' }],
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    expect((els().find((x) => x.id === id) as TextElement).text?.paragraphs[0]?.align).toBe('left')
+  })
+
+  it('a group child gains a body too', () => {
+    const childId = bodylessShape()
+    const grouped = runTxn(opened, {
+      ops: [{ op: 'groupElements', target: { slide: 0 }, els: [childId, cardId] }],
+    })
+    expect(grouped.applied).toBe(true)
+    const grp = els().find((x) => x.type === 'group')!
+    // Group children carry an empty byte anchor — the stripped child lives inside the
+    // group's single blob, which is the path the op has to look the bytes up through
+    const child = (grp as unknown as { children: TextElement[] }).children.find((c) => !c.text)!
+    expect(type(child.id, 'In group', grp.id).applied).toBe(true)
+    expect(patchSlideXml(opened.deck.slides[0]!)).toContain('In group')
+  })
+
+  it('refuses a connector — CT_Connector has no txBody child', () => {
+    const lineId = addElement(opened.deck.slides[0]!, {
+      kind: 'line',
+      offset: { x: 0, y: 0, cx: 914400, cy: 0 },
+    }).id
+    const r = type(lineId, 'on a line')
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain('connector')
+    expect(patchSlideXml(opened.deck.slides[0]!)).not.toContain('on a line')
+  })
+})
+
 describe('cross-family ops on a real deck', () => {
   it('addElement mints an id; setTransform/setTextAnchor/reorder then act on it', () => {
     const added = runTxn(opened, {
@@ -209,6 +339,22 @@ describe('cross-family ops on a real deck', () => {
     expect(opened.deck.slides).toHaveLength(1)
   })
 
+  it('records stamp the acted-on slide durable id, immune to later index shifts', () => {
+    const dup = runTxn(opened, { ops: [{ op: 'duplicateSlide', target: { slide: 0 } }] })
+    expect(dup.applied).toBe(true)
+    const r = runTxn(opened, {
+      ops: [
+        { op: 'setNotes', target: { slide: 1 }, text: 'edited' },
+        { op: 'deleteSlide', target: { slide: 0 } },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    // Numeric index 1 is gone after the delete; the stamp still finds the slide.
+    const stamped = r.records![0]!.slideId
+    expect(stamped).toBeTruthy()
+    expect(opened.deck.slides.findIndex((s) => slideDurableId(s) === stamped)).toBe(0)
+  })
+
   it('atomic rollback spans families: a failing slide op undoes an element op', () => {
     const r = runTxn(opened, {
       ops: [
@@ -218,6 +364,45 @@ describe('cross-family ops on a real deck', () => {
     })
     expect(r.applied).toBe(false)
     expect((els()[1] as TextElement).fill).toEqual({ type: 'solid', color: '#FFFFFF' })
+  })
+})
+
+describe('insertSlidePptx (generated-page landing)', () => {
+  const oneSlideSource = async (text: string) => {
+    const src = await openPptx(await createBlankPptx())
+    addElement(src.deck.slides[0]!, {
+      kind: 'textbox',
+      offset: { x: 0, y: 0, cx: 914400, cy: 457200 },
+      paragraphs: [{ runs: [{ text }] }],
+    })
+    const source = await extractMergeSlideSource(await savePptx(src))
+    expect(source).not.toBeNull()
+    return source!
+  }
+
+  it('lands a page at the end and reports its durable id in created', async () => {
+    const source = await oneSlideSource('Landed')
+    const r = runTxn(opened, { ops: [{ op: 'insertSlidePptx', source }] })
+    expect(r.applied).toBe(true)
+    expect(opened.deck.slides).toHaveLength(2)
+    expect(r.records![0]!.created![0]).toBe(slideDurableId(opened.deck.slides[1]!))
+  })
+
+  it('replace mode swaps the page at `at` without changing the count', async () => {
+    const source = await oneSlideSource('Replacement')
+    const r = runTxn(opened, {
+      ops: [{ op: 'insertSlidePptx', source, at: 0, replace: true }],
+    })
+    expect(r.applied).toBe(true)
+    expect(opened.deck.slides).toHaveLength(1)
+    expect(slideDurableId(opened.deck.slides[0]!)).toBe(r.records![0]!.created![0])
+  })
+
+  it('rejects replace without a valid at', async () => {
+    const source = await oneSlideSource('Rejected')
+    const r = runTxn(opened, { ops: [{ op: 'insertSlidePptx', source, replace: true }] })
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain('replace')
   })
 })
 

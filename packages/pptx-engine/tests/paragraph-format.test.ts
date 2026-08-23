@@ -213,3 +213,37 @@ describe('per-paragraph paraIndices (editing-mode selection)', () => {
     expect(el.dirtyPPr).toBeUndefined()
   })
 })
+
+describe('empty paragraph endParaRPr', () => {
+  it('empty paragraph takes its line style from endParaRPr (marker run)', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr sz="2000"/><a:t>X</a:t></a:r></a:p>' +
+        '<a:p><a:endParaRPr sz="8000" b="1"/></a:p>',
+    )
+    const p = el.text!.paragraphs[1]!
+    expect(p.runs.length).toBe(1)
+    expect(p.runs[0]!.text).toBe('')
+    expect(p.runs[0]!.fontSize).toBe(80)
+    expect(p.runs[0]!.bold).toBe(true)
+  })
+
+  it("endParaRPr overrides an empty run's own rPr (probe-measured PowerPoint rule)", () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr sz="1400"/><a:t></a:t></a:r>' +
+        '<a:endParaRPr sz="8000"/></a:p>',
+    )
+    const p = el.text!.paragraphs[0]!
+    expect(p.runs.length).toBe(1)
+    expect(p.runs[0]!.fontSize).toBe(80)
+  })
+
+  it('a paragraph with real text keeps its runs (endParaRPr ignored)', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:rPr sz="2000"/><a:t>Hello</a:t></a:r>' +
+        '<a:endParaRPr sz="8000"/></a:p>',
+    )
+    const p = el.text!.paragraphs[0]!
+    expect(p.runs[0]!.text).toBe('Hello')
+    expect(p.runs[0]!.fontSize).toBe(20)
+  })
+})

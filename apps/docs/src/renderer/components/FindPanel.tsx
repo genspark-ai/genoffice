@@ -64,11 +64,13 @@ export function findMatches(editor: Editor, query: string, opts: FindOptions): R
 interface FindPanelProps {
   editor: Editor
   onClose: () => void
+  /** Ctrl+H bumps this to land focus on the replace field (falls back to find when read-only) */
+  focusReplaceNonce?: number
 }
 
 const SCAN_DEBOUNCE_MS = 150
 
-export function FindPanel({ editor, onClose }: FindPanelProps) {
+export function FindPanel({ editor, onClose, focusReplaceNonce }: FindPanelProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
@@ -77,6 +79,7 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
   const [matchCase, setMatchCase] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
   const indexRef = useRef(0)
   const canEdit = editor.isEditable
 
@@ -144,6 +147,14 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
     }
   }, [])
+
+  // declared after the mount effect so opening straight into replace wins the focus
+  useEffect(() => {
+    if (!focusReplaceNonce) return
+    const el = replaceInputRef.current ?? inputRef.current
+    el?.focus()
+    el?.select()
+  }, [focusReplaceNonce])
 
   // stay in sync while the document changes underneath (typing, AI edits).
   // The listener reads the query through a ref: between a keystroke in the find
@@ -291,6 +302,7 @@ export function FindPanel({ editor, onClose }: FindPanelProps) {
       {canEdit && (
         <div className="find-row">
           <input
+            ref={replaceInputRef}
             className="find-input"
             placeholder={t('appReplacePlaceholder')}
             value={replacement}

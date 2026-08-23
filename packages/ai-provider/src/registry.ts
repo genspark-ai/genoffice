@@ -18,6 +18,8 @@ export interface ResolvedEndpoint {
   baseUrl: string
   /** the endpoint fixes its sampling and rejects a temperature field (Kimi K3: "only 1 is allowed") */
   omitTemperature?: boolean
+  /** vendor-specific request fields merged into the chat-completions body */
+  bodyExtras?: Record<string, unknown>
 }
 
 export interface ProviderAdapter {
@@ -42,14 +44,29 @@ export function modelHasFixedSampling(model: string): boolean {
   return /(^|\/)(kimi-k3|gpt-5)/.test(model)
 }
 
+/**
+ * DeepSeek V4 thinks by default, and once a request carries `tools` the API
+ * rejects (400) every later turn whose assistant messages don't echo back the
+ * `reasoning_content` it produced. Our OpenAI-compatible transcript has no
+ * field to carry that, so the agent loop would die right after its first tool
+ * call. Pin the models to non-thinking mode — what the retired deepseek-chat
+ * alias did — until the transcript can round-trip reasoning.
+ */
+const DEEPSEEK_NON_THINKING = { thinking: { type: 'disabled' } }
+
 /** a stored baseUrl overrides the default endpoint (regional mirrors, e.g. api.moonshot.cn vs .ai) */
-function fixedEndpoint(protocol: AiProtocol, baseUrl: string, omitTemperature?: boolean) {
+function fixedEndpoint(
+  protocol: AiProtocol,
+  baseUrl: string,
+  extras?: { omitTemperature?: boolean; bodyExtras?: Record<string, unknown> },
+) {
   return (config: AiProviderConfig): ResolvedEndpoint => {
-    const omit = omitTemperature || modelHasFixedSampling(config.model)
+    const omit = extras?.omitTemperature || modelHasFixedSampling(config.model)
     return {
       protocol,
       baseUrl: config.baseUrl || baseUrl,
       ...(omit ? { omitTemperature: true } : {}),
+      ...(extras?.bodyExtras ? { bodyExtras: extras.bodyExtras } : {}),
     }
   }
 }
@@ -87,7 +104,9 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   deepseek: {
     meta: metaOf('deepseek'),
     capabilities: { auth: 'api-key', vision: false },
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1'),
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1', {
+      bodyExtras: DEEPSEEK_NON_THINKING,
+    }),
   },
   openai: {
     meta: metaOf('openai'),
@@ -97,7 +116,9 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   kimi: {
     meta: metaOf('kimi'),
     capabilities: { auth: 'api-key', vision: true },
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.moonshot.ai/v1', true),
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.moonshot.ai/v1', {
+      omitTemperature: true,
+    }),
   },
   glm: {
     meta: metaOf('glm'),

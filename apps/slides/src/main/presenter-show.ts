@@ -9,7 +9,7 @@
 import { BrowserWindow, ipcMain, screen } from 'electron'
 import type { WebContents } from 'electron'
 import type { AudienceNavAction, ShowInkEvent, ShowSyncState } from '../shared/ipc'
-import { runtime, sessions, windowRefs } from './session-state'
+import { runtime, sessions, viewerWcIds, windowRefs } from './session-state'
 
 interface PresenterShow {
   presenterWc: WebContents
@@ -84,12 +84,14 @@ export function registerPresenterIpc(): void {
     sessions.set(win.webContents.id, session)
     audiencePresenter.set(win.webContents.id, e.sender.id)
     const audienceWcId = win.webContents.id
+    viewerWcIds.add(audienceWcId)
     win.once('ready-to-show', () => {
       win.show()
       fullScreenOnDisplay(win, external.bounds)
     })
     win.on('closed', () => {
       sessions.delete(audienceWcId)
+      viewerWcIds.delete(audienceWcId)
       audiencePresenter.delete(audienceWcId)
       const s = presenterShows.get(e.sender.id)
       if (s?.audienceWin === win) s.audienceWin = null

@@ -54,6 +54,8 @@ import {
   type InkPenSettings,
   type RevisionDisplayMode,
   type ViewMode,
+  insertImageFromDataUrl,
+  applyParagraphStyle,
 } from './ribbon-tabs'
 import { WRAP_OPTIONS } from './ContextMenu'
 import { CropDialog, CutoutDialog } from './PictureDialogs'
@@ -112,6 +114,8 @@ import {
   IconTableDelete,
 } from './icons'
 interface RibbonProps {
+  /** App keyboard shortcuts reuse ribbon closures through here (font-size stepping keeps its coalescing) */
+  actionsRef?: React.MutableRefObject<{ stepFontSize?: (dir: 1 | -1) => void }>
   /** Quick-access area on the tab row's left (save/undo-redo/autosave), matching the WPS/Office QAT */
   quickActions?: React.ReactNode
   /** Right side of the tab row (file name, etc.) */
@@ -193,6 +197,8 @@ interface RibbonProps {
   showNav: boolean
   onShowNav: (v: boolean) => void
   commentCount: number
+  /** unresolved root comments (drives the AI resolve-comments action) */
+  openCommentCount: number
   onShowComments: () => void
   /** Review → comments / revisions / compare / protection */
   canComment: boolean
@@ -536,6 +542,7 @@ function findNumIdOfKind(blocks: Block[], kind: 'bullet' | 'ordered'): string | 
 }
 
 function RibbonInner({
+  actionsRef,
   quickActions,
   trailingActions,
   editor,
@@ -600,6 +607,7 @@ function RibbonInner({
   showNav,
   onShowNav,
   commentCount,
+  openCommentCount,
   onShowComments,
   canComment,
   onNewComment,
@@ -1136,51 +1144,8 @@ function RibbonInner({
       }
       return
     }
-    if (sub) return // textboxes have no heading styles
-    let c = chain()
-    if (key === 'p') c = c.setNode('docParagraph')
-    else c = c.setNode('docHeading', { level: Number(key.slice(1)) })
-    // Word-like: applying a paragraph style sheds the runs' direct font/size/color.
-    // Those render as inline span styles and would otherwise mask the style's look
-    // entirely (the click would seem to do nothing on documents whose body runs
-    // carry explicit rPr, common in CJK templates).
-    c.command(({ tr }) => {
-      const { from, to } = tr.selection
-      let start = from
-      let end = to
-      tr.doc.nodesBetween(from, to, (node, pos) => {
-        if (node.isTextblock) {
-          start = Math.min(start, pos + 1)
-          end = Math.max(end, pos + node.nodeSize - 1)
-        }
-      })
-      const type = editor.schema.marks.docTextStyle
-      const jobs: Array<{ from: number; to: number; attrs: Record<string, unknown> | null }> = []
-      tr.doc.nodesBetween(start, end, (node, pos) => {
-        if (!node.isText) return
-        const m = node.marks.find((mm) => mm.type === type)
-        if (!m) return
-        if (
-          m.attrs.color == null &&
-          m.attrs.sizeHalfPoints == null &&
-          m.attrs.font == null &&
-          m.attrs.fontAscii == null
-        )
-          return
-        const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null, fontAscii: null }
-        const keep = Object.values(attrs).some((v) => v !== null)
-        jobs.push({
-          from: Math.max(pos, start),
-          to: Math.min(pos + node.nodeSize, end),
-          attrs: keep ? attrs : null,
-        })
-      })
-      for (const job of jobs) {
-        tr.removeMark(job.from, job.to, type)
-        if (job.attrs) tr.addMark(job.from, job.to, type.create(job.attrs))
-      }
-      return true
-    }).run()
+    if (sub || !canEdit) return // textboxes have no heading styles
+    applyParagraphStyle(editor, key as 'p' | 'h1' | 'h2' | 'h3')
   }
 
   /** Style cards, shared by the inline gallery and its overflow menu */
@@ -1310,6 +1275,11 @@ function RibbonInner({
     }, FONT_STEP_COALESCE_MS)
   }
 
+  useEffect(() => {
+    if (!actionsRef) return
+    actionsRef.current.stepFontSize = stepFontSize
+  })
+
   const toggleVertAlign = (kind: 'superscript' | 'subscript') => {
     setTextStyle({ vertAlign: fs.vertAlign === kind ? null : kind })
   }
@@ -1344,12 +1314,19 @@ function RibbonInner({
     // Paragraph formatting is picked up per Word's ¶-mark rule: a caret pickup
     // or a cross-paragraph selection carries the block identity (heading
     // level / list numbering / styleId) — which then applies to whole target
-    // paragraphs. ANY in-paragraph drag selection copies character formatting
-    // only (in Word a within-paragraph drag can never include the ¶ mark, even
-    // when it covers every visible character), so brushing selected text never
-    // restyles the target's entire paragraph.
+    // paragraphs. A PARTIAL in-paragraph drag copies character formatting
+    // only — but a selection covering the paragraph's ENTIRE content counts
+    // as including the ¶ mark, exactly like Word's triple-click (alpha ledger
+    // r134: "select whole paragraph → painter" dropped line spacing/indents
+    // while a caret pickup carried them — backwards to any user).
     const { $to } = state.selection
-    const includesParaMark = empty || !$from.sameParent($to)
+    const coversWholeParagraph =
+      !empty &&
+      $from.parent.isTextblock && // AllSelection's parent is the doc (bugbot)
+      $from.sameParent($to) &&
+      $from.parentOffset === 0 &&
+      $to.parentOffset === $to.parent.content.size
+    const includesParaMark = empty || !$from.sameParent($to) || coversWholeParagraph
     const marks = picked
       .filter((m) => PAINTER_MARK_TYPES.includes(m.type.name) && m.type.name !== 'docTextStyle')
       .map((m) => ({ type: m.type.name, attrs: { ...m.attrs } as Record<string, unknown> }))
@@ -1587,8 +1564,55 @@ function RibbonInner({
   const clipboard = async (action: 'cut' | 'copy' | 'paste') => {
     if (action !== 'copy' && !canEdit) return
     if (action === 'paste') {
+      // Same pipeline as Ctrl+V: pasteHTML/pasteText run the editor's full
+      // paste machinery, where readText + insertContent flattened everything
+      // to plain text (r127). The synthesized event carries a real
+      // clipboardData so App's handlePaste branches (empty-paragraph
+      // wholesale replace, markdown conversion, image priority) behave
+      // exactly as on a native paste.
+      const pasteEvent = (html: string | null, text: string): ClipboardEvent => {
+        const data = new DataTransfer()
+        if (html) data.setData('text/html', html)
+        if (text) data.setData('text/plain', text)
+        return new ClipboardEvent('paste', { clipboardData: data })
+      }
+      try {
+        for (const item of await navigator.clipboard.read()) {
+          const text = item.types.includes('text/plain')
+            ? await (await item.getType('text/plain')).text()
+            : ''
+          if (item.types.includes('text/html')) {
+            const html = await (await item.getType('text/html')).text()
+            if (html) {
+              ed.view.pasteHTML(html, pasteEvent(html, text))
+              ed.commands.focus()
+              return
+            }
+          }
+          // image priority mirrors Ctrl+V: an image wins over missing or
+          // whitespace-only plain text (OS clipboards often advertise an
+          // empty text/plain beside image/png)
+          const imageType = item.types.find((type) => type.startsWith('image/'))
+          if (imageType && !text.trim()) {
+            const blob = await item.getType(imageType)
+            const reader = new FileReader()
+            reader.onload = () => {
+              if (typeof reader.result === 'string') {
+                void insertImageFromDataUrl(ed, reader.result, 'Image (pasted)')
+              }
+            }
+            reader.readAsDataURL(blob)
+            return
+          }
+        }
+      } catch {
+        /* clipboard.read unavailable/denied: plain-text fallback below */
+      }
       const text = await navigator.clipboard.readText()
-      if (text) chain().insertContent(text).run()
+      if (text) {
+        ed.view.pasteText(text, pasteEvent(null, text))
+        ed.commands.focus()
+      }
     } else {
       document.execCommand(action)
       ed.commands.focus()
@@ -2342,7 +2366,13 @@ function RibbonInner({
                   className="rb-big ai-entry"
                   disabled={docEmpty}
                   data-tip={t('aiPolishBtn')}
-                  onClick={() => onAiPreset(t('aiPolishPrompt'))}
+                  onClick={() =>
+                    onAiPreset(
+                      t(
+                        editor.state.selection.empty ? 'aiPolishPrompt' : 'aiPolishSelectionPrompt',
+                      ),
+                    )
+                  }
                 >
                   <span className="rb-big-icon">
                     <span className="ai-feature-icon" aria-hidden="true">
@@ -3278,6 +3308,7 @@ function RibbonInner({
             setDropdown={setDropdown}
             onAiPreset={onAiPreset}
             commentCount={commentCount}
+            openCommentCount={openCommentCount}
             onShowComments={onShowComments}
             canComment={canComment}
             onNewComment={onNewComment}

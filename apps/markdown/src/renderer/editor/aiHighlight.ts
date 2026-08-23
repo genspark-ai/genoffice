@@ -8,7 +8,15 @@ const key = new PluginKey<DecorationSet>('aiHighlight')
 
 /** Mark a freshly AI-written range on a transaction; decorations map with later edits */
 export function markAiRange(tr: Transaction, from: number, to: number): Transaction {
-  return tr.setMeta('aiHighlightAdd', { from, to })
+  return markAiRanges(tr, [{ from, to }])
+}
+
+/** Multi-range variant for scattered in-place edits (one meta slot per transaction) */
+export function markAiRanges(
+  tr: Transaction,
+  ranges: ReadonlyArray<{ from: number; to: number }>,
+): Transaction {
+  return tr.setMeta('aiHighlightAdd', ranges)
 }
 
 /** Remove every AI-change highlight (called when a run finishes) */
@@ -33,10 +41,11 @@ export const AiHighlight = Extension.create({
           apply(tr, set) {
             if (tr.getMeta('aiHighlightClear')) return DecorationSet.empty
             let next = set.map(tr.mapping, tr.doc)
-            const add = tr.getMeta('aiHighlightAdd') as { from: number; to: number } | undefined
-            if (add) {
-              const from = Math.max(0, Math.min(add.from, tr.doc.content.size))
-              const to = Math.max(from, Math.min(add.to, tr.doc.content.size))
+            const add = tr.getMeta('aiHighlightAdd') as
+              Array<{ from: number; to: number }> | undefined
+            for (const range of add ?? []) {
+              const from = Math.max(0, Math.min(range.from, tr.doc.content.size))
+              const to = Math.max(from, Math.min(range.to, tr.doc.content.size))
               if (to > from) {
                 next = next.add(tr.doc, [Decoration.inline(from, to, { class: 'ai-changed' })])
               }

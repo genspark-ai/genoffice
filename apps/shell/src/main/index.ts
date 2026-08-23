@@ -118,7 +118,7 @@ import { blankXlsxBuffer } from '../../../sheets/src/gateway/csv-import'
 import { blankPdfBuffer } from '../../../pdf/src/main/blank-pdf'
 import {
   configureSheetsRuntime,
-  hasQueuedWorkbook,
+  hasActiveQueuedWorkbook,
   installSheetsMenu,
   markSheetsShuttingDown,
   requestSheetsClose,
@@ -126,7 +126,6 @@ import {
   markSheetsUntitledPath,
   sendSheetsMenuAction,
   sheetsFileRenamed,
-  setForcedWorkbookPath,
   setSheetsCloseTabHook,
   setSheetsExtraFileMenuItems,
   setSheetsShellWindow,
@@ -251,22 +250,25 @@ configureSheetsRuntime({
   rendererUrl: process.env.SHEETS_RENDERER_URL,
   rendererFile: join(SHEETS_OUT, 'renderer', 'index.html'),
   sidecarPath: SIDECAR_BIN,
+  openGeneratedPath: (path) => openGeneratedDocument(path),
 })
 configureSlidesRuntime({
   preloadPath: join(SLIDES_OUT, 'preload', 'index.js'),
   rendererDevUrl: process.env.SLIDES_RENDERER_URL,
   rendererFilePath: join(SLIDES_OUT, 'renderer', 'index.html'),
+  openGeneratedPath: (path) => openGeneratedDocument(path),
 })
 configurePdfRuntime({
   preloadPath: join(PDF_OUT, 'preload', 'index.js'),
   rendererUrl: process.env.PDF_RENDERER_URL,
   rendererFile: join(PDF_OUT, 'renderer', 'index.html'),
-  openGeneratedPath: (path) => openDocumentPath(path),
+  openGeneratedPath: (path) => openGeneratedDocument(path),
 })
 configureMarkdownRuntime({
   preloadPath: join(MARKDOWN_OUT, 'preload', 'index.js'),
   rendererUrl: process.env.MARKDOWN_RENDERER_URL,
   rendererFile: join(MARKDOWN_OUT, 'renderer', 'index.html'),
+  openGeneratedPath: (path) => openGeneratedDocument(path),
 })
 
 // ---- UI language ----
@@ -506,6 +508,9 @@ const tMain = createI18n({
       '本地转换已按图片保真导出各页。如需可编辑的文本，请使用云端转换（支持 OCR）。',
     pdfDocxLocalDegradedMsg: '部分页面已按图片导出',
     pdfDocxLocalDegradedDetail: '第 {pages} 页版面无法可靠重建，已按整页图片保真导出。',
+    pdfDocxLocalOcrMsg: '扫描页已转换为可编辑文本',
+    pdfDocxLocalOcrDetail:
+      '第 {pages} 页为扫描件，已通过本地 OCR 识别为可编辑文字，建议校对识别结果。',
     pdfDocxLocalEncryptedDetail: '此 PDF 已加密，未提供正确的密码，无法转换。',
     pdfDocxLocalUnsupportedEncDetail:
       '该文件使用证书加密或不支持的加密方式，无法在本地转换，可尝试云端转换。',
@@ -514,6 +519,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: '密码不正确，请重试。',
     pdfPwdOk: '确定',
     pdfPwdVerifying: '正在验证密码…',
+    pdfPwdLabel: '密码',
+    pdfPwdPlaceholder: '输入打开密码',
+    pdfPwdShow: '显示密码',
+    pdfPwdHide: '隐藏密码',
     pdfDocxLocalCorruptDetail: '文件已损坏或不是有效的 PDF，无法转换。',
     dlgPickSaveDir: '选择默认保存位置',
     errSaveDirUnusable: '所选文件夹不可写，无法用作默认保存位置',
@@ -595,6 +604,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Some pages were exported as images',
     pdfDocxLocalDegradedDetail:
       'Page(s) {pages} could not be reliably reconstructed and were exported as full-page images.',
+    pdfDocxLocalOcrMsg: 'Scanned pages converted to editable text',
+    pdfDocxLocalOcrDetail:
+      'Page(s) {pages} were scans; their text was recovered with on-device OCR. Please proofread the result.',
     pdfDocxLocalEncryptedDetail:
       'This PDF is encrypted and could not be opened without the correct password.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -604,6 +616,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Incorrect password. Please try again.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Verifying password…',
+    pdfPwdLabel: 'Password',
+    pdfPwdPlaceholder: 'Enter the open password',
+    pdfPwdShow: 'Show password',
+    pdfPwdHide: 'Hide password',
     pdfDocxLocalCorruptDetail: 'The file is damaged or not a valid PDF and cannot be converted.',
     dlgPickSaveDir: 'Choose Default Save Location',
     errSaveDirUnusable:
@@ -686,6 +702,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: '一部のページを画像として書き出しました',
     pdfDocxLocalDegradedDetail:
       'ページ {pages} はレイアウトを正確に再構築できなかったため、ページ全体を画像として書き出しました。',
+    pdfDocxLocalOcrMsg: 'スキャンページを編集可能なテキストに変換しました',
+    pdfDocxLocalOcrDetail:
+      'ページ {pages} はスキャン画像のため、ローカル OCR でテキストを復元しました。内容の確認をおすすめします。',
     pdfDocxLocalEncryptedDetail:
       'このPDFは暗号化されており、正しいパスワードがないため変換できませんでした。',
     pdfDocxLocalUnsupportedEncDetail:
@@ -695,6 +714,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'パスワードが正しくありません。もう一度お試しください。',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'パスワードを確認しています…',
+    pdfPwdLabel: 'パスワード',
+    pdfPwdPlaceholder: '開くパスワードを入力',
+    pdfPwdShow: 'パスワードを表示',
+    pdfPwdHide: 'パスワードを非表示',
     pdfDocxLocalCorruptDetail: 'ファイルが破損しているか有効なPDFではないため、変換できません。',
     dlgPickSaveDir: '既定の保存先を選択',
     errSaveDirUnusable:
@@ -777,6 +800,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: '일부 페이지가 이미지로 내보내졌습니다',
     pdfDocxLocalDegradedDetail:
       '{pages}쪽은 레이아웃을 안정적으로 재구성할 수 없어 전체 페이지 이미지로 내보냈습니다.',
+    pdfDocxLocalOcrMsg: '스캔 페이지를 편집 가능한 텍스트로 변환했습니다',
+    pdfDocxLocalOcrDetail:
+      '{pages}페이지는 스캔 이미지로, 로컬 OCR로 텍스트를 복원했습니다. 결과를 검토해 주세요.',
     pdfDocxLocalEncryptedDetail:
       '이 PDF는 암호화되어 있으며 올바른 비밀번호가 없어 변환할 수 없습니다.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -786,6 +812,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: '비밀번호가 올바르지 않습니다. 다시 시도하세요.',
     pdfPwdOk: '확인',
     pdfPwdVerifying: '비밀번호 확인 중…',
+    pdfPwdLabel: '암호',
+    pdfPwdPlaceholder: '열기 암호 입력',
+    pdfPwdShow: '암호 표시',
+    pdfPwdHide: '암호 숨기기',
     pdfDocxLocalCorruptDetail: '파일이 손상되었거나 유효한 PDF가 아니어서 변환할 수 없습니다.',
     dlgPickSaveDir: '기본 저장 위치 선택',
     errSaveDirUnusable: '선택한 폴더에 쓸 수 없어 기본 저장 위치로 사용할 수 없습니다',
@@ -867,6 +897,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Certaines pages ont été exportées en images',
     pdfDocxLocalDegradedDetail:
       "Les pages {pages} n'ont pas pu être reconstruites de manière fiable et ont été exportées en images pleine page.",
+    pdfDocxLocalOcrMsg: 'Pages numérisées converties en texte modifiable',
+    pdfDocxLocalOcrDetail:
+      'Les pages {pages} étaient des numérisations ; leur texte a été restitué par OCR local. Veuillez relire le résultat.',
     pdfDocxLocalEncryptedDetail:
       "Ce PDF est chiffré et n'a pas pu être ouvert sans le mot de passe correct.",
     pdfDocxLocalUnsupportedEncDetail:
@@ -876,6 +909,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Mot de passe incorrect. Veuillez réessayer.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Vérification du mot de passe…',
+    pdfPwdLabel: 'Mot de passe',
+    pdfPwdPlaceholder: 'Saisissez le mot de passe d’ouverture',
+    pdfPwdShow: 'Afficher le mot de passe',
+    pdfPwdHide: 'Masquer le mot de passe',
     pdfDocxLocalCorruptDetail:
       "Le fichier est endommagé ou n'est pas un PDF valide et ne peut pas être converti.",
     dlgPickSaveDir: "Choisir l'emplacement d'enregistrement par défaut",
@@ -959,6 +996,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Einige Seiten wurden als Bilder exportiert',
     pdfDocxLocalDegradedDetail:
       'Seite(n) {pages} konnten nicht zuverlässig rekonstruiert werden und wurden als ganzseitige Bilder exportiert.',
+    pdfDocxLocalOcrMsg: 'Gescannte Seiten in bearbeitbaren Text umgewandelt',
+    pdfDocxLocalOcrDetail:
+      'Seite(n) {pages} waren Scans; der Text wurde per lokaler OCR wiederhergestellt. Bitte prüfen Sie das Ergebnis.',
     pdfDocxLocalEncryptedDetail:
       'Diese PDF ist verschlüsselt und konnte ohne das richtige Passwort nicht geöffnet werden.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -968,6 +1008,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Falsches Passwort. Bitte versuchen Sie es erneut.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Passwort wird überprüft…',
+    pdfPwdLabel: 'Passwort',
+    pdfPwdPlaceholder: 'Passwort zum Öffnen eingeben',
+    pdfPwdShow: 'Passwort anzeigen',
+    pdfPwdHide: 'Passwort ausblenden',
     pdfDocxLocalCorruptDetail:
       'Die Datei ist beschädigt oder keine gültige PDF und kann nicht konvertiert werden.',
     dlgPickSaveDir: 'Standard-Speicherort auswählen',
@@ -1051,6 +1095,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Algunas páginas se exportaron como imágenes',
     pdfDocxLocalDegradedDetail:
       'Las páginas {pages} no se pudieron reconstruir de forma fiable y se exportaron como imágenes de página completa.',
+    pdfDocxLocalOcrMsg: 'Páginas escaneadas convertidas en texto editable',
+    pdfDocxLocalOcrDetail:
+      'Las páginas {pages} eran escaneos; su texto se recuperó con OCR local. Revise el resultado.',
     pdfDocxLocalEncryptedDetail:
       'Este PDF está cifrado y no se pudo abrir sin la contraseña correcta.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1060,6 +1107,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Contraseña incorrecta. Inténtelo de nuevo.',
     pdfPwdOk: 'Aceptar',
     pdfPwdVerifying: 'Verificando la contraseña…',
+    pdfPwdLabel: 'Contraseña',
+    pdfPwdPlaceholder: 'Escriba la contraseña de apertura',
+    pdfPwdShow: 'Mostrar contraseña',
+    pdfPwdHide: 'Ocultar contraseña',
     pdfDocxLocalCorruptDetail:
       'El archivo está dañado o no es un PDF válido y no se puede convertir.',
     dlgPickSaveDir: 'Elegir ubicación de guardado predeterminada',
@@ -1141,6 +1192,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'บางหน้าถูกส่งออกเป็นรูปภาพ',
     pdfDocxLocalDegradedDetail:
       'หน้า {pages} ไม่สามารถสร้างเลย์เอาต์ใหม่ได้อย่างน่าเชื่อถือ จึงส่งออกเป็นรูปภาพทั้งหน้า',
+    pdfDocxLocalOcrMsg: 'แปลงหน้าสแกนเป็นข้อความที่แก้ไขได้แล้ว',
+    pdfDocxLocalOcrDetail:
+      'หน้า {pages} เป็นภาพสแกน ระบบกู้คืนข้อความด้วย OCR ในเครื่องแล้ว โปรดตรวจทานผลลัพธ์',
     pdfDocxLocalEncryptedDetail: 'PDF นี้ถูกเข้ารหัสและไม่สามารถเปิดได้โดยไม่มีรหัสผ่านที่ถูกต้อง',
     pdfDocxLocalUnsupportedEncDetail:
       'PDF นี้ใช้การเข้ารหัสแบบใบรับรองหรือการเข้ารหัสที่ไม่รองรับ จึงไม่สามารถแปลงในเครื่องได้ ลองใช้การแปลงบนคลาวด์แทน',
@@ -1149,6 +1203,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'รหัสผ่านไม่ถูกต้อง โปรดลองอีกครั้ง',
     pdfPwdOk: 'ตกลง',
     pdfPwdVerifying: 'กำลังตรวจสอบรหัสผ่าน…',
+    pdfPwdLabel: 'รหัสผ่าน',
+    pdfPwdPlaceholder: 'ป้อนรหัสผ่านเพื่อเปิด',
+    pdfPwdShow: 'แสดงรหัสผ่าน',
+    pdfPwdHide: 'ซ่อนรหัสผ่าน',
     pdfDocxLocalCorruptDetail: 'ไฟล์เสียหายหรือไม่ใช่ PDF ที่ถูกต้อง จึงไม่สามารถแปลงได้',
     dlgPickSaveDir: 'เลือกตำแหน่งบันทึกเริ่มต้น',
     errSaveDirUnusable: 'โฟลเดอร์ที่เลือกไม่สามารถเขียนได้ จึงใช้เป็นตำแหน่งบันทึกเริ่มต้นไม่ได้',
@@ -1230,6 +1288,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Beberapa halaman diekspor sebagai gambar',
     pdfDocxLocalDegradedDetail:
       'Halaman {pages} tidak dapat direkonstruksi dengan andal dan diekspor sebagai gambar satu halaman penuh.',
+    pdfDocxLocalOcrMsg: 'Halaman pindaian diubah menjadi teks yang dapat diedit',
+    pdfDocxLocalOcrDetail:
+      'Halaman {pages} adalah hasil pindaian; teksnya dipulihkan dengan OCR lokal. Harap periksa hasilnya.',
     pdfDocxLocalEncryptedDetail:
       'PDF ini terenkripsi dan tidak dapat dibuka tanpa kata sandi yang benar.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1239,6 +1300,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Kata sandi salah. Silakan coba lagi.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Memverifikasi kata sandi…',
+    pdfPwdLabel: 'Kata sandi',
+    pdfPwdPlaceholder: 'Masukkan kata sandi buka',
+    pdfPwdShow: 'Tampilkan kata sandi',
+    pdfPwdHide: 'Sembunyikan kata sandi',
     pdfDocxLocalCorruptDetail:
       'File rusak atau bukan PDF yang valid sehingga tidak dapat dikonversi.',
     dlgPickSaveDir: 'Pilih Lokasi Penyimpanan Default',
@@ -1322,6 +1387,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Некоторые страницы экспортированы как изображения',
     pdfDocxLocalDegradedDetail:
       'Страницы {pages} не удалось надёжно реконструировать; они экспортированы как полностраничные изображения.',
+    pdfDocxLocalOcrMsg: 'Отсканированные страницы преобразованы в редактируемый текст',
+    pdfDocxLocalOcrDetail:
+      'Страницы {pages} были сканами; текст восстановлен локальным OCR. Проверьте результат.',
     pdfDocxLocalEncryptedDetail:
       'Этот PDF зашифрован, и его не удалось открыть без правильного пароля.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1331,6 +1399,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Неверный пароль. Попробуйте ещё раз.',
     pdfPwdOk: 'ОК',
     pdfPwdVerifying: 'Проверка пароля…',
+    pdfPwdLabel: 'Пароль',
+    pdfPwdPlaceholder: 'Введите пароль для открытия',
+    pdfPwdShow: 'Показать пароль',
+    pdfPwdHide: 'Скрыть пароль',
     pdfDocxLocalCorruptDetail:
       'Файл повреждён или не является корректным PDF, преобразование невозможно.',
     dlgPickSaveDir: 'Выбрать папку сохранения по умолчанию',
@@ -1412,6 +1484,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'تم تصدير بعض الصفحات كصور',
     pdfDocxLocalDegradedDetail:
       'تعذّرت إعادة بناء الصفحات {pages} بشكل موثوق، وتم تصديرها كصور لكامل الصفحة.',
+    pdfDocxLocalOcrMsg: 'تم تحويل الصفحات الممسوحة ضوئيًا إلى نص قابل للتحرير',
+    pdfDocxLocalOcrDetail:
+      'الصفحات {pages} كانت صورًا ممسوحة؛ تم استرداد النص عبر OCR المحلي. يُرجى مراجعة النتيجة.',
     pdfDocxLocalEncryptedDetail: 'هذا الملف PDF مشفّر وتعذّر فتحه دون كلمة المرور الصحيحة.',
     pdfDocxLocalUnsupportedEncDetail:
       'يستخدم ملف PDF هذا تشفيرًا قائمًا على الشهادات أو تشفيرًا غير مدعوم ولا يمكن تحويله محليًا. جرّب التحويل السحابي.',
@@ -1420,6 +1495,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'كلمة المرور غير صحيحة. حاول مرة أخرى.',
     pdfPwdOk: 'موافق',
     pdfPwdVerifying: 'جارٍ التحقق من كلمة المرور…',
+    pdfPwdLabel: 'كلمة المرور',
+    pdfPwdPlaceholder: 'أدخل كلمة مرور الفتح',
+    pdfPwdShow: 'إظهار كلمة المرور',
+    pdfPwdHide: 'إخفاء كلمة المرور',
     pdfDocxLocalCorruptDetail: 'الملف تالف أو ليس ملف PDF صالحًا ولا يمكن تحويله.',
     dlgPickSaveDir: 'اختيار موقع الحفظ الافتراضي',
     errSaveDirUnusable: 'المجلد المحدد غير قابل للكتابة ولا يمكن استخدامه كموقع حفظ افتراضي',
@@ -1501,6 +1580,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Algumas páginas foram exportadas como imagens',
     pdfDocxLocalDegradedDetail:
       'As páginas {pages} não puderam ser reconstruídas de forma confiável e foram exportadas como imagens de página inteira.',
+    pdfDocxLocalOcrMsg: 'Páginas digitalizadas convertidas em texto editável',
+    pdfDocxLocalOcrDetail:
+      'As páginas {pages} eram digitalizações; o texto foi recuperado com OCR local. Revise o resultado.',
     pdfDocxLocalEncryptedDetail:
       'Este PDF está criptografado e não pôde ser aberto sem a senha correta.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1510,6 +1592,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Senha incorreta. Tente novamente.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Verificando a senha…',
+    pdfPwdLabel: 'Senha',
+    pdfPwdPlaceholder: 'Digite a senha de abertura',
+    pdfPwdShow: 'Mostrar senha',
+    pdfPwdHide: 'Ocultar senha',
     pdfDocxLocalCorruptDetail:
       'O arquivo está danificado ou não é um PDF válido e não pode ser convertido.',
     dlgPickSaveDir: 'Escolher local de salvamento padrão',
@@ -1593,6 +1679,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Alcune pagine sono state esportate come immagini',
     pdfDocxLocalDegradedDetail:
       'Non è stato possibile ricostruire in modo affidabile le pagine {pages}; sono state esportate come immagini a pagina intera.',
+    pdfDocxLocalOcrMsg: 'Pagine scansionate convertite in testo modificabile',
+    pdfDocxLocalOcrDetail:
+      'Le pagine {pages} erano scansioni; il testo è stato recuperato con OCR locale. Si consiglia di rileggere il risultato.',
     pdfDocxLocalEncryptedDetail:
       'Questo PDF è crittografato e non è stato possibile aprirlo senza la password corretta.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1602,6 +1691,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Password errata. Riprova.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Verifica della password…',
+    pdfPwdLabel: 'Password',
+    pdfPwdPlaceholder: 'Inserisci la password di apertura',
+    pdfPwdShow: 'Mostra password',
+    pdfPwdHide: 'Nascondi password',
     pdfDocxLocalCorruptDetail:
       'Il file è danneggiato o non è un PDF valido e non può essere convertito.',
     dlgPickSaveDir: 'Scegli la posizione di salvataggio predefinita',
@@ -1685,6 +1778,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Niektóre strony wyeksportowano jako obrazy',
     pdfDocxLocalDegradedDetail:
       'Stron {pages} nie udało się wiarygodnie odtworzyć; wyeksportowano je jako obrazy całych stron.',
+    pdfDocxLocalOcrMsg: 'Zeskanowane strony przekonwertowano na edytowalny tekst',
+    pdfDocxLocalOcrDetail:
+      'Strony {pages} były skanami; tekst odzyskano lokalnym OCR. Sprawdź wynik.',
     pdfDocxLocalEncryptedDetail:
       'Ten PDF jest zaszyfrowany i nie można go otworzyć bez prawidłowego hasła.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1694,6 +1790,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Nieprawidłowe hasło. Spróbuj ponownie.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Weryfikowanie hasła…',
+    pdfPwdLabel: 'Hasło',
+    pdfPwdPlaceholder: 'Wprowadź hasło otwarcia',
+    pdfPwdShow: 'Pokaż hasło',
+    pdfPwdHide: 'Ukryj hasło',
     pdfDocxLocalCorruptDetail:
       'Plik jest uszkodzony lub nie jest prawidłowym plikiem PDF i nie można go przekonwertować.',
     dlgPickSaveDir: 'Wybierz domyślną lokalizację zapisu',
@@ -1777,6 +1877,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: "Sommige pagina's zijn als afbeeldingen geëxporteerd",
     pdfDocxLocalDegradedDetail:
       "Pagina's {pages} konden niet betrouwbaar worden gereconstrueerd en zijn als paginagrote afbeeldingen geëxporteerd.",
+    pdfDocxLocalOcrMsg: 'Gescande pagina’s omgezet naar bewerkbare tekst',
+    pdfDocxLocalOcrDetail:
+      'Pagina(’s) {pages} waren scans; de tekst is hersteld met lokale OCR. Controleer het resultaat.',
     pdfDocxLocalEncryptedDetail:
       'Deze PDF is versleuteld en kon niet worden geopend zonder het juiste wachtwoord.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1786,6 +1889,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Onjuist wachtwoord. Probeer het opnieuw.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Wachtwoord controleren…',
+    pdfPwdLabel: 'Wachtwoord',
+    pdfPwdPlaceholder: 'Voer het openingswachtwoord in',
+    pdfPwdShow: 'Wachtwoord tonen',
+    pdfPwdHide: 'Wachtwoord verbergen',
     pdfDocxLocalCorruptDetail:
       'Het bestand is beschadigd of geen geldige PDF en kan niet worden geconverteerd.',
     dlgPickSaveDir: 'Standaard opslaglocatie kiezen',
@@ -1869,6 +1976,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'Sesetengah halaman dieksport sebagai imej',
     pdfDocxLocalDegradedDetail:
       'Halaman {pages} tidak dapat dibina semula dengan pasti dan telah dieksport sebagai imej halaman penuh.',
+    pdfDocxLocalOcrMsg: 'Halaman imbasan ditukar kepada teks boleh edit',
+    pdfDocxLocalOcrDetail:
+      'Halaman {pages} ialah imbasan; teksnya dipulihkan dengan OCR setempat. Sila semak hasilnya.',
     pdfDocxLocalEncryptedDetail:
       'PDF ini disulitkan dan tidak dapat dibuka tanpa kata laluan yang betul.',
     pdfDocxLocalUnsupportedEncDetail:
@@ -1878,6 +1988,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'Kata laluan salah. Sila cuba lagi.',
     pdfPwdOk: 'OK',
     pdfPwdVerifying: 'Mengesahkan kata laluan…',
+    pdfPwdLabel: 'Kata laluan',
+    pdfPwdPlaceholder: 'Masukkan kata laluan buka',
+    pdfPwdShow: 'Tunjukkan kata laluan',
+    pdfPwdHide: 'Sembunyikan kata laluan',
     pdfDocxLocalCorruptDetail: 'Fail rosak atau bukan PDF yang sah dan tidak dapat ditukar.',
     dlgPickSaveDir: 'Pilih Lokasi Simpanan Lalai',
     errSaveDirUnusable:
@@ -1956,6 +2070,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'חלק מהעמודים יוצאו כתמונות',
     pdfDocxLocalDegradedDetail:
       'לא ניתן היה לשחזר באופן אמין את עמודים {pages}, והם יוצאו כתמונות של עמוד מלא.',
+    pdfDocxLocalOcrMsg: 'עמודים סרוקים הומרו לטקסט הניתן לעריכה',
+    pdfDocxLocalOcrDetail:
+      'עמודים {pages} היו סריקות; הטקסט שוחזר באמצעות OCR מקומי. מומלץ להגיה את התוצאה.',
     pdfDocxLocalEncryptedDetail: 'קובץ PDF זה מוצפן ולא ניתן היה לפתוח אותו ללא הסיסמה הנכונה.',
     pdfDocxLocalUnsupportedEncDetail:
       'קובץ PDF זה משתמש בהצפנה מבוססת אישורים או בהצפנה שאינה נתמכת ולא ניתן להמירו מקומית. נסו את ההמרה בענן.',
@@ -1964,6 +2081,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'סיסמה שגויה. נסו שוב.',
     pdfPwdOk: 'אישור',
     pdfPwdVerifying: 'מאמת את הסיסמה…',
+    pdfPwdLabel: 'סיסמה',
+    pdfPwdPlaceholder: 'הזינו את סיסמת הפתיחה',
+    pdfPwdShow: 'הצג סיסמה',
+    pdfPwdHide: 'הסתר סיסמה',
     pdfDocxLocalCorruptDetail: 'הקובץ פגום או שאינו PDF תקין ולא ניתן להמירו.',
     dlgPickSaveDir: 'בחירת מיקום שמירה כברירת מחדל',
     errSaveDirUnusable:
@@ -2046,6 +2167,9 @@ const tMain = createI18n({
     pdfDocxLocalDegradedMsg: 'कुछ पृष्ठ छवियों के रूप में निर्यात किए गए',
     pdfDocxLocalDegradedDetail:
       'पृष्ठ {pages} का लेआउट विश्वसनीय रूप से पुनर्निर्मित नहीं हो सका, इसलिए उन्हें पूर्ण-पृष्ठ छवियों के रूप में निर्यात किया गया।',
+    pdfDocxLocalOcrMsg: 'स्कैन किए गए पृष्ठ संपादन योग्य टेक्स्ट में बदले गए',
+    pdfDocxLocalOcrDetail:
+      'पृष्ठ {pages} स्कैन थे; स्थानीय OCR से टेक्स्ट पुनर्प्राप्त किया गया। कृपया परिणाम जाँचें।',
     pdfDocxLocalEncryptedDetail:
       'यह PDF एन्क्रिप्टेड है और सही पासवर्ड के बिना इसे खोला नहीं जा सका।',
     pdfDocxLocalUnsupportedEncDetail:
@@ -2055,6 +2179,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: 'पासवर्ड गलत है। कृपया फिर से प्रयास करें।',
     pdfPwdOk: 'ठीक है',
     pdfPwdVerifying: 'पासवर्ड सत्यापित किया जा रहा है…',
+    pdfPwdLabel: 'पासवर्ड',
+    pdfPwdPlaceholder: 'खोलने का पासवर्ड दर्ज करें',
+    pdfPwdShow: 'पासवर्ड दिखाएँ',
+    pdfPwdHide: 'पासवर्ड छिपाएँ',
     pdfDocxLocalCorruptDetail:
       'फ़ाइल क्षतिग्रस्त है या मान्य PDF नहीं है, इसलिए रूपांतरण नहीं हो सकता।',
     dlgPickSaveDir: 'डिफ़ॉल्ट सहेजने का स्थान चुनें',
@@ -2131,6 +2259,9 @@ const tMain = createI18n({
       '本機轉換已將各頁以圖片方式保真匯出。如需可編輯的文字，請使用雲端轉換（支援 OCR）。',
     pdfDocxLocalDegradedMsg: '部分頁面已以圖片匯出',
     pdfDocxLocalDegradedDetail: '第 {pages} 頁的版面無法可靠重建，已以整頁圖片保真匯出。',
+    pdfDocxLocalOcrMsg: '掃描頁已轉換為可編輯文字',
+    pdfDocxLocalOcrDetail:
+      '第 {pages} 頁為掃描件，已透過本機 OCR 辨識為可編輯文字，建議校對辨識結果。',
     pdfDocxLocalEncryptedDetail: '此 PDF 已加密，未提供正確的密碼，無法轉換。',
     pdfDocxLocalUnsupportedEncDetail:
       '該檔案使用憑證加密或不支援的加密方式，無法在本機轉換，可嘗試雲端轉換。',
@@ -2139,6 +2270,10 @@ const tMain = createI18n({
     pdfPwdRetryPrompt: '密碼不正確，請重試。',
     pdfPwdOk: '確定',
     pdfPwdVerifying: '正在驗證密碼…',
+    pdfPwdLabel: '密碼',
+    pdfPwdPlaceholder: '輸入開啟密碼',
+    pdfPwdShow: '顯示密碼',
+    pdfPwdHide: '隱藏密碼',
     pdfDocxLocalCorruptDetail: '檔案已損壞或不是有效的 PDF，無法轉換。',
     dlgPickSaveDir: '選擇預設儲存位置',
     errSaveDirUnusable: '所選資料夾無法寫入，無法作為預設儲存位置',
@@ -2169,7 +2304,7 @@ function applyPendingProject(filePath: string): void {
   const ext = extname(filePath).slice(1).toLowerCase()
   let key: string | undefined
   if (ext === 'docx') key = 'doc'
-  else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') key = 'sheet'
+  else if (ext === 'xlsx' || ext === 'xlsm' || ext === 'xls' || ext === 'csv') key = 'sheet'
   else if (ext === 'pptx') key = 'slide'
   else if (ext === 'md' || ext === 'markdown') key = 'markdown'
   else if (ext === 'pdf') key = 'pdf'
@@ -2232,6 +2367,9 @@ function createShellWindow(): void {
   // dragging the window by the tab strip's blank (draggable) area produces no
   // DOM event anywhere — will-move is the only signal to dismiss popovers
   win.on('will-move', () => broadcastChromePressed())
+  // A detached editor window claims the process-global menu/active-editor targets
+  // while focused; take them back when the shell window regains focus
+  win.on('focus', () => tabManager?.refreshActiveTargets())
 
   const manager = new TabManager(
     win,
@@ -2266,9 +2404,16 @@ function createShellWindow(): void {
         .map((t) => ({ id: t.id, title: t.title, focused: t.active })),
     focusTab: (id) => manager.activateTab(id),
     closeActiveTab: () => manager.closeActiveTab(),
+    openGeneratedPath: (path) => openGeneratedDocument(path),
   })
   setSheetsCloseTabHook(() => manager.closeActiveTab())
-  setSlidesCloseTabHook(() => manager.closeActiveTab())
+  // ⌘W targets the focused window: in a detached slides editor window it closes
+  // that window (running its own close guard), not the shell's active tab
+  setSlidesCloseTabHook(() => {
+    const focused = BrowserWindow.getFocusedWindow()
+    if (focused && focused !== win) focused.close()
+    else manager.closeActiveTab()
+  })
   // When ⌘O opens a file inside a tab, sync the tab title/path (used for de-dup by path) and record it as recent.
   // The first save / save-as fires this too, so applyPendingProject also runs here.
   setSheetsWorkbookOpenedHook((wc, path) => {
@@ -2375,13 +2520,13 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 const DOCX_RE = /\.docx$/i
-const XLSX_RE = /\.(xlsx|xls|csv)$/i
+const XLSX_RE = /\.(xlsx|xlsm|xls|csv)$/i
 const PPTX_RE = /\.pptx$/i
 const PDF_RE = /\.pdf$/i
 const MD_RE = /\.(md|markdown)$/i
 
 /** document formats we recognize but don't open — surfaced as a dialog, not silently dropped */
-const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsm|xlsb|pages|key|numbers)$/i
+const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsb|pages|key|numbers)$/i
 
 /**
  * Single source of truth for the open-dialog filter. Includes the
@@ -2392,6 +2537,7 @@ const OPEN_DIALOG_EXTENSIONS = [
   'docx',
   'doc',
   'xlsx',
+  'xlsm',
   'xls',
   'csv',
   'pptx',
@@ -2442,6 +2588,25 @@ function openDocumentPath(filePath: string): boolean {
   return opened
 }
 
+/**
+ * Open a just-written export. Unlike File > Open, an already-open PDF tab is
+ * reloaded from disk so a re-export to the same path shows the new bytes
+ * instead of the previous in-memory document (which may also hold unsaved
+ * annotations). In-memory edits on that tab are discarded — Save would
+ * overwrite the file we just exported.
+ */
+function openGeneratedDocument(filePath: string): boolean {
+  if (tabManager && PDF_RE.test(filePath)) {
+    const existing = tabManager.findPdfTabByPath(filePath)
+    if (existing) {
+      tabManager.reloadTab(existing)
+      tabManager.activateTab(existing)
+      return true
+    }
+  }
+  return openDocumentPath(filePath)
+}
+
 function routeDocumentPath(filePath: string): boolean {
   if (!existsSync(filePath) || !tabManager) return false
   if (DOCX_RE.test(filePath)) {
@@ -2457,7 +2622,6 @@ function routeDocumentPath(filePath: string): boolean {
     if (existing) {
       tabManager.activateTab(existing)
     } else {
-      setForcedWorkbookPath(filePath)
       tabManager.openSheetsTab(filePath)
       startQueuedWorkbookNudge()
     }
@@ -2586,7 +2750,10 @@ async function newPdfTab(): Promise<void> {
  * The sheets renderer subscribes to menu actions only after Univer finishes
  * mounting (seconds on cold start), so a single 'open' can fire into the
  * void. Re-send until the queued workbook is consumed; consumption clears the
- * queue flag main-side (sheets-main), which stops the loop.
+ * queue entry main-side (sheets-main), which stops the loop. The nudge only
+ * reaches the active tab, so it gates on that tab's own queue entry —
+ * background tabs from a multi-select Open pull their path themselves via the
+ * renderer's has-queued-workbook poll.
  */
 let workbookNudgeTimer: ReturnType<typeof setInterval> | null = null
 
@@ -2595,7 +2762,11 @@ function startQueuedWorkbookNudge(): void {
   const startedAt = Date.now()
   sendSheetsMenuAction('open')
   workbookNudgeTimer = setInterval(() => {
-    if (!hasQueuedWorkbook() || Date.now() - startedAt > 30_000 || !tabManager?.findSheetsTab()) {
+    if (
+      !hasActiveQueuedWorkbook() ||
+      Date.now() - startedAt > 30_000 ||
+      !tabManager?.findSheetsTab()
+    ) {
       if (workbookNudgeTimer) clearInterval(workbookNudgeTimer)
       workbookNudgeTimer = null
       return
@@ -2698,14 +2869,14 @@ function registerHomeIpc(): void {
       filters: [
         { name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS },
         { name: tm('filterWord'), extensions: ['docx', 'doc'] },
-        { name: tm('filterExcel'), extensions: ['xlsx', 'xls', 'csv'] },
+        { name: tm('filterExcel'), extensions: ['xlsx', 'xlsm', 'xls', 'csv'] },
         { name: tm('filterPpt'), extensions: ['pptx', 'ppt'] },
         { name: tm('filterPdf'), extensions: ['pdf'] },
         { name: tm('filterMarkdown'), extensions: ['md', 'markdown'] },
       ],
-      properties: ['openFile'],
+      properties: ['openFile', 'multiSelections'],
     })
-    if (!result.canceled && result.filePaths[0]) openDocumentPath(result.filePaths[0])
+    if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
   })
 
   ipcMain.handle(HOME_CHANNELS.newDoc, (_event, opts?: { projectId?: string }) => {
@@ -3098,9 +3269,9 @@ async function openFileViaDialog(): Promise<void> {
   if (!win) return
   const result = await showOpenDialogWithMemory(dialog, win, {
     filters: [{ name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS }],
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
   })
-  if (!result.canceled && result.filePaths[0]) openDocumentPath(result.filePaths[0])
+  if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
 }
 
 function buildHomeMenu(): void {
@@ -3504,6 +3675,10 @@ async function exportPdfAsDocxLocal(): Promise<void> {
             ok: tm('pdfPwdOk'),
             cancel: tm('btnCancel'),
             verifying: tm('pdfPwdVerifying'),
+            label: tm('pdfPwdLabel'),
+            placeholder: tm('pdfPwdPlaceholder'),
+            show: tm('pdfPwdShow'),
+            hide: tm('pdfPwdHide'),
           },
         }),
       (page, total) => {
@@ -3516,19 +3691,41 @@ async function exportPdfAsDocxLocal(): Promise<void> {
     writeFileSync(picked.filePath, result.docx)
 
     // degrade transparency (plan §7.6 dual-track split): whole scan → point
-    // to the cloud/OCR flow; individual image-fallback pages → name them
-    const imagePages = result.pageResults.filter((r) => r.status !== 'ok').map((r) => r.page)
+    // to the cloud/OCR flow; individual image-fallback pages → name them;
+    // OCR-recovered scans ('ocr') are SUCCESSES — announce the recovery (the
+    // user should proofread machine-read text), never the image-export notice
+    const ocrPages = result.pageResults.filter((r) => r.status === 'ocr').map((r) => r.page)
+    const imagePages = result.pageResults
+      .filter((r) => r.status !== 'ok' && r.status !== 'ocr')
+      .map((r) => r.page)
     if (result.scannedDocument) {
       await dialog.showMessageBox(shellWindow, {
         type: 'info',
         message: tm('pdfDocxLocalScannedMsg'),
         detail: tm('pdfDocxLocalScannedDetail'),
       })
+    } else if (imagePages.length > 0 && ocrPages.length > 0) {
+      // mixed documents surface BOTH facts in one dialog: which pages shipped
+      // as images and which carry machine-read text the user should proofread
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalDegradedMsg'),
+        detail:
+          tm('pdfDocxLocalDegradedDetail', { pages: imagePages.join(', ') }) +
+          '\n\n' +
+          tm('pdfDocxLocalOcrDetail', { pages: ocrPages.join(', ') }),
+      })
     } else if (imagePages.length > 0) {
       await dialog.showMessageBox(shellWindow, {
         type: 'info',
         message: tm('pdfDocxLocalDegradedMsg'),
         detail: tm('pdfDocxLocalDegradedDetail', { pages: imagePages.join(', ') }),
+      })
+    } else if (ocrPages.length > 0) {
+      await dialog.showMessageBox(shellWindow, {
+        type: 'info',
+        message: tm('pdfDocxLocalOcrMsg'),
+        detail: tm('pdfDocxLocalOcrDetail', { pages: ocrPages.join(', ') }),
       })
     }
     openDocumentPath(picked.filePath)
@@ -3616,6 +3813,10 @@ async function exportPdfAsPptxLocal(): Promise<void> {
             ok: tm('pdfPwdOk'),
             cancel: tm('btnCancel'),
             verifying: tm('pdfPwdVerifying'),
+            label: tm('pdfPwdLabel'),
+            placeholder: tm('pdfPwdPlaceholder'),
+            show: tm('pdfPwdShow'),
+            hide: tm('pdfPwdHide'),
           },
         }),
       (page, total) => {
@@ -3722,6 +3923,10 @@ async function exportPdfAsXlsxLocal(): Promise<void> {
             ok: tm('pdfPwdOk'),
             cancel: tm('btnCancel'),
             verifying: tm('pdfPwdVerifying'),
+            label: tm('pdfPwdLabel'),
+            placeholder: tm('pdfPwdPlaceholder'),
+            show: tm('pdfPwdShow'),
+            hide: tm('pdfPwdHide'),
           },
         }),
       (page, total) => {

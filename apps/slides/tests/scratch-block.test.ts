@@ -72,7 +72,7 @@ function mkAccess(slides: RenderSlide[]): DeckAccess {
     applySlide: () => {},
     applyDeck: () => {},
     fitWidthPx: 1280,
-    generateFromHtml: async () => ({ ok: true, pages: 1 }),
+    landGeneratedPages: async () => ({ ok: true, pages: 1 }),
   } as unknown as DeckAccess
 }
 const call = (name: string): AgentToolCall => ({

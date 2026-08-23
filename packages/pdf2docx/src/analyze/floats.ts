@@ -11,6 +11,9 @@ import type { LineUnit } from './units'
 
 /** units beside the image (vertically overlapping, horizontally clear) needed to float */
 const SIDE_UNITS_MIN = 2
+/** a line poking this deep into an image contradicts square wrap */
+const CROSSER_MIN_OVERLAP_PT = 8
+const CROSSER_UNITS_MIN = 2
 /** units mostly inside the image box needed to float it as a backdrop */
 const OVER_UNITS_MIN = 2
 /** a unit counts as beside when its share inside the image is at most this */
@@ -52,6 +55,13 @@ const SHADOW_MAX_CX_OFFSET = 0.15
 const SHADOW_MAX_CY_OFFSET = 0.3
 /** only display text gets exported shadow rasters */
 const SHADOW_MIN_FONT_PT = 18
+/**
+ * a shadow raster twins ONE display line — chars stacking taller than this
+ * many line heights are a title block sitting ON a real image (P34: a hero
+ * photo clip-cropped to its band wraps its caption text tightly enough to
+ * pass every other gate here)
+ */
+const SHADOW_MAX_LINE_STACK = 2.2
 
 /**
  * Drop glyph-raster shadow images (P11 B): slide exporters bake a display
@@ -86,6 +96,9 @@ export function suppressTextShadowImages(
       y1: Math.max(...inside.map((c) => c.box.y1)),
     }
     if (rectArea(img.box) > rectArea(union) * SHADOW_MAX_AREA_RATIO) return true
+    const charHeights = inside.map((c) => c.box.y1 - c.box.y0).sort((a, b) => a - b)
+    const medianCharH = charHeights[charHeights.length >> 1] ?? 0
+    if (medianCharH > 0 && union.y1 - union.y0 > SHADOW_MAX_LINE_STACK * medianCharH) return true
     if (union.x1 - union.x0 < w * SHADOW_MIN_WIDTH_SHARE) return true
     if (
       Math.abs((union.x0 + union.x1) / 2 - (img.box.x0 + img.box.x1) / 2) >
@@ -159,6 +172,22 @@ export function classifyFloatImages(
       // overlay stack (decor built from layered images) — before the square
       // rule (P11 D): square floats reserve column band space, and a stack of
       // five layered hexagons beside a text zone reserved five image heights
+      img.float = { wrap: 'behind', xOffsetPt: Math.max(0, img.box.x0 - bodyLeft) }
+      floats.push(img)
+    } else if (
+      units.filter(
+        (u) =>
+          verticalOverlapRatio(u.box, img.box) >= 0.5 &&
+          Math.min(u.box.x1, img.box.x1) - Math.max(u.box.x0, img.box.x0) >=
+            CROSSER_MIN_OVERLAP_PT &&
+          overlapRatio(u.box, img.box) < 0.8,
+      ).length >= CROSSER_UNITS_MIN
+    ) {
+      // lines RUN INTO the image (justified text over a watermark): real
+      // square wrap leaves the image's x-band clear, so crossers are
+      // behind-anchor proof — naskh word gaps split such lines into fragments
+      // that would otherwise count as "beside" and squeeze the whole page
+      // around the watermark (prod_049)
       img.float = { wrap: 'behind', xOffsetPt: Math.max(0, img.box.x0 - bodyLeft) }
       floats.push(img)
     } else if (beside.length >= SIDE_UNITS_MIN) {

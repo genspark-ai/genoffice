@@ -8,6 +8,7 @@ import { displayFontFamily } from '../konva-adapter'
 import { useSystemFontFamilies } from '../system-fonts'
 import {
   GensparkMark,
+  IconAiAskSelection,
   IconAiBeautify,
   IconAiFactCheck,
   IconAiImage,
@@ -88,6 +89,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     onAddSlide,
     onAddSlideWithLayout,
     onAiPreset,
+    onAskSelection,
     onAlign,
     onArrange,
     onFlip,
@@ -172,6 +174,19 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
             <GensparkMark size={26} />
           </span>
           <span>Genspark AI</span>
+        </button>
+        <button
+          className="rb-big ai-entry"
+          disabled={!hasDoc || !hasSelection}
+          data-tip={t('aiAskBtnTip')}
+          onClick={onAskSelection}
+        >
+          <span className="rb-big-icon">
+            <span className="ai-feature-icon" aria-hidden="true">
+              <IconAiAskSelection />
+            </span>
+          </span>
+          <span>{t('aiAskBtn')}</span>
         </button>
         <button
           className="rb-big ai-entry"

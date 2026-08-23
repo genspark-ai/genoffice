@@ -189,6 +189,12 @@ export interface PdfiumModule {
   /** int* fillmode, FPDF_BOOL* stroke */
   _FPDFPath_GetDrawMode(path: number, fillmode: number, stroke: number): number
 
+  // clip paths (fpdf_transformpage.h; optional — feature-detect)
+  _FPDFPageObj_GetClipPath?(obj: number): number
+  _FPDFClipPath_CountPaths?(clip: number): number
+  _FPDFClipPath_CountPathSegments?(clip: number, pathIndex: number): number
+  _FPDFClipPath_GetPathSegment?(clip: number, pathIndex: number, segIndex: number): number
+
   // fonts
   _FPDFTextObj_GetFont(obj: number): number
   _FPDFFont_GetFamilyName(font: number, buffer: number, buflen: number): number

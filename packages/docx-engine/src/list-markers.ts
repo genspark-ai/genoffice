@@ -179,6 +179,17 @@ export function computeListMarkerInfos(
 
     const c = counters.get(def.abstractNumId) ?? []
     counters.set(def.abstractNumId, c)
+    // Word: an item at level L instantiates untouched shallower levels at
+    // their start value, so a later explicit item there increments past it
+    // ("1.1 Objetivos" before any level-0 item makes the first level-0 "2.")
+    for (let a = 0; a < lvl; a++) {
+      if (c[a] !== undefined) continue
+      const aKey = `${def.numId}:${a}`
+      if (def.startOverrides[a] !== undefined && !overrideApplied.has(aKey)) {
+        overrideApplied.add(aKey)
+        c[a] = def.startOverrides[a]
+      } else c[a] = def.levels[a]?.start ?? 1
+    }
     const overrideKey = `${def.numId}:${lvl}`
     if (def.startOverrides[lvl] !== undefined && !overrideApplied.has(overrideKey)) {
       overrideApplied.add(overrideKey)

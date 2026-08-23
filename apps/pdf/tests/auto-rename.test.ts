@@ -24,6 +24,7 @@ const handlers = new Map<string, IpcHandler>()
 interface FakeWebContents {
   id: number
   once: ReturnType<typeof vi.fn>
+  on: ReturnType<typeof vi.fn>
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   loadURL: ReturnType<typeof vi.fn>
   loadFile: ReturnType<typeof vi.fn>
@@ -39,6 +40,9 @@ function makeFakeWebContents(): FakeWebContents {
     id: nextWcId++,
     listeners,
     once: vi.fn((event: string, handler: () => void) => {
+      listeners.set(event, handler)
+    }),
+    on: vi.fn((event: string, handler: () => void) => {
       listeners.set(event, handler)
     }),
     setWindowOpenHandler: vi.fn(),

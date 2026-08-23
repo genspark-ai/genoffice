@@ -34,6 +34,26 @@ describe('home visible counts', () => {
     expect(visiblePageCount(page)).toBe(1)
   })
 
+  it('counts .xlsm under the sheets (xlsx) filter', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'shell-counts-'))
+    tempDirs.push(dir)
+    const bookPath = join(dir, 'book.xlsx')
+    const macroPath = join(dir, 'macro.xlsm')
+    const docPath = join(dir, 'notes.docx')
+    writeFileSync(bookPath, 'sheet')
+    writeFileSync(macroPath, 'sheet')
+    writeFileSync(docPath, 'doc')
+
+    const page = pageRecentPaths(
+      [bookPath, macroPath, docPath],
+      { ext: 'xlsx', offset: 0, limit: 50 },
+      new Set(),
+    )
+
+    expect(page.total).toBe(2)
+    expect(page.entries.map((entry) => entry.path)).toEqual([bookPath, macroPath])
+  })
+
   it('excludes stale paths from totals and rows', () => {
     const dir = mkdtempSync(join(tmpdir(), 'shell-counts-'))
     tempDirs.push(dir)

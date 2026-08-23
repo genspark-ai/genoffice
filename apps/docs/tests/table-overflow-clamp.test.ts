@@ -17,14 +17,14 @@ describe('clampTableColWidths', () => {
   it('compresses grids past the cap, real columns floored at min-content', () => {
     // regression sample 08: a 130620472-twips garbage gridCol laid a table out
     // ~8.7M px wide (fixed layout grows past width/max-width to the col sum);
-    // the garbage column absorbs the cut, 'label' keeps its word unbroken (725 twips)
+    // the garbage column absorbs the cut, 'label' keeps its word unbroken (766 twips)
     const model: TableModel = {
       rows: [[cell('label'), cell('value')]],
       colWidthsTwips: [6236, 130620472],
       colWidthsPct: [0.0048, 99.9952],
     }
     const clamped = clampTableColWidths(model, 10886)
-    expect(clamped.colWidthsTwips).toEqual([725, 10161])
+    expect(clamped.colWidthsTwips).toEqual([766, 10120])
     expect(clamped.colWidthsPct!.map((w) => Math.round(w))).toEqual([7, 93])
     // display-only: the input model keeps the raw document values
     expect(model.colWidthsTwips).toEqual([6236, 130620472])
@@ -75,10 +75,10 @@ describe('clampTableColWidths', () => {
     }
     const clamped = clampTableColWidths(model, 10886)
     const nested = clamped.rows[0][1].nestedTables![0]
-    // outer col1 squeezes to min-content('left') = 562, col2 gets the rest (10324);
-    // nested budget = 10324 - 2 x 108 cell margins, its 'a' column floors at 360 (24px)
-    expect(clamped.colWidthsTwips).toEqual([562, 10324])
-    expect(nested.colWidthsTwips).toEqual([360, 10324 - 216 - 360])
+    // outer col1 squeezes to min-content('left') = 590, col2 gets the rest (10296);
+    // nested budget = 10296 - 2 x 108 cell margins, its 'a' column floors at 360 (24px)
+    expect(clamped.colWidthsTwips).toEqual([590, 10296])
+    expect(nested.colWidthsTwips).toEqual([360, 10296 - 216 - 360])
     expect(model.rows[0][1].nestedTables![0].colWidthsTwips).toEqual([1871, 130618601])
   })
 
@@ -100,9 +100,9 @@ describe('clampTableColWidths', () => {
 
 describe('expandAutofitColWidths', () => {
   // 'الموقف البيئي' at the default 12pt: 6 chars x 0.35em x 16px = 33.6px word
-  // -> ceil(504) + 2 x 108 default margins = 720 twips min-content
+  // -> ceil(33.6 x 1.08 slack x 15) + 2 x 108 default margins = 761 twips min-content
   const ARABIC_HEADER = 'الموقف البيئي'
-  const MIN_ARABIC_COL = 720
+  const MIN_ARABIC_COL = 761
 
   it('widens an autofit column to its widest unbreakable word', () => {
     const model: TableModel = {
@@ -140,8 +140,62 @@ describe('expandAutofitColWidths', () => {
     }
     const expanded = expandAutofitColWidths(model, 10772, 9638)
     expect(expanded.colWidthsTwips![0]).toBe(MIN_ARABIC_COL)
-    // growth (+153) comes out of the wide column; total stays at the declared/fit width
+    // growth (+194) comes out of the wide column; total stays at the declared/fit width
     expect(expanded.colWidthsTwips!.reduce((a, b) => a + b, 0)).toBe(9638)
+  })
+
+  it('floors pct-width autofit columns at min-content, converting to absolute widths', () => {
+    // prod sample: w:tblW w="100" pct (= 2%) tip boxes broke one character per line
+    const model: TableModel = {
+      rows: [[cell(ARABIC_HEADER)]],
+      colWidthsTwips: [100],
+      colWidthsPct: [100],
+      widthPct: 2,
+      autoLayout: true,
+    }
+    const expanded = expandAutofitColWidths(model, 10772, 9638)
+    expect(expanded.colWidthsTwips).toEqual([MIN_ARABIC_COL])
+    expect(expanded.widthPct).toBeUndefined()
+    expect(model.widthPct).toBe(2)
+    // pct tables whose resolved columns already fit their words keep the pct width
+    const wide: TableModel = {
+      rows: [[cell('ok')]],
+      colWidthsPct: [100],
+      widthPct: 50,
+      autoLayout: true,
+    }
+    expect(expandAutofitColWidths(wide, 10772, 9638)).toBe(wide)
+    // pct resolves against the full text column: the render draws width:N% of
+    // the content box and shifts by the indent, so the indent must not shrink
+    // the resolved widths into false growth (8% of 9638 = 771 >= 761 min)
+    const indented: TableModel = {
+      rows: [[cell(ARABIC_HEADER)]],
+      colWidthsPct: [100],
+      widthPct: 8,
+      indentTwips: 1450,
+      autoLayout: true,
+    }
+    expect(expandAutofitColWidths(indented, 10772, 9638)).toBe(indented)
+  })
+
+  it('counts the list indent inside cells toward min-content', () => {
+    const bullet: TableModel = {
+      rows: [
+        [
+          {
+            paras: ['word'],
+            richParas: [
+              { runs: [{ text: 'word' }], list: { kind: 'bullet', numId: '1', ilvl: 0 } },
+            ],
+          },
+        ],
+      ],
+      colWidthsTwips: [400],
+      autoLayout: true,
+    }
+    const expanded = expandAutofitColWidths(bullet, 10772, 9638)
+    // 'word' = 2.18em x 16px = 34.88px, + 0.55in default .doc-li padding (52.8px)
+    expect(expanded.colWidthsTwips![0]).toBe(Math.ceil((34.88 + 52.8) * 1.08 * 15) + 216)
   })
 
   it('compresses proportionally when min-contents exceed the budget', () => {
@@ -208,14 +262,15 @@ describe('autofit expansion wiring', () => {
     expect(colwidth[0]).toBeGreaterThanOrEqual(Math.floor(720 / 15))
   })
 
-  it('parse does not flag fixed-layout or pct tables', async () => {
+  it('parse does not flag fixed-layout tables but keeps pct tables autofit', async () => {
     const fixed = AUTO_TABLE.replace('</w:tblPr>', '<w:tblLayout w:type="fixed"/></w:tblPr>')
     expect((await parseDocx(await buildDocx({ bodyXml: fixed }))).blocks[0].table!.autoLayout).toBe(
       undefined,
     )
+    // pct width picks the table size, not the layout algorithm: min-content still floors columns
     const pct = AUTO_TABLE.replace('w:type="auto" w:w="0"', 'w:type="pct" w:w="4000"')
     expect((await parseDocx(await buildDocx({ bodyXml: pct }))).blocks[0].table!.autoLayout).toBe(
-      undefined,
+      true,
     )
   })
 })
@@ -229,7 +284,7 @@ describe('renderTableSpec width budget', () => {
     }
     const spec = renderTableSpec(model) as Spec
     expect(spec[1].style).toContain(
-      'width:min(624px,calc(100% + var(--doc-margin-right,0px) - 96.7px))',
+      'width:min(624px,calc(var(--doc-content-w,100%) + var(--doc-margin-right,0px) - 96.7px))',
     )
     expect(spec[1].style).toContain('margin-left:96.7px')
     const nestedSpec = renderTableSpec(model, true) as Spec
@@ -244,11 +299,11 @@ describe('renderTableSpec width budget', () => {
       align: 'center',
     }
     const paper =
-      'calc(100% + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
+      'calc(var(--doc-content-w,100%) + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
     const style = (renderTableSpec(centered) as Spec)[1].style
     expect(style).toContain(`width:min(200px,${paper})`)
     // auto margins resolve to 0 on overflow: symmetric spill needs the negative-capable calc
-    expect(style).toContain(`margin-left:calc((100% - min(200px,${paper}))/2)`)
+    expect(style).toContain(`margin-left:calc((var(--doc-content-w,100%) - min(200px,${paper}))/2)`)
     const nestedStyle = (renderTableSpec(centered, true) as Spec)[1].style
     expect(nestedStyle).toContain('width:min(200px,100%)')
     expect(nestedStyle).toContain('margin-left:auto;margin-right:auto')

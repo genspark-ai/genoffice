@@ -48,7 +48,10 @@ export interface BlockBox {
   spaceBeforePx?: number
   /** space after (px), from line-metrics output */
   spaceAfterPx?: number
-  /** break-only paragraph (page-break field, no other content): measured block height, drives absorb-vs-blank-page placement */
+  /** footnote reservation folded into spaceAfterPx by applyBlockMeta (not a
+   *  paragraph space: page-bottom exemptions must not hand it back) */
+  footnoteExtraPx?: number
+  /** break-only paragraph (page-break field, no other content): single line's height, drives absorb-vs-blank-page placement */
   breakOnlyLineH?: number
 
   // ── F2 pagination constraints ───────────────────────────────────────────
@@ -145,6 +148,8 @@ export interface PageSlice {
 /** Pagination geometry for one section */
 export interface SectionGeom {
   contentHeight: number
+  /** content width (px, page width minus side margins); optional so height-only callers/tests can omit it */
+  contentWidth?: number
   /** section start forces a page break (nextPage/evenPage/oddPage, or continuous with different page geometry) */
   forceBreak: boolean
   /** section break type: evenPage/oddPage need physical blank pages inserted to align parity */
@@ -577,11 +582,19 @@ export function computeSectionedSlicesF2(
     }
 
     // break-only paragraph: absorbed at the page bottom (overflowing the bottom margin)
-    // unless less than half its height remains — then it opens a Word-style deliberate
-    // blank page. The half-height tolerance far exceeds the ±few-px page-fill drift
-    // that a plain fit-check turned into spurious mid-document blanks.
+    // unless less than half its line height remains — then it opens a Word-style
+    // deliberate blank page. The half-line tolerance far exceeds the ±few-px page-fill
+    // drift that a plain fit-check turned into spurious mid-document blanks. Word drops
+    // a trailing space-after at the page bottom, so the previous block's folded-in
+    // trailing space is handed back before judging the fit.
     if (block.breakOnlyLineH !== undefined) {
-      if (!fits(block.breakOnlyLineH * 0.5) && !pageBlank()) startPage(block.top, curSection)
+      // paragraph space only: footnote reservations keep consuming capacity
+      const prevTrailing =
+        bi > 0 && !blocks[bi - 1].floated
+          ? Math.max(0, (blocks[bi - 1].spaceAfterPx ?? 0) - (blocks[bi - 1].footnoteExtraPx ?? 0))
+          : 0
+      if (!fits(block.breakOnlyLineH * 0.5 - prevTrailing) && !pageBlank())
+        startPage(block.top, curSection)
       place(block.height)
       if (block.breakAfter) {
         pendingBreak = true
@@ -1235,6 +1248,11 @@ export interface ColumnBlockPlacement {
   el: HTMLElement
   /** column width (px); absent in single-column regions */
   widthPx?: number
+  /** owning section's content width (--doc-content-w): tables resolve their spill/centering caps against it */
+  contentWPx?: number
+  /** owning section's side margins (--doc-margin-left/right overrides) */
+  marginLeftPx?: number
+  marginRightPx?: number
   dx: number
   dy: number
 }
@@ -1293,6 +1311,55 @@ export function columnLayoutSpecs(
         }
       }
     }
+  }
+  return specs
+}
+
+const isTableBlock = (el: HTMLElement) =>
+  el.tagName === 'TABLE' || el.getAttribute('data-doc-protected') === 'table'
+
+/**
+ * Per-block wrap widths for documents whose sections disagree on content width,
+ * e.g. a landscape section in a portrait document. The canvas lays the whole flow
+ * on one page width; these placements make each section's blocks wrap at their
+ * own content width. Every block gets an explicit width (not just the differing
+ * sections'): preview clones render into per-section wrap widths, so any
+ * container-relative block would reflow there. Tables keep their inline min()
+ * width and get the section geometry via --doc-content-w / --doc-margin-* instead.
+ */
+export function sectionWidthSpecs(
+  blocks: BlockBox[],
+  sections: SectionInfo[],
+  geoms: SectionGeom[],
+): ColumnBlockPlacement[] {
+  const canvasW = geoms[0]?.contentWidth
+  if (
+    canvasW === undefined ||
+    !geoms.some((g) => g.contentWidth !== undefined && Math.abs(g.contentWidth - canvasW) > 0.5)
+  )
+    return []
+  const specs: ColumnBlockPlacement[] = []
+  for (const b of blocks) {
+    if (!b.el || b.floated) continue
+    const si = Math.max(0, Math.min(b.section ?? 0, geoms.length - 1))
+    const w = geoms[si]?.contentWidth
+    if (w === undefined) continue
+    const set = sections[si]?.settings
+    const spec: ColumnBlockPlacement = {
+      el: b.el,
+      dx: 0,
+      dy: 0,
+      contentWPx: w,
+      marginLeftPx: set ? twipsToPx(set.marginLeft) : 0,
+      marginRightPx: set ? twipsToPx(set.marginRight) : 0,
+    }
+    // blocks with an own inline width (tables, textboxes) size themselves;
+    // paragraphs get the section width minus their indent margins
+    if (!isTableBlock(b.el) && !b.el.style.width) {
+      const cs = getComputedStyle(b.el)
+      spec.widthPx = w - (parseFloat(cs.marginLeft) || 0) - (parseFloat(cs.marginRight) || 0)
+    }
+    specs.push(spec)
   }
   return specs
 }
@@ -1379,6 +1446,7 @@ export function sectionGeoms(
         twipsToPx(set.pageHeight) -
         effectiveTopPx(set, hf?.headerPx ?? 0) -
         effectiveBottomPx(set, hf?.footerPx ?? 0),
+      contentWidth: twipsToPx(set.pageWidth - set.marginLeft - set.marginRight),
       forceBreak,
       startType: s.startType,
       // colWidths only for explicit-width columns: the narrower-column gate is
@@ -1686,6 +1754,13 @@ export interface FloatBox {
   el: HTMLElement
   top: number
   height: number
+  /** gapless virtual position of the anchor wrapper (the box's page follows it) */
+  anchorTop: number
+  /** page-pinned box: `top` is raw page-relative Y, not a flow position */
+  pinned: boolean
+  /** page/margin-relative V rendered from the anchor: `top` - `anchorTop` is
+   *  the page-relative Y; the box belongs at that offset on the anchor's page */
+  pageRelV: boolean
 }
 
 /** Page-bottom footnote entry (number/text/estimated height): shared by canvas page gaps and the pagination preview */
@@ -1735,6 +1810,8 @@ export function measureBlocks(
     // floating-anchor boxes: absolute children of a zero-height wrapper; record
     // shift-neutral virtual positions so pages can be extended to contain them
     if (el.classList.contains('doc-protected-floating') || el.classList.contains('doc-img-float')) {
+      const anchorTop = (rect.top - origin - gapAccum) / zoomFactor
+      const pinned = el.classList.contains('doc-protected-pagepinned')
       for (const box of Array.from(
         el.querySelectorAll(':scope > .doc-textbox, :scope > .doc-img-wrap'),
       )) {
@@ -1743,8 +1820,12 @@ export function measureBlocks(
         const applied = parseFloat((box as HTMLElement).dataset.pageFloatDy ?? '0') || 0
         floats.push({
           el: box as HTMLElement,
-          top: (b.top - origin - gapAccum) / zoomFactor - applied,
+          // pinned boxes position against the page box: gaps never move them
+          top: (b.top - origin - (pinned ? 0 : gapAccum)) / zoomFactor - applied,
           height: b.height / zoomFactor,
+          anchorTop,
+          pinned,
+          pageRelV: (box as HTMLElement).dataset.pageRelV === '1',
         })
       }
     }
@@ -1774,8 +1855,11 @@ export function measureBlocks(
     const idxAttr = el.getAttribute('data-idx')
     // break-only paragraph (br line + ProseMirror trailing-break phantom line): marked
     // for dedicated placement — Word pushes it into a deliberate blank page when its
-    // line doesn't fit at the page bottom
+    // line doesn't fit at the page bottom. Word renders a single break line, but the
+    // DOM height spans one line box per <br> (a text-less paragraph lays out exactly
+    // brCount line boxes), so the fit height is one line's share.
     const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !el.querySelector('img')
+    const brLines = breakOnly ? el.querySelectorAll('br').length : 0
     // a single break with no text before it: Word starts this block's own content
     // on a new page, so it maps to breakBefore (breakAfter only pushes the next block)
     let leadingBreak = false
@@ -1808,7 +1892,7 @@ export function measureBlocks(
       colBreakAfter: hasColBreak || undefined,
       breakForce: (hasBreak && rect.height <= 0) || undefined,
       el,
-      ...(breakOnly ? { breakOnlyLineH: height } : {}),
+      ...(breakOnly ? { breakOnlyLineH: brLines > 1 ? height / brLines : height } : {}),
       ...(idxAttr ? { docxIndex: parseInt(idxAttr, 10) } : {}),
     })
     gapAccum += innerGap
@@ -1903,9 +1987,18 @@ export function appendFloatSpillBlock(
   blocks: BlockBox[],
   totalHeight: number,
   floats: FloatBox[],
+  /** allowed overhang into the landing page's bottom margin (px): Word draws
+   *  anchored boxes over the margin instead of opening a page for them */
+  bottomOverhangPx = 0,
 ): number | null {
   let bottom = 0
-  for (const f of floats) bottom = Math.max(bottom, f.top + f.height)
+  // page-absolute boxes (pinned / page-relative V) draw on their anchor's
+  // page — Word never opens a page for them, and their measured tops are not
+  // flow extents (pinned = page coords, pageRelV = anchor + page offset)
+  for (const f of floats) {
+    if (!f.pinned && !f.pageRelV) bottom = Math.max(bottom, f.top + f.height)
+  }
+  bottom -= bottomOverhangPx
   if (bottom <= totalHeight + 1) return null
   const top = totalHeight
   const spill = bottom - totalHeight
@@ -2143,6 +2236,7 @@ export function applyBlockMeta(blocks: BlockBox[], metaOf: BlockMetaOf): void {
       // (fits' "text fits" check subtracts space-after, so the reservation doesn't affect the paragraph's own line breaking)
       b.height += meta.footnoteExtraPx
       b.spaceAfterPx = (b.spaceAfterPx ?? 0) + meta.footnoteExtraPx
+      b.footnoteExtraPx = (b.footnoteExtraPx ?? 0) + meta.footnoteExtraPx
     }
   }
 }
@@ -2284,10 +2378,11 @@ function innerGapHeight(el: HTMLElement): number {
 /**
  * In-block text lines (first rect of each line): offset is the virtual in-block Y
  * after subtracting inline gaps; left/top are screen coordinates; node is the text
- * node owning the line's first rect (DOM anchor for viewport-independent positioning).
+ * node owning the line's first rect (DOM anchor for viewport-independent positioning),
+ * or an in-flow inline image element when the line holds no text (picture-only lines).
  * Text inside gaps (e.g. footnotes) doesn't count as lines.
  */
-type DomLineRect = { offset: number; left: number; top: number; node: Text }
+type DomLineRect = { offset: number; left: number; top: number; node: Text | Element }
 export type DomLineRectsFn = (el: HTMLElement, zoomFactor: number) => DomLineRect[]
 
 /**
@@ -2307,17 +2402,26 @@ export function createLineRectsCache(): DomLineRectsFn {
   }
 }
 
-function domLineRects(
-  el: HTMLElement,
-  zoomFactor: number,
-): Array<{ offset: number; left: number; top: number; node: Text }> {
+/** In normal flow inside el (no floated/absolutely-positioned ancestor): only such
+ *  content forms text lines — overlays and wrap-floats don't consume flow height. */
+function inFlowWithin(node: Element, el: HTMLElement): boolean {
+  for (let e: Element | null = node; e && e !== el; e = e.parentElement) {
+    const cs = getComputedStyle(e)
+    // jsdom leaves unset properties '' — treat as in flow
+    if ((cs.float && cs.float !== 'none') || cs.position === 'absolute' || cs.position === 'fixed')
+      return false
+  }
+  return true
+}
+
+function domLineRects(el: HTMLElement, zoomFactor: number): DomLineRect[] {
   const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
     g.getBoundingClientRect(),
   )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
   const range = document.createRange()
-  const rects: Array<{ r: DOMRect; node: Text }> = []
+  const rects: Array<{ r: DOMRect; node: Text | Element }> = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (n.parentElement?.closest('.page-gap, .page-float-host')) continue
     range.selectNodeContents(n)
@@ -2325,9 +2429,17 @@ function domLineRects(
       if (r.height > 0 && r.width > 0) rects.push({ r, node: n as Text })
     }
   }
+  // in-flow inline pictures form lines too (a picture-only paragraph has no text
+  // rect at all, which used to leave over-page image stacks without break points)
+  for (const im of Array.from(el.querySelectorAll('img'))) {
+    if (im.closest('.page-gap, .page-float-host')) continue
+    if (!inFlowWithin(im, el)) continue
+    const r = im.getBoundingClientRect()
+    if (r.height > 0 && r.width > 0) rects.push({ r, node: im })
+  }
   rects.sort((a, b) => a.r.top - b.r.top)
   const elTop = el.getBoundingClientRect().top
-  const lines: Array<{ offset: number; left: number; top: number; node: Text }> = []
+  const lines: DomLineRect[] = []
   let lineBottom = -Infinity
   for (const { r, node } of rects) {
     if (r.top >= lineBottom - 1) {
@@ -2341,7 +2453,15 @@ function domLineRects(
     } else {
       lineBottom = Math.max(lineBottom, r.bottom)
       const last = lines[lines.length - 1]
-      if (last && r.left < last.left) last.left = r.left
+      if (last) {
+        if (r.left < last.left) last.left = r.left
+        // text anchors the line whenever it has any (image rects only stand in
+        // on text-less lines; char anchors keep RTL/offset resolution exact)
+        if (last.node instanceof Element && !(node instanceof Element)) {
+          last.node = node
+          last.top = r.top
+        }
+      }
     }
   }
   return lines
@@ -2363,10 +2483,16 @@ export function lineBreakBoundaries(lineOffsets: number[]): number[] {
   return lineOffsets.slice(1).filter((off) => off > 0.5)
 }
 
-/** DOM anchor of a line start: the line's first text node + character offset within it (feed to view.posAtDOM) */
+/** DOM anchor of a line start: the line's first text node + character offset within it
+ *  (feed to view.posAtDOM), or the line's inline image element on text-less lines. */
 export interface LineAnchor {
-  node: Text
+  node: Text | Element
   charOffset: number
+}
+
+/** Element an anchor hangs off (the element itself, or the text node's parent). */
+export function anchorElement(a: LineAnchor): Element | null {
+  return a.node instanceof Element ? a.node : a.node.parentElement
 }
 
 /**
@@ -2404,10 +2530,10 @@ function lineStartCharOffset(node: Text, lineTop: number): number {
   return ans
 }
 
-const toAnchor = (ln: { node: Text; top: number }): LineAnchor => ({
-  node: ln.node,
-  charOffset: lineStartCharOffset(ln.node, ln.top),
-})
+const toAnchor = (ln: { node: Text | Element; top: number }): LineAnchor =>
+  ln.node instanceof Element
+    ? { node: ln.node, charOffset: 0 }
+    : { node: ln.node, charOffset: lineStartCharOffset(ln.node, ln.top) }
 
 /**
  * DOM anchor of the line start matching an in-block virtual Y (offsetInBlock)
@@ -2441,6 +2567,7 @@ export function nextLineAnchor(
 
 /** Screen top of a cut anchor's line (the char rect at the anchor, else its parent box) */
 function anchorLineTop(a: LineAnchor): number | null {
+  if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
     const range = document.createRange()
     range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
@@ -2492,7 +2619,7 @@ export function singleCutCell(row: Element | null, anchor?: LineAnchor | null): 
     : []
   if (cells.length === 1) return cells[0]
   if (cells.length === 0 || !anchor) return null
-  const anchorCell = anchor.node.parentElement?.closest('td, th')
+  const anchorCell = anchorElement(anchor)?.closest('td, th')
   const host = anchorCell && cells.find((c) => c === anchorCell || c.contains(anchorCell))
   if (!host) return null
   const cutTop = anchorLineTop(anchor)

@@ -7,11 +7,12 @@ import {
 } from '../src/renderer/pagination'
 
 const el = null as unknown as HTMLElement
+const base = { anchorTop: 0, pinned: false, pageRelV: false }
 
 describe('appendFloatSpillBlock', () => {
   it('appends a virtual block spanning to the lowest float bottom', () => {
     const blocks: BlockBox[] = [{ top: 0, height: 100 }]
-    const floats: FloatBox[] = [{ el, top: 950, height: 400 }]
+    const floats: FloatBox[] = [{ el, ...base, top: 950, height: 400 }]
     const total = appendFloatSpillBlock(blocks, 100, floats)
     expect(total).toBe(1350)
     const spill = blocks[1]
@@ -23,13 +24,13 @@ describe('appendFloatSpillBlock', () => {
 
   it('returns null when floats stay within the flow', () => {
     const blocks: BlockBox[] = [{ top: 0, height: 500 }]
-    expect(appendFloatSpillBlock(blocks, 500, [{ el, top: 100, height: 200 }])).toBeNull()
+    expect(appendFloatSpillBlock(blocks, 500, [{ el, ...base, top: 100, height: 200 }])).toBeNull()
     expect(blocks).toHaveLength(1)
   })
 
   it('materializes trailing pages for overflowing floats', () => {
     const blocks: BlockBox[] = [{ top: 0, height: 100 }]
-    const floats: FloatBox[] = [{ el, top: 1500, height: 400 }]
+    const floats: FloatBox[] = [{ el, ...base, top: 1500, height: 400 }]
     const total = appendFloatSpillBlock(blocks, 100, floats)!
     const slices = computeSectionedSlicesF2(
       blocks,

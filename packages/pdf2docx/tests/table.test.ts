@@ -8,6 +8,7 @@ import {
   layoutCells,
   solveGrid,
   trimGhostEdgeColumns,
+  normalizeShapes,
 } from '../src/analyze'
 import type { PageShapes, Stroke, TableBlock } from '../src/ir'
 import { mkText } from './helpers/chars'
@@ -768,5 +769,179 @@ describe('P27 vline-junction row harvest', () => {
     expect(tables).toHaveLength(1)
     // y=660 junction refuted by the straddling glyphs; others may survive
     expect(tables[0]!.rows.some((row) => row[0] && row[0].box.y0 === 660)).toBe(false)
+  })
+})
+
+describe('detectTables: shaded borderless columns (P30)', () => {
+  // survey-style modern table: horizontal rules only, closed frame, and the
+  // header/zebra cell fills carry the column structure
+  const shadedGrid = (): Stroke[] => [
+    h(100, 400, 700),
+    h(100, 400, 650),
+    h(100, 400, 600),
+    v(600, 700, 100),
+    v(600, 700, 400),
+  ]
+  const fills = () => [
+    { box: { x0: 100, x1: 200, y0: 650, y1: 700 }, color: 'F0F4F8' },
+    { box: { x0: 200, x1: 300, y0: 650, y1: 700 }, color: 'F0F4F8' },
+    { box: { x0: 300, x1: 400, y0: 650, y1: 700 }, color: 'F0F4F8' },
+    { box: { x0: 100, x1: 200, y0: 600, y1: 650 }, color: 'F9FAFB' },
+    { box: { x0: 200, x1: 300, y0: 600, y1: 650 }, color: 'F9FAFB' },
+    { box: { x0: 300, x1: 400, y0: 600, y1: 650 }, color: 'F9FAFB' },
+  ]
+
+  it('recovers interior columns from aligned fill edges', () => {
+    const chars = [
+      ...mkText('aa', 110, { y: 680 }).chars,
+      ...mkText('bb', 210, { y: 680 }).chars,
+      ...mkText('cc', 310, { y: 680 }).chars,
+      ...mkText('dd', 110, { y: 620 }).chars,
+    ]
+    const { tables } = detectTables(shapesOf(shadedGrid(), fills()), chars, 792)
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.colWidthsPt).toHaveLength(3)
+    expect(tables[0]!.rows[0]!.map((c) => c.blocks.length > 0)).toEqual([true, true, true])
+  })
+
+  it('keeps the merge when a spanning title straddles the fill edge', () => {
+    const chars = [
+      // one long run flowing across both fill edges refutes the splits
+      ...mkText('spanning title across all columns here yes', 110, { y: 680 }).chars,
+      ...mkText('dd', 110, { y: 620 }).chars,
+    ]
+    const { tables } = detectTables(shapesOf(shadedGrid(), fills()), chars, 792)
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.colWidthsPt.length).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('detectTables: header-only shading (P30 vote threshold)', () => {
+  it('recovers columns from a single shaded header row', () => {
+    const strokes = [
+      h(100, 400, 700),
+      h(100, 400, 650),
+      h(100, 400, 600),
+      v(600, 700, 100),
+      v(600, 700, 400),
+    ]
+    const headerFills = [
+      { box: { x0: 100, x1: 200, y0: 650, y1: 700 }, color: 'F0F4F8' },
+      { box: { x0: 200, x1: 300, y0: 650, y1: 700 }, color: 'F0F4F8' },
+      { box: { x0: 300, x1: 400, y0: 650, y1: 700 }, color: 'F0F4F8' },
+    ]
+    const chars = [
+      ...mkText('aa', 110, { y: 680 }).chars,
+      ...mkText('bb', 210, { y: 680 }).chars,
+      ...mkText('cc', 310, { y: 680 }).chars,
+      ...mkText('dd', 110, { y: 620 }).chars,
+    ]
+    const { tables } = detectTables(shapesOf(strokes, headerFills), chars, 792)
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.colWidthsPt).toHaveLength(3)
+  })
+})
+
+describe('detectTables: label-band edges (invoice headers)', () => {
+  // shaded label band y 576-590, dividers y 562-577, bottom rule y 561:
+  // the strokes alone are a 15pt-tall group (under MIN_TABLE_H) — the band's
+  // edges must complete a 2-row grid
+  const headerStrokes = (): Stroke[] => [
+    h(36, 576, 561),
+    v(562, 577, 36),
+    v(562, 577, 128),
+    v(562, 577, 256),
+    v(562, 577, 369),
+    v(562, 577, 576),
+  ]
+  const band = { box: { x0: 36, y0: 576, x1: 576, y1: 590 }, color: 'C0C0C0' }
+
+  it('completes an invoice header band + dividers into a 2-row grid', () => {
+    const labels = mkText('Salesperson', 40, { y: 579 }).chars
+    const values = mkText('Katelyn', 40, { y: 565 }).chars
+    const { tables } = detectTables(shapesOf(headerStrokes(), [band]), [...labels, ...values])
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.rows.length).toBe(2)
+    // the divider-drawn value row keeps its columns (the band row merges)
+    expect(tables[0]!.rows[1]!.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('without the band the divider group stays too short for a grid', () => {
+    const { tables } = detectTables(shapesOf(headerStrokes(), []), [])
+    expect(tables).toHaveLength(0)
+  })
+
+  it('zebra fills inside an existing grid do not mint extra row boundaries', () => {
+    // full 2x3 grid + a shaded row fill inside it (its edges sit ~2pt off the
+    // real boundaries and would split rows if synthesized)
+    const zebra = { box: { x0: 100, y0: 601.5, x1: 400, y1: 648.5 }, color: 'EEDDCC' }
+    const { tables } = detectTables(shapesOf(fullGrid(), [zebra]), [])
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.rows.length).toBe(2)
+  })
+})
+
+describe('rounded-column lattice (P38, cell-data)', () => {
+  it('adjacent rounded column boxes + a header rule solve into one grid', () => {
+    // two side-by-side rounded columns (as bank statements draw them) and a
+    // header rule crossing both, all built from PDFium-style curved subpaths
+    const roundedBox = (x0: number, y0: number, x1: number, y1: number, r: number) => {
+      const pts = [
+        { x: x0 + r, y: y0 },
+        { x: x1 - r, y: y0 },
+        { x: x1 - r / 2, y: y0 },
+        { x: x1, y: y0 + r / 2 },
+        { x: x1, y: y0 + r },
+        { x: x1, y: y1 - r },
+        { x: x1, y: y1 - r / 2 },
+        { x: x1 - r / 2, y: y1 },
+        { x: x1 - r, y: y1 },
+        { x: x0 + r, y: y1 },
+        { x: x0 + r / 2, y: y1 },
+        { x: x0, y: y1 - r / 2 },
+        { x: x0, y: y1 - r },
+        { x: x0, y: y0 + r },
+        { x: x0, y: y0 + r / 2 },
+        { x: x0 + r / 2, y: y0 },
+        { x: x0 + r, y: y0 },
+      ]
+      return {
+        points: pts,
+        closed: false,
+        hasCurves: true,
+        lineTo: pts.map((_, i) => [1, 5, 9, 13].includes(i)),
+      }
+    }
+    const mk = (subpaths: object[]) => ({
+      subpaths,
+      filled: false,
+      stroked: true,
+      fillColor: 'ffffff',
+      strokeColor: '000000',
+      strokeWidth: 1,
+    })
+    const headerRule = {
+      points: [
+        { x: 20, y: 130 },
+        { x: 120, y: 130 },
+      ],
+      closed: false,
+      hasCurves: false,
+      lineTo: [false, true],
+    }
+    const shapes = normalizeShapes(
+      [
+        mk([roundedBox(20, 100, 60, 500, 3)]),
+        mk([roundedBox(60, 100, 120, 500, 3)]),
+        mk([headerRule]),
+      ] as never,
+      { roundedRectEdges: true },
+    )
+    const groups = groupStrokes(shapes.strokes)
+    expect(groups).toHaveLength(1)
+    const grid = solveGrid(groups[0]!, true)
+    expect(grid).not.toBeNull()
+    expect(grid!.xs.map((x) => Math.round(x))).toEqual([20, 60, 120])
+    expect(grid!.ys.map((y) => Math.round(y)).sort((a, b) => a - b)).toEqual([100, 130, 500])
   })
 })

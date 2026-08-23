@@ -669,7 +669,7 @@ describe('streamForProvider: openai-compatible', () => {
     // empty fixture streams reject with "returned no content"; only the request URL matters here
     await streamForProvider(
       'deepseek',
-      { apiKey: 'k', model: 'deepseek-chat' },
+      { apiKey: 'k', model: 'deepseek-v4-pro' },
       'sys',
       [],
       [],
@@ -680,6 +680,25 @@ describe('streamForProvider: openai-compatible', () => {
       'https://api.deepseek.com/v1/chat/completions',
       expect.anything(),
     )
+  })
+
+  it('keeps deepseek in non-thinking mode so a tool-calling loop is not rejected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
+    vi.stubGlobal('fetch', fetchMock)
+    const { cb } = collector()
+    await streamForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-pro' },
+      'sys',
+      [{ role: 'user', text: 'hi' }],
+      [{ name: 'edit', description: 'edit', inputSchema: { type: 'object' } }],
+      100,
+      cb,
+    ).catch(() => {})
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
+      thinking?: { type?: string }
+    }
+    expect(body.thinking).toEqual({ type: 'disabled' })
   })
 
   it('uses the configured base URL for the custom provider', async () => {

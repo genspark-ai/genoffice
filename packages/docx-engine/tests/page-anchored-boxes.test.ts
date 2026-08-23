@@ -118,8 +118,8 @@ describe('page/margin-anchored textboxes outside the body column', () => {
     expect(box.offsetYEmu).toBe(PAGE_H - 2 * MARGIN - 1000000)
   })
 
-  it('leaves plain posOffset anchors on the legacy paragraph-relative path', async () => {
-    const posH = `<wp:positionH relativeFrom="page"><wp:posOffset>100000</wp:posOffset></wp:positionH>`
+  it('converts page-relative posOffset to column-relative; paragraph-relative stays put', async () => {
+    const posH = `<wp:positionH relativeFrom="page"><wp:posOffset>1000000</wp:posOffset></wp:positionH>`
     const posV = `<wp:positionV relativeFrom="paragraph"><wp:posOffset>50000</wp:posOffset></wp:positionV>`
     const para = anchorPara(
       posH,
@@ -130,7 +130,8 @@ describe('page/margin-anchored textboxes outside the body column', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: para }))
     const [box] = doc.blocks[0].textboxes!
     expect(box.floating).toBeUndefined()
-    expect(box.offsetXEmu).toBe(100000)
+    // page X measures from the page edge: the 1440-twip left margin comes off
+    expect(box.offsetXEmu).toBe(1000000 - 1440 * 635)
     expect(box.offsetYEmu).toBe(50000)
   })
 

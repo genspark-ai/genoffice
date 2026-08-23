@@ -189,6 +189,70 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(build(mk('unknownPreset9')).clip).toBeUndefined()
   })
 
+  it('picture custGeom -> clip pathData scaled to the box; scene3d 180° camera -> container flips', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const mk = (extra: Record<string, any>): any => ({
+      id: 'pic_cg',
+      type: 'picture',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      mediaRef: '',
+      ...extra,
+    })
+    const build = (el: any) =>
+      buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+        fitWidthPx: 1280,
+      }).nodes[0] as any
+
+    const cg = build(mk({ customGeometry: { path: 'M 0 1 L 0.5 0 L 1 1 Z' } }))
+    const px = (n: number, dim: number) => Math.round(n * dim * 100) / 100
+    expect(cg.clip?.pathData).toBe(
+      `M 0 ${px(1, cg.box.h)} L ${px(0.5, cg.box.w)} 0 L ${px(1, cg.box.w)} ${px(1, cg.box.h)} Z`,
+    )
+
+    const mirrorH = build(
+      mk({
+        scene3d: {
+          cameraPreset: 'orthographicFront',
+          cameraRot: { lat: 0, lon: 10800000, rev: 0 },
+        },
+      }),
+    )
+    expect(mirrorH.box.flipH).toBe(true)
+    expect(mirrorH.box.flipV).toBe(false)
+
+    const mirrorBoth = build(
+      mk({
+        scene3d: {
+          cameraPreset: 'orthographicFront',
+          cameraRot: { lat: 10800000, lon: 10800000, rev: 0 },
+        },
+      }),
+    )
+    expect(mirrorBoth.box.flipH).toBe(true)
+    expect(mirrorBoth.box.flipV).toBe(true)
+
+    // perspective camera / non-flat angle: leave the picture untouched (no fake mirror)
+    const persp = build(
+      mk({
+        scene3d: { cameraPreset: 'perspectiveFront', cameraRot: { lat: 0, lon: 10800000, rev: 0 } },
+      }),
+    )
+    expect(persp.box.flipH).toBe(false)
+    const tilted = build(
+      mk({
+        scene3d: { cameraPreset: 'orthographicFront', cameraRot: { lat: 0, lon: 5400000, rev: 0 } },
+      }),
+    )
+    expect(tilted.box.flipH).toBe(false)
+  })
+
   it('slidenum field displays opts.slideNo without mutating the model', async () => {
     const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
     const slide = deck.slides[0]!

@@ -38,10 +38,23 @@ describe('excelWidthScale', () => {
     expect(excelWidthScale(undefined, 11, () => 8.25)).toBe(1)
   })
 
+  it('scales alias-substituted Korean defaults even when the alias resolves', () => {
+    // The styles.css alias maps the family onto Apple SD Gothic Neo, whose
+    // digits measure ~10px at 11pt vs the GDI 7px.
+    expect(excelWidthScale('맑은 고딕', 11, () => 9.97)).toBeCloseTo(7 / 9.97)
+    expect(excelWidthScale('Malgun Gothic', 11, () => 9.97)).toBeCloseTo(7 / 9.97)
+  })
+
   it('keeps a borderline cell from spuriously hashing', () => {
     // 10 chars * 8px = 80 > 75 raw, but 80 * 0.9 = 72 fits.
     expect(overflowHashes('2/22/2016 ', 80, measure, 0.9)).toBeNull()
     expect(overflowHashes('2/22/2016 ', 80, measure)).toBe('#########')
+  })
+
+  it('tolerates overflow within the GDI measurement noise band', () => {
+    // 10 chars * 8px = 80 > 77 available, but 77 * 1.05 = 80.85 fits —
+    // Excel's own (GDI) metrics would show the value, so clip, not hash.
+    expect(overflowHashes('2026/8/30x', 82, measure)).toBeNull()
   })
 })
 

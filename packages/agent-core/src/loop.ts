@@ -81,6 +81,16 @@ const STALE_TOOL_OUTPUT_MAX = 1_000
 /** Cap on consecutive tool-input parse failures (a successful parse resets it); abort beyond it (keeps the model from burning turns on bad JSON) */
 const MAX_INPUT_PARSE_RETRIES = 3
 
+/**
+ * Backoff schedule for in-place same-turn retries on empty-stream errors.
+ * The "(empty stream)" suffix is a cross-layer contract with the ai-provider
+ * protocols: the gateway closed the SSE stream without content, tool calls, or
+ * message framing — a transient soft-failure. The turn produced nothing and
+ * history is untouched, so re-sending the identical request is idempotent;
+ * retrying here keeps one gateway hiccup from killing a long multi-tool run.
+ */
+const EMPTY_STREAM_RETRY_DELAYS_MS = [1_000, 3_000]
+
 const TURN_LIMIT_NOTE =
   '[System] The tool-call turn limit for this request has been reached; no more tools may be called this turn. ' +
   'Answer directly from the information already gathered; if the task is unfinished, briefly state what is done and what remains.'
@@ -462,7 +472,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.history = next
   }
 
-  private startTurn(): void {
+  private startTurn(retriesUsed = 0): void {
     const generation = this.generation
     this.turnText = ''
     this.toolCalls = []
@@ -497,6 +507,28 @@ export class AgentLoop<TSnapshot = unknown> {
         onError: (error) => {
           if (generation !== this.generation || settled) return
           settled = true
+          const delay = EMPTY_STREAM_RETRY_DELAYS_MS[retriesUsed]
+          // The no-partial-output guard keeps the retry idempotent (an empty
+          // stream never emits deltas, but a mislabeled error must not replay
+          // a turn whose text/tool calls the UI already saw)
+          if (
+            delay !== undefined &&
+            error.includes('(empty stream)') &&
+            !this.cancelled &&
+            !this.turnText &&
+            this.toolCalls.length === 0
+          ) {
+            setTimeout(() => {
+              if (generation !== this.generation) return
+              // Stopped during the backoff window: finalize like a normal cancel
+              if (this.cancelled) {
+                void this.finishTurn()
+                return
+              }
+              this.startTurn(retriesUsed + 1)
+            }, delay)
+            return
+          }
           this.running = false
           this.rollbackFailedRun()
           this.options.events?.onError?.(error)

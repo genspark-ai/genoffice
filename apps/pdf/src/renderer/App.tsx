@@ -6,6 +6,8 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mj
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
+import { AiAskPopover, type AskAnchorRect } from './AiAskPopover'
+import { loadSavedAnnots } from './annotation-catalog'
 import type { PdfAiDeps } from './ai/tools'
 import {
   MARKUP_COLORS,
@@ -24,14 +26,8 @@ import { ColorPickerPopover } from './ColorPicker'
 import type { DrawTool, LocalDrawing, SavedNotePin } from './DrawLayer'
 import { NoteMarginColumn } from './NoteMargin'
 import type { NoteMarginDraft, NoteMarginThread } from './NoteMargin'
-import {
-  buildNoteThreads,
-  flattenThread,
-  pendingNoteKey,
-  threadSubtree,
-  toSavedNote,
-} from './note-threads'
-import type { NoteInput, NoteThreadItem, PdfJsAnnotData, SavedNoteAnnot } from './note-threads'
+import { buildNoteThreads, flattenThread, pendingNoteKey, threadSubtree } from './note-threads'
+import type { NoteInput, NoteThreadItem, SavedNoteAnnot } from './note-threads'
 import { FormLayer } from './FormLayer'
 import {
   buildFormCatalog,
@@ -56,6 +52,7 @@ import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import type { OutlineNode } from './OutlinePanel'
 import { printPdf } from './print'
+import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
 import { SignatureDialog, fileToCanvas } from './SignatureDialog'
 import type { SignatureData } from './SignatureDialog'
@@ -156,7 +153,7 @@ import {
   seedDraftColors,
 } from './text-edit-preview'
 import type { LocalTextEdit, LocalTextInsert, TextDraft } from './text-edit-preview'
-import { MARKUP_TYPE_BY_ANNOT, rectsNear } from './edit-state'
+import { rectsNear } from './edit-state'
 import type {
   StampConfig,
   SavedMarkupAnnot,
@@ -647,6 +644,40 @@ export default function App() {
     y: number
     quads: Map<number, number[][]>
   } | null>(null)
+  /** AI scope selection cached at mouseup — the native DOM selection collapses the
+      moment focus moves into the AI panel, so the chip/context read this snapshot.
+      Cleared by clicking elsewhere on the document or the chip's ×. */
+  const [aiSelection, setAiSelection] = useState<{
+    page: number
+    lastPage: number
+    text: string
+  } | null>(null)
+  /** Ask-AI popover opened from the markup bar; the anchor rect is captured at open */
+  const [askPop, setAskPop] = useState<{ rect: AskAnchorRect; excerpt: string } | null>(null)
+  /** Whole-document saved-annotation counts per original page for the AI context
+      (scanned once per doc; kept per-page so deleted pages can be excluded) */
+  const [aiAnnotCounts, setAiAnnotCounts] = useState<{
+    threads: number[]
+    markups: number[]
+  } | null>(null)
+  useEffect(() => {
+    setAiAnnotCounts(null)
+    if (!doc) return
+    let stale = false
+    void (async () => {
+      const threads: number[] = []
+      const markupCounts: number[] = []
+      for (let i = 0; i < doc.numPages && !stale; i++) {
+        const a = await loadSavedAnnots(doc, i)
+        threads.push(a.notes.filter((n) => n.inReplyTo === null).length)
+        markupCounts.push(a.markups.length)
+      }
+      if (!stale) setAiAnnotCounts({ threads, markups: markupCounts })
+    })()
+    return () => {
+      stale = true
+    }
+  }, [doc])
   const [selected, setSelected] = useState<AnnotSelection | null>(null)
   /** Transparency presets fold-out inside the image selection popup */
   const [opacityMenu, setOpacityMenu] = useState(false)
@@ -862,6 +893,8 @@ export default function App() {
       setDoc(loaded)
       if (renderedPages) await renderedPages
       if (!saved) {
+        setAiSelection(null)
+        setAskPop(null)
         setMarkups([])
         setAnnotDeletes([])
         setNoteEdits([])
@@ -1041,7 +1074,9 @@ export default function App() {
         setStatus('ready')
       } catch (err) {
         if ((err as Error | null)?.name === 'PasswordException') {
+          // like docs: a failed attempt clears the field alongside the error
           setPwWrong(passwordRef.current !== undefined)
+          setPwInput('')
           setStatus('password')
           return
         }
@@ -1559,43 +1594,7 @@ export default function App() {
       const markupEntries: [number, SavedMarkupAnnot[]][] = []
       const noteEntries: [number, SavedNoteAnnot[]][] = []
       for (const origIdx of missing) {
-        let markupList: SavedMarkupAnnot[] = []
-        let noteList: SavedNoteAnnot[] = []
-        try {
-          const page = await doc.getPage(origIdx + 1)
-          const annots = (await page.getAnnotations()) as (PdfJsAnnotData & {
-            quadPoints?: Float32Array | null
-          })[]
-          markupList = annots.flatMap((a) => {
-            const type = MARKUP_TYPE_BY_ANNOT[a.annotationType]
-            // Only ref-backed annots can be addressed for deletion (id "123R" → object 123)
-            const objNum = /^(\d+)R$/.exec(a.id)
-            if (!type || !objNum || !a.quadPoints || a.quadPoints.length < 8) return []
-            const quads: number[][] = []
-            for (let q = 0; q + 8 <= a.quadPoints.length; q += 8)
-              quads.push([...a.quadPoints.slice(q, q + 8)])
-            return [
-              {
-                pageIndex: origIdx,
-                objNum: Number(objNum[1]),
-                type,
-                quads,
-                rect: [a.rect[0]!, a.rect[1]!, a.rect[2]!, a.rect[3]!] as [
-                  number,
-                  number,
-                  number,
-                  number,
-                ],
-              },
-            ]
-          })
-          noteList = annots.flatMap((a) => {
-            const note = toSavedNote(a, origIdx)
-            return note ? [note] : []
-          })
-        } catch {
-          /* page unreadable; no saved annotations to offer */
-        }
+        const { markups: markupList, notes: noteList } = await loadSavedAnnots(doc, origIdx)
         markupEntries.push([origIdx, markupList])
         noteEntries.push([origIdx, noteList])
       }
@@ -1695,21 +1694,42 @@ export default function App() {
   /** Mouse released over selected text → show the markup bar centered above the selection box (below if it doesn't fit) */
   const handleMouseUp = () => {
     // In edit-text mode a drag means "choose the characters to edit" (the click
-    // after mouseup opens the editor preselected), not the markup popup
-    if (editTextMode && !readOnly) return
+    // after mouseup opens the editor preselected), not the markup popup — and any
+    // previously cached AI scope no longer matches what the user sees
+    if (editTextMode && !readOnly) {
+      setAiSelection(null)
+      return
+    }
     setTimeout(() => {
       const el = scrollRef.current
       const sel = window.getSelection()
       if (!el || !sel || sel.isCollapsed || sel.rangeCount === 0) {
         setSelPopup(null)
+        setAiSelection(null)
         return
       }
+      // Selection lives outside the document (e.g. panel text): leave the scope alone
       if (!el.contains(sel.getRangeAt(0).commonAncestorContainer)) return
-      if (readOnly) return
       const box = sel.getRangeAt(0).getBoundingClientRect()
-      if (box.width < 1 && box.height < 1) return
-      const quads = selectionQuads()
-      if (!quads) return
+      const quads = box.width >= 1 || box.height >= 1 ? selectionQuads() : null
+      if (!quads) {
+        // A live document selection the scope can't represent must not leave a stale chip
+        setAiSelection(null)
+        return
+      }
+      const selText = sel.toString()
+      // min/max, not insertion order: after a page reorder the visual walk can hit
+      // original indices out of sequence and would invert the span
+      const pages = [...quads.keys()]
+      if (pages.length > 0 && selText.trim()) {
+        setAiSelection({
+          page: Math.min(...pages) + 1,
+          lastPage: Math.max(...pages) + 1,
+          text: selText,
+        })
+      }
+      // Read-only documents still get the bar for its Ask-AI entry (Q&A works);
+      // the markup buttons themselves are hidden in that state
       setSelPopup({
         x: Math.min(Math.max(box.left + box.width / 2, 70), window.innerWidth - 70),
         y: box.top >= 52 ? box.top - 44 : Math.min(box.bottom + 8, window.innerHeight - 44),
@@ -1780,6 +1800,25 @@ export default function App() {
     if (added.length === 0) return
     pushUndo()
     setMarkups((prev) => [...prev, ...added])
+  }
+
+  /** Ask-AI entry on the markup bar: capture the selection box as the popover
+      anchor now (the bar's mousedown preventDefault kept the selection alive up
+      to this click; the popover input will collapse it) */
+  const openAskPopover = () => {
+    const sel = window.getSelection()
+    const box =
+      sel && !sel.isCollapsed && sel.rangeCount > 0
+        ? sel.getRangeAt(0).getBoundingClientRect()
+        : null
+    const rect: AskAnchorRect | null = box
+      ? { left: box.left, top: box.top, right: box.right, bottom: box.bottom }
+      : selPopup
+        ? { left: selPopup.x, top: selPopup.y, right: selPopup.x, bottom: selPopup.y + 36 }
+        : null
+    if (!rect) return
+    setSelPopup(null)
+    setAskPop({ rect, excerpt: aiSelection?.text ?? sel?.toString() ?? '' })
   }
 
   /** Markup types the whole current selection already carries — shown as pressed
@@ -4330,12 +4369,13 @@ export default function App() {
         : [],
     )
 
-  /** Threads for a page, with notes pending deletion filtered out and pending content
-      edits overlaid. Only `item.contents` is overlaid — `item.saved` keeps the on-disk
-      text, which replies and the edits themselves need for identity matching at save. */
-  const noteThreadsOn = (origIdx: number): NoteThreadItem[] => {
+  /** Threads from a page's saved-note list, with notes pending deletion filtered out
+      and pending content edits overlaid. Only `item.contents` is overlaid — `item.saved`
+      keeps the on-disk text, which replies and the edits themselves need for identity
+      matching at save. */
+  const threadsFromSaved = (origIdx: number, savedList: SavedNoteAnnot[]): NoteThreadItem[] => {
     const pendingDeleted = new Set(annotDeletes.map((d) => d.annot.objNum))
-    const saved = (savedNotes.get(origIdx) ?? []).filter((a) => !pendingDeleted.has(a.objNum))
+    const saved = savedList.filter((a) => !pendingDeleted.has(a.objNum))
     const roots = buildNoteThreads(saved, pendingNotesOn(origIdx))
     const edited = new Map(
       noteEdits.filter((e) => e.annot.pageIndex === origIdx).map((e) => [e.annot.objNum, e]),
@@ -4351,6 +4391,18 @@ export default function App() {
     return roots
   }
 
+  const noteThreadsOn = (origIdx: number): NoteThreadItem[] =>
+    threadsFromSaved(origIdx, savedNotes.get(origIdx) ?? [])
+
+  /** Async threads for any page: the visible-page cache when warm, pdf.js otherwise
+      (AI tools address arbitrary pages, not just the ones scrolled into view) */
+  const noteThreadsFor = async (origIdx: number): Promise<NoteThreadItem[]> => {
+    const cached = savedNotes.get(origIdx)
+    if (cached) return threadsFromSaved(origIdx, cached)
+    if (!doc) return threadsFromSaved(origIdx, [])
+    return threadsFromSaved(origIdx, (await loadSavedAnnots(doc, origIdx)).notes)
+  }
+
   /** Root pins DrawLayer renders for saved threads (pending roots render from drawings) */
   const savedNotePins = (origIdx: number): SavedNotePin[] =>
     noteThreadsOn(origIdx).flatMap((root) =>
@@ -4360,7 +4412,7 @@ export default function App() {
     )
 
   /** Append a reply to a thread's root (flat, WPS-style threads: /IRT → root) */
-  const replyToNote = (origIdx: number, root: NoteThreadItem, text: string) => {
+  const replyToNote = (origIdx: number, root: NoteThreadItem, text: string, author?: string) => {
     pushUndo()
     const id = newId()
     setDrawings((prev) => [
@@ -4373,7 +4425,7 @@ export default function App() {
           color: root.color ?? drawColor,
           at: root.at,
           contents: text,
-          author: noteAuthor || undefined,
+          author: author ?? (noteAuthor || undefined),
           createdMs: Date.now(),
           localId: id,
           ...(root.saved
@@ -4745,12 +4797,127 @@ export default function App() {
   }
 
   /** Capability surface for AI tools; rebuilt each render (AiPanel mirrors it via refs to get the latest) */
+  /** One context line about edits queued but unsaved — the model cannot see them in the file */
+  const aiPendingSummary = (): string => {
+    const parts: string[] = []
+    const add = (n: number, label: string) => {
+      if (n > 0) parts.push(`${label}: ${n}`)
+    }
+    add(textEdits.length, 'text edits')
+    add(textInserts.length, 'text inserts')
+    add(imageEdits.length, 'image edits')
+    add(markups.length, 'markups')
+    add(annotDeletes.length, 'annotation deletions')
+    add(noteEdits.length, 'note edits')
+    add(drawings.length, 'drawings')
+    add(formEdits.size, 'form field changes')
+    add(rotations.size, 'page rotations')
+    add(deleted.size, 'page deletions')
+    return parts.length > 0
+      ? `Unsaved changes queued this session (pending until the user saves, not yet visible in the file): ${parts.join(', ')}.`
+      : ''
+  }
+
+  /** One context line about the document's annotations; '' when there are none.
+      Deleted pages and per-annotation deletions are excluded, matching what
+      read_annotations actually returns. */
+  const aiAnnotationSummary = (): string => {
+    const pendingRoots = drawings.filter(
+      (d) =>
+        d.input.kind === 'note' &&
+        !d.input.replyToSaved &&
+        d.input.replyToLocalId === undefined &&
+        !deleted.has(d.input.pageIndex),
+    ).length
+    let deletedThreads = 0
+    let deletedMarkups = 0
+    for (const d of annotDeletes) {
+      if (deleted.has(d.annot.pageIndex)) continue // its whole page is already excluded
+      if (d.annot.type === 'note') {
+        if (d.annot.inReplyTo === null) deletedThreads++
+      } else deletedMarkups++
+    }
+    // scan still running: "unknown" must not read as "none" — a run started right
+    // after open would otherwise never hear the file carries review feedback
+    if (!aiAnnotCounts) {
+      return 'Whether the file contains notes/markups has not been determined yet; use read_annotations to check when the user asks about review feedback.'
+    }
+    let savedThreads = 0
+    let savedMarkups = 0
+    aiAnnotCounts.threads.forEach((n, i) => {
+      if (!deleted.has(i)) savedThreads += n
+    })
+    aiAnnotCounts.markups.forEach((n, i) => {
+      if (!deleted.has(i)) savedMarkups += n
+    })
+    const threads = Math.max(0, savedThreads - deletedThreads) + pendingRoots
+    const markupCount =
+      Math.max(0, savedMarkups - deletedMarkups) +
+      markups.filter((m) => !deleted.has(m.pageIndex)).length
+    if (threads + markupCount === 0) return ''
+    const bits: string[] = []
+    if (threads > 0) bits.push(`${threads} note thread(s)`)
+    if (markupCount > 0) bits.push(`${markupCount} text markup(s)`)
+    return `The document has ${bits.join(' and ')}; use read_annotations to read them.`
+  }
+
   const aiApi: PdfAiDeps = {
     doc: () => doc,
     fileName: () => fileName,
     pageCount: () => sizes.length,
     currentPage: () => (visList[currentPage - 1] ?? 0) + 1,
     readOnly: () => readOnly,
+    selection: () => aiSelection,
+    pendingSummary: aiPendingSummary,
+    annotationSummary: aiAnnotationSummary,
+    annotationsOn: async (origIdx) => {
+      // one pdf.js pass per uncached page: notes and markups come from the same load
+      let notes = savedNotes.get(origIdx)
+      let savedList = savedMarkups.get(origIdx)
+      if ((!notes || !savedList) && doc) {
+        const loaded = await loadSavedAnnots(doc, origIdx)
+        notes ??= loaded.notes
+        savedList ??= loaded.markups
+      }
+      const pendingDeleted = new Set(annotDeletes.map((d) => d.annot.objNum))
+      return {
+        threads: threadsFromSaved(origIdx, notes ?? []),
+        markups: [
+          ...(savedList ?? [])
+            .filter((a) => !pendingDeleted.has(a.objNum))
+            .map((a) => ({ type: a.type, quads: a.quads, saved: true })),
+          ...markups
+            .filter((m) => m.pageIndex === origIdx)
+            .map((m) => ({ type: m.type, quads: m.quads, saved: false })),
+        ],
+      }
+    },
+    addNote: (origIdx, at, contents) => {
+      pushUndoRef.current()
+      const id = newId()
+      setDrawings((prev) => [
+        ...prev,
+        {
+          id,
+          input: {
+            kind: 'note',
+            pageIndex: origIdx,
+            color: drawColor,
+            at,
+            contents,
+            author: 'AI Assistant',
+            createdMs: Date.now(),
+            localId: id,
+          },
+        },
+      ])
+      setActiveNote({ origIdx, rootKey: pendingNoteKey(id) })
+      return pendingNoteKey(id)
+    },
+    findNoteRoot: async (origIdx, rootKey) =>
+      (await noteThreadsFor(origIdx)).find((r) => r.key === rootKey) ?? null,
+    replyToThread: (origIdx, root, contents) =>
+      replyToNote(origIdx, root, contents, 'AI Assistant'),
     outline: () => outline,
     searchIndex: getSearchIndex,
     isDeleted: (i) => deleted.has(i),
@@ -4760,7 +4927,7 @@ export default function App() {
       scrollToPage(visIdx + 1)
       return true
     },
-    addMarkup: (type, origIdx, rects) => {
+    addMarkup: (type, origIdx, rects, color) => {
       pushUndo()
       const quads = rects.map((r) => [r[0], r[3], r[2], r[3], r[0], r[1], r[2], r[1]])
       setMarkups((prev) => [
@@ -4769,7 +4936,8 @@ export default function App() {
           id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
           pageIndex: origIdx,
           type,
-          color: MARKUP_COLORS[type],
+          // default follows the manual path: the ribbon color for highlights
+          color: color ?? (type === 'highlight' ? highlightColor : MARKUP_COLORS[type]),
           quads,
         },
       ])
@@ -5007,7 +5175,8 @@ export default function App() {
         return
       }
       if (e.key === 'Escape') {
-        if (textDraft) setTextDraft(null)
+        if (askPop) setAskPop(null)
+        else if (textDraft) setTextDraft(null)
         else if (pendingTextInsert) setPendingTextInsert(null)
         else if (imagePick) setImagePick(null)
         else if (editTextMode) setEditTextMode(false)
@@ -5077,31 +5246,28 @@ export default function App() {
   if (status === 'password') {
     return (
       <div className="app">
-        <div className="pdf-placeholder">
-          <form
-            className="pdf-password"
-            onSubmit={(e) => {
-              e.preventDefault()
-              passwordRef.current = pwInput
-              setStatus('loading')
-              void openPath(filePath)
-            }}
-          >
-            <div className="pdf-password-title">{t('pwTitle')}</div>
-            <input
-              type="password"
-              className="pdf-password-input"
-              placeholder={t('pwPlaceholder')}
-              value={pwInput}
-              autoFocus
-              onChange={(e) => setPwInput(e.target.value)}
-            />
-            {pwWrong && <div className="pdf-password-error">{t('pwWrong')}</div>}
-            <button type="submit" className="pdf-password-btn" disabled={!pwInput}>
-              {t('pwOpen')}
-            </button>
-          </form>
-        </div>
+        <div className="pdf-placeholder" />
+        <PasswordDialog
+          fileName={fileName}
+          value={pwInput}
+          wrong={pwWrong}
+          onChange={(value) => {
+            setPwInput(value)
+            setPwWrong(false)
+          }}
+          onSubmit={() => {
+            passwordRef.current = pwInput
+            setStatus('loading')
+            void openPath(filePath)
+          }}
+          onCancel={() => {
+            // like docs: cancelling the prompt leaves no document
+            setPwInput('')
+            setPwWrong(false)
+            passwordRef.current = undefined
+            setStatus('empty')
+          }}
+        />
       </div>
     )
   }
@@ -5499,7 +5665,11 @@ export default function App() {
                   <button
                     className="rb-big ai-entry"
                     data-tip={t('aiSummarizeBtn')}
-                    onClick={() => runAiPreset(t('aiQuickSummaryPrompt'))}
+                    onClick={() =>
+                      runAiPreset(
+                        t(aiSelection ? 'aiQuickSummarySelPrompt' : 'aiQuickSummaryPrompt'),
+                      )
+                    }
                   >
                     <span className="rb-big-icon">
                       <span className="ai-feature-icon" aria-hidden="true">
@@ -5511,7 +5681,11 @@ export default function App() {
                   <button
                     className="rb-big ai-entry"
                     data-tip={t('aiKeyPointsBtn')}
-                    onClick={() => runAiPreset(t('aiQuickKeyPointsPrompt'))}
+                    onClick={() =>
+                      runAiPreset(
+                        t(aiSelection ? 'aiQuickKeyPointsSelPrompt' : 'aiQuickKeyPointsPrompt'),
+                      )
+                    }
                   >
                     <span className="rb-big-icon">
                       <span className="ai-feature-icon" aria-hidden="true">
@@ -5604,6 +5778,36 @@ export default function App() {
           )}
           {ribbonTab === 'annotate' && (
             <>
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <button
+                    className="rb-big ai-entry"
+                    data-tip={t('aiReviewSummaryBtn')}
+                    onClick={() => runAiPreset(t('aiReviewSummaryPrompt'))}
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <IconAiSummarize />
+                      </span>
+                    </span>
+                    <span>{t('aiReviewSummaryBtn')}</span>
+                  </button>
+                  <button
+                    className="rb-big ai-entry"
+                    disabled={readOnly}
+                    data-tip={t('aiProcessNotesBtn')}
+                    onClick={() => runAiPreset(t('aiProcessNotesPrompt'))}
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <GensparkMark size={20} />
+                      </span>
+                    </span>
+                    <span>{t('aiProcessNotesBtn')}</span>
+                  </button>
+                </div>
+              </div>
+              <div className="ribbon-sep" />
               {markupGroup}
               <div className="ribbon-sep" />
               <div className="ribbon-group">
@@ -5735,6 +5939,19 @@ export default function App() {
             <>
               <div className="ribbon-group">
                 <div className="ribbon-group-items">
+                  <button
+                    className="rb-big ai-entry"
+                    disabled={readOnly}
+                    data-tip={t('aiFillFormBtn')}
+                    onClick={() => runAiPreset(t('aiFillFormPrompt'))}
+                  >
+                    <span className="rb-big-icon">
+                      <span className="ai-feature-icon" aria-hidden="true">
+                        <GensparkMark size={20} />
+                      </span>
+                    </span>
+                    <span>{t('aiFillFormBtn')}</span>
+                  </button>
                   <button
                     className={`rb-big${pendingStaticFill === 'text' ? ' active' : ''}`}
                     disabled={readOnly}
@@ -6067,6 +6284,7 @@ export default function App() {
             preset={aiPreset}
             onCollapse={() => setAiCollapsed(true)}
             onRunDone={() => void autoSaveAfterAiRun()}
+            onClearSelection={() => setAiSelection(null)}
           />
         </div>
         <div className="app-content">
@@ -6199,6 +6417,7 @@ export default function App() {
               onScroll={() => {
                 handleScroll()
                 setSelPopup(null)
+                setAskPop(null)
                 setSelected(null)
                 clearLineHover()
                 clearBlockHover()
@@ -7423,43 +7642,81 @@ export default function App() {
                 style={{ left: selPopup.x, top: selPopup.y }}
                 onMouseDown={(e) => e.preventDefault()}
               >
+                {!readOnly && (
+                  <>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('highlight') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('highlight') ? t('removeMarkup') : t('highlight')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('highlight') ? t('removeMarkup') : t('highlight')
+                      }
+                      onClick={() => applyMarkup('highlight')}
+                    >
+                      <span
+                        className="sel-swatch sel-swatch-hl"
+                        style={{ background: cssRgb(highlightColor) }}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('underline') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('underline') ? t('removeMarkup') : t('underline')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('underline') ? t('removeMarkup') : t('underline')
+                      }
+                      onClick={() => applyMarkup('underline')}
+                    >
+                      <span className="sel-swatch sel-swatch-ul">U</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={activeMarkupTypes.has('strikeout') ? 'is-active' : undefined}
+                      data-tip={
+                        activeMarkupTypes.has('strikeout') ? t('removeMarkup') : t('strikeout')
+                      }
+                      aria-label={
+                        activeMarkupTypes.has('strikeout') ? t('removeMarkup') : t('strikeout')
+                      }
+                      onClick={() => applyMarkup('strikeout')}
+                    >
+                      <span className="sel-swatch sel-swatch-st">S</span>
+                    </button>
+                    <span className="pdf-sel-popup-sep" aria-hidden />
+                  </>
+                )}
                 <button
                   type="button"
-                  className={activeMarkupTypes.has('highlight') ? 'is-active' : undefined}
-                  data-tip={activeMarkupTypes.has('highlight') ? t('removeMarkup') : t('highlight')}
-                  aria-label={
-                    activeMarkupTypes.has('highlight') ? t('removeMarkup') : t('highlight')
-                  }
-                  onClick={() => applyMarkup('highlight')}
+                  className="pdf-sel-ask"
+                  data-tip={t('aiAskTitle')}
+                  aria-label={t('aiAskBtn')}
+                  onClick={openAskPopover}
                 >
-                  <span
-                    className="sel-swatch sel-swatch-hl"
-                    style={{ background: cssRgb(highlightColor) }}
-                  />
-                </button>
-                <button
-                  type="button"
-                  className={activeMarkupTypes.has('underline') ? 'is-active' : undefined}
-                  data-tip={activeMarkupTypes.has('underline') ? t('removeMarkup') : t('underline')}
-                  aria-label={
-                    activeMarkupTypes.has('underline') ? t('removeMarkup') : t('underline')
-                  }
-                  onClick={() => applyMarkup('underline')}
-                >
-                  <span className="sel-swatch sel-swatch-ul">U</span>
-                </button>
-                <button
-                  type="button"
-                  className={activeMarkupTypes.has('strikeout') ? 'is-active' : undefined}
-                  data-tip={activeMarkupTypes.has('strikeout') ? t('removeMarkup') : t('strikeout')}
-                  aria-label={
-                    activeMarkupTypes.has('strikeout') ? t('removeMarkup') : t('strikeout')
-                  }
-                  onClick={() => applyMarkup('strikeout')}
-                >
-                  <span className="sel-swatch sel-swatch-st">S</span>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden>
+                    <path
+                      d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3zM19 15l.85 2.3L22 18.15l-2.15.85L19 21.3l-.85-2.3-2.15-.85 2.15-.85L19 15z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  {t('aiAskBtn')}
                 </button>
               </div>
+            )}
+            {askPop && (
+              <AiAskPopover
+                rect={askPop.rect}
+                excerpt={askPop.excerpt}
+                readOnly={readOnly}
+                onSend={(text) => {
+                  setAskPop(null)
+                  runAiPreset(text)
+                }}
+                onClose={() => setAskPop(null)}
+              />
             )}
             {selected && (
               <div

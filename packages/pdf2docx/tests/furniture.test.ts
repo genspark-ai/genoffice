@@ -121,3 +121,66 @@ describe('detectFurniture: hf re-emission (P17)', () => {
     expect(hf[0]!.coversFirstPage).toBe(false)
   })
 })
+
+describe('detectFurniture: page-tracking mixed headers (P30 B)', () => {
+  it('drops "Form X … Page N" whose number tracks the physical page', () => {
+    const pages = [0, 1, 2, 3].map((i) =>
+      pageOf(
+        i,
+        header(`Form W-8BEN-E (Rev. 10-2021) Page ${i + 1}`),
+        body(`Body ${'y'.repeat(i)}`),
+      ),
+    )
+    const { drop, hf } = detectFurniture(pages)
+    expect(drop.every((s) => s.size > 0)).toBe(true)
+    expect(hf.some((h) => h.pageNo && h.text.includes(HF_PAGE_MARK))).toBe(true)
+  })
+
+  it('keeps numbered captions whose digits do NOT track the page', () => {
+    const pages = [0, 1, 2, 3].map((i) =>
+      pageOf(i, header(`Form No.${i + 7} Attachment`), body(`Body ${'z'.repeat(i)}`)),
+    )
+    const { drop } = detectFurniture(pages)
+    expect(drop.every((s) => s.size === 0)).toBe(true)
+  })
+})
+
+describe('detectFurniture: keepUnemitted (cell-data)', () => {
+  const line = (text: string, y: number) => mkText(text, 72, { y }).chars
+  // three repeated top-band slots: the 2-per-band hf cap seats Alpha + Beta,
+  // Gamma gets no header line
+  const pages = [0, 1, 2, 3].map((i) =>
+    pageOf(
+      i,
+      line('Alpha heading', HEIGHT - 30),
+      line('Beta heading', HEIGHT - 48),
+      line('Gamma cookie disclaimer', HEIGHT - 66),
+      body(`Body text ${'x'.repeat(i)}`),
+    ),
+  )
+
+  it('default: an unseated slot keeps only its first occurrence', () => {
+    const { droppedLines, hf } = detectFurniture(pages)
+    expect(hf).toHaveLength(2)
+    // 2 emitted slots × 4 pages + unseated slot's pages 2-4
+    expect(droppedLines).toBe(11)
+  })
+
+  it('cell-data: an unseated slot keeps every occurrence', () => {
+    const { drop, droppedLines, hf } = detectFurniture(pages, { keepUnemitted: true })
+    expect(hf).toHaveLength(2)
+    expect(droppedLines).toBe(8)
+    const droppedText = drop.flatMap((s) => [...s].map((c) => c.text)).join('')
+    expect(droppedText).not.toContain('Gamma')
+  })
+
+  it('cell-data: a sporadic page number with no hf seat stays in the cells', () => {
+    // pageno on 2 of 8 pages: over PAGENO_MIN_PAGES, under repeatMin → never
+    // emitted; default drops it, cell-data keeps it
+    const eight = [0, 1, 2, 3, 4, 5, 6, 7].map((i) =>
+      pageOf(i, body(`Body text ${'q'.repeat(i)}`), ...(i < 2 ? [footer(`- ${i + 1} -`)] : [])),
+    )
+    expect(detectFurniture(eight).droppedLines).toBe(2)
+    expect(detectFurniture(eight, { keepUnemitted: true }).droppedLines).toBe(0)
+  })
+})

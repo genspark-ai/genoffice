@@ -25,6 +25,8 @@ export function readThemeFonts(themeXml: string): ThemeFonts | null {
   const majorEastAsia = slot('a:majorFont', 'a:ea')
   const minorCs = slot('a:minorFont', 'a:cs')
   const majorCs = slot('a:majorFont', 'a:cs')
+  const majorScripts = scriptFontsOf(themeXml, 'a:majorFont')
+  const minorScripts = scriptFontsOf(themeXml, 'a:minorFont')
   return {
     major: major ?? '',
     minor: minor ?? '',
@@ -32,7 +34,20 @@ export function readThemeFonts(themeXml: string): ThemeFonts | null {
     ...(majorEastAsia ? { majorEastAsia } : {}),
     ...(minorCs ? { minorCs } : {}),
     ...(majorCs ? { majorCs } : {}),
+    ...(majorScripts ? { majorScripts } : {}),
+    ...(minorScripts ? { minorScripts } : {}),
   }
+}
+
+/** per-script faces of a font group (<a:font script="Hang" typeface="…"/>) */
+function scriptFontsOf(themeXml: string, tag: string): Record<string, string> | undefined {
+  const section = sectionOf(themeXml, tag)
+  if (!section) return undefined
+  const out: Record<string, string> = {}
+  for (const m of section.matchAll(/<a:font script="([^"]+)" typeface="([^"]+)"/g)) {
+    out[m[1]] = m[2]
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function sectionOf(xml: string, tag: string): string | null {

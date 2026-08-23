@@ -2753,6 +2753,305 @@ body.vib .slide-list {
   color: var(--slides-ai-error);
 }
 
+/* ── AI element edit queue ─────────────────────────────────────────────── */
+
+/* Anchored annotation popover: fixed-size, mounted at the app root so the
+ * canvas zoom transform never scales it */
+.ai-ask-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--slides-shadow-popup);
+}
+
+.ai-ask-pop-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-ask-pop-sub {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-ask-pop-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ai-ask-pop-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-ask-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-ask-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-ask-cancel,
+.ai-ask-confirm {
+  padding: 5px 12px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-ask-cancel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ai-ask-cancel:hover {
+  background: var(--hover);
+}
+
+.ai-ask-confirm {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--slides-on-accent);
+}
+
+.ai-ask-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Queue card above the composer */
+.ai-queue {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface-subtle);
+  overflow: hidden;
+}
+
+.ai-queue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.ai-queue-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-queue-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ai-queue-fold {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.ai-queue-fold.folded {
+  transform: rotate(-90deg);
+}
+
+.ai-queue-hint {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ai-queue-list {
+  margin: 0;
+  padding: 0 6px 4px;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.ai-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 6px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  color: var(--text);
+  cursor: default;
+}
+
+.ai-queue-row:hover {
+  background: var(--hover);
+}
+
+.ai-queue-row.stale {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.ai-queue-ord {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.ai-queue-page {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--active-bg);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.ai-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-queue-target {
+  margin-right: 5px;
+  color: var(--text-muted);
+}
+
+.ai-queue-target::after {
+  content: ' ·';
+}
+
+.ai-queue-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-6);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.ai-queue-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.ai-queue-row:hover .ai-queue-row-actions {
+  opacity: 1;
+}
+
+.ai-queue-row-btn {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ai-queue-row-btn:hover {
+  background: var(--active-bg);
+  color: var(--text);
+}
+
+.ai-queue-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+}
+
+.ai-queue-confirm {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.ai-queue-discard {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-queue-discard:hover {
+  background: var(--hover);
+}
+
+.ai-queue-send {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: var(--accent);
+  color: var(--slides-on-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-queue-send:disabled,
+.ai-queue-discard:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* whole-panel drop target highlight */
 .ai-panel-dragover {
   outline: 2px dashed var(--accent);
@@ -3137,6 +3436,33 @@ body.vib .slide-list {
   gap: 6px;
 }
 
+/* PPT-style checkbox option row (锁定纵横比 / 相对于图片原始尺寸 …); one per line,
+   unlike the inline .fp-check used by the background pane */
+.fp-checkrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fp-checkrow input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fp-checkrow:has(input:disabled) {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.fp-checkrow input:disabled {
+  cursor: default;
+}
+
 /* 预设渐变 tiles (gradients themselves are document fill previews, painted inline) */
 .fp-gpreset {
   width: 26px;
@@ -3407,6 +3733,8 @@ body.vib .slide-list {
   border-radius: 2px;
   transform: translateX(-50%);
   cursor: pointer;
+  /* draggable along the bar: keep pointermove events, don't let the browser pan */
+  touch-action: none;
 }
 
 .fp-gstop.sel {
@@ -3548,15 +3876,6 @@ body.vib .slide-list {
   margin-top: 10px;
 }
 
-.fp-link-target {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 .fp-chart-series {
   font-size: 12px;
   font-weight: 600;
@@ -3676,11 +3995,6 @@ body.vib .slide-list {
   border-color: var(--accent);
   background: var(--active-bg);
   color: var(--accent);
-}
-
-.fp-btn.fp-danger:hover {
-  border-color: var(--slides-ai-error);
-  color: var(--slides-ai-error);
 }
 
 /* Color strip on ribbon large buttons (colored buttons such as background fill) */
@@ -4934,13 +5248,21 @@ body.vib .slide-list {
   z-index: 5;
   display: inline-flex;
   align-items: center;
+  /* Deck-wide presets and the selection-scoped entry sit in separate pills, so
+   * the gap itself tells them apart — they act on different things */
+  gap: 8px;
   margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.stage-ai-group {
+  display: inline-flex;
+  align-items: center;
   padding: 3px 5px;
   background: var(--surface);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   box-shadow: var(--slides-shadow-toolbar);
-  white-space: nowrap;
 }
 
 .stage-ai-btn {
@@ -8164,29 +8486,6 @@ body.show-curtain::after {
   .slideshow [class*='ss-anim-'] {
     animation-duration: 0.01ms !important;
   }
-}
-
-.ai-msg-undelivered {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--slides-ai-error);
-}
-
-.ai-retry-btn {
-  border: 1px solid var(--slides-ai-error-border);
-  border-radius: 4px;
-  background: none;
-  padding: 1px 8px;
-  font-size: 12px;
-  color: var(--slides-ai-error);
-  cursor: pointer;
-}
-
-.ai-retry-btn:hover {
-  background: var(--slides-ai-error-bg);
 }
 
 .ai-login-btn {

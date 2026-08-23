@@ -468,6 +468,11 @@ export function pdfIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
 }
 
+/** Drop the mirrored dirty flag (webContents.reload does not destroy the view). */
+export function clearPdfDirty(webContentsId: number): void {
+  dirtyByWc.delete(webContentsId)
+}
+
 // ── Content-derived auto-naming (pdf's analog of sheets' autoRenameWorkbook) ──
 
 /** Paths of shell-created blank PDFs still carrying their untitled name; only these may auto-rename */
@@ -1328,6 +1333,12 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
     closeSaveWaiters.delete(wcId)
     saveAsWaiters.get(wcId)?.(false)
     saveAsWaiters.delete(wcId)
+  })
+  // reload() remounts the renderer without destroying webContents, so the
+  // destroyed handler never runs. A remount discards in-memory edits; the
+  // close guard must not still think the tab is dirty.
+  wc.on('did-start-loading', () => {
+    dirtyByWc.delete(wcId)
   })
 }
 

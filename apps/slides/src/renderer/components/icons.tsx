@@ -2072,6 +2072,16 @@ function AiFeatureSvg({ size, children }: IconProps & { children: ReactNode }) {
   )
 }
 
+/** Selection frame with a sparkle: annotate the selected element with an AI edit */
+export function IconAiAskSelection(props: IconProps) {
+  return (
+    <AiFeatureSvg {...props}>
+      <path d="M4 8.5V5.5A1.5 1.5 0 0 1 5.5 4h3M15.5 4h3A1.5 1.5 0 0 1 20 5.5v3M20 15.5v3a1.5 1.5 0 0 1-1.5 1.5h-3M8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-3" />
+      <path d="M12 8l.74 2.01c.24.65.36.98.6 1.22.24.24.57.36 1.22.6L16.5 12.5l-1.94.67c-.65.24-.98.36-1.22.6-.24.24-.36.57-.6 1.22L12 17l-.74-2.01c-.24-.65-.36-.98-.6-1.22-.24-.24-.57-.36-1.22-.6L7.5 12.5l1.94-.67c.65-.24.98-.36 1.22-.6.24-.24.36-.57.6-1.22L12 8z" />
+    </AiFeatureSvg>
+  )
+}
+
 export function IconAiBeautify(props: IconProps) {
   return (
     <AiFeatureSvg {...props}>

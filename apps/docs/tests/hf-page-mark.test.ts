@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { PAGE_MARK, TOTAL_PAGES_MARK, type HeaderFooter } from '@genoffice/docx-engine'
-import { hfHasPageField, hfWithoutPageMarks, makeGapHfEl } from '../src/renderer/editor/hf-dom'
+import {
+  hfHasPageField,
+  hfSegLeftCss,
+  hfTabSegments,
+  hfWithoutPageMarks,
+  makeGapHfEl,
+} from '../src/renderer/editor/hf-dom'
 import { hfFromPart, restingHfAreaVariant } from '../src/renderer/doc-state'
 
 describe('page-number substitution (PAGE_MARK)', () => {
@@ -71,12 +77,14 @@ describe('page-number substitution (PAGE_MARK)', () => {
     expect(para.classList.contains('page-hf-tabbed')).toBe(true)
     const segs = [...para.querySelectorAll<HTMLElement>('.page-hf-tabseg')]
     expect(segs).toHaveLength(2)
+    // jsdom has no canvas: run widths fall back to chars * sizePt/2 * px-per-pt
+    const w = (chars: number) => chars * 10.5 * 0.5 * (4 / 3)
     expect(segs[0].textContent).toBe('Mid')
-    expect(segs[0].classList.contains('page-hf-tabseg-center')).toBe(true)
-    expect(segs[0].style.left).toBe(`${4513 / 15}px`)
+    // center stop: the segment's midpoint sits on the stop
+    expect(parseFloat(segs[0].style.left) + w(3) / 2).toBeCloseTo(4513 / 15, 0)
     expect(segs[1].textContent).toBe('Right')
-    expect(segs[1].classList.contains('page-hf-tabseg-right')).toBe(true)
-    expect(segs[1].style.left).toBe(`${9026 / 15}px`)
+    // right stop: the segment ends on the stop
+    expect(parseFloat(segs[1].style.left) + w(5)).toBeCloseTo(9026 / 15, 0)
     expect(segs[1].querySelector('span')?.style.fontWeight).toBe('600')
     // lead text stays inline
     expect(para.childNodes[0].textContent).toBe('Left')
@@ -101,6 +109,56 @@ describe('page-number substitution (PAGE_MARK)', () => {
       'page-hf-tabseg page-hf-tabseg-center',
       'page-hf-tabseg page-hf-tabseg-right',
     ])
+  })
+
+  it('tab advances to the next stop past the current position, not by tab index', () => {
+    // lead is wide enough to pass the first (center) stop: the single tab must
+    // land on the right stop (Word), not on stops[0]
+    const lead = 'x'.repeat(50) // fallback width 50 * 7 = 350px > 4513/15
+    const value: HeaderFooter = {
+      text: `${lead}\tPage`,
+      pageNumber: false,
+      paras: [
+        {
+          runs: [{ text: `${lead}\tPage` }],
+          tabStops: [
+            { pos: 4513, val: 'center' },
+            { pos: 9026, val: 'right' },
+          ],
+        },
+      ],
+    }
+    const el = makeGapHfEl({ kind: 'footer', value, pageNo: 1, pageTotal: 1 })
+    const seg = el.querySelector<HTMLElement>('.page-hf-tabseg')!
+    const w = (chars: number) => chars * 10.5 * 0.5 * (4 / 3)
+    expect(parseFloat(seg.style.left) + w(4)).toBeCloseTo(9026 / 15, 0)
+  })
+
+  it('w:jc=right shifts the tab-laid line to end at the column edge (Word: layout left, then align)', () => {
+    const value: HeaderFooter = {
+      text: `College\tPage ${PAGE_MARK}`,
+      pageNumber: true,
+      paras: [
+        {
+          align: 'right',
+          runs: [{ text: `College\tPage ${PAGE_MARK}` }],
+          tabStops: [
+            { pos: 4680, val: 'center' },
+            { pos: 8496, val: 'left' },
+            { pos: 9360, val: 'right' },
+          ],
+        },
+      ],
+    }
+    const el = makeGapHfEl({ kind: 'footer', value, pageNo: 2, pageTotal: 9 })
+    const para = el.querySelector<HTMLElement>('.page-hf-para.page-hf-tabbed')!
+    // the shift is expressed against the strip width: lead indents, segments move together
+    expect(para.style.textAlign).toBe('left')
+    expect(para.style.textIndent).toContain('calc(100% - ')
+    const layout = hfTabSegments(value.paras![0])!
+    expect(layout.shift?.align).toBe('right')
+    // (jsdom drops max()/calc() in `left`, so assert the emitted CSS instead of the DOM)
+    expect(hfSegLeftCss(layout.segments[0], layout)).toContain('calc(100% - ')
   })
 
   it('tabbed paragraph keeps its shading and borders (mirrors the plain path)', () => {

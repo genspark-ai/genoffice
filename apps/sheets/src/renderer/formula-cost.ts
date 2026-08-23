@@ -7,20 +7,7 @@
 /// Such formulas are rejected at propose/edit time instead.
 
 import { offsetFormulaRefs } from '../domain/formula-shift'
-import { qualifierMatches } from '../gateway/xlsx-structure'
-
-/// Like the gateway's FORMULA_REFERENCE_PATTERN, but the unquoted sheet
-/// qualifier accepts any Unicode letter — AI/user formulas reference CJK
-/// sheet names unquoted (a CJK sheet name before !D2:D88588), exactly the incident shape.
-const REFERENCE_PATTERN = new RegExp(
-  "(^|[^\\p{L}\\p{N}_.$'!:])" +
-    "(?:('(?:[^']|'')+'|[\\p{L}_][\\p{L}\\p{N}_.]*)!)?" +
-    '(\\$?[A-Z]{1,3}\\$?[0-9]+(?::\\$?[A-Z]{1,3}\\$?[0-9]+)?' +
-    '|\\$?[A-Z]{1,3}:\\$?[A-Z]{1,3}' +
-    '|\\$?[0-9]+:\\$?[0-9]+)' +
-    '(?![0-9\\p{L}_(])',
-  'gu',
-)
+import { FORMULA_REFERENCE_PATTERN, qualifierMatches } from '../gateway/xlsx-structure'
 
 export interface FormulaCostSheet {
   readonly name: string
@@ -84,7 +71,7 @@ function largestReferenceCells(
   let largest = 0
   const segments = fragment.split('"')
   for (let index = 0; index < segments.length; index += 2) {
-    for (const match of (segments[index] ?? '').matchAll(REFERENCE_PATTERN)) {
+    for (const match of (segments[index] ?? '').matchAll(FORMULA_REFERENCE_PATTERN)) {
       const qualifier = match[2]
       const token = match[3] ?? ''
       const targetName =

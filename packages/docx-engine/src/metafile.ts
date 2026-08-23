@@ -32,6 +32,15 @@ function looksLikeEmf(bytes: Uint8Array): boolean {
   return dv.getUint32(0, true) === 1 && dv.getUint32(40, true) === 0x464d4520
 }
 
+/** placeable-WMF magic, or a standard META_HEADER (type 1/2, HeaderSize 9) */
+function looksLikeWmf(bytes: Uint8Array): boolean {
+  if (bytes.length < 18) return false
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (dv.getUint32(0, true) === 0x9ac6cdd7) return true
+  const type = dv.getUint16(0, true)
+  return (type === 1 || type === 2) && dv.getUint16(2, true) === 9
+}
+
 /**
  * Render EMF/WMF (or gzipped EMZ/WMZ) bytes to a PNG data URL via the vendored
  * emf-converter. Returns null on parse failure or when no canvas API exists
@@ -46,11 +55,13 @@ export async function metafileToDataUrl(
     let u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
     if (isGzip(u8)) u8 = await gunzip(u8)
     const buffer = u8.slice().buffer
+    if (!isMetafileMime(mime)) return null
+    // signature beats the declared mime: HWP-exported docx ship EMF bytes
+    // under .wmf part names; mime only decides indeterminate bytes
     let isEmf: boolean
-    if (EMF_MIMES.has(mime)) isEmf = true
-    else if (WMF_MIMES.has(mime)) isEmf = false
-    else if (EMZ_MIMES.has(mime) || WMZ_MIMES.has(mime)) isEmf = looksLikeEmf(u8)
-    else return null
+    if (looksLikeEmf(u8)) isEmf = true
+    else if (looksLikeWmf(u8)) isEmf = false
+    else isEmf = EMF_MIMES.has(mime) || EMZ_MIMES.has(mime)
     const result = isEmf
       ? await convertEmfToDataUrl(buffer, { dpiScale: 2 })
       : await convertWmfToDataUrl(buffer, { dpiScale: 2 })

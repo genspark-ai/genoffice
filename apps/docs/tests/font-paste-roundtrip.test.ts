@@ -87,6 +87,27 @@ describe('fontAttrsFromFamilyChain', () => {
     ).toEqual({ font: 'STSong' })
   })
 
+  it('never mistakes the range-limited GO aliases for a user East Asian font', () => {
+    expect(fontAttrsFromFamilyChain(cssFontFamily('SomeCustomFont'))).toEqual({
+      font: 'SomeCustomFont',
+      fontAscii: 'SomeCustomFont',
+    })
+    expect(
+      fontAttrsFromFamilyChain("'PT Serif Custom','Noto Serif CJK GO','GenOffice PUA Blank',serif"),
+    ).toEqual({ font: 'PT Serif Custom', fontAscii: 'PT Serif Custom' })
+  })
+
+  it('skips the other internal chain aliases (KR Theme Latin GO, Arabic size-adjusted)', () => {
+    expect(fontAttrsFromFamilyChain(cssFontFamily('Noto Sans CJK KR'))).toEqual({
+      font: 'Noto Sans CJK KR',
+    })
+    expect(
+      fontAttrsFromFamilyChain(
+        "'Naskh Digits GO','Noto Naskh Arabic TNR','Geeza Pro','Al Bayan',serif",
+      ),
+    ).toEqual({ font: 'Geeza Pro', fontAscii: 'Geeza Pro' })
+  })
+
   it('handles foreign single-family styles', () => {
     expect(fontAttrsFromFamilyChain('SimSun')).toEqual({ font: 'SimSun' })
     expect(fontAttrsFromFamilyChain('Calibri')).toEqual({ font: 'Calibri', fontAscii: 'Calibri' })

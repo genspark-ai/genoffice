@@ -26,10 +26,29 @@ import {
   GuidedError,
   lookup,
   resolveElement,
+  resolveSlide,
+  slideDurableId,
   type Op,
   type OpRecord,
   type OpContext,
 } from './registry'
+
+/** Resolve the slide the op is about to act on and stamp its durable id onto the
+    record. Pre-apply resolution against the live mid-txn state is the truth; a
+    numeric target.slide re-resolved after the txn drifts once a later structural
+    op shifts pages. Best-effort: part-targeted / deck-level ops carry no stamp. */
+function applyStamped(op: Op, ctx: OpContext): OpRecord {
+  let slideId: string | undefined
+  if (!op.target?.part && op.target?.slide != null) {
+    try {
+      slideId = slideDurableId(resolveSlide(ctx, op).slide)
+    } catch {
+      // Non-standard slide addressing (op-specific semantics): leave unstamped.
+    }
+  }
+  const rec = lookup(op.op).apply(op, ctx)
+  return slideId ? { ...rec, slideId } : rec
+}
 
 export interface TxnRequest {
   /** atomic: all-or-nothing (default). per_op: independent, failures skip. */
@@ -188,7 +207,7 @@ export function runTxn(opened: OpenedPptx, req: TxnRequest): TxnResult {
     const records: OpRecord[] = []
     for (const [i, op] of req.ops.entries()) {
       try {
-        records.push(lookup(op.op).apply(op, ctx))
+        records.push(applyStamped(op, ctx))
         hardenTargetIdentity(op, ctx)
       } catch (e) {
         restoreSnapshot(opened, snap)
@@ -217,7 +236,7 @@ export function runTxn(opened: OpenedPptx, req: TxnRequest): TxnResult {
   for (const [i, op] of req.ops.entries()) {
     if (failedIdx.has(i)) continue
     try {
-      records.push(lookup(op.op).apply(op, ctx))
+      records.push(applyStamped(op, ctx))
       hardenTargetIdentity(op, ctx)
     } catch (e) {
       failures.push({ index: i, op, error: withUsage(op, message(e)) })

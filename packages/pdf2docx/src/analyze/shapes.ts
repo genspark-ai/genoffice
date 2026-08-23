@@ -138,6 +138,81 @@ function thinRectStroke(rect: Rect, color: string): Stroke | null {
  */
 const CURVED_FILL_MIN_COVER = 0.55
 
+/** each bbox side needs a straight edge covering this share of it to call the subpath a rounded rect */
+const ROUNDED_SIDE_COVER = 0.5
+/** a straight edge must lie within this many pt of a bbox side to count for it */
+const ROUNDED_EDGE_TOL = 1.0
+/** rounded boxes smaller than this per side are chips/badges, not table cells */
+const ROUNDED_MIN_SIDE_PT = 8
+
+/**
+ * Rounded-rectangle outlines (P38, cell-data): bank statements draw each
+ * table column as its own full-height rounded box — hasCurves ignores the
+ * whole subpath, its straight sides never become strokes, and the lattice
+ * sees no table at all. A closed stroked subpath whose four bbox sides each
+ * carry an on-side straight edge (≥ROUNDED_SIDE_COVER of the side, all
+ * straight edges axis-aligned) IS a rectangle with trimmed corners: emit the
+ * four full bbox edges so adjacent boxes share grid boundaries. Pills and
+ * blob art keep at most two on-side edges and stay ignored.
+ */
+function roundedRectEdges(sub: RawSubpath, path: RawPath): Stroke[] | null {
+  // no closed-flag gate: exporters end the outline on the last corner arc
+  // without an explicit close segment
+  if (!sub.lineTo || sub.points.length < 8) return null
+  const box = bboxOf(sub)
+  const w = box.x1 - box.x0
+  const h = box.y1 - box.y0
+  if (w < ROUNDED_MIN_SIDE_PT || h < ROUNDED_MIN_SIDE_PT) return null
+  let top = 0
+  let bottom = 0
+  let left = 0
+  let right = 0
+  for (let i = 1; i < sub.points.length; i++) {
+    if (!sub.lineTo[i]) continue
+    const a = sub.points[i - 1]!
+    const b = sub.points[i]!
+    if (approxEq(a.y, b.y, AXIS_TOL)) {
+      const len = Math.abs(b.x - a.x)
+      const y = (a.y + b.y) / 2
+      if (y - box.y0 <= ROUNDED_EDGE_TOL) top = Math.max(top, len)
+      else if (box.y1 - y <= ROUNDED_EDGE_TOL) bottom = Math.max(bottom, len)
+      else return null // interior straight run: not a plain outline
+    } else if (approxEq(a.x, b.x, AXIS_TOL)) {
+      const len = Math.abs(b.y - a.y)
+      const x = (a.x + b.x) / 2
+      if (x - box.x0 <= ROUNDED_EDGE_TOL) left = Math.max(left, len)
+      else if (box.x1 - x <= ROUNDED_EDGE_TOL) right = Math.max(right, len)
+      else return null
+    } else {
+      return null // diagonal straight edge: vector art
+    }
+  }
+  const minW = ROUNDED_SIDE_COVER * w
+  const minH = ROUNDED_SIDE_COVER * h
+  if (top < minW || bottom < minW || left < minH || right < minH) return null
+  // P34 semantics: an authored edge outside the clip vanishes (the clip
+  // boundary was never stroked), surviving edges clamp to the window
+  const clip = path.clipBox
+  const edges: Stroke[] = []
+  const edgeH = (y: number) => {
+    if (clip && (y < clip.y0 - CLIP_STROKE_TOL || y > clip.y1 + CLIP_STROKE_TOL)) return
+    const x0 = Math.max(box.x0, clip?.x0 ?? -Infinity)
+    const x1 = Math.min(box.x1, clip?.x1 ?? Infinity)
+    if (x1 > x0) edges.push(hStroke(x0, x1, y, path.strokeWidth, path.strokeColor))
+  }
+  const edgeV = (x: number) => {
+    if (clip && (x < clip.x0 - CLIP_STROKE_TOL || x > clip.x1 + CLIP_STROKE_TOL)) return
+    const y0 = Math.max(box.y0, clip?.y0 ?? -Infinity)
+    const y1 = Math.min(box.y1, clip?.y1 ?? Infinity)
+    if (y1 > y0) edges.push(vStroke(y0, y1, x, path.strokeWidth, path.strokeColor))
+  }
+  edgeH(box.y0)
+  edgeH(box.y1)
+  edgeV(box.x0)
+  edgeV(box.x1)
+  return edges.length > 0 ? edges : null
+}
+
 /** this many mutually-overlapping curved fills at one z mark the group as vector art */
 const CURVED_ART_GROUP_MIN = 3
 /** pair overlap share (of the smaller bbox) that counts two fills as one drawing */
@@ -160,11 +235,31 @@ function polygonArea(sub: RawSubpath): number {
 const alphaOf = (path: RawPath): { alpha?: number } =>
   path.fillAlpha !== undefined && path.fillAlpha < 255 ? { alpha: path.fillAlpha } : {}
 
+/**
+ * rect ∩ the path's clip bounds (P34); null when nothing paints. Geometry
+ * routinely overstates paint: a card accent bar is authored as a card-sized
+ * rect clipped to its top sliver — unclipped it normalizes into a giant slab.
+ */
+function clipRect(rect: Rect, clip: Rect | undefined): Rect | null {
+  if (!clip) return rect
+  const x0 = Math.max(rect.x0, clip.x0)
+  const y0 = Math.max(rect.y0, clip.y0)
+  const x1 = Math.min(rect.x1, clip.x1)
+  const y1 = Math.min(rect.y1, clip.y1)
+  return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : null
+}
+
+/** strokes this far outside the clip window are cut, not just clamped (pt) */
+const CLIP_STROKE_TOL = 0.5
+
 /** fills keep the source paint order for behindDoc stacking (P16 A) */
 const zOf = (path: RawPath): { z?: number } => (path.z !== undefined ? { z: path.z } : {})
 
 /** Normalize raw paths into page shapes (strokes + fills + ignored count). */
-export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
+export function normalizeShapes(
+  paths: readonly RawPath[],
+  opts?: { roundedRectEdges?: boolean },
+): PageShapes {
   const strokes: Stroke[] = []
   const fills: Fill[] = []
   const curvedFills: Fill[] = []
@@ -186,9 +281,14 @@ export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
         // rounded cards/banners: keep the bbox as a light-text backdrop
         // candidate (P10 B) — vector-art handling still ignores the path
         if (filled && sub.points.length > 0) {
-          const box = bboxOf(sub)
-          const bboxArea = (box.x1 - box.x0) * (box.y1 - box.y0)
-          if (bboxArea > 0 && polygonArea(sub) >= CURVED_FILL_MIN_COVER * bboxArea) {
+          const box = clipRect(bboxOf(sub), path.clipBox)
+          const bboxArea = box === null ? 0 : (box.x1 - box.x0) * (box.y1 - box.y0)
+          // the clip caps painted area just like the polygon outline does
+          if (
+            box !== null &&
+            bboxArea > 0 &&
+            Math.min(polygonArea(sub), bboxArea) >= CURVED_FILL_MIN_COVER * bboxArea
+          ) {
             curvedFills.push({
               box,
               color: path.fillColor,
@@ -197,10 +297,20 @@ export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
             })
           }
         }
+        if (opts?.roundedRectEdges && path.stroked) {
+          const edges = roundedRectEdges(sub, path)
+          if (edges) {
+            strokes.push(...edges)
+            continue
+          }
+        }
         ignoredPaths++
         continue
       }
-      const rect = rectOfSubpath(sub)
+      const rawRect = rectOfSubpath(sub)
+      // a fully clipped-out rect paints nothing at all
+      const rect = rawRect === null ? null : clipRect(rawRect, path.clipBox)
+      if (rawRect !== null && rect === null) continue
       if (rect) {
         // a thin rect is a line whether it was filled or stroked; emitting its
         // outline edges too would seed phantom perpendicular micro-strokes
@@ -211,10 +321,26 @@ export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
         }
         if (filled) fills.push({ box: rect, color: path.fillColor, ...alphaOf(path), ...zOf(path) })
         if (path.stroked) {
-          strokes.push(hStroke(rect.x0, rect.x1, rect.y1, path.strokeWidth, path.strokeColor))
-          strokes.push(hStroke(rect.x0, rect.x1, rect.y0, path.strokeWidth, path.strokeColor))
-          strokes.push(vStroke(rect.y0, rect.y1, rect.x0, path.strokeWidth, path.strokeColor))
-          strokes.push(vStroke(rect.y0, rect.y1, rect.x1, path.strokeWidth, path.strokeColor))
+          // stroke the AUTHORED edges masked by the clip — the clip boundary
+          // itself was never stroked, so edges falling outside it vanish
+          // rather than snapping onto the clip window as phantom lines
+          const clip = path.clipBox
+          const edgeH = (y: number) => {
+            if (clip && (y < clip.y0 - CLIP_STROKE_TOL || y > clip.y1 + CLIP_STROKE_TOL)) return
+            const x0 = Math.max(rawRect!.x0, clip?.x0 ?? -Infinity)
+            const x1 = Math.min(rawRect!.x1, clip?.x1 ?? Infinity)
+            if (x1 > x0) strokes.push(hStroke(x0, x1, y, path.strokeWidth, path.strokeColor))
+          }
+          const edgeV = (x: number) => {
+            if (clip && (x < clip.x0 - CLIP_STROKE_TOL || x > clip.x1 + CLIP_STROKE_TOL)) return
+            const y0 = Math.max(rawRect!.y0, clip?.y0 ?? -Infinity)
+            const y1 = Math.min(rawRect!.y1, clip?.y1 ?? Infinity)
+            if (y1 > y0) strokes.push(vStroke(y0, y1, x, path.strokeWidth, path.strokeColor))
+          }
+          edgeH(rawRect!.y1)
+          edgeH(rawRect!.y0)
+          edgeV(rawRect!.x0)
+          edgeV(rawRect!.x1)
         }
         continue
       }
@@ -223,9 +349,8 @@ export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
         // P7: a filled bar drawn with redundant collinear points (>4 corners)
         // is not a 4-point rect but still a decorative line when its bbox is
         // thin, elongated and every edge is axis-aligned — salvage it
-        const thinBar = allEdgesAxisAligned(sub)
-          ? thinRectStroke(bboxOf(sub), path.fillColor)
-          : null
+        const barBox = allEdgesAxisAligned(sub) ? clipRect(bboxOf(sub), path.clipBox) : null
+        const thinBar = barBox ? thinRectStroke(barBox, path.fillColor) : null
         if (thinBar) {
           strokes.push(thinBar)
           continue
@@ -233,6 +358,7 @@ export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
         ignoredPaths++ // non-rect fill shape (vector art)
       }
       if (!path.stroked) continue
+      const clip = path.clipBox
       const closing =
         sub.closed && sub.points.length > 2 ? [...sub.points, sub.points[0]!] : sub.points
       let sawDiagonal = false
@@ -241,10 +367,20 @@ export function normalizeShapes(paths: readonly RawPath[]): PageShapes {
         const b = closing[i]!
         if (approxEq(a.y, b.y, AXIS_TOL)) {
           if (!approxEq(a.x, b.x, AXIS_TOL)) {
-            strokes.push(hStroke(a.x, b.x, (a.y + b.y) / 2, path.strokeWidth, path.strokeColor))
+            const y = (a.y + b.y) / 2
+            if (clip && (y < clip.y0 - CLIP_STROKE_TOL || y > clip.y1 + CLIP_STROKE_TOL)) continue
+            const x0 = clip ? Math.max(Math.min(a.x, b.x), clip.x0) : Math.min(a.x, b.x)
+            const x1 = clip ? Math.min(Math.max(a.x, b.x), clip.x1) : Math.max(a.x, b.x)
+            if (x1 <= x0) continue
+            strokes.push(hStroke(x0, x1, y, path.strokeWidth, path.strokeColor))
           }
         } else if (approxEq(a.x, b.x, AXIS_TOL)) {
-          strokes.push(vStroke(a.y, b.y, (a.x + b.x) / 2, path.strokeWidth, path.strokeColor))
+          const x = (a.x + b.x) / 2
+          if (clip && (x < clip.x0 - CLIP_STROKE_TOL || x > clip.x1 + CLIP_STROKE_TOL)) continue
+          const y0 = clip ? Math.max(Math.min(a.y, b.y), clip.y0) : Math.min(a.y, b.y)
+          const y1 = clip ? Math.min(Math.max(a.y, b.y), clip.y1) : Math.max(a.y, b.y)
+          if (y1 <= y0) continue
+          strokes.push(vStroke(y0, y1, x, path.strokeWidth, path.strokeColor))
         } else {
           sawDiagonal = true
         }

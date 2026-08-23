@@ -419,6 +419,119 @@ describe('replaceAllText', () => {
   })
 })
 
+describe('updateMatchedTextStyle', () => {
+  const boldRanges = (editor: Editor, blockIndex: number): string[] => {
+    const out: string[] = []
+    editor.state.doc.child(blockIndex).forEach((child) => {
+      if (child.isText && child.marks.some((m) => m.type.name === 'bold')) out.push(child.text!)
+    })
+    return out
+  }
+
+  it('styles only the matched text, not the whole block', () => {
+    const editor = createEditor([
+      para([text('a TODO: first and TODO: second item')]),
+      para([text('no marker here')]),
+    ])
+    const outcome = executeCommands(editor, {
+      commands: [
+        {
+          updateMatchedTextStyle: {
+            containsText: 'TODO:',
+            style: { bold: true },
+            fields: ['bold'],
+          },
+        },
+      ],
+    })
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].changed).toBe(1)
+    expect(outcome.results[0].detail).toBe('2')
+    expect(boldRanges(editor, 0)).toEqual(['TODO:', 'TODO:'])
+    expect(boldRanges(editor, 1)).toEqual([])
+    expect(editor.state.doc.child(0).attrs.aiChanged).toBe(true)
+    expect(editor.state.doc.child(1).attrs.aiChanged).toBe(false)
+  })
+
+  it('merges docTextStyle attrs per match without wiping existing ones', () => {
+    const editor = createEditor([
+      para([
+        text('keep GenSpark styled', [{ type: 'docTextStyle', attrs: { sizeHalfPoints: 32 } }]),
+      ]),
+    ])
+    executeCommands(editor, {
+      commands: [
+        {
+          updateMatchedTextStyle: {
+            containsText: 'GenSpark',
+            style: { color: 'FF0000' },
+            fields: ['color'],
+          },
+        },
+      ],
+    })
+    let styled: Record<string, unknown> | null = null
+    editor.state.doc.child(0).forEach((child) => {
+      if (child.isText && child.text === 'GenSpark') {
+        styled = child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs ?? null
+      }
+    })
+    expect(styled).toMatchObject({ color: 'FF0000', sizeHalfPoints: 32 })
+  })
+
+  it('rejects invalid baselineOffset and malformed link like updateTextStyle does', () => {
+    const editor = createEditor(fixtureDoc())
+    const badBaseline = executeCommands(editor, {
+      commands: [
+        {
+          updateMatchedTextStyle: {
+            containsText: 'GenSpark',
+            style: { baselineOffset: 'MIDDLE' },
+            fields: ['baselineOffset'],
+          },
+        },
+      ],
+    } as never)
+    expect(badBaseline.ok).toBe(false)
+    expect(badBaseline.error).toContain('baselineOffset')
+    const badLink = executeCommands(editor, {
+      commands: [
+        {
+          updateMatchedTextStyle: {
+            containsText: 'GenSpark',
+            style: { link: 'https://example.com' },
+            fields: ['link'],
+          },
+        },
+      ],
+    } as never)
+    expect(badLink.ok).toBe(false)
+    expect(badLink.error).toContain('link')
+  })
+
+  it('rejects an empty needle and unknown fields', () => {
+    const editor = createEditor(fixtureDoc())
+    const empty = executeCommands(editor, {
+      commands: [
+        { updateMatchedTextStyle: { containsText: '', style: { bold: true }, fields: ['bold'] } },
+      ],
+    } as never)
+    expect(empty.ok).toBe(false)
+    const badField = executeCommands(editor, {
+      commands: [
+        {
+          updateMatchedTextStyle: {
+            containsText: 'x',
+            style: { bold: true },
+            fields: ['align'],
+          },
+        },
+      ],
+    } as never)
+    expect(badField.ok).toBe(false)
+  })
+})
+
 describe('deleteBlocks', () => {
   it('deletes multiple blocks without index drift', () => {
     const editor = createEditor(fixtureDoc())
@@ -607,6 +720,102 @@ describe('transaction atomicity and aiChanged', () => {
     expect(outcome.results[0].changed).toBe(1)
     expect(editor.state.doc.child(1).attrs.align).toBe('right')
     expect(editor.state.doc.child(3).attrs.align).toBe('center')
+  })
+
+  it('a frozen selection in the context wins over the live selection', () => {
+    const editor = createEditor(fixtureDoc())
+    // live selection sits in block 3; the frozen scope (captured at send time) says block 1
+    const block3Pos =
+      editor.state.doc.child(0).nodeSize +
+      editor.state.doc.child(1).nodeSize +
+      editor.state.doc.child(2).nodeSize
+    editor.commands.setTextSelection({ from: block3Pos + 2, to: block3Pos + 4 })
+    const outcome = executeCommands(
+      editor,
+      {
+        commands: [
+          {
+            updateParagraphStyle: {
+              target: { nodeType: 'docParagraph', scope: 'selection' },
+              style: { align: 'right' },
+              fields: ['align'],
+            },
+          },
+        ],
+      },
+      { selection: { startIndex: 1, endIndex: 1 } },
+    )
+    expect(outcome.results[0].changed).toBe(1)
+    expect(editor.state.doc.child(1).attrs.align).toBe('right')
+    expect(editor.state.doc.child(3).attrs.align).toBe('center')
+  })
+
+  it('replaceAllText with a target only replaces inside the targeted blocks', () => {
+    const editor = createEditor([
+      para([text('alpha one')]),
+      para([text('alpha two')]),
+      para([text('alpha three')]),
+    ])
+    const outcome = executeCommands(editor, {
+      commands: [
+        {
+          replaceAllText: {
+            containsText: 'alpha',
+            replaceText: 'beta',
+            target: { blockIndexes: [1] },
+          },
+        },
+      ],
+    })
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].changed).toBe(1)
+    expect(editor.state.doc.child(0).textContent).toBe('alpha one')
+    expect(editor.state.doc.child(1).textContent).toBe('beta two')
+    expect(editor.state.doc.child(2).textContent).toBe('alpha three')
+  })
+
+  it('replaceAllText scoped to the frozen selection leaves other blocks alone', () => {
+    const editor = createEditor([para([text('alpha one')]), para([text('alpha two')])])
+    const outcome = executeCommands(
+      editor,
+      {
+        commands: [
+          {
+            replaceAllText: {
+              containsText: 'alpha',
+              replaceText: 'beta',
+              target: { scope: 'selection' },
+            },
+          },
+        ],
+      },
+      { selection: { startIndex: 0, endIndex: 0 } },
+    )
+    expect(outcome.ok).toBe(true)
+    expect(editor.state.doc.child(0).textContent).toBe('beta one')
+    expect(editor.state.doc.child(1).textContent).toBe('alpha two')
+  })
+
+  it('frozen selection indexes beyond the document clamp to the last block', () => {
+    const editor = createEditor(fixtureDoc())
+    const outcome = executeCommands(
+      editor,
+      {
+        commands: [
+          {
+            updateParagraphStyle: {
+              target: { nodeType: 'docListItem', scope: 'selection' },
+              style: { align: 'right' },
+              fields: ['align'],
+            },
+          },
+        ],
+      },
+      { selection: { startIndex: 4, endIndex: 99 } },
+    )
+    expect(outcome.ok).toBe(true)
+    expect(outcome.results[0].changed).toBe(1)
+    expect(editor.state.doc.child(4).attrs.align).toBe('right')
   })
 })
 

@@ -247,7 +247,11 @@ export function detectFootnotes(
           isGenerated: true,
         })
       }
-      footnotes.push({ id, blocks: groupIntoBlocks(analyzeChars(note.chars)) })
+      footnotes.push({
+        id,
+        marker: String(note.num),
+        blocks: groupIntoBlocks(analyzeChars(note.chars)),
+      })
     }
 
     const bodyChars: PdfChar[] = []

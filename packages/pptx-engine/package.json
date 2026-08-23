@@ -7,6 +7,7 @@
   "description": "pptx parsing (Slide element tree with byte anchors + inheritance resolution), OOXML fragment generation, element-patch save",
   "exports": {
     ".": "./src/index.ts",
+    "./custgeom": "./src/custgeom.ts",
     "./table-grid": "./src/table-grid.ts",
     "./identity": "./src/identity.ts",
     "./background-promote": "./src/background-promote.ts"

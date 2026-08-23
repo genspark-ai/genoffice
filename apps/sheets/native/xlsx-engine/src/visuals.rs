@@ -24,6 +24,10 @@ pub struct CellStyle {
     pub underline: bool,
     pub strikethrough: bool,
     pub wrap_text: bool,
+    /// alignment/@shrinkToFit — Excel scales the font down to fit the column
+    /// instead of clipping. Omitted when false to keep payloads small.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shrink_to_fit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -102,6 +106,7 @@ impl CellStyle {
             || self.indent != default.indent
             || self.text_rotation != default.text_rotation
             || self.wrap_text != default.wrap_text
+            || self.shrink_to_fit != default.shrink_to_fit
     }
 }
 
@@ -130,6 +135,10 @@ pub struct DrawingAnchor {
 #[serde(rename_all = "camelCase")]
 pub struct ChartSeries {
     pub name: String,
+    /// `c:tx/c:strRef/c:f` when the series name is a cell reference whose
+    /// cache is missing — the renderer resolves it from the live cells.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_ref: Option<String>,
     pub categories: Vec<String>,
     pub values: Vec<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -334,6 +343,10 @@ pub struct VisualObject {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shape_type: Option<String>,
+    /// a:custGeom pathLst as one SVG path string in the path coordinate
+    /// space (moveTo/lnTo/beziers/close; shapes with arcs stay unsupported).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_path: Option<CustomPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_color: Option<String>,
     /// xdr:style fillRef resolved against a theme fillStyleLst gradient;
@@ -389,6 +402,23 @@ pub struct VisualObject {
     pub drawing_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drawing_index: Option<usize>,
+}
+
+/// A custGeom outline: `d` uses the `<a:path>` coordinate space so the
+/// renderer scales it into the anchor frame (degenerate 0 extents become 1).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomPath {
+    pub width: f64,
+    pub height: f64,
+    pub d: String,
+    /// True when every subpath is stroke-only (`<a:path fill="none">`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub stroke_only: bool,
+    /// Fillable subpaths only, present when the geometry mixes filled and
+    /// stroke-only subpaths — filling `d` would paint the stroke-only ones.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_d: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -447,6 +477,9 @@ pub struct ColorContext {
     /// fmtScheme/fillStyleLst entries (1-based fillRef idx order); None for
     /// non-gradient entries.
     fill_styles: Vec<Option<ThemeGradient>>,
+    /// styles.xml colors/indexedColors override of the legacy palette
+    /// (hex without '#'); indexes past its end fall back to the builtin.
+    indexed: Vec<String>,
 }
 
 /// A theme gradient with phClr stops: the placeholder resolves to the
@@ -667,6 +700,9 @@ pub fn read_styles(
                         wrap_text: alignment
                             .and_then(|node| node.attribute("wrapText"))
                             .is_some_and(|value| value == "1" || value == "true"),
+                        shrink_to_fit: alignment
+                            .and_then(|node| node.attribute("shrinkToFit"))
+                            .is_some_and(|value| value == "1" || value == "true"),
                         font_color: font.color,
                         fill_color: fill.color,
                         font_color_theme: font.color_theme,
@@ -762,6 +798,7 @@ fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         underline: font.underline,
         strikethrough: font.strikethrough,
         wrap_text: false,
+        shrink_to_fit: false,
         font_color: font.color,
         fill_color,
         font_color_theme: None,
@@ -1155,6 +1192,7 @@ fn read_drawing(
                 media_type: None,
                 name: drawing_name(anchor_node),
                 shape_type: None,
+                custom_path: None,
                 fill_color: None,
                 fill_gradient: None,
                 line_color: None,
@@ -1198,6 +1236,7 @@ fn read_drawing(
                 media_path: Some(media_path),
                 name: drawing_name(anchor_node),
                 shape_type: None,
+                custom_path: None,
                 fill_color: None,
                 fill_gradient: None,
                 line_color: None,
@@ -1267,6 +1306,11 @@ fn shape_visual(
                 .find(|node| node.has_tag_name("prstGeom"))
                 .and_then(|node| node.attribute("prst"))
                 .map(ToOwned::to_owned);
+            let custom_path = if shape_type.is_none() {
+                parse_custom_geometry(shape_node)
+            } else {
+                None
+            };
             let shape_sppr = shape_node.children().find(|node| node.has_tag_name("spPr"));
             // An explicit <a:noFill/> directly under spPr means transparent —
             // it must not fall through to the xdr:style fillRef theme color.
@@ -1381,6 +1425,7 @@ fn shape_visual(
                 media_type: None,
                 name,
                 shape_type,
+                custom_path,
                 fill_color,
                 fill_gradient,
                 line_color,
@@ -1402,6 +1447,118 @@ fn shape_visual(
             }
         }
     }
+}
+
+fn format_path_number(value: f64) -> String {
+    if value.fract() == 0.0 && value.abs() < 1e15 {
+        format!("{}", value as i64)
+    } else {
+        format!("{value:.2}")
+    }
+}
+
+/// Parse a shape's a:custGeom pathLst into one SVG path string. Multiple
+/// `<a:path>` entries scale into the first path's coordinate space. Returns
+/// None when a command has no SVG mapping (arcTo) — the caller falls back
+/// to the placeholder frame.
+fn parse_custom_geometry(shape_node: Node<'_, '_>) -> Option<CustomPath> {
+    let geometry = shape_node
+        .descendants()
+        .find(|node| node.has_tag_name("custGeom"))?;
+    let path_list = geometry
+        .children()
+        .find(|node| node.has_tag_name("pathLst"))?;
+    let mut base_width = 0.0_f64;
+    let mut base_height = 0.0_f64;
+    let mut d = String::new();
+    let mut fill_d = String::new();
+    let mut stroke_only = true;
+    for path in path_list
+        .children()
+        .filter(|node| node.has_tag_name("path"))
+    {
+        let dimension = |attribute: &str| {
+            path.attribute(attribute)
+                .and_then(|value| value.parse::<f64>().ok())
+                .filter(|value| *value > 0.0)
+                .unwrap_or(0.0)
+        };
+        let width = dimension("w");
+        let height = dimension("h");
+        if d.is_empty() {
+            base_width = width;
+            base_height = height;
+        }
+        let path_fills = path.attribute("fill") != Some("none");
+        if path_fills {
+            stroke_only = false;
+        }
+        let segment_start = d.len();
+        let scale_x = if width > 0.0 && base_width > 0.0 {
+            base_width / width
+        } else {
+            1.0
+        };
+        let scale_y = if height > 0.0 && base_height > 0.0 {
+            base_height / height
+        } else {
+            1.0
+        };
+        for command in path.children().filter(|node| node.is_element()) {
+            let points: Vec<(f64, f64)> = command
+                .children()
+                .filter(|node| node.has_tag_name("pt"))
+                .filter_map(|point| {
+                    Some((
+                        point.attribute("x")?.parse::<f64>().ok()? * scale_x,
+                        point.attribute("y")?.parse::<f64>().ok()? * scale_y,
+                    ))
+                })
+                .collect();
+            let (letter, expected) = match command.tag_name().name() {
+                "moveTo" => ("M", 1),
+                "lnTo" => ("L", 1),
+                "cubicBezTo" => ("C", 3),
+                "quadBezTo" => ("Q", 2),
+                "close" => ("Z", 0),
+                _ => return None,
+            };
+            if points.len() < expected {
+                return None;
+            }
+            if !d.is_empty() {
+                d.push(' ');
+            }
+            d.push_str(letter);
+            for (x, y) in points.iter().take(expected) {
+                d.push(' ');
+                d.push_str(&format_path_number(*x));
+                d.push(' ');
+                d.push_str(&format_path_number(*y));
+            }
+        }
+        if path_fills && d.len() > segment_start {
+            if !fill_d.is_empty() {
+                fill_d.push(' ');
+            }
+            fill_d.push_str(d[segment_start..].trim_start());
+        }
+    }
+    if d.is_empty() {
+        return None;
+    }
+    let fill_d = if stroke_only || fill_d == d {
+        None
+    } else {
+        Some(fill_d)
+    };
+    Some(CustomPath {
+        width: base_width.max(1.0),
+        height: base_height.max(1.0),
+        d,
+        stroke_only,
+        fill_d,
+    })
 }
 
 fn hidden_attribute(node: Node<'_, '_>) -> bool {
@@ -1553,6 +1710,7 @@ fn expand_group(
                 media_type: None,
                 name: child_name,
                 shape_type: None,
+                custom_path: None,
                 fill_color: None,
                 fill_gradient: None,
                 line_color: None,
@@ -1596,6 +1754,7 @@ fn expand_group(
             media_path: Some(media_path),
             name: child_name,
             shape_type: None,
+            custom_path: None,
             fill_color: None,
             fill_gradient: None,
             line_color: None,
@@ -1893,44 +2052,50 @@ fn legend_position(document: &Document<'_>) -> String {
     .into()
 }
 
-/// Plot-level dLbls, falling back to the first series' dLbls.
+/// The dLbls node the single-mode metadata reads. Plot-level wins, unless it
+/// resolves to no labels while the first series' own dLbls shows some —
+/// per-series dLbls override the plot default in Excel, so an all-zero plot
+/// element must not hide labels a series switched on.
 fn data_labels_node<'a>(document: &'a Document<'a>) -> Option<Node<'a, 'a>> {
-    document
+    let plot_labels = document
         .descendants()
         .find(|node| CHART_TYPE_NAMES.iter().any(|name| node.has_tag_name(*name)))
-        .and_then(|plot| direct_child(plot, "dLbls"))
-        .or_else(|| {
-            document
-                .descendants()
-                .find(|node| node.has_tag_name("ser"))
-                .and_then(|series| direct_child(series, "dLbls"))
-        })
+        .and_then(|plot| direct_child(plot, "dLbls"));
+    let series_labels = document
+        .descendants()
+        .find(|node| node.has_tag_name("ser"))
+        .and_then(|series| direct_child(series, "dLbls"));
+    match (plot_labels, series_labels) {
+        (Some(plot), Some(series))
+            if data_labels_mode(plot) == "none" && data_labels_mode(series) != "none" =>
+        {
+            Some(series)
+        }
+        (Some(plot), _) => Some(plot),
+        (None, series) => series,
+    }
 }
 
-fn data_labels(document: &Document<'_>) -> Option<String> {
-    let labels = data_labels_node(document)?;
+fn data_labels_mode(labels: Node<'_, '_>) -> &'static str {
     let shown = |name: &str| {
         direct_child(labels, name)
             .and_then(|node| node.attribute("val"))
             .is_some_and(|value| value == "1" || value == "true")
     };
     if shown("delete") {
-        return Some("none".into());
+        return "none";
     }
-    if shown("showPercent") {
-        return Some(
-            if shown("showCatName") {
-                "category-percent"
-            } else {
-                "percent"
-            }
-            .into(),
-        );
+    match (shown("showCatName"), shown("showVal"), shown("showPercent")) {
+        (true, true, true) => "category-value-percent",
+        (true, _, true) => "category-percent",
+        (_, _, true) => "percent",
+        (_, true, _) => "value",
+        _ => "none",
     }
-    if shown("showVal") {
-        return Some("value".into());
-    }
-    Some("none".into())
+}
+
+fn data_labels(document: &Document<'_>) -> Option<String> {
+    Some(data_labels_mode(data_labels_node(document)?).into())
 }
 
 fn data_label_position(document: &Document<'_>) -> Option<String> {
@@ -1987,10 +2152,15 @@ fn plot_grouping(document: &Document<'_>) -> Option<String> {
 }
 
 fn parse_chart_series(series: Node<'_, '_>, index: usize, colors: &ColorContext) -> ChartSeries {
-    // Unnamed series get Excel's global Series1..N numbering.
-    let name = direct_child(series, "tx")
-        .and_then(|node| first_cached_value(node))
-        .unwrap_or_else(|| format!("Series{}", index + 1));
+    // Unnamed series get Excel's global Series1..N numbering. A cell-linked
+    // name without a strCache keeps its reference for renderer-side lookup.
+    let tx = direct_child(series, "tx");
+    let cached_name = tx.and_then(first_cached_value);
+    let name_ref = match &cached_name {
+        Some(_) => None,
+        None => tx.and_then(formula_ref),
+    };
+    let name = cached_name.unwrap_or_else(|| format!("Series{}", index + 1));
     // Explicit series fill/line color, else the theme accent cycle Excel uses
     // for automatic chart colors.
     let color = direct_child(series, "spPr")
@@ -2054,6 +2224,7 @@ fn parse_chart_series(series: Node<'_, '_>, index: usize, colors: &ColorContext)
         .map(ToOwned::to_owned);
     ChartSeries {
         name,
+        name_ref,
         categories,
         values,
         number_format,
@@ -2387,7 +2558,42 @@ pub fn resolve_color(
         return Some(format!("#{value}"));
     }
     let index = indexed?.parse::<usize>().ok()?;
+    // 64/65 are the fixed system window text/background slots — producers
+    // that override the palette still expect the system colors there.
+    if index < 64 {
+        if let Some(value) = colors.indexed.get(index) {
+            return Some(format!("#{value}"));
+        }
+    }
     INDEXED_COLORS.get(index).map(|value| format!("#{value}"))
+}
+
+/// styles.xml `<colors><indexedColors>` — a legacy-palette override written
+/// by workbooks converted from .xls. Entries are ARGB ("00RRGGBB").
+pub fn read_indexed_palette(
+    archive: &mut ZipArchive<File>,
+    colors: &mut ColorContext,
+) -> Result<(), SidecarError> {
+    let Some(xml) = read_optional_xml(archive, "xl/styles.xml")? else {
+        return Ok(());
+    };
+    let document = parse_document(&xml, "styles.xml")?;
+    let Some(list) = document
+        .descendants()
+        .find(|node| node.has_tag_name("indexedColors"))
+    else {
+        return Ok(());
+    };
+    colors.indexed = list
+        .children()
+        .filter(|node| node.has_tag_name("rgbColor"))
+        .filter_map(|node| node.attribute("rgb"))
+        .map(|value| {
+            let hex = if value.len() == 8 { &value[2..] } else { value };
+            hex.to_owned()
+        })
+        .collect();
+    Ok(())
 }
 
 /// Theme accent color (1-6) as rgb, if the palette was loaded.
@@ -2453,7 +2659,11 @@ pub fn read_theme_palette(archive: &mut ZipArchive<File>) -> Result<ColorContext
                 .collect()
         })
         .unwrap_or_default();
-    Ok(ColorContext { theme, fill_styles })
+    Ok(ColorContext {
+        theme,
+        fill_styles,
+        indexed: Vec::new(),
+    })
 }
 
 /// A fillStyleLst gradFill entry as data (the theme document does not
@@ -2900,6 +3110,11 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
         "gif" => Some("image/gif"),
         "bmp" => Some("image/bmp"),
         "svg" => Some("image/svg+xml"),
+        // GDI metafiles: the renderer rasterizes these to PNG before display.
+        "emf" => Some("image/x-emf"),
+        "wmf" => Some("image/x-wmf"),
+        "emz" => Some("image/x-emz"),
+        "wmz" => Some("image/x-wmz"),
         _ => None,
     }
 }
@@ -2915,9 +3130,13 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
 ///    locales use the zh-CN-compatible table below; other locales use their
 ///    local full short-date pattern so a CJK month/day format cannot leak into
 ///    a European workbook and discard its year. The zh AM/PM token (U+4E0A/U+4E0B
-///    U+5348) is not understood by the renderer's numfmt, so 34/35/55/56
-///    render as 24-hour. Escapes: U+5E74 year, U+6708 month, U+65E5 day,
-///    U+65F6 hour, U+5206 minute, U+79D2 second.
+///    U+5348) is not understood by the renderer's numfmt, so 34/35 render as
+///    24-hour. Ids 55/56 are dates: Excel renders them as the OS short date
+///    (verified against a ja-authored workbook where the zh time mapping
+///    turned a month header into "0\u{65f6}00\u{5206}"), so they follow the
+///    host short-date pattern like 14/22 and fall back to a plain date.
+///    Escapes: U+5E74 year, U+6708 month, U+65E5 day, U+65F6 hour, U+5206
+///    minute, U+79D2 second.
 ///  - 41-44: accounting formats; 42/44 use "$" as the symbol is likewise
 ///    locale-defined and unrecorded.
 ///  - 59-81: th-TH; numfmt has no Thai digit/era tokens, so these map to
@@ -2928,7 +3147,7 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
 fn short_date_number_format(id: u32, short_date: Option<&str>) -> Option<String> {
     let short_date = short_date?;
     match id {
-        14 => Some(short_date.to_owned()),
+        14 | 55 | 56 => Some(short_date.to_owned()),
         22 => Some(format!("{short_date} h:mm")),
         _ => None,
     }
@@ -2937,7 +3156,7 @@ fn short_date_number_format(id: u32, short_date: Option<&str>) -> Option<String>
 fn builtin_number_format(id: u32, locale: &str) -> Option<&'static str> {
     if matches!(
         id,
-        27 | 28 | 29 | 30 | 31 | 36 | 50 | 51 | 52 | 53 | 54 | 57 | 58
+        27 | 28 | 29 | 30 | 31 | 36 | 50 | 51 | 52 | 53 | 54 | 55 | 56 | 57 | 58
     ) && !matches!(locale, "zh" | "zh-TW" | "ja" | "ko")
     {
         return Some(locale_short_date_format(locale));
@@ -2966,15 +3185,20 @@ fn builtin_number_format(id: u32, locale: &str) -> Option<&'static str> {
         17 => Some("mmm-yy"),
         18 => Some("h:mm AM/PM"),
         19 => Some("h:mm:ss AM/PM"),
-        20 => Some("h:mm"),
-        21 => Some("h:mm:ss"),
+        // ECMA-376 prints 20/21 as h:mm(:ss), but Excel renders these
+        // builtins with a leading zero on the hour (09:30, matching
+        // LibreOffice's HH:MM mapping) — verified against Excel output.
+        20 => Some("hh:mm"),
+        21 => Some("hh:mm:ss"),
         22 => Some("m/d/yy h:mm"),
         27 | 36 | 50 | 52 | 57 => Some("yyyy\"\u{5e74}\"m\"\u{6708}\""),
         28 | 29 | 51 | 53 | 54 | 58 => Some("m\"\u{6708}\"d\"\u{65e5}\""),
         30 => Some("m-d-yy"),
         31 => Some("yyyy\"\u{5e74}\"m\"\u{6708}\"d\"\u{65e5}\""),
-        32 | 34 | 55 => Some("h\"\u{65f6}\"mm\"\u{5206}\""),
-        33 | 35 | 56 => Some("h\"\u{65f6}\"mm\"\u{5206}\"ss\"\u{79d2}\""),
+        32 | 34 => Some("h\"\u{65f6}\"mm\"\u{5206}\""),
+        33 | 35 => Some("h\"\u{65f6}\"mm\"\u{5206}\"ss\"\u{79d2}\""),
+        // CJK fallback when the host supplied no OS short-date pattern.
+        55 | 56 => Some("yyyy/m/d"),
         37 => Some("#,##0 ;(#,##0)"),
         38 => Some("#,##0 ;[Red](#,##0)"),
         39 => Some("#,##0.00;(#,##0.00)"),
@@ -3035,6 +3259,117 @@ mod tests {
         metadata_with(body, &ColorContext::default())
     }
 
+    fn custom_geometry(paths: &str) -> Option<CustomPath> {
+        let xml = format!(
+            r#"<xdr:sp xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><xdr:spPr><a:custGeom><a:avLst/><a:pathLst>{paths}</a:pathLst></a:custGeom></xdr:spPr></xdr:sp>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        parse_custom_geometry(document.root_element())
+    }
+
+    #[test]
+    fn custom_geometry_maps_svg_commands() {
+        let path = custom_geometry(
+            r#"<a:path w="715645" h="5080"><a:moveTo><a:pt x="715060" y="0"/></a:moveTo><a:lnTo><a:pt x="0" y="0"/></a:lnTo><a:lnTo><a:pt x="0" y="4572"/></a:lnTo><a:close/></a:path>"#,
+        )
+        .unwrap();
+        assert_eq!(path.d, "M 715060 0 L 0 0 L 0 4572 Z");
+        assert_eq!(path.width, 715645.0);
+        assert_eq!(path.height, 5080.0);
+        assert!(!path.stroke_only);
+    }
+
+    #[test]
+    fn custom_geometry_mixed_fills_expose_fillable_subpaths_only() {
+        let path = custom_geometry(
+            r#"<a:path w="100" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="100" y="100"/></a:lnTo><a:close/></a:path><a:path w="100" h="100" fill="none"><a:moveTo><a:pt x="10" y="10"/></a:moveTo><a:lnTo><a:pt x="90" y="10"/></a:lnTo></a:path>"#,
+        )
+        .unwrap();
+        assert!(!path.stroke_only);
+        assert_eq!(path.d, "M 0 0 L 100 100 Z M 10 10 L 90 10");
+        assert_eq!(path.fill_d.as_deref(), Some("M 0 0 L 100 100 Z"));
+    }
+
+    #[test]
+    fn custom_geometry_uniform_fills_have_no_fill_d() {
+        let filled = custom_geometry(
+            r#"<a:path w="10" h="10"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="10" y="10"/></a:lnTo><a:close/></a:path>"#,
+        )
+        .unwrap();
+        assert_eq!(filled.fill_d, None);
+        let stroked = custom_geometry(
+            r#"<a:path w="10" h="10" fill="none"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="10" y="10"/></a:lnTo></a:path>"#,
+        )
+        .unwrap();
+        assert!(stroked.stroke_only);
+        assert_eq!(stroked.fill_d, None);
+    }
+
+    #[test]
+    fn custom_geometry_stroke_only_open_path_with_degenerate_height() {
+        let path = custom_geometry(
+            r#"<a:path w="233679" h="0" fill="none"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="233171" y="0"/></a:lnTo></a:path>"#,
+        )
+        .unwrap();
+        assert_eq!(path.d, "M 0 0 L 233171 0");
+        assert_eq!(path.height, 1.0);
+        assert!(path.stroke_only);
+    }
+
+    #[test]
+    fn custom_geometry_scales_secondary_paths_into_the_first() {
+        let path = custom_geometry(
+            r#"<a:path w="100" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo></a:path><a:path w="200" h="50"><a:lnTo><a:pt x="200" y="50"/></a:lnTo></a:path>"#,
+        )
+        .unwrap();
+        assert_eq!(path.d, "M 0 0 L 100 100");
+    }
+
+    #[test]
+    fn custom_geometry_rejects_arcs() {
+        assert!(
+            custom_geometry(
+                r#"<a:path w="100" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:arcTo wR="10" hR="10" stAng="0" swAng="5400000"/></a:path>"#,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn indexed_palette_override_wins_below_system_slots() {
+        let colors = ColorContext {
+            indexed: vec!["112233".into(); 20],
+            ..ColorContext::default()
+        };
+        assert_eq!(
+            resolve_color(None, Some("8"), None, None, &colors),
+            Some("#112233".into())
+        );
+        // Past the override table: builtin legacy palette.
+        assert_eq!(
+            resolve_color(None, Some("22"), None, None, &colors),
+            Some("#C0C0C0".into())
+        );
+        // 64/65 stay the fixed system slots even when overridden.
+        let colors = ColorContext {
+            indexed: vec!["112233".into(); 66],
+            ..ColorContext::default()
+        };
+        assert_eq!(
+            resolve_color(None, Some("64"), None, None, &colors),
+            Some("#000000".into())
+        );
+    }
+
+    #[test]
+    fn media_types_cover_gdi_metafiles() {
+        assert_eq!(media_type_for_path("xl/media/image1.emf"), Some("image/x-emf"));
+        assert_eq!(media_type_for_path("xl/media/image1.WMF"), Some("image/x-wmf"));
+        assert_eq!(media_type_for_path("xl/media/image1.emz"), Some("image/x-emz"));
+        assert_eq!(media_type_for_path("xl/media/image1.wmz"), Some("image/x-wmz"));
+        assert_eq!(media_type_for_path("xl/media/object1.bin"), None);
+    }
+
     #[test]
     fn numbers_unnamed_series_like_excel() {
         let chart = metadata(
@@ -3066,6 +3401,7 @@ mod tests {
         ColorContext {
             theme: (0..12).map(|slot| (slot as u8, 0x22, 0x33)).collect(),
             fill_styles: Vec::new(),
+            indexed: Vec::new(),
         }
     }
 
@@ -3219,7 +3555,10 @@ mod tests {
         assert_eq!(child.anchor.from_row_offset, 30);
         assert_eq!(child.anchor.to_column_offset, 60);
         assert_eq!(child.anchor.to_row_offset, 40);
-        assert!(child.drawing_index.is_none(), "group children are read-only");
+        assert!(
+            child.drawing_index.is_none(),
+            "group children are read-only"
+        );
     }
 
     #[test]
@@ -3318,11 +3657,53 @@ mod tests {
                 .as_deref(),
             Some("none")
         );
+        assert_eq!(
+            metadata(&plot(
+                "<c:dLbls><c:showCatName val=\"1\"/><c:showVal val=\"1\"/><c:showPercent val=\"1\"/></c:dLbls>"
+            ))
+            .data_labels
+            .as_deref(),
+            Some("category-value-percent")
+        );
         // No dLbls anywhere: absent, so renderer defaults may apply.
         assert_eq!(metadata(&plot("")).data_labels, None);
         // Plot-level dLbls missing: fall back to the first series.
         let series_level = "<c:plotArea><c:barChart><c:ser><c:dLbls><c:showVal val=\"1\"/></c:dLbls></c:ser></c:barChart></c:plotArea>";
         assert_eq!(metadata(series_level).data_labels.as_deref(), Some("value"));
+    }
+
+    #[test]
+    fn series_labels_override_an_all_zero_plot_element() {
+        // Excel: per-series dLbls win over the plot-level default, so a plot
+        // element with every show* off must not hide the series' labels.
+        let both = "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/><c:dLbls>\
+            <c:showVal val=\"1\"/><c:showCatName val=\"1\"/><c:showPercent val=\"1\"/>\
+            </c:dLbls></c:ser><c:dLbls><c:showVal val=\"0\"/><c:showCatName val=\"0\"/>\
+            <c:showPercent val=\"0\"/></c:dLbls></c:pieChart></c:plotArea>";
+        assert_eq!(
+            metadata(both).data_labels.as_deref(),
+            Some("category-value-percent")
+        );
+        // A plot element that shows labels still wins over the series.
+        let plot_wins = "<c:plotArea><c:pieChart><c:ser><c:idx val=\"0\"/><c:dLbls>\
+            <c:showPercent val=\"1\"/></c:dLbls></c:ser><c:dLbls><c:showVal val=\"1\"/>\
+            </c:dLbls></c:pieChart></c:plotArea>";
+        assert_eq!(metadata(plot_wins).data_labels.as_deref(), Some("value"));
+    }
+
+    #[test]
+    fn uncached_series_name_reference_is_kept_for_lookup() {
+        let chart = metadata(
+            r#"<c:title/><c:plotArea><c:barChart><c:ser><c:tx><c:strRef><c:f>Dashboard!$C$13</c:f></c:strRef></c:tx></c:ser></c:barChart></c:plotArea>"#,
+        );
+        assert_eq!(chart.series[0].name, "Series1");
+        assert_eq!(chart.series[0].name_ref.as_deref(), Some("Dashboard!$C$13"));
+        // A cached name needs no reference lookup.
+        let cached = metadata(
+            r#"<c:title/><c:plotArea><c:barChart><c:ser><c:tx><c:strRef><c:f>Dashboard!$C$13</c:f><c:strCache><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strCache></c:strRef></c:tx></c:ser></c:barChart></c:plotArea>"#,
+        );
+        assert_eq!(cached.series[0].name, "Revenue");
+        assert_eq!(cached.series[0].name_ref, None);
     }
 
     #[test]

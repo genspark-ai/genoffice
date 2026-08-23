@@ -981,3 +981,49 @@ describe('applyStructuralOps row moves', () => {
     expect(() => shiftTablePart(table, [move(1, 2, 5)])).toThrow(/header row/)
   })
 })
+
+describe('applyStructuralOps set-col-style (r124)', () => {
+  // Excel persists select-all / full-column formatting as the columns'
+  // default format — the resolver stands in for StylesheetEditor.resolveStyle.
+  const resolver = (base: number, delta: import('../src/shared/desktop-api').WorkbookStyleEdit) =>
+    base * 100 + (delta.fontFamily === 'Calibri' ? 7 : 9)
+
+  it('sets style on the span, resolving against each existing col base', async () => {
+    const xml = applyStructuralOps(
+      await fixtureWorksheet(),
+      [{ kind: 'set-col-style', start: 0, end: 25, style: { fontFamily: 'Calibri' } }],
+      SHEET,
+      resolver,
+    )
+    // uncovered columns get a style-only col resolved from base 0
+    expect(xml).toContain('<col min="1" max="1" style="7"/>')
+    // the existing width col keeps its width and gains the resolved style
+    expect(xml).toMatch(
+      /<col min="2" max="3"[^>]*width="20"[^>]*style="7"|<col min="2" max="3"[^>]*style="7"[^>]*width="20"/,
+    )
+  })
+
+  it('later ops resolve against the style set by earlier ones', async () => {
+    const xml = applyStructuralOps(
+      await fixtureWorksheet(),
+      [
+        { kind: 'set-col-style', start: 0, end: 0, style: { fontFamily: 'Calibri' } },
+        { kind: 'set-col-style', start: 0, end: 0, style: { fontFamily: 'Georgia' } },
+      ],
+      SHEET,
+      resolver,
+    )
+    // base 7 (first op) * 100 + 9 (Georgia)
+    expect(xml).toContain('<col min="1" max="1" style="709"/>')
+  })
+
+  it('drops the op when no resolver is supplied', async () => {
+    const before = await fixtureWorksheet()
+    const xml = applyStructuralOps(
+      before,
+      [{ kind: 'set-col-style', start: 0, end: 3, style: { fontFamily: 'Calibri' } }],
+      SHEET,
+    )
+    expect(xml).toBe(before)
+  })
+})

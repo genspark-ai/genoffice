@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { HeuristicMetrics, OpentypeMetrics, type OpentypeFontLike } from '../src/metrics'
-import { layoutText } from '../src/text-layout'
+import { DEFAULT_INSETS_EMU, layoutText } from '../src/text-layout'
 import { makeViewport } from '../src/coords'
-import type { TextBody } from '@genoffice/pptx-engine'
+import { DEFAULT_BODY_INSETS, type TextBody } from '@genoffice/pptx-engine'
 
 const vp = makeViewport({ cx: 9525 * 1000, cy: 9525 * 1000 }, 1000) // scale 1
 
@@ -15,6 +15,10 @@ function body(partial: Partial<TextBody> & Pick<TextBody, 'paragraphs'>): TextBo
     ...partial,
   }
 }
+
+it('the layout inset defaults mirror the parser (kept separate so the renderer bundle stays engine-free)', () => {
+  expect(DEFAULT_INSETS_EMU).toEqual(DEFAULT_BODY_INSETS)
+})
 
 describe('2.3 metrics', () => {
   const m = new HeuristicMetrics()
@@ -625,7 +629,7 @@ describe('shrink discrete steps + superscript/subscript baseline', () => {
     if (layout.fontScale <= 0.85) expect(layout.lnSpcReduction).toBeGreaterThan(0)
   })
 
-  it('existing scale caps the ceiling: only steps smaller than it are used', () => {
+  it('a stored fontScale renders as-is (PowerPoint-on-open: no re-fit even when overflowing)', () => {
     const many = Array.from({ length: 20 }, () => ({
       runs: [{ text: '很长的一行文字内容', fontSize: 20 }],
     }))
@@ -635,6 +639,24 @@ describe('shrink discrete steps + superscript/subscript baseline', () => {
       boxHeightPx: 120,
       metrics: new HeuristicMetrics(),
       vp,
+    })
+    // Probe-measured: PowerPoint honors the cached ratio on open/export and overflows
+    // rather than re-fitting (a bare <a:normAutofit/> even renders at 100%).
+    expect(layout.fontScale).toBe(0.7)
+    expect(layout.lnSpcReduction).toBe(0.2)
+  })
+
+  it('refitAutofit (edit flows): steps below the stored scale, capped by it', () => {
+    const many = Array.from({ length: 20 }, () => ({
+      runs: [{ text: '很长的一行文字内容', fontSize: 20 }],
+    }))
+    const layout = layoutText({
+      body: body({ autofit: 'shrink', fontScale: 0.7, lnSpcReduction: 0.2, paragraphs: many }),
+      boxWidthPx: 400,
+      boxHeightPx: 120,
+      metrics: new HeuristicMetrics(),
+      vp,
+      refitAutofit: true,
     })
     expect(layout.fontScale).toBeLessThan(0.7)
     // Existing 20% line-spacing reduction: stepping down further never regresses to a smaller reduction
@@ -1065,5 +1087,64 @@ describe('WordArt effect passthrough', () => {
     expect(layout.extrusion?.dx).toBeCloseTo(0, 5)
     // PowerPoint renders the depth below the glyphs for a positive camera latitude
     expect(layout.extrusion!.dy).toBeGreaterThan(0)
+  })
+})
+
+describe('kerning threshold (rPr kern)', () => {
+  const kernFont: OpentypeFontLike = {
+    unitsPerEm: 1000,
+    ascender: 800,
+    descender: -200,
+    getAdvanceWidth: (text, size, options) =>
+      // 0.5em per char, minus a fake 0.1em kern pair per boundary when kerning is on
+      ((text.length * 500 - (options?.kerning !== false ? (text.length - 1) * 100 : 0)) / 1000) *
+      size,
+    charToGlyphIndex: () => 1,
+  }
+  const om = new OpentypeMetrics(() => kernFont)
+  const run = (kern: number | undefined, fontSize: number) => ({
+    anchor: 'top' as const,
+    insets: { l: 0, t: 0, r: 0, b: 0 },
+    autofit: 'none' as const,
+    wrap: true,
+    paragraphs: [
+      {
+        runs: [{ text: 'AVAV', fontSize, ...(kern != null ? { kern } : {}) }],
+        pPrExplicit: {},
+      },
+    ],
+  })
+  const width = (kern: number | undefined, fontSize: number) =>
+    layoutText({
+      body: run(kern, fontSize) as any,
+      boxWidthPx: 500,
+      boxHeightPx: 100,
+      metrics: om,
+      vp,
+    }).lines[0]!.runs[0]!.widthPx
+
+  it('kerns at or above the threshold, not below (absent = 12 pt default)', () => {
+    expect(width(undefined, 18)).toBeCloseTo(width(12, 18), 5) // both kerned
+    expect(width(undefined, 10)).toBeGreaterThan(width(undefined, 18) * (10 / 18) + 1e-6) // 10pt unkerned = wider per pt
+    expect(width(0, 18)).toBeGreaterThan(width(undefined, 18)) // kern=0 disables at any size
+  })
+
+  it('marks below-threshold glyph runs kerningOff for the draw layer', () => {
+    const l = layoutText({
+      body: run(undefined, 10) as any,
+      boxWidthPx: 500,
+      boxHeightPx: 100,
+      metrics: om,
+      vp,
+    })
+    expect(l.lines[0]!.runs[0]!.kerningOff).toBe(true)
+    const l2 = layoutText({
+      body: run(undefined, 18) as any,
+      boxWidthPx: 500,
+      boxHeightPx: 100,
+      metrics: om,
+      vp,
+    })
+    expect(l2.lines[0]!.runs[0]!.kerningOff).toBeUndefined()
   })
 })

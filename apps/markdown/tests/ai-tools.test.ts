@@ -179,3 +179,285 @@ describe('deriveAutoFileName', () => {
     expect(deriveAutoFileName(editor)).toBe('')
   })
 })
+
+describe('selection context', () => {
+  it('names the covered block range', () => {
+    const editor = createEditor('# A\n\nfirst para\n\nsecond para')
+    editor.commands.setTextSelection({ from: 6, to: editor.state.doc.content.size - 2 })
+    const ctx = buildDocContext(editor)
+    expect(ctx).toMatch(/## User selection \(blocks 1-2\)/)
+  })
+})
+
+describe('math markdown', () => {
+  it('parses $...$ into math nodes and round-trips', () => {
+    const editor = createEditor()
+    executeTool(editor, call('insert_content', { afterIndex: -1, markdown: 'Energy: $E=mc^2$' }))
+    let mathNodes = 0
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'inlineMath') mathNodes++
+    })
+    expect(mathNodes).toBe(1)
+    expect(editor.getMarkdown()).toContain('$E=mc^2$')
+  })
+})
+
+describe('replace_text', () => {
+  it('replaces every occurrence in one block and keeps surrounding marks', () => {
+    const editor = createEditor('# A\n\nThe **TODO** item and another TODO here.')
+    const result = executeTool(
+      editor,
+      call('replace_text', { blockIndex: 1, find: 'TODO', replace: 'DONE' }),
+    ) as { isError?: boolean; output: string }
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('2 occurrence(s)')
+    const md = editor.getMarkdown()
+    expect(md).toContain('**DONE**')
+    expect(md).toContain('another DONE here')
+    expect(md).not.toContain('TODO')
+  })
+
+  it('deletes when replace is empty', () => {
+    const editor = createEditor('alpha beta gamma')
+    executeTool(editor, call('replace_text', { blockIndex: 0, find: ' beta', replace: '' }))
+    expect(editor.getMarkdown()).toContain('alpha gamma')
+  })
+
+  it('only touches the addressed block', () => {
+    const editor = createEditor('same text\n\nsame text')
+    executeTool(editor, call('replace_text', { blockIndex: 1, find: 'same', replace: 'other' }))
+    const md = editor.getMarkdown()
+    expect(md.indexOf('same text')).toBeLessThan(md.indexOf('other text'))
+  })
+
+  it('does not match across list-item boundaries', () => {
+    const editor = createEditor('- one\n- two')
+    const result = executeTool(
+      editor,
+      call('replace_text', { blockIndex: 0, find: 'one\ntwo', replace: 'x' }),
+    ) as { isError?: boolean }
+    expect(result.isError).toBe(true)
+  })
+
+  it('reports not-found with guidance', () => {
+    const editor = createEditor('hello world')
+    const result = executeTool(
+      editor,
+      call('replace_text', { blockIndex: 0, find: 'absent', replace: 'x' }),
+    ) as { isError?: boolean; output: string }
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('not found')
+  })
+})
+
+describe('style_matches', () => {
+  it('bolds every match in the range', () => {
+    const editor = createEditor('a TODO here\n\nanother TODO there')
+    const result = executeTool(editor, call('style_matches', { find: 'TODO', style: 'bold' })) as {
+      isError?: boolean
+      output: string
+    }
+    expect(result.isError).toBeUndefined()
+    const md = editor.getMarkdown()
+    expect((md.match(/\*\*TODO\*\*/g) ?? []).length).toBe(2)
+  })
+
+  it('removes a style with remove: true', () => {
+    const editor = createEditor('a **TODO** here')
+    executeTool(editor, call('style_matches', { find: 'TODO', style: 'bold', remove: true }))
+    expect(editor.getMarkdown()).not.toContain('**')
+  })
+
+  it('rejects unknown styles', () => {
+    const editor = createEditor('text')
+    const result = executeTool(
+      editor,
+      call('style_matches', { find: 'text', style: 'underline' }),
+    ) as { isError?: boolean }
+    expect(result.isError).toBe(true)
+  })
+})
+
+describe('insert_image', () => {
+  const PNG =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  const withApi = (api: Record<string, unknown>) => {
+    ;(window as unknown as { markdownApi: unknown }).markdownApi = api
+  }
+
+  it('errors cleanly when the document has never been saved', async () => {
+    withApi({
+      fetchImage: async () => ({ base64: PNG, mime: 'image/png' }),
+      saveImage: async () => null,
+    })
+    const editor = createEditor('# A')
+    const result = await executeTool(
+      editor,
+      call('insert_image', { url: 'https://example.com/x.png' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('save the document first')
+  })
+
+  it('inserts a saved relative path as an image block', async () => {
+    withApi({
+      fetchImage: async () => ({ base64: PNG, mime: 'image/png' }),
+      saveImage: async () => 'assets/pic.png',
+    })
+    const editor = createEditor('# A\n\npara')
+    const result = await executeTool(
+      editor,
+      call('insert_image', { url: 'https://example.com/x.png', afterIndex: 0, alt: 'chart' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(result.mutated).toBe(true)
+    expect(editor.getMarkdown()).toContain('![chart](assets/pic.png)')
+  })
+})
+
+describe('blank/selection edge cases (Bugbot #871)', () => {
+  it('an image-only document is not blank: context lists it, inserts append', () => {
+    const editor = createEditor('![pic](assets/pic.png)')
+    expect(buildDocContext(editor)).not.toContain('currently blank')
+    executeTool(editor, call('insert_content', { afterIndex: -1, markdown: 'caption' }))
+    const md = editor.getMarkdown()
+    expect(md).toContain('![pic](assets/pic.png)')
+    expect(md).toContain('caption')
+  })
+
+  it('a node selection with no text still reports the selected block', () => {
+    const editor = createEditor('intro\n\n![pic](assets/pic.png)')
+    let imagePos = -1
+    editor.state.doc.forEach((node, offset) => {
+      if (node.type.name === 'image') imagePos = offset
+    })
+    editor.commands.setNodeSelection(imagePos)
+    const ctx = buildDocContext(editor)
+    expect(ctx).toContain('## User selection (block 1)')
+    expect(ctx).toContain('non-text block is selected: image')
+  })
+})
+
+describe('review follow-ups (#871)', () => {
+  it('a queued anchor over an image resolves with a type placeholder, not orphaned', async () => {
+    const { addQueueAnchor } = await import('../src/renderer/editor/aiQueueAnchors')
+    const { resolveQueueItem } = await import('../src/renderer/ai/edit-queue')
+    const editor = createEditor('intro\n\n![pic](assets/pic.png)')
+    let imagePos = -1
+    editor.state.doc.forEach((node, offset) => {
+      if (node.type.name === 'image') imagePos = offset
+    })
+    addQueueAnchor(editor, 'q1', imagePos, imagePos + 1)
+    const r = resolveQueueItem(editor, { qid: 'q1', instruction: 'replace it', capturedText: '' })
+    expect(r.target).not.toBeNull()
+    expect(r.target!.startIndex).toBe(1)
+    expect(r.target!.excerpt).toContain('image')
+  })
+
+  it('a deleted anchor still resolves to orphaned', async () => {
+    const { addQueueAnchor } = await import('../src/renderer/editor/aiQueueAnchors')
+    const { resolveQueueItem } = await import('../src/renderer/ai/edit-queue')
+    const editor = createEditor('intro text here')
+    addQueueAnchor(editor, 'q2', 1, 6)
+    editor.view.dispatch(editor.state.tr.delete(1, 6))
+    const r = resolveQueueItem(editor, { qid: 'q2', instruction: 'x', capturedText: 'intro' })
+    expect(r.target).toBeNull()
+  })
+
+  it('rejects a webp download despite the jpeg content-type fallback', async () => {
+    const webp = Buffer.from('RIFF\0\0\0\0WEBPVP8 ', 'binary').toString('base64')
+    ;(window as unknown as { markdownApi: unknown }).markdownApi = {
+      fetchImage: async () => ({ base64: webp, mime: 'image/jpeg' }),
+      saveImage: async () => 'assets/x.jpg',
+    }
+    const editor = createEditor('# A')
+    const result = await executeTool(
+      editor,
+      call('insert_image', { url: 'https://example.com/x.webp' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('unsupported image format')
+  })
+
+  it('afterIndex null falls back to the end of the document', async () => {
+    const PNG =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    ;(window as unknown as { markdownApi: unknown }).markdownApi = {
+      fetchImage: async () => ({ base64: PNG, mime: 'image/png' }),
+      saveImage: async () => 'assets/pic.png',
+    }
+    const editor = createEditor('# A\n\npara')
+    await executeTool(
+      editor,
+      call('insert_image', { url: 'https://x.com/a.png', afterIndex: null }),
+    )
+    expect(editor.getMarkdown().trimEnd().endsWith('![](assets/pic.png)')).toBe(true)
+  })
+})
+
+describe('selectionForAnchor', () => {
+  it('selects the node for an anchored image and text for an anchored passage', async () => {
+    const { addQueueAnchor } = await import('../src/renderer/editor/aiQueueAnchors')
+    const { selectionForAnchor } = await import('../src/renderer/ai/edit-queue')
+    const { NodeSelection, TextSelection } = await import('@tiptap/pm/state')
+    const editor = createEditor('intro text\n\n![pic](assets/pic.png)')
+    let imagePos = -1
+    editor.state.doc.forEach((node, offset) => {
+      if (node.type.name === 'image') imagePos = offset
+    })
+    addQueueAnchor(editor, 'img', imagePos, imagePos + 1)
+    addQueueAnchor(editor, 'txt', 1, 6)
+    const imgSel = selectionForAnchor(editor, 'img')
+    expect(imgSel).toBeInstanceOf(NodeSelection)
+    // dispatching the focus selection must not throw on a block atom
+    editor.view.dispatch(editor.state.tr.setSelection(imgSel!))
+    const txtSel = selectionForAnchor(editor, 'txt')
+    expect(txtSel).toBeInstanceOf(TextSelection)
+    expect(selectionForAnchor(editor, 'missing')).toBeNull()
+  })
+})
+
+describe('frontmatter tools', () => {
+  const fmStore = (initial = '') => {
+    let inner = initial
+    return {
+      read: () => inner,
+      write: (v: string) => {
+        inner = v
+      },
+    }
+  }
+
+  it('reads back what was just written within the same run', () => {
+    const editor = createEditor('# A')
+    const fm = fmStore()
+    const empty = executeTool(editor, call('read_frontmatter'), undefined, fm) as {
+      output: string
+    }
+    expect(empty.output).toContain('no frontmatter')
+    const set = executeTool(
+      editor,
+      call('set_frontmatter', { yaml: 'title: Hello\ntags: [a, b]\n' }),
+      undefined,
+      fm,
+    ) as { mutated?: boolean }
+    expect(set.mutated).toBe(true)
+    const read = executeTool(editor, call('read_frontmatter'), undefined, fm) as {
+      output: string
+    }
+    expect(read.output).toBe('title: Hello\ntags: [a, b]')
+  })
+
+  it('an empty yaml removes the block', () => {
+    const editor = createEditor('# A')
+    const fm = fmStore('title: Old')
+    executeTool(editor, call('set_frontmatter', { yaml: '  \n' }), undefined, fm)
+    expect(fm.read()).toBe('')
+  })
+
+  it('fails cleanly without frontmatter access', () => {
+    const editor = createEditor('# A')
+    const result = executeTool(editor, call('read_frontmatter')) as { isError?: boolean }
+    expect(result.isError).toBe(true)
+  })
+})

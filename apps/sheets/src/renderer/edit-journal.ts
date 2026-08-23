@@ -89,6 +89,14 @@ export type StructuralJournalOp =
       readonly hidden: boolean
     }
   | {
+      readonly kind: 'set-col-style'
+      readonly start: number
+      readonly end: number
+      /// Column default format (Excel select-all semantics): new cells in the
+      /// span inherit it at any row after reopen (alpha ledger r124).
+      readonly style: WorkbookStyleEdit
+    }
+  | {
       readonly kind: 'set-rows-outline' | 'set-cols-outline'
       readonly start: number
       readonly end: number
@@ -885,7 +893,15 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
               }),
         })),
         ...(visual.chart.legend === undefined ? {} : { legend: visual.chart.legend }),
-        ...(visual.chart.dataLabels === undefined ? {} : { dataLabels: visual.chart.dataLabels }),
+        // The read-only combined mode narrows to the closest writable one.
+        ...(visual.chart.dataLabels === undefined
+          ? {}
+          : {
+              dataLabels:
+                visual.chart.dataLabels === 'category-value-percent'
+                  ? 'category-percent'
+                  : visual.chart.dataLabels,
+            }),
         ...(visual.chart.dataLabelPosition === undefined
           ? {}
           : { dataLabelPosition: visual.chart.dataLabelPosition }),
@@ -1113,6 +1129,21 @@ export function shiftVisualForStructuralOp(
 /// the new coordinate space (entries inside a removed range are dropped).
 /// `sheetName` (the edited sheet's name) additionally shifts chart series
 /// references held in the journal.
+/// Removes a previously recorded op by identity (undo of a ribbon-recorded
+/// op, e.g. set-col-style — alpha ledger r124/bugbot). No-op if absent.
+export function removeStructuralOp(
+  journal: EditJournal,
+  sheetId: string,
+  op: StructuralJournalOp,
+): void {
+  const ops = journal.structuralOps.get(sheetId)
+  if (!ops) return
+  const index = ops.lastIndexOf(op)
+  if (index === -1) return
+  ops.splice(index, 1)
+  if (ops.length === 0) journal.structuralOps.delete(sheetId)
+}
+
 export function recordStructuralOp(
   journal: EditJournal,
   sheetId: string,
@@ -1626,6 +1657,20 @@ function mergeCellIntoEntry(
   }
 }
 
+/// CSS <family-name>s can't start with a digit unless quoted or escaped, and
+/// Univer's font-string builder only quotes names containing spaces — an
+/// unescaped "12롯데마트행복Medium" invalidates the whole ctx.font assignment
+/// and the text paints at the canvas default (10px serif). The renderer
+/// escapes the leading digit before handing a family to Univer; the escape
+/// must never leak back into the file model.
+export function escapeCssLeadingDigit(family: string): string {
+  return /^[0-9]/.test(family) ? `\\3${family[0]} ${family.slice(1)}` : family
+}
+
+export function unescapeCssLeadingDigit(family: string): string {
+  return family.replace(/^\\3([0-9]) /, '$1')
+}
+
 function extractRichText(p: unknown): { text: string; runs?: WorkbookRichRun[] } | undefined {
   if (typeof p !== 'object' || p === null) return undefined
   const body = (p as Record<string, unknown>).body
@@ -1672,7 +1717,13 @@ function extractRichRuns(text: string, textRuns: unknown): WorkbookRichRun[] | u
       strikethrough: (style.st as { s?: unknown } | undefined)?.s === 1,
       ...(typeof color === 'string' ? { color } : {}),
       ...(typeof style.fs === 'number' ? { size: style.fs } : {}),
-      ...(typeof style.ff === 'string' ? { family: style.ff } : {}),
+      ...(typeof style.ff === 'string' ? { family: unescapeCssLeadingDigit(style.ff) } : {}),
+      // BaselineOffset: 2 = SUBSCRIPT, 3 = SUPERSCRIPT.
+      ...(style.va === 2
+        ? { vertAlign: 'subscript' as const }
+        : style.va === 3
+          ? { vertAlign: 'superscript' as const }
+          : {}),
     }
     if (
       run.bold ||
@@ -1681,7 +1732,8 @@ function extractRichRuns(text: string, textRuns: unknown): WorkbookRichRun[] | u
       run.strikethrough ||
       run.color !== undefined ||
       run.size !== undefined ||
-      run.family !== undefined
+      run.family !== undefined ||
+      run.vertAlign !== undefined
     ) {
       anyStyled = true
     }
@@ -1764,7 +1816,9 @@ export function toNeutralStyle(s: Record<string, unknown>): WorkbookStyleEdit | 
     }
   }
   if ('st' in s) style.strikethrough = isLineOn(s.st)
-  if (typeof s.ff === 'string' && s.ff.length > 0) style.fontFamily = s.ff
+  if (typeof s.ff === 'string' && s.ff.length > 0) {
+    style.fontFamily = unescapeCssLeadingDigit(s.ff)
+  }
   if (typeof s.fs === 'number' && Number.isFinite(s.fs) && s.fs > 0) style.fontSize = s.fs
   if ('cl' in s && s.cl === null) {
     style.fontColor = null
@@ -1865,7 +1919,7 @@ export function fromNeutralStyle(style: WorkbookStyleEdit): Record<string, unkno
       : null
   }
   if (style.strikethrough !== undefined) s.st = style.strikethrough ? { s: 1 } : null
-  if (style.fontFamily !== undefined) s.ff = style.fontFamily
+  if (style.fontFamily !== undefined) s.ff = escapeCssLeadingDigit(style.fontFamily)
   if (style.fontSize !== undefined) s.fs = style.fontSize
   if (style.fontColor !== undefined) {
     s.cl = style.fontColor === null ? null : { rgb: style.fontColor }

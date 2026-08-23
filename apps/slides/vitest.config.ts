@@ -21,6 +21,10 @@ export default defineConfig({
         here,
         '../../packages/pptx-engine/src/background-promote.ts',
       ),
+      '@genoffice/pptx-engine/custgeom': resolve(
+        here,
+        '../../packages/pptx-engine/src/custgeom.ts',
+      ),
       '@genoffice/pptx-engine': resolve(here, '../../packages/pptx-engine/src/index.ts'),
       '@genoffice/pptx-render/preset-geometry': resolve(
         here,

@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
-import type { GradientFillSpec, LinkTargetOp } from '../../shared/ipc'
+import type { GradientFillSpec } from '../../shared/ipc'
 import { Dropdown } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import { pathGradientCanvas } from '../konva-adapter'
@@ -15,6 +15,10 @@ import { IconSidebarCollapse } from './icons'
 
 interface Props {
   node: RenderNode | null
+  /** Viewport scale of the render tree (fitWidthPx / slide baseline px width) — needed to show sizes in cm */
+  viewScale?: number
+  /** Slide dimensions in viewport px — needed for the position "From: Center" reference */
+  slideSizePx?: { w: number; h: number }
   onTransform: (
     sourceId: string,
     box: { x: number; y: number; w: number; h: number; rotationDeg: number },
@@ -24,6 +28,16 @@ interface Props {
   onImageFill?: (sourceId: string) => void
   /** Text box vertical alignment */
   onTextAnchor?: (sourceId: string, anchor: 'top' | 'middle' | 'bottom') => void
+  /** Text box body properties (direction / autofit / internal margins / wrap) */
+  onTextBodyProps?: (
+    sourceId: string,
+    props: {
+      vert?: 'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+      autofit?: 'none' | 'shrink' | 'resize'
+      insets?: Partial<{ l: number; t: number; r: number; b: number }>
+      wrap?: boolean
+    },
+  ) => void
   onStroke: (
     sourceId: string,
     stroke: {
@@ -36,7 +50,6 @@ interface Props {
       gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
     } | null,
   ) => void
-  onDelete: (sourceId: string) => void
   onCollapse: () => void
   /** Picture: enter crop mode */
   onPictureCrop?: () => void
@@ -44,10 +57,6 @@ interface Props {
   onPictureCutout?: () => void
   /** Whether the selected picture supports background removal (audio/video poster frames etc. don't) */
   pictureCanCutout?: boolean
-  /** Element hyperlink (null = none) */
-  link?: LinkTargetOp | null
-  /** Open the hyperlink dialog for the selected element */
-  onOpenLink?: () => void
   /** Chart: current data + colors (per-point color editing) */
   chartData?: {
     kind: string
@@ -274,18 +283,18 @@ function DashPreview({ dasharray }: { readonly dasharray?: string }) {
 
 export function FormatPane({
   node,
+  viewScale,
+  slideSizePx,
   onTransform,
   onFill,
   onImageFill,
   onTextAnchor,
+  onTextBodyProps,
   onStroke,
-  onDelete,
   onCollapse,
   onPictureCrop,
   onPictureCutout,
   pictureCanCutout,
-  link,
-  onOpenLink,
   chartData,
   onChartPointColor,
 }: Props) {
@@ -314,6 +323,13 @@ export function FormatPane({
   // PPT-style collapsible fill / line sections
   const [fillOpen, setFillOpen] = useState(true)
   const [lineOpen, setLineOpen] = useState(true)
+  const [sizeOpen, setSizeOpen] = useState(true)
+  const [posOpen, setPosOpen] = useState(true)
+  // Position "From:" reference per axis (PPT: top-left corner / center of the slide)
+  const [posFromH, setPosFromH] = useState<'tl' | 'center'>('tl')
+  const [posFromV, setPosFromV] = useState<'tl' | 'center'>('tl')
+  const [picOpen, setPicOpen] = useState(true)
+  const [txtOpen, setTxtOpen] = useState(true)
   // Width-limit balloon (shown while a keystroke tries to exceed MAX_LINE_PT)
   const [widthLimitTip, setWidthLimitTip] = useState(false)
   const widthTipTimer = useRef<number | null>(null)
@@ -328,6 +344,31 @@ export function FormatPane({
   const shape =
     node && (node.type === 'shape' || node.type === 'text') ? (node as ShapeRenderNode) : null
   const pic = node && node.type === 'picture' ? (node as PictureRenderNode) : null
+  // PPT Size-section state: aspect-ratio lock + "relative to original picture size".
+  // The natural size is decoded from the picture dataUrl (the render node doesn't carry it).
+  const [lockRatio, setLockRatio] = useState(false)
+  const [relOriginal, setRelOriginal] = useState(true)
+  const [naturalSize, setNaturalSize] = useState<{ url: string; w: number; h: number } | null>(null)
+  useEffect(() => {
+    setLockRatio(node?.type === 'picture')
+    setRelOriginal(true)
+  }, [node?.sourceId, node?.type])
+  useEffect(() => {
+    const url = pic?.dataUrl
+    if (!url) return
+    let alive = true
+    const img = new Image()
+    img.onload = () => {
+      if (alive) setNaturalSize({ url, w: img.naturalWidth, h: img.naturalHeight })
+    }
+    img.src = url
+    return () => {
+      alive = false
+    }
+  }, [pic?.dataUrl])
+  // Derived at render time and keyed by dataUrl: a selection change can paint before the
+  // decode effect runs, and the previous picture's dimensions must never leak into scaleBasis
+  const naturalPx = pic?.dataUrl && naturalSize?.url === pic.dataUrl ? naturalSize : null
   const fillColor = shape?.fill.kind === 'solid' ? toHex6(shape.fill.color) : null
   const fillAlpha = shape?.fill.kind === 'solid' ? alphaOf(shape.fill.color) : 255
   // 0..100 transparency shown in the dropdown (0 = opaque)
@@ -502,6 +543,45 @@ export function FormatPane({
     el.addEventListener('pointerup', up)
   }
 
+  // Suppresses the click that follows a stop drag (it would re-select by the stale index)
+  const stopDragged = useRef(false)
+  /** Drag a gradient stop along the bar: live-preview locally (committing mid-drag would
+   * remount the button and break pointer capture), commit once on release. */
+  const onStopDown = (e: React.PointerEvent<HTMLButtonElement>, i: number) => {
+    setStopIdx(i)
+    const el = e.currentTarget
+    const wrap = el.parentElement
+    if (!wrap) return
+    const bar = wrap.querySelector<HTMLElement>('.fp-gstops-bar')
+    const rect = wrap.getBoundingClientRect()
+    el.setPointerCapture(e.pointerId)
+    let pos = gradStops[i]!.pos
+    let moved = false
+    const move = (ev: PointerEvent) => {
+      moved = true
+      pos = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+      el.style.left = `${pos * 100}%`
+      if (bar) {
+        const preview = gradStops
+          .map((s, j) => (j === i ? { ...s, pos } : s))
+          .sort((a, b) => a.pos - b.pos)
+        bar.style.background = `linear-gradient(90deg, ${preview
+          .map((s) => `${s.color} ${Math.round(s.pos * 1000) / 10}%`)
+          .join(', ')})`
+      }
+    }
+    const up = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      if (moved) {
+        stopDragged.current = true
+        setStop(i, { pos: Math.round(pos * 1000) / 1000 })
+      }
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+  }
+
   // Focus popover, opened by clicking the radial/rect style tile (closes on outside pointerdown)
   const [dirOpenFor, setDirOpenFor] = useState<'circle' | 'rect' | null>(null)
   useEffect(() => {
@@ -635,22 +715,88 @@ export function FormatPane({
     </div>
   )
 
-  const numField = (label: string, value: number, apply: (v: number) => void, min?: number) => (
+  // ---- PPT Size/Position section helpers: values are shown in cm / ° / % ----
+  const vscale = viewScale ?? 1
+  const pxPerCm = (96 / 2.54) * vscale
+  const MIN_SIZE_PX = 1
+  const fmtNum = (v: number) => String(Math.round(v * 100) / 100)
+  const fmtCm = (px: number) => `${fmtNum(px / pxPerCm)} ${t('paneSizeCm')}`
+
+  /** Size commit honoring the aspect-ratio lock (editing one dim scales the other). */
+  const sizeCommit = (patch: { w?: number; h?: number }) => {
+    if (!box) return
+    let w = Math.max(MIN_SIZE_PX, patch.w ?? box.w)
+    let h = Math.max(MIN_SIZE_PX, patch.h ?? box.h)
+    if (lockRatio) {
+      if (patch.h != null && patch.w == null) w = Math.max(MIN_SIZE_PX, box.w * (h / box.h))
+      if (patch.w != null && patch.h == null) h = Math.max(MIN_SIZE_PX, box.h * (w / box.w))
+    }
+    commit({ w, h })
+  }
+
+  // Scale basis the % fields are measured against: for pictures with "relative to
+  // original picture size" the natural image size (96dpi baseline → viewport px);
+  // otherwise the element's size when it was selected (PPT session semantics — the
+  // fields track edits made while the selection lasts, and reset on reselect).
+  const scaleBaseRef = useRef<{ id: string; w: number; h: number } | null>(null)
+  if (node && box && scaleBaseRef.current?.id !== node.sourceId) {
+    scaleBaseRef.current = {
+      id: node.sourceId,
+      w: Math.max(MIN_SIZE_PX, box.w),
+      h: Math.max(MIN_SIZE_PX, box.h),
+    }
+  }
+  const scaleBasis =
+    node?.type === 'picture' && relOriginal && naturalPx
+      ? { w: naturalPx.w * vscale, h: naturalPx.h * vscale }
+      : node && scaleBaseRef.current?.id === node.sourceId
+        ? { w: scaleBaseRef.current.w, h: scaleBaseRef.current.h }
+        : null
+  const commitScale = (raw: string, dim: 'w' | 'h') => {
+    const v = parseFloat(raw)
+    if (Number.isNaN(v) || v <= 0 || !box) return
+    sizeCommit({ [dim]: ((scaleBasis ? scaleBasis[dim] : box[dim]) * v) / 100 })
+  }
+  const stepScale = (dir: 1 | -1, dim: 'w' | 'h') => {
+    if (!box) return
+    const basis = scaleBasis ? scaleBasis[dim] : box[dim]
+    const curPct = Math.round((box[dim] / basis) * 100)
+    sizeCommit({ [dim]: (basis * Math.max(1, curPct + dir)) / 100 })
+  }
+
+  /** PPT-style value row: label left, "<value> <unit>" spinner box right. */
+  const spinRow = (
+    label: string,
+    display: string,
+    commitText: (raw: string) => void,
+    onStep: (dir: 1 | -1) => void,
+  ) => (
     <label className="fp-prow" key={label}>
       <span>{label}</span>
-      <input
-        key={`${node?.sourceId}:${value}`}
-        type="number"
-        defaultValue={Math.round(value)}
-        min={min}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        }}
-        onBlur={(e) => {
-          const v = Number(e.target.value)
-          if (!Number.isNaN(v) && Math.round(v) !== Math.round(value)) apply(v)
-        }}
-      />
+      <div className="fp-unitstep" onMouseDown={focusSpinnerField}>
+        <input
+          key={`${node?.sourceId}:${label}:${display}`}
+          type="text"
+          inputMode="decimal"
+          defaultValue={display}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
+          onBlur={(e) => {
+            const raw = e.target.value.trim()
+            if (raw !== '' && raw !== display) commitText(raw)
+            e.target.value = display
+          }}
+        />
+        <span className="fp-unitstep-btns">
+          <button type="button" aria-label={`${label} +`} onClick={() => onStep(1)}>
+            <SpinChevron up />
+          </button>
+          <button type="button" aria-label={`${label} −`} onClick={() => onStep(-1)}>
+            <SpinChevron up={false} />
+          </button>
+        </span>
+      </div>
     </label>
   )
 
@@ -748,33 +894,152 @@ export function FormatPane({
         <div className="fp-body">
           {effTab === 'shape' && shapeSub === 'size' && canTransform && box && (
             <>
-              <div className="fp-section">{t('paneFormatPosSize')}</div>
-              {numField('X', box.x, (v) => commit({ x: v }))}
-              {numField('Y', box.y, (v) => commit({ y: v }))}
-              {numField(t('paneFormatW'), box.w, (v) => commit({ w: v }), 1)}
-              {numField(t('paneFormatH'), box.h, (v) => commit({ h: v }), 1)}
-              {numField(t('paneFormatRotation'), box.rotationDeg, (v) =>
-                commit({ rotationDeg: v }),
+              {secHeader(t('paneSizeSection'), sizeOpen, () => setSizeOpen((v) => !v))}
+              {sizeOpen && (
+                <>
+                  {spinRow(
+                    t('paneSizeHeight'),
+                    fmtCm(box.h),
+                    (raw) => {
+                      const v = parseFloat(raw)
+                      if (!Number.isNaN(v) && v > 0) sizeCommit({ h: v * pxPerCm })
+                    },
+                    (dir) => sizeCommit({ h: box.h + dir * 0.1 * pxPerCm }),
+                  )}
+                  {spinRow(
+                    t('paneSizeWidth'),
+                    fmtCm(box.w),
+                    (raw) => {
+                      const v = parseFloat(raw)
+                      if (!Number.isNaN(v) && v > 0) sizeCommit({ w: v * pxPerCm })
+                    },
+                    (dir) => sizeCommit({ w: box.w + dir * 0.1 * pxPerCm }),
+                  )}
+                  {spinRow(
+                    t('paneSizeRotation'),
+                    `${Math.round(box.rotationDeg)}°`,
+                    (raw) => {
+                      const v = parseFloat(raw)
+                      if (!Number.isNaN(v)) commit({ rotationDeg: ((v % 360) + 360) % 360 })
+                    },
+                    (dir) => commit({ rotationDeg: (((box.rotationDeg + dir) % 360) + 360) % 360 }),
+                  )}
+                  {spinRow(
+                    t('paneSizeScaleH'),
+                    `${Math.round((box.h / (scaleBasis?.h ?? box.h)) * 100)}%`,
+                    (raw) => commitScale(raw, 'h'),
+                    (dir) => stepScale(dir, 'h'),
+                  )}
+                  {spinRow(
+                    t('paneSizeScaleW'),
+                    `${Math.round((box.w / (scaleBasis?.w ?? box.w)) * 100)}%`,
+                    (raw) => commitScale(raw, 'w'),
+                    (dir) => stepScale(dir, 'w'),
+                  )}
+                  <label className="fp-checkrow">
+                    <input
+                      type="checkbox"
+                      checked={lockRatio}
+                      onChange={(e) => setLockRatio(e.target.checked)}
+                    />
+                    <span>{t('paneSizeLockRatio')}</span>
+                  </label>
+                  <label className="fp-checkrow">
+                    <input
+                      type="checkbox"
+                      checked={node.type === 'picture' && relOriginal && !!naturalPx}
+                      disabled={node.type !== 'picture' || !naturalPx}
+                      onChange={(e) => setRelOriginal(e.target.checked)}
+                    />
+                    <span>{t('paneSizeRelOriginal')}</span>
+                  </label>
+                </>
+              )}
+
+              {secHeader(t('panePosSection'), posOpen, () => setPosOpen((v) => !v))}
+              {posOpen && (
+                <>
+                  {spinRow(
+                    t('panePosH'),
+                    fmtCm(
+                      posFromH === 'center' && slideSizePx
+                        ? box.x + box.w / 2 - slideSizePx.w / 2
+                        : box.x,
+                    ),
+                    (raw) => {
+                      const v = parseFloat(raw)
+                      if (Number.isNaN(v)) return
+                      commit({
+                        x:
+                          posFromH === 'center' && slideSizePx
+                            ? slideSizePx.w / 2 + v * pxPerCm - box.w / 2
+                            : v * pxPerCm,
+                      })
+                    },
+                    (dir) => commit({ x: box.x + dir * 0.1 * pxPerCm }),
+                  )}
+                  <div className="fp-prow">
+                    <span>{t('panePosFrom')}</span>
+                    <select
+                      value={posFromH}
+                      onChange={(e) => setPosFromH(e.target.value as 'tl' | 'center')}
+                    >
+                      <option value="tl">{t('panePosFromTL')}</option>
+                      <option value="center">{t('panePosFromCenter')}</option>
+                    </select>
+                  </div>
+                  {spinRow(
+                    t('panePosV'),
+                    fmtCm(
+                      posFromV === 'center' && slideSizePx
+                        ? box.y + box.h / 2 - slideSizePx.h / 2
+                        : box.y,
+                    ),
+                    (raw) => {
+                      const v = parseFloat(raw)
+                      if (Number.isNaN(v)) return
+                      commit({
+                        y:
+                          posFromV === 'center' && slideSizePx
+                            ? slideSizePx.h / 2 + v * pxPerCm - box.h / 2
+                            : v * pxPerCm,
+                      })
+                    },
+                    (dir) => commit({ y: box.y + dir * 0.1 * pxPerCm }),
+                  )}
+                  <div className="fp-prow">
+                    <span>{t('panePosFrom')}</span>
+                    <select
+                      value={posFromV}
+                      onChange={(e) => setPosFromV(e.target.value as 'tl' | 'center')}
+                    >
+                      <option value="tl">{t('panePosFromTL')}</option>
+                      <option value="center">{t('panePosFromCenter')}</option>
+                    </select>
+                  </div>
+                </>
               )}
             </>
           )}
 
           {effTab === 'shape' && shapeSub === 'size' && node.type === 'picture' && (
             <>
-              <div className="fp-section">{t('paneFormatPicture')}</div>
-              <div className="fp-prow fp-prow-end">
-                <button className="fp-btn" onClick={() => onPictureCrop?.()}>
-                  {t('paneFormatCrop')}
-                </button>
-                <button
-                  className="fp-btn"
-                  disabled={!pictureCanCutout}
-                  data-tip={pictureCanCutout ? t('paneFormatCutoutTip') : t('paneFormatCutoutNA')}
-                  onClick={() => onPictureCutout?.()}
-                >
-                  {t('paneCutoutTitle')}
-                </button>
-              </div>
+              {secHeader(t('paneFormatPicture'), picOpen, () => setPicOpen((v) => !v))}
+              {picOpen && (
+                <div className="fp-prow fp-prow-end">
+                  <button className="fp-btn" onClick={() => onPictureCrop?.()}>
+                    {t('paneFormatCrop')}
+                  </button>
+                  <button
+                    className="fp-btn"
+                    disabled={!pictureCanCutout}
+                    data-tip={pictureCanCutout ? t('paneFormatCutoutTip') : t('paneFormatCutoutNA')}
+                    onClick={() => onPictureCutout?.()}
+                  >
+                    {t('paneCutoutTitle')}
+                  </button>
+                </div>
+              )}
             </>
           )}
 
@@ -995,7 +1260,16 @@ export function FormatPane({
                             className={`fp-gstop ${i === selStopIdx ? 'sel' : ''}`}
                             style={{ left: `${s.pos * 100}%`, background: toHex6(s.color) }}
                             aria-label={`${Math.round(s.pos * 100)}%`}
-                            onClick={() => setStopIdx(i)}
+                            onPointerDown={(e) => onStopDown(e, i)}
+                            onClick={() => {
+                              // after a drag setStop already re-selected by position; the
+                              // trailing click would re-select the pre-sort index
+                              if (stopDragged.current) {
+                                stopDragged.current = false
+                                return
+                              }
+                              setStopIdx(i)
+                            }}
                           />
                         ))}
                       </div>
@@ -1009,24 +1283,21 @@ export function FormatPane({
                           }
                         />
                       </div>
-                      <label className="fp-prow">
-                        <span>{t('paneGradientPos')}</span>
-                        <input
-                          key={`${node.sourceId}:gp:${selStopIdx}:${selStop.pos}`}
-                          type="number"
-                          min={0}
-                          max={100}
-                          defaultValue={Math.round(selStop.pos * 100)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                          }}
-                          onBlur={(e) => {
-                            const v = Number(e.target.value)
-                            if (!Number.isNaN(v))
-                              setStop(selStopIdx, { pos: Math.max(0, Math.min(100, v)) / 100 })
-                          }}
-                        />
-                      </label>
+                      {spinRow(
+                        t('paneGradientPos'),
+                        `${Math.round(selStop.pos * 100)}%`,
+                        (raw) => {
+                          const v = parseFloat(raw)
+                          if (!Number.isNaN(v))
+                            setStop(selStopIdx, { pos: Math.max(0, Math.min(100, v)) / 100 })
+                        },
+                        (dir) => {
+                          const cur = Math.round(selStop.pos * 100)
+                          setStop(selStopIdx, {
+                            pos: Math.max(0, Math.min(100, cur + dir)) / 100,
+                          })
+                        },
+                      )}
                       <label className="fp-prow">
                         <span>{t('ribbonTransparency')}</span>
                         <PctControl
@@ -1146,36 +1417,42 @@ export function FormatPane({
                           }
                         />
                       </div>
-                      <label className="fp-prow">
-                        <span>{t('paneGradientAngle')}</span>
-                        <input
-                          key={`${node.sourceId}:sga:${strokeGradient.angleDeg}`}
-                          type="number"
-                          min={0}
-                          max={359.9}
-                          defaultValue={Math.round(strokeGradient.angleDeg)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                          }}
-                          onBlur={(e) => {
-                            const v = Number(e.target.value)
-                            if (!Number.isNaN(v))
-                              commitStroke(
-                                node.sourceId,
-                                {
-                                  gradient: {
-                                    ...strokeGradEdge(
-                                      'from',
-                                      toHex6(strokeGradient.stops[0]?.color ?? strokeColor),
-                                    ),
-                                    angleDeg: ((v % 360) + 360) % 360,
-                                  },
+                      {spinRow(
+                        t('paneGradientAngle'),
+                        `${Math.round(strokeGradient.angleDeg)}°`,
+                        (raw) => {
+                          const v = parseFloat(raw)
+                          if (!Number.isNaN(v))
+                            commitStroke(
+                              node.sourceId,
+                              {
+                                gradient: {
+                                  ...strokeGradEdge(
+                                    'from',
+                                    toHex6(strokeGradient.stops[0]?.color ?? strokeColor),
+                                  ),
+                                  angleDeg: ((v % 360) + 360) % 360,
                                 },
-                                true,
-                              )
-                          }}
-                        />
-                      </label>
+                              },
+                              true,
+                            )
+                        },
+                        (dir) =>
+                          commitStroke(
+                            node.sourceId,
+                            {
+                              gradient: {
+                                ...strokeGradEdge(
+                                  'from',
+                                  toHex6(strokeGradient.stops[0]?.color ?? strokeColor),
+                                ),
+                                angleDeg:
+                                  (((Math.round(strokeGradient.angleDeg) + dir) % 360) + 360) % 360,
+                              },
+                            },
+                            true,
+                          ),
+                      )}
                     </>
                   )}
                   {stroke && (
@@ -1377,37 +1654,100 @@ export function FormatPane({
               </>
             )}
 
-          {effTab === 'shape' && shapeSub === 'size' && onOpenLink && (
+          {effTab === 'shape' && shapeSub === 'size' && shape?.text && onTextBodyProps && (
             <>
-              <div className="fp-section">{t('paneFormatLink')}</div>
-              <div className="fp-row">
-                <span
-                  className="fp-link-target"
-                  data-tip={link?.kind === 'url' ? link.url : undefined}
-                >
-                  {link
-                    ? link.kind === 'url'
-                      ? link.url
-                      : t('ribbonSlideN', { n: link.slideIndex + 1 })
-                    : t('paneFormatLinkNone')}
-                </span>
-              </div>
-              <div className="fp-prow fp-prow-end">
-                <button className="fp-btn" onClick={onOpenLink}>
-                  {t('paneFormatLinkSet')}
-                </button>
-              </div>
-            </>
-          )}
-
-          {effTab === 'shape' && shapeSub === 'size' && (
-            <>
-              <div className="fp-section">{t('paneFormatActions')}</div>
-              <div className="fp-prow fp-prow-end">
-                <button className="fp-btn fp-danger" onClick={() => onDelete(node.sourceId)}>
-                  {t('paneFormatDelete')}
-                </button>
-              </div>
+              {secHeader(t('paneFormatTextBox'), txtOpen, () => setTxtOpen((v) => !v))}
+              {txtOpen && (
+                <>
+                  <div className="fp-prow">
+                    <span>{t('paneTextboxVAlign')}</span>
+                    <select
+                      value={shape.text.anchor}
+                      disabled={!onTextAnchor}
+                      onChange={(e) =>
+                        onTextAnchor?.(node.sourceId, e.target.value as 'top' | 'middle' | 'bottom')
+                      }
+                    >
+                      <option value="top">{t('paneVAlignTop')}</option>
+                      <option value="middle">{t('paneVAlignMiddle')}</option>
+                      <option value="bottom">{t('paneVAlignBottom')}</option>
+                    </select>
+                  </div>
+                  <div className="fp-prow">
+                    <span>{t('paneTextboxDirection')}</span>
+                    <select
+                      value={shape.text.vert ?? 'horz'}
+                      onChange={(e) =>
+                        onTextBodyProps(node.sourceId, {
+                          vert: e.target.value as
+                            'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert',
+                        })
+                      }
+                    >
+                      <option value="horz">{t('paneTextDirH')}</option>
+                      <option value="eaVert">{t('paneTextDirV')}</option>
+                      <option value="vert">{t('paneTextDirRot90')}</option>
+                      <option value="vert270">{t('paneTextDirRot270')}</option>
+                      <option value="wordArtVert">{t('paneTextDirStacked')}</option>
+                    </select>
+                  </div>
+                  <div className="fp-radios">
+                    {radioRow(
+                      `autofit-${node.sourceId}`,
+                      (shape.text.autofit ?? 'none') === 'none',
+                      t('paneAutofitNone'),
+                      () => onTextBodyProps(node.sourceId, { autofit: 'none' }),
+                    )}
+                    {radioRow(
+                      `autofit-${node.sourceId}`,
+                      shape.text.autofit === 'shrink',
+                      t('paneAutofitShrink'),
+                      () => onTextBodyProps(node.sourceId, { autofit: 'shrink' }),
+                    )}
+                    {radioRow(
+                      `autofit-${node.sourceId}`,
+                      shape.text.autofit === 'resize',
+                      t('paneAutofitResize'),
+                      () => onTextBodyProps(node.sourceId, { autofit: 'resize' }),
+                    )}
+                  </div>
+                  {(
+                    [
+                      ['l', 'paneInsetL'],
+                      ['r', 'paneInsetR'],
+                      ['t', 'paneInsetT'],
+                      ['b', 'paneInsetB'],
+                    ] as const
+                  ).map(([side, key]) =>
+                    spinRow(
+                      t(key),
+                      fmtCm(shape.text!.insets[side]),
+                      (raw) => {
+                        const v = parseFloat(raw)
+                        if (!Number.isNaN(v) && v >= 0)
+                          onTextBodyProps(node.sourceId, {
+                            insets: { [side]: Math.round(v * 360000) },
+                          })
+                      },
+                      (dir) => {
+                        const curCm = shape.text!.insets[side] / pxPerCm
+                        const next = Math.max(0, Math.round((curCm + dir * 0.1) * 100) / 100)
+                        onTextBodyProps(node.sourceId, {
+                          insets: { [side]: Math.round(next * 360000) },
+                        })
+                      },
+                    ),
+                  )}
+                  <label className="fp-checkrow">
+                    <input
+                      type="checkbox"
+                      checked={shape.text.wrap}
+                      onChange={(e) => onTextBodyProps(node.sourceId, { wrap: e.target.checked })}
+                    />
+                    <span>{t('paneTextWrap')}</span>
+                  </label>
+                </>
+              )}
             </>
           )}
 

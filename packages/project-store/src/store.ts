@@ -45,6 +45,14 @@ import type {
 /** Max stored characters for a single tool input/output field */
 const TOOL_FIELD_MAX_CHARS = 16_000
 
+/**
+ * Max stored characters for message text. A model that falls into a repetition
+ * loop can emit megabytes in one turn; stored whole it would both bloat the
+ * JSONL line and be replayed into the model context when the file reopens.
+ */
+const TEXT_MAX_CHARS = 32_000
+const TEXT_TRUNCATED_MARK = '\n\n[truncated]'
+
 function nowIso(): string {
   return new Date().toISOString()
 }
@@ -300,7 +308,11 @@ export class ProjectStore {
     try {
       const seq = this.nextSeq(projectId, chatId)
       const ts = msg.ts ?? nowIso()
-      const record: ChatMessage = { seq, ts, role: msg.role, text: msg.text }
+      const text =
+        msg.text.length > TEXT_MAX_CHARS
+          ? msg.text.slice(0, TEXT_MAX_CHARS) + TEXT_TRUNCATED_MARK
+          : msg.text
+      const record: ChatMessage = { seq, ts, role: msg.role, text }
       if (msg.fileRef !== undefined) record.fileRef = msg.fileRef
       if (msg.tools && msg.tools.length > 0) {
         // Truncate tool inputs/outputs so one JSONL line can't blow up on a huge payload

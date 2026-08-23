@@ -47,6 +47,10 @@ const worksheetMetadataSchema = z
     // "no default"; the engine normalizes it to null, but a stray 0 must not
     // reject the whole workbook — the preload maps it back to null.
     defaultRowHeight: z.number().nonnegative().nullable(),
+    /// sheetFormatPr/@customHeight — the default row height is user-fixed, so
+    /// wrap rows without their own ht are NOT auto-fit on open. Optional for
+    /// compatibility with an older sidecar binary.
+    defaultRowHeightFixed: z.boolean().optional(),
     defaultColumnWidth: z.number().nonnegative().nullable(),
     freeze: z
       .object({
@@ -179,6 +183,7 @@ const richRunSchema = z
     color: z.string().optional(),
     size: z.number().positive().optional(),
     family: z.string().optional(),
+    vertAlign: z.enum(['subscript', 'superscript']).optional(),
   })
   .strict()
 const conditionalRuleSchema = z
@@ -229,6 +234,8 @@ const cellStyleSchema = z
     underline: z.boolean(),
     strikethrough: z.boolean(),
     wrapText: z.boolean(),
+    /// alignment/@shrinkToFit; omitted by the sidecar when false.
+    shrinkToFit: z.boolean().optional(),
     fontColor: z.string().optional(),
     fillColor: z.string().optional(),
     /// Theme provenance (palette slot + tint) for theme-resolved colors, so
@@ -295,6 +302,9 @@ const visualObjectSchema = z
           z
             .object({
               name: z.string(),
+              /// `c:tx` cell reference when the name has no cached text; the
+              /// renderer resolves it from the live cells.
+              nameRef: z.string().optional(),
               categories: z.array(z.string()),
               values: z.array(z.number().finite()),
               numberFormat: z.string().optional(),
@@ -346,7 +356,11 @@ const visualObjectSchema = z
           })
           .strict()
           .optional(),
-        dataLabels: z.enum(['none', 'value', 'percent', 'category-percent']).optional(),
+        /// 'category-value-percent' is read-only (parsed from files that show
+        /// all three); edits write the four writable modes.
+        dataLabels: z
+          .enum(['none', 'value', 'percent', 'category-percent', 'category-value-percent'])
+          .optional(),
         /// `c:dLblPos` and `c:numFmt` on the plot-level data labels.
         dataLabelPosition: z.enum(['center', 'inside-end', 'outside-end']).optional(),
         dataLabelFormat: z.string().optional(),
@@ -394,6 +408,20 @@ const visualObjectSchema = z
     mediaDataUrl: z.string().optional(),
     name: z.string().optional(),
     shapeType: z.string().optional(),
+    /// a:custGeom pathLst as one SVG path string in its own path coordinate
+    /// space; the renderer scales it into the anchor frame.
+    customPath: z
+      .object({
+        width: z.number().finite().positive(),
+        height: z.number().finite().positive(),
+        d: z.string(),
+        /// Every subpath is stroke-only (a:path fill="none").
+        strokeOnly: z.boolean().optional(),
+        /// Fillable subpaths only; present when subpath fills are mixed.
+        fillD: z.string().optional(),
+      })
+      .strict()
+      .optional(),
     fillColor: z.string().optional(),
     /// xdr:style fillRef resolved against a theme fillStyleLst gradient;
     /// fillColor stays the flat approximation.
@@ -881,6 +909,20 @@ export const workbookStructuralOpSchema = z.union([
       /// File units: points for rows (Excel max 409.5), character width for
       /// columns (max 255). null resets to the sheet default.
       size: z.union([z.number().positive().max(500), z.null()]),
+    })
+    .strict()
+    .refine((op) => op.end >= op.start && op.end - op.start < 100_000, {
+      message: 'Invalid axis span.',
+    }),
+  z
+    .object({
+      sheetId: z.string().min(1),
+      kind: z.literal('set-col-style'),
+      start: z.number().int().nonnegative().max(1_048_575),
+      end: z.number().int().nonnegative().max(1_048_575),
+      /// Column default format (Excel select-all/full-column semantics): new
+      /// cells in the span inherit it, at any row, forever (alpha ledger r124).
+      style: workbookStyleEditSchema,
     })
     .strict()
     .refine((op) => op.end >= op.start && op.end - op.start < 100_000, {

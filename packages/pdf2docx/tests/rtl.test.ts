@@ -54,6 +54,19 @@ describe('reorderVisualToLogical', () => {
     expect(logical.replace(/\s+/g, ' ')).toBe('بك مرحبا')
   })
 
+  it('keeps a ligature expanded into same-box chars in logical order', () => {
+    // PDFium expands a lam-meem ligature glyph (U+FCCC) into TWO chars sharing
+    // one glyph box, already logical: ل then م. The run reversal must treat
+    // them as one cluster, not flip the pair (المشاركة → املشاركة).
+    // visual left→right for logical "المشاركة": ة ك ر ا ش [لم glyph] ا
+    const tail = mkText('ةكراش', 100).chars
+    const next = tail[tail.length - 1]!.box.x1
+    const lig1 = mkChar('ل', next, {})
+    const lig2 = { ...mkChar('م', next, {}), box: { ...lig1.box }, looseBox: { ...lig1.looseBox } }
+    const alef = mkChar('ا', lig1.box.x1, {})
+    expect(joined(reorderVisualToLogical([...tail, lig1, lig2, alef]))).toBe('المشاركة')
+  })
+
   it('mirrors bracket pairs back to logical form', () => {
     // logical "(אב)" displays visually as "(בא)" — glyphs carry the mirrored forms
     const visual = mkText('(בא)', 100).chars
@@ -143,5 +156,23 @@ describe('repairArabicJunkLigatures (P29 D)', () => {
   it('keeps an isolated Latin letter separated by spaces', () => {
     const visual = mkText('בע A וכ', 100).chars
     expect(joined(reorderVisualToLogical(visual))).toContain('A')
+  })
+})
+
+describe('real-space RTL lines skip geometric inference (P30 D)', () => {
+  it('does not split inside a word with a wide non-joiner gap', () => {
+    // visual L→R for logical "كتاب مع": ع م ␣ ب ا (gap) ت ك — the intra-word
+    // gap after the alef is wider than the word spacing (naskh trait)
+    const chars = [
+      mkChar('ع', 100, { width: 5 }),
+      mkChar('م', 105, { width: 5 }),
+      mkChar(' ', 112, { width: 4 }),
+      mkChar('ب', 120, { width: 5 }),
+      mkChar('ا', 127, { width: 5 }),
+      mkChar('ت', 140, { width: 5 }),
+      mkChar('ك', 145, { width: 5 }),
+    ]
+    const out = joined(reorderVisualToLogical(chars))
+    expect(out.trim().split(/\s+/)).toHaveLength(2)
   })
 })

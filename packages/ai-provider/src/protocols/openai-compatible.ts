@@ -101,6 +101,13 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
   if (choice?.finish_reason === 'length') cb.onStopReason?.('max_tokens')
 }
 
+/** Per-endpoint request shaping resolved from the provider registry. */
+export interface OpenAiRequestOptions {
+  omitTemperature?: boolean | undefined
+  /** vendor-specific fields merged into the request body (e.g. DeepSeek's `thinking`) */
+  bodyExtras?: Record<string, unknown> | undefined
+}
+
 export async function streamOpenAiCompatible(
   baseUrl: string,
   config: AiProviderConfig,
@@ -109,21 +116,11 @@ export async function streamOpenAiCompatible(
   tools: AgentToolDef[],
   maxTokens: number,
   cb: StreamCallbacks,
-  omitTemperature = false,
+  options: OpenAiRequestOptions = {},
 ): Promise<void> {
   const wd = createStreamWatchdog(cb.signal)
   return wd.guard(() =>
-    openAiCompatibleTurn(
-      baseUrl,
-      config,
-      system,
-      messages,
-      tools,
-      maxTokens,
-      cb,
-      wd,
-      omitTemperature,
-    ),
+    openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, options),
   )
 }
 
@@ -136,7 +133,7 @@ async function openAiCompatibleTurn(
   maxTokens: number,
   cb: StreamCallbacks,
   wd: StreamWatchdog,
-  omitTemperature: boolean,
+  options: OpenAiRequestOptions,
 ): Promise<void> {
   const onBytes = () => {
     wd.touch()
@@ -162,7 +159,8 @@ async function openAiCompatibleTurn(
             })),
           }
         : {}),
-      ...(omitTemperature ? {} : { temperature: 0.3 }),
+      ...(options.omitTemperature ? {} : { temperature: 0.3 }),
+      ...options.bodyExtras,
       stream: true,
     }),
   })
@@ -266,7 +264,7 @@ export async function chatOpenAiCompatible(
   config: AiProviderConfig,
   system: string,
   user: string,
-  omitTemperature = false,
+  options: OpenAiRequestOptions = {},
 ): Promise<AiChatResponse> {
   const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
@@ -282,7 +280,8 @@ export async function chatOpenAiCompatible(
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      ...(omitTemperature ? {} : { temperature: 0.3 }),
+      ...(options.omitTemperature ? {} : { temperature: 0.3 }),
+      ...options.bodyExtras,
     }),
   })
   wd.touch()

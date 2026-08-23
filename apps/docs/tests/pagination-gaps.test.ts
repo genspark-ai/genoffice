@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   GAP_BAND,
+  alignGapHfStrips,
   makeGapEl,
   syncCutOverlays,
   syncPhantomRowspans,
@@ -217,5 +218,45 @@ describe('clampCellBoxTops', () => {
     box.getBoundingClientRect = () => ({ top: 0, bottom: 45, height: 45, width: 100 }) as DOMRect
     clampCellBoxTops(pm, 0, 1)
     expect(box.style.getPropertyValue('--page-float-dy')).toBe('62.0px')
+  })
+})
+
+describe('alignGapHfStrips', () => {
+  const STRIP_W = 600
+  /** emulates layout: stylesheet centering (left:50% of a 786px gap + translateX(-50%))
+   *  until inline left/transform pin the strip */
+  const stripEl = (pm: HTMLElement): HTMLElement => {
+    const el = document.createElement('div')
+    el.className = 'page-gap-hf'
+    el.getBoundingClientRect = () => {
+      const left = el.style.left ? parseFloat(el.style.left) : 393
+      const tx = el.style.transform === 'none' ? 0 : -STRIP_W / 2
+      return { left: left + tx, width: STRIP_W } as DOMRect
+    }
+    pm.appendChild(el)
+    return el
+  }
+  const pmEl = (): HTMLElement => {
+    const pm = document.createElement('div')
+    pm.getBoundingClientRect = () => ({ left: 0, width: 816 }) as DOMRect
+    return pm
+  }
+
+  it('pins reused stylesheet-centered strips (left:50% + translateX(-50%)) before aligning', () => {
+    const pm = pmEl()
+    const strip = stripEl(pm)
+    alignGapHfStrips(pm, 96, 1)
+    expect(strip.style.transform).toBe('none')
+    expect(strip.getBoundingClientRect().left).toBeCloseTo(96, 1)
+  })
+
+  it('is idempotent across widget reuse: a second pass leaves the pinned strip alone', () => {
+    const pm = pmEl()
+    const strip = stripEl(pm)
+    alignGapHfStrips(pm, 96, 1)
+    const left = strip.style.left
+    alignGapHfStrips(pm, 96, 1)
+    expect(strip.style.left).toBe(left)
+    expect(strip.getBoundingClientRect().left).toBeCloseTo(96, 1)
   })
 })

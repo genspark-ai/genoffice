@@ -80,10 +80,6 @@ describe('preflightFitBlock', () => {
   })
 
   it('skips unmeasurable and out-of-scope blocks', () => {
-    const cjk = span('中文', { script: 'cjk' })
-    preflightFitBlock(block([lineOf([cjk])]), 10, perChar(50))
-    expect(cjk.charSpacingPt).toBeUndefined()
-
     const rtl = span('שלום', { script: 'hebrew' })
     preflightFitBlock(block([lineOf([rtl])], { dir: 'rtl' }), 10, perChar(50))
     expect(rtl.charSpacingPt).toBeUndefined()
@@ -91,6 +87,30 @@ describe('preflightFitBlock', () => {
     const unresolved = span('aaaaaaaaaa')
     preflightFitBlock(block([lineOf([unresolved])]), 10, () => null)
     expect(unresolved.charSpacingPt).toBeUndefined()
+  })
+
+  it('measures CJK spans synthetically at 1 em per fullwidth char (P31 A)', () => {
+    // 10 chars × 1 em × 10pt = 100pt vs avail 90 → tighten
+    const cjk = span('中文测试字符中文测试', { script: 'cjk' })
+    preflightFitBlock(block([lineOf([cjk])]), 90, () => null)
+    expect(cjk.charSpacingPt).toBeLessThan(0)
+
+    // fits at 1 em per char → untouched (measurer never consulted)
+    const fits = span('中文', { script: 'cjk' })
+    preflightFitBlock(block([lineOf([fits])]), 30, () => null)
+    expect(fits.charSpacingPt).toBeUndefined()
+  })
+
+  it('estimates Arabic runs via the shaped ratio (P31 B)', () => {
+    // isolated measure 10 × 13pt = 130 → shaped ≈ 97.5 vs avail 90 → tighten
+    const ar = span('كتابكتابكت', { script: 'arabic' })
+    preflightFitBlock(block([lineOf([ar])], { dir: 'rtl' }), 90, perChar(13))
+    expect(ar.charSpacingPt).toBeLessThan(0)
+
+    // shaped estimate ≈ 97.5 fits 100 even though the isolated sum (130) would not
+    const fits = span('كتابكتابكت', { script: 'arabic' })
+    preflightFitBlock(block([lineOf([fits])], { dir: 'rtl' }), 100, perChar(13))
+    expect(fits.charSpacingPt).toBeUndefined()
   })
 
   it('respects the first-line indent', () => {

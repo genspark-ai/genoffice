@@ -22,6 +22,7 @@ import { NameManagerDialog, type DefinedNameAction, type DefinedNameRow } from '
 import { categoryOptionForPattern, numberFormatCategories } from './number-format'
 import { type SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
+import { shouldInterceptClearSelection } from './clear-selection-keyboard'
 
 import type { ChartSeriesVisualState } from '../domain/chart-visual'
 import type { ChangePlan } from '../domain/workbook.types'
@@ -168,6 +169,9 @@ interface ExcelShellProps {
   readonly onNewChat: () => void
   readonly onUndo: (steps?: number) => void
   readonly onCommand: (command: string) => void
+  /// True while Univer's in-cell editor is open (Backspace must delete
+  /// characters, not clear the selection).
+  readonly onIsCellEditing: () => boolean
   /// Left side of the status bar (ready / streaming / AI progress messages).
   readonly statusMessage: string
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
@@ -311,6 +315,7 @@ export function ExcelShell({
   onNewChat,
   onUndo,
   onCommand,
+  onIsCellEditing,
   statusMessage,
   zoomPercent,
   canSave,
@@ -354,6 +359,10 @@ export function ExcelShell({
   const [showAllowEditRanges, setShowAllowEditRanges] = useState(false)
   /// Non-null while the Chart Design → Add Chart Element text prompt is open.
   const [chartTextTarget, setChartTextTarget] = useState<ChartTextTarget | null>(null)
+  const onCommandRef = useRef(onCommand)
+  const onIsCellEditingRef = useRef(onIsCellEditing)
+  onCommandRef.current = onCommand
+  onIsCellEditingRef.current = onIsCellEditing
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key === '1') {
@@ -370,10 +379,46 @@ export function ExcelShell({
         event.preventDefault()
         onCommand('toggle-show-formulas')
       }
+      // Excel's PageUp/PageDown; Alt+ pages horizontally. Univer parks grid
+      // focus on a hidden editable host, so app fields are told apart by
+      // sitting OUTSIDE the grid container; in-cell editing is checked in the
+      // command handler via the workbook's own editing state.
+      if (
+        (event.key === 'PageDown' || event.key === 'PageUp') &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.defaultPrevented
+      ) {
+        const target = event.target as HTMLElement | null
+        const inAppField =
+          !!target?.closest?.('input, textarea, [contenteditable="true"]') &&
+          !target?.closest?.('[data-u-comp], .univer-app-container, [class*="univer"]')
+        if (!inAppField) {
+          event.preventDefault()
+          const axis = event.altKey ? 'page-col' : 'page-row'
+          onCommand(`${axis}:${event.key === 'PageDown' ? 1 : -1}`)
+        }
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onCommand])
+  // Univer's shortcut dispatcher captures keydown and binds Backspace to
+  // "delete-and-start-editing" (active cell only). Register on window
+  // capture *here* (child effect runs before App creates Univer) so we
+  // win the race and clear the whole selection instead. Keep the listener
+  // mounted once: re-binding after Univer starts would lose capture order.
+  useEffect(() => {
+    const onKeyDownCapture = (event: KeyboardEvent): void => {
+      if (!shouldInterceptClearSelection(event, onIsCellEditingRef.current())) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      onCommandRef.current('clear-contents')
+    }
+    window.addEventListener('keydown', onKeyDownCapture, true)
+    return () => window.removeEventListener('keydown', onKeyDownCapture, true)
+  }, [])
   // Deselecting while on the contextual tab lands back on Home.
   useEffect(() => {
     if (!selectedChart && activeTab === 'Chart Design') setActiveTab('Home')

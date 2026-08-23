@@ -28,8 +28,8 @@ function makeAccess(opts?: { failPages?: number[] }) {
       if (failPages.has(args.pageIndex)) return { ok: false, error: 'mock fail' }
       return { ok: true, marker: `PAGE${args.pageIndex}:${args.title}` }
     },
-    generateFromHtml: async (
-      pagesHtml,
+    landGeneratedPages: async (
+      pageMarkers,
       mode = 'replace',
       _deckName?: string,
       insertAt?: number,
@@ -40,10 +40,10 @@ function makeAccess(opts?: { failPages?: number[] }) {
       }
       if (mode === 'append') {
         const from = pages
-        pages += pagesHtml.length
+        pages += pageMarkers.length
         return { ok: true, pages, appendedFrom: from }
       }
-      pages = pagesHtml.length
+      pages = pageMarkers.length
       return { ok: true, pages }
     },
   }

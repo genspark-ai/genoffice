@@ -238,3 +238,58 @@ describe('parseSlide attaches customGeometry', () => {
     expect(grpEl.children[0].customGeometry?.path).toBe('M 0 1 L 0.5 0 L 1 1 Z')
   })
 })
+
+const PIC_NS =
+  SLIDE_NS + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+
+const picWrap = (spPrExtra: string) =>
+  `<p:pic><p:nvPicPr><p:cNvPr id="3" name="Picture 2"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>` +
+  `<p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
+  `<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm>` +
+  spPrExtra +
+  `</p:spPr></p:pic>`
+
+const picSlide = (spPrExtra: string, wrap: (inner: string) => string = (s) => s) =>
+  parseSlide({
+    path: 'ppt/slides/slide1.xml',
+    slideXml:
+      `<?xml version="1.0"?><p:sld ${PIC_NS}><p:cSld><p:spTree>` +
+      `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>` +
+      wrap(picWrap(spPrExtra)) +
+      `</p:spTree></p:cSld></p:sld>`,
+    ctx: {},
+  })
+
+describe('parseSlide attaches picture custGeom and scene3d', () => {
+  it('pic custGeom: the freeform clip path is parsed from raw bytes', () => {
+    const el = picSlide(TRIANGLE_CUSTGEOM).elements[0] as any
+    expect(el.type).toBe('picture')
+    expect(el.customGeometry?.path).toBe('M 0 1 L 0.5 0 L 1 1 Z')
+  })
+
+  it('pic scene3d: camera preset and rot are recorded', () => {
+    const el = picSlide(
+      `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+        `<a:scene3d><a:camera prst="orthographicFront"><a:rot lat="0" lon="10800000" rev="0"/></a:camera>` +
+        `<a:lightRig rig="threePt" dir="t"/></a:scene3d>`,
+    ).elements[0] as any
+    expect(el.type).toBe('picture')
+    expect(el.scene3d?.cameraPreset).toBe('orthographicFront')
+    expect(el.scene3d?.cameraRot).toEqual({ lat: 0, lon: 10800000, rev: 0 })
+  })
+
+  it('pic custGeom inside a group parses from its source slice', () => {
+    const grpEl = picSlide(
+      TRIANGLE_CUSTGEOM,
+      (inner) =>
+        `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="10" name="g"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
+        `<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/>` +
+        `<a:chOff x="0" y="0"/><a:chExt cx="914400" cy="914400"/></a:xfrm></p:grpSpPr>` +
+        inner +
+        `</p:grpSp>`,
+    ).elements[0] as any
+    expect(grpEl.type).toBe('group')
+    expect(grpEl.children[0].type).toBe('picture')
+    expect(grpEl.children[0].customGeometry?.path).toBe('M 0 1 L 0.5 0 L 1 1 Z')
+  })
+})

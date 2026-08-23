@@ -157,6 +157,25 @@ describe('appendChatMessage + loadChat', () => {
     const msgs = store.loadChat('default', 'chat1')
     expect(msgs[0].text).toBe('')
   })
+
+  it('a runaway reply is truncated instead of stored whole', () => {
+    // A model stuck in a repetition loop; stored whole it would also be replayed
+    // into the model context when the file reopens
+    store.appendChatMessage('default', 'chatHuge', {
+      role: 'assistant',
+      text: 'shame '.repeat(20_000),
+    })
+    const msgs = store.loadChat('default', 'chatHuge')
+    expect(msgs[0].text.length).toBeLessThan(33_000)
+    expect(msgs[0].text.endsWith('[truncated]')).toBe(true)
+  })
+
+  it('text just under the cap is stored verbatim', () => {
+    const text = 'x'.repeat(31_999)
+    store.appendChatMessage('default', 'chatUnder', { role: 'assistant', text })
+    const msgs = store.loadChat('default', 'chatUnder')
+    expect(msgs[0].text).toBe(text)
+  })
 })
 
 // ────────────────────────────────────────────────────────────

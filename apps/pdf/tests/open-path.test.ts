@@ -15,6 +15,7 @@ const handlers = new Map<string, IpcHandler>()
 interface FakeWebContents {
   id: number
   once: ReturnType<typeof vi.fn>
+  on: ReturnType<typeof vi.fn>
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   loadURL: ReturnType<typeof vi.fn>
   loadFile: ReturnType<typeof vi.fn>
@@ -30,6 +31,9 @@ function makeFakeWebContents(): FakeWebContents {
     id: nextWcId++,
     listeners,
     once: vi.fn((event: string, handler: () => void) => {
+      listeners.set(event, handler)
+    }),
+    on: vi.fn((event: string, handler: () => void) => {
       listeners.set(event, handler)
     }),
     setWindowOpenHandler: vi.fn(),
@@ -60,7 +64,7 @@ vi.mock('electron', () => ({
 }))
 
 import { PDF_CHANNELS } from '../src/shared/ipc'
-import { createPdfView } from '../src/main/pdf-main'
+import { createPdfView, pdfIsDirty } from '../src/main/pdf-main'
 
 function makePdfFile(): string {
   const dir = mkdtempSync(join(tmpdir(), 'pdf-open-path-'))
@@ -91,5 +95,15 @@ describe('pdf open-path lifecycle', () => {
     expect(consume(wc.id)).toBe(path)
     wc.listeners.get('destroyed')?.()
     expect(consume(wc.id)).toBeNull()
+  })
+
+  it('clears dirty on did-start-loading so a reload does not keep the close-save prompt', () => {
+    const path = makePdfFile()
+    createPdfView(path)
+    const wc = lastWebContents
+    handlers.get(PDF_CHANNELS.dirtyChanged)?.({ sender: { id: wc.id } }, true)
+    expect(pdfIsDirty(wc.id)).toBe(true)
+    wc.listeners.get('did-start-loading')?.()
+    expect(pdfIsDirty(wc.id)).toBe(false)
   })
 })

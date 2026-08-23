@@ -15,6 +15,7 @@ import {
   nativeImage,
   session as electronSession,
   shell,
+  webContents,
   WebContentsView,
 } from 'electron'
 import type { WebContents } from 'electron'
@@ -23,7 +24,7 @@ import { readFile, writeFile, rm, stat, mkdir, open } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { userInfo } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { gskApiKey, gskSlideGenerate, setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
@@ -37,7 +38,14 @@ import {
   showSaveDialogWithMemory,
   toggleDevToolsItem,
 } from '@genoffice/electron-utils'
-import { resolveGroupChildId, runTxn, type Op, type TxnRequest, type TxnResult } from './ops'
+import {
+  resolveGroupChildId,
+  runTxn,
+  type Op,
+  type OpRecord,
+  type TxnRequest,
+  type TxnResult,
+} from './ops'
 import { mapScriptOps } from './ops/script-map'
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { buildPagePptx, parsePageSpec } from './page-spec'
@@ -53,7 +61,6 @@ import {
   getRunLinks,
   readHeaderFooter,
   createBlankPptx,
-  deleteSlide,
   copySlide,
   type SlideBundle,
   listSlideLayouts,
@@ -65,6 +72,7 @@ import {
   TABLE_STYLE_PRESETS,
   type TableStyleEdit,
   EMU_PER_PT,
+  slideDurableId,
   getSlideComments,
   getSlideNotes,
   getSlideTransition,
@@ -72,6 +80,8 @@ import {
   getSlideAnimations,
   openPptx,
   mergeSlideFromPptx,
+  extractMergeSlideSource,
+  type MergeSlideSource,
   promoteSlideBackground,
   parseTheme,
   reparseDeck,
@@ -83,7 +93,6 @@ import {
   shouldOfferBuiltinLayouts,
   BUILTIN_LAYOUT_PREFIX,
   getSections,
-  moveSlide,
   type SectionInfo,
   type ElementClipboardItem,
   type OpenedPptx,
@@ -91,7 +100,13 @@ import {
   type Slide,
   type TextElement,
 } from '@genoffice/pptx-engine'
-import { buildRenderSlide, EMU_PER_PX_96, type RenderSlide } from '@genoffice/pptx-render'
+import {
+  buildRenderSlide,
+  layoutText,
+  makeViewport,
+  EMU_PER_PX_96,
+  type RenderSlide,
+} from '@genoffice/pptx-render'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
 import { cfbKind, isCfbHeader } from './cfb-sniff'
 import { unplayableAudioCodec } from './mp4-audio-sniff'
@@ -179,12 +194,15 @@ import { buildPrintDocumentHtml } from '../shared/print-html'
 import { tm } from './i18n-main'
 import { tiffToPng } from './tiff-decode'
 import {
+  attachedIds,
+  editorAttachedIds,
   beginHistoryBatch,
   buildAllRenderSlides,
   carryHistoryForReplacement,
   dialogParent,
   endHistoryBatch,
   getFontMetrics,
+  journalOps,
   makeMediaResolver,
   pushHistory,
   rebuildSlide,
@@ -194,11 +212,14 @@ import {
   restoreSnapshot,
   settleStaleHistoryBatch,
   runtime,
+  scheduleDeckBroadcast,
   scheduleHistoryNotify,
+  setActiveSlidesWebContents,
   sessions,
   showChrome,
   takeSnapshot,
   windowRefs,
+  type OpLogEntry,
   type Session,
 } from './session-state'
 import { registerAiIpc, registerSlidesOnlyAiIpc } from './ai-ipc'
@@ -210,7 +231,7 @@ let slideClipboard: { bundle: SlideBundle; png?: string } | null = null
 /** The immediately preceding slide paste per webContents, so the paste-options floater can redo it with another mode. */
 const lastSlidePaste = new Map<number, { afterIndex: number; undoLen: number }>()
 
-// Cloud-generated single-page pptx: marker strings travel in pagesHtml slots; only paths issued
+// Cloud-generated single-page pptx: marker strings travel in pageMarkers slots; only paths issued
 // by slides:cloud-page-generate are readable (the renderer can't point the reader at arbitrary files)
 const CLOUD_PAGE_PREFIX = 'cloudpptx:'
 const issuedCloudPages = new Set<string>()
@@ -357,6 +378,29 @@ export function setSlidesOpenedHook(fn: ((wc: WebContents, path: string) => void
   slidesOpenedHook = fn
 }
 
+/** Detached editor windows (createSlidesWindow), keyed by webContents id — their titles are owned here */
+const standaloneWindows = new Map<number, BrowserWindow>()
+
+/**
+ * A shared session's path changed (Save As): sync every attached surface — the
+ * shell tab title/path of tab-hosted windows (via the opened hook; a no-op for
+ * non-tab webContents) and the window title of detached editors. Without this a
+ * Save As from a detached window left the shell tab on the old path, breaking
+ * open-by-path dedupe.
+ */
+function syncAttachedPaths(session: Session, path: string): void {
+  for (const id of attachedIds(session)) {
+    const wc = webContents.fromId(id)
+    if (!wc || wc.isDestroyed()) continue
+    slidesOpenedHook?.(wc, path)
+    // Peer renderers keep the path in React state (Save As defaults, path-keyed
+    // guides); the saver also gets it from its own IPC result — idempotent
+    wc.send('slides:renamed', path)
+    const win = standaloneWindows.get(id)
+    if (win && !win.isDestroyed()) win.setTitle(basename(path))
+  }
+}
+
 const RECENT_PATH = () => join(app.getPath('userData'), 'slides-recent.json')
 
 /** Comment author name: system username, falling back to a generic "User" label. */
@@ -453,7 +497,10 @@ setInterval(() => {
   if (autosaveRunning) return
   autosaveRunning = true
   void (async () => {
+    const seen = new Set<Session>() // aliased entries share the session; save it once
     for (const [wcId, session] of sessions.entries()) {
+      if (seen.has(session)) continue
+      seen.add(session)
       if (session.masterEdit || !sessionDirty(session)) continue
       let target: string
       if (session.path) {
@@ -533,6 +580,11 @@ export async function requestSlidesClose(
   parent?: BrowserWindow | null,
 ): Promise<boolean> {
   if (!slidesIsDirty(contents.id) || contents.isDestroyed()) return true
+  // A shared session stays alive in another EDITOR window; this window can leave
+  // without a save prompt — the changes are not being discarded. View-only
+  // attachments (presenter audience) don't count: they cannot save.
+  const shared = sessions.get(contents.id)
+  if (shared && editorAttachedIds(shared).length > 1) return true
   // Autosave on and a path exists: save silently and proceed without bothering the user; only a failed save falls through to the dialog
   if (autoSavePrefByWc.get(contents.id) && sessions.get(contents.id)?.path) {
     if (await requestRendererSave(contents)) return true
@@ -638,6 +690,24 @@ async function openAndBuild(
   path: string,
   fitWidthPx: number,
 ): Promise<OpenResult> {
+  // Same file already open in another window: attach to that session instead of
+  // opening an independent copy (which would silently lose the loser's edits on
+  // save). Both windows then see the same live deck; edits propagate via
+  // scheduleDeckBroadcast. Untitled sessions have path '' and never alias.
+  const wanted = resolve(path)
+  for (const [id, existing] of sessions) {
+    if (id === wc.id || !existing.path || resolve(existing.path) !== wanted) continue
+    sessions.set(wc.id, existing)
+    scheduleHistoryNotify(existing)
+    await pushRecent(path)
+    slidesOpenedHook?.(wc, path)
+    return {
+      path: existing.path,
+      slides: buildAllRenderSlides(existing.opened, fitWidthPx),
+      size: { cx: existing.opened.deck.size.cx, cy: existing.opened.deck.size.cy },
+      defaultFont: deckDefaultFont(existing.opened),
+    }
+  }
   const raw = await readFile(path)
   const { bytes, recovered } = await maybeRecoverBytes(path, new Uint8Array(raw))
   await shapedMetricsReady() // Lay out only after complex-script shaped metrics are ready, avoiding an init race falling back to estimation
@@ -815,8 +885,19 @@ function syncAutofitScale(
   if (!el?.text || el.text.autofit !== 'shrink') return rendered
   const node = rendered.nodes.find((n) => n.sourceId === el.id)
   if (!node || (node.type !== 'shape' && node.type !== 'text') || !node.text) return rendered
-  const effective = node.text.fontScale
-  const effectiveRed = node.text.lnSpcReduction ?? 0
+  // The plain render honors the stored fontScale as-is (PowerPoint-on-open semantics);
+  // after a text edit, re-run the layout with the autofit ladder enabled to find the
+  // ratio PowerPoint would now use (still capped at the stored value).
+  const refit = layoutText({
+    body: el.text,
+    boxWidthPx: node.box.w,
+    boxHeightPx: node.box.h,
+    metrics: getFontMetrics(),
+    vp: makeViewport(session.opened.deck.size, session.fitWidthPx),
+    refitAutofit: true,
+  })
+  const effective = refit.fontScale
+  const effectiveRed = refit.lnSpcReduction ?? 0
   if (
     Math.abs(effective - (el.text.fontScale ?? 1)) < 0.005 &&
     Math.abs(effectiveRed - (el.text.lnSpcReduction ?? 0)) < 0.005
@@ -827,7 +908,8 @@ function syncAutofitScale(
   else delete el.text.lnSpcReduction
   el.anchor.originalXml = patchBodyPrAutofit(el.anchor.originalXml, effective, effectiveRed)
   slide!.structureDirty = true
-  return rendered // The layout already rendered with the effective value; no rebuild needed
+  // The render above used the pre-edit stored scale; redo it at the written-back value
+  return rebuildSlide(session, slideIndex) ?? rendered
 }
 
 /** Legacy fixed color schemes (AI tools/old files still pass these keys; kept as fallback). */
@@ -896,6 +978,18 @@ function chartColorSchemes(
   ]
 }
 
+/** After a successful Slides → PDF export: open the file in a PDF tab (shell)
+ * or reveal it in the folder (standalone). Tab-opening failure must not
+ * report the export itself as failed — the file is already persisted. */
+function openExportedPdf(path: string): void {
+  try {
+    if (runtime.openGeneratedPath?.(path)) return
+  } catch (err) {
+    console.warn('[slides] Failed to open exported PDF:', err)
+  }
+  shell.showItemInFolder(path)
+}
+
 let ipcRegistered = false
 
 export function registerSlidesIpc(): void {
@@ -936,13 +1030,32 @@ export function registerSlidesIpc(): void {
   // Plan first: pushHistory clears the redo stack (and can evict the oldest undo
   // entry at the cap), so an invalid request must not touch history at all —
   // legacy handlers validated existence before their history push.
-  const sessionTxn = (session: Session, req: TxnRequest): TxnResult | null => {
+  // The single funnel for non-dry transactions in this module: every applied
+  // batch lands in the session's op journal (collab groundwork).
+  const journaledTxn = (
+    session: Session,
+    source: Exclude<OpLogEntry['source'], 'reset'>,
+    req: TxnRequest,
+  ): TxnResult => {
+    const r = runTxn(session.opened, req)
+    if (r.applied) {
+      journalOps(session, source, r.records ?? [])
+      scheduleDeckBroadcast(session)
+    }
+    return r
+  }
+
+  const sessionTxn = (
+    session: Session,
+    req: TxnRequest,
+    source: Exclude<OpLogEntry['source'], 'reset'> = 'edit',
+  ): TxnResult | null => {
     const plan = runTxn(session.opened, { ...req, dryRun: true })
     const invalid = plan.failures?.length ?? 0
     if ((req.isolation ?? 'atomic') === 'atomic' ? invalid > 0 : invalid >= req.ops.length)
       return null
     pushHistory(session)
-    const r = runTxn(session.opened, req)
+    const r = journaledTxn(session, source, req)
     if (!r.applied) {
       session.undoStack.pop()
       return null
@@ -1012,7 +1125,7 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     pushHistory(session)
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       ops: [
         {
           op: 'setText',
@@ -1053,7 +1166,7 @@ export function registerSlidesIpc(): void {
       color: op.color,
     }
     pushHistory(session)
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       isolation: 'per_op',
       ops: op.sourceIds.map((id) => ({
         op: 'setFont',
@@ -1091,7 +1204,7 @@ export function registerSlidesIpc(): void {
       indentDelta: op.indentDelta,
     }
     pushHistory(session)
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       isolation: 'per_op',
       ops: op.sourceIds.map((id) => ({
         op: 'setParagraphFormat',
@@ -1176,7 +1289,11 @@ export function registerSlidesIpc(): void {
       pushHistory(session)
       pushed = true
     }
-    const r = runTxn(session.opened, { ops: [payload] })
+    // Journal only the settled commit: preview frames would flood the ring with
+    // intermediate boxes (undo coalesces the gesture the same way via transformPreview).
+    const r = op.preview
+      ? runTxn(session.opened, { ops: [payload] })
+      : journaledTxn(session, 'edit', { ops: [payload] })
     if (!r.applied) {
       // Apply-time failure (e.g. a group-child slice that validation cannot see):
       // unwind everything this call did, including the preview flag it set — a stuck
@@ -1274,10 +1391,48 @@ export function registerSlidesIpc(): void {
       return { applied: false, failures: compact(plan.failures) }
     }
     pushHistory(session)
-    const r = runTxn(session.opened, { ops, isolation })
+    const r = journaledTxn(session, 'batch', { ops, isolation })
     if (!r.applied) {
       session.undoStack.pop()
       return { applied: false, failures: compact(r.failures) }
+    }
+    // Post-pass mirroring the dedicated shims (autofit/reparse are render concerns and live
+    // outside the executor): text ops get autofit resize + fontScale write-back, level changes
+    // materialize, and XML-patching ops reparse the page so the final render reflects them.
+    // Slides are re-found by the executor-stamped durable id: a numeric target.slide drifts
+    // when a later structural op (deleteSlide/moveSlide/duplicateSlide) shifts pages.
+    const slideIdxOf = (rec: OpRecord): number => {
+      if (rec.slideId)
+        return session.opened.deck.slides.findIndex((s) => slideDurableId(s) === rec.slideId)
+      return -1
+    }
+    const renderedByIdx = new Map<number, ReturnType<typeof rebuildSlide>>()
+    for (const rec of r.records ?? []) {
+      const o = rec.op
+      const idx = slideIdxOf(rec)
+      if (idx < 0) continue
+      if (o.op === 'setTableStyle' || o.op === 'setChart') {
+        rebuildSlideWithReparse(session, idx)
+        renderedByIdx.delete(idx)
+        continue
+      }
+      const id = o.target?.el
+      if (!id || o.group) continue
+      if (o.op !== 'setText' && o.op !== 'setFont' && o.op !== 'setParagraphFormat') continue
+      if (o.op === 'setText' && (rec.after as { levelDirty?: boolean } | undefined)?.levelDirty)
+        continue
+      if (
+        o.op === 'setParagraphFormat' &&
+        (o.format as { indentDelta?: number } | undefined)?.indentDelta
+      ) {
+        materializeSlide(session.opened, idx)
+        renderedByIdx.delete(idx)
+        continue
+      }
+      let rendered = renderedByIdx.has(idx) ? renderedByIdx.get(idx)! : rebuildSlide(session, idx)
+      rendered = applyAutofitResize(session, idx, id, rendered)
+      rendered = syncAutofitScale(session, idx, id, rendered)
+      renderedByIdx.set(idx, rendered)
     }
     return {
       applied: true,
@@ -1305,7 +1460,7 @@ export function registerSlidesIpc(): void {
     const plan = runTxn(session.opened, { ops, dryRun: true })
     if (plan.failures?.length) return { error: plan.failures[0]!.error }
     pushHistory(session)
-    const r = runTxn(session.opened, { ops })
+    const r = journaledTxn(session, 'script', { ops })
     if (!r.applied) {
       session.undoStack.pop()
       return { error: r.failures?.[0]?.error ?? 'the transaction could not be applied' }
@@ -1328,9 +1483,8 @@ export function registerSlidesIpc(): void {
     return rendered ? { slide: rendered } : null
   })
   // ── Cloud single-page generation (gsk slide_generate): brief → cloud HTML+conversion → one-slide
-  // pptx saved to a temp file. Returns a marker string that flows through the same pagesHtml slots
-  // as locally generated HTML; slides:html-to-pptx recognizes it and reads the bytes instead of
-  // converting. Enabled when gsk is logged in; GENOFFICE_CLOUD_SLIDE=0 is the kill switch.
+  // pptx saved to a temp file. Returns a marker string that slides:land-generated-pages redeems for
+  // the bytes. Enabled when gsk is logged in; GENOFFICE_CLOUD_SLIDE=0 is the kill switch.
   const cloudSlideEnabled = () => process.env.GENOFFICE_CLOUD_SLIDE !== '0' && !!gskApiKey()
 
   ipcMain.handle('slides:cloud-gen-status', () => ({ enabled: cloudSlideEnabled() }))
@@ -1382,7 +1536,7 @@ export function registerSlidesIpc(): void {
   // ── Local single-page generation (no gsk needed, e.g. BYOK): a JSON slide spec written by
   // the renderer's LLM call is built directly into a one-slide pptx with pptx-engine
   // primitives — no HTML intermediate. Returns the same marker kind as the cloud path, so
-  // landing (slides:html-to-pptx) is shared.
+  // landing (slides:land-generated-pages) is shared.
   ipcMain.handle(
     'slides:local-page-generate',
     async (
@@ -1439,10 +1593,10 @@ export function registerSlidesIpc(): void {
   )
 
   ipcMain.handle(
-    'slides:html-to-pptx',
+    'slides:land-generated-pages',
     async (
       e,
-      pagesHtml: string[],
+      pageMarkers: string[],
       fitWidthPx: number,
       mode?: 'replace' | 'append' | 'replace_at' | 'insert_at',
       atIndex?: number,
@@ -1461,8 +1615,8 @@ export function registerSlidesIpc(): void {
       // slides:cloud-page-generate, pointing at a one-slide pptx temp file); this handler only
       // reads and lands the bytes.
       // replace: assemble the whole batch into one multi-page pptx as the new deck base.
-      // append: merge the "new pages" one by one into the existing deck via mergeSlideFromPptx
-      // (earlier pages are untouched).
+      // append/replace_at/insert_at: land the extracted pages as insertSlidePptx ops
+      // (earlier pages are untouched; landing shows up in the op journal like any edit).
       const readCloudPage = async (marker: string): Promise<{ bytes: Uint8Array }> => {
         if (!marker.startsWith(CLOUD_PAGE_PREFIX)) throw new Error('expected a cloud page marker')
         const path = marker.slice(CLOUD_PAGE_PREFIX.length)
@@ -1470,7 +1624,7 @@ export function registerSlidesIpc(): void {
         return { bytes: new Uint8Array(await readFile(path)) }
       }
       const assembleDeck = async (): Promise<{ bytes: Uint8Array }> => {
-        const perPage = await Promise.all(pagesHtml.map(readCloudPage))
+        const perPage = await Promise.all(pageMarkers.map(readCloudPage))
         const base = await openPptx(perPage[0]!.bytes)
         for (const one of perPage.slice(1)) await mergeSlideFromPptx(base, one.bytes)
         for (const s of base.deck.slides) promoteSlideBackground(s, base.deck.size)
@@ -1478,8 +1632,8 @@ export function registerSlidesIpc(): void {
       }
 
       try {
-        // Append: convert only the "new pages" and merge them one by one into the existing
-        // in-memory deck via mergeSlideFromPptx. Already-landed pages stay untouched
+        // Append: extract only the "new pages" and land them into the existing in-memory
+        // deck as one per_op transaction. Already-landed pages stay untouched
         // (O(N) rather than O(N²)); no dependency on stored PageVisualData.
         if (mode === 'append') {
           const existing = sessions.get(e.sender.id)
@@ -1491,23 +1645,32 @@ export function registerSlidesIpc(): void {
           // Push an undo snapshot: appending is an ordinary edit, ⌘Z should return to the
           // pre-append state (previously the undoStack was simply cleared, making all of the
           // user's prior manual edits non-undoable — inconsistent with replace_at behavior)
-          pushHistory(existing)
-          let merged = 0
+          // Extract every page first (pure reads), then land them as insertSlidePptx ops so
+          // the journal and undo see generation like any other edit.
+          const sources: MergeSlideSource[] = []
           let lastErr: string | undefined
-          for (const html of pagesHtml) {
+          for (const marker of pageMarkers) {
             try {
-              const one = await readCloudPage(html)
-              const slide = await mergeSlideFromPptx(opened, one.bytes)
-              if (slide) {
-                promoteSlideBackground(slide, opened.deck.size)
-                merged += 1
-              } else lastErr = tm('errMergeFailed')
+              const one = await readCloudPage(marker)
+              const source = await extractMergeSlideSource(one.bytes)
+              if (source) sources.push(source)
+              else lastErr = tm('errMergeFailed')
             } catch (pageErr) {
               lastErr = pageErr instanceof Error ? pageErr.message : String(pageErr)
             }
           }
+          let merged = 0
+          if (sources.length > 0) {
+            pushHistory(existing)
+            const r = journaledTxn(existing, 'generate', {
+              isolation: 'per_op',
+              ops: sources.map((source) => ({ op: 'insertSlidePptx', source })),
+            })
+            merged = r.records?.length ?? 0
+            if (merged === 0) existing.undoStack.pop() // Nothing happened, pop the just-pushed snapshot
+            if (!lastErr) lastErr = r.failures?.[0]?.error
+          }
           if (merged === 0) {
-            existing.undoStack.pop() // Nothing happened, pop the just-pushed snapshot
             return { error: tm('errAppendFailed', { reason: lastErr ?? tm('errUnknown') }) }
           }
           existing.fitWidthPx = fitWidthPx
@@ -1527,16 +1690,15 @@ export function registerSlidesIpc(): void {
             size: { cx: existing.opened.deck.size.cx, cy: existing.opened.deck.size.cy },
             defaultFont: deckDefaultFont(existing.opened),
             appendedFrom: beforeCount,
-            ...(lastErr && merged < pagesHtml.length
+            ...(lastErr && merged < pageMarkers.length
               ? { fallbackReason: tm('errPartialAppend', { reason: lastErr }) }
               : {}),
           }
         }
 
-        // Redo one page in place: single-page HTML -> single-page pptx -> merge at the end ->
-        // moveSlide into position -> delete the old page. Conversion happens first (deck
-        // untouched); the mutation phase takes one undo snapshot overall, so ⌘Z rolls back to the
-        // old page.
+        // Redo one page in place: the insertSlidePptx op merges the extracted page at the
+        // end, moves it to atIndex and drops the displaced old page — one atomic txn, one
+        // undo snapshot, so ⌘Z rolls back to the old page.
         if (mode === 'replace_at') {
           const existing = sessions.get(e.sender.id)
           if (!existing) {
@@ -1547,26 +1709,22 @@ export function registerSlidesIpc(): void {
           if (atIndex == null || !Number.isInteger(atIndex) || atIndex < 0 || atIndex >= total) {
             return { error: tm('errIndexRange', { max: total - 1 }) }
           }
-          const html = pagesHtml[0]
-          if (!html || pagesHtml.length !== 1) {
+          const marker = pageMarkers[0]
+          if (!marker || pageMarkers.length !== 1) {
             return { error: tm('errReplaceNeedsOne') }
           }
-          const one = await readCloudPage(html)
-          pushHistory(existing)
-          const rollback = () => {
-            const snap = existing.undoStack.pop()
-            if (snap) restoreSnapshot(existing, snap)
-          }
-          const merged = await mergeSlideFromPptx(opened, one.bytes)
-          if (!merged) {
-            rollback()
+          const one = await readCloudPage(marker)
+          const source = await extractMergeSlideSource(one.bytes)
+          if (!source) {
             return { error: tm('errMergeFailed') }
           }
-          promoteSlideBackground(merged, opened.deck.size)
-          // The new page is at the end (index=total); after moving to atIndex the old page gets pushed to atIndex+1, delete it
-          if (!moveSlide(opened, total, atIndex) || !deleteSlide(opened, atIndex + 1)) {
-            rollback()
-            return { error: tm('errReplaceFailed') }
+          pushHistory(existing)
+          const r = journaledTxn(existing, 'generate', {
+            ops: [{ op: 'insertSlidePptx', source, at: atIndex, replace: true }],
+          })
+          if (!r.applied) {
+            existing.undoStack.pop() // The executor already restored the deck
+            return { error: r.failures?.[0]?.error ?? tm('errReplaceFailed') }
           }
           existing.fitWidthPx = fitWidthPx
           const bytes = await savePptx(opened)
@@ -1585,8 +1743,8 @@ export function registerSlidesIpc(): void {
         }
 
         // Insert one page at atIndex (later pages shift back): used to regenerate a failed middle
-        // page from generate_deck and put it back in place. Same mechanism as replace_at (merge at
-        // the end -> moveSlide into position) but without deleting an old page.
+        // page from generate_deck and put it back in place. Same op as replace_at but without
+        // dropping an old page; atIndex=total lands at the end without a move.
         if (mode === 'insert_at') {
           const existing = sessions.get(e.sender.id)
           if (!existing) {
@@ -1597,26 +1755,22 @@ export function registerSlidesIpc(): void {
           if (atIndex == null || !Number.isInteger(atIndex) || atIndex < 0 || atIndex > total) {
             return { error: tm('errIndexRange', { max: total }) }
           }
-          const html = pagesHtml[0]
-          if (!html || pagesHtml.length !== 1) {
+          const marker = pageMarkers[0]
+          if (!marker || pageMarkers.length !== 1) {
             return { error: tm('errInsertNeedsOne') }
           }
-          const one = await readCloudPage(html)
-          pushHistory(existing)
-          const rollback = () => {
-            const snap = existing.undoStack.pop()
-            if (snap) restoreSnapshot(existing, snap)
-          }
-          const merged = await mergeSlideFromPptx(opened, one.bytes)
-          if (!merged) {
-            rollback()
+          const one = await readCloudPage(marker)
+          const source = await extractMergeSlideSource(one.bytes)
+          if (!source) {
             return { error: tm('errMergeFailed') }
           }
-          promoteSlideBackground(merged, opened.deck.size)
-          // The new page is at the end (index=total); with atIndex=total it belongs at the end anyway, no move needed
-          if (atIndex < total && !moveSlide(opened, total, atIndex)) {
-            rollback()
-            return { error: tm('errInsertFailed') }
+          pushHistory(existing)
+          const r = journaledTxn(existing, 'generate', {
+            ops: [{ op: 'insertSlidePptx', source, at: atIndex }],
+          })
+          if (!r.applied) {
+            existing.undoStack.pop() // The executor already restored the deck
+            return { error: r.failures?.[0]?.error ?? tm('errInsertFailed') }
           }
           existing.fitWidthPx = fitWidthPx
           const bytes = await savePptx(opened)
@@ -1637,19 +1791,21 @@ export function registerSlidesIpc(): void {
         // replace mode: assemble the whole batch into one multi-page pptx as the new deck base.
         const { bytes } = await assembleDeck()
         const opened = await openPptx(bytes)
-        // With per-page conversion + merging, stored PageVisualData is no longer needed; append reads the opened deck directly.
         const replaceSession: Session = {
           path: '',
           opened,
           fitWidthPx,
           undoStack: [],
           redoStack: [],
-          htmlPages: null,
         }
-        carryHistoryForReplacement(sessions.get(e.sender.id), replaceSession)
+        const old = sessions.get(e.sender.id)
+        carryHistoryForReplacement(old, replaceSession)
         sessions.set(e.sender.id, replaceSession)
+        // Re-point windows that shared the old session, or they diverge onto a dead deck
+        if (old) for (const id of attachedIds(old)) sessions.set(id, replaceSession)
         // Save the draft: await completion so the real path is returned; on failure degrade silently (session.path stays '')
         await saveDraftAfterGenerate(e.sender, replaceSession, bytes, 'replace', deckName)
+        scheduleDeckBroadcast(replaceSession)
         return {
           path: replaceSession.path,
           slides: buildAllRenderSlides(opened, fitWidthPx),
@@ -1716,7 +1872,7 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     pushHistory(session)
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       ops: [{ op: 'deleteElement', target: { slide: op.slideIndex, el: op.sourceId } }],
     })
     if (!r.applied) {
@@ -1750,7 +1906,7 @@ export function registerSlidesIpc(): void {
         }
       : null
     pushHistory(session)
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       ops: [
         {
           op: 'setStroke',
@@ -1874,7 +2030,7 @@ export function registerSlidesIpc(): void {
       let landed: string | null = null
       for (const [i, s] of slides.entries()) {
         if (!targets.includes(s)) continue
-        const r = runTxn(session.opened, {
+        const r = journaledTxn(session, 'edit', {
           ops: [
             {
               op: 'setBackground',
@@ -1910,7 +2066,7 @@ export function registerSlidesIpc(): void {
               ? { kind: 'reset' }
               : { kind: 'graphics', hidden: op.hidden }
       pushHistory(session)
-      const r = runTxn(session.opened, {
+      const r = journaledTxn(session, 'edit', {
         ops: slides
           .map((s, i) => ({ s, i }))
           .filter(({ s }) => targets.includes(s))
@@ -1957,7 +2113,7 @@ export function registerSlidesIpc(): void {
     let landed: string | null = null
     let applied = 0
     for (const target of op.targets) {
-      const r = runTxn(session.opened, {
+      const r = journaledTxn(session, 'edit', {
         ops: [
           {
             op: 'setImageFill',
@@ -2063,7 +2219,7 @@ export function registerSlidesIpc(): void {
             ),
           }
     pushHistory(session)
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       ops: [
         {
           op: 'setFill',
@@ -2120,7 +2276,7 @@ export function registerSlidesIpc(): void {
   ): { slides: RenderSlide[]; index: number; sourceId?: string } | null => {
     if (!slideClipboard) return null
     if (op.mode === 'picture' && !slideClipboard.png) return null
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       ops: [
         {
           op: 'pasteSlide',
@@ -2216,7 +2372,7 @@ export function registerSlidesIpc(): void {
     pushHistory(session)
     const layoutPath = resolveLayoutPath(session, op.layoutPath)
     const r = layoutPath
-      ? runTxn(session.opened, {
+      ? journaledTxn(session, 'edit', {
           ops: [{ op: 'addSlideWithLayout', target: { slide: op.sourceIndex }, layoutPath }],
         })
       : null
@@ -2356,7 +2512,7 @@ export function registerSlidesIpc(): void {
     if (session.transformPreview) {
       // The gesture's first preview frame already pushed the undo step
       session.transformPreview = false
-      const applied = runTxn(session.opened, { ops: [payload], parts: seed })
+      const applied = journaledTxn(session, 'edit', { ops: [payload], parts: seed })
       r = applied.applied ? applied : null
     } else {
       r = sessionTxn(session, { ops: [payload], parts: seed })
@@ -2458,7 +2614,7 @@ export function registerSlidesIpc(): void {
     const r =
       op.layoutPath && !layoutPath
         ? null
-        : runTxn(session.opened, {
+        : journaledTxn(session, 'edit', {
             ops: [
               {
                 op: 'setSlideLayout',
@@ -2655,7 +2811,7 @@ export function registerSlidesIpc(): void {
         ...(op.cells ? { cells: op.cells } : {}),
       }
     }
-    const r = runTxn(session.opened, {
+    const r = journaledTxn(session, 'edit', {
       ops: [
         {
           op: 'setTableStyle',
@@ -2822,7 +2978,7 @@ export function registerSlidesIpc(): void {
         pushHistory(session)
         pushed = true
       }
-      const r = runTxn(session.opened, { ops: [payload] })
+      const r = journaledTxn(session, 'edit', { ops: [payload] })
       if (!r.applied) {
         if (pushed) {
           session.undoStack.pop()
@@ -2845,6 +3001,36 @@ export function registerSlidesIpc(): void {
             op: 'setTextAnchor',
             target: { slide: op.slideIndex, el: op.sourceId },
             anchor: op.anchor,
+          },
+        ],
+      })
+      return r ? rebuildSlide(session, op.slideIndex) : null
+    },
+  )
+
+  ipcMain.handle(
+    'slides:set-text-body-props',
+    (
+      e,
+      op: {
+        slideIndex: number
+        sourceId: string
+        props: {
+          vert?: 'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+          autofit?: 'none' | 'shrink' | 'resize'
+          insets?: Partial<{ l: number; t: number; r: number; b: number }>
+          wrap?: boolean
+        }
+      },
+    ) => {
+      const session = sessions.get(e.sender.id)
+      if (!session) return null
+      const r = sessionTxn(session, {
+        ops: [
+          {
+            op: 'setTextBodyProps',
+            target: { slide: op.slideIndex, el: op.sourceId },
+            props: op.props,
           },
         ],
       })
@@ -3406,7 +3592,7 @@ export function registerSlidesIpc(): void {
     const plan = runTxn(session.opened, { ops: [payload], dryRun: true })
     if (plan.failures?.length) return { error: plan.failures[0]!.error }
     pushHistory(session)
-    const r = runTxn(session.opened, { ops: [payload] })
+    const r = journaledTxn(session, 'edit', { ops: [payload] })
     if (!r.applied) {
       session.undoStack.pop()
       return { error: r.failures?.[0]?.error ?? 'applyTheme failed' }
@@ -3678,6 +3864,7 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session || session.masterEdit || session.historyBatch) return null
     if (!restoreAiSnapshot(session, id)) return null
+    scheduleDeckBroadcast(session)
     return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
@@ -3690,6 +3877,7 @@ export function registerSlidesIpc(): void {
     session.redoStack.push(takeSnapshot(session))
     restoreSnapshot(session, session.undoStack.pop()!)
     scheduleHistoryNotify(session)
+    scheduleDeckBroadcast(session)
     return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
@@ -3701,6 +3889,7 @@ export function registerSlidesIpc(): void {
     session.undoStack.push(takeSnapshot(session))
     restoreSnapshot(session, session.redoStack.pop()!)
     scheduleHistoryNotify(session)
+    scheduleDeckBroadcast(session)
     return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
@@ -3763,7 +3952,7 @@ export function registerSlidesIpc(): void {
       autosaveBackoff.delete(r.filePath)
       dropUntitledRecovery(e.sender.id)
       await pushRecent(r.filePath)
-      slidesOpenedHook?.(e.sender, r.filePath)
+      syncAttachedPaths(session, r.filePath)
       commitSaved(session.opened)
       session.metaDirty = false
       return {
@@ -3848,6 +4037,7 @@ html, body { margin: 0; padding: 0; }
         preferCSSPageSize: false,
       })
       await writeFile(op.filePath, pdf)
+      openExportedPdf(op.filePath)
       return { ok: true, path: op.filePath }
     } catch (err) {
       return { ok: false, error: String(err) }
@@ -4074,6 +4264,18 @@ export function createSlidesWindow(openPath?: string | null): BrowserWindow {
     },
   })
   trackSlidesWebContents(win.webContents)
+  standaloneWindows.set(win.webContents.id, win)
+  const standaloneWcId = win.webContents.id
+  win.on('closed', () => standaloneWindows.delete(standaloneWcId))
+  // The focused window owns the process-global menu-command target and the app
+  // menu (the shell's tab manager re-claims both on its own window's focus)
+  win.on('focus', () => {
+    setActiveSlidesWebContents(win.webContents)
+    installSlidesMenu()
+  })
+  // Titles are owned by the main process (initial file name, Save As updates);
+  // the renderer's static <title> must not overwrite them
+  win.on('page-title-updated', (event) => event.preventDefault())
   // Close guard for standalone-window mode (tab mode runs the same flow via the shell's tab-manager/window-close path)
   win.on('close', (event) => {
     if (!slidesIsDirty(win.webContents.id)) return
@@ -4088,6 +4290,7 @@ export function createSlidesWindow(openPath?: string | null): BrowserWindow {
   else if (runtime.rendererFilePath) win.loadFile(runtime.rendererFilePath)
 
   if (openPath) {
+    win.setTitle(basename(openPath))
     win.webContents.once('did-finish-load', async () => {
       try {
         const result = await openAndBuild(win.webContents, openPath, 1280)
@@ -4169,6 +4372,16 @@ export function buildSlidesMenu(): Menu {
       label: tm('menuFile'),
       submenu: [
         { label: tm('menuOpen'), accelerator: 'CmdOrCtrl+O', click: () => send('open') },
+        {
+          // Detached second editor window on the same saved file: it attaches to
+          // the shared session (openAndBuild), so both windows co-edit live
+          label: tm('menuOpenNewWindow'),
+          click: () => {
+            const wc = windowRefs.activeWebContents ?? BrowserWindow.getFocusedWindow()?.webContents
+            const path = wc ? sessions.get(wc.id)?.path : undefined
+            if (path) createSlidesWindow(path)
+          },
+        },
         ...(extraFileMenuItems.length > 0
           ? [{ type: 'separator' as const }, ...extraFileMenuItems]
           : []),

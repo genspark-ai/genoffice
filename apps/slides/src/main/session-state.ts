@@ -22,6 +22,8 @@ export interface RuntimePaths {
   preloadPath: string
   rendererDevUrl?: string | undefined
   rendererFilePath?: string | undefined
+  /** Shell router used to open exported PDFs in a new GenOffice tab. */
+  openGeneratedPath?: (path: string) => boolean
 }
 
 export const runtime: RuntimePaths = {
@@ -34,6 +36,7 @@ export function configureSlidesRuntime(paths: RuntimePaths): void {
   runtime.preloadPath = paths.preloadPath
   runtime.rendererDevUrl = paths.rendererDevUrl
   runtime.rendererFilePath = paths.rendererFilePath
+  runtime.openGeneratedPath = paths.openGeneratedPath
 }
 
 // One session per renderer process (standalone window or shell tab), keyed by webContents.id
@@ -53,17 +56,56 @@ export interface Session {
   aiSnapshots?: Map<number, HistorySnapshot>
   /** Edits that only touch archive entries (notes/comments; element-level dirty cannot detect them), reset after save */
   metaDirty?: boolean
-  /** Per-page PageVisualData from the HTML pipeline: appends rebuild "existing + new" wholesale.
-      Set to null after any native edit — a rebuild would lose edits, so refuse to append instead. */
-  htmlPages?: unknown[] | null
   /** Transform preview gesture in progress (the first preview already pushed an undo snapshot; later previews/final commit do not) */
   transformPreview?: boolean
   /** The part currently edited in master view (exception to the fidelity rule: only that part is written back) */
   masterEdit?: { partPath: string; slide: Slide } | null
   /** A history-state notification is already queued for this session (coalesces per task) */
   historyNotifyScheduled?: boolean
+  /** A deck-changed broadcast is already queued for this session (coalesces per task) */
+  deckBroadcastScheduled?: boolean
+  /** Monotonic sequence of the last journaled op entry (collab groundwork) */
+  opSeq?: number
+  /** Applied-op journal, capped ring — the attachment point for a future sync transport */
+  opLog?: OpLogEntry[]
 }
 export const sessions = new Map<number, Session>()
+
+// ── Op journal (collab groundwork) ──────────────────────────────────────
+// Every applied transaction appends its records here in order. Snapshot restores
+// (undo/redo/AI rollback) append a `reset` marker instead of inverse entries: a
+// consumer that cannot invert must full-resync past one. Payloads (e.g. picture
+// bytes) are kept verbatim; content-addressing them is the transport layer's job.
+export interface OpLogEntry {
+  seq: number
+  source: 'edit' | 'batch' | 'script' | 'generate' | 'reset'
+  ops: Array<{ op: { op: string; [k: string]: unknown }; slideId?: string; created?: string[] }>
+}
+const OP_LOG_MAX = 200
+
+export function journalOps(
+  session: Session,
+  source: Exclude<OpLogEntry['source'], 'reset'>,
+  records: Array<{
+    op: { op: string; [k: string]: unknown }
+    slideId?: string
+    created?: string[]
+  }>,
+): void {
+  if (records.length === 0) return
+  const seq = (session.opSeq = (session.opSeq ?? 0) + 1)
+  const log = (session.opLog ??= [])
+  log.push({
+    seq,
+    source,
+    ops: records.map((r) => ({
+      op: r.op,
+      ...(r.slideId ? { slideId: r.slideId } : {}),
+      ...(r.created ? { created: r.created } : {}),
+    })),
+  })
+  while (log.length > OP_LOG_MAX) log.shift()
+}
 
 // ── Undo/redo (snapshot-based) ─────────────────────────────────────────
 // The document's source of truth lives in the main process (deck.slides mutated in place +
@@ -109,14 +151,56 @@ export function scheduleHistoryNotify(session: Session): void {
   session.historyNotifyScheduled = true
   setImmediate(() => {
     session.historyNotifyScheduled = false
-    for (const [id, s] of sessions) {
-      if (s !== session) continue
+    // A shared session (second window on the same file, presenter audience) has
+    // several attached webContents; the undo/redo button states change for all.
+    for (const id of attachedIds(session)) {
       webContents.fromId(id)?.send('slides:history-changed', {
         canUndo: session.undoStack.length > 0,
         canRedo: session.redoStack.length > 0,
       })
-      return
     }
+  })
+}
+
+/** webContents ids currently mapped to this session (aliased entries included). */
+export function attachedIds(session: Session): number[] {
+  const ids: number[] = []
+  for (const [id, s] of sessions) if (s === session) ids.push(id)
+  return ids
+}
+
+/**
+ * View-only attachments (presenter audience windows). They receive broadcasts
+ * but cannot save, so they must not count as "someone still holds this
+ * document" in close guards.
+ */
+export const viewerWcIds = new Set<number>()
+
+/** Attached windows that can actually edit/save the session. */
+export function editorAttachedIds(session: Session): number[] {
+  return attachedIds(session).filter((id) => !viewerWcIds.has(id))
+}
+
+/**
+ * Push the session's current render state to every attached window (coalesced
+ * per task, like scheduleHistoryNotify, so it fires after the handler's own
+ * post-processing). No-op for the ordinary single-window session; with a second
+ * window on the same file this is what makes one side's edit appear on the
+ * other. The originating window applies its handler's return value and simply
+ * receives the same state again.
+ */
+export function scheduleDeckBroadcast(session: Session): void {
+  if (session.deckBroadcastScheduled) return
+  session.deckBroadcastScheduled = true
+  setImmediate(() => {
+    session.deckBroadcastScheduled = false
+    const ids = attachedIds(session)
+    if (ids.length < 2) return
+    const payload = {
+      slides: buildAllRenderSlides(session.opened, session.fitWidthPx),
+      size: { cx: session.opened.deck.size.cx, cy: session.opened.deck.size.cy },
+    }
+    for (const id of ids) webContents.fromId(id)?.send('slides:deck-changed', payload)
   })
 }
 
@@ -125,7 +209,6 @@ export function pushHistory(session: Session): void {
   session.undoStack.push(takeSnapshot(session))
   trimHistory(session.undoStack)
   session.redoStack = []
-  session.htmlPages = null
   scheduleHistoryNotify(session)
 }
 
@@ -208,6 +291,13 @@ export function restoreSnapshot(session: Session, snap: HistorySnapshot): void {
   const entries = session.opened.archive.entries
   entries.clear()
   for (const [k, v] of fresh.entries) entries.set(k, v)
+  // The journal cannot express a snapshot jump as ops; mark the divergence so a
+  // future consumer knows to full-resync rather than replay across it.
+  if (session.opLog?.length) {
+    const seq = (session.opSeq = (session.opSeq ?? 0) + 1)
+    session.opLog.push({ seq, source: 'reset', ops: [] })
+    while (session.opLog.length > OP_LOG_MAX) session.opLog.shift()
+  }
 }
 
 /**
@@ -251,7 +341,9 @@ export function setActiveSlidesWebContents(wc: WebContents | null): void {
 }
 
 export function dialogParent(): BrowserWindow | undefined {
-  return windowRefs.shellWindow ?? BrowserWindow.getFocusedWindow() ?? undefined
+  // Focused window first: a detached editor window must parent its own dialogs
+  // (the shell's tab views live inside the shell window, so tab mode is unchanged)
+  return BrowserWindow.getFocusedWindow() ?? windowRefs.shellWindow ?? undefined
 }
 
 // ── RenderSlide rebuild helpers ─────────────────────────────────────────

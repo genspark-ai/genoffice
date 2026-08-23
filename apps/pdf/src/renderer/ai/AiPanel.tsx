@@ -10,7 +10,17 @@ import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import { createPdfSkill } from './pdf-skill'
 import { createElectronTransport } from './transport'
+import { PDF_NAV_SCHEME, parsePdfNavHref } from './pdf-nav'
 import type { PdfAiDeps } from './tools'
+
+// Word-parity count (same as docs/markdown): Asian chars one by one + non-Asian words
+const ASIAN_RE =
+  /[ᄀ-ᇿ⺀-⿟、-〿぀-ヿ㄀-ㄯ㄰-㆏㇀-ㇿ㐀-䶿一-鿿가-힯豈-﫿！-｠￠-￦]|[\uD840-\uD87F][\uDC00-\uDFFF]/g
+const NON_ASIAN_WORD_RE = /[A-Za-z0-9À-ɏ]+(?:['-][A-Za-z0-9À-ɏ]+)*/g
+
+function countWords(text: string): number {
+  return (text.match(ASIAN_RE) ?? []).length + (text.match(NON_ASIAN_WORD_RE) ?? []).length
+}
 
 const PANEL_WIDTH_KEY = 'pdf-ai-panel-width'
 const PANEL_WIDTH_DEFAULT = 360
@@ -56,6 +66,7 @@ export function AiPanel({
   onCollapse,
   preset,
   onRunDone,
+  onClearSelection,
 }: {
   api: PdfAiDeps
   onCollapse: () => void
@@ -63,12 +74,16 @@ export function AiPanel({
   preset?: { text: string; nonce: number } | null
   /** Fired when a run that mutated the document finishes (drives the untitled-blank auto-save) */
   onRunDone?: () => void
+  /** The × on the scope chip: drop the cached selection so runs target the whole document */
+  onClearSelection?: () => void
 }): ReactElement {
   const { lang, t } = useI18n()
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>('thinking')
+  /** the scope chip's expandable preview of the selected text */
+  const [scopePreviewOpen, setScopePreviewOpen] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   // preferred = the user's chosen width (the only value persisted); panelWidth =
@@ -134,11 +149,18 @@ export function AiPanel({
       pageCount: () => apiRef.current.pageCount(),
       currentPage: () => apiRef.current.currentPage(),
       readOnly: () => apiRef.current.readOnly(),
+      selection: () => apiRef.current.selection(),
+      pendingSummary: () => apiRef.current.pendingSummary(),
       outline: () => apiRef.current.outline(),
       searchIndex: () => apiRef.current.searchIndex(),
       isDeleted: (i) => apiRef.current.isDeleted(i),
       gotoPage: (p) => apiRef.current.gotoPage(p),
-      addMarkup: (type, idx, rects) => apiRef.current.addMarkup(type, idx, rects),
+      addMarkup: (type, idx, rects, color) => apiRef.current.addMarkup(type, idx, rects, color),
+      annotationSummary: () => apiRef.current.annotationSummary(),
+      annotationsOn: (idx) => apiRef.current.annotationsOn(idx),
+      addNote: (idx, at, contents) => apiRef.current.addNote(idx, at, contents),
+      findNoteRoot: (idx, key) => apiRef.current.findNoteRoot(idx, key),
+      replyToThread: (idx, root, contents) => apiRef.current.replyToThread(idx, root, contents),
       editText: (input) => apiRef.current.editText(input),
       insertText: (input) => apiRef.current.insertText(input),
       editFonts: () => apiRef.current.editFonts(),
@@ -268,9 +290,12 @@ export function AiPanel({
 
   const stop = (): void => loopRef.current?.cancel()
 
-  // One-click AI actions from the ribbon (same pattern as the docs ribbon presets)
+  // One-click AI actions from the ribbon / Ask popover; while a run is active the
+  // preset lands in the composer instead of being dropped silently (markdown parity)
   useEffect(() => {
-    if (preset) send(preset.text)
+    if (!preset) return
+    if (loopRef.current?.busy) setPrompt(preset.text)
+    else send(preset.text)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per nonce
   }, [preset?.nonce])
 
@@ -323,6 +348,24 @@ export function AiPanel({
   const typingLabel =
     phase === 'replying' ? t('aiReplying') : phase === 'working' ? t('aiWorking') : t('aiThinking')
 
+  // scope chip data, read per render (App re-renders on every selection change)
+  const scopeSel = api.selection()
+  const hasScopeSelection = !!scopeSel && scopeSel.text.trim().length > 0
+
+  // the selection can vanish without the × (click-away, another file): close the preview too
+  useEffect(() => {
+    if (!hasScopeSelection) setScopePreviewOpen(false)
+  }, [hasScopeSelection])
+
+  /** [p.N](pdfnav://page/N) links in replies scroll the reading view to that page */
+  const pdfNav = {
+    scheme: PDF_NAV_SCHEME,
+    onNavigate: (href: string) => {
+      const page = parsePdfNavHref(href)
+      if (page !== null) apiRef.current.gotoPage(page)
+    },
+  }
+
   return (
     <aside
       ref={asideRef}
@@ -374,10 +417,22 @@ export function AiPanel({
             <div className="ai-chat-empty-title">{t('aiEmptyTitle')}</div>
             <div className="ai-chat-empty-body">{t('aiEmptyBody')}</div>
             <div className="ai-quick-actions">
-              <button className="ai-quick-btn" onClick={() => send(t('aiQuickSummaryPrompt'))}>
+              <button
+                className="ai-quick-btn"
+                onClick={() =>
+                  send(t(hasScopeSelection ? 'aiQuickSummarySelPrompt' : 'aiQuickSummaryPrompt'))
+                }
+              >
                 {t('aiQuickSummary')}
               </button>
-              <button className="ai-quick-btn" onClick={() => send(t('aiQuickKeyPointsPrompt'))}>
+              <button
+                className="ai-quick-btn"
+                onClick={() =>
+                  send(
+                    t(hasScopeSelection ? 'aiQuickKeyPointsSelPrompt' : 'aiQuickKeyPointsPrompt'),
+                  )
+                }
+              >
                 {t('aiQuickKeyPoints')}
               </button>
             </div>
@@ -409,7 +464,7 @@ export function AiPanel({
               className={`ai-msg ai-msg-assistant${entry.isError ? ' ai-msg-error' : ''}`}
             >
               {hasTools && <ToolChipList tools={entry.tools!} />}
-              {entry.text && <Markdown text={entry.text} />}
+              {entry.text && <Markdown text={entry.text} nav={pdfNav} />}
             </div>
           )
         })}
@@ -421,6 +476,54 @@ export function AiPanel({
         <AiComposer
           value={prompt}
           busy={busy}
+          header={
+            hasScopeSelection && (
+              <div className="ai-scope-row">
+                <span className="ai-scope-hint">
+                  <button
+                    className="ai-scope-label"
+                    onClick={() => setScopePreviewOpen((v) => !v)}
+                    aria-expanded={scopePreviewOpen}
+                    data-tip={t('aiScopeSelectionTip')}
+                  >
+                    {t('aiScopeSelection', {
+                      page:
+                        scopeSel!.lastPage > scopeSel!.page
+                          ? `${scopeSel!.page}-${scopeSel!.lastPage}`
+                          : scopeSel!.page,
+                      words: countWords(scopeSel!.text),
+                    })}
+                  </button>
+                  <button
+                    className="ai-scope-clear"
+                    onClick={() => {
+                      setScopePreviewOpen(false)
+                      onClearSelection?.()
+                    }}
+                    data-tip={t('aiScopeClearTitle')}
+                    aria-label={t('aiScopeClearTitle')}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 16 16" aria-hidden>
+                      <path
+                        d="M4 4l8 8M12 4l-8 8"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </span>
+                {scopePreviewOpen && (
+                  <div className="ai-scope-preview">
+                    {scopeSel!.text.length > 400
+                      ? `${scopeSel!.text.slice(0, 400)}…`
+                      : scopeSel!.text}
+                  </div>
+                )}
+              </div>
+            )
+          }
           placeholder={t('aiComposerPlaceholder')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}

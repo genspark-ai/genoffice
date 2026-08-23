@@ -5,7 +5,7 @@
  * path (proving fidelity). Element-level patch regeneration is left for Phase 3.
  */
 import JSZip from 'jszip'
-import { PackageArchive, relsPathFor, resolveTarget } from './zip'
+import { PackageArchive, relsPathFor, resolveTarget, type Relationship } from './zip'
 import { parseClrMap, parseTheme, type Theme } from './theme'
 import {
   parseSlide,
@@ -99,6 +99,7 @@ export { scanSlide, type SlideScan, type SpElement } from './scan'
 export {
   parseSlide,
   parseDecorations,
+  DEFAULT_BODY_INSETS,
   EMU_PER_PT,
   type ParseContext,
   type DecorationOptions,
@@ -125,6 +126,7 @@ export {
   removeSlideBackgroundXml,
   generateParagraphXml,
   generateXfrmXml,
+  isConnectorXml,
   type GradientFillPatch,
   type BackgroundImagePatch,
   type SlideTransitionKind,
@@ -1102,6 +1104,102 @@ export function setElementTextAnchor(
   return true
 }
 
+/** Patch for setElementTextBodyProps; only the provided fields are written. */
+export interface TextBodyPropsPatch {
+  /** Text direction ('horz' clears the vert attribute) */
+  vert?: 'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+  /** Autofit mode (noAutofit / normAutofit / spAutoFit) */
+  autofit?: 'none' | 'shrink' | 'resize'
+  /** Internal margins (EMU); only the provided sides are written */
+  insets?: Partial<{ l: number; t: number; r: number; b: number }>
+  wrap?: boolean
+}
+
+/**
+ * Text-box body properties (direction/autofit/insets/wrap): <a:bodyPr> byte
+ * surgery baked into originalXml, mirroring setElementTextAnchor.
+ */
+export function setElementTextBodyProps(
+  slide: Slide,
+  elementId: string,
+  patch: TextBodyPropsPatch,
+): boolean {
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const t = el as TextElement
+  if (!t.text) return false
+  let xml = patchedElementXml(el)
+  const whole = /<a:bodyPr\b[^>]*?\/>|<a:bodyPr\b[^>]*>[\s\S]*?<\/a:bodyPr>/.exec(xml)
+  if (!whole) return false
+  const bodyXml = whole[0]
+  const selfClosing = !bodyXml.includes('</a:bodyPr>')
+  let openTag = selfClosing
+    ? bodyXml.slice(0, -2).trimEnd() + '>'
+    : bodyXml.slice(0, bodyXml.indexOf('>') + 1)
+  let inner = selfClosing
+    ? ''
+    : bodyXml.slice(bodyXml.indexOf('>') + 1, bodyXml.lastIndexOf('</a:bodyPr>'))
+
+  const setAttr = (name: string, value: string | null) => {
+    openTag = openTag.replace(new RegExp(`\\s+${name}="[^"]*"`), '')
+    if (value != null) openTag = openTag.replace(/^<a:bodyPr/, `<a:bodyPr ${name}="${value}"`)
+  }
+
+  if (patch.vert !== undefined) setAttr('vert', patch.vert === 'horz' ? null : patch.vert)
+  if (patch.wrap !== undefined) setAttr('wrap', patch.wrap ? 'square' : 'none')
+  if (patch.insets) {
+    for (const side of ['l', 't', 'r', 'b'] as const) {
+      const v = patch.insets[side]
+      if (v != null) setAttr(`${side}Ins`, String(Math.max(0, Math.round(v))))
+    }
+  }
+  if (patch.autofit) {
+    inner = inner.replace(
+      /<a:(?:noAutofit|normAutofit|spAutoFit)\b[^>]*?\/>|<a:(?:noAutofit|normAutofit|spAutoFit)\b[^>]*>[\s\S]*?<\/a:(?:noAutofit|normAutofit|spAutoFit)>/,
+      '',
+    )
+    const child =
+      patch.autofit === 'none'
+        ? '<a:noAutofit/>'
+        : patch.autofit === 'shrink'
+          ? '<a:normAutofit/>'
+          : '<a:spAutoFit/>'
+    // schema order: the autofit choice sits after <a:prstTxWarp> when present, else first
+    const warp = /<a:prstTxWarp\b(?:[^>]*?\/>|[\s\S]*?<\/a:prstTxWarp>)/.exec(inner)
+    const at = warp ? warp.index + warp[0].length : 0
+    inner = inner.slice(0, at) + child + inner.slice(at)
+  }
+
+  const rebuilt = inner ? `${openTag}${inner}</a:bodyPr>` : `${openTag.slice(0, -1).trimEnd()}/>`
+  xml = xml.slice(0, whole.index) + rebuilt + xml.slice(whole.index + bodyXml.length)
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  // Mirror into the parsed model so re-renders see the new values without a reparse
+  if (patch.vert !== undefined) {
+    if (patch.vert === 'horz') delete t.text.vert
+    else t.text.vert = patch.vert
+  }
+  if (patch.wrap !== undefined) t.text.wrap = patch.wrap
+  if (patch.insets) {
+    const base = { l: 91440, t: 45720, r: 91440, b: 45720, ...(t.text.insets ?? {}) }
+    if (patch.insets.l != null) base.l = Math.max(0, Math.round(patch.insets.l))
+    if (patch.insets.t != null) base.t = Math.max(0, Math.round(patch.insets.t))
+    if (patch.insets.r != null) base.r = Math.max(0, Math.round(patch.insets.r))
+    if (patch.insets.b != null) base.b = Math.max(0, Math.round(patch.insets.b))
+    t.text.insets = base
+  }
+  if (patch.autofit) {
+    t.text.autofit = patch.autofit
+    if (patch.autofit !== 'shrink') {
+      delete t.text.fontScale
+      delete t.text.lnSpcReduction
+    }
+  }
+  slide.structureDirty = true
+  return true
+}
+
 /**
  * Shape fill (top-level or one-level group child). The XML patch is baked into
  * the owning fragment so a dropped picture fill can immediately release its
@@ -1567,15 +1665,60 @@ export async function mergeSlideFromPptx(
   target: OpenedPptx,
   sourceBytes: Uint8Array,
 ): Promise<Slide | null> {
-  const { deck, archive } = target
+  const source = await extractMergeSlideSource(sourceBytes)
+  return source ? mergeSlideFromSource(target, source) : null
+}
+
+/**
+ * A single-slide pptx reduced to the plain data the merge needs: slide XML, its
+ * relationships, referenced media bytes, and the source layout chain for the
+ * empty-deck fallback. Fully serializable, so ops and journals can carry it.
+ */
+export interface MergeSlideSource {
+  srcSlidePath: string
+  slideXml: string
+  rels: Relationship[]
+  /** Referenced media bytes keyed by their resolved source path */
+  media: Array<{ path: string; bytes: Uint8Array }>
+  /** Source layout→master→theme chain parts (used only when the target has no layout) */
+  layoutChain: Array<{ path: string; bytes: Uint8Array; rels?: Uint8Array }>
+}
+
+/** Async half of the merge: unzip the source and extract everything the sync half needs. Pure read. */
+export async function extractMergeSlideSource(
+  sourceBytes: Uint8Array,
+): Promise<MergeSlideSource | null> {
   const src = await PackageArchive.open(sourceBytes)
   const { slidePaths } = src.readPresentation()
   const srcSlidePath = slidePaths[0]
   if (!srcSlidePath) return null
-
-  let slideXml = src.readText(srcSlidePath)
+  const slideXml = src.readText(srcSlidePath)
   if (slideXml == null) return null
-  const srcRels = src.readRels(srcSlidePath)
+  const rels = [...src.readRels(srcSlidePath).values()]
+  const media: MergeSlideSource['media'] = []
+  for (const rel of rels) {
+    if (!MEDIA_REL_SUFFIXES.some((s) => rel.type.endsWith(s))) continue
+    const path = resolveTarget(srcSlidePath, rel.target)
+    const bytes = src.readBytes(path)
+    if (bytes) media.push({ path, bytes })
+  }
+  const layoutChain: MergeSlideSource['layoutChain'] = []
+  const chain = src.resolveSlideChain(srcSlidePath)
+  for (const p of [chain.layoutPath, chain.masterPath, chain.themePath]) {
+    if (!p) continue
+    const bytes = src.readBytes(p)
+    if (!bytes) continue
+    const relsBytes = src.readBytes(relsPathFor(p))
+    layoutChain.push({ path: p, bytes, ...(relsBytes ? { rels: relsBytes } : {}) })
+  }
+  return { srcSlidePath, slideXml, rels, media, layoutChain }
+}
+
+/** Sync half of the merge: land an extracted source into the target deck (appended at the end). */
+export function mergeSlideFromSource(target: OpenedPptx, source: MergeSlideSource): Slide | null {
+  const { deck, archive } = target
+  let slideXml = source.slideXml
+  const mediaByPath = new Map(source.media.map((m) => [m.path, m.bytes]))
 
   // Relative Target of any existing target slide's slideLayout (the appended slide reuses the same layout)
   const anchorSlide = deck.slides[deck.slides.length - 1]
@@ -1589,11 +1732,11 @@ export async function mergeSlideFromPptx(
   let ridSeq = 0
   const nextRid = () => `rId${++ridSeq}`
 
-  for (const rel of srcRels.values()) {
+  for (const rel of source.rels) {
     if (MEDIA_REL_SUFFIXES.some((s) => rel.type.endsWith(s))) {
       // Media: move source bytes into the target, assign a non-conflicting path, remap the rId
-      const srcMediaPath = resolveTarget(srcSlidePath, rel.target)
-      const bytes = src.readBytes(srcMediaPath)
+      const srcMediaPath = resolveTarget(source.srcSlidePath, rel.target)
+      const bytes = mediaByPath.get(srcMediaPath)
       if (!bytes) continue
       const ext = (srcMediaPath.split('.').pop() || 'png').toLowerCase()
       const destPath = nextMediaPath(archive, ext)
@@ -1618,7 +1761,7 @@ export async function mergeSlideFromPptx(
         `<Relationship Id="${nextRid()}" Type="${LAYOUT_REL_TYPE}" Target="${escapeXmlAttr(t)}"/>`,
       )
       // With no target layout (rare: empty deck), move the source's whole layout→master→theme chain over
-      if (!layoutTarget) importLayoutChain(src, archive, srcSlidePath)
+      if (!layoutTarget) importLayoutChain(archive, source)
     }
     // notesSlide and others (e.g. comments) are dropped
   }
@@ -1637,19 +1780,11 @@ export async function mergeSlideFromPptx(
 }
 
 /** Starting from an empty deck: move the source single slide's layout→master→theme chain into the target verbatim (rare branch). */
-function importLayoutChain(
-  src: PackageArchive,
-  archive: PackageArchive,
-  srcSlidePath: string,
-): void {
-  const chain = src.resolveSlideChain(srcSlidePath)
-  for (const p of [chain.layoutPath, chain.masterPath, chain.themePath]) {
-    if (!p) continue
-    const b = src.readBytes(p)
-    if (b && !archive.has(p)) archive.entries.set(p, b)
-    const rp = relsPathFor(p)
-    const rb = src.readBytes(rp)
-    if (rb && !archive.has(rp)) archive.entries.set(rp, rb)
+function importLayoutChain(archive: PackageArchive, source: MergeSlideSource): void {
+  for (const part of source.layoutChain) {
+    if (!archive.has(part.path)) archive.entries.set(part.path, part.bytes)
+    const rp = relsPathFor(part.path)
+    if (part.rels && !archive.has(rp)) archive.entries.set(rp, part.rels)
   }
 }
 

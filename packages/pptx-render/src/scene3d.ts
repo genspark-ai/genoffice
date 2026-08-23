@@ -712,6 +712,35 @@ export function inPlaneRotationDeg(scene: Scene3DProps): number | null {
   return rev === 0 ? 0 : -rev
 }
 
+/**
+ * Parallel camera whose lat/lon are exact multiples of 180°: the flat content projects
+ * as a plain mirror (lon 180° = horizontal, lat 180° = vertical) plus the in-plane rev
+ * rotation. PowerPoint uses this as a bitmap-flip idiom on pictures
+ * (orthographicFront + <a:rot lon="10800000">). Null for anything needing real 3D
+ * (perspective/oblique camera, extrusion, z shift, non-flat angles) or for identity.
+ */
+export function flatCameraMirror(
+  scene: Scene3DProps,
+): { flipH: boolean; flipV: boolean; rotationDeg: number } | null {
+  const preset = CAMERA_PRESETS[scene.cameraPreset]
+  if (!preset || !preset.parallel || preset.skewAmount !== 0) return null
+  if ((scene.extrusionEmu ?? 0) > 0) return null
+  if ((scene.zEmu ?? 0) !== 0) return null
+  const lat = scene.cameraRot ? scene.cameraRot.lat * D : preset.rx
+  const lon = scene.cameraRot ? scene.cameraRot.lon * D : preset.ry
+  const rev = scene.cameraRot ? scene.cameraRot.rev * D : preset.rz
+  const norm = (a: number) => ((a % 360) + 360) % 360
+  const isHalf = (a: number) => Math.abs(norm(a) - 180) < 0.5
+  const isZero = (a: number) => norm(a) < 0.5 || norm(a) > 359.5
+  const flipV = isHalf(lat)
+  const flipH = isHalf(lon)
+  if ((!flipV && !isZero(lat)) || (!flipH && !isZero(lon))) return null
+  if (!flipH && !flipV && rev === 0) return null
+  // rev folds in with the same screen-clockwise sign as inPlaneRotationDeg; the mirror
+  // is the innermost transform (container flip), so the rotation sign is flip-independent.
+  return { flipH, flipV, rotationDeg: rev === 0 ? 0 : -rev }
+}
+
 export function buildExtrusion(input: BuildExtrusionInput): ExtrusionRender | null {
   const { rings, w, h, depthPx, scene } = input
   const preset = CAMERA_PRESETS[scene.cameraPreset]

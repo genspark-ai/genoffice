@@ -523,3 +523,39 @@ export async function buildCheckboxFormPdf(): Promise<Uint8Array> {
   unchecked.addToPage(page, { x: 186, y: 657, width: 12, height: 12 })
   return doc.save()
 }
+
+/**
+ * Wallpaper base + live content + a page-covering ALPHA-0 rect near the top
+ * of the z-order (Skia exporters write these bounding artifacts): the
+ * paint-less rect must not stretch the background stack across the content.
+ */
+export async function buildAlphaZeroOverlayPdf(): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const image = await doc.embedJpg(tinyJpeg())
+  page.drawImage(image, { x: 0, y: 0, width: 612, height: 792 })
+  page.drawText('Catalog item stays as data', { x: 72, y: 700, size: 18, font })
+  page.drawText('SKU: LH-TB-001 Retail: $39.00', { x: 72, y: 660, size: 12, font })
+  page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0, 0, 0), opacity: 0 })
+  return doc.save()
+}
+
+/**
+ * P16 B wash-drawn-later order: wallpaper base, junk text, then a NEAR-WHITE
+ * blanking wash painted over it. The wash really occludes the junk, so the
+ * junk must keep baking away (regression guard for the alpha-0 skip).
+ */
+export async function buildLateBlankingWashPdf(): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const image = await doc.embedJpg(tinyJpeg())
+  page.drawImage(image, { x: 0, y: 0, width: 612, height: 792 })
+  page.drawText('template junk blanked by the wash', { x: 72, y: 400, size: 12, font })
+  page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(1, 1, 1), opacity: 0.9 })
+  page.drawText('Real title above the late wash', { x: 72, y: 700, size: 18, font })
+  return doc.save()
+}

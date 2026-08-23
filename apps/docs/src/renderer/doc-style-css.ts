@@ -7,12 +7,17 @@ import {
 } from '@genoffice/docx-engine'
 import {
   cjkDeclaredLineFactor,
+  cssAutoLineMult,
   cssDualFontFamily,
+  cssEaOnlyFontFamily,
   cssFontFamily,
+  docLatinChainCss,
   cssGridLineBase,
   cssGridLineExpr,
+  cssGridLineMaxExpr,
   cssGridSpacingPt,
   cssLineHeight,
+  WORD_AUTO_SPACING_PT,
   isCjkFontName,
   krLineFactor,
   lineHeightFactor,
@@ -38,6 +43,8 @@ export function docThemeCss(
     // docDefaults names one (a declared body font supersedes the theme, and
     // docStyleCss already resolved theme references into it)
     rules.push(`.doc-page { font-family:${cssFontFamily(fonts.minor)} }`)
+    // .page-wrap too: header/footer areas are .doc-page siblings inside it
+    rules.push(`.page-wrap, .doc-page { --doc-latin-chain:${docLatinChainCss(fonts.minor)} }`)
   }
   if (fonts?.major) {
     const headings = [1, 2, 3, 4, 5, 6].map((n) => `.doc-page h${n}`).join(', ')
@@ -122,8 +129,27 @@ export function docStyleCss(parsed: ParsedDocFull): string {
   // Declared on every element so per-paragraph --doc-line-factor /
   // --doc-grid-pitch overrides re-substitute; same uniform-grid condition as
   // App.tsx's .doc-page --doc-grid-pitch injection.
-  if (docGridPitchPt(readSections(parsed)) != null) {
-    rules.push(`.doc-page, .doc-page * { --doc-line-grid:${cssGridLineExpr()} }`)
+  const typedGrid = docGridPitchPt(readSections(parsed)) != null
+  const gridBlocks = `.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li, .doc-textbox-para):not(.doc-lh-fixed)`
+  const gridSpanSnap = `line-height:var(--doc-line-max)`
+  if (typedGrid) {
+    // --doc-grid-single-mult keeps grid-aware expressions (SimSun lift) from
+    // multiplying their snapped-single arm in typed-grid docs
+    rules.push(
+      `.doc-page, .doc-page * { --doc-line-grid:${cssGridLineExpr()}; ` +
+        `--doc-line-max:${cssGridLineMaxExpr()}; --doc-grid-single-mult:1 }`,
+    )
+    // snapToGrid=0 paragraphs (blockAttrs .doc-nosnap): natural x mult on the
+    // paragraph and its spans — the pitch arm of --doc-line-max vanishes with
+    // the ~0 pitch, which would otherwise drop the multiple on spans
+    rules.push(
+      `.doc-page .doc-nosnap, .doc-page .doc-nosnap * { ` +
+        `--doc-line-max:calc(var(--doc-line-factor,1.2) * 1em * var(--doc-line-mult,1)) }`,
+    )
+    // Word snaps by the tallest run per line: the paragraph's grid line-height
+    // is a length computed from its own font size, so larger runs must
+    // re-resolve the snap with their 1em (exact/atLeast lines never snap)
+    rules.push(`${gridBlocks} span { ${gridSpanSnap} }`)
   }
   // settings.xml w:autoHyphenation: Word breaks words at line ends document-wide.
   // Chromium hyphenates only under an explicit lang; file-actions sets it on the
@@ -164,6 +190,11 @@ export function docStyleCss(parsed: ParsedDocFull): string {
           : cssFontFamily(baseEa ?? baseAscii ?? 'Calibri')
       }`,
     )
+    // inherited ascii chain for eastAsia-only runs (cssEaOnlyFontFamily);
+    // .page-wrap too: header/footer areas are .doc-page siblings inside it
+    rules.push(
+      `.page-wrap, .doc-page { --doc-latin-chain:${docLatinChainCss(baseAscii ?? baseEa ?? 'Calibri')} }`,
+    )
     const sizeHalf = normal?.sizeHalfPoints ?? dd?.sizeHalfPoints
     if (sizeHalf) decls.push(`font-size:${sizeHalf / 2}pt`)
     const color = normal?.color ?? dd?.color
@@ -173,12 +204,22 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // default style's w:jc reaches unstyled paragraphs (explicit w:jc and
     // [data-style] alignment both override this inherited baseline)
     if (normal?.align && normal.align !== 'left') decls.push(`text-align:${normal.align}`)
-    const lh =
-      cssLineHeight(normal?.lineRule, normal?.lineRawTwips, normal?.lineSpacing) ??
-      cssLineHeight(dd?.lineRule, dd?.lineRawTwips, dd?.lineSpacing)
+    const normalLh = cssLineHeight(normal?.lineRule, normal?.lineRawTwips, normal?.lineSpacing)
+    const ddLh = cssLineHeight(dd?.lineRule, dd?.lineRawTwips, dd?.lineSpacing)
+    const lh = normalLh ?? ddLh
     // fallback references the var (not the resolved number) so per-paragraph
     // script factors and docGrid snapping re-evaluate on each block
     decls.push(`line-height:${lh ?? cssGridLineBase()}`)
+    // grid span snapping scales by the document default multiple (inherits to runs)
+    const lhSrc = normalLh ? normal : ddLh ? dd : undefined
+    const docMult = cssAutoLineMult(lhSrc?.lineRule, lhSrc?.lineRawTwips, lhSrc?.lineSpacing)
+    if (docMult) decls.push(`--doc-line-mult:${docMult}`)
+    if (typedGrid && lhSrc && (lhSrc.lineRule === 'exact' || lhSrc.lineRule === 'atLeast')) {
+      rules.push(`${gridBlocks} span { line-height:inherit }`)
+      // paragraphs that declare their own auto spacing (inline --doc-line-mult)
+      // keep tallest-run snapping despite the document-level fixed line
+      rules.push(`${gridBlocks}[style*="--doc-line-mult"] span { ${gridSpanSnap} }`)
+    }
     rules.push(`.doc-page { ${decls.join(';')} }`)
     // Word's fallback when neither Normal nor docDefaults declares w:spacing is 0
     // (the static stylesheet's 8pt guess inflated undeclared docs, table cells worst);
@@ -186,12 +227,33 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // the line-height var (it wouldn't through inheritance)
     const blockSel =
       '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6, .doc-page .doc-protected-field'
+    const beforePt =
+      (normal?.spaceBeforeAuto ?? dd?.spaceBeforeAuto)
+        ? WORD_AUTO_SPACING_PT
+        : (normal?.spaceBeforeTwips ?? dd?.spaceBeforeTwips ?? 0) / 20
+    const afterPt =
+      (normal?.spaceAfterAuto ?? dd?.spaceAfterAuto)
+        ? WORD_AUTO_SPACING_PT
+        : (normal?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 0) / 20
     const blockDecls = [
-      `margin-top:${cssGridSpacingPt((normal?.spaceBeforeTwips ?? dd?.spaceBeforeTwips ?? 0) / 20)}`,
-      `margin-bottom:${cssGridSpacingPt((normal?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 0) / 20)}`,
+      `margin-top:${cssGridSpacingPt(beforePt)}`,
+      `margin-bottom:${cssGridSpacingPt(afterPt)}`,
       `line-height:${lh ?? cssGridLineBase()}`,
     ]
     rules.push(`${blockSel} { ${blockDecls.join(';')} }`)
+    // default-level auto collapses to 0 between two list items like the direct/
+    // per-style variants; scoped to unstyled items (styled ones resolve their
+    // margins per style) and left un-!important so direct spacing still wins
+    if (normal?.spaceAfterAuto ?? dd?.spaceAfterAuto) {
+      rules.push(`.doc-page .doc-li:not([data-style]):has(+ .doc-li) { margin-bottom:0 }`)
+    }
+    if (normal?.spaceBeforeAuto ?? dd?.spaceBeforeAuto) {
+      rules.push(`.doc-page .doc-li + .doc-li:not([data-style]) { margin-top:0 }`)
+    }
+    // textbox paragraphs re-evaluate the line-height var per block too;
+    // inheriting .doc-page's computed length forced the body's pixel strut
+    // onto every textbox line regardless of the box's own runs/snapToGrid
+    rules.push(`.doc-page .doc-textbox-para { line-height:${lh ?? cssGridLineBase()} }`)
     // Normal's first-line indent applies to plain body paragraphs (not lists —
     // their geometry runs on --li-left/--li-hang)
     if ((normal?.indentFirstLineTwips ?? 0) > 0) {
@@ -242,7 +304,12 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         decls.push(`margin-bottom:${cssGridSpacingPt(ps.afterTwips / 20)}`)
       const psLh = cssLineHeight(ps?.lineRule, ps?.lineRawTwips, ps?.lineSpacing)
       const normalLh = cssLineHeight(normal?.lineRule, normal?.lineRawTwips, normal?.lineSpacing)
-      if (psLh && !normalLh) decls.push(`line-height:${psLh}`)
+      if (psLh && !normalLh) {
+        decls.push(`line-height:${psLh}`)
+        // --doc-line-max reads the multiple from this var
+        const psMult = cssAutoLineMult(ps?.lineRule, ps?.lineRawTwips, ps?.lineSpacing)
+        if (psMult) decls.push(`--doc-line-mult:${psMult}`)
+      }
       if (t.paraJc && t.paraJc !== 'left' && t.paraJc !== 'start' && normal?.align === undefined) {
         const align =
           t.paraJc === 'center'
@@ -273,13 +340,18 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       )
     }
     if (d.font) {
+      // no ascii slot at all = a genuine eastAsia-only style: its Latin glyphs
+      // keep the inherited ascii chain (Word resolves them there, probe 2026-08-23)
       decls.push(
         `font-family:${
           d.fontAscii && d.fontAscii !== d.font
             ? cssDualFontFamily(d.fontAscii, d.font)
-            : cssFontFamily(d.font)
+            : d.fontAscii
+              ? cssFontFamily(d.font)
+              : cssEaOnlyFontFamily(d.font)
         }`,
       )
+      if (d.fontAscii) decls.push(`--doc-latin-chain:${docLatinChainCss(d.fontAscii)}`)
       // style-declared EA face re-anchors the CJK line factor for its paragraphs
       // (runs without their own fonts resolve --doc-line-factor-cjk through this);
       // an empty-theme-slot backfill is not a document choice and stays silent
@@ -288,16 +360,47 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       }
     } else if (d.fontAscii) {
       decls.push(`font-family:${cssFontFamily(d.fontAscii)}`)
+      decls.push(`--doc-latin-chain:${docLatinChainCss(d.fontAscii)}`)
     }
     if (d.charSpacingTwips) decls.push(`letter-spacing:${d.charSpacingTwips / 20}pt`)
     if (d.caps === 'all') decls.push('text-transform:uppercase')
     else if (d.caps === 'small') decls.push('font-variant-caps:small-caps')
     const styleLh = cssLineHeight(d.lineRule, d.lineRawTwips, d.lineSpacing)
     if (styleLh) decls.push(`line-height:${styleLh}`)
-    if (d.spaceBeforeTwips !== undefined)
+    // grid span snapping scales by the style's multiple (an explicit single
+    // still overrides an inherited document multiple); the extra rule keeps
+    // tallest-run snapping when the document default line is exact/atLeast
+    const styleMult = cssAutoLineMult(d.lineRule, d.lineRawTwips, d.lineSpacing)
+    if (styleMult) {
+      decls.push(`--doc-line-mult:${styleMult}`)
+      if (typedGrid) {
+        rules.push(
+          `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { ${gridSpanSnap} }`,
+        )
+      }
+    }
+    // fixed-height style lines opt out of grid span snapping like doc-lh-fixed
+    // (:not() bumps specificity above the grid span rule)
+    if ((d.lineRule === 'exact' || d.lineRule === 'atLeast') && d.lineRawTwips) {
+      rules.push(
+        `.doc-page [data-style="${CSS.escape(info.styleId)}"]:not(.doc-lh-fixed) span { line-height:inherit }`,
+      )
+    }
+    if (d.spaceBeforeAuto) decls.push(`margin-top:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
+    else if (d.spaceBeforeTwips !== undefined)
       decls.push(`margin-top:${cssGridSpacingPt(d.spaceBeforeTwips / 20)}`)
-    if (d.spaceAfterTwips !== undefined)
+    if (d.spaceAfterAuto) decls.push(`margin-bottom:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
+    else if (d.spaceAfterTwips !== undefined)
       decls.push(`margin-bottom:${cssGridSpacingPt(d.spaceAfterTwips / 20)}`)
+    // style-level auto spacing collapses to 0 between two list items (Word),
+    // mirroring the .sp-auto-* rules for direct autospacing (styles.css);
+    // un-!important so a direct explicit margin (inline, auto turned off) wins —
+    // specificity already beats the style's own margin declaration
+    if (d.spaceAfterAuto || d.spaceBeforeAuto) {
+      const sa = `[data-style="${CSS.escape(info.styleId)}"]`
+      if (d.spaceAfterAuto) rules.push(`.doc-page .doc-li${sa}:has(+ .doc-li) { margin-bottom:0 }`)
+      if (d.spaceBeforeAuto) rules.push(`.doc-page .doc-li + .doc-li${sa} { margin-top:0 }`)
+    }
     if (d.indentRightTwips)
       decls.push(`margin-inline-end:${(d.indentRightTwips / 20).toFixed(1)}pt`)
     if (d.indentFirstLineTwips)
@@ -325,10 +428,21 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (d.contextualSpacing) {
       const s = `[data-style="${CSS.escape(info.styleId)}"]`
       // !important so blockAttrs' inline margins (direct w:spacing) can't win:
-      // Word swallows adjacent same-style spacing regardless of its source
-      rules.push(`.doc-page ${s}:has(+ ${s}) { margin-bottom:0 !important }`)
-      rules.push(`.doc-page ${s} + ${s} { margin-top:0 !important }`)
+      // Word swallows adjacent same-style spacing regardless of its source.
+      // A direct w:contextualSpacing w:val="0" (.ctx-sp-off) re-enables the
+      // paragraph's own spacing (Word honors the direct override).
+      rules.push(`.doc-page ${s}:has(+ ${s}):not(.ctx-sp-off) { margin-bottom:0 !important }`)
+      rules.push(`.doc-page ${s} + ${s}:not(.ctx-sp-off) { margin-top:0 !important }`)
     }
+  }
+  // direct pPr w:contextualSpacing (.ctx-sp) without style-level backing: same
+  // same-style suppression, keyed to the paragraph that carries it (unstyled
+  // pairs are covered by a static rule in styles.css)
+  for (const info of parsed.styles.values()) {
+    if (info.type !== 'paragraph' || info.display?.contextualSpacing) continue
+    const s = `[data-style="${CSS.escape(info.styleId)}"]`
+    rules.push(`.doc-page ${s}.ctx-sp:has(+ ${s}) { margin-bottom:0 !important }`)
+    rules.push(`.doc-page ${s} + ${s}.ctx-sp { margin-top:0 !important }`)
   }
   return rules.join('\n')
 }

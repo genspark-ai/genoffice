@@ -109,6 +109,13 @@ describe('parseFileToText: xlsx', () => {
     expect(result.text).toContain('\n Alice pts \n #N/A ')
   })
 
+  it('parses .xlsm through the same xlsx path', async () => {
+    const path = writeFixture('table.xlsm', await buildXlsxFixture())
+    const result = await parseFileToText(path)
+    expect(result.ok).toBe(true)
+    expect(result.text).toContain('# Grades')
+  })
+
   it('fails gracefully on a corrupt file', async () => {
     const path = writeFixture('broken.xlsx', Buffer.from('not a zip'))
     const result = await parseFileToText(path)

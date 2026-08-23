@@ -131,9 +131,52 @@ function parseStopColor(c: string): [number, number, number, number] | null {
 
 const SUBDIVISIONS = 8
 
+/**
+ * PowerPoint's color ramp ignores the color of fully-transparent stops: their RGB is
+ * replaced by the visible-stop ramp sampled at their position (clamped at the ends), so
+ * white@0% → navy → navy fades stay navy. Only when fewer than two visible stops remain
+ * does the declared color survive and the fade washes toward it (navy → white@0% probes
+ * measured both behaviors over black and white backdrops).
+ */
+function maskTransparentStopColors(
+  sorted: Array<{ pos: number; color: string }>,
+): Array<{ pos: number; color: string }> {
+  const parsed = sorted.map((s) => parseStopColor(s.color))
+  const visible: Array<{ pos: number; rgb: [number, number, number] }> = []
+  for (let i = 0; i < sorted.length; i++) {
+    const p = parsed[i]
+    if (p && p[3] > 0) visible.push({ pos: sorted[i]!.pos, rgb: [p[0], p[1], p[2]] })
+  }
+  if (visible.length < 2 || visible.length === sorted.length) return sorted
+  const sample = (pos: number): [number, number, number] => {
+    if (pos <= visible[0]!.pos) return visible[0]!.rgb
+    const last = visible[visible.length - 1]!
+    if (pos >= last.pos) return last.rgb
+    let j = 1
+    while (visible[j]!.pos < pos) j++
+    const lo = visible[j - 1]!
+    const hi = visible[j]!
+    const t = hi.pos === lo.pos ? 0 : (pos - lo.pos) / (hi.pos - lo.pos)
+    const ch = (i: number) =>
+      Math.round(
+        linToSrgb(
+          srgbToLin(lo.rgb[i]! / 255) +
+            (srgbToLin(hi.rgb[i]! / 255) - srgbToLin(lo.rgb[i]! / 255)) * t,
+        ) * 255,
+      )
+    return [ch(0), ch(1), ch(2)]
+  }
+  return sorted.map((s, i) => {
+    const p = parsed[i]
+    if (!p || p[3] > 0) return s
+    const [r, g, b] = sample(s.pos)
+    return { pos: s.pos, color: `rgba(${r},${g},${b},0)` }
+  })
+}
+
 /** Konva colorStops array with linear-sRGB interpolated midpoints between each stop pair. */
 function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<number | string> {
-  const sorted = [...stops].sort((a, b) => a.pos - b.pos)
+  const sorted = maskTransparentStopColors([...stops].sort((a, b) => a.pos - b.pos))
   const out: Array<number | string> = []
   for (let i = 0; i < sorted.length; i++) {
     const cur = sorted[i]!
@@ -145,18 +188,15 @@ function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<nu
     if (!a || !b) continue
     const [lr, lg, lb] = [srgbToLin(a[0] / 255), srgbToLin(a[1] / 255), srgbToLin(a[2] / 255)]
     const [mr, mg, mb] = [srgbToLin(b[0] / 255), srgbToLin(b[1] / 255), srgbToLin(b[2] / 255)]
-    // Alpha-varying pairs interpolate premultiplied (PowerPoint semantics): a transparent
-    // stop contributes no color, so white@0% → navy stays navy through the fade instead of
-    // washing toward white (straight interpolation) — measured on prod alpha-fade overlays.
-    const [aA, aB] = [a[3], b[3]]
+    // Alpha-varying pairs interpolate straight (non-premultiplied): PowerPoint ramps the
+    // color channels toward the transparent stop's hue and the alpha linearly — measured
+    // on a controlled probe (navy→white@0 both stop orders, over black and white backdrops).
     for (let k = 1; k < SUBDIVISIONS; k++) {
       const t = k / SUBDIVISIONS
-      const al = aA + (aB - aA) * t
-      const mix = (x: number, y: number) =>
-        al > 0 ? (x * aA + (y * aB - x * aA) * t) / al : x + (y - x) * t
-      const r = Math.round(linToSrgb(mix(lr, mr)) * 255)
-      const g = Math.round(linToSrgb(mix(lg, mg)) * 255)
-      const bl = Math.round(linToSrgb(mix(lb, mb)) * 255)
+      const al = a[3] + (b[3] - a[3]) * t
+      const r = Math.round(linToSrgb(lr + (mr - lr) * t) * 255)
+      const g = Math.round(linToSrgb(lg + (mg - lg) * t) * 255)
+      const bl = Math.round(linToSrgb(lb + (mb - lb) * t) * 255)
       out.push(
         cur.pos + (next.pos - cur.pos) * t,
         al >= 1 ? `rgb(${r},${g},${bl})` : `rgba(${r},${g},${bl},${al.toFixed(3)})`,
@@ -873,18 +913,49 @@ export function featheredImage(
   return c
 }
 
-/** Picture srcRect crop ratios → Konva Image crop (source-image pixel coordinates). */
+/**
+ * Picture srcRect crop ratios → Konva Image crop (source-image pixel coordinates).
+ * Negative srcRect values are insets: the source rect extends past the image, so the
+ * image occupies only a sub-rect of the frame and the rest stays empty (PowerPoint
+ * leaves those bands blank; common in Google Slides exports).
+ */
 export function cropToKonva(
   pic: PictureRenderNode,
   img: HTMLImageElement | undefined,
-): { crop?: { x: number; y: number; width: number; height: number } } {
+): {
+  crop?: { x: number; y: number; width: number; height: number }
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+} {
   const sr = pic.srcRect
   if (!sr || !img || !img.width || !img.height) return {}
-  const x = Math.max(sr.l, 0) * img.width
-  const y = Math.max(sr.t, 0) * img.height
-  const w = Math.max(img.width * (1 - Math.max(sr.l, 0) - Math.max(sr.r, 0)), 1)
-  const h = Math.max(img.height * (1 - Math.max(sr.t, 0) - Math.max(sr.b, 0)), 1)
-  return { crop: { x, y, width: w, height: h } }
+  const x0 = Math.max(sr.l, 0)
+  const y0 = Math.max(sr.t, 0)
+  const x1 = 1 - Math.max(sr.r, 0)
+  const y1 = 1 - Math.max(sr.b, 0)
+  const crop = {
+    x: x0 * img.width,
+    y: y0 * img.height,
+    width: Math.max(img.width * (x1 - x0), 1),
+    height: Math.max(img.height * (y1 - y0), 1),
+  }
+  if (sr.l >= 0 && sr.t >= 0 && sr.r >= 0 && sr.b >= 0) return { crop }
+  // The frame maps source span [l, 1-r]×[t, 1-b] onto the full box; place the
+  // visible sub-rect of the image at its share of that span.
+  const spanX = 1 - sr.l - sr.r
+  const spanY = 1 - sr.t - sr.b
+  if (spanX <= 0 || spanY <= 0) return { crop }
+  const boxW = pic.box.w
+  const boxH = pic.box.h
+  return {
+    crop,
+    x: (boxW * (x0 - sr.l)) / spanX,
+    y: (boxH * (y0 - sr.t)) / spanY,
+    width: Math.max((boxW * (x1 - x0)) / spanX, 1),
+    height: Math.max((boxH * (y1 - y0)) / spanY, 1),
+  }
 }
 
 /** Preset geometry name → Konva shape type (Phase 3 supports the common ones, the rest approximated as rectangles). */
@@ -1057,7 +1128,12 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
       .join(' '),
     ...((run.letterSpacingPx ?? 0) + (run.justifyExtraPx ?? 0)
       ? { letterSpacing: (run.letterSpacingPx ?? 0) + (run.justifyExtraPx ?? 0) }
-      : {}),
+      : run.kerningOff && !run.rtl
+        ? // Kerning must stay off (fontSize below the rPr kern threshold): a negligible
+          // letterSpacing flips Konva into per-letter drawing, which never kerns —
+          // matching the unkerned measurement (canvas fillText would kern the string)
+          { letterSpacing: 1e-4 }
+        : {}),
     ...(run.outline
       ? {
           stroke: normalizeColor(run.outline.color),
@@ -1148,11 +1224,15 @@ export function normalizeColor(c: string): string {
     const a = parseInt(h.slice(6, 8), 16) / 255
     return `rgba(${r},${g},${b},${a.toFixed(3)})`
   }
-  return c.startsWith('#') ? c : `#${c}`
+  return c.startsWith('#') || c.startsWith('rgb') ? c : `#${c}`
 }
 
 export function isEditableText(node: RenderNode): node is ShapeRenderNode {
-  return (node.type === 'text' || node.type === 'shape') && !!(node as ShapeRenderNode).text
+  if (node.type !== 'text' && node.type !== 'shape') return false
+  // A shape with no text body yet is still editable — setText creates the body and the
+  // engine injects <p:txBody>. Connectors are the exception: CT_Connector has no
+  // txBody child, so a line can never hold text.
+  return !(node as ShapeRenderNode).line
 }
 
 /** Polyline smooth → Konva Line tension (0 = polyline, 0.4 ≈ PPT smooth curve). */

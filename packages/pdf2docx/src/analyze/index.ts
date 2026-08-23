@@ -24,6 +24,7 @@ import {
   analyzeChars,
   calibrateFontSizes,
   dedupeDoubleDrawnChars,
+  normalizeCjkDashes,
   normalizeRegionalFontArtifacts,
 } from './chars'
 import { pageConfidence } from './confidence'
@@ -51,7 +52,7 @@ import {
 import { applySpacingChain } from './spacing'
 import { detectStreamTables } from './stream'
 import { applyTextShapeStyles } from './styling'
-import { detectTables, solveLatticeGrids } from './table'
+import { detectTables, solvePageGrids } from './table'
 import {
   detectTocBlocks,
   detectTocRows,
@@ -197,6 +198,8 @@ function frameImage(box: Rect, color: string, widthPt: number): ImageBlock {
 
 /** a gutter stroke must cover this share of its section's height to be the column rule */
 const COL_SEP_MIN_SECTION_COVER = 0.6
+/** images smaller than this in BOTH dimensions are decor fragments, not content */
+const MICRO_IMAGE_MAX_PT = 2.5
 
 /** interleave non-text blocks into the text flow by vertical position (top edge) */
 function mergeBlocks(textBlocks: PageBlock[], floating: PageBlock[]): PageBlock[] {
@@ -339,7 +342,13 @@ function memberLightShare(members: readonly TextBlock[]): number | undefined {
 export function detectCardRegions(page: IrPage, candidates: readonly CardCandidate[]): void {
   // page flow order (flattened reading order); floats never join a card
   const flow = page.blocks.filter((b) => !(b.kind === 'image' && b.float !== undefined))
+  // a card inside a multi-column section must stay a panel: the text box's
+  // wrapTopAndBottom band spans the whole text area and shoves the NEIGHBOUR
+  // column's flow below the plate too (prod_045: both columns pushed 200pt
+  // down, page spilled)
+  const multiColBoxes = (page.sections ?? []).filter((s) => s.columns.length > 1).map((s) => s.box)
   for (const cand of [...candidates].sort((a, b) => rectArea(a.box) - rectArea(b.box))) {
+    if (multiColBoxes.some((b) => overlapRatio(cand.box, b) >= 0.3)) continue
     const members: TextBlock[] = []
     let poisoned = false
     for (const b of flow) {
@@ -413,8 +422,11 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
   // P16 D: TC-variant families on strictly-simplified text are export-chain
   // substitution artifacts — rewrite before spans capture the family
   normalizeRegionalFontArtifacts(extracted.chars)
+  normalizeCjkDashes(extracted.chars)
 
-  const shapes = normalizeShapes(extracted.paths)
+  const shapes = normalizeShapes(extracted.paths, {
+    roundedRectEdges: extracted.cellData === true,
+  })
   base.shapes = shapes
 
   // a fill covering ~the whole page is the page wash, not content — record it
@@ -490,7 +502,7 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
   // slide design dividers arrive wrapped in forms, and a lone cross of them
   // must not mint a bordered 2×2 "table" around the content it separates —
   // but whole tables wrapped in forms (twotables) do solve
-  const gridBoxes: Rect[] = solveLatticeGrids(shapes.strokes).map((g) => g.box)
+  const gridBoxes: Rect[] = solvePageGrids(shapes).map((g) => g.box)
 
   // light-text backdrops (P10 B): card fills whose text is near-white leave
   // the fill pool as behindDoc floats — dropped, that text is invisible on
@@ -582,17 +594,29 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
     [...latticeBoxes, ...formTables.map((t) => t.box), ...zoneTables.map((t) => t.box)],
     // slides place a data table BESIDE prose absolutely — their interleaved
     // rows need the vast-valley region pass (P16 E)
-    { slideRegions: extracted.widthPt > extracted.heightPt },
+    {
+      slideRegions: extracted.widthPt > extracted.heightPt,
+      relaxKeyValue: extracted.cellData === true,
+    },
   )
-  const imageBlocks: ImageBlock[] = extracted.images.map((img) => ({
-    kind: 'image' as const,
-    box: img.box,
-    data: img.data,
-    mime: img.mime,
-    pixelWidth: img.pixelWidth,
-    pixelHeight: img.pixelHeight,
-    ...(img.z !== undefined ? { z: img.z } : {}),
-  }))
+  // dotted/dashed decor drawn as image fragments: some forms build a dotted
+  // rule from HUNDREDS of 1×3px images — each would pin its own float anchor
+  // (one paragraph line apiece), exploding the page budget and the render
+  const imageBlocks: ImageBlock[] = extracted.images
+    .filter(
+      (img) =>
+        img.box.x1 - img.box.x0 >= MICRO_IMAGE_MAX_PT ||
+        img.box.y1 - img.box.y0 >= MICRO_IMAGE_MAX_PT,
+    )
+    .map((img) => ({
+      kind: 'image' as const,
+      box: img.box,
+      data: img.data,
+      mime: img.mime,
+      pixelWidth: img.pixelWidth,
+      pixelHeight: img.pixelHeight,
+      ...(img.z !== undefined ? { z: img.z } : {}),
+    }))
   const { floats, inline } = classifyFloatImages(
     suppressTextShadowImages(imageBlocks, remainingUnits),
     remainingUnits,
@@ -647,6 +671,29 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
   for (const list of [floats, inline]) {
     const keep = list.filter((img) => !isCellTextOverlay(img))
     if (keep.length !== list.length) list.splice(0, list.length, ...keep)
+  }
+  // cell-interior icons (P30): an INLINE image inside a lattice table both
+  // stacks its height into the flow (double-counting the table's) and renders
+  // BELOW the table. Pin it at its measured position instead — cells cannot
+  // hold images yet, and a behind float at the right spot beats a stray
+  // stacked one (a 42-row checklist carried ~25 such icons per page).
+  const insideLattice = (img: ImageBlock): boolean => {
+    const cx = (img.box.x0 + img.box.x1) / 2
+    const cy = (img.box.y0 + img.box.y1) / 2
+    return tables.some(
+      (t) =>
+        t.confidence === undefined &&
+        cx >= t.box.x0 &&
+        cx <= t.box.x1 &&
+        cy >= t.box.y0 &&
+        cy <= t.box.y1,
+    )
+  }
+  for (const img of [...inline]) {
+    if (!insideLattice(img)) continue
+    img.float = { wrap: 'behind', xOffsetPt: img.box.x0 }
+    floats.push(img)
+    inline.splice(inline.indexOf(img), 1)
   }
 
   const elements: SectionElement[] = [

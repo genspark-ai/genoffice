@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { numfmt } from '@univerjs/core'
+import { isMetafileMime, metafileToDataUrl } from '@genoffice/docx-engine/metafile'
 import { Dropdown, shapePreviewPath, useDismissablePopover } from '@genoffice/ui'
 
 import type { createUniver } from './create-univer'
@@ -204,11 +205,17 @@ export function installWorkbookVisuals(
       Math.max(1, toRow + 1 - fromRow),
       Math.max(1, toColumn + 1 - fromColumn),
     )
-    // Degenerate anchors (oneCellAnchor fallback parses to a zero span):
-    // keep the legacy behavior of filling the clamped cell range.
-    const framed = width >= MIN_FRAME_PIXELS / 2 && height >= MIN_FRAME_PIXELS / 2
-    const layout = framed ? { width, height, marginX, marginY } : {}
-    const frame = framed ? { width, height } : undefined
+    // Degenerate anchors (a zero marker span on BOTH axes): keep the legacy
+    // behavior of filling the clamped cell range. Any real span stays a
+    // marker frame with a 1px floor — tiny icons and hairlines (a line's
+    // thin axis spans 0) must not balloon to their cell range, which turned
+    // zero-height rules into cell-tall diagonals and icon parts into
+    // cell-sized blobs.
+    const framed = width > 0 || height > 0
+    const frameWidth = Math.max(width, 1)
+    const frameHeight = Math.max(height, 1)
+    const layout = framed ? { width: frameWidth, height: frameHeight, marginX, marginY } : {}
+    const frame = framed ? { width: frameWidth, height: frameHeight } : undefined
     const component =
       shapeEditing && editable
         ? () => (
@@ -1093,12 +1100,15 @@ function ShapeVisual({
   const gradientId = `shape-fill-${useId().replace(/[^A-Za-z0-9]/g, '')}`
   const type = visual.shapeType ?? ''
   const gradient = visual.fillGradient
+  const customPath = visual.customPath
   // "none" is an explicit <a:noFill/> — transparent, not the default tint.
+  // Custom geometry never gets the default tint either: a custGeom without
+  // an explicit fill is stroke-only artwork, not an inserted preset.
   const fill = gradient
     ? `url(#${gradientId})`
     : visual.fillColor === 'none'
       ? 'transparent'
-      : (visual.fillColor ?? '#DDEBF7')
+      : (visual.fillColor ?? (customPath ? 'transparent' : '#DDEBF7'))
   // A rotated shape's anchor stores its rotated bounds (Excel writes the
   // quadrant-swapped snap rect, LibreOffice the AABB) while xfrm ext keeps
   // the true unrotated frame; both center the anchor on the shape center.
@@ -1133,13 +1143,19 @@ function ShapeVisual({
   const lineY0 = visual.flipV ? boxHeight : 0
   // Same geometry source as the gallery previews (and the other apps'
   // renderers), so every insertable preset draws its real silhouette.
-  const d = isStraightLine
-    ? `M ${lineX0} ${lineY0} L ${boxWidth - lineX0} ${boxHeight - lineY0}`
-    : shapePreviewPath(type, boxWidth, boxHeight)
+  // custGeom paths keep their own coordinate space and scale into the box.
+  const d = customPath
+    ? customPath.d
+    : isStraightLine
+      ? `M ${lineX0} ${lineY0} L ${boxWidth - lineX0} ${boxHeight - lineY0}`
+      : shapePreviewPath(type, boxWidth, boxHeight)
   if (!d) {
+    // Unsupported geometry: never leak the internal shape name (Excel shows
+    // no frame at all) — an empty frame only when the shape carries text.
+    if (!visual.text) return <div aria-hidden="true" />
     return (
       <div className="xlsx-shape">
-        <span>{visual.text ?? visual.name ?? t('appDrawingObject')}</span>
+        <span>{visual.text}</span>
       </div>
     )
   }
@@ -1177,9 +1193,26 @@ function ShapeVisual({
             </linearGradient>
           </defs>
         )}
+        {customPath?.fillD && (
+          // Mixed custGeom: fill only the fillable subpaths; the stroke pass
+          // below covers every subpath with a transparent fill.
+          <path
+            d={customPath.fillD}
+            fill={fill}
+            stroke="none"
+            transform={`scale(${boxWidth / customPath.width}, ${boxHeight / customPath.height})`}
+          />
+        )}
         <path
           d={d}
-          fill={isStraightLine ? 'transparent' : fill}
+          fill={
+            isStraightLine || customPath?.strokeOnly || customPath?.fillD ? 'transparent' : fill
+          }
+          {...(customPath
+            ? {
+                transform: `scale(${boxWidth / customPath.width}, ${boxHeight / customPath.height})`,
+              }
+            : {})}
           stroke={stroke}
           strokeWidth={strokeWidth}
           {...(dashPattern
@@ -1275,6 +1308,13 @@ function ShapeVisual({
   )
 }
 
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
 function ImageVisual({
   file,
   visual,
@@ -1283,7 +1323,7 @@ function ImageVisual({
   readonly visual: WorkbookVisualObject
 }): React.JSX.Element {
   const [source, setSource] = useState<string | null>(visual.mediaDataUrl ?? null)
-  const [error, setError] = useState<string | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
 
   useEffect(() => {
     // Session-added images carry their bytes inline; nothing to fetch.
@@ -1294,18 +1334,26 @@ function ImageVisual({
         sessionId: file.sessionId,
         visualId: visual.id,
       })
-      .then((media) => {
-        if (isCurrent) setSource(`data:${media.mediaType};base64,${media.base64}`)
+      .then(async (media) => {
+        const url = isMetafileMime(media.mediaType)
+          ? await metafileToDataUrl(base64ToBytes(media.base64), media.mediaType)
+          : `data:${media.mediaType};base64,${media.base64}`
+        if (!isCurrent) return
+        if (url) setSource(url)
+        else setUnavailable(true)
       })
       .catch((reason: unknown) => {
-        if (isCurrent) setError(reason instanceof Error ? reason.message : t('appImageLoadFailed'))
+        // Unsupported or unreadable media degrades to an empty frame; the
+        // grid must never show the failure text.
+        console.warn(`workbook media unavailable (${visual.id})`, reason)
+        if (isCurrent) setUnavailable(true)
       })
     return () => {
       isCurrent = false
     }
   }, [file.sessionId, visual.id, visual.mediaDataUrl])
 
-  if (error) return <div className="xlsx-visual-error">{error}</div>
+  if (unavailable) return <div className="xlsx-visual-unavailable" />
   if (!source) return <div className="xlsx-visual-loading">{t('appImageLoading')}</div>
   return <img className="xlsx-image" src={source} alt={visual.name ?? t('appWorkbookImageAlt')} />
 }
@@ -1409,11 +1457,16 @@ function ChartVisual({
   const needsHydration = sourceChart.series.some(
     (series) =>
       (series.values.length === 0 && series.valuesRef) ||
-      (series.categories.length === 0 && series.categoriesRef),
+      (series.categories.length === 0 && series.categoriesRef) ||
+      series.nameRef,
   )
   const [hydration, setHydration] = useState<ReadonlyMap<
     number,
-    { values: readonly number[] | null; categories: readonly string[] | null }
+    {
+      values: readonly number[] | null
+      categories: readonly string[] | null
+      name: string | null
+    }
   > | null>(null)
   useEffect(() => {
     if (!needsHydration || !readVector) return
@@ -1423,13 +1476,20 @@ function ChartVisual({
       for (let attempt = 0; attempt < 8 && !cancelled; attempt += 1) {
         const entries = new Map<
           number,
-          { values: readonly number[] | null; categories: readonly string[] | null }
+          {
+            values: readonly number[] | null
+            categories: readonly string[] | null
+            name: string | null
+          }
         >()
         let retry = false
         for (const [index, series] of sourceChart.series.entries()) {
           const valuesRef = series.values.length === 0 ? series.valuesRef : undefined
           const categoriesRef = series.categories.length === 0 ? series.categoriesRef : undefined
-          if (valuesRef === undefined && categoriesRef === undefined) continue
+          const nameRef = series.nameRef
+          if (valuesRef === undefined && categoriesRef === undefined && nameRef === undefined) {
+            continue
+          }
           try {
             const values = valuesRef === undefined ? null : await readVector(editKey, valuesRef)
             // A failed categories read only aborts (and retries) when it is
@@ -1440,7 +1500,18 @@ function ChartVisual({
                 : valuesRef === undefined
                   ? await readVector(editKey, categoriesRef)
                   : await readVector(editKey, categoriesRef).catch(() => null)
-            if (values === null && categories === null) continue
+            // The name (an uncached c:tx cell reference) throws into the
+            // retry loop when it is the sole target — a still-indexing sheet
+            // must not freeze the SeriesN placeholder. Alongside other reads
+            // it stays best-effort: the placeholder already stands in.
+            const name =
+              nameRef === undefined
+                ? null
+                : valuesRef === undefined && categoriesRef === undefined
+                  ? await readVector(editKey, nameRef)
+                  : await readVector(editKey, nameRef).catch(() => null)
+            if (values === null && categories === null && name === null) continue
+            const nameText = String(name?.vector[0] ?? '').slice(0, 255)
             entries.set(index, {
               values:
                 values?.vector.map((value) => {
@@ -1450,6 +1521,7 @@ function ChartVisual({
                 }) ?? null,
               categories:
                 categories?.vector.map((value) => String(value ?? '').slice(0, 255)) ?? null,
+              name: nameText === '' ? null : nameText,
             })
           } catch {
             retry = true
@@ -1478,6 +1550,7 @@ function ChartVisual({
             ...(series.categories.length === 0 && entry.categories
               ? { categories: [...entry.categories] }
               : {}),
+            ...(entry.name !== null ? { name: entry.name } : {}),
           }
         }),
       }
@@ -1816,14 +1889,18 @@ function rangeReader(
   return (range) => readVector(editKey, range)
 }
 
+/// Excel's automatic slice cycle past the six accents: the same accents
+/// lightened (HSL L' = 0.6·L + 0.4), verified against Excel-rendered pies.
+const pieSliceColorsLight = ['#8faadc', '#f4b183', '#c9c9c9', '#ffd966', '#9dc3e6', '#a9d18e']
+
 /// Pie/doughnut slices color per point: explicit `c:dPt` fills win, the
-/// Office palette cycles underneath (Excel's varyColors default).
+/// Office palette cycles underneath (Excel's varyColors default) — six
+/// accents, then their lighter variants, then around again.
 function pieSliceColor(series: SeriesLike, index: number): string {
-  return (
-    series.pointColors?.find((point) => point.index === index)?.color ??
-    chartColors[index % chartColors.length] ??
-    '#4472c4'
-  )
+  const explicit = series.pointColors?.find((point) => point.index === index)?.color
+  if (explicit) return explicit
+  const cycle = index % 12
+  return (cycle < 6 ? chartColors[cycle] : pieSliceColorsLight[cycle - 6]) ?? '#4472c4'
 }
 
 /// Inline editor: title, chart type (axis-based family only), series colors.
@@ -2472,6 +2549,19 @@ type ChartLabelPosition = ChartMetadata['dataLabelPosition']
 
 /// Minimal formatCode support for data labels (percent / thousands / fixed
 /// decimals); anything fancier falls back to the axis heuristics.
+/// Pie value labels honor the full source number format (currency symbols,
+/// accounting padding) the way Excel's sourceLinked labels do.
+function formatPieValue(value: number, formatCode: string | undefined): string {
+  if (formatCode && formatCode !== 'General') {
+    try {
+      return numfmt.format(formatCode, value, { throws: false }).trim()
+    } catch {
+      // Unparseable format: fall through to the plain rendering.
+    }
+  }
+  return formatLabelValue(value, formatCode, undefined)
+}
+
 function formatLabelValue(
   value: number,
   formatCode: string | undefined,
@@ -3236,12 +3326,17 @@ function pieSliceLabels(
     const share = Math.max(0, value) / total
     const mid = (cursor + share / 2) * 2 * Math.PI
     cursor += share
-    if (share < 0.02) continue
+    // Excel labels every visible slice; only slivers too thin to aim a
+    // leader line at go unlabeled.
+    if (share < 0.005) continue
     const percentText = `${(share * 100).toFixed(share >= 0.1 ? 0 : 1)}%`
+    const valueText = formatPieValue(value, formatCode)
     const lines =
-      mode === 'category-percent'
-        ? [truncateLabel(categories[index] ?? '', 12), percentText]
-        : [mode === 'value' ? formatLabelValue(value, formatCode, undefined) : percentText]
+      mode === 'category-value-percent'
+        ? [truncateLabel(categories[index] ?? '', 12), valueText, percentText]
+        : mode === 'category-percent'
+          ? [truncateLabel(categories[index] ?? '', 12), percentText]
+          : [mode === 'value' ? valueText : percentText]
     const sin = Math.sin(mid)
     const cos = Math.cos(mid)
     // An exploded slice carries its label out with it.
@@ -3379,7 +3474,8 @@ function PieChart({
           dataLabels,
           { cx, cy, r, inner, offsets },
           dataLabelPosition,
-          dataLabelFormat,
+          // Labels without their own numFmt inherit the source cells' format.
+          dataLabelFormat ?? series.numberFormat,
         )
       : []
   return (
@@ -3444,15 +3540,12 @@ function PieChart({
               : undefined
           }
         >
-          {categories.slice(0, 12).map((category, index) => {
-            const share = (Math.max(0, values[index] ?? 0) / total) * 100
-            return (
-              <span key={`${category}-${index}`}>
-                <i style={{ background: pieSliceColor(series, index) }} />
-                {truncateLabel(category, 12)} {share >= 0.05 ? `${share.toFixed(1)}%` : ''}
-              </span>
-            )
-          })}
+          {categories.slice(0, 12).map((category, index) => (
+            <span key={`${category}-${index}`}>
+              <i style={{ background: pieSliceColor(series, index) }} />
+              {truncateLabel(category, 12)}
+            </span>
+          ))}
           {categories.length > 12 && (
             <span>{t('appMoreItems', { count: categories.length - 12 })}</span>
           )}

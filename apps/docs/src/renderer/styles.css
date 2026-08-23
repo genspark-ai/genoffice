@@ -34,8 +34,8 @@
   --docs-focus-ring: rgb(35 36 37 / 20%);
   --docs-focus-ring-blue: rgb(74 141 246 / 30%);
   --docs-input-focus: #0f7fff;
-  --docs-input-ring: rgb(15 127 255 / 12%);
-  --docs-error-ring: rgb(239 68 68 / 12%);
+  --docs-input-ring: rgb(15 127 255 / 10%);
+  --docs-error-ring: rgb(239 68 68 / 10%);
   --docs-scroll-thumb: rgb(0 0 0 / 25%);
   --docs-tooltip-bg: #232425;
   --docs-tooltip-ink: #ffffff;
@@ -66,6 +66,7 @@
   --docs-shadow-menu: 0 8px 24px rgb(0 0 0 / 18%);
   --docs-shadow-ctx: 0 8px 28px rgb(0 0 0 / 22%);
   --docs-shadow-modal: 0 3px 30px rgb(0 0 0 / 8%);
+  --docs-shadow-modal-gs: 0 12px 40px rgb(0 0 0 / 16%);
   --docs-shadow-chip: 0 2px 8px rgb(0 0 0 / 12%);
   --docs-shadow-tooltip: 0 4px 6px rgb(0 0 0 / 10%);
   --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
@@ -132,6 +133,8 @@
   --docs-paper-comment-bg: rgb(255 196 0 / 22%);
   --docs-paper-comment-flash: rgb(255 170 0 / 55%);
   --docs-paper-comment-line: #e8a33d;
+  --docs-paper-ai-anchor-bg: rgb(80 128 220 / 14%);
+  --docs-paper-ai-anchor-line: #5080dc;
   --docs-paper-xe-ink: #8a6d3b;
   --docs-paper-xe-bg: #fdf6e3;
   --docs-paper-xe-border: #d5c48a;
@@ -203,6 +206,7 @@
   --docs-shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
   --docs-shadow-ctx: 0 8px 28px rgb(0 0 0 / 60%);
   --docs-shadow-modal: 0 20px 50px rgb(0 0 0 / 65%);
+  --docs-shadow-modal-gs: 0 20px 50px rgb(0 0 0 / 65%);
   --docs-shadow-chip: 0 2px 8px rgb(0 0 0 / 40%);
   --docs-shadow-tooltip: 0 4px 6px rgb(0 0 0 / 30%);
   --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
@@ -273,6 +277,7 @@
     --docs-shadow-menu: 0 8px 24px rgb(0 0 0 / 55%);
     --docs-shadow-ctx: 0 8px 28px rgb(0 0 0 / 60%);
     --docs-shadow-modal: 0 20px 50px rgb(0 0 0 / 65%);
+    --docs-shadow-modal-gs: 0 20px 50px rgb(0 0 0 / 65%);
     --docs-shadow-chip: 0 2px 8px rgb(0 0 0 / 40%);
     --docs-shadow-tooltip: 0 4px 6px rgb(0 0 0 / 30%);
     --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
@@ -2163,10 +2168,17 @@ th.cell-rev-del {
   margin-top: 0 !important;
 }
 
-/* page border (w:pgBorders): a box inset from the page edge */
-.page-bordered .doc-page {
-  outline: 1.5px solid var(--docs-paper-ink-dim);
-  outline-offset: -32px;
+/* page border (w:pgBorders): per-page overlay boxes (see syncPageBorders);
+   border color/width are document data and come inline from the sectPr */
+.page-border-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.page-border-overlay {
+  position: absolute;
 }
 
 /* ---- tab stops (w:tabs) ---- */
@@ -2176,6 +2188,18 @@ th.cell-rev-del {
    tab char itself, so an ancestor <u> still underlines the gap. */
 .has-tab-stops {
   tab-size: 0;
+}
+
+/* Word keeps tab segments fixed at their stops on justified lines; Chromium
+   would justify-stretch them and corrupt the tab measurements */
+.has-tab-stops.tab-stops-no-justify {
+  text-align: left !important;
+}
+
+/* tab with no room left on its line: Chromium still advances at least one
+   space width per tab, which would overflow — a zero font lifts that floor */
+.doc-tab-collapse {
+  font-size: 0;
 }
 
 /* underlined tab run: browsers skip text-decoration over a tab advance, so
@@ -3531,6 +3555,26 @@ th.cell-rev-del {
   padding-inline-start: var(--li-left, var(--style-li-left, 1.75in));
 }
 
+/* Word HTML auto spacing (sp-auto-*, 14pt inline margins) collapses to 0 between
+   two list items; !important beats the inline auto margin */
+.doc-page .doc-li.sp-auto-a:has(+ .doc-li) {
+  margin-bottom: 0 !important;
+}
+
+.doc-page .doc-li + .doc-li.sp-auto-b {
+  margin-top: 0 !important;
+}
+
+/* direct w:contextualSpacing between unstyled (Normal) paragraphs: same-style
+   suppression (styled pairs are handled per style in doc-style-css.ts) */
+.doc-page p.ctx-sp:not([data-style]):has(+ p:not([data-style])) {
+  margin-bottom: 0 !important;
+}
+
+.doc-page p:not([data-style]) + p.ctx-sp:not([data-style]) {
+  margin-top: 0 !important;
+}
+
 .doc-li::before {
   display: inline-block;
   /* --li-tab: measured marker escaped the hanging area; box widens to the next default tab stop */
@@ -3633,6 +3677,15 @@ th.cell-rev-del {
   pointer-events: auto;
 }
 
+/* pictures drag-move from anywhere on their body (Word parity) */
+.doc-protected[data-doc-protected='image'] .doc-img-wrap {
+  cursor: grab;
+}
+
+body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
+  cursor: default;
+}
+
 /* Word-style inactive selection: while a ribbon combobox (font family/size)
    holds keyboard focus the DOM selection lives in that input, so the editor's
    native highlight vanishes — this decoration keeps the target text visibly
@@ -3694,9 +3747,11 @@ th.cell-rev-del {
      font size/line spacing inherit the document defaults (.doc-page, i.e. the Normal style) */
   width: 100%;
   /* paper-width cap: over-wide tables may spill into the page margins like Word
-     (inline widths in extensions.ts/protected-render.ts grant up to this much) */
+     (inline widths in extensions.ts/protected-render.ts grant up to this much);
+     --doc-content-w = per-block section content width (differing-width sections) */
   max-width: calc(
-    100% + var(--doc-margin-left, var(--doc-margin-right, 0px)) + var(--doc-margin-right, 0px)
+    var(--doc-content-w, 100%) + var(--doc-margin-left, var(--doc-margin-right, 0px)) +
+      var(--doc-margin-right, 0px)
   );
   border-collapse: collapse;
   table-layout: fixed;
@@ -3716,6 +3771,13 @@ th.cell-rev-del {
 .doc-table td .doc-p-empty,
 .doc-table th .doc-p-empty {
   --doc-line-factor: var(--doc-line-factor-latin, 1.2);
+}
+
+/* Word ignores page-type w:br inside table cells; a visible line break here
+   inflates every cell that carries one (HWP-exported TOC/decor tables) */
+.doc-table td .doc-page-br,
+.doc-table th .doc-page-br {
+  display: none;
 }
 
 .doc-table td,
@@ -3955,7 +4017,28 @@ th.cell-rev-del {
   border: none;
   width: 100%;
   max-width: 100%;
+}
+
+/* behindDoc anchors: under the body text like Word (positioned boxes would
+   otherwise paint above every later in-flow paragraph); on the boxes too so
+   it also holds when the pagepinned wrapper is un-positioned */
+.doc-protected.doc-protected-floating.doc-protected-behind {
+  z-index: -1;
   overflow: visible;
+}
+
+.doc-protected.doc-protected-behind .doc-textbox {
+  z-index: -1;
+}
+
+/* page-pinned cover art: the un-positioned wrapper lets the boxes' absolute
+   page coordinates resolve against the page box itself */
+.doc-protected.doc-protected-floating.doc-protected-pagepinned {
+  position: static;
+}
+
+.doc-protected-pagepinned > .doc-move-handle {
+  display: none;
 }
 
 /* wrapNone / behind-text anchored images: same zero-flow-height semantics */
@@ -4190,7 +4273,11 @@ th.cell-rev-del {
 /* field paragraphs whose visible result is rendered directly (TOC lines, page
    fields...): no chip frame, dashed outline only on hover */
 .doc-protected-field {
-  border-color: transparent;
+  /* outline, not border: the chip border's 1px top/bottom would add 2px to
+     every field row (a 40-line TOC gains ~4 lines and drifts a page) */
+  border: none;
+  outline: 1px dashed transparent;
+  outline-offset: -1px;
   background: transparent;
   /* no vertical padding/margin: field paragraphs (TOC entries, filled text
      fields) must occupy paragraph-height boxes or pagination drifts; document
@@ -4203,7 +4290,7 @@ th.cell-rev-del {
 }
 
 .doc-protected-field:hover {
-  border-color: var(--border-strong);
+  outline-color: var(--border-strong);
 }
 
 .doc-toc-line {
@@ -4214,6 +4301,9 @@ th.cell-rev-del {
      every TOC entry ~50% taller than Word/LO and drifted long TOCs a page+ */
   font-size: inherit;
   line-height: inherit;
+  /* the entry's hanging indent would shift every blockified cell's first line
+     left, overprinting the neighbor cell; the flex row indents via padding */
+  text-indent: 0;
   cursor: pointer;
 }
 
@@ -4476,6 +4566,12 @@ th.cell-rev-del {
   background: var(--docs-paper-select-bg);
 }
 
+/* field rows stay borderless when selected too — the border's 2px would
+   reflow the page under the caret */
+.ProseMirror-focused .doc-protected-field.ProseMirror-selectednode {
+  border: none;
+}
+
 .doc-protected-label {
   display: inline-block;
   font-size: 11px;
@@ -4599,6 +4695,14 @@ th.cell-rev-del {
   border-color: transparent;
   background: none;
   padding: 2px 0;
+  /* no baseline strut/descender slack: Word gives a picture-only paragraph
+     exactly the image height, and the ~8px surplus pushes a page-filling
+     picture past the page and derails the slice boundaries */
+  line-height: 0;
+}
+
+.doc-protected[data-doc-protected='image'] .doc-img-wrap > img {
+  vertical-align: bottom;
 }
 
 .doc-protected[data-doc-protected='image']:hover {
@@ -5863,6 +5967,378 @@ body.docs-crop-active
   background: currentColor;
 }
 
+.ai-scope-row {
+  margin-bottom: 7px;
+}
+
+.ai-scope-hint .ai-scope-label,
+.ai-scope-hint .ai-scope-clear {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ai-scope-hint .ai-scope-clear {
+  opacity: 0.65;
+}
+
+.ai-scope-hint .ai-scope-clear:hover {
+  opacity: 1;
+}
+
+.ai-scope-preview {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  max-height: 96px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* in-answer citation links: click selects and scrolls to the cited block */
+.ai-md .ai-md-nav {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ai-md .ai-md-nav:hover {
+  text-decoration-style: solid;
+}
+
+/* queued-edit anchor highlight inside the document (decoration, never document data) */
+.ai-queue-anchor {
+  background: var(--docs-paper-ai-anchor-bg);
+  border-bottom: 2px dashed var(--docs-paper-ai-anchor-line);
+  cursor: pointer;
+}
+
+/* floating Ask-AI entry that follows the text selection */
+.ai-ask-trigger {
+  position: fixed;
+  z-index: 59;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  box-shadow: var(--docs-shadow-menu);
+  cursor: pointer;
+}
+
+.ai-ask-trigger:hover {
+  background: var(--hover);
+}
+
+/* anchored ask popover (shared look with the slides one, docs tokens) */
+.ai-ask-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--docs-shadow-menu);
+}
+
+.ai-ask-pop-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-ask-pop-sub {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-ask-pop-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ai-ask-pop-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-ask-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-ask-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-ask-cancel,
+.ai-ask-confirm {
+  padding: 5px 12px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-ask-cancel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.ai-ask-cancel:hover {
+  background: var(--hover);
+}
+
+.ai-ask-cancel:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ai-ask-confirm {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--docs-on-accent);
+}
+
+.ai-ask-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* queue card above the composer */
+.ai-queue {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.ai-queue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.ai-queue-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-queue-count {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.ai-queue-fold {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.ai-queue-fold.folded {
+  transform: rotate(-90deg);
+}
+
+.ai-queue-hint {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.ai-queue-list {
+  margin: 0;
+  padding: 0 6px 4px;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.ai-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 6px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  color: var(--text);
+  cursor: default;
+}
+
+.ai-queue-row:hover {
+  background: var(--hover);
+}
+
+.ai-queue-row.stale {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.ai-queue-ord {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.ai-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-queue-target {
+  margin-right: 5px;
+  color: var(--text-dim);
+}
+
+.ai-queue-target::after {
+  content: ' ·';
+}
+
+.ai-queue-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-6);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.ai-queue-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.ai-queue-row:hover .ai-queue-row-actions {
+  opacity: 1;
+}
+
+.ai-queue-row-btn {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ai-queue-row-btn:hover {
+  background: var(--active-bg);
+  color: var(--text);
+}
+
+.ai-queue-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+}
+
+.ai-queue-confirm {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.ai-queue-discard {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-queue-discard:hover {
+  background: var(--hover);
+}
+
+.ai-queue-send {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: var(--accent);
+  color: var(--docs-on-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-queue-send:disabled,
+.ai-queue-discard:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* composer card — 16px radius, default border, production float shadow */
 .ai-input-box {
   border: 1px solid var(--color-border-default);
@@ -6473,16 +6949,22 @@ body.docs-crop-active
 
 /* ---- Genspark DS form dialogs (password prompts + Protect Document) ---- */
 
+.modal.gs-form {
+  padding: 24px;
+  box-shadow: var(--docs-shadow-modal-gs);
+}
+
 .modal.gs-form h2 {
   margin: 0 0 8px;
   font-size: 16px;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .gs-form .modal-desc {
   font-size: 13px;
   line-height: 1.6;
-  color: var(--text-dim);
+  color: var(--color-text-secondary);
   margin: 0 0 20px;
 }
 
@@ -6490,14 +6972,14 @@ body.docs-crop-active
   display: block;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text);
+  color: var(--color-text-primary);
   margin-bottom: 16px;
 }
 
 /* the "(optional)" suffix stays lighter than the label itself */
 .gs-form .fld-opt {
   font-weight: 400;
-  color: var(--text-dim);
+  color: var(--color-text-tertiary);
 }
 
 .gs-form .fld input {
@@ -6505,12 +6987,12 @@ body.docs-crop-active
   width: 100%;
   margin-top: 0;
   height: 38px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
   padding: 0 12px;
   font-size: 13px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--color-text-primary);
   outline: none;
   transition:
     border-color var(--transition-fast),
@@ -6541,8 +7023,8 @@ body.docs-crop-active
   gap: 12px;
 }
 
-/* wrapper positioning the shared .pwd-eye toggle (defined with .pwd-field
-   below) inside a gs-form field */
+/* wrapper positioning the shared .pwd-eye toggle (defined below) inside a
+   gs-form field */
 .pwd-wrap {
   position: relative;
   display: block;
@@ -6569,8 +7051,19 @@ body.docs-crop-active
 .gs-form .fld-hint {
   font-size: 12px;
   line-height: 1.6;
-  color: var(--text-dim);
+  color: var(--color-text-tertiary);
   margin: -8px 0 16px;
+}
+
+/* mockup g-actions spec: 36px buttons, 12px gap, 24px above the footer */
+.gs-form .modal-actions {
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.gs-form .modal-actions button {
+  height: 36px;
+  padding: 0 18px;
 }
 
 .modal select {
@@ -6643,10 +7136,10 @@ body.docs-crop-active
 .protect-dialog .protect-section-title {
   margin: 24px 0 14px;
   padding-top: 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border-default);
   font-size: 13px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .protect-dialog .modal-desc + .protect-section-title {
@@ -6664,7 +7157,7 @@ body.docs-crop-active
   gap: 8px;
   margin-bottom: 10px;
   font-size: 13px;
-  color: var(--text);
+  color: var(--color-text-primary);
   cursor: pointer;
 }
 
@@ -6736,7 +7229,7 @@ body.docs-crop-active
 }
 
 .protect-dialog label.protect-check:has(> input:disabled) {
-  color: var(--text-dim);
+  color: var(--color-text-tertiary);
   cursor: default;
 }
 
@@ -6754,67 +7247,15 @@ body.docs-crop-active
 
 /* ---- password prompt dialog (open password / password to modify) ---- */
 
-.modal.pwd-dialog {
-  width: 384px;
-  padding: 28px 28px 22px;
-  text-align: center;
-}
-
-.pwd-dialog-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 14px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.modal.pwd-dialog h2 {
-  margin: 0 0 8px;
-}
-
-.pwd-dialog-body {
-  margin: 0 0 18px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--text-dim);
+/* the quoted file name in the description can be arbitrarily long */
+.pwd-dialog .modal-desc {
   overflow-wrap: anywhere;
 }
 
-.pwd-field {
-  position: relative;
-}
-
-.pwd-field input {
-  height: 38px;
-  margin: 0;
-  padding: 0 40px 0 12px;
-  border-radius: 9px;
-  background: var(--surface);
-  color: var(--text);
-  /* don't inherit the dialog's centered text */
-  text-align: start;
-}
-
-.pwd-field input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--docs-focus-ring);
-}
-
-.pwd-field.has-error {
+/* wrong password: shake the field; the red border / ring / error line come
+   from the shared gs-form invalid + fld-error rules */
+.pwd-dialog .fld.has-error .pwd-wrap {
   animation: pwd-shake 0.4s ease;
-}
-
-.pwd-field.has-error input {
-  border-color: var(--danger);
-}
-
-.pwd-field.has-error input:focus {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
 }
 
 @keyframes pwd-shake {
@@ -6849,47 +7290,28 @@ body.docs-crop-active
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
-  color: var(--text-dim);
+  color: var(--color-text-tertiary);
   cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
 }
 
 .pwd-eye:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.pwd-eye:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
 }
 
 .pwd-eye:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.pwd-dialog-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin: 10px 0 0;
-  padding: 8px 11px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--danger) 9%, transparent);
-  color: var(--danger);
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: start;
-}
-
-.pwd-dialog-error svg {
-  flex: none;
-  margin-top: 2px;
-}
-
-.pwd-dialog-actions {
-  margin-top: 22px;
-}
-
-.pwd-dialog-actions button {
-  flex: 1;
 }
 
 /* ---- print dialog (Word-style: page preview + range options) ---- */
@@ -7091,7 +7513,12 @@ body.docs-crop-active
 
 /* ProseMirror basics */
 
-.ProseMirror {
+/* pre-wrap, NOT prosemirror-view's break-spaces (its runtime-injected sheet
+   loads after this one, so the selector is doubled to win): Word hangs the
+   space at a line break into the margin, while break-spaces reserves width
+   for it — every line wraps a word early and a space that fits nowhere takes
+   a whole blank line (narrow table cells), inflating layout vs Word. */
+.ProseMirror.ProseMirror {
   white-space: pre-wrap;
 }
 
@@ -7102,7 +7529,7 @@ body.docs-crop-active
    (once clipped at a page bottom, once at the next page top). */
 .pv-content {
   word-wrap: break-word;
-  white-space: break-spaces;
+  white-space: pre-wrap;
   -webkit-font-variant-ligatures: none;
   font-variant-ligatures: none;
   font-feature-settings: 'liga' 0;
@@ -8689,29 +9116,6 @@ tr > .page-gap-cut {
   .ai-dock {
     transition: none;
   }
-}
-
-.ai-msg-undelivered {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--docs-ai-error);
-}
-
-.ai-retry-btn {
-  border: 1px solid var(--docs-ai-error-border);
-  border-radius: 4px;
-  background: none;
-  padding: 1px 8px;
-  font-size: 12px;
-  color: var(--docs-ai-error);
-  cursor: pointer;
-}
-
-.ai-retry-btn:hover {
-  background: var(--docs-ai-error-bg);
 }
 
 .ai-login-btn {

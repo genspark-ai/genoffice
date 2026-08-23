@@ -22,9 +22,11 @@ import {
   duplicateSlide,
   insertBlankSlide,
   insertSlideWithLayout,
+  mergeSlideFromSource,
   moveSection,
   moveSlide,
   pasteSlide,
+  promoteSlideBackground,
   removeSection,
   renameSection,
   replaceAllInDeck,
@@ -48,7 +50,14 @@ import {
   type SlideTransitionKind,
   type TextElement,
 } from '@genoffice/pptx-engine'
-import { GuidedError, register, resolveSlide, type Op, type OpRecord } from './registry'
+import {
+  GuidedError,
+  register,
+  resolveSlide,
+  slideDurableId,
+  type Op,
+  type OpRecord,
+} from './registry'
 
 // ── slide lifecycle ─────────────────────────────────────────────────────
 
@@ -159,6 +168,52 @@ register({
     )
     if (!slide) throw new GuidedError('op "pasteSlide": the copied slide could not be pasted.')
     return { op, after: { index: ctx.opened.deck.slides.indexOf(slide) } }
+  },
+})
+
+// ── insertSlidePptx ─────────────────────────────────────────────────────
+// Lands one generated page: merge an extracted single-slide pptx source into the
+// deck, position it, and (for regenerate) drop the page it replaces — one atomic
+// action, so the landing pipeline produces OpRecords like every other edit.
+// The source payload is main-process data (extractMergeSlideSource); not a model surface.
+register({
+  name: 'insertSlidePptx',
+  validate(op, ctx) {
+    const source = op.source as { slideXml?: unknown } | null | undefined
+    if (typeof source !== 'object' || source === null || typeof source.slideXml !== 'string') {
+      throw new GuidedError(
+        'op "insertSlidePptx" needs "source": an extracted single-slide pptx (main-process payload).',
+      )
+    }
+    const total = ctx.opened.deck.slides.length
+    const at = op.at
+    if (at != null && (typeof at !== 'number' || !Number.isInteger(at) || at < 0 || at > total)) {
+      throw new GuidedError(`op "insertSlidePptx": "at" is out of range (0-${total}).`)
+    }
+    if (op.replace && (typeof at !== 'number' || at >= total)) {
+      throw new GuidedError(
+        'op "insertSlidePptx": "replace" needs "at" pointing at an existing slide.',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const opened = ctx.opened
+    const total = opened.deck.slides.length
+    const slide = mergeSlideFromSource(
+      opened,
+      op.source as Parameters<typeof mergeSlideFromSource>[1],
+    )
+    if (!slide) throw new GuidedError('op "insertSlidePptx": the source page could not be merged.')
+    promoteSlideBackground(slide, opened.deck.size)
+    const at = op.at as number | undefined
+    // The merge appends at index=total; move into place, then (replace) drop the displaced old page
+    if (at != null && at < total && !moveSlide(opened, total, at)) {
+      throw new GuidedError('op "insertSlidePptx": positioning the new page failed.')
+    }
+    if (op.replace && !deleteSlide(opened, (at as number) + 1)) {
+      throw new GuidedError('op "insertSlidePptx": removing the replaced page failed.')
+    }
+    return { op, created: [slideDurableId(slide)], after: { index: at ?? total } }
   },
 })
 

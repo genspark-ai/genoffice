@@ -69,6 +69,14 @@ describe('paragraph formatting HTML round-trip (r117)', () => {
     })
   })
 
+  it('keeps the inferred rtl base direction (bidiInferred)', () => {
+    expect(roundtripPara({ bidiInferred: true, align: 'right' }, 'مرحبا بالعالم')).toMatchObject({
+      bidi: false,
+      bidiInferred: true,
+      align: 'right',
+    })
+  })
+
   it('keeps explicit opt-out booleans (snapToGrid/autoSpace false)', () => {
     expect(roundtripPara({ snapToGrid: false, autoSpace: false })).toMatchObject({
       snapToGrid: false,

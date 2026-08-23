@@ -42,6 +42,33 @@ function hasVisiblePageBorder(xml: string): boolean {
   })
 }
 
+/** Styling details of a visible w:pgBorders box (undefined when no visible side). */
+function pageBorderPropsOf(xml: string): SectionSettings['pageBorderProps'] {
+  const pgBorders = /<w:pgBorders[^>]*\/>|<w:pgBorders[\s\S]*?<\/w:pgBorders>/.exec(xml)?.[0]
+  if (!pgBorders || !hasVisiblePageBorder(xml)) return undefined
+  const display = /w:display="(firstPage|notFirstPage)"/.exec(pgBorders)?.[1] as
+    'firstPage' | 'notFirstPage' | undefined
+  const offsetFrom = /w:offsetFrom="(page|text)"/.exec(pgBorders)?.[1] as
+    'page' | 'text' | undefined
+  let spacePt = 0
+  let szEighths = 0
+  let color: string | undefined
+  for (const side of pgBorders.match(/<w:(?:top|left|bottom|right)\b[^>]*\/?>/g) ?? []) {
+    const val = /w:val="([^"]*)"/.exec(side)?.[1]
+    if (!val || val === 'none' || val === 'nil') continue
+    spacePt = Math.max(spacePt, intAttr(side, 'w:space', 0))
+    szEighths = Math.max(szEighths, intAttr(side, 'w:sz', 0))
+    color ??= /w:color="([0-9A-Fa-f]{6})"/.exec(side)?.[1]
+  }
+  return {
+    ...(display ? { display } : {}),
+    ...(offsetFrom ? { offsetFrom } : {}),
+    spacePt,
+    widthPt: szEighths / 8,
+    ...(color ? { color } : {}),
+  }
+}
+
 /** Page setup from one w:sectPr XML slice. */
 export function sectionSettingsFromXml(xml: string): SectionSettings {
   const pgSz = /<w:pgSz[^>]*\/?>/.exec(xml)?.[0] ?? ''
@@ -69,6 +96,8 @@ export function sectionSettingsFromXml(xml: string): SectionSettings {
     .map((tag) => intAttr(tag, 'w:w', 0))
     .filter((w) => w > 0)
 
+  const pageBorderProps = pageBorderPropsOf(xml)
+
   return {
     pageWidth: intAttr(pgSz, 'w:w', DEFAULT_SECTION.pageWidth),
     pageHeight: intAttr(pgSz, 'w:h', DEFAULT_SECTION.pageHeight),
@@ -81,6 +110,7 @@ export function sectionSettingsFromXml(xml: string): SectionSettings {
     footerDist: intAttr(pgMar, 'w:footer', 720),
     ...(vAlignOf(xml) ? { vAlign: vAlignOf(xml) } : {}),
     pageBorder: hasVisiblePageBorder(xml),
+    ...(pageBorderProps ? { pageBorderProps } : {}),
     columns: intAttr(/<w:cols[^>]*\/?>/.exec(xml)?.[0] ?? '', 'w:num', 1),
     colSpace: intAttr(/<w:cols[^>]*\/?>/.exec(xml)?.[0] ?? '', 'w:space', 720),
     ...(colWidths.length >= 2 ? { colWidths } : {}),

@@ -55,6 +55,14 @@ import { formatClock, type CustomShow } from './slideshow-utils'
 import { ContextMenu } from './components/ContextMenu'
 import { ShapeGalleryPopover } from './components/ShapeGalleryPopover'
 import { PasteOptionsFloater } from './components/PasteOptionsFloater'
+import { AiAskPopover, type AnchorRect, type AskTarget } from './components/AiAskPopover'
+import {
+  anchorId,
+  describeNode,
+  EDIT_QUEUE_MAX,
+  resolveQueueItem,
+  type EditQueueItem,
+} from './ai/edit-queue'
 import { FormatBackgroundPane, type BgPaneOp } from './components/FormatBackgroundPane'
 import { FormatPane } from './components/FormatPane'
 import { CommentsPane } from './components/CommentsPane'
@@ -64,7 +72,13 @@ import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/Ins
 import { CutoutDialog } from './components/CutoutDialog'
 import type { WordArtPreset } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
-import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
+import {
+  GensparkMark,
+  IconAiAskSelection,
+  IconAiBeautify,
+  IconAiFactCheck,
+  IconAiImage,
+} from './components/icons'
 import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
 import { t, useI18n } from './i18n/locale'
@@ -267,6 +281,8 @@ export function App() {
   const [enteredGroupId, setEnteredGroupId] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [editingCell, setEditingCell] = useState<EditingCellState | null>(null)
+  /** Element-scoped AI edits waiting to be submitted (session-only, see the queue helpers below) */
+  const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   // Armed shape draw mode (ribbon gallery pick); null = normal selection behavior
   const [drawKind, setDrawKind] = useState<InsertKind | null>(null)
   /** Latest-state bundle for the extracted action modules; refreshed every render (see action-context.ts). */
@@ -690,6 +706,9 @@ export function App() {
       setDirty(false)
       setInkTool('select')
       setAiPanelKey((k) => k + 1)
+      // Queue anchors belong to the deck that was open; another file invalidates them all
+      setEditQueue([])
+      setAskState(null)
       needsFitRef.current = true
       setStatus(
         result.path
@@ -751,6 +770,8 @@ export function App() {
   // Save/export flows live in file-actions.ts; the editing-active flag lets ⌘S wait for the edit overlay to commit
   const editingActiveRef = useRef(false)
   editingActiveRef.current = !!editing || !!editingCell
+  /** Set while the AI annotation popover is open (assigned below, next to askState) */
+  const askOpenRef = useRef(false)
 
   const save = useCallback(
     (quiet = false): Promise<boolean> => fileActions.save(ctxRef.current, quiet),
@@ -770,6 +791,21 @@ export function App() {
   // Undo/redo stack occupancy pushed by the main process: the QAT buttons grey out when empty
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
   useEffect(() => window.slidesApi.onHistoryChanged?.(setHistState), [])
+
+  // Shared session (a second window on the same file): apply the other window's
+  // edits without touching local selection or an open editor — the ids are stable,
+  // so the selection stays valid; a same-element conflict resolves last-write-wins.
+  useEffect(
+    () =>
+      window.slidesApi.onDeckChanged?.(({ slides: all }) => {
+        setSlides(all)
+        setCurrent((c) => Math.min(c, Math.max(0, all.length - 1)))
+        // The broadcast also fires for undo back to a clean state — ask the
+        // session instead of assuming the change dirtied it
+        void window.slidesApi.isDirty?.().then((d) => setDirty(!!d))
+      }),
+    [],
+  )
 
   // Auto-save (off by default): when on and a file path exists, silently write back every 30s + on blur.
   // Saving rebuilds element ids; skipped during text editing/mouse-down (dragging) to avoid interrupting the current operation.
@@ -968,8 +1004,10 @@ export function App() {
         return
       }
       // Never flip out from under a live text edit — the overlay's commit
-      // must not depend on an unmount blur (same guard as autosave/⌘S)
-      if (editingActiveRef.current) return
+      // must not depend on an unmount blur (same guard as autosave/⌘S).
+      // The ask popover needs it too: it is anchored to an element on this page,
+      // so a flip would tear it down before it can commit what was typed.
+      if (editingActiveRef.current || askOpenRef.current) return
       const fits = zoomLiveRef.current <= rawFitRef.current(slideLiveRef.current) + 0.001
       if (!fits) return
       const flip = pager.feed(ev.deltaY, ev.timeStamp)
@@ -1060,6 +1098,128 @@ export function App() {
     [],
   )
 
+  // ── AI element edit queue ──────────────────────────────────────────────
+  // Session-only: annotations are a scratchpad for the next AI submission, not
+  // document content, so nothing here is persisted with the file.
+
+  /** Open annotation popover; ids are the canvas selection it was opened on */
+  const [askState, setAskState] = useState<{ ids: string[]; itemKey?: string } | null>(null)
+  askOpenRef.current = askState !== null
+  /** When the popover last dismissed itself — see the guard in openAskPopover */
+  const askClosedAtRef = useRef(0)
+
+  // A deliberate page change (thumbnail, outline, queue row) leaves the popover
+  // anchored to elements that are no longer rendered, which would unmount it
+  // without committing; drop it rather than strand askState
+  useEffect(() => {
+    setAskState(null)
+  }, [current])
+
+  const askTargets = useMemo((): AskTarget[] => {
+    if (!askState) return []
+    return askState.ids.flatMap((id) => {
+      const node = findNodeCtx(id)?.node
+      return node ? [{ id: anchorId(node), sourceId: node.sourceId, desc: describeNode(node) }] : []
+    })
+  }, [askState, findNodeCtx])
+
+  /** Viewport rect of the annotated selection; the popover re-measures it while the canvas scrolls */
+  const getAskAnchorRect = useCallback((): AnchorRect | null => {
+    const rel = stageRelRef.current
+    const slide = slides[current]
+    if (!rel || !slide || !askState) return null
+    const r = rel.getBoundingClientRect()
+    const scale = slide.widthPx > 0 ? r.width / slide.widthPx : 1
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const id of askState.ids) {
+      const ctx = findNodeCtx(id)
+      if (!ctx) continue
+      // Children of an entered group carry group-local coordinates
+      const parent = ctx.groupId ? findNodeCtx(ctx.groupId)?.node : null
+      const ox = parent?.box.x ?? 0
+      const oy = parent?.box.y ?? 0
+      const b = ctx.node.box
+      minX = Math.min(minX, ox + b.x)
+      minY = Math.min(minY, oy + b.y)
+      maxX = Math.max(maxX, ox + b.x + b.w)
+      maxY = Math.max(maxY, oy + b.y + b.h)
+    }
+    if (!Number.isFinite(minX)) return null
+    // Anchor to the visible part of the element and hand the canvas band along:
+    // a full-bleed picture would otherwise push the popover over the ribbon
+    const view = stageRelRef.current?.closest('.stage-wrap')?.getBoundingClientRect()
+    const rect = {
+      left: Math.max(r.left + minX * scale, view?.left ?? -Infinity),
+      top: Math.max(r.top + minY * scale, view?.top ?? -Infinity),
+      right: Math.min(r.left + maxX * scale, view?.right ?? Infinity),
+      bottom: Math.min(r.top + maxY * scale, view?.bottom ?? Infinity),
+      viewTop: view?.top ?? 0,
+      viewBottom: view?.bottom ?? window.innerHeight,
+    }
+    return rect.right <= rect.left || rect.bottom <= rect.top ? null : rect
+  }, [askState, findNodeCtx, slides, current])
+
+  const openAskPopover = useCallback(() => {
+    if (editing || editingCell || selectedIds.length === 0) return
+    // Clicking the trigger while the popover is open dismisses it through the
+    // capture-phase outside-click handler, which runs before this click — without
+    // the guard the trigger could only ever reopen what it just closed
+    if (Date.now() - askClosedAtRef.current < 250) return
+    if (editQueue.length >= EDIT_QUEUE_MAX) {
+      setStatus(t('aiAskQueueFull', { max: EDIT_QUEUE_MAX }))
+      return
+    }
+    setAskState({ ids: selectedIds })
+  }, [editing, editingCell, selectedIds, editQueue.length])
+
+  const commitAsk = useCallback(
+    (instruction: string) => {
+      const state = askState
+      setAskState(null)
+      if (!state) return
+      setEditQueue((prev) => {
+        if (state.itemKey) {
+          return prev.map((it) => (it.key === state.itemKey ? { ...it, instruction } : it))
+        }
+        if (prev.length >= EDIT_QUEUE_MAX || askTargets.length === 0) return prev
+        const item: EditQueueItem = {
+          key: globalThis.crypto.randomUUID(),
+          slideIndex: current,
+          targets: askTargets.map((tg) => ({
+            id: tg.id,
+            sourceId: tg.sourceId,
+            type: tg.desc.type,
+          })),
+          instruction,
+          status: 'pending',
+        }
+        return [...prev, item]
+      })
+      // The queue lives in the panel; annotating with it collapsed would look like nothing happened
+      setShowAi(() => {
+        localStorage.setItem('ai-slides-show-ai', '1')
+        return true
+      })
+    },
+    [askState, askTargets, current],
+  )
+
+  const focusQueueItem = useCallback(
+    (key: string) => {
+      const item = editQueue.find((it) => it.key === key)
+      if (!item) return
+      const resolved = resolveQueueItem(slides, item)
+      if (!resolved.ok) return
+      if (resolved.slideIndex !== current) setCurrent(resolved.slideIndex)
+      setEditing(null)
+      setSelectedIds(resolved.nodes.map((n) => n.sourceId))
+    },
+    [editQueue, slides, current],
+  )
+
   const applySlide = useCallback((slideIndex: number, updated: RenderSlide) => {
     setSlides((s) => s.map((sl, i) => (i === slideIndex ? updated : sl)))
     setDirty(true)
@@ -1121,7 +1281,6 @@ export function App() {
     [],
   )
 
-  const deleteSelected = useCallback(() => clipboardActions.deleteSelected(ctxRef.current), [])
   const copySelected = useCallback(() => clipboardActions.copySelected(ctxRef.current), [])
   const cutSelected = useCallback(() => clipboardActions.cutSelected(ctxRef.current), [])
 
@@ -2169,21 +2328,6 @@ export function App() {
     [selectedIds, findNodeCtx],
   )
 
-  const [selectedLink, setSelectedLink] = useState<LinkTargetOp | null>(null)
-  useEffect(() => {
-    if (selectedIds.length !== 1) {
-      setSelectedLink(null)
-      return
-    }
-    let alive = true
-    void window.slidesApi.getLink(current, selectedIds[0]!).then((l) => {
-      if (alive) setSelectedLink(l)
-    })
-    return () => {
-      alive = false
-    }
-  }, [selectedIds, current, slides])
-
   const [selectedChartData, setSelectedChartData] = useState<Awaited<
     ReturnType<typeof window.slidesApi.getChartData>
   > | null>(null)
@@ -2466,6 +2610,7 @@ export function App() {
     setChartDataDialogOpen,
     setFindOpen,
     setPrintDlgOpen,
+    openAskPopover,
     setZoom,
     masterItems,
     recorderRef,
@@ -2547,6 +2692,7 @@ export function App() {
         aiOpen={showAi}
         onToggleAi={toggleAi}
         onAiPreset={(text, opts) => pushAiPreset(text, true, undefined, undefined, opts?.slideShot)}
+        onAskSelection={openAskPopover}
         onInsert={(kind) => void insertElement(kind)}
         onPickShape={pickShape}
         onInsertImage={() => void insertImage()}
@@ -2871,6 +3017,18 @@ export function App() {
                   setDirty(false)
                 }}
                 currentFilePath={path}
+                editQueue={editQueue}
+                onQueueEditInstruction={(key, instruction) =>
+                  setEditQueue((prev) =>
+                    prev.map((it) => (it.key === key ? { ...it, instruction } : it)),
+                  )
+                }
+                onQueueRemove={(key) => setEditQueue((prev) => prev.filter((it) => it.key !== key))}
+                onQueueClear={() => setEditQueue([])}
+                onQueueFocus={focusQueueItem}
+                onQueueConsume={(keys) =>
+                  setEditQueue((prev) => prev.filter((it) => !keys.includes(it.key)))
+                }
               />
             ) : (
               <button
@@ -3187,52 +3345,68 @@ export function App() {
                         }
                       >
                         <div className="stage-ai-bar">
-                          <button
-                            className={`stage-ai-btn${showAi ? ' active' : ''}`}
-                            data-tip={t('aiOpenAssistant')}
-                            onClick={toggleAi}
-                          >
-                            <GensparkMark size={14} />
-                            <span>Genspark AI</span>
-                          </button>
-                          {/* Same one-click presets as the Home tab; hidden instead of
+                          <div className="stage-ai-group">
+                            <button
+                              className={`stage-ai-btn${showAi ? ' active' : ''}`}
+                              data-tip={t('aiOpenAssistant')}
+                              onClick={toggleAi}
+                            >
+                              <GensparkMark size={14} />
+                              <span>Genspark AI</span>
+                            </button>
+                            {/* Same one-click presets as the Home tab; hidden instead of
                         disabled while the deck has no real content */}
-                          {!deckEmpty && (
-                            <>
-                              <span className="stage-ai-divider" aria-hidden="true" />
+                            {!deckEmpty && (
+                              <>
+                                <span className="stage-ai-divider" aria-hidden="true" />
+                                <button
+                                  className="stage-ai-btn"
+                                  data-tip={t('aiBeautifyBtn')}
+                                  onClick={() =>
+                                    pushAiPreset(
+                                      t('aiBeautifyPrompt'),
+                                      true,
+                                      undefined,
+                                      undefined,
+                                      true,
+                                    )
+                                  }
+                                >
+                                  <IconAiBeautify size={14} />
+                                  <span>{t('aiBeautifyBtn')}</span>
+                                </button>
+                                <button
+                                  className="stage-ai-btn"
+                                  data-tip={t('aiFactCheckBtn')}
+                                  onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
+                                >
+                                  <IconAiFactCheck size={14} />
+                                  <span>{t('aiFactCheckBtn')}</span>
+                                </button>
+                                <button
+                                  className="stage-ai-btn"
+                                  data-tip={t('aiImageBtn')}
+                                  onClick={() => pushAiPreset(t('aiImagePrompt'))}
+                                >
+                                  <IconAiImage size={14} />
+                                  <span>{t('aiImageBtn')}</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          {/* Its own pill: everything above acts on the whole deck or page,
+                        this is the only entry that reads the selection */}
+                          {selectedIds.length > 0 && !editing && !editingCell && (
+                            <div className="stage-ai-group">
                               <button
-                                className="stage-ai-btn"
-                                data-tip={t('aiBeautifyBtn')}
-                                onClick={() =>
-                                  pushAiPreset(
-                                    t('aiBeautifyPrompt'),
-                                    true,
-                                    undefined,
-                                    undefined,
-                                    true,
-                                  )
-                                }
+                                className={`stage-ai-btn${askState ? ' active' : ''}`}
+                                data-tip={t('aiAskBtnTip')}
+                                onClick={openAskPopover}
                               >
-                                <IconAiBeautify size={14} />
-                                <span>{t('aiBeautifyBtn')}</span>
+                                <IconAiAskSelection size={14} />
+                                <span>{t('aiAskBtn')}</span>
                               </button>
-                              <button
-                                className="stage-ai-btn"
-                                data-tip={t('aiFactCheckBtn')}
-                                onClick={() => pushAiPreset(t('aiFactCheckPrompt'))}
-                              >
-                                <IconAiFactCheck size={14} />
-                                <span>{t('aiFactCheckBtn')}</span>
-                              </button>
-                              <button
-                                className="stage-ai-btn"
-                                data-tip={t('aiImageBtn')}
-                                onClick={() => pushAiPreset(t('aiImagePrompt'))}
-                              >
-                                <IconAiImage size={14} />
-                                <span>{t('aiImageBtn')}</span>
-                              </button>
-                            </>
+                            </div>
                           )}
                         </div>
                         <div
@@ -3566,6 +3740,8 @@ export function App() {
                 ) : showFormat ? (
                   <FormatPane
                     node={selectedNode}
+                    viewScale={slide?.scale}
+                    slideSizePx={slide ? { w: slide.widthPx, h: slide.heightPx } : undefined}
                     onTransform={onTransform}
                     onFill={(id, fill) => void onFill(id, fill)}
                     onImageFill={(id) =>
@@ -3582,14 +3758,16 @@ export function App() {
                         .setTextAnchor({ slideIndex: current, sourceId: id, anchor })
                         .then((r) => r && applySlide(current, r))
                     }
+                    onTextBodyProps={(id, props) =>
+                      void window.slidesApi
+                        .setTextBodyProps({ slideIndex: current, sourceId: id, props })
+                        .then((r) => r && applySlide(current, r))
+                    }
                     onStroke={(id, stroke) => void onStroke(id, stroke)}
-                    onDelete={() => void deleteSelected()}
                     onCollapse={() => setShowFormat(false)}
                     onPictureCrop={startCrop}
                     onPictureCutout={startCutout}
                     pictureCanCutout={contextPictureCanCutout}
-                    link={selectedLink}
-                    onOpenLink={openLinkDialog}
                     chartData={selectedChartData}
                     onChartPointColor={(si, pi, color) =>
                       void onEditChart({ pointColors: { [si]: { [pi]: color } } })
@@ -3782,6 +3960,21 @@ export function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {askState && askTargets.length > 0 && (
+        <AiAskPopover
+          targets={askTargets}
+          getAnchorRect={getAskAnchorRect}
+          onSubmit={(instruction) => {
+            askClosedAtRef.current = Date.now()
+            commitAsk(instruction)
+          }}
+          onCancel={() => {
+            askClosedAtRef.current = Date.now()
+            setAskState(null)
+          }}
+        />
       )}
 
       {ctxMenu && (

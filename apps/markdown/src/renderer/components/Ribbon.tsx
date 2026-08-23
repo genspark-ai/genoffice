@@ -219,10 +219,21 @@ export function Ribbon({
   // (pinned stroke paints 1.5px at this size per the suite-wide icon rules)
   const ICON = 20
 
+  // polish/tidy act on the selection when one exists (read at click time; the
+  // mousedown preventDefault below keeps the selection alive); summarize stays whole-doc
+  const hasSelection = () => !(editor?.state.selection.empty ?? true)
   const aiPresets = [
-    { kind: 'summarize', btn: 'aiSummarizeBtn', prompt: 'aiSummarizePrompt' },
-    { kind: 'polish', btn: 'aiPolishBtn', prompt: 'aiPolishPrompt' },
-    { kind: 'tidy', btn: 'aiTidyBtn', prompt: 'aiTidyPrompt' },
+    { kind: 'summarize', btn: 'aiSummarizeBtn', prompt: () => t('aiSummarizePrompt') },
+    {
+      kind: 'polish',
+      btn: 'aiPolishBtn',
+      prompt: () => t(hasSelection() ? 'aiPolishSelectionPrompt' : 'aiPolishPrompt'),
+    },
+    {
+      kind: 'tidy',
+      btn: 'aiTidyBtn',
+      prompt: () => t(hasSelection() ? 'aiTidySelectionPrompt' : 'aiTidyPrompt'),
+    },
   ] as const
 
   return (
@@ -297,7 +308,7 @@ export function Ribbon({
                 data-tip={t(btn)}
                 disabled={off || state?.empty}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => onAiPreset(t(prompt))}
+                onClick={() => onAiPreset(prompt())}
               >
                 <span className="rb-big-icon">
                   <span className="ai-feature-icon" aria-hidden="true">

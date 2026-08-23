@@ -452,7 +452,8 @@ describe('insert_image freshness baseline', () => {
     w.desktop = {
       fetchImage: () =>
         new Promise((resolve) => {
-          release = () => resolve({ mime: 'image/png', base64: 'AAAA' })
+          // real PNG magic bytes: the tool sniffs the payload before trusting the mime
+          release = () => resolve({ mime: 'image/png', base64: 'iVBORw0KGgoAAAAA' })
         }),
     }
     globalThis.Image = FakeImage as unknown as typeof Image
@@ -541,5 +542,81 @@ describe('abort during async tools', () => {
     } finally {
       w.desktop = saved
     }
+  })
+})
+
+describe('selection scope freezing', () => {
+  it('tools act on the selection captured at context build, not on a mid-run click elsewhere', async () => {
+    const editor = createEditor(fixture())
+    const skill = createDocsSkill(
+      () => editor,
+      () => NUM_IDS,
+    )
+    // the user selects inside block 1, then the run starts (context build freezes the scope)
+    const block0Size = editor.state.doc.child(0).nodeSize
+    editor.commands.setTextSelection({ from: block0Size + 2, to: block0Size + 6 })
+    const context = skill.buildContext!()
+    expect(context).toContain('Current selection: block 1')
+    // mid-run the user clicks into block 3 (selection-only change, doc untouched)
+    const block3Pos =
+      block0Size + editor.state.doc.child(1).nodeSize + editor.state.doc.child(2).nodeSize
+    editor.commands.setTextSelection(block3Pos + 2)
+    const exec = await skill.executeTool({
+      id: 't',
+      name: 'apply_commands',
+      input: {
+        commands: [
+          {
+            updateParagraphStyle: {
+              target: { nodeType: 'docParagraph', scope: 'selection' },
+              style: { align: 'right' },
+              fields: ['align'],
+            },
+          },
+        ],
+      },
+    })
+    expect(exec.isError).toBeFalsy()
+    expect(editor.state.doc.child(1).attrs.align).toBe('right')
+    expect(editor.state.doc.child(3).attrs.align).not.toBe('right')
+  })
+
+  it('once the AI itself edits the doc, the freeze yields to the PM-remapped live selection', async () => {
+    const editor = createEditor(fixture())
+    const skill = createDocsSkill(
+      () => editor,
+      () => NUM_IDS,
+    )
+    // select inside block 1 (the first body paragraph) and freeze
+    const block0Size = editor.state.doc.child(0).nodeSize
+    editor.commands.setTextSelection({ from: block0Size + 2, to: block0Size + 6 })
+    skill.buildContext!()
+    // the AI inserts a paragraph at the doc start: every block shifts by one,
+    // and ProseMirror remaps the live selection into the original paragraph
+    const insert = await skill.executeTool({
+      id: 'i',
+      name: 'insert_content',
+      input: { html: '<p>Lead-in</p>', afterBlockIndex: -1 },
+    })
+    expect(insert.isError).toBeFalsy()
+    const exec = await skill.executeTool({
+      id: 't',
+      name: 'apply_commands',
+      input: {
+        commands: [
+          {
+            updateParagraphStyle: {
+              target: { nodeType: 'docParagraph', scope: 'selection' },
+              style: { align: 'right' },
+              fields: ['align'],
+            },
+          },
+        ],
+      },
+    })
+    expect(exec.isError).toBeFalsy()
+    // the originally selected paragraph now sits at index 2 and must be the one styled
+    expect(editor.state.doc.child(2).textContent).toBe('GenSpark is an AI office suite.')
+    expect(editor.state.doc.child(2).attrs.align).toBe('right')
   })
 })

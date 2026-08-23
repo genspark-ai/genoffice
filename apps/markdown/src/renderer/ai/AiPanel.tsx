@@ -12,6 +12,24 @@ import { clearAiHighlights } from '../editor/aiHighlight'
 import { createMarkdownSkill } from './markdown-skill'
 import { createSearchSkill } from './search-skill'
 import { createElectronTransport } from './transport'
+import { EditQueueCard } from './EditQueueCard'
+import {
+  buildQueueInstruction,
+  buildQueueSummary,
+  liveItems,
+  resolveQueue,
+  type EditQueueItem,
+} from './edit-queue'
+import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
+
+// Word-parity count (docs word-count.ts): Asian chars one by one + non-Asian words
+const ASIAN_RE =
+  /[ᄀ-ᇿ⺀-⿟、-〿぀-ヿ㄀-ㄯ㄰-㆏㇀-ㇿ㐀-䶿一-鿿가-힯豈-﫿！-｠￠-￦]|[\uD840-\uD87F][\uDC00-\uDFFF]/g
+const NON_ASIAN_WORD_RE = /[A-Za-z0-9À-ɏ]+(?:['-][A-Za-z0-9À-ɏ]+)*/g
+
+function countWords(text: string): number {
+  return (text.match(ASIAN_RE) ?? []).length + (text.match(NON_ASIAN_WORD_RE) ?? []).length
+}
 
 const PANEL_WIDTH_KEY = 'markdown-ai-panel-width'
 const PANEL_WIDTH_DEFAULT = 360
@@ -55,10 +73,19 @@ interface ChatEntry {
   tools?: ToolActivity[]
 }
 
+/** structured, not the serialized file text: a body starting with `---` must
+ *  never be re-parsed as a frontmatter block on rollback */
+export interface DocSnapshot {
+  /** document body as markdown */
+  body: string
+  /** raw frontmatter block (fences included), kept byte-for-byte */
+  frontmatter: string
+}
+
 interface Snapshot {
   label: string
   time: string
-  markdown: string
+  doc: DocSnapshot
 }
 
 /** Ribbon preset instruction; a new nonce triggers one auto-send */
@@ -69,10 +96,14 @@ export interface AiPreset {
 
 export interface MarkdownAiDeps {
   getEditor(): Editor | null
-  /** full document body as markdown, for pre-mutation snapshots */
-  getSnapshot(): string
-  /** rollback: replace the document with a snapshot */
-  restoreSnapshot(markdown: string): void
+  /** inner YAML of the properties block, read synchronously (write-then-read within one run) */
+  getFrontmatter(): string
+  /** replace the properties block; empty string removes it */
+  setFrontmatter(inner: string): void
+  /** document body + frontmatter, for pre-mutation snapshots */
+  getSnapshot(): DocSnapshot
+  /** rollback: replace the document (body and frontmatter) with a snapshot */
+  restoreSnapshot(snapshot: DocSnapshot): void
   /** fired when a run with at least one mutation finishes (auto-save hook) */
   onRunDone(mutated: boolean): void
 }
@@ -82,11 +113,24 @@ export function AiPanel({
   filePath,
   preset,
   onCollapse,
+  editQueue = [],
+  onQueueEditInstruction,
+  onQueueRemove,
+  onQueueClear,
+  onQueueFocus,
+  onQueueConsume,
 }: {
   deps: MarkdownAiDeps
   filePath: string | null
   preset?: AiPreset | null
   onCollapse: () => void
+  /** queued selection-scoped edits (owned by App, which also owns the anchors) */
+  editQueue?: EditQueueItem[]
+  onQueueEditInstruction?: (qid: string, instruction: string) => void
+  onQueueRemove?: (qid: string) => void
+  onQueueClear?: () => void
+  onQueueFocus?: (qid: string) => void
+  onQueueConsume?: (qids: string[]) => void
 }): ReactElement {
   const { lang, t } = useI18n()
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -94,6 +138,10 @@ export function AiPanel({
   const [busy, setBusy] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
+  // bumped on selection/doc changes so the scope chip & queue rows stay fresh
+  const [, setScopeTick] = useState(0)
+  /** the scope chip's expandable preview of the selected text */
+  const [scopePreviewOpen, setScopePreviewOpen] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const stickToBottomRef = useRef(true)
@@ -119,6 +167,8 @@ export function AiPanel({
   const filePathRef = useRef(filePath)
   /** instruction of the in-flight run, labels its rollback snapshot */
   const runInstructionRef = useRef('')
+  /** what the user saw for that instruction (queue submissions show a summary) */
+  const runDisplayRef = useRef('')
   const runMutatedRef = useRef(false)
   /** tool activity of the whole run, for transcript persistence */
   const runToolsRef = useRef<ToolActivity[]>([])
@@ -159,13 +209,16 @@ export function AiPanel({
   }
 
   // The loop is built once; every mutable value goes through a ref getter
-  const loopRef = useRef<AgentLoop<string> | null>(null)
+  const loopRef = useRef<AgentLoop<DocSnapshot> | null>(null)
   if (!loopRef.current) {
-    loopRef.current = new AgentLoop<string>({
+    loopRef.current = new AgentLoop<DocSnapshot>({
       transport: createElectronTransport(() => settingsRef.current!),
       maxTurns: MAX_TURNS,
       skill: composeSkills('markdown+search', '', [
-        createMarkdownSkill(() => depsRef.current.getEditor()),
+        createMarkdownSkill(() => depsRef.current.getEditor(), {
+          read: () => depsRef.current.getFrontmatter(),
+          write: (inner) => depsRef.current.setFrontmatter(inner),
+        }),
         createSearchSkill(),
       ]),
       captureSnapshot: () => depsRef.current.getSnapshot(),
@@ -190,7 +243,7 @@ export function AiPanel({
               minute: '2-digit',
             })
             setSnapshots((prev) =>
-              [...prev, { label, time, markdown: snapshotBefore }].slice(-MAX_SNAPSHOTS),
+              [...prev, { label, time, doc: snapshotBefore }].slice(-MAX_SNAPSHOTS),
             )
           }
           const activity: ToolActivity = {
@@ -334,22 +387,25 @@ export function AiPanel({
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
   }
 
-  const send = (text: string): void => {
+  const send = (text: string, displayText?: string): void => {
     const instruction = text.trim()
     const loop = loopRef.current
     if (!instruction || !loop || loop.busy) return
     stickToBottomRef.current = true
     runInstructionRef.current = instruction
+    runDisplayRef.current = displayText ?? instruction
     runMutatedRef.current = false
     runToolsRef.current = []
     setChat((prev) => [
       ...prev,
-      { role: 'user', text: instruction },
+      { role: 'user', text: displayText ?? instruction },
       { role: 'assistant', text: '', streaming: true },
     ])
     setPrompt('')
     setBusy(true)
-    persistMessage('user', instruction)
+    // persist what the user saw — a restored transcript must not surface the
+    // internal batch protocol text behind a queue submission
+    persistMessage('user', displayText ?? instruction)
     void (async () => {
       try {
         settingsRef.current = await window.markdownApi.getAiSettings()
@@ -369,7 +425,65 @@ export function AiPanel({
 
   const stop = (): void => loopRef.current?.cancel()
 
-  const retry = (): void => send(runInstructionRef.current)
+  const retry = (): void => send(runInstructionRef.current, runDisplayRef.current)
+
+  // keep the scope chip & queue rows in sync with the editor selection/content
+  useEffect(() => {
+    const editor = depsRef.current.getEditor()
+    if (!editor) return
+    const bump = () => {
+      if (editor.state.selection.empty) setScopePreviewOpen(false)
+      setScopeTick((tick) => tick + 1)
+    }
+    editor.on('selectionUpdate', bump)
+    editor.on('update', bump)
+    return () => {
+      editor.off('selectionUpdate', bump)
+      editor.off('update', bump)
+    }
+  }, [])
+
+  // scope chip data, recomputed per render (the scope tick above keeps it fresh)
+  const editor = depsRef.current.getEditor()
+  const liveSelection = editor?.state.selection
+  const selectionText =
+    !editor || !liveSelection || liveSelection.empty
+      ? ''
+      : editor.state.doc.textBetween(liveSelection.from, liveSelection.to, '\n', ' ').trim()
+  const hasScopeSelection = selectionText.length > 0
+
+  /** the × on the scope chip: collapse the selection so the run targets the whole document */
+  const clearScopeSelection = (): void => {
+    if (editor) editor.commands.setTextSelection(editor.state.selection.to)
+  }
+
+  /** [label](mdnav://block/N) links in replies select and scroll to that block */
+  const docNav = {
+    scheme: DOC_NAV_SCHEME,
+    onNavigate: (href: string) => {
+      const index = parseDocNavHref(href)
+      const current = depsRef.current.getEditor()
+      if (index !== null && current) navigateToBlock(current, index)
+    },
+  }
+
+  /** submit every still-anchored queued edit as one batch run */
+  const sendQueue = (): void => {
+    const loop = loopRef.current
+    const current = depsRef.current.getEditor()
+    if (!loop || loop.busy || editQueue.length === 0 || !current) return
+    const entries = liveItems(resolveQueue(current, editQueue))
+    if (entries.length === 0) {
+      onQueueClear?.()
+      return
+    }
+    const instruction = buildQueueInstruction(entries)
+    const display = buildQueueSummary(t('aiQueueSubmitted', { count: entries.length }), entries)
+    // consumed at send: the run rewrites the anchored passages, which would
+    // orphan the anchors anyway; a failed run is retried via the retry action
+    onQueueConsume?.(editQueue.map((item) => item.qid))
+    send(instruction, display)
+  }
 
   // ribbon presets auto-send; while a run is active they land in the composer instead
   const presetNonceRef = useRef(0)
@@ -389,7 +503,7 @@ export function AiPanel({
 
   const rollback = (snapshot: Snapshot): void => {
     if (busy) return
-    depsRef.current.restoreSnapshot(snapshot.markdown)
+    depsRef.current.restoreSnapshot(snapshot.doc)
     setSnapshots((prev) => prev.filter((s) => s !== snapshot))
   }
 
@@ -546,7 +660,7 @@ export function AiPanel({
                   <AiTypingIndicator label={hasTools ? t('aiWorking') : t('aiThinking')} />
                 </span>
               ) : (
-                entry.text && <Markdown text={entry.text} />
+                entry.text && <Markdown text={entry.text} nav={docNav} />
               )}
               {hasTools && <ToolChipList tools={entry.tools!} />}
               {showToolbar && (
@@ -630,9 +744,58 @@ export function AiPanel({
       )}
 
       <div className="ai-composer">
+        {editor && editQueue.length > 0 && (
+          <EditQueueCard
+            items={editQueue}
+            editor={editor}
+            busy={busy}
+            onEditInstruction={(qid, instruction) => onQueueEditInstruction?.(qid, instruction)}
+            onRemove={(qid) => onQueueRemove?.(qid)}
+            onDiscardAll={() => onQueueClear?.()}
+            onSend={sendQueue}
+            onFocus={(qid) => onQueueFocus?.(qid)}
+          />
+        )}
         <AiComposer
           value={prompt}
           busy={busy}
+          header={
+            hasScopeSelection && (
+              <div className="ai-scope-row">
+                <span className="ai-scope-hint">
+                  <button
+                    className="ai-scope-label"
+                    onClick={() => setScopePreviewOpen((v) => !v)}
+                    aria-expanded={scopePreviewOpen}
+                    data-tip={t('aiScopeSelectionTip')}
+                  >
+                    {t('aiScopeSelection', { words: countWords(selectionText) })}
+                  </button>
+                  <button
+                    className="ai-scope-clear"
+                    onClick={clearScopeSelection}
+                    data-tip={t('aiScopeClearTitle')}
+                    aria-label={t('aiScopeClearTitle')}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 16 16" aria-hidden>
+                      <path
+                        d="M4 4l8 8M12 4l-8 8"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </span>
+                {scopePreviewOpen && (
+                  <div className="ai-scope-preview">
+                    {selectionText.length > 400 ? `${selectionText.slice(0, 400)}…` : selectionText}
+                  </div>
+                )}
+              </div>
+            )
+          }
           placeholder={t('aiComposerPlaceholder')}
           hintIdle={t('aiHintIdle')}
           hintBusy={t('aiHintBusy')}

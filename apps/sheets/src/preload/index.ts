@@ -1205,7 +1205,10 @@ function parseRichRuns(input: unknown): WorkbookRichRun[] {
       !isOptionalString(run.color) ||
       (run.size !== undefined &&
         (typeof run.size !== 'number' || !Number.isFinite(run.size) || run.size <= 0)) ||
-      !isOptionalString(run.family)
+      !isOptionalString(run.family) ||
+      (run.vertAlign !== undefined &&
+        run.vertAlign !== 'subscript' &&
+        run.vertAlign !== 'superscript')
     ) {
       throw new Error('Invalid workbook rich text response.')
     }
@@ -1218,6 +1221,7 @@ function parseRichRuns(input: unknown): WorkbookRichRun[] {
       ...(run.color === undefined ? {} : { color: run.color }),
       ...(run.size === undefined ? {} : { size: run.size }),
       ...(run.family === undefined ? {} : { family: run.family }),
+      ...(run.vertAlign === undefined ? {} : { vertAlign: run.vertAlign }),
     }
   })
 }
@@ -1687,6 +1691,21 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
         throw new Error('Invalid workbook structural operation.')
       }
       parseCellArea(op.range)
+      continue
+    }
+    if ('style' in op) {
+      const { start, end } = op
+      if (
+        op.kind !== 'set-col-style' ||
+        !isNonnegativeInteger(start) ||
+        !isNonnegativeInteger(end) ||
+        end < start ||
+        end - start >= 100_000 ||
+        !isRecord(op.style) ||
+        Object.keys(op.style).length === 0
+      ) {
+        throw new Error('Invalid workbook structural operation.')
+      }
       continue
     }
     if ('size' in op || 'hidden' in op || 'level' in op) {
@@ -2265,6 +2284,7 @@ function parseCellStyle(input: unknown): WorkbookCellStyle {
     typeof input.underline !== 'boolean' ||
     typeof input.strikethrough !== 'boolean' ||
     typeof input.wrapText !== 'boolean' ||
+    (input.shrinkToFit !== undefined && typeof input.shrinkToFit !== 'boolean') ||
     !isOptionalString(input.fontFamily) ||
     (input.fontSize !== undefined &&
       (typeof input.fontSize !== 'number' ||
@@ -2304,6 +2324,7 @@ function parseCellStyle(input: unknown): WorkbookCellStyle {
     wrapText: input.wrapText,
     diagonalUp: input.diagonalUp,
     diagonalDown: input.diagonalDown,
+    ...(input.shrinkToFit === undefined ? {} : { shrinkToFit: input.shrinkToFit }),
     ...(input.fontFamily === undefined ? {} : { fontFamily: input.fontFamily }),
     ...(input.fontSize === undefined ? {} : { fontSize: input.fontSize }),
     ...(input.fontColor === undefined ? {} : { fontColor: input.fontColor }),
@@ -2377,6 +2398,7 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     input.paragraphs === undefined ? undefined : parseShapeParagraphs(input.paragraphs)
   const fillGradient =
     input.fillGradient === undefined ? undefined : parseFillGradient(input.fillGradient)
+  const customPath = input.customPath === undefined ? undefined : parseCustomPath(input.customPath)
   if (
     !isOptionalString(input.shapeType) ||
     !isOptionalString(input.fillColor) ||
@@ -2419,6 +2441,7 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     ...(typeof input.mediaType === 'string' ? { mediaType: input.mediaType } : {}),
     ...(typeof input.name === 'string' ? { name: input.name } : {}),
     ...(input.shapeType === undefined ? {} : { shapeType: input.shapeType }),
+    ...(customPath === undefined ? {} : { customPath }),
     ...(input.fillColor === undefined ? {} : { fillColor: input.fillColor }),
     ...(fillGradient === undefined ? {} : { fillGradient }),
     ...(input.lineColor === undefined ? {} : { lineColor: input.lineColor }),
@@ -2436,6 +2459,30 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     ...(input.frameHeight === undefined ? {} : { frameHeight: input.frameHeight }),
     ...(input.drawingPath === undefined ? {} : { drawingPath: input.drawingPath }),
     ...(input.drawingIndex === undefined ? {} : { drawingIndex: input.drawingIndex }),
+  }
+}
+
+function parseCustomPath(input: unknown): NonNullable<WorkbookVisualObject['customPath']> {
+  if (
+    !isRecord(input) ||
+    typeof input.width !== 'number' ||
+    !Number.isFinite(input.width) ||
+    input.width <= 0 ||
+    typeof input.height !== 'number' ||
+    !Number.isFinite(input.height) ||
+    input.height <= 0 ||
+    typeof input.d !== 'string' ||
+    (input.strokeOnly !== undefined && typeof input.strokeOnly !== 'boolean') ||
+    (input.fillD !== undefined && typeof input.fillD !== 'string')
+  ) {
+    throw new Error('Invalid workbook shape custom path.')
+  }
+  return {
+    width: input.width,
+    height: input.height,
+    d: input.d,
+    ...(input.strokeOnly === undefined ? {} : { strokeOnly: input.strokeOnly }),
+    ...(input.fillD === undefined ? {} : { fillD: input.fillD }),
   }
 }
 
@@ -2533,7 +2580,13 @@ function parseDrawingAnchor(input: Record<string, unknown>): WorkbookVisualObjec
 }
 
 const CHART_LEGENDS = ['none', 'right', 'bottom', 'top', 'left'] as const
-const CHART_DATA_LABELS = ['none', 'value', 'percent', 'category-percent'] as const
+const CHART_DATA_LABELS = [
+  'none',
+  'value',
+  'percent',
+  'category-percent',
+  'category-value-percent',
+] as const
 const CHART_DATA_LABEL_POSITIONS = ['center', 'inside-end', 'outside-end'] as const
 const CHART_GROUPINGS = ['clustered', 'stacked', 'percentStacked', 'standard'] as const
 
@@ -2569,6 +2622,7 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
     if (
       !isRecord(entry) ||
       typeof entry.name !== 'string' ||
+      !isOptionalString(entry.nameRef) ||
       !Array.isArray(entry.categories) ||
       entry.categories.some((value) => typeof value !== 'string') ||
       !Array.isArray(entry.values) ||
@@ -2589,6 +2643,7 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
     const pointExplosions = parseChartPointExplosions(entry.pointExplosions)
     return {
       name: entry.name,
+      ...(entry.nameRef === undefined ? {} : { nameRef: entry.nameRef }),
       categories: entry.categories,
       values: entry.values,
       ...(entry.numberFormat === undefined ? {} : { numberFormat: entry.numberFormat }),

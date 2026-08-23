@@ -5,7 +5,16 @@
  * (image generation, media analysis, style templates).
  */
 import { app, ipcMain, nativeImage, net, shell } from 'electron'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import {
   AiCreditsError,
@@ -37,6 +46,7 @@ import {
 import { addPicture, editPictureSrcRect, replacePictureBytes } from '@genoffice/pptx-engine'
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { coverCropFractions } from '../shared/cover-crop'
+import type { AiRunFailure } from '../shared/ipc'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'
 import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './session-state'
@@ -65,6 +75,33 @@ function writeJson(path: string, value: unknown): void {
 }
 
 const activeAiStreams = new Map<string, AbortController>()
+
+// ---- Post-mortem log for runs that produced no usable reply ----
+
+const AI_RUN_FAILURES_PATH = () => join(app.getPath('userData'), 'ai-run-failures.jsonl')
+/** Enough of a repetition blowup to recognize the pattern, without storing megabytes */
+const RUN_FAILURE_TEXT_MAX = 20_000
+/** Rotated (one generation kept) rather than grown without bound */
+const RUN_FAILURES_MAX_BYTES = 2_000_000
+
+function appendRunFailure(entry: AiRunFailure): void {
+  const path = AI_RUN_FAILURES_PATH()
+  try {
+    if (existsSync(path) && statSync(path).size > RUN_FAILURES_MAX_BYTES) {
+      renameSync(path, `${path}.1`)
+    }
+    const record = {
+      ts: new Date().toISOString(),
+      ...entry,
+      instruction: entry.instruction.slice(0, RUN_FAILURE_TEXT_MAX),
+      streamed: entry.streamed.slice(0, RUN_FAILURE_TEXT_MAX),
+      streamedChars: entry.streamed.length,
+    }
+    appendFileSync(path, JSON.stringify(record) + '\n', 'utf-8')
+  } catch {
+    /* Diagnostics must never break a run */
+  }
+}
 
 export function registerAiIpc(): void {
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
@@ -95,6 +132,10 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
     writeJson(AI_SETTINGS_PATH(), settings)
+  })
+
+  ipcMain.handle('ai:log-run-failure', (_event, entry: AiRunFailure) => {
+    appendRunFailure(entry)
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {

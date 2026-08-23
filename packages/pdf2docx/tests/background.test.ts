@@ -229,3 +229,31 @@ describe('background rebuild (P9 B)', () => {
     expect(texts.some((t) => t.includes('Title over the wallpaper'))).toBe(true)
   })
 })
+
+describe('paint-less overlay rects (Skia alpha-0 artifacts)', () => {
+  it('does not stretch the stack across live content', async () => {
+    const m = await loadPdfium()
+    const { buildAlphaZeroOverlayPdf } = await import('./helpers/fixtures')
+    const page = withPdfDocument(m, await buildAlphaZeroOverlayPdf(), (doc) =>
+      extractPage(m, doc, 0),
+    )
+    // the wallpaper still bakes…
+    expect(page.bgRender).toBeDefined()
+    // …but the text above it survives — the alpha-0 top rect must not bury it
+    const text = page.chars.map((c) => String.fromCodePoint(c.code)).join('')
+    expect(text).toContain('Catalog item stays as data')
+    expect(text).toContain('SKU: LH-TB-001')
+  })
+
+  it('a real blanking wash drawn late still bakes the junk under it (P16 B)', async () => {
+    const m = await loadPdfium()
+    const { buildLateBlankingWashPdf } = await import('./helpers/fixtures')
+    const page = withPdfDocument(m, await buildLateBlankingWashPdf(), (doc) =>
+      extractPage(m, doc, 0),
+    )
+    expect(page.bgRender).toBeDefined()
+    const text = page.chars.map((c) => String.fromCodePoint(c.code)).join('')
+    expect(text).not.toContain('template junk blanked by the wash')
+    expect(text).toContain('Real title above the late wash')
+  })
+})

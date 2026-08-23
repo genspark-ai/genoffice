@@ -79,7 +79,37 @@ export const toggleDropdown = (setDropdown: SetDropdown, key: string) =>
   setDropdown((prev) => (prev === key ? null : key))
 
 /** apply paragraph-level attrs to every block type in the selection */
-export function setParaAttrs(editor: Editor, attrs: Record<string, unknown>): void {
+export function setParaAttrs(
+  editor: Editor,
+  attrs: Record<string, unknown>,
+  /// Explicit target range: blur-committed inputs capture the selection at
+  /// focus time — by blur, a click may already have moved the live selection
+  /// to another paragraph (alpha ledger r131 / bugbot).
+  range?: { from: number; to: number },
+): void {
+  // an explicit spacing value turns Word's "Auto" spacing off (dialog semantics);
+  // a stale auto flag would keep rendering 14pt over the user's value
+  if ('spaceBefore' in attrs && !('spaceBeforeAuto' in attrs)) attrs.spaceBeforeAuto = false
+  if ('spaceAfter' in attrs && !('spaceAfterAuto' in attrs)) attrs.spaceAfterAuto = false
+  if (range) {
+    const paraTypes = new Set(['docParagraph', 'docHeading', 'docListItem'])
+    editor
+      .chain()
+      .command(({ tr, dispatch }) => {
+        const from = Math.min(range.from, tr.doc.content.size)
+        const to = Math.min(range.to, tr.doc.content.size)
+        let changed = false
+        tr.doc.nodesBetween(from, to, (node, pos) => {
+          if (!paraTypes.has(node.type.name)) return true
+          if (dispatch) tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs })
+          changed = true
+          return false
+        })
+        return changed
+      })
+      .run()
+    return
+  }
   let chain = editor
     .chain()
     .focus()
@@ -91,6 +121,54 @@ export function setParaAttrs(editor: Editor, attrs: Record<string, unknown>): vo
     chain = chain.updateAttributes('docProtected', { imageAlign: attrs.align ?? null })
   }
   chain.run()
+}
+
+/** apply a gallery paragraph style; not for textbox sub-editors (no docHeading in their schema) */
+export function applyParagraphStyle(editor: Editor, key: 'p' | 'h1' | 'h2' | 'h3'): void {
+  let c = editor.chain().focus()
+  if (key === 'p') c = c.setNode('docParagraph')
+  else c = c.setNode('docHeading', { level: Number(key.slice(1)) })
+  // Word-like: applying a paragraph style sheds the runs' direct font/size/color.
+  // Those render as inline span styles and would otherwise mask the style's look
+  // entirely (the click would seem to do nothing on documents whose body runs
+  // carry explicit rPr, common in CJK templates).
+  c.command(({ tr }) => {
+    const { from, to } = tr.selection
+    let start = from
+    let end = to
+    tr.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.isTextblock) {
+        start = Math.min(start, pos + 1)
+        end = Math.max(end, pos + node.nodeSize - 1)
+      }
+    })
+    const type = editor.schema.marks.docTextStyle
+    const jobs: Array<{ from: number; to: number; attrs: Record<string, unknown> | null }> = []
+    tr.doc.nodesBetween(start, end, (node, pos) => {
+      if (!node.isText) return
+      const m = node.marks.find((mm) => mm.type === type)
+      if (!m) return
+      if (
+        m.attrs.color == null &&
+        m.attrs.sizeHalfPoints == null &&
+        m.attrs.font == null &&
+        m.attrs.fontAscii == null
+      )
+        return
+      const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null, fontAscii: null }
+      const keep = Object.values(attrs).some((v) => v !== null)
+      jobs.push({
+        from: Math.max(pos, start),
+        to: Math.min(pos + node.nodeSize, end),
+        attrs: keep ? attrs : null,
+      })
+    })
+    for (const job of jobs) {
+      tr.removeMark(job.from, job.to, type)
+      if (job.attrs) tr.addMark(job.from, job.to, type.create(job.attrs))
+    }
+    return true
+  }).run()
 }
 
 /** attrs of the paragraph-like node at the cursor */
@@ -512,6 +590,8 @@ export type RevisionDisplayMode = 'all' | 'none' | 'original'
 interface ReviewTabProps extends TabProps {
   onAiPreset: (instruction: string) => void
   commentCount: number
+  /** unresolved root comments; 0 disables the AI resolve-comments action */
+  openCommentCount: number
   onShowComments: () => void
   /** create a comment on the current selection (disabled when selection is empty) */
   canComment: boolean
@@ -537,11 +617,13 @@ interface ReviewTabProps extends TabProps {
 }
 
 export function ReviewTab({
+  editor,
   hasDoc,
   dropdown,
   setDropdown,
   onAiPreset,
   commentCount,
+  openCommentCount,
   onShowComments,
   canComment,
   onNewComment,
@@ -570,6 +652,8 @@ export function ReviewTab({
     localStorage.setItem(AI_REWRITE_ACK_KEY, '1')
     return true
   }
+  // With a range selection the rewrite scopes to the selection (no whole-document ack needed)
+  const hasRangeSelection = () => !editor.state.selection.empty
   return (
     <>
       {/* Word: Proofing (Editor) sits leftmost */}
@@ -580,7 +664,8 @@ export function ReviewTab({
             disabled={!hasDoc}
             data-tip={`${t('ribbonEditorTip')} — ${t('ribbonAiCreditNote')}`}
             onClick={() => {
-              if (confirmAiRewrite()) onAiPreset(t('ribbonEditorPrompt'))
+              if (hasRangeSelection()) onAiPreset(t('ribbonEditorSelectionPrompt'))
+              else if (confirmAiRewrite()) onAiPreset(t('ribbonEditorPrompt'))
             }}
           >
             <span className="rb-big-icon">
@@ -620,7 +705,9 @@ export function ReviewTab({
                     key={lang.labelKey}
                     onClick={() => {
                       setDropdown(() => null)
-                      if (confirmAiRewrite()) {
+                      if (hasRangeSelection()) {
+                        onAiPreset(t('ribbonTranslateSelectionPrompt', { lang: t(lang.labelKey) }))
+                      } else if (confirmAiRewrite()) {
                         onAiPreset(t('ribbonTranslatePrompt', { lang: t(lang.labelKey) }))
                       }
                     }}
@@ -660,6 +747,32 @@ export function ReviewTab({
               <IconComments size={BIG} />
             </span>
             <span>{t('ribbonShowComments')}</span>
+          </button>
+          <button
+            className="rb-big"
+            disabled={!hasDoc || openCommentCount === 0}
+            data-tip={`${t('ribbonAiCommentsTip', { count: openCommentCount })} — ${t('ribbonAiCreditNote')}`}
+            onClick={() => onAiPreset(t('ribbonAiCommentsPrompt'))}
+          >
+            <span className="rb-big-icon">
+              <span className="ai-feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 3V11.5a7.5 7.5 0 0 1 7.5-7.5h2A7.5 7.5 0 0 1 20 11.5z" />
+                  <path
+                    d="M17 14l.26.7c.34.91.5 1.37.84 1.7.33.33.79.5 1.7.84l.7.26-.7.26c-.91.34-1.37.5-1.7.84-.34.33-.5.79-.84 1.7L17 21l-.26-.7c-.34-.91-.5-1.37-.84-1.7-.33-.34-.79-.5-1.7-.84l-.7-.26.7-.26c.91-.34 1.37-.5 1.7-.84.34-.33.5-.79.84-1.7L17 14z"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            </span>
+            <span>{t('ribbonAiComments')}</span>
           </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupComments')}</div>
@@ -805,6 +918,33 @@ export function ReviewTab({
               <IconRedo size={BIG} />
             </span>
             <span>{t('ribbonNextChange')}</span>
+          </button>
+          <button
+            className="rb-big"
+            disabled={!hasDoc || revisionCount === 0}
+            data-tip={`${t('ribbonAiRevisionsTip', { count: revisionCount })} — ${t('ribbonAiCreditNote')}`}
+            onClick={() => onAiPreset(t('ribbonAiRevisionsPrompt'))}
+          >
+            <span className="rb-big-icon">
+              <span className="ai-feature-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M4 5h16M4 9h12M4 13h9M4 17h7" />
+                  <path
+                    d="M17 14l.26.7c.34.91.5 1.37.84 1.7.33.33.79.5 1.7.84l.7.26-.7.26c-.91.34-1.37.5-1.7.84-.34.33-.5.79-.84 1.7L17 21l-.26-.7c-.34-.91-.5-1.37-.84-1.7-.33-.34-.79-.5-1.7-.84l-.7-.26.7-.26c.91-.34 1.37-.5 1.7-.84.34-.33.5-.79.84-1.7L17 14z"
+                    strokeLinejoin="round"
+                  />
+                  <path d="M19.5 4.5l-7 7-2 .5.5-2 7-7z" />
+                </svg>
+              </span>
+            </span>
+            <span>{t('ribbonAiRevisions')}</span>
           </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupTracking')}</div>

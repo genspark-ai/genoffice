@@ -29,6 +29,19 @@ describe('parseFormulaReferences', () => {
     expect(refs[3]?.qualifier).toBe('Data')
   })
 
+  // The prod_040 incident shape: an Arabic sheet name, unquoted, qualifying
+  // absolute references. An ASCII-only qualifier pattern dropped these
+  // entirely, so the closure never loaded B30/B31 and NPV computed with a
+  // zero rate.
+  it('parses unquoted non-ASCII sheet qualifiers, absolute and relative', () => {
+    const zakat = parseFormulaReferences('IF(B18>0,B18*الافتراضات!$B$30,0)')
+    expect(zakat).toHaveLength(3)
+    expect(zakat[2]?.qualifier).toBe('الافتراضات')
+    expect(zakat[2]?.token).toEqual({ startRow: 29, endRow: 29, startColumn: 1, endColumn: 1 })
+    const relative = parseFormulaReferences('الافتراضات!B16+集計!C2:C4')
+    expect(relative.map((ref) => ref.qualifier)).toEqual(['الافتراضات', '集計'])
+  })
+
   it('ignores references inside string literals and marks whole columns unbounded', () => {
     const refs = parseFormulaReferences('IF(A1>0,"see B2:B9",SUM(D:D))')
     expect(refs).toHaveLength(2)
@@ -51,23 +64,47 @@ describe('containsUnresolvedNames', () => {
     expect(containsUnresolvedNames('SUM(MyRange)')).toBe(true)
     expect(containsUnresolvedNames('Total*2')).toBe(true)
   })
+
+  it('flags non-ASCII defined names but not non-ASCII sheet qualifiers', () => {
+    expect(containsUnresolvedNames('IF(B18>0,B18*الافتراضات!$B$30,0)')).toBe(false)
+    expect(containsUnresolvedNames('NPV(الافتراضات!$B$31,C16:G16)+B18')).toBe(false)
+    expect(containsUnresolvedNames('合計*2')).toBe(true)
+  })
 })
 
 describe('computeFormulaClosure', () => {
   it('collects formulas plus referenced precedents across sheets', () => {
-    const result = computeFormulaClosure([
-      sheet('sheet-1', 'Data', [
-        { row: 0, column: 3, formula: 'SUM(A1:A3)' },
-        { row: 1, column: 3, formula: "'Other'!B2*2" },
-      ]),
-      sheet('sheet-2', 'Other', []),
-    ], 1000)
+    const result = computeFormulaClosure(
+      [
+        sheet('sheet-1', 'Data', [
+          { row: 0, column: 3, formula: 'SUM(A1:A3)' },
+          { row: 1, column: 3, formula: "'Other'!B2*2" },
+        ]),
+        sheet('sheet-2', 'Other', []),
+      ],
+      1000,
+    )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.formulaCount).toBe(2)
     // 2 formulas + A1:A3 + Other!B2
     expect(result.totalCells).toBe(6)
     expect(result.cellsBySheet.get('sheet-2')?.has(cellKey(1, 1))).toBe(true)
+  })
+
+  it('loads precedents referenced through unquoted non-ASCII sheet names', () => {
+    const result = computeFormulaClosure(
+      [
+        sheet('sheet-2', 'الافتراضات', []),
+        sheet('sheet-3', 'قائمة الدخل', [
+          { row: 18, column: 1, formula: 'IF(B18>0,B18*الافتراضات!$B$30,0)' },
+        ]),
+      ],
+      1000,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.cellsBySheet.get('sheet-2')?.has(cellKey(29, 1))).toBe(true)
   })
 
   it('clamps whole-column references to the used range and bails over budget', () => {
@@ -124,7 +161,11 @@ describe('closureFetchRanges', () => {
 
 describe('shiftPinnedCells', () => {
   it('moves keys through inserts and drops removed positions', () => {
-    const pinned = new Map([['5:2', 'a'], ['10:2', 'b'], ['3:0', 'c']])
+    const pinned = new Map([
+      ['5:2', 'a'],
+      ['10:2', 'b'],
+      ['3:0', 'c'],
+    ])
     const inserted = shiftPinnedCells(pinned, { kind: 'insert-rows', index: 4, count: 2 })
     expect([...inserted.keys()].sort()).toEqual(['12:2', '3:0', '7:2'])
     const removed = shiftPinnedCells(pinned, { kind: 'remove-rows', index: 5, count: 1 })

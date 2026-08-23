@@ -91,6 +91,8 @@ export interface PlaceholderGeom {
   anchor?: 'top' | 'middle' | 'bottom'
   /** Raw spPr node when it carries an explicit fill (parse.ts resolves it with the part's rels) */
   fillSpPr?: unknown
+  /** Non-rect <a:prstGeom>: placeholder pictures inherit it as their clip shape */
+  presetGeom?: { prst: string; avLstRaw?: unknown }
 }
 
 /** Placeholder geometry table for one layer (layout or master). */
@@ -160,7 +162,11 @@ export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): P
     const anchorAttr = asXmlNode(asXmlNode(sp['p:txBody'])['a:bodyPr'])['@_anchor']
     const anchor = ANCHOR_MAP[String(anchorAttr ?? '')]
     const hasFill = FILL_TAGS.some((tag) => tag in spPr)
-    if (!transform && !textStyle && !anchor && !hasFill) continue
+    const prstGeomNode = asXmlNode(spPr['a:prstGeom'])
+    const prst = prstGeomNode['@_prst'] != null ? String(prstGeomNode['@_prst']) : undefined
+    const presetGeom =
+      prst && prst !== 'rect' ? { prst, avLstRaw: prstGeomNode['a:avLst'] } : undefined
+    if (!transform && !textStyle && !anchor && !hasFill && !presetGeom) continue
     entries.push({
       type,
       idx,
@@ -168,6 +174,7 @@ export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): P
       ...(textStyle ? { textStyle } : {}),
       ...(anchor ? { anchor } : {}),
       ...(hasFill ? { fillSpPr: spPr } : {}),
+      ...(presetGeom ? { presetGeom } : {}),
     })
   }
   return { entries }
@@ -544,4 +551,32 @@ export function resolvePlaceholderTransform(
   idx: string | undefined,
 ): Transform | undefined {
   return findInMap(layout, type, idx) ?? findInMap(master, type, idx)
+}
+
+/**
+ * Placeholder preset-geometry inheritance (layout first, master as fallback).
+ * Matches the placeholder first (same order as fill inheritance) so an unrelated
+ * sibling never donates its shape.
+ */
+export function resolvePlaceholderPresetGeom(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['presetGeom'] | undefined {
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  for (const map of [layout, master]) {
+    if (!map) continue
+    const entries = map.entries
+    const hit =
+      entries.find((e) => e.type === t && e.idx === i) ??
+      (i !== '' ? entries.find((e) => e.idx === i) : undefined) ??
+      entries.find((e) => e.type === t) ??
+      (TITLE_TYPES.has(t) ? entries.find((e) => TITLE_TYPES.has(e.type)) : undefined) ??
+      (BODY_TYPES.has(t) ? entries.find((e) => BODY_TYPES.has(e.type)) : undefined)
+    if (hit?.presetGeom) return hit.presetGeom
+    if (hit) return undefined
+  }
+  return undefined
 }

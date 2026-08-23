@@ -22,7 +22,7 @@ export function isQcEnabled(): boolean {
 export const QC_MAX_PAGES = 20
 
 /**
- * Pages produced by a generateFromHtml/regenerateSlide call, as 0-based indexes.
+ * Pages produced by a landGeneratedPages/regenerateSlide call, as 0-based indexes.
  * replace lands a whole new deck; append starts at appendedFrom; insert_at/replace_at touch one page.
  */
 export function generatedPageRange(

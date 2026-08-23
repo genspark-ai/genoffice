@@ -1,13 +1,16 @@
 import { CellValueType } from '@univerjs/core'
 import { describe, expect, it } from 'vitest'
 
-import { installCachedValueFallbackInterceptor } from '../src/renderer/formula-cached-fallback'
+import {
+  installCachedValueFallbackInterceptor,
+  isPlainArithmeticFormula,
+} from '../src/renderer/formula-cached-fallback'
 
 interface Interceptor {
   priority: number
   handler: (
     cell: Record<string, unknown> | undefined,
-    location: { subUnitId: string; row: number; col: number },
+    location: { subUnitId: string; row: number; col: number; rawData?: { f?: string } },
     next: (cell: Record<string, unknown> | undefined) => unknown,
   ) => unknown
 }
@@ -40,6 +43,39 @@ function makeState(cached: Record<string, string | number | boolean>) {
 
 const at = (row: number, col: number) => ({ subUnitId: 'sheet-1', row, col })
 const passthrough = (cell: Record<string, unknown> | undefined) => cell
+
+describe('isPlainArithmeticFormula', () => {
+  it('accepts references, literals and operators', () => {
+    expect(isPlainArithmeticFormula('=(D23+D24+D25)/3')).toBe(true)
+    expect(isPlainArithmeticFormula('=D26')).toBe(true)
+    expect(isPlainArithmeticFormula('=$A$1*-2.5%+3^2')).toBe(true)
+    expect(isPlainArithmeticFormula('=\'Data Sheet\'!B2&"x"')).toBe(true)
+    expect(isPlainArithmeticFormula('=Sheet2!A1+TRUE')).toBe(true)
+  })
+
+  it('rejects functions, names and structured/external refs', () => {
+    expect(isPlainArithmeticFormula('=SUM(A1:A3)')).toBe(false)
+    expect(isPlainArithmeticFormula('=Revenue/2')).toBe(false)
+    expect(isPlainArithmeticFormula('=Table1[Total]+1')).toBe(false)
+    expect(isPlainArithmeticFormula('=[1]Sheet1!A1')).toBe(false)
+    expect(isPlainArithmeticFormula('=A:B')).toBe(false)
+  })
+
+  it('ignores function-looking text inside string literals', () => {
+    expect(isPlainArithmeticFormula('=A1&"SUM(x)"')).toBe(true)
+  })
+
+  it('rejects ref-shaped function calls', () => {
+    expect(isPlainArithmeticFormula('=LOG10(A1)')).toBe(false)
+    expect(isPlainArithmeticFormula('=ABS (A1)')).toBe(false)
+  })
+
+  it('accepts scientific literals with signed exponents', () => {
+    expect(isPlainArithmeticFormula('=1E-3*A1')).toBe(true)
+    expect(isPlainArithmeticFormula('=1.5E+10-B2')).toBe(true)
+    expect(isPlainArithmeticFormula('=E3+2E2')).toBe(true)
+  })
+})
 
 describe('installCachedValueFallbackInterceptor', () => {
   it('replaces an engine error with the file-cached value', () => {
@@ -109,6 +145,21 @@ describe('installCachedValueFallbackInterceptor', () => {
     expect(handler(divide, at(0, 0), passthrough)).toBe(divide)
     // #NAME? cannot be computed under any inputs; the cache stays better.
     expect(handler({ v: '#NAME?' }, at(0, 1), passthrough)).toMatchObject({ v: 7 })
+  })
+
+  it('keeps a genuine arithmetic #VALUE! instead of the stale cache', () => {
+    // Excel recalculates (D23+D24+D25)/3 over comma-decimal text to #VALUE!;
+    // the file's cached number predates the corruption and must not win.
+    const ref = { current: makeState({ '0:0': 76.9066, '0:1': 76.9066 }) }
+    const { handler } = captureInterceptor(ref)
+    const cell = { v: '#VALUE!' }
+    const withFormula = (f: string) => ({ ...at(0, 0), rawData: { f } })
+    expect(handler(cell, withFormula('=(D23+D24+D25)/3'), passthrough)).toBe(cell)
+    expect(handler(cell, withFormula('=D26'), passthrough)).toBe(cell)
+    // Functions and structured refs may be engine gaps: cache still wins.
+    expect(
+      handler(cell, { ...at(0, 1), rawData: { f: '=SUM(D23:D25)/3' } }, passthrough),
+    ).toMatchObject({ v: 76.9066 })
   })
 
   it('ignores style-only journal entries', () => {

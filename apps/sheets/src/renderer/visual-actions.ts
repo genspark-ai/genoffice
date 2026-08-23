@@ -62,21 +62,16 @@ export interface VisualActionContext {
   setPreview: (plan: ChangePlan | null) => void
   setPendingEdits: (count: number) => void
   pivotContext: () => PivotActionContext
-  queueDemoVisualInstall: (runtime: UniverRuntime, sheetId: string) => void
+  queueDemoVisualInstall: (runtime: UniverRuntime) => void
   refreshLazyVisuals: (state: LazyWorkbookState) => void
 }
 
-function queueCtxVisualInstall(
-  ctx: VisualActionContext,
-  runtime: UniverRuntime,
-  sheetId: string,
-): void {
+function queueCtxVisualInstall(ctx: VisualActionContext, runtime: UniverRuntime): void {
   queueVisualInstall(
     runtime,
     ctx.lazyWorkbookRef,
     ctx.visualDisposablesRef,
     ctx.visualInstallTimerRef,
-    sheetId,
     ctx.chartEditRef,
     ctx.chartVectorRef,
     ctx.shapeEditRef,
@@ -156,7 +151,7 @@ function insertDemoChartFromSelection(
     const receipt = ctx.adapterRef.current.apply(plan)
     ctx.setRevision(receipt.revision)
     ctx.setPreview(null)
-    ctx.queueDemoVisualInstall(runtime, worksheet.getSheetId())
+    ctx.queueDemoVisualInstall(runtime)
     ctx.setMessage(t('appChartInsertedDemo'))
   } catch (error: unknown) {
     ctx.setMessage(error instanceof Error ? error.message : t('appChartInsertFailed'))
@@ -284,7 +279,7 @@ export async function handleInsertChart(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(t('appChartInserted'))
 }
 
@@ -376,7 +371,7 @@ export async function handleInsertPivotChart(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, found.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(
     chartData.truncated ? t('appPivotChartInsertedTruncated') : t('appPivotChartInserted'),
   )
@@ -419,7 +414,7 @@ export function insertShapeAtAnchor(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(t('appShapeInserted'))
 }
 
@@ -467,7 +462,7 @@ export function handleInsertShape(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(isTextBox ? t('appTextBoxInserted') : t('appShapeInserted'))
 }
 
@@ -564,7 +559,7 @@ export function insertAiImageVisual(
     name: op.path.split('/').pop() ?? 'image',
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
-  queueCtxVisualInstall(ctx, runtime, op.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 /// AI edit_shape: in-place journal update of a session-added shape,
@@ -595,7 +590,7 @@ export function applyAiShapeEdit(
     ...(op.text === undefined ? {} : { text: op.text }),
     ...(op.fillColor === undefined ? {} : { fillColor: op.fillColor }),
   })
-  queueCtxVisualInstall(ctx, runtime, visual.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 /// AI add_chart: same visual-add pipeline as the ribbon's Insert Chart,
@@ -622,7 +617,7 @@ export async function insertAiChartVisual(
     values,
   })
   pushVisualAddUndo(ctx, runtime, state, visual)
-  queueCtxVisualInstall(ctx, runtime, op.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 export function insertAiShapeVisual(
@@ -658,7 +653,7 @@ export function insertAiShapeVisual(
         }),
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
-  queueCtxVisualInstall(ctx, runtime, op.sheetId)
+  queueCtxVisualInstall(ctx, runtime)
 }
 
 export function handleInsertPicture(ctx: VisualActionContext): void {
@@ -819,6 +814,6 @@ function insertPictureVisual(
   }
   pushVisualAddUndo(ctx, runtime, state, visual)
   ctx.setPendingEdits(journalSize(state.editJournal))
-  queueCtxVisualInstall(ctx, runtime, sheetId)
+  queueCtxVisualInstall(ctx, runtime)
   ctx.setMessage(t('appPictureInserted'))
 }

@@ -60,6 +60,73 @@ describe('field paragraph display model', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: TOC_ENTRY_PARAGRAPH }))
     expect(doc.blocks[0].fieldDisplay?.anchor).toBe('_Toc1')
   })
+
+  it('page number follows the LAST tab; a leading outline number becomes the num cell', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>1.1.</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>Latar Belakang Masalah</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>7</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      num: '1.1.',
+      left: 'Latar Belakang Masalah',
+      right: '7',
+      level: 2,
+    })
+  })
+
+  it('a long first segment stays part of the title, not the num cell', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> TOC </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>BAB I</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>PENDAHULUAN</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>1</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      left: 'BAB I PENDAHULUAN',
+      right: '1',
+    })
+    expect(doc.blocks[0].fieldDisplay?.num).toBeUndefined()
+  })
+
+  it('entry font size comes from visible result runs, not field-machinery runs', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>' +
+      '<w:r><w:rPr><w:sz w:val="32"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:rPr><w:sz w:val="32"/></w:rPr><w:instrText xml:space="preserve"> TOC \\o "1-2" </w:instrText></w:r>' +
+      '<w:r><w:rPr><w:sz w:val="32"/></w:rPr><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:rPr><w:sz w:val="21"/></w:rPr><w:t>Chapter One</w:t></w:r>' +
+      '<w:r><w:tab/></w:r><w:r><w:t>3</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].fieldDisplay?.szHalfPoints).toBe(21)
+  })
+
+  it('TableofFigures entries render as level-1 toc lines (dot leader + protection)', async () => {
+    const xml =
+      '<w:p><w:pPr><w:pStyle w:val="TableofFigures"/></w:pPr>' +
+      '<w:r><w:t>Tabel 2. 1 Sintaks model pembelajaran</w:t></w:r>' +
+      '<w:r><w:tab/></w:r><w:r><w:t>11</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].type).toBe('passthrough')
+    expect(doc.blocks[0].fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      left: 'Tabel 2. 1 Sintaks model pembelajaran',
+      right: '11',
+      level: 1,
+    })
+  })
 })
 
 describe('generateTocFieldXml', () => {
@@ -149,6 +216,24 @@ describe('HYPERLINK field folding', () => {
     const para = `<w:p>${hyperlinkField('HYPERLINK \\l "bm1"')}</w:p>`
     const doc = await parseDocx(await buildDocx({ bodyXml: para }))
     expect(doc.blocks[0].type).toBe('passthrough')
+  })
+
+  it('a non-convertible HYPERLINK inside a textbox keeps its cached text visible', async () => {
+    // production resumes carry file:///C:\... HYPERLINK fields (backslashes)
+    // inside header textboxes; the cached email text must not vanish
+    const field = hyperlinkField(
+      'HYPERLINK "file:///C:\\Users\\u\\INetCache\\ph.hussam@gmail.com"',
+    ).replace('creativets.org', 'ph.hussam@gmail.com')
+    const para =
+      '<w:p><w:r><w:drawing><wp:anchor behindDoc="0"><wp:extent cx="914400" cy="914400"/>' +
+      '<a:graphic><a:graphicData><wps:wsp><wps:txbx><w:txbxContent>' +
+      `<w:p>${field}</w:p>` +
+      '</w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic>' +
+      '</wp:anchor></w:drawing></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    const box = doc.blocks[0].textboxes?.[0]
+    const text = box?.paras.map((p) => p.runs.map((r) => r.text).join('')).join('\n')
+    expect(text).toContain('ph.hussam@gmail.com')
   })
 })
 

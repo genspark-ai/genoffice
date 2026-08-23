@@ -4,7 +4,7 @@ import type { Transaction } from '@tiptap/pm/state'
 import { generateTocFieldXml, type TocEntry } from '@genoffice/docx-engine'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
-import { isTrackedDeleted, liveText } from './protocol'
+import { blockRangePositions, isTrackedDeleted, liveText } from './protocol'
 
 /**
  * Structured edit commands: the model emits a
@@ -78,11 +78,26 @@ export interface SetHeadingLevel {
   level: 0 | 1 | 2 | 3 | 4 | 5 | 6
 }
 
-/** Whole-document find & replace (plain text, no cross-block matching) */
+/** Find & replace (plain text, no cross-block matching); target narrows the scanned blocks */
 export interface ReplaceAllText {
   containsText: string
   replaceText: string
   matchCase?: boolean
+  /** omitted = whole document */
+  target?: Target
+}
+
+/**
+ * Character-level styling: applies the run style only to the matched text
+ * itself (updateTextStyle always styles whole blocks). target narrows which
+ * blocks are scanned; omitted = whole document.
+ */
+export interface UpdateMatchedTextStyle {
+  containsText: string
+  matchCase?: boolean
+  target?: Target
+  style: UpdateTextStyle['style']
+  fields: Array<keyof UpdateTextStyle['style']>
 }
 
 export interface DeleteBlocks {
@@ -131,6 +146,7 @@ export interface InsertToc {
 
 export type Command =
   | { updateTextStyle: UpdateTextStyle }
+  | { updateMatchedTextStyle: UpdateMatchedTextStyle }
   | { updateParagraphStyle: UpdateParagraphStyle }
   | { setHeadingLevel: SetHeadingLevel }
   | { replaceAllText: ReplaceAllText }
@@ -146,6 +162,12 @@ export interface CommandContext {
   numIds?: { bullet: string | null; ordered: string | null } | null
   /** record the envelope's changes as tracked revisions under this author */
   track?: { author: string } | null
+  /**
+   * Selection frozen (in block-index space) when the model last saw the doc.
+   * scope:'selection' resolves against this instead of the live selection, so
+   * the user clicking elsewhere mid-run cannot retarget the command.
+   */
+  selection?: { startIndex: number; endIndex: number } | null
 }
 
 export interface CommandEnvelope {
@@ -222,6 +244,7 @@ const PARA_STYLE_KEYS = [
 const BASELINE_OFFSETS = ['SUPERSCRIPT', 'SUBSCRIPT', 'NONE'] as const
 const COMMAND_NAMES = [
   'updateTextStyle',
+  'updateMatchedTextStyle',
   'updateParagraphStyle',
   'setHeadingLevel',
   'replaceAllText',
@@ -280,6 +303,20 @@ function validateStyleCommand(
   return null
 }
 
+/** value checks shared by every command speaking the updateTextStyle style vocabulary */
+function validateTextStyleValues(style: UpdateTextStyle['style'], where: string): string | null {
+  if (
+    style.baselineOffset != null &&
+    !(BASELINE_OFFSETS as readonly string[]).includes(style.baselineOffset)
+  ) {
+    return `${where}: baselineOffset must be SUPERSCRIPT/SUBSCRIPT/NONE`
+  }
+  if (style.link != null && typeof style.link.url !== 'string') {
+    return `${where}: link must be { url } or null`
+  }
+  return null
+}
+
 export function validateEnvelope(envelope: unknown): string | null {
   if (!envelope || typeof envelope !== 'object') return 'the envelope must be an object'
   const commands = (envelope as CommandEnvelope).commands
@@ -298,17 +335,8 @@ export function validateEnvelope(envelope: unknown): string | null {
     switch (name as CommandName) {
       case 'updateTextStyle': {
         error = validateStyleCommand(payload, TEXT_STYLE_KEYS, where)
-        if (!error) {
-          const style = payload.style as UpdateTextStyle['style']
-          if (
-            style.baselineOffset != null &&
-            !(BASELINE_OFFSETS as readonly string[]).includes(style.baselineOffset)
-          ) {
-            error = `${where}: baselineOffset must be SUPERSCRIPT/SUBSCRIPT/NONE`
-          } else if (style.link != null && typeof style.link.url !== 'string') {
-            error = `${where}: link must be { url } or null`
-          }
-        }
+        if (!error)
+          error = validateTextStyleValues(payload.style as UpdateTextStyle['style'], where)
         break
       }
       case 'updateParagraphStyle':
@@ -327,8 +355,32 @@ export function validateEnvelope(envelope: unknown): string | null {
           error = `${where}: containsText must not be empty`
         } else if (typeof payload.replaceText !== 'string') {
           error = `${where}: replaceText must be a string`
+        } else if (payload.target !== undefined) {
+          error = validateTarget(payload.target, where)
         }
         break
+      case 'updateMatchedTextStyle': {
+        if (typeof payload.containsText !== 'string' || payload.containsText === '') {
+          error = `${where}: containsText must not be empty`
+          break
+        }
+        if (payload.target !== undefined) {
+          error = validateTarget(payload.target, where)
+          if (error) break
+        }
+        if (!payload.style || typeof payload.style !== 'object') {
+          error = `${where}: missing style`
+        } else if (!Array.isArray(payload.fields) || payload.fields.length === 0) {
+          error = `${where}: fields must not be empty`
+        } else {
+          const bad = payload.fields.filter(
+            (f) => !(TEXT_STYLE_KEYS as readonly string[]).includes(String(f)),
+          )
+          if (bad.length > 0) error = `${where}: unknown fields ${bad.map(String).join(', ')}`
+          else error = validateTextStyleValues(payload.style as UpdateTextStyle['style'], where)
+        }
+        break
+      }
       case 'deleteBlocks':
         error = validateTarget(payload.target, where)
         break
@@ -467,15 +519,11 @@ function markChanged(tr: Transaction, pos: number): boolean {
   return true
 }
 
-function runUpdateTextStyle(
-  tr: Transaction,
-  schema: Schema,
-  cmd: UpdateTextStyle,
-  sel: SelRange,
-): CommandResult {
-  const matched = matchTarget(tr.doc, cmd.target, sel)
-  const boolFields = cmd.fields.filter((f) => f in BOOL_MARK_TYPES)
-  // patch applied onto each text node's existing docTextStyle attrs
+/** patch applied onto each text node's existing docTextStyle attrs (fonts route to their rFonts slot) */
+function buildTextMarkPatch(cmd: {
+  style: UpdateTextStyle['style']
+  fields: UpdateTextStyle['fields']
+}): Record<string, unknown> {
   const markPatch: Record<string, unknown> = {}
   for (const f of cmd.fields) {
     if (f === 'font') {
@@ -492,6 +540,18 @@ function runUpdateTextStyle(
         value === 'SUPERSCRIPT' ? 'superscript' : value === 'SUBSCRIPT' ? 'subscript' : null
     }
   }
+  return markPatch
+}
+
+function runUpdateTextStyle(
+  tr: Transaction,
+  schema: Schema,
+  cmd: UpdateTextStyle,
+  sel: SelRange,
+): CommandResult {
+  const matched = matchTarget(tr.doc, cmd.target, sel)
+  const boolFields = cmd.fields.filter((f) => f in BOOL_MARK_TYPES)
+  const markPatch = buildTextMarkPatch(cmd)
   const hasLink = cmd.fields.includes('link')
   let changed = 0
   let skippedProtected = 0
@@ -557,8 +617,11 @@ function runUpdateParagraphStyle(
     const attrs: Record<string, unknown> = { ...b.node.attrs }
     for (const f of cmd.fields) {
       attrs[f] = cmd.style[f] ?? (f === 'pageBreakBefore' ? false : null)
+      // an explicit spacing value turns Word's "Auto" spacing off
+      if (f === 'spaceBefore') attrs.spaceBeforeAuto = false
+      if (f === 'spaceAfter') attrs.spaceAfterAuto = false
     }
-    const dirty = cmd.fields.some((f) => attrs[f] !== b.node.attrs[f])
+    const dirty = Object.keys(attrs).some((f) => attrs[f] !== b.node.attrs[f])
     if (!dirty) continue
     tr.setNodeMarkup(b.pos, undefined, { ...attrs, aiChanged: true })
     changed++
@@ -597,14 +660,19 @@ function runSetHeadingLevel(
   return { command: 'setHeadingLevel', matched: matched.length, changed, skippedProtected }
 }
 
-function runReplaceAllText(tr: Transaction, schema: Schema, cmd: ReplaceAllText): CommandResult {
+function runReplaceAllText(
+  tr: Transaction,
+  schema: Schema,
+  cmd: ReplaceAllText,
+  sel: SelRange,
+): CommandResult {
   // an empty needle would match at every offset without ever advancing the scan below
   if (!cmd.containsText) {
     return { command: 'replaceAllText', matched: 0, changed: 0, skippedProtected: 0 }
   }
   const matchCase = cmd.matchCase !== false
   const needle = matchCase ? cmd.containsText : cmd.containsText.toLowerCase()
-  const blocks = topLevelBlocks(tr.doc)
+  const blocks = cmd.target ? matchTarget(tr.doc, cmd.target, sel) : topLevelBlocks(tr.doc)
   const replacements: Array<{ from: number; to: number; marks: PmDocNode['marks'] }> = []
   const touchedIndexes = new Set<number>()
   let skippedProtected = 0
@@ -651,6 +719,85 @@ function runReplaceAllText(tr: Transaction, schema: Schema, cmd: ReplaceAllText)
     skippedProtected,
     skippedDeleted,
     detail: t('aiCmdReplacedCount', { count: replacements.length }),
+  }
+}
+
+function runUpdateMatchedTextStyle(
+  tr: Transaction,
+  schema: Schema,
+  cmd: UpdateMatchedTextStyle,
+  sel: SelRange,
+): CommandResult {
+  const matchCase = cmd.matchCase !== false
+  const needle = matchCase ? cmd.containsText : cmd.containsText.toLowerCase()
+  const blocks = cmd.target ? matchTarget(tr.doc, cmd.target, sel) : topLevelBlocks(tr.doc)
+  const boolFields = cmd.fields.filter((f) => f in BOOL_MARK_TYPES)
+  const markPatch = buildTextMarkPatch(cmd)
+  const hasLink = cmd.fields.includes('link')
+  const touched = new Set<number>()
+  let styledCount = 0
+  let skippedProtected = 0
+  let skippedDeleted = 0
+
+  for (const b of blocks) {
+    if (b.node.type.name === 'docProtected') {
+      if (blockText(b.node).includes(cmd.containsText)) skippedProtected++
+      continue
+    }
+    const blockDeleted = isTrackedDeleted(b.node)
+    b.node.forEach((child, offset) => {
+      if (!child.isText || !child.text) return
+      const struck = blockDeleted || child.marks.some((m) => m.type.name === 'del')
+      const hay = matchCase ? child.text : child.text.toLowerCase()
+      let at = hay.indexOf(needle)
+      while (at !== -1) {
+        if (struck) {
+          skippedDeleted++
+        } else {
+          const from = b.pos + 1 + offset + at
+          const to = from + needle.length
+          for (const f of boolFields) {
+            const markType = schema.marks[BOOL_MARK_TYPES[f]]
+            if (cmd.style[f]) tr.addMark(from, to, markType.create())
+            else tr.removeMark(from, to, markType)
+          }
+          if (hasLink) {
+            if (cmd.style.link?.url) {
+              tr.addMark(
+                from,
+                to,
+                schema.marks.link.create({ href: cmd.style.link.url, rId: null }),
+              )
+            } else {
+              tr.removeMark(from, to, schema.marks.link)
+            }
+          }
+          if (Object.keys(markPatch).length > 0) {
+            const existing = child.marks.find((m) => m.type.name === 'docTextStyle')?.attrs ?? {}
+            // spread keeps every non-listed attr (fontAscii/styleId/rawRPr…) alive
+            const merged: Record<string, unknown> = { ...existing, ...markPatch }
+            const empty = Object.values(merged).every((v) => v === null)
+            if (empty) tr.removeMark(from, to, schema.marks.docTextStyle)
+            else tr.addMark(from, to, schema.marks.docTextStyle.create(merged))
+          }
+          styledCount++
+          touched.add(b.index)
+        }
+        at = hay.indexOf(needle, at + needle.length)
+      }
+    })
+  }
+  // mark steps never shift positions, so block offsets are still valid here
+  for (const b of topLevelBlocks(tr.doc)) {
+    if (touched.has(b.index)) markChanged(tr, b.pos)
+  }
+  return {
+    command: 'updateMatchedTextStyle',
+    matched: touched.size,
+    changed: touched.size,
+    skippedProtected,
+    skippedDeleted,
+    detail: String(styledCount),
   }
 }
 
@@ -874,6 +1021,18 @@ function runInsertToc(tr: Transaction, schema: Schema, cmd: InsertToc): CommandR
 
 // ---- entry point ----
 
+/** frozen block-index scope -> current PM positions (indexes clamped: AI edits earlier in the run may have shrunk the doc) */
+function frozenSelectionRange(
+  editor: Editor,
+  frozen: CommandContext['selection'],
+): SelRange | null {
+  if (!frozen) return null
+  const last = editor.state.doc.childCount - 1
+  const start = Math.min(Math.max(frozen.startIndex, 0), last)
+  const end = Math.min(Math.max(frozen.endIndex, start), last)
+  return blockRangePositions(editor, start, end)
+}
+
 function summarize(results: CommandResult[]): string {
   const total = results.reduce((sum, r) => sum + r.changed, 0)
   if (total === 0) {
@@ -885,6 +1044,9 @@ function summarize(results: CommandResult[]): string {
     switch (r.command) {
       case 'updateTextStyle':
         part = t('aiCmdTextStyle', { count: r.changed })
+        break
+      case 'updateMatchedTextStyle':
+        part = t('aiCmdMatchedStyle', { count: r.detail ?? '0', blocks: r.changed })
         break
       case 'updateParagraphStyle':
         part = t('aiCmdParaStyle', { count: r.changed })
@@ -935,7 +1097,7 @@ export function executeCommands(
 
   const tr = editor.state.tr
   const schema = editor.schema
-  const selection = editor.state.selection
+  const selection = frozenSelectionRange(editor, context.selection) ?? editor.state.selection
   const results: CommandResult[] = []
   try {
     for (const command of envelope.commands) {
@@ -946,12 +1108,14 @@ export function executeCommands(
       }
       if ('updateTextStyle' in command) {
         results.push(runUpdateTextStyle(tr, schema, command.updateTextStyle, sel))
+      } else if ('updateMatchedTextStyle' in command) {
+        results.push(runUpdateMatchedTextStyle(tr, schema, command.updateMatchedTextStyle, sel))
       } else if ('updateParagraphStyle' in command) {
         results.push(runUpdateParagraphStyle(tr, command.updateParagraphStyle, sel))
       } else if ('setHeadingLevel' in command) {
         results.push(runSetHeadingLevel(tr, schema, command.setHeadingLevel, sel))
       } else if ('replaceAllText' in command) {
-        results.push(runReplaceAllText(tr, schema, command.replaceAllText))
+        results.push(runReplaceAllText(tr, schema, command.replaceAllText, sel))
       } else if ('deleteBlocks' in command) {
         results.push(runDeleteBlocks(tr, schema, command.deleteBlocks, sel))
       } else if ('createParagraphBullets' in command) {

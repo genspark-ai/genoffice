@@ -30,15 +30,9 @@ export async function streamForProvider(
     case 'gemini':
       return streamGemini(config, system, messages, tools, maxTokens, cb, baseUrl)
     case 'openai-compatible':
-      return streamOpenAiCompatible(
-        baseUrl,
-        config,
-        system,
-        messages,
-        tools,
-        maxTokens,
-        cb,
-        endpoint.omitTemperature,
-      )
+      return streamOpenAiCompatible(baseUrl, config, system, messages, tools, maxTokens, cb, {
+        omitTemperature: endpoint.omitTemperature,
+        bodyExtras: endpoint.bodyExtras,
+      })
   }
 }

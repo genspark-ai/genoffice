@@ -61,6 +61,13 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     pageCount: () => 2,
     currentPage: () => 1,
     readOnly: () => false,
+    selection: () => null,
+    pendingSummary: () => '',
+    annotationSummary: () => '',
+    annotationsOn: vi.fn(async () => ({ threads: [], markups: [] })),
+    addNote: vi.fn(() => 'Pn1'),
+    findNoteRoot: vi.fn(async () => null),
+    replyToThread: vi.fn(),
     outline: () => null,
     searchIndex: () => Promise.resolve(INDEX),
     isDeleted: () => false,
@@ -200,7 +207,7 @@ describe('markup_text', () => {
     )
     expect(result.mutated).toBe(true)
     expect(deps.addMarkup).toHaveBeenCalledTimes(1)
-    expect(deps.addMarkup).toHaveBeenCalledWith('highlight', 1, expect.any(Array))
+    expect(deps.addMarkup).toHaveBeenCalledWith('highlight', 1, expect.any(Array), undefined)
     expect(deps.gotoPage).toHaveBeenCalledWith(2)
   })
 
@@ -906,5 +913,128 @@ describe('transform_image / delete_image', () => {
     expect(deps.insertImage).not.toHaveBeenCalled()
     expect(deps.transformImage).not.toHaveBeenCalled()
     expect(deps.deleteImage).not.toHaveBeenCalled()
+  })
+})
+
+describe('annotations tools', () => {
+  const thread = {
+    key: 'S12',
+    saved: null,
+    pendingId: null,
+    author: 'Alice',
+    contents: 'Fix this total',
+    timeMs: Date.UTC(2026, 7, 20),
+    color: null,
+    at: [10, 700] as [number, number],
+    replies: [],
+  }
+
+  it('read_annotations lists threads and quotes markup-covered text', async () => {
+    const deps = makeDeps({
+      annotationsOn: vi.fn(async (idx: number) =>
+        idx === 0
+          ? {
+              threads: [thread],
+              // covers the first ~half of "Hello World" (x 0..50 of the 110pt item)
+              markups: [
+                {
+                  type: 'highlight' as const,
+                  quads: [[0, 712, 50, 712, 0, 700, 50, 700]],
+                  saved: true,
+                },
+              ],
+            }
+          : { threads: [], markups: [] },
+      ),
+    })
+    const result = await executePdfTool(deps, call('read_annotations', {}))
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toContain('[Page 1]')
+    expect(result.output).toContain('Note S12')
+    expect(result.output).toContain('Alice')
+    expect(result.output).toContain('2026-08-20')
+    expect(result.output).toContain('Fix this total')
+    expect(result.output).toContain('highlight')
+    expect(result.output).toContain('Hello')
+  })
+
+  it('read_annotations reports an annotation-free range', async () => {
+    const result = await executePdfTool(makeDeps(), call('read_annotations', {}))
+    expect(result.output).toContain('No notes or markups')
+  })
+
+  it('add_note anchors at the end of anchor_text', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('add_note', { page: 1, text: 'Check spelling', anchor_text: 'World' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(result.mutated).toBe(true)
+    expect(deps.addNote).toHaveBeenCalledWith(0, [110, 712], 'Check spelling')
+    expect(result.output).toContain('Pn1')
+  })
+
+  it('add_note requires a position', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(deps, call('add_note', { page: 1, text: 'hi' }))
+    expect(result.isError).toBe(true)
+    expect(deps.addNote).not.toHaveBeenCalled()
+  })
+
+  it('reply_note replies to a found root and errors on unknown ids', async () => {
+    const deps = makeDeps({
+      findNoteRoot: vi.fn(async (_i: number, key: string) => (key === 'S12' ? thread : null)),
+    })
+    const ok = await executePdfTool(
+      deps,
+      call('reply_note', { page: 1, note_id: 'S12', text: 'Done' }),
+    )
+    expect(ok.mutated).toBe(true)
+    expect(deps.replyToThread).toHaveBeenCalledWith(0, thread, 'Done')
+    const bad = await executePdfTool(
+      deps,
+      call('reply_note', { page: 1, note_id: 'S99', text: 'x' }),
+    )
+    expect(bad.isError).toBe(true)
+    expect(bad.output).toContain('read_annotations')
+  })
+
+  it('markup_text forwards a custom color as rgb 0-1', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('markup_text', { page: 1, text: 'Hello', type: 'highlight', color: '#ff0000' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(deps.addMarkup).toHaveBeenCalledWith('highlight', 0, expect.anything(), [1, 0, 0])
+  })
+
+  it('markup_text without color leaves the default to the app', async () => {
+    const deps = makeDeps()
+    await executePdfTool(deps, call('markup_text', { page: 1, text: 'Hello', type: 'highlight' }))
+    expect(deps.addMarkup).toHaveBeenCalledWith('highlight', 0, expect.anything(), undefined)
+  })
+
+  it('insert_text places anchored text to the right of the anchor', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('insert_text', { page: 1, text: 'John Doe', anchor_text: 'World' }),
+    )
+    expect(result.isError).toBeUndefined()
+    const input = (deps.insertText as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    // anchor "World" ends at x=110 (display); the new text starts right of it
+    expect(input.origin[0]).toBeGreaterThan(110)
+  })
+
+  it('insert_text rejects an anchor that is not on the page', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('insert_text', { page: 1, text: 'x', anchor_text: 'nope' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(deps.insertText).not.toHaveBeenCalled()
   })
 })

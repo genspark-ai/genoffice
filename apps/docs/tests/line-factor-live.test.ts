@@ -4,8 +4,9 @@
  * toDOM output, which ProseMirror reuses while typing).
  */
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { setDocFontTable } from '../src/renderer/line-metrics'
 
 const factorOf = (editor: Editor, index = 0): string => {
   const p = editor.view.dom.querySelectorAll('p')[index] as HTMLElement
@@ -63,6 +64,48 @@ describe('live line-height factor decorations', () => {
     editor.commands.insertContent('latin')
     expect(factorOf(editor)).toBe('var(--doc-line-factor-latin,1.2)')
 
+    editor.destroy()
+  })
+})
+
+describe('fontTable-driven per-block factor', () => {
+  afterEach(() => setDocFontTable(null))
+
+  const krParagraph = {
+    type: 'doc',
+    content: [
+      {
+        type: 'docParagraph',
+        content: [
+          {
+            type: 'text',
+            text: '한국어 본문',
+            marks: [{ type: 'docTextStyle', attrs: { font: '원신한 Light' } }],
+          },
+        ],
+      },
+    ],
+  } as never
+
+  it('a missing hangul-named run face with a sans PANOSE bakes the Malgun factor', () => {
+    // registry must be set before content, mirroring file-actions' open order
+    setDocFontTable([{ name: '원신한 Light', panose: '020B0303000000000000' }])
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: krParagraph,
+    })
+    expect(factorOf(editor)).toBe('1.7371')
+    editor.destroy()
+  })
+
+  it('without a fontTable the same face stays Batang-ward', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: krParagraph,
+    })
+    expect(factorOf(editor)).toBe('1.3029')
     editor.destroy()
   })
 })
@@ -155,6 +198,32 @@ describe('declared run fonts drive the Latin factor and the paragraph face', () 
     editor.destroy()
   })
 
+  it('a Latin run declaring only an eastAsia face keeps the doc Latin var', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            content: [
+              {
+                type: 'text',
+                text: 'latin only',
+                // eastAsia-only rFonts: parse puts the EA name in `font` and
+                // leaves fontAscii unset (prod sample 13's bullets)
+                marks: [{ type: 'docTextStyle', attrs: { font: 'Arial Unicode MS' } }],
+              },
+            ],
+          },
+        ],
+      } as never,
+    })
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-latin,1.2)')
+    editor.destroy()
+  })
+
   it('CJK runs declaring a JP-variant Noto face take the JA substitution factor', () => {
     const editor = new Editor({
       element: document.createElement('div'),
@@ -209,7 +278,7 @@ describe('SimSun-substitution ・/〜 line lift decorations', () => {
     const spans = liftSpans(editor)
     expect(spans.map((s) => s.textContent)).toEqual(['・', '〜'])
     expect(spans[0].style.lineHeight).toBe(
-      'round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.001), var(--doc-grid-pitch,0.0001px))',
+      'round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.004), var(--doc-grid-pitch,0.0001px))',
     )
     editor.destroy()
   })
@@ -221,7 +290,7 @@ describe('SimSun-substitution ・/〜 line lift decorations', () => {
       content: gapDoc('項目・内容', 'Noto Sans JP', { lineRule: 'auto', lineSpacing: 2 }),
     })
     expect(liftSpans(editor)[0].style.lineHeight).toBe(
-      'calc(round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.001), var(--doc-grid-pitch,0.0001px)) * 2)',
+      'max(calc(var(--doc-grid-pitch,0.0001px) * 2), calc(round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.004), var(--doc-grid-pitch,0.0001px)) * var(--doc-grid-single-mult,2)))',
     )
     editor.destroy()
   })

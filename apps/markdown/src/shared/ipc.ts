@@ -18,6 +18,7 @@ export const MARKDOWN_CHANNELS = {
   exportDocx: 'markdown:export-docx',
   exportPdf: 'markdown:export-pdf',
   printRequest: 'markdown:print-request',
+  aiGenerateImage: 'markdown:ai-generate-image',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
   getTheme: 'app:get-theme',
@@ -59,11 +60,20 @@ export const AI_CHANNELS = {
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
   webSearch: 'ai:web-search',
+  imageSearch: 'ai:image-search',
+  fetchImage: 'ai:fetch-image',
 } as const
 
 export interface WebSearchResult {
   answer?: string
   results: Array<{ title: string; url: string; snippet: string }>
+  method: string
+  /** failure reason when method === 'error' */
+  error?: string
+}
+
+export interface ImageSearchResult {
+  images: Array<{ title?: string; imageUrl: string; width?: number; height?: number }>
   method: string
   /** failure reason when method === 'error' */
   error?: string
@@ -152,4 +162,13 @@ export interface MarkdownApi {
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   /** Main-process web search (Serper/DuckDuckGo via the shared ai:web-search handler) */
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
+  /** Main-process image search (shared ai:image-search handler) */
+  imageSearch(query: string, maxResults?: number): Promise<ImageSearchResult>
+  /** Download an image URL in the main process (CORS-free, scheme/target validated) */
+  fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
+  /** Genspark cloud image generation (markdown-owned channel, gsk login required) */
+  aiGenerateImage(op: { prompt: string; aspectRatio?: string }): Promise<{
+    url?: string
+    error?: string
+  }>
 }

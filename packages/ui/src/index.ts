@@ -17,7 +17,7 @@ export {
 export { Dropdown, type DropdownOption } from './dropdown'
 export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, type IconProps } from './icons'
-export { Markdown } from './Markdown'
+export { Markdown, type MarkdownNav } from './Markdown'
 export { isSymbolFontFamily } from './symbol-fonts'
 export { BUILTIN_FONT_FAMILIES, fontFamiliesFor } from './font-list'
 export {

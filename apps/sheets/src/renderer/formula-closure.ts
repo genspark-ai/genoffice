@@ -117,9 +117,9 @@ export function containsUnresolvedNames(formula: string): boolean {
       FORMULA_REFERENCE_PATTERN,
       (_full, lead: string) => `${lead} `,
     )
-    for (const match of stripped.matchAll(/[A-Za-z_][A-Za-z0-9_.]*/g)) {
+    for (const match of stripped.matchAll(/[\p{L}_][\p{L}\p{N}_.]*/gu)) {
       const before = match.index === 0 ? '' : (stripped[match.index - 1] ?? '')
-      if (/[A-Za-z0-9_.$'!]/.test(before)) continue
+      if (/[\p{L}\p{N}_.$'!]/u.test(before)) continue
       const name = match[0]
       if (name === 'TRUE' || name === 'FALSE') continue
       const rest = stripped.slice(match.index + name.length)

@@ -101,19 +101,34 @@ export const NodeBody = React.memo(function NodeBody({
     const tiny = !!procImg && isDegenerateImage(procImg)
     const img = procImg && tiny ? (flatColorImage(procImg, srcKey) as HTMLImageElement) : procImg
     const clip = pic.clip
+    const cropProps = tiny || !img ? {} : cropToKonva(pic, img)
+    // srcRect inset: the image only covers a sub-rect of the frame. The full frame
+    // stays the hit target and carries the outline (PowerPoint selects/strokes the
+    // frame, not the visible sub-image); shadow stays on the painted pixels.
+    const inset = 'x' in cropProps
     const image = img ? (
-      <KImage
-        image={
-          pic.softEdgePx && img.width
-            ? featheredImage(img, srcKey, pic.softEdgePx * (img.width / Math.max(box.w, 1)))
-            : img
-        }
-        width={box.w}
-        height={box.h}
-        {...(tiny ? {} : cropToKonva(pic, img))}
-        {...(pic.opacity != null ? { opacity: pic.opacity } : {})}
-        {...(clip ? {} : { ...strokeToKonva(pic.stroke), ...shadowToKonva(pic.shadow, pic.glow) })}
-      />
+      <>
+        {inset && !clip && (
+          <Rect width={box.w} height={box.h} fill="rgba(0,0,0,0)" {...strokeToKonva(pic.stroke)} />
+        )}
+        <KImage
+          image={
+            pic.softEdgePx && img.width
+              ? featheredImage(img, srcKey, pic.softEdgePx * (img.width / Math.max(box.w, 1)))
+              : img
+          }
+          width={box.w}
+          height={box.h}
+          {...cropProps}
+          {...(pic.opacity != null ? { opacity: pic.opacity } : {})}
+          {...(clip
+            ? {}
+            : {
+                ...(inset ? {} : strokeToKonva(pic.stroke)),
+                ...shadowToKonva(pic.shadow, pic.glow),
+              })}
+        />
+      </>
     ) : (
       <Rect width={box.w} height={box.h} fill="#eef" stroke="#99f" dash={[4, 4]} />
     )
@@ -130,9 +145,23 @@ export const NodeBody = React.memo(function NodeBody({
         ) : (
           <Rect width={box.w} height={box.h} cornerRadius={clip.cornerRadiusPx ?? 0} {...extra} />
         )
+      // Inset crops leave blank bands inside the geometry: back only the visible
+      // image sub-rect there (a full-geometry backing would show white through the bands)
+      const backing = (extra: Record<string, unknown>) =>
+        inset ? (
+          <Rect
+            x={cropProps.x}
+            y={cropProps.y}
+            width={cropProps.width}
+            height={cropProps.height}
+            {...extra}
+          />
+        ) : (
+          outline(extra)
+        )
       return (
         <>
-          {'shadowColor' in shadowProps && outline({ fill: '#ffffff', ...shadowProps })}
+          {'shadowColor' in shadowProps && backing({ fill: '#ffffff', ...shadowProps })}
           <Group
             clipFunc={(ctx) => {
               if (clip.pathData) return [new Path2D(clip.pathData)] as [Path2D]
@@ -156,7 +185,7 @@ export const NodeBody = React.memo(function NodeBody({
             {pic.fill &&
               outline({ ...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y }) })}
             {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
-            {pic.bgColor && (pic.opacity ?? 1) >= 1 && outline({ fill: pic.bgColor })}
+            {pic.bgColor && (pic.opacity ?? 1) >= 1 && backing({ fill: pic.bgColor })}
             {image}
           </Group>
           {'stroke' in strokeProps && outline({ ...strokeProps, fillEnabled: false })}

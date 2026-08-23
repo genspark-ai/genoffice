@@ -6,6 +6,7 @@ import {
   cellCutYs,
   columnLayoutSpecs,
   vAlignShiftSpecs,
+  sectionWidthSpecs,
   sectionColGeom,
   computePageSlices,
   computeSectionedSlices,
@@ -14,6 +15,9 @@ import {
   hasPrintableHeaderFooter,
   insertParityBlanks,
   lineBreakBoundaries,
+  lineStartAnchor,
+  nextLineAnchor,
+  anchorElement,
   pageAt,
   visiblePageCount,
   liveSections,
@@ -365,6 +369,16 @@ describe('multi-section slicing', () => {
     expect(Math.round(geoms[0].contentHeight)).toBe(Math.round(((16838 - 2880) / 1440) * 96))
   })
 
+  it('sectionGeoms: contentWidth follows each section page width and side margins', () => {
+    const portrait = sec({})
+    const landscape = sec({ pageWidth: 16838, pageHeight: 11906, orientation: 'landscape' })
+    const narrowMargins = sec({ marginLeft: 720, marginRight: 720 })
+    const geoms = sectionGeoms([portrait, landscape, narrowMargins])
+    expect(geoms[0].contentWidth).toBeCloseTo(((11906 - 2880) / 1440) * 96, 1)
+    expect(geoms[1].contentWidth).toBeCloseTo(((16838 - 2880) / 1440) * 96, 1)
+    expect(geoms[2].contentWidth).toBeCloseTo(((11906 - 1440) / 1440) * 96, 1)
+  })
+
   it('sectionGeoms: nextColumn starts a new page in a single-column layout, flows in a multi-column one (n750255)', () => {
     const single = sec({})
     const afterSingle = sec({}, { startType: 'nextColumn' })
@@ -544,6 +558,59 @@ const lineBlock = (top: number, heights: number[], extra?: Partial<BlockBox>): B
 }
 
 const geoms1 = [{ contentHeight: 200, forceBreak: false }]
+
+describe('sectionWidthSpecs — differing-width sections wrap at their own content width', () => {
+  const el = (tag = 'p', marginLeft?: string) => {
+    const e = document.createElement(tag)
+    if (marginLeft) e.style.marginLeft = marginLeft
+    return e
+  }
+
+  it('equal-width sections produce no specs', () => {
+    const secsList = [sec({}), sec({ pageHeight: 20160 })]
+    const blocks = [
+      block(0, 100, { section: 0, el: el() }),
+      block(100, 100, { section: 1, el: el() }),
+    ]
+    expect(sectionWidthSpecs(blocks, secsList, sectionGeoms(secsList))).toEqual([])
+  })
+
+  it('every block wraps at its own section width; tables get vars only; floats are skipped', () => {
+    const landscape = sec({
+      pageWidth: 16838,
+      pageHeight: 11906,
+      orientation: 'landscape',
+      marginLeft: 720,
+    })
+    const secsList = [sec({}), landscape, sec({})]
+    const portraitW = ((11906 - 2880) / 1440) * 96
+    const landscapeW = ((16838 - 720 - 1440) / 1440) * 96
+    const para = el('p', '30px')
+    const table = el('table')
+    const blocks = [
+      block(0, 100, { section: 0, el: el() }),
+      block(100, 100, { section: 1, el: para }),
+      block(200, 100, { section: 1, el: table }),
+      block(300, 100, { section: 1, el: el(), floated: true }),
+      block(400, 100, { section: 2, el: el() }),
+    ]
+    const specs = sectionWidthSpecs(blocks, secsList, sectionGeoms(secsList))
+    expect(specs).toHaveLength(4)
+    // canvas-width blocks get explicit widths too: preview clones render into
+    // per-section wrap widths, so container-relative blocks would reflow there
+    expect(specs[0].widthPx).toBeCloseTo(portraitW, 1)
+    expect(specs[0].contentWPx).toBeCloseTo(portraitW, 1)
+    expect(specs[1].el).toBe(para)
+    expect(specs[1].widthPx).toBeCloseTo(landscapeW - 30, 1)
+    expect(specs[1].contentWPx).toBeCloseTo(landscapeW, 1)
+    expect(specs[1].marginLeftPx).toBeCloseTo((720 / 1440) * 96, 1)
+    expect(specs[1].marginRightPx).toBeCloseTo(96, 1)
+    expect(specs[2].el).toBe(table)
+    expect(specs[2].widthPx).toBeUndefined()
+    expect(specs[2].contentWPx).toBeCloseTo(landscapeW, 1)
+    expect(specs[3].widthPx).toBeCloseTo(portraitW, 1)
+  })
+})
 
 describe('computeSectionedSlicesF2 — line-level pagination', () => {
   it('content shorter than a page does not break', () => {
@@ -1171,7 +1238,7 @@ describe('measureBlocks — break-only paragraphs', () => {
       toJSON: () => ({}),
     }) as DOMRect
   // page height 200; the break paragraph's DOM height is two line boxes (br + trailingBreak) = 44px
-  const breakDoc = (fillerH: number) => {
+  const breakDoc = (fillerH: number, gap = 0) => {
     const pm = document.createElement('div')
     const addPara = (top: number, height: number, html: string) => {
       const el = document.createElement('p')
@@ -1180,8 +1247,8 @@ describe('measureBlocks — break-only paragraphs', () => {
       pm.appendChild(el)
     }
     addPara(0, fillerH, 'filler text')
-    addPara(fillerH, 44, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
-    addPara(fillerH + 44, 100, 'after the break')
+    addPara(fillerH + gap, 44, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
+    addPara(fillerH + gap + 44, 100, 'after the break')
     return measureBlocks(pm, 0, 1)
   }
   const geoms = [{ contentHeight: 200, forceBreak: false }]
@@ -1189,7 +1256,8 @@ describe('measureBlocks — break-only paragraphs', () => {
   it('absorbs at the page bottom when the break line fits (no blank page)', () => {
     const { blocks, totalHeight } = breakDoc(173) // 27px left
     expect(blocks[1].breakAfter).toBe(true)
-    expect(blocks[1].breakOnlyLineH).toBe(44)
+    // one line's share of the two DOM line boxes (br + trailingBreak)
+    expect(blocks[1].breakOnlyLineH).toBe(22)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
     // break paragraph overflows the bottom margin; page 2 starts at the following block
     expect(slices.map((s) => s.start)).toEqual([0, 217])
@@ -1203,10 +1271,41 @@ describe('measureBlocks — break-only paragraphs', () => {
     expect(slices[1]).toMatchObject({ start: 200, end: 244 })
   })
 
-  it('still absorbs within the drift tolerance (half the block height)', () => {
-    const { blocks, totalHeight } = breakDoc(177) // 23px left, just above the 22px floor
+  it('still absorbs within the drift tolerance (half the line height)', () => {
+    const { blocks, totalHeight } = breakDoc(177) // 23px left, above the 11px floor
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
     expect(slices.map((s) => s.start)).toEqual([0, 221])
+  })
+
+  it('absorbs a small remainder measured by a single line, not the phantom-inflated height', () => {
+    const { blocks, totalHeight } = breakDoc(185) // 15px left: below one full line, above half
+    const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
+    // a two-line fit height (44*0.5=22) used to double-turn here into a blank page
+    expect(slices.map((s) => s.start)).toEqual([0, 229])
+  })
+
+  it('exempts the previous block trailing space-after from the page-bottom fit', () => {
+    // filler text ends at 180; its 15px space-after folds into usedInCol but Word
+    // drops it at the page bottom, so the break line still fits
+    const { blocks, totalHeight } = breakDoc(180, 15)
+    expect(blocks[0].spaceAfterPx).toBe(15)
+    const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
+    expect(slices.map((s) => s.start)).toEqual([0, 239])
+  })
+
+  it('does not exempt footnote reservations from the page-bottom fit', () => {
+    // Word drops trailing paragraph space-after at the page bottom, not footnote
+    // reservations: a reservation-filled page keeps its deliberate blank page
+    const { blocks, totalHeight } = breakDoc(180, 15)
+    blocks[0].footnoteExtraPx = 15
+    const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
+    expect(slices.map((s) => s.start)).toEqual([0, 195, 239])
+  })
+
+  it('applyBlockMeta tracks the footnote share of space-after separately', () => {
+    const blocks = [{ top: 0, height: 100, docxIndex: 0, spaceAfterPx: 5 }]
+    applyBlockMeta(blocks, () => ({ footnoteExtraPx: 12 }))
+    expect(blocks[0]).toMatchObject({ height: 112, spaceAfterPx: 17, footnoteExtraPx: 12 })
   })
 })
 
@@ -1965,5 +2064,83 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
     )
     expect(pageAt(slices, 300)).toBe(1) // content in column 2 is still page 1
     expect(pageAt(slices, 450)).toBe(2)
+  })
+})
+
+describe('fillLineBoxes — picture-only paragraphs (inline image lines)', () => {
+  const geoms = [{ contentHeight: 200, forceBreak: false }]
+  const rectOf = (top: number, height: number, left = 0, width = 100) =>
+    ({
+      top,
+      height,
+      bottom: top + height,
+      left,
+      right: left + width,
+      width,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect
+  const imageStack = (tops: number[], lineH: number, style?: string) => {
+    const el = document.createElement('p')
+    for (const t of tops) {
+      const img = document.createElement('img')
+      img.className = 'doc-inline-img'
+      if (style) img.setAttribute('style', style)
+      img.getBoundingClientRect = () => rectOf(t, lineH - 5)
+      el.appendChild(img)
+    }
+    el.getBoundingClientRect = () => rectOf(0, tops.length * lineH)
+    return el
+  }
+
+  it('breaks an over-page image stack at image line starts, not synthesized pixel cuts', () => {
+    const el = imageStack([0, 120, 240, 360], 120)
+    const b: BlockBox = { top: 0, height: 480, el }
+    expect(fillLineBoxes([b], geoms, 1)).toBe(true)
+    expect(b.lineBoxes).toEqual([
+      { offsetInBlock: 0, height: 120 },
+      { offsetInBlock: 120, height: 120 },
+      { offsetInBlock: 240, height: 120 },
+      { offsetInBlock: 360, height: 120 },
+    ])
+    // one 120px image line per 200px page (two lines exceed a page)
+    const slices = computeSectionedSlicesF2([b], geoms, 480)
+    expect(slices.map((s) => s.start)).toEqual([0, 120, 240, 360])
+  })
+
+  it('floated and absolutely positioned images do not form lines', () => {
+    for (const style of ['float:left', 'position:absolute']) {
+      const el = imageStack([0, 120, 240, 360], 120, style)
+      const b: BlockBox = { top: 0, height: 480, el }
+      expect(fillLineBoxes([b], geoms, 1)).toBe(true)
+      // no line data: synthesized page-height cuts remain
+      expect(b.lineBoxes).toEqual([
+        { offsetInBlock: 0, height: 200 },
+        { offsetInBlock: 200, height: 200 },
+        { offsetInBlock: 400, height: 80 },
+      ])
+    }
+  })
+
+  it('anchors a picture-only line at its image element', () => {
+    const el = imageStack([0, 120, 240, 360], 120)
+    const anchor = nextLineAnchor(el, 120, 1)
+    expect(anchor).toEqual({ node: el.children[1], charOffset: 0 })
+    expect(anchorElement(anchor!)).toBe(el.children[1])
+  })
+
+  it('a line holding both text and a taller image keeps the text anchor', () => {
+    const el = imageStack([0], 120)
+    el.appendChild(document.createTextNode('caption'))
+    const glyph = rectOf(10, 20, 60, 50)
+    const orig = Range.prototype.getClientRects
+    Range.prototype.getClientRects = () => [glyph] as unknown as DOMRectList
+    try {
+      const anchor = lineStartAnchor(el, 0, 1)
+      expect(anchor?.node).toBe(el.lastChild)
+    } finally {
+      Range.prototype.getClientRects = orig
+    }
   })
 })

@@ -191,7 +191,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: '空白页',
     ribbonBlankPageTip: '插入空白页',
     ribbonPageBreak: '分页符',
-    ribbonPageBreakTip: '从下一段起换页',
+    ribbonPageBreakTip: '从下一段起换页 (⌘↩)',
     ribbonGroupPages: '页面',
     ribbonTable: '表格',
     ribbonTableTip: '插入表格',
@@ -587,6 +587,9 @@ export const ribbonStrings = defineStrings({
     ribbonTranslate: '翻译',
     ribbonTranslateTip: 'AI 翻译文档',
     ribbonTranslatePrompt: '把全文翻译成{lang},保持段落结构和标题层级不变。',
+    ribbonTranslateSelectionPrompt: '把选中的内容翻译成{lang},保持段落结构不变。',
+    ribbonEditorSelectionPrompt:
+      '校对选中的内容:修正错别字、标点和语法错误,保持原意和段落结构不变。',
     ribbonTranslateTo: '翻译为{lang}',
     ribbonLangEnglish: '英文',
     ribbonLangSimplifiedChinese: '简体中文',
@@ -600,6 +603,14 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: '为所选内容新建批注',
     ribbonNewCommentSelectTip: '先选中要批注的文字',
     ribbonShowComments: '显示批注',
+    ribbonAiComments: 'AI 处理批注',
+    ribbonAiRevisions: 'AI 总结修订',
+    ribbonAiRevisionsTip: 'AI 通读 {count} 条待处理修订,按章节总结改动并提示风险',
+    ribbonAiRevisionsPrompt:
+      '总结文档中所有待处理的修订:先给出总体统计(插入/删除数量、作者、日期范围),再按章节逐条说明改了什么(标注 block 索引),最后列出需要注意的风险点(如删除了义务或限定语、改动了数字/日期/金额)。只做总结,不要修改文档,也不要接受或拒绝任何修订。',
+    ribbonAiCommentsTip: 'AI 逐条处理 {count} 条未解决的批注:按批注修改、回复说明并标记解决',
+    ribbonAiCommentsPrompt:
+      '处理文档中所有未解决的批注:逐条按批注要求修改,回复说明改动,然后标记解决;若批注是提问或有歧义,只回复不修改。',
     ribbonShowCommentsTip: '显示批注({count} 条)',
     ribbonTrackChanges: '修订',
     ribbonTrackChangesTip: '修订:记录此后的所有更改(插入带下划线,删除带删除线)',
@@ -876,7 +887,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Blank Page',
     ribbonBlankPageTip: 'Insert a blank page',
     ribbonPageBreak: 'Page Break',
-    ribbonPageBreakTip: 'Start the next paragraph on a new page',
+    ribbonPageBreakTip: 'Start the next paragraph on a new page (⌘↩)',
     ribbonGroupPages: 'Pages',
     ribbonTable: 'Table',
     ribbonTableTip: 'Insert a table',
@@ -1271,6 +1282,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI translates the document',
     ribbonTranslatePrompt:
       'Translate the entire document into {lang}, keeping the paragraph structure and heading levels unchanged.',
+    ribbonTranslateSelectionPrompt:
+      'Translate the selected content into {lang}, keeping the paragraph structure unchanged.',
+    ribbonEditorSelectionPrompt:
+      'Proofread the selected content: fix typos, punctuation and grammar errors while keeping the original meaning and paragraph structure unchanged.',
     ribbonTranslateTo: 'Translate to {lang}',
     ribbonLangEnglish: 'English',
     ribbonLangSimplifiedChinese: 'Simplified Chinese',
@@ -1284,6 +1299,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Add a comment on the selection',
     ribbonNewCommentSelectTip: 'Select the text to comment on first',
     ribbonShowComments: 'Show Comments',
+    ribbonAiComments: 'AI Resolve Comments',
+    ribbonAiRevisions: 'AI Revision Summary',
+    ribbonAiRevisionsTip:
+      'AI reads the {count} pending revisions, summarizes the changes by section and flags risks',
+    ribbonAiRevisionsPrompt:
+      'Summarize all pending tracked revisions in the document: start with overall stats (insertion/deletion counts, authors, date range), then describe the changes section by section (cite block indexes), and end with a list of potential concerns (e.g. deleted obligations or qualifiers, changed numbers/dates/amounts). Summarize only — do not modify the document or accept/reject any revision.',
+    ribbonAiCommentsTip:
+      'AI works through the {count} unresolved comments: edits per comment, replies with what changed, then resolves',
+    ribbonAiCommentsPrompt:
+      'Address every unresolved comment in the document: for each one, apply the requested change, reply describing what changed, then resolve it; if a comment is a question or ambiguous, reply without modifying the document.',
     ribbonShowCommentsTip: 'Show comments ({count})',
     ribbonTrackChanges: 'Track Changes',
     ribbonTrackChangesTip:
@@ -1571,7 +1596,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: '空白のページ',
     ribbonBlankPageTip: '空白のページを挿入',
     ribbonPageBreak: 'ページ区切り',
-    ribbonPageBreakTip: '次の段落を新しいページから開始',
+    ribbonPageBreakTip: '次の段落を新しいページから開始 (⌘↩)',
     ribbonGroupPages: 'ページ',
     ribbonTable: '表',
     ribbonTableTip: '表を挿入',
@@ -1975,6 +2000,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI がドキュメントを翻訳',
     ribbonTranslatePrompt:
       '文書全体を{lang}に翻訳してください。段落構成と見出しレベルは変えないでください。',
+    ribbonTranslateSelectionPrompt:
+      '選択した内容を{lang}に翻訳してください。段落構成は変えないでください。',
+    ribbonEditorSelectionPrompt:
+      '選択した内容を校正してください：誤字、句読点、文法の誤りを修正し、元の意味と段落構成は変えないでください。',
     ribbonTranslateTo: '{lang}に翻訳',
     ribbonLangEnglish: '英語',
     ribbonLangSimplifiedChinese: '簡体字中国語',
@@ -1988,6 +2017,15 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: '選択範囲にコメントを追加',
     ribbonNewCommentSelectTip: 'まずコメントを付ける文字列を選択してください',
     ribbonShowComments: 'コメントの表示',
+    ribbonAiComments: 'AI でコメント処理',
+    ribbonAiRevisions: 'AI で変更履歴を要約',
+    ribbonAiRevisionsTip:
+      '保留中の変更 {count} 件を AI が読み、セクション別に要約してリスクを指摘します',
+    ribbonAiRevisionsPrompt:
+      '文書内の保留中の変更履歴をすべて要約してください:まず全体統計(挿入/削除の件数、作成者、日付範囲)、次にセクション別に何が変わったかを説明し(block 番号を明記)、最後に注意すべき点(義務や限定表現の削除、数値・日付・金額の変更など)を挙げてください。要約のみを行い、文書の変更や変更履歴の承諾/拒否はしないでください。',
+    ribbonAiCommentsTip: '未解決のコメント {count} 件を AI が順に処理します(修正・返信・解決)',
+    ribbonAiCommentsPrompt:
+      '文書内の未解決コメントをすべて処理してください:各コメントの要望どおりに修正し、変更内容を返信してから解決済みにしてください。質問や曖昧なコメントには返信のみ行い、本文は変更しないでください。',
     ribbonShowCommentsTip: 'コメントを表示({count} 件)',
     ribbonTrackChanges: '変更履歴の記録',
     ribbonTrackChangesTip:
@@ -2276,7 +2314,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: '새 페이지',
     ribbonBlankPageTip: '빈 페이지 삽입',
     ribbonPageBreak: '페이지 나누기',
-    ribbonPageBreakTip: '다음 단락부터 새 페이지에서 시작',
+    ribbonPageBreakTip: '다음 단락부터 새 페이지에서 시작 (⌘↩)',
     ribbonGroupPages: '페이지',
     ribbonTable: '표',
     ribbonTableTip: '표 삽입',
@@ -2677,6 +2715,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI가 문서 번역',
     ribbonTranslatePrompt:
       '문서 전체를 {lang}(으)로 번역해 주세요. 단락 구조와 제목 수준은 유지해 주세요.',
+    ribbonTranslateSelectionPrompt:
+      '선택한 내용을 {lang}(으)로 번역해 주세요. 단락 구조는 유지해 주세요.',
+    ribbonEditorSelectionPrompt:
+      '선택한 내용을 교정해 주세요: 오탈자, 문장 부호, 문법 오류를 수정하되 원래 의미와 단락 구조는 유지해 주세요.',
     ribbonTranslateTo: '{lang}(으)로 번역',
     ribbonLangEnglish: '영어',
     ribbonLangSimplifiedChinese: '중국어 간체',
@@ -2690,6 +2732,15 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: '선택 영역에 메모 추가',
     ribbonNewCommentSelectTip: '먼저 메모를 달 텍스트를 선택하세요',
     ribbonShowComments: '메모 표시',
+    ribbonAiComments: 'AI 메모 처리',
+    ribbonAiRevisions: 'AI 변경 내용 요약',
+    ribbonAiRevisionsTip:
+      '대기 중인 변경 내용 {count}건을 AI가 읽고 섹션별로 요약하며 위험 요소를 짚어 줍니다',
+    ribbonAiRevisionsPrompt:
+      '문서의 대기 중인 변경 내용을 모두 요약해 주세요: 먼저 전체 통계(삽입/삭제 수, 작성자, 날짜 범위), 다음으로 섹션별로 무엇이 바뀌었는지 설명하고(block 번호 표기), 마지막으로 주의할 점(의무나 한정 표현 삭제, 숫자·날짜·금액 변경 등)을 나열하세요. 요약만 하고 문서를 수정하거나 변경 내용을 적용/거부하지 마세요.',
+    ribbonAiCommentsTip: '해결되지 않은 메모 {count}건을 AI가 순서대로 처리합니다(수정·회신·해결)',
+    ribbonAiCommentsPrompt:
+      '문서의 해결되지 않은 메모를 모두 처리해 주세요: 각 메모의 요청대로 수정하고, 변경 내용을 회신한 뒤 해결로 표시하세요. 질문이거나 모호한 메모에는 회신만 하고 본문은 수정하지 마세요.',
     ribbonShowCommentsTip: '메모 표시({count}개)',
     ribbonTrackChanges: '변경 내용 추적',
     ribbonTrackChangesTip:
@@ -2970,7 +3021,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Page vierge',
     ribbonBlankPageTip: 'Insérer une page vierge',
     ribbonPageBreak: 'Saut de page',
-    ribbonPageBreakTip: 'Commencer le paragraphe suivant sur une nouvelle page',
+    ribbonPageBreakTip: 'Commencer le paragraphe suivant sur une nouvelle page (⌘↩)',
     ribbonGroupPages: 'Pages',
     ribbonTable: 'Tableau',
     ribbonTableTip: 'Insérer un tableau',
@@ -3369,6 +3420,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: "L'IA traduit le document",
     ribbonTranslatePrompt:
       'Traduisez tout le document en {lang}, en conservant la structure des paragraphes et les niveaux de titres.',
+    ribbonTranslateSelectionPrompt:
+      'Traduisez le contenu sélectionné en {lang}, en conservant la structure des paragraphes.',
+    ribbonEditorSelectionPrompt:
+      "Relisez le contenu sélectionné : corrigez les fautes de frappe, la ponctuation et la grammaire en conservant le sens d'origine et la structure des paragraphes.",
     ribbonTranslateTo: 'Traduire en {lang}',
     ribbonLangEnglish: 'anglais',
     ribbonLangSimplifiedChinese: 'chinois simplifié',
@@ -3382,6 +3437,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Ajouter un commentaire sur la sélection',
     ribbonNewCommentSelectTip: "Sélectionnez d'abord le texte à commenter",
     ribbonShowComments: 'Afficher les commentaires',
+    ribbonAiComments: 'Commentaires par IA',
+    ribbonAiRevisions: 'Résumé IA des révisions',
+    ribbonAiRevisionsTip:
+      "L'IA lit les {count} révisions en attente, résume les changements par section et signale les risques",
+    ribbonAiRevisionsPrompt:
+      "Résumez toutes les révisions en attente du document : commencez par des statistiques globales (nombre d'insertions/suppressions, auteurs, plage de dates), puis décrivez les changements section par section (citez les index de blocs), et terminez par les points de vigilance (obligations ou réserves supprimées, chiffres/dates/montants modifiés). Résumez seulement — ne modifiez pas le document et n'acceptez/rejetez aucune révision.",
+    ribbonAiCommentsTip:
+      "L'IA traite les {count} commentaires non résolus : modification, réponse, puis résolution",
+    ribbonAiCommentsPrompt:
+      'Traitez tous les commentaires non résolus du document : pour chacun, appliquez la modification demandée, répondez en décrivant le changement, puis marquez-le comme résolu ; si un commentaire est une question ou est ambigu, répondez sans modifier le document.',
     ribbonShowCommentsTip: 'Afficher les commentaires ({count})',
     ribbonTrackChanges: 'Suivi des modifications',
     ribbonTrackChangesTip:
@@ -3666,7 +3731,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Leere Seite',
     ribbonBlankPageTip: 'Leere Seite einfügen',
     ribbonPageBreak: 'Seitenumbruch',
-    ribbonPageBreakTip: 'Nächsten Absatz auf einer neuen Seite beginnen',
+    ribbonPageBreakTip: 'Nächsten Absatz auf einer neuen Seite beginnen (⌘↩)',
     ribbonGroupPages: 'Seiten',
     ribbonTable: 'Tabelle',
     ribbonTableTip: 'Tabelle einfügen',
@@ -4065,6 +4130,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'KI übersetzt das Dokument',
     ribbonTranslatePrompt:
       'Übersetze das gesamte Dokument in {lang} und behalte Absatzstruktur und Überschriftenebenen bei.',
+    ribbonTranslateSelectionPrompt:
+      'Übersetze den ausgewählten Inhalt in {lang} und behalte die Absatzstruktur bei.',
+    ribbonEditorSelectionPrompt:
+      'Korrigiere den ausgewählten Inhalt: Behebe Tippfehler, Zeichensetzungs- und Grammatikfehler, ohne Sinn und Absatzstruktur zu verändern.',
     ribbonTranslateTo: 'Ins {lang} übersetzen',
     ribbonLangEnglish: 'Englische',
     ribbonLangSimplifiedChinese: 'Chinesische (vereinfacht)',
@@ -4078,6 +4147,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Kommentar zur Auswahl hinzufügen',
     ribbonNewCommentSelectTip: 'Wählen Sie zuerst den zu kommentierenden Text aus',
     ribbonShowComments: 'Kommentare anzeigen',
+    ribbonAiComments: 'KI-Kommentare',
+    ribbonAiRevisions: 'KI-Änderungsübersicht',
+    ribbonAiRevisionsTip:
+      'Die KI liest die {count} offenen Änderungen, fasst sie abschnittsweise zusammen und markiert Risiken',
+    ribbonAiRevisionsPrompt:
+      'Fasse alle offenen nachverfolgten Änderungen des Dokuments zusammen: zuerst Gesamtstatistik (Anzahl Einfügungen/Löschungen, Autoren, Zeitraum), dann die Änderungen Abschnitt für Abschnitt (mit Blockindizes), zum Schluss eine Liste möglicher Risiken (gelöschte Pflichten oder Einschränkungen, geänderte Zahlen/Daten/Beträge). Nur zusammenfassen — das Dokument nicht ändern und keine Änderung annehmen oder ablehnen.',
+    ribbonAiCommentsTip:
+      'Die KI arbeitet die {count} offenen Kommentare ab: ändern, antworten, erledigen',
+    ribbonAiCommentsPrompt:
+      'Bearbeite alle offenen Kommentare im Dokument: Wende je Kommentar die gewünschte Änderung an, antworte mit einer kurzen Beschreibung der Änderung und markiere ihn dann als erledigt; bei Fragen oder unklaren Kommentaren nur antworten, nichts ändern.',
     ribbonShowCommentsTip: 'Kommentare anzeigen ({count})',
     ribbonTrackChanges: 'Änderungen nachverfolgen',
     ribbonTrackChangesTip:
@@ -4363,7 +4442,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Página en blanco',
     ribbonBlankPageTip: 'Insertar una página en blanco',
     ribbonPageBreak: 'Salto de página',
-    ribbonPageBreakTip: 'Comenzar el párrafo siguiente en una página nueva',
+    ribbonPageBreakTip: 'Comenzar el párrafo siguiente en una página nueva (⌘↩)',
     ribbonGroupPages: 'Páginas',
     ribbonTable: 'Tabla',
     ribbonTableTip: 'Insertar una tabla',
@@ -4762,6 +4841,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'La IA traduce el documento',
     ribbonTranslatePrompt:
       'Traduce todo el documento al {lang}, manteniendo la estructura de párrafos y los niveles de títulos.',
+    ribbonTranslateSelectionPrompt:
+      'Traduce el contenido seleccionado al {lang}, manteniendo la estructura de párrafos.',
+    ribbonEditorSelectionPrompt:
+      'Revisa el contenido seleccionado: corrige erratas, puntuación y errores gramaticales manteniendo el significado original y la estructura de los párrafos.',
     ribbonTranslateTo: 'Traducir al {lang}',
     ribbonLangEnglish: 'inglés',
     ribbonLangSimplifiedChinese: 'chino simplificado',
@@ -4775,6 +4858,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Agregar un comentario a la selección',
     ribbonNewCommentSelectTip: 'Seleccione primero el texto que quiere comentar',
     ribbonShowComments: 'Mostrar comentarios',
+    ribbonAiComments: 'Comentarios con IA',
+    ribbonAiRevisions: 'Resumen IA de revisiones',
+    ribbonAiRevisionsTip:
+      'La IA lee las {count} revisiones pendientes, resume los cambios por sección y señala riesgos',
+    ribbonAiRevisionsPrompt:
+      'Resume todas las revisiones pendientes del documento: primero estadísticas generales (número de inserciones/eliminaciones, autores, rango de fechas), luego describe los cambios sección por sección (cita los índices de bloque) y termina con los puntos de atención (obligaciones o matices eliminados, números/fechas/importes modificados). Solo resume: no modifiques el documento ni aceptes/rechaces ninguna revisión.',
+    ribbonAiCommentsTip:
+      'La IA procesa los {count} comentarios sin resolver: modifica, responde y resuelve',
+    ribbonAiCommentsPrompt:
+      'Atiende todos los comentarios sin resolver del documento: para cada uno, aplica el cambio solicitado, responde describiendo el cambio y márcalo como resuelto; si un comentario es una pregunta o es ambiguo, responde sin modificar el documento.',
     ribbonShowCommentsTip: 'Mostrar comentarios ({count})',
     ribbonTrackChanges: 'Control de cambios',
     ribbonTrackChangesTip:
@@ -5058,7 +5151,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'หน้าเปล่า',
     ribbonBlankPageTip: 'แทรกหน้าเปล่า',
     ribbonPageBreak: 'ตัวแบ่งหน้า',
-    ribbonPageBreakTip: 'เริ่มย่อหน้าถัดไปในหน้าใหม่',
+    ribbonPageBreakTip: 'เริ่มย่อหน้าถัดไปในหน้าใหม่ (⌘↩)',
     ribbonGroupPages: 'หน้า',
     ribbonTable: 'ตาราง',
     ribbonTableTip: 'แทรกตาราง',
@@ -5450,6 +5543,9 @@ export const ribbonStrings = defineStrings({
     ribbonTranslate: 'แปล',
     ribbonTranslateTip: 'AI แปลเอกสาร',
     ribbonTranslatePrompt: 'แปลทั้งเอกสารเป็น{lang} โดยคงโครงสร้างย่อหน้าและระดับหัวข้อไว้',
+    ribbonTranslateSelectionPrompt: 'แปลเนื้อหาที่เลือกเป็น{lang} โดยคงโครงสร้างย่อหน้าไว้',
+    ribbonEditorSelectionPrompt:
+      'พิสูจน์อักษรเนื้อหาที่เลือก: แก้ไขคำผิด เครื่องหมายวรรคตอน และไวยากรณ์ โดยคงความหมายเดิมและโครงสร้างย่อหน้าไว้',
     ribbonTranslateTo: 'แปลเป็น{lang}',
     ribbonLangEnglish: 'ภาษาอังกฤษ',
     ribbonLangSimplifiedChinese: 'ภาษาจีนตัวย่อ',
@@ -5463,6 +5559,15 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'เพิ่มข้อคิดเห็นให้ส่วนที่เลือก',
     ribbonNewCommentSelectTip: 'เลือกข้อความที่ต้องการแสดงความคิดเห็นก่อน',
     ribbonShowComments: 'แสดงข้อคิดเห็น',
+    ribbonAiComments: 'AI จัดการข้อคิดเห็น',
+    ribbonAiRevisions: 'AI สรุปการแก้ไข',
+    ribbonAiRevisionsTip: 'AI อ่านการแก้ไขที่ค้างอยู่ {count} รายการ สรุปตามหัวข้อ และชี้จุดเสี่ยง',
+    ribbonAiRevisionsPrompt:
+      'สรุปการแก้ไขที่ค้างอยู่ทั้งหมดในเอกสาร: เริ่มจากสถิติรวม (จำนวนแทรก/ลบ ผู้แก้ไข ช่วงวันที่) จากนั้นอธิบายการเปลี่ยนแปลงทีละหัวข้อ (ระบุหมายเลข block) และปิดท้ายด้วยจุดที่ควรระวัง (เช่น ลบข้อผูกพันหรือเงื่อนไข เปลี่ยนตัวเลข/วันที่/จำนวนเงิน) สรุปเท่านั้น ห้ามแก้ไขเอกสารหรือยอมรับ/ปฏิเสธการแก้ไขใด ๆ',
+    ribbonAiCommentsTip:
+      'AI จัดการข้อคิดเห็นที่ยังไม่แก้ไข {count} รายการทีละรายการ (แก้ไข ตอบกลับ ปิดเรื่อง)',
+    ribbonAiCommentsPrompt:
+      'จัดการข้อคิดเห็นที่ยังไม่แก้ไขทั้งหมดในเอกสาร: แก้ไขตามที่แต่ละข้อคิดเห็นร้องขอ ตอบกลับสรุปสิ่งที่เปลี่ยน แล้วทำเครื่องหมายว่าแก้ไขแล้ว หากเป็นคำถามหรือกำกวม ให้ตอบกลับโดยไม่แก้ไขเอกสาร',
     ribbonShowCommentsTip: 'แสดงข้อคิดเห็น ({count} รายการ)',
     ribbonTrackChanges: 'ติดตามการเปลี่ยนแปลง',
     ribbonTrackChangesTip:
@@ -5739,7 +5844,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Halaman Kosong',
     ribbonBlankPageTip: 'Sisipkan halaman kosong',
     ribbonPageBreak: 'Pemisah Halaman',
-    ribbonPageBreakTip: 'Mulai paragraf berikutnya di halaman baru',
+    ribbonPageBreakTip: 'Mulai paragraf berikutnya di halaman baru (⌘↩)',
     ribbonGroupPages: 'Halaman',
     ribbonTable: 'Tabel',
     ribbonTableTip: 'Sisipkan tabel',
@@ -6134,6 +6239,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI menerjemahkan dokumen',
     ribbonTranslatePrompt:
       'Terjemahkan seluruh dokumen ke {lang}, dengan mempertahankan struktur paragraf dan tingkat judul.',
+    ribbonTranslateSelectionPrompt:
+      'Terjemahkan konten yang dipilih ke {lang}, dengan mempertahankan struktur paragraf.',
+    ribbonEditorSelectionPrompt:
+      'Koreksi konten yang dipilih: perbaiki salah ketik, tanda baca, dan kesalahan tata bahasa tanpa mengubah makna asli dan struktur paragraf.',
     ribbonTranslateTo: 'Terjemahkan ke {lang}',
     ribbonLangEnglish: 'bahasa Inggris',
     ribbonLangSimplifiedChinese: 'bahasa Tionghoa Sederhana',
@@ -6147,6 +6256,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Tambahkan komentar pada pilihan',
     ribbonNewCommentSelectTip: 'Pilih dahulu teks yang akan dikomentari',
     ribbonShowComments: 'Tampilkan Komentar',
+    ribbonAiComments: 'Komentar dengan AI',
+    ribbonAiRevisions: 'Ringkasan revisi AI',
+    ribbonAiRevisionsTip:
+      'AI membaca {count} revisi tertunda, meringkas perubahan per bagian, dan menandai risiko',
+    ribbonAiRevisionsPrompt:
+      'Ringkas semua revisi terlacak yang tertunda di dokumen: mulai dengan statistik keseluruhan (jumlah sisipan/penghapusan, penulis, rentang tanggal), lalu jelaskan perubahan per bagian (sebutkan indeks blok), dan akhiri dengan daftar hal yang perlu diwaspadai (kewajiban atau kualifikasi yang dihapus, angka/tanggal/jumlah yang berubah). Ringkas saja — jangan mengubah dokumen atau menerima/menolak revisi apa pun.',
+    ribbonAiCommentsTip:
+      'AI memproses {count} komentar yang belum selesai: ubah, balas, lalu selesaikan',
+    ribbonAiCommentsPrompt:
+      'Tangani semua komentar yang belum selesai di dokumen: untuk tiap komentar, terapkan perubahan yang diminta, balas dengan menjelaskan perubahannya, lalu tandai selesai; jika komentar berupa pertanyaan atau ambigu, balas tanpa mengubah dokumen.',
     ribbonShowCommentsTip: 'Tampilkan komentar ({count})',
     ribbonTrackChanges: 'Lacak Perubahan',
     ribbonTrackChangesTip:
@@ -6428,7 +6547,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Пустая страница',
     ribbonBlankPageTip: 'Вставить пустую страницу',
     ribbonPageBreak: 'Разрыв страницы',
-    ribbonPageBreakTip: 'Начать следующий абзац с новой страницы',
+    ribbonPageBreakTip: 'Начать следующий абзац с новой страницы (⌘↩)',
     ribbonGroupPages: 'Страницы',
     ribbonTable: 'Таблица',
     ribbonTableTip: 'Вставить таблицу',
@@ -6824,6 +6943,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'ИИ переведёт документ',
     ribbonTranslatePrompt:
       'Переведите весь документ на {lang}, сохранив структуру абзацев и уровни заголовков.',
+    ribbonTranslateSelectionPrompt:
+      'Переведите выделенный текст на {lang}, сохранив структуру абзацев.',
+    ribbonEditorSelectionPrompt:
+      'Вычитайте выделенный текст: исправьте опечатки, пунктуацию и грамматические ошибки, сохранив исходный смысл и структуру абзацев.',
     ribbonTranslateTo: 'Перевести на {lang}',
     ribbonLangEnglish: 'английский',
     ribbonLangSimplifiedChinese: 'китайский (упрощённый)',
@@ -6837,6 +6960,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Добавить примечание к выделенному фрагменту',
     ribbonNewCommentSelectTip: 'Сначала выделите текст, к которому нужно добавить примечание',
     ribbonShowComments: 'Показать примечания',
+    ribbonAiComments: 'ИИ: примечания',
+    ribbonAiRevisions: 'ИИ: сводка исправлений',
+    ribbonAiRevisionsTip:
+      'ИИ читает нерассмотренные исправления ({count}), резюмирует их по разделам и отмечает риски',
+    ribbonAiRevisionsPrompt:
+      'Составьте сводку всех нерассмотренных исправлений в документе: сначала общая статистика (число вставок/удалений, авторы, диапазон дат), затем изменения по разделам (с указанием индексов блоков), в конце — список рисков (удалённые обязательства или оговорки, изменённые числа/даты/суммы). Только сводка — не изменяйте документ и не принимайте/отклоняйте исправления.',
+    ribbonAiCommentsTip:
+      'ИИ обрабатывает нерешённые примечания ({count}): правка, ответ, отметка «решено»',
+    ribbonAiCommentsPrompt:
+      'Обработайте все нерешённые примечания в документе: для каждого внесите запрошенную правку, ответьте с описанием изменения и отметьте его решённым; если примечание — вопрос или неоднозначно, только ответьте, не меняя документ.',
     ribbonShowCommentsTip: 'Показать примечания ({count})',
     ribbonTrackChanges: 'Исправления',
     ribbonTrackChangesTip:
@@ -7115,7 +7248,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'صفحة فارغة',
     ribbonBlankPageTip: 'إدراج صفحة فارغة',
     ribbonPageBreak: 'فاصل صفحات',
-    ribbonPageBreakTip: 'بدء الفقرة التالية في صفحة جديدة',
+    ribbonPageBreakTip: 'بدء الفقرة التالية في صفحة جديدة (⌘↩)',
     ribbonGroupPages: 'صفحات',
     ribbonTable: 'جدول',
     ribbonTableTip: 'إدراج جدول',
@@ -7508,6 +7641,9 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'يترجم الذكاء الاصطناعي المستند',
     ribbonTranslatePrompt:
       'ترجم المستند بالكامل إلى {lang} مع الحفاظ على بنية الفقرات ومستويات العناوين.',
+    ribbonTranslateSelectionPrompt: 'ترجم المحتوى المحدد إلى {lang} مع الحفاظ على بنية الفقرات.',
+    ribbonEditorSelectionPrompt:
+      'دقّق المحتوى المحدد: صحّح الأخطاء الإملائية وعلامات الترقيم والأخطاء النحوية مع الحفاظ على المعنى الأصلي وبنية الفقرات.',
     ribbonTranslateTo: 'ترجمة إلى {lang}',
     ribbonLangEnglish: 'الإنجليزية',
     ribbonLangSimplifiedChinese: 'الصينية المبسطة',
@@ -7521,6 +7657,15 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'إضافة تعليق على التحديد',
     ribbonNewCommentSelectTip: 'حدد أولاً النص الذي تريد التعليق عليه',
     ribbonShowComments: 'إظهار التعليقات',
+    ribbonAiComments: 'معالجة التعليقات بالذكاء الاصطناعي',
+    ribbonAiRevisions: 'ملخص المراجعات بالذكاء الاصطناعي',
+    ribbonAiRevisionsTip:
+      'يقرأ الذكاء الاصطناعي {count} مراجعات معلقة ويلخص التغييرات حسب الأقسام ويشير إلى المخاطر',
+    ribbonAiRevisionsPrompt:
+      'لخّص جميع المراجعات المعلقة في المستند: ابدأ بإحصاءات عامة (عدد الإدراجات/الحذوفات، المؤلفون، نطاق التواريخ)، ثم اشرح التغييرات قسمًا بقسم (مع ذكر فهارس الكتل)، واختم بقائمة نقاط تستدعي الانتباه (حذف التزامات أو قيود، تغيير أرقام/تواريخ/مبالغ). لخّص فقط — لا تعدّل المستند ولا تقبل أو ترفض أي مراجعة.',
+    ribbonAiCommentsTip: 'يعالج الذكاء الاصطناعي {count} تعليقات غير محلولة: تعديل ثم رد ثم حل',
+    ribbonAiCommentsPrompt:
+      'عالج جميع التعليقات غير المحلولة في المستند: لكل تعليق طبّق التعديل المطلوب، ثم رد بوصف ما تغيّر، ثم علّمه كمحلول؛ إذا كان التعليق سؤالًا أو غامضًا فاكتفِ بالرد دون تعديل المستند.',
     ribbonShowCommentsTip: 'إظهار التعليقات ({count})',
     ribbonTrackChanges: 'تعقب التغييرات',
     ribbonTrackChangesTip:
@@ -7798,7 +7943,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Página em Branco',
     ribbonBlankPageTip: 'Inserir uma página em branco',
     ribbonPageBreak: 'Quebra de Página',
-    ribbonPageBreakTip: 'Iniciar o próximo parágrafo em uma nova página',
+    ribbonPageBreakTip: 'Iniciar o próximo parágrafo em uma nova página (⌘↩)',
     ribbonGroupPages: 'Páginas',
     ribbonTable: 'Tabela',
     ribbonTableTip: 'Inserir uma tabela',
@@ -8193,6 +8338,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'A IA traduz o documento',
     ribbonTranslatePrompt:
       'Traduza todo o documento para {lang}, mantendo a estrutura dos parágrafos e os níveis de títulos.',
+    ribbonTranslateSelectionPrompt:
+      'Traduza o conteúdo selecionado para {lang}, mantendo a estrutura dos parágrafos.',
+    ribbonEditorSelectionPrompt:
+      'Revise o conteúdo selecionado: corrija erros de digitação, pontuação e gramática mantendo o sentido original e a estrutura dos parágrafos.',
     ribbonTranslateTo: 'Traduzir para {lang}',
     ribbonLangEnglish: 'inglês',
     ribbonLangSimplifiedChinese: 'chinês simplificado',
@@ -8206,6 +8355,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Adicionar um comentário à seleção',
     ribbonNewCommentSelectTip: 'Selecione primeiro o texto a comentar',
     ribbonShowComments: 'Mostrar Comentários',
+    ribbonAiComments: 'Comentários com IA',
+    ribbonAiRevisions: 'Resumo de revisões com IA',
+    ribbonAiRevisionsTip:
+      'A IA lê as {count} revisões pendentes, resume as mudanças por seção e sinaliza riscos',
+    ribbonAiRevisionsPrompt:
+      'Resuma todas as revisões pendentes do documento: comece com estatísticas gerais (número de inserções/exclusões, autores, intervalo de datas), depois descreva as mudanças seção por seção (cite os índices de bloco) e termine com os pontos de atenção (obrigações ou ressalvas excluídas, números/datas/valores alterados). Apenas resuma — não modifique o documento nem aceite/rejeite nenhuma revisão.',
+    ribbonAiCommentsTip:
+      'A IA processa os {count} comentários não resolvidos: edita, responde e resolve',
+    ribbonAiCommentsPrompt:
+      'Trate todos os comentários não resolvidos do documento: para cada um, aplique a alteração pedida, responda descrevendo a mudança e marque-o como resolvido; se um comentário for uma pergunta ou for ambíguo, responda sem alterar o documento.',
     ribbonShowCommentsTip: 'Mostrar comentários ({count})',
     ribbonTrackChanges: 'Controlar Alterações',
     ribbonTrackChangesTip:
@@ -8488,7 +8647,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Pagina vuota',
     ribbonBlankPageTip: 'Inserisci una pagina vuota',
     ribbonPageBreak: 'Interruzione di pagina',
-    ribbonPageBreakTip: 'Inizia il paragrafo successivo in una nuova pagina',
+    ribbonPageBreakTip: 'Inizia il paragrafo successivo in una nuova pagina (⌘↩)',
     ribbonGroupPages: 'Pagine',
     ribbonTable: 'Tabella',
     ribbonTableTip: 'Inserisci una tabella',
@@ -8885,6 +9044,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: "L'IA traduce il documento",
     ribbonTranslatePrompt:
       "Traduci l'intero documento in {lang}, mantenendo la struttura dei paragrafi e i livelli dei titoli.",
+    ribbonTranslateSelectionPrompt:
+      'Traduci il contenuto selezionato in {lang}, mantenendo la struttura dei paragrafi.',
+    ribbonEditorSelectionPrompt:
+      'Correggi il contenuto selezionato: sistema refusi, punteggiatura ed errori grammaticali mantenendo il significato originale e la struttura dei paragrafi.',
     ribbonTranslateTo: 'Traduci in {lang}',
     ribbonLangEnglish: 'inglese',
     ribbonLangSimplifiedChinese: 'cinese semplificato',
@@ -8898,6 +9061,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Aggiungi un commento alla selezione',
     ribbonNewCommentSelectTip: 'Seleziona prima il testo da commentare',
     ribbonShowComments: 'Mostra commenti',
+    ribbonAiComments: 'Commenti con IA',
+    ribbonAiRevisions: 'Riepilogo revisioni IA',
+    ribbonAiRevisionsTip:
+      "L'IA legge le {count} revisioni in sospeso, riassume le modifiche per sezione e segnala i rischi",
+    ribbonAiRevisionsPrompt:
+      'Riassumi tutte le revisioni in sospeso del documento: inizia con le statistiche generali (numero di inserimenti/eliminazioni, autori, intervallo di date), poi descrivi le modifiche sezione per sezione (cita gli indici dei blocchi) e chiudi con i punti di attenzione (obblighi o riserve eliminati, numeri/date/importi modificati). Solo riassunto: non modificare il documento né accettare/rifiutare alcuna revisione.',
+    ribbonAiCommentsTip:
+      "L'IA elabora i {count} commenti non risolti: modifica, risponde e risolve",
+    ribbonAiCommentsPrompt:
+      'Gestisci tutti i commenti non risolti del documento: per ciascuno applica la modifica richiesta, rispondi descrivendo il cambiamento e segnalo come risolto; se un commento è una domanda o è ambiguo, rispondi senza modificare il documento.',
     ribbonShowCommentsTip: 'Mostra commenti ({count})',
     ribbonTrackChanges: 'Revisioni',
     ribbonTrackChangesTip:
@@ -9182,7 +9355,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Pusta strona',
     ribbonBlankPageTip: 'Wstaw pustą stronę',
     ribbonPageBreak: 'Podział strony',
-    ribbonPageBreakTip: 'Rozpocznij następny akapit na nowej stronie',
+    ribbonPageBreakTip: 'Rozpocznij następny akapit na nowej stronie (⌘↩)',
     ribbonGroupPages: 'Strony',
     ribbonTable: 'Tabela',
     ribbonTableTip: 'Wstaw tabelę',
@@ -9578,6 +9751,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI przetłumaczy dokument',
     ribbonTranslatePrompt:
       'Przetłumacz cały dokument na {lang}, zachowując strukturę akapitów i poziomy nagłówków.',
+    ribbonTranslateSelectionPrompt:
+      'Przetłumacz zaznaczoną treść na {lang}, zachowując strukturę akapitów.',
+    ribbonEditorSelectionPrompt:
+      'Zrób korektę zaznaczonej treści: popraw literówki, interpunkcję i błędy gramatyczne, zachowując pierwotny sens i strukturę akapitów.',
     ribbonTranslateTo: 'Przetłumacz na {lang}',
     ribbonLangEnglish: 'angielski',
     ribbonLangSimplifiedChinese: 'chiński uproszczony',
@@ -9591,6 +9768,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Dodaj komentarz do zaznaczenia',
     ribbonNewCommentSelectTip: 'Najpierw zaznacz tekst do skomentowania',
     ribbonShowComments: 'Pokaż komentarze',
+    ribbonAiComments: 'Komentarze z AI',
+    ribbonAiRevisions: 'Podsumowanie zmian AI',
+    ribbonAiRevisionsTip:
+      'AI czyta oczekujące zmiany ({count}), podsumowuje je według sekcji i wskazuje ryzyka',
+    ribbonAiRevisionsPrompt:
+      'Podsumuj wszystkie oczekujące zmiany w dokumencie: zacznij od ogólnych statystyk (liczba wstawień/usunięć, autorzy, zakres dat), następnie opisz zmiany sekcja po sekcji (podaj indeksy bloków), a na końcu wypisz punkty wymagające uwagi (usunięte zobowiązania lub zastrzeżenia, zmienione liczby/daty/kwoty). Tylko podsumuj — nie modyfikuj dokumentu ani nie akceptuj/odrzucaj żadnych zmian.',
+    ribbonAiCommentsTip:
+      'AI przetwarza nierozwiązane komentarze ({count}): zmiana, odpowiedź, rozwiązanie',
+    ribbonAiCommentsPrompt:
+      'Obsłuż wszystkie nierozwiązane komentarze w dokumencie: dla każdego wprowadź żądaną zmianę, odpowiedz z opisem zmiany i oznacz jako rozwiązany; jeśli komentarz jest pytaniem lub jest niejednoznaczny, tylko odpowiedz, nie zmieniając dokumentu.',
     ribbonShowCommentsTip: 'Pokaż komentarze ({count})',
     ribbonTrackChanges: 'Śledź zmiany',
     ribbonTrackChangesTip:
@@ -9874,7 +10061,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Lege pagina',
     ribbonBlankPageTip: 'Een lege pagina invoegen',
     ribbonPageBreak: 'Pagina-einde',
-    ribbonPageBreakTip: 'De volgende alinea op een nieuwe pagina beginnen',
+    ribbonPageBreakTip: 'De volgende alinea op een nieuwe pagina beginnen (⌘↩)',
     ribbonGroupPages: "Pagina's",
     ribbonTable: 'Tabel',
     ribbonTableTip: 'Een tabel invoegen',
@@ -10271,6 +10458,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI vertaalt het document',
     ribbonTranslatePrompt:
       'Vertaal het hele document naar het {lang}, met behoud van de alineastructuur en kopniveaus.',
+    ribbonTranslateSelectionPrompt:
+      'Vertaal de geselecteerde inhoud naar het {lang}, met behoud van de alineastructuur.',
+    ribbonEditorSelectionPrompt:
+      'Corrigeer de geselecteerde inhoud: herstel typefouten, interpunctie en grammaticale fouten zonder de oorspronkelijke betekenis en alineastructuur te wijzigen.',
     ribbonTranslateTo: 'Vertalen naar het {lang}',
     ribbonLangEnglish: 'Engels',
     ribbonLangSimplifiedChinese: 'Vereenvoudigd Chinees',
@@ -10284,6 +10475,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Een opmerking bij de selectie toevoegen',
     ribbonNewCommentSelectTip: 'Selecteer eerst de tekst waarop je een opmerking wilt maken',
     ribbonShowComments: 'Opmerkingen weergeven',
+    ribbonAiComments: 'AI-opmerkingen',
+    ribbonAiRevisions: 'AI-revisieoverzicht',
+    ribbonAiRevisionsTip:
+      'De AI leest de {count} openstaande wijzigingen, vat ze per sectie samen en markeert risico\u2019s',
+    ribbonAiRevisionsPrompt:
+      'Vat alle openstaande bijgehouden wijzigingen in het document samen: begin met algemene statistieken (aantal invoegingen/verwijderingen, auteurs, datumbereik), beschrijf daarna de wijzigingen per sectie (noem blokindexen) en sluit af met aandachtspunten (verwijderde verplichtingen of voorbehouden, gewijzigde getallen/datums/bedragen). Alleen samenvatten — wijzig het document niet en accepteer/weiger geen enkele wijziging.',
+    ribbonAiCommentsTip:
+      'De AI verwerkt de {count} onopgeloste opmerkingen: wijzigen, beantwoorden, oplossen',
+    ribbonAiCommentsPrompt:
+      'Handel alle onopgeloste opmerkingen in het document af: pas per opmerking de gevraagde wijziging toe, antwoord met wat er is veranderd en markeer die daarna als opgelost; is een opmerking een vraag of onduidelijk, antwoord dan zonder het document te wijzigen.',
     ribbonShowCommentsTip: 'Opmerkingen weergeven ({count})',
     ribbonTrackChanges: 'Wijzigingen bijhouden',
     ribbonTrackChangesTip:
@@ -10566,7 +10767,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'Halaman Kosong',
     ribbonBlankPageTip: 'Sisipkan halaman kosong',
     ribbonPageBreak: 'Pemisah Halaman',
-    ribbonPageBreakTip: 'Mulakan perenggan seterusnya pada halaman baharu',
+    ribbonPageBreakTip: 'Mulakan perenggan seterusnya pada halaman baharu (⌘↩)',
     ribbonGroupPages: 'Halaman',
     ribbonTable: 'Jadual',
     ribbonTableTip: 'Sisipkan jadual',
@@ -10963,6 +11164,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI menterjemah dokumen',
     ribbonTranslatePrompt:
       'Terjemahkan keseluruhan dokumen ke {lang}, sambil mengekalkan struktur perenggan dan aras tajuk.',
+    ribbonTranslateSelectionPrompt:
+      'Terjemahkan kandungan yang dipilih ke {lang}, sambil mengekalkan struktur perenggan.',
+    ribbonEditorSelectionPrompt:
+      'Semak kandungan yang dipilih: betulkan kesalahan taip, tanda baca dan tatabahasa tanpa mengubah maksud asal dan struktur perenggan.',
     ribbonTranslateTo: 'Terjemah kepada {lang}',
     ribbonLangEnglish: 'bahasa Inggeris',
     ribbonLangSimplifiedChinese: 'bahasa Cina Ringkas',
@@ -10976,6 +11181,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'Tambah komen pada pilihan',
     ribbonNewCommentSelectTip: 'Pilih teks yang hendak dikomen terlebih dahulu',
     ribbonShowComments: 'Tunjukkan Komen',
+    ribbonAiComments: 'Komen dengan AI',
+    ribbonAiRevisions: 'Ringkasan semakan AI',
+    ribbonAiRevisionsTip:
+      'AI membaca {count} semakan tertunda, meringkaskan perubahan mengikut bahagian dan menandakan risiko',
+    ribbonAiRevisionsPrompt:
+      'Ringkaskan semua semakan tertunda dalam dokumen: mulakan dengan statistik keseluruhan (bilangan sisipan/pemadaman, pengarang, julat tarikh), kemudian terangkan perubahan bahagian demi bahagian (nyatakan indeks blok), dan akhiri dengan senarai perkara yang perlu diberi perhatian (kewajipan atau syarat yang dipadamkan, nombor/tarikh/amaun yang diubah). Ringkaskan sahaja — jangan ubah dokumen atau terima/tolak sebarang semakan.',
+    ribbonAiCommentsTip:
+      'AI memproses {count} komen yang belum selesai: ubah, balas, kemudian selesaikan',
+    ribbonAiCommentsPrompt:
+      'Uruskan semua komen yang belum selesai dalam dokumen: bagi setiap satu, buat perubahan yang diminta, balas dengan menerangkan perubahan, kemudian tandakan selesai; jika komen berupa soalan atau kabur, balas sahaja tanpa mengubah dokumen.',
     ribbonShowCommentsTip: 'Tunjukkan komen ({count})',
     ribbonTrackChanges: 'Jejak Perubahan',
     ribbonTrackChangesTip:
@@ -11253,7 +11468,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'עמוד ריק',
     ribbonBlankPageTip: 'הוסף עמוד ריק',
     ribbonPageBreak: 'מעבר עמוד',
-    ribbonPageBreakTip: 'התחל את הפיסקה הבאה בעמוד חדש',
+    ribbonPageBreakTip: 'התחל את הפיסקה הבאה בעמוד חדש (⌘↩)',
     ribbonGroupPages: 'עמודים',
     ribbonTable: 'טבלה',
     ribbonTableTip: 'הוסף טבלה',
@@ -11643,6 +11858,9 @@ export const ribbonStrings = defineStrings({
     ribbonTranslate: 'תרגם',
     ribbonTranslateTip: 'ה-AI מתרגם את המסמך',
     ribbonTranslatePrompt: 'תרגם את המסמך כולו ל{lang}, תוך שמירה על מבנה הפסקאות ורמות הכותרות.',
+    ribbonTranslateSelectionPrompt: 'תרגם את התוכן שנבחר ל{lang}, תוך שמירה על מבנה הפסקאות.',
+    ribbonEditorSelectionPrompt:
+      'הגה את התוכן שנבחר: תקן שגיאות הקלדה, פיסוק ודקדוק תוך שמירה על המשמעות המקורית ומבנה הפסקאות.',
     ribbonTranslateTo: 'תרגם ל{lang}',
     ribbonLangEnglish: 'אנגלית',
     ribbonLangSimplifiedChinese: 'סינית פשוטה',
@@ -11656,6 +11874,14 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'הוסף הערה לקטע הנבחר',
     ribbonNewCommentSelectTip: 'בחר תחילה את הטקסט להערה',
     ribbonShowComments: 'הצג הערות',
+    ribbonAiComments: 'טיפול בהערות עם AI',
+    ribbonAiRevisions: 'סיכום שינויים עם AI',
+    ribbonAiRevisionsTip: 'ה-AI קורא {count} שינויים ממתינים, מסכם לפי סעיפים ומסמן סיכונים',
+    ribbonAiRevisionsPrompt:
+      'סכם את כל השינויים הממתינים במסמך: התחל בסטטיסטיקה כללית (מספר הוספות/מחיקות, מחברים, טווח תאריכים), לאחר מכן תאר את השינויים סעיף אחר סעיף (ציין אינדקסי בלוקים), וסיים ברשימת נקודות לתשומת לב (מחיקת התחייבויות או הסתייגויות, שינוי מספרים/תאריכים/סכומים). סכם בלבד — אל תשנה את המסמך ואל תקבל או תדחה שינויים.',
+    ribbonAiCommentsTip: 'ה-AI מטפל ב-{count} הערות שלא נפתרו: עריכה, תשובה ופתרון',
+    ribbonAiCommentsPrompt:
+      'טפל בכל ההערות שלא נפתרו במסמך: לכל הערה בצע את השינוי המבוקש, השב בתיאור השינוי וסמן אותה כפתורה; אם הערה היא שאלה או דו-משמעית, השב בלבד מבלי לשנות את המסמך.',
     ribbonShowCommentsTip: 'הצג הערות ({count})',
     ribbonTrackChanges: 'עקוב אחר שינויים',
     ribbonTrackChangesTip:
@@ -11932,7 +12158,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: 'रिक्त पृष्ठ',
     ribbonBlankPageTip: 'रिक्त पृष्ठ सम्मिलित करें',
     ribbonPageBreak: 'पृष्ठ विराम',
-    ribbonPageBreakTip: 'अगला अनुच्छेद नए पृष्ठ से शुरू करें',
+    ribbonPageBreakTip: 'अगला अनुच्छेद नए पृष्ठ से शुरू करें (⌘↩)',
     ribbonGroupPages: 'पृष्ठ',
     ribbonTable: 'तालिका',
     ribbonTableTip: 'तालिका सम्मिलित करें',
@@ -12328,6 +12554,10 @@ export const ribbonStrings = defineStrings({
     ribbonTranslateTip: 'AI दस्तावेज़ का अनुवाद करता है',
     ribbonTranslatePrompt:
       'पूरे दस्तावेज़ का {lang} में अनुवाद करें, अनुच्छेद संरचना और शीर्षक स्तर अपरिवर्तित रखें।',
+    ribbonTranslateSelectionPrompt:
+      'चयनित सामग्री का {lang} में अनुवाद करें, अनुच्छेद संरचना अपरिवर्तित रखें।',
+    ribbonEditorSelectionPrompt:
+      'चयनित सामग्री को प्रूफ़रीड करें: वर्तनी, विराम चिह्न और व्याकरण की गलतियाँ सुधारें, मूल अर्थ और अनुच्छेद संरचना को अपरिवर्तित रखें।',
     ribbonTranslateTo: '{lang} में अनुवाद करें',
     ribbonLangEnglish: 'अंग्रेज़ी',
     ribbonLangSimplifiedChinese: 'सरलीकृत चीनी',
@@ -12341,6 +12571,16 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: 'चयन पर टिप्पणी जोड़ें',
     ribbonNewCommentSelectTip: 'पहले वह पाठ चुनें जिस पर टिप्पणी करनी है',
     ribbonShowComments: 'टिप्पणियाँ दिखाएँ',
+    ribbonAiComments: 'AI से टिप्पणियाँ निपटाएँ',
+    ribbonAiRevisions: 'AI से परिवर्तन सारांश',
+    ribbonAiRevisionsTip:
+      'AI {count} लंबित परिवर्तनों को पढ़ता है, अनुभाग के अनुसार सारांश देता है और जोखिम बताता है',
+    ribbonAiRevisionsPrompt:
+      'दस्तावेज़ के सभी लंबित ट्रैक किए गए परिवर्तनों का सारांश दें: पहले समग्र आँकड़े (सम्मिलन/विलोपन की संख्या, लेखक, दिनांक सीमा), फिर अनुभाग-दर-अनुभाग बताएं कि क्या बदला (block सूचकांक बताएं), और अंत में ध्यान देने योग्य बिंदु सूचीबद्ध करें (हटाए गए दायित्व या शर्तें, बदले गए अंक/तिथियाँ/राशियाँ)। केवल सारांश दें — दस्तावेज़ न बदलें और कोई परिवर्तन स्वीकार/अस्वीकार न करें।',
+    ribbonAiCommentsTip:
+      'AI {count} अनसुलझी टिप्पणियों को क्रमशः निपटाता है (संशोधन, उत्तर, समाधान)',
+    ribbonAiCommentsPrompt:
+      'दस्तावेज़ की सभी अनसुलझी टिप्पणियाँ निपटाएँ: हर टिप्पणी के अनुरोध के अनुसार संशोधन करें, बदलाव का विवरण देते हुए उत्तर दें, फिर उसे हल के रूप में चिह्नित करें; यदि टिप्पणी कोई प्रश्न है या अस्पष्ट है, तो दस्तावेज़ बदले बिना केवल उत्तर दें।',
     ribbonShowCommentsTip: 'टिप्पणियाँ दिखाएँ ({count})',
     ribbonTrackChanges: 'परिवर्तन ट्रैक करें',
     ribbonTrackChangesTip:
@@ -12618,7 +12858,7 @@ export const ribbonStrings = defineStrings({
     ribbonBlankPage: '空白頁',
     ribbonBlankPageTip: '插入空白頁',
     ribbonPageBreak: '分頁符號',
-    ribbonPageBreakTip: '從下一段起換頁',
+    ribbonPageBreakTip: '從下一段起換頁 (⌘↩)',
     ribbonGroupPages: '頁面',
     ribbonTable: '表格',
     ribbonTableTip: '插入表格',
@@ -13005,6 +13245,9 @@ export const ribbonStrings = defineStrings({
     ribbonTranslate: '翻譯',
     ribbonTranslateTip: 'AI 翻譯文件',
     ribbonTranslatePrompt: '把全文翻譯成{lang},保持段落結構和標題層級不變。',
+    ribbonTranslateSelectionPrompt: '把選中的內容翻譯成{lang},保持段落結構不變。',
+    ribbonEditorSelectionPrompt:
+      '校對選中的內容:修正錯別字、標點和語法錯誤,保持原意和段落結構不變。',
     ribbonTranslateTo: '翻譯為{lang}',
     ribbonLangEnglish: '英文',
     ribbonLangSimplifiedChinese: '簡體中文',
@@ -13018,6 +13261,14 @@ export const ribbonStrings = defineStrings({
     ribbonNewCommentTip: '為選取的內容新增註解',
     ribbonNewCommentSelectTip: '請先選取要加註解的文字',
     ribbonShowComments: '顯示註解',
+    ribbonAiComments: 'AI 處理註解',
+    ribbonAiRevisions: 'AI 總結修訂',
+    ribbonAiRevisionsTip: 'AI 通讀 {count} 條待處理修訂,按章節總結改動並提示風險',
+    ribbonAiRevisionsPrompt:
+      '總結文件中所有待處理的修訂:先給出總體統計(插入/刪除數量、作者、日期範圍),再按章節逐條說明改了什麼(標註 block 索引),最後列出需要注意的風險點(如刪除了義務或限定語、改動了數字/日期/金額)。只做總結,不要修改文件,也不要接受或拒絕任何修訂。',
+    ribbonAiCommentsTip: 'AI 逐條處理 {count} 條未解決的註解:按註解修改、回覆說明並標記解決',
+    ribbonAiCommentsPrompt:
+      '處理文件中所有未解決的註解:逐條按註解要求修改,回覆說明改動,然後標記解決;若註解是提問或有歧義,只回覆不修改。',
     ribbonShowCommentsTip: '顯示註解({count} 則)',
     ribbonTrackChanges: '追蹤修訂',
     ribbonTrackChangesTip: '追蹤修訂：記錄此後的所有變更(插入加底線，刪除加刪除線)',

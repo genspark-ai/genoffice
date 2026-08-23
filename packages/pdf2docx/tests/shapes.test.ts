@@ -8,7 +8,7 @@ import {
   normalizeShapes,
   rectOfSubpath,
 } from '../src/analyze'
-import type { RawPath, RawSubpath } from '../src/ir'
+import type { RawPath, RawSubpath, Stroke } from '../src/ir'
 
 const sub = (points: Array<[number, number]>, closed = true, hasCurves = false): RawSubpath => ({
   points: points.map(([x, y]) => ({ x, y })),
@@ -543,5 +543,263 @@ describe('curved-art z group (P29 C)', () => {
     ]
     const out = extractTextBackdrops([], chars(40, 100), [], W, H, cards)
     expect(out.length).toBeGreaterThan(0)
+  })
+})
+
+describe('normalizeShapes: clip-region bounds (P34)', () => {
+  it('clips a card-sized accent rect down to its painted top band', () => {
+    // authored as a full-card rect, clipped to the 12pt rounded top bar
+    const accent = path([rect(30, 33, 465, 442.5)], {
+      filled: true,
+      fillColor: '1E3A5F',
+      clipBox: { x0: 30, y0: 430.5, x1: 465, y1: 442.5 },
+    })
+    const shapes = normalizeShapes([accent])
+    expect(shapes.fills).toHaveLength(1)
+    expect(shapes.fills[0]!.box).toEqual({ x0: 30, y0: 430.5, x1: 465, y1: 442.5 })
+  })
+
+  it('drops a rect whose clip region leaves nothing to paint', () => {
+    const ghost = path([rect(0, 0, 400, 300)], {
+      filled: true,
+      fillColor: 'FF0000',
+      clipBox: { x0: 500, y0: 400, x1: 600, y1: 500 },
+    })
+    const shapes = normalizeShapes([ghost])
+    expect(shapes.fills).toHaveLength(0)
+    expect(shapes.strokes).toHaveLength(0)
+  })
+
+  it('a clip-thinned fill becomes a decorative line', () => {
+    const bar = path([rect(0, 0, 400, 300)], {
+      filled: true,
+      fillColor: '00AA00',
+      clipBox: { x0: 0, y0: 148, x1: 400, y1: 151 },
+    })
+    const shapes = normalizeShapes([bar])
+    expect(shapes.fills).toHaveLength(0)
+    expect(shapes.strokes).toHaveLength(1)
+    expect(shapes.strokes[0]!.orientation).toBe('h')
+  })
+
+  it('clips a curved fill backdrop to the clip window', () => {
+    const rounded = path(
+      [
+        sub(
+          [
+            [0, 80],
+            [100, 80],
+            [100, 100],
+            [0, 100],
+          ],
+          true,
+          true,
+        ),
+      ],
+      { filled: true, fillColor: '112233', clipBox: { x0: 10, y0: 0, x1: 90, y1: 95 } },
+    )
+    const shapes = normalizeShapes([rounded])
+    expect(shapes.curvedFills).toHaveLength(1)
+    expect(shapes.curvedFills![0]!.box).toEqual({ x0: 10, y0: 80, x1: 90, y1: 95 })
+  })
+
+  it('clamps polyline strokes to the clip window and cuts outside ones', () => {
+    const lines = path(
+      [
+        sub(
+          [
+            [0, 10],
+            [500, 10],
+          ],
+          false,
+        ),
+        sub(
+          [
+            [350, 0],
+            [350, 20],
+          ],
+          false,
+        ),
+      ],
+      { stroked: true, strokeColor: '000000', clipBox: { x0: 100, y0: 0, x1: 300, y1: 20 } },
+    )
+    const shapes = normalizeShapes([lines])
+    expect(shapes.strokes).toHaveLength(1)
+    const s = shapes.strokes[0]!
+    expect(s.orientation).toBe('h')
+    expect(s.box.x0).toBeCloseTo(100)
+    expect(s.box.x1).toBeCloseTo(300)
+  })
+})
+
+describe('normalizeShapes: clipped stroked rects keep authored edges only (P34)', () => {
+  it('drops edges outside the clip and never strokes the clip boundary', () => {
+    const framed = path([rect(0, 0, 400, 300)], {
+      stroked: true,
+      strokeColor: '000000',
+      clipBox: { x0: 0, y0: 0, x1: 400, y1: 150 },
+    })
+    const shapes = normalizeShapes([framed])
+    // bottom edge survives, top edge is clipped away, sides are shortened;
+    // no phantom line appears along the clip boundary at y=150
+    expect(shapes.strokes).toHaveLength(3)
+    const hs = shapes.strokes.filter((s) => s.orientation === 'h')
+    expect(hs).toHaveLength(1)
+    expect((hs[0]!.box.y0 + hs[0]!.box.y1) / 2).toBeCloseTo(0, 0)
+    for (const v of shapes.strokes.filter((s) => s.orientation === 'v')) {
+      expect(v.box.y1).toBeCloseTo(150)
+    }
+  })
+})
+
+describe('normalizeShapes: rounded-rect outlines become edge strokes (P38, cell-data)', () => {
+  // MOVETO start on the top edge, 4 straight sides, 3-point bezier corners
+  // (control points included, like the PDFium segment stream), no close flag
+  const roundedRect = (x0: number, y0: number, x1: number, y1: number, r: number): RawSubpath => {
+    const pts: Array<[number, number]> = [
+      [x0 + r, y0],
+      [x1 - r, y0], // top edge (line)
+      [x1 - r / 2, y0],
+      [x1, y0 + r / 2],
+      [x1, y0 + r], // corner
+      [x1, y1 - r], // right edge (line)
+      [x1, y1 - r / 2],
+      [x1 - r / 2, y1],
+      [x1 - r, y1], // corner
+      [x0 + r, y1], // bottom edge (line)
+      [x0 + r / 2, y1],
+      [x0, y1 - r / 2],
+      [x0, y1 - r], // corner
+      [x0, y0 + r], // left edge (line)
+      [x0 + r / 2, y0 + r / 2],
+      [x0 + r / 4, y0 + r / 4],
+      [x0 + r, y0], // corner back to start
+    ]
+    return {
+      points: pts.map(([x, y]) => ({ x, y })),
+      closed: false,
+      hasCurves: true,
+      lineTo: pts.map((_, i) => [1, 5, 9, 13].includes(i)),
+    }
+  }
+
+  it('emits the four bbox edges for a stroked rounded box (bank-statement columns)', () => {
+    const shapes = normalizeShapes([path([roundedRect(20, 100, 60, 500, 3)], { stroked: true })], {
+      roundedRectEdges: true,
+    })
+    expect(shapes.ignoredPaths).toBe(0)
+    expect(shapes.strokes).toHaveLength(4)
+    const hs = shapes.strokes.filter((s) => s.orientation === 'h')
+    const vs = shapes.strokes.filter((s) => s.orientation === 'v')
+    const mid = (s: Stroke) =>
+      s.orientation === 'h' ? (s.box.y0 + s.box.y1) / 2 : (s.box.x0 + s.box.x1) / 2
+    expect(hs.map(mid).sort((a, b) => a - b)).toEqual([100, 500])
+    expect(vs.map(mid).sort((a, b) => a - b)).toEqual([20, 60])
+  })
+
+  it('stays ignored without the cell-data option (docx path unchanged)', () => {
+    const shapes = normalizeShapes([path([roundedRect(20, 100, 60, 500, 3)], { stroked: true })])
+    expect(shapes.strokes).toHaveLength(0)
+    expect(shapes.ignoredPaths).toBe(1)
+  })
+
+  it('rejects a pill: no straight run on the short sides', () => {
+    // capsule 40×20 with r=10 — left/right sides are pure arcs
+    const pts: Array<[number, number]> = [
+      [30, 100],
+      [50, 100], // top line
+      [58, 100],
+      [60, 110],
+      [60, 110], // right cap
+      [50, 120], // bottom line start via arc end
+      [30, 120], // bottom line
+      [22, 120],
+      [20, 110],
+      [20, 110], // left cap
+      [30, 100],
+    ]
+    const pill: RawSubpath = {
+      points: pts.map(([x, y]) => ({ x, y })),
+      closed: false,
+      hasCurves: true,
+      lineTo: pts.map((_, i) => i === 1 || i === 6),
+    }
+    const shapes = normalizeShapes([path([pill], { stroked: true })], { roundedRectEdges: true })
+    expect(shapes.strokes).toHaveLength(0)
+    expect(shapes.ignoredPaths).toBe(1)
+  })
+
+  it('rejects outlines with diagonal straight edges (vector art)', () => {
+    const art = roundedRect(20, 100, 60, 500, 3)
+    art.points[5] = { x: 55, y: 480 } // right edge now slants
+    const shapes = normalizeShapes([path([art], { stroked: true })], { roundedRectEdges: true })
+    expect(shapes.strokes).toHaveLength(0)
+    expect(shapes.ignoredPaths).toBe(1)
+  })
+
+  it('keeps the curved-fill backdrop candidate for filled rounded boxes', () => {
+    const shapes = normalizeShapes(
+      [
+        path([roundedRect(20, 100, 60, 500, 3)], {
+          stroked: true,
+          filled: true,
+          fillColor: 'ffffff',
+        }),
+      ],
+      { roundedRectEdges: true },
+    )
+    expect(shapes.strokes).toHaveLength(4)
+    expect(shapes.curvedFills).toHaveLength(1)
+  })
+})
+
+describe('rounded-rect salvage under a clip (P34 semantics)', () => {
+  const roundedRect = (x0: number, y0: number, x1: number, y1: number, r: number): RawSubpath => {
+    const pts: Array<[number, number]> = [
+      [x0 + r, y0],
+      [x1 - r, y0],
+      [x1 - r / 2, y0],
+      [x1, y0 + r / 2],
+      [x1, y0 + r],
+      [x1, y1 - r],
+      [x1, y1 - r / 2],
+      [x1 - r / 2, y1],
+      [x1 - r, y1],
+      [x0 + r, y1],
+      [x0 + r / 2, y1],
+      [x0, y1 - r / 2],
+      [x0, y1 - r],
+      [x0, y0 + r],
+      [x0 + r / 2, y0 + r / 2],
+      [x0 + r / 4, y0 + r / 4],
+      [x0 + r, y0],
+    ]
+    return {
+      points: pts.map(([x, y]) => ({ x, y })),
+      closed: false,
+      hasCurves: true,
+      lineTo: pts.map((_, i) => [1, 5, 9, 13].includes(i)),
+    }
+  }
+
+  it('drops the clipped-away edge and never strokes the clip boundary', () => {
+    // clip cuts off the bottom half of the box
+    const shapes = normalizeShapes(
+      [
+        path([roundedRect(20, 100, 60, 500, 3)], {
+          stroked: true,
+          clipBox: { x0: 0, y0: 0, x1: 200, y1: 300 },
+        }),
+      ],
+      { roundedRectEdges: true },
+    )
+    expect(shapes.strokes).toHaveLength(3) // top + both sides, no bottom
+    const mid = (s: Stroke) =>
+      s.orientation === 'h' ? (s.box.y0 + s.box.y1) / 2 : (s.box.x0 + s.box.x1) / 2
+    const hs = shapes.strokes.filter((s) => s.orientation === 'h')
+    expect(hs.map(mid)).toEqual([100]) // nothing snapped onto y=300
+    for (const v of shapes.strokes.filter((s) => s.orientation === 'v')) {
+      expect(v.box.y1).toBeCloseTo(300) // surviving sides clamp to the window
+    }
   })
 })

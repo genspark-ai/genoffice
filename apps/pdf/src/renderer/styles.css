@@ -69,6 +69,10 @@
   --pdf-shadow-popup: 0 4px 16px rgb(0 0 0 / 15%);
   --pdf-shadow-toast: 0 4px 16px rgb(0 0 0 / 25%);
   --pdf-shadow-modal: 0 3px 30px rgb(0 0 0 / 8%);
+  --pdf-shadow-modal-gs: 0 12px 40px rgb(0 0 0 / 16%);
+  --pdf-input-focus: #0f7fff;
+  --pdf-input-ring: rgb(15 127 255 / 10%);
+  --pdf-error-ring: rgb(239 68 68 / 10%);
   --pdf-shadow-page: 0 1px 4px rgb(0 0 0 / 18%);
   --pdf-shadow-pin: 0 1px 4px rgb(0 0 0 / 30%);
   --pdf-shadow-drop: 0 6px 20px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
@@ -93,6 +97,10 @@
   --pdf-statusbar-hover: rgb(255 255 255 / 10%);
   --pdf-swatch-ring: rgb(255 255 255 / 30%);
   --pdf-scroll-thumb: rgb(255 255 255 / 28%);
+  --pdf-shadow-modal-gs: 0 20px 50px rgb(0 0 0 / 65%);
+  --pdf-input-focus: #4a9eff;
+  --pdf-input-ring: rgb(74 158 255 / 20%);
+  --pdf-error-ring: rgb(242 139 130 / 20%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -114,6 +122,10 @@
     --pdf-statusbar-hover: rgb(255 255 255 / 10%);
     --pdf-swatch-ring: rgb(255 255 255 / 30%);
     --pdf-scroll-thumb: rgb(255 255 255 / 28%);
+    --pdf-shadow-modal-gs: 0 20px 50px rgb(0 0 0 / 65%);
+    --pdf-input-focus: #4a9eff;
+    --pdf-input-ring: rgb(74 158 255 / 20%);
+    --pdf-error-ring: rgb(242 139 130 / 20%);
   }
 }
 
@@ -1133,54 +1145,164 @@ button {
 
 /* ── Encrypted document password ── */
 
-.pdf-password {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* ---- encrypted-PDF password dialog (Genspark DS form dialog, matching the
+   docs PasswordDialog and mockups/protect-dialogs-genspark.html §1/2) ---- */
+
+/* base .pdf-modal-mask (defined below) top-aligns dialogs; this one centers */
+.pdf-modal-mask.pdf-pwd-mask {
   align-items: center;
 }
 
-.pdf-password-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
+.pdf-modal.pdf-pwd-dialog {
+  margin-top: 0;
+  width: 440px;
+  padding: 24px;
+  gap: 0;
+  border: none;
+  box-shadow: var(--pdf-shadow-modal-gs);
 }
 
-.pdf-password-input {
-  width: 220px;
-  height: 30px;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  padding: 0 10px;
+.pdf-pwd-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.pdf-pwd-desc {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.pdf-pwd-fld {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.pdf-pwd-wrap {
+  position: relative;
+  display: block;
+  margin-top: 6px;
+}
+
+.pdf-pwd-wrap input {
+  display: block;
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  padding: 0 40px 0 12px;
   font-size: 13px;
   background: var(--surface);
-  color: var(--text);
-}
-
-.pdf-password-input:focus {
+  color: var(--color-text-primary);
   outline: none;
-  border-color: var(--accent);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
-.pdf-password-error {
-  font-size: 12px;
-  color: var(--pdf-error);
+.pdf-pwd-wrap input:hover:not(:focus):not(.invalid) {
+  border-color: var(--border-strong);
 }
 
-.pdf-password-btn {
-  height: 30px;
-  padding: 0 22px;
+.pdf-pwd-wrap input:focus {
+  border-color: var(--pdf-input-focus);
+  box-shadow: 0 0 0 3px var(--pdf-input-ring);
+}
+
+.pdf-pwd-wrap input.invalid {
+  border-color: var(--color-error);
+}
+
+.pdf-pwd-wrap input.invalid:focus {
+  box-shadow: 0 0 0 3px var(--pdf-error-ring);
+}
+
+/* wrong password: shake the field */
+.pdf-pwd-fld.has-error .pdf-pwd-wrap {
+  animation: pdf-pwd-shake 0.4s ease;
+}
+
+@keyframes pdf-pwd-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+/* show/hide toggle inside the field */
+.pdf-pwd-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
-  border-radius: 5px;
-  background: var(--accent);
-  color: var(--pdf-on-accent);
-  font-size: 13px;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text-tertiary);
   cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
 }
 
-.pdf-password-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
+.pdf-pwd-eye:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.pdf-pwd-eye:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--pdf-focus-ring);
+}
+
+.pdf-pwd-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-error);
+}
+
+.pdf-pwd-error svg {
+  flex-shrink: 0;
+}
+
+/* mockup g-actions spec: 36px buttons, 12px gap, 24px above the footer */
+.pdf-pwd-dialog .pdf-modal-actions {
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.pdf-pwd-dialog .pdf-modal-btn {
+  height: 36px;
+  padding: 0 18px;
 }
 
 .tb-readonly {
@@ -3369,7 +3491,186 @@ button {
   color: var(--color-text-secondary);
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 14px;
-} /* Thinking indicator: shimmer label above two grow/shrink dots */
+}
+
+/* in-answer page citations: click scrolls the reading view to the page */
+.ai-md .ai-md-nav {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ai-md .ai-md-nav:hover {
+  text-decoration-style: solid;
+}
+
+/* ---- Ask-AI entry on the markup bar + its anchored popover ---- */
+
+.pdf-sel-popup-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: var(--border);
+}
+
+.pdf-sel-popup button.pdf-sel-ask {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent-dark);
+}
+
+.ai-ask-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--pdf-shadow-popup);
+}
+
+.ai-ask-pop-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-ask-pop-sub {
+  margin-top: -4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-ask-pop-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ai-ask-pop-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-ask-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ai-ask-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-ask-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-ask-confirm {
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: var(--accent);
+  color: var(--pdf-on-accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-ask-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- selection scope chip in the AI composer header (same look as docs/markdown) ---- */
+
+.ai-scope-row {
+  margin-bottom: 7px;
+}
+
+.ai-scope-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-30);
+  background: var(--accent-soft);
+  font-size: 11.5px;
+  color: var(--accent-dark);
+  font-weight: 500;
+}
+
+.ai-scope-hint::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ai-scope-hint .ai-scope-label,
+.ai-scope-hint .ai-scope-clear {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ai-scope-hint .ai-scope-clear {
+  opacity: 0.65;
+}
+
+.ai-scope-hint .ai-scope-clear:hover {
+  opacity: 1;
+}
+
+.ai-scope-preview {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  max-height: 96px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Thinking indicator: shimmer label above two grow/shrink dots */
 .ai-typing {
   display: flex;
   flex-direction: column;

@@ -351,7 +351,8 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: body, withImage: true }))
     const imgs = (doc.blocks[0].runs ?? []).filter((r) => r.image)
     expect(imgs).toHaveLength(2)
-    expect(imgs[0].image!.wrap).toBe('square-left')
+    // positionH align=center + wrapSquare maps to the centered topBottom slot
+    expect(imgs[0].image!.wrap).toBe('topBottom')
     // the colliding allowOverlap="0" picture leaves the flow as a front overlay
     // under the collider's box
     expect(imgs[1].image!.wrap).toBe('front')

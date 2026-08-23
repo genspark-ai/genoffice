@@ -70,6 +70,29 @@ function officeFontDirs(): string[] {
   )
 }
 
+const APPLE_FONT_ASSET_ROOT = '/System/Library/AssetsV2/com_apple_MobileAsset_Font7'
+const APPLE_FONT_SUBSETS =
+  '/System/Library/PrivateFrameworks/FontServices.framework/Versions/A/Resources/Fonts/Subsets'
+
+/**
+ * macOS on-demand font assets (CoreText downloadable fonts, e.g. NanumGothic): PowerPoint
+ * renders with them but Chromium cannot resolve them by name — same private treatment as
+ * Office DFonts. Materialized full downloads (AssetsV2) take precedence over the built-in
+ * stub subsets; both are read-only system paths and simply absent on other platforms.
+ */
+function appleFontAssetDirs(): string[] {
+  if (process.platform !== 'darwin') return []
+  const dirs: string[] = []
+  try {
+    for (const d of readdirSync(APPLE_FONT_ASSET_ROOT))
+      dirs.push(join(APPLE_FONT_ASSET_ROOT, d, 'AssetData'))
+  } catch {
+    /* asset root absent */
+  }
+  dirs.push(APPLE_FONT_SUBSETS)
+  return dirs
+}
+
 /** Office cloud-font roots: <root>/<Family Name>/<numeric-id>.ttf — indexed by directory name. */
 function cloudFontRoots(): string[] {
   const globDirs = (base: string, sub: string): string[] => {
@@ -223,12 +246,15 @@ function substitutesFor(family: string): string[] {
           ? ['Hiragino Sans']
           : ['Yu Gothic', 'Meiryo', 'MS Gothic']
     case 'ko':
+      // mac chains start with the Office-bundled faces to mirror the renderer's KO_SANS/
+      // KO_SERIF draw chains — measuring Apple SD Gothic Neo while drawing the private
+      // Malgun FontFace swallowed word spaces on unknown KR vendor fonts
       return serif
         ? mac
-          ? ['AppleMyungjo', 'Apple SD Gothic Neo']
+          ? ['Batang', 'AppleMyungjo', 'Apple SD Gothic Neo']
           : ['Batang', 'Malgun Gothic']
         : mac
-          ? ['Apple SD Gothic Neo', 'AppleGothic']
+          ? ['Malgun Gothic', 'Apple SD Gothic Neo', 'AppleGothic']
           : ['Malgun Gothic', 'Gulim']
     case 'tc':
       return serif
@@ -443,6 +469,9 @@ class FontRegistry {
       this.privateDirs.push(dir)
       this.scanFlatDir(dir)
     }
+    // One prefix each covers every scanned asset dir for the isPrivate check
+    this.privateDirs.push(APPLE_FONT_ASSET_ROOT, APPLE_FONT_SUBSETS)
+    for (const dir of appleFontAssetDirs()) this.scanFlatDir(dir)
     for (const root of cloudFontRoots()) {
       let families: string[]
       try {
@@ -675,13 +704,14 @@ function wrapSafeAdvance(font: OpentypeFontLike): OpentypeFontLike {
     ...(font.charToGlyphIndex
       ? { charToGlyphIndex: (ch: string) => font.charToGlyphIndex!(ch) }
       : {}),
-    getAdvanceWidth(text: string, fontSize: number): number {
+    getAdvanceWidth(text: string, fontSize: number, options?: { kerning?: boolean }): number {
+      const kern = options?.kerning !== false
       let units = 0
       let prev: unknown = null
       for (const ch of text) {
         const glyph = f.charToGlyph!(ch)
         units += glyph?.advanceWidth ?? 0
-        if (prev && typeof f.getKerningValue === 'function') {
+        if (kern && prev && typeof f.getKerningValue === 'function') {
           try {
             units += f.getKerningValue(prev, glyph) || 0
           } catch {

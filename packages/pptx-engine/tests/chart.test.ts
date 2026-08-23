@@ -779,3 +779,68 @@ describe('axis units / gridline defaults / title overlay', () => {
     expect(m.catAxis?.gridColorAuto).toBe(true)
   })
 })
+
+describe('dual plot groups and cache-less series', () => {
+  const ser = (idx: number, name: string, vals: string, axIds = '') =>
+    `<c:ser><c:idx val="${idx}"/><c:order val="${idx}"/>` +
+    `<c:tx><c:strRef><c:f>S!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${name}</c:v></c:pt></c:strCache></c:strRef></c:tx>` +
+    `<c:val>${vals}</c:val></c:ser>${axIds}`
+  const cached =
+    '<c:numRef><c:f>S!$B$2:$B$3</c:f><c:numCache><c:ptCount val="2"/>' +
+    '<c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef>'
+  const uncached = '<c:numRef><c:f>ext!$C$2:$C$3</c:f></c:numRef>'
+
+  it('two c:lineChart nodes (secondary-axis group) both contribute series', () => {
+    const xml =
+      `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>` +
+      `<c:lineChart>${ser(0, 'P', cached)}<c:axId val="1"/><c:axId val="2"/></c:lineChart>` +
+      `<c:lineChart>${ser(1, 'S', cached)}<c:axId val="1"/><c:axId val="3"/></c:lineChart>` +
+      `<c:catAx><c:axId val="1"/></c:catAx>` +
+      `<c:valAx><c:axId val="2"/><c:axPos val="l"/><c:delete val="0"/></c:valAx>` +
+      `<c:valAx><c:axId val="3"/><c:axPos val="r"/><c:delete val="0"/></c:valAx>` +
+      `</c:plotArea></c:chart></c:chartSpace>`
+    const m = parseChartXml(xml)!
+    expect(m).not.toBeNull()
+    expect(m.series.length).toBe(2)
+    expect(m.series.map((s) => s.name)).toEqual(['P', 'S'])
+    expect(m.series[1]!.secondaryAxis).toBe(true)
+  })
+
+  it('a series whose val has a numRef but no cache is dropped (PowerPoint plots and lists nothing)', () => {
+    const xml =
+      `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>` +
+      `<c:lineChart>${ser(0, 'Flow', uncached)}${ser(1, 'Temp', cached)}</c:lineChart>` +
+      `</c:plotArea></c:chart></c:chartSpace>`
+    const m = parseChartXml(xml)!
+    expect(m.series.length).toBe(1)
+    expect(m.series[0]!.name).toBe('Temp')
+  })
+
+  it('an all-gaps cached series keeps its slot (ptCount sized, no points)', () => {
+    const gaps =
+      '<c:numRef><c:f>S!$B$2:$B$3</c:f><c:numCache><c:ptCount val="2"/></c:numCache></c:numRef>'
+    const xml =
+      `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>` +
+      `<c:lineChart>${ser(0, 'Gaps', gaps)}</c:lineChart>` +
+      `</c:plotArea></c:chart></c:chartSpace>`
+    const m = parseChartXml(xml)!
+    expect(m.series.length).toBe(1)
+    expect(m.series[0]!.values).toEqual([null, null])
+  })
+})
+
+describe('category tick skips', () => {
+  it('parses explicit c:tickLblSkip / c:tickMarkSkip on the category axis', () => {
+    const xml =
+      `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>` +
+      `<c:lineChart><c:ser><c:idx val="0"/><c:val><c:numRef><c:f>S!$B$2</c:f><c:numCache><c:ptCount val="2"/>` +
+      `<c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>` +
+      `<c:axId val="1"/><c:axId val="2"/></c:lineChart>` +
+      `<c:catAx><c:axId val="1"/><c:tickLblSkip val="192"/><c:tickMarkSkip val="192"/></c:catAx>` +
+      `<c:valAx><c:axId val="2"/><c:axPos val="l"/><c:delete val="0"/></c:valAx>` +
+      `</c:plotArea></c:chart></c:chartSpace>`
+    const m = parseChartXml(xml)!
+    expect(m.catAxis?.tickLblSkip).toBe(192)
+    expect(m.catAxis?.tickMarkSkip).toBe(192)
+  })
+})

@@ -147,6 +147,16 @@ export function shapeBackgroundImage(
     ? straightLinePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2), line)
     : shapePaths(prst, Math.max(8, w - 2), Math.max(8, h - 2))
   if (!paths) return null
+  return pathsBackgroundImage(paths, w, h, fillHex, borderHex)
+}
+
+function pathsBackgroundImage(
+  paths: ShapePaths,
+  w: number,
+  h: number,
+  fillHex?: string,
+  borderHex?: string,
+): string {
   const fill = fillHex ? `#${fillHex}` : 'none'
   const stroke = borderHex ? `#${borderHex}` : 'none'
   const parts: string[] = []
@@ -163,6 +173,48 @@ export function shapeBackgroundImage(
     parts.join('') +
     '</svg>'
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
+/** Normalized a:custGeom path channels (TextboxDisplay.pathData, coords 0..1). */
+export interface CustGeomPathData {
+  path?: string
+  fillPath?: string
+  strokePath?: string
+}
+
+/** Scale a normalized path string ("M x y L x y … Z") into a w×h pixel box. */
+function scaleNormPathD(d: string, w: number, h: number): string {
+  let axis = 0
+  return d
+    .split(' ')
+    .map((tok) => {
+      const n = Number(tok)
+      if (!Number.isFinite(n)) {
+        axis = 0
+        return tok
+      }
+      return String(R(n * (axis++ % 2 === 0 ? w : h)))
+    })
+    .join(' ')
+}
+
+/** custGeom visual as full CSS background properties (same pipeline as presets). */
+export function custGeomBackgroundCss(
+  geom: CustGeomPathData,
+  w: number,
+  h: number,
+  fillHex?: string,
+  borderHex?: string,
+): string {
+  const sw = Math.max(8, w - 2)
+  const sh = Math.max(8, h - 2)
+  const paths: ShapePaths = {
+    main: geom.path ? scaleNormPathD(geom.path, sw, sh) : undefined,
+    fillOnly: geom.fillPath ? scaleNormPathD(geom.fillPath, sw, sh) : undefined,
+    strokeOnly: geom.strokePath ? scaleNormPathD(geom.strokePath, sw, sh) : undefined,
+  }
+  const image = pathsBackgroundImage(paths, w, h, fillHex, borderHex)
+  return `background-image:${image};background-size:100% 100%;background-repeat:no-repeat`
 }
 
 /** Same visual as full CSS background properties (for style strings). */

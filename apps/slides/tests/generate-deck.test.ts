@@ -49,25 +49,30 @@ function makeAccess(opts?: {
     applyDeck: () => {},
     fitWidthPx: 1280,
     retryBackoffMs: 0,
-    generateFromHtml: async (html, mode = 'replace', _deckName?: string, insertAt?: number) => {
-      const failNo = [...landFailOnce].find((n) => html[0]?.includes(`PAGE${n}:`))
+    landGeneratedPages: async (
+      markers,
+      mode = 'replace',
+      _deckName?: string,
+      insertAt?: number,
+    ) => {
+      const failNo = [...landFailOnce].find((n) => markers[0]?.includes(`PAGE${n}:`))
       if (failNo !== undefined) {
         landFailOnce.delete(failNo)
         return { ok: false, error: 'mock land fail' }
       }
       if (mode === 'insert_at') {
         pages += 1
-        landOrder.push(`insert@${insertAt}:` + html[0])
+        landOrder.push(`insert@${insertAt}:` + markers[0])
         return { ok: true, pages, insertedIndex: insertAt }
       }
       if (mode === 'append') {
         const from = pages
-        pages += html.length
-        landOrder.push('append:' + html[0])
+        pages += markers.length
+        landOrder.push('append:' + markers[0])
         return { ok: true, pages, appendedFrom: from }
       }
-      pages = html.length
-      landOrder.push('replace:' + html[0])
+      pages = markers.length
+      landOrder.push('replace:' + markers[0])
       return { ok: true, pages }
     },
     isCloudPageGenEnabled: async () => opts?.cloudEnabled !== false,

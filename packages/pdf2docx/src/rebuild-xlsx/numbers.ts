@@ -104,10 +104,19 @@ export function parseCellValue(raw: string): ParsedCell {
 
   const bare = parseBareNumber(text)
   if (bare) {
+    // a trailing decimal zero is authored precision ("31.10"): keep the
+    // display faithful with a fixed-decimal format, or the sheet shows 31.1
+    const dec = /\.([0-9]*0)$/.exec(text)
     return {
       kind: 'number',
       value: bare.value,
-      numFmt: bare.grouped ? (text.includes('.') ? '#,##0.00' : '#,##0') : 'General',
+      numFmt: bare.grouped
+        ? text.includes('.')
+          ? '#,##0.00'
+          : '#,##0'
+        : dec
+          ? `0.${'0'.repeat(dec[1]!.length)}`
+          : 'General',
     }
   }
 

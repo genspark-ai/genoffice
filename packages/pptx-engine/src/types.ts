@@ -140,6 +140,9 @@ export interface TextRun {
   fontSizeImplicit?: boolean
   /** Letter spacing <a:rPr spc> (pt, may be negative; PowerPoint stores 1/100pt) */
   letterSpacing?: number
+  /** Kerning threshold <a:rPr kern> (pt): kern pairs apply only at fontSize ≥ this; 0 = never.
+   *  Absent = PowerPoint's 12 pt default (probe-measured: 18 pt kerns, 10 pt does not). */
+  kern?: number
   /** Font family (final font name after theme inheritance, for render/editor display) */
   fontFamily?: string
   /**
@@ -327,6 +330,8 @@ interface ElementBase {
   dirtyPPr?: PPrDirty
   /** Placeholder type (title/body/…), located via layout/master inheritance */
   placeholder?: string
+  /** <p:cNvSpPr txBox="1">: an Insert > Text Box, which stays top-left where an autoshape centers */
+  txBox?: boolean
   name?: string
   /**
    * <p:cNvPr descr="…">: editor-owned metadata payload (e.g. vector points of
@@ -428,6 +433,10 @@ export interface PictureElement extends ElementBase {
   /** Picture outline geometry <a:prstGeom> (ellipse avatars/rounded-corner frames etc. from picture styles; rect omitted) */
   presetGeometry?: string
   adjust?: Record<string, number>
+  /** Picture outline <a:custGeom> (the image is clipped to the custom path; mutually exclusive with presetGeometry) */
+  customGeometry?: CustomGeometry
+  /** <a:scene3d> on the pic: a flat 180° camera rotation mirrors the bitmap */
+  scene3d?: Scene3D
   /** Shape fill from the pic's own spPr, drawn as a backdrop behind the image */
   fill?: Fill
   /** <a:blip><a:duotone> on the picture blip */

@@ -70,8 +70,8 @@ export function promptPdfPassword(
   }
 
   const win = new BrowserWindow({
-    width: 400,
-    height: 260,
+    width: 440,
+    height: 312,
     ...(parent && !parent.isDestroyed() ? { parent, modal: true } : {}),
     frame: false,
     transparent: true,

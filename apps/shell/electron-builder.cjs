@@ -22,7 +22,7 @@
  */
 
 const { execFileSync } = require('node:child_process')
-const { existsSync } = require('node:fs')
+const { existsSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
 
 const updateUrl = process.env.GENOFFICE_UPDATE_URL
@@ -59,6 +59,83 @@ for (const rel of [
     throw new Error(
       `electron-builder extraResources source missing: ${rel} (npm hoisting changed?)`,
     )
+  }
+}
+
+// macOS local-OCR helper (scanned-page text recovery): a swiftc output, not
+// an npm artifact — compiled here on demand so CI runners and fresh checkouts
+// need no manual step. Universal (arm64 + x86_64) when both targets compile,
+// host-arch otherwise; mac installers must not silently ship without it.
+const VISION_OCR_HELPER = '../../packages/pdf2docx/ocr-helper/vision-ocr'
+
+// Compile the helper. universalOnly=true has NO host-arch fallback: dual-arch
+// packaging must fail loudly rather than ship a host-arch binary to both dmgs.
+function compileVisionOcr({ universalOnly } = { universalOnly: false }) {
+  const src = join(__dirname, `${VISION_OCR_HELPER}.swift`)
+  const out = join(__dirname, VISION_OCR_HELPER)
+  try {
+    try {
+      const slices = ['arm64', 'x86_64'].map((arch) => {
+        const slice = `${out}.${arch}`
+        execFileSync('swiftc', ['-O', src, '-target', `${arch}-apple-macos12`, '-o', slice], {
+          stdio: 'inherit',
+        })
+        return slice
+      })
+      execFileSync('lipo', ['-create', ...slices, '-output', out], { stdio: 'inherit' })
+      for (const slice of slices) rmSync(slice, { force: true })
+    } catch (err) {
+      if (universalOnly) throw err
+      // cross-target SDK unavailable — a host-arch helper still serves this build
+      execFileSync('swiftc', ['-O', src, '-o', out], { stdio: 'inherit' })
+    }
+  } catch (err) {
+    throw new Error(`vision-ocr helper compile failed: ${err}`, { cause: err })
+  }
+}
+
+if (process.platform === 'darwin' && !existsSync(join(__dirname, VISION_OCR_HELPER))) {
+  compileVisionOcr()
+}
+
+// Windows local-OCR helper (Windows.Media.Ocr): compiled by the in-box .NET
+// Framework csc via build-win.mjs — same on-demand policy as the mac helper,
+// and Windows installers must not silently ship without it.
+const WIN_OCR_HELPER = '../../packages/pdf2docx/ocr-helper/win-ocr.exe'
+if (process.platform === 'win32' && !existsSync(join(__dirname, WIN_OCR_HELPER))) {
+  try {
+    execFileSync(
+      process.execPath,
+      [join(__dirname, '../../packages/pdf2docx/ocr-helper/build-win.mjs')],
+      { stdio: 'inherit' },
+    )
+  } catch (err) {
+    throw new Error(`win-ocr helper compile failed: ${err}`, { cause: err })
+  }
+}
+
+// Dual-arch packs share one extraResources path, so the shipped helper must be
+// a lipo fat binary. A stale host-arch build (dev path above) is rebuilt in
+// place; if a universal build cannot be produced, packaging aborts — otherwise
+// the other arch's OCR silently fails and every scanned page ships as bitmap.
+function assertUniversalVisionOcr() {
+  const helper = join(__dirname, VISION_OCR_HELPER)
+  const wanted = ['x86_64', 'arm64']
+  const archsOf = () =>
+    existsSync(helper)
+      ? execFileSync('lipo', ['-archs', helper], { encoding: 'utf8' }).trim().split(/\s+/)
+      : []
+  if (!wanted.every((w) => archsOf().includes(w))) {
+    rmSync(helper, { force: true })
+    compileVisionOcr({ universalOnly: true })
+  }
+  const archs = archsOf()
+  for (const want of wanted) {
+    if (!archs.includes(want)) {
+      throw new Error(
+        `vision-ocr helper is [${archs.join(', ')}] but both mac arch packages ship it`,
+      )
+    }
   }
 }
 
@@ -162,6 +239,17 @@ const config = {
       from: '../pdf/node_modules/harfbuzzjs/hb-subset.wasm',
       to: 'wasm/hb-subset.wasm',
     },
+    // platform system-OCR helpers for scanned-page recovery (each exists only
+    // on its own build platform; electron-builder skips absent sources and the
+    // engine resolver degrades to the bitmap fallback when missing)
+    {
+      from: '../../packages/pdf2docx/ocr-helper/vision-ocr',
+      to: 'ocr/vision-ocr',
+    },
+    {
+      from: '../../packages/pdf2docx/ocr-helper/win-ocr.exe',
+      to: 'ocr/win-ocr.exe',
+    },
     {
       from: '../../node_modules/@genspark/cli',
       to: 'gsk/node_modules/@genspark/cli',
@@ -190,6 +278,12 @@ const config = {
       name: 'Excel Workbook',
       role: 'Editor',
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+    {
+      ext: 'xlsm',
+      name: 'Excel Macro-Enabled Workbook',
+      role: 'Editor',
+      mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12',
     },
     {
       ext: 'pptx',
@@ -354,7 +448,10 @@ const config = {
   },
   beforePack: async (context) => {
     assertModuleTreesPresent()
-    if (context.electronPlatformName === 'darwin' && includeMacX64) assertUniversalSidecar()
+    if (context.electronPlatformName === 'darwin' && includeMacX64) {
+      assertUniversalSidecar()
+      assertUniversalVisionOcr()
+    }
   },
   dmg: {
     sign: true,

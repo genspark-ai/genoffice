@@ -29,22 +29,50 @@ interface PanelRows {
   xs: number[]
 }
 
-/** recover a table's row boundaries from its cell boxes; null = malformed */
-function rowBoundaries(t: TableBlock): number[] | null {
-  const ys: number[] = [t.box.y1]
-  for (let r = 1; r < t.rows.length; r++) {
-    const tops = t.rows[r]!.filter((c) => c.vMerge !== 'continue').map((c) => c.box.y1)
-    if (tops.length > 0) {
-      ys.push(Math.max(...tops))
-      continue
+/**
+ * Recover a table's row boundaries from its cell boxes; null = malformed.
+ * Boundaries come from two sources: the top edge of every cell STARTING at a
+ * row, and the bottom edge of every spanning cell at the row its merge ENDS
+ * (deep merge stacks leave rows where nothing starts). Boundaries no cell
+ * edge touches interpolate linearly between their known neighbors.
+ */
+export function rowBoundaries(t: TableBlock): number[] | null {
+  const n = t.rows.length
+  if (n === 0) return null
+  const ys: Array<number | null> = Array.from({ length: n + 1 }, () => null)
+  ys[0] = t.box.y1
+  ys[n] = t.box.y0
+  for (let r = 0; r < n; r++) {
+    for (const c of t.rows[r]!) {
+      if (c.vMerge === 'continue') continue
+      if (ys[r] === null) ys[r] = c.box.y1
+      // merge end: consecutive covered rows share the restart cell's box
+      let span = 1
+      while (
+        r + span < n &&
+        t.rows[r + span]!.some(
+          (p) =>
+            p.vMerge === 'continue' &&
+            Math.abs(p.box.y0 - c.box.y0) < 0.1 &&
+            Math.abs(p.box.x0 - c.box.x0) < 0.1,
+        )
+      ) {
+        span++
+      }
+      if (ys[r + span] === null) ys[r + span] = c.box.y0
     }
-    const bottomsAbove = t.rows[r - 1]!.filter((c) => c.vMerge === undefined).map((c) => c.box.y0)
-    if (bottomsAbove.length === 0) return null
-    ys.push(Math.min(...bottomsAbove))
   }
-  ys.push(t.box.y0)
-  for (let i = 1; i < ys.length; i++) if (ys[i]! >= ys[i - 1]! - 0.1) return null
-  return ys
+  // untouched boundaries (a band fully inside every crossing merge) — linear
+  for (let i = 1; i < n; i++) {
+    if (ys[i] !== null) continue
+    let hi = i + 1
+    while (ys[hi] === null) hi++
+    const lo = i - 1
+    const step = (ys[hi]! - ys[lo]!) / (hi - lo)
+    for (let k = lo + 1; k < hi; k++) ys[k] = ys[lo]! + step * (k - lo)
+  }
+  for (let i = 1; i <= n; i++) if (ys[i]! >= ys[i - 1]! - 0.1) return null
+  return ys as number[]
 }
 
 function colBoundaries(t: TableBlock): number[] {

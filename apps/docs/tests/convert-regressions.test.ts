@@ -5,6 +5,7 @@ import {
   capTableRowHeights,
   inlineToRuns,
   pmDocToSavePlan,
+  pmNodeToGeneratedBlock,
   runsToInline,
   signatureOfBlock,
   signatureOfGenerated,
@@ -356,5 +357,58 @@ describe('empty paragraph line size attr', () => {
     const saved = plan.saveBlocks[0]
     if (saved.kind !== 'generated') throw new Error(`expected generated, got ${saved.kind}`)
     expect(saved.block.format?.emptyRunSizeHalfPoints).toBe(2)
+  })
+})
+
+describe('paragraph direction inference (run w:rtl / RTL script, no w:bidi)', () => {
+  const paraBlock = (over: Partial<Block>): Block => ({
+    id: 'b0',
+    type: 'paragraph',
+    docxIndex: 0,
+    originalXml: '<w:p/>',
+    ...over,
+  })
+  const rtlBlock = paraBlock({
+    runs: [{ text: 'مرحبا بالعالم', rtl: true }],
+    format: { align: 'right' },
+  })
+
+  it('sets the render-only bidiInferred attr and keeps the visual alignment', () => {
+    const doc = blocksToPmDoc([rtlBlock])
+    expect(doc.content?.[0].attrs).toMatchObject({
+      bidi: false,
+      bidiInferred: true,
+      align: 'right',
+    })
+  })
+
+  it('infers from a first strong RTL character without run flags', () => {
+    const doc = blocksToPmDoc([paraBlock({ runs: [{ text: '123 שלום' }] })])
+    expect(doc.content?.[0].attrs?.bidiInferred).toBe(true)
+  })
+
+  it('lets run w:rtl decide only weak-only text', () => {
+    const weak = blocksToPmDoc([paraBlock({ runs: [{ text: '42 —', rtl: true }] })])
+    expect(weak.content?.[0].attrs?.bidiInferred).toBe(true)
+    // first strong char is Latin: an embedded rtl run must not flip the base direction
+    const mixed = blocksToPmDoc([
+      paraBlock({ runs: [{ text: 'He said ' }, { text: 'مرحبا', rtl: true }] }),
+    ])
+    expect(mixed.content?.[0].attrs?.bidiInferred).toBe(false)
+  })
+
+  it('does not infer for LTR text or explicitly bidi paragraphs', () => {
+    const ltr = blocksToPmDoc([paraBlock({ runs: [{ text: 'Hello' }] })])
+    expect(ltr.content?.[0].attrs?.bidiInferred).toBe(false)
+    const explicit = blocksToPmDoc([{ ...rtlBlock, format: { bidi: true, align: 'right' } }])
+    expect(explicit.content?.[0].attrs).toMatchObject({ bidi: true, bidiInferred: false })
+  })
+
+  it('never writes the inference back: block stays original, regenerated format has no bidi', () => {
+    const doc = blocksToPmDoc([rtlBlock])
+    const plan = pmDocToSavePlan(doc, [rtlBlock])
+    expect(plan.changedCount).toBe(0)
+    expect(plan.saveBlocks[0]).toEqual({ kind: 'original', docxIndex: 0 })
+    expect(pmNodeToGeneratedBlock(doc.content![0]).format?.bidi).toBeUndefined()
   })
 })

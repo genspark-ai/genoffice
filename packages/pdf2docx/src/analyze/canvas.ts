@@ -32,11 +32,48 @@ export interface CanvasDocPrior {
   pointsNeeded: number
 }
 
-/** slide-app exports — a hit is the strongest document prior there is */
-const SLIDE_PRODUCER_RE = /powerpoint|keynote|google slides|impress|wps\s*演示|wps\s+presentation/i
+/**
+ * slide-app exports — a hit is the strongest document prior there is.
+ * `beamer` catches chains whose Creator survives as "LaTeX with Beamer class";
+ * the legacy pdfTeX+hyperref chain overwrites Creator and loses the token —
+ * those decks are recovered by the Beamer page-size fingerprint below.
+ */
+const SLIDE_PRODUCER_RE =
+  /powerpoint|keynote|google slides|impress|wps\s*演示|wps\s+presentation|beamer/i
 
 export function isSlideProducer(meta: DocMeta): boolean {
   return SLIDE_PRODUCER_RE.test(`${meta.producer ?? ''} ${meta.creator ?? ''}`)
+}
+
+const TEX_PRODUCER_RE = /pdftex|xetex|luatex|luahbtex|dvips|dvipdfm|latex|miktex|tex\s?live/i
+
+export function isTexProducer(meta: DocMeta): boolean {
+  return TEX_PRODUCER_RE.test(`${meta.producer ?? ''} ${meta.creator ?? ''}`)
+}
+
+const MM_TO_PT = 72 / 25.4
+/**
+ * Beamer's geometry is a fixed table of mm page sizes (beamer.cls
+ * `\beamer@paperwidth/height` per `aspectratio=`) that nothing else uses.
+ * aspectratio=141 (148.5×105mm) is deliberately absent — it is exactly
+ * landscape A6, so it cannot serve as a fingerprint.
+ */
+const BEAMER_PAGE_SIZES_MM: ReadonlyArray<readonly [number, number]> = [
+  [128, 96], // 4:3 (default)
+  [160, 90], // 16:9
+  [160, 100], // 16:10
+  [140, 90], // 14:9
+  [125, 100], // 5:4
+  [135, 90], // 3:2
+]
+const BEAMER_SIZE_TOL_PT = 1
+
+export function isBeamerPageSize(widthPt: number, heightPt: number): boolean {
+  return BEAMER_PAGE_SIZES_MM.some(
+    ([w, h]) =>
+      Math.abs(widthPt - w * MM_TO_PT) <= BEAMER_SIZE_TOL_PT &&
+      Math.abs(heightPt - h * MM_TO_PT) <= BEAMER_SIZE_TOL_PT,
+  )
 }
 
 /** typical slide aspect ratios; letter (1.294) and A4 (1.415) landscape stay outside */
@@ -47,6 +84,12 @@ const SLIDE_MIN_WIDTH_PT = 576
 
 export function isSlideSizedPage(widthPt: number, heightPt: number): boolean {
   if (widthPt <= heightPt || widthPt < SLIDE_MIN_WIDTH_PT) return false
+  return isSlideAspect(widthPt, heightPt)
+}
+
+/** landscape at a slide aspect, any size — LaTeX Beamer exports 364-454pt wide */
+export function isSlideAspect(widthPt: number, heightPt: number): boolean {
+  if (widthPt <= heightPt) return false
   const aspect = widthPt / heightPt
   return SLIDE_ASPECTS.some((a) => Math.abs(aspect - a) / a <= SLIDE_ASPECT_TOL)
 }
@@ -208,7 +251,13 @@ export function computeCanvasPrior(pages: IrPage[], meta: DocMeta): CanvasDocPri
     if (jointContinues(prev, next)) continuing++
   }
   const continuityShare = joints > 0 ? continuing / joints : 0
-  const slideProducer = isSlideProducer(meta)
+  // TeX doc on Beamer's fixed page geometry (every page) = a Beamer deck whose
+  // Creator token was overwritten by the legacy pdfTeX+hyperref chain
+  const slideProducer =
+    isSlideProducer(meta) ||
+    (isTexProducer(meta) &&
+      flowPages.length > 0 &&
+      flowPages.every((p) => isBeamerPageSize(p.widthPt, p.heightPt)))
 
   let pointsNeeded = POINTS_NONE
   if (slideProducer) {
@@ -228,8 +277,18 @@ export type PageLayoutClass = 'flow' | 'canvas' | 'scan'
 export function classifyPage(page: IrPage, prior: CanvasDocPrior): PageLayoutClass {
   if (page.scanned || page.degraded) return 'scan'
   // non-slide geometry: only the document-gated newsletter path (P20 C,
-  // classifyPages) may admit such pages — never the slide points system
-  if (!isSlideSizedPage(page.widthPt, page.heightPt)) return 'flow'
+  // classifyPages) may admit such pages — never the slide points system.
+  // With a slide-producer prior (Beamer decks run 354-454pt wide) the aspect
+  // or exact Beamer geometry qualifies; the 576pt floor only guards
+  // geometry-only guesses
+  if (
+    !isSlideSizedPage(page.widthPt, page.heightPt) &&
+    !(
+      prior.slideProducer &&
+      (isSlideAspect(page.widthPt, page.heightPt) || isBeamerPageSize(page.widthPt, page.heightPt))
+    )
+  )
+    return 'flow'
   if (pageCharCount(page) > VETO_MAX_CHARS) return 'flow'
   const textLines = page.blocks.reduce((t, b) => t + (b.kind === 'text' ? b.lines.length : 0), 0)
   if (textLines > VETO_MAX_TEXT_LINES) return 'flow'
@@ -312,6 +371,38 @@ export function classifyPages(pages: IrPage[], meta: DocMeta): CanvasDocPrior {
     for (const page of live) {
       if (page.canvas !== true && newsletterPageShape(page)) page.canvas = true
     }
+  }
+  // footnotes were lifted off the page bottom for the flow path; a canvas
+  // page (whether slide- or newsletter-admitted) pins blocks absolutely, so
+  // the note text must return to the page — and its body anchors must not
+  // reference a note that no longer exists in footnotes.xml. Word supplied
+  // the numbering for w:footnoteReference anchors (their text was collapsed
+  // to ''), so the marker digits are restored as literal superscript text and
+  // prepended to the note body; anchors inside TABLE CELLS are cleared too.
+  for (const page of pages) {
+    if (page.canvas !== true || page.footnotes === undefined) continue
+    const markerOf = new Map(page.footnotes.map((f) => [f.id, f.marker]))
+    for (const f of page.footnotes) {
+      const span = f.blocks[0]?.lines[0]?.spans[0]
+      if (f.marker !== undefined && span !== undefined) span.text = `${f.marker} ${span.text}`
+      page.blocks.push(...f.blocks)
+    }
+    const textBlocks: TextBlock[] = []
+    for (const b of page.blocks) {
+      if (b.kind === 'text') textBlocks.push(b)
+      else if (b.kind === 'table')
+        for (const row of b.rows) for (const cell of row) textBlocks.push(...cell.blocks)
+    }
+    for (const b of textBlocks) {
+      for (const line of b.lines)
+        for (const span of line.spans) {
+          if (span.noteRef === undefined) continue
+          const marker = markerOf.get(span.noteRef)
+          if (span.text === '' && marker !== undefined) span.text = marker
+          delete span.noteRef
+        }
+    }
+    delete page.footnotes
   }
   return prior
 }

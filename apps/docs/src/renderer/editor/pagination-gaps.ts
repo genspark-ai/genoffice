@@ -110,6 +110,9 @@ export type PageGapSpec = {
   /** mixed-column page above: pull the gap (and everything below) up over the
    *  vacated stacked-column space (negative margin-top, neutralized while measuring) */
   pullUp?: number
+  /** slice boundary (gapless flow px) this gap opens; syncFloatShifts prefers it
+   *  over the widget's DOM position (they differ at trailing float-spill pages) */
+  boundaryY?: number
 } & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
@@ -164,12 +167,14 @@ export function setPageGaps(
       pos = gap.pos
       kind = gap.kind ?? 'inline'
     }
-    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)}`
+    // boundaryY in the key: a reused widget must not keep a stale boundary
+    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)}`
     decos.push(
       Decoration.widget(
         pos,
         () => {
           const el = makeGapEl(metrics, kind)
+          if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
           // margins don't apply to table-rows and cuts are zero-height markers;
           // tables inside mixed-column regions are out of scope anyway (v1)
           if (gap.pullUp && kind !== 'cut' && kind !== 'table')
@@ -226,6 +231,7 @@ export function setPageGaps(
 
 /** Line top of a cut anchor (screen px); falls back to the parent element's top. */
 function anchorTop(a: LineAnchor): number | null {
+  if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
     const range = document.createRange()
     range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
@@ -265,6 +271,70 @@ export function syncCutOverlays(
     const el = document.createElement('div')
     el.className = 'page-gap-cut page-cut-overlay'
     el.style.top = `${(top - wrapTop) / zoomFactor}px`
+    layer.appendChild(el)
+  }
+}
+
+export interface PageBorderStyle {
+  /** pages the border applies to (w:pgBorders w:display); undefined = all pages */
+  display?: 'firstPage' | 'notFirstPage'
+  /** border inset from the paper edge per side (CSS px, unzoomed) */
+  insetPx: { top: number; right: number; bottom: number; left: number }
+  widthPx: number
+  color: string
+}
+
+/**
+ * Page borders (w:pgBorders) as absolute per-page overlays on the page wrap.
+ * The continuous canvas can't carry a real border per page, and w:display
+ * needs pages skipped; page rects come from the gap widgets, like the
+ * per-page screenshot slicing does.
+ */
+export function syncPageBorders(
+  wrap: HTMLElement,
+  style: PageBorderStyle | null,
+  zoomFactor: number,
+): void {
+  let layer = wrap.querySelector(':scope > .page-border-overlays') as HTMLElement | null
+  if (!style) {
+    layer?.remove()
+    return
+  }
+  if (!layer) {
+    layer = document.createElement('div')
+    layer.className = 'page-border-overlays'
+    wrap.appendChild(layer)
+  }
+  layer.textContent = ''
+  const wr = wrap.getBoundingClientRect()
+  // page bounds: spans between gap decorations (gap = prev bottom margin +
+  // band + next top margin; zero-height cut markers are boundaries too)
+  const gaps = Array.from(wrap.querySelectorAll('.page-gap, .page-gap-cut'))
+    .map((g) => {
+      const r = g.getBoundingClientRect()
+      const cs = getComputedStyle(g)
+      const mb = parseFloat(cs.getPropertyValue('--gap-mb')) || 0
+      const mt = parseFloat(cs.getPropertyValue('--gap-mt')) || 0
+      return { top: (r.top - wr.top) / zoomFactor, height: r.height / zoomFactor, mb, mt }
+    })
+    .sort((a, b) => a.top - b.top)
+  const bounds = [0]
+  for (const g of gaps) bounds.push(g.top + g.mb, g.top + g.height - g.mt)
+  bounds.push(wr.height / zoomFactor)
+  const { insetPx: inset, widthPx, color } = style
+  for (let i = 0, page = 0; i + 1 < bounds.length; i += 2) {
+    const [top, bottom] = [bounds[i], bounds[i + 1]]
+    if (bottom - top <= 10) continue
+    const pageIdx = page++
+    if (style.display === 'firstPage' && pageIdx > 0) continue
+    if (style.display === 'notFirstPage' && pageIdx === 0) continue
+    const el = document.createElement('div')
+    el.className = 'page-border-overlay'
+    el.style.top = `${top + inset.top}px`
+    el.style.left = `${inset.left}px`
+    el.style.right = `${inset.right}px`
+    el.style.height = `${bottom - top - inset.top - inset.bottom}px`
+    el.style.border = `${widthPx}px solid ${color}`
     layer.appendChild(el)
   }
 }
@@ -342,28 +412,49 @@ function sameGaps(a: DecorationSet, b: DecorationSet): boolean {
  */
 export function syncFloatShifts(
   pm: HTMLElement,
-  floats: Array<{ el: HTMLElement; top: number }>,
+  floats: Array<{
+    el: HTMLElement
+    top: number
+    anchorTop?: number
+    pinned?: boolean
+    pageRelV?: boolean
+  }>,
   origin: number,
   factor: number,
 ): void {
   if (floats.length === 0) return
   const gaps: Array<{ v: number; h: number }> = []
   let acc = 0
-  for (const el of Array.from(pm.children) as HTMLElement[]) {
-    if (
-      el.classList.contains('page-gap') ||
-      el.classList.contains('page-float-host') ||
-      el.classList.contains('page-repeat-header')
-    ) {
-      const r = el.getBoundingClientRect()
-      gaps.push({ v: (r.top - origin - acc) / factor, h: r.height })
-      acc += r.height
-    }
+  // in-table gap rows / repeated-header clones displace the DOM below them just
+  // like top-level gap widgets: a float anchored after a multi-page table would
+  // otherwise resolve one page too high (its virtual top already excludes them)
+  for (const el of Array.from(
+    pm.querySelectorAll<HTMLElement>('.page-gap, .page-float-host, .page-repeat-header'),
+  )) {
+    const r = el.getBoundingClientRect()
+    // true slice boundary when known: the widget can sit at the flow end
+    // while its boundary lies inside trailing float-spill space, which would
+    // otherwise pull every below-flow box of the same page onto the next one
+    const b = parseFloat(el.dataset.boundaryY ?? '')
+    gaps.push({ v: Number.isFinite(b) ? b : (r.top - origin - acc) / factor, h: r.height })
+    acc += r.height
   }
   for (const f of floats) {
     let above = 0
-    for (const g of gaps) if (g.v <= f.top) above += g.h
-    const desired = origin + f.top * factor + above
+    let pageStart = 0
+    // page-absolute V boxes render on their ANCHOR's page at the page-relative
+    // Y (Word): pinned tops already are page coords, pageRelV tops carry the
+    // anchor position. Flow-positioned boxes keep their virtual Y.
+    const abs = f.pinned || f.pageRelV
+    const ref = abs ? (f.anchorTop ?? f.top) + 0.5 : f.top
+    for (const g of gaps) {
+      if (g.v <= ref) {
+        above += g.h
+        if (abs) pageStart = Math.max(pageStart, g.v)
+      }
+    }
+    const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) : f.top
+    const desired = origin + (pageStart + rel) * factor + above
     const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
     const cur = f.el.getBoundingClientRect().top
     const next = applied + (desired - cur) / factor
@@ -375,6 +466,108 @@ export function syncFloatShifts(
       f.el.dataset.pageFloatDy = String(next)
     }
   }
+}
+
+/**
+ * Word resumes body text below the union of wrapTopAndBottom bands: consecutive
+ * anchor paragraphs (photo walls) stack their own lines, not their bands, so a
+ * later anchor's origin sits one line below the previous anchor — not below its
+ * whole band. Collapse each non-last wrapper to its anchor line and extend the
+ * run's last wrapper so following text still resumes below the band union.
+ * Layout-affecting, so it runs before measurement; idempotent (inputs are the
+ * static data-band values and the anchor-line heights).
+ */
+export function syncAnchorBands(pm: HTMLElement, factor: number): void {
+  let run: HTMLElement[] = []
+  const apply = (el: HTMLElement, minHeight: number): void => {
+    const own = Math.round(parseFloat(el.dataset.band ?? '0') || 0)
+    if (minHeight === own) {
+      if (el.dataset.bandAdj === undefined) return
+      delete el.dataset.bandAdj
+      el.style.minHeight = own > 0 ? `${own}px` : ''
+      return
+    }
+    if (el.dataset.bandAdj === String(minHeight)) return
+    el.dataset.bandAdj = String(minHeight)
+    el.style.minHeight = minHeight > 0 ? `${minHeight}px` : ''
+  }
+  const bandsOf = (el: HTMLElement): Array<[number, number]> =>
+    (el.dataset.bands ?? '')
+      .split(' ')
+      .map((s) => s.split(':').map(Number) as [number, number])
+      .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b > a)
+  // union of the accumulated band intervals (photos in one row overlap; their
+  // coverage must not double-count)
+  const mergedOf = (intervals: Array<[number, number]>): Array<[number, number]> => {
+    const sorted = [...intervals].sort((a, b) => a[0] - b[0])
+    const out: Array<[number, number]> = []
+    for (const [a, b] of sorted) {
+      const last = out[out.length - 1]
+      if (last && a <= last[1]) last[1] = Math.max(last[1], b)
+      else out.push([a, b])
+    }
+    return out
+  }
+  const flush = (): void => {
+    if (run.length > 1) {
+      const intervals: Array<[number, number]> = []
+      const tops: number[] = []
+      let t = 0
+      let bottom = 0
+      for (const el of run) {
+        const line =
+          (el
+            .querySelector(':scope > .doc-anchor-strut, :scope > .doc-textbox-stray')
+            ?.getBoundingClientRect().height ?? 0) / factor
+        // the anchor's own line lands on the first slot not substantially
+        // covered by earlier bands (Word excludes text lines from wrap bands;
+        // the half-line tolerance absorbs our taller-than-Word line boxes)
+        const merged = mergedOf(intervals)
+        let cand = t
+        for (let guard = 0; guard < 64 && line > 0; guard++) {
+          const hit = merged.filter(([a, b]) => a < cand + line && b > cand)
+          const covered = hit.reduce(
+            (s, [a, b]) => s + Math.min(b, cand + line) - Math.max(a, cand),
+            0,
+          )
+          if (covered <= line / 2) break
+          cand = Math.min(...hit.map(([, b]) => b))
+        }
+        tops.push(cand)
+        for (const [a, b] of bandsOf(el)) {
+          intervals.push([cand + a, cand + b])
+          bottom = Math.max(bottom, cand + b)
+        }
+        t = cand + line
+        bottom = Math.max(bottom, t)
+      }
+      run.forEach((el, i) => {
+        const h = i === run.length - 1 ? bottom - tops[i] : tops[i + 1] - tops[i]
+        apply(el, Math.max(0, Math.round(h)))
+      })
+    } else if (run.length === 1) {
+      apply(run[0], Math.round(parseFloat(run[0].dataset.band ?? '0') || 0))
+    }
+    run = []
+  }
+  for (const el of Array.from(pm.children) as HTMLElement[]) {
+    if (
+      el.classList.contains('page-gap') ||
+      el.classList.contains('page-float-host') ||
+      el.classList.contains('page-repeat-header')
+    ) {
+      continue
+    }
+    if (
+      el.classList.contains('doc-protected-floating') &&
+      !el.classList.contains('doc-protected-pagepinned')
+    ) {
+      run.push(el)
+      continue
+    }
+    flush()
+  }
+  flush()
 }
 
 /**
@@ -403,6 +596,27 @@ export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: numb
       box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
       box.dataset.pageFloatDy = String(next)
     }
+  }
+}
+
+/**
+ * Differing-width documents: gap header/footer strips live inside gap boxes whose
+ * origin shifts with the next section's margins (and, for in-table gaps, with the
+ * spanning cell's grid position), so no static left fits every gap kind. Align
+ * each strip to the body blocks' left edge by measurement (idempotent; runs after
+ * setPageGaps while the widgets' rects are final).
+ */
+export function alignGapHfStrips(pm: HTMLElement, bodyLeftPx: number, factor: number): void {
+  const target = pm.getBoundingClientRect().left + bodyLeftPx * factor
+  for (const el of Array.from(pm.querySelectorAll<HTMLElement>('.page-gap-hf'))) {
+    // widget DOM reused from an equal-width era still carries the stylesheet
+    // centering (left:50% + translateX(-50%)): pin it before measuring, or the
+    // increment is applied against the wrong base
+    if (el.style.transform !== 'none') el.style.transform = 'none'
+    if (!el.style.left) el.style.left = '0px'
+    const delta = (target - el.getBoundingClientRect().left) / factor
+    if (Math.abs(delta) < 0.5) continue
+    el.style.left = `${((parseFloat(el.style.left) || 0) + delta).toFixed(1)}px`
   }
 }
 

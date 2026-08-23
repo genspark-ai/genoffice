@@ -451,4 +451,67 @@ describe('image wrap in the editor', () => {
     expect(reparsed.blocks[1].imageZOrder).toBe(-1)
     editor.destroy()
   })
+
+  it('square wrap renders numeric posOffset as position margins (drop WYSIWYG)', async () => {
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    // 120px right, 40px down of the anchor (EMU_PER_PX = 9525)
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-left',
+      imageOffsetXEmu: 120 * 9525,
+      imageOffsetYEmu: 40 * 9525,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-square-left')!
+    expect(el.style.marginLeft).toBe('120px')
+    expect(el.style.marginTop).toBe('40px')
+    // the 60% float clamp must not shrink a freely positioned picture
+    expect(el.style.maxWidth).toBe('none')
+
+    // right floats position from the right edge: colW − x − width
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-right',
+      imageWidthPx: 96,
+    })
+    const right = editor.view.dom.querySelector<HTMLElement>(
+      '.doc-protected.img-wrap-square-right',
+    )!
+    expect(right.style.marginRight).toMatch(/calc\(100% - 216(\.0)?px\)/)
+    editor.destroy()
+  })
+
+  it('topBottom wrap with an explicit X leaves the centered slot', async () => {
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'topBottom',
+      imageOffsetXEmu: 60 * 9525,
+      imageOffsetYEmu: 0,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-topBottom')!
+    expect(el.style.textAlign).toBe('left')
+    const inner = el.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(inner.style.marginLeft).toBe('60px')
+    editor.destroy()
+  })
+
+  it('negative posOffset (above/left of the anchor) round-trips like Word', async () => {
+    const { editor, parsed } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'behind',
+      imageOffsetXEmu: -190500,
+      imageOffsetYEmu: -95250,
+    })
+    const saved = await saveDocx(
+      parsed,
+      pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).saveBlocks,
+    )
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    expect(docXml).toContain('<wp:posOffset>-190500</wp:posOffset>')
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].imageOffsetXEmu).toBe(-190500)
+    expect(reparsed.blocks[0].imageOffsetYEmu).toBe(-95250)
+    expect(reparsed.blocks[0].imageWrap).toBe('behind')
+    editor.destroy()
+  })
 })

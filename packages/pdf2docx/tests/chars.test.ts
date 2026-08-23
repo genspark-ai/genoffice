@@ -1,6 +1,10 @@
 /** Double-drawn char dedup unit tests (P11 B): no wasm. */
 import { describe, expect, it } from 'vitest'
-import { dedupeDoubleDrawnChars, normalizeRegionalFontArtifacts } from '../src/analyze/chars'
+import {
+  dedupeDoubleDrawnChars,
+  normalizeCjkDashes,
+  normalizeRegionalFontArtifacts,
+} from '../src/analyze/chars'
 import type { PdfChar } from '../src/ir'
 import { mkChar, mkText } from './helpers/chars'
 
@@ -106,6 +110,25 @@ describe('dedupeDoubleDrawnChars', () => {
     expect(chars).toHaveLength(2)
   })
 
+  it('keeps ligature twins that share one text object', () => {
+    const first = { ...mkChar('t', 84.035, { y: 724, fontSize: 11, width: 6.6 }), textObjId: 7 }
+    const twin = { ...mkChar('t', 84.035, { y: 724, fontSize: 11, width: 6.6 }), textObjId: 7 }
+    const chars = [first, twin]
+    dedupeDoubleDrawnChars(chars)
+    expect(chars).toHaveLength(2)
+  })
+
+  it('collapses identical-box adjacent twins drawn as separate text objects', () => {
+    // a string drawn twice at the same spot: PDFium interleaves the two
+    // draws, so the copies are stream-adjacent with verbatim boxes — the
+    // per-draw object id is what separates them from a ligature expansion
+    const first = { ...mkChar('ب', 84.035, { y: 724, fontSize: 18, width: 9 }), textObjId: 3 }
+    const twin = { ...mkChar('ب', 84.035, { y: 724, fontSize: 18, width: 9 }), textObjId: 4 }
+    const chars = [first, twin]
+    dedupeDoubleDrawnChars(chars)
+    expect(chars).toHaveLength(1)
+  })
+
   it('still collapses identical-box twins that are not stream-adjacent', () => {
     const first = mkChar('赴', 100, { y: 400, fontSize: 36 })
     const other = mkChar('日', 200, { y: 400, fontSize: 36 })
@@ -123,5 +146,25 @@ describe('dedupeDoubleDrawnChars', () => {
     ]
     dedupeDoubleDrawnChars(chars)
     expect(chars).toHaveLength(1)
+  })
+})
+
+describe('normalizeCjkDashes (P31 D)', () => {
+  it('folds an em-dash pair between CJK chars to horizontal bars', () => {
+    const chars = mkText('静态的——它依赖', 100).chars
+    normalizeCjkDashes(chars)
+    expect(chars.map((c) => c.text).join('')).toBe('静态的――它依赖')
+  })
+
+  it('leaves Latin-context em dashes alone', () => {
+    const chars = mkText('rules—based', 100).chars
+    normalizeCjkDashes(chars)
+    expect(chars.map((c) => c.text).join('')).toBe('rules—based')
+  })
+
+  it('folds dashes beside Hangul (P31 D follow-up)', () => {
+    const chars = mkText('정적—다음', 100).chars
+    normalizeCjkDashes(chars)
+    expect(chars.map((c) => c.text).join('')).toBe('정적―다음')
   })
 })

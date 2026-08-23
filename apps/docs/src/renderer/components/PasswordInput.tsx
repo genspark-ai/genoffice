@@ -20,6 +20,7 @@ export function PasswordInput({
   maxLength,
   invalid,
   hideReveal,
+  placeholder,
 }: {
   value: string
   onChange: (value: string) => void
@@ -29,6 +30,7 @@ export function PasswordInput({
   maxLength?: number
   invalid?: boolean
   hideReveal?: boolean
+  placeholder?: string
 }) {
   const { t } = useI18n()
   const [show, setShow] = useState(false)
@@ -67,6 +69,7 @@ export function PasswordInput({
         autoFocus={autoFocus}
         disabled={disabled}
         maxLength={maxLength}
+        placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}

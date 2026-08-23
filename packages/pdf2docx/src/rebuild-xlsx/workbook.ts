@@ -68,6 +68,16 @@ export interface SheetSpec {
   rowHeightsPt?: Map<number, number>
   /** merged ranges in A1 notation ("A1:B2") */
   merges?: string[]
+  /** print header/footer strings, already &-encoded (repeated PDF furniture) */
+  headerFooter?: { oddHeader?: string; oddFooter?: string }
+  /** print setup: source-page paper geometry plus the sheet's printed page
+   * number (&P restarts at 1 per sheet otherwise) */
+  pageSetup?: {
+    /** OOXML paper size code (1 = Letter, 9 = A4, …); omitted when unmatched */
+    paperSize?: number
+    orientation?: 'portrait' | 'landscape'
+    firstPageNumber?: number
+  }
 }
 
 // ── style pool ──
@@ -323,6 +333,27 @@ export function worksheetXml(sheet: SheetSpec): string {
         merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('') +
         '</mergeCells>'
 
+  const hf = sheet.headerFooter
+  // schema order: pageSetup precedes headerFooter
+  const ps = sheet.pageSetup
+  const pageSetupXml =
+    ps === undefined
+      ? ''
+      : '<pageSetup' +
+        (ps.paperSize !== undefined ? ` paperSize="${ps.paperSize}"` : '') +
+        (ps.orientation !== undefined ? ` orientation="${ps.orientation}"` : '') +
+        (ps.firstPageNumber !== undefined
+          ? ` firstPageNumber="${ps.firstPageNumber}" useFirstPageNumber="1"`
+          : '') +
+        '/>'
+  const hfXml =
+    hf === undefined
+      ? ''
+      : '<headerFooter>' +
+        (hf.oddHeader ? `<oddHeader>${escapeXml(hf.oddHeader)}</oddHeader>` : '') +
+        (hf.oddFooter ? `<oddFooter>${escapeXml(hf.oddFooter)}</oddFooter>` : '') +
+        '</headerFooter>'
+
   const dimension = `A1:${cellRef(Math.max(maxRow, 0), Math.max(maxCol, 0))}`
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -331,6 +362,8 @@ export function worksheetXml(sheet: SheetSpec): string {
     colsXml +
     `<sheetData>${rowsXml}</sheetData>` +
     mergesXml +
+    pageSetupXml +
+    hfXml +
     '</worksheet>'
   )
 }

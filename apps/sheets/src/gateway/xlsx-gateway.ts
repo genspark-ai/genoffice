@@ -754,6 +754,25 @@ export async function planCellEditsToXlsx(
     await applyPivotLayoutExpansions(pkg, resolvedUpdates, touchedEntries)
   }
 
+  // Stylesheet editor created up front: cell-edit styles and CF need it, and
+  // 'set-col-style' structural ops (select-all/full-column formatting, alpha
+  // ledger r124) intern their column xf during the structural pass below.
+  let stylesheet: StylesheetEditor | null = null
+  const stylesPath = 'xl/styles.xml'
+  if (
+    edits.some((edit) => edit.style !== undefined) ||
+    cfStates.length > 0 ||
+    structuralOps.some(({ ops }) => ops.some((op) => op.kind === 'set-col-style'))
+  ) {
+    if (!(await pkg.has(stylesPath))) await addDefaultStylesheet(pkg, touchedEntries)
+    stylesheet = new StylesheetEditor(await pkg.readText(stylesPath))
+  }
+  const resolveColStyle =
+    stylesheet === null
+      ? undefined
+      : (baseXfIndex: number, delta: WorkbookStyleEdit) =>
+          stylesheet!.resolveStyle(baseXfIndex, delta)
+
   // Structural operations replay first: journaled cell edits are already in
   // the post-operation coordinate space. Qualified references from other
   // sheets, defined names, and chart series shift along with the edited sheet.
@@ -764,7 +783,7 @@ export async function planCellEditsToXlsx(
     if (ops.length === 0) continue
     worksheetXmls.set(
       sheetName,
-      applyStructuralOps(worksheetXmls.get(sheetName) ?? '', ops, sheetName),
+      applyStructuralOps(worksheetXmls.get(sheetName) ?? '', ops, sheetName, resolveColStyle),
     )
     const editedPath = worksheetPaths.get(sheetName)
     if (editedPath !== undefined) {
@@ -821,12 +840,7 @@ export async function planCellEditsToXlsx(
 
   const editsBySheet = groupBySheet(edits)
   const fillsBySheet = groupBySheet(bulkConstantFills)
-  let stylesheet: StylesheetEditor | null = null
-  const stylesPath = 'xl/styles.xml'
-  if (edits.some((edit) => edit.style !== undefined) || cfStates.length > 0) {
-    if (!(await pkg.has(stylesPath))) await addDefaultStylesheet(pkg, touchedEntries)
-    stylesheet = new StylesheetEditor(await pkg.readText(stylesPath))
-  }
+  // (stylesheet was created before the structural pass — see above)
   // Apply declarative fills and explicit edits in one worksheet pass. A
   // per-cell edit runs after the fill and remains authoritative, while a
   // 300MB sheet avoids allocating two successive full-size output strings.
@@ -2336,6 +2350,7 @@ function serializeRunProperties(run: WorkbookRichRun): string {
   if (run.family !== undefined) {
     parts.push(`<rFont val="${escapeXmlAttribute(run.family)}"/>`)
   }
+  if (run.vertAlign !== undefined) parts.push(`<vertAlign val="${run.vertAlign}"/>`)
   return parts.length === 0 ? '' : `<rPr>${parts.join('')}</rPr>`
 }
 

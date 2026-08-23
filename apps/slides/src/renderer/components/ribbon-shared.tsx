@@ -346,6 +346,8 @@ export interface Props {
   /** Push a preset instruction to the AI panel and expand it (autoRun executes immediately) */
   /** slideShot: attach the current slide's rendering so the model sees the page (AI Beautify) */
   onAiPreset: (text: string, opts?: { slideShot?: boolean }) => void
+  /** Annotate the current selection with an AI edit (queued in the AI panel) */
+  onAskSelection: () => void
   /** Insert an element on the current page */
   onInsert: (kind: InsertKind) => void
   /** Shape gallery pick: enter canvas draw mode (crosshair; click = default size, drag = custom, Esc cancels) */
@@ -622,6 +624,7 @@ export interface RibbonTabCtx extends Pick<
   | 'onAddSlide'
   | 'onAddSlideWithLayout'
   | 'onAiPreset'
+  | 'onAskSelection'
   | 'onAlign'
   | 'onArrange'
   | 'onFlip'

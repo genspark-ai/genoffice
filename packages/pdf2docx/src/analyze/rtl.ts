@@ -94,16 +94,49 @@ function syntheticSpace(at: number, template: PdfChar): PdfChar {
  * neighbours are meaningless once the sequence is reordered).
  */
 export function reorderVisualToLogical(chars: readonly PdfChar[]): PdfChar[] {
-  // 1. visual order = left → right
-  const visual = [...chars].sort((a, b) => rectCenterX(a.looseBox) - rectCenterX(b.looseBox))
+  // 0. PDFium expands a multi-char ToUnicode ligature glyph (e.g. U+FCCC
+  // lam-meem) into consecutive chars sharing ONE glyph box, already in logical
+  // order. Merge them into one cluster: left as separate chars, the RTL-run
+  // reversal below would flip the pair (المشاركة → املشاركة).
+  const sameGlyphBox = (a: PdfChar, b: PdfChar): boolean =>
+    Math.abs(a.box.x0 - b.box.x0) < 0.05 &&
+    Math.abs(a.box.x1 - b.box.x1) < 0.05 &&
+    Math.abs(a.box.y0 - b.box.y0) < 0.05 &&
+    Math.abs(a.box.y1 - b.box.y1) < 0.05
+  const clustered: PdfChar[] = []
+  for (const c of chars) {
+    const prev = clustered[clustered.length - 1]
+    if (
+      prev !== undefined &&
+      !isSpaceCode(prev.code) &&
+      !isSpaceCode(c.code) &&
+      prev.script === c.script &&
+      sameGlyphBox(prev, c)
+    ) {
+      clustered[clustered.length - 1] = { ...prev, text: prev.text + c.text }
+      continue
+    }
+    clustered.push(c)
+  }
 
-  // 2. materialize inferred word gaps while x-adjacency still means adjacency
+  // 1. visual order = left → right
+  const visual = clustered.sort((a, b) => rectCenterX(a.looseBox) - rectCenterX(b.looseBox))
+
+  // 2. materialize inferred word gaps while x-adjacency still means adjacency.
+  // A line that carries REAL space glyphs already has its word boundaries
+  // (P30 D): naskh fonts open intra-word gaps after non-joining letters WIDER
+  // than their word spacing, so geometric inference (ours or PDFium's
+  // generated spaces) splits words mid-letter — with real spaces present,
+  // only those count.
   const lineGap = medianCharGap(visual)
   repairArabicJunkLigatures(visual, lineGap)
+  const hasRealSpace = visual.some((c) => isSpaceCode(c.code) && !c.isGenerated)
   const withSpaces: PdfChar[] = []
   for (const c of visual) {
+    if (hasRealSpace && isSpaceCode(c.code) && c.isGenerated) continue
     const prev = withSpaces[withSpaces.length - 1]
     if (
+      !hasRealSpace &&
       prev &&
       !isSpaceCode(prev.code) &&
       !isSpaceCode(c.code) &&

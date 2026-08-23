@@ -238,7 +238,10 @@ function textHf(band: 'top' | 'bottom', slot: Slot, firstTextPage: number): Furn
 }
 
 /** Detect repeated headers/footers + page numbers across a document's pages. */
-export function detectFurniture(pages: readonly FurniturePage[]): FurnitureResult {
+export function detectFurniture(
+  pages: readonly FurniturePage[],
+  { keepUnemitted = false }: { keepUnemitted?: boolean } = {},
+): FurnitureResult {
   const drop: Array<Set<PdfChar>> = pages.map(() => new Set())
   const textPages = pages
     .map((page, at) => ({ page, at }))
@@ -278,22 +281,28 @@ export function detectFurniture(pages: readonly FurniturePage[]): FurnitureResul
     const numbered = band.filter((l) => l.pageNo)
     for (const slot of slotsOf(numbered.map((l) => ({ ...l, norm: '#pageno' })))) {
       if (slot.pages.size < PAGENO_MIN_PAGES) continue
+      // a slot only re-emits when it covers most pages — a two-page fluke
+      // must not stamp a page number onto the whole document
+      const entry =
+        slot.pages.size >= repeatMin && emitted < HF_MAX_PER_BAND
+          ? pageNoHf(bandName, slot, firstTextPage)
+          : null
+      if (entry) {
+        hf.push(entry)
+        emitted++
+      }
+      // cell-data promises the data survives somewhere: a slot with no
+      // header/footer seat stays in the cells instead of vanishing
+      if (!entry && keepUnemitted) continue
       for (const line of slot.lines) {
         for (const c of line.chars) drop[line.page]!.add(c)
         droppedLines++
       }
-      // a slot only re-emits when it covers most pages — a two-page fluke
-      // must not stamp a page number onto the whole document
-      if (slot.pages.size >= repeatMin && emitted < HF_MAX_PER_BAND) {
-        const entry = pageNoHf(bandName, slot, firstTextPage)
-        if (entry) {
-          hf.push(entry)
-          emitted++
-        }
-      }
     }
+    const consumed = new Set<BandLine>()
     for (const slot of slotsOf(band.filter((l) => !l.pageNo))) {
       if (slot.pages.size < repeatMin) continue
+      for (const l of slot.lines) consumed.add(l)
       const entry = emitted < HF_MAX_PER_BAND ? textHf(bandName, slot, firstTextPage) : null
       const ordered = [...slot.lines].sort((a, b) => a.page - b.page)
       if (entry) {
@@ -305,12 +314,32 @@ export function detectFurniture(pages: readonly FurniturePage[]): FurnitureResul
           for (const c of line.chars) drop[line.page]!.add(c)
           droppedLines++
         }
-      } else {
+      } else if (!keepUnemitted) {
         // keep the first occurrence — headers usually carry real content once
         for (const line of ordered.slice(1)) {
           for (const c of line.chars) drop[line.page]!.add(c)
           droppedLines++
         }
+      }
+    }
+    // page-tracking mixed headers (P30 B): "Form X (Rev. …) Page N" repeats
+    // with a varying page number, so the verbatim pass above never groups it.
+    // Digit-masked grouping + the pageNoHf tracking proof (some digit run
+    // equals the physical page number on every probe) identifies it without
+    // reviving the digit-normalized false merges ("Form No.1" vs "No.2"
+    // captions do not track the page and stay apart).
+    const masked = band
+      .filter((l) => !l.pageNo && !consumed.has(l) && /[0-9０-９]/.test(l.norm))
+      .map((l) => ({ ...l, norm: l.norm.replace(/[0-9０-９]+/g, '#') }))
+    for (const slot of slotsOf(masked)) {
+      if (slot.pages.size < repeatMin || emitted >= HF_MAX_PER_BAND) continue
+      const entry = pageNoHf(bandName, slot, firstTextPage)
+      if (!entry) continue
+      hf.push(entry)
+      emitted++
+      for (const line of slot.lines) {
+        for (const c of line.chars) drop[line.page]!.add(c)
+        droppedLines++
       }
     }
   }

@@ -59,6 +59,22 @@ describe('computeListMarkers', () => {
     expect(markers).toEqual(['1.', '1.1', '1.2', 'a)', '2.', '2.1'])
   })
 
+  it('a sub-level item instantiates untouched shallower levels at their start', () => {
+    // Word: "1.1"-style items before any level-0 item consume the level-0
+    // start value, so the first explicit level-0 item numbers as 2.
+    const markers = computeListMarkers(
+      [
+        { numId: '1', ilvl: 1 },
+        { numId: '1', ilvl: 1 },
+        { numId: '1', ilvl: 0 },
+        { numId: '1', ilvl: 1 },
+        { numId: '1', ilvl: 0 },
+      ],
+      defs(DECIMAL_3LVL),
+    )
+    expect(markers).toEqual(['1.1', '1.2', '2.', '2.1', '3.'])
+  })
+
   it('continues numbering across interleaved plain paragraphs', () => {
     const markers = computeListMarkers(
       [

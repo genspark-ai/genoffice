@@ -43,6 +43,13 @@ const VETO_LINE_MIN_CHARS = 6
 const VETO_LINE_MIN_WIDTH_PT = 60
 /** chars at or above this share of the page's dominant font size are "body" */
 const VETO_BODY_SIZE_RATIO = 0.75
+/**
+ * …but never below this absolute size (pt): on a diagram-only page the
+ * dominant font IS the annotation font (GEO5 reports: 4.5pt callouts), and a
+ * relative-only threshold reads scattered chart labels as body paragraphs —
+ * real running text is not set at 4-6pt
+ */
+const VETO_ABS_MIN_FONT_PT = 6.5
 
 /** count body-size text lines (grouped by baseline) inside a region */
 function bodyTextLineCount(
@@ -51,8 +58,9 @@ function bodyTextLineCount(
   pageBodySize: number,
 ): number {
   const rows = new Map<number, { count: number; x0: number; x1: number }>()
+  const bodyMin = Math.max(VETO_BODY_SIZE_RATIO * pageBodySize, VETO_ABS_MIN_FONT_PT)
   for (const c of visibleChars) {
-    if (c.fontSize < VETO_BODY_SIZE_RATIO * pageBodySize) continue
+    if (c.fontSize < bodyMin) continue
     if (!centerInside(c.box, region)) continue
     // quantize the baseline to half the font size so one visual line = one bucket
     const key = Math.round(c.originY / Math.max(1, pageBodySize / 2))

@@ -69,6 +69,70 @@ describe('XLSX Rust sidecar', () => {
     }
   })
 
+  it('normalizes CRLF line breaks in shared and inline strings to LF', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      `<?xml version="1.0"?>
+      <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+      </workbook>`,
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      `<?xml version="1.0"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1"
+          Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+          Target="worksheets/sheet1.xml"/>
+      </Relationships>`,
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      `<?xml version="1.0"?>
+      <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+        <dimension ref="A1:B1"/>
+        <sheetData><row r="1">
+          <c r="A1" t="s"><v>0</v></c>
+          <c r="B1" t="inlineStr"><is><t xml:space="preserve">Inline\r\nBreak</t></is></c>
+        </row></sheetData>
+      </worksheet>`,
+    )
+    zip.file(
+      'xl/sharedStrings.xml',
+      `<?xml version="1.0"?>
+      <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+        <si><t xml:space="preserve">Shared\r\nBreak</t></si>
+      </sst>`,
+    )
+
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-sidecar-crlf-'))
+    const path = join(directory, 'crlf.xlsx')
+    await writeFile(path, await zip.generateAsync({ type: 'nodebuffer' }))
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    let sessionId: string | null = null
+    try {
+      const opened = openResultSchema.parse(await client.open(path))
+      sessionId = opened.sessionId
+      const result = workbookRangeResultSchema.parse(
+        await client.readRange({
+          sessionId,
+          sheetId: 'sheet-1',
+          range: { startRow: 0, endRow: 0, startColumn: 0, endColumn: 1 },
+        }),
+      )
+      expect(result.cells).toEqual([
+        { row: 0, column: 0, value: 'Shared\nBreak' },
+        { row: 0, column: 1, value: 'Inline\nBreak' },
+      ])
+    } finally {
+      if (sessionId) await client.close(sessionId)
+      client.stop()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('opens a blankXlsxBuffer workbook and saves a first edit into it', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'xlsx-sidecar-blank-'))
     const sourcePath = join(directory, 'blank.xlsx')

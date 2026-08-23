@@ -24,6 +24,30 @@ const COORDINATE_SHIFTING_OPS = new Set([
   'move-rows',
 ])
 
+/**
+ * #VALUE! from a formula built only of literals, references and operators is
+ * the engine's own arithmetic verdict (text the coercion rules reject, like
+ * Excel recalculating "76,92"+…), not a capability gap — the file cache must
+ * not mask it. Functions, defined names and structured/external refs keep
+ * the fallback: those are where the engine errors where Excel would not.
+ */
+export function isPlainArithmeticFormula(formula: string): boolean {
+  let body = formula.startsWith('=') ? formula.slice(1) : formula
+  body = body.replace(/"(?:[^"]|"")*"/g, '""').replace(/\$/g, '')
+  // Structured/external refs, array literals and spill refs are not "plain".
+  if (/[[{#]/.test(body)) return false
+  body = body.replace(/'(?:[^']|'')*'!/g, '').replace(/[A-Za-z_][\w.]*!/g, '')
+  // Scientific literals (1E-3) would otherwise shed a bare E token.
+  body = body.replace(/(?<![\w.])\d+(?:\.\d+)?E[+-]?\d+/gi, '0')
+  for (const match of body.matchAll(/[A-Za-z_][\w.]*/g)) {
+    const token = match[0]
+    // A ref-shaped name followed by "(" is a function call (LOG10, ...).
+    if (/^\s*\(/.test(body.slice((match.index ?? 0) + token.length))) return false
+    if (!/^[A-Za-z]{1,3}\d+$/.test(token) && !/^(?:TRUE|FALSE)$/i.test(token)) return false
+  }
+  return true
+}
+
 export function installCachedValueFallbackInterceptor(
   runtime: UniverRuntime,
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null },
@@ -37,6 +61,10 @@ export function installCachedValueFallbackInterceptor(
       const value = cell?.v
       if (typeof value !== 'string' || !ERROR_TYPE_SET.has(value as ErrorType)) {
         return next(cell)
+      }
+      if (value === ErrorType.VALUE) {
+        const formula = location.rawData?.f
+        if (typeof formula === 'string' && isPlainArithmeticFormula(formula)) return next(cell)
       }
       const state = lazyWorkbookRef.current
       if (!state) return next(cell)

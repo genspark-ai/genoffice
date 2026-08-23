@@ -150,18 +150,24 @@ export function submitNewComment(ctx: ReviewContext, text: string): void {
 }
 
 /** Reply to a comment: the new entry carries parentId; the anchor shares the parent comment's range */
-export function replyToComment(ctx: ReviewContext, parentId: string, text: string): void {
-  if (!ctx.editor) return
+export function replyToComment(
+  ctx: ReviewContext,
+  parentId: string,
+  text: string,
+  author = 'User',
+): boolean {
+  if (!ctx.editor) return false
   const id = nextCommentId(ctx.comments)
   if (!addReplyToCommentRange(ctx.editor, parentId, id)) {
     ctx.setStatus(t('appCommentAnchorGone'))
-    return
+    return false
   }
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-  ctx.setComments((prev) => [...prev, { id, author: 'User', date: now, text, parentId }])
+  ctx.setComments((prev) => [...prev, { id, author, date: now, text, parentId }])
   ctx.setCommentsDirty(true)
   ctx.dirtyRef.current = true
   ctx.setStatus(t('appCommentReplied'))
+  return true
 }
 
 /** Resolve/reopen: the whole thread (parent + replies) gets done set together */

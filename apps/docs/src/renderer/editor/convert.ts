@@ -36,11 +36,14 @@ import {
   type SectionInfo,
   type TableCell,
   type TableModel,
+  type TableParagraph,
   type TextboxDisplay,
   type TextboxParaPatch,
+  type TextboxParasPatchSet,
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
-import { maxWordWidthPx, textHasComplexScript } from '../line-metrics'
+import { charScaleEm, maxWordWidthPx, textHasComplexScript } from '../line-metrics'
+import { firstStrongDir } from './direction'
 import { inlineMathML } from './equation'
 import { isStraightLineKind } from './shape-svg'
 
@@ -80,7 +83,18 @@ export function blocksToPmDoc(blocks: Block[], sections?: SectionInfo[]): PmNode
   return { type: 'doc', content }
 }
 
-function formatAttrs(format: ParaFormat | undefined): Record<string, unknown> {
+/** Word lays out RTL-script / run-rtl paragraphs with an RTL base direction even
+ * without w:bidi (HTML-converted docs omit it). The first strong character wins
+ * (dir=auto semantics); run w:rtl only decides weak-only text. Render-only: never
+ * written back, and never subject to the explicit-bidi jc left/right swap. */
+export function inferredBidi(format: ParaFormat | undefined, runs: Run[] | undefined): boolean {
+  if (format?.bidi || !runs?.length) return false
+  const strong = firstStrongDir(runs.map((r) => r.text).join(''))
+  if (strong) return strong === 'rtl'
+  return runs.some((r) => r.rtl)
+}
+
+function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<string, unknown> {
   return {
     align: format?.align ?? null,
     lineSpacing: format?.lineSpacing ?? null,
@@ -91,6 +105,9 @@ function formatAttrs(format: ParaFormat | undefined): Record<string, unknown> {
     indentFirstLine: format?.indentFirstLine ?? null,
     spaceBefore: format?.spaceBefore ?? null,
     spaceAfter: format?.spaceAfter ?? null,
+    spaceBeforeAuto: format?.spaceBeforeAuto ?? null,
+    spaceAfterAuto: format?.spaceAfterAuto ?? null,
+    contextualSpacing: format?.contextualSpacing ?? null,
     pageBreakBefore: format?.pageBreakBefore ?? false,
     shadingFill: format?.shadingFill ?? null,
     borders: format?.borders ?? null,
@@ -98,6 +115,7 @@ function formatAttrs(format: ParaFormat | undefined): Record<string, unknown> {
     tabStops: format?.tabStops ? JSON.stringify(format.tabStops) : null,
     dropCap: format?.dropCap ? JSON.stringify(format.dropCap) : null,
     bidi: format?.bidi ?? false,
+    bidiInferred: inferredBidi(format, runs),
     autoSpace: format?.autoSpace ?? null,
     snapToGrid: format?.snapToGrid ?? null,
     emptyRunSize: format?.emptyRunSizeHalfPoints ?? null,
@@ -271,6 +289,15 @@ export function clampTableColWidths(model: TableModel, capTwips: number): TableM
   return withColWidths(model, rows, widthsChanged ? widths : undefined)
 }
 
+/**
+ * Browser fallback faces run wider than the 0.52em heuristic average (Arial /
+ * Helvetica digits and most lowercase advance 0.556em, +7%); an under-floored
+ * column re-shatters the very word the floor exists for (RFP sample: two-digit
+ * row numbers broke one digit per line; Word grants that column ~11% over the
+ * estimate).
+ */
+const MIN_CONTENT_SLACK = 1.08
+
 /** per grid column (twips): widest unbreakable word in single-span cells, plus side padding */
 function minContentColTwips(model: TableModel, colCount: number): number[] {
   const mins = new Array<number>(colCount).fill(0)
@@ -286,17 +313,25 @@ function minContentColTwips(model: TableModel, colCount: number): number[] {
       if (wordPx <= 0) continue
       const mar = cell.cellMarTwips ?? model.cellMarTwips
       const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
-      mins[start] = Math.max(mins[start], Math.ceil(wordPx * 15) + pad)
+      mins[start] = Math.max(mins[start], Math.ceil(wordPx * MIN_CONTENT_SLACK * 15) + pad)
     }
   }
   return mins
 }
 
+/** paragraph indent inside a cell eats line width like the word itself does;
+ * list fallbacks mirror the .doc-li per-level CSS defaults (0.55in + 0.3in/level) */
+function paraIndentPx(para: TableParagraph): number {
+  const leftTw = para.indentLeft ?? (para.list ? 792 + 432 * (para.list.ilvl || 0) : 0)
+  const firstTw = Math.max(para.indentFirstLine ?? 0, 0)
+  return Math.max(leftTw + firstTw, 0) / 15
+}
+
 function cellMaxWordPx(cell: TableCell): number {
-  const runs: Parameters<typeof maxWordWidthPx>[0] = []
+  let max = 0
   if (cell.richParas?.length) {
     for (const para of cell.richParas) {
-      if (runs.length) runs.push({ text: '\n' })
+      const runs: Parameters<typeof maxWordWidthPx>[0] = []
       for (const r of para.runs) {
         if (!r.text) continue
         runs.push({
@@ -307,14 +342,16 @@ function cellMaxWordPx(cell: TableCell): number {
           ...(r.italic ? { italic: true } : {}),
         })
       }
+      if (!runs.length) continue
+      max = Math.max(max, maxWordWidthPx(runs) + paraIndentPx(para))
     }
   } else {
     for (const text of cell.paras) {
-      if (runs.length) runs.push({ text: '\n' })
-      if (text) runs.push({ text, ...(cell.bold ? { bold: true } : {}) })
+      if (!text) continue
+      max = Math.max(max, maxWordWidthPx([{ text, ...(cell.bold ? { bold: true } : {}) }]))
     }
   }
-  return runs.length ? maxWordWidthPx(runs) : 0
+  return max
 }
 
 /**
@@ -335,7 +372,20 @@ export function expandAutofitColWidths(
   const budget = availTwips - indent
   let widths = model.colWidthsTwips
   let widthsChanged = false
-  if (model.autoLayout && !model.widthPct && widths?.length && budget > 0) {
+  // pct-width autofit tables: the min-content floor applies to the resolved
+  // widths (Word never wraps below the widest word even when w:tblW is a tiny
+  // percentage); growth converts the table to absolute widths for display.
+  // pct resolves against the full text column — the render path draws
+  // width:N% of the content box and applies the indent as a margin
+  let resolvedPct = false
+  if (model.autoLayout && model.widthPct && model.colWidthsPct?.length && budget > 0) {
+    const tableW = (Math.min(fitTwips, availTwips) * model.widthPct) / 100
+    if (tableW > 0) {
+      widths = model.colWidthsPct.map((p) => Math.round((p / 100) * tableW))
+      resolvedPct = true
+    }
+  }
+  if (model.autoLayout && (resolvedPct || !model.widthPct) && widths?.length && budget > 0) {
     const mins = minContentColTwips(model, widths.length).map((m) => Math.min(m, budget))
     if (mins.some((m, i) => m > widths![i])) {
       const declared = widths.reduce((a, b) => a + b, 0)
@@ -372,7 +422,9 @@ export function expandAutofitColWidths(
     expandAutofitColWidths,
   )
   if (!widthsChanged && !rowsChanged) return model
-  return withColWidths(model, rows, widthsChanged ? widths : undefined)
+  const result = withColWidths(model, rows, widthsChanged ? widths : undefined)
+  if (widthsChanged && resolvedPct) delete result.widthPct
+  return result
 }
 
 function displayTable(
@@ -411,7 +463,7 @@ function blockToPmNode(
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
-          ...formatAttrs(block.format),
+          ...formatAttrs(block.format, block.runs),
         },
         content: runsToInline(block.runs ?? []),
       }
@@ -432,7 +484,7 @@ function blockToPmNode(
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
-          ...formatAttrs(block.format),
+          ...formatAttrs(block.format, block.runs),
         },
         content: runsToInline(block.runs ?? []),
       }
@@ -452,7 +504,7 @@ function blockToPmNode(
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
-          ...formatAttrs(block.format),
+          ...formatAttrs(block.format, block.runs),
         },
         content: runsToInline(block.runs ?? []),
       }
@@ -677,7 +729,7 @@ function cellContentNodes(cell: TableCell): PmNode[] {
       ? {
           type: 'docListItem',
           attrs: {
-            ...formatAttrs(paragraph),
+            ...formatAttrs(paragraph, paragraph.runs),
             styleId,
             kind: list.kind,
             numId: list.numId,
@@ -687,21 +739,37 @@ function cellContentNodes(cell: TableCell): PmNode[] {
         }
       : {
           type: 'docParagraph',
-          attrs: { ...formatAttrs(paragraph), styleId },
+          attrs: { ...formatAttrs(paragraph, paragraph.runs), styleId },
           content: runsToInline(paragraph.runs),
         }
   })
   // fidelity on save comes from the outer table's bytes; reverse insertion keeps anchors valid
+  const inserts: Array<{ at: number; node: PmNode }> = []
   const nested = cell.nestedTables ?? []
-  const content = [...paraNodes]
-  for (let i = nested.length - 1; i >= 0; i--) {
-    const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraNodes.length, paraNodes.length)
-    content.splice(at, 0, { type: 'docNestedTable', attrs: { model: nested[i] } })
+  for (let i = 0; i < nested.length; i++) {
+    inserts.push({
+      at: Math.min(cell.nestedTableAnchors?.[i] ?? paraNodes.length, paraNodes.length),
+      node: { type: 'docNestedTable', attrs: { model: nested[i] } },
+    })
   }
-  // anchored shapes/textboxes in the cell (display-only): a leading zero-width
-  // float strut, so the row height becomes max(text, boxes) exactly like Word
-  if (cell.anchoredBoxes?.length) {
-    content.unshift({ type: 'docCellBoxes', attrs: { boxes: cell.anchoredBoxes } })
+  // anchored shapes/textboxes (display-only): a zero-width float strut before
+  // each group's anchor paragraph, so the boxes' positionV offsets resolve from
+  // that paragraph like Word and the row grows to max(text, boxes)
+  const boxes = cell.anchoredBoxes ?? []
+  const boxGroups = new Map<number, TextboxDisplay[]>()
+  for (let i = 0; i < boxes.length; i++) {
+    const at = Math.min(cell.anchoredBoxAnchors?.[i] ?? 0, paraNodes.length)
+    const group = boxGroups.get(at)
+    if (group) group.push(boxes[i])
+    else boxGroups.set(at, [boxes[i]])
+  }
+  for (const [at, group] of boxGroups) {
+    inserts.push({ at, node: { type: 'docCellBoxes', attrs: { boxes: group } } })
+  }
+  const content = [...paraNodes]
+  inserts.sort((a, b) => a.at - b.at)
+  for (let i = inserts.length - 1; i >= 0; i--) {
+    content.splice(inserts[i].at, 0, inserts[i].node)
   }
   return content
 }
@@ -835,14 +903,18 @@ export function pmTableToModel(table: PmNode): TableModel {
       const nestedModels: TableModel[] = []
       const nestedAnchors: number[] = []
       let paraCount = 0
-      let cellBoxes: TableCell['anchoredBoxes']
+      const cellBoxes: TextboxDisplay[] = []
+      const cellBoxAnchors: number[] = []
       for (const n of cellNode.content ?? []) {
         if (n.type === 'docParagraph' || n.type === 'docListItem') paraCount++
         else if (n.type === 'docNestedTable' && n.attrs?.model) {
           nestedModels.push(n.attrs.model as TableModel)
           nestedAnchors.push(paraCount)
         } else if (n.type === 'docCellBoxes' && Array.isArray(n.attrs?.boxes)) {
-          cellBoxes = n.attrs.boxes as TableCell['anchoredBoxes']
+          for (const box of n.attrs.boxes as TextboxDisplay[]) {
+            cellBoxes.push(box)
+            cellBoxAnchors.push(paraCount)
+          }
         }
       }
       entries.push({
@@ -866,7 +938,9 @@ export function pmTableToModel(table: PmNode): TableModel {
           ...(nestedModels.length > 0
             ? { nestedTables: nestedModels, nestedTableAnchors: nestedAnchors }
             : {}),
-          ...(cellBoxes?.length ? { anchoredBoxes: cellBoxes } : {}),
+          ...(cellBoxes.length > 0
+            ? { anchoredBoxes: cellBoxes, anchoredBoxAnchors: cellBoxAnchors }
+            : {}),
           colSpan: colspan > 1 ? colspan : undefined,
           vMerge: rowspan > 1 ? 'restart' : undefined,
         },
@@ -911,29 +985,6 @@ export function pmTableToModel(table: PmNode): TableModel {
     // tblPr untouched so unmapped w:jc values (e.g. 'start') survive rebuilds
     ...(table.attrs?.tblAlign ? { align: table.attrs.tblAlign as TableModel['align'] } : {}),
   }
-}
-
-/**
- * w:w horizontal character scaling → letter-spacing approximation (em): estimate,
- * from the run text's average character width, how much layout width to add or
- * remove per character. Error is tiny for monospaced CJK; glyphs themselves are not scaled.
- */
-function charScaleEm(text: string, scalePct: number): number {
-  let sum = 0
-  let n = 0
-  for (const ch of text) {
-    const cp = ch.codePointAt(0)!
-    const wide =
-      (cp >= 0x2e80 && cp <= 0x9fff) ||
-      (cp >= 0xac00 && cp <= 0xd7af) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xff00 && cp <= 0xff60) ||
-      cp >= 0x20000
-    sum += wide ? 1 : 0.52
-    n++
-  }
-  const avg = n > 0 ? sum / n : 0.52
-  return Math.round((scalePct / 100 - 1) * avg * 1000) / 1000
 }
 
 export function runsToInline(runs: Run[]): PmNode[] {
@@ -1460,12 +1511,12 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
           genTextboxes.length > 0 &&
           genTextboxes.some((box) => box.paras.some((p) => p.runs.some((r) => r.text !== '')))
         if (hasNonEmptyTextbox) {
-          xml = patchTextboxParas(
-            xml,
-            genTextboxes!.map((box) =>
+          // editor-built XML has exactly one txbxContent per box, in box order
+          xml = patchTextboxParas(xml, {
+            byIndex: genTextboxes!.map((box) =>
               box.paras.map((p) => ({ runs: mergeRuns(p.runs), align: p.align ?? null })),
             ),
-          )
+          })
         }
         // persist resize/autogrow of newly-inserted single-box shapes/lines;
         // horizontal lines keep their zero-height extent (display box is a grab band)
@@ -1531,8 +1582,17 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
             ? { extentPx: { w: display.widthPx, h: display.heightPx } }
             : {}),
         })
+      } else {
+        // picture that traveled through clipboard HTML (r136 cross-document
+        // paste): no anchor and no genImage — rebuild from the preview bytes
+        // or it silently vanishes on save
+        const image = imageFromProtectedAttrs(node)
+        if (image) {
+          changedCount++
+          pushBlock({ kind: 'image', image })
+        }
       }
-      // protected node without an anchor or generated payload cannot be regenerated; drop it
+      // any other protected node without an anchor or generated payload cannot be regenerated; drop it
       continue
     }
 
@@ -1887,35 +1947,53 @@ export function textboxParaSignature(para: TextboxDisplay['paras'][number]): str
   return JSON.stringify([para.align ?? null, normalizedRuns(para.runs)])
 }
 
+/** all-empty sub-editor content counts as "still no text" for a paras:[] box */
+function boxStillEmpty(paras: TextboxDisplay['paras']): boolean {
+  return paras.every((p) => p.runs.every((r) => r.text === ''))
+}
+
 /**
- * Per-box, per-paragraph rich-run patches on an original textbox block; null
- * when untouched. Unchanged paragraphs stay null so the engine keeps their
- * original bytes.
+ * Per-box, per-paragraph rich-run patches on an original textbox block,
+ * addressed by the box's txbxIndex (or shapeId for a box gaining its first
+ * text); null when untouched. Unchanged paragraphs stay null so the engine
+ * keeps their original bytes.
  */
-function textboxParasPatch(
-  node: PmNode,
-  original: Block,
-): ((TextboxParaPatch | null)[] | null)[] | null {
+function textboxParasPatch(node: PmNode, original: Block): TextboxParasPatchSet | null {
   const current = node.attrs?.textboxes as TextboxDisplay[] | null
   const orig = original.textboxes
   if (!current || !orig || current.length !== orig.length) return null
-  let changed = false
-  const boxes = current.map((box, i) => {
-    const origParas = orig[i].paras
+  const byIndex: (TextboxParaPatch | null)[][] = []
+  const inject: Array<{ shapeId: string; paras: TextboxParaPatch[] }> = []
+  current.forEach((box, i) => {
+    const origBox = orig[i]
+    const origParas = origBox.paras
     const same =
       box.paras.length === origParas.length &&
       box.paras.every((p, j) => textboxParaSignature(p) === textboxParaSignature(origParas[j]))
-    if (same) return null
-    changed = true
-    return box.paras.map((p, j) => {
-      if (j < origParas.length && textboxParaSignature(p) === textboxParaSignature(origParas[j])) {
-        return null
-      }
-      // align is always explicit so a removed alignment also clears w:jc
-      return { runs: mergeRuns(p.runs), align: p.align ?? null }
-    })
+    if (same || (origParas.length === 0 && boxStillEmpty(box.paras))) return
+    if (origBox.txbxIndex !== undefined) {
+      byIndex[origBox.txbxIndex] = box.paras.map((p, j) => {
+        if (
+          j < origParas.length &&
+          textboxParaSignature(p) === textboxParaSignature(origParas[j])
+        ) {
+          return null
+        }
+        // align is always explicit so a removed alignment also clears w:jc
+        return { runs: mergeRuns(p.runs), align: p.align ?? null }
+      })
+    } else if (origBox.shapeId) {
+      inject.push({
+        shapeId: origBox.shapeId,
+        paras: box.paras.map((p) => ({ runs: mergeRuns(p.runs), align: p.align ?? null })),
+      })
+    }
   })
-  return changed ? boxes : null
+  if (byIndex.length === 0 && inject.length === 0) return null
+  return {
+    ...(byIndex.length > 0 ? { byIndex } : {}),
+    ...(inject.length > 0 ? { inject } : {}),
+  }
 }
 
 function textboxSizesPatch(node: PmNode, original: Block): (TextboxSizePatch | null)[] | null {
@@ -2010,6 +2088,12 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.indentFirstLine) format.indentFirstLine = Number(node.attrs.indentFirstLine)
   if (node.attrs?.spaceBefore != null) format.spaceBefore = Number(node.attrs.spaceBefore)
   if (node.attrs?.spaceAfter != null) format.spaceAfter = Number(node.attrs.spaceAfter)
+  if (node.attrs?.spaceBeforeAuto != null)
+    format.spaceBeforeAuto = node.attrs.spaceBeforeAuto as boolean
+  if (node.attrs?.spaceAfterAuto != null)
+    format.spaceAfterAuto = node.attrs.spaceAfterAuto as boolean
+  if (node.attrs?.contextualSpacing != null)
+    format.contextualSpacing = node.attrs.contextualSpacing as boolean
   if (node.attrs?.pageBreakBefore) format.pageBreakBefore = true
   if (node.attrs?.bidi) format.bidi = true
   if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as boolean

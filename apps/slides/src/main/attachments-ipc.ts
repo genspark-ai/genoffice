@@ -60,6 +60,7 @@ const ATTACHMENT_EXTS = new Set([
   'pptx',
   'ppt',
   'xlsx',
+  'xlsm',
   'xls',
   ...ATTACHMENT_IMAGE_EXTS,
 ])

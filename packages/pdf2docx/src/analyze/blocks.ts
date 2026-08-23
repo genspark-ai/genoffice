@@ -191,6 +191,15 @@ function inferFormat(
   const rightAligned = spread(rights) <= tol
   const centerAligned = spread(centers) <= tol
 
+  // centered stack (P30 A): shared centers with scattered lefts AND rights,
+  // floating clear of the body's left edge. Checked before the left test —
+  // a two-line group's leftAligned is vacuous (one body line), so a centered
+  // title pair used to read as "left + huge first-line indent" and reflow.
+  const floating = Math.min(...lefts) - body.bodyLeft > tol
+  if (centerAligned && spread(lefts) > tol && spread(rights) > tol && floating) {
+    return { align: 'center', firstLineIndentPt: 0 }
+  }
+
   let align: TextBlock['align'] = 'left'
   if (!leftAligned && rightAligned) align = 'right'
   else if (!leftAligned && !rightAligned && centerAligned) align = 'center'

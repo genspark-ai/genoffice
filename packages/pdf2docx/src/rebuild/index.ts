@@ -34,6 +34,7 @@ import type {
   TextboxContentParagraph,
 } from '../../../docx-engine/src/index'
 import type { FurnitureHf } from '../analyze/furniture'
+import { rowBoundaries } from '../analyze/panels'
 import { detectCellHAlign } from '../analyze/table'
 import { preflightFitBlock } from './fit'
 import { applyOutputFontSubstitutions } from './fontmap'
@@ -421,8 +422,11 @@ function blockFormat(block: TextBlock, heightScale = 1): ParaFormat {
   // baseline-span pitch was tried for pinned verse stacks (P22 E) and
   // reverted: hard-break stacks from the slide/list machinery drifted
   // whole form/deck pages for a ~0.001 poems gain.
+  // stitched continuation lines (P32) live outside the native ink box —
+  // pitch derives from the native lines only, or the line height collapses
+  const nativeLines = Math.min(block.lines.length, block.stitchedFromLine ?? Infinity)
   const measuredPitchTwips = Math.round(
-    (rectHeight(block.box) / Math.max(1, block.lines.length)) * PT_TO_TWIPS,
+    (rectHeight(block.box) / Math.max(1, nativeLines)) * PT_TO_TWIPS,
   )
   // font-based floor, SINGLE-line blocks only: a lone line's ink box is all
   // the pitch information there is, and it understates the em — exact then
@@ -430,8 +434,12 @@ function blockFormat(block: TextBlock, heightScale = 1): ParaFormat {
   // multi-line box already spans its inter-line leading, so its measured
   // pitch is trusted as-is — flooring it to the tallest span re-inflates
   // dense mixed-size text into extra pages.
+  const nativeMaxFontPt = Math.max(
+    ...block.lines.slice(0, nativeLines).flatMap((l) => l.spans.map((sp) => sp.fontSize)),
+    1,
+  )
   const fontFloorTwips =
-    block.lines.length <= 1 ? Math.round(maxFontSizePt(block) * LINE_LEADING * PT_TO_TWIPS) : 0
+    nativeLines <= 1 ? Math.round(nativeMaxFontPt * LINE_LEADING * PT_TO_TWIPS) : 0
   // whole-page compression (P9 C) applies AFTER the floors: on a page whose
   // block heights alone exceed the budget every pitch shrinks by one factor
   const lineTwips = Math.max(MIN_LINE_TWIPS, measuredPitchTwips, fontFloorTwips)
@@ -767,6 +775,30 @@ function rowHeightTwips(row: TableBlock['rows'][number]): number | null {
   return Math.max(1, Math.round(Math.min(...heights) * PT_TO_TWIPS))
 }
 
+/**
+ * Per-row heights from the grid's row boundaries. Rows whose every cell is a
+ * vMerge restart/continue have no own-height cell — rowHeightTwips returns
+ * null, the budget model counted them as ZERO, and the emitted table carried
+ * no trHeight for them (a JA form's 424pt table modeled as 217pt while Word
+ * auto-sized the merge bands taller). Falls back per row when the boundary
+ * recovery fails.
+ */
+function tableRowHeightsPt(block: TableBlock): Array<number | null> {
+  const perRow = block.rows.map((row) => {
+    const twips = rowHeightTwips(row)
+    return twips === null ? null : twips / PT_TO_TWIPS
+  })
+  if (!perRow.some((h) => h === null)) return perRow
+  const ys = rowBoundaries(block)
+  if (ys === null || ys.length !== block.rows.length + 1) return perRow
+  const bounds = block.rows.map((_, i) => Math.max(1, ys[i]! - ys[i + 1]!))
+  // trust the recovery only when it reproduces the measured table extent
+  const sum = bounds.reduce((a, b) => a + b, 0)
+  const boxH = rectHeight(block.box)
+  if (Math.abs(sum - boxH) > Math.max(4, boxH * 0.02)) return perRow
+  return perRow.map((h, i) => h ?? bounds[i]!)
+}
+
 /** stream/form (borderless) tables carry explicit none-borders */
 const NO_BORDER = { style: 'none' } as const
 const NO_BORDERS = {
@@ -931,8 +963,8 @@ function tableToSave(
     colWidthsTwips: block.colWidthsPt.map((w) => Math.max(1, Math.round(w * PT_TO_TWIPS))),
     // measured heights keep the docx table's extent close to the PDF's
     // (w:trHeight hRule=atLeast — content may still grow a row)
-    rowHeightsTwips: block.rows.map((row) => {
-      const h = rowHeightTwips(row)
+    rowHeightsTwips: tableRowHeightsPt(block).map((heightPt) => {
+      const h = heightPt === null ? null : Math.max(1, Math.round(heightPt * PT_TO_TWIPS))
       if (h === null) return null
       // bordered rows render trHeight + the horizontal border width in
       // LibreOffice — deduct it or a 35-row form grows ~18pt (P16 H)
@@ -1179,9 +1211,10 @@ function columnWidthsPt(section: PageSection, geo: PageGeometry): number[] {
 function signatureOf(section: PageSection, geo: PageGeometry, page: IrPage): SectionSignature {
   const n = section.columns.length
   if (n <= 1) return singleColumnSig(page)
-  // IR columns are in reading order; docx wants layout order
-  const layoutCols = section.dir === 'rtl' ? [...section.columns].reverse() : section.columns
-  const widths = layoutCols.map((c) => Math.max(rectWidth(c.box), 1))
+  // w:col entries are in FLOW order: under <w:bidi/> Word places the first
+  // one at the RIGHT edge, so reading order maps 1:1 — never reverse (a
+  // reversed list hands the sidebar width to the body column and vice versa)
+  const widths = section.columns.map((c) => Math.max(rectWidth(c.box), 1))
   const gutters =
     section.gutterWidthsPt.length === n - 1
       ? section.gutterWidthsPt
@@ -1644,13 +1677,13 @@ function flowBlockHeightPt(block: PageBlock, geo: PageGeometry, heightScale = 1)
       block.border && block.lines.length === 0
         ? TIGHT_LINE_TWIPS
         : (blockFormat(block, heightScale).lineRawTwips ?? MIN_LINE_TWIPS)
-    return (Math.max(1, block.lines.length) * lineTwips) / PT_TO_TWIPS
+    // stitched continuation lines flow past the page boundary (P32): only
+    // the native lines charge this page's budget
+    const ownLines = Math.min(block.lines.length, block.stitchedFromLine ?? Infinity)
+    return (Math.max(1, ownLines) * lineTwips) / PT_TO_TWIPS
   }
   if (block.kind === 'table') {
-    return (
-      (block.rows.reduce((sum, row) => sum + (rowHeightTwips(row) ?? 0), 0) / PT_TO_TWIPS) *
-      heightScale
-    )
+    return tableRowHeightsPt(block).reduce((sum: number, h) => sum + (h ?? 0), 0) * heightScale
   }
   const boxW = Math.max(1, rectWidth(block.box))
   const displayW = Math.min(boxW, geo.contentWidthPt) * heightScale
@@ -1683,7 +1716,10 @@ function lineSurplusPt(block: PageBlock): number {
   if (block.kind !== 'text' || block.lines.length === 0) return 0
   if (maxFontSizePt(block) > SURPLUS_FONT_MAX_PT) return 0
   const lineTwips = blockFormat(block).lineRawTwips ?? MIN_LINE_TWIPS
-  return Math.max(0, (lineTwips * block.lines.length) / PT_TO_TWIPS - rectHeight(block.box))
+  // stitched continuations (P32) sit outside the native ink box: surplus
+  // compares like with like — native lines against the native box
+  const ownLines = Math.min(block.lines.length, block.stitchedFromLine ?? Infinity)
+  return Math.max(0, (lineTwips * ownLines) / PT_TO_TWIPS - rectHeight(block.box))
 }
 
 /** pages built by hand (tests) may lack sections — wrap their flat blocks */
@@ -1752,6 +1788,13 @@ export function pagesToSaveBlocks(
     // start instead; single-column runs keep flowing (pageBreakBefore works).
     if (!forceClose && sameSignature(curSig, sig) && !(atPageStart && sig.columns > 1)) return
     forceClose = false
+    // a continuous section MUST repeat the open section's exact page dims:
+    // measured page sizes drift a fraction of a pt between source pages, and
+    // Word promotes a continuous break with a different w:pgSz to a page break
+    if (!atPageStart) {
+      sig.pageWidthTwips = curSig.pageWidthTwips
+      sig.pageHeightTwips = curSig.pageHeightTwips
+    }
     blocks.push(sectionBreakParagraph(curSig, geo, curStart, titlePgPending))
     titlePgPending = false
     sectionBreaks++
@@ -1762,7 +1805,8 @@ export function pagesToSaveBlocks(
   }
 
   for (const page of pages) {
-    needBreak = page.index > 0
+    // a stitched cross-page paragraph flows naturally — no explicit break (P32)
+    needBreak = page.index > 0 && page.flowsFromPrev !== true
     const pageStartBlockCount = blocks.length
 
     if ((page.scanned || page.degraded) && page.render) {
@@ -1847,7 +1891,10 @@ export function pagesToSaveBlocks(
     // the final margins are known
     let leadPt = 0
     const firstFlow = sections[0]?.columns[0]?.blocks.find((b) => !isFloatImage(b))
-    if (firstFlow) {
+    // a stitched page (P32) flows straight out of the previous paragraph:
+    // its former first block is gone, and lead measured to the NEXT block
+    // would inject the stitched paragraph's height as phantom whitespace
+    if (firstFlow && page.flowsFromPrev !== true) {
       leadPt = Math.max(0, page.heightPt - geo.marginTopPt - firstFlow.box.y1)
       if (leadPt < MIN_LEAD_EMIT_PT) leadPt = 0
     }
@@ -1911,8 +1958,15 @@ export function pagesToSaveBlocks(
     let cardPadPt = 0
     for (const s of sections) {
       let tallest = 0
+      // columns run in PARALLEL: one column's positioning chain coexists with
+      // its neighbour's block heights, so the section's true footprint is
+      // max over columns of (heights + want). Charging Σwant serially crushed
+      // a label column's 350pt chain to 30% because the content column's
+      // lines had already eaten the budget (prod_045 shaded table)
+      let tallestWithWant = 0
       for (const c of s.columns) {
         let col = 0
+        let colWant = 0
         for (const b of c.blocks) {
           if (isFloatImage(b)) continue
           // card group (P20): the whole group charges the plate's height once
@@ -1922,7 +1976,7 @@ export function pagesToSaveBlocks(
             if (!prePassCards.has(tb.cardId!)) {
               prePassCards.add(tb.cardId!)
               col += rectHeight(card.box)
-              wantTotalPt += Math.max(0, cardSpacingBeforePt(tb, card) - cardPadPt)
+              colWant += Math.max(0, cardSpacingBeforePt(tb, card) - cardPadPt)
               const members = page.blocks.filter(
                 (x): x is TextBlock => x.kind === 'text' && x.cardId === tb.cardId,
               )
@@ -1932,7 +1986,7 @@ export function pagesToSaveBlocks(
           }
           const h = flowBlockHeightPt(b, geo)
           col += h
-          wantTotalPt += Math.max(0, (b.spacingBeforePt ?? 0) - cardPadPt)
+          colWant += Math.max(0, (b.spacingBeforePt ?? 0) - cardPadPt)
           cardPadPt = 0
           if (b.kind === 'text' && b.lines.length >= 2 && wrapsAtRisk(b, rectWidth(c.box))) {
             wrapRiskPt += h / b.lines.length
@@ -1946,8 +2000,10 @@ export function pagesToSaveBlocks(
           }
         }
         tallest = Math.max(tallest, col)
+        tallestWithWant = Math.max(tallestWithWant, col + colWant)
       }
       heightsPt += tallest
+      wantTotalPt += Math.max(0, tallestWithWant - tallest)
     }
     heightsPt += wrapRiskPt
     bodyWrapRiskPt = Math.min(bodyWrapRiskPt, BODY_WRAP_RISK_CAP_PT)
@@ -1977,12 +2033,22 @@ export function pagesToSaveBlocks(
       heightsPt > usablePt
         ? Math.max((usablePt - COMPRESS_SAFETY_PT) / heightsPt, MIN_HEIGHT_SCALE)
         : 1
+    if (process.env['PDF2DOCX_DEBUG_BUDGET'] !== undefined) {
+      console.error(
+        `[budget] page ${page.index + 1} heights=${heightsPt.toFixed(1)} usable=${usablePt.toFixed(1)} ` +
+          `want=${wantTotalPt.toFixed(1)} lead=${leadPt.toFixed(1)} scale=${heightScale.toFixed(3)} ` +
+          `marginT=${geo.marginTopPt.toFixed(1)} marginB=${geo.marginBottomPt.toFixed(1)}`,
+      )
+    }
     const scaledHeightsPt = heightsPt * heightScale
-    // measured whitespace may consume half the budget slack (P16 C): the
-    // slack guards wrap growth in BLOCK heights, and crushing every gap to a
-    // fraction of its measured size lifts the whole page's rhythm upward — a
-    // bigger visual lie than the rare spilled tail line the slack prevents
-    const spacingBudgetPt = usablePt + BUDGET_SLACK_PT / 2
+    // whitespace never plans past usable (P33, revising P16 C): the old
+    // half-slack rebate let a crowded page plan up to 24pt past the budget,
+    // betting block heights render smaller than measured — on ja/ko slide
+    // decks and dense two-column reports Word renders a hair TALLER instead,
+    // and every page planned into the rebate spilled a near-empty tail page
+    // (a lone ≒ paragraph, a footer logo). Scaling the gaps a few percent
+    // tighter is invisible; the spilled ghost page is not.
+    const spacingBudgetPt = usablePt
     // the page-top lead anchors every block below it — fund it in full
     // before the inter-block gaps share what remains (P16 F): scaling the
     // lead like a gap shifted whole crushed pages upward

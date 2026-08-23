@@ -6,6 +6,7 @@
  * spreadsheet instance. Extracted from App.tsx; they hold no React state.
  */
 import {
+  BaselineOffset,
   BooleanNumber,
   BorderStyleTypes,
   CellValueType,
@@ -14,7 +15,6 @@ import {
   HorizontalAlign,
   ICommandService,
   IUndoRedoService,
-  LifecycleService,
   LifecycleStages,
   VerticalAlign,
   WrapStrategy,
@@ -22,7 +22,9 @@ import {
   type IRange,
   type IStyleData,
 } from '@univerjs/core'
-import { IRenderManagerService } from '@univerjs/engine-render'
+import { IFindReplaceService } from '@univerjs/preset-sheets-find-replace'
+import { FontCache, getFontStyleString, IRenderManagerService } from '@univerjs/engine-render'
+import { SheetSkeletonManagerService } from '@univerjs/sheets-ui'
 import { CFValueType, type IValueConfig } from '@univerjs/preset-sheets-conditional-formatting'
 
 import type {
@@ -55,6 +57,7 @@ import type {
   WorkbookVisualObject,
 } from '../shared/desktop-api'
 import {
+  escapeCssLeadingDigit,
   fromNeutralStyle,
   bulkConstantFillValueAt,
   isSheetRemoved,
@@ -74,6 +77,7 @@ import {
   recalcReadRanges,
   type ClosureSheetInput,
 } from './formula-closure'
+import { isPlainArithmeticFormula } from './formula-cached-fallback'
 import { degradeQuadraticFormulaCells } from './formula-cost'
 import { DEFAULT_SHORT_DATE, setSystemShortDate } from '../shared/short-date'
 import { getWorkbookMdw, setWorkbookMdw } from './app-constants'
@@ -109,6 +113,7 @@ import {
   CLOSURE_MAX_CELLS,
   journalSuppression,
   lazySheetScreenExtent,
+  loadAutoHeightSuppression,
   type ActiveWorkbook,
   type LazyWorkbookState,
   type PinnedClosureCell,
@@ -339,7 +344,6 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
   // A load starts from a clean history even when the unitId was used before
   // (reopening the same unchanged file reuses `file-<sha>`).
   clearUnitUndoHistory(runtime, `file-${file.sha256}`)
-  clearPendingAutoHeight()
   setWorkbookMdw(measureNormalFontMdw(file))
   setSystemShortDate(file.shortDateFormat ?? DEFAULT_SHORT_DATE)
   const created = runtime.univerAPI.createWorkbook({
@@ -652,6 +656,96 @@ export function applyAiDataValidation(
 }
 
 /// Jumps to an internal link target like `Sheet1!A1` or `'My Sheet'!B2`.
+/**
+ * scrollToCell computes its frozen-pane offset from DEFAULT row sizes, so
+ * custom-height frozen rows hide the revealed cell underneath the pane
+ * (alpha ledger r135: search/Go To landed the match behind the frozen
+ * header). Iteratively correct: if the viewport starts past the target after
+ * the scroll, re-scroll by the measured overshoot — converges immediately
+ * for uniform-height regions and stops as soon as the target is visible.
+ */
+/** newest reveal wins: rapid Find Next/Previous must not let an older
+ *  correction loop keep scrolling after a newer one started (bugbot) */
+let revealGeneration = 0
+
+export async function revealCellBelowFreeze(
+  sheet: { scrollToCell(row: number, column: number): unknown; getVisibleRange(): IRange | null },
+  row: number,
+  column: number,
+): Promise<void> {
+  // aim one row above the target: the offset error is fractional rows, so a
+  // position converged exactly on the target can still leave it half-sliced
+  // under the pane — with the predecessor as the boundary row the target is
+  // whole. Every scrollToCell call re-applies the same broken offset, so the
+  // compensation folds into one running aim; the scroll and its viewport
+  // update settle asynchronously, hence the waits between measurements.
+  const generation = ++revealGeneration
+  const aimRow = Math.max(0, row - 1)
+  let scrollRow = aimRow
+  let scrollColumn = column
+  let lastStartRow = -1
+  let lastStartColumn = -1
+  sheet.scrollToCell(scrollRow, scrollColumn)
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    if (generation !== revealGeneration) return // superseded by a newer reveal
+    let visible: IRange | null
+    try {
+      visible = sheet.getVisibleRange()
+    } catch {
+      return
+    }
+    if (!visible) return
+    // over*: the viewport starts past the aim (target hidden under the pane).
+    // under*: a correction clamped at 0 left the target below/right of the
+    // viewport — the aim being visible is not enough, the target must be too.
+    // The two cannot both be positive: overRows > 0 puts the whole viewport
+    // at or past the target row.
+    const overRows = Math.max(0, visible.startRow - aimRow)
+    const underRows = Math.max(0, row - visible.endRow)
+    const overColumns = Math.max(0, visible.startColumn - column)
+    const underColumns = Math.max(0, column - visible.endColumn)
+    if (overRows === 0 && overColumns === 0 && underRows === 0 && underColumns === 0) return
+    // an aim inside the frozen pane (target on the first scrollable row) can
+    // never be reached — the viewport clamps at the pane edge with the target
+    // visible right below it, so a correction that moved nothing is done
+    if (visible.startRow === lastStartRow && visible.startColumn === lastStartColumn) return
+    lastStartRow = visible.startRow
+    lastStartColumn = visible.startColumn
+    scrollRow = Math.max(0, scrollRow - overRows + underRows)
+    scrollColumn = Math.max(0, scrollColumn - overColumns + underColumns)
+    sheet.scrollToCell(scrollRow, scrollColumn)
+  }
+}
+
+/** The find bar's own reveal shares the broken freeze offset: re-reveal each
+ *  navigated-to match (r135). The match position comes from the find service —
+ *  the find bar highlights matches WITHOUT moving the active range. */
+export function installFindRevealFix(runtime: UniverRuntime): () => void {
+  const injector = (
+    runtime.univer as unknown as { __getInjector(): { get<T>(token: unknown): T } }
+  ).__getInjector()
+  let service: {
+    currentMatch$: { subscribe(next: (match: unknown) => void): { unsubscribe(): void } }
+  } | null
+  try {
+    service = injector.get(IFindReplaceService)
+  } catch {
+    return () => {} // find-replace not installed in this runtime
+  }
+  const subscription = service?.currentMatch$?.subscribe((match) => {
+    const range = (match as { range?: { range?: IRange } } | null)?.range?.range
+    if (!range) return
+    // after the plugin's own (mis-offset) scroll settles
+    window.setTimeout(() => {
+      const sheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+      if (!sheet) return
+      void revealCellBelowFreeze(sheet, range.startRow, range.startColumn)
+    }, 0)
+  })
+  return () => subscription?.unsubscribe()
+}
+
 export function navigateToAnchor(
   runtime: UniverRuntime,
   location: string,
@@ -671,7 +765,7 @@ export function navigateToAnchor(
   try {
     workbook.setActiveSheet(sheet)
     const coordinates = parseAddress(match[2].replace(/\$/g, ''))
-    sheet.scrollToCell(coordinates.row, coordinates.column)
+    void revealCellBelowFreeze(sheet, coordinates.row, coordinates.column)
   } catch {
     setMessage(t('appLinkJumpFailed', { location }))
   }
@@ -951,6 +1045,7 @@ export async function activateFormulaClosure(
       const picked = result.cells.filter((cell) => cells.has(cellKey(cell.row, cell.column)))
       recordCachedFormulaValues(state, sheetId, picked)
       const wanted = degradeCostlyFormulas(state, sheetMeta.name, picked)
+      recordRowStyleKeys(state, sheetId, result.rows)
       patchWorksheetRange(
         worksheet,
         undefined,
@@ -963,6 +1058,11 @@ export async function activateFormulaClosure(
         sheetMeta.freeze,
         true,
         state.editJournal,
+        undefined,
+        undefined,
+        undefined,
+        sheetRowColStyleKeys(state, sheetId),
+        inheritedWrapLookup(state.file.styles, result.rows, sheetMeta.columnWidths),
       )
       for (const cell of wanted) {
         pinned.set(
@@ -1073,9 +1173,108 @@ const visualUndoRegistry = new Map<number, VisualUndoStep>()
 let visualUndoSequence = 0
 const visualUndoRuntimes = new WeakSet<object>()
 
+/// Appends a registry step to the undo entry a Univer command just pushed, so
+/// ONE ⌘Z reverts the whole user action (cells + shadow journal op) instead of
+/// needing a second, visually-inert undo press — and no extra undo-carry
+/// truncation point is created (alpha ledger r124 / bugbot). Falls back to a
+/// standalone entry when the stack is empty.
+/// The current top undo element (opaque identity token): callers snapshot it
+/// BEFORE running a Univer command, so attachVisualUndoToLastStep can tell a
+/// freshly pushed entry from a stale one (a no-op command pushes nothing, and
+/// attaching to whatever was already on top would bind the step to an
+/// unrelated edit — bugbot).
+export function topUndoElement(runtime: UniverRuntime): unknown {
+  try {
+    const injector = (
+      runtime.univer as unknown as {
+        __getInjector(): { get<T>(token: unknown): T }
+      }
+    ).__getInjector()
+    return injector.get<{ pitchTopUndoElement(): unknown }>(IUndoRedoService).pitchTopUndoElement()
+  } catch {
+    return null
+  }
+}
+
+export function attachVisualUndoToLastStep(
+  runtime: UniverRuntime,
+  step: VisualUndoStep,
+  /// topUndoElement() snapshot taken before the command this step shadows;
+  /// when the top is unchanged the step gets its own standalone entry instead
+  notThisElement?: unknown,
+): void {
+  const unitId = runtime.univerAPI.getActiveWorkbook()?.getId()
+  if (!unitId) return
+  const injector = (
+    runtime.univer as unknown as {
+      __getInjector(): { get<T>(token: unknown): T }
+    }
+  ).__getInjector()
+  ensureVisualUndoCommand(injector, runtime)
+  const token = ++visualUndoSequence
+  visualUndoRegistry.set(token, step)
+  const mutation = (direction: 'undo' | 'redo') => ({
+    id: VISUAL_UNDO_COMMAND_ID,
+    params: { token, direction },
+  })
+  const service = injector.get<{
+    pitchTopUndoElement(): {
+      unitID: string
+      undoMutations: { id: string; params: unknown }[]
+      redoMutations: { id: string; params: unknown }[]
+    } | null
+    pushUndoRedo(item: {
+      unitID: string
+      undoMutations: { id: string; params: unknown }[]
+      redoMutations: { id: string; params: unknown }[]
+    }): void
+  }>(IUndoRedoService)
+  const top = service.pitchTopUndoElement()
+  if (top && top.unitID === unitId && top !== notThisElement) {
+    top.undoMutations.push(mutation('undo'))
+    top.redoMutations.push(mutation('redo'))
+    return
+  }
+  service.pushUndoRedo({
+    unitID: unitId,
+    undoMutations: [mutation('undo')],
+    redoMutations: [mutation('redo')],
+  })
+}
+
 /// Interactive visual ops (chart edits, moves, deletes, inserts) enter
 /// Univer's own undo stack as a custom mutation pair, so ⌘Z interleaves
 /// them correctly with cell edits.
+function ensureVisualUndoCommand(
+  injector: { get<T>(token: unknown): T },
+  runtime: UniverRuntime,
+): void {
+  if (visualUndoRuntimes.has(runtime)) return
+  visualUndoRuntimes.add(runtime)
+  injector
+    .get<{
+      registerCommand(command: {
+        id: string
+        type: unknown
+        handler: (
+          accessor: unknown,
+          params?: { token: number; direction: 'undo' | 'redo' },
+        ) => boolean
+      }): unknown
+    }>(ICommandService)
+    .registerCommand({
+      id: VISUAL_UNDO_COMMAND_ID,
+      type: CommandType.MUTATION,
+      handler: (_accessor, params) => {
+        const entry = params ? visualUndoRegistry.get(params.token) : undefined
+        if (!entry || !params) return false
+        if (params.direction === 'undo') entry.undo()
+        else entry.redo()
+        return true
+      },
+    })
+}
+
 export function pushVisualUndo(runtime: UniverRuntime, step: VisualUndoStep): void {
   const unitId = runtime.univerAPI.getActiveWorkbook()?.getId()
   if (!unitId) return
@@ -1084,31 +1283,7 @@ export function pushVisualUndo(runtime: UniverRuntime, step: VisualUndoStep): vo
       __getInjector(): { get<T>(token: unknown): T }
     }
   ).__getInjector()
-  if (!visualUndoRuntimes.has(runtime)) {
-    visualUndoRuntimes.add(runtime)
-    injector
-      .get<{
-        registerCommand(command: {
-          id: string
-          type: unknown
-          handler: (
-            accessor: unknown,
-            params?: { token: number; direction: 'undo' | 'redo' },
-          ) => boolean
-        }): unknown
-      }>(ICommandService)
-      .registerCommand({
-        id: VISUAL_UNDO_COMMAND_ID,
-        type: CommandType.MUTATION,
-        handler: (_accessor, params) => {
-          const entry = params ? visualUndoRegistry.get(params.token) : undefined
-          if (!entry || !params) return false
-          if (params.direction === 'undo') entry.undo()
-          else entry.redo()
-          return true
-        },
-      })
-  }
+  ensureVisualUndoCommand(injector, runtime)
   const token = ++visualUndoSequence
   visualUndoRegistry.set(token, step)
   injector
@@ -1488,10 +1663,12 @@ async function runFormulaRecalc(
     const loaded = state.loadedRanges.get(sheetId)
     if (loaded && overlay.size > 0) {
       journalSuppression.active = true
+      loadAutoHeightSuppression.active = true
       try {
         applyPinnedOverlay(worksheet, overlay, undefined, loaded)
       } finally {
         journalSuppression.active = false
+        loadAutoHeightSuppression.active = false
       }
     }
     state.recalc.failures = 0
@@ -1552,10 +1729,12 @@ async function loadFrozenColumnStrip(
       return
     }
     if (state.formulaMode) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
+    const stripPatchRange = { ...stripRange, endRow: availableEndRow }
+    recordRowStyleKeys(state, sheetId, mapped.screen.rows)
     patchWorksheetRange(
       worksheet,
       undefined,
-      { ...stripRange, endRow: availableEndRow },
+      stripPatchRange,
       state.formulaMode
         ? degradeCostlyFormulas(state, sheet.name, mapped.screen.cells)
         : mapped.screen.cells,
@@ -1568,6 +1747,20 @@ async function loadFrozenColumnStrip(
       state.editJournal,
       state.closure.pinned.get(sheetId),
       state.recalc.overlay.get(sheetId),
+      undefined,
+      sheetRowColStyleKeys(state, sheetId),
+      inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheet.columnWidths),
+    )
+    measureWrapAutoFitRows(
+      worksheet,
+      wrapAutoFitRows(
+        mapped.screen.cells,
+        state.file.styles,
+        mapped.screen.rows,
+        sheet.columnWidths,
+        sheet.defaultRowHeightFixed,
+        stripPatchRange,
+      ),
     )
   } catch {
     state.frozenStripKeys.delete(sheetId)
@@ -1665,11 +1858,13 @@ async function loadRange(
       mapped.indexedThroughScreen === null
         ? null
         : Math.min(mapped.indexedThroughScreen, range.endRow)
+    let patchedRange: IRange | undefined
     if (availableEndRow !== null && availableEndRow >= range.startRow) {
       const availableRange = { ...range, endRow: availableEndRow }
       const alreadyLoaded = state.loadedRanges.get(sheetId)
       if (!alreadyLoaded || !containsRange(alreadyLoaded, availableRange)) {
         if (state.formulaMode) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
+        recordRowStyleKeys(state, sheetId, mapped.screen.rows)
         patchWorksheetRange(
           worksheet,
           alreadyLoaded,
@@ -1686,8 +1881,12 @@ async function loadRange(
           state.editJournal,
           state.closure.pinned.get(sheetId),
           state.recalc.overlay.get(sheetId),
+          undefined,
+          sheetRowColStyleKeys(state, sheetId),
+          inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheetMeta.columnWidths),
         )
         state.loadedRanges.set(sheetId, availableRange)
+        patchedRange = availableRange
       }
     }
     const result = mapped.raw
@@ -1700,6 +1899,20 @@ async function loadRange(
       applyRowProperties(worksheet, state, sheetId, mapped.screen.rows)
       applyMerges(worksheet, state, sheetId, mapped.screen.merges)
     })
+    // After merges (merged-only rows never auto-fit) and stored heights.
+    if (patchedRange) {
+      measureWrapAutoFitRows(
+        worksheet,
+        wrapAutoFitRows(
+          mapped.screen.cells,
+          state.file.styles,
+          mapped.screen.rows,
+          sheetMeta.columnWidths,
+          sheetMeta.defaultRowHeightFixed,
+          patchedRange,
+        ),
+      )
+    }
     // Conditional formatting, filters, and validations install once with
     // file-space ranges; Univer shifts the installed models itself on later
     // structural edits, but a fresh install after a shift would be stale —
@@ -1917,97 +2130,89 @@ function defaultRowHeightPx(state: LazyWorkbookState, sheetId: string): number {
   return Math.round((points * 96) / 72)
 }
 
-/// Auto-height measurement needs the sheet skeleton, which does not exist
-/// yet while cold-boot patches run — the command would set ia=1 but never
-/// compute ah. Defer the calls past the first paint (double rAF) so the
-/// skeleton exists and in-view rows measure immediately.
-const pendingAutoHeight: Array<{
-  worksheet: UniverWorksheet
-  start: number
-  count: number
-  /// false = sweep entry: honors the row lock present at flush time, so a
-  /// customHeight force that lands after queueing wins. true = explicit
-  /// re-enable queued right after a forced fallback height.
-  force: boolean
-}> = []
-let autoHeightFlushScheduled = false
-let autoHeightFlushRetries = 0
-
-/// A new workbook load disposes the previous unit; drop its queued rows so a
-/// flush never targets disposed worksheets.
-export function clearPendingAutoHeight(): void {
-  pendingAutoHeight.length = 0
-}
-
-/// AutoHeightController only registers its measurement interceptor at
-/// lifecycle Rendered; before that the command sets ia=1 but silently drops
-/// the measurement (and the skeleton already existing rules out the lazy
-/// re-measure path). True when the flush must wait.
-function autoHeightNotReady(worksheet: UniverWorksheet): boolean {
-  try {
-    const injector = (
-      worksheet as unknown as { _injector?: { get(token: unknown): { stage: number } } }
-    )._injector
-    const lifecycle = injector?.get(LifecycleService)
-    return lifecycle !== undefined && lifecycle.stage < LifecycleStages.Rendered
-  } catch {
-    return false
+/// Union of IStyleData keys the sheet's row/column default styles define.
+/// Univer composes row/col styles into every cell per-property, but an OOXML
+/// cell xf is complete — Excel never lets a row/column default show through a
+/// cell that has its own xf — so styled cells override these keys explicitly.
+export function sheetRowColStyleKeys(state: LazyWorkbookState, sheetId: string): Set<string> {
+  let keys = state.rowColStyleKeys.get(sheetId)
+  if (!keys) {
+    keys = new Set()
+    const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
+    for (const columnWidth of sheet?.columnWidths ?? []) {
+      if (columnWidth.styleIndex === undefined) continue
+      const style = state.file.styles[columnWidth.styleIndex]
+      if (style) for (const key of Object.keys(toUniverStyle(style))) keys.add(key)
+    }
+    state.rowColStyleKeys.set(sheetId, keys)
   }
+  return keys
 }
 
-function queueRowAutoHeight(
-  worksheet: UniverWorksheet,
-  start: number,
-  count: number,
-  force = false,
+/// Must run before the range patch that covers these rows: the patch bakes
+/// the overrides into cell styles at apply time.
+export function recordRowStyleKeys(
+  state: LazyWorkbookState,
+  sheetId: string,
+  rows: WorkbookRangeResult['rows'],
 ): void {
-  pendingAutoHeight.push({ worksheet, start, count, force })
-  if (autoHeightFlushScheduled) return
-  autoHeightFlushScheduled = true
-  const flush = () => {
-    const head = pendingAutoHeight[0]
-    if (head && autoHeightNotReady(head.worksheet) && autoHeightFlushRetries < 200) {
-      autoHeightFlushRetries += 1
-      setTimeout(flush, 50)
-      return
-    }
-    autoHeightFlushScheduled = false
-    autoHeightFlushRetries = 0
-    const batch = pendingAutoHeight.splice(0)
-    journalSuppression.active = true
-    try {
-      for (const item of batch) {
-        // A disposed unit (workbook switched mid-defer) must not abort the
-        // rest of the batch.
-        try {
-          if (item.force) {
-            item.worksheet.setRowAutoHeight(item.start, item.count)
-            continue
-          }
-          const rowManager = item.worksheet.getSheet().getRowManager()
-          let runStart = -1
-          for (let offset = 0; offset <= item.count; offset += 1) {
-            const row = item.start + offset
-            const open = offset < item.count && rowManager.getRow(row)?.ia !== BooleanNumber.FALSE
-            if (open && runStart === -1) runStart = row
-            if (!open && runStart !== -1) {
-              item.worksheet.setRowAutoHeight(runStart, row - runStart)
-              runStart = -1
-            }
-          }
-        } catch {
-          // Disposed worksheet or torn-down services: skip this entry.
-        }
-      }
-    } finally {
-      journalSuppression.active = false
+  for (const row of rows) {
+    if (row.styleIndex === undefined) continue
+    const style = state.file.styles[row.styleIndex]
+    if (!style) continue
+    const keys = sheetRowColStyleKeys(state, sheetId)
+    for (const key of Object.keys(toUniverStyle(style))) keys.add(key)
+  }
+}
+
+/// Concrete "absent property" values per bleed key. Explicit nulls would be
+/// the natural block, but Univer's set-range-values merge strips them
+/// (Tools.removeNull), so the override must be a real value that renders
+/// exactly like the missing property. pd/bd have no such value and their
+/// (rare) bleed is left alone. Document data: hardcoded colors stay
+/// theme-independent by design.
+function bleedOverrideValue(key: string, normal: WorkbookCellStyle | undefined): unknown {
+  switch (key) {
+    case 'cl':
+      return { rgb: '#000000' } // automatic font color
+    case 'bg':
+      return { rgb: '#FFFFFF' } // fillId 0 on the white page surface
+    case 'ul':
+    case 'st':
+      return { s: BooleanNumber.FALSE }
+    case 'ht':
+      return HorizontalAlign.UNSPECIFIED
+    case 'vt':
+      return VerticalAlign.UNSPECIFIED
+    case 'tr':
+      return { a: 0 }
+    case 'n':
+      return { pattern: 'General' }
+    case 'ff':
+      return normal?.fontFamily === undefined ? 'Calibri' : escapeCssLeadingDigit(normal.fontFamily)
+    case 'fs':
+      return normal?.fontSize ?? 11
+    default:
+      return undefined
+  }
+}
+
+/// Explicit stand-ins for every bleed key the cell xf leaves unset — an OOXML
+/// cell xf is complete, so a row/column default must never show through it.
+export function withRowColOverrides(
+  style: IStyleData,
+  bleedKeys: ReadonlySet<string> | undefined,
+  normal: WorkbookCellStyle | undefined,
+): IStyleData {
+  if (bleedKeys?.size) {
+    const record = style as Record<string, unknown>
+    for (const key of bleedKeys) {
+      if (record[key] !== undefined) continue
+      const override = bleedOverrideValue(key, normal)
+      if (override !== undefined) record[key] = override
     }
   }
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => requestAnimationFrame(flush))
-  } else {
-    setTimeout(flush, 0)
-  }
+  return style
 }
 
 export function applyRowProperties(
@@ -2017,12 +2222,14 @@ export function applyRowProperties(
   rows: WorkbookRangeResult['rows'],
 ): void {
   if (rows.length === 0) return
+  recordRowStyleKeys(state, sheetId, rows)
   let applied = state.appliedRowKeys.get(sheetId)
   if (!applied) {
     applied = new Set()
     state.appliedRowKeys.set(sheetId, applied)
   }
   journalSuppression.active = true
+  loadAutoHeightSuppression.active = true
   try {
     for (const row of rows) {
       if (row.outlineLevel !== undefined || row.collapsed) {
@@ -2047,32 +2254,24 @@ export function applyRowProperties(
       }
       if (row.height !== undefined) {
         const px = Math.round((row.height * 96) / 72)
-        if (row.customHeight) {
-          // User-fixed height: clip overflow and skip auto-height, exactly
-          // like Excel renders it.
-          worksheet.setRowHeightsForced(row.row, 1, px)
-        } else if (px >= defaultRowHeightPx(state, sheetId)) {
-          // Without customHeight, ht is only Excel's last auto-fit result;
-          // wrapped content may need more room than the stored value (our
-          // fonts measure differently). The facade setRowHeights path locks
-          // rows at ia=0 whenever the auto-height interceptor ran before the
-          // skeleton existed (cold boot), so set the stored height as the
-          // fallback and explicitly re-enable auto-height: the command flips
-          // ia=1 immediately and lazily re-measures once rendered.
-          worksheet.setRowHeightsForced(row.row, 1, px)
-          queueRowAutoHeight(worksheet, row.row, 1, true)
-        } else {
-          // Sub-default heights are spacer rows in print-style layouts, not
-          // auto-fit results — no content fits them. setRowHeights would
-          // drop the stored height and balloon them to a full text line
-          // (72-row spacer sheets grew several-fold), so they stay forced.
-          worksheet.setRowHeightsForced(row.row, 1, px)
+        // Excel renders the stored ht verbatim on open — it never re-measures
+        // wrapped content when loading a file, so neither do we.
+        worksheet.setRowHeightsForced(row.row, 1, px)
+        if (!row.customHeight && px >= defaultRowHeightPx(state, sheetId)) {
+          // Without customHeight the row is still in Excel's auto mode: a
+          // later USER edit in the row must re-fit it. setRowHeightsForced
+          // locked ia=0; flip it back — the suppression flag raised above
+          // keeps the command from measuring (and ballooning) the row now.
+          // Sub-default heights stay locked: they are deliberate spacer rows
+          // an auto-fit would balloon to a full text line.
+          worksheet.setRowAutoHeight(row.row, 1)
         }
       }
       if (row.hidden) worksheet.hideRows(row.row, 1)
     }
   } finally {
     journalSuppression.active = false
+    loadAutoHeightSuppression.active = false
   }
 }
 
@@ -2101,6 +2300,16 @@ function applyMerges(
     state.appliedMerges.set(sheetId, applied)
   }
   journalSuppression.active = true
+  // .merge() re-selects each merged range (AddMergeRedoSelectionsOperation),
+  // so a file load would leave a phantom selection highlight on whichever
+  // merge happened to apply last. Remember the real selection and put it back.
+  let activeBefore: string | null
+  try {
+    activeBefore = worksheet.getSelection()?.getActiveRange()?.getA1Notation() ?? null
+  } catch {
+    activeBefore = null
+  }
+  let appliedAny = false
   try {
     for (const merge of merges) {
       const key = `${merge.startRow}:${merge.startColumn}:${merge.endRow}:${merge.endColumn}`
@@ -2115,12 +2324,20 @@ function applyMerges(
             merge.endColumn - merge.startColumn + 1,
           )
           .merge()
+        appliedAny = true
       } catch {
         // An overlapping merge from a previous partial pass is not fatal.
       }
     }
   } finally {
     journalSuppression.active = false
+  }
+  if (appliedAny && activeBefore) {
+    try {
+      worksheet.getRange(activeBefore).activate()
+    } catch {
+      // Selection restore is cosmetic; never fail the load over it.
+    }
   }
 }
 
@@ -2212,21 +2429,28 @@ function recordCachedFormulaValues(
 /// the microtask and task queues too. Only a flip TO the patched sheet is
 /// undone, so a genuine user sheet switch in the same window survives.
 function keepActiveSheet<T>(worksheet: UniverWorksheet, run: () => T): T {
-  const workbook = (
-    worksheet as unknown as {
-      getWorkbook?: () => {
-        getActiveSheet(allowNull: true): { getSheetId(): string } | null
-        setActiveSheet(sheet: unknown): void
-      }
+  const facade = worksheet as unknown as {
+    getWorkbook?: () => {
+      getActiveSheet(allowNull: true): { getSheetId(): string } | null
+      setActiveSheet(sheet: unknown): void
     }
-  ).getWorkbook?.()
+    _fWorkbook?: { setActiveSheet(sheetId: string): unknown }
+  }
+  const workbook = facade.getWorkbook?.()
   const before = workbook?.getActiveSheet(true)
   const patchedId = worksheet.getSheetId()
   const restore = (): void => {
     if (!workbook || !before || before.getSheetId() === patchedId) return
     const current = workbook.getActiveSheet(true)
     if (current && current !== before && current.getSheetId() === patchedId) {
-      workbook.setActiveSheet(before)
+      // Restore through the full SetWorksheetActiveOperation, not the bare
+      // model setter: the stray activation also moved the render skeleton's
+      // current sheet, and a model-only restore leaves canvas and model
+      // pointing at different sheets — resolveRenderedSheetId then "heals"
+      // the model back to the patched sheet, making the theft permanent.
+      const fWorkbook = facade._fWorkbook
+      if (fWorkbook) fWorkbook.setActiveSheet(before.getSheetId())
+      else workbook.setActiveSheet(before)
     }
   }
   try {
@@ -2254,8 +2478,13 @@ function patchWorksheetRange(
   pinned?: ReadonlyMap<string, PinnedClosureCell>,
   recalcOverlay?: ReadonlyMap<string, PinnedClosureCell>,
   arrayFollowers?: ReadonlySet<string>,
+  rowColStyleKeys?: ReadonlySet<string>,
+  inheritedWrap?: (row: number, column: number) => boolean,
 ): void {
   journalSuppression.active = true
+  // Installing file content must keep every row at its stored height — Excel
+  // does not re-measure on open — while leaving rows in auto mode for edits.
+  loadAutoHeightSuppression.active = true
   try {
     keepActiveSheet(worksheet, () => {
       patchWorksheetRangeInner(
@@ -2269,6 +2498,8 @@ function patchWorksheetRange(
         freeze,
         useFormulas,
         arrayFollowers,
+        rowColStyleKeys,
+        inheritedWrap,
       )
       // Closure cells were just evicted or clobbered with static cached
       // values; re-pin them first — the journal overlay runs after so user
@@ -2280,6 +2511,7 @@ function patchWorksheetRange(
     })
   } finally {
     journalSuppression.active = false
+    loadAutoHeightSuppression.active = false
   }
 }
 
@@ -2348,12 +2580,16 @@ export function applyJournalOverlay(
   for (const entry of journalEntriesInRange(journal, sheetId, range)) {
     const cellRange = worksheet.getRange(entry.row, entry.column, 1, 1)
     if (entry.hasValue) {
+      // Replayed rich/multiline docs need the same cell-font base as the
+      // load path; the cell's composed style is already installed here.
+      const baseFont = (): IStyleData =>
+        fontTextStyleOf(worksheet.getSheet().getComposedCellStyle(entry.row, entry.column))
       if (entry.formula) cellRange.setValues([[{ f: entry.formula }]])
       else if (entry.value === null) cellRange.clearContent()
       else if (entry.rich && typeof entry.value === 'string') {
-        cellRange.setValues([[{ p: toRichTextDocument(entry.value, [...entry.rich]) }]])
+        cellRange.setValues([[{ p: toRichTextDocument(entry.value, [...entry.rich], baseFont()) }]])
       } else if (typeof entry.value === 'string' && entry.value.includes('\n')) {
-        cellRange.setValues([[{ p: toRichTextDocument(entry.value) }]])
+        cellRange.setValues([[{ p: toRichTextDocument(entry.value, [], baseFont()) }]])
       } else cellRange.setValues([[{ v: entry.value }]])
     }
     // The set-range-values mutation merges style patches, so re-applying the
@@ -2394,6 +2630,152 @@ function formulaKeepsCache(formula: string): boolean {
   return cached
 }
 
+/// Excel never wraps non-text values: a too-wide number/date renders as a
+/// one-line hash fill (####), so a wrap style on a numeric cell must not
+/// change the line count or the row height. CLIP approximates that (the hash
+/// fill itself is a separate numeric-overflow render feature). Formula cells
+/// are left alone — the engine may recompute them into text.
+export function numericWrapOverride(
+  hasFormula: boolean,
+  value: unknown,
+  wrapText: boolean | undefined,
+): boolean {
+  return !hasFormula && typeof value === 'number' && wrapText === true
+}
+
+/// Excel renders a manual line break (Alt+Enter) as nothing when the cell
+/// does not wrap: the lines join on one display line.
+export function joinManualBreaks(value: string): string {
+  return value.replace(/\r\n?|\n/g, '')
+}
+
+/// Effective wrapText for a cell without its own xf. A customFormat row xf is
+/// the COMPLETE default xf for its unstyled cells — the column xf is not
+/// consulted (same OOXML semantics the sidecar's row styleIndex guard
+/// encodes) — otherwise the column xf applies.
+export function inheritedWrapLookup(
+  styles: readonly WorkbookCellStyle[],
+  rows: WorkbookRangeResult['rows'],
+  columnWidths: WorkbookFile['sheets'][number]['columnWidths'],
+): (row: number, column: number) => boolean {
+  const rowWrap = new Map<number, boolean>()
+  for (const row of rows) {
+    if (row.styleIndex === undefined) continue
+    rowWrap.set(row.row, styles[row.styleIndex]?.wrapText === true)
+  }
+  const columnSpans = columnWidths
+    .filter((span) => span.styleIndex !== undefined)
+    .map((span) => ({
+      start: span.startColumn,
+      end: span.endColumn,
+      wrap: styles[span.styleIndex as number]?.wrapText === true,
+    }))
+  return (row, column) => {
+    const fromRow = rowWrap.get(row)
+    if (fromRow !== undefined) return fromRow
+    // Match createColumnData: overlapping <col> spans apply in file order, so
+    // the last styled span covering the column decides.
+    let wrap = false
+    for (const span of columnSpans) {
+      if (column >= span.start && column <= span.end) wrap = span.wrap
+    }
+    return wrap
+  }
+}
+
+/// Rows Excel DOES auto-fit when opening a file: the row is in auto mode (no
+/// stored ht of its own), the sheet default is not user-fixed (sheetFormatPr
+/// customHeight), and at least one loaded cell wraps real text. Everything
+/// else keeps its stored/default height verbatim (#884); numeric wrap cells
+/// and no-wrap manual breaks never change the line count, so neither counts.
+export function wrapAutoFitRows(
+  cells: WorkbookRangeResult['cells'],
+  styles: readonly WorkbookCellStyle[],
+  rows: WorkbookRangeResult['rows'],
+  columnWidths: WorkbookFile['sheets'][number]['columnWidths'],
+  defaultRowHeightFixed: boolean | undefined,
+  range: IRange,
+): number[] {
+  if (defaultRowHeightFixed) return []
+  const inheritedWrap = inheritedWrapLookup(styles, rows, columnWidths)
+  const storedHeights = new Set<number>()
+  for (const row of rows) {
+    if (row.height !== undefined) storedHeights.add(row.row)
+  }
+  const qualifying = new Set<number>()
+  for (const cell of cells) {
+    if (cell.row < range.startRow || cell.row > range.endRow) continue
+    if (cell.column < range.startColumn || cell.column > range.endColumn) continue
+    if (qualifying.has(cell.row) || storedHeights.has(cell.row)) continue
+    const style = cell.styleIndex === undefined ? undefined : styles[cell.styleIndex]
+    const wraps = style ? style.wrapText === true : inheritedWrap(cell.row, cell.column)
+    if (!wraps) continue
+    const value = cell.value ?? ''
+    if (typeof value !== 'string' || value === '') continue
+    qualifying.add(cell.row)
+  }
+  return [...qualifying].sort((a, b) => a - b)
+}
+
+/// Univer's AutoHeightController registers the auto-height interceptor only
+/// when the lifecycle reaches Rendered; a measure dispatched before that
+/// silently yields nothing. Loads race that stage on open, so early measures
+/// queue here and flush when the stage arrives.
+export const wrapMeasureGate: {
+  ready: boolean
+  pending: Array<{ worksheet: UniverWorksheet; rows: readonly number[] }>
+} = { ready: false, pending: [] }
+
+export function installWrapMeasureLifecycle(runtime: UniverRuntime): { dispose(): void } {
+  wrapMeasureGate.ready = false
+  wrapMeasureGate.pending.length = 0
+  return runtime.univerAPI.addEvent(runtime.univerAPI.Event.LifeCycleChanged, (params) => {
+    const { stage } = params as { stage: LifecycleStages }
+    if (stage < LifecycleStages.Rendered || wrapMeasureGate.ready) return
+    wrapMeasureGate.ready = true
+    // Let the other lifecycle subscribers (the plugin hooks that create
+    // AutoHeightController) run before the queued measures.
+    setTimeout(() => {
+      for (const item of wrapMeasureGate.pending.splice(0)) {
+        measureWrapAutoFitRows(item.worksheet, item.rows)
+      }
+    }, 0)
+  })
+}
+
+/// Runs the user-autofit measurement channel over the qualifying rows. The
+/// load gate must be DOWN (this is the one load-time measure Excel really
+/// does); the undo/journal suppression stays up so opening a file neither
+/// pollutes undo nor dirties the document. Univer's measure never shrinks a
+/// row below the sheet default, so single-line wrap rows are untouched.
+export function measureWrapAutoFitRows(
+  worksheet: UniverWorksheet,
+  rowsToMeasure: readonly number[],
+): void {
+  if (rowsToMeasure.length === 0) return
+  if (!wrapMeasureGate.ready) {
+    wrapMeasureGate.pending.push({ worksheet, rows: rowsToMeasure })
+    return
+  }
+  journalSuppression.active = true
+  try {
+    let start = rowsToMeasure[0] as number
+    let previous = start
+    for (const row of rowsToMeasure.slice(1)) {
+      if (row === previous + 1) {
+        previous = row
+        continue
+      }
+      worksheet.setRowAutoHeight(start, previous - start + 1)
+      start = row
+      previous = row
+    }
+    worksheet.setRowAutoHeight(start, previous - start + 1)
+  } finally {
+    journalSuppression.active = false
+  }
+}
+
 function patchWorksheetRangeInner(
   worksheet: UniverWorksheet,
   previousRange: IRange | undefined,
@@ -2405,6 +2787,8 @@ function patchWorksheetRangeInner(
   freeze: WorkbookFile['sheets'][number]['freeze'],
   useFormulas: boolean,
   arrayFollowers?: ReadonlySet<string>,
+  rowColStyleKeys?: ReadonlySet<string>,
+  inheritedWrap?: (row: number, column: number) => boolean,
 ): void {
   if (previousRange) {
     // Frozen rows/columns stay visible while scrolling, so never evict them —
@@ -2427,6 +2811,7 @@ function patchWorksheetRangeInner(
   const matrix: ICellData[][] = Array.from({ length: rows }, () =>
     Array.from({ length: columns }, () => ({})),
   )
+  const overrideCells: Array<[number, number]> = []
   for (const cell of cells) {
     if (
       cell.row < range.startRow ||
@@ -2447,75 +2832,151 @@ function patchWorksheetRangeInner(
     if (useFormulas && arrayFollowers?.has(`${cell.row}:${cell.column}`)) {
       if (row) {
         row[cell.column - range.startColumn] = style ? { s: toUniverStyle(style) } : {}
+        if (style && rowColStyleKeys?.size) {
+          overrideCells.push([cell.row - range.startRow, cell.column - range.startColumn])
+        }
       }
       continue
     }
     const multiline = typeof displayValue === 'string' && displayValue.includes('\n')
+    // Excel honors manual line breaks only when the cell wraps; with wrap off
+    // it renders the lines joined on a single line at the stored row height.
+    // A cell xf is complete, so it alone decides; only xf-less cells inherit
+    // wrap from the row/column default.
+    const wrapsEffective = style
+      ? style.wrapText === true
+      : (inheritedWrap?.(cell.row, cell.column) ?? false)
+    const joinLines = multiline && !wrapsEffective
+    // Wrap inherited from a row/column default counts too: Excel never
+    // wraps numbers regardless of where the wrap flag comes from.
+    const numericNoWrap = numericWrapOverride(Boolean(cell.formula), displayValue, wrapsEffective)
+    // shrinkToFit text cells: bake the reduced size into the cell style so
+    // both the plain and rich render paths (and the #### rule) see it.
+    // Formula cells are skipped in formula mode — their display text isn't
+    // known until the engine evaluates.
+    const shrinkScale =
+      style?.shrinkToFit &&
+      !style.wrapText &&
+      typeof displayValue === 'string' &&
+      displayValue !== '' &&
+      !(useFormulas && cell.formula)
+        ? shrinkScaleFor(
+            worksheet,
+            cell.row,
+            cell.column,
+            // Joined manual breaks display as one line, so fit that line —
+            // the widest fragment alone would under-shrink.
+            joinLines ? joinManualBreaks(displayValue) : displayValue,
+            style,
+            cell.rich,
+          )
+        : 1
+    const effectiveStyle =
+      shrinkScale >= 1 || !style
+        ? style
+        : { ...style, fontSize: scaledFontSize(style.fontSize ?? 11, shrinkScale) }
     if (row) {
       row[cell.column - range.startColumn] = {
         // Explicit string typing: bare `v` lets Univer coerce numeric-looking
         // text ("007", phone numbers) into numbers.
         ...(cell.rich && typeof displayValue === 'string'
-          ? { p: toRichTextDocument(displayValue, cell.rich) }
+          ? {
+              p: toRichTextDocument(
+                joinLines ? joinManualBreaks(displayValue) : displayValue,
+                joinLines
+                  ? cell.rich.map((run) => ({ ...run, text: joinManualBreaks(run.text) }))
+                  : cell.rich,
+                cellFontTextStyle(effectiveStyle),
+                shrinkScale,
+              ),
+              // Excel joins manual breaks only visually — CHAR(10) stays in
+              // the stored value; keep v raw so formulas and copies see it.
+              ...(joinLines ? { v: displayValue, t: CellValueType.STRING } : {}),
+            }
           : useFormulas && cell.formula && !keepsCache
             ? // No cached value: leave v unset so the engine computes instead
               // of showing the formula text as a literal. An error-literal
               // cache means the last writer could not evaluate the formula
               // (LibreOffice caches #NAME? for functions it lacks) — drop it
               // too, so the engine recomputes like Excel does on open.
+              // Plain-arithmetic formulas also recompute: the engine handles
+              // them at full parity, and Excel's own recalc-on-open shows
+              // #VALUE! where a stale cache still holds a number (comma-
+              // decimal text summed before the cells went text). CSE array
+              // masters keep the cache — the engine would spill them.
               cell.value === null ||
               cell.value === undefined ||
-              (typeof cell.value === 'string' && EXCEL_ERROR_LITERALS.has(cell.value))
+              (typeof cell.value === 'string' && EXCEL_ERROR_LITERALS.has(cell.value)) ||
+              (!cell.arrayRef && isPlainArithmeticFormula(cell.formula))
               ? { f: cell.formula }
               : { f: cell.formula, v: cell.value }
-            : typeof displayValue === 'string' && multiline
-              ? // Bare `v` renders only the first line; the doc model keeps all.
-                { p: toRichTextDocument(displayValue) }
-              : typeof displayValue === 'string' && displayValue !== ''
-                ? { v: displayValue, t: CellValueType.STRING }
-                : { v: displayValue }),
-        ...(style || multiline
+            : typeof displayValue === 'string' && joinLines
+              ? // Excel joins manual breaks only visually — CHAR(10) stays in
+                // the stored value. Render the joined line through the doc
+                // model and keep v raw for formulas, edits, and copies.
+                {
+                  v: displayValue,
+                  t: CellValueType.STRING,
+                  p: toRichTextDocument(
+                    joinManualBreaks(displayValue),
+                    [],
+                    cellFontTextStyle(effectiveStyle),
+                  ),
+                }
+              : typeof displayValue === 'string' && multiline
+                ? // Bare `v` renders only the first line; the doc model keeps all.
+                  { p: toRichTextDocument(displayValue, [], cellFontTextStyle(effectiveStyle)) }
+                : typeof displayValue === 'string' && displayValue !== ''
+                  ? { v: displayValue, t: CellValueType.STRING }
+                  : displayValue === ''
+                    ? // Style-only cells (`<c r="B3" s="170"/>`): `v: ''` would
+                      // make them empty STRINGS, and a formula referencing one
+                      // then returns '' where Excel returns 0 (a serial-0 date
+                      // shows 1900/1/0, a plain 0 shows 0 — not blank). `v:
+                      // null` clears any earlier value and keeps them value-less.
+                      { v: null }
+                    : { v: displayValue }),
+        ...(effectiveStyle || numericNoWrap
           ? {
               s: {
                 // Hyperlinked cells keep the file's own font: Excel styles a
                 // link via the cell xf, so injecting blue/underline here
                 // overrode plain-styled links.
-                ...(style ? toUniverStyle(style) : {}),
-                // Excel shows manual line breaks even without wrapText.
-                ...(multiline ? { tb: WrapStrategy.WRAP } : {}),
+                ...(effectiveStyle ? toUniverStyle(effectiveStyle) : {}),
+                ...(numericNoWrap ? { tb: WrapStrategy.CLIP } : {}),
               },
             }
           : {}),
+      }
+      // Only cells with their own xf override row/col defaults.
+      if (effectiveStyle && rowColStyleKeys?.size) {
+        overrideCells.push([cell.row - range.startRow, cell.column - range.startColumn])
       }
     }
   }
   applyTableBanding(matrix, range, tables)
   applyPivotStyling(matrix, range, pivotTables)
-  worksheet.getRange(range.startRow, range.startColumn, rows, columns).setValues(matrix)
-  // Rows holding wrapped cells need a computed auto-height (ah): the
-  // SetRangeValues auto-height interceptor silently no-ops when the sheet
-  // skeleton doesn't exist yet (cold boot / background preload), leaving
-  // wrapped rows one line tall. Rows the file marks customHeight are forced
-  // back afterwards by applyRowProperties, which runs after each patch.
-  const rowManager = worksheet.getSheet().getRowManager()
-  let runStart = -1
-  for (let offset = 0; offset <= rows; offset += 1) {
-    // ia=0 rows are height-locked (file customHeight or a manual user
-    // resize) — never re-enable auto-height on them.
-    const locked = rowManager.getRow(range.startRow + offset)?.ia === BooleanNumber.FALSE
-    const wraps =
-      offset < rows &&
-      !locked &&
-      (matrix[offset]?.some(
-        (cell) => (cell.s as IStyleData | undefined)?.tb === WrapStrategy.WRAP,
-      ) ??
-        false)
-    if (wraps && runStart === -1) runStart = offset
-    if (!wraps && runStart !== -1) {
-      queueRowAutoHeight(worksheet, range.startRow + runStart, offset - runStart)
-      runStart = -1
+  // Bake the row/col-default overrides only after banding: the table/pivot
+  // stripes treat any present bg/cl as the cell's own and must see the raw
+  // xf, and a stripe fill they add counts as explicit (never overridden).
+  for (const [rowIndex, columnIndex] of overrideCells) {
+    const s = matrix[rowIndex]?.[columnIndex]?.s
+    if (s && typeof s === 'object') {
+      withRowColOverrides(s as IStyleData, rowColStyleKeys, styles[0])
     }
   }
+  // No blanket auto-height sweep here: rows with a stored ht (or a fixed
+  // sheet default) render verbatim like Excel; the caller raises
+  // loadAutoHeightSuppression so the SetRangeValues interceptor stays quiet.
+  // The one measure Excel really performs on open — auto rows with wrapped
+  // text — runs afterwards via measureWrapAutoFitRows.
+  worksheet.getRange(range.startRow, range.startColumn, rows, columns).setValues(matrix)
+}
+
+/// True only for a real fill: unfilled xfs carry the bg empty-rgb sentinel
+/// (see toUniverStyle), which must not read as "baked fill".
+function styleHasFill(style: IStyleData): boolean {
+  return Boolean((style.bg as { rgb?: string } | null | undefined)?.rgb)
 }
 
 /// Approximates Excel table styles (header band + row stripes) for cells that
@@ -2626,7 +3087,7 @@ function applyTableBanding(
               : headerFill
                 ? headerFont
                 : (table.headerFontColor ?? '#333333')
-          if (style.bg) {
+          if (styleHasFill(style)) {
             // Baked header fill: keep it, but a default-black font still takes
             // the style's header font (Excel lets table-style text win over
             // the automatic color).
@@ -2647,7 +3108,7 @@ function applyTableBanding(
           }
           continue
         }
-        if (style.bg) continue
+        if (styleHasFill(style)) continue
         if (isTotals) {
           cell.s = {
             ...style,
@@ -2722,7 +3183,7 @@ export function applyPivotStyling(
         const cell = matrix[row - range.startRow]?.[column - range.startColumn]
         if (!cell) continue
         const style = (cell.s ?? {}) as IStyleData
-        if (style.bg) continue
+        if (styleHasFill(style)) continue
         cell.s = {
           ...style,
           bg: { rgb: fill },
@@ -2738,33 +3199,162 @@ export function applyPivotStyling(
   }
 }
 
+/// The cell xf's font as a text style — the base a rich-text document
+/// inherits. Univer applies a cell's `s` font only to plain `v` cells; a `p`
+/// document renders purely from its textRuns, so runs without explicit
+/// formatting must carry the cell font themselves (Excel semantics: a run
+/// without rPr uses the cell font).
+export function cellFontTextStyle(style: WorkbookCellStyle | undefined): IStyleData {
+  if (!style) return {}
+  return {
+    ...(style.fontFamily ? { ff: escapeCssLeadingDigit(style.fontFamily) } : {}),
+    ...(style.fontSize ? { fs: style.fontSize } : {}),
+    ...(style.bold ? { bl: BooleanNumber.TRUE } : {}),
+    ...(style.italic ? { it: BooleanNumber.TRUE } : {}),
+    ...(style.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
+    ...(style.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
+    ...(style.fontColor ? { cl: { rgb: style.fontColor } } : {}),
+  }
+}
+
+/// The font subset of an already-composed Univer style — the rich-document
+/// base for journal-replayed cells, whose family is already CSS-escaped.
+function fontTextStyleOf(s: IStyleData | null | undefined): IStyleData {
+  if (!s) return {}
+  return {
+    ...(s.ff ? { ff: s.ff } : {}),
+    ...(s.fs ? { fs: s.fs } : {}),
+    ...(s.bl ? { bl: s.bl } : {}),
+    ...(s.it ? { it: s.it } : {}),
+    ...(s.ul?.s ? { ul: { s: BooleanNumber.TRUE } } : {}),
+    ...(s.st?.s ? { st: { s: BooleanNumber.TRUE } } : {}),
+    ...(s.cl?.rgb ? { cl: { rgb: s.cl.rgb } } : {}),
+  }
+}
+
+/// Guards the float underflow in size * (shrunk / measured): 9 * (6/9)
+/// is 5.999…, which must floor to 6, not 5.
+function scaledFontSize(size: number, scale: number): number {
+  return Math.max(1, Math.floor(size * scale + 1e-6))
+}
+
+/// Excel shrink-to-fit: scale the font down until the widest line fits the
+/// column (never wraps, never enlarges). Integer result — Univer ceils
+/// fractional font sizes, which would overflow again. Excel keeps shrinking
+/// as far as needed; clamp at 1pt to stay renderable.
+export function shrinkToFitFontSize(
+  text: string,
+  fontSize: number,
+  availablePx: number,
+  measure: (line: string) => number,
+): number | null {
+  if (!(availablePx > 0)) return null
+  let widest = 0
+  for (const line of text.split(/\r\n|[\r\n]/)) widest = Math.max(widest, measure(line))
+  if (!(widest > availablePx)) return null
+  return Math.max(1, Math.floor((fontSize * availablePx) / widest))
+}
+
+/// Shrink factor (≤1) for a shrinkToFit cell; 1 when the text already fits.
+/// Rich runs are approximated with the cell font at the largest size in play
+/// — per-run measurement isn't worth it for a fit heuristic.
+function shrinkScaleFor(
+  worksheet: UniverWorksheet,
+  row: number,
+  column: number,
+  text: string,
+  style: WorkbookCellStyle,
+  runs?: readonly WorkbookRichRun[],
+): number {
+  const sheet = worksheet.getSheet()
+  // A merged cell's budget is the merge span's total width; only the anchor
+  // carries the text (covered cells have nothing to shrink).
+  const merge = sheet.getMergedCell(row, column)
+  if (merge && (row !== merge.startRow || column !== merge.startColumn)) return 1
+  let cellWidth = 0
+  for (let c = merge?.startColumn ?? column; c <= (merge?.endColumn ?? column); c += 1) {
+    cellWidth += sheet.getColumnWidth(c)
+  }
+  const measureSize = Math.max(style.fontSize ?? 11, ...(runs ?? []).map((run) => run.size ?? 0))
+  const { fontString } = getFontStyleString({ ...cellFontTextStyle(style), fs: measureSize })
+  // 2+2 cell padding plus 1px blur offset (matches the #### rule), plus the
+  // indent's left padding.
+  const available = cellWidth - 5 - (style.indent ? style.indent * INDENT_STEP_PX : 0)
+  const shrunk = shrinkToFitFontSize(text, measureSize, available, (line) =>
+    line === '' ? 0 : FontCache.getMeasureText(line, fontString).width,
+  )
+  return shrunk === null ? 1 : shrunk / measureSize
+}
+
+/// A run with any explicit formatting came from an rPr, which is
+/// authoritative for its boolean flags; a bare run inherits the cell font.
+function runHasFormatting(run: WorkbookRichRun): boolean {
+  return (
+    run.bold ||
+    run.italic ||
+    run.underline ||
+    run.strikethrough ||
+    run.color !== undefined ||
+    run.size !== undefined ||
+    run.family !== undefined ||
+    run.vertAlign !== undefined
+  )
+}
+
 export function toRichTextDocument(
   text: string,
   runs: readonly WorkbookRichRun[] = [],
+  // The cell font (cellFontTextStyle / fontTextStyleOf) — Univer applies a
+  // cell's `s` font only to plain `v` cells, so a rich document's runs must
+  // carry it themselves.
+  base: IStyleData = {},
+  // shrinkToFit factor (≤1): run-level sizes must scale along with the cell
+  // font, or an rPr-sized run would keep overflowing the shrunken cell.
+  fontScale = 1,
 ): ICellData['p'] {
+  // Excel stores hard line breaks as CRLF (or bare \n); Univer's paragraph
+  // break is a single \r — an unnormalized \r\n would leave a phantom empty
+  // paragraph behind every break.
+  const normalize = (value: string): string => value.replace(/\r\n?/g, '\n')
+  const normalized = normalize(text)
+  const hasBase = Object.keys(base).length > 0
   const textRuns = []
   let cursor = 0
   for (const run of runs) {
-    const end = cursor + run.text.length
+    const end = cursor + normalize(run.text).length
     textRuns.push({
       st: cursor,
       ed: end,
-      ts: {
-        ...(run.family ? { ff: run.family } : {}),
-        ...(run.size ? { fs: run.size } : {}),
-        ...(run.bold ? { bl: BooleanNumber.TRUE } : {}),
-        ...(run.italic ? { it: BooleanNumber.TRUE } : {}),
-        ...(run.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
-        ...(run.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
-        ...(run.color ? { cl: { rgb: run.color } } : {}),
-      },
+      ts: runHasFormatting(run)
+        ? {
+            ...base,
+            ...(run.family ? { ff: escapeCssLeadingDigit(run.family) } : {}),
+            ...(run.size ? { fs: scaledFontSize(run.size, fontScale) } : {}),
+            bl: run.bold ? BooleanNumber.TRUE : BooleanNumber.FALSE,
+            it: run.italic ? BooleanNumber.TRUE : BooleanNumber.FALSE,
+            ul: { s: run.underline ? BooleanNumber.TRUE : BooleanNumber.FALSE },
+            st: { s: run.strikethrough ? BooleanNumber.TRUE : BooleanNumber.FALSE },
+            ...(run.color ? { cl: { rgb: run.color } } : {}),
+            ...(run.vertAlign
+              ? {
+                  va:
+                    run.vertAlign === 'subscript'
+                      ? BaselineOffset.SUBSCRIPT
+                      : BaselineOffset.SUPERSCRIPT,
+                }
+              : {}),
+          }
+        : base,
     })
     cursor = end
+  }
+  if (hasBase && cursor < normalized.length) {
+    textRuns.push({ st: cursor, ed: normalized.length, ts: base })
   }
   // Univer document streams use \r as paragraph break and \n as section
   // break; a raw \n would split the cell into sections and drop later lines.
   // 1:1 replacement, so textRun offsets stay valid.
-  const dataStream = `${text.replace(/\n/g, '\r')}\r\n`
+  const dataStream = `${normalized.replace(/\n/g, '\r')}\r\n`
   const paragraphs: Array<{ startIndex: number }> = []
   for (let i = 0; i < dataStream.length; i += 1) {
     if (dataStream[i] === '\r') paragraphs.push({ startIndex: i })
@@ -2868,6 +3458,7 @@ export async function preloadEntireWorkbook(
       recordCachedFormulaValues(state, sheetId, screen.cells)
       const installable = degradeCostlyFormulas(state, sheet.name, screen.cells)
       collectArrayFollowers(arrayFollowers, installable, ops)
+      recordRowStyleKeys(state, sheetId, screen.rows)
       patchWorksheetRange(
         worksheet,
         undefined,
@@ -2883,6 +3474,8 @@ export async function preloadEntireWorkbook(
         undefined,
         undefined,
         arrayFollowers,
+        sheetRowColStyleKeys(state, sheetId),
+        inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
       )
       if (state.formulaMode) storeFormulaText(state, sheetId, result.cells)
       recordHyperlinks(state, sheetId, screen.hyperlinks)
@@ -2890,6 +3483,17 @@ export async function preloadEntireWorkbook(
         applyRowProperties(worksheet, state, sheetId, screen.rows)
         applyMerges(worksheet, state, sheetId, screen.merges)
       })
+      measureWrapAutoFitRows(
+        worksheet,
+        wrapAutoFitRows(
+          screen.cells,
+          state.file.styles,
+          screen.rows,
+          sheet.columnWidths,
+          sheet.defaultRowHeightFixed,
+          screenRange,
+        ),
+      )
       if (ops.length === 0) {
         if (result.indexingComplete) {
           await applyConditionalRules(worksheet, state, sheetId, result.conditionalRules)
@@ -4260,7 +4864,7 @@ export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
     ...(diagonal && style.diagonalUp ? { bl_tr: diagonal } : {}),
   }
   return {
-    ...(style.fontFamily ? { ff: style.fontFamily } : {}),
+    ...(style.fontFamily ? { ff: escapeCssLeadingDigit(style.fontFamily) } : {}),
     ...(style.fontSize ? { fs: style.fontSize } : {}),
     bl: style.bold ? BooleanNumber.TRUE : BooleanNumber.FALSE,
     it: style.italic ? BooleanNumber.TRUE : BooleanNumber.FALSE,
@@ -4270,7 +4874,14 @@ export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
     // must override a WRAP column/row style at compose time.
     tb: style.wrapText ? WrapStrategy.WRAP : WrapStrategy.OVERFLOW,
     ...(style.fontColor ? { cl: { rgb: style.fontColor } } : {}),
-    ...(style.fillColor ? { bg: { rgb: style.fillColor } } : {}),
+    // Like tb above: an explicit xf without a fill must BLOCK a filled
+    // column/row style at compose time — Univer merges styles by key, so a
+    // missing bg lets a <col style=> fill bleed through explicitly-styled
+    // cells (Excel treats each xf as complete, never a merge). bg: null
+    // would be stripped by SetRangeValues' Tools.removeNull, so use an
+    // empty-rgb sentinel: defined (blocks the compose fallthrough) but
+    // falsy for every painter that checks bg.rgb.
+    ...(style.fillColor ? { bg: { rgb: style.fillColor } } : { bg: { rgb: '' } }),
     ...(style.numberFormat ? { n: { pattern: style.numberFormat } } : {}),
     ...(Object.keys(borders).length > 0 ? { bd: borders } : {}),
     ...(mapHorizontalAlignment(style.horizontalAlignment) === undefined
@@ -4419,12 +5030,44 @@ export function a1RowRangeRef(
   return `'${name}'!$${columnLetter(fromColumn)}$${row + 1}:$${columnLetter(toColumn)}$${row + 1}`
 }
 
+/// The sheet the float installs should target, resolved at timer-fire time —
+/// and from the RENDERED sheet (the skeleton the canvas shows), not the
+/// workbook model. A tab click during load can leave the model pointing at
+/// the file's stored activeTab while the canvas already shows the clicked
+/// sheet; trusting the model then installs (and Univer's float-DOM service,
+/// which checks the model, keeps painting) the wrong sheet's floats over the
+/// visible grid. Re-activating the rendered sheet heals the model so the
+/// float service accepts the install; visually it is already there.
+export function resolveRenderedSheetId(runtime: UniverRuntime): string | undefined {
+  const workbook = runtime.univerAPI.getActiveWorkbook()
+  if (!workbook) return undefined
+  const renderSheetId = (() => {
+    try {
+      return runtime.univer
+        .__getInjector()
+        .get(IRenderManagerService)
+        .getRenderById(workbook.getId())
+        ?.with(SheetSkeletonManagerService)
+        .getCurrentParam()?.sheetId
+    } catch {
+      // Render modules not registered yet (redi throws): model fallback.
+      return undefined
+    }
+  })()
+  const sheetId = renderSheetId ?? workbook.getActiveSheet()?.getSheetId()
+  if (!sheetId) return undefined
+  if (workbook.getActiveSheet()?.getSheetId() !== sheetId) {
+    const rendered = workbook.getSheetBySheetId(sheetId)
+    if (rendered) workbook.setActiveSheet(rendered)
+  }
+  return sheetId
+}
+
 export function queueVisualInstall(
   runtime: UniverRuntime,
   lazyWorkbookRef: { current: LazyWorkbookState | null },
   visualDisposablesRef: { current: { dispose(): void }[] },
   visualInstallTimerRef: { current: ReturnType<typeof setTimeout> | null },
-  sheetId: string,
   chartEditRef?: { current: (chartPath: string, edit: ChartEditData) => void },
   chartVectorRef?: { current: (chartPath: string, range: string) => Promise<ChartVectorRead> },
   shapeEditRef?: { current: (visualId: string, changes: ShapeEditChanges) => void },
@@ -4434,13 +5077,9 @@ export function queueVisualInstall(
   if (visualInstallTimerRef.current) clearTimeout(visualInstallTimerRef.current)
   visualInstallTimerRef.current = setTimeout(function install() {
     visualInstallTimerRef.current = null
-    if (
-      lazyWorkbookRef.current !== state ||
-      runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId() !== sheetId
-    ) {
-      return
-    }
-    const workbookId = runtime.univerAPI.getActiveWorkbook()?.getId()
+    if (lazyWorkbookRef.current !== state) return
+    const workbook = runtime.univerAPI.getActiveWorkbook()
+    const workbookId = workbook?.getId()
     const render = workbookId
       ? runtime.univer.__getInjector().get(IRenderManagerService).getRenderById(workbookId)
       : null
@@ -4455,6 +5094,8 @@ export function queueVisualInstall(
       visualInstallTimerRef.current = setTimeout(install, 100)
       return
     }
+    const sheetId = resolveRenderedSheetId(runtime)
+    if (!sheetId) return
     // Reinstalling mid-drag disposes the dragged node and kills its pointer
     // capture — hold off until the drop. Same for an open inline chart
     // editor, whose typed-in state lives in the float DOM.
@@ -4517,19 +5158,17 @@ export function queueSparklineInstall(
   lazyWorkbookRef: { current: LazyWorkbookState | null },
   sparklineDisposablesRef: { current: { dispose(): void }[] },
   sparklineTimerRef: { current: ReturnType<typeof setTimeout> | null },
-  sheetId: string,
 ): void {
   const state = lazyWorkbookRef.current
   if (!state) return
   if (sparklineTimerRef.current) clearTimeout(sparklineTimerRef.current)
   sparklineTimerRef.current = setTimeout(() => {
     sparklineTimerRef.current = null
-    if (
-      lazyWorkbookRef.current !== state ||
-      runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId() !== sheetId
-    ) {
-      return
-    }
+    if (lazyWorkbookRef.current !== state) return
+    // Fire-time rendered sheet, for the same stale-float reason as
+    // queueVisualInstall above.
+    const sheetId = resolveRenderedSheetId(runtime)
+    if (!sheetId) return
     disposeVisuals(sparklineDisposablesRef.current)
     const sheetMeta = state.file.sheets.find((sheet) => sheet.id === sheetId)
     const sparklines: SparklineGroupState[] = [

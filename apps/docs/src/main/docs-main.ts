@@ -10,7 +10,18 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { BrowserWindow, Menu, WebContentsView, app, dialog, ipcMain, net, shell } from 'electron'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeImage,
+  net,
+  shell,
+} from 'electron'
 import {
   appMenuLabels,
   configuredDefaultSaveDir,
@@ -56,6 +67,7 @@ import {
 import {
   ensureGenofficeLogin,
   gskApiKey,
+  gskGenerateImage,
   gskLoginInfo,
   hasGskAuth,
   webSearch,
@@ -2408,6 +2420,7 @@ const ATTACHMENT_EXTS = new Set([
   'pptx',
   'ppt',
   'xlsx',
+  'xlsm',
   'xls',
   ...ATTACHMENT_IMAGE_EXTS,
 ])
@@ -2695,6 +2708,34 @@ export function registerAiIpc(): void {
         return { base64: buf.toString('base64'), mime }
       } catch {
         return null
+      }
+    },
+  )
+
+  // docs-owned (like pdf:generate-image): slides' ai:generate-image is only
+  // registered once a slides view exists, so docs needs its own channel
+  ipcMain.handle(
+    'docs:ai-generate-image',
+    async (_event, op: { prompt?: unknown; aspectRatio?: unknown }) => {
+      if (!hasGskAuth())
+        return {
+          error: 'Genspark account is not logged in on this machine; ask the user to log in first',
+        }
+      if (!gskCloudToolsOn())
+        return {
+          error:
+            'Genspark cloud tools are turned off in Settings (AI Model); enable them to use this tool',
+        }
+      const prompt = String(op?.prompt ?? '').trim()
+      if (!prompt) return { error: 'prompt must not be empty' }
+      try {
+        const r = await gskGenerateImage({
+          prompt,
+          aspectRatio: op?.aspectRatio ? String(op.aspectRatio) : undefined,
+        })
+        return { url: r.url }
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) }
       }
     },
   )
@@ -3301,6 +3342,44 @@ export function registerDocsIpc(): void {
     },
   )
 
+  // r136: copying an embedded picture must yield a real bitmap for external
+  // apps (Gmail pasted blank) plus plain <img> html for cross-document paste
+  // (the protected wrapper round-tripped as a "protected content" shell).
+  ipcMain.handle(
+    'docs:copy-image-to-clipboard',
+    (_event, dataUrl: unknown, meta: unknown): boolean => {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
+      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+      // createFromBuffer, not createFromDataURL — the latter returns an empty
+      // image for valid PNGs in this Electron
+      const image = nativeImage.createFromBuffer(Buffer.from(base64, 'base64'))
+      if (image.isEmpty()) return false
+      // the html flavor carries the DISPLAY size + layout meta so an in-app
+      // paste keeps size/align/wrap instead of falling back to bitmap pixels
+      let width = image.getSize().width
+      let height = image.getSize().height
+      let metaAttr = ''
+      if (typeof meta === 'string' && meta.length <= 2048) {
+        try {
+          const parsed = JSON.parse(meta) as Record<string, unknown>
+          if (typeof parsed.imageWidthPx === 'number' && parsed.imageWidthPx > 0)
+            width = Math.round(parsed.imageWidthPx)
+          if (typeof parsed.imageHeightPx === 'number' && parsed.imageHeightPx > 0)
+            height = Math.round(parsed.imageHeightPx)
+          const escaped = meta.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+          metaAttr = ` data-image-meta="${escaped}"`
+        } catch {
+          /* malformed payload: plain img */
+        }
+      }
+      clipboard.write({
+        image,
+        html: `<img src="${dataUrl}" width="${width}" height="${height}"${metaAttr}>`,
+      })
+      return true
+    },
+  )
+
   ipcMain.handle('docs:print', async (event) => {
     // print the calling tab's own content; zero margins — the docx page padding provides them.
     // Resolves when the system dialog is dismissed; the print dialog stays open on cancel
@@ -3350,6 +3429,7 @@ export function registerDocsIpc(): void {
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
         })
         writeFileSync(filePath, data)
+        openExportedPdf(filePath)
         return { ok: true, path: filePath }
       } catch (err) {
         return { ok: false, error: String(err) }
@@ -3404,6 +3484,7 @@ export function registerDocsIpc(): void {
           for (const page of pages) merged.addPage(page)
         }
         writeFileSync(filePath, Buffer.from(await merged.save()))
+        openExportedPdf(filePath)
         return { ok: true, path: filePath }
       } catch (err) {
         return { ok: false, error: String(err) }
@@ -3451,10 +3532,24 @@ interface DocsShellHooks {
   focusTab(id: string): void
   /** closes the calling tab instead of the whole shell window (Cmd+W / role:'close') */
   closeActiveTab(): void
+  /** Shell router used to open exported PDFs in a new GenOffice tab. */
+  openGeneratedPath?(path: string): boolean
 }
 let shellHooks: DocsShellHooks | null = null
 export function setDocsShellHooks(hooks: DocsShellHooks | null): void {
   shellHooks = hooks
+}
+
+/** After a successful Docs → PDF export: open the file in a PDF tab (shell)
+ * or reveal it in the folder (standalone). Tab-opening failure must not
+ * report the export itself as failed — the file is already persisted. */
+function openExportedPdf(path: string): void {
+  try {
+    if (shellHooks?.openGeneratedPath?.(path)) return
+  } catch (err) {
+    console.warn('[docs] Failed to open exported PDF:', err)
+  }
+  shell.showItemInFolder(path)
 }
 
 // ---- application menu ----
@@ -3649,6 +3744,9 @@ export function buildDocsMenu(): void {
       submenu: [
         { label: tm('menuInsertTable'), click: () => sendCommand('insert-table') },
         { label: tm('menuInsertImage'), click: () => sendCommand('insert-image') },
+        // no CmdOrCtrl+Enter accelerator: a menu accelerator would intercept
+        // the key before renderer inputs (comments panel / prompt modal use
+        // Cmd+Enter to submit); the editor keymap handles it instead
         { label: tm('menuInsertPageBreak'), click: () => sendCommand('insert-page-break') },
         {
           label: tm('menuInsertLink'),

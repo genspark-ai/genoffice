@@ -144,6 +144,7 @@ const tMain = createI18n({
   zh: {
     filterSpreadsheets: '电子表格',
     filterXlsx: 'Excel 工作簿',
+    filterXlsm: 'Excel 启用宏的工作簿',
     dlgAddAttachment: '添加附件',
     filterSupported: '支持的文件',
     filterAll: '所有文件',
@@ -188,6 +189,7 @@ const tMain = createI18n({
   en: {
     filterSpreadsheets: 'Spreadsheets',
     filterXlsx: 'Excel Workbooks',
+    filterXlsm: 'Excel Macro-Enabled Workbooks',
     dlgAddAttachment: 'Add Attachments',
     filterSupported: 'Supported Files',
     filterAll: 'All Files',
@@ -233,6 +235,7 @@ const tMain = createI18n({
   ja: {
     filterSpreadsheets: 'スプレッドシート',
     filterXlsx: 'Excel ブック',
+    filterXlsm: 'Excel マクロ有効ブック',
     dlgAddAttachment: '添付ファイルを追加',
     filterSupported: 'サポートされているファイル',
     filterAll: 'すべてのファイル',
@@ -281,6 +284,7 @@ const tMain = createI18n({
   ko: {
     filterSpreadsheets: '스프레드시트',
     filterXlsx: 'Excel 통합 문서',
+    filterXlsm: 'Excel 매크로 사용 통합 문서',
     dlgAddAttachment: '첨부 파일 추가',
     filterSupported: '지원되는 파일',
     filterAll: '모든 파일',
@@ -329,6 +333,7 @@ const tMain = createI18n({
   fr: {
     filterSpreadsheets: 'Feuilles de calcul',
     filterXlsx: 'Classeurs Excel',
+    filterXlsm: 'Classeurs Excel prenant en charge les macros',
     dlgAddAttachment: 'Ajouter des pièces jointes',
     filterSupported: 'Fichiers pris en charge',
     filterAll: 'Tous les fichiers',
@@ -377,6 +382,7 @@ const tMain = createI18n({
   de: {
     filterSpreadsheets: 'Tabellenkalkulationen',
     filterXlsx: 'Excel-Arbeitsmappen',
+    filterXlsm: 'Excel-Arbeitsmappen mit Makros',
     dlgAddAttachment: 'Anlagen hinzufügen',
     filterSupported: 'Unterstützte Dateien',
     filterAll: 'Alle Dateien',
@@ -425,6 +431,7 @@ const tMain = createI18n({
   es: {
     filterSpreadsheets: 'Hojas de cálculo',
     filterXlsx: 'Libros de Excel',
+    filterXlsm: 'Libros de Excel habilitados para macros',
     dlgAddAttachment: 'Agregar datos adjuntos',
     filterSupported: 'Archivos compatibles',
     filterAll: 'Todos los archivos',
@@ -472,6 +479,7 @@ const tMain = createI18n({
   th: {
     filterSpreadsheets: 'สเปรดชีต',
     filterXlsx: 'เวิร์กบุ๊ก Excel',
+    filterXlsm: 'เวิร์กบุ๊ก Excel ที่เปิดใช้งานแมโคร',
     dlgAddAttachment: 'เพิ่มสิ่งที่แนบ',
     filterSupported: 'ไฟล์ที่รองรับ',
     filterAll: 'ไฟล์ทั้งหมด',
@@ -519,6 +527,7 @@ const tMain = createI18n({
   id: {
     filterSpreadsheets: 'Lembar bentang',
     filterXlsx: 'Buku kerja Excel',
+    filterXlsm: 'Buku kerja Excel dengan makro aktif',
     dlgAddAttachment: 'Tambahkan lampiran',
     filterSupported: 'File yang didukung',
     filterAll: 'Semua file',
@@ -564,6 +573,7 @@ const tMain = createI18n({
   ru: {
     filterSpreadsheets: 'Электронные таблицы',
     filterXlsx: 'Книги Excel',
+    filterXlsm: 'Книги Excel с поддержкой макросов',
     dlgAddAttachment: 'Добавить вложения',
     filterSupported: 'Поддерживаемые файлы',
     filterAll: 'Все файлы',
@@ -611,6 +621,7 @@ const tMain = createI18n({
   ar: {
     filterSpreadsheets: 'جداول البيانات',
     filterXlsx: 'مصنفات Excel',
+    filterXlsm: 'مصنفات Excel ممكّنة بوحدات الماكرو',
     dlgAddAttachment: 'إضافة مرفقات',
     filterSupported: 'الملفات المدعومة',
     filterAll: 'كل الملفات',
@@ -656,6 +667,7 @@ const tMain = createI18n({
   pt: {
     filterSpreadsheets: 'Planilhas',
     filterXlsx: 'Pastas de Trabalho do Excel',
+    filterXlsm: 'Pastas de Trabalho Habilitadas para Macro do Excel',
     dlgAddAttachment: 'Adicionar Anexos',
     filterSupported: 'Arquivos Compatíveis',
     filterAll: 'Todos os Arquivos',
@@ -703,6 +715,7 @@ const tMain = createI18n({
   it: {
     filterSpreadsheets: 'Fogli di calcolo',
     filterXlsx: 'Cartelle di lavoro di Excel',
+    filterXlsm: 'Cartelle di lavoro di Excel con attivazione macro',
     dlgAddAttachment: 'Aggiungi allegati',
     filterSupported: 'File supportati',
     filterAll: 'Tutti i file',
@@ -751,6 +764,7 @@ const tMain = createI18n({
   pl: {
     filterSpreadsheets: 'Arkusze kalkulacyjne',
     filterXlsx: 'Skoroszyty programu Excel',
+    filterXlsm: 'Skoroszyty programu Excel z obsługą makr',
     dlgAddAttachment: 'Dodaj załączniki',
     filterSupported: 'Obsługiwane pliki',
     filterAll: 'Wszystkie pliki',
@@ -798,6 +812,7 @@ const tMain = createI18n({
   nl: {
     filterSpreadsheets: 'Spreadsheets',
     filterXlsx: 'Excel-werkmappen',
+    filterXlsm: "Excel-werkmappen met macro's",
     dlgAddAttachment: 'Bijlagen toevoegen',
     filterSupported: 'Ondersteunde bestanden',
     filterAll: 'Alle bestanden',
@@ -846,6 +861,7 @@ const tMain = createI18n({
   ms: {
     filterSpreadsheets: 'Hamparan',
     filterXlsx: 'Buku Kerja Excel',
+    filterXlsm: 'Buku Kerja Excel Didayakan Makro',
     dlgAddAttachment: 'Tambah Lampiran',
     filterSupported: 'Fail yang Disokong',
     filterAll: 'Semua Fail',
@@ -892,6 +908,7 @@ const tMain = createI18n({
   he: {
     filterSpreadsheets: 'גיליונות אלקטרוניים',
     filterXlsx: 'חוברות עבודה של Excel',
+    filterXlsm: 'חוברות עבודה של Excel מותאמות מאקרו',
     dlgAddAttachment: 'הוספת קבצים מצורפים',
     filterSupported: 'קבצים נתמכים',
     filterAll: 'כל הקבצים',
@@ -936,6 +953,7 @@ const tMain = createI18n({
   hi: {
     filterSpreadsheets: 'स्प्रेडशीट',
     filterXlsx: 'Excel कार्यपुस्तिकाएँ',
+    filterXlsm: 'Excel मैक्रो-सक्षम कार्यपुस्तिकाएँ',
     dlgAddAttachment: 'अनुलग्नक जोड़ें',
     filterSupported: 'समर्थित फ़ाइलें',
     filterAll: 'सभी फ़ाइलें',
@@ -983,6 +1001,7 @@ const tMain = createI18n({
   'zh-TW': {
     filterSpreadsheets: '電子試算表',
     filterXlsx: 'Excel 活頁簿',
+    filterXlsm: 'Excel 啟用巨集的活頁簿',
     dlgAddAttachment: '新增附件',
     filterSupported: '支援的檔案',
     filterAll: '所有檔案',
@@ -1069,6 +1088,8 @@ interface SheetsRuntimeConfig {
   rendererFile: string
   /** absolute path to the Rust xlsx-sidecar binary */
   sidecarPath?: string | undefined
+  /** Shell router used to open exported PDFs in a new GenOffice tab. */
+  openGeneratedPath?: (path: string) => boolean
 }
 
 let runtime: SheetsRuntimeConfig = {
@@ -1079,6 +1100,18 @@ let runtime: SheetsRuntimeConfig = {
 
 export function configureSheetsRuntime(config: SheetsRuntimeConfig): void {
   runtime = config
+}
+
+/** After a successful Sheets → PDF export: open the file in a PDF tab (shell)
+ * or reveal it in the folder (standalone). Tab-opening failure must not
+ * report the export itself as failed — the file is already persisted. */
+function openExportedPdf(path: string): void {
+  try {
+    if (runtime.openGeneratedPath?.(path)) return
+  } catch (err) {
+    console.warn('[sheets] Failed to open exported PDF:', err)
+  }
+  shell.showItemInFolder(path)
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -1366,19 +1399,23 @@ function gskCloudToolsOn(): boolean {
 const debugPort = app.isPackaged ? undefined : process.env.XLSX_DEBUG_PORT
 if (debugPort) app.commandLine.appendSwitch('remote-debugging-port', debugPort)
 let forcedWorkbookPath = app.isPackaged ? undefined : process.env.XLSX_OPEN_PATH
-/** true while a shell-queued path is waiting to be consumed (dev env/capture-server
- * paths stay sticky; shell-queued ones are one-shot so a later Open shows the dialog) */
-let shellQueuedWorkbook = false
+/** shell-queued workbook paths keyed by tab webContents id: a multi-select Open
+ * creates several sheets tabs at once, so the path must be bound to its own tab
+ * (a single global would be overwritten by the next iteration). One-shot, unlike
+ * the sticky dev env/capture-server path above. */
+const queuedWorkbookPaths = new Map<number, string>()
 
-/** queue a workbook the next selectWorkbook call opens without a dialog (shell routing) */
-export function setForcedWorkbookPath(path: string | undefined): void {
-  forcedWorkbookPath = path
-  shellQueuedWorkbook = path !== undefined
+/** queue a workbook this tab's first selectWorkbook call opens without a dialog (shell routing) */
+export function queueWorkbookForView(contents: WebContents, path: string): void {
+  queuedWorkbookPaths.set(contents.id, path)
+  contents.once('destroyed', () => {
+    queuedWorkbookPaths.delete(contents.id)
+  })
 }
 
-/** still waiting for the renderer to consume a shell-queued workbook? */
-export function hasQueuedWorkbook(): boolean {
-  return shellQueuedWorkbook
+/** is the active tab still waiting for the renderer to consume a shell-queued workbook? */
+export function hasActiveQueuedWorkbook(): boolean {
+  return activeSheetsWebContents !== null && queuedWorkbookPaths.has(activeSheetsWebContents.id)
 }
 
 /** set by shell for home:new-sheet: renderer opens blank workbook instead of demo */
@@ -1585,6 +1622,7 @@ const ATTACHMENT_EXTS = new Set([
   'pptx',
   'ppt',
   'xlsx',
+  'xlsm',
   'xls',
   ...ATTACHMENT_IMAGE_EXTS,
 ])
@@ -1835,21 +1873,18 @@ export function registerSheetsIpc(): void {
    * would strand the tab as a blank in-memory workbook. The renderer polls
    * this once it is ready and triggers the open itself.
    */
-  ipcMain.handle('sheets:has-queued-workbook', () => hasQueuedWorkbook())
+  ipcMain.handle('sheets:has-queued-workbook', (event) => queuedWorkbookPaths.has(event.sender.id))
 
   ipcMain.handle(IPC_CHANNELS.selectWorkbook, async (event) => {
     const entry = sessionFor(event)
-    let path = forcedWorkbookPath
-    if (shellQueuedWorkbook) {
-      // consume immediately (before the slow session open) so the shell's
-      // retry loop stops re-sending 'open' for the same file
-      forcedWorkbookPath = undefined
-      shellQueuedWorkbook = false
-    }
+    let path = queuedWorkbookPaths.get(event.sender.id) ?? forcedWorkbookPath
+    // consume immediately (before the slow session open) so the shell's
+    // retry loop stops re-sending 'open' for the same file
+    queuedWorkbookPaths.delete(event.sender.id)
     if (!path) {
       const selection = await openFileDialog(event, {
         properties: ['openFile'],
-        filters: [{ name: tm('filterSpreadsheets'), extensions: ['xlsx', 'xls', 'csv'] }],
+        filters: [{ name: tm('filterSpreadsheets'), extensions: ['xlsx', 'xlsm', 'xls', 'csv'] }],
       })
       if (selection.canceled || !selection.filePaths[0]) return null
       path = selection.filePaths[0]
@@ -2114,7 +2149,9 @@ export function registerSheetsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.exportPdf, async (event, input: unknown) => {
     sessionFor(event)
     const request = workbookExportPdfRequestSchema.parse(input)
-    return exportPdf(event, request)
+    const result = await exportPdf(event, request)
+    if (!result.canceled && result.path) openExportedPdf(result.path)
+    return result
   })
 
   ipcMain.handle(IPC_CHANNELS.saveWorkbook, async (event, input: unknown) => {
@@ -2128,18 +2165,24 @@ export function registerSheetsIpc(): void {
     // Converted imports (.xls/.csv) never save silently over the temp copy —
     // the first save always asks where the .xlsx should live.
     if (request.mode === 'save-as' || session.suggestSaveAs !== undefined) {
+      // .xlsm keeps its extension: untouched archive entries (vbaProject.bin,
+      // the macro-enabled content type) round-trip verbatim through the save.
+      const macroEnabled = /\.xlsm$/i.test(
+        session.suggestSaveAs ?? session.restoreTarget ?? session.path,
+      )
+      const ext = macroEnabled ? 'xlsm' : 'xlsx'
       const selection = await saveFileDialog(event, {
         defaultPath: session.suggestSaveAs ?? session.restoreTarget ?? session.path,
-        filters: [{ name: tm('filterXlsx'), extensions: ['xlsx'] }],
+        filters: [{ name: tm(macroEnabled ? 'filterXlsm' : 'filterXlsx'), extensions: [ext] }],
         // CSV import: explain why the save goes through .xlsx (CSV keeps values only)
         ...(session.csvImport
           ? { title: tm('csvSaveAsNotice'), message: tm('csvSaveAsNotice') }
           : {}),
       })
       if (selection.canceled || !selection.filePath) return { canceled: true }
-      targetPath = selection.filePath.endsWith('.xlsx')
+      targetPath = selection.filePath.toLowerCase().endsWith(`.${ext}`)
         ? selection.filePath
-        : `${selection.filePath}.xlsx`
+        : `${selection.filePath}.${ext}`
     } else if (session.restoreTarget !== undefined) {
       // Restored crash-recovery copy: the restore prompt was the confirmation,
       // so Save writes straight back to the original — unless someone else
@@ -2791,6 +2834,8 @@ async function writeWorkbookTo(
       })
     } else if ('hidden' in op) {
       sheetOps.push({ kind: op.kind, start: op.start, end: op.end, hidden: op.hidden })
+    } else if ('style' in op) {
+      sheetOps.push({ kind: op.kind, start: op.start, end: op.end, style: op.style })
     } else if ('before' in op) {
       sheetOps.push({ kind: op.kind, index: op.index, count: op.count, before: op.before })
     } else {

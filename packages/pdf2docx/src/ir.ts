@@ -45,6 +45,9 @@ export interface PdfChar {
   isGenerated: boolean
   /** source char index in the PDFium text page (extraction bookkeeping, P16 B) */
   pdfCharIndex?: number
+  /** per-page serial of the source text object: chars of one draw share it —
+   * separates ligature expansion (one object) from double draws (two) */
+  textObjId?: number
   /** end-of-line hyphenation hyphen (drop when joining the split word) */
   isHyphen: boolean
   script: UnicodeScript
@@ -136,6 +139,12 @@ export interface TextBlock {
   dir: Dir
   /** present = this paragraph is a list item (P4); the marker is auto-generated on rebuild */
   list?: ListInfo
+  /**
+   * lines from this index on were stitched in from the NEXT page (P32) —
+   * they soft-flow past the page boundary, so vertical budgets must charge
+   * only the native lines before it.
+   */
+  stitchedFromLine?: number
   /**
    * present = the paragraph is one TOC dot-leader line (P6). Lines hold the
    * TITLE only; the dots become a right leader tab and `pageNumber` follows it.
@@ -285,6 +294,8 @@ export interface RawSubpath {
   closed: boolean
   /** contains bezier segments (P2 ignores the subpath) */
   hasCurves: boolean
+  /** per-point: points[i] was reached by a straight LINETO (false for MOVETO/bezier points) */
+  lineTo?: boolean[]
 }
 
 export interface RawPath {
@@ -303,6 +314,13 @@ export interface RawPath {
   fromForm?: boolean
   /** top-level page-object index (form children share the form's, P16 A) */
   z?: number
+  /**
+   * bbox of the object's clip region in the same space as the points (P34).
+   * Paint never escapes it — object bounds routinely lie about painted extent
+   * (an accent bar authored as a card-sized rect clipped to its top sliver
+   * reads as a giant slab without it). Absent = no usable clip info.
+   */
+  clipBox?: Rect
 }
 
 // ── tables (P2, lattice) ──
@@ -366,6 +384,8 @@ export type PageBlock = TextBlock | ImageBlock | TableBlock
 export interface FootnoteIR {
   /** document-unique id (page-scoped numbering encoded in) */
   id: string
+  /** the source marker digits ("3") — canvas pages restore them as literal text */
+  marker?: string
   /** note content without its leading marker digits */
   blocks: TextBlock[]
 }
@@ -381,6 +401,13 @@ export interface PageRender {
 export interface IrPage {
   /** 0-based page index */
   index: number
+  /**
+   * this page's first paragraph was stitched onto the previous page's last
+   * (the source page boundary cut MID-PARAGRAPH, P32): the rebuild emits no
+   * explicit page break here — natural flow absorbs small height drift that
+   * an explicit break would amplify into a stranded near-empty page.
+   */
+  flowsFromPrev?: boolean
   widthPt: number
   heightPt: number
   /** /Rotate in 90° steps (0..3) */
@@ -391,6 +418,9 @@ export interface IrPage {
   degraded: boolean
   /** no text layer + one page-covering image → bitmap fallback */
   scanned: boolean
+  /** scanned page whose text was recovered through the local OCR engine —
+   * layout guards tuned for authored ink must not re-degrade it */
+  ocrRecovered?: boolean
   /** page had a structure tree (Tagged PDF); P1 only probes, P2+ may consume it */
   hasStructTree: boolean
   /** why the page degraded (for warnings), e.g. 'bad-tounicode' | 'rotated' | 'vertical-text' */

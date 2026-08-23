@@ -5,6 +5,7 @@
  * once with an empty dependency list.
  */
 import type { ActionCtx } from './action-context'
+import { isEditableText } from './konva-adapter'
 import * as clipboardActions from './clipboard-actions'
 import * as arrangeActions from './arrange-actions'
 import * as slideActions from './slide-actions'
@@ -48,6 +49,13 @@ export function handleGlobalKeydown(ctx: ActionCtx, e: KeyboardEvent): void {
     if (editing) return
     e.preventDefault()
     ctx.setFindOpen(true)
+    return
+  }
+  // ⌘K: annotate the selection with an AI edit
+  if (mod && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+    if (editing || inField || selectedIds.length === 0) return
+    e.preventDefault()
+    ctx.openAskPopover()
     return
   }
   // ⌘P print
@@ -123,7 +131,7 @@ export function handleGlobalKeydown(ctx: ActionCtx, e: KeyboardEvent): void {
   ) {
     const ctx0 = ctx.findNodeCtx(selectedIds[0]!)
     const n0 = ctx0?.node
-    if (n0 && (n0.type === 'text' || n0.type === 'shape')) {
+    if (n0 && isEditableText(n0)) {
       e.preventDefault()
       ctx.setEditing({
         sourceId: n0.sourceId,

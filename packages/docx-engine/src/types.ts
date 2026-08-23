@@ -208,12 +208,15 @@ export interface SdtShell {
 
 /** One custom tab stop from w:tabs/w:tab. Positions are in twips. */
 export interface TabStop {
-  /** position in twips (w:pos) */
+  /** position in twips (w:pos); percent of the text column when rel is set */
   pos: number
   /** tab alignment (w:val) */
   val: 'left' | 'center' | 'right' | 'decimal' | 'bar' | 'clear'
   /** leader character (w:leader): none/dot/hyphen/underscore/heavy/middleDot */
   leader?: 'none' | 'dot' | 'hyphen' | 'underscore' | 'heavy' | 'middleDot'
+  /** display-only stop synthesized from a w:ptab (absolute position tab):
+   *  pos is a percent of the column width. Never written back to w:tabs. */
+  rel?: 'margin'
 }
 
 /** Declared look of one w:pBdr side. */
@@ -275,6 +278,10 @@ export interface ParaFormat {
   spaceBefore?: number
   /** space below the paragraph in twips (w:spacing w:after) */
   spaceAfter?: number
+  /** w:beforeAutospacing: Word ignores the literal and uses its HTML auto value (14pt) */
+  spaceBeforeAuto?: boolean
+  /** w:afterAutospacing: Word ignores the literal and uses its HTML auto value (14pt) */
+  spaceAfterAuto?: boolean
   /** start the paragraph on a new page (w:pageBreakBefore) */
   pageBreakBefore?: boolean
   /** keep this paragraph on same page as the next paragraph (w:keepNext) */
@@ -287,7 +294,7 @@ export interface ParaFormat {
   snapToGrid?: boolean
   /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN; Word default=true); false when both are explicitly off */
   autoSpace?: boolean
-  /** ignore space-after when followed by same-style para (w:contextualSpacing) */
+  /** ignore spacing next to same-style paras (w:contextualSpacing); false = explicit off overriding the style */
   contextualSpacing?: boolean
   /** paragraph shading fill, hex without '#' (w:shd w:fill) */
   shadingFill?: string
@@ -355,6 +362,19 @@ export interface SectionSettings {
   marginLeft: number
   /** simple single-line box page border (w:pgBorders) */
   pageBorder: boolean
+  /** page border box details (parse-side; pageBorder stays the on/off flag) */
+  pageBorderProps?: {
+    /** pages the border applies to (w:display); undefined = all pages */
+    display?: 'firstPage' | 'notFirstPage'
+    /** distance basis (w:offsetFrom): 'page' = space from the page edge, 'text' = from the text area */
+    offsetFrom?: 'page' | 'text'
+    /** border distance in points (max across sides' w:space) */
+    spacePt: number
+    /** line width in points (max across sides' w:sz eighth-points) */
+    widthPt: number
+    /** hex without '#', first side declaring a literal color */
+    color?: string
+  }
   /** number of text columns (w:cols w:num), 1 = normal */
   columns: number
   /** column gap (w:cols w:space, twips; OOXML default 720) */
@@ -562,6 +582,12 @@ export interface FieldDisplay {
   anchor?: string
   /** numbering marker of the entry's w:numPr ("1.", "1.1."), computed at parse time */
   num?: string
+  /** display-only metrics of the entry paragraph (direct pPr/run values; Word
+   *  sizes TOC lines by them while the style carries nothing) */
+  szHalfPoints?: number
+  lineRule?: 'auto' | 'atLeast' | 'exact'
+  lineRawTwips?: number
+  lineSpacing?: number
 }
 
 /** Editable text tokens inside an OMML formula; the surrounding math tree is preserved. */
@@ -703,6 +729,8 @@ export interface TableCell {
   nestedTables?: TableModel[]
   /** anchored shapes/textboxes inside cell paragraphs (display-only; Word grows the row to hold them) */
   anchoredBoxes?: TextboxDisplay[]
+  /** per anchored box: index of its anchor paragraph (positionV "paragraph" origin); absent = cell top */
+  anchoredBoxAnchors?: number[]
   /** per nested table: how many cell paragraphs precede it (reading-order anchor); absent = after all paragraphs */
   nestedTableAnchors?: number[]
   colSpan?: number
@@ -738,7 +766,7 @@ export interface TableModel {
   colWidthsTwips?: number[]
   /** table width as a percentage of the body width (w:tblW type="pct"); absolute widths are ignored when set */
   widthPct?: number
-  /** autofit layout (w:tblW auto/absent/zero, no fixed w:tblLayout): display may widen columns to min-content */
+  /** autofit layout (no fixed w:tblLayout; w:tblW auto/absent/zero or pct): display may widen columns to min-content */
   autoLayout?: boolean
   /** table-level default cell margins (w:tblCellMar) */
   cellMarTwips?: CellMargins
@@ -1068,6 +1096,11 @@ export interface TextboxDisplay {
    */
   prst?: string
   /**
+   * a:custGeom outline as normalized SVG path channels (coords 0..1, scaled to
+   * the box by the renderer), display-only. Wins over prst when present.
+   */
+  pathData?: { path?: string; fillPath?: string; strokePath?: string }
+  /**
    * WordArt preset id (e.g. 'wordArt-1').  When set, the editor applies
    * large-text CSS approximation (color + optional text-stroke).
    * This field is display-only; it is never written to OOXML.
@@ -1079,6 +1112,21 @@ export interface TextboxDisplay {
   nowrap?: boolean
   /** vertical anchoring of the text body (wps:bodyPr anchor="ctr|b"), display-only */
   vAlign?: 'center' | 'bottom'
+  /** default text color from the shape style's a:fontRef (hex without '#'); a run's own color wins */
+  textColor?: string
+  /**
+   * Ordinal of this box's first w:txbxContent among all non-fallback
+   * w:txbxContent segments in the block XML. The save path addresses the box
+   * by it — positional matching skews whenever a paragraph also renders boxes
+   * that consume no segment (ink-only shapes, WordArt, pictures).
+   */
+  txbxIndex?: number
+  /**
+   * wps:cNvPr id of the owning DrawingML shape. A box with no txbxIndex has
+   * no w:txbxContent yet: its first text commit injects a fresh wps:txbx into
+   * the shape addressed by this id.
+   */
+  shapeId?: string
   /**
    * Content holds tables / content controls flattened into display lines, so
    * paras do not map 1:1 onto the w:txbxContent w:p children the patch-save
@@ -1095,6 +1143,15 @@ export interface TextboxDisplay {
    *  paragraph with other drawings — leave the flow like Word (absolute
    *  position, no flow height) instead of stacking as blocks */
   floating?: boolean
+  /** behindDoc="1" anchor: this box paints under the body text */
+  behind?: boolean
+  /** first-page page-anchored cover art: offsets are raw page coordinates and
+   *  the box positions against the page box, not the anchor paragraph */
+  pagePinned?: boolean
+  /** page/margin-relative posOffset V rendered from the anchor paragraph: the
+   *  canvas re-pins the box to its page top (Word treats the offset as
+   *  absolute on the anchor's page, wherever the anchor sits) */
+  pageRelV?: boolean
   /** wrapTopAndBottom (paragraph/line-relative V): the anchor paragraph keeps
    *  flow height down to this box bottom (px) so following text resumes below */
   bandBottomPx?: number
@@ -1194,6 +1251,9 @@ export interface StyleDisplay {
   lineRawTwips?: number
   spaceBeforeTwips?: number
   spaceAfterTwips?: number
+  /** style-level w:beforeAutospacing / w:afterAutospacing (Word HTML auto = 14pt) */
+  spaceBeforeAuto?: boolean
+  spaceAfterAuto?: boolean
   /** indents from the style definition (w:pPr w:ind, twips; hanging is stored as a negative firstLine) */
   indentLeftTwips?: number
   indentRightTwips?: number
@@ -1294,6 +1354,9 @@ export interface DocDefaults {
   spaceBeforeTwips?: number
   /** F1: paragraph spacing after default (twips); undefined = not set in docDefaults */
   spaceAfterTwips?: number
+  /** docDefaults-level w:beforeAutospacing / w:afterAutospacing (Word HTML auto = 14pt) */
+  spaceBeforeAuto?: boolean
+  spaceAfterAuto?: boolean
   /** rPrDefault w:lang w:val (BCP-47) — hyphenation/locale of the body text */
   lang?: string
 }
@@ -1359,6 +1422,22 @@ export interface ThemeFonts {
   minorCs?: string
   /** settings.xml w:themeFontLang w:eastAsia — picks Word's face for empty EA theme slots */
   eaLang?: string
+  /** per-script faces (<a:font script="Hang" typeface="…"/>) of each font group */
+  majorScripts?: Record<string, string>
+  minorScripts?: Record<string, string>
+}
+
+/** One word/fontTable.xml entry — Word's substitution hints for missing fonts. */
+export interface FontTableEntry {
+  name: string
+  /** w:altName — the face Word substitutes when the font is missing */
+  altName?: string
+  /** w:panose1 hex digits (byte 2 = serif style: 02-0A serif, 0B-0F sans) */
+  panose?: string
+  /** w:family — roman / swiss / modern / script / decorative / auto */
+  family?: string
+  /** w:pitch — fixed / variable / default */
+  pitch?: string
 }
 
 /** Color scheme values (hex without '#') from a:clrScheme. */
@@ -1393,6 +1472,8 @@ export interface ParsedDoc {
   inks: InkInfo[]
   /** theme font pair from word/theme/theme1.xml, null when the doc has no theme part */
   themeFonts?: ThemeFonts | null
+  /** word/fontTable.xml entries (substitution hints), absent when the part is missing/empty */
+  fontTable?: FontTableEntry[]
   /** color scheme from word/theme/theme1.xml, null when the doc has no theme part */
   themeColors?: ThemeColors | null
   /** editing restriction from word/settings.xml, null when none */

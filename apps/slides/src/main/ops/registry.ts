@@ -54,6 +54,10 @@ export interface OpRecord {
   after?: unknown
   /** ids minted by additive ops */
   created?: string[]
+  /** Durable id of the slide the op acted on, stamped by the executor at apply
+      time — post-txn consumers must use this, not target.slide: a numeric index
+      drifts once a later structural op (delete/move/duplicate) shifts pages. */
+  slideId?: string
 }
 
 export interface OpContext {

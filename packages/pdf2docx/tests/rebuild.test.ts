@@ -546,6 +546,36 @@ describe('rebuildDocx: sections, spacing, floats (P3)', () => {
     expect(settings.colWidths![1]!).toBeGreaterThan(2 * settings.colWidths![0]!)
   })
 
+  it('RTL unequal columns keep w:col in flow order (first entry = right/wide column)', async () => {
+    // Arabic textbook layout: wide body on the RIGHT, narrow sidebar on the
+    // LEFT. Under <w:bidi/> Word assigns w:col entries in FLOW order (first
+    // one lands at the right edge) — a visually-ordered list hands the sidebar
+    // width to the body column and every line wraps at sidebar width.
+    const bodyA = columnBlock('نص الجسم الأول', 220, 540, 700)
+    const bodyB = columnBlock('نص الجسم الثاني', 220, 540, 660)
+    const sideA = columnBlock('خريطة', 72, 172, 700)
+    const p = page([bodyA, bodyB, sideA], {
+      sections: [
+        {
+          box: box(72, 648, 540, 700),
+          columns: [
+            // reading order: right (wide body) column first
+            { box: box(220, 648, 540, 700), blocks: [bodyA, bodyB] },
+            { box: box(72, 648, 172, 700), blocks: [sideA] },
+          ],
+          gutterWidthsPt: [48],
+          dir: 'rtl',
+        },
+      ],
+    })
+    const parsed = await parseDocx(await rebuildDocx([p]))
+    const { readSectionSettings } = await import('@genoffice/docx-engine')
+    const settings = readSectionSettings(parsed)
+    expect(settings.columns).toBe(2)
+    expect(settings.colWidths).toHaveLength(2)
+    expect(settings.colWidths![0]!).toBeGreaterThan(2 * settings.colWidths![1]!)
+  })
+
   it('a TOC entry in the RIGHT column measures from the column base (P23)', async () => {
     // the old emitter measured indent from the page margin and the leader tab
     // to the full content width: a right-column checklist entry got its column
@@ -906,11 +936,12 @@ describe('rebuildDocx: page vertical budget (P8)', () => {
     const parsed = await parseDocx(await rebuildDocx([page([text, image])]))
     const xml = parsed.internal.documentXml
     // budget: usable = 792 − marginTop 12 − marginBottom 20 − slack 48 =
-    // 712pt, plus the half-slack whitespace rebate (P16 C) = 736pt; block
-    // heights = text 278tw (13.9pt) + image 30pt → the gap shrinks to what
-    // is left: 736 − 43.9 = 692.1pt = 13842tw
+    // 712pt; the half-slack whitespace rebate (P16 C) is withheld on a
+    // spacing-dominated page (want ≫ ink — planning past the physical page
+    // spilled the GB/T cover); block heights = text 278tw (13.9pt) + image
+    // 30pt → the gap shrinks to what is left: 712 − 43.9 = 668.1pt = 13362tw
     expect(xml).not.toContain('w:before="14560"') // the unclamped 728pt
-    expect(xml).toContain('w:before="13842"')
+    expect(xml).toContain('w:before="13362"')
     // nothing on the page may carry spacing beyond the spacing budget
     for (const m of xml.matchAll(/w:before="(\d+)"/g)) {
       expect(Number(m[1])).toBeLessThanOrEqual((712 + 24) * 20)
@@ -982,8 +1013,10 @@ describe('rebuildDocx: micro-section chrome charge (P18 A)', () => {
     line([span('narrow text', { box: { x0, y0: top - 12, x1, y1: top } })], top)
   const stack = (top: number, n: number) => Array.from({ length: n }, (_, i) => mk(top - 16 * i))
   const build = async (withMicro: boolean) => {
-    const a = textBlock(stack(770, 20))
-    const b = textBlock(stack(430, 20), { spacingBeforePt: 40 })
+    // 19-line stacks: the plain page must fit unsqueezed within usable —
+    // whitespace no longer plans into the slack rebate (P33)
+    const a = textBlock(stack(770, 19))
+    const b = textBlock(stack(430, 19), { spacingBeforePt: 40 })
     const c = textBlock([mk(40)], { spacingBeforePt: 40 })
     const label = textBlock([mk(450, 72, 200)])
     const ruling = textBlock([mk(450, 380, 540)])

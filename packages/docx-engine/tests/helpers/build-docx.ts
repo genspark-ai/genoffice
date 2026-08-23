@@ -23,6 +23,8 @@ export interface BuildDocxOptions {
   binaryParts?: Array<{ path: string; base64: string; extension: string; contentType: string }>
   /** extra sectPr children inserted first (headerReference/footerReference…) */
   sectPrExtra?: string
+  /** extra attributes on the <w:document> root (e.g. xml:space="preserve") */
+  docRootExtraAttrs?: string
 }
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -118,7 +120,7 @@ export async function buildDocx(options: BuildDocxOptions): Promise<Uint8Array> 
     '</w:sectPr>'
   zip.file(
     'word/document.xml',
-    `${XML_DECL}<w:document ${DOC_NS}><w:body>${options.bodyXml}${sectPr}</w:body></w:document>`,
+    `${XML_DECL}<w:document ${DOC_NS}${options.docRootExtraAttrs ? ` ${options.docRootExtraAttrs}` : ''}><w:body>${options.bodyXml}${sectPr}</w:body></w:document>`,
   )
 
   // Pin zip entry mtimes (JSZip defaults them to "now") so regenerating the

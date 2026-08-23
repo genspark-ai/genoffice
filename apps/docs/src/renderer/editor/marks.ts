@@ -2,7 +2,7 @@ import { Extension, Mark } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssCsFontFamily, cssDualFontFamily, cssFontFamily } from '../line-metrics'
+import { cssCsFontFamily, cssRunFontFamily } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import {} from '@genoffice/docx-engine'
@@ -281,9 +281,7 @@ export const RevisionOriginalExtension = Extension.create({
               if (old.font || old.fontAscii) {
                 const ea = old.font ? String(old.font) : null
                 const ascii = old.fontAscii ? String(old.fontAscii) : null
-                styles.push(
-                  `font-family:${ea && ascii ? cssDualFontFamily(ascii, ea) : cssFontFamily((ea ?? ascii)!)}`,
-                )
+                styles.push(`font-family:${cssRunFontFamily(ascii, ea)}`)
               }
               decos.push(Decoration.inline(pos, pos + node.nodeSize, { style: styles.join(';') }))
             })
@@ -364,9 +362,15 @@ export function fontAttrsFromFamilyChain(chain: string | undefined): Record<stri
     .filter(
       (x) =>
         x &&
+        // var(--doc-latin-chain, ...) fragments from eastAsia-only chains
+        !/^var\(|\)$/.test(x) &&
         !/^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/i.test(x) &&
-        // internal fonts.css aliases (GenOffice Songti SC etc.) are not user picks
-        !/^genoffice /i.test(x),
+        // internal fonts.css aliases are not user picks: 'GenOffice *', the
+        // '* GO' renamed/range-limited faces (Carlito GO, KR Theme Latin GO,
+        // Noto Sans/Serif CJK GO...) and the size-adjusted Noto Arabic aliases
+        !/^genoffice /i.test(x) &&
+        !/ go$/i.test(x) &&
+        !/^noto (naskh|sans) arabic (w|ta|tnr)$/i.test(x),
     )
   const ea = families.find(
     (f, i) => isEastAsianFontName(f) && (i === 0 || !/^noto (sans|serif) cjk sc$/i.test(f)),
@@ -523,9 +527,7 @@ export const TextStyleMark = Mark.create({
         `font-family:${
           cs
             ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
-            : ea && ascii
-              ? cssDualFontFamily(ascii, ea)
-              : cssFontFamily((ea ?? ascii)!)
+            : cssRunFontFamily(ascii, ea)
         }`,
       )
     }

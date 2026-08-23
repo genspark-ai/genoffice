@@ -32,6 +32,8 @@ export type ChartGridValue = string | number | boolean | null | undefined
 /// renderer's WorkbookVisualObject.chart (structurally identical).
 export interface ChartSeriesVisualState {
   name: string
+  /// `c:tx` cell reference when the name carries no cached text.
+  nameRef?: string | undefined
   categories: string[]
   values: number[]
   numberFormat?: string | undefined
@@ -73,7 +75,9 @@ export interface ChartVisualState {
   legend?: 'none' | 'right' | 'bottom' | 'top' | 'left' | undefined
   axisTitles?:
     { category?: string | null | undefined; value?: string | null | undefined } | undefined
-  dataLabels?: 'none' | 'value' | 'percent' | 'category-percent' | undefined
+  /// 'category-value-percent' is read-only (all three show* flags on).
+  dataLabels?:
+    'none' | 'value' | 'percent' | 'category-percent' | 'category-value-percent' | undefined
   dataLabelPosition?: 'center' | 'inside-end' | 'outside-end' | undefined
   dataLabelFormat?: string | undefined
   grouping?: 'clustered' | 'stacked' | 'percentStacked' | 'standard' | undefined

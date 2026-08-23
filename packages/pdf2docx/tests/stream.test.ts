@@ -487,6 +487,42 @@ describe('P27 sparse-leading runs', () => {
     expect(tables).toHaveLength(0)
   })
 
+  it('pairs wide-gutter key-value rows across generous leading (cell-data mode)', () => {
+    // report sheet: 2-unit label/value rows at 33pt pitch (gap 23pt > 1.6 ×
+    // 10pt height), values right-aligned at x1=500
+    const rows: Array<[string, string, number]> = [
+      ['Credit Limit', '-', 700],
+      ['Sanctioned Amount', '2674354', 667],
+      ['Current Balance', '2057058', 634],
+      ['Rate of Interest', '9.95%', 601],
+      ['EMI Amount', '88280', 568],
+    ]
+    const chars = rows.flatMap(([label, value, y]) => [
+      ...mkText(label, 100, { y }).chars,
+      ...mkText(value, 500 - value.length * 5, { y }).chars,
+    ])
+    const { tables } = detectStreamTables(unitsOf(chars), shapesOf(), [], { relaxKeyValue: true })
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.rows).toHaveLength(5)
+    expect(tables[0]!.colWidthsPt).toHaveLength(2)
+    expect(cellText(tables[0]!, 1, 0)).toBe('Sanctioned Amount')
+    expect(cellText(tables[0]!, 1, 1)).toBe('2674354')
+
+    // default mode stays miss-rather-than-misfire: no pairing without the flag
+    expect(detectStreamTables(unitsOf(chars), shapesOf()).tables).toHaveLength(0)
+  })
+
+  it('does not pair narrow-gutter rows (numbered list) at the same pitch', () => {
+    const ys = [700, 667, 634, 601, 568]
+    const chars = ys.flatMap((y, i) => [
+      ...mkText(String(i + 1), 100, { y }).chars,
+      // one word-space away — a list marker, not a label/value gutter
+      ...mkText('Introduction', 115, { y }).chars,
+    ])
+    const { tables } = detectStreamTables(unitsOf(chars), shapesOf(), [], { relaxKeyValue: true })
+    expect(tables).toHaveLength(0)
+  })
+
   it('absorbs a wrapped-label row between strong value rows', () => {
     // value rows at 20pt pitch with a 1-unit label continuation between them
     const mkRow = (y: number) =>
@@ -503,5 +539,79 @@ describe('P27 sparse-leading runs', () => {
     const { tables } = detectStreamTables(unitsOf(chars), shapesOf())
     expect(tables).toHaveLength(1)
     expect(tables[0]!.rows.length).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('align-failure split retry', () => {
+  it('recovers a table glued to misaligned trailing rows', () => {
+    // 5 aligned rows, then (after the widest gap) drifting 2-unit rows that
+    // solve columns with the table but drag a column's alignment under the
+    // gate — the run must split and the table half survive
+    const table = [700, 685, 670, 655, 640].flatMap((y, i) => [
+      ...mkText(`Item${i}`, 100, { y }).chars,
+      ...mkText(`${i * 3}`, 250, { y }).chars,
+    ])
+    const junk = [618, 603, 588, 573].flatMap((y, i) => [
+      ...mkText('note', 120 + i * 20, { y }).chars,
+      ...mkText('text', 270 + i * 20, { y }).chars,
+    ])
+    const { tables } = detectStreamTables(unitsOf([...table, ...junk]), shapesOf(), [], {
+      relaxKeyValue: true,
+    })
+    expect(tables.length).toBeGreaterThanOrEqual(1)
+    // docx mode (no cell-data flag) keeps today's flow behavior
+    const docx = detectStreamTables(unitsOf([...table, ...junk]), shapesOf())
+    expect(docx.tables.find((x) => x.rows.length === 5)).toBeUndefined()
+    const t = tables.find((x) => x.rows.length === 5)
+    expect(t).toBeDefined()
+    expect(cellText(t!, 0, 0)).toBe('Item0')
+    expect(cellText(t!, 4, 1)).toBe('12')
+    // the drifting rows never join a table
+    for (const x of tables) {
+      for (const row of x.rows) {
+        for (const cell of row) {
+          const txt = cell.blocks
+            .map((b) => b.lines.map((l) => l.spans.map((s) => s.text).join('')).join(''))
+            .join('')
+          expect(txt).not.toContain('note')
+        }
+      }
+    }
+  })
+})
+
+describe('KV-grid alignment waiver (cell-data)', () => {
+  // 4 rows × 2 cols of 'Label: value' cells whose left edges drift by an
+  // indent step — alignment fails but the colon-led cells are self-describing
+  const kvChars = [700, 685, 670, 655, 640, 625].flatMap((y, i) => [
+    ...mkText(`Field${i}: ${i * 7}`, 100 + i * 6, { y }).chars,
+    ...mkText(`Other${i}: yes`, 300 + i * 6, { y }).chars,
+    ...mkText(`Third${i}: no`, 480 + i * 6, { y }).chars,
+  ])
+
+  it('keeps a drifting label:value grid in cell-data mode', () => {
+    const { tables } = detectStreamTables(unitsOf(kvChars), shapesOf(), [], {
+      relaxKeyValue: true,
+    })
+    expect(tables).toHaveLength(1)
+    expect(tables[0]!.rows).toHaveLength(6)
+    expect(cellText(tables[0]!, 2, 1)).toBe('Other2: yes')
+  })
+
+  it('docx mode keeps the alignment gate', () => {
+    const { tables } = detectStreamTables(unitsOf(kvChars), shapesOf())
+    expect(tables).toHaveLength(0)
+  })
+
+  it('drifting rows without label colons stay rejected', () => {
+    const chars = [700, 685, 670, 655, 640, 625].flatMap((y, i) => [
+      ...mkText(`some words ${i}`, 100 + i * 6, { y }).chars,
+      ...mkText(`more text ${i}`, 300 + i * 6, { y }).chars,
+      ...mkText(`extra bits ${i}`, 480 + i * 6, { y }).chars,
+    ])
+    const { tables } = detectStreamTables(unitsOf(chars), shapesOf(), [], {
+      relaxKeyValue: true,
+    })
+    expect(tables).toHaveLength(0)
   })
 })

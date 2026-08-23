@@ -75,6 +75,9 @@ describe('parseCellValue', () => {
     expect(parseCellValue('-3.5')).toEqual(num(-3.5))
     expect(parseCellValue('0')).toEqual(num(0))
     expect(parseCellValue('0.25')).toEqual(num(0.25))
+    // authored trailing zeros keep a fixed-decimal display format
+    expect(parseCellValue('31.10')).toEqual(num(31.1, '0.00'))
+    expect(parseCellValue('2.500')).toEqual(num(2.5, '0.000'))
     expect(parseCellValue('1,234')).toEqual(num(1234, '#,##0'))
     expect(parseCellValue('1,234.56')).toEqual(num(1234.56, '#,##0.00'))
     expect(parseCellValue('12,345,678')).toEqual(num(12345678, '#,##0'))
@@ -189,6 +192,75 @@ describe('rebuildXlsx', () => {
     expect(parts.has('xl/worksheets/sheet1.xml')).toBe(true)
     expect(parts.has('xl/worksheets/sheet2.xml')).toBe(true)
     expect(parts.get('[Content_Types].xml')).toContain('/xl/worksheets/sheet2.xml')
+  })
+
+  it('carries dropped furniture as the print header/footer on every sheet', async () => {
+    const hf = {
+      pageNo: false,
+      fontSizePt: 9,
+      fontFamily: 'Helvetica',
+      bold: false,
+      italic: false,
+      color: '000000',
+      coversFirstPage: true,
+    }
+    const { xlsx } = await rebuildXlsx(
+      [page(), page({ index: 1 })],
+      [
+        { ...hf, band: 'top' as const, text: 'ACME & Co', x0: 240, x1: 360, edgeDistPt: 20 },
+        {
+          ...hf,
+          band: 'bottom' as const,
+          text: 'Page \uE001',
+          pageNo: true,
+          x0: 500,
+          x1: 560,
+          edgeDistPt: 20,
+        },
+      ],
+    )
+    const parts = await unzip(xlsx)
+    for (const name of ['xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml']) {
+      const sheet = parts.get(name)!
+      // centered ink → &C, ampersand doubled; page-number mark → &P at &R
+      expect(sheet).toContain('<oddHeader>&amp;CACME &amp;&amp; Co</oddHeader>')
+      expect(sheet).toContain('<oddFooter>&amp;RPage &amp;P</oddFooter>')
+    }
+    // &P restarts per worksheet — each sheet pins its printed page number
+    expect(parts.get('xl/worksheets/sheet1.xml')).toContain(
+      '<pageSetup paperSize="1" orientation="portrait" firstPageNumber="1" useFirstPageNumber="1"/>',
+    )
+    expect(parts.get('xl/worksheets/sheet2.xml')).toContain(
+      '<pageSetup paperSize="1" orientation="portrait" firstPageNumber="2" useFirstPageNumber="1"/>',
+    )
+  })
+
+  it('orders furniture lines by edge distance and skips cover pages', async () => {
+    const hf = {
+      pageNo: false,
+      fontSizePt: 9,
+      fontFamily: 'Helvetica',
+      bold: false,
+      italic: false,
+      color: '000000',
+      x0: 200,
+      x1: 400,
+    }
+    const { xlsx } = await rebuildXlsx(
+      [page(), page({ index: 1 })],
+      [
+        // detection order reversed vs reading order: the footer's UPPER line
+        // sits FURTHER from the bottom edge
+        { ...hf, band: 'bottom' as const, text: 'closing', edgeDistPt: 20, coversFirstPage: false },
+        { ...hf, band: 'bottom' as const, text: 'opening', edgeDistPt: 32, coversFirstPage: false },
+      ],
+    )
+    const parts = await unzip(xlsx)
+    expect(parts.get('xl/worksheets/sheet2.xml')).toContain(
+      '<oddFooter>&amp;Copening\nclosing</oddFooter>',
+    )
+    // no slot covers the first (cover) page — sheet 1 stays clean
+    expect(parts.get('xl/worksheets/sheet1.xml')).not.toContain('<headerFooter>')
   })
 
   it('maps tables to grids with merges, numbers, fills and borders', async () => {
@@ -333,5 +405,281 @@ describe('P27 x-aware sheet columns', () => {
     const styles = parts.get('xl/styles.xml')!
     // at least one border record omits the left edge while keeping the rest
     expect(styles).toMatch(/<border><left\/><right style="thin">/)
+  })
+})
+
+// ── cross-page table runs (P39) ──
+
+/** header + one glued band row, statement style */
+function statementTable(band: string, over: Partial<TableBlock> = {}): TableBlock {
+  const head = { y0: 700, y1: 720 }
+  const body = { y0: 100, y1: 700 }
+  return {
+    kind: 'table',
+    box: { x0: 40, y0: 100, x1: 240, y1: 720 },
+    colWidthsPt: [100, 100],
+    rows: [
+      [cell('Ref', { x0: 40, x1: 140, ...head }), cell('Amount', { x0: 140, x1: 240, ...head })],
+      [cell(band, { x0: 40, x1: 140, ...body }), cell('9.99', { x0: 140, x1: 240, ...body })],
+    ],
+    ...over,
+  }
+}
+
+describe('cross-page table runs (P39)', () => {
+  it('merges continuing statement pages into one sheet and drops the restated header', async () => {
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    const p2 = page({ index: 1, blocks: [statementTable('RC-2')] })
+    const { xlsx, sheets } = await rebuildXlsx([p1, p2])
+    expect(sheets.map((s) => s.name)).toEqual(['Pages 1-2'])
+    const parts = await unzip(xlsx)
+    expect(parts.get('xl/workbook.xml')).toContain('name="Pages 1-2"')
+    const sheet1 = parts.get('xl/worksheets/sheet1.xml')!
+    expect(sheet1.match(/>Ref</g)).toHaveLength(1) // header once
+    expect(sheet1).toContain('>RC-1<')
+    expect(sheet1).toContain('>RC-2<')
+  })
+
+  it('keeps pages separate when the header differs', async () => {
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    const other = statementTable('RC-2')
+    other.rows[0] = [
+      cell('Code', { x0: 40, x1: 140, y0: 700, y1: 720 }),
+      cell('Total', { x0: 140, x1: 240, y0: 700, y1: 720 }),
+    ]
+    const p2 = page({ index: 1, blocks: [other] })
+    const { sheets } = await rebuildXlsx([p1, p2])
+    expect(sheets.map((s) => s.name)).toEqual(['Page 1', 'Page 2'])
+  })
+
+  it('keeps pages separate when column boundaries move', async () => {
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    const shifted = statementTable('RC-2', {
+      box: { x0: 60, y0: 100, x1: 260, y1: 720 },
+    })
+    shifted.rows = shifted.rows.map((r) =>
+      r.map((c) => ({ ...c, box: { ...c.box, x0: c.box.x0 + 20, x1: c.box.x1 + 20 } })),
+    )
+    const p2 = page({ index: 1, blocks: [shifted] })
+    const { sheets } = await rebuildXlsx([p1, p2])
+    expect(sheets.map((s) => s.name)).toEqual(['Page 1', 'Page 2'])
+  })
+
+  it('a scanned page breaks the run', async () => {
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    const p2 = page({ index: 1, scanned: true })
+    const p3 = page({ index: 2, blocks: [statementTable('RC-3')] })
+    const { sheets } = await rebuildXlsx([p1, p2, p3])
+    expect(sheets.map((s) => s.name)).toEqual(['Page 1', 'Page 2', 'Page 3'])
+  })
+
+  it('a mid-document new statement starts a new sheet (cover table first)', async () => {
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    const p2 = page({ index: 1, blocks: [statementTable('RC-2')] })
+    const cover: TableBlock = {
+      kind: 'table',
+      box: { x0: 300, y0: 730, x1: 500, y1: 780 },
+      colWidthsPt: [200],
+      rows: [[cell('RIB box', { x0: 300, x1: 500, y0: 730, y1: 780 })]],
+    }
+    const p3 = page({ index: 2, blocks: [cover, statementTable('RC-3')] })
+    const { sheets } = await rebuildXlsx([p1, p2, p3])
+    expect(sheets.map((s) => s.name)).toEqual(['Pages 1-2', 'Page 3'])
+  })
+
+  it('continuation rows stay in the anchor columns under sub-tolerance drift', async () => {
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    // whole grid drifts +1.8pt: within RUN_GEOM_TOL_PT but past SLOT_TOL_PT
+    const drifted = statementTable('RC-2', {
+      box: { x0: 41.8, y0: 100, x1: 241.8, y1: 720 },
+    })
+    drifted.rows = drifted.rows.map((r) =>
+      r.map((c) => ({ ...c, box: { ...c.box, x0: c.box.x0 + 1.8, x1: c.box.x1 + 1.8 } })),
+    )
+    const p2 = page({ index: 1, blocks: [drifted] })
+    const { sheets } = await rebuildXlsx([p1, p2])
+    expect(sheets.map((s) => s.name)).toEqual(['Pages 1-2'])
+    const colOf = (needle: string): number =>
+      sheets[0]!.cells.find((c) => c.value?.kind === 'text' && c.value.text === needle)!.col
+    expect(colOf('RC-2')).toBe(colOf('RC-1'))
+  })
+
+  it('a run starting mid-group anchors to its own table, not the group head', async () => {
+    // p1: table A · p2: A continues, then NEW table B starts · p3: B continues
+    // with sub-tolerance drift — B's rows must map through B's bounds, not A's
+    const tableB = (band: string, dx = 0): TableBlock => ({
+      kind: 'table',
+      box: { x0: 300 + dx, y0: 100, x1: 540 + dx, y1: 400 },
+      colWidthsPt: [80, 80, 80],
+      rows: [
+        [
+          cell('Code', { x0: 300 + dx, x1: 380 + dx, y0: 380, y1: 400 }),
+          cell('Qty', { x0: 380 + dx, x1: 460 + dx, y0: 380, y1: 400 }),
+          cell('Total', { x0: 460 + dx, x1: 540 + dx, y0: 380, y1: 400 }),
+        ],
+        [
+          cell(band, { x0: 300 + dx, x1: 380 + dx, y0: 100, y1: 380 }),
+          cell('7', { x0: 380 + dx, x1: 460 + dx, y0: 100, y1: 380 }),
+          cell('9.99', { x0: 460 + dx, x1: 540 + dx, y0: 100, y1: 380 }),
+        ],
+      ],
+    })
+    const p1 = page({ index: 0, blocks: [statementTable('RC-1')] })
+    const p2 = page({ index: 1, blocks: [statementTable('RC-2'), tableB('B-1')] })
+    const p3 = page({ index: 2, blocks: [tableB('B-2', 1.8)] })
+    const { sheets } = await rebuildXlsx([p1, p2, p3])
+    expect(sheets.map((s) => s.name)).toEqual(['Pages 1-3'])
+    const colOf = (needle: string): number =>
+      sheets[0]!.cells.find((c) => c.value?.kind === 'text' && c.value.text === needle)!.col
+    expect(colOf('B-2')).toBe(colOf('B-1'))
+    expect(colOf('RC-2')).toBe(colOf('RC-1'))
+  })
+})
+// ── band-row splitting (P40) ──
+
+describe('splitBandRows via rebuildXlsx (P40)', () => {
+  /** statement band: header + one giant row; per txn the ref/amount sit on
+   * the boundary line and the description adds a second line below it */
+  const Y = (i: number) => 700 - i * 40 // txn i boundary top (IR y up)
+  const bandTable = (txns: number): TableBlock => {
+    const mk = (
+      text: string,
+      x0: number,
+      x1: number,
+      top: number,
+      h = 12,
+    ): { line: Line; box: Rect } => {
+      const box = { x0, x1, y0: top - h, y1: top }
+      return { line: line(text, box), box }
+    }
+    const refLines: Line[] = []
+    const descLines: Line[] = []
+    const amtLines: Line[] = []
+    for (let i = 0; i < txns; i++) {
+      refLines.push(mk(`R-${i}`, 40, 100, Y(i)).line)
+      descLines.push(mk(`LABEL-${i}`, 140, 220, Y(i)).line)
+      descLines.push(mk(`DETAIL-${i}`, 140, 260, Y(i) - 14).line)
+      amtLines.push(mk(`${i + 1},000.00`, 300, 380, Y(i)).line)
+    }
+    const bandBox = { y0: Y(txns - 1) - 30, y1: 712 }
+    const blockOf = (lines: Line[], x0: number, x1: number): TextBlock => ({
+      kind: 'text',
+      lines,
+      box: { x0, x1, ...bandBox },
+      align: 'left',
+      firstLineIndentPt: 0,
+      dir: 'ltr',
+    })
+    const cellOf = (lines: Line[], x0: number, x1: number): TableCellBlock => ({
+      box: { x0, x1, ...bandBox },
+      gridSpan: 1,
+      blocks: [blockOf(lines, x0, x1)],
+    })
+    const head = { y0: 715, y1: 730 }
+    return {
+      kind: 'table',
+      box: { x0: 40, y0: bandBox.y0, x1: 380, y1: 730 },
+      colWidthsPt: [100, 160, 80],
+      rows: [
+        [
+          cell('Ref', { x0: 40, x1: 140, ...head }),
+          cell('Desc', { x0: 140, x1: 300, ...head }),
+          cell('Amount', { x0: 300, x1: 380, ...head }),
+        ],
+        [cellOf(refLines, 40, 140), cellOf(descLines, 140, 300), cellOf(amtLines, 300, 380)],
+      ],
+    }
+  }
+
+  it('splits a glued statement band into one row per transaction', async () => {
+    const { sheets } = await rebuildXlsx([page({ blocks: [bandTable(4)] })])
+    const cells = sheets[0]!.cells.filter((c) => c.value !== undefined)
+    const textAt = (needle: string) =>
+      cells.find(
+        (c) => c.value!.kind === 'text' && (c.value as { text: string }).text.includes(needle),
+      )
+    for (let i = 0; i < 4; i++) {
+      const ref = textAt(`R-${i}`)!
+      const desc = textAt(`LABEL-${i}`)!
+      expect(desc.row).toBe(ref.row)
+      // the wrapped detail line stays with its own transaction
+      expect((desc.value as { text: string }).text).toContain(`DETAIL-${i}`)
+      const amt = cells.find((c) => c.value!.kind === 'number' && c.row === ref.row)!
+      expect((amt.value as { value: number }).value).toBe(1000 * (i + 1))
+    }
+  })
+
+  it('keeps two-line wrapped cells intact (no split below the line floor)', async () => {
+    const { sheets } = await rebuildXlsx([page({ blocks: [bandTable(2)] })])
+    // 2 txns → band cells carry 2-4 lines but only 2 boundaries < MIN_SPLIT_ROWS
+    const texts = sheets[0]!.cells
+      .filter((c) => c.value?.kind === 'text')
+      .map((c) => (c.value as { text: string }).text)
+    expect(texts.some((t) => t.includes('R-0') && t.includes('R-1'))).toBe(true)
+  })
+
+  it('never splits rows containing merged cells', async () => {
+    const t = bandTable(4)
+    t.rows[1]![0]!.vMerge = 'restart'
+    const { sheets } = await rebuildXlsx([page({ blocks: [t] })])
+    const texts = sheets[0]!.cells
+      .filter((c) => c.value?.kind === 'text')
+      .map((c) => (c.value as { text: string }).text)
+    expect(texts.some((t2) => t2.includes('R-0') && t2.includes('R-3'))).toBe(true)
+  })
+
+  it('staggered column baselines collapse into one row (no phantom 3pt rows)', async () => {
+    // two column groups start each transaction 3pt apart — both clusters can
+    // win the vote, but boundaries closer than the row pitch must merge
+    const mk = (text: string, x0: number, x1: number, top: number): Line =>
+      line(text, { x0, x1, y0: top - 10, y1: top })
+    const colCell = (lines: Line[], x0: number, x1: number): TableCellBlock => ({
+      box: { x0, x1, y0: 480, y1: 700 },
+      gridSpan: 1,
+      blocks: [
+        {
+          kind: 'text',
+          lines,
+          box: { x0, x1, y0: 480, y1: 700 },
+          align: 'left',
+          firstLineIndentPt: 0,
+          dir: 'ltr',
+        },
+      ],
+    })
+    const Y = (i: number) => 690 - i * 40
+    const a: Line[] = []
+    const b: Line[] = []
+    const c: Line[] = []
+    const d: Line[] = []
+    for (let i = 0; i < 4; i++) {
+      a.push(mk(`A-${i}`, 40, 90, Y(i)))
+      b.push(mk(`B-${i}`, 100, 150, Y(i)))
+      c.push(mk(`C-${i}`, 160, 210, Y(i) - 3))
+      d.push(mk(`D-${i}`, 220, 270, Y(i) - 3))
+    }
+    const head = { y0: 705, y1: 718 }
+    const t: TableBlock = {
+      kind: 'table',
+      box: { x0: 40, y0: 480, x1: 280, y1: 718 },
+      colWidthsPt: [60, 60, 60, 60],
+      rows: [
+        [
+          cell('H1', { x0: 40, x1: 100, ...head }),
+          cell('H2', { x0: 100, x1: 160, ...head }),
+          cell('H3', { x0: 160, x1: 220, ...head }),
+          cell('H4', { x0: 220, x1: 280, ...head }),
+        ],
+        [colCell(a, 40, 100), colCell(b, 100, 160), colCell(c, 160, 220), colCell(d, 220, 280)],
+      ],
+    }
+    const { sheets } = await rebuildXlsx([page({ blocks: [t] })])
+    const cells = sheets[0]!.cells.filter((x) => x.value?.kind === 'text')
+    const rowOfText = (needle: string) =>
+      cells.find((x) => (x.value as { text: string }).text.includes(needle))!.row
+    for (let i = 0; i < 4; i++) {
+      expect(rowOfText(`C-${i}`)).toBe(rowOfText(`A-${i}`))
+      expect(rowOfText(`D-${i}`)).toBe(rowOfText(`A-${i}`))
+    }
   })
 })

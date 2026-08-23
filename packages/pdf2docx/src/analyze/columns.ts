@@ -64,6 +64,14 @@ const STANDALONE_MIN_ELEMENTS = 2
  * "column" of markers — a sliver column is never a real page column.
  */
 const MIN_COLUMN_WIDTH_PT = 24
+/**
+ * …and each column must cover this share of the tallest column's y-extent.
+ * Columns flow to comparable heights; a stub that ends after a few lines
+ * while its neighbour keeps flowing is line-continuation text that happens to
+ * share an aligned whitespace channel (GB/T reference list: "[N] id class"
+ * columns vs their title continuations), not a page column.
+ */
+const COLUMN_BAND_COVER_MIN = 0.35
 
 /** one flow element: a text unit, or a table/image block placed in the flow */
 export interface SectionElement {
@@ -272,12 +280,19 @@ function buildSection(elements: SectionElement[], gutterMin: number): LayoutSect
   // gutter and re-split; single-column only when no gutter survives.
   while (gutters.length > 0) {
     const columns = splitByGutters(elements, box, gutters)
+    const heightOf = (c: LayoutColumn): number =>
+      c.elements.length === 0
+        ? 0
+        : Math.max(...c.elements.map((e) => e.box.y1)) -
+          Math.min(...c.elements.map((e) => e.box.y0))
+    const tallest = Math.max(...columns.map(heightOf))
     const isStrong = (c: LayoutColumn): boolean =>
       (c.elements.length >= MIN_COLUMN_ELEMENTS ||
         // a detected table is a heavily-gated aggregate of dozens of units —
         // the column it anchors is real even standing alone (P16 E)
         c.elements.some((e) => e.block?.kind === 'table')) &&
-      contentWidthOf(c) >= MIN_COLUMN_WIDTH_PT
+      contentWidthOf(c) >= MIN_COLUMN_WIDTH_PT &&
+      heightOf(c) >= COLUMN_BAND_COVER_MIN * tallest
     // standalone weak columns (P15 B) only exist beside real columns — an
     // all-weak split (an author-name pair) still degrades to a single column
     const anchored = columns.some(isStrong)

@@ -148,7 +148,9 @@ function literalPrefixBeforeFill(section: string): { prefix: string; fill: strin
     if (character === '*') {
       const fill = section[index + 1]
       if (fill === undefined) return null
-      return { prefix, fill: fill === ' ' ? '\u00a0' : fill }
+      // numfmt's nbsp mode renders literal spaces (escaped or quoted) as
+      // NBSP too (`"$"\ * #,##0`), so the prefix must match that.
+      return { prefix: prefix.replace(/ /g, '\u00a0'), fill: fill === ' ' ? '\u00a0' : fill }
     }
     if (character === '_') {
       prefix += '\u00a0'
@@ -291,7 +293,11 @@ export function overflowHashes(
 ): string | null {
   // 2+2 cell padding plus 1px blur offset, matching generalCharBudget.
   const available = columnWidthPx - 5
-  if (display === '' || measure(display) * scale <= available) return null
+  // macOS glyph advances run a few percent wide of Excel's GDI metrics
+  // (Arial bold "2026/8/30" measures 65.2px here vs ≤63px in Excel), so a
+  // borderline overflow within that noise band is a spurious #### — clip
+  // instead, which loses a couple of pixels rather than the whole value.
+  if (display === '' || measure(display) * scale <= available * 1.05) return null
   return hashFill(columnWidthPx, measure)
 }
 
@@ -306,7 +312,21 @@ export function hashFill(columnWidthPx: number, measure: (text: string) => numbe
 /// locally the canvas measures a substitute (Helvetica ≈9% wider), biasing
 /// borderline cells into a spurious ####. Scale such measurements back to
 /// the known GDI digit width; installed fonts already measure true.
-const EXCEL_DIGIT_PER_PT: Record<string, number> = { Calibri: 7 / 11, Verdana: 8 / 10 }
+const EXCEL_DIGIT_PER_PT: Record<string, number> = {
+  Calibri: 7 / 11,
+  Verdana: 8 / 10,
+  // Korean Excel's default; its GDI digit width matches Calibri (MDW 7px at
+  // 11pt), while the macOS substitute (Apple SD Gothic Neo, via the
+  // styles.css alias) measures digits ~40% wider — Excel-auto-fitted number
+  // columns turned into spurious ####.
+  'Malgun Gothic': 7 / 11,
+  '맑은 고딕': 7 / 11,
+}
+
+/// Families whose @font-face alias substitutes a metrically different local
+/// face: the family "resolves", but the canvas measures the substitute, so
+/// the GDI scale-back must apply even though fontAvailable() is true.
+const ALIAS_SUBSTITUTED = new Set(['Malgun Gothic', '맑은 고딕'])
 
 const fontAvailabilityCache = new Map<string, boolean>()
 
@@ -345,7 +365,8 @@ export function excelWidthScale(
 ): number {
   if (!family) return 1
   const perPt = EXCEL_DIGIT_PER_PT[family]
-  if (perPt === undefined || fontAvailable(family)) return 1
+  if (perPt === undefined) return 1
+  if (!ALIAS_SUBSTITUTED.has(family) && fontAvailable(family)) return 1
   const digit = measureDigit()
   if (!(digit > 0)) return 1
   return Math.min(1, (perPt * sizePt) / digit)
@@ -362,10 +383,13 @@ export function fixFormattedValue(
   displayed: string | number | boolean | undefined,
 ): string | null {
   if (typeof raw === 'string') {
-    // Univer never formats plain-text cells: apply the text (4th) section.
-    if (displayed !== raw) return null
-    const text = safeFormat(pattern, raw)
-    return text !== null && text !== raw ? text : null
+    // Excel applies number formats to numbers only, but Univer's NUMFMT
+    // coerces numeric-looking text (checkCellValueType lets isRealNum win
+    // over t=STRING) — "9853" under a date format rendered as 1926-12-22.
+    // Re-derive from the raw text: numfmt applies the @/text section and
+    // otherwise returns the text unchanged.
+    const text = safeFormat(pattern, raw) ?? raw
+    return text !== String(displayed ?? '') ? text : null
   }
   const text = safeFormat(pattern, raw)
   if (text === null) return null
@@ -396,6 +420,28 @@ export function fixFormattedValue(
   return null
 }
 
+const JA_FONT_FAMILY =
+  /(?:ＭＳ|MS)\s*(?:UI\s+)?[PＰ]?\s*(?:ゴシック|明朝|Gothic|Mincho)|Meiryo|メイリオ|Yu\s?(?:Gothic|Mincho)|游ゴシック|游明朝|Hiragino|ヒラギノ|BIZ\s?UD|Noto\s(?:Sans|Serif)\s(?:JP|CJK\s?JP)/i
+
+const JA_LOCALE_TAG = /\[\$[^\]]*-411\]/
+
+/**
+ * JIS legacy currency: ja-authored files store the yen sign at 0x5C
+ * (`"\"#,##0` — on Shift-JIS systems U+00A5 occupies the backslash code
+ * point) and Excel renders it as U+00A5 with Japanese fonts. Swap the
+ * literal in the displayed text when the pattern carries the quoted lone
+ * backslash and the context is Japanese (ja font or [$-411] tag).
+ */
+export function yenLiteralDisplay(
+  pattern: string,
+  displayed: string,
+  fontFamily: string | undefined,
+): string | null {
+  if (!displayed.includes('\\') || !pattern.includes('"\\"')) return null
+  if (!JA_LOCALE_TAG.test(pattern) && !(fontFamily && JA_FONT_FAMILY.test(fontFamily))) return null
+  return displayed.replaceAll('\\', '¥')
+}
+
 export function installNumberFormatFix(
   runtime: UniverRuntime,
   isDate1904?: () => boolean,
@@ -404,7 +450,27 @@ export function installNumberFormatFix(
   const interceptorService = injector.get(SheetInterceptorService)
   const cfService = injector.get(ConditionalFormattingService)
   const cache = new Map<string, string | null>()
-  return interceptorService.intercept(INTERCEPTOR_POINT.CELL_CONTENT, {
+  // Below the value fixes (9.5) so it sees the final displayed text.
+  const yenFix = interceptorService.intercept(INTERCEPTOR_POINT.CELL_CONTENT, {
+    priority: 9.4,
+    effect: InterceptorEffectEnum.Value,
+    handler: (cell, location, next) => {
+      if (
+        !cell ||
+        cell.t !== CellValueType.NUMBER ||
+        typeof cell.v !== 'string' ||
+        !cell.v.includes('\\')
+      ) {
+        return next(cell)
+      }
+      const style = location.workbook.getStyles().getStyleByCell(cell)
+      const pattern = style?.n?.pattern
+      if (typeof pattern !== 'string') return next(cell)
+      const swapped = yenLiteralDisplay(pattern, cell.v, style?.ff ?? undefined)
+      return swapped === null ? next(cell) : next({ ...cell, v: swapped })
+    },
+  })
+  const valueFix = interceptorService.intercept(INTERCEPTOR_POINT.CELL_CONTENT, {
     // Below NUMFMT (10): Univer formats first (keeping its section colors and
     // render cache); this pass only corrects the value it left behind.
     priority: 9.5,
@@ -414,8 +480,18 @@ export function installNumberFormatFix(
       if (cell.t === CellValueType.BOOLEAN || cell.t === CellValueType.FORCE_STRING) {
         return next(cell)
       }
-      const raw = location.rawData?.v
-      if (raw === undefined || raw === null || typeof raw === 'boolean') return next(cell)
+      const rawValue = location.rawData?.v
+      if (rawValue === undefined || rawValue === null || typeof rawValue === 'boolean') {
+        return next(cell)
+      }
+      // Trust the model's type: a numeric string with t=NUMBER is a number
+      // (Univer stores some edits that way); anything else stays text.
+      const raw =
+        typeof rawValue === 'string' &&
+        location.rawData?.t === CellValueType.NUMBER &&
+        Number.isFinite(Number(rawValue))
+          ? Number(rawValue)
+          : rawValue
       const style = location.workbook.getStyles().getStyleByCell(cell)
       const pattern = style?.n?.pattern
       // A matched CF rule's dxf number format wins over the cell xf, but the
@@ -552,4 +628,10 @@ export function installNumberFormatFix(
       )
     },
   })
+  return {
+    dispose() {
+      valueFix.dispose()
+      yenFix.dispose()
+    },
+  }
 }

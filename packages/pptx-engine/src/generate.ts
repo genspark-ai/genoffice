@@ -16,7 +16,15 @@
  * possible). The Phase 3 editor uses the former (lossless) when only text and
  * formatting change without structural edits; structural changes use the latter.
  */
-import type { SlideElement, TextElement, Paragraph, TextRun, Transform, PPrDirty } from './types'
+import type {
+  SlideElement,
+  TextElement,
+  TextBody,
+  Paragraph,
+  TextRun,
+  Transform,
+  PPrDirty,
+} from './types'
 import { escapeXmlText, escapeXmlAttr } from './xml-utils'
 
 /**
@@ -595,21 +603,47 @@ function setAttr(tag: string, name: string, value: string | undefined, existingR
   return tag.replace(/^<a:rPr/, `<a:rPr ${name}="${escapeXmlAttr(value)}"`)
 }
 
+/**
+ * Bytes of a <p:cxnSp>. CT_Connector's sequence is nvCxnSpPr/spPr/style/extLst —
+ * there is no txBody child, so a connector can never gain text (PowerPoint offers no
+ * text editing on a line either).
+ */
+export function isConnectorXml(xml: string): boolean {
+  return /^\s*<p:cxnSp[\s/>]/.test(xml)
+}
+
+/**
+ * A shape that never carried text gains a whole <p:txBody>. CT_Shape's sequence is
+ * nvSpPr/spPr/style?/txBody?/extLst?, so the element belongs after </p:style> whenever
+ * the shape references a theme style — landing it right after </p:spPr> would order
+ * txBody ahead of style, and PowerPoint refuses to open the deck.
+ */
+function injectTxBody(body: TextBody, originalXml: string, paras: string): string {
+  if (isConnectorXml(originalXml)) return originalXml
+  const anchor =
+    body.anchor === 'middle' ? ' anchor="ctr"' : body.anchor === 'bottom' ? ' anchor="b"' : ''
+  const txBody = `<p:txBody><a:bodyPr${anchor}/><a:lstStyle/>${paras}</p:txBody>`
+  // Placeholders inherit their geometry, so a self-closing <p:spPr/> is routine
+  for (const re of [/<\/p:style>/, /<\/p:spPr>/, /<p:spPr\b[^>]*\/>/]) {
+    const at = re.exec(originalXml)
+    if (!at) continue
+    const end = at.index + at[0].length
+    return originalXml.slice(0, end) + txBody + originalXml.slice(end)
+  }
+  // Nothing recognizable to anchor against: appending still beats dropping the text
+  const close = originalXml.lastIndexOf('</p:sp>')
+  return close < 0 ? originalXml : originalXml.slice(0, close) + txBody + originalXml.slice(close)
+}
+
 /** Rebuild the <p:txBody>'s paragraph content on structural change, keeping the txBody wrapper and <a:bodyPr>. */
 export function rebuildTxBody(el: TextElement, originalXml: string): string {
   const body = el.text!
-  const paras = body.paragraphs.map((p) => generateParagraphXml(p)).join('')
+  // CT_TextBody requires at least one <a:p>
+  const paras = body.paragraphs.map((p) => generateParagraphXml(p)).join('') || '<a:p/>'
 
   // Keep the original txBody's bodyPr / lstStyle prefix verbatim; only the <a:p>… after it is replaced
   const txOpen = /<p:txBody\b[^>]*>/.exec(originalXml)
-  if (!txOpen) {
-    // No txBody originally (a plain shape gained text): inject a full txBody after spPr
-    const txBody = `<p:txBody><a:bodyPr/><a:lstStyle/>${paras}</p:txBody>`
-    if (/<\/p:spPr>/.test(originalXml)) {
-      return originalXml.replace(/(<\/p:spPr>)/, `$1${txBody}`)
-    }
-    return originalXml
-  }
+  if (!txOpen) return injectTxBody(body, originalXml, paras)
   const txStart = txOpen.index
   const txContentStart = txStart + txOpen[0].length
   const txEnd = originalXml.lastIndexOf('</p:txBody>')

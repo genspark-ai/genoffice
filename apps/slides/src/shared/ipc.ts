@@ -191,6 +191,23 @@ export interface ApplyTxnResult {
 }
 
 /** The whole edit script as one atomic transaction (surface px; the main-process shim converts). */
+/**
+ * A run that ended without a usable reply. These never reach the chat history —
+ * agent-core rolls a failed turn out of the model context, so storing it there
+ * would feed it back on the next reopen. This lands in a separate log instead,
+ * which is the only trace left of a model that loops or a stream that dies.
+ */
+export interface AiRunFailure {
+  kind: 'error' | 'stopped'
+  /** What was sent to the model, so the log alone explains what triggered it */
+  instruction: string
+  /** Whatever the model had streamed before it ended (truncated by the main process) */
+  streamed: string
+  error?: string
+  tools?: string[]
+  durationMs?: number
+}
+
 export interface ApplyEditScriptOp {
   slideIndex: number
   fitWidthPx: number
@@ -1146,13 +1163,14 @@ export interface SlidesApi {
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>
-  /** HTML pipeline generation: mode="append" merges with the previously generated pages and rebuilds wholesale (appendedFrom = existing page count);
-   *  mode="replace_at" redoes page atIndex in place from single-page HTML (other pages untouched, undoable, replacedIndex = that page's index);
-   *  mode="insert_at" inserts a new page at atIndex from single-page HTML (later pages shift back, undoable, insertedIndex = that page's index);
+  /** Land generated pages: each pageMarkers entry is a marker (cloudpptx:<path>) redeemable for a one-slide pptx.
+   *  mode="append" merges the new pages onto the existing deck (appendedFrom = existing page count);
+   *  mode="replace_at" redoes page atIndex in place from a single marker (other pages untouched, undoable, replacedIndex = that page's index);
+   *  mode="insert_at" inserts a new page at atIndex from a single marker (later pages shift back, undoable, insertedIndex = that page's index);
    *  when the pipeline fails it falls back to element-level mode, fallbackReason explains why;
    *  deckName = the deck name AI derived from user input, used as the filename when saving a new draft (falls back to timestamp naming) */
-  htmlToPptx: (
-    pagesHtml: string[],
+  landGeneratedPages: (
+    pageMarkers: string[],
     fitWidthPx: number,
     mode?: 'replace' | 'append' | 'replace_at' | 'insert_at',
     atIndex?: number,
@@ -1169,7 +1187,7 @@ export interface SlidesApi {
   >
   /** Whether cloud single-page generation (gsk slide_generate) is available (GENOFFICE_CLOUD_SLIDE=1 + gsk login) */
   cloudGenStatus: () => Promise<{ enabled: boolean }>
-  /** Cloud single-page generation: brief → one-slide pptx temp file; the marker goes into an htmlToPptx pagesHtml slot in place of HTML */
+  /** Cloud single-page generation: brief → one-slide pptx temp file; the marker goes into a landGeneratedPages pageMarkers slot */
   cloudGeneratePage: (op: {
     brief: string
     title?: string
@@ -1233,6 +1251,18 @@ export interface SlidesApi {
     slideIndex: number
     sourceId: string
     anchor: 'top' | 'middle' | 'bottom'
+  }) => Promise<RenderSlide | null>
+  /** Text box body properties (direction / autofit / internal margins / wrap) */
+  setTextBodyProps: (op: {
+    slideIndex: number
+    sourceId: string
+    props: {
+      vert?: 'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+      autofit?: 'none' | 'shrink' | 'resize'
+      /** Internal margins (EMU); only the provided sides are written */
+      insets?: Partial<{ l: number; t: number; r: number; b: number }>
+      wrap?: boolean
+    }
   }) => Promise<RenderSlide | null>
   /** External clipboard content probe (internal/slide = last copy came from this app) */
   clipboardExternal: () => Promise<
@@ -1459,6 +1489,10 @@ export interface SlidesApi {
   onCloseSaveRequest: (handler: () => void) => () => void
   /** Undo/redo stack occupancy pushed by the main process (drives the QAT button gray states) */
   onHistoryChanged: (handler: (state: { canUndo: boolean; canRedo: boolean }) => void) => () => void
+  /** Another window attached to the same file changed the deck (shared session): fresh render state to apply */
+  onDeckChanged: (
+    handler: (state: { slides: RenderSlide[]; size: { cx: number; cy: number } }) => void,
+  ) => () => void
   reportCloseSaveResult: (ok: boolean) => void
   /** Mirror the autosave toggle state to the main process: files with it on save silently on close, no dialog */
   setAutoSavePref: (on: boolean) => void
@@ -1476,6 +1510,8 @@ export interface SlidesApi {
   aiGskStatus: (withEmail?: boolean) => Promise<GenSparkAccountStatus>
   /** Open the browser to log into Genspark (fire-and-forget; aiGskStatus turns logged-in once done) */
   aiGskLogin: () => Promise<void>
+  /** Record a run that ended without a usable reply, for post-mortem (fire-and-forget, never throws) */
+  aiLogRunFailure: (entry: AiRunFailure) => Promise<void>
   webSearch: (
     query: string,
     maxResults?: number,

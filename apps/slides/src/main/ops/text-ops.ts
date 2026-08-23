@@ -6,8 +6,11 @@
  */
 import {
   cleanupSupersededSlideResources,
+  DEFAULT_BODY_INSETS,
   ensureRunLinkRels,
   findGroupChild,
+  groupChildSlices,
+  isConnectorXml,
   materializeSlide,
   patchGroupChildText,
   patchSlideXml,
@@ -16,8 +19,10 @@ import {
   setGroupChildFont,
   setGroupChildParagraphFormat,
   type ElementFontPatch,
+  type GroupElement,
   type Paragraph,
   type ParagraphFormatPatch,
+  type TextBody,
   type TextElement,
 } from '@genoffice/pptx-engine'
 import type { EditParagraph } from '../../shared/ipc'
@@ -35,6 +40,49 @@ import {
 function plainText(paragraphs: Paragraph[] | undefined): string {
   if (!paragraphs) return ''
   return paragraphs.map((p) => p.runs.map((r) => r.text).join('')).join('\n')
+}
+
+// ── First text on a shape that has no <p:txBody> ────────────────────────
+// The engine injects the element into the bytes on write-back; the model side just
+// has to describe the body PowerPoint would have created.
+
+/**
+ * Only an autoshape gets PowerPoint's centered authoring defaults. A placeholder
+ * inherits anchor and alignment from the layout/master — in a survey of 421
+ * PowerPoint-authored decks ~90% of placeholders carry neither attribute, so baking
+ * them in would override the template. A text box stays top-left.
+ */
+function isAutoShape(el: TextElement): boolean {
+  return el.type === 'shape' && !el.placeholder && !el.txBox
+}
+
+/** Insets mirror the parser's <a:bodyPr> defaults, so the live render and the
+ *  reopened file agree; the anchor is the vertical half of an autoshape's centering. */
+function createTextBody(autoShape: boolean): TextBody {
+  return {
+    paragraphs: [],
+    insets: { ...DEFAULT_BODY_INSETS },
+    ...(autoShape ? { anchor: 'middle' as const } : {}),
+  }
+}
+
+/** Connectors cannot hold text: CT_Connector has no txBody child, so anything typed
+ *  into one would be dropped on save (or reopen as a repaired file). */
+function refuseConnector(bytes: string, what: string): void {
+  if (isConnectorXml(bytes)) {
+    throw new GuidedError(`op "setText": ${what} is a connector, which cannot hold text.`)
+  }
+}
+
+/** Group children carry an empty byte anchor (the group saves as one blob), so a
+ *  child's bytes come from the group's slice table. */
+function groupChildBytes(grp: GroupElement, child: TextElement): string {
+  return groupChildSlices(grp.anchor.originalXml).find((s) => s.nvId === child.nvId)?.xml ?? ''
+}
+
+/** Horizontal half of an autoshape's centering; an alignment the caller asked for wins. */
+function centerParagraphs(paragraphs: Paragraph[]): void {
+  for (const p of paragraphs) if (!p.align) p.align = 'center'
 }
 
 // ── setText ─────────────────────────────────────────────────────────────
@@ -66,13 +114,19 @@ register({
         throw new GuidedError(`op "setText": no text child "${id}" in group "${groupId}".`)
       }
       const textChild = child as TextElement
-      if (!textChild.text) {
-        throw new GuidedError(`op "setText": group child "${id}" has no editable text body.`)
+      const freshBody = !textChild.text
+      let autoShape = false
+      if (freshBody) {
+        refuseConnector(groupChildBytes(found!.grp, textChild), `group child "${id}"`)
+        autoShape = isAutoShape(textChild)
+        textChild.text = createTextBody(autoShape)
       }
+      const childBody = textChild.text!
       const previousXml = patchSlideXml(slide)
-      const before = plainText(textChild.text.paragraphs)
-      textChild.text.paragraphs = applyEditParagraphs(textChild.text.paragraphs, paragraphs)
-      ensureRunLinkRels(ctx.opened, index, textChild.text.paragraphs)
+      const before = plainText(childBody.paragraphs)
+      childBody.paragraphs = applyEditParagraphs(childBody.paragraphs, paragraphs)
+      if (autoShape) centerParagraphs(childBody.paragraphs)
+      ensureRunLinkRels(ctx.opened, index, childBody.paragraphs)
       if (!patchGroupChildText(slide, groupId, textChild)) {
         // Executor snapshot rollback restores the already-mutated model
         throw new GuidedError(
@@ -87,15 +141,22 @@ register({
     }
     const { el } = resolveElement(ctx, op, { types: ['text', 'shape'], allowPart: true })
     const te = el as TextElement
-    if (!te.text)
-      throw new GuidedError(`op "setText": element "${te.id}" has no editable text body.`)
+    const freshBody = !te.text
+    let autoShape = false
+    if (freshBody) {
+      refuseConnector(te.anchor.originalXml, `element "${te.id}"`)
+      autoShape = isAutoShape(te)
+      te.text = createTextBody(autoShape)
+    }
+    const body = te.text!
     const previousXml = patchSlideXml(slide)
-    const before = plainText(te.text.paragraphs)
-    const levelDirty = levelsChanged(te.text.paragraphs, paragraphs)
-    te.text.paragraphs = applyEditParagraphs(te.text.paragraphs, paragraphs)
+    const before = plainText(body.paragraphs)
+    const levelDirty = levelsChanged(body.paragraphs, paragraphs)
+    body.paragraphs = applyEditParagraphs(body.paragraphs, paragraphs)
+    if (autoShape) centerParagraphs(body.paragraphs)
     // Link rels and level rematerialization are deck-slide concerns (rels live on
     // the slide part; levels resolve against the chrome being edited) — skip on parts
-    if (index >= 0) ensureRunLinkRels(ctx.opened, index, te.text.paragraphs)
+    if (index >= 0) ensureRunLinkRels(ctx.opened, index, body.paragraphs)
     te.dirty = true
     for (const { index: pi, patch } of collectParagraphFormatPatches(paragraphs)) {
       setElementParagraphFormat(slide, te.id, patch, [pi])

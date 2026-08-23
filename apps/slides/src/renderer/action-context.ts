@@ -171,6 +171,8 @@ export interface ActionCtx {
   setChartDataDialogOpen: Set<boolean>
   setFindOpen: Set<boolean>
   setPrintDlgOpen: Set<boolean>
+  /** Open the AI annotation popover on the current selection (no-op when nothing is selected) */
+  openAskPopover: () => void
   setZoom: Set<number>
   masterItems: MasterPartItem[] | null
 

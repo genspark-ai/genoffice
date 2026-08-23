@@ -5,6 +5,7 @@
  * paragraph/run structure (each run's format preserved independently) and go through IPC editText.
  */
 import React, { useEffect, useRef } from 'react'
+import { DEFAULT_INSETS_EMU, emuToPx } from '@genoffice/pptx-render'
 import type { GlyphRun, ShapeRenderNode, TextLine } from '@genoffice/pptx-render'
 import type { EditParagraph, EditRun, LinkTargetOp } from '../shared/ipc'
 import { decodeLinkTarget, encodeLinkTarget } from '../shared/run-link'
@@ -423,8 +424,23 @@ export function TextEditOverlay({
   }, [])
 
   const box = node.box
-  const insets = node.text?.insets ?? { l: 0, t: 0, r: 0, b: 0 }
-  const anchor = node.text?.anchor ?? 'top'
+  // A shape with no text body yet: preview the body setText is about to create so the
+  // content does not jump between typing and commit. Every fresh body gets the standard
+  // bodyPr insets (createTextBody writes them unconditionally); only an autoshape also
+  // gets the centered anchor/alignment — keep both halves in step with setText.
+  const freshBody = !node.text && node.type === 'shape'
+  const fresh = freshBody && !node.placeholder && !node.txBox
+  const insets =
+    node.text?.insets ??
+    (freshBody
+      ? {
+          l: emuToPx(DEFAULT_INSETS_EMU.l, scale),
+          t: emuToPx(DEFAULT_INSETS_EMU.t, scale),
+          r: emuToPx(DEFAULT_INSETS_EMU.r, scale),
+          b: emuToPx(DEFAULT_INSETS_EMU.b, scale),
+        }
+      : { l: 0, t: 0, r: 0, b: 0 })
+  const anchor = node.text?.anchor ?? (fresh ? 'middle' : 'top')
   // Editing uses layout viewport px directly (including viewport scale and autofit fontScale): layout height =
   // visual height, so the edit box isn't inflated; on commit extractParagraphs divides by norm back to model pt
   const norm = scale * (node.text?.fontScale ?? 1) || 1
@@ -645,6 +661,9 @@ export function TextEditOverlay({
           // height); inflating a laid-out body distorts the flex vertical anchor — a
           // middle-anchored single line with tight spacing sat a few px too high in edit
           minHeight: node.text?.lines.length ? undefined : baseFontSize * 1.2 + insets.t + insets.b,
+          // extractParagraphs reads the root alignment back, so the fresh-shape preview
+          // is also what gets committed
+          ...(fresh ? { textAlign: 'center' as const } : {}),
           padding: `${insets.t}px ${insets.r}px ${insets.b}px ${insets.l}px`,
           fontSize: baseFontSize,
           fontFamily: baseFont,

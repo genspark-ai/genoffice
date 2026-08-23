@@ -1,4 +1,5 @@
 export * from './types'
+export { parseFontTable } from './font-table'
 export { parseDocx, styleRunFormat, type ParseExtras } from './parse'
 export {
   saveDocx,
@@ -46,6 +47,7 @@ export {
   type GenerateContext,
   type ImagePatch,
   type TextboxParaPatch,
+  type TextboxParasPatchSet,
   type TableGenOptions,
   type TocEntry,
 } from './generate'

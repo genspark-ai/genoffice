@@ -129,6 +129,41 @@ function charGap(prev: PdfChar, cur: PdfChar): number {
   return cur.looseBox.x0 - prev.looseBox.x1
 }
 
+// ── tracked lines with inflated glyph boxes (P30 C) ──
+// Some fonts report em-wide glyph boxes on spaced-out titles: boxes OVERLAP
+// (negative gaps), so the gap threshold under-measures the real word gap and
+// "REPORT FORM" fuses into "REPORTFORM". Baseline origins stay truthful —
+// when the line's origin pitch is uniform, a pitch outlier IS the word gap.
+
+/** origin pitch at/above this multiple of the line's median pitch is a word gap */
+const TRACKED_PITCH_MIN_RATIO = 1.35
+/** share of pitches that must sit near the median for "uniform" */
+const TRACKED_PITCH_UNIFORM_MIN = 0.7
+/** near the median = within this share of it */
+const TRACKED_PITCH_BAND = 0.25
+/** minimum adjacent pairs before the pattern is trusted */
+const TRACKED_MIN_PAIRS = 6
+
+/** the line's median origin pitch, or null when the pattern does not hold */
+function trackedPitchOf(chars: readonly PdfChar[]): number | null {
+  const pitches: number[] = []
+  let negGaps = 0
+  let prev: PdfChar | null = null
+  for (const c of chars) {
+    if (isSpaceCode(c.code) || c.code <= 0x1f) continue
+    if (prev && !isNoSpaceScript(prev.script) && !isNoSpaceScript(c.script)) {
+      if (charGap(prev, c) < 0) negGaps++
+      pitches.push(c.originX - prev.originX)
+    }
+    prev = c
+  }
+  if (pitches.length < TRACKED_MIN_PAIRS || negGaps < pitches.length / 2) return null
+  const med = median(pitches)
+  if (med <= 0) return null
+  const near = pitches.filter((p) => Math.abs(p - med) <= TRACKED_PITCH_BAND * med).length
+  return near / pitches.length >= TRACKED_PITCH_UNIFORM_MIN ? med : null
+}
+
 function shouldInsertSpace(prev: PdfChar, cur: PdfChar, lineGap: number): boolean {
   // HARD RULE: never machine-insert spaces next to CJK/kana/Thai characters
   if (isNoSpaceScript(prev.script) || isNoSpaceScript(cur.script)) return false
@@ -151,6 +186,7 @@ export function groupIntoWords(chars: readonly PdfChar[], options: WordOptions =
   // word gaps — suppress inference so the spans layer can restore w:spacing
   const inferSpaces = (options.inferSpaces ?? true) && !isLetterSpacedLine(chars)
   const lineGap = medianCharGap(chars)
+  const trackedPitch = inferSpaces ? trackedPitchOf(chars) : null
   const words: Word[] = []
   let current: PdfChar[] = []
   let pendingSpace = false
@@ -216,7 +252,11 @@ export function groupIntoWords(chars: readonly PdfChar[], options: WordOptions =
       inferSpaces &&
       prevVisible !== null &&
       current.length > 0 &&
-      shouldInsertSpace(prevVisible, c, lineGap)
+      (shouldInsertSpace(prevVisible, c, lineGap) ||
+        (trackedPitch !== null &&
+          !isNoSpaceScript(prevVisible.script) &&
+          !isNoSpaceScript(c.script) &&
+          c.originX - prevVisible.originX >= TRACKED_PITCH_MIN_RATIO * trackedPitch))
     const noSpaceChar = isNoSpaceScript(c.script)
     const prevNoSpace = prevVisible !== null && isNoSpaceScript(prevVisible.script)
 

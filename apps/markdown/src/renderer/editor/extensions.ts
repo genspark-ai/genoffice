@@ -11,6 +11,7 @@ import { LocalImage } from './localImage'
 import { BlockDragHandle } from './blockDragHandle'
 import { BlockKeymap } from './blockKeymap'
 import { AiHighlight } from './aiHighlight'
+import { AiQueueAnchors } from './aiQueueAnchors'
 import { buildMathExtensions } from './math'
 import { SlashCommand } from './slashCommand'
 import type { SlashController, SlashItem } from './slashCommand'
@@ -51,6 +52,7 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
     BlockDragHandle,
     BlockKeymap,
     AiHighlight,
+    AiQueueAnchors,
     Placeholder.configure({ placeholder: () => t('placeholder') }),
     SlashCommand.configure({
       controller: options.slashController,

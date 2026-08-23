@@ -47,7 +47,12 @@ const BORDER_COLOR_DOMINANCE = 0.8
 const touches = (a: Rect, b: Rect, tol: number): boolean =>
   a.x0 <= b.x1 + tol && b.x0 <= a.x1 + tol && a.y0 <= b.y1 + tol && b.y0 <= a.y1 + tol
 
-/** Union-find grouping of strokes by contact (within CONNECT_TOL). */
+/** spatial-hash cell size (pt) for stroke grouping; must exceed CONNECT_TOL */
+const GROUP_CELL_PT = 24
+
+/** Union-find grouping of strokes by contact (within CONNECT_TOL).
+ * Candidate pairs come from a spatial hash — the naive all-pairs scan is
+ * O(n²) and a CAD page feeds tens of thousands of stroke segments. */
 export function groupStrokes(strokes: readonly Stroke[]): Stroke[][] {
   const parent = strokes.map((_, i) => i)
   const find = (i: number): number => {
@@ -62,9 +67,30 @@ export function groupStrokes(strokes: readonly Stroke[]): Stroke[][] {
     const rb = find(b)
     if (ra !== rb) parent[rb] = ra
   }
+  const buckets = new Map<number, number[]>()
   for (let i = 0; i < strokes.length; i++) {
-    for (let j = i + 1; j < strokes.length; j++) {
-      if (touches(strokes[i]!.box, strokes[j]!.box, CONNECT_TOL)) union(i, j)
+    const b = strokes[i]!.box
+    const cx0 = Math.floor((b.x0 - CONNECT_TOL) / GROUP_CELL_PT)
+    const cx1 = Math.floor((b.x1 + CONNECT_TOL) / GROUP_CELL_PT)
+    const cy0 = Math.floor((b.y0 - CONNECT_TOL) / GROUP_CELL_PT)
+    const cy1 = Math.floor((b.y1 + CONNECT_TOL) / GROUP_CELL_PT)
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const key = cx * 0x10000 + cy
+        let list = buckets.get(key)
+        if (!list) buckets.set(key, (list = []))
+        list.push(i)
+      }
+    }
+  }
+  for (const list of buckets.values()) {
+    for (let a = 0; a < list.length; a++) {
+      const i = list[a]!
+      for (let b = a + 1; b < list.length; b++) {
+        const j = list[b]!
+        if (find(i) === find(j)) continue
+        if (touches(strokes[i]!.box, strokes[j]!.box, CONNECT_TOL)) union(i, j)
+      }
     }
   }
   const byRoot = new Map<number, Stroke[]>()
@@ -564,6 +590,13 @@ const SPLIT_BOUNDARY_GAP_EM = 0.5
 
 /** vertical strokes that must break at the same y to imply a row boundary (P27) */
 const JUNCTION_MIN_STROKES = 3
+/** same-line chars this close (ems) flow across a candidate column boundary */
+const COLUMN_FLOW_GAP_EMS = 0.4
+/** merged cell shadings narrower than this (pt) are chips/badges, not cells */
+const SHADING_MIN_WIDTH_PT = 14
+/** a column edge needs this many fill bodies sharing it (2 = one shaded row
+ * of abutting cells — header-only tables have no zebra rows to add votes) */
+const SHADING_EDGE_MIN_FILLS = 2
 
 /**
  * Harvest implied row boundaries from vline junctions (P27): some tables
@@ -619,6 +652,123 @@ function augmentGridRowBoundaries(grid: TableGrid, chars: readonly PdfChar[]): v
   }
   grid.hLines.sort((a, b) => b.pos - a.pos) // top → bottom, like solveGrid
   grid.ys = grid.hLines.map((l) => l.pos)
+}
+
+/**
+ * Column boundaries from cell-shading edges (P30): modern borderless tables
+ * draw NO interior vertical rules — the header/zebra fills carry the column
+ * structure instead, and the grid solved into one column with every row's
+ * text stacked into a single cell. A fill edge repeated by ≥2 fills inside
+ * the grid, clear of the existing boundaries, becomes an interior column —
+ * unless any character straddles it (a spanning title refutes the split).
+ */
+function augmentGridColumnBoundaries(
+  grid: TableGrid,
+  chars: readonly PdfChar[],
+  fills: readonly Fill[],
+): void {
+  // rescue-only: a grid that already HAS columns keeps them — adding fill-
+  // derived columns to a real multi-column table re-wraps its cells for a
+  // marginal structural gain (a 38-page report grew a page)
+  if (grid.xs.length - 1 >= 2) return
+  // a rounded cell shading arrives as its BODY plus narrow side slivers
+  // (5pt rounded-corner strips) — sliver edges minted phantom columns (a
+  // 3-column report table became 9). Slivers never vote; they only extend an
+  // x-adjacent same-color body. Full-width bodies stay separate even when
+  // same-colored: zebra rows paint every cell one color, and merging them
+  // would erase the real column edges they share.
+  const inside = fills.filter(
+    (f) =>
+      f.box.x0 >= grid.box.x0 - POS_TOL &&
+      f.box.x1 <= grid.box.x1 + POS_TOL &&
+      f.box.y0 >= grid.box.y0 - POS_TOL &&
+      f.box.y1 <= grid.box.y1 + POS_TOL,
+  )
+  const isSliver = (f: Fill): boolean => f.box.x1 - f.box.x0 < SHADING_MIN_WIDTH_PT
+  const bodies = inside
+    .filter((f) => !isSliver(f))
+    .map((f) => ({ color: f.color, box: { ...f.box } }))
+  const slivers = inside.filter(isSliver)
+  for (const body of bodies) {
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const f of slivers) {
+        if (f.color !== body.color) continue
+        if (
+          Math.abs(f.box.y0 - body.box.y0) > POS_TOL ||
+          Math.abs(f.box.y1 - body.box.y1) > POS_TOL
+        ) {
+          continue
+        }
+        if (f.box.x0 > body.box.x1 + POS_TOL || f.box.x1 < body.box.x0 - POS_TOL) continue
+        const x0 = Math.min(body.box.x0, f.box.x0)
+        const x1 = Math.max(body.box.x1, f.box.x1)
+        if (x0 !== body.box.x0 || x1 !== body.box.x1) {
+          body.box.x0 = x0
+          body.box.x1 = x1
+          grew = true
+        }
+      }
+    }
+  }
+  const edges: number[] = []
+  for (const body of bodies) edges.push(body.box.x0, body.box.x1)
+  if (edges.length === 0) return
+  edges.sort((a, b) => a - b)
+  const clusters: Array<{ pos: number; n: number }> = []
+  for (const e of edges) {
+    const last = clusters[clusters.length - 1]
+    if (last && e - last.pos <= POS_TOL) {
+      last.pos = (last.pos + e) / 2
+      last.n++
+    } else {
+      clusters.push({ pos: e, n: 1 })
+    }
+  }
+
+  // text lines (baseline buckets, x-sorted) — a boundary is refuted by a
+  // straddling char OR by a same-line adjacent pair flowing across it with a
+  // normal intra-text gap (a spanning title rarely lands a char ON the edge)
+  const visible = chars.filter((ch) => ch.code > 0x20)
+  const byLine = new Map<number, PdfChar[]>()
+  for (const ch of visible) {
+    const key = Math.round(ch.originY / 2)
+    let list = byLine.get(key)
+    if (!list) byLine.set(key, (list = []))
+    list.push(ch)
+  }
+  for (const list of byLine.values()) list.sort((a, b) => a.box.x0 - b.box.x0)
+
+  const refuted = (pos: number): boolean => {
+    for (const ch of visible) {
+      const over = SPLIT_CROSS_SHARE * (ch.box.x1 - ch.box.x0)
+      if (ch.box.x0 < pos - over && ch.box.x1 > pos + over) return true
+    }
+    for (const list of byLine.values()) {
+      for (let i = 1; i < list.length; i++) {
+        const a = list[i - 1]!
+        const b = list[i]!
+        if (a.box.x1 > pos || b.box.x0 < pos) continue
+        if (b.box.x0 - a.box.x1 < COLUMN_FLOW_GAP_EMS * a.fontSize) return true
+      }
+    }
+    return false
+  }
+
+  const inner: number[] = []
+  for (const c of clusters) {
+    if (c.n < SHADING_EDGE_MIN_FILLS) continue
+    if (c.pos <= grid.box.x0 + MIN_CELL_DIM || c.pos >= grid.box.x1 - MIN_CELL_DIM) continue
+    if (grid.xs.some((x) => Math.abs(x - c.pos) < MIN_CELL_DIM)) continue
+    if (!refuted(c.pos)) inner.push(c.pos)
+  }
+  if (inner.length === 0) return
+  for (const pos of inner) {
+    grid.vLines.push({ pos, segments: [[grid.box.y0, grid.box.y1]], virtual: true })
+  }
+  grid.vLines.sort((a, b) => a.pos - b.pos)
+  grid.xs = grid.vLines.map((l) => l.pos)
 }
 
 /**
@@ -690,6 +840,68 @@ function splitRunByColumns(
   return parts
 }
 
+/** a label band is a thin, wide fill — anything taller is a panel/card */
+const BAND_MAX_H_PT = 42
+
+/**
+ * Invoice-style headers draw a shaded label band with column dividers rooted
+ * in it and a single rule below — the band's edges are real visual row
+ * borders the stroke pool is missing, and without them the divider group is
+ * too short for a grid. A non-white band touched by 2+ vertical strokes
+ * contributes its top/bottom edges as synthetic h-strokes.
+ */
+function bandEdgeStrokes(fills: readonly Fill[], strokes: readonly Stroke[]): Stroke[] {
+  const verts = strokes.filter((s) => s.orientation === 'v' && !s.fromForm)
+  if (verts.length < 2) return []
+  const out: Stroke[] = []
+  for (const fill of fills) {
+    if (WHITE.test(fill.color)) continue
+    const w = fill.box.x1 - fill.box.x0
+    const h = fill.box.y1 - fill.box.y0
+    if (h > BAND_MAX_H_PT || w < 2 * MIN_TABLE_W || w < 2 * h) continue
+    let touching = 0
+    for (const v of verts) {
+      if (touches(v.box, fill.box, CONNECT_TOL) && ++touching >= 2) break
+    }
+    if (touching < 2) continue
+    // all four edges: the sides bridge the far edge into the divider group
+    // (the dividers touch only one edge of the band)
+    for (const y of [fill.box.y0, fill.box.y1]) {
+      out.push({
+        box: { x0: fill.box.x0, y0: y - 0.25, x1: fill.box.x1, y1: y + 0.25 },
+        orientation: 'h',
+        widthPt: 0.5,
+        color: fill.color,
+      })
+    }
+    for (const x of [fill.box.x0, fill.box.x1]) {
+      out.push({
+        box: { x0: x - 0.25, y0: fill.box.y0, x1: x + 0.25, y1: fill.box.y1 },
+        orientation: 'v',
+        widthPt: 0.5,
+        color: fill.color,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Band-aware lattice solve — the single entry every gridBoxes consumer must
+ * share, or a band grid forms here while styling/backdrop gates still splice
+ * its fill away. Two passes: fills already inside a solved grid are that
+ * table's own shading (zebra rows) — synthesizing edges from them would mint
+ * duplicate, slightly-off row boundaries. Only uncovered bands contribute.
+ */
+export function solvePageGrids(shapes: PageShapes): TableGrid[] {
+  const baseGrids = solveLatticeGrids(shapes.strokes)
+  const uncovered = shapes.fills.filter(
+    (f) => !baseGrids.some((g) => overlapRatio(f.box, g.box) >= 0.5),
+  )
+  const bandEdges = bandEdgeStrokes(uncovered, shapes.strokes)
+  return bandEdges.length > 0 ? solveLatticeGrids([...shapes.strokes, ...bandEdges]) : baseGrids
+}
+
 export function detectTables(
   shapes: PageShapes,
   chars: readonly PdfChar[],
@@ -697,7 +909,7 @@ export function detectTables(
   pageWidthPt?: number,
 ): DetectedTables {
   let grids: TableGrid[] = []
-  for (const grid of solveLatticeGrids(shapes.strokes)) {
+  for (const grid of solvePageGrids(shapes)) {
     grids.push(grid.lowRank ? grid : trimGhostEdgeColumns(grid, chars, shapes.fills))
   }
   // a grid spanning ~the whole page is a page frame / certificate border, not
@@ -759,7 +971,19 @@ export function detectTables(
   const tables: TableBlock[] = []
   for (const [i, grid] of grids.entries()) {
     // per-row cell sides without horizontal rules imply the rows (P27)
-    if (!grid.lowRank) augmentGridRowBoundaries(grid, perGrid[i]!)
+    if (!grid.lowRank) {
+      augmentGridRowBoundaries(grid, perGrid[i]!)
+      augmentGridColumnBoundaries(grid, perGrid[i]!, shapes.fills)
+    } else {
+      // a closed one-column box whose fills reveal interior columns is a
+      // shaded borderless table (header/zebra fills carry the structure) —
+      // rescue it into the normal grid path instead of a stacked text box
+      augmentGridColumnBoundaries(grid, perGrid[i]!, shapes.fills)
+      if (grid.xs.length - 1 >= 2 && grid.ys.length - 1 >= 2) {
+        delete grid.lowRank
+        augmentGridRowBoundaries(grid, perGrid[i]!)
+      }
+    }
     const layout = layoutCells(grid)
     const tableArea = rectArea(grid.box)
 

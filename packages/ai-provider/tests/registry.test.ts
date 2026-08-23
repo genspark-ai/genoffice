@@ -42,9 +42,12 @@ describe('provider registry', () => {
       protocol: 'gemini',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     })
-    expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deepseek-chat'))).toEqual({
+    // thinking stays off: once tools are in play DeepSeek 400s any turn that
+    // does not echo back the reasoning_content our transcript cannot carry
+    expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deepseek-v4-pro'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://api.deepseek.com/v1',
+      bodyExtras: { thinking: { type: 'disabled' } },
     })
     expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config('gpt-4.1-mini'))).toEqual({
       protocol: 'openai-compatible',
@@ -65,9 +68,9 @@ describe('provider registry', () => {
   it('resolves the catalog additions to their OpenAI-compatible endpoints', () => {
     const cases: Array<[AiProviderId, string, string]> = [
       ['glm', 'glm-5.3', 'https://open.bigmodel.cn/api/paas/v4'],
-      ['qwen', 'qwen-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
-      ['doubao', 'doubao-seed-1-6-251015', 'https://ark.cn-beijing.volces.com/api/v3'],
-      ['minimax', 'MiniMax-M2.5', 'https://api.minimax.io/v1'],
+      ['qwen', 'qwen3.8-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
+      ['doubao', 'doubao-seed-2-1-pro-260628', 'https://ark.cn-beijing.volces.com/api/v3'],
+      ['minimax', 'MiniMax-M3', 'https://api.minimax.io/v1'],
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
       ['mistral', 'mistral-large-latest', 'https://api.mistral.ai/v1'],
       ['openrouter', 'openrouter/auto', 'https://openrouter.ai/api/v1'],
@@ -146,7 +149,7 @@ describe('fixed-sampling models on indirect routes', () => {
   })
 
   it('omits temperature for gpt-5 via OpenRouter and via a custom endpoint', () => {
-    expect(AI_PROVIDER_ADAPTERS.openrouter.resolveEndpoint(config('openai/gpt-5.6'))).toEqual({
+    expect(AI_PROVIDER_ADAPTERS.openrouter.resolveEndpoint(config('openai/gpt-5.6-sol'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://openrouter.ai/api/v1',
       omitTemperature: true,

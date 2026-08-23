@@ -20,6 +20,13 @@ export interface PdfPasswordUiStrings {
   cancel: string
   /** shown while a submitted password is being verified by the converter */
   verifying: string
+  /** label above the password field */
+  label: string
+  /** placeholder inside the empty field */
+  placeholder: string
+  /** accessible names of the reveal toggle's two states */
+  show: string
+  hide: string
 }
 
 export interface PdfPasswordUiState {

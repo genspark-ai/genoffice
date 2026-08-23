@@ -1,20 +1,24 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import type { ChartDisplay, NewChart } from '@genoffice/docx-engine'
+import type { ChartDisplay, CommentInfo, NewChart } from '@genoffice/docx-engine'
 import type { AgentToolCall, AgentToolDef } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { executeCommands, type Command, type CommandEnvelope } from './commands'
 import {
   blockRangePositions,
+  buildCommentsContext,
   buildDocumentContext,
+  buildRevisionsContext,
   insertBlocksAfter,
   isBlankDocument,
   isTrackedDeleted,
   parseHtmlFragment,
   replaceBlockRange,
   serializeRangeToHtml,
+  type AiHfState,
   type AiTrack,
   type NumIds,
+  type SelectionScope,
 } from './protocol'
 
 /**
@@ -85,7 +89,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'apply_commands',
     description:
-      'Execute formatting/structure/batch commands (batchUpdate style, see the command guide in the system prompt): text style, paragraph format, heading level, find & replace, delete/move blocks, list conversion, image properties.',
+      'Execute formatting/structure/batch commands (batchUpdate style, see the command guide in the system prompt): text style (whole-block or matched-text-only), paragraph format, heading level, find & replace, delete/move blocks, list conversion, image properties, TOC insertion.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -96,6 +100,43 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         },
       },
       required: ['commands'],
+    },
+  },
+  {
+    name: 'read_revisions',
+    description:
+      'List every pending tracked revision (insertions, deletions, formatting/move/table changes) with kind, author, date, block index and the affected text. Read-only: revisions are accepted/rejected by the user in the Review tab.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'read_comments',
+    description:
+      'List all comment threads (including resolved ones) with ids, authors, anchored block indexes and anchor text. Unresolved threads already ride along in the message context; use this for the full picture.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'reply_comment',
+    description:
+      'Add a reply to a comment thread: after completing a requested change (summarize what changed), or to answer/ask back when the comment is a question or is ambiguous.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parentId: { type: 'string', description: 'id of the comment thread to reply to' },
+        text: { type: 'string', description: 'reply text' },
+      },
+      required: ['parentId', 'text'],
+    },
+  },
+  {
+    name: 'resolve_comment',
+    description:
+      'Mark a comment thread as resolved. Only after the requested change was applied (reply first), or when the user explicitly asked to resolve.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'id of the comment thread to resolve' },
+      },
+      required: ['id'],
     },
   },
   {
@@ -135,6 +176,26 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         maxWidthPx: { type: 'integer', description: 'maximum width (px), default 480' },
       },
       required: ['url'],
+    },
+  },
+  {
+    name: 'generate_image',
+    description:
+      'Generate an illustration with AI from a text prompt and insert it into the document (at the cursor / end of document). For illustration/diagram-style art that image_search cannot find, or when the user asks to generate/draw a picture. Requires Genspark login with cloud tools enabled.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'detailed English description of the image to generate',
+        },
+        aspectRatio: {
+          type: 'string',
+          description: 'e.g. "1:1", "16:9", "4:3"; omit for the default',
+        },
+        maxWidthPx: { type: 'integer', description: 'maximum width (px), default 480' },
+      },
+      required: ['prompt'],
     },
   },
   {
@@ -211,7 +272,65 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       required: ['blockIndex'],
     },
   },
+  {
+    name: 'set_header_footer',
+    description:
+      'Set the page header or footer text (the current contents are listed in the message context). Plain text; \\n separates lines; the tokens {PAGE} and {NUMPAGES} become live page-number fields; an empty string clears the text. ' +
+      'Per-line alignment/styling of the existing header/footer is preserved; images in it are untouched. view "first"/"even" writes the different-first-page / even-page variant (enabling that setting if needed).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['header', 'footer'] },
+        text: {
+          type: 'string',
+          description: 'new text; \\n between lines; may contain {PAGE} / {NUMPAGES}; "" clears',
+        },
+        view: {
+          type: 'string',
+          enum: ['default', 'first', 'even'],
+          description: 'which variant to write (default when omitted)',
+        },
+      },
+      required: ['kind', 'text'],
+    },
+  },
 ]
+
+/**
+ * App-owned header/footer state, handed to the tool executor. Writes run the
+ * same commit path as on-canvas editing (variant routing, per-section edits,
+ * dirty flags), so the docx save path needs no changes.
+ */
+export interface AiHeaderFooterAccess {
+  read(): AiHfState
+  /** returns an error message, or null on success */
+  set(kind: 'header' | 'footer', view: 'default' | 'first' | 'even', text: string): string | null
+}
+
+/**
+ * The App-owned comments store, handed to the tool executor. Mutations run
+ * the same review-actions code paths as the comments pane, so AI replies and
+ * resolves behave exactly like manual ones (anchors, dirty flags, docx save).
+ */
+export interface AiCommentsAccess {
+  list(): CommentInfo[]
+  /** false when the parent thread or its anchor no longer exists */
+  reply(parentId: string, text: string): boolean
+  /** false when the thread does not exist */
+  resolve(id: string): boolean
+}
+
+/**
+ * Selection frozen at context build, valid only while `doc` is still the live
+ * document. A user click elsewhere keeps the doc identical (selection-only
+ * transaction) so the freeze holds; once any edit lands, the live selection —
+ * which ProseMirror has remapped through those edits — is the correct target
+ * again and the frozen block indexes would drift, so the freeze is dropped.
+ */
+export interface FrozenSelection {
+  scope: SelectionScope
+  doc: ProseMirrorNode
+}
 
 export interface ToolExecution {
   /** result text fed back to the model */
@@ -364,53 +483,113 @@ async function executeAsyncTool(
     case 'insert_image': {
       const url = String(call.input.url ?? '')
       if (!/^https?:\/\//.test(url)) return fail(t('aiSumInsertImage'), 'invalid url')
-      const fetched = await window.desktop.fetchImage(url)
-      // never write after the user hit stop (the download may resolve long after the abort)
+      return insertImageFromUrl(editor, url, Number(call.input.maxWidthPx) || 480, signal, {
+        failLabel: t('aiSumInsertImage'),
+        doneLabel: t('aiSumInsertWebImage'),
+        blockLabel: 'Image (web)',
+      })
+    }
+    case 'generate_image': {
+      const prompt = String(call.input.prompt ?? '').trim()
+      if (!prompt) return fail(t('aiSumGenerateImage'), 'prompt must not be empty')
+      const aspectRatio = String(call.input.aspectRatio ?? '').trim()
+      const generated = await window.desktop.aiGenerateImage({
+        prompt,
+        ...(aspectRatio ? { aspectRatio } : {}),
+      })
       if (signal?.aborted)
-        return fail(t('aiSumInsertImage'), 'stopped by the user; the image was not inserted')
-      if (!fetched)
-        return fail(t('aiSumInsertImage'), 'download failed (the image may not be accessible)')
-      const dataUrl = `data:${fetched.mime};base64,${fetched.base64}`
-      const maxW = Number(call.input.maxWidthPx) || 480
-      try {
-        const natural = await imageSizeOf(dataUrl)
-        if (signal?.aborted)
-          return fail(t('aiSumInsertImage'), 'stopped by the user; the image was not inserted')
-        const scale = Math.min(1, maxW / natural.width)
-        const w = Math.round(natural.width * scale)
-        const h = Math.round(natural.height * scale)
-        // The download can take long: user edits made meanwhile must keep the
-        // freshness baseline stale, so only our own insertion may mark the doc
-        // seen. Checked right before the write — there is no async gap after.
-        const userEditedDuringFetch = editedExternally(editor)
-        editor
-          .chain()
-          .focus()
-          .insertContent({
-            type: 'docProtected',
-            attrs: {
-              docxIndex: null,
-              blockType: 'image',
-              label: 'Image (web)',
-              imageDataUrl: dataUrl,
-              imageWidthPx: w,
-              imageHeightPx: h,
-              genImage: { base64: fetched.base64, mime: fetched.mime, widthPx: w, heightPx: h },
-            },
-          })
-          .run()
-        if (!userEditedDuringFetch) markDocSeen(editor)
-        return {
-          output: `Inserted the image (${w}×${h}px).`,
-          mutated: true,
-          summary: t('aiSumInsertWebImage'),
-        }
-      } catch {
-        return fail(t('aiSumInsertImage'), 'the image could not be decoded')
+        return fail(t('aiSumGenerateImage'), 'stopped by the user; the image was not inserted')
+      if (!generated.url) {
+        return fail(t('aiSumGenerateImage'), generated.error ?? 'image generation failed')
       }
+      return insertImageFromUrl(
+        editor,
+        generated.url,
+        Number(call.input.maxWidthPx) || 480,
+        signal,
+        {
+          failLabel: t('aiSumGenerateImage'),
+          doneLabel: t('aiSumInsertedGenImage'),
+          blockLabel: 'Image (AI)',
+        },
+      )
     }
     default:
       return fail(t('aiSumUnknownTool'), call.name)
+  }
+}
+
+/** magic-byte sniff: the fetch handler's content-type mapping defaults unknown
+ *  types to jpeg, and a webp/svg mislabeled as jpeg breaks the exported docx */
+export function sniffImageMime(base64: string): 'image/png' | 'image/jpeg' | 'image/gif' | null {
+  let head: string
+  try {
+    head = atob(base64.slice(0, 12))
+  } catch {
+    return null
+  }
+  if (head.startsWith('\x89PNG')) return 'image/png'
+  if (head.startsWith('GIF8')) return 'image/gif'
+  if (head.charCodeAt(0) === 0xff && head.charCodeAt(1) === 0xd8) return 'image/jpeg'
+  return null
+}
+
+/** download a direct image URL and insert it at the cursor as a protected image block */
+async function insertImageFromUrl(
+  editor: Editor,
+  url: string,
+  maxW: number,
+  signal: AbortSignal | undefined,
+  labels: { failLabel: string; doneLabel: string; blockLabel: string },
+): Promise<ToolExecution> {
+  const fetched = await window.desktop.fetchImage(url)
+  // never write after the user hit stop (the download may resolve long after the abort)
+  if (signal?.aborted)
+    return fail(labels.failLabel, 'stopped by the user; the image was not inserted')
+  if (!fetched) return fail(labels.failLabel, 'download failed (the image may not be accessible)')
+  const mime = sniffImageMime(fetched.base64)
+  if (!mime) {
+    return fail(
+      labels.failLabel,
+      'unsupported image format (only png/jpg/gif can be embedded) — pick a different image',
+    )
+  }
+  const dataUrl = `data:${mime};base64,${fetched.base64}`
+  try {
+    const natural = await imageSizeOf(dataUrl)
+    if (signal?.aborted)
+      return fail(labels.failLabel, 'stopped by the user; the image was not inserted')
+    const scale = Math.min(1, maxW / natural.width)
+    const w = Math.round(natural.width * scale)
+    const h = Math.round(natural.height * scale)
+    // The download can take long: user edits made meanwhile must keep the
+    // freshness baseline stale, so only our own insertion may mark the doc
+    // seen. Checked right before the write — there is no async gap after.
+    const userEditedDuringFetch = editedExternally(editor)
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: 'docProtected',
+        attrs: {
+          docxIndex: null,
+          blockType: 'image',
+          label: labels.blockLabel,
+          imageDataUrl: dataUrl,
+          imageWidthPx: w,
+          imageHeightPx: h,
+          genImage: { base64: fetched.base64, mime, widthPx: w, heightPx: h },
+        },
+      })
+      .run()
+    if (!userEditedDuringFetch) markDocSeen(editor)
+    return {
+      output: `Inserted the image (${w}×${h}px).`,
+      mutated: true,
+      summary: labels.doneLabel,
+    }
+  } catch {
+    return fail(labels.failLabel, 'the image could not be decoded')
   }
 }
 
@@ -420,7 +599,11 @@ export function executeTool(
   numIds: NumIds,
   track?: AiTrack,
   signal?: AbortSignal,
+  frozen?: FrozenSelection | null,
+  comments?: AiCommentsAccess,
+  hf?: AiHeaderFooterAccess,
 ): ToolExecution | Promise<ToolExecution> {
+  const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = INDEX_WRITE_SUMMARIES[call.name]
   if (staleSummary && editedExternally(editor)) return fail(staleSummary(), STALE_DOC_ERROR)
   const settle = (exec: ToolExecution): ToolExecution => {
@@ -432,10 +615,15 @@ export function executeTool(
   // synchronously (doesn't break existing tests). No settle here: marking the doc
   // seen after the long download would baptize user edits made meanwhile —
   // insert_image maintains the baseline itself right at its synchronous write.
-  if (call.name === 'web_search' || call.name === 'image_search' || call.name === 'insert_image') {
+  if (
+    call.name === 'web_search' ||
+    call.name === 'image_search' ||
+    call.name === 'insert_image' ||
+    call.name === 'generate_image'
+  ) {
     return executeAsyncTool(editor, call, signal)
   }
-  return settle(executeSyncTool(editor, call, numIds, track))
+  return settle(executeSyncTool(editor, call, numIds, track, scope, comments, hf))
 }
 
 function executeSyncTool(
@@ -443,11 +631,16 @@ function executeSyncTool(
   call: AgentToolCall,
   numIds: NumIds,
   track?: AiTrack,
+  scope?: SelectionScope | null,
+  comments?: AiCommentsAccess,
+  hf?: AiHeaderFooterAccess,
 ): ToolExecution {
   switch (call.name) {
     case 'get_document_context':
       return {
-        output: buildDocumentContext(editor),
+        // the still-valid frozen scope keeps the reported selection consistent
+        // with what scope:'selection' and cursor-relative inserts will act on
+        output: buildDocumentContext(editor, scope ?? undefined, hf?.read()),
         mutated: false,
         summary: t('aiSumReadDocContext'),
       }
@@ -512,7 +705,7 @@ function executeSyncTool(
       }
       const cursorScope = call.input.afterBlockIndex === undefined
       const after = cursorScope
-        ? getCursorBlockIndex(editor)
+        ? getCursorBlockIndex(editor, scope)
         : Math.min(Math.max(Number(call.input.afterBlockIndex), -1), count - 1)
       if (!Number.isInteger(after)) return fail(t('aiSumInsertContent'), 'invalid afterBlockIndex')
       // -1 hits blockRangePositions' 0/0 default, i.e. insert at doc start
@@ -575,7 +768,7 @@ function executeSyncTool(
       const count = editor.state.doc.childCount
       const after =
         call.input.afterBlockIndex === undefined
-          ? getCursorBlockIndex(editor)
+          ? getCursorBlockIndex(editor, scope)
           : Math.min(Math.max(Number(call.input.afterBlockIndex), -1), count - 1)
       if (!Number.isInteger(after)) return fail(t('aiSumInsertChart'), 'invalid afterBlockIndex')
       const { to } = blockRangePositions(editor, after, after)
@@ -697,13 +890,103 @@ function executeSyncTool(
       }
     }
 
+    case 'read_revisions':
+      return {
+        output: buildRevisionsContext(editor),
+        mutated: false,
+        summary: t('aiSumReadRevisions'),
+      }
+
+    case 'read_comments': {
+      if (!comments) return fail(t('aiSumReadComments'), 'comments are not available here')
+      return {
+        output: buildCommentsContext(editor, comments.list(), true),
+        mutated: false,
+        summary: t('aiSumReadComments'),
+      }
+    }
+
+    case 'reply_comment': {
+      if (!comments) return fail(t('aiSumReplyComment'), 'comments are not available here')
+      const parentId = String(call.input.parentId ?? '').trim()
+      const text = String(call.input.text ?? '').trim()
+      if (!parentId || !text) {
+        return fail(t('aiSumReplyComment'), 'parentId and text must not be empty')
+      }
+      const target = comments.list().find((c) => c.id === parentId)
+      if (!target) {
+        return fail(
+          t('aiSumReplyComment'),
+          `no comment with id ${parentId}; call read_comments for the current ids`,
+        )
+      }
+      const rootId = target.parentId ?? target.id // replies always attach to the thread root
+      if (!comments.reply(rootId, text)) {
+        return fail(
+          t('aiSumReplyComment'),
+          'the comment anchor no longer exists in the document; the reply was not added',
+        )
+      }
+      return {
+        output: `Replied to comment ${rootId}.`,
+        mutated: true, // the reply id joins the anchor marks, so the doc changed
+        summary: t('aiSumReplyComment'),
+      }
+    }
+
+    case 'resolve_comment': {
+      if (!comments) return fail(t('aiSumResolveComment'), 'comments are not available here')
+      const id = String(call.input.id ?? '').trim()
+      const target = comments.list().find((c) => c.id === id)
+      if (!target) {
+        return fail(
+          t('aiSumResolveComment'),
+          `no comment with id ${id}; call read_comments for the current ids`,
+        )
+      }
+      const rootId = target.parentId ?? target.id
+      if (!comments.resolve(rootId)) {
+        return fail(t('aiSumResolveComment'), `comment ${rootId} could not be resolved`)
+      }
+      return {
+        output: `Comment ${rootId} marked as resolved.`,
+        mutated: false, // app state only; the document content is untouched
+        summary: t('aiSumResolveComment'),
+      }
+    }
+
+    case 'set_header_footer': {
+      const kind = String(call.input.kind ?? '')
+      const summaryOf = () => t(kind === 'footer' ? 'aiSumSetFooter' : 'aiSumSetHeader')
+      if (!hf) return fail(summaryOf(), 'header/footer editing is not available here')
+      if (kind !== 'header' && kind !== 'footer') {
+        return fail(summaryOf(), 'kind must be "header" or "footer"')
+      }
+      const view = call.input.view === undefined ? 'default' : String(call.input.view)
+      if (view !== 'default' && view !== 'first' && view !== 'even') {
+        return fail(summaryOf(), 'view must be "default", "first" or "even"')
+      }
+      if (typeof call.input.text !== 'string') return fail(summaryOf(), 'text must be a string')
+      const text = call.input.text
+      if (text.length > 2000) {
+        return fail(summaryOf(), 'text is too long for a header/footer (2000 characters max)')
+      }
+      const error = hf.set(kind, view, text)
+      if (error) return fail(summaryOf(), error)
+      return {
+        output: `Updated the ${kind}${view !== 'default' ? ` (${view}-page variant)` : ''}.`,
+        mutated: false, // app state only, saved with the document; not part of the PM doc
+        summary: summaryOf(),
+      }
+    }
+
     case 'apply_commands': {
       const commands = call.input.commands
       if (!Array.isArray(commands) || commands.length === 0) {
         return fail(t('aiSumApplyCommands'), 'commands must be a non-empty array')
       }
       const envelope: CommandEnvelope = { commands: commands as Command[] }
-      const outcome = executeCommands(editor, envelope, { numIds, track })
+      const outcome = executeCommands(editor, envelope, { numIds, track, selection: scope })
       if (!outcome.ok)
         return fail(t('aiSumApplyCommands'), outcome.error ?? 'command execution failed')
       const changed = outcome.results.reduce((sum, r) => sum + r.changed, 0)
@@ -725,8 +1008,10 @@ function executeSyncTool(
   }
 }
 
-/** top-level index of the block containing the caret (doc end as fallback) */
-function getCursorBlockIndex(editor: Editor): number {
+/** top-level index of the block containing the caret (doc end as fallback);
+ *  a frozen scope wins over the live caret — it is what the prompt described */
+function getCursorBlockIndex(editor: Editor, scope?: SelectionScope | null): number {
+  if (scope) return Math.min(Math.max(scope.endIndex, 0), editor.state.doc.childCount - 1)
   const { from } = editor.state.selection
   let result = editor.state.doc.childCount - 1
   let index = 0

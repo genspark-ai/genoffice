@@ -164,6 +164,64 @@ describe('rich header / footer', () => {
     ])
   })
 
+  it('direct w:tabs merge with Header style stops instead of replacing them (Word)', async () => {
+    const HEADER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:pPr><w:pStyle w:val="Header"/>' +
+      '<w:tabs><w:tab w:val="left" w:pos="8928"/><w:tab w:val="left" w:pos="8928"/></w:tabs>' +
+      '</w:pPr><w:r><w:tab/><w:t>Right text</w:t></w:r></w:p>' +
+      '</w:hdr>'
+    const STYLES =
+      '<w:style w:type="paragraph" w:styleId="Header"><w:name w:val="header"/>' +
+      '<w:pPr><w:tabs><w:tab w:val="center" w:pos="4680"/><w:tab w:val="right" w:pos="9360"/></w:tabs></w:pPr></w:style>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraStylesXml: STYLES,
+      extraRels:
+        '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/header1.xml',
+          xml: HEADER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+        },
+      ],
+      sectPrExtra: '<w:headerReference w:type="default" r:id="rId61"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.headerParas![0].tabStops).toEqual([
+      { pos: 4680, val: 'center' },
+      { pos: 8928, val: 'left' },
+      { pos: 9360, val: 'right' },
+    ])
+  })
+
+  it('legacy <w:pgNum/> renders as a PAGE field (page number, hasPageNumber)', async () => {
+    const FOOTER =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:p><w:r><w:t xml:space="preserve">Page </w:t></w:r>' +
+      '<w:r><w:pgNum/></w:r></w:p>' +
+      '</w:ftr>'
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId62" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/footer1.xml',
+          xml: FOOTER,
+          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml',
+        },
+      ],
+      sectPrExtra: '<w:footerReference w:type="default" r:id="rId62"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.footerHasPageNumber).toBe(true)
+    expect(parsed.footerParas![0].runs.map((r) => r.text).join('')).toBe(`Page ${PAGE_MARK}`)
+  })
+
   it('w:framePr xAlign surfaces as frameXAlign (POI WordWithAttachments page number frame)', async () => {
     const HEADER =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +

@@ -152,7 +152,7 @@ describe('brief provenance gate (regenerate_slide / generate_deck)', () => {
       regenerateSlide: async () => null,
       generatePageCloud: async () => ({ ok: false, error: 'cloud down' }),
       isCloudPageGenEnabled: async () => true,
-      generateFromHtml: async () => ({ ok: true, pages: 1 }),
+      landGeneratedPages: async () => ({ ok: true, pages: 1 }),
     })
 
   it('regenerate_slide with a figure-dense brief refuses without dataSource', async () => {

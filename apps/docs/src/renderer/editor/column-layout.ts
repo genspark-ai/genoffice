@@ -51,10 +51,24 @@ export interface ColumnBlockSpec {
   el: HTMLElement
   /** column width (px); absent for single-column regions (natural width) */
   widthPx?: number
+  /** owning section's content width (--doc-content-w): tables resolve their spill/centering caps against it */
+  contentWPx?: number
+  /** owning section's side margins (--doc-margin-left/right overrides) */
+  marginLeftPx?: number
+  marginRightPx?: number
   /** translate; dy < 0 pulls content up over vacated column space */
   dx: number
   dy: number
 }
+
+const PATCH_PROPS = [
+  '--col-w',
+  '--col-dx',
+  '--col-dy',
+  '--doc-content-w',
+  '--doc-margin-left',
+  '--doc-margin-right',
+]
 
 /** Rebuild the column-layout decorations (an empty list clears them). */
 export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): void {
@@ -63,6 +77,9 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
   for (const spec of specs) {
     const style =
       (spec.widthPx !== undefined ? `--col-w:${round2(spec.widthPx)}px;` : '') +
+      (spec.contentWPx !== undefined
+        ? `--doc-content-w:${round2(spec.contentWPx)}px;--doc-margin-left:${round2(spec.marginLeftPx ?? 0)}px;--doc-margin-right:${round2(spec.marginRightPx ?? 0)}px;`
+        : '') +
       `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`
     styleOf.set(spec.el, style)
     let from: number
@@ -94,14 +111,14 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
       if (styleOf.has(el)) continue
       el.removeAttribute('data-col-patch')
       el.classList.remove('doc-col-block')
-      for (const p of ['--col-w', '--col-dx', '--col-dy']) el.style.removeProperty(p)
+      for (const p of PATCH_PROPS) el.style.removeProperty(p)
     }
     for (const [el, style] of styleOf) {
       if (el.classList.contains('doc-col-block') && !el.hasAttribute('data-col-patch')) continue
       el.setAttribute('data-col-patch', '1')
       el.classList.add('doc-col-block')
       const parts = style.split(';')
-      for (const p of ['--col-w', '--col-dx', '--col-dy']) el.style.removeProperty(p)
+      for (const p of PATCH_PROPS) el.style.removeProperty(p)
       for (const part of parts) {
         const i = part.indexOf(':')
         if (i > 0) el.style.setProperty(part.slice(0, i), part.slice(i + 1))

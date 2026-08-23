@@ -4,6 +4,8 @@
 /// validations, conditional formatting). Anything that cannot be shifted
 /// safely throws — the save must fail closed rather than corrupt references.
 
+import type { WorkbookStyleEdit } from '../shared/desktop-api'
+
 export type StructuralOp =
   | {
       readonly kind: 'insert-rows' | 'remove-rows' | 'insert-cols' | 'remove-cols'
@@ -32,6 +34,14 @@ export type StructuralOp =
       readonly start: number
       readonly end: number
       readonly hidden: boolean
+    }
+  /// Column default format (Excel select-all/full-column semantics): resolved
+  /// against each existing <col>'s style so widths/outline attrs survive.
+  | {
+      readonly kind: 'set-col-style'
+      readonly start: number
+      readonly end: number
+      readonly style: WorkbookStyleEdit
     }
   /// level: absolute outline level 0-7 (0 removes the attribute); an omitted
   /// collapsed leaves the file's collapsed flag untouched.
@@ -67,6 +77,10 @@ export function applyStructuralOps(
   worksheetXml: string,
   ops: readonly StructuralOp[],
   sheetName: string,
+  /// Interns base-xf + delta into cellXfs and returns the new index; required
+  /// for 'set-col-style' ops (undefined drops them — caller must supply it
+  /// whenever such ops exist).
+  resolveColStyle?: (baseXfIndex: number, delta: WorkbookStyleEdit) => number,
 ): string {
   let xml = worksheetXml
   let outlineTouched = false
@@ -78,7 +92,7 @@ export function applyStructuralOps(
         op.kind === 'set-rows-hidden' ||
         op.kind === 'set-rows-outline'
           ? applyRowAttributeOp(xml, op)
-          : applyColAttributeOp(xml, op)
+          : applyColAttributeOp(xml, op, resolveColStyle)
       continue
     }
     if (!('index' in op)) {
@@ -177,6 +191,8 @@ function formatSize(size: number): string {
 /// file never materialized are created in order — but only when the op sets
 /// something (a default-reset on a missing row is already the default).
 function applyRowAttributeOp(xml: string, op: AxisAttributeOp): string {
+  // col-only op: never dispatched here, but narrow the union for the checks below
+  if ('style' in op) return xml
   const seen = new Set<number>()
   let result = xml.replace(/<row\b([^>]*?)(\/>|>)/g, (full, attributes: string, close: string) => {
     const rowNumber = /(?:^|\s)r="([0-9]+)"/.exec(attributes)?.[1]
@@ -251,7 +267,12 @@ interface ColDefinition {
 /// Rewrites the `<cols>` section for a width or visibility change. Existing
 /// `<col>` ranges overlapping the span are split so untouched columns keep
 /// their exact attributes.
-function applyColAttributeOp(xml: string, op: AxisAttributeOp): string {
+function applyColAttributeOp(
+  xml: string,
+  op: AxisAttributeOp,
+  resolveColStyle?: (baseXfIndex: number, delta: WorkbookStyleEdit) => number,
+): string {
+  if ('style' in op && resolveColStyle === undefined) return xml
   const existing: ColDefinition[] = []
   const section = /<cols\b[^>]*>([\s\S]*?)<\/cols>/.exec(xml)
   if (section?.[1]) {
@@ -271,7 +292,10 @@ function applyColAttributeOp(xml: string, op: AxisAttributeOp): string {
 
   const patch = (attrs: Map<string, string>): Map<string, string> => {
     const next = new Map(attrs)
-    if ('size' in op) {
+    if ('style' in op) {
+      const base = Number(next.get('style') ?? 0)
+      next.set('style', String(resolveColStyle!(Number.isInteger(base) ? base : 0, op.style)))
+    } else if ('size' in op) {
       next.delete('width')
       next.delete('customWidth')
       next.delete('bestFit')
@@ -311,11 +335,13 @@ function applyColAttributeOp(xml: string, op: AxisAttributeOp): string {
   // Span parts no existing <col> covered get an element carrying only the
   // change (unless the change is a reset back to the default).
   const setsSomething =
-    'size' in op
-      ? op.size !== null
-      : 'level' in op
-        ? op.level > 0 || op.collapsed === true
-        : op.hidden
+    'style' in op
+      ? true
+      : 'size' in op
+        ? op.size !== null
+        : 'level' in op
+          ? op.level > 0 || op.collapsed === true
+          : op.hidden
   if (setsSomething) {
     const covered = result
       .filter((col) => col.max >= op.start && col.min <= op.end)
@@ -1115,15 +1141,18 @@ function moveRefRange(ref: string, shift: Shift, axis: Axis): string | null {
 
 // A1-style token, optionally sheet-qualified: cell, cell range, whole-column
 // range, or whole-row range. The leading guard keeps defined-name characters
-// from being misread as references.
+// from being misread as references. The unquoted sheet qualifier accepts any
+// Unicode letter — Excel allows unquoted non-ASCII sheet names (Arabic, CJK),
+// and an ASCII-only qualifier made such references invisible to every
+// consumer (the formula closure then never loaded their precedents).
 export const FORMULA_REFERENCE_PATTERN = new RegExp(
-  "(^|[^A-Za-z0-9_.$'!:])" +
-    "(?:('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!)?" +
+  "(^|[^\\p{L}\\p{N}_.$'!:])" +
+    "(?:('(?:[^']|'')+'|[\\p{L}_][\\p{L}\\p{N}_.]*)!)?" +
     '(\\$?[A-Z]{1,3}\\$?[0-9]+(?::\\$?[A-Z]{1,3}\\$?[0-9]+)?' +
     '|\\$?[A-Z]{1,3}:\\$?[A-Z]{1,3}' +
     '|\\$?[0-9]+:\\$?[0-9]+)' +
-    '(?![0-9A-Za-z_(])',
-  'g',
+    '(?![0-9\\p{L}_(])',
+  'gu',
 )
 
 /// Shifts A1 references in a formula, preserving `$` markers and other

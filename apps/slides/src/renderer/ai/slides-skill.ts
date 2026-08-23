@@ -76,12 +76,12 @@ export interface DeckAccess {
    * memory, never persisted or journaled.
    */
   onProgress?(event: DeckProgressEvent): void
-  /** HTML→PPTX pipeline: several pages of HTML → generate editable native elements and replace/append the current deck. Returns total page count or an error.
-   *  mode="insert_at" inserts a single HTML page at position insertAt (later pages shift) — used to re-insert failed pages at their original position.
+  /** Land generated pages: each pageMarkers entry redeems a one-slide pptx, merged into / replacing the current deck. Returns total page count or an error.
+   *  mode="insert_at" inserts a single page at position insertAt (later pages shift) — used to re-insert failed pages at their original position.
    *  On pipeline failure it automatically falls back to element-level mode; fallbackReason explains why (ok is still true).
    *  deckName = presentation name derived from user input, used as the file name when the new draft is saved (instead of "Untitled-timestamp"). */
-  generateFromHtml?(
-    pagesHtml: string[],
+  landGeneratedPages?(
+    pageMarkers: string[],
     mode?: 'replace' | 'append' | 'insert_at',
     deckName?: string,
     insertAt?: number,
@@ -94,10 +94,10 @@ export interface DeckAccess {
     fallbackReason?: string
     imageFailures?: { page: number; url: string }[]
   }>
-  /** Redo one slide in place: single-page HTML → convert → replace slide slideIndex (other slides untouched; undoable with ⌘Z). */
+  /** Redo one slide in place: land the marker's page as a replacement for slide slideIndex (other slides untouched; undoable with ⌘Z). */
   regenerateSlide?(
     slideIndex: number,
-    html: string,
+    marker: string,
   ): Promise<{ ok: boolean; error?: string; imageFailures?: { page: number; url: string }[] }>
   /** Survey: shows a card with options and waits for the user's choices, returning an answer summary. */
   askClarification?(questions: ClarifyQuestion[]): Promise<{ answers: string; cancelled?: boolean }>
@@ -115,7 +115,7 @@ export interface DeckAccess {
    * Cloud single-page generation (gsk slide_generate), used by generate_deck's self-driven
    * pipeline: given the unified style + this page's brief/layout/images, the cloud service
    * writes the HTML and converts it to a one-slide pptx. Returns a marker string that goes
-   * into a generateFromHtml pagesHtml slot.
+   * into a landGeneratedPages pageMarkers slot.
    */
   generatePageCloud?(args: {
     pageIndex: number
@@ -1150,7 +1150,7 @@ const TOOLS: AgentToolDef[] = [
     description:
       '[Advanced batch surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). Use for multi-page or many-element batches (retitle every page, deck-wide transitions, bulk restyle); for one-page layout math prefer execute_slide_script, for ordinary single edits prefer the dedicated tools.\n' +
       'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +
-      'Units are document-space EMU: 1 px = 9525 EMU (read_slide reports px — multiply by 9525). Font sizes are pt.\n' +
+      'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt.\n' +
       'Full vocabulary (the same executor every editing surface uses):\n' +
       opVocabulary() +
       '\nCommon signatures: setText {paragraphs:[{runs:[{text,bold?,italic?,fontSize?,color?}],align?}]} · setFont {font:{fontFamily?,fontSizePt?,bold?,…}} · setFill {fill:"#RRGGBB"|"none"} · setStroke {stroke:{color,widthEmu}|null} · setTransform {box:{x,y,cx,cy},rotDeg?} · addElement {kind:"textbox"|preset,offset,paragraphs?} · setTableCell {row,col,paragraphs} · moveSlide {to} · findReplace {find,replace}.\n' +
@@ -1517,7 +1517,10 @@ export function formatSlideDump(slide: RenderSlide): string {
   const colorNote = colorlessTypes.length
     ? `\n(${colorlessTypes.join('/')} colors not available)`
     : ''
-  return `Canvas ${slide.widthPx}×${slide.heightPx}px\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
+  // Report the real px→EMU factor: render px carry the viewport scale, so ×9525 only
+  // holds for decks whose baseline width is exactly the fit width (standard 16:9 at 1280).
+  const pxToEmu = +(9525 / slide.scale).toFixed(2)
+  return `Canvas ${slide.widthPx}×${slide.heightPx}px (1 px = ${pxToEmu} EMU)\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
 }
 
 /** tools only usable through the Genspark cloud (gated by login + the cloud-tools toggle) */
@@ -2343,7 +2346,7 @@ async function executeTool(
           t('aiFailGenDeck'),
           'No page generation pipeline is available in this environment',
         )
-      if (!access.generateFromHtml)
+      if (!access.landGeneratedPages)
         return fail(
           t('aiFailGenDeck'),
           'The current environment does not support the page landing pipeline',
@@ -2745,7 +2748,7 @@ async function executeTool(
           const marker = markerByIndex[nextToLand] as string
           if (marker.length > 0) {
             const m: 'replace' | 'append' = firstDone ? 'append' : insertMode
-            const r = await access.generateFromHtml!([marker], m, deckName)
+            const r = await access.landGeneratedPages!([marker], m, deckName)
             if (r.ok) {
               if (r.fallbackReason) {
                 degraded.push(nextToLand)
@@ -2833,8 +2836,8 @@ async function executeTool(
           }
           const isFirstLand = !firstDone
           const r = isFirstLand
-            ? await access.generateFromHtml!([marker], insertMode, deckName)
-            : await access.generateFromHtml!(
+            ? await access.landGeneratedPages!([marker], insertMode, deckName)
+            : await access.landGeneratedPages!(
                 [marker],
                 'insert_at',
                 deckName,

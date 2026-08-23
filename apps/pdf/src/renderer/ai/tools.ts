@@ -3,7 +3,7 @@ import type { AgentToolCall, AgentToolDef, ToolExecution } from '@genoffice/agen
 import type { OutlineNode } from '../OutlinePanel'
 import type { PageEntry, SearchIndex } from '../search'
 import { searchInIndex } from '../search'
-import { geomDispSize, pdfRectToCss, viewToPdf } from '../annotations'
+import { geomDispSize, pdfRectToCss, quadToRect, viewToPdf } from '../annotations'
 import type { PageGeom } from '../annotations'
 import { EDIT_FONTS } from '../../shared/ipc'
 import type {
@@ -19,6 +19,7 @@ import { groupPageBlocks } from '../text-block'
 import { joinBlockLines, measurePt, wrapText } from '../text-wrap'
 import { t } from '../i18n/locale'
 import { buildFormCatalog } from '../form-catalog'
+import { flattenThread, type NoteThreadItem } from '../note-threads'
 
 /** Text cap per read_pages fed back to the model (the payload is resent in full each turn, so volume must be limited) */
 const READ_CHUNK_CHARS = 24_000
@@ -31,12 +32,36 @@ export interface PdfAiDeps {
   /** Original page number of the currently visible page (1-based) */
   currentPage(): number
   readOnly(): boolean
+  /** Text selection cached at mouseup (native DOM selections collapse when focus moves
+      into the panel); page..lastPage is the original-page span it covers */
+  selection(): { page: number; lastPage: number; text: string } | null
+  /** One-line summary of this session's unsaved pending edits; '' when none */
+  pendingSummary(): string
   outline(): OutlineNode[] | null
   searchIndex(): Promise<SearchIndex> | null
   isDeleted(origIdx: number): boolean
   /** Original page number → scroll to that page; returns false if the page was deleted */
   gotoPage(origPage: number): boolean
-  addMarkup(type: MarkupType, origIdx: number, rects: [number, number, number, number][]): void
+  /** color (rgb 0-1) omitted → the user's current ribbon color for the type */
+  addMarkup(
+    type: MarkupType,
+    origIdx: number,
+    rects: [number, number, number, number][],
+    color?: [number, number, number],
+  ): void
+  /** Note threads + text markups on a page: saved (minus pending deletions) with pending overlays */
+  annotationsOn(origIdx: number): Promise<{
+    threads: NoteThreadItem[]
+    markups: { type: MarkupType; quads: number[][]; saved: boolean }[]
+  }>
+  /** Counts of saved+pending annotations for the per-run context; '' when none */
+  annotationSummary(): string
+  /** Queue a pending sticky note authored by the AI; returns its thread key */
+  addNote(origIdx: number, at: [number, number], contents: string): string
+  /** Thread root by key ('S<objNum>' saved / 'P<id>' pending); null when not found */
+  findNoteRoot(origIdx: number, rootKey: string): Promise<NoteThreadItem | null>
+  /** Queue a pending AI-authored reply to a thread root */
+  replyToThread(origIdx: number, root: NoteThreadItem, contents: string): void
   /** Queue a pending text edit (dry-run validated against the file when possible); null = accepted, string = rejection reason */
   editText(input: TextEditInput): Promise<string | null>
   /** Queue a pending insert of a new text object (same pipeline as the UI "add text" tool) */
@@ -138,8 +163,58 @@ export const AGENT_TOOLS: AgentToolDef[] = [
           type: 'boolean',
           description: 'Whether to mark every occurrence on the page; defaults to false',
         },
+        color: {
+          type: 'string',
+          description:
+            "Markup color as #RRGGBB hex; omit to use the user's current color for the type",
+        },
       },
       required: ['page', 'text', 'type'],
+    },
+  },
+  {
+    name: 'read_annotations',
+    description:
+      'List the comment notes (sticky notes, with their reply threads) and text markups (highlight/underline/strikeout) in the document — both saved in the file and queued unsaved this session. Optional page range; omit to read the whole document. Reply to a note with reply_note using the returned note id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        start: { type: 'integer', description: 'First page (1-based); omit to start at page 1' },
+        end: { type: 'integer', description: 'Last page (inclusive); omit to read to the end' },
+      },
+    },
+  },
+  {
+    name: 'add_note',
+    description:
+      'Add a sticky-note comment to a page (takes effect on save; authored as "AI Assistant"). Anchor it with anchor_text (a verbatim fragment on the page — the note pin lands at its end) or explicit x/y in points from the page top-left as displayed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        text: { type: 'string', description: 'Note contents' },
+        anchor_text: {
+          type: 'string',
+          description: 'Verbatim text fragment on the page the note refers to',
+        },
+        x: { type: 'number', description: 'Pin x in points from the page left edge' },
+        y: { type: 'number', description: 'Pin y in points from the page TOP edge' },
+      },
+      required: ['page', 'text'],
+    },
+  },
+  {
+    name: 'reply_note',
+    description:
+      'Append a reply to an existing note thread (takes effect on save; authored as "AI Assistant"). note_id is a thread id from read_annotations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based) the thread is on' },
+        note_id: { type: 'string', description: 'Thread id from read_annotations (e.g. "S12")' },
+        text: { type: 'string', description: 'Reply contents' },
+      },
+      required: ['page', 'note_id', 'text'],
     },
   },
   {
@@ -220,12 +295,22 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'insert_text',
     description:
-      'Add NEW text to a page (drawn as new content on top of the page; takes effect on save). Use this for blank pages or empty areas — to change text that already exists, use edit_text or edit_block instead. x/y are the TOP-LEFT corner of the text block in points measured from the page top-left as displayed; with no x/y the block is centered horizontally near the top. "\\n" starts a new line; pass max_width to auto-wrap long paragraphs within that width.',
+      'Add NEW text to a page (drawn as new content on top of the page; takes effect on save). Use this for blank pages, empty areas, and filling in non-interactive form blanks — to change text that already exists, use edit_text or edit_block instead. Position with anchor_text (a verbatim fragment on the page, e.g. a form label) plus placement, or with x/y as the TOP-LEFT corner of the text block in points measured from the page top-left as displayed; with neither, the block is centered horizontally near the top. "\\n" starts a new line; pass max_width to auto-wrap long paragraphs within that width.',
     inputSchema: {
       type: 'object',
       properties: {
         page: { type: 'integer', description: 'Page number (1-based)' },
         text: { type: 'string', description: 'Text to insert; "\\n" separates lines/paragraphs' },
+        anchor_text: {
+          type: 'string',
+          description:
+            'Verbatim text fragment on the page (e.g. a form label) to position the new text against',
+        },
+        placement: {
+          type: 'string',
+          enum: ['right', 'below', 'above'],
+          description: 'Which side of anchor_text to place the text on; defaults to right',
+        },
         x: {
           type: 'number',
           description: 'Left edge of the text block in points from the page left edge',
@@ -570,6 +655,13 @@ async function markupText(deps: PdfAiDeps, input: Record<string, unknown>): Prom
   if ('bad' in r) return err(r.bad, summary)
   const text = String(input.text ?? '').trim()
   if (!text) return err('text must not be empty', summary)
+  let color: [number, number, number] | undefined
+  if (input.color !== undefined) {
+    const hex = HEX_COLOR.exec(String(input.color))
+    if (!hex) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
+    const v = parseInt(hex[1]!, 16)
+    color = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
+  }
   const indexPromise = deps.searchIndex()
   if (!indexPromise) return err('Document not ready', summary)
   const index = await indexPromise
@@ -581,10 +673,161 @@ async function markupText(deps: PdfAiDeps, input: Record<string, unknown>): Prom
     )
   }
   const targets = input.all === true ? onPage : onPage.slice(0, 1)
-  for (const m of targets) deps.addMarkup(type, r.origIdx, m.rects)
+  for (const m of targets) deps.addMarkup(type, r.origIdx, m.rects, color)
   deps.gotoPage(r.origIdx + 1)
   return {
     output: `Marked ${targets.length} occurrence(s) on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S)`,
+    mutated: true,
+    summary,
+  }
+}
+
+const fmtNoteDate = (ms: number | null): string =>
+  ms === null ? '' : ` (${new Date(ms).toISOString().slice(0, 10)})`
+
+/** Page text covered by a markup rect, best-effort via the search index */
+function textUnderRect(entry: PageEntry, rect: readonly [number, number, number, number]): string {
+  const [x1, y1, x2, y2] = rect
+  let out = ''
+  for (const it of entry.items) {
+    const yOverlap = Math.min(y2, it.y + it.h) - Math.max(y1, it.y)
+    if (yOverlap < it.h * 0.5) continue
+    const lo = Math.max(0, Math.min(1, (x1 - it.x) / (it.w || 1)))
+    const hi = Math.max(0, Math.min(1, (x2 - it.x) / (it.w || 1)))
+    if (hi <= lo) continue
+    const len = it.end - it.start
+    out += entry.text.slice(it.start + Math.round(len * lo), it.start + Math.round(len * hi))
+  }
+  return out.replace(/\s+/g, ' ').trim()
+}
+
+async function readAnnotations(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+): Promise<ToolExecution> {
+  const summary = t('aiToolReadAnnots')
+  const pageCount = deps.pageCount()
+  const start = input.start === undefined ? 1 : Math.trunc(Number(input.start))
+  let end = input.end === undefined ? pageCount : Math.trunc(Number(input.end))
+  if (!(start >= 1) || !(end >= start) || start > pageCount)
+    return err(`Invalid page range (the document has ${pageCount} pages)`, summary)
+  end = Math.min(end, pageCount)
+  const indexPromise = deps.searchIndex()
+  const index = indexPromise ? await indexPromise : null
+  const lines: string[] = []
+  let notes = 0
+  let marks = 0
+  for (let p = start; p <= end; p++) {
+    const origIdx = p - 1
+    if (deps.isDeleted(origIdx)) continue
+    const { threads, markups } = await deps.annotationsOn(origIdx)
+    if (threads.length === 0 && markups.length === 0) continue
+    lines.push(`[Page ${p}]`)
+    for (const root of threads) {
+      notes++
+      for (const { item, depth } of flattenThread(root)) {
+        const head = depth === 0 ? `- Note ${root.key}` : `${'  '.repeat(depth)}- reply`
+        const unsaved = item.saved ? '' : ' (unsaved)'
+        lines.push(
+          `${head}${unsaved} by ${item.author || 'unknown'}${fmtNoteDate(item.timeMs)}: ${JSON.stringify(item.contents)}`,
+        )
+      }
+    }
+    const entry = index?.[origIdx]
+    for (const m of markups) {
+      marks++
+      const covered = entry
+        ? m.quads
+            .map((q) => textUnderRect(entry, quadToRect(q)))
+            .filter(Boolean)
+            .join(' ')
+        : ''
+      const quote = covered
+        ? ` on ${JSON.stringify(covered.length > 120 ? `${covered.slice(0, 120)}…` : covered)}`
+        : ''
+      lines.push(`- ${m.type}${m.saved ? '' : ' (unsaved)'}${quote}`)
+    }
+    if (lines.join('\n').length > READ_CHUNK_CHARS) {
+      lines.push('…output truncated; call read_annotations with a narrower page range for the rest')
+      break
+    }
+  }
+  if (notes === 0 && marks === 0)
+    return { output: `No notes or markups on pages ${start}-${end}.`, summary }
+  return { output: `${notes} note thread(s), ${marks} markup(s):\n${lines.join('\n')}`, summary }
+}
+
+async function addNoteTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const summary = t('aiToolAddNote', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const text = String(input.text ?? '').trim()
+  if (!text) return err('text must not be empty', summary)
+  const geom = deps.pageGeom(r.origIdx)
+  if (!geom) return err('Document not ready', summary)
+  let at: [number, number]
+  const anchor = String(input.anchor_text ?? '').trim()
+  if (anchor) {
+    const indexPromise = deps.searchIndex()
+    if (!indexPromise) return err('Document not ready', summary)
+    const entry = (await indexPromise)[r.origIdx]
+    const located = entry ? locateOccurrence(entry, anchor, 1) : null
+    if (!located) {
+      return err(
+        `"${anchor}" not found on page ${r.origIdx + 1}; use read_pages to verify the exact text`,
+        summary,
+      )
+    }
+    at = [located.rect[2], located.rect[3]]
+  } else if (input.x !== undefined || input.y !== undefined) {
+    const tx = Number(input.x ?? 0)
+    const ty = Number(input.y ?? 0)
+    if (!Number.isFinite(tx) || !Number.isFinite(ty))
+      return err('x and y must be numbers (points from the page top-left as displayed)', summary)
+    at = viewToPdf(geom, tx, ty)
+  } else {
+    return err('Position the note with anchor_text or x/y', summary)
+  }
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
+  const key = deps.addNote(r.origIdx, at, text)
+  deps.gotoPage(r.origIdx + 1)
+  return {
+    output: `Added note ${key} on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function replyNoteTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const summary = t('aiToolReplyNote', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const text = String(input.text ?? '').trim()
+  if (!text) return err('text must not be empty', summary)
+  const noteId = String(input.note_id ?? '').trim()
+  if (!noteId) return err('note_id must not be empty', summary)
+  const root = await deps.findNoteRoot(r.origIdx, noteId)
+  if (!root) {
+    return err(
+      `Note "${noteId}" not found on page ${r.origIdx + 1}; call read_annotations to list thread ids`,
+      summary,
+    )
+  }
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
+  deps.replyToThread(r.origIdx, root, text)
+  deps.gotoPage(r.origIdx + 1)
+  return {
+    output: `Replied to note ${noteId} on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).`,
     mutated: true,
     summary,
   }
@@ -812,6 +1055,7 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
 async function insertTextTool(
   deps: PdfAiDeps,
   input: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<ToolExecution> {
   const summary = t('aiToolInsertText', { page: Number(input.page) })
   if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
@@ -869,13 +1113,43 @@ async function insertTextTool(
 
   // display-space position (top-left origin, points at scale 1), clamped to the page
   const size = geomDispSize(geom)
-  let tx = input.x === undefined ? (size.width - blockW) / 2 : Number(input.x)
-  let ty = input.y === undefined ? 72 : Number(input.y)
-  if (!Number.isFinite(tx) || !Number.isFinite(ty))
-    return err('x and y must be numbers (points from the page top-left as displayed)', summary)
+  let tx: number
+  let ty: number
+  const anchor = String(input.anchor_text ?? '').trim()
+  if (anchor) {
+    const indexPromise = deps.searchIndex()
+    if (!indexPromise) return err('Document not ready', summary)
+    const entry = (await indexPromise)[r.origIdx]
+    const located = entry ? locateOccurrence(entry, anchor, 1) : null
+    if (!located) {
+      return err(
+        `"${anchor}" not found on page ${r.origIdx + 1}; use read_pages to verify the exact text`,
+        summary,
+      )
+    }
+    const a = dispBox(geom, located.rect)
+    const placement = String(input.placement ?? 'right')
+    if (placement === 'above') {
+      tx = a.left
+      ty = a.top - TEXT_GAP_PT - blockH
+    } else if (placement === 'below') {
+      tx = a.left
+      ty = a.top + a.height + TEXT_GAP_PT
+    } else {
+      // right: first baseline sits on the anchor's baseline (form-fill style)
+      tx = a.left + a.width + TEXT_GAP_PT
+      ty = a.top + a.height - fontSize * 1.1
+    }
+  } else {
+    tx = input.x === undefined ? (size.width - blockW) / 2 : Number(input.x)
+    ty = input.y === undefined ? 72 : Number(input.y)
+    if (!Number.isFinite(tx) || !Number.isFinite(ty))
+      return err('x and y must be numbers (points from the page top-left as displayed)', summary)
+  }
   tx = Math.min(Math.max(tx, 0), Math.max(size.width - blockW, 0))
   ty = Math.min(Math.max(ty, 0), Math.max(size.height - blockH, 0))
 
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
   deps.insertText({
     pageIndex: r.origIdx,
     // TextInsertInput.origin is the first-line baseline in PDF user space
@@ -911,6 +1185,7 @@ async function insertTextTool(
 // UI edit path). Rects handed to deps stay in PDF user space (y-up, unrotated).
 
 const IMAGE_GAP_PT = 8
+const TEXT_GAP_PT = 4
 const px2pt = (px: number) => (px * 72) / 96
 const fmt = (n: number) => String(Math.round(n))
 
@@ -1382,7 +1657,13 @@ export async function executePdfTool(
     case 'edit_block':
       return editBlock(deps, input)
     case 'insert_text':
-      return insertTextTool(deps, input)
+      return insertTextTool(deps, input, signal)
+    case 'read_annotations':
+      return readAnnotations(deps, input)
+    case 'add_note':
+      return addNoteTool(deps, input, signal)
+    case 'reply_note':
+      return replyNoteTool(deps, input, signal)
     case 'image_search':
       return imageSearchTool(deps, input)
     case 'generate_image':

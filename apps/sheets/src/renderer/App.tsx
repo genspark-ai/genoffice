@@ -30,14 +30,18 @@ import {
   workbookStructureLocked,
   queueFormulaRecalc,
   queueSparklineInstall,
+  resolveRenderedSheetId,
   RECALC_MAX_FAILURES,
   queueVisualInstall,
   sheetOutline,
   syncUniver,
   univerDefinedNames,
+  installFindRevealFix,
+  installWrapMeasureLifecycle,
 } from './univer-sync'
 import {
   installJournalSuppressionUndoFilter,
+  installLoadAutoHeightGate,
   journalSuppression,
   type ActiveWorkbook,
   type LazyWorkbookState,
@@ -265,6 +269,9 @@ import { installCellFilenameFunction } from './cell-function'
 import { installFormulaLexerFix } from './formula-lexer-fix'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
+import { installCellClipAnchorFix } from './cell-clip-anchor-fix'
+import { installMergeBorderFix } from './merge-border-fix'
+import { installRtlTextDirectionFix } from './rtl-text-fix'
 import { installMultiRowAutofit } from './autofit-multi-row'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
@@ -1347,6 +1354,11 @@ export function App(): React.JSX.Element {
     })
     loadSnapshotIntoUniver(runtime, initialSnapshot, 'new-workbook', 'Untitled')
     univerRef.current = runtime
+    // find-bar reveals share scrollToCell's broken freeze offset (r135)
+    const findRevealDispose = installFindRevealFix(runtime)
+    // Load-time wrap-row measures queue until Univer's auto-height
+    // interceptor exists (lifecycle Rendered).
+    const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
     // live theme switching: main.tsx updates data-theme first (its listener
     // registered at bootstrap), so reading the attribute here is safe; the
     // matchMedia listener covers OS appearance flips while in system mode
@@ -1369,6 +1381,17 @@ export function App(): React.JSX.Element {
     // lazy redi proxy, so assigning onto the resolved instance only shadows
     // the proxy — Univer-internal callers keep hitting the real method.
     installJournalSuppressionUndoFilter()
+    // Opening a file must not re-measure row heights (Excel renders stored
+    // heights verbatim), and clipped multi-line cells must show their FIRST
+    // line like Excel does.
+    installLoadAutoHeightGate()
+    installCellClipAnchorFix()
+    // Borders stored on a merged range's main cell must render their edge
+    // segments like Excel; stock Univer drops them entirely.
+    installMergeBorderFix()
+    // Mixed-direction cell text (e.g. Arabic year suffixes) must follow
+    // Excel's context reading order instead of always rendering ltr.
+    installRtlTextDirectionFix()
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
@@ -1487,18 +1510,11 @@ export function App(): React.JSX.Element {
           lazyWorkbookRef,
           visualDisposablesRef,
           visualInstallTimerRef,
-          worksheet.getSheetId(),
           chartEditRef,
           chartVectorRef,
           shapeEditRef,
         )
-        queueSparklineInstall(
-          runtime,
-          lazyWorkbookRef,
-          sparklineDisposablesRef,
-          sparklineTimerRef,
-          worksheet.getSheetId(),
-        )
+        queueSparklineInstall(runtime, lazyWorkbookRef, sparklineDisposablesRef, sparklineTimerRef)
       },
     )
     const zoomDisposable = runtime.univerAPI.addEvent(
@@ -1532,25 +1548,18 @@ export function App(): React.JSX.Element {
         refreshSelectionFormatRef.current()
         visualViewportKeyRef.current = ''
         if (!lazyWorkbookRef.current) {
-          queueDemoVisualInstall(runtime, activeSheet.getSheetId())
+          queueDemoVisualInstall(runtime)
         }
         queueVisualInstall(
           runtime,
           lazyWorkbookRef,
           visualDisposablesRef,
           visualInstallTimerRef,
-          activeSheet.getSheetId(),
           chartEditRef,
           chartVectorRef,
           shapeEditRef,
         )
-        queueSparklineInstall(
-          runtime,
-          lazyWorkbookRef,
-          sparklineDisposablesRef,
-          sparklineTimerRef,
-          activeSheet.getSheetId(),
-        )
+        queueSparklineInstall(runtime, lazyWorkbookRef, sparklineDisposablesRef, sparklineTimerRef)
       },
     )
     const editDisposable = runtime.univerAPI.addEvent(
@@ -2024,7 +2033,6 @@ export function App(): React.JSX.Element {
               lazyWorkbookRef,
               sparklineDisposablesRef,
               sparklineTimerRef,
-              params.subUnitId,
             )
           }
         }
@@ -2299,6 +2307,8 @@ export function App(): React.JSX.Element {
       unsubscribeCloseSave()
       offThemeChanged?.()
       undoRedoSub.unsubscribe()
+      findRevealDispose()
+      wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()
       filteredCopyDisposable.dispose()
@@ -2430,12 +2440,15 @@ export function App(): React.JSX.Element {
   /// Demo-mode counterpart of queueVisualInstall: charts live in the adapter
   /// snapshot, so every grid rebuild (Apply/undo) and sheet switch re-installs
   /// them from there.
-  function queueDemoVisualInstall(runtime: UniverRuntime, sheetId: string): void {
+  function queueDemoVisualInstall(runtime: UniverRuntime): void {
     if (demoVisualInstallTimerRef.current) clearTimeout(demoVisualInstallTimerRef.current)
     demoVisualInstallTimerRef.current = setTimeout(function install() {
       demoVisualInstallTimerRef.current = null
       if (lazyWorkbookRef.current) return
-      if (runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId() !== sheetId) return
+      // Fire-time rendered sheet — an enqueue-time snapshot can go stale
+      // while the timer pends and would leave stale floats painted.
+      const sheetId = resolveRenderedSheetId(runtime)
+      if (!sheetId) return
       if (isVisualDragActive()) {
         demoVisualInstallTimerRef.current = setTimeout(install, 100)
         return
@@ -2463,8 +2476,7 @@ export function App(): React.JSX.Element {
 
   function queueDemoVisualInstallForActiveSheet(): void {
     const runtime = univerRef.current
-    const sheetId = runtime?.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
-    if (runtime && sheetId) queueDemoVisualInstall(runtime, sheetId)
+    if (runtime) queueDemoVisualInstall(runtime)
   }
 
   /** Default worksheet names carry no content signal, so they never name the file. */
@@ -2841,7 +2853,6 @@ export function App(): React.JSX.Element {
             lazyWorkbookRef,
             sparklineDisposablesRef,
             sparklineTimerRef,
-            op.sheetId,
           )
         } else if (op.op === 'delete_visual') {
           const visual = [...state.file.visuals, ...state.editJournal.visualAdds].find(
@@ -3596,6 +3607,12 @@ export function App(): React.JSX.Element {
     }
   }
 
+  const isCellEditing = useCallback((): boolean => {
+    const workbook = univerRef.current?.univerAPI.getActiveWorkbook() as
+      { isCellEditing?(): boolean } | null | undefined
+    return workbook?.isCellEditing?.() === true
+  }, [])
+
   function handleRibbonCommand(command: string): void {
     if (command === 'watch-window') {
       setWatchOpen((open) => !open)
@@ -3759,6 +3776,7 @@ export function App(): React.JSX.Element {
       retryTimers: new Map(),
       appliedMerges: new Map(),
       appliedRowKeys: new Map(),
+      rowColStyleKeys: new Map(),
       sheetProtections: new Map(),
       sheetPageBreaks: new Map(),
       sheetProtectedRanges: new Map(),
@@ -3924,7 +3942,6 @@ export function App(): React.JSX.Element {
           lazyWorkbookRef,
           visualDisposablesRef,
           visualInstallTimerRef,
-          worksheet.getSheetId(),
           chartEditRef,
           chartVectorRef,
           shapeEditRef,
@@ -4053,19 +4070,15 @@ export function App(): React.JSX.Element {
     if (!runtime || lazyWorkbookRef.current !== state) return
     setPendingEdits(journalSize(state.editJournal))
     setVisualEditTick((tick) => tick + 1)
-    const sheetId = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
-    if (sheetId) {
-      queueVisualInstall(
-        runtime,
-        lazyWorkbookRef,
-        visualDisposablesRef,
-        visualInstallTimerRef,
-        sheetId,
-        chartEditRef,
-        chartVectorRef,
-        shapeEditRef,
-      )
-    }
+    queueVisualInstall(
+      runtime,
+      lazyWorkbookRef,
+      visualDisposablesRef,
+      visualInstallTimerRef,
+      chartEditRef,
+      chartVectorRef,
+      shapeEditRef,
+    )
   }
 
   function refreshDemoVisuals(): void {
@@ -4229,6 +4242,7 @@ export function App(): React.JSX.Element {
         canUndo={univerHist.canUndo || (!lazyWorkbookRef.current && adapterRef.current.canUndo)}
         canRedo={univerHist.canRedo}
         onCommand={handleRibbonCommand}
+        onIsCellEditing={isCellEditing}
         zoomPercent={zoomPercent}
         canSave={pendingEdits > 0}
         onSave={() => void handleSave('save')}

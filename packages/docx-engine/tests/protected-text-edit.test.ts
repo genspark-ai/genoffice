@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  parseDocx,
-  patchFieldParagraphXml,
-  patchMathTokens,
-} from '../src/index'
+import { parseDocx, patchFieldParagraphXml, patchMathTokens } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const TOC_ENTRY =
@@ -37,6 +33,19 @@ describe('protected visible-text patching', () => {
     const parsed = await parseDocx(await buildDocx({ bodyXml: patched }))
     expect(parsed.blocks[0].fieldDisplay?.left).toBe('Updated & chapter')
     expect(parsed.blocks[0].fieldDisplay?.right).toBe('12')
+  })
+
+  it('patches the page number after the LAST tab, leaving the title and num intact', async () => {
+    const entry =
+      '<w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr>' +
+      '<w:r><w:t>1.1.</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>Latar Belakang</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>7</w:t></w:r></w:p>'
+    const patched = patchFieldParagraphXml(entry, { left: 'Judul Baru', right: '9' })
+    expect(patched).toContain('<w:t>1.1.</w:t>')
+    expect(patched).toContain('<w:t>Judul Baru</w:t>')
+    expect(patched).toContain('<w:t>9</w:t>')
+    expect(patched).not.toContain('Latar Belakang')
   })
 
   it('edits OMML tokens while preserving the formula tree', async () => {

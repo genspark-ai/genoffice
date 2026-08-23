@@ -5,6 +5,7 @@
  * helpers (univer-sync.ts).
  */
 import { BorderType, LocalUndoRedoService, type IRange } from '@univerjs/core'
+import { SheetInterceptorService } from '@univerjs/sheets'
 
 import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
 import type { createUniver } from './create-univer'
@@ -25,6 +26,11 @@ export interface LazyWorkbookState {
   readonly retryTimers: Map<string, ReturnType<typeof setTimeout>>
   readonly appliedMerges: Map<string, Set<string>>
   readonly appliedRowKeys: Map<string, Set<string>>
+  /// Per-sheet union of IStyleData keys carried by <row s= customFormat> and
+  /// <col style=> defaults. Univer composes row/col styles into every cell
+  /// per-property, but an OOXML cell xf is complete: styled cells null these
+  /// keys out so nothing bleeds through (Excel semantics).
+  readonly rowColStyleKeys: Map<string, Set<string>>
   readonly appliedCfSheets: Set<string>
   readonly appliedFilterSheets: Set<string>
   readonly appliedDvSheets: Set<string>
@@ -150,6 +156,39 @@ export function installJournalSuppressionUndoFilter(): void {
   const originalPush = proto.pushUndoRedo
   proto.pushUndoRedo = function (this: unknown, item: { unitID: string }) {
     if (!journalSuppression.active) originalPush.call(this, item)
+  }
+}
+
+/// Excel never re-measures row heights when opening a file: a row shows its
+/// stored ht (or the sheet default) and wrapped/tall content is clipped.
+/// Univer's AutoHeightController re-measures every auto (ia≠0) row touched by
+/// SetRangeValues-style commands, so streaming file content into the grid
+/// ballooned wrapped rows. While this flag is up, the auto-height interceptor
+/// yields nothing; rows keep ia=1 so later USER edits still auto-fit.
+export const loadAutoHeightSuppression = { active: false }
+
+let autoHeightGateInstalled = false
+
+/// Same prototype-patch shape as the undo filter above: command handlers
+/// resolve the real service, so wrapping the resolved instance is not enough.
+export function installLoadAutoHeightGate(): void {
+  if (autoHeightGateInstalled) return
+  autoHeightGateInstalled = true
+  type AutoHeightMutations = {
+    preUndos: unknown[]
+    undos: unknown[]
+    preRedos: unknown[]
+    redos: unknown[]
+  }
+  const proto = SheetInterceptorService.prototype as unknown as {
+    generateMutationsOfAutoHeight(ctx: unknown): AutoHeightMutations
+  }
+  const original = proto.generateMutationsOfAutoHeight
+  proto.generateMutationsOfAutoHeight = function (this: unknown, ctx: unknown) {
+    if (loadAutoHeightSuppression.active) {
+      return { preUndos: [], undos: [], preRedos: [], redos: [] }
+    }
+    return original.call(this, ctx)
   }
 }
 

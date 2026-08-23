@@ -33,14 +33,10 @@ export async function chatForProvider(
       case 'gemini':
         return chatGemini(wd, config, system, user, endpoint.baseUrl)
       case 'openai-compatible':
-        return chatOpenAiCompatible(
-          wd,
-          endpoint.baseUrl,
-          config,
-          system,
-          user,
-          endpoint.omitTemperature,
-        )
+        return chatOpenAiCompatible(wd, endpoint.baseUrl, config, system, user, {
+          omitTemperature: endpoint.omitTemperature,
+          bodyExtras: endpoint.bodyExtras,
+        })
     }
   })
 }

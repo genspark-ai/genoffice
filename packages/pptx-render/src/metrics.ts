@@ -20,6 +20,8 @@ export interface RunStyle {
   fontSizePx: number
   bold: boolean
   italic: boolean
+  /** Apply kern pairs when measuring (PowerPoint kerns only at fontSize ≥ rPr kern; default true) */
+  kerning?: boolean
 }
 
 export interface FontMetrics {
@@ -171,7 +173,8 @@ export interface OpentypeFontLike {
   descender: number
   /** hhea lineGap (external leading, font units); part of the single-spacing line height */
   lineGap?: number
-  getAdvanceWidth(text: string, fontSize: number): number
+  /** options matches opentype.js Font.getAdvanceWidth (kerning defaults to true) */
+  getAdvanceWidth(text: string, fontSize: number, options?: { kerning?: boolean }): number
   /** Optional: char → glyph index (0 = missing glyph). Used for the missing-glyph heuristic fallback. */
   charToGlyphIndex?(char: string): number
 }
@@ -217,7 +220,7 @@ export class OpentypeMetrics implements FontMetricsProvider {
           if (font.charToGlyphIndex(ch) === 0) return this.fallback.measure(text, style)
         }
       }
-      return font.getAdvanceWidth(text, style.fontSizePx)
+      return font.getAdvanceWidth(text, style.fontSizePx, { kerning: style.kerning !== false })
     } catch {
       return this.fallback.measure(text, style)
     }

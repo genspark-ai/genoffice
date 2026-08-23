@@ -426,3 +426,27 @@ describe('short-line verse runs (P21 C)', () => {
     expect(flat.some((l) => l.hardBreakBefore)).toBe(false)
   })
 })
+
+describe('centered stack alignment (P30 A)', () => {
+  it('detects a two-line centered title floating off the body edge', () => {
+    // body context includes a flush-left line; the title pair shares a center
+    const lines = [
+      mkLine(200, 360, 700, 16, '통합신청서 (신고서)'),
+      mkLine(130, 430, 682, 16, 'APPLICATION FORM (REPORT FORM)'),
+      mkLine(LEFT, RIGHT, 640, 10, 'body line establishing the left edge'),
+    ]
+    const blocks = groupIntoBlocks(lines)
+    const title = blocks.find((b) => b.lines.some((l) => l.spans[0]!.text.includes('FORM')))!
+    expect(title.align).toBe('center')
+  })
+
+  it('keeps indented-first-line prose left-aligned', () => {
+    const lines = [
+      mkLine(LEFT + 20, RIGHT, 700, 10, 'indented first line of a paragraph'),
+      mkLine(LEFT, RIGHT, 688, 10, 'second line flush with the body left'),
+      mkLine(LEFT, RIGHT - 200, 676, 10, 'short last line'),
+    ]
+    const blocks = groupIntoBlocks(lines)
+    expect(blocks[0]!.align ?? 'left').toBe('left')
+  })
+})

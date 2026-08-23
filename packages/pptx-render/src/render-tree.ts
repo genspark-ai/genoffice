@@ -144,6 +144,8 @@ export interface GlyphRun {
   logicalOrder?: number
   /** Letter spacing (px, appended after each char, may be negative; maps to <a:rPr spc>, fed to canvas letterSpacing by the renderer) */
   letterSpacingPx?: number
+  /** Kern pairs disabled (fontSize below the rPr kern threshold): the draw layer must not kern either */
+  kerningOff?: boolean
   /** Text outline (<a:rPr><a:ln>, commonly used by WordArt) */
   outline?: { color: string; widthPx: number }
   /** Run outer shadow (px), drawn via canvas shadow props */
@@ -216,6 +218,8 @@ export interface RenderTextLayout {
   inkBottom?: number
   /** bodyPr wrap (false = no wrapping, overflows the box; the editor also doesn't wrap) */
   wrap: boolean
+  /** bodyPr autofit mode (noAutofit/normAutofit/spAutoFit), surfaced for the format pane */
+  autofit?: 'none' | 'shrink' | 'resize'
   /** bodyPr vert: vertical column layout (lines = columns, right→left); vert/vert270/wordArtVert degrade to eaVert */
   vert?: 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
   /** WordArt text extrusion: glyphs get offset copies in this color behind them (px) */
@@ -236,6 +240,8 @@ export interface ShapeRenderNode extends RenderNodeBase {
   type: 'shape' | 'text'
   /** Placeholder type (title/ctrTitle/subTitle/body/…); empty placeholders draw hint text on the canvas */
   placeholder?: string
+  /** Insert > Text Box rather than Insert > Shape: the edit overlay must not center a fresh body */
+  txBox?: boolean
   presetGeometry?: string
   /** Raw avLst adjust values (OOXML units) for the edit layer's adjust handles */
   adjust?: Record<string, number>

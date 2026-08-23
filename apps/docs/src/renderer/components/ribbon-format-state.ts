@@ -230,7 +230,7 @@ export function computeFormatState(
     listBullet: editor.isActive('docListItem', { kind: 'bullet' }),
     listOrdered: editor.isActive('docListItem', { kind: 'ordered' }),
     align: str(paraAttrs.align),
-    bidi: paraAttrs.bidi === true,
+    bidi: paraAttrs.bidi === true || paraAttrs.bidiInferred === true,
     lineSpacing: typeof paraAttrs.lineSpacing === 'number' ? paraAttrs.lineSpacing : null,
     shadingFill: str(paraAttrs.shadingFill),
     paraBorders: paraAttrs.borders ?? null,

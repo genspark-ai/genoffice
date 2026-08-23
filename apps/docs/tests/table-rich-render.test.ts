@@ -294,3 +294,33 @@ describe('renderTableSpec paragraph line box', () => {
     expect(styles[1]).toContain(SINGLE_LH)
   })
 })
+
+// bidiVisual mirrors column order via dir="rtl" on the <table>; each cell
+// paragraph's base direction stays its own (w:bidi / strong-script inference),
+// so weak-only text like "50,0 %" must not reorder to "% 50,0".
+describe('bidiVisual cell paragraph direction', () => {
+  it('cell paragraphs get explicit ltr unless their own content is RTL', () => {
+    const model: TableModel = {
+      bidiVisual: true,
+      rows: [
+        [
+          cell(['50,0 %'], [{ runs: [{ text: '50,0 %' }] }]),
+          cell(['مرحبا'], [{ runs: [{ text: 'مرحبا' }] }]),
+        ],
+      ],
+    }
+    const dom = renderTable(model)
+    expect(dom.getAttribute('dir')).toBe('rtl')
+    const paras = dom.querySelectorAll('td > div')
+    expect((paras[0] as HTMLElement).style.direction).toBe('ltr')
+    expect((paras[1] as HTMLElement).style.direction).toBe('rtl')
+  })
+
+  it('an explicit w:bidi cell paragraph stays rtl even with weak-only text', () => {
+    const model: TableModel = {
+      rows: [[cell(['50,0 %'], [{ runs: [{ text: '50,0 %' }], bidi: true }])]],
+    }
+    const paras = renderTable(model).querySelectorAll('td > div')
+    expect((paras[0] as HTMLElement).style.direction).toBe('rtl')
+  })
+})

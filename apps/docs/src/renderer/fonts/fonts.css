@@ -155,6 +155,45 @@
   font-style: normal;
 }
 
+/* Chromium never system-falls-back for Private Use codepoints: unmapped PUA
+ * renders the chain's primary font's .notdef. Chains headed by a real face
+ * (Calibri, Carlito GO) draw tofu boxes for AI-residue PUA tokens, while Word
+ * and subset-headed chains (blank subsetted .notdef) show nothing. This tiny
+ * generated font (tools/build-pua-blank-font.py) maps all of U+E000-F8FF to a
+ * blank 1em glyph so PUA stays invisible in the chains that carry it. */
+@font-face {
+  font-family: 'GenOffice PUA Blank';
+  src: url('./GenOfficePUABlank.woff2') format('woff2');
+  unicode-range: U+E000-F8FF;
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* CJK-range-only views of the same subsets, for unknown *Latin-named* fonts
+ * (Aptos-era cloud faces etc.): the full subsets cover U+2018/2019/201C/201D
+ * at a 1em advance and would swallow Latin punctuation ahead of the generic
+ * face, shifting every wrap. CJK-named unknown fonts keep the full subsets
+ * (fullwidth quotes are correct inside CJK body text). Same ranges as the
+ * 'GenOffice Hiragino/Batang…' local() aliases below. */
+@font-face {
+  font-family: 'Noto Sans CJK GO';
+  src: url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Noto Serif CJK GO';
+  src: url('./NotoSerifCJKsc-Regular-subset.woff2') format('woff2');
+  unicode-range:
+    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
+    U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+
 /*
  * Korean fallback: Noto Sans/Serif CJK KR subsets (KS X 1001 syllables + jamo),
  * renamed per OFL since advances are normalized to the Windows faces Word
@@ -283,6 +322,114 @@
   unicode-range: U+0020-0040, U+005B-0060, U+007B-007E;
   font-weight: normal;
   font-style: normal;
+}
+
+/* Nunito Sans is an Office cloud font Word downloads and renders real (probe
+ * 2026-08-23). Its advances run 4.4% wider than Helvetica (272.93 vs 261.5pt
+ * per probe string @12pt, measured from Word's cached NunitoSans-Regular), so
+ * the size-adjusted alias keeps line wraps aligned with Word. A locally
+ * installed Nunito still precedes this alias in the chain. */
+@font-face {
+  font-family: 'Nunito Sans GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 104.4%;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Nunito Sans GO';
+  src: local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf');
+  size-adjust: 104.4%;
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Nunito Sans GO';
+  src: local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf');
+  size-adjust: 104.4%;
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Nunito Sans GO';
+  src:
+    local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'),
+    url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 104.4%;
+  font-weight: bold;
+  font-style: italic;
+}
+
+/* Latin-range backstops closing dual-slot / eastAsia-only chains: Word
+ * substitutes a missing w:ascii face with a Latin font and never draws Latin
+ * glyphs from the eastAsia slot (probe 2026-08-23). The range covers letters,
+ * digits and ASCII punctuation only — no general punctuation or Latin-1
+ * symbols (quotes, x/÷, °±) so ambiguous-width characters keep resolving
+ * through the East Asian font like Word. local() needs PostScript names in
+ * Chromium; the bundled Liberation files backstop other hosts. */
+@font-face {
+  font-family: 'Latin Serif GO';
+  src: local('TimesNewRomanPSMT'), local('Times New Roman'), url('./LiberationSerif-Regular.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Latin Serif GO';
+  src:
+    local('TimesNewRomanPS-BoldMT'), local('Times New Roman Bold'),
+    url('./LiberationSerif-Bold.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Latin Serif GO';
+  src:
+    local('TimesNewRomanPS-ItalicMT'), local('Times New Roman Italic'),
+    url('./LiberationSerif-Italic.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Latin Serif GO';
+  src:
+    local('TimesNewRomanPS-BoldItalicMT'), local('Times New Roman Bold Italic'),
+    url('./LiberationSerif-BoldItalic.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: bold;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Latin Sans GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Latin Sans GO';
+  src: local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Latin Sans GO';
+  src: local('Helvetica-Oblique'), local('Arial-ItalicMT'), url('./LiberationSans-Italic.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'Latin Sans GO';
+  src:
+    local('Helvetica-BoldOblique'), local('Arial-BoldItalicMT'),
+    url('./LiberationSans-BoldItalic.ttf');
+  unicode-range: U+0020-007E, U+00C0-00D6, U+00D8-00F6, U+00F8-024F, U+1E00-1EFF, U+FB00-FB06;
+  font-weight: bold;
+  font-style: italic;
 }
 
 /* macOS's PMingLiU stand-in (Songti TC) draws these fullwidth glyphs at

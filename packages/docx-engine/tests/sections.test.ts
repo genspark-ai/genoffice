@@ -545,3 +545,36 @@ describe('SaveOptions.numbering write-back', () => {
     expect(reparsed.numbering.get('9')!.levels[0].numFmt).toBe('bullet')
   })
 })
+
+describe('pgBorders details', () => {
+  it('parses display/offsetFrom/space/sz/color from the sides', async () => {
+    const { sectionSettingsFromXml } = await import('../src/section')
+    const s = sectionSettingsFromXml(
+      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+        '<w:pgMar w:top="1417" w:right="1134" w:bottom="1134" w:left="1417"/>' +
+        '<w:pgBorders w:display="firstPage" w:offsetFrom="page">' +
+        '<w:top w:val="single" w:sz="18" w:space="24" w:color="1F497D"/>' +
+        '<w:left w:val="single" w:sz="18" w:space="24" w:color="1F497D"/>' +
+        '<w:bottom w:val="single" w:sz="18" w:space="24" w:color="1F497D"/>' +
+        '<w:right w:val="single" w:sz="18" w:space="24" w:color="1F497D"/>' +
+        '</w:pgBorders></w:sectPr>',
+    )
+    expect(s.pageBorder).toBe(true)
+    expect(s.pageBorderProps).toEqual({
+      display: 'firstPage',
+      offsetFrom: 'page',
+      spacePt: 24,
+      widthPt: 2.25,
+      color: '1F497D',
+    })
+  })
+
+  it('none-only sides leave pageBorderProps unset', async () => {
+    const { sectionSettingsFromXml } = await import('../src/section')
+    const s = sectionSettingsFromXml(
+      '<w:sectPr><w:pgBorders><w:top w:val="none"/></w:pgBorders></w:sectPr>',
+    )
+    expect(s.pageBorder).toBe(false)
+    expect(s.pageBorderProps).toBeUndefined()
+  })
+})

@@ -11,6 +11,8 @@ interface FakeWebContents {
   id: number
   on: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
+  reload: ReturnType<typeof vi.fn>
+  isDestroyed: ReturnType<typeof vi.fn>
   listeners: Map<string, () => void>
 }
 
@@ -32,6 +34,8 @@ function makeFakeView(): FakeView {
         listeners.set(event, handler)
       }),
       close: vi.fn(),
+      reload: vi.fn(),
+      isDestroyed: vi.fn(() => false),
     },
     setVisible: vi.fn(),
     setBounds: vi.fn(),
@@ -58,15 +62,18 @@ vi.mock('../../docs/src/main/docs-main', () => ({
 
 const createPdfView = vi.fn(() => makeFakeView())
 const pdfIsDirty = vi.fn(() => false)
+const clearPdfDirty = vi.fn()
 const requestPdfClose = vi.fn(() => Promise.resolve(true))
 
 vi.mock('../../pdf/src/main/pdf-main', () => ({
   createPdfView: (...args: unknown[]) => createPdfView(...(args as [])),
   pdfIsDirty: (...args: unknown[]) => pdfIsDirty(...(args as [])),
+  clearPdfDirty: (...args: unknown[]) => clearPdfDirty(...(args as [])),
   requestPdfClose: (...args: unknown[]) => requestPdfClose(...(args as [])),
 }))
 
 const createSheetsView = vi.fn(() => makeFakeView())
+const queueWorkbookForView = vi.fn()
 const requestSheetsClose = vi.fn(() => Promise.resolve(true))
 const setActiveSheetsWebContents = vi.fn()
 const setSheetsNewBlank = vi.fn()
@@ -74,6 +81,7 @@ const sheetsPendingEditCount = vi.fn(() => 0)
 
 vi.mock('../../sheets/src/main/sheets-main', () => ({
   createSheetsView: (...args: unknown[]) => createSheetsView(...(args as [])),
+  queueWorkbookForView: (...args: unknown[]) => queueWorkbookForView(...args),
   requestSheetsClose: (...args: unknown[]) => requestSheetsClose(...(args as [])),
   setActiveSheetsWebContents: (...args: unknown[]) => setActiveSheetsWebContents(...args),
   setSheetsNewBlank: (...args: unknown[]) => setSheetsNewBlank(...args),
@@ -461,6 +469,14 @@ describe('file path bookkeeping', () => {
     expect(manager.findSlidesTabByPath('/tmp/b.pptx')).toBe('t2')
     expect(manager.findPdfTabByPath('/tmp/c.pdf')).toBe('t3')
     expect(manager.findPdfTabByPath('/tmp/missing.pdf')).toBeUndefined()
+  })
+
+  it('reloads an existing pdf tab so a re-export rereads the file from disk', () => {
+    const id = manager.openPdfTab('/tmp/c.pdf')
+    const view = lastCreatedView(createPdfView)
+    manager.reloadTab(id)
+    expect(clearPdfDirty).toHaveBeenCalledWith(view.webContents.id)
+    expect(view.webContents.reload).toHaveBeenCalledTimes(1)
   })
 
   it('reports the active pdf tab with its id (so callers can re-activate it)', () => {

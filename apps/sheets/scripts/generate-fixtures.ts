@@ -7,6 +7,7 @@ import {
   buildStructureFixture,
   buildSheetsFixture,
   buildKitchenSinkFixture,
+  buildMacroFixture,
 } from '../tests/fixture-builder'
 
 const FIXTURES: ReadonlyArray<[string, () => Promise<Buffer>]> = [
@@ -15,6 +16,7 @@ const FIXTURES: ReadonlyArray<[string, () => Promise<Buffer>]> = [
   ['compatibility-structure.xlsx', buildStructureFixture],
   ['compatibility-sheets.xlsx', buildSheetsFixture],
   ['compatibility-kitchen-sink.xlsx', buildKitchenSinkFixture],
+  ['compatibility-macro.xlsm', buildMacroFixture],
 ]
 
 async function main(): Promise<void> {

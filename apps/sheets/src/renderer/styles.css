@@ -62,8 +62,6 @@
   --sheets-shape-border: #aeb4b8;
   --sheets-shape-bg: rgb(255 255 255 / 94%);
   --sheets-shape-ink: #596068;
-  --sheets-shape-err-border: #d9a4a4;
-  --sheets-shape-err-ink: #9a3030;
   --sheets-content-danger: #b42318;
 
   /* dark chips and black translucent masks/shadows hold in both themes */
@@ -212,6 +210,63 @@
     local('Aptos Bold Italic'), local('Calibri Bold Italic'), local('Carlito Bold Italic'),
     url('./fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
     local('Arial Bold Italic');
+}
+
+@font-face {
+  font-family: 'Aptos Narrow';
+  src:
+    local('Aptos Narrow'), local('Calibri'), local('Carlito'), url('./fonts/Carlito-Regular.ttf'),
+    local('Helvetica Neue'), local('Arial');
+}
+
+@font-face {
+  font-family: 'Aptos Narrow';
+  font-weight: bold;
+  src:
+    local('Aptos Narrow Bold'), local('Calibri Bold'), local('Carlito Bold'),
+    url('./fonts/Carlito-Bold.ttf'), local('Helvetica Neue Bold'), local('Arial Bold');
+}
+
+@font-face {
+  font-family: 'Aptos Narrow';
+  font-style: italic;
+  src:
+    local('Aptos Narrow Italic'), local('Calibri Italic'), local('Carlito Italic'),
+    url('./fonts/Carlito-Italic.ttf'), local('Helvetica Neue Italic'), local('Arial Italic');
+}
+
+@font-face {
+  font-family: 'Aptos Narrow';
+  font-weight: bold;
+  font-style: italic;
+  src:
+    local('Aptos Narrow Bold Italic'), local('Calibri Bold Italic'), local('Carlito Bold Italic'),
+    url('./fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
+    local('Arial Bold Italic');
+}
+
+@font-face {
+  font-family: Carlito;
+  src: local('Carlito'), url('./fonts/Carlito-Regular.ttf');
+}
+
+@font-face {
+  font-family: Carlito;
+  font-weight: bold;
+  src: local('Carlito Bold'), url('./fonts/Carlito-Bold.ttf');
+}
+
+@font-face {
+  font-family: Carlito;
+  font-style: italic;
+  src: local('Carlito Italic'), url('./fonts/Carlito-Italic.ttf');
+}
+
+@font-face {
+  font-family: Carlito;
+  font-weight: bold;
+  font-style: italic;
+  src: local('Carlito Bold Italic'), url('./fonts/Carlito-BoldItalic.ttf');
 }
 
 @font-face {
@@ -1873,7 +1928,7 @@ textarea:focus {
 .xlsx-image,
 .xlsx-shape,
 .xlsx-visual-loading,
-.xlsx-visual-error {
+.xlsx-visual-unavailable {
   width: 100%;
   height: 100%;
   margin: 0;
@@ -2595,6 +2650,15 @@ textarea:focus {
   flex-direction: column-reverse;
 }
 
+/* Excel lays top/bottom pie legends out as a wrapping row, not a column. */
+.pie-legend-bottom > .chart-legend,
+.pie-legend-top > .chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+}
+
 .pie-legend-left {
   flex-direction: row-reverse;
 }
@@ -2676,8 +2740,7 @@ textarea:focus {
 }
 
 .xlsx-shape,
-.xlsx-visual-loading,
-.xlsx-visual-error {
+.xlsx-visual-loading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2688,11 +2751,6 @@ textarea:focus {
     12px 'Segoe UI',
     sans-serif;
   text-align: center;
-}
-
-.xlsx-visual-error {
-  border-color: var(--sheets-shape-err-border);
-  color: var(--sheets-shape-err-ink);
 }
 
 .inline-tools .color-tool {

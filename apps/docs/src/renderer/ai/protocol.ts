@@ -3,12 +3,13 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import {
   TABLE_HEADER_FILL,
   type Block,
+  type CommentInfo,
   type TableCell,
   type TableModel,
 } from '@genoffice/docx-engine'
 import { pmTableToModel, tableModelToPmNode, type PmMark, type PmNode } from '../editor/convert'
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
-import { TRACK_IGNORE } from '../editor/revisions'
+import { collectRevisions, TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 
 /**
@@ -47,7 +48,8 @@ export const COMMANDS_GUIDE = [
   "{ updateTextStyle: { target, style: { color?, highlight?, sizeHalfPoints?, font?, bold?, italic?, underline?, strike?, baselineOffset?: 'SUPERSCRIPT'|'SUBSCRIPT'|'NONE', link?: {url}|null }, fields: string[] } }  // value null = clear that property; font applies only to its own script's slot (an East Asian font keeps the run's Latin font and vice versa)",
   "{ updateParagraphStyle: { target, style: { align?: 'left'|'center'|'right'|'justify', lineSpacing?, indentLeft?, indentRight?, indentFirstLine?, spaceBefore?, spaceAfter?, pageBreakBefore?, shadingFill?, borders?: subset of 'tblr'|null }, fields: string[] } }  // indentFirstLine positive = first-line indent, negative = hanging; a two-character indent for CJK text ≈ font size in pt × 40 twips",
   '{ setHeadingLevel: { target, level: 0-6 } }  // 0 = demote to body paragraph',
-  '{ replaceAllText: { containsText, replaceText, matchCase? } }',
+  "{ replaceAllText: { containsText, replaceText, matchCase?, target? } }  // target narrows the scanned blocks (blockIndexes / scope:'selection' / nodeType); omitted = whole document. The replacement keeps the matched text's formatting — the right tool for small in-place fixes (a few words inside a sentence)",
+  '{ updateMatchedTextStyle: { containsText, matchCase?, target?, style, fields } }  // character-level styling: applies the run style (same style/fields as updateTextStyle) only to the matched text itself, not the whole block',
   '{ deleteBlocks: { target } }',
   '{ moveBlocks: { blockIndexes: number[], afterBlockIndex: number } }  // -1 = start of document',
   '{ createParagraphBullets: { target, bulletPreset? } }  // paragraphs to list; BULLET_* prefix = unordered, NUMBERED_* = ordered (default unordered); heading blocks are not converted',
@@ -63,6 +65,8 @@ export const COMMANDS_GUIDE = [
   '- "Delete blocks 3 to 5" → commands: [{"deleteBlocks":{"target":{"blockIndexes":[3,4,5]}}}]',
   '- "Turn blocks 2 to 4 into a numbered list" → commands: [{"createParagraphBullets":{"target":{"blockIndexes":[2,3,4]},"bulletPreset":"NUMBERED_DECIMAL_ALPHA_ROMAN"}}]',
   '- "Center all images" → commands: [{"updateImageProperties":{"target":{"nodeType":"image"},"properties":{"align":"center"},"fields":["align"]}}]',
+  '- "In block 5, change 8% to 9%" → commands: [{"replaceAllText":{"containsText":"8%","replaceText":"9%","target":{"blockIndexes":[5]}}}]',
+  '- "Bold every TODO:" → commands: [{"updateMatchedTextStyle":{"containsText":"TODO:","style":{"bold":true},"fields":["bold"]}}]',
   '- "Two-character first-line indent for the whole document" (11 pt font) → one updateParagraphStyle for docParagraph, style {"indentFirstLine":440}, fields ["indentFirstLine"]',
   '- "Insert a table of contents at the beginning" → commands: [{"insertToc":{"afterBlockIndex":-1}}]; if the user wants the TOC on its own page, also apply updateParagraphStyle to the first body block after the TOC with style {"pageBreakBefore":true}, fields ["pageBreakBefore"]',
   '- Cover page recipe: use insert_content to insert one paragraph each for title/subtitle/date at the start of the document, then updateTextStyle to enlarge the title font (e.g. {"sizeHalfPoints":72}, fields ["sizeHalfPoints"]), updateParagraphStyle to center everything and give the title {"spaceBefore":4800}, and finally set {"pageBreakBefore":true} on the first body block after the cover',
@@ -108,12 +112,38 @@ export const AGENT_SYSTEM_PROMPT = [
   '- When a list preview is truncated, read the full content with read_blocks before rewriting; never rewrite based on a truncated preview;',
   '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML);',
   '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_commands — do not rewrite whole blocks with replace_blocks;',
+  '- Small in-place text fixes (changing a few words inside a sentence) go through apply_commands replaceAllText with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses updateMatchedTextStyle;',
   '- When the user has text selected, the message includes the selection block indexes and content; rewrite-style requests apply to the selection by default;',
   '- Web search: use web_search when you need up-to-date information/data/fact checking; search before writing about uncertain facts — do not fabricate;',
-  '- Illustrations: when the user wants pictures, first image_search (English keywords work better) → pick a suitable result → insert_image with its imageUrl to insert into the document;',
+  '- Illustrations: when the user wants pictures, first image_search (English keywords work better) → pick a suitable result → insert_image with its imageUrl; when the user asks to generate/draw a picture, or search cannot match the needed illustration, use generate_image with a detailed English prompt;',
   '- Tracked deletions (struck-through revision text) are not part of the current content and are hidden from the block list/read_blocks/stats; when a [tracked deletion] tag or a skipped-deletion notice appears, that text is already deleted — never try to delete or rewrite it again (the user accepts/rejects revisions in the Review tab);',
   '- Charts: use insert_chart for data visualization (bar/line/pie; saved as native Word charts); use edit_chart to change the data of an existing chart block in the block list; data must be real, from the document or search results;',
   '- One reply may chain multiple tools; after everything is done, always finish with a short plain-text summary.',
+  '',
+  '# Comments',
+  '- Unresolved comment threads ride along in every user message (id, author, anchored block, quoted anchor text); resolved threads are omitted. read_comments returns the full list including resolved threads and replies.',
+  '- When the user asks to handle/address/resolve the comments, process them one at a time: read the anchored block, apply the requested change with the normal editing tools, then reply_comment with a one-sentence summary of what changed, then resolve_comment. Handle each comment in its own tool sequence — never one giant edit for all of them.',
+  '- A comment that is a question or is ambiguous gets a reply_comment with an answer or a clarifying question, no document change and no resolve.',
+  "- Never modify content beyond a comment's anchored passage unless the comment explicitly requires it; skip threads that are already resolved.",
+  '',
+  '# Template filling',
+  '- When the user asks to fill in a template/form, first scan the document for placeholders: [bracketed labels], {{curly names}}, runs of underscores (____), and protected content-control blocks whose label reads as a field.',
+  "- List every placeholder found (with block indexes). Fill the ones the user's message answers via replaceAllText with a target so the surrounding formatting survives; for the rest, ask for the missing values in one consolidated question — never invent facts to fill a field.",
+  "- Dates follow the user's locale; never change text outside the placeholders.",
+  '',
+  '# Headers & footers',
+  '- The message context lists the current header/footer text. Change them with set_header_footer: plain text, \\n between lines; the tokens {PAGE} and {NUMPAGES} become live page-number fields (e.g. text "{PAGE} / {NUMPAGES}" renders as "3 / 12"); an empty string clears the text.',
+  '- view "first" / "even" writes the different-first-page or even-page variant and switches the corresponding Word setting on automatically; omit view for the normal header/footer.',
+  '- Existing per-line alignment and styling are preserved; logos and images in the part are untouched. Headers/footers are not document blocks — never try to reach them via block indexes.',
+  '',
+  '# Answer citations',
+  '- When an answer draws on specific parts of the document, cite them as markdown links: [heading text or a short label](docnav://block/N), where N is a block index from the current block list. The user can click these to jump to the passage.',
+  '- Only cite block indexes that exist in the block list — never guess; prefer heading blocks as citation anchors. Whole-document answers may omit citations.',
+  '',
+  '# Tracked revisions',
+  '- read_revisions lists every pending tracked change (kind, author, date, block index, affected text). Use it when the user asks what changed / to review or summarize the revisions (a redline summary).',
+  '- Redline summary shape: overall counts first (insertions/deletions, authors, date range), then the changes grouped by document section using the heading structure from the block list, one line each; end with a "Potential concerns" list flagging risky edits (deleted obligations or qualifiers, changed numbers/dates/amounts, weakened commitments). Cite block indexes so the user can locate each change.',
+  '- Summarizing is read-only: do not modify the document, and never try to accept or reject revisions — the user does that in the Review tab.',
   '',
   '# HTML fragment rules',
   HTML_RULES,
@@ -350,7 +380,13 @@ export function serializeRangeToHtml(editor: Editor, startIndex: number, endInde
         )
       } else {
         const label = String(node.attrs?.label ?? node.attrs?.blockType ?? 'content')
-        parts.push(`<p>[Protected content: ${escapeHtml(label)}, kept as is]</p>`)
+        // fields (TOC lines, page numbers, dates…) expose their visible result text
+        const preview = String(node.attrs?.previewText ?? '')
+          .replace(/\s+/g, ' ')
+          .trim()
+        parts.push(
+          `<p>[Protected content: ${escapeHtml(label)}${preview ? ` — visible text: "${escapeHtml(clip(preview, 300))}"` : ''}, kept as is]</p>`,
+        )
       }
     }
   }
@@ -359,6 +395,43 @@ export function serializeRangeToHtml(editor: Editor, startIndex: number, endInde
 }
 
 // ---- document context + layered request builders ----
+
+/** Header/footer snapshot for the AI context; texts use {PAGE}/{NUMPAGES} tokens, null = variant off */
+export interface AiHfState {
+  header: string
+  footer: string
+  headerFirst: string | null
+  footerFirst: string | null
+  headerEven: string | null
+  footerEven: string | null
+  titlePg: boolean
+  evenOddHf: boolean
+  multiSection: boolean
+}
+
+function hfContextLines(hf: AiHfState): string[] {
+  const fmt = (v: string) => (v ? `"${clip(v.replace(/\n/g, '\\n'), 160)}"` : '(empty)')
+  const lines = [
+    'Headers & footers ({PAGE}/{NUMPAGES} are live page-number fields; change with set_header_footer):',
+    `- header: ${fmt(hf.header)} | footer: ${fmt(hf.footer)}`,
+  ]
+  if (hf.titlePg) {
+    lines.push(
+      `- first-page variant: header ${fmt(hf.headerFirst ?? '')} | footer ${fmt(hf.footerFirst ?? '')}`,
+    )
+  }
+  if (hf.evenOddHf) {
+    lines.push(
+      `- even-page variant: header ${fmt(hf.headerEven ?? '')} | footer ${fmt(hf.footerEven ?? '')}`,
+    )
+  }
+  if (hf.multiSection) {
+    lines.push(
+      '- the document has multiple sections; header/footer edits apply to the first section (later sections inherit unless they define their own)',
+    )
+  }
+  return lines
+}
 
 interface ContextEntry {
   index: number
@@ -373,7 +446,11 @@ interface ContextEntry {
  * top-level block. Block numbers MUST equal the live PM doc order at execution
  * time, so this is rebuilt per request and never cached.
  */
-export function buildDocumentContext(editor: Editor): string {
+export function buildDocumentContext(
+  editor: Editor,
+  scope?: SelectionScope,
+  hf?: AiHfState,
+): string {
   const entries: ContextEntry[] = []
   let index = 0
   let fullText = ''
@@ -440,7 +517,7 @@ export function buildDocumentContext(editor: Editor): string {
     ]
   }
 
-  const scope = getSelectionScope(editor)
+  scope ??= getSelectionScope(editor)
   const selLine = scope.isRange
     ? scope.startIndex === scope.endIndex
       ? `Current selection: block ${scope.startIndex}`
@@ -461,12 +538,144 @@ export function buildDocumentContext(editor: Editor): string {
           'Tracked changes: blocks tagged [tracked deletion] and struck-through text inside other blocks are pending deletion revisions — that text is already deleted, is excluded from stats/read_blocks, and must never be deleted or rewritten again; the user accepts/rejects revisions in the Review tab.',
         ]
       : []),
+    ...(hf ? hfContextLines(hf) : []),
     selLine,
   ].join('\n')
 }
 
 function clip(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + '…' : text
+}
+
+// ---- tracked revisions context ----
+
+const REVISIONS_CONTEXT_MAX = 200
+
+const REVISION_KIND_LABEL: Record<RevisionRange['kind'], string> = {
+  ins: 'inserted',
+  del: 'deleted',
+  // ins+del marks on the same text: added while tracking, then deleted —
+  // never part of the base document; both accept and reject remove it
+  both: 'inserted then deleted (not in the base document)',
+  pPrChange: 'paragraph formatting changed',
+  rPrChange: 'text formatting changed',
+  moveFrom: 'moved away',
+  moveTo: 'moved here',
+  rowIns: 'table row inserted',
+  rowDel: 'table row deleted',
+  cellIns: 'table cell inserted',
+  cellDel: 'table cell deleted',
+  blockIns: 'block inserted',
+  blockDel: 'block deleted',
+}
+
+/** top-level block index containing a document position */
+function blockIndexOfPos(doc: ProseMirrorNode, pos: number): number {
+  let index = 0
+  let result = Math.max(0, doc.childCount - 1)
+  doc.forEach((node, offset) => {
+    if (pos >= offset && pos <= offset + node.nodeSize) result = index
+    index++
+  })
+  return result
+}
+
+/** flat listing of every pending tracked change; backs the read_revisions tool */
+export function buildRevisionsContext(editor: Editor): string {
+  const revisions = collectRevisions(editor.state.doc)
+  if (revisions.length === 0) return '(the document has no tracked revisions)'
+  const doc = editor.state.doc
+  const shown = revisions.slice(0, REVISIONS_CONTEXT_MAX)
+  const lines = shown.map((rev) => {
+    const text = doc.textBetween(rev.from, rev.to, '\n', ' ').replace(/\s+/g, ' ').trim()
+    const date = rev.date ? ` on ${rev.date.slice(0, 10)}` : ''
+    const excerpt = text ? `: "${clip(text, 200)}"` : ''
+    return `- block ${blockIndexOfPos(doc, rev.from)} | ${REVISION_KIND_LABEL[rev.kind]} by ${rev.author || 'unknown'}${date}${excerpt}`
+  })
+  const header = `Tracked revisions (${revisions.length} pending; deleted text shows what will disappear on accept):`
+  const overflow =
+    revisions.length > shown.length
+      ? [`…and ${revisions.length - shown.length} more revision(s) not listed.`]
+      : []
+  return [header, ...lines, ...overflow].join('\n')
+}
+
+// ---- comments context ----
+
+export interface CommentAnchor {
+  blockIndex: number
+  excerpt: string
+}
+
+/** anchored block + anchor text per comment id (text marks first, block-attr ranges as fallback) */
+export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
+  const found = new Map<string, { blockIndex: number; text: string }>()
+  let index = 0
+  editor.state.doc.forEach((block) => {
+    block.descendants((node) => {
+      if (!node.isText) return
+      const mark = node.marks.find((m) => m.type.name === 'comment')
+      if (!mark) return
+      for (const id of String(mark.attrs.ids ?? '')
+        .split(' ')
+        .filter(Boolean)) {
+        const entry = found.get(id) ?? { blockIndex: index, text: '' }
+        entry.text += node.text ?? ''
+        found.set(id, entry)
+      }
+    })
+    const starts = Array.isArray(block.attrs?.commentStarts)
+      ? (block.attrs.commentStarts as string[])
+      : []
+    for (const id of starts) {
+      if (!found.has(id)) found.set(id, { blockIndex: index, text: block.textContent })
+    }
+    index++
+  })
+  const anchors = new Map<string, CommentAnchor>()
+  for (const [id, entry] of found) {
+    anchors.set(id, {
+      blockIndex: entry.blockIndex,
+      excerpt: clip(entry.text.replace(/\s+/g, ' ').trim(), 80),
+    })
+  }
+  return anchors
+}
+
+const COMMENTS_CONTEXT_MAX = 20
+
+/**
+ * Unresolved comment threads for the per-turn context (roots with their
+ * replies, anchored block indexes included). `all` additionally lists
+ * resolved threads — that variant backs the read_comments tool.
+ */
+export function buildCommentsContext(editor: Editor, comments: CommentInfo[], all = false): string {
+  const anchors = commentAnchors(editor)
+  const roots = comments.filter((c) => !c.parentId && (all || c.done !== true))
+  if (roots.length === 0) return all ? '(the document has no comments)' : ''
+  const shown = all ? roots : roots.slice(0, COMMENTS_CONTEXT_MAX)
+  const lines: string[] = [
+    all
+      ? 'All comment threads (including resolved):'
+      : 'Unresolved comments (address with reply_comment / resolve_comment by id):',
+  ]
+  for (const root of shown) {
+    const anchor = anchors.get(root.id)
+    const where = anchor
+      ? `block ${anchor.blockIndex}, anchored text "${anchor.excerpt}"`
+      : 'anchor missing'
+    const state = all && root.done === true ? ' [resolved]' : ''
+    lines.push(`- id ${root.id} by ${root.author} (${where})${state}: ${clip(root.text, 300)}`)
+    for (const reply of comments.filter((c) => c.parentId === root.id)) {
+      lines.push(`  - reply id ${reply.id} by ${reply.author}: ${clip(reply.text, 300)}`)
+    }
+  }
+  if (!all && roots.length > shown.length) {
+    lines.push(
+      `…and ${roots.length - shown.length} more unresolved thread(s); use read_comments for the full list.`,
+    )
+  }
+  return lines.join('\n')
 }
 
 /** Blank = exactly one empty paragraph; a textContent check would misread image/chart-only documents as blank. */
@@ -479,21 +688,30 @@ export function isBlankDocument(editor: Editor): boolean {
 
 /**
  * Per-turn context: fresh document skeleton + selection fragment injected
- * as a selection chip.
+ * as a selection chip. Passing `scope` freezes the selection the prompt
+ * describes, so tools can later act on the same range the model saw.
  */
-export function buildDocContext(editor: Editor): string {
+export function buildDocContext(
+  editor: Editor,
+  scope?: SelectionScope,
+  comments?: CommentInfo[],
+  hf?: AiHfState,
+): string {
   const isEmptyDoc = isBlankDocument(editor)
-  const scope = getSelectionScope(editor)
+  scope ??= getSelectionScope(editor)
   const selectionHtml = scope.isRange
     ? clip(serializeRangeToHtml(editor, scope.startIndex, scope.endIndex), SELECTION_MAX_CHARS)
     : ''
   return [
     isEmptyDoc
       ? 'The document is currently blank.'
-      : `Document block list:\n${buildDocumentContext(editor)}`,
+      : `Document block list:\n${buildDocumentContext(editor, scope, hf)}`,
+    // a blank body can still carry headers/footers (template setup): keep them visible
+    isEmptyDoc && hf ? hfContextLines(hf).join('\n') : '',
     selectionHtml
       ? `Content selected by the user (blocks ${scope.startIndex}-${scope.endIndex}):\n${selectionHtml}`
       : '',
+    comments && comments.length > 0 ? buildCommentsContext(editor, comments) : '',
   ]
     .filter(Boolean)
     .join('\n\n')

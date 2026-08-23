@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
@@ -24,6 +24,8 @@ import {
   showSaveDialogWithMemory,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
+import { cloudToolsEnabled, type AiSettings } from '@genoffice/ai-provider'
+import { gskGenerateImage, hasGskAuth } from '@genoffice/ai-search'
 import { atomicWriteFile } from './atomic-write'
 import {
   copyImageIntoOwnedAssets,
@@ -298,12 +300,26 @@ interface RuntimePaths {
   preloadPath: string
   rendererUrl?: string
   rendererFile?: string
+  /** Shell router used to open exported PDFs in a new GenOffice tab. */
+  openGeneratedPath?: (path: string) => boolean
 }
 
 let runtime: RuntimePaths = { preloadPath: '' }
 
 export function configureMarkdownRuntime(paths: RuntimePaths): void {
   runtime = paths
+}
+
+/** After a successful Markdown → PDF export: open the file in a PDF tab (shell)
+ * or reveal it in the folder (standalone). Tab-opening failure must not
+ * report the export itself as failed — the file is already persisted. */
+function openExportedPdf(path: string): void {
+  try {
+    if (runtime.openGeneratedPath?.(path)) return
+  } catch (err) {
+    console.warn('[markdown] Failed to open exported PDF:', err)
+  }
+  shell.showItemInFolder(path)
 }
 
 /** Open path per view, queued at tab creation; the renderer consumes it after mount.
@@ -658,6 +674,44 @@ function registerMarkdownIpc(): void {
     },
   )
 
+  /** live read: the shell settings pane writes the file; every tool call re-checks */
+  const gskCloudToolsOn = (): boolean => {
+    try {
+      const raw = readFileSync(join(app.getPath('userData'), 'ai-settings.json'), 'utf8')
+      return cloudToolsEnabled(JSON.parse(raw) as Partial<AiSettings>)
+    } catch {
+      return false
+    }
+  }
+
+  // markdown-owned (like docs:ai-generate-image): the shared ai:* handlers are
+  // shell-registered, but image generation is gated per app
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.aiGenerateImage,
+    async (_e, op: { prompt?: unknown; aspectRatio?: unknown }) => {
+      if (!hasGskAuth())
+        return {
+          error: 'Genspark account is not logged in on this machine; ask the user to log in first',
+        }
+      if (!gskCloudToolsOn())
+        return {
+          error:
+            'Genspark cloud tools are turned off in Settings (AI Model); enable them to use this tool',
+        }
+      const prompt = String(op?.prompt ?? '').trim()
+      if (!prompt) return { error: 'prompt must not be empty' }
+      try {
+        const r = await gskGenerateImage({
+          prompt,
+          aspectRatio: op?.aspectRatio ? String(op.aspectRatio) : undefined,
+        })
+        return { url: r.url }
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
   const MIME_BY_EXT: Record<string, ImageData['mime']> = {
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
@@ -766,6 +820,7 @@ function registerMarkdownIpc(): void {
           margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
         })
         await writeFile(picked.filePath, pdf)
+        openExportedPdf(picked.filePath)
         return { ok: true, path: picked.filePath }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
